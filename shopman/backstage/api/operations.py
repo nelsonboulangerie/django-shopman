@@ -1541,7 +1541,7 @@ class OrderQueueView(APIView):
     required_permission = "shop.manage_orders"
 
     def get(self, request):
-        queue = build_two_zone_queue()
+        queue = build_two_zone_queue(user=request.user)
         return Response({"queue": projection_data(queue)})
 
 
@@ -1569,34 +1569,85 @@ class _OrderActionBase(APIView):
     ),
 )
 class OrderAdvanceView(_OrderActionBase):
-    def post(self, request, ref: str):
+    def _scope(self, request, ref):
+        from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+        return mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": "orders.advance", "ref": ref})
+
+    def get(self, request, ref: str):
+        from shopman.shop.services.remote_mutations import RemoteMutationInProgress, lookup_local_mutation
+
         order, err = self._get_order(ref)
         if err:
             return err
-        # ``change_out``: troco que o entregador leva da gaveta no despacho de
-        # entrega em dinheiro (reais; "0" = levou sem troco). Ausente em pedido
-        # que pede troco → 409 com a sugestão, para a tela perguntar.
-        body = request.data or {}
-        change_out = body.get("change_out")
-        equipment = body.get("equipment") or []
-        if not isinstance(equipment, list):
-            equipment = [equipment]
+        key = str(request.query_params.get("idempotency_key") or "")
+        if not key or len(key) > 128:
+            return Response({"detail": "Informe a intenção a consultar."}, status=400)
         try:
-            orders_service.advance_order(
-                order,
-                actor=_actor(request),
-                operator=request.user,
-                change_out_raw=None if change_out is None else str(change_out),
-                equipment=[str(ref) for ref in equipment],
-            )
-        except orders_service.OrderChangeOutRequired as exc:
-            return Response(
-                {"detail": str(exc), "code": "change_out_required", "suggested_q": exc.suggested_q},
-                status=409,
-            )
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Ação inválida."}, status=400)
-        return Response({"ok": True, "ref": ref})
+            result = lookup_local_mutation(scope=self._scope(request, ref), key=key)
+        except RemoteMutationInProgress:
+            result = None
+        if result is None:
+            return Response({"intention": key, "outcome": "unknown", "detail": "Ainda não há resultado confirmado para esta intenção."}, status=202)
+        return Response({**result.response_body, "replayed": True, "order": projection_data(build_operator_order(order, user=request.user))}, status=result.response_code)
+
+    def post(self, request, ref: str):
+        from shopman.shop.services.remote_mutations import (
+            RemoteMutationConflict,
+            RemoteMutationInProgress,
+            mutation_fingerprint,
+            run_idempotent_mutation,
+        )
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        body = request.data or {}
+        key = str(request.headers.get("Idempotency-Key") or body.get("idempotency_key") or "").strip()
+        base = str(body.get("base_revision") or request.headers.get("If-Match") or "").strip('"')
+        target = body.get("target_status")
+        if not key or len(key) > 128 or not base or not isinstance(target, str) or not target:
+            return Response({"detail": "Atualize o pedido: esta ação exige intenção, revisão e etapa de destino.", "code": "intention_required"}, status=400)
+        equipment = body.get("equipment") or []
+        if not isinstance(equipment, list) or any(not isinstance(value, str) for value in equipment):
+            return Response({"detail": "Aparelhos devem ser uma lista de referências."}, status=400)
+        equipment = sorted(set(equipment))
+        change_out = body.get("change_out")
+        if change_out is not None:
+            from shopman.backstage.services.exceptions import POSError
+            from shopman.backstage.services.pos import parse_money_to_q
+
+            try:
+                change_q = parse_money_to_q(str(change_out))
+            except POSError as exc:
+                return Response({"detail": str(exc)}, status=400)
+        else:
+            change_q = None
+        fingerprint = mutation_fingerprint({"version": 1, "scope": self._scope(request, ref), "base": base, "target": target, "equipment": equipment, "change_out_q": change_q})
+
+        def execute():
+            try:
+                orders_service.advance_order(
+                    order, actor=_actor(request), operator=request.user,
+                    change_out_raw=None if change_out is None else str(change_out),
+                    equipment=equipment, expected_revision=base, target_status=target,
+                )
+            except orders_service.OrderChangeOutRequired as exc:
+                return {"detail": str(exc), "code": "change_out_required", "suggested_q": exc.suggested_q, "outcome": "not_applied", "intention": key}, 409
+            except OrderConflict as exc:
+                return {"detail": str(exc), "outcome": "not_applied", "intention": key}, 409
+            except OrderError as exc:
+                return {"detail": str(exc) or "Ação inválida.", "outcome": "not_applied", "intention": key}, 400
+            return {"ok": True, "ref": ref, "intention": key, "outcome": "applied", "applied": {"status": target}, "pending": ["lifecycle"]}, 200
+
+        try:
+            result = run_idempotent_mutation(scope=self._scope(request, ref), key=key, fingerprint=fingerprint, execute=execute)
+        except RemoteMutationConflict as exc:
+            return Response({"detail": str(exc), "code": "intention_conflict", "outcome": "not_applied"}, status=409)
+        except RemoteMutationInProgress:
+            return Response({"intention": key, "outcome": "in_progress", "detail": "A intenção está em andamento; consulte o resultado."}, status=202)
+        order.refresh_from_db()
+        return Response({**result.response_body, "replayed": result.replayed, "order": projection_data(build_operator_order(order, user=request.user))}, status=result.response_code)
 
 
 @extend_schema_view(

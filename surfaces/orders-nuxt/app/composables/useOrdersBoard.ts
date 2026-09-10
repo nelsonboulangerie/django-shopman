@@ -1,3 +1,4 @@
+import { useOrderAdvanceIntention } from "./useOrderAdvanceIntention";
 // Order board read-side. Single source for the live queue:
 //   - useFetch the canonical two-zone projection (GET /api/v1/backstage/orders/);
 //   - poll every 30s as a robust fallback (mirrors the Admin queue `every 30s`);
@@ -60,6 +61,7 @@ export const GESTOR_ALERT = {
 // O kit para de repetir no primeiro toque/tecla — presença cala o aviso.
 
 export function useOrdersBoard() {
+  const intentions = useOrderAdvanceIntention();
   const config = useRuntimeConfig();
   const path = "/api/v1/backstage/orders/";
 
@@ -249,10 +251,14 @@ export function useOrdersBoard() {
     clearActionError(ref_); // a fresh attempt clears the previous reason
     busy.value = new Set(busy.value).add(ref_);
     try {
-      await $fetch(`/api/v1/backstage/orders/${encodeURIComponent(ref_)}/${action}/`, {
-        method: "POST",
-        body: body ?? {},
-      });
+      if (action === "advance") {
+        const card = [...zones.value.flatMap((zone) => zone.cards), ...(queue.value?.preorders ?? [])].find((item) => item.ref === ref_);
+        await intentions.advance(ref_, card?.actions?.find((item) => item.ref === "advance"), body ?? {});
+      } else {
+        await $fetch(`/api/v1/backstage/orders/${encodeURIComponent(ref_)}/${action}/`, {
+          method: "POST", body: body ?? {},
+        });
+      }
       await refresh();
       return true;
     } catch (error) {

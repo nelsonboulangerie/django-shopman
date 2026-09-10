@@ -57,6 +57,8 @@ const hasCustomerContact = computed(() =>
 
 // kitchen-note editor (seeded from the projection; saved explicitly). The note —
 // preset tags one-tap-appended + free text — is shown on the KDS ticket.
+const projectedAction = (ref_: string) => order.value?.actions?.find((action) => action.ref === ref_);
+
 const notes = ref("");
 watch(order, (o) => { if (o) notes.value = o.kitchen_note || ""; }, { immediate: true });
 const notesDirty = computed(() => order.value != null && notes.value !== (order.value.kitchen_note || ""));
@@ -324,14 +326,14 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
            que decide é o servidor, e quando ele bloqueia o lugar do botão
            continua ocupado dizendo o motivo, em vez de sumir. -->
       <section class="flex flex-wrap gap-2">
-        <button v-if="order.can_confirm" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="confirm" @click="confirm">
+        <button v-if="projectedAction('confirm')" type="button" :disabled="busy || !projectedAction('confirm')?.enabled" :title="projectedAction('confirm')?.reason" class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="confirm" @click="confirm">
           <Icon name="lucide:check" class="size-4" /> Aceitar
         </button>
-        <button v-else-if="order.can_advance && order.next_action_label" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="advance" @click="onAdvance">
+        <button v-else-if="projectedAction('advance')?.enabled" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="advance" @click="onAdvance">
           <Icon name="lucide:arrow-right" class="size-4" /> {{ order.next_action_label }}
         </button>
-        <button v-else-if="order.advance_block_label" type="button" disabled :title="order.advance_block_reason" class="inline-flex cursor-not-allowed items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold text-muted-foreground opacity-60" data-action="advance-blocked">
-          <Icon name="lucide:clock" class="size-4" /> {{ order.advance_block_label }}
+        <button v-else-if="projectedAction('advance')" type="button" disabled :title="projectedAction('advance')?.reason" class="inline-flex cursor-not-allowed items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold text-muted-foreground opacity-60" data-action="advance-blocked">
+          <Icon name="lucide:clock" class="size-4" /> {{ projectedAction('advance')?.reason }}
         </button>
         <button v-if="order.can_settle_delivery_cash" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="openDialog('settle')">
           <Icon name="lucide:banknote" class="size-4" /> Acerto dinheiro
@@ -351,7 +353,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         </button>
         <!-- Recusar é a resposta ao pedido que ACABOU de chegar; depois de
              aceito o gesto certo é Cancelar. -->
-        <button v-if="order.can_confirm" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3.5 py-2 text-sm font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50 dark:text-orange-300" data-action="reject" @click="openDialog('reject')">
+        <button v-if="projectedAction('reject')" type="button" :disabled="busy || !projectedAction('reject')?.enabled" class="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3.5 py-2 text-sm font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50 dark:text-orange-300" data-action="reject" @click="openDialog('reject')">
           <Icon name="lucide:x" class="size-4" /> Recusar
         </button>
         <!-- `can_cancel` já é régua + política + permissão, resolvidas no

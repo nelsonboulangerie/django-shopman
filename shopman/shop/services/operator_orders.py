@@ -226,6 +226,7 @@ def advance_block_reason(order: Order) -> str:
     return advance_block_message(advance_block(order))
 
 
+@transaction.atomic
 def advance_order(
     order: Order,
     *,
@@ -233,6 +234,8 @@ def advance_order(
     change_out_q: int | None = None,
     cash_shift=None,
     equipment: list[str] | None = None,
+    expected_revision: str | None = None,
+    target_status: str | None = None,
 ) -> str:
     """Advance an order through the operator lifecycle.
 
@@ -242,6 +245,15 @@ def advance_order(
     do total) o valor é obrigatório, zero incluído: é o servidor que exige, não
     a tela, porque uma gaveta desfalcada sem linha é exatamente o buraco.
     """
+    # Custódia antes do agregado, compatível com o livro do caixa.
+    if cash_shift is not None:
+        type(cash_shift).objects.select_for_update().get(pk=cash_shift.pk)
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    if expected_revision is not None and expected_revision != operational_revision(order):
+        raise OrderStateConflict("O pedido mudou. Confira o estado atualizado antes de continuar.")
+    if target_status is not None and target_status != next_status_for(order):
+        raise OrderStateConflict("A etapa solicitada não é mais a próxima ação deste pedido.")
     blocked = advance_block_reason(order)
     if blocked:
         raise ValueError(blocked)
@@ -856,3 +868,75 @@ def _advance_fulfillment_to(fulfillment, target_status: str, fulfillment_service
             fulfillment.refresh_from_db()
         if fulfillment.status == Fulfillment.Status.DISPATCHED:
             fulfillment_service.update(fulfillment, Fulfillment.Status.DELIVERED)
+
+
+def confirmation_block_reason(order: Order) -> str:
+    """Consulta os mesmos guards do aceite, sem captura, reserva ou escrita."""
+    from shopman.orderman.exceptions import InvalidTransition
+
+    from shopman.shop.lifecycle import ensure_confirmable, ensure_payment_captured
+
+    if order.status != Order.Status.NEW:
+        return "Pedido não está aguardando confirmação."
+    try:
+        ensure_payment_captured(order)
+        ensure_confirmable(order)
+    except InvalidTransition as exc:
+        return exc.message
+    return ""
+
+
+def operational_revision(order: Order, *, field: str = "advance") -> str:
+    """Base opaca: nota/atribuição independentes; avanço cobre seus fatos canônicos."""
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    data = order.data or {}
+    if field in {"kitchen_note", "assignment"}:
+        state = data.get(field)
+    elif field == "advance":
+        state = {
+            "status": order.status, "total_q": order.total_q,
+            "transitions": order.get_transitions(),
+            "data": {key: data.get(key) for key in (
+                "payment", "availability_decision", "waitlist", "fulfillment_type",
+                "delivery_method", "delivery_date", "commitment_date", "dispatch",
+            )},
+        }
+    else:
+        raise ValueError("Unknown revision field")
+    return mutation_fingerprint({"version": 1, "order": order.ref, "field": field, "state": state})
+
+
+def operational_actions(order: Order, *, user=None):
+    """Elegibilidade canônica; cliente só renderiza. API ainda revalida sob lock."""
+    from shopman.shop.projections.types import Action
+
+    authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
+    permission_reason = "Identifique uma pessoa com permissão para gerenciar pedidos."
+    actions = []
+    if order.status == Order.Status.NEW:
+        reason = confirmation_block_reason(order) if authorized else permission_reason
+        actions.append(Action(
+            ref="confirm", kind="mutation", label="Aceitar", priority="primary",
+            enabled=not reason, reason=reason, method="POST", idempotency="required",
+        ))
+        actions.append(Action(
+            ref="reject", kind="mutation", label="Recusar", priority="danger",
+            enabled=authorized, reason="" if authorized else permission_reason,
+            method="POST", idempotency="required", payload_schema={"reason": "string"},
+            confirmation={"required": True},
+        ))
+    elif next_status_for(order):
+        labels = {
+            "preparing": "Iniciar preparo", "ready": "Marcar pronto",
+            "dispatched": "Marcar saída para entrega", "delivered": "Marcar como Entregue",
+            "completed": "Marcar como Retirado" if order.status == "ready" else "Concluir",
+        }
+        target = next_status_for(order)
+        reason = advance_block_reason(order) if authorized else permission_reason
+        actions.append(Action(
+            ref="advance", kind="mutation", label=labels[target], priority="primary",
+            enabled=not reason, reason=reason, method="POST", idempotency="required",
+            payload_schema={"target_status": target, "base_revision": operational_revision(order)},
+        ))
+    return tuple(actions)

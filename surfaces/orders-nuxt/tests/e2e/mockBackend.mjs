@@ -13,6 +13,8 @@ const SESSION = { station: "balcao", operator: { id: 1, username: "admin", name:
 const CARD = {
   ref: "WEB-20260625-0007",
   status: "accepted",
+  revisions: { advance: "fixture-base" },
+  actions: [{ ref: "advance", kind: "mutation", label: "Iniciar preparo", priority: "primary", enabled: true, reason: "", href: "", method: "POST", payload_schema: { target_status: "preparing", base_revision: "fixture-base" }, idempotency: "required", confirmation: {} }],
   status_label: "Aceito",
   status_color: "",
   channel_ref: "web",
@@ -60,6 +62,7 @@ const QUEUE = {
       customer_name: "Pagamento pendente",
       items_summary: "0.5× Pesado",
       total_display: "R$ 3,00",
+      actions: [{ ...CARD.actions[0], enabled: false, label: "Aguardando pagamento", reason: "O pagamento ainda não foi capturado." }],
       can_advance: false,
       next_status: "",
       payment_method: "link",

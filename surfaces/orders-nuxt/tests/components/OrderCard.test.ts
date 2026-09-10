@@ -1,3 +1,4 @@
+import { fixtureActions } from "../support/orderActions";
 import { describe, expect, it, vi } from "vitest";
 import { computed, ref } from "vue";
 import { mount } from "@vue/test-utils";
@@ -52,6 +53,8 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     awaiting_work_orders: [],
     confirmation_deadline_iso: "",
     confirmation_action: "confirm",
+    revisions: {},
+    actions: fixtureActions({ can_advance: true, next_action_label: "Iniciar preparo", ...over }),
     ...over,
   } as OrderCardProjection;
 }

@@ -39,7 +39,7 @@ def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellati
         raise OrderError(str(exc)) from exc
 
 
-def advance_order(order, *, actor: str, operator=None, change_out_raw: str | None = None, equipment=None):
+def advance_order(order, *, actor: str, operator=None, change_out_raw: str | None = None, equipment=None, expected_revision=None, target_status=None):
     """Avança o pedido; no despacho de entrega em dinheiro, leva o troco da gaveta.
 
     ``change_out_raw`` é o valor que o entregador leva (texto em reais; vazio é
@@ -71,8 +71,11 @@ def advance_order(order, *, actor: str, operator=None, change_out_raw: str | Non
         shift = pos_service.current_shift()
     try:
         return operator_orders.advance_order(
-            order, actor=actor, change_out_q=change_out_q, cash_shift=shift, equipment=list(equipment or [])
+            order, actor=actor, change_out_q=change_out_q, cash_shift=shift, equipment=list(equipment or []),
+            expected_revision=expected_revision, target_status=target_status,
         )
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
     except operator_orders.ChangeOutRequired as exc:
         raise OrderChangeOutRequired(str(exc), suggested_q=exc.suggested_q) from exc
     except (ValueError, InvalidTransition) as exc:

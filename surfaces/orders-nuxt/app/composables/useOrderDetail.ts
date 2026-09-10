@@ -1,9 +1,11 @@
+import { useOrderAdvanceIntention } from "./useOrderAdvanceIntention";
 // Order detail read-side. Reads the expanded operator projection (items, timeline,
 // notes, fiscal links) and exposes the full action set. Writes go through the django
 // proxy and reconcile via refresh. Mirrors useOrdersBoard's in-flight guard.
 import type { CancellationReason, OperatorOrderProjection, OrderDetailResponse } from "~/types/orders";
 
 export function useOrderDetail(orderRef: string) {
+  const intentions = useOrderAdvanceIntention();
   const path = `/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/`;
   // Estação travada: a leitura volta 403 `station_locked` e a tela dizia "Pedido
   // não encontrado ou falha ao carregar" — o pedido existe, quem não se
@@ -43,10 +45,13 @@ export function useOrderDetail(orderRef: string) {
     if (busy.value) return false;
     busy.value = true;
     try {
-      await $fetch(`/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/${action}/`, {
-        method: "POST",
-        body: { ...(body ?? {}), ...(approval ? { manager_approval: approval } : {}) },
-      });
+      if (action === "advance") {
+        await intentions.advance(orderRef, order.value?.actions?.find((item) => item.ref === "advance"), body ?? {});
+      } else {
+        await $fetch(`/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/${action}/`, {
+          method: "POST", body: { ...(body ?? {}), ...(approval ? { manager_approval: approval } : {}) },
+        });
+      }
       managerChallenge.value = null;
       lastAttempt = null;
       await refresh();

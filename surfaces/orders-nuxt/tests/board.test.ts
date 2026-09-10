@@ -1,3 +1,4 @@
+import { fixtureActions } from "./support/orderActions";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -81,6 +82,8 @@ const card = (over: Partial<OrderCardProjection> = {}): OrderCardProjection => (
   equipment_out: [],
   equipment_label: "",
   equipment_back_pending: false,
+  revisions: {},
+  actions: fixtureActions({ can_advance: true, next_action_label: "Iniciar preparo", ...over }),
   ...over,
 });
 

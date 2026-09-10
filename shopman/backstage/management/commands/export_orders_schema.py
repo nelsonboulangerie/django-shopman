@@ -33,13 +33,14 @@ from shopman.backstage.projections.order_queue import (
     OrderQueueProjection,
     TwoZoneQueueProjection,
 )
-from shopman.shop.projections.types import OrderItemProjection, TimelineEventProjection
+from shopman.shop.projections.types import Action, OrderItemProjection, TimelineEventProjection
 
 #: Generated artifact, relative to the repository root (``BASE_DIR``).
 OUTPUT_RELATIVE_PATH = Path("surfaces/orders-nuxt/app/generated/ordersContract.ts")
 
 #: Every dataclass exported to the surface, dependencies first.
 CONTRACT_DATACLASSES = (
+    Action,
     OrderItemProjection,
     TimelineEventProjection,
     AwaitingWorkOrderProjection,

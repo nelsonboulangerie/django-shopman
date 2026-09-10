@@ -1,3 +1,4 @@
+import { fixtureActions } from "../support/orderActions";
 import { describe, expect, it, vi } from "vitest";
 import { computed, ref, watch } from "vue";
 import { mount } from "@vue/test-utils";
@@ -100,6 +101,8 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     can_resend_payment_link: false,
     payment_link_notice: "",
     customer_profile: null,
+    revisions: {},
+    actions: fixtureActions({ can_confirm: true, ...over }),
     ...over,
   } as OperatorOrderProjection;
 }

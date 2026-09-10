@@ -25,6 +25,7 @@ from shopman.backstage.presentation.status import (
     status_color,
 )
 from shopman.shop.projections.types import (
+    Action,
     OrderItemProjection,
     TimelineEventProjection,
 )
@@ -109,6 +110,8 @@ class OrderCardProjection:
 
     ref: str
     status: str
+    actions: tuple[Action, ...]
+    revisions: dict[str, str]
     status_label: str
     status_color: str
     channel_ref: str
@@ -262,6 +265,8 @@ class OperatorOrderProjection:
 
     ref: str
     status: str
+    actions: tuple[Action, ...]
+    revisions: dict[str, str]
     status_label: str
     status_color: str
     customer_name: str
@@ -518,6 +523,8 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
     return OperatorOrderProjection(
         ref=order.ref,
         status=order.status,
+        actions=operator_orders.operational_actions(order, user=user),
+        revisions={field: operator_orders.operational_revision(order, field=field) for field in ("advance", "kitchen_note", "assignment")},
         status_label=order_status_label(order.status),
         status_color=status_color(order.status),
         customer_name=customer_name,
@@ -537,7 +544,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         payment_method_label=payment_method_label,
         payment_status=payment_status,
         payment_status_label=payment_status_label(payment_status),
-        can_confirm=order.status == "new",
+        can_confirm=not operator_orders.confirmation_block_reason(order),
         can_advance=bool(next_status),
         **_cancel_capability(order, user),
         next_action_label=_next_label(order),
@@ -881,12 +888,12 @@ def _segment_label(segment: str) -> str:
         return ""
 
 
-def build_order_card(order: Order) -> OrderCardProjection:
+def build_order_card(order: Order, *, user=None) -> OrderCardProjection:
     """Build a single order card projection (for HTMX partial re-renders)."""
-    return _build_card(order)
+    return _build_card(order, user=user)
 
 
-def build_two_zone_queue() -> TwoZoneQueueProjection:
+def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     """Build the operator queue grouped by the next physical action."""
     all_orders = list(
         Order.objects.filter(status__in=ACTIVE_STATUSES)
@@ -905,12 +912,12 @@ def build_two_zone_queue() -> TwoZoneQueueProjection:
     # mantém o prazo de confirmação (auto-confirm) e o botão de aceitar; o
     # despertador (preorder.activate) devolve o pedido ao fluxo na data (WP-D).
     intake = tuple(
-        _build_card(o, deadline=deadlines.get(o.ref))
+        _build_card(o, user=user, deadline=deadlines.get(o.ref))
         for o in new_orders
         if not _is_future_preorder(o)
     )
     prep_orders = [o for o in all_orders if o.status in ("accepted", "preparing")]
-    prep = tuple(_build_card(o, courier_change=courier_change) for o in prep_orders if not _is_future_preorder(o))
+    prep = tuple(_build_card(o, user=user, courier_change=courier_change) for o in prep_orders if not _is_future_preorder(o))
     # Só estados pré-fulfillment viram "Agendados"; ready/dispatched/delivered
     # seguem nas colunas de expedição mesmo que a data combinada seja futura.
     future_preorders = [
@@ -918,16 +925,16 @@ def build_two_zone_queue() -> TwoZoneQueueProjection:
         if o.status in ("new", "accepted", "preparing") and _is_future_preorder(o)
     ]
     preorders = tuple(
-        _build_card(o, deadline=deadlines.get(o.ref))
+        _build_card(o, user=user, deadline=deadlines.get(o.ref))
         for o in sorted(future_preorders, key=lambda o: (get_commitment_date(o), o.created_at))
     )
     preparing_count = len(prep)
 
     ready_orders = [o for o in all_orders if o.status == "ready"]
-    expedition_pickup = tuple(_build_card(o) for o in ready_orders if not _is_delivery(o))
-    expedition_delivery = tuple(_build_card(o, courier_change=courier_change) for o in ready_orders if _is_delivery(o))
+    expedition_pickup = tuple(_build_card(o, user=user) for o in ready_orders if not _is_delivery(o))
+    expedition_delivery = tuple(_build_card(o, user=user, courier_change=courier_change) for o in ready_orders if _is_delivery(o))
     expedition_delivery_transit = tuple(
-        _build_card(o, courier_change=courier_change)
+        _build_card(o, user=user, courier_change=courier_change)
         for o in all_orders
         if o.status in ("dispatched", "delivered")
     )
@@ -1030,6 +1037,7 @@ def _build_card(
     order: Order,
     deadline: tuple[str, str] | None = None,
     courier_change: dict[str, tuple[int, int | None]] | None = None,
+    user=None,
 ) -> OrderCardProjection:
     now = timezone.now()
     elapsed = (now - order.created_at).total_seconds()
@@ -1076,6 +1084,8 @@ def _build_card(
     return OrderCardProjection(
         ref=order.ref,
         status=order.status,
+        actions=operator_orders.operational_actions(order, user=user),
+        revisions={field: operator_orders.operational_revision(order, field=field) for field in ("advance", "kitchen_note", "assignment")},
         status_label=order_status_label(order.status),
         status_color=status_color(order.status),
         channel_ref=order.channel_ref or "",
@@ -1094,7 +1104,7 @@ def _build_card(
         fulfillment_type="delivery" if is_delivery else "pickup",
         delivery_address=delivery_address,
         delivery_instructions=delivery_instructions,
-        can_confirm=order.status == "new",
+        can_confirm=not operator_orders.confirmation_block_reason(order),
         can_advance=bool(next_status),
         next_status=next_status,
         next_action_label=next_label,

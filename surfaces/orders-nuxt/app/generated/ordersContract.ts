@@ -2,6 +2,21 @@
 // Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py
 // Regenerate with: python manage.py export_orders_schema
 
+/** Canonical action offered by a Shopman projection to any surface. */
+export interface Action {
+  ref: string;
+  kind: string;
+  label: string;
+  priority: string;
+  enabled: boolean;
+  reason: string;
+  href: string;
+  method: string;
+  payload_schema: Record<string, unknown>;
+  idempotency: string;
+  confirmation: Record<string, unknown>;
+}
+
 /** One line item as displayed on order tracking or confirmation. */
 export interface OrderItemProjection {
   sku: string;
@@ -67,6 +82,8 @@ export interface CustomerProfileProjection {
 export interface OrderCardProjection {
   ref: string;
   status: string;
+  actions: Action[];
+  revisions: Record<string, string>;
   status_label: string;
   status_color: string;
   channel_ref: string;
@@ -132,6 +149,8 @@ export interface OrderCardProjection {
 export interface OperatorOrderProjection {
   ref: string;
   status: string;
+  actions: Action[];
+  revisions: Record<string, string>;
   status_label: string;
   status_color: string;
   customer_name: string;

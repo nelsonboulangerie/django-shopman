@@ -225,3 +225,36 @@ Kit: **221 passed em 22 arquivos (2,57s)**, incluindo allowlist e não encaminha
 identidade arbitrária. Integração dos endpoints/clientes e todos os writers ainda em andamento;
 isto não conclui WP02. Migração: envelope JSON apenas em escopos novos, sem DDL. Rollback:
 manter leitores dos recibos e suspender capacidades locais antes de reverter executor.
+
+## Retomada — WP01/WP02: Actions e avanço por intenção
+
+C01: card e detalhe recebem Actions de shop para aceitar/recusar/avançar. Aceite consulta
+os guards existentes de pagamento/disponibilidade; ausência de pessoa/permissão desabilita
+Actions. Recusar permanece independente do bloqueio de aceite. Frontend usa essas Actions
+nas três apresentações; revisões opacas independentes para avanço, nota e atribuição.
+
+D01: POST advance exige chave, base e target; escopo vinculado a request.user/operação/ref.
+Serviço relê sob lock e compara base/target antes de qualquer escrita. API GET no mesmo
+recurso consulta recibo, sem resgate de gateway; o resgate do detalhe permanece intacto.
+Cliente conserva chave/payload após erro ambíguo, consulta recibo automaticamente e não
+aceita resposta de outra pessoa. Nenhuma persistência após reload foi introduzida.
+
+Provas: cadeia do plano + regressões novas **603 passed, 2 skipped, 18 subtests (42,24s)**.
+Skips são PostgreSQL-only; recibo concorrente já ensaiado em PG na fatia anterior. Ensaio
+adicional de duas chaves contra uma base em PG: **1 passed (5,93s)**, exatamente um 200 e
+um 409, uma transição. Handler posterior mock nesse ensaio, portanto sem alegação de efeito
+externo. API/custódia/payment gate: **48 passed, 5 subtests (15,21s)**. Gestor **225 passed
+(2,05s)**; E2E Chromium/mock **4 passed (22,7s)**; build e typecheck passaram; Ruff e gate
+da meia-correção passaram. Resultados sobrepostos não devem ser somados como testes únicos.
+
+J04 sintético: resposta perdida → uma consulta automática, zero clique extra, mesmo key;
+resultado ainda desconhecido → próxima tentativa conserva payload/chave. J03 concorrência
+de avanço: segunda intenção recusada, sem segundo movimento. Tempos humanos/clareza não
+medidos. Sem alteração de confirmação/autoridade; G01/G02 continuam pendentes para políticas.
+
+Limites restantes: Actions de outras mutações, unidade, writers JSON e edição concorrente,
+durabilidade de enqueue lifecycle, integração Django no navegador e matriz completa de crash.
+O recibo informa lifecycle pendente; não prova conclusão dos efeitos posteriores. WP01 e
+WP02 seguem em andamento, sem T. Migração coordenada servidor/cliente: cliente antigo sem
+precondição recebe 400; rollback deve suspender avanço, preservar recibos e manter consulta,
+nunca reinstalar o advance inseguro para recuperar compatibilidade.

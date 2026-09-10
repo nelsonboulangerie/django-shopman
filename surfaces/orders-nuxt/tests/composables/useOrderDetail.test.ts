@@ -1,9 +1,12 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { ref } from "vue";
+import { fixtureActions } from "../support/orderActions";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
 import { useOrderDetail } from "../../app/composables/useOrderDetail";
 
 const env = installNuxtGlobals();
+vi.stubGlobal("useNuxtData", () => ({ data: ref({ operator: { id: 1 } }) }));
 
 describe("useOrderDetail", () => {
   beforeEach(() => env.reset());
@@ -49,7 +52,8 @@ describe("useOrderDetail", () => {
 
   it("guarda de reentrância: 2ª ação enquanto em voo é no-op", async () => {
     let release!: () => void;
-    env.fetchMock.mockReturnValueOnce(new Promise<void>((r) => { release = r; }));
+    env.fetchMock.mockReturnValueOnce(new Promise((r) => { release = () => r({ outcome: "applied" }); }));
+    env.fetchData.value = { order: { ref: "WEB-3", actions: fixtureActions({ can_advance: true }) } };
     const d = useOrderDetail("WEB-3");
     const first = d.advance();
     expect(d.busy.value).toBe(true);

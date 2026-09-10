@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { ref } from "vue";
+import { fixtureActions } from "../support/orderActions";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
 import { useStationLock } from "../../../operator-kit/app/composables/useStationLock";
@@ -6,6 +8,7 @@ import { GESTOR_ALERT, useOrdersBoard } from "../../app/composables/useOrdersBoa
 import type { TwoZoneQueueProjection } from "../../app/types/orders";
 
 const env = installNuxtGlobals();
+vi.stubGlobal("useNuxtData", () => ({ data: ref({ operator: { id: 1 } }) }));
 
 function emptyZone(): TwoZoneQueueProjection {
   return {
@@ -112,16 +115,19 @@ describe("useOrdersBoard — ações (act)", () => {
 
   it("uma nova tentativa limpa o erro anterior do ref", async () => {
     env.fetchMock.mockRejectedValueOnce({ data: { detail: "boom" } });
+    env.fetchData.value = { queue: { ...emptyZone(), prep: [{ ref: "WEB-3", actions: fixtureActions({ can_advance: true }) }] } };
     const board = useOrdersBoard();
     await board.confirm("WEB-3");
     expect(board.actionError("WEB-3")).toBe("boom");
+    env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });
     await board.advance("WEB-3");
     expect(board.actionError("WEB-3")).toBe("");
   });
 
   it("guarda de reentrância: 2º clique enquanto em voo não dispara 2º POST", async () => {
     let release!: () => void;
-    env.fetchMock.mockReturnValueOnce(new Promise<void>((res) => { release = res; }));
+    env.fetchMock.mockReturnValueOnce(new Promise((res) => { release = () => res({ outcome: "applied" }); }));
+    env.fetchData.value = { queue: { ...emptyZone(), prep: [{ ref: "WEB-4", actions: fixtureActions({ can_advance: true }) }] } };
     const board = useOrdersBoard();
     const first = board.advance("WEB-4");
     expect(board.isBusy("WEB-4")).toBe(true);

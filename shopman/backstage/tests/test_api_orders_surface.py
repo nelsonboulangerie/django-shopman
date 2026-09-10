@@ -15,6 +15,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 from shopman.orderman.models import Directive, Order, OrderItem
 
+from shopman.backstage.tests._order_intent import advance_payload
 from shopman.shop.models import Shop
 
 
@@ -175,9 +176,11 @@ def test_order_detail_unknown_ref_is_404(client, operator):
 @pytest.mark.django_db
 def test_advance_confirmed_order(client, operator, order):
     client.force_login(operator)
-    response = client.post(reverse("api-backstage-order-advance", args=[order.ref]))
+    response = client.post(reverse("api-backstage-order-advance", args=[order.ref]), advance_payload(client, order.ref), content_type="application/json")
     assert response.status_code == 200
-    assert response.json() == {"ok": True, "ref": order.ref}
+    assert response.json()["ok"] is True
+    assert response.json()["ref"] == order.ref
+    assert response.json()["outcome"] == "applied"
     order.refresh_from_db()
     assert order.status == "preparing"
 
@@ -309,3 +312,37 @@ def test_cancel_endpoint_without_reason_stays_generic(
         payload__template="order_cancelled",
     )
     assert notice.payload.get("reason") is None
+
+
+@pytest.mark.django_db
+def test_advance_requires_intention_and_replays_exact_target(client, operator, order):
+    from shopman.backstage.tests._order_intent import advance_payload
+
+    client.force_login(operator)
+    url = reverse("api-backstage-order-advance", args=[order.ref])
+    assert client.post(url, {}, content_type="application/json").status_code == 400
+    body = advance_payload(client, order.ref)
+    first = client.post(url, body, content_type="application/json")
+    assert first.status_code == 200
+    replay = client.post(url, body, content_type="application/json")
+    assert replay.status_code == 200 and replay.json()["replayed"] is True
+    order.refresh_from_db()
+    assert order.status == "preparing"
+    assert client.get(url, {"idempotency_key": body["idempotency_key"]}).json()["outcome"] == "applied"
+    changed = client.post(url, {**body, "target_status": "ready"}, content_type="application/json")
+    assert changed.status_code == 409
+    order.refresh_from_db()
+    assert order.status == "preparing"
+
+
+@pytest.mark.django_db
+def test_advance_receipt_is_private_and_lookup_does_not_create_it(client, operator, plain_staff, order):
+    from shopman.orderman.models import IdempotencyKey
+
+    client.force_login(operator)
+    url = reverse("api-backstage-order-advance", args=[order.ref])
+    before = IdempotencyKey.objects.count()
+    assert client.get(url, {"idempotency_key": "missing"}).status_code == 202
+    assert IdempotencyKey.objects.count() == before
+    client.force_login(plain_staff)
+    assert client.get(url, {"idempotency_key": "missing"}).status_code == 403
