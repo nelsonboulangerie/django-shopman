@@ -321,14 +321,27 @@ describe("QcCloseScreen — correção auditável", () => {
     expect(
       wrapper.find('[data-grade-ref="standard"]').attributes("aria-label"),
     ).toContain("30 unidades");
-    expect(
-      wrapper.find('button[aria-label="Alterar motivo de Razoável"]').text(),
-    ).toContain("Formato");
-    const lossReason = wrapper.find(
-      'button[aria-label="Alterar motivo da perda"]',
+    const fairReason = wrapper.find(
+      'button[aria-label="Editar motivo de Razoável: Formato"]',
     );
-    expect(lossReason.text()).toContain("Queimado");
+    expect(fairReason.text()).toBe("Formato");
+    expect(fairReason.classes()).toContain("min-h-11");
+    expect(fairReason.classes()).toContain("rounded-full");
+    expect(fairReason.find('icon-stub[name="lucide:pencil"]').exists()).toBe(
+      true,
+    );
+    expect(
+      wrapper
+        .find('[data-grade-card="fair"]')
+        .text()
+        .match(/Formato/g),
+    ).toHaveLength(1);
+    const lossReason = wrapper.find(
+      'button[aria-label="Editar motivo da perda: Queimado"]',
+    );
+    expect(lossReason.text()).toBe("Queimado");
     expect(lossReason.classes()).toContain("min-h-11");
+    expect(lossReason.classes()).toContain("rounded-full");
     expect(lossReason.find('icon-stub[name="lucide:pencil"]').exists()).toBe(
       true,
     );
@@ -343,11 +356,11 @@ describe("QcCloseScreen — correção auditável", () => {
     ).toContain("26 unidades");
 
     await wrapper
-      .find('button[aria-label="Alterar motivo de Razoável"]')
+      .find('button[aria-label="Editar motivo de Razoável: Formato"]')
       .trigger("click");
     await buttonByText(wrapper, "Cor")!.trigger("click");
     await wrapper
-      .find('button[aria-label="Alterar motivo da perda"]')
+      .find('button[aria-label="Editar motivo da perda: Queimado"]')
       .trigger("click");
     await buttonByText(wrapper, "Formato")!.trigger("click");
 
@@ -395,6 +408,9 @@ describe("QcCloseScreen — correção auditável", () => {
       initialPartition: [{ quantity: "40", quality_grade_ref: "standard" }],
     });
 
+    expect(wrapper.text()).toContain("Saldo automático");
+    expect(wrapper.text()).toContain("Sem perda");
+
     await buttonByText(wrapper, "Perda")!.trigger("click");
     await enter(wrapper, "5");
     expect(
@@ -406,7 +422,7 @@ describe("QcCloseScreen — correção auditável", () => {
       wrapper.find('[data-grade-ref="standard"]').attributes("aria-label"),
     ).toContain("40 unidades");
     expect(
-      wrapper.find('button[aria-label="Alterar motivo da perda"]').exists(),
+      wrapper.find('button[aria-label^="Editar motivo da perda"]').exists(),
     ).toBe(false);
   });
 

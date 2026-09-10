@@ -159,7 +159,7 @@ const activeLabel = computed(() => {
   if (activeTarget.value?.kind === "loss") return "Perda";
   if (activeGrade.value) return activeGrade.value.label;
   const grade = props.grades.find((item) => item.ref === defaultRef.value);
-  return grade ? `${grade.label} · saldo automático` : "Escolha um grau";
+  return grade ? `${grade.label} · Saldo automático` : "Escolha um grau";
 });
 const activeQuantity = computed(() => {
   if (activeTarget.value?.kind === "loss") return lossQuantity.value;
@@ -548,21 +548,22 @@ const fieldCard =
         @clear="onClear"
       />
 
-      <div class="flex min-h-0 flex-col">
+      <div class="flex flex-col">
         <div
-          class="flex flex-1 flex-col gap-2"
+          class="flex flex-col gap-2"
           role="group"
           aria-label="Graus de qualidade"
         >
           <div
             v-for="grade in orderedGrades"
             :key="grade.ref"
-            class="flex flex-1 flex-col overflow-hidden rounded-md border bg-card"
+            class="flex flex-col rounded-md border bg-card"
+            :data-grade-card="grade.ref"
           >
             <button
               type="button"
               :data-grade-ref="grade.ref"
-              class="relative flex min-h-14 flex-1 items-center justify-between gap-2 overflow-hidden py-2 pl-4 pr-3 text-left transition hover:bg-accent"
+              class="relative flex min-h-14 items-center justify-between gap-2 overflow-hidden rounded-md py-2 pl-4 pr-3 text-left transition hover:bg-accent"
               :class="{
                 'bg-accent ring-2 ring-inset ring-primary/30': isActiveGrade(
                   grade.ref,
@@ -582,10 +583,10 @@ const fieldCard =
                   v-if="grade.ref === defaultRef && anchor.anchor !== null"
                   class="block text-xs text-muted-foreground"
                 >
-                  saldo automático
+                  Saldo automático
                 </span>
                 <span
-                  v-else-if="gradeDefectRefs[grade.ref]"
+                  v-else-if="mode !== 'correct' && gradeDefectRefs[grade.ref]"
                   class="block truncate text-xs text-muted-foreground"
                 >
                   {{ defectLabel(gradeDefectRefs[grade.ref]!) }}
@@ -598,8 +599,10 @@ const fieldCard =
             <button
               v-if="mode === 'correct' && gradeNeedsReason(grade)"
               type="button"
-              class="flex min-h-11 items-center justify-between gap-2 border-t border-dashed px-3 text-left text-xs text-muted-foreground transition hover:bg-accent hover:text-foreground"
-              :aria-label="`Alterar motivo de ${grade.label}`"
+              class="mx-3 mb-3 flex min-h-11 w-[calc(100%-1.5rem)] items-center justify-between gap-2 rounded-full border bg-background px-3 py-2 text-left text-xs font-medium leading-tight text-foreground shadow-sm transition hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              :aria-label="`Editar motivo de ${grade.label}: ${
+                defectLabel(gradeDefectRefs[grade.ref] ?? '') || 'não informado'
+              }`"
               @click="
                 openQuestion(
                   { kind: 'grade_reason', gradeRef: grade.ref },
@@ -607,18 +610,17 @@ const fieldCard =
                 )
               "
             >
-              <span class="truncate">
+              <span class="min-w-0 whitespace-normal break-words">
                 {{
                   defectLabel(gradeDefectRefs[grade.ref] ?? "") ||
                   "Informar motivo"
                 }}
               </span>
-              <span
-                class="inline-flex shrink-0 items-center gap-1 rounded-full border bg-background px-2 py-1 font-medium text-foreground"
-              >
-                <Icon name="lucide:pencil" class="size-3" />
-                Alterar
-              </span>
+              <Icon
+                name="lucide:pencil"
+                class="size-3.5 shrink-0"
+                aria-hidden="true"
+              />
             </button>
           </div>
         </div>
@@ -639,13 +641,16 @@ const fieldCard =
             <span class="min-w-0">
               <span class="block font-medium">Perda</span>
               <span
-                v-if="lossDefectRef"
+                v-if="mode !== 'correct' && lossDefectRef"
                 class="block truncate text-xs text-muted-foreground"
               >
                 {{ defectLabel(lossDefectRef) }}
               </span>
-              <span v-else class="block text-xs text-muted-foreground">
-                {{ lossQuantity ? "motivo pendente" : "sem perda" }}
+              <span
+                v-else-if="mode !== 'correct' || lossQuantity === 0"
+                class="block text-xs text-muted-foreground"
+              >
+                {{ lossQuantity ? "Motivo pendente" : "Sem perda" }}
               </span>
             </span>
             <span class="text-sm font-semibold tabular-nums">
@@ -655,19 +660,20 @@ const fieldCard =
           <button
             v-if="mode === 'correct' && lossQuantity > 0"
             type="button"
-            class="flex min-h-11 items-center justify-between gap-2 border-t border-dashed px-3 text-left text-xs text-muted-foreground transition hover:bg-destructive/10 hover:text-foreground"
-            aria-label="Alterar motivo da perda"
+            class="mx-3 mb-3 flex min-h-11 w-[calc(100%-1.5rem)] items-center justify-between gap-2 rounded-full border bg-background px-3 py-2 text-left text-xs font-medium leading-tight text-foreground shadow-sm transition hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive focus-visible:ring-offset-2"
+            :aria-label="`Editar motivo da perda: ${
+              defectLabel(lossDefectRef) || 'não informado'
+            }`"
             @click="openQuestion({ kind: 'loss_reason' }, false)"
           >
-            <span class="truncate">
+            <span class="min-w-0 whitespace-normal break-words">
               {{ defectLabel(lossDefectRef) || "Informar motivo" }}
             </span>
-            <span
-              class="inline-flex shrink-0 items-center gap-1 rounded-full border bg-background px-2 py-1 font-medium text-foreground"
-            >
-              <Icon name="lucide:pencil" class="size-3" />
-              Alterar
-            </span>
+            <Icon
+              name="lucide:pencil"
+              class="size-3.5 shrink-0"
+              aria-hidden="true"
+            />
           </button>
         </div>
       </div>
