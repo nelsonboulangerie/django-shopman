@@ -1,7 +1,7 @@
 # MKT-047 — resultados das sessões de gestores
 
-**Estado:** sessão P01 e repetições afetadas concluídas; P02–P03 pendentes
-**Commit sob avaliação:** `9fd2b6a5d` + correções `bcc00fc48`, `6fd632b1d`, `92b4de2ea`, `d9e54c5c5`, `42b2eb7ed`, `a88b550c8`, `057f307e8`, `d86e0dce8`, `6c4bbc3f2`, `31b0128e8`, `f74d966e0` e `c6f6de469`
+**Estado:** sessão P01 e repetições afetadas concluídas; P02 em andamento; P03 pendente
+**Commit sob avaliação:** `9fd2b6a5d` + correções `bcc00fc48`, `6fd632b1d`, `92b4de2ea`, `d9e54c5c5`, `42b2eb7ed`, `a88b550c8`, `057f307e8`, `d86e0dce8`, `6c4bbc3f2`, `31b0128e8`, `f74d966e0`, `c6f6de469` e `6bdb3a37d`
 **Perfil:** `config.settings_marketing_demo`, adapter `SIMULATION_ONLY`  
 **Política de dados:** somente códigos P01–P05 e métricas; sem nomes, conteúdo ou PII
 
@@ -17,12 +17,28 @@ Em 2026-09-10, antes da sessão P01:
 - o adapter de Marketing permanece `SIMULATION_ONLY` e as flags externas permanecem
   desligadas.
 
+Em 2026-09-10, antes da sessão P02:
+
+- a restauração canônica encontrou uma falha real: `seed --flush` tentava remover
+  clientes antes dos membros selados da audiência e era interrompido pela constraint
+  de identidade mínima;
+- `6bdb3a37d` passou a apagar o grafo protegido de Marketing em ordem de dependência,
+  antes das identidades e do catálogo. A regressão automatizada reproduz exatamente o
+  snapshot selado ligado ao cliente;
+- o reset descartável completo e 18 testes de seed/curadoria/terminal passaram; `ruff`
+  e `git diff --check` também passaram;
+- a base restaurada ficou com zero anúncio, snapshot, target, outbox, confirmação,
+  comprovante e evento de auditoria anteriores; as três campanhas canônicas e a coorte
+  sintética de 12 pessoas foram recriadas sem fonte degradada;
+- todos os quatro adapters apontam para o console hermético, a simulação está ativa e
+  as flags de SMS, ManyChat, WhatsApp e máquina externas permanecem desligadas.
+
 ## Participantes
 
 | Código | Perfil operacional resumido, sem identificação | Data | Estado |
 |---|---|---|---|
 | P01 | proprietário/gestor | 2026-09-10 | concluída |
-| P02 | gestor real | — | pendente |
+| P02 | gestor real | 2026-09-10 | em andamento |
 | P03 | gestor real | — | pendente |
 | P04 | participante cumulativo do piloto | — | futuro |
 | P05 | participante cumulativo do piloto | — | futuro |
