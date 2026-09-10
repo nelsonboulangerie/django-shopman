@@ -1,6 +1,6 @@
 # MKT-047 — resultados das sessões de gestores
 
-**Estado:** coleta P01 em andamento; T4 original falhou, regressão técnica aprovada e repetição humana pendente
+**Estado:** coleta P01 em andamento; T4 original preservado como falha e repetição humana concluída funcionalmente
 **Commit sob avaliação:** `9fd2b6a5d` + correções `bcc00fc48`, `6fd632b1d` e `92b4de2ea`
 **Perfil:** `config.settings_marketing_demo`, adapter `SIMULATION_ONLY`  
 **Política de dados:** somente códigos P01–P05 e métricas; sem nomes, conteúdo ou PII
@@ -37,6 +37,7 @@ O facilitador preenche esta tabela; o participante não precisa anotar cliques o
 | P01 | 2 | sim | 3 inferidas + edição | somente texto e senha/frase de segurança | 0 | 84 s totais | 0 | N/A | não | Texto exato aprovado agora; comprovante `0655480d-6127-473d-8b38-d400c61db4f3`; sem dúvida relatada. |
 | P01 | 3 | sim | 3 inferidas + data/hora | somente data/hora e senha/frase de segurança | 0 | 1.045 s de relógio; tempo ativo não observável | 0 | N/A | não | Persistiu 11/09/2026 09:15 BRT; comprovante `7d79ef88-beae-4bd2-8f3d-b919010febc5`; sem dúvida relatada. |
 | P01 | 4 | não | não concluída | houve redigitação aparente | 1 | 207 s até a interrupção | 0 | não | não | Reautenticação fechou o editor. O rascunho existia, mas só reapareceu após abrir manualmente “Nova campanha”; tarefa invalidada. |
+| P01 | 4R1 | sim | não instrumentadas | somente o nome solicitado | 0 trocas de rota | não instrumentada; sem espera relatada | 0 | N/A; sessão não expirou | sim, no escopo de T4 | Repetição concluída sem pedido de ajuda. Regra 6 voltou do servidor ativa, versão 1, com gatilho manual, modelo “Saiu do forno”, Instagram + WhatsApp e tag `qa-marketing-e2e`; lista mostrou público de 12 pessoas. Budgets de clique/latência não são reivindicados sem telemetria. |
 | P01 | 5 | — | — | — | — | — | — | — | — | pendente |
 | P01 | 6 | — | — | — | — | — | — | — | — | pendente |
 | P01 | 7 | — | — | — | — | — | — | — | — | pendente |
@@ -110,6 +111,23 @@ evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta rea
   rascunho P01 foi restaurado sem redigitação. T4 original permanece **falha** e será
   repetida integralmente depois da validação da suíte, sem reclassificar o incidente.
 
+### P01/T4-R1 — repetição humana após a correção
+
+- P01 repetiu a tarefa sem pedir ajuda e confirmou a conclusão; o navegador permaneceu
+  em `/campaigns`, sem navegação para outra tela.
+- A própria lista reapresentou **Pesquisa P01 — fornada — reteste** como disparo manual,
+  Instagram + WhatsApp e público **QA Marketing E2E (12)**.
+- Uma leitura do banco descartável confirmou a regra 6 ativa, versão 1, com modelo
+  **Saiu do forno**, `platforms=[instagram, whatsapp]`,
+  `audience_rules={tags: [qa-marketing-e2e]}` e agendamento vazio. Nenhum conteúdo ou
+  dado pessoal foi coletado.
+- Classificação: repetição funcional aprovada, sem ajuda, redigitação extra, troca de
+  tela ou consulta externa. Como não havia telemetria de cliques/latência da interação
+  humana, este registro não inventa esses números nem os usa para aprovar o budget
+  agregado do gate.
+- O incidente original continua na linha T4 como falha e permanece parte da evidência;
+  esta linha registra somente o resultado posterior à correção.
+
 ### Regressão técnica facilitada — não conta como participante MKT047
 
 - O facilitador retomou o rascunho preservado, concluiu a campanha e percorreu o fluxo
@@ -131,5 +149,5 @@ evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta rea
 - Validação do diff final: 172 testes de backend e 239 de interface passaram, junto de
   typecheck, lint, `ruff`, contrato gerado e `git diff --check`.
 - Esta evidência aprova a regressão técnica, mas **não** transforma o facilitador em P01
-  nem reclassifica T4. O próximo passo do gate é P01 repetir T4 sem ajuda e confirmar que
-  não houve redigitação, tela perdida ou consulta externa.
+  nem reclassifica o incidente original. A repetição humana posterior está registrada
+  separadamente em P01/T4-R1.
