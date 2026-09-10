@@ -3411,13 +3411,14 @@ def _ingredient_name(
 
     Quem tem campo próprio para o SKU deve usá-lo — o nome com ``(SKU)`` embutido
     fazia a lista de insumos repetir o código duas vezes na mesma linha, uma no
-    nome e outra logo abaixo. Sem nome cadastrado, deriva-se uma legenda humana
-    conservadora do SKU; o código original continua no campo secundário.
+    nome e outra logo abaixo. Sem nome cadastrado, o próprio SKU é a única
+    identidade segura: inventar uma legenda humana faria parecer que houve
+    cadastro e ainda repetiria o código na etiqueta composta.
     """
     if sku in active_recipes:
         recipe = active_recipes[sku]
-        return recipe.name or str(sku).replace("-", " ").replace("_", " ").title()
-    return product_names.get(sku) or str(sku).replace("-", " ").replace("_", " ").title()
+        return recipe.name or sku
+    return product_names.get(sku) or sku
 
 
 def _ingredient_label(

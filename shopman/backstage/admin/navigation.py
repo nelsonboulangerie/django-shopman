@@ -161,6 +161,14 @@ def get_sidebar_navigation(request):
                 else []
             ),
         ]),
+        # Impressão é uma pequena estação operacional própria: trabalhos são
+        # trilha auditável; agentes são credenciais de dispositivo. Deixá-los
+        # escondidos no CRUD tornaria impossível resolver uma fila ou revogar
+        # um relay sem conhecer a URL interna do Admin.
+        _group("Impressão", "print", [
+            _model_item("Trabalhos de impressão", "receipt_long", "backstage.PrintJob"),
+            _model_item("Agentes de impressão", "devices", "backstage.PrintAgentCredential"),
+        ]),
         _group("Estoque", "inventory_2", [
             _model_item("Saldos", "point_scan", "stockman.Quant"),
             _model_item("Reservas", "keep", "stockman.Hold"),

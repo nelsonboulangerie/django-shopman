@@ -117,12 +117,6 @@ def _weighing_for_request(request, body):
     return replace(projection, print_destination=destination_projection(request=request))
 
 
-def _raise_service(error: Exception):
-    if isinstance(error, print_jobs.PrintJobError):
-        raise PrintJobAPIError(error) from error
-    raise error
-
-
 class ProductionWeighingPrintJobCreateView(APIView):
     permission_classes = [HasProductionCapability]
     required_production_capability = "can_print_prep"
@@ -174,8 +168,8 @@ class ProductionWeighingPrintJobCreateView(APIView):
                 source_revision=body["source_revision"],
                 idempotency_key=body["idempotency_key"],
             )
-        except Exception as error:
-            _raise_service(error)
+        except print_jobs.PrintJobError as error:
+            raise PrintJobAPIError(error) from error
         location = reverse("api-backstage-production-print-job", args=[job.ref])
         return Response(
             {"print_job": print_jobs.job_data(job, include_document=True)},
@@ -228,8 +222,8 @@ class ProductionPrintJobRetryView(OperatorPrintJobMixin, APIView):
         body = _validated(IdempotentJobActionSerializer, request.data)
         try:
             job = print_jobs.retry_job(job=self.job(request, job_ref), actor=request.user, idempotency_key=body["idempotency_key"])
-        except Exception as error:
-            _raise_service(error)
+        except print_jobs.PrintJobError as error:
+            raise PrintJobAPIError(error) from error
         return Response({"print_job": print_jobs.job_data(job, include_document=True)})
 
 
@@ -244,8 +238,8 @@ class ProductionPrintJobReprintView(OperatorPrintJobMixin, APIView):
                 transport=body["transport"],
                 idempotency_key=body["idempotency_key"],
             )
-        except Exception as error:
-            _raise_service(error)
+        except print_jobs.PrintJobError as error:
+            raise PrintJobAPIError(error) from error
         return Response({"print_job": print_jobs.job_data(job, include_document=True)})
 
 
@@ -260,8 +254,8 @@ class ProductionPrintJobConfirmView(OperatorPrintJobMixin, APIView):
                 detail=body["detail"],
                 idempotency_key=body["idempotency_key"],
             )
-        except Exception as error:
-            _raise_service(error)
+        except print_jobs.PrintJobError as error:
+            raise PrintJobAPIError(error) from error
         return Response({"print_job": print_jobs.job_data(job, include_document=True)})
 
 
@@ -275,8 +269,8 @@ class ProductionPrintJobBrowserResultView(OperatorPrintJobMixin, APIView):
                 result=body["result"],
                 idempotency_key=body["idempotency_key"],
             )
-        except Exception as error:
-            _raise_service(error)
+        except print_jobs.PrintJobError as error:
+            raise PrintJobAPIError(error) from error
         return Response({"print_job": print_jobs.job_data(job, include_document=True)})
 
 
@@ -323,6 +317,6 @@ class PrintAgentAckView(PrintAgentMixin, APIView):
                 lease_token=body["lease_token"],
                 telemetry=body,
             )
-        except Exception as error:
-            _raise_service(error)
+        except print_jobs.PrintJobError as error:
+            raise PrintJobAPIError(error) from error
         return Response({"print_job": print_jobs.job_data(job)})
