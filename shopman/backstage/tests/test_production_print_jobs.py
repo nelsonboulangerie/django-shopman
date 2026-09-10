@@ -254,14 +254,17 @@ def test_counting_equivalence_is_frozen_and_printed_as_secondary_reference(
     projection = build_production_weighing(selected_date=date.today())
     ticket = _ticket(projection)
     assert ticket.ingredients[0].target_display == "102 g"
-    assert ticket.ingredients[0].annotation == "≈ 2,04 porções"
+    # 2,04 porções não existem na mão: a ajuda diz quantas unidades inteiras
+    # separar, sempre para cima. O alvo autoritativo continua sendo 102 g.
+    assert ticket.ingredients[0].annotation == "(≈ 3 un.)"
 
     job = _create(projection, actor)
     frozen = next(label for label in job.document["tickets"] if label["ingredients"][0]["sku"] == "FARINHA-FINA")
-    assert frozen["ingredients"][0]["annotation"] == "≈ 2,04 porções"
+    assert frozen["ingredients"][0]["annotation"] == "(≈ 3 un.)"
     paper = bytes(job.payload).decode("cp860", "replace")
     assert "102 g" in paper
-    assert "Referencia: ≈ 2,04 porções" in paper
+    assert "(≈ 3 un.)" in paper
+    assert "Referencia:" not in paper
 
 
 def test_browser_create_is_independent_of_a_relay_and_records_only_honest_outcomes(

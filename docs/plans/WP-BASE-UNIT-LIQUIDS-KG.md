@@ -111,8 +111,8 @@ descartar as planilhas anteriores. Os XLSX que já estão no Sheets são pré-mu
 
 A tela de separação anota a linha pela conversão declarada de menor fator
 (`_counting_conversions`, `backstage/projections/production.py`). Com a ponte "litro"
-declarada, o leite passa a aparecer como `3,502 kg · ≈ 3,4 litros`, exatamente como o ovo
-aparece como `≈ 6 ovos`. É informação para quem despeja de caixa de 1 L, não ruído.
+declarada, o leite passa a aparecer como `3,502 kg` e `(≈ 3,4 litros)`, enquanto o ovo
+aparece como `(≈ 6 un.)`. É informação para quem despeja de caixa de 1 L, não ruído.
 A água não ganha a ponte (não entra por nota), então não ganha anotação.
 
 ## O que fica UM clique mais caro no recebimento (e por que está certo assim)

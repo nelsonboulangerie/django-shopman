@@ -1340,7 +1340,7 @@ uma via já emitida.
 | `legal_scope` | `internal_only_not_for_sale` | Impede reutilização silenciosa como rótulo de venda. |
 | `date_basis` | `planned_production_date` | A data vem do dia selecionado; mudança de dia exige descartar/reemitir. |
 | `tickets[].ingredients[].target_display` | `str` | Alvo operacional já arredondado pelo servidor para a precisão da balança. |
-| `tickets[].ingredients[].annotation` | `str` | Referência canônica pronta (`≈ 7 ovos`); vazio quando não há conversão segura. |
+| `tickets[].ingredients[].annotation` | `str` | Ajuda canônica pronta para separação (`(≈ 7 un.)`); contagens discretas são inteiras e arredondadas para cima, grandezas contínuas mantêm a fração; vazio sem conversão segura. |
 | `tickets[].expiry_display` | `str` | Só na identificação interna; calculada por ficha → cadastro do SKU. Nunca D+1 implícito. |
 | `tickets[].validity_source` | `recipe\|catalog` | Proveniência congelada da validade. |
 
