@@ -329,7 +329,7 @@ describe("AnnouncementResultPanel", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(wrapper.text()).toContain("PUBLICAR 1");
     expect(wrapper.text()).toContain("1 destino elegível");
-    expect(wrapper.text()).toContain("Plataformas realmente afetadas");
+    expect(wrapper.text()).toContain("Plataformas afetadas");
     expect(
       (wrapper.find("#recovery-username").element as HTMLInputElement).value,
     ).toBe("admin");

@@ -526,7 +526,7 @@ function closeDialog(open: boolean) {
               v-if="challenge.platforms.length"
               class="mt-1 text-muted-foreground"
             >
-              Plataformas realmente afetadas:
+              Plataformas afetadas:
               {{ challenge.platforms.map(platformResultLabel).join(", ") }}.
             </p>
           </div>
