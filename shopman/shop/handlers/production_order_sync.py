@@ -753,7 +753,7 @@ def _match_strategy() -> str:
 
         return ProductionConfig.load().order_match
     except Exception:
-        logger.debug("production_order_sync.strategy_failed", exc_info=True)
+        logger.warning("production_order_sync.strategy_failed", exc_info=True)
     return "first_planned"
 
 
@@ -772,5 +772,9 @@ def _target_date(order) -> date:
         try:
             return date.fromisoformat(str(raw))
         except ValueError:
-            pass
+            logger.warning(
+                "production_order_sync.invalid_target_date order=%s value=%r",
+                order.ref,
+                raw,
+            )
     return timezone.localdate(order.created_at) if order.created_at else timezone.localdate()

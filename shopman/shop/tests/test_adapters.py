@@ -82,6 +82,25 @@ class TestStockContract:
         assert callable(getattr(mod, "release_holds_for_reference", None))
         assert callable(getattr(mod, "receive_return", None))
 
+    def test_bulk_release_only_treats_terminal_status_as_idempotent(self):
+        from shopman.stockman import StockError
+
+        from shopman.shop.adapters import stock
+
+        with patch(
+            "shopman.stockman.service.Stock.release",
+            side_effect=StockError("INVALID_STATUS", current="released"),
+        ):
+            stock.release_holds(["hold:1"])
+
+        with patch(
+            "shopman.stockman.service.Stock.release",
+            side_effect=StockError("INVALID_HOLD", hold_id="hold:missing"),
+        ), pytest.raises(StockError) as raised:
+            stock.release_holds(["hold:missing"])
+
+        assert raised.value.code == "INVALID_HOLD"
+
 
 class TestChannelScopeResolution:
     """``get_channel_scope`` must resolve ``excluded_positions`` from

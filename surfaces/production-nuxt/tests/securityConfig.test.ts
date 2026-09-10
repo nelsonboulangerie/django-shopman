@@ -28,6 +28,10 @@ describe("Produção — configuração segura de release", () => {
   });
 
   it("mantém build de imagem inerte e exige opt-in duplo no harness local", () => {
+    const packageJson = JSON.parse(read("surfaces/production-nuxt/package.json"));
+    expect(packageJson.scripts.postinstall).toContain("NUXT_SHOPMAN_ENVIRONMENT=development");
+    expect(packageJson.scripts.typecheck).toContain("NUXT_SHOPMAN_ENVIRONMENT=development");
+
     const dockerfile = read("surfaces/Dockerfile.surface");
     expect(dockerfile).toContain('"${SURFACE}" = "production-nuxt"');
     expect(dockerfile).toContain("https://django-upstream.invalid");

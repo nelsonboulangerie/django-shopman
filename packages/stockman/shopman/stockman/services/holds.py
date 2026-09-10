@@ -34,7 +34,7 @@ def _parse_hold_id(hold_id: str) -> int:
     if hold_id and hold_id.startswith("hold:"):
         try:
             return int(hold_id.split(":")[1])
-        except (IndexError, ValueError):
+        except (IndexError, ValueError):  # silêncio-deliberado: o StockError canônico é lançado abaixo
             pass
     raise StockError("INVALID_HOLD", hold_id=hold_id)
 

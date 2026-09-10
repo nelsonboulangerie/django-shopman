@@ -987,7 +987,7 @@ def apply_quick_finish(
             try:
                 work_order.refresh_from_db(fields=["status", "rev"])
             except Exception:
-                logger.debug(
+                logger.warning(
                     "production.quick_finish_recovery_read_failed work_order=%s",
                     work_order.ref,
                     exc_info=True,

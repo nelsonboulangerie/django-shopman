@@ -480,7 +480,7 @@ def _current_work_order_projection(ref_or_pk) -> dict | None:
     lookup = Q(ref=str(ref_or_pk))
     try:
         lookup |= Q(pk=int(ref_or_pk))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError):  # silêncio-deliberado: ref textual continua sendo uma chave válida
         pass
     row = WorkOrder.objects.filter(lookup).values("pk", "ref", "status", "rev").first()
     return dict(row) if row else None

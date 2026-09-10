@@ -294,8 +294,14 @@ def release_holds(hold_ids: list[str]) -> None:
     for hold_id in hold_ids:
         try:
             stock.release(hold_id, reason="Liberado via Shopman")
-        except StockError:
-            logger.debug("release_holds: Hold %s already released or invalid", hold_id)
+        except StockError as exc:
+            if exc.code == "INVALID_STATUS":
+                logger.info("release_holds: Hold %s already terminal", hold_id)
+                continue
+            # INVALID_HOLD e demais falhas não são idempotência comprovada. O
+            # caller decide se pode compensar; a fila depende desta exceção
+            # para desfazer atomicamente uma liberação multi-item.
+            raise
 
 
 def release_holds_for_reference(reference: str) -> int:
@@ -310,8 +316,13 @@ def release_holds_for_reference(reference: str) -> int:
             try:
                 stock.release(hold.hold_id, reason="Idempotency cleanup")
                 count += 1
-            except StockError:
-                pass
+            except StockError as exc:
+                if exc.code != "INVALID_STATUS":
+                    raise
+                logger.info(
+                    "release_holds_for_reference: Hold %s already terminal",
+                    hold.hold_id,
+                )
         return count
     except Exception:
         logger.warning("release_all_holds: unexpected error", exc_info=True)

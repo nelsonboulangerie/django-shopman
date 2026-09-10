@@ -1,5 +1,3 @@
-import { createError } from "h3";
-
 const LOCAL_DJANGO_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"]);
 const PRODUCTION_ENVIRONMENTS = new Set(["production", "prod"]);
 const TEST_ENVIRONMENTS = new Set(["test", "testing", "e2e"]);
@@ -7,6 +5,10 @@ const LOCAL_ENVIRONMENTS = new Set(["development", "dev", "local"]);
 const DEVELOPMENT_DJANGO_BASE_URL = "http://127.0.0.1:8000";
 
 type Environment = Record<string, string | undefined>;
+
+function configurationError(statusMessage: string): Error & { statusCode: number; statusMessage: string } {
+  return Object.assign(new Error(statusMessage), { statusCode: 503, statusMessage });
+}
 
 function shopmanEnvironment(environment: Environment): string {
   return String(environment.NUXT_SHOPMAN_ENVIRONMENT || environment.SHOPMAN_ENVIRONMENT || "")
@@ -17,6 +19,7 @@ function shopmanEnvironment(environment: Environment): string {
 export function isProductionRuntime(environment: Environment = process.env): boolean {
   const declaredEnvironment = shopmanEnvironment(environment);
   if (PRODUCTION_ENVIRONMENTS.has(declaredEnvironment)) return true;
+  if (LOCAL_ENVIRONMENTS.has(declaredEnvironment)) return false;
   // Playwright compila o app como NODE_ENV=production, mas aponta deliberadamente
   // para um mock local. A exceção exige ambiente + flag de teste explícitos.
   if (isExplicitTestRuntime(environment)) return false;
@@ -34,27 +37,27 @@ export function resolveDjangoBaseUrl(
 ): string {
   const value = String(rawValue || "").trim().replace(/\/+$/, "");
   if (!value) {
-    throw createError({ statusCode: 503, statusMessage: "Django upstream is not configured" });
+    throw configurationError("Django upstream is not configured");
   }
 
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    throw createError({ statusCode: 503, statusMessage: "Django upstream is invalid" });
+    throw configurationError("Django upstream is invalid");
   }
 
   if (!new Set(["http:", "https:"]).has(url.protocol)) {
-    throw createError({ statusCode: 503, statusMessage: "Django upstream must use HTTP or HTTPS" });
+    throw configurationError("Django upstream must use HTTP or HTTPS");
   }
 
   const production = options.production ?? isProductionRuntime();
   if (production) {
     if (LOCAL_DJANGO_HOSTS.has(url.hostname)) {
-      throw createError({ statusCode: 503, statusMessage: "Django upstream cannot be local in production" });
+      throw configurationError("Django upstream cannot be local in production");
     }
     if (url.protocol !== "https:") {
-      throw createError({ statusCode: 503, statusMessage: "Django upstream must use HTTPS in production" });
+      throw configurationError("Django upstream must use HTTPS in production");
     }
   }
 
@@ -72,10 +75,10 @@ export function configuredDjangoBaseUrl(environment: Environment = process.env):
 export function assertProductionDjangoConfiguration(environment: Environment = process.env): string {
   const declaredEnvironment = shopmanEnvironment(environment);
   if (!declaredEnvironment) {
-    throw createError({ statusCode: 503, statusMessage: "Shopman environment is not configured" });
+    throw configurationError("Shopman environment is not configured");
   }
   if (LOCAL_ENVIRONMENTS.has(declaredEnvironment) || TEST_ENVIRONMENTS.has(declaredEnvironment)) {
-    throw createError({ statusCode: 503, statusMessage: "Shopman environment cannot be local in production" });
+    throw configurationError("Shopman environment cannot be local in production");
   }
   return resolveDjangoBaseUrl(environment.NUXT_DJANGO_BASE_URL, { production: true });
 }

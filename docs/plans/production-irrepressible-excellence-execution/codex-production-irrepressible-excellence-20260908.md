@@ -388,6 +388,13 @@ O fechamento deste slice estabeleceu os seguintes invariantes:
 12. A confirmação de pedido misto cruza todos os `hold_ids` adotados no pedido com os holds vivos
     sob lock. Reserva ausente, expirada ou terminal em qualquer linha bloqueia a CTA do pedido
     inteiro. Liberação multi-item faz rollback integral e só serve o próximo após soltar locks.
+13. A validade física usa o dia local de produção, não `datetime.date()` em UTC. A regressão cobre
+    a virada de 00h UTC/21h BRT que acrescentava indevidamente um dia ao pão de validade D+0.
+14. O adapter bulk de liberação ignora somente `INVALID_STATUS` terminal como replay idempotente;
+    `INVALID_HOLD` e demais falhas propagam para o rollback do caller, sem confirmação falsa.
+15. O Produção não importa mais `h3` da layer irmã durante o `nuxt prepare`. Postinstall e
+    typecheck declaram ambiente local de tooling; build/boot real continuam fail-closed sem
+    ambiente e upstream HTTPS. O caminho foi ensaiado desde `npm ci` em diretório limpo.
 
 Inventário somente leitura da alpha antes do corte: dois holds ativos legados, ambos ligados a
 pedidos já concluídos; nenhum pedido ativo afetado. Foram encontrados quatro Quants históricos
@@ -398,12 +405,14 @@ Provas finais deste slice:
 
 | Gate | Resultado |
 |---|---|
-| Shop completo | 3.656 aprovados, 17 skips, 26 deselectados e 10 subtests |
-| Stockman completo | 278 aprovados, 14 skips |
+| Shop completo | 3.657 aprovados, 17 skips, 26 deselectados e 10 subtests |
+| Stockman completo | 279 aprovados, 14 skips |
 | Storefront web completo | 613 aprovados |
 | Seed — contratos e cenários operacionais | 74 aprovados |
 | Notificação/idempotência/consentimento | 231 aprovados, 2 skips PostgreSQL |
 | Waitlist focal | 41 aprovados, 1 skip PostgreSQL |
+| Produção Nuxt | 31 arquivos / 217 testes; lint, typecheck e build limpo aprovados |
+| Operator Kit | 22 arquivos / 219 testes aprovados |
 | Migrações | 3 checks aprovados; banco vazio migrado; 2 skips pré-go-live esperados |
 | Qualidade estática | Ruff e `git diff --check` aprovados |
 | Django | sem drift de models/migrations; somente warnings locais esperados de SQLite/fiscal |

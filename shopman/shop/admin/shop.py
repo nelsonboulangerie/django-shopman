@@ -1404,7 +1404,7 @@ def _token_value_to_hex(val: str) -> str:
             r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
             if 0 <= r <= 255 and 0 <= g <= 255 and 0 <= b <= 255:
                 return f"#{r:02x}{g:02x}{b:02x}"
-        except ValueError:
+        except ValueError:  # silêncio-deliberado: token legado cai no parser OKLCH/fallback abaixo
             pass
         if "." in parts[0]:
             return _oklch_raw_to_hex(val)

@@ -11,8 +11,9 @@ Validates filtering by:
 - Combinations of the above
 """
 
-from datetime import timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from shopman.stockman.models import Batch, Position, PositionKind, Quant
@@ -22,8 +23,21 @@ from shopman.stockman.services.availability import (
     availability_for_skus,
 )
 from shopman.stockman.services.scope import quants_eligible_for
+from shopman.stockman.shelflife import is_valid_for_date
 
 pytestmark = pytest.mark.django_db
+
+
+def test_python_shelflife_uses_the_local_production_day_at_utc_midnight():
+    quant = SimpleNamespace(
+        target_date=None,
+        # 00:10 UTC ainda é 21:10 do dia anterior em America/Sao_Paulo.
+        created_at=datetime(2026, 9, 10, 0, 10, tzinfo=UTC),
+    )
+    product = SimpleNamespace(shelf_life_days=0)
+
+    assert is_valid_for_date(quant, product, date(2026, 9, 9)) is True
+    assert is_valid_for_date(quant, product, date(2026, 9, 10)) is False
 
 
 def test_planned_breakdown_subtracts_active_holds_once():
