@@ -564,19 +564,45 @@ useHead({ title: "Plataformas · Marketing" });
         }
       "
     >
-      <UiDialogContent class="sm:max-w-md">
-        <UiDialogHeader>
-          <UiDialogTitle>Confirmar configuração do WhatsApp</UiDialogTitle>
-          <UiDialogDescription>
+      <UiDialogContent class="gap-3 rounded-2xl p-4 sm:max-w-md sm:p-5">
+        <UiDialogHeader class="items-center gap-1.5 text-center sm:text-center">
+          <div
+            class="grid size-10 place-items-center rounded-full bg-primary/10 text-primary"
+            aria-hidden="true"
+          >
+            <Icon name="lucide:shield-check" class="size-5" />
+          </div>
+          <UiDialogTitle class="text-xl">
+            Confirmar configuração do WhatsApp
+          </UiDialogTitle>
+          <UiDialogDescription class="sr-only">
             Esta escolha muda o alcance dos próximos anúncios e ficará
             registrada na auditoria.
           </UiDialogDescription>
         </UiDialogHeader>
 
-        <dl class="space-y-2 rounded-lg bg-muted/40 p-3 text-sm">
+        <div
+          class="flex gap-3 rounded-xl border border-sky-500/30 bg-sky-500/5 p-2.5 text-sm"
+        >
+          <Icon
+            name="lucide:shield-check"
+            class="mt-0.5 size-5 shrink-0 text-sky-700 dark:text-sky-300"
+            aria-hidden="true"
+          />
           <div>
+            <p class="font-semibold">Nenhuma mensagem será enviada agora</p>
+            <p class="mt-0.5 text-muted-foreground">
+              Só a configuração dos próximos anúncios será alterada.
+            </p>
+          </div>
+        </div>
+
+        <dl
+          class="grid grid-cols-2 overflow-hidden rounded-xl border border-border bg-muted/40 text-center text-sm"
+        >
+          <div class="border-r border-border p-3">
             <dt class="text-xs text-muted-foreground">Configuração atual</dt>
-            <dd class="font-medium">
+            <dd class="mt-1 font-medium">
               {{
                 waTemplate.currentName.value ||
                 (waTemplate.current.value
@@ -585,13 +611,15 @@ useHead({ title: "Plataformas · Marketing" });
               }}
             </dd>
           </div>
-          <div>
+          <div class="p-3">
             <dt class="text-xs text-muted-foreground">Depois da confirmação</dt>
-            <dd class="font-medium">{{ pendingFlowName }}</dd>
+            <dd class="mt-1 font-medium">{{ pendingFlowName }}</dd>
           </div>
-          <div>
+          <div class="col-span-2 border-t border-border p-3">
             <dt class="text-xs text-muted-foreground">Versão revisada</dt>
-            <dd class="font-medium">{{ waTemplate.version.value }}</dd>
+            <dd class="mt-1 font-semibold tabular-nums">
+              {{ waTemplate.version.value }}
+            </dd>
           </div>
         </dl>
 
@@ -599,13 +627,14 @@ useHead({ title: "Plataformas · Marketing" });
           id="platform-totp"
           v-model="totp"
           :disabled="savingTemplate"
-          help="Abra o autenticador cadastrado para sua conta. O sistema também revalida sua permissão, a versão e a lista ativa antes de salvar."
+          class="text-center"
+          help="Use o código atual do autenticador cadastrado."
         />
 
-        <UiDialogFooter>
+        <UiDialogFooter class="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <button
             type="button"
-            class="inline-flex min-h-11 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold"
+            class="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-border px-4 text-sm font-semibold"
             :disabled="savingTemplate"
             @click="pendingFlow = null"
           >
@@ -613,7 +642,7 @@ useHead({ title: "Plataformas · Marketing" });
           </button>
           <button
             type="button"
-            class="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-40"
+            class="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-40"
             :disabled="savingTemplate || totp.length !== 6"
             @click="onConfirmTemplate"
           >
@@ -624,7 +653,7 @@ useHead({ title: "Plataformas · Marketing" });
               class="size-4"
               :class="savingTemplate ? 'animate-spin' : ''"
             />
-            {{ savingTemplate ? "Confirmando…" : "Confirmar mudança" }}
+            {{ savingTemplate ? "Salvando…" : "Salvar configuração" }}
           </button>
         </UiDialogFooter>
       </UiDialogContent>
