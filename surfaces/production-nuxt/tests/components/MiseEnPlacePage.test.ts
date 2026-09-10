@@ -7,6 +7,7 @@ import type { WeighingTicketProjection } from "../../app/types/production";
 
 const tickets = ref<WeighingTicketProjection[]>([]);
 const printSpy = vi.fn();
+const printWarningSpy = vi.fn();
 
 function ticket(
   recipeRef: string,
@@ -64,6 +65,7 @@ function installGlobals() {
     error: ref(null),
     refresh: vi.fn(),
   }));
+  vi.stubGlobal("useSonner", { warning: printWarningSpy });
   vi.stubGlobal("print", printSpy);
 }
 
@@ -88,6 +90,7 @@ const stubs = {
 beforeEach(() => {
   installGlobals();
   printSpy.mockReset();
+  printWarningSpy.mockReset();
   tickets.value = [
     ticket("massa-croissant", "Massa Croissant", "D8"),
     ticket("massa-forma", "Massa Forma", "S5"),
@@ -173,5 +176,42 @@ describe("Preparação — impressão por preparo", () => {
     );
     expect(payload.attributes("data-label-count")).toBe("4");
     expect(printSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("monta e envia as etiquetas explícitas de todos os preparos", async () => {
+    const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
+
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("Etiquetas do preparo"))!
+      .trigger("click");
+    await nextTick();
+
+    const payload = wrapper.get('[data-testid="print-payload"]');
+    expect(payload.attributes("data-mode")).toBe("preparo");
+    expect(payload.attributes("data-ticket-refs")).toBe(
+      "massa-croissant,massa-forma",
+    );
+    expect(printSpy).toHaveBeenCalledTimes(1);
+    expect(printWarningSpy).not.toHaveBeenCalled();
+  });
+
+  it("explica a limitação quando o preview não oferece impressão", async () => {
+    vi.stubGlobal("print", undefined);
+    const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
+
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("Etiquetas do preparo"))!
+      .trigger("click");
+    await nextTick();
+
+    expect(
+      wrapper.get('[data-testid="print-payload"]').attributes("data-mode"),
+    ).toBe("preparo");
+    expect(printWarningSpy).toHaveBeenCalledWith(
+      "Impressão indisponível neste preview.",
+      { description: "Abra Produção no Chrome ou Safari para imprimir." },
+    );
   });
 });
