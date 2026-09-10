@@ -123,6 +123,39 @@ const { data: operatorSession } = useNuxtData<{
 const operatorUsername = computed(
   () => operatorSession.value?.operator?.username?.trim() || "",
 );
+const recoveryDialogPresentation = computed(() => {
+  const action = activeAction.value;
+  if (action?.kind === "reconcile_unknown_delivery") {
+    return {
+      icon: "lucide:search",
+      safetyTitle: "Somente consulta — nada será reenviado",
+      safetyDetail: "O sistema apenas pergunta ao provedor o que aconteceu.",
+      confirmLabel: "Consultar resultado",
+    };
+  }
+  if (action?.kind === "retry_failed_delivery") {
+    return {
+      icon: "lucide:refresh-cw",
+      safetyTitle: "Somente as falhas recuperáveis serão repetidas",
+      safetyDetail: "Aceitos, confirmados e resultados incertos ficam intocados.",
+      confirmLabel: `Tentar apenas ${formatCount(action.eligible_count)} ${action.eligible_count === 1 ? "falha" : "falhas"}`,
+    };
+  }
+  if (action?.kind === "cancel_announcement") {
+    return {
+      icon: "lucide:circle-x",
+      safetyTitle: "Somente o trabalho ainda reversível será cancelado",
+      safetyDetail: "O que já começou nunca será apresentado como desfeito.",
+      confirmLabel: "Confirmar cancelamento",
+    };
+  }
+  return {
+    icon: "lucide:shield-check",
+    safetyTitle: "Confira a consequência antes de autorizar",
+    safetyDetail: "O servidor revalida o escopo e a versão no momento da ação.",
+    confirmLabel: "Confirmar ação",
+  };
+});
 
 const confirmationReady = computed(() => {
   const current = challenge.value;
@@ -466,25 +499,30 @@ function closeDialog(open: boolean) {
     </section>
 
     <UiDialog :open="dialogOpen" @update:open="closeDialog">
-      <UiDialogContent class="sm:max-w-lg">
-        <UiDialogHeader>
-          <UiDialogTitle>
+      <UiDialogContent class="rounded-2xl p-5 sm:max-w-lg sm:p-6">
+        <UiDialogHeader class="items-center text-center sm:text-center">
+          <div
+            class="grid size-12 place-items-center rounded-full bg-primary/10 text-primary"
+            aria-hidden="true"
+          >
+            <Icon :name="recoveryDialogPresentation.icon" class="size-5" />
+          </div>
+          <UiDialogTitle class="text-xl">
             {{
               activeAction
                 ? recoveryActionLabel(activeAction)
                 : "Confirmar recuperação"
             }}
           </UiDialogTitle>
-          <UiDialogDescription>
-            {{
-              activeAction
-                ? recoveryActionExplanation(activeAction)
-                : "Aguarde a consequência emitida pelo servidor."
-            }}
+          <UiDialogDescription class="max-w-sm">
+            Confira o escopo calculado pelo servidor antes de autorizar.
           </UiDialogDescription>
         </UiDialogHeader>
 
-        <div v-if="activeAction?.kind === 'cancel_announcement' && !challenge">
+        <div
+          v-if="activeAction?.kind === 'cancel_announcement' && !challenge"
+          class="mx-auto w-full max-w-sm"
+        >
           <label for="recovery-cancel-reason" class="block text-sm font-medium">
             Motivo do cancelamento
           </label>
@@ -512,24 +550,46 @@ function closeDialog(open: boolean) {
         </div>
 
         <div v-else-if="challenge" class="space-y-4">
-          <div class="rounded-lg border border-border bg-muted/50 p-3 text-sm">
-            <p>
-              <strong>{{ formatCount(challenge.audience_count) }}</strong>
-              {{
-                challenge.audience_count === 1
-                  ? "destino elegível"
-                  : "destinos elegíveis"
-              }}
-              nesta consequência.
-            </p>
-            <p
-              v-if="challenge.platforms.length"
-              class="mt-1 text-muted-foreground"
-            >
-              Plataformas afetadas:
-              {{ challenge.platforms.map(platformResultLabel).join(", ") }}.
-            </p>
+          <div
+            class="flex gap-3 rounded-xl border border-sky-500/30 bg-sky-500/5 p-3 text-sm"
+          >
+            <Icon
+              name="lucide:shield-check"
+              class="mt-0.5 size-5 shrink-0 text-sky-700 dark:text-sky-300"
+              aria-hidden="true"
+            />
+            <div>
+              <p class="font-semibold">{{ recoveryDialogPresentation.safetyTitle }}</p>
+              <p class="mt-0.5 text-muted-foreground">
+                {{ recoveryDialogPresentation.safetyDetail }}
+              </p>
+            </div>
           </div>
+
+          <dl
+            class="grid grid-cols-2 divide-x divide-border rounded-xl border border-border bg-muted/40 py-3 text-center"
+          >
+            <div class="px-3">
+              <dt class="text-xs text-muted-foreground">Destinos elegíveis</dt>
+              <dd class="mt-1">
+                <strong class="text-xl tabular-nums">
+                  {{ formatCount(challenge.audience_count) }}
+                </strong>
+                <span class="ml-1 text-sm">
+                  {{ challenge.audience_count === 1 ? "destino" : "destinos" }}
+                </span>
+              </dd>
+            </div>
+            <div class="px-3">
+              <dt class="text-xs text-muted-foreground">Plataformas afetadas</dt>
+              <dd class="mt-1 text-sm font-semibold">
+                {{
+                  challenge.platforms.map(platformResultLabel).join(", ") ||
+                  "Nenhuma"
+                }}
+              </dd>
+            </div>
+          </dl>
 
           <div
             v-if="challenge.dual_control"
@@ -545,7 +605,7 @@ function closeDialog(open: boolean) {
             </p>
           </div>
 
-          <div v-if="challenge.typed_phrase">
+          <div v-if="challenge.typed_phrase" class="mx-auto w-full max-w-sm">
             <label
               for="recovery-typed-confirmation"
               class="block text-sm font-medium"
@@ -566,7 +626,10 @@ function closeDialog(open: boolean) {
             />
           </div>
 
-          <div v-if="challenge.step_up !== 'none'">
+          <div
+            v-if="challenge.step_up !== 'none'"
+            class="mx-auto w-full max-w-sm"
+          >
             <div v-if="challenge.step_up === 'password'" class="mb-3">
               <label for="recovery-username" class="block text-sm font-medium">
                 Usuário
@@ -586,6 +649,7 @@ function closeDialog(open: boolean) {
               id="recovery-credential"
               v-model="credential"
               :disabled="pending"
+              class="text-center"
               @keydown.enter="confirmRecovery"
             />
             <template v-else>
@@ -610,10 +674,10 @@ function closeDialog(open: boolean) {
           {{ commandError }}
         </p>
 
-        <UiDialogFooter>
+        <UiDialogFooter class="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <button
             type="button"
-            class="min-h-11 rounded-md border border-border px-3 text-sm font-medium transition hover:bg-muted"
+            class="min-h-11 w-full rounded-md border border-border px-3 text-sm font-medium transition hover:bg-muted"
             :disabled="pending"
             @click="closeDialog(false)"
           >
@@ -622,7 +686,7 @@ function closeDialog(open: boolean) {
           <button
             v-if="activeAction?.kind === 'cancel_announcement' && !challenge"
             type="button"
-            class="min-h-11 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            class="min-h-11 w-full rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             :disabled="pending || !reason.trim()"
             @click="requestRecovery"
           >
@@ -631,18 +695,18 @@ function closeDialog(open: boolean) {
           <button
             v-if="challenge"
             type="button"
-            class="min-h-11 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            class="min-h-11 w-full rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             :disabled="!confirmationReady"
             @click="confirmRecovery"
           >
-            {{ pending ? "Registrando…" : "Confirmar consequência" }}
+            {{ pending ? "Registrando…" : recoveryDialogPresentation.confirmLabel }}
           </button>
           <button
             v-else-if="
               commandError && activeAction?.kind !== 'cancel_announcement'
             "
             type="button"
-            class="min-h-11 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground"
+            class="min-h-11 w-full rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground"
             :disabled="pending || !activeAction"
             @click="requestRecovery"
           >

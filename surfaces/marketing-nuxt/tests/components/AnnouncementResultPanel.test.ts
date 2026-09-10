@@ -2,6 +2,7 @@ import { mount, flushPromises } from "@vue/test-utils";
 import { computed, defineComponent, ref } from "vue";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import AnnouncementResultPanel from "~/components/AnnouncementResultPanel.vue";
+import VerificationCodeInput from "~/components/Ui/VerificationCodeInput.vue";
 import type {
   AnnouncementProjectionV2,
   MarketingActionProjectionV2,
@@ -183,6 +184,24 @@ function cancelAction(): MarketingActionProjectionV2 {
   };
 }
 
+function reconcileAction(): MarketingActionProjectionV2 {
+  return {
+    ...retryAction(),
+    ref: "announcement:42:reconcile_unknown_delivery:v3",
+    kind: "reconcile_unknown_delivery",
+    href: "/api/v1/backstage/marketing/announcements/42/reconcile-deliveries/",
+    payload_schema: "marketing.command.reconcile-delivery.v2",
+    creates_external_effect: false,
+    confirmation: {
+      mode: "summary",
+      token_required: true,
+      consequence_code: "lookup_only_unknown_provider_outcomes",
+      step_up: "totp",
+      dual_control: false,
+    },
+  };
+}
+
 function response(): MarketingCommandResponse {
   return {
     ok: true,
@@ -221,6 +240,9 @@ function panel(options: { actions?: MarketingActionProjectionV2[] } = {}) {
       },
     },
     global: {
+      components: {
+        UiVerificationCodeInput: VerificationCodeInput,
+      },
       stubs: {
         Icon: true,
         UiDialog: DialogStub,
@@ -328,7 +350,8 @@ describe("AnnouncementResultPanel", () => {
     await flushPromises();
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(wrapper.text()).toContain("PUBLICAR 1");
-    expect(wrapper.text()).toContain("1 destino elegível");
+    expect(wrapper.text()).toContain("Destinos elegíveis");
+    expect(wrapper.text()).toContain("1 destino");
     expect(wrapper.text()).toContain("Plataformas afetadas");
     expect(
       (wrapper.find("#recovery-username").element as HTMLInputElement).value,
@@ -341,13 +364,52 @@ describe("AnnouncementResultPanel", () => {
     await wrapper.find("#recovery-credential").setValue("senha-segura");
     const confirmButton = wrapper
       .findAll("button")
-      .find((button) => button.text().includes("Confirmar consequência"))!;
+      .find((button) => button.text().includes("Tentar apenas 1 falha"))!;
     await confirmButton.trigger("click");
     await flushPromises();
 
     expect(fetcher).toHaveBeenCalledTimes(3);
     expect(wrapper.emitted("receipt")?.[0]?.[0]).toEqual(response());
     expect(wrapper.emitted("refresh")).toHaveLength(1);
+  });
+
+  it("presents lookup-only reconciliation as a centered, explicit confirmation", async () => {
+    const confirmation = {
+      token: "reconcile-token",
+      ref: "reconcile-confirmation-ref",
+      expires_at: "2026-09-09T09:10:00-03:00",
+      mode: "summary",
+      step_up: "totp",
+      dual_control: false,
+      typed_phrase: "",
+      consequence: "lookup_only_unknown_provider_outcomes",
+      resource_ref: "announcement:42",
+      base_version: 3,
+      audience_count: 1,
+      platforms: ["whatsapp"],
+      scheduled_for: null,
+    };
+    const fetcher = vi.fn().mockRejectedValueOnce({
+      data: { code: "confirmation_required", confirmation },
+    });
+    Object.assign(globalThis, { $fetch: fetcher });
+    const wrapper = panel({ actions: [reconcileAction()] });
+    const actionButton = wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("Consultar 1 resultado incerto"))!;
+
+    await actionButton.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Somente consulta — nada será reenviado");
+    expect(wrapper.text()).toContain("O sistema apenas pergunta ao provedor");
+    expect(wrapper.text()).toContain("Plataformas afetadas");
+    expect(wrapper.text()).toContain("WhatsApp");
+    expect(wrapper.text()).toContain("Código de 6 dígitos do autenticador");
+    const confirmButton = wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("Consultar resultado"))!;
+    expect(confirmButton.classes()).toContain("w-full");
   });
 
   it("collects and preserves a cancellation reason before requesting confirmation", async () => {
@@ -404,7 +466,7 @@ describe("AnnouncementResultPanel", () => {
 
     const confirmButton = wrapper
       .findAll("button")
-      .find((button) => button.text().includes("Confirmar consequência"))!;
+      .find((button) => button.text().includes("Confirmar cancelamento"))!;
     await confirmButton.trigger("click");
     await flushPromises();
 

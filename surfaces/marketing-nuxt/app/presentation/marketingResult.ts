@@ -107,7 +107,7 @@ export function deliveryStatePresentation(
     unknown: {
       label: "Há resultados incertos — não reenvie",
       detail:
-        "A plataforma pode ter produzido efeito sem devolver resposta. Reconciliar só consulta; não envia outra vez.",
+        "A plataforma pode ter produzido efeito sem devolver resposta. Consultar só verifica o resultado; não envia outra vez.",
       tone: "attention",
       icon: "lucide:circle-help",
     },
@@ -171,7 +171,7 @@ export function recoveryActionLabel(
     return `Tentar novamente ${formatCount(count)} ${count === 1 ? "falha" : "falhas"}`;
   }
   if (action.kind === "reconcile_unknown_delivery") {
-    return `Reconciliar ${formatCount(count)} ${count === 1 ? "resultado incerto" : "resultados incertos"}`;
+    return `Consultar ${formatCount(count)} ${count === 1 ? "resultado incerto" : "resultados incertos"}`;
   }
   if (action.kind === "cancel_announcement") {
     return "Cancelar o que ainda não começou";
@@ -227,7 +227,7 @@ export function commandReceiptPresentation(receipt: MarketingCommandReceipt): {
   }
   if (receipt.kind === "reconcile_delivery") {
     return {
-      title: "Reconciliação registrada",
+      title: "Consulta registrada",
       detail: `${formatCount(count)} ${count === 1 ? "consulta foi aberta" : "consultas foram abertas"}; nenhuma mensagem foi reenviada.`,
     };
   }
