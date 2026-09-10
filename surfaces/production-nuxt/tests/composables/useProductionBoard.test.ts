@@ -281,7 +281,12 @@ describe("useProductionBoard — plan/start writes", () => {
 
 describe("defaultPlanningDate", () => {
   it("plans today in the morning, tomorrow after noon (baker's calm-afternoon rhythm)", () => {
-    expect(defaultPlanningDate(new Date(2026, 6, 6, 9, 0))).toBe("2026-07-06");
-    expect(defaultPlanningDate(new Date(2026, 6, 6, 13, 0))).toBe("2026-07-07");
+    expect(defaultPlanningDate(new Date("2026-07-06T12:00:00Z"))).toBe("2026-07-06");
+    expect(defaultPlanningDate(new Date("2026-07-06T16:00:00Z"))).toBe("2026-07-07");
+  });
+
+  it("uses the bakery clock during the UTC/BRT date gap", () => {
+    // 23:30 BRT ainda é 09/set, mas o planejamento já aponta para amanhã.
+    expect(defaultPlanningDate(new Date("2026-09-10T02:30:00Z"))).toBe("2026-09-10");
   });
 });
