@@ -234,3 +234,29 @@ def test_capability_avisa_o_desafio_antes_de_o_operador_digitar(gerente, monkeyp
 
     assert projecao.can_cancel is True
     assert projecao.cancel_requires_approval is True
+
+
+@pytest.mark.django_db
+def test_capture_between_policy_and_transition_requires_new_approval(client, caixa, monkeypatch):
+    from shopman.payman import PaymentService
+
+    from shopman.backstage.services import orders
+
+    order = _order("CANCEL-CAPTURE-RACE", "accepted")
+    intent = PaymentService.create_intent(order.ref, 1500, "pix", ref="CANCEL-CAPTURE-INTENT")
+    order.data["payment"] = {"method": "pix", "intent_ref": intent.ref}
+    order.save(update_fields=["data"])
+    client.force_login(caixa)
+    original = orders.cancel_order
+
+    def capture_then_cancel(*args, **kwargs):
+        PaymentService.authorize(intent.ref)
+        PaymentService.capture(intent.ref)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(orders, "cancel_order", capture_then_cancel)
+    response = _cancel(client, order)
+    assert response.status_code in {403, 409}, response.content
+    order.refresh_from_db()
+    assert order.status == "accepted"
+    assert PaymentService.refunded_total(intent.ref) == 0

@@ -8,17 +8,20 @@ from __future__ import annotations
 
 import logging
 
+from django.db import transaction
 from shopman.orderman.models import Order
 
 logger = logging.getLogger(__name__)
 
 
+@transaction.atomic
 def cancel(
     order,
     reason: str,
     actor: str = "system",
     *,
     extra_data: dict | None = None,
+    expected_unpaid_intent_ref: str | None = None,
 ) -> bool:
     """
     Cancel an order. Single entry point for all cancellation paths:
@@ -40,6 +43,30 @@ def cancel(
 
     SYNC — transitions status immediately.
     """
+    # Context, state and timeout preconditions belong to the same local commit.
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    if expected_unpaid_intent_ref is not None:
+        from shopman.payman.models import PaymentIntent
+
+        from shopman.shop.services import payment
+
+        current_payment = (order.data or {}).get("payment") or {}
+        if order.status not in {Order.Status.NEW, Order.Status.ACCEPTED}:
+            return False
+        if str(current_payment.get("intent_ref") or "") != expected_unpaid_intent_ref:
+            return False
+        # Payman capture/cancel take this same row lock. No provider I/O here.
+        if expected_unpaid_intent_ref:
+            list(PaymentIntent.objects.select_for_update().filter(ref=expected_unpaid_intent_ref))
+        status = (payment.get_payment_status(order) or "").lower()
+        if status == "unknown":
+            return False
+        if current_payment.get("method") == "card" and status == "authorized":
+            return False
+        if payment.has_sufficient_captured_payment(order):
+            return False
+
     # A máquina de estados é a autoridade única: no mapa DEFAULT, completed/
     # cancelled/returned não transicionam para cancelled — mesmo efeito do
     # conjunto fixo que morava aqui. A diferença é o canal que DECLARA
@@ -174,3 +201,22 @@ def is_advanced_cancel(order) -> bool:
     responde a de POLÍTICA (o quê). A view cruza as duas.
     """
     return order.status in ADVANCED_CANCEL_STATUSES
+
+
+def authority_revision(order) -> str:
+    """Snapshot of the existing cancellation policy, never a new authority rule."""
+    from shopman.shop.services import payment
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    policy = operator_cancel_policy(order)
+    payment_data = (order.data or {}).get("payment") or {}
+    return mutation_fingerprint({
+        "status": order.status,
+        "total_q": order.total_q,
+        "allowed": policy.allowed,
+        "requires_approval": policy.requires_approval,
+        "advanced": is_advanced_cancel(order),
+        "intent_ref": payment_data.get("intent_ref"),
+        "payment_status": payment.get_payment_status(order),
+        "captured_balance_q": payment.captured_balance_q(order),
+    })

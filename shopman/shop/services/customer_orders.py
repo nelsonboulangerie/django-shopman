@@ -326,6 +326,7 @@ def resolve_payment_timeout_if_due(order) -> bool:
         reason="payment_timeout",
         actor="payment.timeout",
         extra_data={"payment_timeout_at": timezone.now().isoformat()},
+        expected_unpaid_intent_ref=str(payment.get("intent_ref") or ""),
     )
     if cancelled:
         notification.send(order, "payment_expired")

@@ -591,6 +591,7 @@ def cancel_order(
     actor: str,
     cancellation_code: str = "",
     customer_note: str = "",
+    expected_authority_revision: str | None = None,
 ) -> bool:
     """Cancel an order through the canonical cancellation service.
 
@@ -617,6 +618,16 @@ def cancel_order(
     # estava. ``reject_order``, a ação irmã, sempre conferiu; esta não.
     with transaction.atomic():
         locked = Order.objects.select_for_update().get(pk=order.pk)
+        if expected_authority_revision is not None:
+            from shopman.payman.models import PaymentIntent
+
+            from shopman.shop.services.cancellation import authority_revision
+
+            # Same Order -> Payman lock order as custody/timeout. Provider reason
+            # lookup has already finished before entering this local transaction.
+            list(PaymentIntent.objects.select_for_update().filter(order_ref=locked.ref).order_by("pk"))
+            if authority_revision(locked) != expected_authority_revision:
+                raise OrderStateConflict("O pagamento ou estado mudou. Confira o pedido e a aprovação novamente.")
         if _cancellation_identity(locked) != reason_identity:
             raise OrderStateConflict("A referência do pedido mudou. Consulte os motivos novamente.")
         return cancel(locked, reason=reason, actor=actor, extra_data=extra_data or None)

@@ -551,3 +551,32 @@ Rollback não pode reativar worker antigo sobre started/unknown/accepted nem apa
 conservar handler/leitor e suspender somente dispatcher incompatível. Zero repetição automática
 após resposta perdida; esforço humano e p95 da verificação externa ainda não demonstrados.
 WP04 continua em execução pelas demais fronteiras/matriz; isto não declara piloto ou rollout.
+
+### WP02/WP03 — H03: captura entre leitura e cancelamento
+
+Revalidação nova (não cópia de diagnóstico): dois testes falharam antes da mudança.
+Cancelamento com instância antiga apagava kitchen_note gravada por outro writer; timeout
+que recebeu resposta antiga unpaid cancelava após captura Payman. Terceiro teste na API
+provou captura entre avaliação da política e chamada de domínio: retornava 200 sem nova
+aprovação. Os caminhos maduros de PIX tardio/estorno existentes foram preservados.
+
+Implementação mínima: cancelamento canônico relê Order sob lock e grava contexto/transição
+atomicamente. Os três caminhos de vencimento de pagamento passam a referência observada;
+guard relê intenção/pagamento com lock Payman antes da transição. A política existente de
+suficiência/unknown/cartão autorizado foi preservada. Gestor congela revisão da autoridade
+já avaliada (estado, política existente, saldo/intenção); domínio compara sob Order→Payman
+e recusa 409 quando mudou, sem suprimir PIN/permissão. Consulta de motivos externos fica
+antes dos locks. Sem novas regras de autoridade nem escrita remota dentro desses locks.
+
+Validações: **46 passed in 11.73s PostgreSQL**, incluindo captura em conexão separada enquanto
+timeout espera a leitura do gateway; Order accepted, captura 5000q, estorno 0q. SQLite final:
+39 passed, 1 skipped (somente concorrência PG), rodada anterior 45 passed com fachada.
+Preparação do segundo banco de ensaio falhou inicialmente por TEST ausente no settings;
+setdefault corrigido no bootstrap isolado, banco test_orders_lab_h03 separado da suíte ampla.
+Ruff passou. Logs before/after anexos. Nenhuma transação financeira externa foi executada.
+
+Migração/rollback: sem DDL/payload novo; keyword interna opcional para compatibilidade de
+callers confiáveis. Rollback é revert local, mas reabre as janelas demonstradas; não liberar
+piloto com leitores antigos contornando o guard. Guard não equivale ao contrato completo de
+intenção dos demais comandos. WP03 segue em execução: timeout de confirmação versus ação
+do operador e demais fronteiras da matriz ainda precisam das provas próprias.

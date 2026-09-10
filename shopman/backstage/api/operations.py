@@ -1797,6 +1797,7 @@ class OrderCancelView(_OrderActionBase):
         if err:
             return err
 
+        authority_revision = cancellation_service.authority_revision(order)
         policy = cancellation_service.operator_cancel_policy(order)
         if not policy.allowed:
             return Response({"detail": policy.reason}, status=409)
@@ -1837,6 +1838,7 @@ class OrderCancelView(_OrderActionBase):
                 actor=_actor(request),
                 cancellation_code=cancellation_code,
                 customer_note=operator_reason,
+                expected_authority_revision=authority_revision,
             )
         except operator_orders.CancellationReasonsUnavailable as exc:
             return Response({"detail": str(exc), "error": {"code": "cancellation_reasons_unavailable"}}, status=503)
