@@ -69,6 +69,7 @@ O facilitador preenche esta tabela; o participante não precisa anotar cliques o
 | P02 | 2 | não | 3 inferidas + edição | somente texto e senha/frase de segurança | 0 | autosave/preview ≤30 ms e ack ≤40 ms no backend | 0 | N/A | sim | Texto preservado exatamente e agendamento concluído, mas P02 perguntou se “aprovar” significava “agendar”. Comprovante `9dd35568-05a6-4a7b-a38f-ef2f1b2eb0e2`; requer correção e repetição mínima. |
 | P02 | 3 | sim | até 4 inferidas + data/hora | somente data/hora e senha/frase de segurança | 0 | preview ≤20 ms e ack ≤50 ms no backend | 0 | N/A | não | Persistiu 11/09/2026 09:15 BRT e comprovante `3620c55b-ffe5-4591-a8dd-952fe606bb7e`, mas P02 classificou como parcial a clareza de fuso, expiração e efeito do horário permitido. Requer correção e repetição mínima. |
 | P02 | 2R1 | sim | 3 inferidas + edição | somente texto e senha/frase de segurança | 0 | autosave/preview ≤20 ms e ack ≤180 ms no backend | 0 | N/A | sim | Após a explicação inline, alterou somente o texto, aprovou sem nova dúvida e declarou o resultado claro. Conteúdo preservado no artefato, comprovante `ed34488a-1252-400d-ac85-135fb6059c0d`, versão 2, público 12 e WhatsApp. |
+| P02 | 3R1 | sim | inspeção visual; nenhum comando novo | nenhuma | 0 | sem espera relatada | 0 | N/A | sim, no escopo afetado de T3 | Após a correção, localizou no mesmo resumo fuso, política do horário permitido e validade e respondeu `CONCLUÍDO`, sem nova dúvida. |
 
 As linhas P02–P05 serão adicionadas no início de cada sessão, nunca antecipadas como
 evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta real.
@@ -378,6 +379,9 @@ evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta rea
 - Validação da correção: 245 testes da interface, typecheck, lint focado e
   `git diff --check` passaram. A árvore acessível do navegador real confirmou todos os
   novos rótulos e valores no comprovante de T3.
+- Em T3-R1, P02 conferiu somente os critérios afetados no comprovante original e
+  respondeu **CONCLUÍDO** sem nova dúvida. Classificação da repetição mínima: aprovada;
+  o incidente original permanece preservado na linha T3.
 
 ### Regressão técnica facilitada — não conta como participante MKT047
 
