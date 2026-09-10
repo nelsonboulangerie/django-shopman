@@ -68,6 +68,7 @@ O facilitador preenche esta tabela; o participante não precisa anotar cliques o
 | P02 | 1 | sim | 3 inferidas | somente senha/frase de segurança | 0 | preview ≤60 ms e ack ≤100 ms no backend | 0 | N/A | sim | Agendou para a próxima janela segura sem ajuda. Comprovante `2bce1b10-340f-49fc-8a20-b52d5e93ae64`, versão 2, público 12 e WhatsApp; confirmou na própria tela que localizou todos os fatos e a próxima ação. |
 | P02 | 2 | não | 3 inferidas + edição | somente texto e senha/frase de segurança | 0 | autosave/preview ≤30 ms e ack ≤40 ms no backend | 0 | N/A | sim | Texto preservado exatamente e agendamento concluído, mas P02 perguntou se “aprovar” significava “agendar”. Comprovante `9dd35568-05a6-4a7b-a38f-ef2f1b2eb0e2`; requer correção e repetição mínima. |
 | P02 | 3 | sim | até 4 inferidas + data/hora | somente data/hora e senha/frase de segurança | 0 | preview ≤20 ms e ack ≤50 ms no backend | 0 | N/A | não | Persistiu 11/09/2026 09:15 BRT e comprovante `3620c55b-ffe5-4591-a8dd-952fe606bb7e`, mas P02 classificou como parcial a clareza de fuso, expiração e efeito do horário permitido. Requer correção e repetição mínima. |
+| P02 | 2R1 | sim | 3 inferidas + edição | somente texto e senha/frase de segurança | 0 | autosave/preview ≤20 ms e ack ≤180 ms no backend | 0 | N/A | sim | Após a explicação inline, alterou somente o texto, aprovou sem nova dúvida e declarou o resultado claro. Conteúdo preservado no artefato, comprovante `ed34488a-1252-400d-ac85-135fb6059c0d`, versão 2, público 12 e WhatsApp. |
 
 As linhas P02–P05 serão adicionadas no início de cada sessão, nunca antecipadas como
 evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta real.
@@ -350,6 +351,10 @@ evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta rea
   chama **“Como aprovar este anúncio”** e explica que aprovar confirma a versão e define
   quando ela fica pronta para entrega, mantendo agendamento seguro e publicação imediata
   como decisões distintas.
+- Em T2-R1, P02 repetiu a tarefa inteira e respondeu **CONCLUÍDO** sem nova dúvida. O
+  texto no anúncio coincide com o artefato selado; o comprovante
+  `ed34488a-1252-400d-ac85-135fb6059c0d` registra versão 2, público 12, WhatsApp e
+  agendamento seguro. Classificação da repetição mínima: aprovada.
 
 ### P02/T3 — instante correto, política temporal só parcialmente compreendida
 
