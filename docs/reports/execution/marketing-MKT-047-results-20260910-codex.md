@@ -66,6 +66,7 @@ O facilitador preenche esta tabela; o participante não precisa anotar cliques o
 | P01 | 8 | sim | 2 inferidas + TOTP | só TOTP, permitido pelo gate | 0 no app | não instrumentada; sem espera relatada | 1 autenticador, exigido pela segurança | rollback não acionado; gravação concluída | sim, no escopo da configuração | Substituiu a referência indisponível pelo fluxo local aprovado. Comprovante `1e81fb34-29f6-4f58-9d9b-b6773be51db2`, versão 3→4; teste externo permaneceu bloqueado por não existir aparelho verificado e nenhum envio foi criado. |
 | P01 | 9 | sim | login + 1 retomada após a expiração | somente credenciais de login | 0 trocas de rota | não instrumentada; sem espera relatada | 0 | sim | sim, no escopo da retomada | Após a expiração controlada, voltou a `/announcements/42`, retomou e recebeu uma confirmação nova e vazia para a versão 1, público 12 e Instagram + WhatsApp. O anúncio permaneceu pendente, sem aprovação, outbox ou destinos. |
 | P02 | 1 | sim | 3 inferidas | somente senha/frase de segurança | 0 | preview ≤60 ms e ack ≤100 ms no backend | 0 | N/A | sim | Agendou para a próxima janela segura sem ajuda. Comprovante `2bce1b10-340f-49fc-8a20-b52d5e93ae64`, versão 2, público 12 e WhatsApp; confirmou na própria tela que localizou todos os fatos e a próxima ação. |
+| P02 | 2 | não | 3 inferidas + edição | somente texto e senha/frase de segurança | 0 | autosave/preview ≤30 ms e ack ≤40 ms no backend | 0 | N/A | sim | Texto preservado exatamente e agendamento concluído, mas P02 perguntou se “aprovar” significava “agendar”. Comprovante `9dd35568-05a6-4a7b-a38f-ef2f1b2eb0e2`; requer correção e repetição mínima. |
 
 As linhas P02–P05 serão adicionadas no início de cada sessão, nunca antecipadas como
 evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta real.
@@ -327,6 +328,23 @@ evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta rea
   confirmados pelo simulador. O adapter permaneceu `SIMULATION_ONLY`, sem provider ou
   efeito externo.
 - Classificação: T1 aprovada para P02, sem ajuda e dentro dos budgets observáveis.
+
+### P02/T2 — texto preservado, mas “aprovar” permaneceu ambíguo
+
+- P02 alterou somente o texto; todas as quatro atualizações de prévia observadas
+  responderam em até 30 ms no backend e o conteúdo do anúncio coincide exatamente com o
+  artefato selado da versão 2.
+- Antes da decisão, P02 perguntou se **“aprovar” quer dizer “agendar”**. O participante
+  precisou receber a distinção entre **Agendar (recomendado)** e **Publicar agora**;
+  portanto T2 não foi concluída sem ajuda e não passa nesta rodada.
+- Depois da orientação, o comando terminou em 40 ms, registrou o comprovante
+  `9dd35568-05a6-4a7b-a38f-ef2f1b2eb0e2`, público 12, WhatsApp e próxima janela às
+  18:15 BRT. Nenhum destino havia começado no instante do comprovante.
+- P02 confirmou sem consulta externa que viu a prévia acompanhar a edição e localizou
+  no resultado texto, versão, público, horário, plataforma, estado e próxima ação.
+- Classificação: persistência, prévia, certeza e budgets observáveis aprovados; critério
+  **sem ajuda** reprovado. Preservar o incidente, corrigir a ambiguidade e repetir apenas
+  T2.
 
 ### Regressão técnica facilitada — não conta como participante MKT047
 
