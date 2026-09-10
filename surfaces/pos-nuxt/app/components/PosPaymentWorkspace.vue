@@ -597,6 +597,27 @@ const hasNonLinkTender = computed(() => props.paymentTenders.some((tender) => te
  *  se desfaz. UMA verdade só: o botão e a tecla F10 leem daqui, senão o teclado
  *  abriria um modal que o dedo não consegue abrir. */
 const splitAvailable = computed(() => !(hasLinkTender.value && !splitActive.value));
+// No modal de dividir, o NÚMERO do botão é a própria tecla. Escolher o número já
+// é a decisão inteira, então a tecla escolhe E fecha, como o toque. Não disputa
+// com ninguém: o diálogo prende o foco em si e o shell cala os atalhos globais
+// enquanto ele está aberto (`globalKeysBlocked`) — "2" só tem este dono aqui.
+// "1" desfaz (uma pessoa = não dividir), e só quando há divisão a desfazer,
+// como o botão. As mesmas recusas do dedo: com link lançado os presets não
+// respondem, porque os botões também não.
+function splitCountFromKey(key: string): number | null {
+  if (key === "1") return 0;
+  const n = Number(key);
+  return SPLIT_PRESETS.includes(n) ? n : null;
+}
+function onSplitKeydown(event: KeyboardEvent) {
+  if (event.altKey || event.ctrlKey || event.metaKey || event.repeat) return;
+  const n = splitCountFromKey(event.key);
+  if (n === null) return;
+  if (n === 0 ? !splitActive.value : hasLinkTender.value) return;
+  event.preventDefault();
+  emit("setSplitCount", n);
+  splitSheetOpen.value = false;
+}
 /** Este método está indisponível AGORA por causa da exclusividade do link? */
 function blockedByLink(ref: string): boolean {
   return ref === "link" ? hasNonLinkTender.value : hasLinkTender.value;
@@ -1868,11 +1889,11 @@ defineExpose({
        modal, sem "Concluir". Só o desfazer fica, porque desfazer com partes já
        lançadas merece uma frase antes. -->
   <UiDialog v-model:open="splitSheetOpen">
-    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-md">
+    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-md" @keydown="onSplitKeydown">
       <UiDialogHeader>
         <UiDialogTitle>Dividir conta</UiDialogTitle>
         <UiDialogDescription>
-          Em quantas pessoas. Cada toque numa forma de pagamento lança uma parte já calculada — os centavos fecham sozinhos.
+          Em quantas pessoas — digite o número ou toque. Cada forma de pagamento lançada depois cobra uma parte já calculada; os centavos fecham sozinhos.
         </UiDialogDescription>
       </UiDialogHeader>
       <div class="grid gap-4">
@@ -1907,8 +1928,9 @@ defineExpose({
       <UiDialogFooter class="sm:flex-col sm:items-stretch sm:gap-2">
         <p v-if="splitNote" class="text-center text-sm text-muted-foreground">{{ splitNote }}</p>
         <template v-if="splitActive">
-          <UiButton variant="outline" class="w-full" @click="$emit('setSplitCount', 0); splitSheetOpen = false">
+          <UiButton variant="outline" class="w-full gap-2" @click="$emit('setSplitCount', 0); splitSheetOpen = false">
             Não dividir
+            <OperatorKbd aria-hidden="true">1</OperatorKbd>
           </UiButton>
           <p v-if="splitInProgress" class="text-center text-xs text-muted-foreground">
             As partes já lançadas continuam na conta — remova cada linha de pagamento se quiser recomeçar.
