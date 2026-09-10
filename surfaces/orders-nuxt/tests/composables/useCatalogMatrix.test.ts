@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
 import { useCatalogMatrix } from "../../app/composables/useCatalogMatrix";
 
 const env = installNuxtGlobals();
+vi.stubGlobal("useNuxtData", () => ({ data: { value: { operator: { id: 1 } } } }));
 
 describe("useCatalogMatrix — leitura + célula", () => {
   beforeEach(() => env.reset());
@@ -67,13 +68,13 @@ describe("useCatalogMatrix — lote + reordenação", () => {
   });
 
   it("bulkPrice envia op/value e escopo por skus", async () => {
-    env.fetchMock.mockResolvedValueOnce({ count: 3 });
+    env.fetchMock.mockResolvedValueOnce({ count: 3, outcome: "applied" });
     const m = useCatalogMatrix();
-    const n = await m.bulkPrice("web", { skus: ["PAO"] }, { op: "pct", value: 10 });
+    const n = await m.bulkPrice("web", { skus: ["PAO"] }, { op: "pct", value: 10 }, { base_revision: "base", expected_actor_id: 1, cells: [], limit: 100 });
     expect(n).toBe(3);
     const [url, opts] = env.fetchMock.mock.calls[0]!;
     expect(String(url)).toBe("/api/v1/backstage/catalog/bulk-price/");
-    expect(opts.body).toEqual({ surface_ref: "web", skus: ["PAO"], op: "pct", value: 10 });
+    expect(opts.body).toEqual({ surface_ref: "web", skus: ["PAO"], op: "pct", value: 10, base_revision: "base", expected_actor_id: 1 });
   });
 
   it("bulkSet em voo bloqueia 2ª chamada (bulkBusy)", async () => {
@@ -146,5 +147,25 @@ describe("useCatalogMatrix — sync + PIM (Arc H)", () => {
     expect(await m.saveSocial("PAO", { gtin: "123" })).toBe(false);
     expect(m.errorMsg.value).toBe("GTIN inválido");
     expect(env.sonner.error).toHaveBeenCalledWith("GTIN inválido");
+  });
+});
+
+
+describe("catalog price preview and lost response", () => {
+  beforeEach(() => env.reset());
+  const preview = { base_revision: "base", expected_actor_id: 1, cells: [], limit: 100 };
+  it("preview does not claim prices were applied", async () => {
+    env.fetchMock.mockResolvedValueOnce({ preview });
+    const m = useCatalogMatrix();
+    expect(await m.previewBulkPrice("web", { skus: ["PAO"] }, { op: "pct", value: 10 })).toEqual(preview);
+    expect(env.fetchMock.mock.calls[0]![1].body.preview).toBe(true);
+    expect(env.sonner.success).not.toHaveBeenCalled();
+  });
+  it("lost price response queries the same receipt without reapplying the percentage", async () => {
+    env.fetchMock.mockRejectedValueOnce({ status: 502 }).mockResolvedValueOnce({ outcome: "applied", count: 2 });
+    const m = useCatalogMatrix();
+    expect(await m.bulkPrice("web", { skus: ["PAO"] }, { op: "pct", value: 10 }, preview)).toBe(2);
+    expect(env.fetchMock).toHaveBeenCalledTimes(2);
+    expect(env.fetchMock.mock.calls[1]![1].query.idempotency_key).toBe(env.fetchMock.mock.calls[0]![1].headers["Idempotency-Key"]);
   });
 });

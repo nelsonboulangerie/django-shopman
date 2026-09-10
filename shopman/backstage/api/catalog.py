@@ -222,43 +222,67 @@ class CatalogBulkView(_CatalogBase):
 
 
 class CatalogBulkPriceView(_CatalogBase):
-    """Reprecificação em lote scoped a superfície + (coleção | seleção de skus)."""
+    """Exact preview and atomic local receipt; remote sync is independently recoverable."""
+
+    @staticmethod
+    def _scope(request):
+        from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+        return mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": "catalog.bulk-price"})
+
+    def get(self, request):
+        from shopman.shop.services.remote_mutations import RemoteMutationInProgress, lookup_local_mutation
+
+        key = str(request.query_params.get("idempotency_key") or "")
+        if not key:
+            return Response({"detail": "Informe a intenção."}, status=400)
+        try:
+            receipt = lookup_local_mutation(scope=self._scope(request), key=key)
+        except RemoteMutationInProgress:
+            receipt = None
+        if receipt is None:
+            return Response({"outcome": "unknown", "detail": "Resultado ainda não confirmado."}, status=202)
+        return Response(receipt.response_body, status=receipt.response_code)
 
     def post(self, request):
-        surface_ref = (request.data.get("surface_ref") or "").strip()
-        op = (request.data.get("op") or "").strip()
-        if not surface_ref:
-            return Response({"detail": "surface_ref é obrigatório."}, status=400)
-        if op not in ("set", "pct", "delta"):
-            return Response({"detail": "op deve ser set, pct ou delta."}, status=400)
-        # Depois das duas checagens acima, e não antes: a ordem em que o operador
-        # vê os erros é a ordem em que ele preenche a tela.
-        value = as_int(request.data, "value", message="value é obrigatório.")
+        from shopman.backstage.services.exceptions import CatalogConflict
+        from shopman.shop.services.remote_mutations import (
+            RemoteMutationConflict,
+            RemoteMutationInProgress,
+            mutation_fingerprint,
+            run_idempotent_mutation,
+        )
 
-        collection_ref = (request.data.get("collection_ref") or "").strip()
-        skus = request.data.get("skus") or []
-
+        data = dict(request.data)
         try:
-            if collection_ref:
-                count = catalog_service.bulk_price_collection(
-                    collection_ref, surface_ref, op=op, value=value, actor=_actor(request)
-                )
-            elif isinstance(skus, list) and skus:
-                count = catalog_service.bulk_price(
-                    [str(s).strip() for s in skus],
-                    surface_ref,
-                    op=op,
-                    value=value,
-                    actor=_actor(request),
-                )
-            else:
-                return Response(
-                    {"detail": "Informe collection_ref ou uma lista skus."}, status=400
-                )
+            if data.get("preview") is True:
+                return Response({"preview": catalog_service.preview_bulk_price(data, actor_id=request.user.pk)})
+            key = request.headers.get("Idempotency-Key") or data.get("idempotency_key")
+            if not isinstance(key, str) or not key or len(key) > 128 or not data.get("base_revision"):
+                return Response({"detail": "Atualize o Gestor e revise a prévia antes de confirmar.", "error": {"code": "intention_required"}}, status=400)
+            if data.get("expected_actor_id") != request.user.pk:
+                return Response({"detail": "A identificação mudou. Revise a prévia.", "error": {"code": "actor_changed"}}, status=409)
+            scope = self._scope(request)
+            payload = {key: value for key, value in data.items() if key not in {"idempotency_key", "preview"}}
+
+            def execute():
+                try:
+                    return catalog_service.apply_bulk_price_intention(payload, actor_id=request.user.pk), 200
+                except CatalogConflict as exc:
+                    return {"outcome": "not_applied", "detail": str(exc), "error": {"code": "catalog_changed"}}, 409
+                except (CatalogError, ValidationError) as exc:
+                    return {"outcome": "not_applied", "detail": str(exc)}, 400
+
+            result = run_idempotent_mutation(
+                scope=scope, key=key, fingerprint=mutation_fingerprint({"scope": scope, "payload": payload}), execute=execute,
+            )
+            return Response(result.response_body, status=result.response_code)
         except (CatalogError, ValidationError) as exc:
             return Response({"detail": str(exc)}, status=400)
-
-        return Response({"ok": True, "surface_ref": surface_ref, "count": count})
+        except RemoteMutationConflict:
+            return Response({"detail": "Esta intenção já representa outra alteração.", "error": {"code": "intention_conflict"}}, status=409)
+        except RemoteMutationInProgress:
+            return Response({"outcome": "unknown", "detail": "Alteração em processamento; consulte esta intenção."}, status=202)
 
 
 class CatalogReorderCollectionsView(_CatalogBase):

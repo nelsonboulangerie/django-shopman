@@ -133,3 +133,7 @@ class RecipeEntryNotFound(BackstageServiceError):
 
 class RecipeVersionNotFound(BackstageServiceError):
     """Versão inexistente na receita. A camada HTTP mapeia para 404."""
+
+
+class CatalogConflict(CatalogError):
+    """Catalog snapshot changed after preview; no cells were applied."""

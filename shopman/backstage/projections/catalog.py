@@ -16,6 +16,24 @@ from dataclasses import dataclass
 from shopman.utils.monetary import format_money
 
 
+@dataclass(frozen=True)
+class CatalogPricePreviewCell:
+    id: int
+    sku: str
+    surface_ref: str
+    tier: str
+    before_q: int
+    after_q: int
+
+
+@dataclass(frozen=True)
+class CatalogPricePreview:
+    base_revision: str
+    expected_actor_id: int
+    cells: tuple[CatalogPricePreviewCell, ...]
+    limit: int
+
+
 def _money(value_q: int) -> str:
     return f"R$ {format_money(int(value_q))}"
 

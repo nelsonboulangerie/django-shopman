@@ -1,6 +1,24 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py
 // Regenerate with: python manage.py export_orders_schema
+
+/** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
+export interface CatalogPricePreviewCell {
+  id: number;
+  sku: string;
+  surface_ref: string;
+  tier: string;
+  before_q: number;
+  after_q: number;
+}
+
+/** CatalogPricePreview(base_revision: 'str', expected_actor_id: 'int', cells: 'tuple[CatalogPricePreviewCell, ...]', limit: 'int') */
+export interface CatalogPricePreview {
+  base_revision: string;
+  expected_actor_id: number;
+  cells: CatalogPricePreviewCell[];
+  limit: number;
+}
 
 /** Canonical action offered by a Shopman projection to any surface. */
 export interface Action {

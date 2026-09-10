@@ -7,6 +7,7 @@
 import { cellPrice, cellSyncView, cellView, filterRows, rowStatus, surfaceDisplayIcon, syncBadge, syncErrorCount } from "~/presentation/catalog";
 import { catalogDimensions, filterByDimensions } from "~/presentation/catalogFilters";
 import { keepVisible, reconcile } from "../../../operator-kit/app/presentation/columnPicker";
+import type { CatalogPricePreview } from "~/generated/ordersContract";
 import type { HiddenColumns } from "../../../operator-kit/app/types/columns";
 import type { ActiveFilters } from "../../../operator-kit/app/types/filters";
 import type {
@@ -20,7 +21,7 @@ import type {
 
 const collectionRef = ref("");
 const {
-  matrix, pending, error, refresh, isBusy, cellKey, productKey, detailKey, setCell, setProduct, bulkSet, bulkPrice,
+  matrix, pending, error, refresh, isBusy, cellKey, productKey, detailKey, setCell, setProduct, bulkSet, bulkPrice, previewBulkPrice,
   resync, fetchProductDetail, saveProductDetail, reorderCollections, reorderItems, bulkBusy,
   aiAssist, aiAssistKey,
 } = useCatalogMatrix(collectionRef);
@@ -168,6 +169,8 @@ const priceOps = [
   { k: "delta", l: "Ajustar R$" },
 ] as const;
 const priceInputBulk = ref("");
+const pricePreview = ref<CatalogPricePreview | null>(null);
+watch(() => JSON.stringify([priceOp.value, priceInputBulk.value, bulkSurface.value, [...selected.value].sort()]), () => { pricePreview.value = null; });
 const surfaceLabel = (ref_: string) =>
   ref_ === "*" ? "Todos os canais" : (surfaces.value.find((s) => s.ref === ref_)?.name ?? ref_);
 // número digitado (aceita vírgula/percentual/negativo); em centavos p/ set/delta.
@@ -184,7 +187,11 @@ const priceValid = computed(() => {
 async function applyBulkPrice() {
   const value = parsedPriceValue();
   if (value === null || !bulkSurface.value || selected.value.size === 0) return;
-  const ok = await bulkPrice(bulkSurface.value, { skus: [...selected.value] }, { op: priceOp.value, value });
+  if (!pricePreview.value) {
+    pricePreview.value = await previewBulkPrice(bulkSurface.value, { skus: [...selected.value] }, { op: priceOp.value, value });
+    return;
+  }
+  const ok = await bulkPrice(bulkSurface.value, { skus: [...selected.value] }, { op: priceOp.value, value }, pricePreview.value);
   if (ok === null) return;
   priceOpen.value = false;
   priceInputBulk.value = "";
@@ -629,7 +636,17 @@ useHead({ title: "Catálogo · Gestor" });
                       @keyup.enter="commitPrice(row, cell)" @keyup.esc="editing = null"
                     />
                     <p class="mt-1 text-xs text-muted-foreground">Base do produto: {{ row.base_price_display }}</p>
-                    <div class="mt-2.5 flex justify-end gap-1.5">
+                    <div v-if="pricePreview" class="mt-3 max-h-64 overflow-auto rounded border p-2" aria-live="polite">
+              <p class="mb-2 text-xs font-semibold">Revise {{ pricePreview.cells.length }} células antes de confirmar</p>
+              <ul class="space-y-1 text-xs">
+                <li v-for="cell in pricePreview.cells" :key="cell.id">
+                  {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref) }} · mínimo {{ cell.tier }}:
+                  {{ (cell.before_q / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) }} →
+                  {{ (cell.after_q / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) }}
+                </li>
+              </ul>
+            </div>
+            <div class="mt-2.5 flex justify-end gap-1.5">
                       <button type="button" class="rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="editing = null">Cancelar</button>
                       <button type="button" class="rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90" @click="commitPrice(row, cell)">Salvar</button>
                     </div>
@@ -739,9 +756,19 @@ useHead({ title: "Catálogo · Gestor" });
               {{ priceOp === "set" ? "Define o preço de todos os selecionados." : priceOp === "pct" ? "Aumenta (+) ou reduz (−) por porcentagem." : "Soma (+) ou subtrai (−) do preço atual." }}
               Permanente — para promo, use as regras.
             </p>
+            <div v-if="pricePreview" class="mt-3 max-h-64 overflow-auto rounded border p-2" aria-live="polite">
+              <p class="mb-2 text-xs font-semibold">Revise {{ pricePreview.cells.length }} células antes de confirmar</p>
+              <ul class="space-y-1 text-xs">
+                <li v-for="cell in pricePreview.cells" :key="cell.id">
+                  {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref) }} · mínimo {{ cell.tier }}:
+                  {{ (cell.before_q / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) }} →
+                  {{ (cell.after_q / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) }}
+                </li>
+              </ul>
+            </div>
             <div class="mt-2.5 flex justify-end gap-1.5">
               <button type="button" class="rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="priceOpen = false">Cancelar</button>
-              <button type="button" :disabled="!priceValid || bulkBusy" class="rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyBulkPrice">Aplicar</button>
+              <button type="button" :disabled="!priceValid || bulkBusy" class="rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyBulkPrice">{{ pricePreview ? "Confirmar alterações" : "Revisar alterações" }}</button>
             </div>
           </UiPopoverContent>
         </UiPopover>

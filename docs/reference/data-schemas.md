@@ -1752,3 +1752,15 @@ reaproveitados como escopos locais. Efeito local, eventos, enqueue e recibo comp
 transação; respostas >=400 revertem as escritas do executor antes de registrar a recusa.
 Nenhuma chamada de rede é permitida no executor local. TTL global de 24h e recibos
 permanentes existentes não mudam; G08 continua pendente para qualquer nova retenção.
+
+### Catálogo: intenção local de reprecificação (`local-mutation-v1`)
+
+Escopo `catalog.bulk-price` + pessoa autenticada no IdempotencyKey existente. A prévia
+não escreve: devolve base_revision opaca, pessoa esperada e células exatas (ListingItem,
+SKU, canal, tier, preço anterior/resultante em centavos). Limite técnico provisório:
+100 células somando destinos. Confirmação relê a mesma seleção/configuração sob locks,
+compara revisão e grava valores absolutos, enqueue catalog.project_sku e recibo no mesmo
+commit. Payload do recibo: outcome/applied, count, células aplicadas e sync_pending por
+SKU/canal; não armazena texto de cliente. Replay devolve o resultado local original;
+sincronização continua governada por Directive/CatalogSyncState. GET do resultado não
+reexecuta preço nem consulta fornecedor. Sem nova tabela ou alteração de retenção.

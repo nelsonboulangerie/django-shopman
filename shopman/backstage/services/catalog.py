@@ -954,3 +954,123 @@ def reorder_collection_items(collection_ref: str, ordered_skus: list[str], *, ac
     return len(changed)
 
 
+
+
+# 100 destination cells is the measured provisional lab envelope, not a field SLA.
+MAX_BULK_PRICE_CELLS = 100
+
+
+def _price_snapshot(data: dict, *, actor_id: int, lock: bool = False) -> tuple[dict, list]:
+    from shopman.offerman.models import Collection, Listing, ListingItem, Product
+
+    from shopman.shop.models import Channel
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    surface = data.get("surface_ref")
+    op = data.get("op")
+    value = data.get("value")
+    if not isinstance(surface, str) or not surface:
+        raise CatalogError("surface_ref é obrigatório.")
+    if op not in _PRICE_OPS or not isinstance(value, int) or isinstance(value, bool):
+        raise CatalogError("Informe operação de preço e valor inteiro válidos.")
+    if op == "set" and value < 0:
+        raise CatalogError("Preço não pode ser negativo.")
+    refs = _all_channel_refs() if surface == ALL_SURFACES else [surface]
+    channels = Channel.objects.filter(ref__in=refs).order_by("pk")
+    if lock:
+        channels = channels.select_for_update()
+    channels = list(channels)
+    if len(channels) != len(refs) or any(channel.commerce_policy != Channel.CommercePolicy.ORDER for channel in channels):
+        raise CatalogError("Preço pertence somente a canais de venda existentes.")
+    collection = None
+    if data.get("collection_ref"):
+        collections = Collection.objects.filter(ref=data["collection_ref"])
+        collection = (collections.select_for_update() if lock else collections).first()
+        if collection is None:
+            raise CatalogError("Coleção não encontrada.")
+        skus = list(collection.product_queryset().order_by("sku").values_list("sku", flat=True))
+    else:
+        skus = data.get("skus")
+        if not isinstance(skus, list) or not skus or any(not isinstance(sku, str) or not sku.strip() for sku in skus):
+            raise CatalogError("Informe collection_ref ou uma lista skus.")
+        skus = sorted(set(skus))
+    products = Product.objects.filter(sku__in=skus).order_by("pk")
+    listings = Listing.objects.filter(ref__in=refs).order_by("pk")
+    if lock:
+        products, listings = products.select_for_update(), listings.select_for_update()
+    products, listings = list(products), list(listings)
+    if len(products) != len(skus):
+        raise CatalogError("A seleção contém produto que não existe mais.")
+    queryset = ListingItem.objects.filter(listing__ref__in=refs, product__sku__in=skus).order_by("listing_id", "product_id", "min_qty", "pk")
+    if lock:
+        queryset = queryset.select_for_update()
+    all_items = list(queryset)
+    by_product = {product.pk: product for product in products}
+    by_listing = {listing.pk: listing for listing in listings}
+    seen = set()
+    items, cells = [], []
+    for item in all_items:
+        identity = (item.listing_id, item.product_id)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        product, listing = by_product[item.product_id], by_listing[item.listing_id]
+        cells.append({"id": item.pk, "sku": product.sku, "surface_ref": listing.ref,
+                      "tier": str(item.min_qty), "before_q": item.price_q,
+                      "after_q": _apply_price_op(item.price_q, op, value)})
+        items.append(item)
+    if len(cells) > MAX_BULK_PRICE_CELLS:
+        raise CatalogError(f"Selecione no máximo {MAX_BULK_PRICE_CELLS} células somando os canais.")
+    state = {
+        "actor": actor_id, "operation": "bulk-price", "op": op, "value": value,
+        "skus": skus, "refs": refs, "cells": cells,
+        "tiers": [(item.pk, str(item.min_qty), item.price_q, item.is_published, item.is_sellable) for item in all_items],
+        "products": [(product.pk, product.base_price_q, product.is_published, product.is_sellable, product.metadata) for product in products],
+        "listings": [(listing.pk, listing.is_active) for listing in listings],
+        "channels": [(channel.pk, channel.is_active, channel.commerce_policy, channel.config) for channel in channels],
+        "collection": (collection.ref, collection.rule) if collection else None,
+    }
+    from shopman.backstage.projections.catalog import CatalogPricePreview, CatalogPricePreviewCell
+
+    preview = CatalogPricePreview(
+        base_revision=mutation_fingerprint(state), expected_actor_id=actor_id,
+        cells=tuple(CatalogPricePreviewCell(**cell) for cell in cells), limit=MAX_BULK_PRICE_CELLS,
+    )
+    return asdict(preview), items
+
+
+def preview_bulk_price(data: dict, *, actor_id: int) -> dict:
+    preview, _items = _price_snapshot(data, actor_id=actor_id)
+    return preview
+
+
+@transaction.atomic
+def apply_bulk_price_intention(data: dict, *, actor_id: int) -> dict:
+    from shopman.offerman.conf import get_projection_backend
+    from shopman.offerman.models import ListingItem
+
+    from shopman.backstage.services.exceptions import CatalogConflict
+    from shopman.shop.handlers.catalog_projection import enqueue_project
+    from shopman.shop.services.catalog_sync import record_sync
+
+    preview, items = _price_snapshot(data, actor_id=actor_id, lock=True)
+    if data.get("expected_actor_id") != actor_id or data.get("base_revision") != preview["base_revision"]:
+        raise CatalogConflict("O catálogo ou a identificação mudou. Revise a prévia; nenhum preço foi alterado.")
+    changed, pending = [], []
+    surfaces = set()
+    for item, cell in zip(items, preview["cells"], strict=True):
+        if item.price_q == cell["after_q"]:
+            continue
+        item.price_q = cell["after_q"]
+        changed.append(item)
+        surfaces.add(cell["surface_ref"])
+    ListingItem.objects.bulk_update(changed, ["price_q"])
+    for cell in preview["cells"]:
+        if cell["before_q"] == cell["after_q"] or get_projection_backend(cell["surface_ref"]) is None:
+            continue
+        record_sync(cell["sku"], cell["surface_ref"], status="pending")
+        enqueue_project(cell["sku"], cell["surface_ref"], trigger="operator_price_intention")
+        pending.append({"sku": cell["sku"], "surface_ref": cell["surface_ref"]})
+    for surface in surfaces:
+        transaction.on_commit(lambda ref=surface: _notify_surface(ref))
+    return {"ok": True, "outcome": "applied", "count": len(changed), "cells": preview["cells"], "sync_pending": pending}

@@ -1,0 +1,27 @@
+DEBUG 2026-09-10 19:43:37,506 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-10 19:43:37,507 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-10 19:43:37,508 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-10 19:43:37,510 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-10 19:43:37,548 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-10 19:43:37,557 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-10 19:43:37,568 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-10 19:43:37,577 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-10 19:43:37,593 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-10 19:43:37,598 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-10 19:43:37,598 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-10 19:43:37,608 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-10 19:43:37,691 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-10 19:43:37,705 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-10 19:43:37,710 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-10 19:43:37,711 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-10 19:43:37,711 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-10 19:43:37,712 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-10 19:43:37,725 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-10 19:43:37,726 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+DEBUG 2026-09-10 19:43:37,947 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-10 19:43:38,526 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-10 19:43:42,023 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+{"platform": "macOS-15.4.1-arm64-arm-64bit", "database": "postgresql", "samples": 20, "remote_adapters": false, "observations": [{"cells": 10, "queries": 19, "cold_ms": 17.913500021677464, "p50_ms": 17.831500008469447, "p95_ms": 26.433833001647145}, {"cells": 50, "queries": 19, "cold_ms": 21.52974996715784, "p50_ms": 27.284395997412503, "p95_ms": 40.29362497385591}, {"cells": 100, "queries": 19, "cold_ms": 46.039207954891026, "p50_ms": 36.35089547606185, "p95_ms": 45.14695901889354}]}
+.DEBUG 2026-09-10 19:43:58,476 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+
+1 passed in 20.85s

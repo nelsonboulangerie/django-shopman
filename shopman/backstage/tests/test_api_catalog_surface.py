@@ -349,9 +349,21 @@ def test_bulk_requires_field(client, operator, catalog):
 # ── write: preço em lote ───────────────────────────────────────────────────────
 
 
+def _post_price_intention(client, url, *, data, **kwargs):
+    from uuid import uuid4
+
+    response = client.post(url, {**data, "preview": True}, content_type="application/json")
+    if response.status_code != 200:
+        return response
+    preview = response.json()["preview"]
+    return client.post(url, {**data, "base_revision": preview["base_revision"],
+                            "expected_actor_id": preview["expected_actor_id"]},
+                       HTTP_IDEMPOTENCY_KEY=str(uuid4()), **kwargs)
+
+
 def test_bulk_price_set(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_PRICE_URL,
         data={"surface_ref": "web", "skus": ["PAO", "BOLO"], "op": "set", "value": 999},
         content_type="application/json",
@@ -365,7 +377,7 @@ def test_bulk_price_set(client, operator, catalog):
 def test_bulk_price_pct_rounds(client, operator, catalog):
     client.force_login(operator)
     # PAO web = 600 → +10% = 660
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_PRICE_URL,
         data={"surface_ref": "web", "skus": ["PAO"], "op": "pct", "value": 10},
         content_type="application/json",
@@ -377,7 +389,7 @@ def test_bulk_price_pct_rounds(client, operator, catalog):
 def test_bulk_price_delta_clamps_at_zero(client, operator, catalog):
     client.force_login(operator)
     # PAO web = 600; delta -1000 → clamp 0 (nunca negativo)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_PRICE_URL,
         data={"surface_ref": "web", "skus": ["PAO"], "op": "delta", "value": -1000},
         content_type="application/json",
@@ -389,7 +401,7 @@ def test_bulk_price_delta_clamps_at_zero(client, operator, catalog):
 def test_bulk_price_by_collection(client, operator, catalog):
     client.force_login(operator)
     # BOLO web = 4800; coleção Doces só tem BOLO; +50% = 7200
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_PRICE_URL,
         data={"surface_ref": "web", "collection_ref": "doces", "op": "pct", "value": 50},
         content_type="application/json",
@@ -403,7 +415,7 @@ def test_bulk_price_by_collection(client, operator, catalog):
 
 def test_bulk_price_invalid_op(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_PRICE_URL,
         data={"surface_ref": "web", "skus": ["PAO"], "op": "multiply", "value": 2},
         content_type="application/json",
@@ -413,7 +425,7 @@ def test_bulk_price_invalid_op(client, operator, catalog):
 
 def test_bulk_price_set_negative_rejected(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_PRICE_URL,
         data={"surface_ref": "web", "skus": ["PAO"], "op": "set", "value": -1},
         content_type="application/json",
@@ -436,7 +448,7 @@ def test_bulk_all_channels_pause(client, operator, catalog):
 
 def test_bulk_price_all_channels(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_PRICE_URL,
         data={"surface_ref": "*", "skus": ["PAO"], "op": "set", "value": 1234},
         content_type="application/json",
@@ -448,7 +460,7 @@ def test_bulk_price_all_channels(client, operator, catalog):
 
 def test_bulk_price_requires_manage_catalog(client, plain_staff, catalog):
     client.force_login(plain_staff)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_PRICE_URL,
         data={"surface_ref": "web", "skus": ["PAO"], "op": "set", "value": 100},
         content_type="application/json",

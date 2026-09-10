@@ -23,6 +23,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from shopman.backstage.contracts import render_contract_module, run_contract_export
+from shopman.backstage.projections.catalog import CatalogPricePreview, CatalogPricePreviewCell
 from shopman.backstage.projections.order_queue import (
     AwaitingWorkOrderProjection,
     CustomerProfileProjection,
@@ -40,6 +41,8 @@ OUTPUT_RELATIVE_PATH = Path("surfaces/orders-nuxt/app/generated/ordersContract.t
 
 #: Every dataclass exported to the surface, dependencies first.
 CONTRACT_DATACLASSES = (
+    CatalogPricePreviewCell,
+    CatalogPricePreview,
     Action,
     OrderItemProjection,
     TimelineEventProjection,
@@ -63,7 +66,7 @@ def render_orders_contract_ts() -> str:
     return render_contract_module(
         source=(
             "shopman/backstage/projections/order_queue.py"
-            " + shopman/shop/projections/types.py"
+            " + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py"
         ),
         command="export_orders_schema",
         dataclasses=CONTRACT_DATACLASSES,

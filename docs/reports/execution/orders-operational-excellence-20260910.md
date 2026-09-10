@@ -354,3 +354,30 @@ Sem DDL/novos campos JSON. Rollback preserva validação integral/fiscal ou susp
 reverter apenas ordem/editor não altera preços/dados. Limites: fan-out entre superfícies,
 intenção/revisão de catálogo/feed, sync parcial, drafts entre SKUs e carga ainda pendentes.
 WP05/WP06 continuam em execução, sem T.
+
+## Retomada — WP05/WP02: reprecificação por prévia e intenção
+
+D12: API de lote de preços exige prévia/base/pessoa/chave. A prévia congela células/tier,
+valores exatos resultantes e configuração relevante; mudança em preço, coleção ou destino
+recusa o lote. Confirmação bloqueia recursos, grava preços absolutos + CatalogSyncState +
+enqueue existente + recibo atômicos. Nenhuma chamada ao fornecedor dentro dessa transação.
+GET/replay não recalculam percentual. Cliente antigo sem precondição recebe 400. Gestor
+mostra antes/depois para confirmação explícita, conserva editor no erro e consulta recibo
+após resposta perdida. Schema novo gerado por export_orders_schema, sem mirror manual.
+
+PG catálogo/schema/intenções **94 passed (32,48s)**: duas conexões/chaves na mesma prévia,
+replay/lookup, fingerprint divergente, outra pessoa, legacy, segundo enqueue falhando,
+falha ao salvar recibo, limite por destino e alteração de membership. Gestor **235 passed
+(3,97s)**; typecheck passou. Uma tentativa inicial de unpack do helper foi corrigida para
+seu dataclass antes dos testes; testes de preço iniciais 8/8 e principais 5/5 passaram.
+
+Budget PostgreSQL local, 20 amostras sem backend externo e rollback de cada amostra:
+10/50/100 células em dois destinos: **19 consultas**; p95 **26,43/40,29/45,15ms**.
+100 células permanece limite provisório; números excluem HTTP/worker/provedor e aprovação
+humana G06. J08 proposta: abrir preço → revisar → confirmar (3 ativações após seleção;
+digitação contada separadamente); ainda falta jornada browser/Django e validação humana.
+
+Sem DDL; recibo usa envelope já documentado. Rollback mantém lookup/dedupe e suspende lote
+incompatível, nunca volta a reaplicar pct/delta por tentativa ambígua. Lote de publicação,
+feed, célula e outros writers ainda não têm todo o protocolo de intenção/revisão; WP05
+continua em execução. Estado de sync atual continua no CatalogSyncState, não no recibo.

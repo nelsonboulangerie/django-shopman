@@ -1,7 +1,7 @@
 import type { Action } from "~/generated/ordersContract";
 
 type Intention = { key: string; owner: number; body: Record<string, unknown> };
-type Result = { outcome?: string; detail?: string };
+type Result = { outcome?: string; detail?: string; count?: number };
 
 /** Session-only, person-bound intentions. Unknown results never create a new key. */
 export function useOrderIntention() {
@@ -11,20 +11,18 @@ export function useOrderIntention() {
     if (next) pending.value = Object.fromEntries(Object.entries(pending.value).filter(([, intent]) => intent.owner === next));
   });
 
-  async function execute(ref_: string, operation: string, action: Action | undefined, inputs: Record<string, unknown>) {
+  async function executePath(resource: string, path: string, action: Pick<Action, "enabled" | "reason" | "payload_schema"> | undefined, inputs: Record<string, unknown>) {
     const owner = session.value?.operator?.id;
     if (!owner) throw new Error("Identifique-se antes de continuar.");
-    const resource = `${ref_}:${operation}`;
     let intent = pending.value[resource];
     if (!intent) {
-      if (!action?.enabled || !action.payload_schema.base_revision || (operation === "advance" && !action.payload_schema.target_status)) {
+      if (!action?.enabled || !action.payload_schema.base_revision) {
         throw new Error(action?.reason || "Atualize o pedido antes de continuar.");
       }
       intent = { owner, key: crypto.randomUUID(), body: JSON.parse(JSON.stringify({ ...action.payload_schema, ...inputs })) };
       pending.value[resource] = intent;
     }
     const current = intent;
-    const path = `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/${encodeURIComponent(operation)}/`;
     const samePerson = () => session.value?.operator?.id === current.owner;
     if (Object.entries(inputs).some(([key, value]) => JSON.stringify(value) !== JSON.stringify(current.body[key]))) {
       const result = await $fetch<Result>(path, { query: { idempotency_key: current.key } });
@@ -39,7 +37,7 @@ export function useOrderIntention() {
       if (!samePerson()) throw new Error("A identificação mudou. Confira o pedido antes de continuar.");
       if (result.outcome === "applied") {
         delete pending.value[resource];
-        return true;
+        return result;
       }
       throw new Error(result.detail || "Resultado ainda desconhecido. Verifique esta intenção antes de uma nova ação.");
     };
@@ -60,5 +58,9 @@ export function useOrderIntention() {
       return finish(result);
     }
   }
-  return { execute };
+  async function execute(ref_: string, operation: string, action: Action | undefined, inputs: Record<string, unknown>) {
+    await executePath(`${ref_}:${operation}`, `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/${encodeURIComponent(operation)}/`, action, inputs);
+    return true;
+  }
+  return { execute, executePath };
 }

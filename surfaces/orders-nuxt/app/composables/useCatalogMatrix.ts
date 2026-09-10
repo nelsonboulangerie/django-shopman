@@ -1,3 +1,5 @@
+import { useOrderIntention } from "./useOrderIntention";
+import type { CatalogPricePreview } from "~/generated/ordersContract";
 // Catalog matrix read/write. Single source for the produto × superfície grid:
 //   - useFetch the canonical matrix projection (GET /api/v1/backstage/catalog/);
 //   - poll every 60s as a light fallback (catalog changes less often than orders);
@@ -24,6 +26,7 @@ export interface CellPatch {
 export type SocialPatch = Partial<Omit<ProductSocial, "has_data">>;
 
 export function useCatalogMatrix(collectionRef?: Ref<string>) {
+  const intentions = useOrderIntention();
   const path = "/api/v1/backstage/catalog/";
   // Reactive collection filter → server-side row scoping (smart-aware via
   // product_queryset). Changing the ref refetches the matrix.
@@ -134,30 +137,43 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
 
   // Reprecificação em lote: op set|pct|delta, value em centavos (set/delta) ou
   // pontos percentuais (pct). Escopo por coleção OU lista de skus.
+  async function previewBulkPrice(surface: string, scope: { collection_ref?: string; skus?: string[] }, patch: { op: "set" | "pct" | "delta"; value: number }): Promise<CatalogPricePreview | null> {
+    if (bulkBusy.value) return null;
+    bulkBusy.value = true;
+    try {
+      const response = await $fetch<{ preview: CatalogPricePreview }>("/api/v1/backstage/catalog/bulk-price/", { method: "POST", body: { surface_ref: surface, ...scope, ...patch, preview: true } });
+      return response.preview;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(error, "Não foi possível preparar a prévia.");
+      useSonner.error(errorMsg.value);
+      return null;
+    } finally { bulkBusy.value = false; }
+  }
+
   async function bulkPrice(
     surface: string,
     scope: { collection_ref?: string; skus?: string[] },
     patch: { op: "set" | "pct" | "delta"; value: number },
+    preview: CatalogPricePreview,
   ): Promise<number | null> {
     if (bulkBusy.value) return null;
     clearError();
     bulkBusy.value = true;
     try {
-      const res = await $fetch<{ count: number }>("/api/v1/backstage/catalog/bulk-price/", {
-        method: "POST",
-        body: { surface_ref: surface, ...scope, ...patch },
-      });
+      const body = { surface_ref: surface, ...scope, ...patch, base_revision: preview.base_revision, expected_actor_id: preview.expected_actor_id };
+      const result = await intentions.executePath("catalog:bulk-price", "/api/v1/backstage/catalog/bulk-price/", {
+        enabled: true, reason: "", payload_schema: body,
+      }, body);
       await refresh();
-      const count = res?.count ?? 0;
-      useSonner.success(`${count} preço(s) atualizado(s).`);
+      const count = result.count ?? 0;
+      useSonner.success(`${count} preço(s) atualizado(s). Acompanhe a sincronização nas células.`);
       return count;
     } catch (error) {
-      errorMsg.value = httpErrorMessage(error, "Falha ao reprecificar.");
+      errorMsg.value = httpErrorMessage(error, error instanceof Error ? error.message : "Não foi possível confirmar a alteração de preços.");
       useSonner.error(errorMsg.value);
+      await refresh();
       return null;
-    } finally {
-      bulkBusy.value = false;
-    }
+    } finally { bulkBusy.value = false; }
   }
 
   // ── sync por plataforma (Arc H) ────────────────────────────────────────────
@@ -332,7 +348,7 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
 
   return {
     matrix, pending, error, refresh, isBusy, cellKey, productKey, socialKey, detailKey, errorMsg, clearError,
-    setCell, setProduct, bulkSet, bulkPrice, resync, saveSocial, fetchProductDetail, saveProductDetail,
+    setCell, setProduct, bulkSet, bulkPrice, previewBulkPrice, resync, saveSocial, fetchProductDetail, saveProductDetail,
     reorderCollections, reorderItems, bulkBusy, aiAssist, aiAssistKey,
   };
 }
