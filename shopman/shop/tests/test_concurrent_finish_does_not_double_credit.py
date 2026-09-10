@@ -3,11 +3,9 @@
 O ``production_changed`` sai FORA do ``transaction.atomic`` do
 ``CraftExecution.finish``, e as pernas do ledger carimbavam o marcador DEPOIS
 de escrever. Entre o COMMIT da WorkOrder e o carimbo existia uma janela em que
-``stock_legs_complete()`` respondia falso: a segunda requisição passava pela
-idempotência (o core devolve a WO existente em vez de estourar
-``TERMINAL_STATUS``), caía em ``_ensure_stock_ledger_closed``, lia o ledger
-como "aberto" e reexecutava as duas pernas. Os dois operadores liam
-``200 {"ok": true}``, e 24 madeleines viravam 48 na vitrine.
+``stock_legs_complete()`` respondia falso: duas tentativas idempotentes de
+quiosques distintos podiam ler o ledger como "aberto" e reexecutar as duas
+pernas. Os dois operadores liam sucesso, e 24 madeleines viravam 48 na vitrine.
 
 O invariante ``_quantity == Σ(moves.delta)`` NÃO pega este defeito: o ledger
 fica internamente consistente e materialmente errado. A asserção que vale é a
@@ -15,9 +13,9 @@ daqui — o saldo da vitrine depois de dois fechamentos é igual ao de um.
 
 Vizinho que afirmava algo mais fraco:
 ``packages/craftsman/.../tests/test_concurrency.py`` prova que o segundo
-``finish()`` morre em ``TERMINAL_STATUS`` — verdade só SEM chave de
-idempotência. A superfície do operador manda chave (derivada do payload em
-``_finish_idempotency_key``), e é justamente por ela que o segundo toque passa.
+``finish()`` morre em ``TERMINAL_STATUS`` — verdade só fora da fachada usada
+pelos operadores. Aqui cada quiosque manda revisão e chave próprias, como a
+superfície real; a trava da fachada deve deixar exatamente um deles concluir.
 """
 
 from __future__ import annotations
@@ -65,7 +63,7 @@ def _vitrine_qty(sku: str, vitrine) -> Decimal:
     return total
 
 
-def _finish_twice_at_once(work_order_id) -> None:
+def _finish_twice_at_once(work_order_id, expected_rev: int) -> None:
     """Duas requisições de fechamento no mesmo instante, conexões próprias."""
     gate = threading.Barrier(2)
 
@@ -77,6 +75,8 @@ def _finish_twice_at_once(work_order_id) -> None:
                 quantity=BATCH,
                 actor=f"kiosk-{slot}",
                 force=True,
+                expected_rev=expected_rev,
+                idempotency_key=f"finish-race-{work_order_id}-{slot}",
             )
         except Exception:  # noqa: BLE001 — quem julga o resultado é a asserção
             pass
@@ -109,8 +109,9 @@ def test_two_kiosks_finishing_the_same_batch_credit_the_showcase_once(vitrine):
 
         work_order = craft.plan(recipe, BATCH, date=timezone.localdate())
         craft.start(work_order, quantity=BATCH, actor="test")
+        work_order.refresh_from_db()
 
-        _finish_twice_at_once(work_order.pk)
+        _finish_twice_at_once(work_order.pk, work_order.rev)
 
         credited = _vitrine_qty(sku, vitrine)
         assert credited == BATCH, (
