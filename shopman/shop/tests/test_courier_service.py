@@ -472,3 +472,57 @@ def test_channel_config_validates_courier_values():
     config = ChannelConfig.from_dict({"fulfillment": {"courier": "sempre"}})
     with pytest.raises(ValueError, match="fulfillment.courier"):
         config.validate()
+
+
+@pytest.mark.parametrize("status", ["E", "F"])
+def test_repeated_external_fact_keeps_custody_refusal_until_operator_resolves(status, django_user_model):
+    from shopman.cashman import services as cash
+
+    from shopman.shop.services import operator_orders
+
+    order = _delivery_order(payment={"method": "cash", "collection": "on_delivery", "change_for_q": 5500},
+                            courier={"id_mch": "LAB-RIDE", "status": "A"})
+    for _ in range(2):
+        with pytest.raises(operator_orders.ChangeOutRequired):
+            courier.apply_status(order, status, source="poll")
+        order.refresh_from_db()
+        assert order.status == "ready"
+        assert courier.get_block(order)["status"] == status
+    assert order.events.filter(type="courier_status").count() == 1
+    # An explicit synthetic operator/custody action, never an invented provider cash movement.
+    user = django_user_model.objects.create_user(username="custodian")
+    shift = cash.open_shift(operator=user, float_q=1000)
+    operator_orders.advance_order(order, actor=user.username, change_out_q=500, cash_shift=shift)
+    courier.apply_status(order, status, source="poll")
+    order.refresh_from_db()
+    assert order.status in ({"dispatched"} if status == "E" else {"delivered", "completed"})
+    assert order.events.filter(type="courier_status").count() == 1
+
+
+def test_terminal_fact_recovers_local_failure_without_polling_provider(monkeypatch):
+    from shopman.shop.services import operator_orders
+
+    order = _delivery_order(status="dispatched", courier={"id_mch": "LAB-F", "status": "E"})
+    real = operator_orders.confirm_received
+    monkeypatch.setattr(operator_orders, "confirm_received", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("local failure")))
+    with pytest.raises(RuntimeError, match="local failure"):
+        courier.apply_status(order, "F", source="poll")
+    order.refresh_from_db()
+    assert courier.get_block(order)["status"] == "F"
+    monkeypatch.setattr(operator_orders, "confirm_received", real)
+    directive = Directive.objects.create(topic=COURIER_SYNC, payload={"order_ref": order.ref})
+    CourierSyncHandler().handle(message=directive, ctx={})
+    order.refresh_from_db()
+    assert order.status in {"delivered", "completed"}
+    assert order.events.filter(type="courier_status").count() == 1
+
+
+def test_old_ride_response_does_not_modify_replacement():
+    order = _delivery_order(courier={"id_mch": "OLD", "status": "A"})
+    stale = Order.objects.get(pk=order.pk)
+    courier._save_block(order, {"id_mch": "NEW", "status": "A"})
+    courier.apply_status(stale, "F", source="webhook")
+    order.refresh_from_db()
+    assert courier.get_block(order) == {"id_mch": "NEW", "status": "A"}
+    assert order.status == "ready"
+    assert not order.events.filter(type="courier_status").exists()

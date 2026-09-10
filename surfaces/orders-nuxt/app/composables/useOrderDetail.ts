@@ -119,7 +119,7 @@ export function useOrderDetail(orderRef: string) {
   // cedo demais) — o motivo chega como `detail` e vira o toast do `act`.
   async function resendPaymentLink(): Promise<boolean> {
     const ok = await act("resend-payment-link");
-    if (ok) useSonner.success("Link reenviado ao cliente.");
+    if (ok) useSonner.success("Reenvio do link solicitado.");
     return ok;
   }
 

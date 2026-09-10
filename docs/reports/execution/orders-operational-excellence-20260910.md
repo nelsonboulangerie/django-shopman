@@ -279,3 +279,27 @@ J02 sintético mantém texto durante SSE, J03 resolve conflito sem redigitação
 humana. Migração sem DDL; ações exigem expected_actor_id/base/chave em cliente coordenado.
 Rollback conserva leitores/recibos e suspende mutações incompatíveis, sem reativar RMW antigo.
 WP02/WP06 seguem em andamento; troca de recurso/pessoa com draft e demais comandos pendentes.
+
+## Retomada — WP04: fato do courier e evidência do aviso
+
+D04: o mesmo E/F volta a avaliar a derivação local após gravar uma única vez o fato
+externo. A recusa de troco permanece explícita em todas as tentativas; só o operador
+sintético com turno/valor explícito resolve a custódia no ensaio. F terminal é reconciliado
+pelo polling existente antes de este encerrar, mesmo sem nova consulta ao fornecedor.
+Leitura bloqueada compara a corrida observada com a atual; resposta antiga não altera
+a substituta. Confirmar recebimento também relê sob lock. Sem novo campo JSON ou tabela.
+
+D19: fila, processamento, aceite pelo serviço, omissão e ausência de confirmação histórica
+são distintos. Recibo accepted é lido mesmo antes de o worker fechar; done sozinho não
+comprova envio. Gestor e PDV dizem reenvio solicitado. Nenhuma frase comprova leitura humana.
+
+PostgreSQL courier **32 passed (6,47s)**, incluindo E/F + recusa repetida, resolução canônica,
+falha local após F e resposta antiga. São ensaios em PG, não prova de todos os interleavings.
+Avisos/API **41 passed (16,52s)**; Gestor **227 passed (2,36s)**; PDV reenvio **3 passed
+(4,05s)**. Preparação PDV inicialmente falhou (vitest ausente); npm ci isolado e repetição
+resolveram. Ruff passou. Migração sem DDL, sem modificar recibos antigos; leitura histórica
+sem prova permanece desconhecida. Rollback da apresentação não deve restaurar sucesso falso;
+rollback do courier suspende derivação automática afetada, preservando fato e caixa.
+
+WP04 ainda não concluído: enqueue durável de todas as fases, crash externo/worker e
+homologação G03 continuam pendentes. Não houve rede externa de negócio ou efeito real.

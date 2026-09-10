@@ -59,7 +59,8 @@ def _delivered_long_ago(order: Order) -> None:
     notification_svc.send(order, "payment_link_sent")
     (original,) = _directives(order.ref)
     original.status = "done"
-    original.save(update_fields=["status", "updated_at"])
+    original.payload["notification_delivery"] = {"status": "accepted", "recorded_at": timezone.now().isoformat()}
+    original.save(update_fields=["status", "payload", "updated_at"])
     Directive.objects.filter(pk=original.pk).update(created_at=timezone.now() - timedelta(minutes=2))
 
 
@@ -96,8 +97,8 @@ class _ResendContract:
         self.assertEqual(response.status_code, 200, response.content)
         body = response.json()
         self.assertTrue(body["ok"])
-        self.assertEqual(body["detail"], "Link reenviado ao cliente.")
-        self.assertEqual(body["payment_link_notice"], "Enviando o link ao cliente…")
+        self.assertEqual(body["detail"], "Reenvio do link solicitado.")
+        self.assertEqual(body["payment_link_notice"], "Envio do link na fila.")
         self.assertEqual(_directives("LNK-1").count(), 2)
 
     def test_recusa_fala_o_dialeto_da_casa(self) -> None:
@@ -167,7 +168,7 @@ class GestorResendPaymentLinkTests(_ResendContract, TestCase):
         self.assertEqual(response.status_code, 200)
         detail = response.json()["order"]
         self.assertTrue(detail["can_resend_payment_link"])
-        self.assertTrue(detail["payment_link_notice"].startswith("Link enviado às "))
+        self.assertTrue(detail["payment_link_notice"].startswith("Envio aceito pelo serviço às "))
 
     def test_o_detalhe_esconde_o_botao_de_quem_nao_e_link(self) -> None:
         _link_order("LNK-7", method="cash", checkout_url="")

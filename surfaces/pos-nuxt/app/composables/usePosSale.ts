@@ -245,7 +245,7 @@ export function usePosSale(deps: PosSaleDeps) {
     resendingLink.value = true;
     try {
       await action.call(`/api/v1/backstage/pos/orders/${encodeURIComponent(orderRef)}/resend-payment-link/`);
-      toast.success("Link reenviado ao cliente");
+      toast.success("Reenvio do link solicitado.");
       return true;
     } catch (error) {
       toast.error(httpErrorMessage(error, "Não foi possível reenviar o link. Copie e mande você."));

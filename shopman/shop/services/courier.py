@@ -20,6 +20,7 @@ import logging
 from datetime import timedelta
 
 from django.core.cache import cache
+from django.db import transaction
 from django.utils import timezone
 from shopman.orderman.models import Directive, Order
 
@@ -288,66 +289,70 @@ _STATUS_EVENT = "courier_status"
 
 
 def apply_status(order, machine_status: str, *, source: str, details: dict | None = None) -> None:
-    """Aplica um status da Machine à corrida do pedido. Idempotente.
+    """Persist the external fact once; every replay retries its local derivation.
 
-    ``source``: "webhook", "poll" ou "operator:<nome>" — auditoria + supressão
-    de alerta quando o próprio operador cancelou.
+    Enrichment uses the observed ride outside the lock. A replacement ride cannot
+    adopt its response. A local custody refusal never rolls back the external fact.
     """
     status = (machine_status or "").strip().upper()
-    if not status:
+    observed = dict(get_block(order))
+    ride_id = observed.get("id_mch")
+    if not status or not ride_id:
         return
-    block = get_block(order)
-    if not block.get("id_mch"):
-        logger.warning("courier.apply_status_without_ride order=%s status=%s", order.ref, status)
-        return
-    if block.get("status") == status:
-        return
-    if block.get("status") in TERMINAL_STATUSES:
-        return  # corrida já encerrada; eventos atrasados não reabrem
+    enrichment = dict(observed)
+    if status == "A" and observed.get("status") != status and not observed.get("driver"):
+        _enrich_accepted(enrichment, details)
+    if status == "F" and observed.get("status") != status:
+        _enrich_finished(enrichment, details)
 
-    now_iso = timezone.now().isoformat()
-    block["status"] = status
-    block["last_event_at"] = now_iso
-    block["last_source"] = source
+    failed_ride = False
+    with transaction.atomic():
+        Order.objects.select_for_update().get(pk=order.pk)
+        order.refresh_from_db()
+        block = dict(get_block(order))
+        if block.get("id_mch") != ride_id:
+            return
+        previous = block.get("status")
+        if previous in TERMINAL_STATUSES and previous != status:
+            return
+        if previous != status:
+            now_iso = timezone.now().isoformat()
+            for key in ("driver", "tracking_url", "confirmation_code", "final_value_q"):
+                if key in enrichment:
+                    block[key] = enrichment[key]
+            block.update(status=status, last_event_at=now_iso, last_source=source)
+            if status == "E":
+                block.setdefault("dispatched_at", now_iso)
+            if status == "F":
+                block["finished_at"] = now_iso
+            order.emit_event(event_type=_STATUS_EVENT, actor=source,
+                             payload={"status": status, "id_mch": ride_id})
+            failed_ride = status in ("N", "C")
+            if failed_ride:
+                _archive_current_ride(block)
+            _save_block(order, block, emit={"kind": "ride_ended" if failed_ride else "status", "status": status})
+    if failed_ride and not source.startswith("operator:"):
+        _alert_ride_failed(order, status)
+    if not failed_ride:
+        recover_local_status(order, ride_id=ride_id)
 
-    if status == "A" and not block.get("driver"):
-        _enrich_accepted(block, details)
 
-    if status == "E":
-        block.setdefault("dispatched_at", now_iso)
-
-    if status == "F":
-        block["finished_at"] = now_iso
-        _enrich_finished(block, details)
-
-    order.emit_event(
-        event_type=_STATUS_EVENT,
-        actor=source,
-        payload={"status": status, "id_mch": block.get("id_mch", "")},
-    )
-
-    if status in ("N", "C"):
-        _archive_current_ride(block)
-        _save_block(order, block, emit={"kind": "ride_ended", "status": status})
-        if not source.startswith("operator:"):
-            _alert_ride_failed(order, status)
-        return
-
-    _save_block(order, block, emit={"kind": "status", "status": status})
-
-    # Transições de pedido derivadas — DEPOIS de persistir o bloco, para que a
-    # notificação/projection já leia o estado novo da corrida.
+def recover_local_status(order, *, ride_id: str) -> None:
+    """Reconcile only the known ride's due local transitions, without provider I/O."""
     from shopman.shop.services import operator_orders
 
-    if status == "E" and order.status == Order.Status.READY:
-        operator_orders.advance_order(order, actor="courier:machine")
-
+    order.refresh_from_db()
+    block = get_block(order)
+    if block.get("id_mch") != ride_id:
+        return
+    status = block.get("status")
+    if status in ("E", "F") and order.status == Order.Status.READY:
+        operator_orders.advance_order(
+            order, actor="courier:machine", target_status=Order.Status.DISPATCHED,
+            expected_courier_id=ride_id,
+        )
     if status == "F":
-        if order.status == Order.Status.READY:
-            # Coleta não observada (webhook perdido/polling largo): completa o
-            # caminho canônico para notificar "saiu" antes de "entregue".
-            operator_orders.advance_order(order, actor="courier:machine")
-        operator_orders.confirm_received(order, actor="courier:machine")
+        operator_orders.confirm_received(order, actor="courier:machine", expected_courier_id=ride_id)
 
 
 def _enrich_accepted(block: dict, details: dict | None) -> None:

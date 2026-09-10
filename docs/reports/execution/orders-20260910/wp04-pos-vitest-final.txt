@@ -1,0 +1,13 @@
+
+> test
+> vitest run --run tests/composables/usePosSale.resend.test.ts
+
+
+ RUN  v4.1.6 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/pos-nuxt
+
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  19:20:28
+   Duration  4.05s (transform 3.05s, setup 46ms, import 241ms, tests 3.36s, environment 263ms)
+

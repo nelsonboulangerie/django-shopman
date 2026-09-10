@@ -38,8 +38,13 @@ class CourierSyncHandler:
             return
 
         block = courier.get_block(order)
-        if not block.get("id_mch") or block.get("status") in TERMINAL_STATUSES:
-            return  # corrida encerrada/removida — heartbeat morre aqui
+        if not block.get("id_mch"):
+            return
+        # F may already be durable while the local delivery/custody step failed.
+        # Recover before deciding the terminal heartbeat has nothing left to do.
+        courier.recover_local_status(order, ride_id=block["id_mch"])
+        if block.get("status") in TERMINAL_STATUSES:
+            return
 
         adapter = get_adapter("courier")
         if adapter is None:

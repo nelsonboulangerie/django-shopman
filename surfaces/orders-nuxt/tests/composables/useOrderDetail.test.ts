@@ -76,7 +76,7 @@ describe("useOrderDetail", () => {
     expect(await d.resendPaymentLink()).toBe(true);
     expect(String(env.fetchMock.mock.calls[0]![0])).toBe("/api/v1/backstage/orders/PDV-9/resend-payment-link/");
     expect(env.refresh).toHaveBeenCalledTimes(1);
-    expect(env.sonner.success).toHaveBeenCalledWith("Link reenviado ao cliente.");
+    expect(env.sonner.success).toHaveBeenCalledWith("Reenvio do link solicitado.");
   });
 
   it("reenvio recusado pelo servidor → o motivo vira toast, sem sucesso", async () => {

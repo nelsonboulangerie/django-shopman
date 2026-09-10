@@ -372,7 +372,7 @@ class OperatorOrderProjection:
     # (``notification.payment_link_resend_refusal``): forma ``link`` com URL,
     # pedido vivo, não pago, link não vencido. A cadência (cedo demais, envio
     # em andamento) é recusa da hora do clique, com toast — não esconde botão.
-    # ``payment_link_notice`` é a prova de envio, lida da última Directive do
+    # ``payment_link_notice`` descreve a evidência, lida da última Directive do
     # aviso: "Enviando…", "Link enviado às 14h32" ou "falhou — reenvie".
     can_resend_payment_link: bool = False
     payment_link_notice: str = ""
@@ -1404,23 +1404,33 @@ def _payment_link_fields(order: Order, method: str) -> dict:
 
 
 def payment_link_notice(order: Order) -> str:
-    """O estado do último aviso ``payment_link_sent``, na frase que o operador lê.
+    """Describe the delivery evidence; worker completion alone proves no send."""
+    from django.utils.dateparse import parse_datetime
 
-    Lê a Directive mais recente do aviso (envio original ou reenvio): em fila
-    ou rodando é "Enviando…"; concluída é "Link enviado às 14h32" (o handler
-    não grava POR QUAL canal saiu — só que saiu); falhou é o convite ao gesto.
-    Sem Directive nenhuma, nada: o pedido de link da loja online não passa por
-    este aviso.
-    """
     from shopman.shop.services import notification as notification_svc
 
     directive = notification_svc.latest_delivery(order, notification_svc.PAYMENT_LINK_TEMPLATE)
     if directive is None:
         return ""
-    if directive.status in ("queued", "running"):
-        return "Enviando o link ao cliente…"
+    delivery = (directive.payload or {}).get("notification_delivery") or {}
+    if delivery.get("status") == "accepted":
+        recorded = parse_datetime(str(delivery.get("recorded_at") or ""))
+        when = _format_time_of_day(recorded) if recorded and timezone.is_aware(recorded) else ""
+        return f"Envio aceito pelo serviço{(' ' + when) if when else ''}. Leitura pelo cliente não confirmada."
+    if delivery.get("status") == "skipped":
+        reason = {
+            "customer_opt_out": "o cliente não autorizou notificações",
+            "expected_no_contact": "não há contato disponível",
+            "notification_not_required": "a notificação não se aplica",
+            "payment_not_pending": "o pagamento não está pendente",
+        }.get(delivery.get("reason"), "o envio foi omitido")
+        return f"Link não enviado: {reason}."
+    if directive.status == "queued":
+        return "Envio do link na fila."
+    if directive.status == "running":
+        return "Envio do link em processamento; aceite ainda não confirmado."
     if directive.status == "done":
-        return f"Link enviado {_format_time_of_day(directive.updated_at)}"
+        return "Processamento concluído sem confirmação de envio. Confira o contato antes de reenviar."
     return "O envio do link falhou. Reenvie ou copie o link."
 
 

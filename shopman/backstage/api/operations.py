@@ -1942,7 +1942,7 @@ def _resend_payment_link_response(order) -> Response:
         {
             "ok": True,
             "ref": order.ref,
-            "detail": "Link reenviado ao cliente.",
+            "detail": "Reenvio do link solicitado.",
             "payment_link_notice": payment_link_notice(order),
         }
     )

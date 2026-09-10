@@ -236,6 +236,7 @@ def advance_order(
     equipment: list[str] | None = None,
     expected_revision: str | None = None,
     target_status: str | None = None,
+    expected_courier_id: str | None = None,
 ) -> str:
     """Advance an order through the operator lifecycle.
 
@@ -250,6 +251,8 @@ def advance_order(
         type(cash_shift).objects.select_for_update().get(pk=cash_shift.pk)
     Order.objects.select_for_update().get(pk=order.pk)
     order.refresh_from_db()
+    if expected_courier_id is not None and (order.data or {}).get("courier", {}).get("id_mch") != expected_courier_id:
+        raise OrderStateConflict("A corrida mudou. Confira a entrega atual.")
     if expected_revision is not None and expected_revision != operational_revision(order):
         raise OrderStateConflict("O pedido mudou. Confira o estado atualizado antes de continuar.")
     if target_status is not None and target_status != next_status_for(order):
@@ -526,7 +529,8 @@ def schedule_delivery_auto_complete(order: Order) -> None:
     )
 
 
-def confirm_received(order: Order, *, actor: str = "customer") -> bool:
+@transaction.atomic
+def confirm_received(order: Order, *, actor: str = "customer", expected_courier_id: str | None = None) -> bool:
     """Customer confirms a dispatched delivery arrived → mark delivered.
 
     Same machinery as the operator "Marcar como Entregue" (fulfillment sync +
@@ -535,6 +539,10 @@ def confirm_received(order: Order, *, actor: str = "customer") -> bool:
     são terceirizados, então o cliente fechando o loop é uma das vias legítimas
     para o pedido virar "entregue" (junto do operador e da auto-conclusão).
     """
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    if expected_courier_id is not None and (order.data or {}).get("courier", {}).get("id_mch") != expected_courier_id:
+        return False
     if order.status != Order.Status.DISPATCHED or get_fulfillment_type(order) != "delivery":
         return False
     _sync_delivery_fulfillment(order, Order.Status.DELIVERED)
