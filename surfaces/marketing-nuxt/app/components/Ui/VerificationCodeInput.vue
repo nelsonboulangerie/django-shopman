@@ -70,7 +70,7 @@ function complete(value: number[]) {
       type="number"
       otp
       :disabled="disabled"
-      class="mt-2 flex max-w-full gap-1.5 sm:gap-2"
+      class="mt-2 flex max-w-full justify-center gap-1.5 sm:gap-2"
       role="group"
       :aria-labelledby="labelId"
       :aria-describedby="helpId"

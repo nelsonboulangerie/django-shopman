@@ -23,6 +23,7 @@ describe("VerificationCodeInput", () => {
     expect(inputs).toHaveLength(6);
     expect(wrapper.text()).toContain("Código de 6 dígitos do autenticador");
     expect(wrapper.get('label[for="test-code"]')).toBeTruthy();
+    expect(wrapper.get('[role="group"]').classes()).toContain("justify-center");
     expect(inputs[0]?.attributes("inputmode")).toBe("numeric");
     expect(inputs[0]?.attributes("autocomplete")).toBe("one-time-code");
     expect(inputs[0]?.attributes("aria-label")).toBe("Dígito 1 de 6");
