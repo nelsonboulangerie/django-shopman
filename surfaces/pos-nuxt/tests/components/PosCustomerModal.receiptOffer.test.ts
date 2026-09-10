@@ -68,7 +68,7 @@ describe("PosCustomerModal — o e-mail do comprovante também pergunta", () => 
     expect(panel!.textContent).toContain("Salvar como cliente?");
     // A consequência dita é a que acontece: o servidor procura antes de criar.
     expect(document.body.textContent).toContain(
-      "Este e-mail fica salvo como cliente — ou vai para o cadastro que já o tem.",
+      "Marcado, fica salvo como cliente — ou vai para o cadastro que já o tem.",
     );
     expect(wrapper.html()).toBeTruthy();
   });

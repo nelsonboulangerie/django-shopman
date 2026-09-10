@@ -130,11 +130,23 @@ function firstName(name: string): string {
   return String(name || "").trim().split(/\s+/)[0] || "";
 }
 
-/** Como o campo se chama na tela. `cpf` fica em português: é nome próprio. */
-const FIELD_COPY: Record<ReceiptContactField, { noun: string }> = {
-  email: { noun: "e-mail" },
-  tax_id: { noun: "CPF" },
+/** Como o campo se chama na tela, e o que ele faz na nota. `cpf` fica em
+ *  português: é nome próprio. */
+const FIELD_COPY: Record<ReceiptContactField, { noun: string; onInvoice: string }> = {
+  email: { noun: "e-mail", onInvoice: "recebe a nota" },
+  tax_id: { noun: "CPF", onInvoice: "sai na nota" },
 };
+
+/**
+ * A primeira frase de TODA oferta: o que acontece com a nota não depende da
+ * caixa. Sem ela o operador lia "Salvar…?" e ficava sem saber se desmarcar
+ * tirava o CPF da nota — ou se marcar trocava o cliente da comanda. A pergunta
+ * é só sobre o cadastro; a nota já está decidida.
+ */
+function invoiceInvariant(field: ReceiptContactField): string {
+  const copy = FIELD_COPY[field];
+  return `Este ${copy.noun} ${copy.onInvoice} de qualquer jeito.`;
+}
 
 const EMPTY: Omit<ReceiptContactOffer, "field" | "typed" | "onFile" | "customerName"> = {
   kind: "none",
@@ -181,8 +193,8 @@ export function receiptContactOffer(input: ReceiptContactInput): ReceiptContactO
       kind: "create",
       defaultChecked: true,
       title: "Salvar como cliente?",
-      hint: `Este ${copy.noun} fica salvo como cliente — ou vai para o cadastro que já o tem. `
-        + "Desmarque para vender sem cadastrar.",
+      hint: `${invoiceInvariant(field)} Marcado, fica salvo como cliente — ou vai para o cadastro `
+        + "que já o tem. Desmarque para vender sem cadastrar.",
       confirmLabel: "Salvar como cliente",
       summaryLine: `Este ${copy.noun} será salvo como cliente — ou vai para o cadastro que já o tem.`,
     };
@@ -202,7 +214,11 @@ export function receiptContactOffer(input: ReceiptContactInput): ReceiptContactO
       kind: "save",
       defaultChecked: false,
       title: `Salvar este ${copy.noun} no cadastro de ${ownerName}?`,
-      hint: `Hoje o cadastro não tem ${copy.noun}.`,
+      // O cliente da comanda NÃO muda: a caixa só decide se o cadastro dele
+      // ganha o dado. Dito por inteiro, porque a dúvida no balcão era
+      // exatamente "vai trocar o cliente que eu indiquei?".
+      hint: `${invoiceInvariant(field)} Marcado, fica também no cadastro de ${ownerName}, `
+        + `que hoje não tem ${copy.noun}. Desmarcado, vale só nesta venda.`,
       confirmLabel: "Salvar no cadastro",
       summaryLine: `O ${copy.noun} será salvo no cadastro de ${ownerName}.`,
     };
@@ -216,7 +232,8 @@ export function receiptContactOffer(input: ReceiptContactInput): ReceiptContactO
     kind: "update" as const,
     defaultChecked: false,
     title: `Atualizar o ${copy.noun} do cadastro de ${ownerName}?`,
-    hint: `Hoje: ${onFile}. A nota vai para o informado de qualquer jeito; o cadastro só muda se você mandar.`,
+    hint: `${invoiceInvariant(field)} O cadastro de ${ownerName} tem ${onFile} e só muda `
+      + "se você mandar; desmarcado, vale só nesta venda.",
     confirmLabel: "Atualizar o cadastro",
     summaryLine: `O ${copy.noun} do cadastro de ${ownerName} será atualizado para este.`,
   };
