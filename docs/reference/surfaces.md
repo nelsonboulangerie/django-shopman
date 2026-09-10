@@ -1,7 +1,8 @@
 # Shopman Surfaces
 
 Status: referencia operacional
-Data: 2026-05-16
+Owner: Platform/Produto
+Ultima verificacao: 2026-09-10 contra rotas e specs do HEAD
 
 Shopman core/orquestrador e o canon: Orderman, Payman, Stockman, Guestman,
 Doorman, ChannelConfig, Directives, services, projections, actions,
@@ -21,11 +22,23 @@ e a superficie `storefront-nuxt` foram **aposentados** no cutover headless.
 | `api.` | Django headless | `/api/v1/*` + webhooks; nenhuma pagina de cliente. |
 | `admin.` | Django Admin/Unfold | Operador/admin. |
 | `pos.` | `surfaces/pos-nuxt` | PDV. |
+| `cozinha.` | `surfaces/kds-nuxt` | KDS. |
+| `gestor.` | `surfaces/orders-nuxt` | Gestor de pedidos. |
+| `prod.` | `surfaces/production-nuxt` | Producao e fornadas. |
+| `compras.` | `surfaces/purchase-nuxt` | Compras e recebimento. |
+| `central.` | `surfaces/hub-nuxt` | Central de Apps. |
+| `mkt.` | `surfaces/marketing-nuxt` | Cockpit de Marketing. |
+| `bi.` | `surfaces/bi-nuxt` | Leitura analitica. |
 
 Blueprints: `.do/app.alpha-subdomains.yaml` (alpha) e `.do/app.subdomains.yaml`
 (template de producao). Cada superficie Nuxt serve em `/` no seu host; o BFF proxia
 `/api/v1` → `api.` (ver `server/utils/djangoProxy.ts`). Dev local da loja:
 `cd surfaces/storefront-nuxt && npm run dev` (`http://127.0.0.1:3000/`).
+
+O contrato especifico, incluindo todas as rotas Nuxt/Django, lanes de plataforma,
+capabilities e probes, esta em
+[`marketing-surface-contract.md`](marketing-surface-contract.md). A lista e comparada
+com o codigo por `make marketing-docs` no Runtime Gate.
 
 ## Regras De Superficie
 

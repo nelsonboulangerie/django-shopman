@@ -211,6 +211,12 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   mínima por diretiva e rode testes do kit + consumer. POS (Maps/ViaCEP) e Storefront
   exigem tratamento específico. Ver [ADR-026](docs/decisions/adr-026-operator-surface-security-envelope.md)
   e o follow-up `SEC-SURF-001`.
+- **Marketing tem um contrato factual único**: antes de alterar cockpit, rotas, projeções,
+  permissões, canais ou deploy, leia
+  [docs/reference/marketing-surface-contract.md](docs/reference/marketing-surface-contract.md).
+  Nuxt é o único cockpit; Admin é auditoria agregada; Instagram/Facebook/Google são
+  publicação pública e WhatsApp é mensagem direta. Rode `make marketing-docs` para
+  impedir deriva entre documentação, rotas e probes.
 
 ## Admin/Unfold — Regra de Canonicidade
 

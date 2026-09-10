@@ -172,3 +172,4 @@ nos relatórios operacionais do production-nuxt.
 - [Constituição Semântica](../constitution.md) — §2.5, §2.6, §8.3
 - [docs/plans/BI-PLAN.md](../plans/BI-PLAN.md) — plano de execução
 - [docs/plans/QC-FORNADA.md §7](../plans/QC-FORNADA.md) · HARDENING-PLAN §9 (doutrina revertida)
+- [Contrato da superfície Marketing](../reference/marketing-surface-contract.md) — precedente Nuxt operacional realizado

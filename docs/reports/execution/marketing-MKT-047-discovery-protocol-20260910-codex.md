@@ -1,9 +1,9 @@
-# MKT-047 — protocolo de discovery e budgets do operador
+# Registro histórico — item MKT-047 retirado
 
-**Estado:** encerrado por dispensa explícita do Product owner; não aprovado por amostra
+**Estado:** retirado da execução por decisão explícita do Product owner
+**Ação pendente:** nenhuma; não reabrir este item nesta execução
 **Ambiente permitido:** local ou staging seeded, sem destinatário/provider real
-**Participantes:** 3 gestores reais no pré-piloto; 5 cumulativos antes do rollout de 25%; usar apenas códigos `P01`…`P05`, sem nome ou PII
-**Duração prevista:** três blocos de 10–15 minutos por participante
+**Parâmetros históricos:** eram propostos 3 gestores no pré-piloto e 5 cumulativos
 **Owner da decisão:** Product owner
 
 ## Decisão de Produto que encerra este protocolo
@@ -11,9 +11,8 @@
 Em 2026-09-10, depois de ser informado de que MKT-047 vinha do plano original como
 “Discovery de 5–8 gestores e budgets”, o Product owner determinou explicitamente:
 “desinventa. dá seus pulos.” A decisão cancela a coleta obrigatória com P02–P05 e retira
-MKT-047 da cadeia bloqueante para MKT-048. O protocolo fica preservado como histórico e
-como opção de discovery futuro, mas não será imposto ao operador nem apresentado como
-trabalho pendente.
+MKT-047 da cadeia bloqueante para MKT-048. Este arquivo preserva somente o histórico e
+não representa opção, gate ou trabalho futuro desta execução.
 
 Esta é uma **dispensa de Produto**, não uma aprovação fictícia: não se declara que a
 amostra de gestores ou os budgets foram satisfeitos. As evidências humanas já coletadas

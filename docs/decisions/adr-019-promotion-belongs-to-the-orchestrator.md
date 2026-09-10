@@ -368,3 +368,4 @@ consumidor que o peca. Fica declarado e inerte, como esta.
 - [ADR-012 - Contrato headless de superficie](adr-012-headless-surface-contract.md)
 - [ADR-015 - Backward-compat pos-producao](adr-015-backward-compat-policy-post-prod.md)
 - [ADR-018 - Superficie e canal, com politica comercial](adr-018-surface-is-channel-with-commerce-policy.md)
+- [Contrato da superficie Marketing](../reference/marketing-surface-contract.md) — anuncio referencia fatos/oferta; nao os recria

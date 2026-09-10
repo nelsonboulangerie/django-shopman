@@ -1,17 +1,19 @@
 # Backstage Design System — o canon das superfícies de operador
 
-> Contrato visual **canônico e guardrailado** das quatro superfícies de operador
-> (`pos-nuxt`, `orders-nuxt`, `kds-nuxt`, `production-nuxt`) e da central
-> **Central de Apps** (`hub-nuxt`). Objetivo: **familiaridade** entre os apps do
+> Contrato visual **canônico e guardrailado** das oito superfícies de operador:
+> `pos-nuxt`, `orders-nuxt`, `kds-nuxt`, `production-nuxt`, `purchase-nuxt`,
+> `marketing-nuxt`, `bi-nuxt` e a **Central de Apps** (`hub-nuxt`). Objetivo:
+> **familiaridade** entre os apps do
 > operador — a mesma gramática visual, ergonomia e comportamento, para que quem opera
 > um reconheça o outro de imediato.
 >
 > **O storefront (`storefront-nuxt`) fica de fora**: é uma superfície de cliente,
 > branded (Nelson), com sistema tipográfico e de cor próprio. Não consome este canon.
 
-Estado atual (auditado 2026-07-04): os quatro `tailwind.css` de operador já são
-**token-idênticos** — este documento **promove** essa identidade de-facto a contrato
-**documentado + testado** (guardrails), servido uma vez pelo Nuxt layer
+Estado atual (reverificado 2026-09-10): os apps importam o tema canônico do
+`operator-kit`; cada regra automatizada declara seus consumidores em vez de fingir
+cobertura universal. O contrato foi originalmente extraído dos `tailwind.css` de
+operador e hoje é servido uma vez pelo Nuxt layer
 `surfaces/operator-kit/` (ver
 [BACKSTAGE-EXCELLENCE-HARDENING-PLAN §4](../plans/completed/BACKSTAGE-EXCELLENCE-HARDENING-PLAN.md)).
 
@@ -92,6 +94,9 @@ distância no KDS/produção favorece `lg`.
 | KDS (`kds-nuxt`) | `chef-hat` | cozinha / preparo |
 | Gestor (`orders-nuxt`) | `clipboard-list` | fila de pedidos |
 | Produção (`production-nuxt`) | `croissant` | produção / fornada |
+| Compras (`purchase-nuxt`) | `package-check` | comprar / receber |
+| Marketing (`marketing-nuxt`) | `megaphone` | divulgar / acompanhar |
+| B.I. (`bi-nuxt`) | `chart-line` | analisar a operação |
 | Loja (config no Central) | `store` | loja online |
 | Central de Apps (`hub-nuxt`) | `layout-grid` | central / launcher |
 
@@ -103,11 +108,14 @@ distância no KDS/produção favorece `lg`.
 | KDS | **dark** | back-of-house, leitura à distância, timers mono, semáforo SLA |
 | Gestor | light | board de pedidos, countdown de deadline visível |
 | Produção | light | board Solari (split-flap), poll visibility-aware |
+| Compras | light | recebimento e conferência de insumos |
+| Marketing | light | decisão mobile-first; consequência e comprovante no mesmo contexto |
+| B.I. | light | leitura analítica, gráficos apenas quando informativos |
 | Central | light | grade de tiles com ícone forte, permission-aware |
 
 ## 8. Guardrails (testes de consistência)
 
-Suíte vitest compartilhada no `operator-kit`, consumida pelos 4 apps (modelo:
+Suíte vitest compartilhada no `operator-kit`, com cobertura declarada por app (modelo:
 `surfaceGuardrails` do storefront). Verifica, entre outros:
 
 1. **Paridade de tokens** — os `tailwind.css` de operador têm o mesmo bloco de tokens

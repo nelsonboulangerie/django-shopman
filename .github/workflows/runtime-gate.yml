@@ -56,6 +56,9 @@ jobs:
       - name: Marketing OpenAPI and TypeScript client have no drift
         run: .venv/bin/python manage.py export_marketing_client --check
 
+      - name: Marketing docs, routes and deploy probes have no drift
+        run: make marketing-docs
+
       # ⚠️ Barato e específico: recusa workflow cujo teto de job não cabe a
       # própria espera. O `alpha-smoke.yml` viveu três dias com `timeout: 5` e
       # `sleep 420` — dezesseis runs cancelados, asserção nenhuma, e nada

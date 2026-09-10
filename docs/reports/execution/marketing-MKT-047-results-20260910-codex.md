@@ -1,8 +1,10 @@
-# MKT-047 — resultados das sessões de gestores
+# Registro histórico — evidências do item MKT-047 retirado
 
-**Estado:** coleta encerrada por dispensa explícita do Product owner; amostra não aprovada
+**Estado:** retirado da execução por decisão explícita do Product owner
+**Ação pendente:** nenhuma; não reabrir este item nesta execução
 **Commit sob avaliação:** `9fd2b6a5d` + correções `bcc00fc48`, `6fd632b1d`, `92b4de2ea`, `d9e54c5c5`, `42b2eb7ed`, `a88b550c8`, `057f307e8`, `d86e0dce8`, `6c4bbc3f2`, `31b0128e8`, `f74d966e0`, `c6f6de469`, `6bdb3a37d` e `bd34b3750`
-**Perfil:** `config.settings_marketing_demo`, adapter `SIMULATION_ONLY`  
+**Perfil:** `config.settings_marketing_demo`, adapter `SIMULATION_ONLY`
+
 **Política de dados:** somente códigos P01–P05 e métricas; sem nomes, conteúdo ou PII
 
 ## Encerramento sem ficção de evidência

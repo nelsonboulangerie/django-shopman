@@ -388,17 +388,34 @@ Para `POST /api/auth/access/create/` originado do ManyChat, use
 `DOORMAN_ACCESS_LINK_API_KEY` via header `X-Api-Key` ou `Authorization: Bearer`.
 Esse segredo pertence ao Doorman, nao ao ManyChat API token.
 
-### URLs e mídia de Marketing
+### Marketing — execução, URLs, mídia e assistência
 
 | Setting | Tipo | Default | Descrição |
 |---------|------|---------|-----------|
+| `SHOPMAN_MARKETING_BASE_URL` | URL | vazio | Host público do cockpit. Vazio remove o atalho da Central/Admin em vez de criar link morto. |
+| `SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED` | bool | `false` | Autoriza somente o handoff da outbox transacional. Não autoriza tentativa de provider. |
+| `SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` | bool | `false` | Autoriza o worker de destinos. Ainda exige adapter configurado e pronto. |
+| `SHOPMAN_MARKETING_DELIVERY_ADAPTERS` | dict por plataforma | `{}` | Registro Python dos adapters de entrega. Ausência deixa a plataforma indisponível; não existe fallback entre plataformas. |
+| `SHOPMAN_MARKETING_TARGET_HMAC_KEY` | segredo | vazio | Chave exclusiva para fingerprint de destino. Vazio bloqueia a materialização segura. Nunca reutilizar `DJANGO_SECRET_KEY`. |
+| `SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION` | int | `1` | Versão monotônica para rotação da chave sem reescrever histórico. |
+| `SHOPMAN_MARKETING_TEST_TARGETS` / `SHOPMAN_MARKETING_TEST_TARGETS_JSON` | mapa / JSON | `{}` | Catálogo server-side de alvos sandbox ou com posse verificada. A API devolve ref/label, nunca recipient. |
 | `SHOPMAN_MARKETING_MEDIA_HOSTS` | CSV de hosts exatos | vazio | Hosts HTTPS controlados cujas imagens podem aparecer no browser do operador e ser entregues a providers. O host de `SHOPMAN_STOREFRONT_BASE_URL` entra automaticamente. Wildcards, URLs completas, portas e IPs privados são inválidos. |
+| `SHOPMAN_MARKETING_AI_ASSIST_V2` | bool | `false` | Exibe assistência de texto somente quando a policy abaixo também está aprovada. Nunca publica. |
+| `SHOPMAN_MARKETING_AI_PROVIDER_POLICY_APPROVED` | bool | `false` | Registro do gate humano de retenção/no-training/transferência do fornecedor. Credencial sozinha não habilita. |
+| `SHOPMAN_MARKETING_AI_TIMEOUT_SECONDS` | float | `12` | Timeout da sugestão; falha preserva o rascunho do operador. |
 
 Links de campanha não têm allowlist separada: são restritos ao mesmo origin de
 `SHOPMAN_STOREFRONT_BASE_URL`, nas rotas canônicas de produto/oferta, sem query ou
 fragment. Mídia aceita somente HTTPS em host confiável (ou caminho relativo local),
 sem credenciais/porta/fragment; query é limitada a parâmetros de transformação de
 imagem. O default vazio bloqueia mídia externa nova em vez de confiar no host digitado.
+
+Os dois consumers são switches separados por desenho: `true/false` não substitui
+capability, consentimento, prontidão, CAS, idempotência, freeze ou limites. Simulação,
+bypass de horário e catálogo de fluxos locais vivem somente em
+`config.settings_marketing_demo`; não são knobs de deploy público. Owner, failsafe e
+revisão de cada flag estão no
+[`contrato da superfície Marketing`](marketing-surface-contract.md#flags-e-configuração-segura).
 
 ---
 

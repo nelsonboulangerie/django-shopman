@@ -1,14 +1,17 @@
 # ADR-020 - Campanha anuncia, nao vende
 
-**Status:** Proposto
+**Status:** Aceito; implementação técnica local concluída em 2026-09-10, rollout pendente
 **Data:** 2026-08-08
-**Escopo:** `shopman/shop` (models/services/handlers de broadcast, `audience.py`, `directives.py`),
-`shopman/backstage` (API + projections), `surfaces/broadcast-nuxt`, `guestman` (nenhuma mudanca de
-model)
+**Escopo:** `shopman/shop` (models/services/handlers de Marketing, `audience.py`, `directives.py`),
+`shopman/backstage` (API + projections), `surfaces/marketing-nuxt`, `guestman`
 **Depende de:** ADR-018 (canal `display`), ADR-019 (`Promotion.ref` e `Promotion.channels`)
 **Refina:** `docs/plans/FOMO-MARKETING-SPECS.md` §2, §3, §4, §7 e §9
 **Nao reabre:** o veto a B.I. (ADR-017 §8) nem o "nao e um Hootsuite"
 (`docs/plans/FOMO-MARKETING-SPECS.md:37-38`)
+
+> **Nota de estado (2026-09-10).** As referências de código no contexto e a coluna
+> “Hoje” registram o snapshot anterior à implementação. O estado corrente está no
+> [contrato realizado da superfície Marketing](../reference/marketing-surface-contract.md).
 
 ---
 
@@ -606,4 +609,5 @@ da fornada, penalizando o operador que esta com o pao na mao.
 - [ADR-017 - Qualidade e o resultado da producao](adr-017-quality-as-production-outcome.md)
 - [ADR-018 - Superficie e canal, com politica comercial](adr-018-surface-is-channel-with-commerce-policy.md)
 - [ADR-019 - A promocao tem um dono](adr-019-promotion-belongs-to-the-orchestrator.md)
+- [Contrato realizado da superficie Marketing](../reference/marketing-surface-contract.md)
 - [FOMO-MARKETING-SPECS](../plans/FOMO-MARKETING-SPECS.md)

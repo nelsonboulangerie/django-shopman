@@ -43,7 +43,8 @@ API/Admin/backstage em `*.boulangerie.com.br`). Produção usa
   login web enquanto envio real por WhatsApp/SMS ainda não está operacional;
 - instância Nelson ativa via `SHOPMAN_INSTANCE_APPS`, `SHOPMAN_CUSTOMER_STRATEGY_MODULES`
   e `SHOPMAN_INSTANCE_MODIFIERS`;
-- health checks em `/ready/` e liveness em `/health/`.
+- Django com readiness `/ready/` e liveness `/health/`; Marketing Nuxt com
+  `/health/ready` e `/health/live` nos dois blueprints.
 
 O deploy é por **imagens**: o workflow `.github/workflows/deploy-images.yml`
 builda no GitHub Actions e publica no DOCR (`registry.digitalocean.com/nelsonboulangerie/shopman`, tag por componente); o App Platform assina cada tag com `deploy_on_push` — **publicar a tag nova É o deploy** (merge em `main` = deploy no alpha; build seletivo por componente; `concurrency` sem cancel serializa merges seguidos).
@@ -329,13 +330,21 @@ Topologia (apex = loja):
 | `api.seudominio.com` | `web` (Django) | API REST + webhooks |
 | `admin.seudominio.com` | `web` (Django) | admin/operador (Unfold, KDS, produção) |
 | `pos.seudominio.com` | `pos-nuxt` | PDV Nuxt em `/` |
+| `cozinha.seudominio.com` | `kds-nuxt` | KDS em `/` |
+| `gestor.seudominio.com` | `orders-nuxt` | gestor de pedidos em `/` |
+| `prod.seudominio.com` | `production-nuxt` | produção em `/` |
+| `compras.seudominio.com` | `purchase-nuxt` | compras em `/` |
+| `central.seudominio.com` | `hub-nuxt` | Central de Apps em `/` |
+| `mkt.seudominio.com` | `marketing-nuxt` | cockpit de Marketing em `/` |
+| `bi.seudominio.com` | `bi-nuxt` | B.I. em `/` |
 
 **Por que subdomínios e não path único:** o BFF das superfícies Nuxt serve `/api/v1`
 e `/api/auth`; o Django também tem `/api/*`. Na raiz isso colide. Em subdomínios cada
 superfície só tem o próprio `/api` — a colisão evapora.
 
 **Como o cross-domain funciona (já implementado, sem CORS):** o navegador só fala com o
-próprio host (apex/pos.). O servidor Nuxt (BFF, `server/utils/djangoProxy.ts`) proxia
+próprio host (apex ou subdomínio da superfície). O servidor Nuxt (BFF,
+`server/utils/djangoProxy.ts`) proxia
 para `api.` por baixo: seta `origin`/`referer` = host do Django (CSRF passa) e repassa o
 `Set-Cookie` do Django **host-only** para o host da loja — a sessão nasce no domínio do
 cliente. Exige (já é o caso no código): `SESSION_COOKIE_DOMAIN`/`CSRF_COOKIE_DOMAIN`
@@ -350,7 +359,7 @@ no deploy (não crie CNAME manual, causaria conflito). É exatamente o caso de
 
 **Passos do cutover (zona externa; na DO pule o passo 1):**
 
-1. **DNS (só se externo):** aponte o apex + `api`/`admin`/`pos` para o alvo
+1. **DNS (só se externo):** aponte o apex e os hosts da tabela para o alvo
    `*.ondigitalocean.app` do app (o painel mostra o alvo ao adicionar cada domínio).
 2. **Spec/template:** troque `STORE_DOMAIN` pelo domínio real em uma cópia de
    `.do/app.subdomains.yaml` e valide o template com `doctl apps spec validate`.
@@ -360,7 +369,7 @@ no deploy (não crie CNAME manual, causaria conflito). É exatamente o caso de
    só então faça `apps update` sobre o spec vivo editado.
 3. **Knob único:** `SHOPMAN_STOREFRONT_BASE_URL=https://seudominio.com` (apex) vira **todos**
    os links de cliente (notificações, magic link, "ver site"). `NUXT_DJANGO_BASE_URL` das
-   superfícies → `https://api.seudominio.com`; `NUXT_APP_BASE_URL=/` (loja e PDV na raiz).
+   superfícies → `https://api.seudominio.com`; `NUXT_APP_BASE_URL=/` em cada host.
 4. **Produção:** trocar os adapters de pagamento mock pelos reais + secrets, desligar
    `SHOPMAN_EXPOSE_DEBUG_OTP`, `SHOPMAN_ENVIRONMENT=production`.
 
@@ -370,6 +379,9 @@ no deploy (não crie CNAME manual, causaria conflito). É exatamente o caso de
 - API: `https://api.seudominio.com/api/v1/storefront/home/` responde; `/health` e `/ready` ok.
 - Admin/operador: `https://admin.seudominio.com/admin/` loga e abre consoles (pedidos/KDS/produção).
 - PDV: `https://pos.seudominio.com/` opera (login operador, venda, fechamento).
+- Marketing: `/health/live` e `/health/ready` respondem; login e leitura não geram
+  outbox; `make marketing-diagnose` não mostra divergência. Envio real só entra no
+  roteiro após G-H08/G-H09 e canário autorizado.
 - Notificações: WhatsApp/ManyChat entrega com links apontando para o apex.
 
 ## Media
@@ -391,6 +403,8 @@ Staging técnico está pronto quando:
 2. `/health/` e `/ready/` respondem 200.
 3. `make release-readiness` não reporta falhas locais.
 4. `make release-readiness-strict` aponta somente bloqueios externos reais.
+5. `marketing-nuxt` responde em `/health/live` e `/health/ready`, enquanto os dois
+   consumers de Marketing continuam desligados se o canário ainda não foi autorizado.
 
 Piloto público só fica pronto quando:
 
@@ -398,3 +412,6 @@ Piloto público só fica pronto quando:
 2. QA Omotenashi físico/staging está registrado.
 3. Media persistente está decidido e configurado se houver upload real.
 4. PostgreSQL e Valkey estão em plano gerenciado adequado para o risco do piloto.
+5. Marketing só participa depois de shadow reconciliation sem mismatch inexplicado,
+   canário interno observado e autorização explícita; deploy saudável não concede esse
+   gate.

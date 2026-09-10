@@ -107,6 +107,27 @@ No PR, o workflow `Runtime Gate` builda a imagem Docker e executa PostgreSQL +
 Redis reais no GitHub Actions, entao esse gate nao depende de Docker instalado
 na maquina local.
 
+### Marketing permanece fechado até o canário
+
+O componente `marketing-nuxt` usa `/health/live` para liveness e
+`/health/ready` para readiness do BFF + Django. Antes de propor qualquer mudança
+no spec vivo:
+
+```bash
+make marketing-docs
+python manage.py export_marketing_client --check
+make marketing-drills
+make marketing-diagnose
+```
+
+`SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED` e
+`SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` ficam `false` até autorização
+contextual de shadow/canário. São gates independentes e não substituem adapter,
+prontidão, consentimento, capabilities, freeze ou reconciliação. Simulação local
+jamais é configuração de staging/produção. O contrato de flags, smoke e rollback
+está em
+[`../reference/marketing-surface-contract.md`](../reference/marketing-surface-contract.md).
+
 ## Limites
 
 Este compose e uma topologia minima para staging/piloto. Em producao final,

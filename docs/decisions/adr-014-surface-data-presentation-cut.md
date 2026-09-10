@@ -12,7 +12,7 @@ coordenação) e [ADR-012](adr-012-headless-surface-contract.md) (contrato headl
 ## Contexto
 
 A iniciativa de redesign de excelência ([[project_excellence_refactor_initiative]]) auditou as
-superfícies atuais ([01-surface-audit](../redesign/01-surface-audit.md)) e achou a causa-raiz do
+superfícies atuais ([01-surface-audit](../_archive/redesign/01-surface-audit.md)) e achou a causa-raiz do
 "frankenstein": a regra **"superfície nunca importa o Core"** (testada em `test_import_boundaries`)
 estava certa, mas **incompleta** — não havia uma camada de apresentação **dentro** da superfície. Sem
 ela, a apresentação (copy, formatação, layout, ETA, labels) não tinha pra onde ir e **vazou para o
@@ -135,4 +135,8 @@ no orquestrador (ADR-012), e ganha a contraparte de Presentation na superfície.
 - **Um BFF separado entre orquestrador e superfícies.** Descartado para o nosso caso (single-tenant,
   `Shop` singleton): Presentation por-superfície + Projections no orquestrador já dá o corte limpo sem
   mais um processo/camada (KISS).
-```
+
+## Implementação de referência
+
+Marketing v2 aplica o corte com projection pura no Django, apresentação pt-BR no
+Nuxt e cliente gerado: [contrato da superfície Marketing](../reference/marketing-surface-contract.md).

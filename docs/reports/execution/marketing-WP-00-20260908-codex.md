@@ -2443,3 +2443,24 @@ segurança**; audit zero; workflow YAML e diff check verdes. Relatório completo
 
 O workflow não foi executado remotamente porque push/PR não estão autorizados. Não
 houve provider, credencial real, destinatário, deploy, produção ou escrita externa.
+
+## MKT-050 — documentação factual vinculada ao HEAD
+
+Concluído na branch isolada em 2026-09-10. Foi criado um contrato canônico do Marketing
+com ownership, semântica de canais, rotas, projeção gerada, capacidades, flags e estado
+de rollout. READMEs, inventários de superfícies, design systems, ADRs, referências,
+guias de deploy e runbooks agora apontam para o mesmo estado factual.
+
+O novo `make marketing-docs`, também bloqueante no `runtime-gate.yml`, deriva as rotas
+do código e recusará divergência entre **6 rotas Nuxt**, **31 rotas Django**, README,
+contrato e os probes dos **2 specs de deploy**. O trabalho encontrou e corrigiu o probe
+antigo `/` do Marketing no blueprint de produção para `/health/ready`, adicionando
+`/health/live`; nenhum outro serviço foi tocado.
+
+Provas: gate documental verde; projection/OpenAPI/client sem deriva; **9 testes**
+focados de deploy e cliente; **4 testes** de segurança; typecheck; Ruff; YAML; links
+Markdown e diff check verdes. Relatório completo:
+[`marketing-MKT-050-documentation-20260910-codex.md`](marketing-MKT-050-documentation-20260910-codex.md).
+
+Nenhum push, PR, merge, deploy, staging, produção, provider, destinatário ou escrita
+externa foi executado.

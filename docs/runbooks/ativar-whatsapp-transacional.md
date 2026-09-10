@@ -4,6 +4,12 @@
 > eventos já disparam, adapters registrados, fallback texto→SMS→email funcionando. A
 > configuração do flow por evento é feita **no Admin** (sem editar código nem deploy).
 
+> **Este runbook não liga Marketing.** Pedido/OTP/estoque são notificações
+> transacionais; campanhas usam outro ledger, outro catálogo de fluxo, consentimento de
+> Marketing e o cockpit `marketing-nuxt`. Não copie fallback, template ou readiness
+> deste caminho para campanha. Ver
+> [`marketing-surface-contract.md`](../reference/marketing-surface-contract.md).
+
 ## Como o sistema decide o canal
 
 `ChannelConfig.notifications`: backend primário `manychat` (WhatsApp) → fallback `sms` →
@@ -31,6 +37,10 @@ só como fallback de bootstrap; pode permanecer vazio).
    **flow do WhatsApp**. (Se o evento ainda não tiver template, criar um.)
 
 Pronto — sem deploy. Mapeie só os eventos que quiser; os demais caem no texto.
+
+Essa prontidão vale somente para notificações transacionais. No Marketing, ausência de
+adapter, flow ativo verificado ou prova fresca deixa WhatsApp bloqueado/indisponível;
+não há fallback escondido para SMS, email ou Meta Cloud direto.
 
 ## Eventos
 

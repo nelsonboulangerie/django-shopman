@@ -1,93 +1,129 @@
-# Marketing — marketing-nuxt
+# Marketing — `marketing-nuxt`
 
-Superfície headless do gestor de marketing (**Marketing**, servida no subdomínio
-`mkt.`). É onde o anúncio gerado pela operação vira decisão: revisar, ajustar
-o texto e publicar (ou agendar, ou descartar). Consome o contrato canônico em
-`api/v1/backstage/marketing/*` — nenhuma regra de negócio é copiada; quem decide
-audiência, despacho e expiração é o orquestrador
-(`shopman/shop/services/campaign.py`).
+- **Proprietário operacional:** Produto/Marketing
+- **Última verificação:** 2026-09-10
+- **Verificado contra:** rotas e contratos do `HEAD`
+- **Gate de deriva:** `make marketing-docs`
 
-> **Não é um Hootsuite.** Sem inbox, sem DMs, sem analytics de engajamento. É
-> marketing operacional unidirecional: evento da padaria → conteúdo → plataformas.
-> Ver [FOMO-MARKETING-SPECS §6.1](../../docs/plans/FOMO-MARKETING-SPECS.md).
+Cockpit headless do gestor de Marketing, servido no host `mkt.`. É aqui que um
+fato operacional vira anúncio revisável: o operador edita, confere a consequência,
+aprova, agenda, cancela e acompanha o resultado por plataforma. A superfície não
+resolve audiência, autorização, consentimento, horário, oferta nem entrega; ela
+renderiza as projeções e executa somente as ações oferecidas pelo Django.
 
-## Publicação pública não é mensagem direta
+O contrato completo e a lista de rotas verificadas estão em
+[`docs/reference/marketing-surface-contract.md`](../../docs/reference/marketing-surface-contract.md).
 
-- `instagram`, `facebook` e `google_business` significam **uma publicação pública**
-  por plataforma. O ledger cria um único destino sem membro de audiência.
-- `whatsapp` significa **uma mensagem direta por pessoa elegível**. O ledger cria um
-  destino por membro e revalida consentimento antes do envio.
-- DM do Instagram não é suportada por este app. Se vier a existir, deve nascer como
-  lane/capability separada, com identidade, consentimento, limites, readiness e
-  comprovante próprios; nunca pode ser inferida ou misturada ao `instagram` público.
+## O que cada plataforma significa
 
-Assim, “12 pessoas + Instagram, WhatsApp” quer dizer uma postagem pública no Instagram
-e até 12 mensagens diretas no WhatsApp — não 12 DMs no Instagram.
+- Instagram, Facebook e Google Meu Negócio são publicações públicas: um destino por
+  plataforma, sem membro de público.
+- WhatsApp é mensagem direta: um destino por pessoa elegível, com consentimento
+  revalidado antes da tentativa.
+- Mensagem direta no Instagram não é suportada. Uma futura implementação deverá ser
+  outra capacidade e outro fluxo de entrega, com consentimento, limites, prontidão e
+  comprovante próprios; nunca será inferida do Instagram público.
 
-- **Nome estável:** `marketing-nuxt` (por função, como `pos-`/`kds-`/`orders-`/
-  `production-nuxt`). `mkt.` é só o host público; nunca hardcodar (vive na
-  spec de deploy).
-- **Gate:** `shop.manage_campaigns` — publicar em nome da marca é decisão de
-  marketing, não de quem opera a fila de pedidos. É a MESMA permissão que decide
-  quem recebe a notificação acionável, então quem é avisado é quem pode publicar.
-- **Forma:** mobile-first (o gestor decide do celular), funcional no desktop.
-  Tema claro (superfície de escritório), escuro disponível no toggle.
+Portanto, “12 pessoas; Instagram e WhatsApp” significa uma publicação pública no
+Instagram e até 12 mensagens no WhatsApp — não 12 mensagens no Instagram.
 
-## Telas
+## Corte de responsabilidade
 
-- **Painel** (`/`) — o que pede decisão agora (cards acionáveis), o que saiu nas
-  últimas 24h e os números do dia.
-- **Regras** (`/rules`) — CRUD leve das `Campaign`: liga/desliga a um toque,
-  edição em painel lateral (gatilho, modelo, plataformas, audiência, prazo).
-- **Histórico** (`/history`) — tudo que saiu, com o resultado de CADA plataforma.
-  Sucesso parcial não se disfarça de sucesso.
-- **Post** (`/announcements/:id`) — destino do link da notificação acionável
-  (`UserNotification.action_url`), para decidir direto do celular.
+- O Nuxt é o único cockpit e o único lugar de operação de Marketing.
+- O Admin/Unfold é apenas auditoria agregada para `shop.audit_marketing`; não oferece
+  escrita duplicada e não expõe membros, contatos, outbox ou tentativas individuais.
+- O backend é a autoridade de estado e de ações. Abrir a tela nunca publica.
+- A permissão ampla legada `shop.manage_campaigns` não autoriza aprovar, publicar,
+  disparar, testar nem configurar plataformas. As capacidades granulares são
+  revalidadas no backend no instante de cada comando.
 
-## O card acionável
+## Rotas da superfície
 
-O centro do app. Preview editável do texto, foto do produto, hashtags,
-plataformas pré-marcadas pela regra e a audiência resolvida
-("12 favoritos, 28 recompra, 3 alertas = 43 clientes").
+<!-- marketing-ui-routes:start -->
+- `/`
+- `/announcements/:id`
+- `/campaigns`
+- `/history`
+- `/platforms`
+- `/templates`
+<!-- marketing-ui-routes:end -->
 
-Duas invariantes que valem a pena não quebrar:
+O histórico é um aprofundamento acessível por contexto, não uma aba primária. Links
+antigos em `/campaign/announcements/:id` recebem redirecionamento para o detalhe atual.
+Os probes são `/health/live` (processo/BFF) e `/health/ready` (BFF + prontidão do
+Django). O BFF same-origin atende `/api/v1/**`; o SSE pessoal atende
+`/sse/notifications` e apenas invalida a leitura para que o cliente refaça o fetch.
 
-1. **As edições viajam junto com a aprovação**, num request só. Salvar e depois
-   publicar abriria a janela de publicar a versão anterior.
-2. **O total da audiência vem do backend, nunca da soma das partes.** Quem
-   favoritou E recompra é uma pessoa só; somar mentiria pra cima.
+## Segurança que aparece para o operador
 
-## Tempo real
+- Sessão válida é requisito antes do primeiro fetch protegido.
+- Ações sensíveis usam versão/CAS, chave de idempotência, confirmação contextual e,
+  conforme a consequência, nova autenticação, TOTP ou duplo controle.
+- Resultado aceito mas não confirmado, falha parcial e resultado incerto permanecem
+  distintos; repetição cega de resultado incerto é proibida.
+- Contagem zero, fonte degradada, plataforma sem prontidão, fato vencido ou permissão
+  revogada bloqueiam a consequência com motivo e próximo passo no mesmo contexto.
+- Rascunho é isolado por operador/loja/objeto e sobrevive a reload, navegação e 401;
+  conflito exige comparação, nunca sobrescrita silenciosa.
+- A interface é em pt-BR. Identificadores técnicos estáveis podem permanecer em inglês
+  somente em logs, payloads, código ou auditoria técnica.
 
-SSE no canal PESSOAL do gestor (`/sse/notifications` → `/events/me/` →
-canal `user-<id>`). O push só avisa que chegou algo; a verdade é sempre o refetch
-do painel (ADR-016). Poll de 60s como rede de segurança.
+## Desenvolvimento local sem efeito externo
 
-## Dev
+Use Node 22 e navegue por `127.0.0.1`, nunca por `localhost`:
 
 ```bash
-npm ci
-npm run dev          # http://127.0.0.1:3006  (navegar por 127.0.0.1, nunca localhost)
-npm run test         # vitest — presentation pura + o card montado
-npm run typecheck
+cd surfaces/operator-kit && npm ci
+cd ../marketing-nuxt && npm ci
+npm run dev
+```
+
+O app abre em `http://127.0.0.1:3006`. O ensaio completo e hermético usa banco e
+cookie próprios, adapter `SIMULATION_ONLY` e porta 3008; siga
+[`docs/operations/marketing-local-simulator.md`](../../docs/operations/marketing-local-simulator.md).
+Ele produz comprovantes `sim_…`, mas nunca prova credencial ou entrega de um provider
+real.
+
+## Gates mecânicos
+
+```bash
+npm test
 npm run lint
+npm run typecheck
+npm run build
+MARKETING_E2E_MANAGED=1 npm run test:e2e
+MARKETING_E2E_MANAGED=1 npm run test:a11y
+npm run test:visual
+npm run test:security
+npm audit --audit-level=high
 ```
 
-O app precisa de alguém identificado: entre pelo formulário do próprio app
-(usuário + senha de uma conta staff com `shop.manage_campaigns`). Num aparelho
-provisionado como estação, o caminho é o PIN ou o crachá — e a permissão precisa
-estar num operador com credencial, senão a tela de destravar não lista ninguém.
+O job `Marketing — cadeia completa` executa essa cadeia com Node 22, `npm ci`,
+Chromium e runner fixados. O contrato Django v2, o OpenAPI e o cliente TypeScript são
+regenerados juntos por `python manage.py export_marketing_client`; o Runtime Gate usa
+`--check` e reprova qualquer deriva.
 
-## Estrutura
+Na raiz do repositório também existem:
 
-```
+- `make marketing-capacity`: pico 2× sem provider;
+- `make marketing-drills`: oito falhas sintéticas e seus runbooks;
+- `make marketing-diagnose`: fotografia somente leitura, sem PII;
+- `make marketing-simulator`: worker local ponta a ponta sem rede.
+
+## Estrutura atual
+
+```text
 app/
-├── pages/          index (painel), rules, history, posts/[id]
-├── components/     AnnouncementCard, CampaignForm, CampaignTopBar, OperatorLogin, Ui/*
-├── composables/    useCampaignBoard, useCampaigns, useCampaignHistory, useUserNotifications
-├── presentation/   campaign.ts — funções puras (audiência, prazo, resultado). Testadas.
-└── types/          campaign.ts — espelho do contrato da projection
+├── pages/          painel, campanhas, modelos, plataformas, histórico e anúncio
+├── components/     formulários, confirmações, resultados e primitivas de UI
+├── composables/    projeções, sessão, comandos, recuperação, SSE e rascunho
+├── generated/      cliente TypeScript gerado do OpenAPI
+├── presentation/   copy/formatação pt-BR sem política de domínio
+└── types/          tipos locais de apresentação
 server/
-├── api/v1/[...path].ts    proxy do BFF (djangoProxy, da layer operator-kit)
-└── routes/sse/notifications.ts  proxy SSE do canal pessoal
+├── api/v1/[...path].ts       BFF Django
+└── routes/health/*           liveness e readiness
 ```
+
+O nome estável é `marketing-nuxt`; `mkt.` é configuração de deploy e não deve ser
+hardcoded no app.

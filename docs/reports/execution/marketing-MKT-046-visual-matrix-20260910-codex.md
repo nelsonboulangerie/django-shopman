@@ -6,6 +6,9 @@ Branch isolada: `codex/marketing-irrepressible-excellence-20260908`
 
 Ambiente: worktree local, fixtures sintéticas, zero provider/deploy/produção
 
+> **Nota posterior:** referências abaixo a MKT-047 como próximo gate registram o estado
+> no momento deste relatório. Produto retirou esse item da execução; não há ação pendente.
+
 ## Resultado técnico
 
 A matriz automatizada mantém **69 screenshots determinísticas** e passou integralmente

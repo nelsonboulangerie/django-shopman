@@ -79,6 +79,11 @@ corrompeu dado, restore do snapshot.
 
 - Confirmar `make diagnose-worker` sem backlog stuck e `make diagnose-payments`
   sem divergencia.
+- Se o deploy tocou Marketing, rodar `make marketing-diagnose` antes e depois do
+  rollback. Preservar command receipts/outbox/targets em voo: não apagar filas nem
+  repetir `unknown`. Congele efeitos externos, deixe o reconciler classificar o que o
+  provider pode ter aceitado e use o runbook
+  [`marketing-rollout-rollback.md`](marketing-rollout-rollback.md).
 - Se houve queda durante pagamento, reconciliar o dia antes de reabrir.
 - Abrir post-mortem curto: o que o deploy mudou, por que o gate
   (`make test-migrations`, `release-readiness-strict`, staging) nao pegou.
