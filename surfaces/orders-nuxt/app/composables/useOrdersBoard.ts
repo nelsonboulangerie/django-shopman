@@ -1,3 +1,4 @@
+import { coalesceRefresh } from "../utils/coalesceRefresh";
 import { useOrderIntention } from "./useOrderIntention";
 // Order board read-side. Single source for the live queue:
 //   - useFetch the canonical two-zone projection (GET /api/v1/backstage/orders/);
@@ -74,13 +75,16 @@ export function useOrdersBoard() {
   const { flagIfStationLocked } = useStationLock();
 
   // useFetch (not useAsyncData) so the SSR payload transfers reliably (POS gotcha).
-  const { data, pending, error, refresh } = useFetch<OrderQueueResponse>(path, {
+  const { data, pending, error, refresh: fetchQueue } = useFetch<OrderQueueResponse>(path, {
     key: "orders-queue",
+    dedupe: "defer",
     server: true,
     // Sessão expirou no meio do turno → o poll passa a 401/403. Reabre o gate de
     // operador (re-fetch da sessão) em vez de deixar "reconectando…" para sempre.
     onResponseError: operatorSessionOnError,
   });
+
+  const refresh = coalesceRefresh(() => fetchQueue());
 
   watch(error, (value) => { if (value) flagIfStationLocked(value); }, { immediate: true });
 

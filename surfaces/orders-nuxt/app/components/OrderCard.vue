@@ -50,7 +50,7 @@ const tTone = computed(() => timerTone(props.card.timer_class));
 
 // Countdown do prazo da confirmação otimista (só em cards com timer agendado).
 // Usa o relógio compartilhado (um só interval no board, não um por card).
-const nowMs = useNowTick();
+const nowMs = useNowTick(() => props.card.server_now_iso);
 const confirmationLeft = computed(() =>
   confirmationRemainingLabel(props.card.confirmation_deadline_iso, nowMs.value),
 );

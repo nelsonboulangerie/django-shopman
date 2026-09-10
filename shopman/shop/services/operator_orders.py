@@ -190,7 +190,7 @@ def next_status_for(order: Order) -> str:
     return _NEXT_STATUS_MAP.get(order.status, "")
 
 
-def advance_block(order: Order) -> AdvanceBlock:
+def advance_block(order: Order, *, waitlist_state: str | None = None) -> AdvanceBlock:
     """Why advancing is blocked right now, as a code.
 
     Single source for the operator-advance gate: ``advance_order`` raises with
@@ -211,7 +211,7 @@ def advance_block(order: Order) -> AdvanceBlock:
         return AdvanceBlock.PAYMENT_NOT_CAPTURED
     if order.status == Order.Status.ACCEPTED and _preorder_not_due(order):
         return AdvanceBlock.PREORDER_NOT_DUE
-    if order.status == Order.Status.ACCEPTED and _waiting_for_the_batch(order):
+    if order.status == Order.Status.ACCEPTED and _waiting_for_the_batch(order, state=waitlist_state):
         return AdvanceBlock.WAITLIST_FERMATA
     return AdvanceBlock.NONE
 
@@ -221,9 +221,9 @@ def advance_block_message(bloqueio: AdvanceBlock) -> str:
     return _ADVANCE_BLOCK_MESSAGES.get(bloqueio, "")
 
 
-def advance_block_reason(order: Order) -> str:
+def advance_block_reason(order: Order, *, waitlist_state: str | None = None) -> str:
     """A frase que o operador lê, ou '' se ``advance_order`` rodaria agora."""
-    return advance_block_message(advance_block(order))
+    return advance_block_message(advance_block(order, waitlist_state=waitlist_state))
 
 
 @transaction.atomic
@@ -801,7 +801,7 @@ def add_comment(order: Order, *, note: str, actor: str) -> None:
     order.emit_event(event_type="operator_comment", actor=actor, payload={"note": text})
 
 
-def _waiting_for_the_batch(order: Order) -> bool:
+def _waiting_for_the_batch(order: Order, *, state: str | None = None) -> bool:
     """True enquanto a reserva de fila espera a fornada sair (``fermata``).
 
     Não é encomenda (não há data combinada com o cliente, então
@@ -812,7 +812,7 @@ def _waiting_for_the_batch(order: Order) -> bool:
     try:
         from shopman.shop.services import waitlist
 
-        return waitlist.state_for(order) == waitlist.FERMATA
+        return (waitlist.state_for(order) if state is None else state) == waitlist.FERMATA
     except Exception:
         logger.debug("operator_orders._waiting_for_the_batch degraded ref=%s", order.ref, exc_info=True)
         return False
@@ -930,7 +930,7 @@ def operational_revision(order: Order, *, field: str = "advance") -> str:
     return mutation_fingerprint({"version": 1, "order": order.ref, "field": field, "state": state})
 
 
-def operational_actions(order: Order, *, user=None):
+def operational_actions(order: Order, *, user=None, waitlist_state: str | None = None):
     """Elegibilidade canônica; cliente só renderiza. API ainda revalida sob lock."""
     from shopman.shop.projections.types import Action
 
@@ -956,7 +956,7 @@ def operational_actions(order: Order, *, user=None):
             "completed": "Marcar como Retirado" if order.status == "ready" else "Concluir",
         }
         target = next_status_for(order)
-        reason = advance_block_reason(order) if authorized else permission_reason
+        reason = advance_block_reason(order, waitlist_state=waitlist_state) if authorized else permission_reason
         actions.append(Action(
             ref="advance", kind="mutation", label=labels[target], priority="primary",
             enabled=not reason, reason=reason, method="POST", idempotency="required",

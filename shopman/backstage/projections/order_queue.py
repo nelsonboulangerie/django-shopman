@@ -440,7 +440,10 @@ def build_order_queue(
         filter_status = "all"
 
     courier_change = operator_orders.courier_change_by_order([o.ref for o in filtered])
-    cards = tuple(_build_card(o, courier_change=courier_change) for o in filtered)
+    from shopman.shop.services import waitlist
+
+    waitlist_states = waitlist.states_for(filtered)
+    cards = tuple(_build_card(o, courier_change=courier_change, waitlist_states=waitlist_states) for o in filtered)
 
     return OrderQueueProjection(
         orders=cards,
@@ -901,6 +904,9 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         .order_by("created_at")
     )
 
+    from shopman.shop.services import waitlist
+
+    waitlist_states = waitlist.states_for(all_orders)
     new_orders = [o for o in all_orders if o.status == "new"]
     deadlines = _confirmation_deadlines([o.ref for o in new_orders])
     # Uma consulta ao livro para todos os cards: o troco que saiu e voltou.
@@ -912,12 +918,12 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     # mantém o prazo de confirmação (auto-confirm) e o botão de aceitar; o
     # despertador (preorder.activate) devolve o pedido ao fluxo na data (WP-D).
     intake = tuple(
-        _build_card(o, user=user, deadline=deadlines.get(o.ref))
+        _build_card(o, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
         for o in new_orders
         if not _is_future_preorder(o)
     )
     prep_orders = [o for o in all_orders if o.status in ("accepted", "preparing")]
-    prep = tuple(_build_card(o, user=user, courier_change=courier_change) for o in prep_orders if not _is_future_preorder(o))
+    prep = tuple(_build_card(o, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in prep_orders if not _is_future_preorder(o))
     # Só estados pré-fulfillment viram "Agendados"; ready/dispatched/delivered
     # seguem nas colunas de expedição mesmo que a data combinada seja futura.
     future_preorders = [
@@ -925,16 +931,16 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         if o.status in ("new", "accepted", "preparing") and _is_future_preorder(o)
     ]
     preorders = tuple(
-        _build_card(o, user=user, deadline=deadlines.get(o.ref))
+        _build_card(o, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
         for o in sorted(future_preorders, key=lambda o: (get_commitment_date(o), o.created_at))
     )
     preparing_count = len(prep)
 
     ready_orders = [o for o in all_orders if o.status == "ready"]
-    expedition_pickup = tuple(_build_card(o, user=user) for o in ready_orders if not _is_delivery(o))
-    expedition_delivery = tuple(_build_card(o, user=user, courier_change=courier_change) for o in ready_orders if _is_delivery(o))
+    expedition_pickup = tuple(_build_card(o, waitlist_states=waitlist_states, user=user) for o in ready_orders if not _is_delivery(o))
+    expedition_delivery = tuple(_build_card(o, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in ready_orders if _is_delivery(o))
     expedition_delivery_transit = tuple(
-        _build_card(o, user=user, courier_change=courier_change)
+        _build_card(o, waitlist_states=waitlist_states, user=user, courier_change=courier_change)
         for o in all_orders
         if o.status in ("dispatched", "delivered")
     )
@@ -1013,7 +1019,7 @@ _WAITLIST_LABELS = {
 }
 
 
-def _waitlist_badge(order: Order) -> tuple[str, str, str]:
+def _waitlist_badge(order: Order, *, states: dict[str, str] | None = None) -> tuple[str, str, str]:
     """Estado da fila para o card do board (WP-P2E).
 
     Pedido esperando fornada não é pedido travado, e a diferença precisa estar
@@ -1022,7 +1028,7 @@ def _waitlist_badge(order: Order) -> tuple[str, str, str]:
     try:
         from shopman.shop.services import waitlist
 
-        state = waitlist.state_for(order)
+        state = states[order.ref] if states is not None else waitlist.state_for(order)
     except Exception:
         logger.debug("order_queue._waitlist_badge degraded ref=%s", order.ref, exc_info=True)
         return "", "", ""
@@ -1037,6 +1043,7 @@ def _build_card(
     order: Order,
     deadline: tuple[str, str] | None = None,
     courier_change: dict[str, tuple[int, int | None]] | None = None,
+    waitlist_states: dict[str, str] | None = None,
     user=None,
 ) -> OrderCardProjection:
     now = timezone.now()
@@ -1067,7 +1074,8 @@ def _build_card(
         or ""
     )
 
-    bloqueio = operator_orders.advance_block(order)
+    batch_state = waitlist_states.get(order.ref) if waitlist_states is not None else None
+    bloqueio = operator_orders.advance_block(order, waitlist_state=batch_state)
     next_status = operator_orders.next_status_for(order) if not bloqueio else ""
     next_label = _next_label(order)
 
@@ -1078,13 +1086,13 @@ def _build_card(
     fiscal_status, fiscal_status_label, _fiscal_links = _fiscal_status(order)
     commitment = get_commitment_date(order)
     is_preorder = commitment is not None and commitment > timezone.localdate()
-    waitlist_state, waitlist_deadline_iso, waitlist_label = _waitlist_badge(order)
+    waitlist_state, waitlist_deadline_iso, waitlist_label = _waitlist_badge(order, states=waitlist_states)
     recipient = order.data.get("recipient") if isinstance(order.data.get("recipient"), dict) else {}
 
     return OrderCardProjection(
         ref=order.ref,
         status=order.status,
-        actions=operator_orders.operational_actions(order, user=user),
+        actions=operator_orders.operational_actions(order, user=user, waitlist_state=batch_state),
         revisions={field: operator_orders.operational_revision(order, field=field) for field in ("advance", "kitchen_note", "assignment")},
         status_label=order_status_label(order.status),
         status_color=status_color(order.status),

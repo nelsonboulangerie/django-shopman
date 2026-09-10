@@ -1,0 +1,25 @@
+DEBUG 2026-09-10 19:24:59,420 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-10 19:24:59,420 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-10 19:24:59,421 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-10 19:24:59,423 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-10 19:24:59,465 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-10 19:24:59,469 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-10 19:24:59,475 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-10 19:24:59,479 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-10 19:24:59,489 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-10 19:24:59,492 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-10 19:24:59,492 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-10 19:24:59,497 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-10 19:24:59,564 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-10 19:24:59,571 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-10 19:24:59,575 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-10 19:24:59,577 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-10 19:24:59,577 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-10 19:24:59,579 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-10 19:24:59,593 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-10 19:24:59,595 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+DEBUG 2026-09-10 19:24:59,852 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-10 19:25:01,163 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+{"platform": "macOS-15.4.1-arm64-arm-64bit", "database": "sqlite", "samples": 20, "observations": [{"n": 1, "projection": "build_order_queue", "queries": 4, "holds": 1, "bytes": 3373, "cold_ms": 10.241999989375472, "p50_ms": 4.305124486563727, "p95_ms": 7.390792015939951}, {"n": 1, "projection": "build_two_zone_queue", "queries": 4, "holds": 1, "bytes": 3495, "cold_ms": 6.020208995323628, "p50_ms": 3.038750000996515, "p95_ms": 6.776458991225809}, {"n": 10, "projection": "build_order_queue", "queries": 4, "holds": 1, "bytes": 32446, "cold_ms": 11.879083991516382, "p50_ms": 9.14368752273731, "p95_ms": 11.99649996124208}, {"n": 10, "projection": "build_two_zone_queue", "queries": 4, "holds": 1, "bytes": 32568, "cold_ms": 9.32862499030307, "p50_ms": 6.059583509340882, "p95_ms": 9.32862499030307}, {"n": 100, "projection": "build_order_queue", "queries": 4, "holds": 1, "bytes": 323338, "cold_ms": 34.061666985508054, "p50_ms": 37.09947899915278, "p95_ms": 201.28633396234363}, {"n": 100, "projection": "build_two_zone_queue", "queries": 4, "holds": 1, "bytes": 323460, "cold_ms": 37.050040962640196, "p50_ms": 27.11427051690407, "p95_ms": 41.2965840077959}, {"n": 500, "projection": "build_order_queue", "queries": 4, "holds": 1, "bytes": 1616538, "cold_ms": 136.7357079870999, "p50_ms": 129.95816650800407, "p95_ms": 191.80487497942522}, {"n": 500, "projection": "build_two_zone_queue", "queries": 4, "holds": 1, "bytes": 1616660, "cold_ms": 128.09383298736066, "p50_ms": 129.7671459906269, "p95_ms": 198.81479197647423}]}
+.
+1 passed in 14.92s

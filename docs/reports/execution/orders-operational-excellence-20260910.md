@@ -303,3 +303,31 @@ rollback do courier suspende derivação automática afetada, preservando fato e
 
 WP04 ainda não concluído: enqueue durável de todas as fases, crash externo/worker e
 homologação G03 continuam pendentes. Não houve rede externa de negócio ou efeito real.
+
+## Retomada — WP07: reservas em lote, relógio e refresh
+
+D20: states_for usa uma leitura SQL de Hold com Quant associado, incluindo reservas de
+outros pedidos nos mesmos quants; o predicado canônico continua exigindo política congelada,
+fermata e saldo agregado íntegro. Cards/Actions compartilham o resultado desta projeção;
+comandos continuam revalidando. Não há cache durável ou fonte paralela.
+
+D16: countdown ancora server_now_iso com tempo monotônico; drift do navegador ±5min e
+reancoragem após retomada ensaiados. Fallback legado sem server_now continua Date.now;
+latência de transporte/hidratação e suspensão real ainda não calibradas. Refreshs explícitos
+coalescem burst de 100 eventos em leitura ativa + uma posterior; o fetch inicial conserva
+os mecanismos defer do Nuxt. Não houve alteração de som, confirmação ou permissão.
+
+PG **107 passed, 13 subtests (7,77s)**; Gestor **231 passed (3,14s)**; typecheck/Ruff passaram.
+Preparação: primeiro comando apontou dois módulos inexistentes (nenhum teste executado);
+nomes corrigidos. Primeiro teste de relógio não tinha DOM; happy-dom explícito resolveu.
+
+20 amostras SQLite, macOS15.4.1 arm64: 1/10/100/500 cards agora **4/4/4/4 consultas**, com
+**1/1/1/1 ao Hold**, em ambas as projeções (antes 4/13/103/503). Para 100 cards retiradas,
+99 consultas Hold removidas conforme budget estrutural. Duas zonas 500: p50 **129,77ms**,
+p95 **198,81ms**; baseline 218,03/265,70ms. Ensaios não controlaram carga concorrente do host;
+não equivalem a HTTP/produção ou tempo humano. Payload aumentou com Actions/revisions:
+**1.616.660 bytes** contra 872.660; custo de transferência e 2/10 clientes ainda pendentes.
+
+Sem migração. Rollback pode reverter otimização mantendo predicados; custa consultas, não
+altera reservas. Relógio/refresh são leitura apenas. WP07 não T: faltam payload rico,
+estações, frescor E2E e budgets sob carga/controlados. O ganho em campo permanece não medido.
