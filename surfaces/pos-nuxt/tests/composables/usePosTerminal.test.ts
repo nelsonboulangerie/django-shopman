@@ -8,7 +8,7 @@ const { fetchResult } = vi.hoisted(() => ({ fetchResult: { value: null as unknow
 
 mockNuxtImport("useFetch", () => () => fetchResult.value);
 mockNuxtImport("useRequestHeaders", () => () => ({}));
-mockNuxtImport("useRuntimeConfig", () => () => ({ app: { baseURL: "/" } }));
+mockNuxtImport("useRuntimeConfig", () => () => ({ app: { baseURL: "/" }, public: {} }));
 
 function asyncData(payload: unknown) {
   return { data: ref(payload), pending: ref(false), error: ref(null), refresh: vi.fn() };

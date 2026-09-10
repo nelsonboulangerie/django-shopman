@@ -5,7 +5,7 @@
 // parado que uma gaveta aberta passa despercebida: dava para deixar aberta a
 // tarde inteira e só encontrar a trava na próxima venda, que talvez demorasse.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, ref } from "vue";
+import { computed, createApp, type App } from "vue";
 
 import type { DrawerState } from "~/composables/useCounterAgent";
 import { useDrawerIdleWatch } from "~/composables/useDrawerIdleWatch";
@@ -14,17 +14,27 @@ const OPEN: DrawerState = { known: true, open: true, raw: "0x12" };
 const CLOSED: DrawerState = { known: true, open: false, raw: "0x16" };
 const BLIND: DrawerState = { known: false, reason: "sem resposta", calibrated: true };
 
+const mounted: App[] = [];
+
 function makeWatch(states: DrawerState[], { minutes = 3, blocked = false, canKick = true } = {}) {
   const queue = [...states];
   const readState = vi.fn(async () => queue.length > 1 ? queue.shift()! : queue[0]!);
   const actionCall = vi.fn().mockResolvedValue({ ok: true });
-  const watcher = useDrawerIdleWatch({
-    drawer: { canKick: computed(() => canKick), readState },
-    actions: computed(() => []),
-    action: { call: actionCall as <T = unknown>(...args: unknown[]) => Promise<T> },
-    minutes: computed(() => minutes),
-    blocked: computed(() => blocked),
+  let watcher!: ReturnType<typeof useDrawerIdleWatch>;
+  const app = createApp({
+    setup() {
+      watcher = useDrawerIdleWatch({
+        drawer: { canKick: computed(() => canKick), readState },
+        actions: computed(() => []),
+        action: { call: actionCall as <T = unknown>(...args: unknown[]) => Promise<T> },
+        minutes: computed(() => minutes),
+        blocked: computed(() => blocked),
+      });
+      return () => null;
+    },
   });
+  app.mount(document.createElement("div"));
+  mounted.push(app);
   return { watcher, actionCall, readState };
 }
 
@@ -40,6 +50,7 @@ beforeEach(() => {
   vi.spyOn(Date, "now").mockImplementation(() => agora);
 });
 afterEach(() => {
+  for (const app of mounted.splice(0)) app.unmount();
   vi.restoreAllMocks();
 });
 

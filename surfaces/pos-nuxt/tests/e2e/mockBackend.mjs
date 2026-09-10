@@ -12,6 +12,14 @@ const server = createServer((req, res) => {
   // csrftoken p/ o handshake do BFF não semear em loop.
   res.setHeader("set-cookie", "csrftoken=e2e-mock; Path=/");
 
+  // A antessala é a fonte atual do gate. Dispositivo sem confiança nem
+  // sessão recebe 403; {} com 200 fingia estação identificável e abria setup.
+  if (req.url && /\/backstage\/operator\/session\/?(\?|$)/.test(req.url)) {
+    res.statusCode = 403;
+    res.end(JSON.stringify({ detail: "Autenticação necessária.", error: { code: "not_authenticated" } }));
+    return;
+  }
+
   // Leitura do terminal sem sessão → 401 → o app renderiza o gate de login.
   if (req.url && /\/backstage\/pos\/?(\?|$)/.test(req.url)) {
     res.statusCode = 401;

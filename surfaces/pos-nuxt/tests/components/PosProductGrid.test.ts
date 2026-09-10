@@ -28,6 +28,8 @@ function props() {
     collections: [],
     cartItems: [],
     loading: false,
+    favoriteRefs: [],
+    pending: false,
   };
 }
 

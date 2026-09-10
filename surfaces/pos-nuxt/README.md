@@ -6,8 +6,13 @@ Shopman POS projection/action contract without copying business rules.
 ## Setup
 
 ```bash
-npm install
+cd ../operator-kit
+npm ci --no-audit --no-fund
+cd ../pos-nuxt
+npm ci --no-audit --no-fund
 ```
+
+Use Node 22 conforme `package.json`. Instale o kit e o PDV na mesma worktree.
 
 ## Development Server
 
@@ -25,11 +30,10 @@ The API proxy targets `http://127.0.0.1:8000` by default. Override it with
 ## Operator access
 
 The POS does not own credentials. Backstage endpoints use the canonical Django
-session and require a staff user with `backstage.operate_pos`.
+session and require a staff user with `cashman.operate_pos`.
 
-When the session is missing or unauthorized, the Nuxt surface links to
-the Django admin login on the Django public base URL so the operator can
-log in, keep the tab open, and click "Já entrei".
+A sessão ausente abre o acesso de operador no PDV; bloqueio da estação exige
+identificação conforme o contrato Doorman. A superfície não concede permissões.
 
 For local development, keep Django and Nuxt on the same hostname, such as
 `127.0.0.1`, so Django session and CSRF cookies are visible to both ports.
@@ -46,9 +50,10 @@ npm run build
 npm run test
 ```
 
-The UI reads `GET /api/v1/backstage/pos/` and submits only projection-provided
-POS actions. Price, stock, fulfillment validation, status, and order persistence
-remain in the Django/Shopman contract.
+The UI reads `GET /api/v1/backstage/pos/` and consumes POS actions. Some legacy
+callers still use fallback paths when an Action is missing; this gap is tracked
+as PDV-F07 in the execution plan. Price, stock, fulfillment validation, status,
+and order persistence remain in the Django/Shopman contract.
 
 Current POS capabilities consumed from the projection include tab lifecycle,
 cash runtime/actions, checkout review/close, customer lookup with saved

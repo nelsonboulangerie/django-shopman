@@ -8,7 +8,7 @@ const { cookieRef, fetchMock } = vi.hoisted(() => ({
 }));
 
 mockNuxtImport("useCookie", () => () => cookieRef);
-mockNuxtImport("useRuntimeConfig", () => () => ({ app: { baseURL: "/" } }));
+mockNuxtImport("useRuntimeConfig", () => () => ({ app: { baseURL: "/" }, public: {} }));
 mockNuxtImport("$fetch", () => fetchMock);
 
 describe("usePosAction", () => {

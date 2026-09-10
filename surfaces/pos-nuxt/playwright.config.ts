@@ -5,6 +5,9 @@ import { defineConfig, devices } from "@playwright/test";
 // dados de negócio: gate de login (sessão de operador ausente → terminal 401) e banner
 // offline. Fluxos com dados ricos (comanda→pagamento→cozinha, lock screen, re-gate de
 // 401 no meio da sessão) rodam contra o Django real (reviewer local) — ver tests/e2e/README.
+const posPort = Number(process.env.POS_E2E_PORT || 3002);
+const mockPort = Number(process.env.POS_E2E_MOCK_PORT || 8798);
+
 export default defineConfig({
   testDir: "./tests/e2e",
   testMatch: "**/*.spec.ts",
@@ -14,28 +17,28 @@ export default defineConfig({
   retries: 0,
   reporter: [["list"]],
   use: {
-    baseURL: "http://127.0.0.1:3002",
+    baseURL: `http://127.0.0.1:${posPort}`,
     trace: "retain-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: [
     {
       command: "node tests/e2e/mockBackend.mjs",
-      port: 8798,
-      reuseExistingServer: !process.env.CI,
+      port: mockPort,
+      reuseExistingServer: false,
+      env: { MOCK_PORT: String(mockPort) },
     },
     {
-      // Build com baseURL '/' (produção usa '/pos/') + serve o Nitro. reuseExistingServer
-      // evita rebuild a cada corrida local.
+      // Cada ensaio possui seus processos; porta ocupada exige outro par.
       command: "nuxt build && node .output/server/index.mjs",
-      port: 3002,
-      reuseExistingServer: !process.env.CI,
+      port: posPort,
+      reuseExistingServer: false,
       timeout: 240_000,
       env: {
         NUXT_APP_BASE_URL: "/",
-        NUXT_DJANGO_BASE_URL: "http://127.0.0.1:8798",
+        NUXT_DJANGO_BASE_URL: `http://127.0.0.1:${mockPort}`,
         HOST: "127.0.0.1",
-        PORT: "3002",
+        PORT: String(posPort),
       },
     },
   ],

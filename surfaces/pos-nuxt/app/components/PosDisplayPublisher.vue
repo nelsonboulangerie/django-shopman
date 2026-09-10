@@ -33,5 +33,5 @@ useCustomerDisplayPublisher(snapshot);
 </script>
 
 <template>
-  <!-- Renderless: só publica. -->
+  <template v-if="false" />
 </template>

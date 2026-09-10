@@ -10,7 +10,7 @@
 //    treinado sabe que Esc abre o PIN.
 //
 // O que fica escondido é a SAÍDA. O ESTADO continua anunciado a leitor de tela.
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 
 import PosDrawerLockDialog from "~/components/PosDrawerLockDialog.vue";

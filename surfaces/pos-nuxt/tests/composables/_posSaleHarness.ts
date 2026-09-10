@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import { computed, effectScope, ref, type Ref } from "vue";
+import { computed, createApp, ref, type Ref } from "vue";
 
 import type { Action, POSProjection, POSTabProjection } from "~/types/pos";
 import { usePosSale } from "~/composables/usePosSale";
@@ -61,12 +61,7 @@ interface HarnessOptions {
   actionCall?: ReturnType<typeof vi.fn>;
 }
 
-/**
- * Instancia `usePosSale` com deps injetadas dentro de um `effectScope`, para que
- * os watchers (autosave/auto-review) e o `onScopeDispose` (polling PIX) fiquem
- * ativos e sejam encerráveis por `handles.dispose()`. As slices são refs mutáveis
- * expostas para o teste dirigir a Projection.
- */
+/** Monta o composable em setup real; dispose encerra hooks, watchers e timers. */
 export function makeSale(opts: HarnessOptions = {}) {
   const posValue: Ref<POSProjection | null> = ref(
     opts.projection === undefined ? makeProjection() : opts.projection,
@@ -87,8 +82,14 @@ export function makeSale(opts: HarnessOptions = {}) {
     ordersUrl: computed(() => "http://gestor.test/"),
   };
 
-  const scope = effectScope();
-  const sale = scope.run(() => usePosSale(deps))!;
+  let sale!: ReturnType<typeof usePosSale>;
+  const app = createApp({
+    setup() {
+      sale = usePosSale(deps);
+      return () => null;
+    },
+  });
+  app.mount(document.createElement("div"));
 
   return {
     sale,
@@ -99,7 +100,7 @@ export function makeSale(opts: HarnessOptions = {}) {
       actionsValue,
       actionCall,
       refresh,
-      dispose: () => scope.stop(),
+      dispose: () => app.unmount(),
     },
   };
 }
