@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
 import { useFeedBoard } from "../../app/composables/useFeedBoard";
 
 const env = installNuxtGlobals();
+vi.stubGlobal("useNuxtData", () => ({ data: { value: { operator: { id: 1 } } } }));
 
 describe("useFeedBoard", () => {
   beforeEach(() => env.reset());

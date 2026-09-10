@@ -436,3 +436,32 @@ J11 sintético: repetir consulta com 1 ativação, sem fechar/reabrir; J05 códi
 zero mutações. Providers todos simulados, sem envio/cancelamento real. H03 e recibos de
 cancelamento/COD ainda pendentes; WP03 não T. Sem DDL. Rollback mantém serialização/guards
 ou suspende ações afetadas; não volta a ocultar falha externa nem remove lançamentos.
+
+## WP06 — H06 comprovada, identificação e saída do editor
+
+Dois ensaios de componente falharam antes: resposta da IA do SKU A aparecia em B;
+resposta baseada no texto anterior aparecia após nova digitação. Agora sugestão confere
+SKU/campo/base/geração e invalida ao desmontar; o painel informa SKU explicitamente.
+Fetch de detalhe, salvar detalhe e prévia de preço também conferem recurso/geração/base;
+resposta de um editor anterior não fecha/hidrata o atual. Removida prévia de lote que
+havia sido inserida indevidamente também no popover de preço individual durante WP05.
+
+Cache de leitura é separado por pessoa/recurso. Página permanece oculta durante bloqueio;
+mesma pessoa retoma instância/draft, outra pessoa recebe nova instância. Detalhe tem chave
+da rota e saída com texto não salvo exige descarte explícito. Login por senha passou a
+usar refresh da sessão/leitura, como unlock PIN/crachá do kit, sem reload destrutivo.
+Não há persistência de drafts após reload nem armazenamento de senha no contexto.
+
+**240 testes Gestor passaram**, typecheck/build passaram. Um primeiro ciclo teve 29 falhas
+por falta dos stubs Nuxt definePageMeta/onBeforeRouteLeave no teste da página; corrigido.
+**5 jornadas Chromium reais passaram (10,1s)**: três anteriores + fechar A/abrir B com
+resposta HTTP real atrasada + bloquear/reidentificar A preservando texto e trocar para B
+sem herdar texto. Nenhum POST automático de nota após reidentificar; valor canônico ficou
+igual. O primeiro ciclo de 5 jornadas encontrou 429 legítimo ao ultrapassar 5 logins/min;
+fixtures agora distribuem usuários sintéticos, sem desativar rate limit. Teste subsequente
+comprovou retomada por senha. H06 confirmado no componente e recurso errado prevenido no
+painel real. J12: uma reidentificação e R=0 para a mesma pessoa, no escopo da sessão.
+
+Sem migração; rollback de UI pode reintroduzir perda de draft e deve manter proteção de
+saída/isolar pessoa. Ainda faltam contexto completo da fila/scroll, drafts de catálogo
+protegidos na saída, carga/teclado/touch e retomada de todas as mutações; WP06 não T.

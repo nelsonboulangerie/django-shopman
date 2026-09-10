@@ -19,6 +19,8 @@ import type { CustomerProfileProjection, OperatorOrderProjection } from "../../a
 const detalhe = ref<OperatorOrderProjection | null>(null);
 const resendPaymentLink = vi.fn();
 
+vi.stubGlobal("definePageMeta", vi.fn());
+vi.stubGlobal("onBeforeRouteLeave", vi.fn());
 vi.stubGlobal("computed", computed);
 vi.stubGlobal("ref", ref);
 vi.stubGlobal("watch", watch);

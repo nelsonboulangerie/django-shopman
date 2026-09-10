@@ -1,3 +1,4 @@
+import { useOperatorResourceKey } from "./useOperatorResourceKey";
 import { coalesceRefresh } from "../utils/coalesceRefresh";
 import { useOrderIntention } from "./useOrderIntention";
 // Order board read-side. Single source for the live queue:
@@ -76,7 +77,7 @@ export function useOrdersBoard() {
 
   // useFetch (not useAsyncData) so the SSR payload transfers reliably (POS gotcha).
   const { data, pending, error, refresh: fetchQueue } = useFetch<OrderQueueResponse>(path, {
-    key: "orders-queue",
+    key: useOperatorResourceKey("orders-queue"),
     dedupe: "defer",
     server: true,
     // Sessão expirou no meio do turno → o poll passa a 401/403. Reabre o gate de

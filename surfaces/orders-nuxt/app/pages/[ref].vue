@@ -14,6 +14,7 @@ import {
 } from "~/presentation/board";
 import type { CancellationReason } from "~/types/orders";
 
+definePageMeta({ key: (route) => route.path });
 const route = useRoute();
 const orderRef = computed(() => String(route.params.ref || ""));
 
@@ -90,6 +91,11 @@ async function saveKitchenNote() {
     notesRevision.value = order.value?.revisions?.kitchen_note || "";
   }
 }
+// Session-only drafts: leaving requires an explicit discard while text is dirty.
+onBeforeRouteLeave(() => {
+  if (!notesDirty.value && !comment.value.trim()) return true;
+  return window.confirm("Há texto não salvo neste pedido. Descartar e sair?");
+});
 // Store-configured kitchen-note tags (Admin/Unfold). One tap appends the tag to the
 // note, preserving the free text; already-present tags aren't duplicated.
 const noteTags = computed(() => order.value?.kitchen_note_tags ?? []);

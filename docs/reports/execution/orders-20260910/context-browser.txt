@@ -1,0 +1,14 @@
+[WebServer] (node:19314) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 5 tests using 1 worker
+
+(node:19315) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › surfaces/orders-nuxt/tests/integration/operational.spec.ts:15:1 › lost response after the Django commit queries receipt and advances only once (2.4s)
+  ✓  2 [chromium] › surfaces/orders-nuxt/tests/integration/operational.spec.ts:38:1 › SSE during notes draft preserves text and offers explicit same-field resolution (1.0s)
+  ✓  3 [chromium] › surfaces/orders-nuxt/tests/integration/operational.spec.ts:59:1 › price preview confirms exact canonical values through Nitro and Django (1.6s)
+  ✓  4 [chromium] › surfaces/orders-nuxt/tests/integration/operational.spec.ts:80:1 › closed product A cannot hydrate the reopened panel for B (2.2s)
+  ✓  5 [chromium] › surfaces/orders-nuxt/tests/integration/operational.spec.ts:108:1 › same person resumes a locked draft; another person never inherits it (1.5s)
+
+  5 passed (10.1s)

@@ -170,7 +170,9 @@ const priceOps = [
 ] as const;
 const priceInputBulk = ref("");
 const pricePreview = ref<CatalogPricePreview | null>(null);
-watch(() => JSON.stringify([priceOp.value, priceInputBulk.value, bulkSurface.value, [...selected.value].sort()]), () => { pricePreview.value = null; });
+let priceRequest = 0;
+const priceBase = () => JSON.stringify([priceOp.value, priceInputBulk.value, bulkSurface.value, [...selected.value].sort()]);
+watch(priceBase, () => { priceRequest++; pricePreview.value = null; }, { flush: "sync" });
 const surfaceLabel = (ref_: string) =>
   ref_ === "*" ? "Todos os canais" : (surfaces.value.find((s) => s.ref === ref_)?.name ?? ref_);
 // número digitado (aceita vírgula/percentual/negativo); em centavos p/ set/delta.
@@ -188,11 +190,15 @@ async function applyBulkPrice() {
   const value = parsedPriceValue();
   if (value === null || !bulkSurface.value || selected.value.size === 0) return;
   if (!pricePreview.value) {
-    pricePreview.value = await previewBulkPrice(bulkSurface.value, { skus: [...selected.value] }, { op: priceOp.value, value });
+    const request = ++priceRequest;
+    const base = priceBase();
+    const preview = await previewBulkPrice(bulkSurface.value, { skus: [...selected.value] }, { op: priceOp.value, value });
+    if (request === priceRequest && base === priceBase() && priceOpen.value) pricePreview.value = preview;
     return;
   }
+  const base = priceBase();
   const ok = await bulkPrice(bulkSurface.value, { skus: [...selected.value] }, { op: priceOp.value, value }, pricePreview.value);
-  if (ok === null) return;
+  if (ok === null || base !== priceBase()) return;
   priceOpen.value = false;
   priceInputBulk.value = "";
   clearSelection();
@@ -274,26 +280,32 @@ const detailSku = ref<string | null>(null);
 const detail = ref<ProductDetailProjection | null>(null);
 const detailLoading = ref(false);
 const detailTab = ref("geral");
+let detailRequest = 0;
 async function openDetail(row: CatalogRowProjection, tab = "geral") {
+  const request = ++detailRequest;
   menuOpen.value = null;
   detailTab.value = tab;
   detailSku.value = row.sku;
   detail.value = null;
   detailLoading.value = true;
   try {
-    detail.value = await fetchProductDetail(row.sku);
+    const result = await fetchProductDetail(row.sku);
+    if (request === detailRequest && detailSku.value === row.sku) detail.value = result;
   } finally {
-    detailLoading.value = false;
+    if (request === detailRequest) detailLoading.value = false;
   }
 }
 function closeDetail() {
+  detailRequest++;
   detailSku.value = null;
   detail.value = null;
 }
 async function saveDetail(patch: ProductDetailPatch) {
   if (!detailSku.value) return;
-  const ok = await saveProductDetail(detailSku.value, patch);
-  if (ok) closeDetail();
+  const sku = detailSku.value;
+  const request = detailRequest;
+  const ok = await saveProductDetail(sku, patch);
+  if (ok && sku === detailSku.value && request === detailRequest) closeDetail();
 }
 
 // assist de IA — o painel é presentacional, então a página injeta a chamada e o
@@ -636,16 +648,6 @@ useHead({ title: "Catálogo · Gestor" });
                       @keyup.enter="commitPrice(row, cell)" @keyup.esc="editing = null"
                     />
                     <p class="mt-1 text-xs text-muted-foreground">Base do produto: {{ row.base_price_display }}</p>
-                    <div v-if="pricePreview" class="mt-3 max-h-64 overflow-auto rounded border p-2" aria-live="polite">
-              <p class="mb-2 text-xs font-semibold">Revise {{ pricePreview.cells.length }} células antes de confirmar</p>
-              <ul class="space-y-1 text-xs">
-                <li v-for="cell in pricePreview.cells" :key="cell.id">
-                  {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref) }} · mínimo {{ cell.tier }}:
-                  {{ (cell.before_q / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) }} →
-                  {{ (cell.after_q / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) }}
-                </li>
-              </ul>
-            </div>
             <div class="mt-2.5 flex justify-end gap-1.5">
                       <button type="button" class="rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="editing = null">Cancelar</button>
                       <button type="button" class="rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90" @click="commitPrice(row, cell)">Salvar</button>

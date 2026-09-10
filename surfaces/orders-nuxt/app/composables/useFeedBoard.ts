@@ -1,10 +1,11 @@
+import { useOperatorResourceKey } from "./useOperatorResourceKey";
 // Feeds (menuboard/Google/Meta) — lê o board + liga/pausa + escolhe coleções.
 import type { FeedBoardProjection, FeedBoardResponse } from "~/types/feeds";
 
 export function useFeedBoard() {
   const path = "/api/v1/backstage/feeds/";
   const { data, pending, error, refresh } = useFetch<FeedBoardResponse>(path, {
-    key: "feed-board",
+    key: useOperatorResourceKey("feed-board"),
     server: true,
   });
   const board = computed<FeedBoardProjection | null>(() => data.value?.board ?? null);

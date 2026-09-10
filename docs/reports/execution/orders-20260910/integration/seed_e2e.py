@@ -22,3 +22,14 @@ for ref in refs.values():
     if created:
         OrderItem.objects.create(order=order,line_id=ref+'-line',sku='LAB-PROD',name='Produto laboratório',qty='0.500',unit_price_q=1000,line_total_q=500)
 print('Synthetic lab seeded; no external adapters enabled.')
+
+Product.objects.get_or_create(sku='LAB-PROD-B', defaults={'name':'Produto secundário','unit':'un','base_price_q':1200,'is_published':True,'is_sellable':True})
+second, _ = User.objects.get_or_create(username='orders-lab-b', defaults={'is_staff':True,'first_name':'Operadora B laboratório'})
+second.set_password('synthetic-lab-only-20260910')
+second.save()
+second.user_permissions.set(user.user_permissions.all())
+for suffix in ('advance', 'notes', 'price', 'product'):
+    tester, _ = User.objects.get_or_create(username=f'orders-lab-{suffix}', defaults={'is_staff':True,'first_name':f'Laboratório {suffix}'})
+    tester.set_password('synthetic-lab-only-20260910')
+    tester.save()
+    tester.user_permissions.set(user.user_permissions.all())

@@ -379,6 +379,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
             </label>
 
             <CatalogAiSuggest
+              :sku="sku"
               field="short_description"
               label="Descrição curta"
               :current="draft.short_description"
@@ -394,6 +395,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
             </CatalogAiSuggest>
 
             <CatalogAiSuggest
+              :sku="sku"
               field="long_description"
               label="Descrição longa"
               :current="draft.long_description"
@@ -492,6 +494,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
           <!-- Ingredientes e nutrição -->
           <div v-show="tab === 'rotulagem'" class="space-y-5">
             <CatalogAiSuggest
+              :sku="sku"
               field="ingredients_text"
               label="Ingredientes"
               :current="draft.ingredients_text"
@@ -621,6 +624,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
             </label>
 
             <CatalogAiSuggest
+              :sku="sku"
               field="hashtags"
               label="Hashtags"
               :current="draft.social.hashtagsText"
@@ -633,6 +637,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
             </CatalogAiSuggest>
 
             <CatalogAiSuggest
+              :sku="sku"
               field="social_caption"
               label="Legenda social"
               :current="draft.social.social_caption"

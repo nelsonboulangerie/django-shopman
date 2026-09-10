@@ -4,16 +4,16 @@ import { test, expect, type Page } from "@playwright/test";
 
 const lab = JSON.parse(readFileSync(new URL("../../../../.orders-lab/manifest.json", import.meta.url), "utf8"));
 
-async function login(page: Page) {
+async function login(page: Page, username = "orders-lab") {
   await page.goto("/");
-  await page.getByRole("textbox", { name: "Usuário", exact: true }).fill("orders-lab");
+  await page.getByRole("textbox", { name: "Usuário", exact: true }).fill(username);
   await page.getByLabel("Senha", { exact: true }).fill("synthetic-lab-only-20260910");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Entre para operar" })).toHaveCount(0);
 }
 
 test("lost response after the Django commit queries receipt and advances only once", async ({ page }) => {
-  await login(page);
+  await login(page, "orders-lab-advance");
   let posts = 0;
   let lookups = 0;
   await page.route(`**/api/v1/backstage/orders/${lab.advance_ref}/advance/**`, async (route) => {
@@ -36,7 +36,7 @@ test("lost response after the Django commit queries receipt and advances only on
 });
 
 test("SSE during notes draft preserves text and offers explicit same-field resolution", async ({ page }) => {
-  await login(page);
+  await login(page, "orders-lab-notes");
   await page.goto(`/${lab.notes_ref}`);
   const editor = page.locator("textarea").first();
   await expect(editor).toHaveValue("Nota inicial");
@@ -57,7 +57,7 @@ test("SSE during notes draft preserves text and offers explicit same-field resol
 });
 
 test("price preview confirms exact canonical values through Nitro and Django", async ({ page }) => {
-  await login(page);
+  await login(page, "orders-lab-price");
   await page.goto("/catalog");
   const matrix = await (await page.request.get("/api/v1/backstage/catalog/")).json();
   const before = matrix.matrix.rows.find((row: { sku: string }) => row.sku === "LAB-PROD").cells.find((cell: { surface_ref: string }) => cell.surface_ref === "lab").price_q;
@@ -75,4 +75,55 @@ test("price preview confirms exact canonical values through Nitro and Django", a
   expect((await (await result).json()).outcome).toBe("applied");
   const after = await (await page.request.get("/api/v1/backstage/catalog/")).json();
   expect(after.matrix.rows.find((row: { sku: string }) => row.sku === "LAB-PROD").cells.find((cell: { surface_ref: string }) => cell.surface_ref === "lab").price_q).toBe(Math.round(before * 1.1));
+});
+
+test("closed product A cannot hydrate the reopened panel for B", async ({ page }) => {
+  await login(page, "orders-lab-product");
+  await page.goto("/catalog");
+  let release!: () => void;
+  let received!: () => void;
+  const responseReady = new Promise<void>(resolve => { received = resolve; });
+  const delayed = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/api/v1/backstage/catalog/product/LAB-PROD/**", async route => {
+    const response = await route.fetch();
+    received();
+    await delayed;
+    await route.fulfill({ response });
+  });
+  await page.getByRole("button", { name: "Ações de Produto laboratório", exact: true }).click();
+  await page.getByRole("button", { name: "Editar detalhes", exact: true }).click();
+  await responseReady;
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Ações de Produto secundário", exact: true }).click();
+  await page.getByRole("button", { name: "Editar detalhes", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Produto secundário", exact: true })).toBeVisible();
+  const finished = page.waitForResponse("**/api/v1/backstage/catalog/product/LAB-PROD/**");
+  release();
+  await finished;
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page.getByRole("heading", { name: "Produto secundário", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Produto laboratório", exact: true })).toHaveCount(0);
+});
+
+test("same person resumes a locked draft; another person never inherits it", async ({ page }) => {
+  await login(page);
+  await page.goto(`/${lab.notes_ref}`);
+  const serverNote = (await (await page.request.get(`/api/v1/backstage/orders/${lab.notes_ref}/`)).json()).order.kitchen_note;
+  const editor = page.locator("textarea").first();
+  await expect(editor).toHaveValue(serverNote);
+  await editor.fill("Texto privado da pessoa A");
+  async function identify(username: string) {
+    await page.getByRole("button", { name: /travar \/ trocar/ }).click();
+    await expect(page.getByRole("heading", { name: "Entre para operar" })).toBeVisible();
+    await expect(editor).not.toBeVisible();
+    await page.getByRole("textbox", { name: "Usuário", exact: true }).fill(username);
+    await page.getByLabel("Senha", { exact: true }).fill("synthetic-lab-only-20260910");
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Entre para operar" })).toHaveCount(0);
+  }
+  await identify("orders-lab");
+  await expect(editor).toHaveValue("Texto privado da pessoa A");
+  expect((await (await page.request.get(`/api/v1/backstage/orders/${lab.notes_ref}/`)).json()).order.kitchen_note).toBe(serverNote);
+  await identify("orders-lab-b");
+  await expect(editor).toHaveValue(serverNote);
 });

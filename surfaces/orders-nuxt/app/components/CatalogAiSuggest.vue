@@ -13,6 +13,7 @@
 import type { AssistableField } from "~/types/catalog";
 
 const props = defineProps<{
+  sku: string | null;
   field: AssistableField;
   label: string;
   current: string;
@@ -25,11 +26,15 @@ const emit = defineEmits<{ accept: [text: string] }>();
 
 // Sugestão pendente: fica visível até o operador aceitar ou descartar.
 const suggestion = ref("");
+let generation = 0;
 
 async function onSuggest() {
   if (props.busy) return;
   // Erro e "não configurado" já viram toast no composable; aqui "" = nada a mostrar.
-  suggestion.value = await props.assist(props.field, props.current);
+  const request = ++generation;
+  const base = [props.sku, props.field, props.current];
+  const result = await props.assist(props.field, props.current);
+  if (request === generation && base.every((value, i) => value === [props.sku, props.field, props.current][i])) suggestion.value = result;
 }
 
 function onAccept() {
@@ -38,7 +43,8 @@ function onAccept() {
 }
 
 // Trocar de produto com uma sugestão aberta não pode vazar o texto do anterior.
-watch(() => props.field, () => (suggestion.value = ""));
+watch(() => [props.sku, props.field, props.current], () => { generation++; suggestion.value = ""; }, { flush: "sync" });
+onBeforeUnmount(() => { generation++; });
 </script>
 
 <template>

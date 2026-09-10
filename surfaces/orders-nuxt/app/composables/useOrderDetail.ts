@@ -1,3 +1,4 @@
+import { useOperatorResourceKey } from "./useOperatorResourceKey";
 import { useOrderIntention } from "./useOrderIntention";
 // Order detail read-side. Reads the expanded operator projection (items, timeline,
 // notes, fiscal links) and exposes the full action set. Writes go through the django
@@ -14,7 +15,7 @@ export function useOrderDetail(orderRef: string) {
   const { flagIfStationLocked } = useStationLock();
 
   const { data, pending, error, refresh } = useFetch<OrderDetailResponse>(path, {
-    key: `order-detail-${orderRef}`,
+    key: useOperatorResourceKey(`order-detail-${orderRef}`),
     server: true,
   });
 

@@ -1,3 +1,4 @@
+import { useOperatorResourceKey } from "./useOperatorResourceKey";
 import { useOrderIntention } from "./useOrderIntention";
 import type { CatalogPricePreview } from "~/generated/ordersContract";
 // Catalog matrix read/write. Single source for the produto × superfície grid:
@@ -32,7 +33,7 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   // product_queryset). Changing the ref refetches the matrix.
   const collection = collectionRef ?? ref("");
   const { data, pending, error, refresh } = useFetch<CatalogMatrixResponse>(path, {
-    key: "catalog-matrix",
+    key: useOperatorResourceKey("catalog-matrix"),
     server: true,
     query: { collection },
   });
