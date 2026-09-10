@@ -1063,11 +1063,10 @@ defineExpose({
                    precisa abrir o modal para conferir se há desconto e de que
                    tamanho. Desligado, o mesmo canto carrega o atalho. -->
               <UiBadge v-if="hasDiscount" class="shrink-0 tabular-nums">−{{ discountSummary }}</UiBadge>
-              <kbd
+              <OperatorKbd
                 v-else
-                class="shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground"
                 aria-hidden="true"
-              >F9</kbd>
+              >F9</OperatorKbd>
             </button>
 
             <button
@@ -1093,11 +1092,10 @@ defineExpose({
               <UiBadge v-if="splitActive" class="shrink-0 tabular-nums">{{ splitBadge }}</UiBadge>
               <!-- Mesmo canto do vizinho: ligado, o badge diz o estado;
                    desligado, ele carrega o atalho. -->
-              <kbd
+              <OperatorKbd
                 v-else
-                class="shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground"
                 aria-hidden="true"
-              >F10</kbd>
+              >F10</OperatorKbd>
             </button>
           </div>
         </section>
@@ -1181,11 +1179,10 @@ defineExpose({
             >
               <Icon :name="paymentIcon(method.ref)" class="size-5 shrink-0 text-muted-foreground" />
               <span class="flex-1">{{ method.label }}</span>
-              <kbd
+              <OperatorKbd
                 v-if="methodKeys[method.ref]"
-                class="shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground"
                 aria-hidden="true"
-              >{{ methodKeys[method.ref] }}</kbd>
+              >{{ methodKeys[method.ref] }}</OperatorKbd>
             </button>
           </div>
 
@@ -1230,7 +1227,7 @@ defineExpose({
               @click="$emit('tenderExact')"
             >
               <span class="truncate">Exato</span>
-              <kbd class="shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">=</kbd>
+              <OperatorKbd aria-hidden="true">=</OperatorKbd>
             </button>
             <button
               type="button"
@@ -1600,7 +1597,7 @@ defineExpose({
                   <Icon name="lucide:receipt-text" class="size-4 shrink-0 text-muted-foreground" />
                   CPF na nota?
                 </span>
-                <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F</kbd>
+                <OperatorKbd class="ml-auto" aria-hidden="true">F</OperatorKbd>
                 <UiSwitch
                   :model-value="wantsCpfOnInvoice"
                   aria-label="CPF na nota"
@@ -1646,7 +1643,7 @@ defineExpose({
                   <Icon name="lucide:printer" class="size-4 shrink-0 text-muted-foreground" />
                   Impressa?
                 </span>
-                <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">I</kbd>
+                <OperatorKbd class="ml-auto" aria-hidden="true">I</OperatorKbd>
                 <UiSwitch
                   :model-value="wantsPrintedReceipt"
                   aria-label="Nota impressa"
@@ -1665,7 +1662,7 @@ defineExpose({
                   <Icon name="lucide:mail" class="size-4 shrink-0 text-muted-foreground" />
                   Por e-mail?
                 </span>
-                <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">M</kbd>
+                <OperatorKbd class="ml-auto" aria-hidden="true">M</OperatorKbd>
                 <UiSwitch
                   :model-value="wantsEmailReceipt"
                   aria-label="Nota por e-mail"
@@ -1721,7 +1718,7 @@ defineExpose({
           @click="onCta"
         >
           {{ ctaLabel }}
-          <kbd class="rounded border border-primary-foreground/30 bg-transparent px-1.5 py-0.5 font-mono text-xs font-medium opacity-80" aria-hidden="true">Enter</kbd>
+          <OperatorKbd variant="inverse" aria-hidden="true">Enter</OperatorKbd>
         </UiButton>
       </div>
     </div>

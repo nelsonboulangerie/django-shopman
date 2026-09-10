@@ -151,11 +151,10 @@ defineExpose({ reset });
           :aria-keyshortcuts="index < numberedCount ? String(index + 1) : undefined"
           @click="pick(person)"
         >
-          <kbd
+          <OperatorKbd
             v-if="index < numberedCount"
-            class="shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground"
             aria-hidden="true"
-          >{{ index + 1 }}</kbd>
+          >{{ index + 1 }}</OperatorKbd>
           <span class="min-w-0 truncate">{{ person.name }}</span>
         </button>
       </div>

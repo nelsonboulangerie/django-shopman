@@ -247,7 +247,7 @@ onBeforeUnmount(() => {
           <span class="block truncate text-xs tabular-nums text-muted-foreground">{{ [result.phone, result.document, result.email].filter(Boolean).join(" · ") }}</span>
         </span>
         <span class="flex shrink-0 items-center gap-1.5">
-          <kbd v-if="index === highlighted" class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">Enter</kbd>
+          <OperatorKbd v-if="index === highlighted"  aria-hidden="true">Enter</OperatorKbd>
           <Icon name="lucide:chevron-right" class="size-4 shrink-0 text-muted-foreground" />
         </span>
       </button>
@@ -268,7 +268,7 @@ onBeforeUnmount(() => {
       >
         <Icon name="lucide:user-round-plus" class="size-4 shrink-0" />
         <span class="min-w-0">{{ emptyStateLabel }}</span>
-        <kbd class="shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">Enter</kbd>
+        <OperatorKbd aria-hidden="true">Enter</OperatorKbd>
       </UiButton>
       <p v-if="emptyStateCaveat" class="flex items-start gap-1.5 text-center text-xs text-muted-foreground">
         <Icon name="lucide:info" class="mt-0.5 size-3.5 shrink-0" />

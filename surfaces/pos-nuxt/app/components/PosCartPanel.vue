@@ -727,13 +727,11 @@ defineExpose({ focusItem, onDigit, onBackspace });
     class="flex min-h-0 flex-col overflow-hidden rounded-md border bg-card text-card-foreground md:h-full"
   >
     <header
-      class="flex shrink-0 items-center justify-between border-b px-3 py-1"
+      class="flex min-h-[calc(var(--pos-context-header-height,53px)-1px)] shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5"
     >
       <div class="flex items-center gap-2">
-        <h3 class="text-base font-semibold">Pedido</h3>
-        <span class="text-xs text-muted-foreground"
-          >{{ items.length }} itens</span
-        ><button
+        <h3 class="whitespace-nowrap text-base font-semibold">{{ items.length }} {{ items.length === 1 ? "item" : "itens" }}</h3>
+        <button
           ref="listEntry"
           aria-label="Navegar nos itens"
           aria-keyshortcuts="Alt+i"
@@ -741,12 +739,12 @@ defineExpose({ focusItem, onDigit, onBackspace });
           class="min-h-9 rounded px-1 text-xs text-muted-foreground hover:text-primary"
           @click="focusItem()"
         >
-          <kbd class="rounded border px-1 py-0.5">Alt I</kbd>
+          <OperatorKbd aria-hidden="true">Alt I</OperatorKbd>
         </button>
       </div>
-      <button v-if="itemNavigation && !batchMode" class="min-h-9 rounded-md px-2 text-xs font-medium text-primary" @click="finishItemMode">Concluir</button>
+      <button v-if="itemNavigation && !batchMode" class="inline-flex h-9 shrink-0 items-center rounded-full border border-border px-3 text-sm font-medium transition hover:bg-accent" @click="finishItemMode">Concluir</button>
       <button
-        class="min-h-9 rounded-md px-2 text-xs font-medium text-primary"
+        class="inline-flex h-9 shrink-0 items-center rounded-full border border-border px-3 text-sm font-medium transition hover:bg-accent"
         :aria-label="batchMode ? 'Concluir seleção' : 'Iniciar seleção'"
         @click="toggleBatchMode"
       >
@@ -801,7 +799,8 @@ defineExpose({ focusItem, onDigit, onBackspace });
             /></span>
           </button>
           <button
-            class="grid min-h-11 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2 pl-3 pr-1 py-2 text-left focus-visible:outline-none"
+            class="grid min-h-11 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2 pl-3 pr-1 pt-2 text-left focus-visible:outline-none"
+            :class="activeLineId === item.line_id && !batchMode ? 'pb-1' : 'pb-2'"
             :data-item-select="item.line_id"
             :aria-label="`Editar ${item.name}`"
             :aria-pressed="
@@ -868,7 +867,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
           </button>
           <div
             v-if="activeLineId === item.line_id && !batchMode"
-            class="flex w-full items-center justify-between gap-2 px-3 pb-2 pt-0.5"
+            class="flex w-full items-center justify-between gap-2 px-3 pb-2"
             aria-label="Ajustes do item"
           >
             <div
@@ -1186,11 +1185,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
         >
           <Icon name="lucide:credit-card" class="size-6" />
           Pagamento
-          <kbd
-            class="rounded border border-primary-foreground/30 bg-transparent px-1.5 py-0.5 font-mono text-xs font-medium opacity-80"
-            aria-hidden="true"
-            >F4</kbd
-          >
+          <OperatorKbd variant="inverse" aria-hidden="true">F4</OperatorKbd>
         </UiButton>
       </div>
       <UiButton
@@ -1203,11 +1198,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
       >
         <Icon name="lucide:credit-card" class="size-5" />
         Pagamento
-        <kbd
-          class="rounded border border-primary-foreground/30 bg-transparent px-1.5 py-0.5 font-mono text-xs font-medium opacity-80"
-          aria-hidden="true"
-          >F4</kbd
-        >
+        <OperatorKbd variant="inverse" aria-hidden="true">F4</OperatorKbd>
       </UiButton>
     </div>
   </div>

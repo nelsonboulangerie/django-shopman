@@ -129,11 +129,11 @@ function isActive(to: string): boolean {
       >
         <Icon :name="tab.icon" class="size-4" />
         <span class="hidden sm:inline">{{ tab.label }}</span>
-        <kbd
-          class="hidden rounded border border-current/20 px-1 py-0.5 font-mono text-xs font-medium leading-none opacity-70 xl:inline"
+        <OperatorKbd
+          variant="inverse"
+          class="hidden xl:inline-flex"
           aria-hidden="true"
-          >{{ tab.shortcut }}</kbd
-        >
+          >{{ tab.shortcut }}</OperatorKbd>
       </NuxtLink>
     </nav>
 
@@ -198,12 +198,11 @@ function isActive(to: string): boolean {
         >
           <Icon name="lucide:x" class="size-3.5" />
         </button>
-        <kbd
+        <OperatorKbd
           v-else
-          class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium leading-none text-muted-foreground"
+          class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2"
           aria-hidden="true"
-          >/</kbd
-        >
+          >/</OperatorKbd>
       </div>
       <AlertsBell />
       <button
@@ -230,11 +229,9 @@ function isActive(to: string): boolean {
       >
         <Icon name="lucide:keyboard" class="size-4" />
         <span class="hidden xl:inline">Atalhos</span>
-        <kbd
-          class="rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium leading-none"
+        <OperatorKbd
           aria-hidden="true"
-          >?</kbd
-        >
+          >?</OperatorKbd>
       </button>
     </div>
   </header>
