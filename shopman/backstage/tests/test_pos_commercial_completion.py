@@ -47,6 +47,7 @@ class POSCommercialCompletionTests(TestCase):
             "payment_method": "cash",
             "tab_ref": opened["tab_ref"],
             "tab_session_key": opened["tab_session_key"],
+            "expected_revision": opened["revision"],
             "client_request_id": "pos:test-commercial-001",
         }
         payload.update(overrides)

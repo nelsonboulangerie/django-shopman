@@ -78,6 +78,7 @@ from shopman.backstage.api._production_mutations import (
     ProductionVoidMutationSerializer,
     validated_body,
 )
+from shopman.backstage.api.pos_concurrency import tab_command
 from shopman.backstage.api.production_freshness import (
     override_attempt_digest,
     override_shortage_snapshot,
@@ -509,6 +510,8 @@ def _cash_shift_result(shift) -> dict:
 def _pos_payload_with_runtime(request, body: dict) -> dict:
     """Attach the active POS runtime context that browser surfaces should not invent."""
     payload = dict(body or {})
+    payload.pop("cash_shift_id", None)
+    payload.pop("pos_terminal_ref", None)
     cash_shift = _open_cash_shift_for_request(request)
     if cash_shift:
         # O servidor CONHECE o turno do operador — o browser nunca decide a
@@ -519,12 +522,8 @@ def _pos_payload_with_runtime(request, body: dict) -> dict:
 
 
 def _open_cash_shift_for_request(request):
-    """O turno ABERTO do operador no ``cashman`` — é o pk dele que vai em ``cash_shift_id``."""
-    try:
-        return pos_service.current_shift()
-    except Exception:
-        logger.debug("pos_runtime_payload_enrichment_failed user=%s", _actor(request), exc_info=True)
-        return None
+    """Resolve o turno exclusivamente pela estação desta requisição."""
+    return pos_service.current_shift(_terminal_do_pedido(request), strict=True)
 
 
 def _cash_shift_required_response() -> Response:
@@ -2926,38 +2925,21 @@ def _falha_do_caixa(exc, padrao: str) -> Response:
 
 
 def _cash_idempotent(request, *, acao: str, executar):
-    """Roda uma mutação de dinheiro UMA vez por `client_request_id`.
-
-    ⚠️ As oito mutações de dinheiro do caixa declaravam `idempotency="none"` e não
-    tinham trava nenhuma. O operador lança uma sangria de R$ 200, a rede do salão
-    oscila (é a mesma do kiosk e do KDS), o botão não responde, ele toca de novo —
-    e o livro-caixa aceita as duas linhas. O livro é IMUTÁVEL de propósito, então o
-    conserto não é apagar: é um ajuste, com o gerente, no fechamento, com o dono
-    perguntando por que faltam R$ 200.
-
-    E não havia segunda linha de defesa: as `UniqueConstraint` que o cashman
-    acrescentou depois de um TOCTOU real cobrem só os `kind` que têm `order_ref`.
-    Sangria, suprimento, fundo de troco, devolução e acerto de conta são exatamente
-    os que não têm. A trava de banco que salvou a venda não alcançava o caixa.
-
-    **Replay é SILENCIOSO aqui, e a diferença com o recibo de Compras é o que a
-    chave significa.** Lá a chave é a NOTA — estável para sempre —, então um envio
-    repetido meses depois merece ser contado ao operador. Aqui a chave é ESTE GESTO:
-    a tela a descarta no sucesso, então um segundo envio com a mesma chave só pode
-    ser retry da mesma sangria. Responder o mesmo resultado é a leitura certa dele.
-
-    Sem chave não há o que travar — mesma régua do submit da venda. A tela sempre
-    manda uma; quem chama a API crua sem chave está dizendo que cada envio é uma
-    operação.
-    """
+    """Efeito interno e recibo compartilham a transação e o conteúdo da tentativa."""
     from shopman.shop.services.remote_mutations import (
+        RemoteMutationConflict,
         RemoteMutationInProgress,
+        mutation_fingerprint,
         run_idempotent_mutation,
     )
 
+    terminal_ref = _terminal_do_pedido(request)
     chave = str(request.data.get("client_request_id") or "").strip()
-    if not chave:
-        return executar()
+    if not chave or len(chave) > 128:
+        return Response({"detail": "Identifique a tentativa antes de registrar.",
+            "error": {"code": "client_request_id_required"}}, status=422)
+    fingerprint = mutation_fingerprint({"actor": request.user.pk, "terminal": terminal_ref,
+        "payload": request.data})
 
     def _executar_para_o_claim():
         resposta = executar()
@@ -2967,11 +2949,16 @@ def _cash_idempotent(request, *, acao: str, executar):
         resultado = run_idempotent_mutation(
             scope=f"{CASH_IDEMPOTENCY_SCOPE}.{acao}",
             key=chave,
+            fingerprint=fingerprint,
+            atomic_effect=True,
             execute=_executar_para_o_claim,
             # Só a resposta BEM-SUCEDIDA vira replay. Guardar um 400 faria o
             # operador que corrigiu o valor receber o erro antigo de volta.
             cache_response=lambda corpo, codigo: codigo < 300,
         )
+    except RemoteMutationConflict:
+        return Response({"detail": "Esta tentativa pertence a outro conteúdo ou operador. Confira o resultado.",
+            "error": {"code": "idempotency_conflict"}}, status=409)
     except RemoteMutationInProgress:
         return Response(
             {
@@ -3009,7 +2996,7 @@ class POSCashOpenView(APIView):
                 session = pos_service.open_cash_shift(
                     operator=request.user,
                     opening_amount_raw=str(amount),
-                    terminal_ref=str(request.data.get("terminal_ref") or ""),
+                    terminal_ref=_terminal_do_pedido(request),
                 )
             except POSError as exc:
                 message = str(exc) or "Falha ao abrir caixa."
@@ -3062,7 +3049,7 @@ class POSCashCloseView(APIView):
                     actor_user=request.user,
                     closing_amount_raw=str(amount),
                     notes=notes,
-                    terminal_ref=str(request.data.get("terminal_ref") or ""),
+                    terminal_ref=_terminal_do_pedido(request),
                 )
             except POSPermissionError as exc:
                 # Fechar o caixa é da gerência (decisão de 21/08). O balcão precisa
@@ -3166,7 +3153,7 @@ class POSCashReceiptView(APIView):
                 entry_id=entry_id,
                 status=(request.data.get("status") or "").strip(),
                 detail=request.data.get("detail") or "",
-                terminal_ref=str(request.data.get("terminal_ref") or ""),
+                terminal_ref=_terminal_do_pedido(request),
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
@@ -3389,16 +3376,24 @@ class POSCashDrawerUnlockView(APIView):
 
 
 def _terminal_do_pedido(request) -> str:
-    """Em qual gaveta esta mutação acontece.
+    """O corpo pode confirmar a estação, nunca selecionar outra gaveta."""
+    from rest_framework.exceptions import APIException
+    from shopman.cashman.models import Terminal
 
-    O corpo tem prioridade porque é AFIRMAÇÃO de quem chama; o cookie da estação é o
-    contexto ambiente do dispositivo. Com uma gaveta só — o caso de hoje — os dois
-    caminham juntos. Com duas, é isto que impede o operador do balcão 1 de lançar
-    sangria na gaveta do balcão 2 sem erro nenhum.
-    """
-    corpo = request.data if hasattr(request, "data") else {}
-    do_corpo = str((corpo or {}).get("terminal_ref") or "").strip()
-    return do_corpo or station_trust.station_ref(request)
+    ref = station_trust.station_ref(request)
+    body = getattr(request, "data", {}) or {}
+    asserted = str(body.get("terminal_ref") or body.get("pos_terminal_ref") or "").strip()
+    code = "pos_station_required"
+    message = "Vincule este dispositivo a um único terminal ativo antes de operar."
+    if ref and asserted and asserted != ref:
+        code = "pos_terminal_mismatch"
+        message = "O caixa informado não corresponde a este dispositivo. Atualize o balcão."
+    elif ref and Terminal.objects.filter(ref=ref, is_active=True).exists():
+        return ref
+    exc = APIException({"detail": message, "field": "terminal_ref", "error": {"code": code, "message": message,
+        "field": "terminal_ref", "focus": "cash", "recovery": message}})
+    exc.status_code = 409
+    raise exc
 
 
 @extend_schema_view(
@@ -3725,6 +3720,14 @@ class POSTabOpenView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    def get(self, request, tab_ref: str):
+        from shopman.orderman.models import Session
+        session = Session.objects.filter(channel_ref=POS_CHANNEL_REF, state="open", handle_ref=pos_tabs_service.normalize_tab_ref(tab_ref)).first()
+        if session is None:
+            return Response({"detail": "Esta comanda foi encerrada ou não está aberta.",
+                "error": {"code": "tab_closed"}}, status=409)
+        return Response(build_open_tab(session))
+
     def post(self, request, tab_ref: str):
         try:
             session = pos_tabs_service.open_pos_tab(
@@ -3750,6 +3753,7 @@ class POSTabSaveView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -3787,6 +3791,7 @@ class POSTabClearView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def delete(self, request, session_key: str):
         try:
             cleared = pos_tabs_service.clear_pos_tab(
@@ -3813,6 +3818,7 @@ class POSTabMoveLinesView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -3845,6 +3851,7 @@ class POSTabRenameView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -3867,6 +3874,7 @@ class POSTabFireView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -3897,6 +3905,7 @@ class POSTabUnfireView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -4241,8 +4250,30 @@ class POSCloseSaleView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    def get(self, request):
+        """Consulta sem redispatch, inclusive após fechar o turno ou relogar."""
+        from shopman.orderman.models import IdempotencyKey, Order
+        terminal = _terminal_do_pedido(request)
+        key = str(request.query_params.get("client_request_id") or "").strip()
+        claim = IdempotencyKey.objects.filter(scope=pos_tabs_service._sale_claim_scope(POS_CHANNEL_REF), key=key).first()
+        receipt = (claim.response_body or {}) if claim else {}
+        if receipt.get("actor") != _username(request) or receipt.get("terminal_ref") != terminal:
+            return Response({"detail": "Resultado ainda não disponível para este operador e terminal.",
+                "error": {"code": "sale_outcome_unknown"}}, status=409)
+        order = Order.objects.filter(ref=receipt.get("order_ref", "")).first()
+        if order is None:
+            return Response({"detail": "A tentativa ainda não tem resultado confirmado. Não repita a cobrança.",
+                "error": {"code": "sale_outcome_unknown"}}, status=409)
+        return Response({"ok": True, "order_ref": order.ref,
+            "total_q": order.total_q, "outcome": "committed",
+            "payment": pos_tabs_service._pos_payment_response(order),
+            "fiscal_expected": _fiscal_expected(order.ref)})
+
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
+        if not pos_tabs_service._payload_client_request_id(body):
+            return Response({"detail": "Identifique a tentativa antes de finalizar.",
+                "error": {"code": "client_request_id_required"}}, status=422)
         if _open_cash_shift_for_request(request) is None:
             return _cash_shift_required_response()
         try:

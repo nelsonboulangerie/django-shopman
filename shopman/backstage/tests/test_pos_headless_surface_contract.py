@@ -90,6 +90,8 @@ class POSHeadlessSurfaceContractTests(TestCase):
         _grant_pos_perm(self.operator)
         self.client.force_login(self.operator)
         self.terminal = Terminal.default()
+        from shopman.backstage.tests.pos_test_runtime import bind_station
+        bind_station(self.client, self.terminal.ref)
         self.shift = cash.open_shift(operator=self.operator, terminal=self.terminal, float_q=0)
 
     def test_products_expose_sold_out_from_stock_scope(self) -> None:
@@ -278,7 +280,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         """
         response = self.client.post(
             "/api/v1/backstage/pos/cash/open/",
-            {"opening_amount": "0,00", "terminal_ref": self.terminal.ref},
+            {"opening_amount": "0,00", "terminal_ref": self.terminal.ref, "client_request_id": "opening-test"},
             content_type="application/json",
         )
 
@@ -295,6 +297,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+            "expected_revision": tab["revision"],
             "items": [
                 {
                     "sku": "POS-HEADLESS-ITEM",
@@ -675,6 +678,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+            "expected_revision": tab["revision"],
             "items": [
                 {
                     "sku": "POS-HEADLESS-ITEM",
@@ -791,6 +795,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+            "expected_revision": tab["revision"],
             "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
             "fulfillment_type": "delivery",
             "payment_method": "cash",
@@ -814,6 +819,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+            "expected_revision": tab["revision"],
             "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
             "fulfillment_type": "pickup",
             "payment_method": "mixed",
@@ -861,12 +867,8 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(mismatch_close.json()["error"]["field"], "payment_tenders")
         self.assertEqual(Order.objects.count(), 0)
 
-    def test_api_headless_pos_split_with_change_is_accepted(self) -> None:
-        """Split que COBRE o total (excedente = troco) passa — não é mismatch.
-
-        Regressão: antes a validação exigia soma EXATA (`!= total`), então uma
-        linha de dinheiro recebida a mais (troco) era rejeitada por engano.
-        """
+    def test_api_headless_pos_split_requires_exact_total(self) -> None:
+        """Regra aprovada: troco só em dinheiro único, sem normalização do misto."""
         opened = self.client.post("/api/v1/backstage/pos/tabs/00001008/open/", {})
         self.assertEqual(opened.status_code, 200)
         tab = opened.json()
@@ -875,6 +877,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+            "expected_revision": tab["revision"],
             "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
             "fulfillment_type": "pickup",
             "payment_method": "mixed",
@@ -894,16 +897,16 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(review.status_code, 200)
         review_body = review.json()["review"]
         codes = [w["code"] for w in review_body["warnings"]]
-        self.assertNotIn("payment_tenders_total_mismatch", codes)
-        self.assertEqual(review_body["change_q"], 200)
+        self.assertIn("payment_tenders_total_mismatch", codes)
+        self.assertEqual(review_body["change_q"], 0)
 
         close = self.client.post(
             "/api/v1/backstage/pos/sale/close/",
             data=json.dumps(payload),
             content_type="application/json",
         )
-        self.assertEqual(close.status_code, 200)
-        self.assertEqual(Order.objects.count(), 1)
+        self.assertEqual(close.status_code, 422)
+        self.assertEqual(Order.objects.count(), 0)
 
     def test_api_customer_lookup_returns_memory_and_default_address_projection(self) -> None:
         customer = Customer.objects.create(
@@ -1219,6 +1222,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
                 "intent_version": POS_SALE_INTENT_VERSION,
                 "tab_ref": tab["tab_ref"],
                 "tab_session_key": tab["tab_session_key"],
+            "expected_revision": tab["revision"],
                 "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
                 "payment_method": "cash",
                 "payment_collection": "terminal",

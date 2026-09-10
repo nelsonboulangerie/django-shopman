@@ -13,7 +13,7 @@ import { shouldConnectSse, shouldPollTick, type PosRealtimeState } from "~/prese
  * pendências, turno e comandas já vivem (ADR-016: o push é sinal, o fetch é a
  * verdade).
  *
- * Fallback: poll calmo (60s) só enquanto o SSE não está vivo — se o stream
+ * Fallback: poll calmo (15s) só enquanto o SSE não está vivo — se o stream
  * conecta, o tick não refaz nada. Tablet que dormiu/voltou à aba refaz na hora
  * e tenta reconectar o stream (um 403 na conexão fecha o EventSource de vez;
  * sem esta retomada, a estação ficaria no poll para sempre).
@@ -46,10 +46,10 @@ export function usePosEvents(onPush: () => void, opts?: { pollMs?: number; enabl
         // django-eventstream empurra eventos nomeados; qualquer um = refetch.
         const onEvent = () => onPush();
         ["message", channel.event].forEach((name) => source.addEventListener(name, onEvent));
-        // Um stream vivo já tira a tela do poll; o outro caindo não a devolve
-        // para lá, senão o canal saudável passaria a refazer fetch de graça.
-        source.onopen = () => { realtime.value = "live"; };
-        source.onerror = () => { if (!sources.some((s) => s.readyState === EventSource.OPEN)) realtime.value = "polling"; };
+        // Só todos os canais vivos dispensam o fallback: caixa vivo não
+        // comprova que mudanças de comanda estejam chegando.
+        source.onopen = () => { realtime.value = sources.length === CHANNELS.length && sources.every((s) => s.readyState === EventSource.OPEN) ? "live" : "polling"; onPush(); };
+        source.onerror = () => { if (!sources.every((s) => s.readyState === EventSource.OPEN)) realtime.value = "polling"; };
         sources.push(source);
       } catch {
         realtime.value = "polling";
@@ -82,7 +82,7 @@ export function usePosEvents(onPush: () => void, opts?: { pollMs?: number; enabl
   onMounted(() => {
     pollTimer = setInterval(() => {
       if (shouldPollTick(realtime.value)) onPush();
-    }, opts?.pollMs ?? 60_000);
+    }, opts?.pollMs ?? 15_000);
     connectSse();
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("online", onVisible);

@@ -453,65 +453,38 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
         Carrinho vazio
       </p>
       <ul v-else class="grid gap-0.5">
-        <!-- A LINHA DO CARRINHO EM DUAS FAIXAS, e não em três colunas.
-             Medido na tela (painel de 360px, linha útil de 329px): o nome do
-             produto recebia 119px e os botões 152px — a lixeira e o stepper
-             ficavam com MAIS espaço que a mercadoria, o nome truncava em
-             "Croissant Tradici…" e o preço quebrava em duas linhas perdendo o
-             separador. Sessenta pixels de altura para não dizer nem o produto
-             nem quanto ele custa.
-
-             Agora o nome ocupa a faixa de cima inteira e o TOTAL DA LINHA — o
-             número que o operador confere contra a bandeja — fica alinhado à
-             direita, legível. A faixa de baixo carrega o preço unitário, os
-             selos e os controles. Cada número aparece UMA vez: a quantidade
-             mora no stepper (era repetida no "2× R$ 13,00"), o unitário só
-             quando há mais de um (com qty 1, "R$ 15,00 cada" ao lado de
-             "R$ 15,00" é a mesma frase duas vezes). -->
+        <!-- Leitura primeiro. Só a linha ativa abre controles e autoria completa. -->
         <li
           v-for="item in items"
           :key="item.line_id"
-          class="grid cursor-pointer grid-cols-[auto_1fr] items-start gap-x-2 rounded-md border border-transparent px-2 py-0.5 transition"
+          class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-1 rounded-lg border border-transparent px-1 py-2 transition"
           :class="isSelected(item.line_id) ? 'border-primary bg-primary/10' : (activeLineId === item.line_id ? 'border-primary bg-primary/5' : 'hover:bg-accent/60')"
           :aria-current="activeLineId === item.line_id ? 'true' : undefined"
           @click="selectLine(item.line_id)"
         >
-          <button
-            type="button"
-            class="mt-1 grid size-6 shrink-0 place-items-center rounded-md border transition"
-            :class="isSelected(item.line_id) ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-transparent hover:border-primary/60'"
-            :aria-label="`Selecionar ${item.name}`"
-            :aria-pressed="isSelected(item.line_id)"
-            @click.stop="toggleSelect(item.line_id)"
-          >
-            <Icon name="lucide:check" class="size-4" />
+          <button type="button" class="grid size-11 shrink-0 place-items-center rounded-md focus-visible:outline-2 focus-visible:outline-primary" :aria-label="`Selecionar ${item.name}`" :aria-pressed="isSelected(item.line_id)" @click.stop="toggleSelect(item.line_id)">
+            <span class="grid size-4 place-items-center rounded border" :class="isSelected(item.line_id) ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'">
+              <Icon name="lucide:check" class="size-3" :class="isSelected(item.line_id) ? 'opacity-100' : 'opacity-0'" />
+            </span>
           </button>
 
           <div class="min-w-0">
-            <!-- faixa 1 — o que é, e quanto custa -->
-            <div class="flex items-baseline gap-2">
-              <p class="min-w-0 flex-1 truncate text-sm font-medium leading-tight">{{ item.name }}</p>
-              <!-- A ETIQUETA RISCADA é o marcador de desconto desta lista, e o
-                   selo com o NOME da promoção saiu daqui. Os dois diziam a mesma
-                   coisa — "estava mais caro" — e o selo custava uma faixa
-                   inteira (82px por linha contra 60px). Nesta lista o operador
-                   confere o que ele lançou; o POR QUÊ é pergunta de cliente, e
-                   ela tem lugar: o resumo do checkout, o recibo e este `title`. -->
-              <span
-                v-if="lineListTotalDisplay(item)"
-                class="shrink-0 text-xs tabular-nums text-muted-foreground line-through"
-                :title="discountBadge(item) ? `Preço de tabela — ${discountBadge(item)}` : 'Preço de tabela'"
-              >{{ lineListTotalDisplay(item) }}</span>
-              <strong class="shrink-0 text-sm font-semibold tabular-nums leading-tight">{{ formatBRL(lineTotalQ(item)) }}</strong>
-            </div>
-
-            <p v-if="item.notes" class="flex items-center gap-1 truncate text-xs italic text-muted-foreground">
-              <Icon name="lucide:sticky-note" class="size-3 shrink-0" />
-              <span class="truncate">{{ item.notes }}</span>
-            </p>
+            <button type="button" class="grid min-h-11 w-full gap-1 py-1 text-left" :aria-label="`Editar ${item.name}`" :aria-expanded="activeLineId === item.line_id" @click.stop="selectLine(item.line_id)">
+              <span class="flex items-baseline gap-2">
+                <span class="shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ item.qty }}×</span>
+                <span class="min-w-0 flex-1 text-sm font-medium leading-snug [overflow-wrap:anywhere]">{{ item.name }}</span>
+                <span class="shrink-0 text-right">
+                  <span v-if="lineListTotalDisplay(item)" class="block text-xs tabular-nums text-muted-foreground line-through" :title="discountBadge(item) || 'Preço de tabela'">{{ lineListTotalDisplay(item) }}</span>
+                  <strong class="text-sm font-semibold tabular-nums">{{ formatBRL(lineTotalQ(item)) }}</strong>
+                </span>
+              </span>
+              <span v-if="item.notes" class="flex items-start gap-1 text-xs italic leading-snug text-muted-foreground">
+                <Icon name="lucide:sticky-note" class="mt-0.5 size-3 shrink-0" /><span>{{ item.notes }}</span>
+              </span>
+            </button>
 
             <!-- faixa 2 — unitário à esquerda, controles à direita -->
-            <div class="flex items-center gap-2">
+            <div v-if="activeLineId === item.line_id" class="flex items-center gap-2 border-t border-border/60 pt-1">
               <span
                 v-if="item.qty > 1"
                 class="min-w-0 flex-1 truncate text-xs tabular-nums text-muted-foreground"
@@ -523,30 +496,32 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
               <!-- Alvos de toque de balcão: steppers em icon-sm (36px), e a lixeira
                    APARTADA deles, para o dedo apressado não remover querendo "menos 1". -->
               <div class="flex shrink-0 items-center gap-1" @click.stop>
-                <UiButton variant="ghost" size="icon-sm" aria-label="Diminuir" @click="bump(item.line_id, 'decrement')">
+                <UiButton variant="ghost" size="icon-sm" class="size-11" aria-label="Diminuir" @click="bump(item.line_id, 'decrement')">
                   <Icon name="lucide:minus" class="size-4" />
                 </UiButton>
                 <span class="w-6 text-center text-sm font-semibold tabular-nums">{{ item.qty }}</span>
-                <UiButton variant="ghost" size="icon-sm" aria-label="Aumentar" @click="bump(item.line_id, 'increment')">
+                <UiButton variant="ghost" size="icon-sm" class="size-11" aria-label="Aumentar" @click="bump(item.line_id, 'increment')">
                   <Icon name="lucide:plus" class="size-4" />
                 </UiButton>
-                <UiButton variant="ghost" size="icon-sm" class="ml-2" aria-label="Remover" @click="askRemove(item.line_id)">
+                <UiButton variant="ghost" size="icon-sm" class="ml-2 size-11" aria-label="Remover" @click="askRemove(item.line_id)">
                   <Icon name="lucide:trash-2" class="size-4 text-destructive" />
                 </UiButton>
               </div>
             </div>
 
-            <!-- faixa 3 — OS SELOS, com a largura inteira da linha. Dividir a
-                 faixa com o stepper deixava ~145px para um selo como "Hora da
-                 Xepa −25%", e a pílula quebrava DENTRO de si mesma: quatro
-                 andares de texto num formato que é redondo justamente porque
-                 pressupõe uma linha. Cada selo é `whitespace-nowrap` — quem
-                 quebra é a FILA de selos, nunca a palavra dentro do selo. Some
-                 por inteiro quando não há nada a dizer, que é o caso comum. -->
+            <div v-if="activeLineId === item.line_id && item.authorship" class="pb-1 text-xs leading-relaxed text-muted-foreground">
+              <p v-if="item.authorship.created_by && item.authorship.created_by !== item.authorship.updated_by">Lançado por {{ item.authorship.created_label || item.authorship.created_by }}</p>
+              <ClientOnly><p v-if="item.authorship.updated_at">Última alteração: {{ new Date(item.authorship.updated_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) }}</p></ClientOnly>
+            </div>
+
             <div
-              v-if="lineKitchenState(item) !== 'unfired'"
+              v-if="item.authorship?.updated_by || lineKitchenState(item) !== 'unfired'"
               class="mb-0.5 flex flex-wrap items-center gap-1"
             >
+            <span v-if="item.authorship?.updated_by" class="flex min-w-0 items-center gap-1 py-0.5 text-xs text-muted-foreground">
+              <Icon name="lucide:user-round" class="size-3 shrink-0" />
+              <span>{{ item.authorship.updated_by === item.authorship.created_by ? 'Lançado por' : 'Editado por' }} {{ item.authorship.updated_label || item.authorship.updated_by }}</span>
+            </span>
               <button
                 v-if="lineKitchenState(item) === 'fired_cancellable'"
                 type="button"

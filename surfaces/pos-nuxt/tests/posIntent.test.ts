@@ -211,7 +211,7 @@ describe("POS sale intent", () => {
     ])).toBe(1300);
   });
 
-  it("does not replay saved tender lines unless split payment is explicit", () => {
+  it("preserves explicitly entered tender lines for single payment", () => {
     const staleTender = { method: "cash", amount_q: 1000, collection: "terminal" as const };
     const simple = buildPosSaleIntent(baseIntentState({
       paymentMethod: "cash",
@@ -219,7 +219,7 @@ describe("POS sale intent", () => {
       tenderedQ: null,
     }));
 
-    expect(simple).not.toHaveProperty("payment_tenders");
+    expect(simple.payment_tenders).toEqual([staleTender]);
 
     const mixed = buildPosSaleIntent(baseIntentState({
       paymentMethod: "mixed",
@@ -463,23 +463,23 @@ describe("o QUANDO viaja na retirada também", () => {
 describe("resolvePayment (injeção de tenders → contrato)", () => {
   const t = (method: string, amount_q: number) => ({ method, amount_q, collection: "terminal" as const });
 
-  it("dinheiro único com troco vai pelo caminho de caixa (sem tenders)", () => {
+  it("dinheiro único preserva parcela líquida e valor recebido para troco", () => {
     const r = resolvePayment([t("cash", 5000)], 4300);
     expect(r.paymentMethod).toBe("cash");
-    expect(r.paymentTenders).toEqual([]);
+    expect(r.paymentTenders).toEqual([t("cash", 4300)]);
     expect(r.tenderedQ).toBe(5000);
   });
 
   it("dinheiro único exato também usa o caminho de caixa", () => {
     const r = resolvePayment([t("cash", 4300)], 4300);
     expect(r.tenderedQ).toBe(4300);
-    expect(r.paymentTenders).toEqual([]);
+    expect(r.paymentTenders).toEqual([t("cash", 4300)]);
   });
 
-  it("um cartão: só o método (backend constrói o tender), sem replay", () => {
+  it("um cartão preserva o valor declarado", () => {
     const r = resolvePayment([t("card", 4300)], 4300);
     expect(r.paymentMethod).toBe("card");
-    expect(r.paymentTenders).toEqual([]);
+    expect(r.paymentTenders).toEqual([t("card", 4300)]);
     expect(r.tenderedQ).toBeNull();
   });
 
@@ -492,5 +492,13 @@ describe("resolvePayment (injeção de tenders → contrato)", () => {
 
   it("sem tenders não resolve método", () => {
     expect(resolvePayment([], 4300).paymentMethod).toBe("");
+  });
+});
+
+describe("pagamento explícito preservado", () => {
+  it.each([500, 1500])("PIX %s não vira o total de 1000", (amount_q) => {
+    const tender = { method: "pix", amount_q, collection: "terminal" as const, reference: "PIX-REF" };
+    const resolved = resolvePayment([tender], 1000);
+    expect(resolved.paymentTenders).toEqual([tender]);
   });
 });

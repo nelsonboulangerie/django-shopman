@@ -95,16 +95,16 @@ class ChangeIsCashOnlyTests(PosGuardsBase):
 
     def test_cash_overpay_is_change(self) -> None:
         review = self._review(
-            payment_method="mixed",
-            payment_tenders=[{"method": "cash", "amount_q": 5000}],
+            payment_method="cash",
+            tendered_q=5000,
+            payment_tenders=[{"method": "cash", "amount_q": 1000}],
         )
 
         self.assertEqual(review.change_q, 4000)
         self.assertNotIn("tender_overpaid_non_cash", {w["code"] for w in review.warnings})
 
-    def test_mixed_change_limited_to_the_cash_share(self) -> None:
-        # Cartão cobre o total e ainda sobra dinheiro: o troco é só a parte em
-        # espécie, nunca o excedente do cartão.
+    def test_mixed_excess_requires_correction(self) -> None:
+        # Política aprovada: pagamento misto precisa fechar exatamente o total.
         review = self._review(
             payment_method="mixed",
             payment_tenders=[
@@ -113,7 +113,8 @@ class ChangeIsCashOnlyTests(PosGuardsBase):
             ],
         )
 
-        self.assertEqual(review.change_q, 500)
+        self.assertEqual(review.change_q, 0)
+        self.assertIn("payment_tenders_total_mismatch", {w["code"] for w in review.warnings})
 
 
 class DiscountThresholdHasOneOwnerTests(PosGuardsBase):

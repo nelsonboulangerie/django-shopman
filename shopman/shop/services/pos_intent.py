@@ -53,6 +53,8 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "client_request_id",
     "tab_ref",
     "tab_session_key",
+    "expected_revision",
+    "review_total_q",
     "manual_discount",
     "manager_approval",
     "cash_shift_id",
@@ -149,6 +151,8 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
     payload = dict(raw)
     payload["intent_version"] = POS_SALE_INTENT_VERSION
     payload["items"] = _items(payload.get("items"), for_commit=for_commit)
+    if "review_total_q" in payload:
+        payload["review_total_q"] = _nonnegative_int(payload["review_total_q"], "review_total_q")
 
     fulfillment_type = _fulfillment_type(payload.get("fulfillment_type"))
     payload["fulfillment_type"] = fulfillment_type
@@ -587,3 +591,8 @@ __all__ = [
     "PosSaleIntent",
     "parse_pos_sale_intent",
 ]
+
+
+def pos_session_revision(session) -> str:
+    """Token opaco de versão; o cliente só devolve a evidência que leu."""
+    return f"v1:{session.rev}:{session.updated_at.isoformat()}"

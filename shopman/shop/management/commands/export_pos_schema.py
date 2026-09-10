@@ -22,6 +22,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from shopman.shop.services.pos_intent import (
+    POS_SALE_INTENT_PAYLOAD_KEYS,
     POS_SALE_INTENT_PAYMENT_COLLECTIONS,
     POS_SALE_INTENT_PAYMENT_METHODS,
     POS_SALE_INTENT_RECEIPT_CHANNELS,
@@ -53,6 +54,7 @@ def render_pos_contract_ts() -> str:
         "",
         f'export const POS_SALE_INTENT_VERSION = "{POS_SALE_INTENT_VERSION}";',
         "",
+        _const_array("POS_SALE_INTENT_KEYS", "PosSaleIntentKey", POS_SALE_INTENT_PAYLOAD_KEYS),
         _const_array("POS_PAYMENT_METHODS", "PosPaymentMethod", POS_SALE_INTENT_PAYMENT_METHODS),
         _const_array("POS_PAYMENT_COLLECTIONS", "PosPaymentCollection", POS_SALE_INTENT_PAYMENT_COLLECTIONS),
         _const_array("POS_RECEIPT_CHANNELS", "PosReceiptChannel", POS_SALE_INTENT_RECEIPT_CHANNELS),

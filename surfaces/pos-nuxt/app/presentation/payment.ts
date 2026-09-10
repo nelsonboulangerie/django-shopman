@@ -97,7 +97,7 @@ export function cashTenderSumQ(tenders: POSPaymentTenderDraft[]): number {
  * Cartão e Pix cobram o que foi passado na maquininha; não há troco neles.
  */
 export function paymentChangeQ(tenders: POSPaymentTenderDraft[], totalQ: number): number {
-  return Math.min(Math.max(0, tenderSumQ(tenders) - totalQ), cashTenderSumQ(tenders));
+  return tenders.length === 1 && tenders[0]?.method === "cash" ? Math.max(0, tenderSumQ(tenders) - totalQ) : 0;
 }
 
 /**
@@ -106,7 +106,7 @@ export function paymentChangeQ(tenders: POSPaymentTenderDraft[], totalQ: number)
  */
 export function nonCashExcessQ(tenders: POSPaymentTenderDraft[], totalQ: number): number {
   const excess = Math.max(0, tenderSumQ(tenders) - totalQ);
-  return excess - Math.min(excess, cashTenderSumQ(tenders));
+  return excess - paymentChangeQ(tenders, totalQ);
 }
 
 // ── DIVIDIR A CONTA ──────────────────────────────────────────────────
@@ -179,7 +179,7 @@ export function splitHint(
 
 /** UX gate: at least one tender and the total fully covered. */
 export function isPaymentCovered(tenders: POSPaymentTenderDraft[], totalQ: number): boolean {
-  return tenders.length > 0 && paymentRemainingQ(tenders, totalQ) <= 0;
+  return tenders.length > 0 && (tenderSumQ(tenders) === totalQ || (tenders.length === 1 && tenders[0]?.method === "cash" && tenderSumQ(tenders) > totalQ));
 }
 
 /**

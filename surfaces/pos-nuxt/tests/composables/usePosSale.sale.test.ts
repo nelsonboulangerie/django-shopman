@@ -8,6 +8,8 @@ const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }));
 mockNuxtImport("$fetch", () => fetchMock);
 vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 
+beforeEach(() => sessionStorage.clear());
+
 function freeCartProjection() {
   return makeProjection({
     checkout: {
@@ -650,6 +652,28 @@ describe("usePosSale — a trava da gaveta na venda SEM comanda", () => {
 
     expect(h.sale.cart.items).toHaveLength(2);
     expect(h.sale.drawerLock.open.value).toBe(false);
+    h.handles.dispose();
+  });
+});
+
+describe("resultado desconhecido — consultar antes de repetir", () => {
+  it("um segundo toque consulta por GET e nunca repete o POST", async () => {
+    const actionCall = vi.fn(async (path: string, options?: { method?: string }) => {
+      if (path.includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
+      if (path.includes("/sale/close/") && options?.method === "GET") return { ok: true, order_ref: "PED-recovered" };
+      if (path.includes("/sale/close/")) throw new TypeError("Failed to fetch");
+      return {};
+    });
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+    expect(h.sale.pendingSaleKey.value).not.toBe("");
+    await h.sale.submitSale();
+    const calls = actionCall.mock.calls.filter(([p]) => p.includes("/sale/close/"));
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.[1]?.method).toBe("GET");
+    expect(h.sale.pendingSaleKey.value).toBe("");
+    expect(h.sale.recoveryMessage.value).toContain("PED-recovered");
     h.handles.dispose();
   });
 });

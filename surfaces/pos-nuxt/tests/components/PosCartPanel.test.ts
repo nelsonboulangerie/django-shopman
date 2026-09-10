@@ -56,14 +56,16 @@ describe("PosCartPanel — render", () => {
 describe("PosCartPanel — interações emitem os comandos certos", () => {
   it("'Aumentar' emite increment com o line_id da linha", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    await wrapper.findAll('[aria-label="Aumentar"]')[0]!.trigger("click");
+    await wrapper.find('[aria-label="Editar Pão"]').trigger("click");
+    await wrapper.find('[aria-label="Aumentar"]').trigger("click");
     expect(wrapper.emitted("increment")?.[0]).toEqual(["L-PAO"]);
   });
 
   it("'Diminuir' numa linha com qty>1 emite decrement (não abre remoção)", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     // CAFE é a 2ª linha, qty 2 → decrementa direto.
-    await wrapper.findAll('[aria-label="Diminuir"]')[1]!.trigger("click");
+    await wrapper.find('[aria-label="Editar Café"]').trigger("click");
+    await wrapper.find('[aria-label="Diminuir"]').trigger("click");
     expect(wrapper.emitted("decrement")?.[0]).toEqual(["L-CAFE"]);
     expect(wrapper.emitted("remove")).toBeUndefined();
   });
@@ -73,7 +75,8 @@ describe("PosCartPanel — interações emitem os comandos certos", () => {
     // que mais remove é zerar a quantidade, e ali ninguém teve intenção de
     // excluir — o item sumia e o operador procurava um toast que já passou.
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    await wrapper.findAll('[aria-label="Diminuir"]')[0]!.trigger("click");
+    await wrapper.find('[aria-label="Editar Pão"]').trigger("click");
+    await wrapper.find('[aria-label="Diminuir"]').trigger("click");
 
     expect(wrapper.emitted("decrement")).toBeUndefined();
     expect(wrapper.emitted("remove")).toBeUndefined();
@@ -195,7 +198,8 @@ describe("PosCartPanel — duas linhas do MESMO produto", () => {
 
   it("o stepper age na linha tocada, não na primeira do sku", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: doisChas }) });
-    await wrapper.findAll('[aria-label="Aumentar"]')[1]!.trigger("click");
+    await wrapper.findAll('[aria-label="Editar Chá"]')[1]!.trigger("click");
+    await wrapper.find('[aria-label="Aumentar"]').trigger("click");
     expect(wrapper.emitted("increment")?.[0]).toEqual(["L-cha-2"]);
   });
 
@@ -278,7 +282,7 @@ describe("PosCartPanel — a linha do carrinho", () => {
       props: props({ items: [item({ sku: "CROISSANT", name: "Croissant Tradicional", price_q: 1300, qty: 2 })] }),
     });
     const line = wrapper.find("li");
-    const band = line.find("div.flex.items-baseline");
+    const band = line.find('[aria-label="Editar Croissant Tradicional"]');
     expect(band.text()).toContain("Croissant Tradicional");
     expect(band.text()).toContain(formatBRL(2600));
     expect(band.find("button").exists()).toBe(false);
@@ -349,5 +353,21 @@ describe("PosCartPanel — transparência de desconto na linha", () => {
       }),
     });
     expect(wrapper.text()).toContain(formatBRL(1020 + 500));
+  });
+});
+
+
+describe("PosCartPanel — autoria discreta", () => {
+  it("mostra o último operador e revela o criador ao selecionar a linha", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: [
+      item({ sku: "PAO", name: "Pão", authorship: { created_by: "ana", created_label: "Ana", updated_by: "bruno", updated_label: "Bruno" } }),
+      item({ sku: "CAFE", name: "Café" }),
+    ] }) });
+    expect(wrapper.text()).toContain("Editado por Bruno");
+    expect(wrapper.text()).not.toContain("Lançado por Ana");
+    expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(1);
+    await wrapper.find('[aria-label="Editar Pão"]').trigger("click");
+    expect(wrapper.text()).toContain("Lançado por Ana");
+    expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(1);
   });
 });

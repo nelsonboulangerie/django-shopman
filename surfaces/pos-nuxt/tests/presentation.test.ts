@@ -432,7 +432,8 @@ describe("presentation/payment — tender math & method affordance", () => {
     expect(tenderSumQ(tenders)).toBe(4000);
     expect(paymentRemainingQ(tenders, 5000)).toBe(1000);
     expect(paymentRemainingQ(tenders, 3500)).toBe(-500);
-    expect(paymentChangeQ(tenders, 3500)).toBe(500);
+    expect(paymentChangeQ(tenders, 3500)).toBe(0);
+    expect(isPaymentCovered(tenders, 3500)).toBe(false);
     expect(paymentChangeQ(tenders, 5000)).toBe(0);
     expect(isPaymentCovered(tenders, 4000)).toBe(true);
     expect(isPaymentCovered(tenders, 5000)).toBe(false);
@@ -451,10 +452,10 @@ describe("presentation/payment — tender math & method affordance", () => {
     expect(paymentChangeQ(pix, 4200)).toBe(0);
   });
 
-  it("limits change to the cash share of a mixed payment", () => {
+  it("rejects mixed overpayment without calculating change", () => {
     const tenders = [tender("card", 4200), tender("cash", 1000)];
-    expect(paymentChangeQ(tenders, 4200)).toBe(1000);
-    expect(nonCashExcessQ(tenders, 4200)).toBe(0);
+    expect(paymentChangeQ(tenders, 4200)).toBe(0);
+    expect(nonCashExcessQ(tenders, 4200)).toBe(1000);
     expect(cashTenderSumQ(tenders)).toBe(1000);
   });
 

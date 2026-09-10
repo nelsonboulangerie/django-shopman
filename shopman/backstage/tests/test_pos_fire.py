@@ -410,6 +410,7 @@ class POSFireTabTests(TestCase):
 
         alice = get_user_model().objects.create_user(username="alice", password="x")
         shift = cash.open_shift(operator=alice, float_q=0)
+        session.refresh_from_db()
         pos_service.close_sale(
             channel_ref="pdv",
             payload={
@@ -417,6 +418,7 @@ class POSFireTabTests(TestCase):
                 "cash_shift_id": shift.pk,
                 "tab_ref": "2001",
                 "tab_session_key": session.session_key,
+                "expected_revision": build_open_tab(session)["revision"],
                 "items": [
                     {"line_id": "L-A", "sku": "FIRE-A", "name": "Fire A", "qty": 1, "unit_price_q": 1000},
                     {"line_id": "L-B", "sku": "FIRE-B", "name": "Fire B", "qty": 1, "unit_price_q": 1000},

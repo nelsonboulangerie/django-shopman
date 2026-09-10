@@ -50,23 +50,14 @@ export interface ResolvedPayment {
   tenderedQ: number | null;
 }
 
-/**
- * Map operator-injected tender lines onto the backend payment contract (Odoo-style:
- * no "mixed" selection — you inject amounts in different forms; the method is derived).
- * - A single cash tender covering the total → single-cash path, so overpayment becomes
- *   change (tendered_q). The backend rejects overpay inside the tenders list, so
- *   cash change only exists for a lone cash payment.
- * - A single non-cash tender → just the method; the backend builds the tender from the
- *   total (no need to replay a tender line — and the spec forbids replaying saved ones).
- * - Two or more tenders → "mixed" with the lines (they must sum to the total).
- */
+/** Preserva a declaração do operador; dinheiro único permite troco. */
 export function resolvePayment(tenders: POSPaymentTenderDraft[], totalQ: number): ResolvedPayment {
   const only = tenders.length === 1 ? tenders[0] : undefined;
   if (only) {
-    if (only.method === "cash" && only.amount_q >= totalQ) {
-      return { paymentMethod: "cash", paymentTenders: [], tenderedQ: only.amount_q };
+    if (only.method === "cash" && only.collection === "terminal" && only.amount_q >= totalQ) {
+      return { paymentMethod: "cash", paymentTenders: [{ method: only.method, amount_q: totalQ, collection: only.collection, ...(only.reference ? { reference: only.reference } : {}) }], tenderedQ: only.amount_q };
     }
-    return { paymentMethod: only.method, paymentTenders: [], tenderedQ: null };
+    return { paymentMethod: only.method, paymentTenders: [{ method: only.method, amount_q: only.amount_q, collection: only.collection, ...(only.reference ? { reference: only.reference } : {}) }], tenderedQ: null };
   }
   if (tenders.length >= 2) {
     // Strip internal fields (e.g. `_virgin`) — the intent carries only the contract shape.
@@ -110,6 +101,7 @@ export function buildPosSaleIntent(
     intent_version: intentVersion || POS_SALE_INTENT_VERSION,
     tab_ref: state.tabRef,
     tab_session_key: state.tabSessionKey,
+    ...(state.expectedRevision ? { expected_revision: state.expectedRevision } : {}),
     items: state.items.map((item) => ({
       // A identidade viaja SEMPRE. Sem ela o servidor gerava um id novo a cada
       // save e perdia o vínculo com o ticket de KDS já disparado — era por isso
@@ -185,7 +177,7 @@ export function buildPosSaleIntent(
   }
 
   if (state.orderNotes.trim()) payload.order_notes = state.orderNotes.trim();
-  if (state.paymentMethod === "mixed" && state.paymentTenders.length) payload.payment_tenders = state.paymentTenders;
+  if (state.paymentTenders.length) payload.payment_tenders = state.paymentTenders;
   if (
     state.paymentMethod === "cash"
     && state.paymentCollection === "terminal"

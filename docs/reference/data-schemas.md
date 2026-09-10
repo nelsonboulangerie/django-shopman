@@ -1683,3 +1683,38 @@ o [WP-ATRIBUTOS-RENAME](../plans/WP-ATRIBUTOS-RENAME-CHAVES-LEGADAS.md).
 `dietary_from_recipe`, e o service de atributos não o toca. Duas fontes
 escrevendo a mesma verdade é exatamente como ela diverge; unificá-lo com
 `source`/`reviewed` é do WP de rename.
+
+### PDV — revisão, autoria de linha e recibos de tentativa (2026-09-10)
+
+O comando HTTP de comanda exige `expected_revision`, token opaco `v1:<rev>:<updated_at ISO>`
+da leitura canônica. Save, fire, unfire, rename, clear e transfer conferem o token
+sob lock de Session; transfer para comanda existente confere também `target_revision`.
+O `rev` existente continua sendo incrementado pelo Orderman; alterações de cozinha
+agora atualizam também `rev` e `updated_at`. Nenhum campo novo nem migration.
+A venda com comanda verifica revisão e estado aberto dentro de sua transação;
+`review_total_q`, quando presente, deve coincidir com o total efetivamente calculado
+antes de confirmar o commit. O cliente PDV envia esse total da revisão aceita.
+
+`SessionItem.meta.pos_authorship` é escrito pelo servidor: `created_by`,
+`created_label`, `created_at`, `updated_by`, `updated_label`, `updated_at`.
+As identidades são usernames; labels são nomes públicos de operador. Uma gravação
+sem alteração de SKU/quantidade/observação/desconto conserva autoria e horário.
+Linhas históricas sem evidência não recebem criador presumido. A projection de
+operador publica esse bloco como `items[].authorship`; o intent não o aceita como
+fonte de identidade, e o display de cliente não o incorpora.
+
+`IdempotencyKey.response_body` dos scopes `pos_sale:<canal>` contém envelope v1 com
+`actor`, `terminal_ref`, `fingerprint` e `order_ref` quando registrado. Para
+`pos.cash.<ação>`, o envelope v1 contém `fingerprint` e `result` (status + data da
+resposta), gravados na mesma transação do efeito interno. O hash exclui PIN, token,
+crachá, senha e client_request_id; valores divergentes na mesma tentativa conflitam.
+Scopes monetários são preservados por `cleanup_idempotency_keys`, inclusive quando
+expirados ou in_progress: retenção não autoriza repetir dinheiro. Não fabricar
+recibos para histórico incompleto. A consulta de venda é GET na rota de close,
+com `client_request_id`; exige novamente operador autorizado e estação do recibo,
+e funciona após fechamento do turno, sem redispatch de pagamento/fiscal.
+
+O navegador mantém apenas a chave de venda pendente em `sessionStorage`
+(`pos.pending-sale.v1`), até consulta/conclusão ou fim da sessão do navegador.
+Não guarda itens, cliente, PIN ou dados de cartão nesse registro. Resultado ausente
+permanece desconhecido; não libera automaticamente uma nova cobrança.

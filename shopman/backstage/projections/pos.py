@@ -1026,6 +1026,16 @@ def _pos_actions() -> tuple[Action, ...]:
             idempotency="none",
         ),
         Action(
+            ref="read_tab", kind="navigation", label="Atualizar comanda", priority="quiet",
+            method="GET", href="/api/v1/backstage/pos/tabs/{tab_ref}/open/",
+            payload_schema={"path": {"tab_ref": "string"}}, idempotency="none",
+        ),
+        Action(
+            ref="sale_receipt", kind="navigation", label="Consultar resultado", priority="quiet",
+            method="GET", href="/api/v1/backstage/pos/sale/close/",
+            payload_schema={"query": {"client_request_id": "string"}}, idempotency="none",
+        ),
+        Action(
             ref="save_tab",
             kind="mutation",
             label="Salvar comanda",
@@ -1033,7 +1043,7 @@ def _pos_actions() -> tuple[Action, ...]:
             method="POST",
             href="/api/v1/backstage/pos/tabs/save/",
             payload_schema={
-                "required": ["tab_session_key", "items"],
+                "required": ["tab_session_key", "expected_revision", "items"],
                 "optional": ["customer_name", "customer_phone", "fulfillment_type", "payment_method"],
             },
             idempotency="none",
@@ -1059,7 +1069,7 @@ def _pos_actions() -> tuple[Action, ...]:
             method="POST",
             href="/api/v1/backstage/pos/sale/close/",
             payload_schema={
-                "required": ["tab_session_key", "items", "payment_method"],
+                "required": ["items", "payment_method", "client_request_id"],
                 "optional": [
                     "customer_name",
                     "customer_phone",
@@ -1342,7 +1352,7 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="quiet",
             method="DELETE",
             href="/api/v1/backstage/pos/tabs/{session_key}/clear/",
-            payload_schema={"path": {"session_key": "string"}},
+            payload_schema={"path": {"session_key": "string"}, "required": ["expected_revision"]},
             confirmation={"style": "destructive"},
             idempotency="none",
         ),
@@ -1353,7 +1363,7 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/tabs/rename/",
-            payload_schema={"required": ["session_key", "new_tab_ref"]},
+            payload_schema={"required": ["session_key", "expected_revision", "new_tab_ref"]},
             idempotency="none",
         ),
         Action(
@@ -1366,8 +1376,8 @@ def _pos_actions() -> tuple[Action, ...]:
             method="POST",
             href="/api/v1/backstage/pos/tabs/move-lines/",
             payload_schema={
-                "required": ["from_session_key", "line_ids"],
-                "optional": ["to_session_key", "to_tab_ref", "close_source_when_empty"],
+                "required": ["from_session_key", "expected_revision", "line_ids"],
+                "optional": ["to_session_key", "target_revision", "to_tab_ref", "close_source_when_empty"],
             },
             idempotency="none",
         ),
@@ -1379,7 +1389,7 @@ def _pos_actions() -> tuple[Action, ...]:
             method="POST",
             href="/api/v1/backstage/pos/tabs/fire/",
             payload_schema={
-                "required": ["session_key"],
+                "required": ["session_key", "expected_revision"],
                 "optional": ["line_ids", "client_request_id"],
             },
             # ⚠️ Prometia `client_request_id`, e essa chave só vai para o LOG. Quem
@@ -1396,7 +1406,7 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/tabs/unfire/",
-            payload_schema={"required": ["session_key", "line_ids"]},
+            payload_schema={"required": ["session_key", "expected_revision", "line_ids"]},
             confirmation={"style": "destructive"},
             idempotency="none",
         ),
@@ -2420,6 +2430,7 @@ def _tab_payload_payment_tenders(payment: dict) -> list[dict]:
 
 
 def build_open_tab(session: Session) -> dict:
+    from shopman.shop.services.pos_intent import pos_session_revision
     """Read-model of an open POS comanda, rendered by the POS surface.
 
     The stored ``tab_ref``/``tab_display`` are already normalized at open time,
@@ -2440,6 +2451,7 @@ def build_open_tab(session: Session) -> dict:
     items = [
         {
             "line_id": item.get("line_id", ""),
+            "authorship": (item.get("meta") or {}).get("pos_authorship") or {},
             "sku": item["sku"],
             "name": item.get("name", item["sku"]),
             "price_q": _tab_line_display_price_q(item, manual_originals),
@@ -2465,6 +2477,7 @@ def build_open_tab(session: Session) -> dict:
     return {
         "session_key": session.session_key,
         "tab_session_key": session.session_key,
+        "revision": pos_session_revision(session),
         "tab_ref": tab_ref,
         "tab_display": tab_display,
         "items": items,

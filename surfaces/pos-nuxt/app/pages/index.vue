@@ -160,6 +160,14 @@ const {
   reviewCheckout,
   reviewFailed,
   submitSale,
+  tabClosedElsewhere,
+  leaveClosedTab,
+  tabConflict,
+  adoptCurrentTab,
+  pendingSaleKey,
+  recoveryMessage,
+  recoveredOrderUrl,
+  recoverPendingSale,
   dismissResult,
   resendingLink,
   resendPaymentLink,
@@ -727,6 +735,25 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
     />
 
     <div class="flex min-w-0 flex-1 flex-col md:min-h-0 md:overflow-hidden">
+      <section v-if="tabClosedElsewhere" role="alert" class="m-3 rounded-lg border border-warning p-4">
+        <p>Esta comanda foi encerrada em outro dispositivo. Não repita a cobrança.</p>
+        <UiButton class="mt-2" @click="leaveClosedTab">Voltar às comandas e descartar a edição local</UiButton>
+      </section>
+      <section v-if="tabConflict" role="alert" class="m-3 rounded-lg border border-warning p-4">
+        <p class="font-medium">Esta comanda foi alterada em outro dispositivo.</p>
+        <div class="grid grid-cols-2 gap-4 py-2">
+          <div><p>Sua edição</p><p v-for="item in cart.items" :key="item.line_id">{{ item.qty }} × {{ item.name }}</p></div>
+          <div><p>Versão atual</p><p v-for="item in tabConflict.items" :key="item.line_id">{{ item.qty }} × {{ item.name }}</p></div>
+        </div>
+        <UiButton @click="adoptCurrentTab">Usar versão atual e substituir minha edição</UiButton>
+      </section>
+
+        <div v-if="pendingSaleKey || recoveryMessage" role="status" class="m-3 rounded-lg border border-amber-500 bg-background p-4">
+          <NuxtLink v-if="recoveredOrderUrl" :to="recoveredOrderUrl" external class="mb-2 inline-flex min-h-11 items-center underline">Conferir pagamento do pedido</NuxtLink>
+          <p>{{ recoveryMessage || 'Esta venda ainda precisa de confirmação. Consulte o resultado antes de cobrar novamente.' }}</p>
+          <button v-if="pendingSaleKey" type="button" class="mt-2 min-h-11 rounded border px-4" :disabled="busy" @click="recoverPendingSale">Consultar resultado</button>
+        </div>
+
       <header v-if="pos" class="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-2">
         <!-- Controle do rail (kit): cicla colapsado/compacto/estendido; mora no cabeçalho
              para que o rail suma por inteiro quando colapsado. -->

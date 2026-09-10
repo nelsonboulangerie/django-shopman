@@ -80,6 +80,8 @@ class POSConflitoComSaidaTests(TestCase):
         )
         self.client.force_login(self.operator)
         self.terminal = Terminal.default()
+        from shopman.backstage.tests.pos_test_runtime import bind_station
+        bind_station(self.client, self.terminal.ref)
         cash.open_shift(operator=self.operator, terminal=self.terminal, float_q=0)
 
     # ── ferramentas ──────────────────────────────────────────────────────────

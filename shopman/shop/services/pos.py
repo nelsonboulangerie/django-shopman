@@ -295,6 +295,10 @@ def close_sale(
 ) -> PosSaleResult:
     """Create and commit a POS sale from a parsed cart payload."""
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+    request_evidence = {"version": 1, "actor": operator_username,
+        "terminal_ref": payload.get("pos_terminal_ref", ""),
+        "fingerprint": mutation_fingerprint({"actor": operator_username, "payload": payload})}
     channel, config = _channel_and_config(channel_ref)
     # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou, e o
     # GATE precisa dela tanto quanto a review: sem carimbo, ``_payload_discount_q``
@@ -338,11 +342,11 @@ def close_sale(
     # PRÓPRIA TRAVA (``_answer_sale_claim`` o escreveu dentro da transação) e
     # devolve a mesma venda, em vez de criar a segunda.
     with transaction.atomic():
-        claim = _claim_sale_request(channel_ref=channel.ref, payload=payload)
+        claim = _claim_sale_request(channel_ref=channel.ref, payload=payload, evidence=request_evidence)
         session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
-        existing = _claimed_sale(claim) or _existing_sale_by_client_request_id(
-            channel_ref=channel.ref, payload=payload
-        )
+        existing = _claimed_sale(claim)
+        if existing is None and _existing_sale_by_client_request_id(channel_ref=channel.ref, payload=payload):
+            raise PosIntentError("sale_outcome_unknown", "Há uma venda anterior para esta tentativa, mas o recibo está incompleto. Confira o pedido antes de continuar.", status=409)
         if existing is not None:
             # Vale com comanda também: ``client_request_id`` identifica ESTE
             # envio, e o segundo envio do mesmo é replay, não venda nova.
@@ -358,7 +362,7 @@ def close_sale(
         shift = _require_open_shift(payload)
         if session is None:
             if _payload_has_tab_identity(payload):
-                raise ValueError("Abra um POS tab antes de finalizar.")
+                raise PosIntentError("tab_closed", "Esta comanda já foi encerrada ou mudou em outro dispositivo.", status=409)
             session = _create_direct_checkout_session(
                 channel_ref=channel.ref,
                 payload=payload,
@@ -369,6 +373,13 @@ def close_sale(
             # A comanda é relida SOB LOCK: os ops de troca (remove_line dos itens
             # atuais + add_line dos novos) só valem para o estado que travamos.
             session = _locked_session(session)
+            expected = payload.get("expected_revision")
+            from shopman.shop.services.pos_intent import pos_session_revision
+            if session.state != "open" or not expected or expected != pos_session_revision(session):
+                raise PosIntentError("tab_revision_conflict",
+                    "Esta comanda mudou. Confira a versão atual antes de finalizar.",
+                    field="expected_revision", status=409)
+
             direct_checkout = False
 
         result, session, tab_ref = _commit_sale_session(
@@ -381,7 +392,12 @@ def close_sale(
             direct_checkout=direct_checkout,
             approved_by=approved_by,
         )
+        reviewed_total = payload.get("review_total_q")
+        if reviewed_total is not None and int(result.total_q) != reviewed_total:
+            raise PosIntentError("review_stale", "O total mudou desde a revisão. Confira o novo total antes de finalizar.", status=409)
         _answer_sale_claim(claim, order_ref=result.order_ref)
+        from shopman.shop.handlers._sse_emitters import _emit_backstage
+        _emit_backstage("tabs", "backstage-tabs-update", {"kind": "committed", "session_key": session.session_key})
 
     # Fora da transação, e a ordem importa: os callbacks de ``on_commit`` do
     # lifecycle já rodaram e já reescreveram ``order.data``. Escrever o carimbo
@@ -469,7 +485,7 @@ def _sale_claim_scope(channel_ref: str) -> str:
     return f"pos_sale:{channel_ref}"[:64]
 
 
-def _claim_sale_request(*, channel_ref: str, payload: dict):
+def _claim_sale_request(*, channel_ref: str, payload: dict, evidence: dict):
     """Trava a chave do submit no banco, para dois envios simultâneos virarem um.
 
     Usa a ``IdempotencyKey`` do orderman, que já tem a ``UniqueConstraint``
@@ -506,6 +522,9 @@ def _claim_sale_request(*, channel_ref: str, payload: dict):
     for _attempt in range(2):
         claim = IdempotencyKey.objects.select_for_update().filter(scope=scope, key=key).first()
         if claim is not None:
+            stored = claim.response_body or {}
+            if any(stored.get(k) != v for k, v in evidence.items()):
+                raise PosIntentError("idempotency_conflict", "Esta tentativa já identifica outro conteúdo ou operador. Consulte o resultado.", status=409)
             return claim
         try:
             # Savepoint próprio: a violação de unicidade é o resultado ESPERADO
@@ -520,6 +539,7 @@ def _claim_sale_request(*, channel_ref: str, payload: dict):
                     scope=scope,
                     key=key,
                     status="in_progress",
+                    response_body=evidence,
                     expires_at=timezone.now() + timedelta(days=1),
                 )
         except IntegrityError:
@@ -551,7 +571,7 @@ def _answer_sale_claim(claim, *, order_ref: str) -> None:
         return
     claim.status = "done"
     claim.response_code = 200
-    claim.response_body = {"order_ref": order_ref}
+    claim.response_body = {**(claim.response_body or {}), "order_ref": order_ref}
     claim.save(update_fields=["status", "response_code", "response_body"])
 
 
@@ -731,11 +751,11 @@ def review_sale(
             "field": "payment_tenders",
             "message": "Adicione as linhas do pagamento misto antes de finalizar.",
         })
-    elif payment_method == "mixed" and total_q > 0 and tender_total_q < total_q:
+    elif payment_method != "cash" and total_q > 0 and tender_total_q != total_q:
         warnings.append({
             "code": "payment_tenders_total_mismatch",
             "field": "payment_tenders",
-            "message": "Os pagamentos informados não cobrem o total da venda.",
+            "message": "Os pagamentos informados devem somar o total exato da venda.",
         })
 
     approval_reasons = _approval_reasons(discount_q=discount_q, threshold_q=threshold_q)
@@ -789,7 +809,7 @@ def review_sale(
         # troco mandava o operador devolver dinheiro de verdade por um erro de
         # digitação. No dinheiro simples, o troco vem do valor recebido.
         change_q=(
-            min(max(0, tender_total_q - total_q), cash_tender_total_q)
+            0
             if payment_method == "mixed"
             else (max(0, tendered_q - total_q) if tendered_q else 0)
         ),
@@ -1063,6 +1083,7 @@ def open_pos_tab(
     return session
 
 
+@transaction.atomic
 def save_pos_tab(
     *,
     channel_ref: str,
@@ -1077,6 +1098,9 @@ def save_pos_tab(
     if session is None:
         raise ValueError("Abra um POS tab antes de deixar em espera.")
 
+    session = _locked_session(session)
+    if session.state != "open":
+        raise PosIntentError("tab_closed", "Esta comanda já foi encerrada.", status=409)
     before_items = session.items
     tab_ref = _session_tab_ref(session)
     tab_display = _ensure_pos_tab(tab_ref, display=_session_tab_display(session))
@@ -1112,10 +1136,14 @@ def save_pos_tab(
     return PosTabResult(tab_ref=tab_ref, tab_display=tab_display, session_key=session.session_key)
 
 
+@transaction.atomic
 def clear_pos_tab(*, channel_ref: str, session_key: str, operator_username: str) -> bool:
     """Abandon the open POS tab session, making the tab empty again."""
     session = _get_open_pos_tab_session_by_key(channel_ref=channel_ref, session_key=session_key)
     if session is None:
+        return False
+    session = _locked_session(session)
+    if session.state != "open":
         return False
     discarded = [
         {"sku": i.get("sku"), "name": i.get("name"), "qty": _audit_qty(i)}
@@ -1145,6 +1173,7 @@ def clear_pos_tab(*, channel_ref: str, session_key: str, operator_username: str)
     return cleared
 
 
+@transaction.atomic
 def rename_pos_tab(
     *,
     channel_ref: str,
@@ -1171,6 +1200,9 @@ def rename_pos_tab(
             focus="cart",
         )
 
+    session = _locked_session(session)
+    if session.state != "open":
+        raise PosIntentError("tab_closed", "Esta comanda já foi encerrada.", status=409)
     try:
         ref = normalize_tab_ref(new_tab_ref)
     except ValueError as exc:
@@ -1203,7 +1235,8 @@ def rename_pos_tab(
     )
     session.refresh_from_db()
     session.data = {**(session.data or {}), "tab_ref": ref, "tab_display": tab_display}
-    session.save(update_fields=["data"])
+    session.rev += 1
+    session.save(update_fields=["data", "rev", "updated_at"])
 
     session.emit_event("tab_renamed", actor=operator_username, payload={"from_ref": old_ref, "to_ref": ref})
 
@@ -1382,6 +1415,7 @@ def _session_to_fire_lines(session: Session) -> list[dict]:
     return lines
 
 
+@transaction.atomic
 def fire_pos_tab(
     *,
     channel_ref: str,
@@ -1414,6 +1448,10 @@ def fire_pos_tab(
             field="session_key",
             focus="cart",
         )
+
+    session = _locked_session(session)
+    if session.state != "open":
+        raise PosIntentError("tab_closed", "Esta comanda já foi encerrada.", status=409)
 
     requested = {str(lid).strip() for lid in (line_ids or []) if str(lid).strip()}
     lines = _session_to_fire_lines(session)
@@ -1451,7 +1489,8 @@ def fire_pos_tab(
         if line["line_id"] in fired_set:
             fired_qty[line["line_id"]] = int(line["qty"])
     session.data = {**(session.data or {}), "fired_lines": fired, "fired_qty": fired_qty}
-    session.save(update_fields=["data"])
+    session.rev += 1
+    session.save(update_fields=["data", "rev", "updated_at"])
 
     session.emit_event("fired", actor=operator_username, payload={
         "lines": [{"sku": ln["sku"], "name": ln["name"], "qty": ln["qty"]} for ln in to_fire],
@@ -1466,6 +1505,7 @@ def fire_pos_tab(
     return PosFireResult(session=session, fired_count=len(tickets), fired_lines=tuple(fired))
 
 
+@transaction.atomic
 def cancel_fired_pos_tab_lines(
     *,
     channel_ref: str,
@@ -1493,6 +1533,9 @@ def cancel_fired_pos_tab_lines(
             focus="cart",
         )
 
+    session = _locked_session(session)
+    if session.state != "open":
+        raise PosIntentError("tab_closed", "Esta comanda já foi encerrada.", status=409)
     targets = [str(lid).strip() for lid in (line_ids or []) if str(lid).strip()]
     if not targets:
         raise PosIntentError(
@@ -1515,7 +1558,8 @@ def cancel_fired_pos_tab_lines(
         if str(k) not in target_set
     }
     session.data = {**(session.data or {}), "fired_lines": fired, "fired_qty": fired_qty}
-    session.save(update_fields=["data"])
+    session.rev += 1
+    session.save(update_fields=["data", "rev", "updated_at"])
 
     session.emit_event("unfired", actor=operator_username, payload={
         "lines": unfired_lines, "line_ids": targets, "cancelled": result["cancelled"],
@@ -2126,7 +2170,33 @@ def _replace_session_ops(
         {"op": "set_data", "path": "delivery_fee_override_q", "value": None},
         {"op": "set_data", "path": "order_notes", "value": ""},
     ])
-    ops.extend(build_session_ops(payload, operator_username, approved_by=approved_by))
+    incoming = build_session_ops(payload, operator_username, approved_by=approved_by)
+    previous = {item.get("line_id"): item for item in session.items or []}
+    from django.contrib.auth import get_user_model
+    author = get_user_model().objects.filter(username=operator_username).first()
+    author_label = author.get_full_name().strip() if author else ""
+    author_label = author_label or operator_username
+    now = timezone.now().isoformat()
+    def content(item):
+        meta = item.get("meta") or {}
+        discount = meta.get("manual_discount") or {}
+        return (item.get("sku"), int(item.get("qty", 1)), meta.get("notes", ""),
+                discount.get("type", "percent"), str(discount.get("value", 0)), discount.get("reason", ""))
+    for op in incoming:
+        if op.get("op") != "add_line":
+            continue
+        old = previous.get(op.get("line_id"))
+        authorship = dict(((old or {}).get("meta") or {}).get("pos_authorship") or {})
+        if old is None:
+            authorship = {"created_by": operator_username, "created_label": author_label, "created_at": now,
+                          "updated_by": operator_username, "updated_label": author_label, "updated_at": now}
+        elif content(old) != content(op):
+            authorship.update(updated_by=operator_username, updated_label=author_label, updated_at=now)
+        # Histórico sem prova não recebe um criador inventado. O browser não
+        # fornece autor; autosave sem mudança também não rouba a autoria.
+        if authorship:
+            op.setdefault("meta", {})["pos_authorship"] = authorship
+    ops.extend(incoming)
     return ops
 
 
@@ -2628,13 +2698,13 @@ def _payload_tenders(
                 recovery="Remova as outras formas, ou troque o link por uma delas.",
             )
         paid_q = sum(int(tender["amount_q"]) for tender in tenders)
-        if require_complete and total_q > 0 and paid_q < total_q:
+        if require_complete and total_q > 0 and (paid_q < total_q or (paid_q != total_q and not (len(tenders) == 1 and tenders[0]["method"] == "cash"))):
             raise PosIntentError(
                 code="payment_tenders_total_mismatch",
-                message="Os pagamentos informados não cobrem o total da venda.",
+                message="Os pagamentos informados precisam corresponder ao total da venda.",
                 field="payment_tenders",
                 focus="payment",
-                recovery="Ajuste as linhas do pagamento até cobrirem o total revisado (o excedente vira troco).",
+                recovery="Confira os valores. Apenas dinheiro único permite troco; os demais devem somar o total exato.",
             )
         return tenders
 

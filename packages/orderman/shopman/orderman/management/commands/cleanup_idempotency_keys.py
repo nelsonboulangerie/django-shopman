@@ -12,6 +12,7 @@ Recomendação: Agendar via cron para executar diariamente.
 from datetime import timedelta
 
 from django.core.management.base import BaseCommand
+from django.db.models import Q
 from django.utils import timezone
 from shopman.orderman.models import IdempotencyKey
 
@@ -51,18 +52,21 @@ class Command(BaseCommand):
         dry_run = options["dry_run"]
         include_in_progress = options["include_in_progress"]
 
+        # Recibos monetários não são cache descartável. Apagá-los permitiria
+        # repetir um lançamento antigo; retenção exige reconciliação própria.
+        persistent = Q(scope__in=PERSISTENT_SCOPES) | Q(scope__startswith="pos_sale:") | Q(scope__startswith="pos.cash.")
         cutoff = timezone.now() - timedelta(days=days)
         now = timezone.now()
 
         # 1. Keys com expires_at definido e expirado
-        expired_qs = IdempotencyKey.objects.filter(expires_at__lt=now).exclude(scope__in=PERSISTENT_SCOPES)
+        expired_qs = IdempotencyKey.objects.filter(expires_at__lt=now).exclude(persistent)
         expired_count = expired_qs.count()
 
         # 2. Keys antigas (criadas há mais de N dias)
         old_qs = IdempotencyKey.objects.filter(
             created_at__lt=cutoff,
             status__in=["done", "failed"],
-        ).exclude(scope__in=PERSISTENT_SCOPES)
+        ).exclude(persistent)
         old_count = old_qs.count()
 
         # 3. Keys "in_progress" antigas (possíveis órfãs de processos interrompidos)
@@ -73,7 +77,7 @@ class Command(BaseCommand):
             orphan_qs = IdempotencyKey.objects.filter(
                 created_at__lt=orphan_cutoff,
                 status="in_progress",
-            ).exclude(scope__in=PERSISTENT_SCOPES)
+            ).exclude(persistent)
             orphan_count = orphan_qs.count()
 
         total = expired_count + old_count + orphan_count

@@ -40,6 +40,7 @@ def _payload(
         "manual_discount": None,
         "tab_ref": tab_ref,
         "tab_session_key": tab_session_key or None,
+        "expected_revision": build_open_tab(Session.objects.get(session_key=tab_session_key))["revision"] if tab_session_key else "",
     }
 
 

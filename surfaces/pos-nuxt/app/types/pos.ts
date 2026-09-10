@@ -477,7 +477,17 @@ export interface POSResponse {
   pin_must_change: boolean;
 }
 
+export interface POSLineAuthorship {
+  created_by?: string;
+  created_label?: string;
+  created_at?: string;
+  updated_by?: string;
+  updated_label?: string;
+  updated_at?: string;
+}
+
 export interface POSCartItem {
+  authorship?: POSLineAuthorship;
   /** A IDENTIDADE da linha, e a única chave dela. O cliente gera ao criar
    *  (`L-` + 8 caracteres) e o servidor preserva.
    *
@@ -533,6 +543,7 @@ export interface POSPaymentTenderDraft {
 export interface POSTabPayload {
   session_key: string;
   tab_session_key: string;
+  revision?: string;
   tab_ref: string;
   tab_display: string;
   items: POSCartItem[];
@@ -590,6 +601,7 @@ export interface POSPaymentResultProjection {
 export interface POSIntentCartState {
   tabRef: string;
   tabSessionKey: string;
+  expectedRevision?: string;
   items: POSCartItem[];
   customerName: string;
   customerRef: string;

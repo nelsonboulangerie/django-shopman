@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -56,9 +57,14 @@ def run_idempotent_mutation(
     key: str,
     execute: Callable[[], tuple[dict[str, Any], int]],
     cache_response: Callable[[dict[str, Any], int], bool] | None = None,
+    fingerprint: str = "",
+    atomic_effect: bool = False,
 ) -> RemoteMutationResult:
     """Run ``execute`` once for ``scope``/``key`` and replay cached responses."""
 
+    if atomic_effect:
+        return _run_atomic_mutation(scope=scope, key=key, execute=execute,
+            cache_response=cache_response, fingerprint=fingerprint)
     idem = _acquire(scope=scope, key=key)
     if idem.status == "done" and idem.response_body is not None:
         return RemoteMutationResult(
@@ -116,3 +122,50 @@ def _normalize_key(value: str) -> str:
         return key
     digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
     return f"sha256:{digest}"
+
+
+class RemoteMutationConflict(Exception):
+    """A chave já identifica outro conteúdo ou uma evidência legada."""
+
+
+def mutation_fingerprint(payload: dict) -> str:
+    """Hash determinístico sem persistir credenciais nem dados pessoais brutos."""
+    def clean(value):
+        if isinstance(value, dict):
+            return {k: clean(v) for k, v in value.items()
+                    if k not in {"pin", "token", "badge", "password", "client_request_id"}}
+        if isinstance(value, list):
+            return [clean(v) for v in value]
+        return value
+    return hashlib.sha256(json.dumps(clean(payload), sort_keys=True, separators=(",", ":"),
+                                     default=str).encode()).hexdigest()
+
+
+def _run_atomic_mutation(*, scope, key, execute, cache_response, fingerprint):
+    # Só efeitos internos: rollback deve alcançar o owner do efeito. Não usar
+    # este modo para um provider HTTP, e-mail, fiscal ou hardware.
+    with transaction.atomic():
+        idem, created = IdempotencyKey.objects.select_for_update().get_or_create(
+            scope=scope, key=key, defaults={"status": "in_progress",
+                "expires_at": timezone.now() + timedelta(days=1),
+                "response_body": {"version": 1, "fingerprint": fingerprint}},
+        )
+        envelope = idem.response_body or {}
+        if envelope.get("version") != 1 or envelope.get("fingerprint") != fingerprint:
+            raise RemoteMutationConflict()
+        if not created:
+            if idem.status == "done":
+                return RemoteMutationResult(envelope["result"], idem.response_code or 200, True)
+            # Expiração é retenção, nunca autorização para repetir dinheiro.
+            raise RemoteMutationInProgress()
+        body, code = execute()
+        if cache_response(body, code) if cache_response else code < 300:
+            idem.status = "done"
+            idem.response_code = code
+            idem.response_body = {**envelope, "result": body}
+            idem.save(update_fields=["status", "response_body", "response_code"])
+        else:
+            # Uma resposta recusada também pode ter sido montada depois de um
+            # efeito parcial: desfazer tudo, inclusive a tentativa, antes de sair.
+            transaction.set_rollback(True)
+        return RemoteMutationResult(body, code)
