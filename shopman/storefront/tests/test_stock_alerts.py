@@ -3,6 +3,7 @@
 Cobre: subscribe (anônimo/dedup/sem contato), notify idempotente (dispara só
 quando disponível, marca uma vez, não marca em falha de envio) e o endpoint.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -25,14 +26,18 @@ def _state(can_add: bool, available_qty: int | None = None):
 
 def _publish(sku="SKU-NOTIFY", *, is_batch_produced=False):
     return Product.objects.create(
-        sku=sku, name="Pão Teste", base_price_q=500,
-        is_published=True, is_sellable=True, is_batch_produced=is_batch_produced,
+        sku=sku,
+        name="Pão Teste",
+        base_price_q=500,
+        is_published=True,
+        is_sellable=True,
+        is_batch_produced=is_batch_produced,
     )
 
 
-def _move(sku: str, *, kind: str = "buy"):
+def _move(sku: str, *, kind: str = "buy", delta=1, metadata=None):
     """Um ``Move`` de mentira, com o ``kind`` que o receptor lê para decidir a rede."""
-    fake = MagicMock(quant_id=1, kind=kind)
+    fake = MagicMock(quant_id=1, kind=kind, delta=delta, metadata=metadata or {})
     fake.quant.sku = sku
     return fake
 
@@ -242,11 +247,35 @@ def test_move_receiver_skips_when_no_pending_subscription():
     nb.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "move",
+    [
+        _move("SKU-QC", delta=-1),
+        _move(
+            "SKU-QC",
+            delta=1,
+            kind="waste",
+            metadata={"operation": "production_qc_correction", "direction": "loss_recovery"},
+        ),
+    ],
+)
+def test_move_receiver_never_calls_a_qc_correction_a_new_arrival(move):
+    from shopman.storefront import handlers
+
+    stock_alerts.subscribe("SKU-QC", phone=PHONE)
+    with (
+        patch("shopman.storefront.services.stock_alerts.notify_back_in_stock") as nb,
+        patch("django.db.transaction.on_commit", side_effect=lambda fn: fn()),
+    ):
+        handlers.on_move_for_stock_alerts(sender=None, instance=move)
+    nb.assert_not_called()
+
+
 # ── trigger (fornada) ───────────────────────────────────────────────
 
 
 def test_bake_receiver_notifies_production_ready_subscribers():
-    """"Me avise quando sair do forno" dispara na fornada, não na reposição."""
+    """ "Me avise quando sair do forno" dispara na fornada, não na reposição."""
     from shopman.storefront import handlers
 
     stock_alerts.subscribe("SKU-BAKE", phone=PHONE, alert_type="production_ready")
@@ -350,8 +379,11 @@ def test_an_active_recipe_is_enough_to_make_it_an_oven_item():
 
     _publish(sku="CI")
     Recipe.objects.create(
-        ref="ciabatta", name="Ciabatta", output_sku="CI",
-        batch_size=Decimal("10"), is_active=True,
+        ref="ciabatta",
+        name="Ciabatta",
+        output_sku="CI",
+        batch_size=Decimal("10"),
+        is_active=True,
     )
     assert stock_alerts.subscribe("CI", phone=PHONE).alert_type == "production_ready"
 
@@ -398,7 +430,11 @@ def test_a_bake_does_not_send_twice_to_the_same_person():
     ):
         handlers.on_move_for_stock_alerts(sender=None, instance=_move("BF-BAKE", kind="make"))
         handlers.on_production_finished_for_stock_alerts(
-            sender=None, product_ref="BF-BAKE", date=None, action="finished", work_order=None,
+            sender=None,
+            product_ref="BF-BAKE",
+            date=None,
+            action="finished",
+            work_order=None,
         )
 
     assert nf.call_count == 1
@@ -441,9 +477,7 @@ def test_one_person_two_subscriptions_gets_one_message():
 
     assert notified == 1
     assert nf.call_count == 1
-    assert StockAlertSubscription.objects.filter(
-        sku="SKU-LEGACY-BOTH", notified_at__isnull=True
-    ).count() == 0
+    assert StockAlertSubscription.objects.filter(sku="SKU-LEGACY-BOTH", notified_at__isnull=True).count() == 0
 
 
 # ── rede de segurança: estoque que chega por fora da produção ────────

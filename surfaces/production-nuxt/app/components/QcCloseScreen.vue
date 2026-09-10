@@ -96,7 +96,17 @@ const lossDefectRef = ref(
 );
 const overshootConfirmed = ref(false);
 const overshootReason = ref("");
-const auditReason = ref("");
+// O diff estruturado + ator + horário já é a auditoria. Não cobramos do
+// operador um segundo motivo livre que apenas repetiria o defeito escolhido.
+const auditReason = "Revisão do QC registrada no quiosque.";
+const submitLatched = ref(false);
+
+watch(
+  () => props.submitting,
+  (value, previous) => {
+    if (previous && !value) submitLatched.value = false;
+  },
+);
 
 // Com âncora, Normal é saldo e não exige digitação. Sem âncora, o padrão é um
 // bucket editável como os demais para que uma fornada avulsa possa ser fechada.
@@ -173,8 +183,18 @@ function setTargetQuantity(quantity: number) {
   const target = activeTarget.value;
   if (!target) return;
   if (target.kind === "loss") {
-    lossQuantity.value = quantity;
-    if (quantity === 0) lossDefectRef.value = "";
+    let nextQuantity = quantity;
+    if (props.mode === "correct") {
+      const maximum = Math.max(0, correctionTotal - explicitTotal.value);
+      nextQuantity = Math.min(quantity, maximum);
+      if (quantity > maximum) {
+        useSonner.warning(
+          `Máximo ${maximum}; os outros graus já ocupam o restante.`,
+        );
+      }
+    }
+    lossQuantity.value = nextQuantity;
+    if (nextQuantity === 0) lossDefectRef.value = "";
   } else {
     let nextQuantity = quantity;
     if (props.mode === "correct" && target.gradeRef !== defaultRef.value) {
@@ -186,8 +206,13 @@ function setTargetQuantity(quantity: number) {
         .reduce((total, grade) => total + explicitGradeQuantity(grade.ref), 0);
       nextQuantity = Math.min(
         quantity,
-        Math.max(0, correctionTotal - correctionLoss - otherExplicit),
+        Math.max(0, correctionTotal - lossQuantity.value - otherExplicit),
       );
+      if (quantity > nextQuantity) {
+        useSonner.warning(
+          `Máximo ${nextQuantity}; Perda e os outros graus já ocupam o restante.`,
+        );
+      }
     }
     gradeQuantities.value = {
       ...gradeQuantities.value,
@@ -232,12 +257,6 @@ function pickGrade(grade: QCGradeProjection) {
 }
 
 function pickLoss() {
-  if (props.mode === "correct") {
-    if (lossQuantity.value > 0) {
-      openQuestion({ kind: "loss_reason" }, false);
-    }
-    return;
-  }
   activeTarget.value = { kind: "loss" };
   fresh.value = true;
 }
@@ -306,11 +325,6 @@ const activeDefects = computed(() =>
     ? props.defects.filter((defect) => !defect.forces_discard)
     : props.defects,
 );
-const correctionReasonGrades = computed(() =>
-  props.mode === "correct"
-    ? orderedGrades.value.filter((grade) => gradeNeedsReason(grade))
-    : [],
-);
 const sheetTitle = computed(() => {
   if (sheetQuestion.value?.kind === "overshoot") {
     return `Foram contabilizadas ${total.value} de ${anchor.anchor} unidades?`;
@@ -369,11 +383,7 @@ function fixOvershoot() {
 }
 
 function onConfirm() {
-  if (props.submitting) return;
-  if (props.mode === "correct" && !auditReason.value.trim()) {
-    useSonner.warning("Informe o motivo da correção.");
-    return;
-  }
+  if (props.submitting || submitLatched.value) return;
   if (total.value <= 0) {
     useSonner.warning("Informe a quantidade produzida ou a perda da fornada.");
     return;
@@ -387,19 +397,20 @@ function onConfirm() {
 }
 
 function submit() {
+  if (props.submitting || submitLatched.value) return;
+  submitLatched.value = true;
   emit("confirm", {
     quantity: String(total.value),
     partition: buildPartition(),
     yield_deviation_confirmed: overshootConfirmed.value,
     yield_deviation_reason: overshootReason.value.trim(),
-    reason: auditReason.value.trim(),
+    reason: auditReason,
   });
 }
 
 const isDirty = computed(() =>
   props.mode === "correct"
-    ? partitionKey(buildPartition()) !== partitionKey(props.initialPartition) ||
-      Boolean(auditReason.value.trim())
+    ? partitionKey(buildPartition()) !== partitionKey(props.initialPartition)
     : Object.values(gradeQuantities.value).some((quantity) => quantity > 0) ||
       lossQuantity.value > 0 ||
       Object.values(gradeDefectRefs.value).some(Boolean) ||
@@ -543,116 +554,136 @@ const fieldCard =
           role="group"
           aria-label="Graus de qualidade"
         >
-          <button
+          <div
             v-for="grade in orderedGrades"
             :key="grade.ref"
-            type="button"
-            :data-grade-ref="grade.ref"
-            class="relative flex min-h-14 flex-1 items-center justify-between gap-2 overflow-hidden rounded-md border py-2 pl-4 pr-3 text-left transition hover:bg-accent"
-            :class="{
-              'border-primary bg-accent ring-2 ring-primary/30': isActiveGrade(
-                grade.ref,
-              ),
-            }"
-            :aria-label="`${grade.label}: ${gradeQuantity(grade.ref)} unidades${grade.ref === defaultRef && anchor.anchor !== null ? ', saldo' : ''}`"
-            :aria-pressed="gradeQuantity(grade.ref) > 0"
-            @click="pickGrade(grade)"
+            class="flex flex-1 flex-col overflow-hidden rounded-md border bg-card"
           >
-            <span
-              class="absolute inset-y-0 left-0 w-1.5"
-              :class="gradeBandClass(grade, grades)"
-            />
-            <span class="min-w-0">
-              <span class="block font-medium">{{ grade.label }}</span>
+            <button
+              type="button"
+              :data-grade-ref="grade.ref"
+              class="relative flex min-h-14 flex-1 items-center justify-between gap-2 overflow-hidden py-2 pl-4 pr-3 text-left transition hover:bg-accent"
+              :class="{
+                'bg-accent ring-2 ring-inset ring-primary/30': isActiveGrade(
+                  grade.ref,
+                ),
+              }"
+              :aria-label="`${grade.label}: ${gradeQuantity(grade.ref)} unidades${grade.ref === defaultRef && anchor.anchor !== null ? ', saldo' : ''}`"
+              :aria-pressed="gradeQuantity(grade.ref) > 0"
+              @click="pickGrade(grade)"
+            >
               <span
-                v-if="grade.ref === defaultRef && anchor.anchor !== null"
-                class="block text-xs text-muted-foreground"
-              >
-                saldo
+                class="absolute inset-y-0 left-0 w-1.5"
+                :class="gradeBandClass(grade, grades)"
+              />
+              <span class="min-w-0">
+                <span class="block font-medium">{{ grade.label }}</span>
+                <span
+                  v-if="grade.ref === defaultRef && anchor.anchor !== null"
+                  class="block text-xs text-muted-foreground"
+                >
+                  saldo automático
+                </span>
+                <span
+                  v-else-if="gradeDefectRefs[grade.ref]"
+                  class="block truncate text-xs text-muted-foreground"
+                >
+                  {{ defectLabel(gradeDefectRefs[grade.ref]!) }}
+                </span>
+              </span>
+              <span class="text-sm font-semibold tabular-nums">
+                {{ gradeQuantity(grade.ref) }}
+              </span>
+            </button>
+            <button
+              v-if="mode === 'correct' && gradeNeedsReason(grade)"
+              type="button"
+              class="flex min-h-11 items-center justify-between gap-2 border-t border-dashed px-3 text-left text-xs text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              :aria-label="`Alterar motivo de ${grade.label}`"
+              @click="
+                openQuestion(
+                  { kind: 'grade_reason', gradeRef: grade.ref },
+                  false,
+                )
+              "
+            >
+              <span class="truncate">
+                {{
+                  defectLabel(gradeDefectRefs[grade.ref] ?? "") ||
+                  "Informar motivo"
+                }}
               </span>
               <span
-                v-else-if="gradeDefectRefs[grade.ref]"
+                class="inline-flex shrink-0 items-center gap-1 rounded-full border bg-background px-2 py-1 font-medium text-foreground"
+              >
+                <Icon name="lucide:pencil" class="size-3" />
+                Alterar
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <div
+          class="mt-4 flex flex-col overflow-hidden rounded-md border border-destructive/50"
+        >
+          <button
+            type="button"
+            class="flex min-h-16 items-center justify-between gap-2 px-3 text-left transition hover:bg-destructive/10"
+            :class="{
+              'ring-2 ring-inset ring-destructive/30':
+                activeTarget?.kind === 'loss',
+            }"
+            :aria-label="`Perda: ${lossQuantity} unidades`"
+            @click="pickLoss"
+          >
+            <span class="min-w-0">
+              <span class="block font-medium">Perda</span>
+              <span
+                v-if="lossDefectRef"
                 class="block truncate text-xs text-muted-foreground"
               >
-                {{ defectLabel(gradeDefectRefs[grade.ref]!) }}
+                {{ defectLabel(lossDefectRef) }}
+              </span>
+              <span v-else class="block text-xs text-muted-foreground">
+                {{ lossQuantity ? "motivo pendente" : "sem perda" }}
               </span>
             </span>
             <span class="text-sm font-semibold tabular-nums">
-              {{ gradeQuantity(grade.ref) }}
+              {{ lossQuantity }}
             </span>
           </button>
           <button
-            v-for="grade in correctionReasonGrades"
-            :key="`reason-${grade.ref}`"
+            v-if="mode === 'correct' && lossQuantity > 0"
             type="button"
-            class="flex min-h-10 items-center justify-between gap-2 rounded-md border border-dashed px-3 text-left text-xs text-muted-foreground transition hover:bg-accent hover:text-foreground"
-            :aria-label="`Alterar motivo de ${grade.label}`"
-            @click="
-              openQuestion({ kind: 'grade_reason', gradeRef: grade.ref }, false)
-            "
+            class="flex min-h-11 items-center justify-between gap-2 border-t border-dashed px-3 text-left text-xs text-muted-foreground transition hover:bg-destructive/10 hover:text-foreground"
+            aria-label="Alterar motivo da perda"
+            @click="openQuestion({ kind: 'loss_reason' }, false)"
           >
+            <span class="truncate">
+              {{ defectLabel(lossDefectRef) || "Informar motivo" }}
+            </span>
             <span
-              >{{ grade.label }} ·
-              {{
-                defectLabel(gradeDefectRefs[grade.ref] ?? "") || "sem motivo"
-              }}</span
+              class="inline-flex shrink-0 items-center gap-1 rounded-full border bg-background px-2 py-1 font-medium text-foreground"
             >
-            <span class="font-medium">Alterar motivo</span>
+              <Icon name="lucide:pencil" class="size-3" />
+              Alterar
+            </span>
           </button>
         </div>
-
-        <button
-          type="button"
-          class="mt-4 flex min-h-16 items-center justify-between gap-2 rounded-md border border-destructive/50 px-3 text-left transition hover:bg-destructive/10"
-          :class="{
-            'ring-2 ring-destructive/30': activeTarget?.kind === 'loss',
-            'cursor-default opacity-70':
-              mode === 'correct' && lossQuantity === 0,
-          }"
-          :disabled="mode === 'correct' && lossQuantity === 0"
-          :aria-label="`Perda: ${lossQuantity} unidades`"
-          @click="pickLoss"
-        >
-          <span class="min-w-0">
-            <span class="block font-medium">Perda</span>
-            <span
-              v-if="lossDefectRef"
-              class="block truncate text-xs text-muted-foreground"
-            >
-              {{ defectLabel(lossDefectRef) }}
-            </span>
-            <span v-else class="block text-xs text-muted-foreground">
-              {{ mode === "correct" ? "sem perda" : "quantidade + motivo" }}
-            </span>
-          </span>
-          <span class="text-sm font-semibold tabular-nums">
-            {{ lossQuantity }}
-          </span>
-        </button>
       </div>
     </div>
-
-    <label v-if="mode === 'correct'" class="mt-4 grid gap-1.5 text-sm">
-      <span class="font-medium">Motivo da correção</span>
-      <textarea
-        v-model="auditReason"
-        rows="2"
-        maxlength="500"
-        required
-        class="rounded-md border bg-background px-3 py-2 outline-none focus:ring-1 focus:ring-ring"
-        aria-label="Motivo da correção de qualidade"
-        placeholder="Ex.: reavaliação feita pelo responsável"
-      />
-    </label>
 
     <button
       type="button"
       class="mt-4 h-14 shrink-0 rounded-lg bg-primary text-lg font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
-      :disabled="submitting || (mode === 'correct' && !auditReason.trim())"
+      :disabled="
+        submitting || submitLatched || (mode === 'correct' && !isDirty)
+      "
+      :aria-busy="submitting || submitLatched"
       @click="onConfirm"
     >
       {{
-        submitting
+        submitting || submitLatched
           ? mode === "correct"
             ? "Salvando correção…"
             : "Fechando a fornada…"

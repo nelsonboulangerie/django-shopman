@@ -41,6 +41,9 @@ export function useOvenFacts(
       metadata: ProductionMutationMetadata,
     ) => Promise<{ current: ProductionMutationCurrent | null }>,
   ): Promise<boolean> {
+    // Trava síncrona: dois toques antes do próximo render nunca criam duas
+    // declarações nem fazem o primeiro parecer ignorado.
+    if (pending.value.has(workOrderPk)) return false;
     const actionRef = `${action === "arm" ? "oven_arm" : "oven_conclude"}:${workOrderPk}`;
     const authorization = mutationGuard.authorizeMutation(actionRef);
     if (!authorization.ok) {
