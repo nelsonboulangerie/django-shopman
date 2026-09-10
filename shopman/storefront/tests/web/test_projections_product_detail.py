@@ -240,14 +240,15 @@ class TestAvailability:
         assert proj.can_add_to_cart is True
         assert proj.available_qty is None
 
-    def test_planned_batch_has_no_stepper_ceiling(self, listing, product):
-        """Encomenda: sem prateleira, com lote. Teto 0 travaria o "+" na 1ª unidade."""
+    def test_planned_batch_uses_the_known_queue_capacity(self, listing, product):
+        """Encomenda: o plano informa quantas unidades ainda cabem na fila."""
         from unittest.mock import patch
 
         _publish_on_listing(listing, product)
         raw = {
             "availability_policy": "planned_ok",
-            "total_promisable": Decimal("0"),
+            "total_promisable": Decimal("10"),
+            "ready_physical": Decimal("0"),
             "is_planned": True,
         }
         with patch(
@@ -259,7 +260,7 @@ class TestAvailability:
         assert proj is not None
         assert proj.availability is Availability.PLANNED_OK
         assert proj.can_add_to_cart is True
-        assert proj.available_qty is None
+        assert proj.available_qty == 10
 
 
 # ──────────────────────────────────────────────────────────────────────

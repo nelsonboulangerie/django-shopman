@@ -79,8 +79,13 @@ def _make_position(ref: str):
 
 def _receive(qty: int, sku: str, position):
     from shopman.stockman import stock
+    from shopman.stockman.models import Batch
 
-    stock.receive(Decimal(str(qty)), sku, position, reason="gate setup")
+    quant = stock.receive(Decimal(str(qty)), sku, position, reason="gate setup")
+    # O cenário é estoque físico de uma fornada Normal já inspecionada. Lotes
+    # sem QC são inelegíveis por segurança nos canais de cliente.
+    if quant.batch:
+        Batch.objects.filter(ref=quant.batch).update(quality_grade_ref="standard")
 
 
 def _open_session(channel_ref: str, session_key: str, sku: str, qty: int, *, data=None):

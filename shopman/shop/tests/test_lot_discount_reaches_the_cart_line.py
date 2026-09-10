@@ -33,7 +33,12 @@ def channel(db):
     from shopman.shop.models import Channel
 
     ch, _ = Channel.objects.get_or_create(
-        ref="web", defaults={"name": "Loja online", "is_active": True},
+        ref="pdv",
+        defaults={
+            "name": "Balcão",
+            "is_active": True,
+            "config": {"stock": {"sells_nonconforming": True}},
+        },
     )
     return ch
 
@@ -56,6 +61,8 @@ def lote(db):
         sku=SKU,
         ref="L-VENCE-HOJE",
         expiry_date=date.today(),
+        quality_grade_ref="fair",
+        nonconformity_reason="Validade curta",
         nonconformity_percent=30,
     )
     quant = Quant.objects.create(
@@ -112,17 +119,18 @@ def test_an_unreadable_hold_id_shouts_instead_of_disabling_the_discount():
 
 
 def test_the_frozen_lot_discount_reaches_the_cart_line(channel, lote):
-    """A ponta a ponta: reservar o lote põe ``batch_ref`` na linha da sacola.
+    """A ponta a ponta no balcão: reservar põe ``batch_ref`` na linha.
 
     Sem ele o ``LotDiscountModifier`` não tem o que aplicar, e o desconto de
-    validade some sem deixar rastro.
+    validade some sem deixar rastro. O PDV é intencional: lote Razoável tem
+    markdown, mas canais remotos só podem oferecer qualidade Ótima/Normal.
     """
     from shopman.shop.services import cart as cart_service
 
     _session, session_key = cart_service.add_item(
         session_key=None,
-        channel_ref="web",
-        origin_channel="web",
+        channel_ref="pdv",
+        origin_channel="pdv",
         sku=SKU,
         qty=1,
         unit_price_q=1000,

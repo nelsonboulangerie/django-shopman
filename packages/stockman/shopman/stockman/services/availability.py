@@ -160,7 +160,8 @@ def _build_availability_dict(
         "breakdown": {
             "ready": ready - held_ready,
             "in_production": in_production - held_production,
-            "planned": planned_clamped - held_planned,
+            # ``planned_clamped`` já é líquido dos holds planejados.
+            "planned": planned_clamped,
         },
         "is_planned": is_planned,
         "is_paused": False,
@@ -402,10 +403,15 @@ def availability_for_skus(
     expired_refs_by_sku: dict[str, set[str]] = {}
     for row in Batch.objects.filter(sku__in=skus, expiry_date__lt=expiry_cutoff).values("sku", "ref"):
         expired_refs_by_sku.setdefault(row["sku"], set()).add(row["ref"])
+    allowed_batch_refs_by_sku: dict[str, set[str]] | None = None
     if allowed_quality_grade_refs is not None:
         allowed_refs = tuple(allowed_quality_grade_refs)
-        for row in Batch.objects.filter(sku__in=skus).exclude(quality_grade_ref__in=allowed_refs).values("sku", "ref"):
-            expired_refs_by_sku.setdefault(row["sku"], set()).add(row["ref"])
+        allowed_batch_refs_by_sku = {}
+        for row in Batch.objects.filter(
+            sku__in=skus,
+            quality_grade_ref__in=allowed_refs,
+        ).values("sku", "ref"):
+            allowed_batch_refs_by_sku.setdefault(row["sku"], set()).add(row["ref"])
     elif not include_nonconforming:
         for row in Batch.objects.filter(sku__in=skus).nonconforming().values("sku", "ref"):
             expired_refs_by_sku.setdefault(row["sku"], set()).add(row["ref"])
@@ -498,6 +504,15 @@ def availability_for_skus(
 
         for quant in quants_by_sku.get(sku, []):
             if quant.batch and quant.batch in expired_refs:
+                continue
+            if (
+                allowed_batch_refs_by_sku is not None
+                and quant.batch
+                and quant.batch not in allowed_batch_refs_by_sku.get(sku, set())
+            ):
+                # Named refs without a matching Batch are unclassified lots,
+                # not batchless stock. Match the canonical queryset and the
+                # fulfill recheck by failing them closed under an allowlist.
                 continue
             if not is_valid_for_date(quant, shelflife_ns, target):
                 continue

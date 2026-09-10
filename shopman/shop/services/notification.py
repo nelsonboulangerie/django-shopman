@@ -10,6 +10,7 @@ Adapter: get_adapter("notification", channel=...) → notification_manychat / em
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import datetime
 
@@ -66,6 +67,12 @@ _BACKEND_CHANNELS = {
 
 _ORIGIN_CHANNELS = {"whatsapp", "instagram", "web"}
 
+_DELIVERY_PAYLOAD_KEY = "notification_delivery"
+
+_IDENTITY_KNOWN = "known"
+_IDENTITY_ABSENT = "absent"
+_IDENTITY_UNAVAILABLE = "unavailable"
+
 
 def send(order, template: str, **extra) -> None:
     """
@@ -79,22 +86,6 @@ def send(order, template: str, **extra) -> None:
     """
     template = _canonical_template(template)
     dedupe_key = _dedupe_key(order, template)
-    existing = (
-        Directive.objects.filter(
-            topic=TOPIC,
-            dedupe_key=dedupe_key,
-            status__in=("queued", "running", "done"),
-        )
-        .order_by("-created_at")
-        .first()
-    )
-    if existing:
-        logger.info(
-            "notification.send: skipped duplicate %s for order %s",
-            template,
-            order.ref,
-        )
-        return
 
     payload = {
         "order_ref": order.ref,
@@ -113,14 +104,20 @@ def send(order, template: str, **extra) -> None:
     if customer_ref:
         payload["customer_ref"] = customer_ref
 
-    from shopman.shop.directives import create_deduped
+    from shopman.shop.directives import (
+        NOTIFICATION_ORIGINAL_RECEIPT_SCOPE,
+        create_persistently_deduped,
+    )
 
-    created = create_deduped(topic=TOPIC, payload=payload, dedupe_key=dedupe_key)
+    created = create_persistently_deduped(
+        topic=TOPIC,
+        payload=payload,
+        dedupe_key=dedupe_key,
+        receipt_scope=NOTIFICATION_ORIGINAL_RECEIPT_SCOPE,
+    )
     if created is None:
-        # Corrida no check-then-create: outro processo enfileirou a mesma
-        # notificação entre o filtro acima e o INSERT. Dedupe-hit, não erro.
         logger.info(
-            "notification.send: skipped duplicate %s for order %s (constraint)",
+            "notification.send: skipped duplicate %s for order %s",
             template,
             order.ref,
         )
@@ -174,8 +171,8 @@ def resend(order, template: str, *, min_interval_seconds: int = RESEND_MIN_INTER
     - último envio há menos de ``min_interval_seconds`` → ``notification_resend_too_soon``.
 
     O clique duplo no MESMO segundo passa pelos dois guardas com o mesmo ``n``;
-    o UNIQUE parcial do Core recusa o segundo INSERT e devolvemos a Directive
-    que o primeiro criou — nunca duas.
+    o receipt permanente recusa o segundo INSERT e devolvemos a Directive que o
+    primeiro criou — nunca duas.
     """
     template = _canonical_template(template)
     history = Directive.objects.filter(topic=TOPIC, payload__order_ref=order.ref, payload__template=template)
@@ -209,9 +206,17 @@ def resend(order, template: str, *, min_interval_seconds: int = RESEND_MIN_INTER
     if customer_ref:
         payload["customer_ref"] = customer_ref
 
-    from shopman.shop.directives import create_deduped
+    from shopman.shop.directives import (
+        NOTIFICATION_RESEND_RECEIPT_SCOPE,
+        create_persistently_deduped,
+    )
 
-    created = create_deduped(topic=TOPIC, payload=payload, dedupe_key=dedupe_key)
+    created = create_persistently_deduped(
+        topic=TOPIC,
+        payload=payload,
+        dedupe_key=dedupe_key,
+        receipt_scope=NOTIFICATION_RESEND_RECEIPT_SCOPE,
+    )
     if created is None:
         # Corrida: o outro clique do mesmo segundo já enfileirou este reenvio.
         existing = Directive.objects.filter(topic=TOPIC, dedupe_key=dedupe_key).order_by("-pk").first()
@@ -306,16 +311,27 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
     template = _canonical_template(template)
     backend_chain = _resolve_backend_chain(order)
     requires_active = _requires_active_notification(template, payload=payload)
+    routing: dict[str, str] = {}
     backend_chain = _filter_backend_chain(
         order,
         backend_chain,
         payload=payload,
         requires_active=requires_active,
+        routing=routing,
     )
 
     if not backend_chain or backend_chain == ["none"]:
+        if routing.get("skip_reason") == "customer_opt_out":
+            _record_delivery(payload, status="skipped", reason="customer_opt_out")
+            return True, None
+        if _expected_order_without_contact(order, template=template):
+            _record_delivery(payload, status="skipped", reason="expected_no_contact")
+            return True, None
         if requires_active:
-            return False, "no active notification channel available"
+            error = routing.get("error") or "no active notification channel available"
+            _record_delivery(payload, status="failed", error=error)
+            return False, error
+        _record_delivery(payload, status="skipped", reason="notification_not_required")
         return True, None
 
     context = _build_context(order, payload, template)
@@ -324,6 +340,9 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
 
     last_error: str | None = None
     any_attempted = False
+    any_recipient = False
+    last_attempted_backend = ""
+    last_attempted_recipient = ""
     for backend_name in backend_chain:
         if backend_name == "none":
             continue
@@ -332,10 +351,18 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
         if not recipient:
             logger.debug("notification.deliver: no recipient for backend=%s order=%s, skipping", backend_name, order.ref)
             continue
+        any_recipient = True
 
         from shopman.shop.notifications import get_backend as _get_backend
         backend_module = _get_backend(backend_name)
-        if backend_module and hasattr(backend_module, "is_available"):
+        if backend_module is None:
+            logger.warning(
+                "notification.deliver: backend=%s not registered, skipping order=%s",
+                backend_name,
+                order.ref,
+            )
+            continue
+        if hasattr(backend_module, "is_available"):
             if not backend_module.is_available():
                 logger.debug(
                     "notification.deliver: backend=%s not configured, skipping order=%s",
@@ -344,6 +371,8 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
                 continue
 
         any_attempted = True
+        last_attempted_backend = backend_name
+        last_attempted_recipient = recipient
 
         if backend_name == "manychat" and order.handle_type == "manychat":
             context["subscriber_id"] = order.handle_ref
@@ -351,6 +380,13 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
         result = notify(event=template, recipient=recipient, context=context, backend=backend_name)
 
         if result.success:
+            _record_delivery(
+                payload,
+                status="accepted",
+                backend=backend_name,
+                recipient=recipient,
+                message_id=str(getattr(result, "message_id", "") or ""),
+            )
             return True, None
 
         last_error = result.error or "unknown"
@@ -360,17 +396,37 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
         )
 
     if not any_attempted:
-        # No recipient for any backend — notifications not configured, not a failure.
+        if _expected_order_without_contact(order, template=template):
+            _record_delivery(payload, status="skipped", reason="expected_no_contact")
+            return True, None
         if requires_active:
             logger.warning(
                 "notification.deliver: active notification has no recipient order=%s template=%s",
                 order.ref,
                 template,
             )
-            return False, "no active notification recipient available"
+            error = (
+                "no active notification backend available"
+                if any_recipient
+                else "no active notification recipient available"
+            )
+            _record_delivery(
+                payload,
+                status="failed",
+                error=error,
+            )
+            return False, error
         logger.info("notification.deliver: no recipient for any backend, skipping order=%s template=%s", order.ref, template)
+        _record_delivery(payload, status="skipped", reason="notification_not_required")
         return True, None
 
+    _record_delivery(
+        payload,
+        status="failed",
+        backend=last_attempted_backend,
+        recipient=last_attempted_recipient,
+        error=last_error or "unknown",
+    )
     return False, last_error
 
 
@@ -393,6 +449,7 @@ def _filter_backend_chain(
     *,
     payload: dict,
     requires_active: bool,
+    routing: dict[str, str] | None = None,
 ) -> list[str]:
     """
     Keep notification routing aligned with customer channel preferences.
@@ -429,8 +486,18 @@ def _filter_backend_chain(
     por `ConsentService.get_marketable_customers` (`services/audience.py`), que
     só devolve quem está ``opted_in``.
     """
-    customer_ref = payload.get("customer_ref") or _customer_ref(order)
+    routing = routing if routing is not None else {}
+    customer_ref = str(payload.get("customer_ref") or "").strip()
+    identity_state = _IDENTITY_KNOWN if customer_ref else _IDENTITY_ABSENT
     if not customer_ref:
+        identity_state, customer_ref = _resolve_customer_identity(order)
+    if identity_state == _IDENTITY_UNAVAILABLE:
+        routing["identity_lookup_failed"] = "true"
+        routing["error"] = "notification customer identity unavailable"
+        if _dev_console_allowed(backend_chain):
+            return [backend for backend in backend_chain if backend == "console"]
+        return []
+    if identity_state == _IDENTITY_ABSENT:
         return backend_chain
 
     available_channels = tuple(
@@ -443,7 +510,11 @@ def _filter_backend_chain(
             }
         )
     )
-    revoked_channels = _revoked_notification_channels(customer_ref, available_channels)
+    revoked_channels = _revoked_notification_channels(
+        customer_ref,
+        available_channels,
+        routing=routing,
+    )
 
     # A regra inteira em uma linha: o aviso do próprio pedido sai por qualquer
     # canal configurado, MENOS os que o titular revogou. "Ausente" e "revogado"
@@ -458,6 +529,10 @@ def _filter_backend_chain(
         return [backend for backend in backend_chain if backend == "console"]
 
     if not allowed_channels:
+        if routing.get("consent_lookup_failed"):
+            routing["error"] = "notification preferences unavailable"
+        elif available_channels:
+            routing["skip_reason"] = "customer_opt_out"
         return []
 
     filtered: list[str] = []
@@ -687,28 +762,47 @@ def _dedupe_key(order, template: str) -> str:
     return f"{TOPIC}:{order.ref}:{_canonical_template(template)}"
 
 
-def _customer_ref(order) -> str:
+def _resolve_customer_identity(order) -> tuple[str, str]:
+    """Resolve cliente como conhecido, ausente ou temporariamente indisponível.
+
+    Ausência confirmada permite o aviso transacional usando o contato do próprio
+    pedido. Indisponibilidade é diferente: pode esconder um opt-out existente e,
+    portanto, fecha os canais externos até a leitura se recuperar.
+    """
     data = order.data or {}
     customer_ref = data.get("customer_ref")
     if customer_ref:
-        return str(customer_ref)
+        return _IDENTITY_KNOWN, str(customer_ref)
 
     customer_data = data.get("customer", {})
     if not isinstance(customer_data, dict):
         customer_data = {}
     if customer_data.get("ref"):
-        return str(customer_data["ref"])
+        return _IDENTITY_KNOWN, str(customer_data["ref"])
 
     customer_uuid = customer_data.get("uuid")
     if customer_uuid:
         try:
-            from shopman.shop.projections import customer_context
+            from shopman.guestman.services import customer as customer_service
 
-            resolved = customer_context.customer_ref_by_uuid(customer_uuid)
-            if resolved:
-                return str(resolved)
+            customer = customer_service.get_by_uuid(customer_uuid)
+            if customer:
+                return _IDENTITY_KNOWN, str(customer.ref)
         except Exception:
-            logger.debug("notification.customer_ref_uuid_lookup_failed order=%s", order.ref, exc_info=True)
+            logger.warning(
+                "notification.customer_ref_uuid_lookup_failed order=%s",
+                order.ref,
+                exc_info=True,
+            )
+            return _IDENTITY_UNAVAILABLE, ""
+        # UUID é identidade autenticada, não mero dado de contato. Se ele ficou
+        # órfão/inativo, não podemos rebaixá-lo a guest (nem aceitar o telefone
+        # possivelmente divergente) e ignorar um opt-out sem titular resolvível.
+        logger.warning(
+            "notification.customer_ref_uuid_unresolved order=%s",
+            order.ref,
+        )
+        return _IDENTITY_UNAVAILABLE, ""
 
     phone = customer_data.get("phone") or data.get("customer_phone")
     if phone:
@@ -717,14 +811,29 @@ def _customer_ref(order) -> str:
 
             customer = customer_service.get_by_phone(phone)
             if customer:
-                return str(customer.ref)
+                return _IDENTITY_KNOWN, str(customer.ref)
         except Exception:
-            logger.debug("notification.customer_ref_phone_lookup_failed order=%s", order.ref, exc_info=True)
+            logger.warning(
+                "notification.customer_ref_phone_lookup_failed order=%s",
+                order.ref,
+                exc_info=True,
+            )
+            return _IDENTITY_UNAVAILABLE, ""
+    return _IDENTITY_ABSENT, ""
 
-    return ""
+
+def _customer_ref(order) -> str:
+    """Compatibilidade para callers que precisam apenas da ref, sem o estado."""
+    _state, customer_ref = _resolve_customer_identity(order)
+    return customer_ref
 
 
-def _revoked_notification_channels(customer_ref: str, channels: tuple[str, ...]) -> frozenset[str]:
+def _revoked_notification_channels(
+    customer_ref: str,
+    channels: tuple[str, ...],
+    *,
+    routing: dict[str, str] | None = None,
+) -> frozenset[str]:
     """Canais que o titular DESLIGOU. Falha de leitura silencia o canal.
 
     O fallback é o oposto do de `enabled`: se não dá para saber, não manda. Errar
@@ -735,17 +844,90 @@ def _revoked_notification_channels(customer_ref: str, channels: tuple[str, ...])
     if not channels:
         return frozenset()
     try:
-        from shopman.shop.projections import customer_context
+        from shopman.guestman.contrib.consent import ConsentService
+        from shopman.guestman.contrib.consent.models import ConsentStatus
 
-        return customer_context.revoked_notification_channels(customer_ref, channels)
+        wanted = set(channels)
+        return frozenset(
+            consent.channel
+            for consent in ConsentService.get_consents(customer_ref)
+            if consent.channel in wanted and consent.status == ConsentStatus.OPTED_OUT
+        )
     except Exception:
         logger.warning(
             "notification.revoked_channels_failed customer=%s",
             customer_ref,
             exc_info=True,
         )
+        if routing is not None:
+            routing["consent_lookup_failed"] = "true"
         return frozenset(channels)
 
 
 def _dev_console_allowed(backend_chain: list[str]) -> bool:
     return bool(getattr(settings, "DEBUG", False) and "console" in backend_chain)
+
+
+def _expected_order_without_contact(order, *, template: str) -> bool:
+    """Whether this channel legitimately accepts an anonymous order.
+
+    Counter and marketplace orders may have no customer destination because the
+    hand-off happens in person or in the marketplace itself. A payment link is a
+    deliberate exception: even at the counter, no destination means the customer
+    was never charged, so that template must fail loudly. A remote first-party
+    order without contact is likewise an operational failure.
+    """
+    data = order.data or {}
+    customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
+    has_contact = bool(
+        customer.get("phone")
+        or customer.get("email")
+        or data.get("customer_phone")
+        or (
+            getattr(order, "handle_ref", "")
+            and getattr(order, "handle_type", "") in {"customer", "phone", "manychat"}
+        )
+    )
+    if has_contact:
+        return False
+
+    if template in {PAYMENT_LINK_TEMPLATE, "payment_requested"}:
+        return False
+
+    origin = str(data.get("origin_channel") or "").strip().lower()
+    channel = str(getattr(order, "channel_ref", "") or "").strip().lower()
+    return origin in {"pos", "pdv", "counter", "balcao", "ifood"} or channel in {
+        "pos",
+        "pdv",
+        "ifood",
+    }
+
+
+def _record_delivery(
+    payload: dict,
+    *,
+    status: str,
+    backend: str = "",
+    recipient: str = "",
+    message_id: str = "",
+    reason: str = "",
+    error: str = "",
+) -> None:
+    """Persistable evidence for the directive without copying contact data."""
+    record = {
+        "status": status,
+        "recorded_at": timezone.now().isoformat(),
+    }
+    if backend:
+        record["backend"] = backend
+    if recipient:
+        record["recipient_fingerprint"] = hashlib.sha256(
+            recipient.strip().lower().encode("utf-8")
+        ).hexdigest()[:16]
+    if message_id:
+        record["message_id"] = message_id[:200]
+    if reason:
+        record["reason"] = reason
+    if error:
+        record["error"] = error[:500]
+    payload[_DELIVERY_PAYLOAD_KEY] = record

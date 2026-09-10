@@ -16,9 +16,34 @@ from decimal import Decimal
 
 import pytest
 from shopman.stockman.models import Batch, Position, PositionKind, Quant
+from shopman.stockman.services.availability import (
+    _build_availability_dict,
+    availability_for_sku,
+    availability_for_skus,
+)
 from shopman.stockman.services.scope import quants_eligible_for
 
 pytestmark = pytest.mark.django_db
+
+
+def test_planned_breakdown_subtracts_active_holds_once():
+    info = _build_availability_dict(
+        sku="PLANNED-NET",
+        availability_policy="planned_ok",
+        ready=Decimal("0"),
+        in_production=Decimal("0"),
+        planned=Decimal("10"),
+        held_ready=Decimal("0"),
+        held_production=Decimal("0"),
+        held_planned=Decimal("3"),
+        safety_margin=0,
+        is_planned=True,
+        positions_data=[],
+    )
+
+    assert info["planned"] == Decimal("7")
+    assert info["breakdown"]["planned"] == Decimal("7")
+    assert info["total_promisable"] == Decimal("7")
 
 
 @pytest.fixture
@@ -638,6 +663,48 @@ class TestNonconformingGate:
 
 
 class TestChannelQualityGradeGate:
+    def test_allowlist_distinguishes_batchless_from_unclassified_named_lots(
+        self,
+        product,
+        vitrine,
+        today,
+    ):
+        Batch.objects.create(
+            sku=product.sku,
+            ref="STANDARD",
+            quality_grade_ref="standard",
+        )
+        Batch.objects.create(
+            sku=product.sku,
+            ref="NAMED-WITHOUT-GRADE",
+            quality_grade_ref="",
+        )
+        for ref in ("", "STANDARD", "NAMED-WITHOUT-GRADE", "ORPHAN-BATCH"):
+            Quant.objects.create(
+                sku=product.sku,
+                position=vitrine,
+                batch=ref,
+                _quantity=Decimal("1"),
+            )
+
+        qs = quants_eligible_for(
+            product.sku,
+            target_date=today,
+            allowed_quality_grade_refs=("excellent", "standard"),
+        )
+
+        assert set(qs.values_list("batch", flat=True)) == {"", "STANDARD"}
+        assert availability_for_sku(
+            product.sku,
+            target_date=today,
+            allowed_quality_grade_refs=("excellent", "standard"),
+        )["total_available"] == Decimal("2")
+        assert availability_for_skus(
+            [product.sku],
+            target_date=today,
+            allowed_quality_grade_refs=("excellent", "standard"),
+        )[product.sku]["total_available"] == Decimal("2")
+
     def test_remote_scope_filters_by_grade_without_interpreting_reason(
         self,
         product,

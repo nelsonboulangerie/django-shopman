@@ -360,6 +360,10 @@ class TestTheOrderTracking:
         from decimal import Decimal as D
 
         from shopman.stockman.models import Hold, HoldStatus, Position, Quant
+        from shopman.stockman.services.holds import (
+            QUALITY_GRADE_POLICY_VERSION,
+            QUALITY_GRADE_POLICY_VERSION_METADATA_KEY,
+        )
 
         # ``batch`` diz se existe LOTE por trás da reserva. Default: a fornada
         # planejada tem, a demanda não — que é o mundo real. Passar explícito
@@ -384,7 +388,11 @@ class TestTheOrderTracking:
             status=HoldStatus.PENDING,
             expires_at=None,
             target_date=date.today(),
-            metadata={"reference": f"order:{order.ref}", marker: True},
+            metadata={
+                "reference": f"order:{order.ref}",
+                marker: True,
+                QUALITY_GRADE_POLICY_VERSION_METADATA_KEY: QUALITY_GRADE_POLICY_VERSION,
+            },
         )
 
     def _order(self, channel):

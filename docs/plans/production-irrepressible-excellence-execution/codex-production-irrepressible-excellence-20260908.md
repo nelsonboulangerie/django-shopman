@@ -341,3 +341,77 @@ e alinhou o dashboard legado ao lifecycle canônico: **Visto** mantém a causa a
 O gate canônico do Admin aprovou 245 testes; o recorte integrado aprovou 199; o Nuxt aprovou 217,
 além de typecheck, ESLint, Ruff, `git diff --check`, `manage.py check` e ausência de drift de
 migrations. A revisão multiagente derradeira não encontrou blocker, P0 ou P1 remanescente.
+
+## Fermata, entrega ativa e corte de dados — 09/09/2026
+
+O ensaio manual solicitado pelo dono revelou um falso positivo importante: uma Directive podia
+terminar como entregue sem destinatário real. A cópia recebida por SMS confirmou a semântica
+correta do evento — a fornada ficou disponível e aguardava a decisão do cliente —, mas expôs que
+o sistema precisava diferenciar aceite externo, opt-out legítimo e ausência/falha de rota.
+
+O fechamento deste slice estabeleceu os seguintes invariantes:
+
+1. A fermata só abre janela depois que todos os holds planejados do pedido foram materializados e
+   toda reserva das demais linhas continua viva. Estado, prazo e outbox são gravados na mesma
+   transação; uma falha ao enfileirar o aviso não inicia um relógio silencioso.
+2. Confirmação, sweep e liberação serializam a Order e seus Holds. A liberação é idempotente,
+   devolve todas as linhas do pedido e nunca transforma uma linha sob demanda (`quant=None`) em
+   capacidade física para servir o próximo cliente.
+3. Avisos transacionais ativos falham alto quando identidade, preferências, destinatário ou
+   backend estão indisponíveis. Opt-out explícito e pedido anônimo administrado pelo PDV/iFood são
+   skips auditáveis; link de pagamento sem destino nunca é skip.
+4. A Directive guarda prova minimizada da entrega: status, backend realmente tentado,
+   identificador do provider quando existente e fingerprint irreversível do destinatário. Replay
+   depois de aceite não reenvia. `IdempotencyKey` mantém a identidade original permanente, mesmo
+   depois de a Directive terminar; reenvio explícito usa identidade própria.
+5. Os canais `web` e `whatsapp` passam a receber por data migration a política de fermata de dois
+   dias, janela de 15 minutos, cobrança na confirmação e cadeia `manychat → sms → email`. iFood
+   permanece sem fila própria. O seed reproduz exatamente esse contrato.
+6. O catálogo de QC do seed é reconstruído por `--flush` e reparado atomicamente sem violar ranks
+   únicos. Conflito com catálogo não canônico é recusado antes de mutação parcial.
+7. Lote nomeado sem fato `Batch` correspondente falha fechado em leitura unitária, leitura bulk e
+   reserva sob allowlist de QC; estoque genuinamente sem lote permanece elegível e pode completar
+   o fulfillment.
+8. A migration `shop.0042` congela a versão/allowlist nos holds ativos legados somente quando o
+   canal pode ser provado por Order, Session ou propósito de WorkOrder. Dono desconhecido aborta o
+   deploy em vez de inventar política. O rollback remove apenas os campos marcados pelo próprio
+   backfill.
+9. O teto remoto usa a maior capacidade integralmente reservável entre hoje e a **primeira**
+   fornada elegível, nunca a soma de datas incompatíveis. Catálogo e reserva consultam o mesmo
+   scope de posição, validade e QC; fornada inelegível não vira promessa.
+10. `qa_scenarios --arm` valida tudo antes de escrever e congela um snapshot reversível. O reset
+    desfaz somente os deltas do próprio comando, preserva movimentos reais intermediários e
+    restaura as pausas anteriores em vez de reconstruir um alvo presumido do seed.
+11. Holds físicos sem janela e pedidos confirmados sem cobrança/outbox são receipts duráveis:
+    o sweep os reconcilia com chaves idempotentes. Assim, queda do processo depois do commit não
+    exige outra fornada nem outro clique do cliente para convergir.
+12. A confirmação de pedido misto cruza todos os `hold_ids` adotados no pedido com os holds vivos
+    sob lock. Reserva ausente, expirada ou terminal em qualquer linha bloqueia a CTA do pedido
+    inteiro. Liberação multi-item faz rollback integral e só serve o próximo após soltar locks.
+
+Inventário somente leitura da alpha antes do corte: dois holds ativos legados, ambos ligados a
+pedidos já concluídos; nenhum pedido ativo afetado. Foram encontrados quatro Quants históricos
+com batch textual órfão, três com saldo zero e um com saldo 2, sem holds ou pedidos dependentes.
+Isso não bloqueia o cutover, mas permanece como higiene histórica explícita.
+
+Provas finais deste slice:
+
+| Gate | Resultado |
+|---|---|
+| Shop completo | 3.656 aprovados, 17 skips, 26 deselectados e 10 subtests |
+| Stockman completo | 278 aprovados, 14 skips |
+| Storefront web completo | 613 aprovados |
+| Seed — contratos e cenários operacionais | 74 aprovados |
+| Notificação/idempotência/consentimento | 231 aprovados, 2 skips PostgreSQL |
+| Waitlist focal | 41 aprovados, 1 skip PostgreSQL |
+| Migrações | 3 checks aprovados; banco vazio migrado; 2 skips pré-go-live esperados |
+| Qualidade estática | Ruff e `git diff --check` aprovados |
+| Django | sem drift de models/migrations; somente warnings locais esperados de SQLite/fiscal |
+
+A concorrência real específica de notification receipts e cobrança pós-confirmação continua
+marcada para PostgreSQL e registrada no executor obrigatório de runtime; SQLite local prova os
+replays determinísticos, mas não é apresentado como prova da disputa física. O canal
+ManyChat ainda depende de um Utility Flow aprovado para mensagens proativas fora da janela de 24
+horas; a queda imediata para SMS/e-mail permanece a rede operacional real. A autorização do dono
+neste diálogo permite publicar o candidato na **alpha** e validar host/edge; não equivale ao piloto
+de turno nem encerra D1/D2/D4–D8.

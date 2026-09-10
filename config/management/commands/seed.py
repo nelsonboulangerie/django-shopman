@@ -28,6 +28,8 @@ STOREFRONT_REF = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
 from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from shopman.craftsman import STOCK_CONSUMED_KEY, STOCK_REALIZED_KEY
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderItem
@@ -95,6 +97,8 @@ from shopman.shop.models import (
     Coupon,
     OmotenashiCopy,
     Promotion,
+    QualityDefect,
+    QualityGrade,
     RuleConfig,
     Shop,
 )
@@ -109,6 +113,27 @@ from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_reci
 # Prefixos que marcam pré-preparo (saída em kg): fonte única — _is_preparation
 # do seed e as funções de alvo abaixo leem daqui.
 PREP_PREFIXES = ("massa-", "recheio-", "creme-", "molho-", "salada-", "vinagrete-")
+
+# O catálogo nasce por data migration em qualquer deployment, mas ``seed
+# --flush`` também precisa reconstruí-lo: testes transacionais e bancos já
+# truncados não reaplicam RunPython. Estes são os quatro botões e os sete
+# motivos do QC aprovados; grau governa markdown, motivo permanece ortogonal.
+QUALITY_GRADES = (
+    ("excellent", "Ótimo", 40, 0, False),
+    ("standard", "Normal", 30, 0, True),
+    ("fair", "Razoável", 20, 20, False),
+    ("minimal", "Mínimo", 10, 50, False),
+)
+
+QUALITY_DEFECTS = (
+    ("underproofed", "Fermentou pouco", "Pequeno, denso, rasgou", False, 10),
+    ("overproofed", "Fermentou demais", "Esparramado, ácido, colapsou", False, 20),
+    ("underbaked", "Assou pouco", "Pálido, miolo cru", False, 30),
+    ("overbaked", "Assou demais", "Escuro, casca amarga", False, 40),
+    ("misshapen", "Deformado", "Torto, colado, fora do padrão", False, 50),
+    ("scorch_marks", "Marcas de forno", "Fuligem, sujeira de lastro", False, 60),
+    ("contaminated", "Contaminado", "Matéria estranha — não vende", True, 70),
+)
 
 # O plano de produção do dia — calibrado com as médias diárias REAIS dos XMLs
 # de NFC-e (jun/2019 + jun/2021; sex/sáb ×1,25 aplicado na criação das WOs).
@@ -469,18 +494,22 @@ STOREFRONT_PLANNED_QTY = 10
 
 
 def clear_vitrine_stock(sku: str, vitrine, *, reason: str) -> None:
-    """Zera TODO estoque de vitrine do SKU — pronto E planejado.
+    """Zera toda oferta do SKU que contaminaria o cenário da vitrine.
 
-    O estado precisa nascer limpo: um quant residual da produção de hoje ou de
-    uma fornada já planejada faz "esgotado" virar "previsto" sem avisar ninguém.
+    Com a fermata ligada, produção iniciada e fornada futura em qualquer posição
+    também são promessa do canal. Limpar só a posição ``vitrine`` deixava os
+    cenários ``sold_out``/``low_stock`` disponíveis pela produção e somava o
+    plano geral ao cenário ``planned``. Este helper é exclusivo de QA/seed e
+    dirige deliberadamente a oferta inteira dos SKUs escolhidos.
     """
     from shopman.stockman.models import Quant
 
-    for q in Quant.objects.filter(sku=sku, position=vitrine):
+    for q in Quant.objects.filter(sku=sku):
         if (q._quantity or 0) > 0:
             stock.adjust(q, Decimal("0"), reason=reason)
 
 
+@transaction.atomic
 def apply_storefront_state(
     state: str,
     sku: str,
@@ -499,6 +528,26 @@ def apply_storefront_state(
     """
     from shopman.offerman.models import ListingItem, Product
 
+    if state not in {"sold_out", "low_stock", "planned", "paused", "paused_channel"}:
+        raise ValueError(f"Estado de vitrine desconhecido: {state}")
+
+    # Todo preflight que pode recusar o cenário acontece antes do primeiro
+    # ajuste de estoque. O bloco atômico também impede estado parcial se um
+    # writer falhar depois da validação.
+    batch_ref = ""
+    if state == "low_stock":
+        from shopman.stockman.shelflife import shelf_life_days_for
+
+        shelf_life_days = shelf_life_days_for(sku)
+        if shelf_life_days is not None:
+            received_on = timezone.localdate()
+            batch_ref = _ensure_seed_standard_batch(
+                ref=f"{sku}-{received_on:%Y%m%d}-SEED",
+                sku=sku,
+                production_date=received_on,
+                expiry_date=received_on + timedelta(days=shelf_life_days),
+            )
+
     if state == "paused":
         # Publicado (aparece no cardápio) mas não vendável. É decisão do
         # operador e se distingue do esgotado honesto: não oferece "me avise".
@@ -516,18 +565,6 @@ def apply_storefront_state(
     if state == "sold_out":
         return  # sem pronto e sem plano: é o esgotado que habilita "me avise"
     if state == "low_stock":
-        from shopman.stockman.shelflife import shelf_life_days_for
-
-        batch_ref = ""
-        shelf_life_days = shelf_life_days_for(sku)
-        if shelf_life_days is not None:
-            received_on = timezone.localdate()
-            batch_ref = _ensure_seed_standard_batch(
-                ref=f"{sku}-{received_on:%Y%m%d}-SEED",
-                sku=sku,
-                production_date=received_on,
-                expiry_date=received_on + timedelta(days=shelf_life_days),
-            )
         stock.receive(
             Decimal(STOREFRONT_LOW_STOCK_QTY), sku=sku, position=vitrine,
             batch=batch_ref,
@@ -541,7 +578,7 @@ def apply_storefront_state(
             reason=f"{reason_prefix} {sku}: planejado",
         )
         return
-    raise ValueError(f"Estado de vitrine desconhecido: {state}")
+    raise AssertionError("estado validado sem implementação")
 
 
 def _ensure_seed_standard_batch(*, ref: str, sku: str, production_date, expiry_date) -> str:
@@ -562,6 +599,16 @@ def _ensure_seed_standard_batch(*, ref: str, sku: str, production_date, expiry_d
             "quality_grade_ref": "standard",
         },
     )
+    _validate_seed_standard_batch(batch=batch, ref=ref, sku=sku)
+    if not batch.quality_grade_ref:
+        Batch.objects.filter(pk=batch.pk, quality_grade_ref="").update(
+            quality_grade_ref="standard"
+        )
+    return batch.ref
+
+
+def _validate_seed_standard_batch(*, batch, ref: str, sku: str) -> None:
+    """Recusa colisão de lote antes de qualquer mutação do cenário."""
     if batch.sku != sku:
         raise CommandError(
             f"Lote de seed {ref} pertence a {batch.sku}, não a {sku}; fato preservado."
@@ -571,11 +618,6 @@ def _ensure_seed_standard_batch(*, ref: str, sku: str, production_date, expiry_d
             f"Lote de seed {ref} já foi classificado como {batch.quality_grade_ref}; "
             "o seed não reescreve QC congelado."
         )
-    if not batch.quality_grade_ref:
-        Batch.objects.filter(pk=batch.pk, quality_grade_ref="").update(
-            quality_grade_ref="standard"
-        )
-    return batch.ref
 
 
 def _discard_owned_seed_output_batch(*, ref: str, sku: str, work_order_ref: str) -> None:
@@ -806,6 +848,7 @@ class Command(BaseCommand):
         # (teste com `transaction=True`, que NÃO repõe dado de migração) ou
         # flushado.
         ensure_definitions()
+        self._seed_quality_catalog()
 
         self._create_superuser(admin_password)
         self._seed_operators()
@@ -987,6 +1030,56 @@ class Command(BaseCommand):
     # ────────────────────────────────────────────────────────────────
     # Shop
     # ────────────────────────────────────────────────────────────────
+
+    @transaction.atomic
+    def _seed_quality_catalog(self):
+        """Reinstala o contrato canônico do QC em dados demonstrativos.
+
+        O seed é dono destes refs fixos e pode atualizá-los; lotes históricos
+        continuam imutáveis porque já congelaram grau e percentual próprios.
+        O preflight recusa uma política alheia que ocupe o default ou um rank
+        canônico. A transação garante que o seed nunca deixe meia escala nova
+        misturada com meia escala antiga se encontrar esse conflito.
+        """
+        canonical_refs = [ref for ref, *_ in QUALITY_GRADES]
+        canonical_ranks = [rank for _ref, _label, rank, _markdown, _default in QUALITY_GRADES]
+        conflicts = list(
+            QualityGrade.objects.exclude(ref__in=canonical_refs)
+            .filter(Q(is_default=True) | Q(rank__in=canonical_ranks))
+            .order_by("ref")
+            .values_list("ref", flat=True)
+        )
+        if conflicts:
+            joined = ", ".join(conflicts)
+            raise CommandError(
+                "Catálogo de QC não canônico conflita com default/ranks reservados: "
+                f"{joined}. Use `seed --flush` para reconstruir o catálogo canônico."
+            )
+
+        # Recriar o bloco inteiro, dentro do savepoint, evita a janela em que
+        # ranks trocados entre dois refs canônicos violariam ``rank UNIQUE``.
+        # Não há FK para estes models: os fatos históricos guardam refs opacas.
+        QualityDefect.objects.filter(ref__in=[ref for ref, *_ in QUALITY_DEFECTS]).delete()
+        QualityGrade.objects.filter(ref__in=canonical_refs).delete()
+        for ref, label, rank, markdown, is_default in QUALITY_GRADES:
+            QualityGrade.objects.create(
+                ref=ref,
+                label=label,
+                rank=rank,
+                markdown_percent=markdown,
+                is_default=is_default,
+                is_active=True,
+            )
+        for ref, label, hint, forces_discard, position in QUALITY_DEFECTS:
+            QualityDefect.objects.create(
+                ref=ref,
+                label=label,
+                hint=hint,
+                forces_discard=forces_discard,
+                position=position,
+                is_active=True,
+            )
+        self.stdout.write("  ✓ Catálogo de QC: 4 graus e 7 motivos canônicos")
 
     def _seed_shop(self):
         # Feriados de fechamento SEMPRE à frente da data de hoje (próxima ocorrência do
@@ -1442,6 +1535,11 @@ class Command(BaseCommand):
         AnnouncementTemplate.objects.all().delete()
         Coupon.objects.all().delete()
         Promotion.objects.all().delete()
+        # O catálogo de QC é parte do cenário canônico, não configuração que o
+        # ``--flush`` preserva. Os fatos históricos usam refs textuais e as WOs
+        # já foram removidas acima; o seed o recria inteiro logo no início.
+        QualityDefect.objects.all().delete()
+        QualityGrade.objects.all().delete()
         # Regras são config como qualquer outra (Shop, Channel, Promotion, Coupon): o
         # `--flush` apaga e o `_seed_rule_configs` recria o conjunto canônico. Sem
         # apagar, uma regra que saiu do RULE_CONFIGS sobrevive a todo re-seed — foi o
@@ -5648,6 +5746,26 @@ class Command(BaseCommand):
             # override: somente o PDV local pode vender grau com markdown.
             "sells_nonconforming": False,
         }
+        # Fila de fornada (fermata): o cliente pode reservar a produção futura
+        # conhecida por até dois dias. O relógio de 15 min só começa quando o
+        # Stockman materializa a unidade; até lá a intenção não expira nem cobra.
+        #
+        # Isto precisa ser explícito no seed. Herdar o default desligado fazia o
+        # catálogo demonstrar uma fornada planejada que nenhum cliente conseguia
+        # reservar — e obrigava qualquer QA da notificação a fabricar Hold à mão,
+        # pulando justamente os invariantes que o ensaio deveria provar.
+        _remote_waitlist = {
+            "enabled": True,
+            "horizon_days": 2,
+            "confirmation_minutes": 15,
+            "release_policy": "serve_next",
+            "charge_at": "confirmation",
+            "price_frozen": True,
+        }
+        _remote_notifications = {
+            "backend": "manychat",
+            "fallback_chain": ["sms", "email"],
+        }
         _remote_config = {
             # Aceite otimista em 1 min (alpha/staging): com estoque fantasma do
             # autosserviço não dá pra cobrar antes de confirmar disponibilidade,
@@ -5656,6 +5774,11 @@ class Command(BaseCommand):
             "confirmation": {"mode": "auto_confirm", "timeout_minutes": 1, "stale_new_alert_minutes": 10},
             "payment": {"method": ["pix", "card"], "timing": "post_commit", "timeout_minutes": 10},
             "stock": _remote_stock,
+            "waitlist": _remote_waitlist,
+            # Canal remoto nunca herda ``console``: console aceita qualquer
+            # mensagem localmente e interrompe a cadeia antes de alcançar a
+            # pessoa. WhatsApp é o primário; SMS e e-mail são redes reais.
+            "notifications": _remote_notifications,
         }
         _marketplace_config = {
             # stale_new_alert < hold_ttl_minutes (20 < 30): o operador é cutucado
@@ -5676,8 +5799,9 @@ class Command(BaseCommand):
             # esperar a captura (`lifecycle._requires_captured_payment_before_confirmation`):
             # o concierge não promete fornada a pedido que ainda não pagou.
             "payment": {"method": ["pix", "card"], "timing": "at_commit", "timeout_minutes": 10},
-            "notifications": {"backend": "manychat"},
+            "notifications": _remote_notifications,
             "stock": _remote_stock,
+            "waitlist": _remote_waitlist,
         }
         channels_data = [
             # (ref, name, display_order, is_active, config_overrides)

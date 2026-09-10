@@ -789,14 +789,15 @@ def test_nelson_seed_qa_profile_builds_named_scenarios(monkeypatch):
     assert low.availability == Availability.LOW_STOCK
     assert low.can_add_to_cart is True
 
-    # "planned": sem pronto HOJE (no menu aparece indisponível), MAS tem produção
-    # planejada — base da "lista de espera / previsto" no fluxo de encomenda.
+    # "planned": sem pronto, mas a fermata do canal oferece exatamente a fornada.
     from shopman.shop.projections import catalog_context
     planned = by_sku[states["planned"]]
-    assert planned.availability == Availability.UNAVAILABLE
-    assert catalog_context.planned_supply_for_skus(
+    assert planned.availability == Availability.PLANNED_OK
+    planned_qty = catalog_context.planned_supply_for_skus(
         [states["planned"]], horizon_days=2
-    ).get(states["planned"], 0) > 0
+    ).get(states["planned"], 0)
+    assert planned_qty == 10
+    assert planned.available_qty == planned_qty
 
     paused = by_sku[states["paused"]]
     assert paused.is_paused is True

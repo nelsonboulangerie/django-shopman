@@ -19,6 +19,8 @@ PERSISTENT_SCOPES = frozenset(
     {
         "production:planning-attempt",
         "production:quick-finish-attempt",
+        "notification:original",
+        "notification:resend",
     }
 )
 

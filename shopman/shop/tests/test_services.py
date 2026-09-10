@@ -247,6 +247,7 @@ class TestAvailabilityListingMembership:
             # defaults são permissivos (o canal é quem restringe).
             expiry_margin_days=0,
             include_nonconforming=True,
+            allowed_quality_grade_refs=None,
         )
 
     @patch("shopman.shop.services.availability.get_adapter")
@@ -931,12 +932,13 @@ class TestNotificationService:
         from shopman.shop.services.notification import deliver_order_notification
 
         order = _make_order(data={"customer_ref": "CLI-001"})
+        payload = {"order_ref": order.ref, "customer_ref": "CLI-001"}
 
         with patch("shopman.shop.services.notification._resolve_backend_chain", return_value=["manychat"]):
             success, error = deliver_order_notification(
                 order,
                 "payment_requested",
-                {"order_ref": order.ref, "customer_ref": "CLI-001"},
+                payload,
             )
 
         # Este teste afirmava "no active notification channel available" e
@@ -946,6 +948,116 @@ class TestNotificationService:
         # sem nenhum destinatário, que continua falhando alto.
         assert success is False
         assert error == "no active notification recipient available"
+        assert payload["notification_delivery"]["status"] == "failed"
+        assert payload["notification_delivery"]["error"] == error
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize(
+        ("channel_ref", "origin_channel", "extra_data"),
+        [
+            ("pdv", "pos", {}),
+            ("ifood", "ifood", {}),
+            # O marketplace pode trazer um identificador externo sem fornecer
+            # telefone/e-mail à loja; isso continua sendo hand-off gerenciado,
+            # não falha de cadastro do canal próprio.
+            ("ifood", "ifood", {"customer_ref": "IFOOD-CUSTOMER-42"}),
+        ],
+    )
+    def test_active_notification_for_anonymous_managed_order_is_an_explicit_skip(
+        self,
+        channel_ref,
+        origin_channel,
+        extra_data,
+    ):
+        from shopman.shop.services.notification import deliver_order_notification
+
+        order = _make_order(
+            channel_ref=channel_ref,
+            data={"origin_channel": origin_channel, **extra_data},
+        )
+        payload = {"order_ref": order.ref}
+
+        with patch("shopman.shop.services.notification._resolve_backend_chain", return_value=["manychat"]):
+            success, error = deliver_order_notification(order, "order_cancelled", payload)
+
+        assert success is True
+        assert error is None
+        assert payload["notification_delivery"]["status"] == "skipped"
+        assert payload["notification_delivery"]["reason"] == "expected_no_contact"
+
+    @pytest.mark.django_db
+    def test_active_notification_with_recipient_but_unavailable_backend_fails_loudly(self):
+        from shopman.shop.services.notification import deliver_order_notification
+
+        order = _make_order(data={"customer_phone": "+5543999999999"})
+        payload = {"order_ref": order.ref}
+        backend = SimpleNamespace(is_available=lambda: False)
+
+        with patch("shopman.shop.services.notification._resolve_backend_chain", return_value=["manychat"]):
+            with patch("shopman.shop.notifications.get_backend", return_value=backend):
+                success, error = deliver_order_notification(order, "order_ready", payload)
+
+        assert success is False
+        assert error == "no active notification backend available"
+        assert "backend" not in payload["notification_delivery"]
+        assert "recipient_fingerprint" not in payload["notification_delivery"]
+        assert "+5543999999999" not in str(payload["notification_delivery"])
+
+    @pytest.mark.django_db
+    def test_missing_backend_is_not_recorded_as_a_real_delivery_attempt(self):
+        from shopman.shop.services.notification import deliver_order_notification
+
+        order = _make_order(data={"customer_phone": "+5543999999999"})
+        payload = {"order_ref": order.ref}
+
+        with (
+            patch(
+                "shopman.shop.services.notification._resolve_backend_chain",
+                return_value=["missing-provider"],
+            ),
+            patch("shopman.shop.notifications.get_backend", return_value=None),
+            patch("shopman.shop.services.notification.notify") as mock_notify,
+        ):
+            success, error = deliver_order_notification(order, "order_ready", payload)
+
+        assert success is False
+        assert error == "no active notification backend available"
+        assert "backend" not in payload["notification_delivery"]
+        assert "recipient_fingerprint" not in payload["notification_delivery"]
+        mock_notify.assert_not_called()
+
+    @pytest.mark.django_db
+    def test_failure_evidence_names_only_the_last_backend_actually_attempted(self):
+        from shopman.shop.services.notification import deliver_order_notification
+
+        order = _make_order(data={"customer_phone": "+5543999999999"})
+        payload = {"order_ref": order.ref}
+        backends = {
+            "manychat": SimpleNamespace(is_available=lambda: True),
+            "sms": SimpleNamespace(is_available=lambda: False),
+        }
+
+        with (
+            patch(
+                "shopman.shop.services.notification._resolve_backend_chain",
+                return_value=["manychat", "sms"],
+            ),
+            patch(
+                "shopman.shop.notifications.get_backend",
+                side_effect=lambda name: backends[name],
+            ),
+            patch(
+                "shopman.shop.services.notification.notify",
+                return_value=SimpleNamespace(success=False, error="manychat rejected"),
+            ) as mock_notify,
+        ):
+            success, error = deliver_order_notification(order, "order_ready", payload)
+
+        assert success is False
+        assert error == "manychat rejected"
+        assert payload["notification_delivery"]["backend"] == "manychat"
+        assert "recipient_fingerprint" in payload["notification_delivery"]
+        mock_notify.assert_called_once()
 
     @pytest.mark.django_db
     def test_whatsapp_origin_is_transactional_active_channel(self):
@@ -957,25 +1069,35 @@ class TestNotificationService:
             data={"customer_ref": "CLI-001", "origin_channel": "whatsapp"},
         )
         backend = SimpleNamespace(is_available=lambda: True)
+        payload = {
+            "order_ref": order.ref,
+            "customer_ref": "CLI-001",
+            "origin_channel": "whatsapp",
+        }
 
         with patch("shopman.shop.services.notification._resolve_backend_chain", return_value=["manychat"]):
             with patch("shopman.shop.notifications.get_backend", return_value=backend):
                 with patch(
                     "shopman.shop.services.notification.notify",
-                    return_value=SimpleNamespace(success=True, error=None),
+                    return_value=SimpleNamespace(
+                        success=True,
+                        error=None,
+                        message_id="mc-accepted-123",
+                    ),
                 ) as mock_notify:
                     success, error = deliver_order_notification(
                         order,
                         "payment_requested",
-                        {
-                            "order_ref": order.ref,
-                            "customer_ref": "CLI-001",
-                            "origin_channel": "whatsapp",
-                        },
+                        payload,
                     )
 
         assert success is True
         assert error is None
+        assert payload["notification_delivery"]["status"] == "accepted"
+        assert payload["notification_delivery"]["backend"] == "manychat"
+        assert payload["notification_delivery"]["message_id"] == "mc-accepted-123"
+        assert payload["notification_delivery"]["recipient_fingerprint"] != "123"
+        assert len(payload["notification_delivery"]["recipient_fingerprint"]) == 16
         mock_notify.assert_called_once()
 
     @pytest.mark.django_db
@@ -1049,13 +1171,11 @@ class TestNotificationSendHandler:
         assert without_reason["reason_note"] == ""
 
     @pytest.mark.django_db
-    def test_no_recipient_failure_is_silent_no_alert(self):
-        """F2: sem destinatário é condição permanente — o handler não retenta
-        nem grita o alerta notification_failed (venda de balcão sem cliente é
-        esperado, não anomalia). A Directive já foi emitida pelo contrato.
-        """
+    def test_active_no_recipient_failure_retries_instead_of_becoming_done(self):
+        """Ausência operacional de destinatário é falha, não sucesso silencioso."""
         from unittest.mock import patch
 
+        from shopman.orderman.exceptions import DirectiveTransientError
         from shopman.orderman.models import Directive, Order
 
         from shopman.shop.handlers.notification import NotificationSendHandler
@@ -1066,7 +1186,7 @@ class TestNotificationSendHandler:
             session_key="session-ORD-001",
             status="new",
             total_q=1500,
-            data={"origin_channel": "pos"},
+            data={},
         )
         directive = Directive.objects.create(
             topic="notification.send",
@@ -1080,10 +1200,143 @@ class TestNotificationSendHandler:
             ) as mock_deliver,
             patch.object(NotificationSendHandler, "_escalate") as mock_escalate,
         ):
-            NotificationSendHandler().handle(message=directive, ctx={})
+            with pytest.raises(DirectiveTransientError):
+                NotificationSendHandler().handle(message=directive, ctx={})
 
         mock_deliver.assert_called_once()
         mock_escalate.assert_not_called()
+
+    @pytest.mark.django_db
+    def test_handler_persists_delivery_proof_and_replay_does_not_send_twice(self):
+        from shopman.orderman.models import Directive, Order
+
+        from shopman.shop.handlers.notification import NotificationSendHandler
+
+        Order.objects.create(
+            ref="ORD-001",
+            channel_ref="web",
+            session_key="session-ORD-001",
+            status="new",
+            total_q=1500,
+            data={"customer_phone": "+5543999999999"},
+        )
+        directive = Directive.objects.create(
+            topic="notification.send",
+            dedupe_key="notification.send:ORD-001:order_ready",
+            payload={"order_ref": "ORD-001", "template": "order_ready"},
+        )
+
+        provider_send = MagicMock(
+            return_value={"success": True, "message_id": "mc-123"}
+        )
+        backend = SimpleNamespace(
+            is_available=lambda: True,
+            send=provider_send,
+        )
+        with (
+            patch(
+                "shopman.shop.services.notification._resolve_backend_chain",
+                return_value=["manychat"],
+            ),
+            patch("shopman.shop.notifications.get_backend", return_value=backend),
+        ):
+            handler = NotificationSendHandler()
+            handler.handle(message=directive, ctx={})
+            directive.refresh_from_db()
+            handler.handle(message=directive, ctx={})
+
+        proof = directive.payload["notification_delivery"]
+        assert proof["status"] == "accepted"
+        assert proof["backend"] == "manychat"
+        assert proof["message_id"] == "mc-123"
+        assert proof["recipient_fingerprint"] != "+5543999999999"
+        assert "+5543999999999" not in str(proof)
+        provider_send.assert_called_once()
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize(
+        ("suffix", "order_data", "backend", "expected_error"),
+        [
+            (
+                "recipient",
+                {},
+                SimpleNamespace(is_available=lambda: True),
+                "no active notification recipient available",
+            ),
+            (
+                "backend",
+                {"customer_phone": "+5543999999999"},
+                SimpleNamespace(is_available=lambda: False),
+                "no active notification backend available",
+            ),
+        ],
+    )
+    def test_waitlist_available_without_delivery_route_retries_with_failed_evidence(
+        self,
+        suffix,
+        order_data,
+        backend,
+        expected_error,
+    ):
+        from shopman.orderman import registry
+        from shopman.orderman.dispatch import _process_directive
+        from shopman.orderman.models import Directive, Order
+
+        from shopman.shop.handlers.notification import NotificationSendHandler
+
+        order_ref = f"ORD-WAITLIST-{suffix}"
+        Order.objects.create(
+            ref=order_ref,
+            channel_ref="web",
+            session_key=f"session-{order_ref}",
+            status="new",
+            total_q=1500,
+            data=order_data,
+        )
+        directive = Directive.objects.create(
+            topic="notification.send",
+            dedupe_key=f"notification.send:{order_ref}:waitlist_available",
+            payload={"order_ref": order_ref, "template": "waitlist_available"},
+        )
+
+        with (
+            patch.object(
+                registry,
+                "get_directive_handler",
+                return_value=NotificationSendHandler(),
+            ),
+            patch(
+                "shopman.shop.services.notification._resolve_backend_chain",
+                return_value=["manychat"],
+            ),
+            patch("shopman.shop.notifications.get_backend", return_value=backend),
+        ):
+            _process_directive(directive)
+
+        directive.refresh_from_db()
+        assert directive.status == Directive.Status.QUEUED
+        assert directive.attempts == 1
+        assert directive.error_code == "transient"
+        assert directive.last_error == f"[transient] {expected_error}"
+        assert directive.payload["notification_delivery"]["status"] == "failed"
+        assert directive.payload["notification_delivery"]["error"] == expected_error
+
+    @pytest.mark.django_db
+    def test_exhausted_delivery_escalation_dedupes_the_open_cause(self):
+        from shopman.backstage.models import OperatorAlert
+        from shopman.shop.handlers.notification import NotificationSendHandler
+
+        handler = NotificationSendHandler()
+        handler._escalate("ORD-ALERT", "waitlist_available", "provider timeout")
+        handler._escalate("ORD-ALERT", "waitlist_available", "provider timeout")
+
+        alerts = OperatorAlert.objects.filter(
+            type="notification_failed",
+            order_ref="ORD-ALERT",
+            resolved_at__isnull=True,
+        )
+        assert alerts.count() == 1
+        assert "'waitlist_available'" in alerts.get().message
 
     @pytest.mark.django_db
     def test_real_backend_failure_still_escalates(self):

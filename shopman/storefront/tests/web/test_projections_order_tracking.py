@@ -40,6 +40,10 @@ def _attach_pending_planned_hold(order, *, sku: str, target_date=None):
 
     from django.utils import timezone
     from shopman.stockman.models import Hold, HoldStatus, Position, Quant
+    from shopman.stockman.services.holds import (
+        QUALITY_GRADE_POLICY_VERSION,
+        QUALITY_GRADE_POLICY_VERSION_METADATA_KEY,
+    )
 
     planned_for = target_date or timezone.localdate()
     position, _ = Position.objects.get_or_create(ref="forno", defaults={"name": "Forno"})
@@ -48,7 +52,7 @@ def _attach_pending_planned_hold(order, *, sku: str, target_date=None):
         position=position,
         target_date=planned_for,
         batch="",
-        defaults={"metadata": {}},
+        defaults={"metadata": {}, "_quantity": Decimal("1")},
     )
     hold = Hold.objects.create(
         sku=sku,
@@ -57,7 +61,12 @@ def _attach_pending_planned_hold(order, *, sku: str, target_date=None):
         target_date=planned_for,
         status=HoldStatus.PENDING,
         expires_at=None,
-        metadata={"planned": True, "reference": f"order:{order.ref}", "priority": 0},
+        metadata={
+            "planned": True,
+            "reference": f"order:{order.ref}",
+            "priority": 0,
+            QUALITY_GRADE_POLICY_VERSION_METADATA_KEY: QUALITY_GRADE_POLICY_VERSION,
+        },
     )
     data = dict(order.data or {})
     data["hold_ids"] = [{"sku": sku, "hold_id": hold.hold_id, "qty": 1}]

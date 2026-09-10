@@ -412,7 +412,7 @@ class StockHolds:
                 )
 
             allowed_grades = (hold.metadata or {}).get(QUALITY_GRADE_ALLOWLIST_METADATA_KEY)
-            if allowed_grades is not None:
+            if allowed_grades is not None and quant.batch:
                 from shopman.stockman.models import Batch
 
                 grade_ref = (

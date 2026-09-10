@@ -29,7 +29,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from types import SimpleNamespace
 
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.utils import timezone
 from shopman.stockman.models.quant import Quant
 from shopman.stockman.services.queries import _resolve_stock_profile
@@ -117,13 +117,17 @@ def quants_eligible_for(
         qs = qs.exclude(batch__in=expired_refs)
 
     if allowed_quality_grade_refs is not None:
-        disallowed_refs = list(
+        allowed_batch_refs = list(
             Batch.objects.for_sku(sku)
-            .exclude(quality_grade_ref__in=tuple(allowed_quality_grade_refs))
+            .filter(quality_grade_ref__in=tuple(allowed_quality_grade_refs))
             .values_list("ref", flat=True)
         )
-        if disallowed_refs:
-            qs = qs.exclude(batch__in=disallowed_refs)
+        # ``Quant.batch`` is deliberately a loose textual reference, not an FK.
+        # Under an explicit quality policy, a named lot is therefore eligible
+        # only when its Batch fact exists for this SKU and carries an allowed
+        # grade.  The empty coordinate remains distinct: it is genuinely
+        # batchless stock and must not acquire a made-up QC classification.
+        qs = qs.filter(Q(batch="") | Q(batch__in=allowed_batch_refs))
     elif not include_nonconforming:
         nonconforming_refs = list(Batch.objects.for_sku(sku).nonconforming().values_list("ref", flat=True))
         if nonconforming_refs:

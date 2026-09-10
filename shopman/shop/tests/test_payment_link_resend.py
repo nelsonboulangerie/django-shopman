@@ -167,24 +167,28 @@ def test_envio_que_falhou_pode_ser_reenviado_na_hora(db):
 
 
 def test_clique_duplo_no_mesmo_segundo_devolve_a_mesma_directive(sent):
-    """O UNIQUE parcial do Core recusa o segundo INSERT; devolvemos a do primeiro.
+    """O receipt permanente recusa o segundo INSERT; devolvemos a do primeiro.
 
     A corrida de verdade: os dois cliques passam pelos guardas e computam o
     mesmo ``n`` antes de qualquer INSERT. Aqui o "outro clique" commita dentro
-    do nosso ``create_deduped`` (que então devolve ``None``, como faz quando a
-    constraint viola), e o service tem que achar a Directive dele pela chave.
+    do nosso ``create_persistently_deduped`` (que então devolve ``None``, como
+    faz quando o receipt já existe), e o service tem que achar a Directive dele
+    pela chave.
     """
     from shopman.shop import directives as directives_module
 
     order, _ = sent
-    real_create = directives_module.create_deduped
+    real_create = directives_module.create_persistently_deduped
     other_click: list[Directive] = []
 
     def racing(**kwargs):
         other_click.append(real_create(**kwargs))  # o outro clique chegou primeiro
         return None  # o nosso INSERT violou o UNIQUE parcial
 
-    with patch("shopman.shop.directives.create_deduped", side_effect=racing):
+    with patch(
+        "shopman.shop.directives.create_persistently_deduped",
+        side_effect=racing,
+    ):
         joined = resend_payment_link(order)
 
     assert joined.pk == other_click[0].pk

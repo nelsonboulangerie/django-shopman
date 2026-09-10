@@ -460,3 +460,49 @@ class TestRealizeWithHolds:
             StockHolds.fulfill(hold_id)
 
         assert exc.value.code == "INELIGIBLE_BATCH"
+
+    def test_fulfill_keeps_batchless_stock_eligible(self, product, vitrine):
+        """A allowlist classifica lotes; estoque sem lote não inventa QC.
+
+        O mesmo quant sem lote que a consulta e a reserva consideram elegível
+        precisa continuar elegível no fulfill. Um lote nomeado e sem grau segue
+        falhando fechado pelo teste acima.
+        """
+        StockMovements.receive(
+            quantity=Decimal("5"),
+            sku=product.sku,
+            position=vitrine,
+        )
+        hold_id = StockHolds.hold(
+            quantity=Decimal("2"),
+            product=product,
+            allowed_quality_grade_refs=("excellent", "standard"),
+        )
+        StockHolds.confirm(hold_id)
+
+        move = StockHolds.fulfill(hold_id)
+
+        assert move.delta == Decimal("-2")
+        assert Hold.objects.get(pk=int(hold_id.split(":")[1])).status == HoldStatus.FULFILLED
+
+    def test_hold_never_reserves_a_named_batch_without_a_batch_fact(
+        self,
+        product,
+        vitrine,
+    ):
+        StockMovements.receive(
+            quantity=Decimal("5"),
+            sku=product.sku,
+            position=vitrine,
+            batch="ORPHAN-BATCH",
+        )
+
+        with pytest.raises(StockError) as exc:
+            StockHolds.hold(
+                quantity=Decimal("2"),
+                product=product,
+                allowed_quality_grade_refs=("excellent", "standard"),
+            )
+
+        assert exc.value.code == "INSUFFICIENT_AVAILABLE"
+        assert not Hold.objects.exists()
