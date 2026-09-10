@@ -905,7 +905,7 @@ class RelayJournal:
         try:
             self.path.chmod(0o600)
         except OSError:
-            pass
+            logger.warning("não foi possível restringir permissões de %s", self.path, exc_info=True)
 
     def recover_incomplete(self) -> int:
         """Converte resíduos de processo morto em ACKs terminais seguros."""
@@ -1822,7 +1822,7 @@ def _write_private_json(path: Path, payload: dict) -> None:
         try:
             temporary.unlink()
         except OSError:
-            pass
+            logger.warning("não foi possível remover o arquivo temporário %s", temporary, exc_info=True)
         raise
 
 
@@ -1947,7 +1947,7 @@ def _run_quiet(cmd: list[str]) -> None:
     """
     try:
         subprocess.run(cmd, capture_output=True, check=False)
-    except OSError:
+    except OSError:  # silêncio-deliberado: faxina aceita serviço/comando legado ausente
         pass
 
 
@@ -2907,7 +2907,7 @@ def _wait_until_listening(config: dict, *, seconds: int = 10) -> dict | None:
             with urllib.request.urlopen(url, timeout=2) as response:
                 if response.status == 200:
                     return json.loads(response.read().decode("utf-8"))
-        except (urllib.error.URLError, OSError, ValueError):
+        except (urllib.error.URLError, OSError, ValueError):  # silêncio-deliberado: probe repete até o prazo
             pass
         time.sleep(0.5)
     return None

@@ -3404,7 +3404,7 @@ def _product_names(skus: set[str]) -> dict[str, str]:
     try:
         from shopman.offerman.models import Product
     except Exception:
-        logger.debug("production.product_names_import_failed", exc_info=True)
+        logger.exception("production.product_names_import_failed")
     else:
         names.update(
             (sku, name)
@@ -3417,7 +3417,7 @@ def _product_names(skus: set[str]) -> dict[str, str]:
     try:
         from shopman.buyman.models import Material
     except Exception:
-        logger.debug("production.material_names_import_failed", exc_info=True)
+        logger.exception("production.material_names_import_failed")
     else:
         names.update(
             (sku, name)
