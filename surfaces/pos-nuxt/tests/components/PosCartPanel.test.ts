@@ -263,7 +263,7 @@ describe("PosCartPanel — duas linhas do MESMO produto", () => {
       .findAll("button")
       .find((b) => b.text().includes("Enviar à cozinha"));
     await fire!.trigger("click");
-    expect(wrapper.emitted("fireLines")?.[0]).toEqual([["L-cha-2"]]);
+    expect(wrapper.emitted("fireLines")?.[0]?.[0]).toEqual(["L-cha-2"]);
   });
 
   it("o desconto do teclado vai para a linha ativa, e só para ela", async () => {
@@ -746,4 +746,36 @@ it("mantém o rodapé compacto durante navegação até Concluir, sem depender d
   expect(wrapper.findAll('button').some(b => b.text().includes('Pagamento'))).toBe(false);
   await wrapper.findAll('button').find(b => b.text()==='Concluir')!.trigger('click');
   expect(wrapper.findAll('button').some(b => b.text().includes('Pagamento'))).toBe(true);
+});
+
+
+describe("PosCartPanel — conclusão da ação em lote", () => {
+  for (const kind of ["fireLines", "unfireLines"] as const) {
+    it(`${kind}: preserva seleção no erro e conclui somente no sucesso`, async () => {
+      const wrapper = await mountSuspended(PosCartPanel, { props: props({
+        items: [item({ sku: "PAO", name: "Pão", fired: kind === "unfireLines" })],
+      }) });
+      await wrapper.find('[data-item-select="L-PAO"]').trigger("keydown", { key: " " });
+      const action = () => wrapper.findAll("button").find(b => b.text().includes(
+        kind === "fireLines" ? "Enviar à cozinha" : "Cancelar envio",
+      ))!;
+      const payment = () => wrapper.findAll("button").some(b => b.text().includes("Pagamento"));
+      await action().trigger("click");
+      expect(payment()).toBe(false);
+      expect(wrapper.find('[aria-label="Selecionar Pão"]').attributes("aria-pressed")).toBe("true");
+      await action().trigger("click");
+      expect(wrapper.emitted(kind)).toHaveLength(1);
+      const complete = wrapper.emitted(kind)![0]![1] as (success: boolean) => void;
+      complete(false);
+      await wrapper.vm.$nextTick();
+      expect(wrapper.find('[aria-label="Selecionar Pão"]').attributes("aria-pressed")).toBe("true");
+      expect(payment()).toBe(false);
+      await action().trigger("click");
+      (wrapper.emitted(kind)![1]![1] as (success: boolean) => void)(true);
+      await wrapper.vm.$nextTick();
+      expect(wrapper.find('[aria-label="Concluir seleção"]').exists()).toBe(false);
+      expect(wrapper.find('[aria-label="Selecionar Pão"]').exists()).toBe(false);
+      expect(payment()).toBe(true);
+    });
+  }
 });

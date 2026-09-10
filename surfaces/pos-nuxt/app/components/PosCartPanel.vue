@@ -63,8 +63,8 @@ const emit = defineEmits<{
   fire: [];
   unfire: [string];
   /** Multi-select batch (spec §2.2): fire/unfire exatamente estas linhas. */
-  fireLines: [string[]];
-  unfireLines: [string[]];
+  fireLines: [string[], (success: boolean) => void];
+  unfireLines: [string[], (success: boolean) => void];
   requestTab: [];
 }>();
 
@@ -91,29 +91,38 @@ watch(
     selected.value = pruneSelection(selected.value, props.items);
   },
 );
+const batchPending = ref(false);
+function completeBatch(success: boolean) {
+  batchPending.value = false;
+  if (success) finishItemMode();
+}
 function batchFire() {
   if (
     props.loading ||
     props.saving ||
     props.firing ||
+    batchPending.value ||
     !props.fireAction.present ||
     !props.fireAction.enabled
   )
     return;
-  if (selection.value.canFire) emit("fireLines", selection.value.lineIds);
-  clearSelection();
+  if (!selection.value.canFire) return;
+  batchPending.value = true;
+  emit("fireLines", selection.value.lineIds, completeBatch);
 }
 function batchUnfire() {
   if (
     props.loading ||
     props.saving ||
     props.firing ||
+    batchPending.value ||
     !props.unfireAction.present ||
     !props.unfireAction.enabled
   )
     return;
-  if (selection.value.canUnfire) emit("unfireLines", selection.value.lineIds);
-  clearSelection();
+  if (!selection.value.canUnfire) return;
+  batchPending.value = true;
+  emit("unfireLines", selection.value.lineIds, completeBatch);
 }
 // Remover o LOTE é gesto largo: confirma antes (a seleção pode ter linha já
 // enviada à cozinha e o operador pode ter marcado a mais).

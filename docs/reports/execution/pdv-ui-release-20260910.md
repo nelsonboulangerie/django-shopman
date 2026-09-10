@@ -42,3 +42,14 @@ a conclusão do deploy exige verificar a implantação ativa correspondente.
 O gate compartilhado identificou tamanhos avulsos no carrinho. Textos auxiliares
 foram alinhados a text-xs e o total a text-xl; 220 testes do operator-kit passaram
 após a correção, sem exceção adicionada à regra tipográfica.
+
+## Conclusão de seleção após ação
+
+Envio e cancelamento de envio em lote agora informam o resultado ao carrinho.
+Só o sucesso conclui o modo e restaura o rodapé. Erro ou ausência de ação mantém
+os itens marcados para nova tentativa; envio duplicado durante espera é bloqueado.
+Desconto pelo numpad mantém seleção enquanto o operador digita o valor.
+847 testes do PDV passaram, incluindo sucesso, falha e repetição das duas ações.
+Ensaio completo atualizado: falha HTTP 503 simulada preservou seleção; nova
+ tentativa com Django real concluiu a seleção e devolveu Pagamento. Fechamento
+confirmado no banco em R$ 24,75, pedido PDV-260910-P32 (35,65s).
