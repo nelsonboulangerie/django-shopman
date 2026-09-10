@@ -39,6 +39,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from dataclasses import replace
 from decimal import Decimal
 
 from django.contrib.auth import login, logout
@@ -1277,7 +1278,24 @@ class ProductionWeighingView(APIView):
             base_recipe=query.get("base_recipe", ""),
             access=access,
         )
-        return Response({"weighing": projection_data(weighing)})
+        from shopman.backstage.api.print_jobs import destination_projection
+
+        weighing = replace(
+            weighing,
+            print_destination=destination_projection(request=request),
+        )
+        return Response(
+            {
+                "weighing": projection_data(
+                    weighing,
+                    freshness_context=(
+                        "weighing",
+                        weighing.selected_date,
+                        f"user:{request.user.pk}",
+                    ),
+                )
+            }
+        )
 
 
 class ProductionReportsCSVRenderer(BaseRenderer):

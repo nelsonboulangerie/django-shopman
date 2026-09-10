@@ -182,6 +182,69 @@ def _qr(data: str, *, module: int = 6) -> bytes:
     ) + payload + bytes([GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]) + bytes([ESC, ord("a"), 0])
 
 
+def production_label_run(
+    document: dict,
+    *,
+    copy_number: int = 1,
+    columns: int = COLUMNS,
+    cut_mode: str = "partial",
+) -> bytes:
+    """Render one frozen preparation-label document to ESC/POS.
+
+    Blind documents deliberately have no recipe/preparation name, ref, output
+    SKU or source-order text.  Ingredient name + SKU are safe and operationally
+    necessary: blindness is about the formula being weighed, not about asking
+    the operator to identify anonymous ingredient codes.
+    """
+    if columns != COLUMNS:
+        raise ValueError("O primeiro contrato de etiquetas exige exatamente 48 colunas.")
+    mode = str(document.get("mode") or "")
+    if mode not in {"blind", "explicit"}:
+        raise ValueError("Modo de etiqueta inválido.")
+    tickets = document.get("tickets")
+    if not isinstance(tickets, list) or not tickets:
+        raise ValueError("Documento de etiquetas vazio.")
+
+    out = bytearray()
+    for index, ticket in enumerate(tickets):
+        if index:
+            out += _rule()
+        out += bytes([ESC, ord("@")])
+        out += bytes([ESC, ord("t"), CODE_PAGE])
+        out += _centered("PESAGEM" if mode == "blind" else "PREPARO")
+        if copy_number > 1:
+            out += _centered(f"*** {copy_number}ª VIA ***")
+        if mode == "blind":
+            out += _double(str(ticket["blind_code"]))
+        else:
+            for part in _wrap(str(ticket["name"]), columns):
+                out += _centered(part)
+            out += _centered(str(ticket["output_sku"]))
+            total_weight = str(ticket.get("total_weight_display") or "")
+            if total_weight:
+                out += _centered(f"Peso total: {total_weight}")
+            output = str(ticket.get("output_quantity_display") or "")
+            if output:
+                out += _centered(f"Rendimento: {output}")
+        out += _pair(f"Feito {ticket['made_display']}", f"Validade {ticket['expiry_display']}")
+        out += _rule()
+        for ingredient in ticket["ingredients"]:
+            # Identification hierarchy: human name first, SKU second.  Never
+            # emit a bare SKU as the only identity on the paper.
+            for part in _wrap(str(ingredient["name"]), columns):
+                out += _line(part)
+            out += _pair(
+                f"  {ingredient['sku']}",
+                str(ingredient.get("target_display") or ingredient["quantity_display"]),
+            )
+        out += bytes([ESC, ord("d"), 3])
+        if cut_mode == "partial":
+            out += bytes([GS, ord("V"), 1])
+        elif cut_mode != "none":
+            raise ValueError("Modo de corte inválido.")
+    return bytes(out)
+
+
 def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
     """Recibo NÃO fiscal da venda de balcão — a projeção impressa do pedido.
 

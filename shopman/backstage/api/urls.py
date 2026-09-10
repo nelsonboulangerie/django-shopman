@@ -168,6 +168,16 @@ from .operations import (
     WorkOrderStartView,
     WorkOrderVoidView,
 )
+from .print_jobs import (
+    PrintAgentAckView,
+    PrintAgentClaimView,
+    ProductionPrintJobBrowserResultView,
+    ProductionPrintJobConfirmView,
+    ProductionPrintJobReprintView,
+    ProductionPrintJobRetryView,
+    ProductionPrintJobStatusView,
+    ProductionWeighingPrintJobCreateView,
+)
 from .product_promise import CatalogPromiseView, ProductPromiseView
 from .purchase import (
     PurchaseBoardView,
@@ -243,6 +253,42 @@ urlpatterns = [
         "production/weighing/",
         ProductionWeighingView.as_view(),
         name="api-backstage-production-weighing",
+    ),
+    path(
+        "production/weighing/print-jobs/",
+        ProductionWeighingPrintJobCreateView.as_view(),
+        name="api-backstage-production-print-job-create",
+    ),
+    path(
+        "production/weighing/print-jobs/<uuid:job_ref>/",
+        ProductionPrintJobStatusView.as_view(),
+        name="api-backstage-production-print-job",
+    ),
+    path(
+        "production/weighing/print-jobs/<uuid:job_ref>/retry/",
+        ProductionPrintJobRetryView.as_view(),
+        name="api-backstage-production-print-job-retry",
+    ),
+    path(
+        "production/weighing/print-jobs/<uuid:job_ref>/reprint/",
+        ProductionPrintJobReprintView.as_view(),
+        name="api-backstage-production-print-job-reprint",
+    ),
+    path(
+        "production/weighing/print-jobs/<uuid:job_ref>/confirm/",
+        ProductionPrintJobConfirmView.as_view(),
+        name="api-backstage-production-print-job-confirm",
+    ),
+    path(
+        "production/weighing/print-jobs/<uuid:job_ref>/browser-result/",
+        ProductionPrintJobBrowserResultView.as_view(),
+        name="api-backstage-production-print-job-browser-result",
+    ),
+    path("print-agent/jobs/claim/", PrintAgentClaimView.as_view(), name="api-backstage-print-agent-claim"),
+    path(
+        "print-agent/jobs/<uuid:job_ref>/ack/",
+        PrintAgentAckView.as_view(),
+        name="api-backstage-print-agent-ack",
     ),
     # Produção — persona GESTOR (perm fina backstage.view_production_reports)
     path(

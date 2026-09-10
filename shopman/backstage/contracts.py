@@ -143,6 +143,8 @@ def render_serializer_interfaces(
             if child_name is None:
                 raise TypeError(f"Nested serializer {type(field.child).__name__} is not exported")
             rendered = f"{child_name}[]"
+        elif isinstance(field, drf.ListField):
+            rendered = f"{field_type(field.child)}[]"
         elif isinstance(field, drf.ChoiceField):
             rendered = " | ".join(json.dumps(str(value), ensure_ascii=False) for value in field.choices)
         elif isinstance(field, drf.DecimalField):

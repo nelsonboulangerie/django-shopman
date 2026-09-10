@@ -7,18 +7,37 @@ import type { WeighingTicketProjection } from "../../app/types/production";
 
 const tickets = ref<WeighingTicketProjection[]>([]);
 const printSpy = vi.fn();
+const weighingProjection = ref({
+  selected_date: "2026-09-10",
+  selected_date_display: "10 set 2026",
+  selected_position_ref: "",
+  selected_base_recipe: "",
+  tickets: [],
+  access: {},
+  actions: [],
+  generated_at: "2026-09-10T10:00:00Z",
+  source_revision: "weighing:7",
+  fresh_until: "2099-09-10T10:05:00Z",
+  contract_version: 1,
+  scale_precision_g: "2",
+  scale_precision_display: "2 g",
+  scale_rounding_note: "Alvos arredondados para cima · balança 2 g",
+});
 
 function ticket(
   recipeRef: string,
   name: string,
   blindCode: string,
+  ticketRef?: string,
 ): WeighingTicketProjection {
   return {
+    ...(ticketRef ? { ticket_ref: ticketRef } : {}),
     recipe_ref: recipeRef,
     output_sku: recipeRef.toUpperCase(),
     name,
     output_quantity_display: "12 un.",
     dough_weight_display: "2 kg",
+    total_weight_display: "2.000 g",
     sources_display: "12 un.",
     blind_code: blindCode,
     made_display: "10/09",
@@ -28,12 +47,13 @@ function ticket(
         sku: "FARINHA",
         name: "Farinha",
         quantity_display: "1 kg",
+        target_display: "1.000 g",
         is_subrecipe: false,
       },
       {
         sku: "AGUA",
         name: "Água",
-        quantity_display: "700 ml",
+        quantity_display: "700 g",
         is_subrecipe: false,
       },
     ],
@@ -58,6 +78,7 @@ function installGlobals() {
     checkedCount: ref(0),
   }));
   vi.stubGlobal("useWeighing", () => ({
+    projection: weighingProjection,
     tickets,
     dateDisplay: ref("10 set 2026"),
     pending: ref(false),
@@ -72,16 +93,6 @@ const stubs = {
   Icon: true,
   NuxtLink: { template: "<a><slot /></a>" },
   UiBadge: { template: "<span><slot /></span>" },
-  UiButton: { template: "<button><slot /></button>" },
-  UiDialog: {
-    props: ["open"],
-    template: '<div v-if="open" data-testid="print-unavailable"><slot /></div>',
-  },
-  UiDialogContent: { template: "<div><slot /></div>" },
-  UiDialogHeader: { template: "<header><slot /></header>" },
-  UiDialogTitle: { template: "<h2><slot /></h2>" },
-  UiDialogDescription: { template: "<p><slot /></p>" },
-  UiDialogFooter: { template: "<footer><slot /></footer>" },
   WeighingLabels: {
     props: ["printMode", "labels", "tickets"],
     template: `
@@ -89,7 +100,19 @@ const stubs = {
         data-testid="print-payload"
         :data-mode="printMode"
         :data-label-count="labels.length"
-        :data-ticket-refs="tickets.map((ticket) => ticket.recipe_ref).join(',')"
+        :data-ticket-refs="tickets.map((ticket) => ticket.ticket_ref || ticket.recipe_ref).join(',')"
+      />
+    `,
+  },
+  ProductionLabelPrintDialog: {
+    props: ["open", "printMode", "labels", "tickets"],
+    template: `
+      <div
+        v-if="open"
+        data-testid="print-preview"
+        :data-mode="printMode"
+        :data-label-count="labels.length"
+        :data-ticket-refs="tickets.map((ticket) => ticket.ticket_ref || ticket.recipe_ref).join(',')"
       />
     `,
   },
@@ -98,18 +121,15 @@ const stubs = {
 beforeEach(() => {
   installGlobals();
   printSpy.mockReset();
-  printSpy.mockImplementation(() =>
-    window.dispatchEvent(new Event("beforeprint")),
-  );
   tickets.value = [
-    ticket("massa-croissant", "Massa Croissant", "D8"),
-    ticket("massa-forma", "Massa Forma", "S5"),
+    ticket("massa-base", "Massa Croissant", "D8", "ticket-croissant"),
+    ticket("massa-base", "Massa Forma", "S5", "ticket-forma"),
   ];
 });
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe("Preparação — impressão por preparo", () => {
+describe("Preparação — preview e identificação", () => {
   it("abre em Por preparo e mantém Por insumo como segunda visão", () => {
     const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
     const viewMode = wrapper.get('[aria-label="Modo de visualização"]');
@@ -123,126 +143,81 @@ describe("Preparação — impressão por preparo", () => {
     expect(wrapper.find("article").exists()).toBe(true);
   });
 
-  it("mantém o código junto da identificação e a ação isolada à direita", async () => {
+  it("mostra Nome e, na última linha do cabeçalho, SKU · peso total em gramas", () => {
     const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
-    await wrapper
-      .findAll("button")
-      .find((button) => button.text().trim() === "Por preparo")!
-      .trigger("click");
+    const header = wrapper.find("article header");
 
-    const cardHeader = wrapper.find("article header");
-    const leftIdentity = cardHeader.get(":scope > div");
-    const printButton = cardHeader.get(":scope > button");
+    expect(header.text()).toContain("Massa Croissant");
+    expect(header.text()).toContain("MASSA-BASE · Peso total 2.000 g");
+    expect(header.text()).not.toContain("12 un. · MASSA-BASE");
+  });
 
-    expect(leftIdentity.text()).toContain("D8");
-    expect(leftIdentity.text()).toContain("Massa Croissant");
-    expect(printButton.attributes("aria-label")).toBe(
-      "Imprimir etiquetas de pesagem de Massa Croissant",
+  it("identifica o insumo por Nome + SKU e apresenta kg em gramas", () => {
+    const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
+    const firstIngredient = wrapper.find("article ul li");
+
+    expect(firstIngredient.text()).toContain("Farinha");
+    expect(firstIngredient.text()).toContain("FARINHA");
+    expect(firstIngredient.text()).toContain("1.000 g");
+    expect(firstIngredient.text()).not.toContain("1 kg");
+    expect(wrapper.text()).toContain(
+      "Alvos arredondados para cima · balança 2 g",
     );
-    expect(printButton.classes()).toContain("size-11");
   });
 
-  it("imprime somente as etiquetas de pesagem do cartão escolhido", async () => {
+  it("primeiro toque abre preview do ticket_ref escolhido e não chama window.print", async () => {
     const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
-    await wrapper
-      .findAll("button")
-      .find((button) => button.text().trim() === "Por preparo")!
-      .trigger("click");
 
     await wrapper
-      .get(
-        'button[aria-label="Imprimir etiquetas de pesagem de Massa Croissant"]',
-      )
+      .get('button[aria-label="Abrir etiquetas de pesagem de Massa Croissant"]')
       .trigger("click");
     await nextTick();
 
-    const payload = wrapper.get('[data-testid="print-payload"]');
-    expect(payload.attributes("data-mode")).toBe("pesagem");
-    expect(payload.attributes("data-ticket-refs")).toBe("massa-croissant");
-    expect(payload.attributes("data-label-count")).toBe("2");
-    expect(printSpy).toHaveBeenCalledTimes(1);
+    const preview = wrapper.get('[data-testid="print-preview"]');
+    expect(preview.attributes("data-mode")).toBe("pesagem");
+    expect(preview.attributes("data-ticket-refs")).toBe("ticket-croissant");
+    expect(preview.attributes("data-label-count")).toBe("2");
+    expect(printSpy).not.toHaveBeenCalled();
   });
 
-  it("mantém a impressão geral e restaura todos os preparos", async () => {
+  it("usa recipe_ref apenas como fallback para um contrato antigo", async () => {
+    tickets.value = [ticket("massa-legada", "Massa Legada", "L1")];
     const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
-    await wrapper
-      .findAll("button")
-      .find((button) => button.text().trim() === "Por preparo")!
-      .trigger("click");
 
     await wrapper
-      .get('button[aria-label="Imprimir etiquetas de pesagem de Massa Forma"]')
+      .get('button[aria-label="Abrir etiquetas de pesagem de Massa Legada"]')
       .trigger("click");
-    await nextTick();
+
+    expect(
+      wrapper
+        .get('[data-testid="print-preview"]')
+        .attributes("data-ticket-refs"),
+    ).toBe("massa-legada");
+  });
+
+  it("a ação geral restaura todos os preparos e a explícita preserva o modo", async () => {
+    const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
+
+    await wrapper
+      .get('button[aria-label="Abrir etiquetas de pesagem de Massa Forma"]')
+      .trigger("click");
     await wrapper
       .findAll("button")
       .find((button) => button.text().includes("Etiquetas de pesagem"))!
       .trigger("click");
-    await nextTick();
 
-    const payload = wrapper.get('[data-testid="print-payload"]');
-    expect(payload.attributes("data-ticket-refs")).toBe(
-      "massa-croissant,massa-forma",
+    let preview = wrapper.get('[data-testid="print-preview"]');
+    expect(preview.attributes("data-ticket-refs")).toBe(
+      "ticket-croissant,ticket-forma",
     );
-    expect(payload.attributes("data-label-count")).toBe("4");
-    expect(printSpy).toHaveBeenCalledTimes(2);
-  });
-
-  it("monta e envia as etiquetas explícitas de todos os preparos", async () => {
-    const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
+    expect(preview.attributes("data-label-count")).toBe("4");
 
     await wrapper
       .findAll("button")
       .find((button) => button.text().includes("Etiquetas do preparo"))!
       .trigger("click");
-    await nextTick();
-
-    const payload = wrapper.get('[data-testid="print-payload"]');
-    expect(payload.attributes("data-mode")).toBe("preparo");
-    expect(payload.attributes("data-ticket-refs")).toBe(
-      "massa-croissant,massa-forma",
-    );
-    expect(printSpy).toHaveBeenCalledTimes(1);
-    expect(wrapper.find('[data-testid="print-unavailable"]').exists()).toBe(
-      false,
-    );
-  });
-
-  it("explica a limitação quando o preview não oferece impressão", async () => {
-    vi.stubGlobal("print", undefined);
-    const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
-
-    await wrapper
-      .findAll("button")
-      .find((button) => button.text().includes("Etiquetas do preparo"))!
-      .trigger("click");
-    await nextTick();
-
-    expect(
-      wrapper.get('[data-testid="print-payload"]').attributes("data-mode"),
-    ).toBe("preparo");
-    const dialog = wrapper.get('[data-testid="print-unavailable"]');
-    expect(dialog.text()).toContain("Impressão indisponível neste preview");
-    expect(dialog.text()).toContain("Chrome ou Safari");
-    expect(dialog.text()).toContain("80 mm");
-  });
-
-  it("explica também quando o preview oferece uma ponte de impressão inerte", async () => {
-    vi.useFakeTimers();
-    printSpy.mockImplementation(() => undefined);
-    const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
-
-    await wrapper
-      .findAll("button")
-      .find((button) => button.text().includes("Etiquetas do preparo"))!
-      .trigger("click");
-    await nextTick();
-    await vi.advanceTimersByTimeAsync(200);
-    await nextTick();
-
-    expect(wrapper.get('[data-testid="print-unavailable"]').text()).toContain(
-      "Impressão indisponível neste preview",
-    );
-    vi.useRealTimers();
+    preview = wrapper.get('[data-testid="print-preview"]');
+    expect(preview.attributes("data-mode")).toBe("preparo");
+    expect(printSpy).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/production.py + projections/alerts.py + api/_production_mutations.py
+// Source of truth: shopman/backstage/projections/production.py + projections/alerts.py + api/_production_mutations.py + api/print_jobs.py
 // Regenerate with: python manage.py export_production_schema
 
 /** How the client must identify retries of one projected mutation. */
@@ -26,7 +26,7 @@ export interface ProductionActionApprovalRequirementProjection {
 /** A server-owned action offered by an operational projection. */
 export interface ProductionActionProjection {
   ref: string;
-  kind: "plan" | "start" | "advance_step" | "finish" | "correct_qc" | "quick_finish" | "void" | "oven_arm" | "oven_conclude" | "acknowledge_alert" | "open_alert_context";
+  kind: "plan" | "start" | "advance_step" | "finish" | "correct_qc" | "quick_finish" | "void" | "oven_arm" | "oven_conclude" | "acknowledge_alert" | "open_alert_context" | "print_labels";
   label: string;
   priority: number;
   enabled: boolean;
@@ -227,6 +227,7 @@ export interface ProductionSurfaceAccess {
   can_record_oven_fact: boolean;
   can_view_reports: boolean;
   can_reveal_blind_map: boolean;
+  can_print_prep: boolean;
 }
 
 /** Top-level read model for the production board. */
@@ -372,7 +373,13 @@ export interface ProductionWeighingIngredientProjection {
   sku: string;
   name: string;
   quantity_display: string;
+  target_display: string;
   is_subrecipe: boolean;
+  theoretical_g: string | null;
+  target_g: string | null;
+  rounding_delta_g: string | null;
+  accepted_min_g: string | null;
+  accepted_max_g: string | null;
 }
 
 /** Closed printable row contract for one weighing ingredient. */
@@ -387,13 +394,25 @@ export interface ProductionWeighingTableProjection {
   rows: ProductionWeighingTableRowProjection[];
 }
 
+/** Safe preflight for the station's preparation printer (never a secret). */
+export interface ProductionPrintDestinationProjection {
+  label: string;
+  status_label: string;
+  available: boolean;
+}
+
 /** A printable 80mm-oriented ticket for one recipe/base recipe. */
 export interface ProductionWeighingTicketProjection {
+  ticket_ref: string;
   recipe_ref: string;
   output_sku: string;
   name: string;
   output_quantity_display: string;
   dough_weight_display: string;
+  total_weight_display: string;
+  theoretical_total_g: string | null;
+  target_total_g: string | null;
+  rounding_delta_total_g: string | null;
   sources_display: string;
   ingredients: ProductionWeighingIngredientProjection[];
   table: ProductionWeighingTableProjection;
@@ -408,7 +427,11 @@ export interface ProductionWeighingProjection {
   selected_date_display: string;
   selected_position_ref: string;
   selected_base_recipe: string;
+  scale_precision_g: string;
+  scale_precision_display: string;
+  scale_rounding_note: string;
   tickets: ProductionWeighingTicketProjection[];
+  print_destination: ProductionPrintDestinationProjection | null;
   access: ProductionSurfaceAccess;
   actions: ProductionActionProjection[];
   generated_at: string;
@@ -967,6 +990,22 @@ export interface AlertAckMutationRequest {
   action_ref: string;
   action_proof: string;
   expected_rev: number;
+}
+
+export interface ProductionWeighingPrintJobRequest {
+  idempotency_key: string;
+  projection_generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
+  action_ref: string;
+  action_proof: string;
+  selected_date: string;
+  position?: string;
+  base_recipe?: string;
+  mode: "blind" | "explicit";
+  transport: "relay" | "browser";
+  ticket_refs: string[];
 }
 
 /** Generated production writer. Errors use the envelopes above. */

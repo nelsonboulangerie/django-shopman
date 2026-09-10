@@ -67,8 +67,8 @@ class TestAMargemApareceComOMotivo:
         massa_line = _line(projection, "MASSA-TRADICAO")
 
         # 7 kg + 25 g de arredondamento + 150 g de masseira + ~8,66 g de folga
-        assert massa_line.quantity_display == "7,184 kg"
-        assert massa_line.margin_display == "+ 0,184 kg de margem"
+        assert massa_line.quantity_display == "7183,66 g"
+        assert massa_line.margin_display == "+ 183,66 g de margem"
 
     def test_o_motivo_nomeia_as_tres_parcelas(self, baguete):
         """Três parcelas com formas diferentes; uma porcentagem só erraria as três."""
@@ -99,7 +99,7 @@ class TestAMargemApareceComOMotivo:
         assert [line.sku for line in expandido.lines] == ["AGUA", "FARINHA"]
         assert expandido.yield_margin_applied
         # 4,2/7 da massa é farinha; a margem cascateia na mesma proporção.
-        assert _line(expandido, "FARINHA").quantity_display == "4,31 kg"
+        assert _line(expandido, "FARINHA").quantity_display == "4310,196 g"
         assert _line(expandido, "FARINHA").margin_display == ""
 
     def test_materia_prima_direta_nao_ganha_margem(self, db):
@@ -113,7 +113,7 @@ class TestAMargemApareceComOMotivo:
 
         projection = build_production_mise_en_place(selected_date=date.today())
         farinha = _line(projection, "FARINHA")
-        assert farinha.quantity_display == "3 kg"
+        assert farinha.quantity_display == "3000 g"
         assert farinha.margin_display == ""
         assert not projection.yield_margin_applied
 
@@ -134,7 +134,7 @@ class TestOLedgerNaoLevaAMargem:
         plano = _line(
             build_production_mise_en_place(selected_date=date.today()), "MASSA-TRADICAO"
         )
-        assert plano.quantity_display == "7,184 kg"
+        assert plano.quantity_display == "7183,66 g"
 
         craft.start(wo, quantity=25)
         wo.refresh_from_db()

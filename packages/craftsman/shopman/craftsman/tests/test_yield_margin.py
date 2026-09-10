@@ -18,7 +18,7 @@ import pytest
 from django.test import override_settings
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrderItem
 from shopman.craftsman.service import craft
-from shopman.craftsman.services.yield_margin import compute_yield_margin
+from shopman.craftsman.services.yield_margin import compute_scale_target, compute_yield_margin
 
 D = Decimal
 
@@ -207,6 +207,46 @@ class TestPerdaDaMasseira:
 
 
 class TestPrecisaoDaBalanca:
+    def test_alvo_da_etiqueta_sobe_para_a_divisao_da_balanca(self):
+        target = compute_scale_target(D("101"), scale_precision=D("2"))
+
+        assert target.theoretical_g == D("101")
+        assert target.target_g == D("102")
+        assert target.rounding_delta_g == D("1")
+        assert target.accepted_min_g == D("102")
+        assert target.accepted_max_g == D("104")
+
+    def test_alvo_cravado_na_divisao_nao_muda(self):
+        target = compute_scale_target(D("102"), scale_precision=D("2"))
+
+        assert target.target_g == D("102")
+        assert target.rounding_delta_g == D("0")
+
+    @override_settings(CRAFTSMAN={"SCALE_PRECISION_G": Decimal("5")})
+    def test_alvo_da_etiqueta_le_a_mesma_configuracao_do_equipamento(self):
+        target = compute_scale_target(D("101"))
+
+        assert target.precision_g == D("5")
+        assert target.target_g == D("105")
+        assert target.accepted_max_g == D("110")
+
+    def test_precisao_decimal_continua_exata_e_nunca_arredonda_para_baixo(self):
+        target = compute_scale_target(D("101.1"), scale_precision=D("0.5"))
+
+        assert target.target_g == D("101.5")
+        assert target.target_g >= target.theoretical_g
+        assert target.target_g % target.precision_g == 0
+
+    @pytest.mark.parametrize("quantity", [D("-1"), D("NaN"), D("Infinity")])
+    def test_recusa_quantidade_invalida(self, quantity):
+        with pytest.raises(ValueError, match="quantity_g"):
+            compute_scale_target(quantity, scale_precision=D("2"))
+
+    @pytest.mark.parametrize("precision", [D("0"), D("-2"), D("NaN"), D("Infinity")])
+    def test_recusa_precisao_invalida(self, precision):
+        with pytest.raises(ValueError, match="scale_precision"):
+            compute_scale_target(D("101"), scale_precision=precision)
+
     def test_padrao_da_casa_e_dois_gramas(self, db, massa, tomorrow):
         baguete = _piece_recipe(ref="baguete", sku="BAGUETE", pieces=25, dough_kg=7)
         craft.plan(baguete, 25, date=tomorrow)

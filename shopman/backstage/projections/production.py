@@ -10,6 +10,8 @@ Never imports from ``shopman.backstage.views.*``.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -98,6 +100,7 @@ class ProductionActionProjection:
         "oven_conclude",
         "acknowledge_alert",
         "open_alert_context",
+        "print_labels",
     ]
     label: str
     priority: int
@@ -279,7 +282,13 @@ class ProductionWeighingIngredientProjection:
     sku: str
     name: str
     quantity_display: str
+    target_display: str
     is_subrecipe: bool
+    theoretical_g: str | None
+    target_g: str | None
+    rounding_delta_g: str | None
+    accepted_min_g: str | None
+    accepted_max_g: str | None
 
 
 @dataclass(frozen=True)
@@ -302,11 +311,18 @@ class ProductionWeighingTableProjection:
 class ProductionWeighingTicketProjection:
     """A printable 80mm-oriented ticket for one recipe/base recipe."""
 
+    ticket_ref: str
     recipe_ref: str
     output_sku: str
     name: str
     output_quantity_display: str
     dough_weight_display: str
+    # Total mass of the scaled ingredients.  This is a display fact only: the
+    # recipe/work-order accounting units remain untouched.
+    total_weight_display: str
+    theoretical_total_g: str | None
+    target_total_g: str | None
+    rounding_delta_total_g: str | None
     # Peso total da massa (soma dos insumos mássicos escalados). Para tickets
     # cujo rendimento sai em unidades, é o "quanto de massa" que a convenção
     # do subtítulo pede; "" quando o rendimento já é em massa (evita eco).
@@ -321,6 +337,15 @@ class ProductionWeighingTicketProjection:
 
 
 @dataclass(frozen=True)
+class ProductionPrintDestinationProjection:
+    """Safe preflight for the station's preparation printer (never a secret)."""
+
+    label: str
+    status_label: str
+    available: bool
+
+
+@dataclass(frozen=True)
 class ProductionWeighingProjection:
     """Printable weighing tickets for saved production planning."""
 
@@ -328,7 +353,11 @@ class ProductionWeighingProjection:
     selected_date_display: str
     selected_position_ref: str
     selected_base_recipe: str
+    scale_precision_g: str
+    scale_precision_display: str
+    scale_rounding_note: str
     tickets: tuple[ProductionWeighingTicketProjection, ...]
+    print_destination: ProductionPrintDestinationProjection | None
     access: ProductionSurfaceAccess
     actions: tuple[ProductionActionProjection, ...] = ()
     generated_at: str = ""
@@ -471,6 +500,7 @@ class ProductionSurfaceAccess:
     can_record_oven_fact: bool
     can_view_reports: bool
     can_reveal_blind_map: bool
+    can_print_prep: bool
 
     @property
     def can_access_board(self) -> bool:
@@ -1313,21 +1343,45 @@ def build_production_weighing(
     ingredient_skus = {item.input_sku for entry in tickets.values() for item in entry["items"]}
     product_names = _product_names(ingredient_skus)
 
+    projected_tickets = tuple(
+        _build_weighing_ticket(
+            entry,
+            active_recipes=active_recipes,
+            product_names=product_names,
+            selected_date=selected_date,
+        )
+        for entry in sorted(tickets.values(), key=lambda item: item["recipe"].name)
+    )
+    action_ref = f"print_weighing:{selected_date.isoformat()}:{position_ref}:{base_recipe}"
+    from shopman.craftsman.services.yield_margin import scale_precision_g
+
+    precision_g = scale_precision_g()
     return ProductionWeighingProjection(
         selected_date=selected_date.isoformat(),
         selected_date_display=selected_date.strftime("%d/%m/%Y"),
         selected_position_ref=position_ref,
         selected_base_recipe=base_recipe,
-        tickets=tuple(
-            _build_weighing_ticket(
-                entry,
-                active_recipes=active_recipes,
-                product_names=product_names,
-                selected_date=selected_date,
-            )
-            for entry in sorted(tickets.values(), key=lambda item: item["recipe"].name)
+        scale_precision_g=_decimal_fact_string(precision_g),
+        scale_precision_display=f"{_plain_decimal(precision_g)} g",
+        scale_rounding_note=(
+            f"Alvos arredondados para cima · balança {_plain_decimal(precision_g)} g"
         ),
+        tickets=projected_tickets,
+        print_destination=None,
         access=access,
+        actions=(
+            _production_action(
+                ref=action_ref,
+                kind="print_labels",
+                label="Imprimir etiquetas",
+                priority=80,
+                enabled=bool(access.can_print_prep and projected_tickets),
+                reason="" if projected_tickets else "Não há preparos para imprimir.",
+                href="/api/v1/backstage/production/weighing/print-jobs/",
+                payload_schema="ProductionWeighingPrintJobRequest",
+                expected_rev=None,
+            ),
+        ),
     )
 
 
@@ -1428,7 +1482,7 @@ def build_production_mise_en_place(
                     MiseEnPlaceBreakdownProjection(
                         recipe_name=recipe.name or recipe.ref,
                         output_sku=recipe.output_sku,
-                        quantity_display=_measure(item.quantity * coefficient, item.unit),
+                        quantity_display=_preparation_measure(item.quantity * coefficient, item.unit),
                     )
                 )
 
@@ -1449,15 +1503,15 @@ def build_production_mise_en_place(
             MiseEnPlaceLineProjection(
                 sku=need.item_ref,
                 name=_ingredient_name(need.item_ref, active_recipes=active_recipes, product_names=product_names),
-                quantity_display=_measure(need.quantity, need.unit),
-                unit=need.unit,
+                quantity_display=_preparation_measure(need.quantity, need.unit),
+                unit="g" if units.dimension(need.unit) == units.MASS else need.unit,
                 is_subrecipe=need.has_recipe,
-                available_display=_measure(available, need.unit) if available is not None else "",
+                available_display=_preparation_measure(available, need.unit) if available is not None else "",
                 is_short=bool(available is not None and available < need.quantity),
                 breakdown=tuple(breakdown_by_sku.get(need.item_ref, ())),
                 annotation=_preparation_annotation(need.quantity, need.unit, conversions.get(need.item_ref)),
                 margin_display=(
-                    f"+ {_measure(need.margin.total, need.unit)} de margem" if need.margin is not None else ""
+                    f"+ {_preparation_measure(need.margin.total, need.unit)} de margem" if need.margin is not None else ""
                 ),
                 margin_reason=need.margin.reason() if need.margin is not None else "",
             )
@@ -3016,15 +3070,25 @@ def _build_weighing_ticket(
     output_unit = str(entry["unit"])
     items = entry["items"]
     coefficient = output_quantity / entry["batch_size"]
-    ingredients = tuple(
-        ProductionWeighingIngredientProjection(
-            sku=item.input_sku,
-            name=_ingredient_label(item.input_sku, active_recipes=active_recipes, product_names=product_names),
-            quantity_display=_measure(Decimal(str(item.quantity)) * coefficient, item.unit),
-            is_subrecipe=item.input_sku in active_recipes,
+    ingredients = []
+    for item in items:
+        quantity = Decimal(str(item.quantity)) * coefficient
+        display, facts = _weighing_measure(quantity, item.unit)
+        ingredients.append(
+            ProductionWeighingIngredientProjection(
+                sku=item.input_sku,
+                name=_ingredient_name(item.input_sku, active_recipes=active_recipes, product_names=product_names),
+                quantity_display=display,
+                target_display=display,
+                is_subrecipe=item.input_sku in active_recipes,
+                theoretical_g=_decimal_fact_string(facts[0]) if facts[0] is not None else None,
+                target_g=_decimal_fact_string(facts[1]) if facts[1] is not None else None,
+                rounding_delta_g=_decimal_fact_string(facts[2]) if facts[2] is not None else None,
+                accepted_min_g=_decimal_fact_string(facts[3]) if facts[3] is not None else None,
+                accepted_max_g=_decimal_fact_string(facts[4]) if facts[4] is not None else None,
+            )
         )
-        for item in items
-    )
+    ingredients = tuple(ingredients)
 
     # Peso da massa = soma dos insumos mássicos escalados (kg/g/mg → kg).
     mass_factors = {"kg": Decimal("1"), "g": Decimal("0.001"), "mg": Decimal("0.000001")}
@@ -3036,8 +3100,27 @@ def _build_weighing_ticket(
         ),
         Decimal("0"),
     )
+    mass_ingredients = tuple(ingredient for ingredient in ingredients if ingredient.target_g is not None)
+    theoretical_total_g = (
+        sum((Decimal(ingredient.theoretical_g) for ingredient in mass_ingredients), Decimal("0"))
+        if mass_ingredients
+        else None
+    )
+    target_total_g = (
+        sum((Decimal(ingredient.target_g) for ingredient in mass_ingredients), Decimal("0"))
+        if mass_ingredients
+        else None
+    )
+    rounding_delta_total_g = (
+        target_total_g - theoretical_total_g
+        if target_total_g is not None and theoretical_total_g is not None
+        else None
+    )
+    total_weight_display = (
+        _preparation_measure(target_total_g, "g") if target_total_g is not None else ""
+    )
     dough_weight_display = (
-        f"≈ {_measure(dough_weight, 'kg')} de massa" if output_unit not in mass_factors and dough_weight > 0 else ""
+        f"≈ {total_weight_display} de massa" if output_unit not in mass_factors and dough_weight > 0 else ""
     )
 
     shelf_life = _decimal_meta(recipe.meta, "shelf_life_days")
@@ -3051,16 +3134,46 @@ def _build_weighing_ticket(
         contract_version=PRODUCTION_CONTRACT_VERSION,
         headers=("Insumo", "Quantidade"),
         rows=tuple(
-            ProductionWeighingTableRowProjection(cols=(ingredient.name, ingredient.quantity_display))
+            ProductionWeighingTableRowProjection(
+                cols=(
+                    ingredient.name if ingredient.name == ingredient.sku else f"{ingredient.name} · {ingredient.sku}",
+                    ingredient.quantity_display,
+                )
+            )
             for ingredient in ingredients
         ),
     )
+    snapshot_identity = {
+        "date": selected_date.isoformat(),
+        "recipe_ref": recipe.ref,
+        "output_sku": recipe.output_sku,
+        "output_quantity": str(output_quantity),
+        "output_unit": output_unit,
+        "batch_size": str(entry["batch_size"]),
+        "sources": sorted(str(source) for source in entry["sources"]),
+        "items": [
+            (item.input_sku, str(item.quantity), item.unit, item.sort_order)
+            for item in items
+        ],
+    }
+    ticket_digest = hashlib.sha256(
+        json.dumps(snapshot_identity, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()[:20]
     return ProductionWeighingTicketProjection(
+        ticket_ref=f"prep-{ticket_digest}",
         recipe_ref=recipe.ref,
         output_sku=recipe.output_sku,
         name=recipe.name,
-        output_quantity_display=_measure(output_quantity, output_unit),
+        output_quantity_display=_preparation_measure(output_quantity, output_unit),
         dough_weight_display=dough_weight_display,
+        total_weight_display=total_weight_display,
+        theoretical_total_g=(
+            _decimal_fact_string(theoretical_total_g) if theoretical_total_g is not None else None
+        ),
+        target_total_g=_decimal_fact_string(target_total_g) if target_total_g is not None else None,
+        rounding_delta_total_g=(
+            _decimal_fact_string(rounding_delta_total_g) if rounding_delta_total_g is not None else None
+        ),
         sources_display=", ".join(entry["sources"]),
         ingredients=ingredients,
         table=table,
@@ -3259,13 +3372,13 @@ def _ingredient_name(
 
     Quem tem campo próprio para o SKU deve usá-lo — o nome com ``(SKU)`` embutido
     fazia a lista de insumos repetir o código duas vezes na mesma linha, uma no
-    nome e outra logo abaixo. Sem nome cadastrado, o SKU é o nome: melhor a linha
-    feia que a linha ausente.
+    nome e outra logo abaixo. Sem nome cadastrado, deriva-se uma legenda humana
+    conservadora do SKU; o código original continua no campo secundário.
     """
     if sku in active_recipes:
         recipe = active_recipes[sku]
-        return recipe.name or sku
-    return product_names.get(sku, sku)
+        return recipe.name or str(sku).replace("-", " ").replace("_", " ").title()
+    return product_names.get(sku) or str(sku).replace("-", " ").replace("_", " ").title()
 
 
 def _ingredient_label(
@@ -3287,12 +3400,31 @@ def _ingredient_label(
 def _product_names(skus: set[str]) -> dict[str, str]:
     if not skus:
         return {}
+    names: dict[str, str] = {}
     try:
         from shopman.offerman.models import Product
     except Exception:
         logger.debug("production.product_names_import_failed", exc_info=True)
-        return {}
-    return dict(Product.objects.filter(sku__in=skus).values_list("sku", "name"))
+    else:
+        names.update(
+            (sku, name)
+            for sku, name in Product.objects.filter(sku__in=skus).values_list("sku", "name")
+            if str(name or "").strip()
+        )
+    missing = skus - names.keys()
+    if not missing:
+        return names
+    try:
+        from shopman.buyman.models import Material
+    except Exception:
+        logger.debug("production.material_names_import_failed", exc_info=True)
+    else:
+        names.update(
+            (sku, name)
+            for sku, name in Material.objects.filter(sku__in=missing).values_list("sku", "name")
+            if str(name or "").strip()
+        )
+    return names
 
 
 def _measure(value: Decimal, unit: str) -> str:
@@ -3383,6 +3515,7 @@ def resolve_production_access(
             "can_reveal_blind_map",
             user.has_perm("backstage.reveal_production_blind_map"),
         ),
+        can_print_prep=capability("can_print_prep", can_start or can_edit_plan),
     )
 
 
@@ -3411,6 +3544,59 @@ def _full_access() -> ProductionSurfaceAccess:
         can_record_oven_fact=True,
         can_view_reports=True,
         can_reveal_blind_map=True,
+        can_print_prep=True,
+    )
+
+
+def _preparation_measure(value: Decimal, unit: str, *, mass_unit: str = "g") -> str:
+    """Format a preparation measurement without changing its accounting unit.
+
+    Mass is converted definitionally to grams for the floor.  Volume and count
+    stay in their canonical dimensions: no density or per-item weight is ever
+    guessed.  ``mass_unit='kg'`` is reserved for a future explicit display and
+    intentionally keeps exactly three decimal places.
+    """
+    if units.dimension(unit) == units.MASS:
+        converted = units.convert(value, unit, mass_unit)
+        if mass_unit == "kg":
+            text = format(converted.quantize(Decimal("0.001")), "f")
+        else:
+            text = format(converted.quantize(Decimal("0.001")).normalize(), "f")
+        return f"{text.replace('.', ',')} {mass_unit}"
+    return _measure(value, unit)
+
+
+def _plain_decimal(value: Decimal) -> str:
+    return format(value.normalize(), "f").replace(".", ",")
+
+
+def _decimal_fact_string(value: Decimal) -> str:
+    """Canonical dot-decimal string for typed machine facts."""
+    return format(value.normalize(), "f")
+
+
+def _weighing_measure(
+    value: Decimal,
+    unit: str,
+) -> tuple[str, tuple[Decimal | None, Decimal | None, Decimal | None, Decimal | None, Decimal | None]]:
+    """Round a mass upward to the canonical scale division, preserving facts."""
+    if units.dimension(unit) != units.MASS:
+        return _preparation_measure(value, unit), (None, None, None, None, None)
+    from shopman.craftsman.services.yield_margin import compute_scale_target
+
+    # Avoid exponent notation in the public Decimal contract (``4200``, never
+    # ``4.2E+3``) while preserving the exact numeric value.
+    theoretical_g = Decimal(format(units.convert(value, unit, "g"), "f"))
+    target = compute_scale_target(theoretical_g)
+    return (
+        _preparation_measure(target.target_g, "g"),
+        (
+            target.theoretical_g,
+            target.target_g,
+            target.rounding_delta_g,
+            target.accepted_min_g,
+            target.accepted_max_g,
+        ),
     )
 
 

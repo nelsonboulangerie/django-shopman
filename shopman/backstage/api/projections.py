@@ -26,6 +26,11 @@ _PRODUCTION_META_FIELDS = {
     "contract_version",
 }
 
+# Runtime delivery health must not invalidate an otherwise unchanged operator
+# intent. A relay can heartbeat between GET and POST; that changes the helpful
+# preflight label, not the recipes, quantities or selected tickets being signed.
+_NON_REVISION_FIELDS = {"print_destination"}
+
 
 def _projected_actions(value: Any):
     """Yield every action nested in a projection without assuming its layout."""
@@ -51,7 +56,11 @@ def projection_data(
         data = {field.name: projection_data(getattr(value, field.name)) for field in fields(value)}
         if _PRODUCTION_META_FIELDS <= data.keys():
             now = timezone.now().replace(microsecond=0)
-            revision_source = {key: item for key, item in data.items() if key not in _PRODUCTION_META_FIELDS}
+            revision_source = {
+                key: item
+                for key, item in data.items()
+                if key not in _PRODUCTION_META_FIELDS | _NON_REVISION_FIELDS
+            }
             digest = hashlib.sha256(
                 json.dumps(
                     revision_source,

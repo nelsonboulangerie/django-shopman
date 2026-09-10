@@ -3,8 +3,10 @@
 Processo local, sem dependências, que recebe um pedido do PDV em `127.0.0.1` e
 entrega bytes crus à impressora térmica pelo spooler: o kick ESC/POS que abre a
 gaveta e o papel que o servidor compôs (comprovante de movimento de caixa hoje,
-DANFE NFC-e depois — obrigação legal). Ele é a ponte do navegador com o hardware
-do balcão; a gaveta é um dos aparelhos que ele alcança, não o escopo dele.
+DANFE NFC-e depois — obrigação legal). Opcionalmente, a mesma instância busca
+por HTTPS trabalhos duráveis criados por tablets: o tablet nunca chama a
+loopback do PC nem recebe segredo do agente. Ele é a ponte com o hardware; a
+gaveta é um dos aparelhos que ele alcança, não o escopo dele.
 
 **Por que ele existe:** a gaveta não tem cabo próprio — ela pendura no RJ11 da
 impressora e abre quando a impressora recebe `ESC p m t1 t2`. O PDV roda no
@@ -51,6 +53,20 @@ normal é o Admin ser o dono do par.
 Reinstalar preserva o token guardado; só um `--token` diferente rotaciona. O PDV
 levaria 401 até os dois lados baterem, e ninguém quer descobrir isso no sábado.
 
+Para habilitar também a impressão iniciada por tablets, use o comando completo
+emitido pelo Admin. A forma é:
+
+```bash
+python3 counter_agent.py --install --token TOKEN-LOCAL --origin https://pdv.example \
+  --server-url https://gestor.example --station preparo-01 \
+  --relay-token CREDENCIAL-DO-RELAY
+```
+
+`--agent-id` é opcional: na primeira instalação nasce um UUID estável. O token
+local e a credencial do relay são separados. Nenhum deles é enviado ao tablet.
+O instalador nunca imprime a credencial do relay e mantém o arquivo em modo
+`600`.
+
 ### Numa máquina que já rodava o agente antigo
 
 O instalador **derruba o serviço antigo antes de subir o novo** (`stop`,
@@ -74,13 +90,23 @@ compara o `build` (sha256 do arquivo). Se quem atende não for este arquivo, ele
   "token": "…",
   "port": 47811,
   "host": "127.0.0.1",
-  "allowed_origins": ["https://pdv.boulangerie.com.br"]
+  "allowed_origins": ["https://pdv.boulangerie.com.br"],
+  "server_url": "https://gestor.example",
+  "station_ref": "preparo-01",
+  "agent_id": "UUID-estavel",
+  "relay_token": "…",
+  "relay_poll_seconds": 2
 }
 ```
 
 Só fatos **da máquina**. O pulso e a política (adapter, abrir-na-venda) moram no
 Django, por terminal, e chegam no request — para não existirem dois donos da
 mesma resposta.
+
+O relay é opcional: configs antigas, sem esses quatro campos, continuam no modo
+local. Se um campo do relay estiver presente, `server_url`, `station_ref`,
+`agent_id` e `relay_token` precisam formar um conjunto completo. O servidor deve
+ser HTTPS. `host` aceita somente `127.0.0.1`, `::1` ou `localhost`.
 
 ## API
 
@@ -100,6 +126,43 @@ sabe se a gaveta está plugada nem se abriu: isso viria pelo canal bidirecional
 da impressora, que um job de spool não tem. Quem confirma é o olho do operador
 no teste de gaveta.
 
+### Relay de impressão
+
+O relay roda em outra thread; conexão lenta ou servidor offline não bloqueiam
+`/kick`, `/print` nem `/health`. Ele usa somente stdlib (`urllib` e `sqlite3`):
+
+1. `POST /api/v1/backstage/print-agent/jobs/claim/` com Bearer da credencial;
+2. valida `job_ref`, `lease_token`, base64, `payload_sha256` dos bytes RAW e o
+   teto de 512 KiB;
+3. grava `claimed` e depois `spooling` no SQLite **antes** de chamar o spooler;
+4. grava `submitted_to_spooler` e o `spooler_job_id` quando o spooler aceita;
+5. envia `POST /api/v1/backstage/print-agent/jobs/<job_ref>/ack/` com
+   `status=spooled|failed|uncertain`, `lease_token` e `payload_sha256`.
+
+`content_sha256`, quando vier, é metadado adicional e nunca substitui
+`payload_sha256`. `station_ref` e `agent_id` também são metadados: o servidor
+deve derivar a identidade autorizada da credencial, não confiar no corpo.
+
+“`spooled`” quer dizer apenas **aceito pela fila**, nunca “papel impresso”. Se o
+ACK se perder, a reentrega repete só o ACK. Se o processo cair enquanto chama o
+spooler, o resíduo `spooling` vira `uncertain` no próximo início e não imprime
+de novo automaticamente. Uma reimpressão intencional deve nascer no servidor
+como novo trabalho auditado, com outro `job_ref`.
+
+O journal fica em `~/.local/share/nelson-pos-counter/print-relay.sqlite3`. Ele
+guarda referências, hashes, estados, detalhe curto, id do spooler e o lease
+temporário necessário para concluir um ACK depois de restart — nunca o payload
+nem a credencial permanente do relay. O arquivo também é `600`. Em cada ciclo,
+o agente drena primeiro todos os ACKs pendentes e só então pede outro trabalho;
+o servidor pode conservar apenas o digest do lease. Rede offline usa backoff
+exponencial de 1 a 60 segundos e volta sozinha.
+
+O journal identifica também o número de `attempt`. Se o servidor reutilizar o
+mesmo `job_ref` num retry, um lease novo só reabre o fluxo quando a ocorrência
+anterior terminou em `failed` **e seu ACK já foi aceito**. `spooled`,
+`uncertain` ou qualquer ACK ainda pendente permanecem fechados para não produzir
+uma segunda etiqueta. Retry de payload rejeitado segue a mesma regra.
+
 ## Segurança
 
 CORS não protege endpoint com efeito colateral — um `POST` simples *chega* aqui
@@ -107,7 +170,10 @@ mesmo com a resposta bloqueada pelo navegador. Quem protege é o **token**; a
 allowlist de origem é a segunda tranca. Sem token, qualquer aba aberta no balcão
 abre a gaveta de dinheiro.
 
-O agente escuta só em loopback. Não exponha na rede.
+O agente escuta só em loopback. A configuração recusa qualquer outro host; não
+há modo LAN. Uma allowlist vazia também **não** libera páginas arbitrárias:
+pedidos de navegador com `Origin` são recusados. Chamadas locais sem `Origin`
+continuam compatíveis e ainda exigem o token.
 
 ## Diagnóstico
 
@@ -126,6 +192,13 @@ Testar o caminho até o spooler sem navegador:
 
 ```bash
 python3 ~/.local/share/nelson-pos-counter/counter_agent.py --kick
+```
+
+Ver configuração local, estado do serviço, fila e resumo do journal sem expor a
+credencial do relay:
+
+```bash
+python3 ~/.local/share/nelson-pos-counter/counter_agent.py --doctor
 ```
 
 ## Testes

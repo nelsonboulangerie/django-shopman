@@ -71,6 +71,9 @@ def test_flush_preserva_a_config_dos_terminais(loja_configurada, monkeypatch):
     # Hardware: o que a loja declarou vence; o que ela não declarou o seed preenche.
     hardware = balcao.metadata["hardware"]
     assert hardware["printer"]["roll_width_mm"] == 58, "o seed sobrescreveu o rolo da loja"
+    assert hardware["printer"]["columns"] == 48
+    assert hardware["printer"]["cut_mode"] == "partial"
+    assert hardware["printer"]["role"] == "preparation"
     assert hardware["cash_drawer"]["adapter"] == "agent", "a gaveta do seed não preencheu a lacuna"
 
 

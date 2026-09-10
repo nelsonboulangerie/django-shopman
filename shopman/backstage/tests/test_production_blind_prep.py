@@ -203,7 +203,9 @@ class TestWeighingAPI:
         ticket = next(t for t in tickets if t["recipe_ref"] == "massa-pao")
         assert re.fullmatch(r"[A-HJ-NP-Z][2-9]", ticket["blind_code"])
         assert ticket["ingredients"][0]["sku"] == "FARINHA"
-        assert ticket["ingredients"][0]["quantity_display"] == "4,2 kg"
+        assert ticket["ingredients"][0]["quantity_display"] == "4200 g"
+        assert resp.json()["weighing"]["scale_precision_g"] == "2"
+        assert ticket["ingredients"][0]["target_g"] == "4200"
 
     def test_endpoint_requires_permission(self):
         from django.contrib.auth import get_user_model
@@ -263,9 +265,13 @@ class TestWeighingTicketConventions:
     def test_unit_ticket_shows_total_dough_weight(self):
         """Rendimento em unidades ganha o peso total da massa (convenção)."""
         ticket = self._plan_direct_recipe()
-        # 0,625 kg + 625 g + 0,5 kg = 1,75 kg
+        # Cada alvo é arredondado para cima à divisão de 2 g: 626+626+500.
         assert ticket.output_quantity_display == "30 un."
-        assert ticket.dough_weight_display == "≈ 1,75 kg de massa"
+        assert ticket.dough_weight_display == "≈ 1752 g de massa"
+        assert ticket.total_weight_display == "1752 g"
+        assert ticket.theoretical_total_g == "1750"
+        assert ticket.target_total_g == "1752"
+        assert ticket.rounding_delta_total_g == "2"
 
     def test_mass_ticket_has_no_dough_echo(self):
         massa = Recipe.objects.create(
@@ -280,7 +286,7 @@ class TestWeighingTicketConventions:
 
         weighing = build_production_weighing(selected_date=date.today())
         ticket = next(t for t in weighing.tickets if t.recipe_ref == "massa-eco")
-        assert ticket.output_quantity_display == "7 kg"
+        assert ticket.output_quantity_display == "7000 g"
         assert ticket.dough_weight_display == ""  # rendimento já é massa
 
     def test_started_quantity_and_frozen_recipe_drive_existing_ticket(self):
@@ -308,7 +314,7 @@ class TestWeighingTicketConventions:
         ticket = next(t for t in weighing.tickets if t.recipe_ref == recipe.ref)
 
         assert ticket.output_quantity_display == "5 un."
-        assert ticket.ingredients[0].quantity_display == "2,5 kg"
+        assert ticket.ingredients[0].quantity_display == "2500 g"
 
     def test_expiry_defaults_to_next_day(self):
         """Sem validade configurada, D+1 (padrão de massas)."""

@@ -102,7 +102,40 @@ class TerminalForm(forms.ModelForm):
         initial=True,
         help_text="Desligue se o balcão prefere abrir só no botão.",
     )
-
+    printer_enabled = forms.BooleanField(
+        label="Impressora de preparação ativa",
+        required=False,
+        widget=UnfoldBooleanSwitchWidget,
+        help_text="Habilita a fila auditável de etiquetas neste terminal.",
+    )
+    printer_role = forms.ChoiceField(
+        label="Papel operacional",
+        required=False,
+        widget=UnfoldAdminSelectWidget,
+        choices=(("preparation", "Preparação e pesagem"),),
+        initial="preparation",
+    )
+    printer_roll_width_mm = forms.ChoiceField(
+        label="Largura do rolo",
+        required=False,
+        widget=UnfoldAdminSelectWidget,
+        choices=(("80", "80 mm"),),
+        initial="80",
+    )
+    printer_columns = forms.ChoiceField(
+        label="Colunas",
+        required=False,
+        widget=UnfoldAdminSelectWidget,
+        choices=(("48", "48 colunas"),),
+        initial="48",
+    )
+    printer_cut_mode = forms.ChoiceField(
+        label="Corte",
+        required=False,
+        widget=UnfoldAdminSelectWidget,
+        choices=(("partial", "Corte parcial"), ("none", "Sem corte")),
+        initial="partial",
+    )
     class Meta:
         model = Terminal
         fields = ("ref", "label", "channel_ref", "location_ref", "is_active")
@@ -127,12 +160,25 @@ class TerminalForm(forms.ModelForm):
         self.fields["drawer_pulse_on_ms"].initial = config.pulse_on_ms
         self.fields["drawer_pulse_off_ms"].initial = config.pulse_off_ms
         self.fields["drawer_open_on_cash_sale"].initial = config.open_on_cash_sale
+        metadata = self.instance.metadata if isinstance(self.instance.metadata, dict) else {}
+        hardware = metadata.get("hardware") if isinstance(metadata.get("hardware"), dict) else {}
+        printer = hardware.get("printer") if isinstance(hardware.get("printer"), dict) else {}
+        self.fields["printer_enabled"].initial = bool(printer and printer.get("enabled") is not False)
+        self.fields["printer_role"].initial = str(printer.get("role") or "preparation")
+        self.fields["printer_roll_width_mm"].initial = str(printer.get("roll_width_mm") or "80")
+        self.fields["printer_columns"].initial = str(printer.get("columns") or "48")
+        self.fields["printer_cut_mode"].initial = str(printer.get("cut_mode") or "partial")
 
     def clean(self):
         cleaned = super().clean()
         if cleaned.get("drawer_adapter") == ADAPTER_AGENT:
             if not (cleaned.get("counter_agent_url") or "").strip():
                 self.add_error("counter_agent_url", "Informe o endereço do agente.")
+        if cleaned.get("printer_enabled"):
+            if cleaned.get("printer_role") != "preparation":
+                self.add_error("printer_role", "Neste incremento, use Preparação e pesagem.")
+            if cleaned.get("printer_roll_width_mm") != "80" or cleaned.get("printer_columns") != "48":
+                self.add_error("printer_roll_width_mm", "Etiquetas exigem rolo de 80 mm e 48 colunas.")
         return cleaned
 
     def _resolved_token(self) -> str:
@@ -169,6 +215,17 @@ class TerminalForm(forms.ModelForm):
         else:
             # Sem adapter escolhido = a loja não declarou gaveta neste balcão.
             hardware.pop("cash_drawer", None)
+        if self.cleaned_data.get("printer_enabled"):
+            hardware["printer"] = {
+                "enabled": True,
+                "adapter": "relay",
+                "role": "preparation",
+                "roll_width_mm": 80,
+                "columns": 48,
+                "cut_mode": self.cleaned_data.get("printer_cut_mode") or "partial",
+            }
+        else:
+            hardware.pop("printer", None)
         if hardware:
             metadata["hardware"] = hardware
         else:
@@ -204,6 +261,19 @@ class TerminalAdmin(_CashmanTerminalAdmin):
                 # Quem testa é a estação: só o navegador do balcão alcança a
                 # loopback do agente. Este Admin não tem como chutar a gaveta.
                 "description": "O teste da gaveta fica no próprio PDV (antesala do caixa) — só o navegador do balcão alcança o agente.",
+            },
+        ),
+        (
+            "Impressora de preparação",
+            {
+                "fields": (
+                    "printer_enabled",
+                    "printer_role",
+                    "printer_roll_width_mm",
+                    "printer_columns",
+                    "printer_cut_mode",
+                ),
+                "description": "Configuração separada da gaveta. Os bytes da etiqueta são compostos no servidor; o relay apenas entrega.",
             },
         ),
     )

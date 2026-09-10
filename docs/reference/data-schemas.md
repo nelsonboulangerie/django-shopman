@@ -1362,6 +1362,7 @@ dele, pelo gate de permissão do backstage. Ausente = **atendida**.
 |-------|------|-----------|
 | `mode` | `str` | `attended` (default) ou `autonomous`. Qualquer outro valor cai em `attended`. |
 | `operator` | `str` | Só para `autonomous`: o `username` da conta em cujo nome o dispositivo age. |
+| `print_target_ref` | `str` | Terminal físico que recebe as etiquetas pedidas nesta estação. Ausente: o servidor usa a própria estação quando ela tem a capacidade ou deduz o único destino de preparação disponível. O tablet nunca recebe endereço ou segredo do agente. |
 
 **Atendida** é o balcão: tem gente na frente, e não faz nada sem PIN ou crachá.
 **Autônoma** é o totem: não há quem digite PIN, então ele age em nome próprio, com uma conta
@@ -1389,6 +1390,14 @@ alerta que ninguém lê.
 | `model` | `str` | todos | Informativo (ex.: `epson-tm-t20`). Não afeta saúde. |
 | `roll_width_mm` | `int` | `printer` | Largura do rolo em mm (40–120). É o que a loja sabe: o papel que ela compra. Vira `--pos-roll-width` no print CSS do PDV via projection. Ausente → o default do CSS (80mm) manda. |
 | `print_width_mm` | `int` | `printer` | Largura que o cabeçote alcança, em mm. **Só é necessária para rolo fora dos dois padrões** (80mm→72mm, 58mm→48mm), porque a área imprimível não é proporcional à largura do papel e chutar imprime fora do alcance. |
+| `columns` | `int` | `printer` | Colunas ESC/POS aferidas. O primeiro perfil de etiquetas de produção aceita 48 colunas em rolo de 80 mm; outro valor falha fechado em vez de cortar nomes ou pesos. |
+| `cut_mode` | `str` | `printer` | `partial` ou `none`, segundo a guilhotina instalada. |
+| `role` | `str` | `printer` | Capacidade operacional. Neste incremento, `preparation` habilita etiquetas de preparação e pesagem. |
+
+O nome da fila CUPS/Windows **não mora neste JSON**: ele é um fato da máquina e
+fica no `agent.json` local. O servidor recebe a fila observada somente como
+telemetria de cada tentativa. Assim uma troca de driver no PC não cria uma
+segunda configuração divergente no Admin.
 
 ⚠️ **Declaração inválida não cai calada para o default.** Rolo fora da faixa, rolo não padrão sem
 `print_width_mm`, ou `print_width_mm >= roll_width_mm` viram `warning` na saúde do terminal com o
