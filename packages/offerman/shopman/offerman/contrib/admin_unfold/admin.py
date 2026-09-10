@@ -47,7 +47,7 @@ from unfold.widgets import (
 for model in [Collection, Listing, Product]:
     try:
         admin.site.unregister(model)
-    except admin.sites.NotRegistered:
+    except admin.sites.NotRegistered:  # silêncio-deliberado: registro base é opcional; abaixo registramos o canônico
         pass
 
 
