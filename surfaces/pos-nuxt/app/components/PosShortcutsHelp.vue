@@ -36,14 +36,14 @@ const groups: Array<{ title: string; items: Array<{ keys: string[]; label: strin
   {
     title: "Na lista de itens",
     items: [
-      { keys: ["Alt+I"], label: "Entrar na navegação dos itens" },
+      { keys: ["Alt+S"], label: "Selecionar itens (com navegação por teclado)" },
       { keys: ["↑", "↓"], label: "Mover o foco entre itens, sem mudar as marcações" },
-      { keys: ["Espaço"], label: "Marcar/desmarcar o item e iniciar seleção múltipla" },
-      { keys: ["Enter"], label: "Abrir/fechar detalhes; no modo seleção, marcar/desmarcar" },
-      { keys: ["→", "←"], label: "Abrir/fechar detalhes fora do modo seleção" },
+      { keys: ["Espaço"], label: "Marcar/desmarcar o item" },
+      { keys: ["Enter"], label: "Abrir/fechar detalhes do item" },
+      { keys: ["→", "←"], label: "Abrir/fechar detalhes do item" },
       { keys: ["+", "−"], label: "Ajustar quantidade fora da seleção múltipla" },
       { keys: ["Delete"], label: "Pedir remoção do item, com confirmação" },
-      { keys: ["Esc"], label: "Fechar detalhes; depois, concluir navegação/seleção" },
+      { keys: ["Esc"], label: "Fechar detalhes; depois, concluir seleção" },
     ],
   },
   {
