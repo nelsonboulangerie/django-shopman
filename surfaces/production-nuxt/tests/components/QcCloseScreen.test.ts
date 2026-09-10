@@ -324,9 +324,18 @@ describe("QcCloseScreen — correção auditável", () => {
     const fairReason = wrapper.find(
       'button[aria-label="Editar motivo de Razoável: Formato"]',
     );
+    const fairQuantity = wrapper.find('[data-grade-ref="fair"]');
     expect(fairReason.text()).toBe("Formato");
-    expect(fairReason.classes()).toContain("min-h-11");
-    expect(fairReason.classes()).toContain("rounded-full");
+    expect(fairReason.classes()).toContain("h-11");
+    expect(fairReason.classes()).toContain("rounded-md");
+    expect(fairReason.classes()).toContain("ml-3");
+    expect(fairReason.classes()).toContain("mr-2");
+    expect(fairReason.classes()).toContain("w-[calc(100%-1.25rem)]");
+    expect(fairReason.classes()).toContain("mt-14");
+    expect(fairReason.classes()).toContain("z-20");
+    expect(fairQuantity.classes()).toContain("absolute");
+    expect(fairQuantity.classes()).toContain("inset-0");
+    expect(wrapper.find("[data-qc-layout]").classes()).toContain("items-start");
     expect(fairReason.find('icon-stub[name="lucide:pencil"]').exists()).toBe(
       true,
     );
@@ -340,11 +349,13 @@ describe("QcCloseScreen — correção auditável", () => {
       'button[aria-label="Editar motivo da perda: Queimado"]',
     );
     expect(lossReason.text()).toBe("Queimado");
-    expect(lossReason.classes()).toContain("min-h-11");
-    expect(lossReason.classes()).toContain("rounded-full");
+    expect(lossReason.classes()).toContain("h-11");
+    expect(lossReason.classes()).toContain("rounded-md");
+    expect(lossReason.classes()).toContain("w-[calc(100%-1rem)]");
     expect(lossReason.find('icon-stub[name="lucide:pencil"]').exists()).toBe(
       true,
     );
+    expect(wrapper.text().match(/Queimado/g)).toHaveLength(1);
 
     await buttonByText(wrapper, "Perda")!.trigger("click");
     await enter(wrapper, "8");
