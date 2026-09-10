@@ -48,7 +48,7 @@ describe("PosReceiptSaveOffer", () => {
     expect(panel).not.toBeNull();
     expect(panel!.textContent).toContain("Salvar este e-mail no cadastro de Ana?");
     // Nenhum hover envolvido: o painel existe porque o valor ficou perguntável.
-    expect(panel!.textContent).toContain("Hoje o cadastro não tem e-mail");
+    expect(panel!.textContent).toContain("que hoje não tem e-mail");
   });
 
   it("não rouba o foco do campo: o input segue com o foco depois de abrir", async () => {
