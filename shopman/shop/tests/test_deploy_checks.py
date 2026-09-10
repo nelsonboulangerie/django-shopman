@@ -1,5 +1,6 @@
 from base64 import b64encode
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from django.test import override_settings
@@ -550,3 +551,13 @@ def test_production_configuration_check_blocks_invalid_resolved_config(db):
 
     assert [message.id for message in messages] == ["SHOPMAN_E019"]
     assert "low_yield_threshold" in messages[0].msg
+
+
+def test_production_configuration_check_is_offline_when_redis_is_unavailable():
+    from redis.exceptions import ConnectionError as RedisConnectionError
+
+    with patch(
+        "shopman.shop.production_config.ProductionConfig.load",
+        side_effect=RedisConnectionError("cache unavailable"),
+    ):
+        assert checks.check_production_configuration(None) == []

@@ -75,9 +75,12 @@ def test_formula_suggest_builds_basis_without_formula_plan(recipe, settings):
     assert "FormulaPlan" not in {model.__name__ for model in Recipe._meta.apps.get_models()}
 
 
-def test_accept_suggestion_routes_explicit_basis_through_canonical_facade(recipe):
+def test_accept_suggestion_routes_explicit_basis_through_canonical_facade(recipe, settings):
     from shopman.craftsman.contrib.formula import accept_suggestion
 
+    settings.CRAFTSMAN = {
+        "PRODUCTION_COMMAND_BACKEND": "shopman.shop.adapters.production.CanonicalProductionCommands",
+    }
     target = date.today() + timedelta(days=1)
     expected_order = craft.plan(recipe, 10, date=target, actor="test:setup")
     with patch(

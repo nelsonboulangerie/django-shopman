@@ -1078,13 +1078,17 @@ def check_production_quality_catalog(app_configs, **kwargs):
 def check_production_configuration(app_configs, **kwargs):
     """Valida a configuração resolvida que governará produção no release."""
     from django.db import DatabaseError
+    from redis.exceptions import RedisError
 
     from shopman.shop.production_config import ProductionConfig
 
     try:
         ProductionConfig.load()
-    except DatabaseError:
-        return []  # Shop ainda não existe durante o primeiro migrate
+    except (DatabaseError, RedisError):
+        # O check de deploy é deliberadamente offline: nem o banco nem o cache
+        # precisam estar acessíveis para validar settings e contratos estáticos.
+        # A configuração persistida é validada novamente no readiness semeado.
+        return []
     except (TypeError, ValueError) as exc:
         return [
             Error(
