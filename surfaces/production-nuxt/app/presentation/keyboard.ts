@@ -22,13 +22,6 @@ type ShortcutEvent = Pick<
   "key" | "code" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey"
 >;
 
-const STAGE_BY_FUNCTION_KEY: Record<string, ProductionGlobalShortcut> = {
-  F1: "plan",
-  F2: "mise-en-place",
-  F3: "produce",
-  F4: "expedite",
-};
-
 const STAGE_BY_ALT_CODE: Record<string, ProductionGlobalShortcut> = {
   Digit1: "plan",
   Digit2: "mise-en-place",
@@ -40,9 +33,6 @@ export function resolveProductionGlobalShortcut(
   event: ShortcutEvent,
 ): ProductionGlobalShortcut | null {
   if (event.ctrlKey || event.metaKey) return null;
-
-  const functionStage = STAGE_BY_FUNCTION_KEY[event.key];
-  if (functionStage && !event.altKey) return functionStage;
 
   const altStage = event.altKey ? STAGE_BY_ALT_CODE[event.code] : null;
   if (altStage) return altStage;

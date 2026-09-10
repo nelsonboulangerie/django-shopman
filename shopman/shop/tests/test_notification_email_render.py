@@ -48,3 +48,26 @@ def test_malformed_admin_subject_still_sends_email():
     # Assunto degradou para o template cru; corpo renderizou normal.
     assert mail.outbox[0].subject.endswith("Pedido {order_ref pronto")
     assert "ORD-9" in mail.outbox[0].body
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_stock_alert_uses_human_name_and_sku():
+    from django.core import mail
+
+    mail.outbox = []
+    ok = notification_email.send(
+        "operacao@boulangerie.com.br",
+        "stock_alert",
+        {
+            "product_label": "Focaccia do dia (FOA)",
+            "sku": "FOA",
+            "available": "0",
+            "min_quantity": "4.000",
+        },
+    )
+
+    assert ok is True
+    assert mail.outbox[0].subject.endswith(
+        "Alerta de estoque: Focaccia do dia (FOA)"
+    )
+    assert "Produto: Focaccia do dia (FOA)" in mail.outbox[0].body

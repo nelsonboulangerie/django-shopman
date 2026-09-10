@@ -70,20 +70,25 @@ const tabs = computed(() => [
     to: "/plan",
     label: "Planejamento",
     icon: "lucide:layout-grid",
-    shortcut: "F1",
+    shortcut: "Alt+1",
   },
   {
     to: "/mise-en-place",
     label: "Preparação",
     icon: "lucide:scale",
-    shortcut: "F2",
+    shortcut: "Alt+2",
   },
-  { to: "/", label: "Produção", icon: "lucide:flame", shortcut: "F3" },
+  {
+    to: "/",
+    label: "Produção",
+    icon: "lucide:flame",
+    shortcut: "Alt+3",
+  },
   {
     to: "/expedite",
     label: "Expedição",
     icon: "lucide:package-check",
-    shortcut: "F4",
+    shortcut: "Alt+4",
   },
 ]);
 function isActive(to: string): boolean {
@@ -113,7 +118,7 @@ function isActive(to: string): boolean {
         v-for="tab in tabs"
         :key="tab.to"
         :to="tab.to"
-        :aria-keyshortcuts="`${tab.shortcut} Alt+${Number(tab.shortcut.slice(1))}`"
+        :aria-keyshortcuts="tab.shortcut"
         :title="`${tab.label} · ${tab.shortcut}`"
         class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
         :class="
@@ -217,13 +222,19 @@ function isActive(to: string): boolean {
       </button>
       <button
         type="button"
-        class="grid size-9 place-items-center rounded-md border font-mono text-sm font-semibold text-muted-foreground transition hover:bg-accent hover:text-foreground"
+        class="inline-flex h-9 items-center gap-1.5 rounded-md border px-2 text-sm font-semibold text-muted-foreground transition hover:bg-accent hover:text-foreground"
         aria-label="Ver atalhos do teclado"
         aria-keyshortcuts="?"
         title="Atalhos do teclado · ?"
         @click="shortcutsHelpOpen = true"
       >
-        ?
+        <Icon name="lucide:keyboard" class="size-4" />
+        <span class="hidden xl:inline">Atalhos</span>
+        <kbd
+          class="rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium leading-none"
+          aria-hidden="true"
+          >?</kbd
+        >
       </button>
     </div>
   </header>

@@ -7,7 +7,6 @@ import type { WeighingTicketProjection } from "../../app/types/production";
 
 const tickets = ref<WeighingTicketProjection[]>([]);
 const printSpy = vi.fn();
-const printWarningSpy = vi.fn();
 
 function ticket(
   recipeRef: string,
@@ -65,7 +64,6 @@ function installGlobals() {
     error: ref(null),
     refresh: vi.fn(),
   }));
-  vi.stubGlobal("useSonner", { warning: printWarningSpy });
   vi.stubGlobal("print", printSpy);
 }
 
@@ -74,6 +72,16 @@ const stubs = {
   Icon: true,
   NuxtLink: { template: "<a><slot /></a>" },
   UiBadge: { template: "<span><slot /></span>" },
+  UiButton: { template: "<button><slot /></button>" },
+  UiDialog: {
+    props: ["open"],
+    template: '<div v-if="open" data-testid="print-unavailable"><slot /></div>',
+  },
+  UiDialogContent: { template: "<div><slot /></div>" },
+  UiDialogHeader: { template: "<header><slot /></header>" },
+  UiDialogTitle: { template: "<h2><slot /></h2>" },
+  UiDialogDescription: { template: "<p><slot /></p>" },
+  UiDialogFooter: { template: "<footer><slot /></footer>" },
   WeighingLabels: {
     props: ["printMode", "labels", "tickets"],
     template: `
@@ -90,7 +98,9 @@ const stubs = {
 beforeEach(() => {
   installGlobals();
   printSpy.mockReset();
-  printWarningSpy.mockReset();
+  printSpy.mockImplementation(() =>
+    window.dispatchEvent(new Event("beforeprint")),
+  );
   tickets.value = [
     ticket("massa-croissant", "Massa Croissant", "D8"),
     ticket("massa-forma", "Massa Forma", "S5"),
@@ -193,7 +203,9 @@ describe("Preparação — impressão por preparo", () => {
       "massa-croissant,massa-forma",
     );
     expect(printSpy).toHaveBeenCalledTimes(1);
-    expect(printWarningSpy).not.toHaveBeenCalled();
+    expect(wrapper.find('[data-testid="print-unavailable"]').exists()).toBe(
+      false,
+    );
   });
 
   it("explica a limitação quando o preview não oferece impressão", async () => {
@@ -209,9 +221,28 @@ describe("Preparação — impressão por preparo", () => {
     expect(
       wrapper.get('[data-testid="print-payload"]').attributes("data-mode"),
     ).toBe("preparo");
-    expect(printWarningSpy).toHaveBeenCalledWith(
-      "Impressão indisponível neste preview.",
-      { description: "Abra Produção no Chrome ou Safari para imprimir." },
+    const dialog = wrapper.get('[data-testid="print-unavailable"]');
+    expect(dialog.text()).toContain("Impressão indisponível neste preview");
+    expect(dialog.text()).toContain("Chrome ou Safari");
+    expect(dialog.text()).toContain("80 mm");
+  });
+
+  it("explica também quando o preview oferece uma ponte de impressão inerte", async () => {
+    vi.useFakeTimers();
+    printSpy.mockImplementation(() => undefined);
+    const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
+
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("Etiquetas do preparo"))!
+      .trigger("click");
+    await nextTick();
+    await vi.advanceTimersByTimeAsync(200);
+    await nextTick();
+
+    expect(wrapper.get('[data-testid="print-unavailable"]').text()).toContain(
+      "Impressão indisponível neste preview",
     );
+    vi.useRealTimers();
   });
 });

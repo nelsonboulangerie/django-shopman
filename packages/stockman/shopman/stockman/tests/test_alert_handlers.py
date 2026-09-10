@@ -104,6 +104,41 @@ class TestMoveSignalTriggersAlertCheck:
         alert.refresh_from_db()
         assert alert.last_triggered_at is None
 
+    def test_synthetic_refresh_never_dispatches(self, product, vitrine, alert):
+        """Reposição de seed não é uma baixa operacional nem envia e-mail."""
+        with patch(
+            "shopman.stockman.contrib.alerts.handlers._check_alerts_for_sku"
+        ) as check_alerts:
+            stock.receive(
+                Decimal("1"),
+                product.sku,
+                vitrine,
+                reason="Synthetic refresh",
+                suppress_notifications=True,
+            )
+
+        alert.refresh_from_db()
+        assert alert.last_triggered_at is None
+        check_alerts.assert_not_called()
+
+    def test_future_planning_never_dispatches_current_low_stock(self, product, vitrine, alert):
+        """Planejar amanhã não é evidência nova sobre o estoque físico de hoje."""
+        with patch(
+            "shopman.stockman.contrib.alerts.handlers._check_alerts_for_sku"
+        ) as check_alerts:
+            stock.receive(
+                Decimal("50"),
+                product.sku,
+                vitrine,
+                target_date=timezone.localdate() + timedelta(days=1),
+                reason="Planned tomorrow",
+                kind="make",
+            )
+
+        alert.refresh_from_db()
+        assert alert.last_triggered_at is None
+        check_alerts.assert_not_called()
+
 
 class TestCooldown:
     """Alert dispatch respects cooldown period."""
