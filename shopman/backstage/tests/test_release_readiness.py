@@ -192,6 +192,53 @@ def test_storefront_contact_check_passes_with_phone():
     assert check.details["whatsapp_url"] == "https://wa.me/554333231997"
 
 
+@pytest.mark.django_db
+def test_preparation_shelf_life_is_warning_in_alpha_and_blocker_in_production():
+    from shopman.craftsman.models import Recipe
+
+    Recipe.objects.create(
+        ref="creme-alpha",
+        name="Creme alpha",
+        output_sku="CREME-ALPHA",
+        batch_size=1,
+        meta={
+            "output_unit": "kg",
+            "shelf_life_days": 2,
+            "shelf_life_source": "pre_go_live_example",
+            "shelf_life_review_required": True,
+        },
+    )
+
+    assert readiness._preparation_shelf_life_review_check(profile="alpha").status == "warning"
+    production = readiness._preparation_shelf_life_review_check(profile="production")
+    assert production.status == "failed"
+    assert production.details["pending"][0]["ref"] == "creme-alpha"
+
+
+@pytest.mark.django_db
+def test_preparation_shelf_life_review_requires_matching_signed_value():
+    from shopman.craftsman.models import Recipe
+
+    recipe = Recipe.objects.create(
+        ref="massa-revisada",
+        name="Massa revisada",
+        output_sku="MASSA-REVISADA",
+        batch_size=1,
+        meta={
+            "output_unit": "kg",
+            "shelf_life_days": 1,
+            "shelf_life_reviewed_days": 1,
+            "shelf_life_reviewed_by": "gestora",
+            "shelf_life_reviewed_at": "2026-09-10T12:00:00-03:00",
+        },
+    )
+    assert readiness._preparation_shelf_life_review_check(profile="production").status == "passed"
+
+    recipe.meta = {**recipe.meta, "shelf_life_days": 2}
+    recipe.save(update_fields=("meta",))
+    assert readiness._preparation_shelf_life_review_check(profile="production").status == "failed"
+
+
 def test_main_outputs_json_and_uses_blocking_exit(monkeypatch, capsys):
     report = readiness.ReadinessReport(
         strict_external=True,

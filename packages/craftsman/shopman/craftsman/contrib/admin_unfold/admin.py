@@ -187,6 +187,15 @@ class RecipeAdminForm(forms.ModelForm):
             "0 = mesmo dia; vazio = não emitir validade nem presumir D+1."
         ),
     )
+    shelf_life_reviewed = forms.BooleanField(
+        label=_("Validade revisada para o go-live"),
+        required=False,
+        widget=UnfoldBooleanSwitchWidget,
+        help_text=_(
+            "Confirma que o prazo acima foi validado pelo responsável técnico/gestor. "
+            "Alterar o prazo exige nova confirmação."
+        ),
+    )
 
     class Meta:
         model = Recipe
@@ -206,6 +215,12 @@ class RecipeAdminForm(forms.ModelForm):
         self.fields["capacity_per_day"].initial = meta.get("capacity_per_day")
         self.fields["requires_batch_tracking"].initial = bool(meta.get("requires_batch_tracking"))
         self.fields["shelf_life_days"].initial = meta.get("shelf_life_days")
+        self.fields["shelf_life_reviewed"].initial = bool(
+            meta.get("shelf_life_days") not in (None, "")
+            and meta.get("shelf_life_reviewed_days") == meta.get("shelf_life_days")
+            and meta.get("shelf_life_reviewed_by")
+            and meta.get("shelf_life_reviewed_at")
+        )
 
         lifecycle_choices = _production_lifecycle_choices()
         if lifecycle_choices:
@@ -229,7 +244,19 @@ class RecipeAdminForm(forms.ModelForm):
         _set_meta_value(meta, "max_started_minutes", self.cleaned_data.get("max_started_minutes"))
         _set_meta_value(meta, "capacity_per_day", _json_decimal(self.cleaned_data.get("capacity_per_day")))
         _set_meta_value(meta, "requires_batch_tracking", self.cleaned_data.get("requires_batch_tracking") or None)
-        _set_meta_value(meta, "shelf_life_days", self.cleaned_data.get("shelf_life_days"))
+        shelf_life_days = self.cleaned_data.get("shelf_life_days")
+        _set_meta_value(meta, "shelf_life_days", shelf_life_days)
+        if self.cleaned_data.get("shelf_life_reviewed") and shelf_life_days is not None:
+            meta["shelf_life_reviewed_days"] = shelf_life_days
+            meta["shelf_life_source"] = "manager_review"
+            meta.pop("shelf_life_review_required", None)
+        else:
+            for key in (
+                "shelf_life_reviewed_days",
+                "shelf_life_reviewed_by",
+                "shelf_life_reviewed_at",
+            ):
+                meta.pop(key, None)
         if "production_lifecycle" in self.fields:
             lifecycle = (self.cleaned_data.get("production_lifecycle") or "").strip()
             default_value = self.fields["production_lifecycle"].choices[0][0]
@@ -388,10 +415,23 @@ class RecipeAdmin(BaseModelAdmin):
                     "steps_text",
                     ("max_started_minutes", "capacity_per_day"),
                     ("requires_batch_tracking", "shelf_life_days"),
+                    "shelf_life_reviewed",
                 ),
             },
         ),
     )
+
+    def save_model(self, request, obj, form, change):
+        meta = dict(obj.meta or {})
+        reviewed_days = meta.get("shelf_life_reviewed_days")
+        if reviewed_days not in (None, "") and reviewed_days == meta.get("shelf_life_days"):
+            meta["shelf_life_reviewed_by"] = request.user.get_username()
+            meta["shelf_life_reviewed_at"] = timezone.now().isoformat()
+        else:
+            meta.pop("shelf_life_reviewed_by", None)
+            meta.pop("shelf_life_reviewed_at", None)
+        obj.meta = meta
+        super().save_model(request, obj, form, change)
 
 
 # =============================================================================

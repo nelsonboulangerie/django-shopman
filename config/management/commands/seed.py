@@ -114,6 +114,28 @@ from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_reci
 # do seed e as funções de alvo abaixo leem daqui.
 PREP_PREFIXES = ("massa-", "recheio-", "creme-", "molho-", "salada-", "vinagrete-")
 
+# Validades OPERACIONAIS provisórias para o cenário pré-go-live, decididas pelo
+# dono em 10/09/2026. Elas tornam as etiquetas testáveis sem fingir validação
+# sanitária: a readiness de produção só libera quando cada valor tiver sido
+# confirmado no Admin por responsável identificado.
+PRE_GO_LIVE_PREPARATION_SHELF_LIFE_DAYS = {
+    "mass": 1,
+    "cream": 2,
+    "other_filling": 3,
+}
+
+
+def _pre_go_live_preparation_shelf_life(recipe_ref: str) -> tuple[str, int] | None:
+    if recipe_ref == "creme-levain" or recipe_ref.startswith("massa-"):
+        kind = "mass"
+    elif recipe_ref.startswith("creme-"):
+        kind = "cream"
+    elif recipe_ref.startswith(("recheio-", "molho-", "salada-", "vinagrete-")):
+        kind = "other_filling"
+    else:
+        return None
+    return kind, PRE_GO_LIVE_PREPARATION_SHELF_LIFE_DAYS[kind]
+
 # O catálogo nasce por data migration em qualquer deployment, mas ``seed
 # --flush`` também precisa reconstruí-lo: testes transacionais e bancos já
 # truncados não reaplicam RunPython. Estes são os quatro botões e os sete
@@ -1473,6 +1495,32 @@ class Command(BaseCommand):
 
         # Craftsman
         from shopman.craftsman.models import WorkOrderEvent
+
+        # Validade confirmada por uma pessoa é curadoria, não fixture. O seed
+        # pode atualizar o exemplo ainda pendente, mas nem ``--flush`` pode
+        # trocar silenciosamente um prazo assinado por gestor/RT.
+        self._recipe_shelf_life_reviews = {}
+        for recipe in Recipe.objects.only("ref", "meta"):
+            meta = dict(recipe.meta or {})
+            days = meta.get("shelf_life_days")
+            if not (
+                days not in (None, "")
+                and str(meta.get("shelf_life_reviewed_days")) == str(days)
+                and meta.get("shelf_life_reviewed_by")
+                and meta.get("shelf_life_reviewed_at")
+            ):
+                continue
+            self._recipe_shelf_life_reviews[recipe.ref] = {
+                key: meta[key]
+                for key in (
+                    "shelf_life_days",
+                    "shelf_life_reviewed_days",
+                    "shelf_life_reviewed_by",
+                    "shelf_life_reviewed_at",
+                    "shelf_life_source",
+                )
+                if key in meta
+            }
 
         for model in [WorkOrderEvent, WorkOrder, RecipeItem, Recipe]:
             model.objects.all().delete()
@@ -4722,7 +4770,50 @@ class Command(BaseCommand):
 
         for rd in recipes_data:
             product = Product.objects.filter(sku=rd["output_sku"]).first()
-            shelf_life_days = product.shelf_life_days if product else None
+            existing = Recipe.objects.filter(ref=rd["ref"]).only("meta").first()
+            existing_meta = (
+                dict(existing.meta or {})
+                if existing is not None
+                else dict(getattr(self, "_recipe_shelf_life_reviews", {}).get(rd["ref"], {}))
+            )
+            provisional = _pre_go_live_preparation_shelf_life(rd["ref"])
+            shelf_review_meta: dict[str, object] = {}
+            if provisional is not None:
+                preparation_kind, provisional_days = provisional
+                reviewed_days = existing_meta.get("shelf_life_reviewed_days")
+                current_days = existing_meta.get("shelf_life_days")
+                try:
+                    reviewed_value = int(str(reviewed_days))
+                    current_value = int(str(current_days))
+                except (TypeError, ValueError):
+                    reviewed_value = current_value = None
+                is_reviewed = bool(
+                    reviewed_value is not None
+                    and reviewed_value == current_value
+                    and existing_meta.get("shelf_life_reviewed_by")
+                    and existing_meta.get("shelf_life_reviewed_at")
+                )
+                if is_reviewed:
+                    shelf_life_days = current_value
+                    shelf_review_meta = {
+                        key: existing_meta[key]
+                        for key in (
+                            "shelf_life_reviewed_days",
+                            "shelf_life_reviewed_by",
+                            "shelf_life_reviewed_at",
+                        )
+                    }
+                    shelf_review_meta["preparation_kind"] = preparation_kind
+                    shelf_review_meta["shelf_life_source"] = "manager_review"
+                else:
+                    shelf_life_days = provisional_days
+                    shelf_review_meta = {
+                        "preparation_kind": preparation_kind,
+                        "shelf_life_source": "pre_go_live_example",
+                        "shelf_life_review_required": True,
+                    }
+            else:
+                shelf_life_days = product.shelf_life_days if product else None
             recipe, _ = Recipe.objects.update_or_create(
                 ref=rd["ref"],
                 defaults={
@@ -4739,6 +4830,7 @@ class Command(BaseCommand):
                         "max_started_minutes": self._max_started_minutes_for_recipe(rd["ref"]),
                         "requires_batch_tracking": shelf_life_days is not None,
                         "shelf_life_days": shelf_life_days,
+                        **shelf_review_meta,
                         # Pré-preparo não existe no catálogo, então a unidade da
                         # saída não tem de onde vir sozinha — e adivinhar é o que
                         # a ADR-024 §R4 proíbe. Declarada aqui, é ela que liga o
@@ -8271,6 +8363,10 @@ class Command(BaseCommand):
         printer.setdefault("roll_width_mm", 80)
         printer.setdefault("columns", 48)
         printer.setdefault("cut_mode", "partial")
+        printer.setdefault("label_width_mm", 60)
+        printer.setdefault("label_height_mm", 40)
+        printer.setdefault("label_print_width_mm", 52)
+        printer.setdefault("label_cut_mode", "none")
         printer.setdefault("role", "preparation")
         hardware["printer"] = printer
 

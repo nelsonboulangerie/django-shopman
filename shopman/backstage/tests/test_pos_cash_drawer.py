@@ -16,7 +16,7 @@ from shopman.cashman.models import Entry, Shift, Terminal
 
 from shopman.backstage.services import pos as pos_service
 from shopman.backstage.services.exceptions import POSError
-from shopman.backstage.services.pos_hardware import CashDrawerConfig
+from shopman.backstage.services.pos_hardware import CashDrawerConfig, DeviceAgentConfig
 from shopman.backstage.services.pos_terminal import runtime_profile
 
 pytestmark = pytest.mark.django_db
@@ -51,6 +51,29 @@ def test_gaveta_de_chave_nao_chuta_por_software():
     config = CashDrawerConfig.from_terminal(_terminal({"adapter": "manual"}))
     assert config.declared is True
     assert config.kicks_by_software is False
+
+
+def test_agente_do_dispositivo_independe_da_gaveta_e_preserva_legacy():
+    terminal = Terminal.objects.create(
+        ref="prep-sem-gaveta",
+        label="Preparação",
+        metadata={
+            "hardware": {
+                "device_agent": {
+                    "enabled": True,
+                    "agent_url": "http://127.0.0.1:47811",
+                    "token": "token-da-impressora-com-tamanho",
+                },
+                "cash_drawer": {"adapter": "manual"},
+            }
+        },
+    )
+    device = DeviceAgentConfig.from_terminal(terminal)
+    drawer = CashDrawerConfig.from_terminal(terminal)
+
+    assert device.available is True
+    assert drawer.kicks_by_software is False
+    assert DeviceAgentConfig.from_terminal(_terminal(AGENT_CONFIG)).available is True
 
 
 def test_adapter_desconhecido_cai_para_manual():

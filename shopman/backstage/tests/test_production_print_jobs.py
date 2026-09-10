@@ -6,11 +6,12 @@ import base64
 from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
-from django.test import override_settings
+from django.test import RequestFactory, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -19,6 +20,7 @@ from shopman.cashman.models import Terminal
 from shopman.craftsman import craft
 from shopman.craftsman.models import Recipe, RecipeItem
 
+from shopman.backstage.api.print_jobs import destination_projection
 from shopman.backstage.models import PrintAgentCredential, PrintAttempt, PrintJob
 from shopman.backstage.projections.production import build_production_weighing
 from shopman.backstage.services import print_jobs
@@ -87,6 +89,10 @@ def printer_terminal():
                     "roll_width_mm": 80,
                     "columns": 48,
                     "cut_mode": "partial",
+                    "label_width_mm": 60,
+                    "label_height_mm": 40,
+                    "label_print_width_mm": 52,
+                    "label_cut_mode": "none",
                 }
             }
         },
@@ -194,7 +200,7 @@ def test_blind_document_is_one_label_per_ingredient_and_never_leaks_recipe(weigh
     assert "Farinha Fina" in paper
     assert "FARINHA-FINA" in paper
     assert "PESAGEM INTERNA" in paper
-    assert "NAO E ROTULO DE VENDA" in paper
+    assert "NAO E ROTULO DE VENDA" not in paper
     assert "Data" in paper
     assert "Validade" not in paper
 
@@ -217,7 +223,7 @@ def test_explicit_document_is_one_label_per_prep_with_name_sku_and_totals(weighi
     assert "CREME-TESTE" in paper
     assert "Alvo total: 204 g" in paper
     assert "PREPARO INTERNO" in paper
-    assert "NAO E ROTULO DE VENDA" in paper
+    assert "NAO E ROTULO DE VENDA" not in paper
     assert "Preparo" in paper
     assert "Validade" in paper
     assert "Farinha Fina" not in paper
@@ -292,6 +298,60 @@ def test_browser_create_is_independent_of_a_relay_and_records_only_honest_outcom
     )
     assert confirmed.status == PrintJob.Status.CONFIRMED
     assert confirmed.confirmed_by_ref == actor.get_username()
+
+
+def test_local_pos_agent_outcome_uses_the_same_audited_browser_job(weighing, actor):
+    job = _create(weighing, actor)
+    wire = print_jobs.job_data(job, include_document=True)
+
+    assert base64.b64decode(wire["payload_b64"]) == bytes(job.payload)
+    assert wire["payload_sha256"] == job.payload_sha256
+    spooled = print_jobs.record_browser_result(
+        job=job,
+        actor=actor,
+        result="agent_spooled",
+        detail="Fila EPSON · job 42",
+        idempotency_key="local-agent-1",
+    )
+
+    assert spooled.status == PrintJob.Status.SPOOLED
+    attempt = spooled.attempts.get()
+    assert attempt.status == PrintAttempt.Status.SPOOLED
+    assert attempt.credential is None
+    assert "EPSON" in attempt.detail
+
+
+def test_60x40_label_geometry_derives_escpos_columns_from_printable_width(printer_terminal):
+    config = print_jobs.PrinterConfig.from_terminal(printer_terminal)
+
+    assert config.accepts_preparation
+    assert (config.label_width_mm, config.label_height_mm) == (60, 40)
+    assert config.printable_width_mm == 52
+    assert config.columns == 34
+    assert config.cut_mode == "none"
+
+
+def test_local_print_agent_is_a_device_capability_not_a_drawer_capability(printer_terminal):
+    metadata = dict(printer_terminal.metadata)
+    hardware = dict(metadata["hardware"])
+    hardware["device_agent"] = {
+        "enabled": True,
+        "agent_url": "http://127.0.0.1:47811",
+        "token": "token-da-estacao-com-tamanho",
+    }
+    hardware["cash_drawer"] = {"adapter": "manual"}
+    printer_terminal.metadata = {**metadata, "hardware": hardware}
+    printer_terminal.save(update_fields=("metadata",))
+
+    with patch(
+        "shopman.backstage.api.print_jobs.station_trust.station_ref",
+        return_value=printer_terminal.ref,
+    ):
+        projected = destination_projection(request=RequestFactory().get("/"))
+
+    assert projected.local_agent_available is True
+    assert projected.local_agent_url == "http://127.0.0.1:47811"
+    assert projected.local_agent_token == "token-da-estacao-com-tamanho"
 
 
 def test_incomplete_confirmation_requires_a_new_visible_copy(weighing, actor):
@@ -552,6 +612,9 @@ def test_browser_api_create_uses_projected_proof_and_uniform_job_contract(
         "poll_after_ms",
         "print_document",
         "document_sha256",
+        "payload_b64",
+        "payload_sha256",
+        "print_title",
     }
     assert created.json()["print_job"]["status"] == "prepared"
     assert created.json()["print_job"]["target_label"] == "Este dispositivo"
