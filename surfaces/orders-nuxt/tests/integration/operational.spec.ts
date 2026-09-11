@@ -31,7 +31,7 @@ test("lost response after the Django commit queries receipt and advances only on
   const canonical = await (await page.request.get(`/api/v1/backstage/orders/${lab.advance_ref}/`)).json();
   expect(canonical.order.status).toBe("preparing");
   expect(posts).toBe(1);
-  expect(lookups).toBe(1);
+  await expect.poll(() => lookups).toBe(1);
   await page.screenshot({ path: fileURLToPath(new URL("../../../../.orders-lab/integration-advance.png", import.meta.url)), fullPage: true });
 });
 
@@ -223,4 +223,88 @@ test("failed refresh leaves the live draft visible and prevents a stale mutation
   await page.getByRole("button", { name: "Salvar nota", exact: true }).click();
   await expect(page.getByText("A leitura está desatualizada. Atualize o pedido antes de confirmar; seu rascunho foi mantido.", { exact: true })).toBeVisible();
   expect(posts).toBe(0);
+});
+
+test("product PATCH response lost after commit closes only after receipt confirmation", async ({ page }) => {
+  await login(page, "orders-lab-edit");
+  await page.goto("/catalog");
+  const path = `/api/v1/backstage/catalog/product/${lab.edit_sku}/`;
+  let patches = 0;
+  let receipts = 0;
+  await page.route(`**${path}**`, async route => {
+    if (route.request().method() === "PATCH") {
+      patches += 1;
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.abort("failed");
+    } else {
+      if (route.request().url().includes("idempotency_key")) receipts += 1;
+      await route.continue();
+    }
+  });
+  await page.getByRole("button", { name: `Ações de ${lab.edit_name}`, exact: true }).click();
+  await page.getByRole("button", { name: "Editar detalhes", exact: true }).click();
+  await page.getByRole("textbox", { name: "Nome", exact: true }).fill(`${lab.edit_name} salvo`);
+  await page.getByRole("button", { name: "Salvar", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Nome", exact: true })).toHaveCount(0);
+  expect((await (await page.request.get(path)).json()).product.name).toBe(`${lab.edit_name} salvo`);
+  expect(patches).toBe(1);
+  expect(receipts).toBe(1);
+});
+
+test("product same-field dispute preserves draft until explicit reviewed save", async ({ page }) => {
+  await login(page, "orders-lab-edit");
+  await page.goto("/catalog");
+  const path = `/api/v1/backstage/catalog/product/${lab.edit_sku}/`;
+  const before = await (await page.request.get(path)).json();
+  await page.getByRole("button", { name: `Ações de ${before.product.name}`, exact: true }).click();
+  await page.getByRole("button", { name: "Editar detalhes", exact: true }).click();
+  const name = page.getByRole("textbox", { name: "Nome", exact: true });
+  await expect(name).toHaveValue(before.product.name);
+  await name.fill("Rascunho do catálogo");
+  const concurrent = await page.request.patch(path, { headers: { "Idempotency-Key": crypto.randomUUID() }, data: { ...before.action.payload_schema, patch: { name: "Outra estação do catálogo" } } });
+  expect(concurrent.status()).toBe(200);
+  await page.getByRole("button", { name: "Salvar", exact: true }).click();
+  await expect(page.getByText("Nome — atual: Outra estação do catálogo")).toBeVisible();
+  await expect(name).toHaveValue("Rascunho do catálogo");
+  await expect(page.getByRole("button", { name: "Salvar", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Manter meu rascunho", exact: true }).click();
+  await expect(name).toHaveValue("Rascunho do catálogo");
+  expect((await (await page.request.get(path)).json()).product.name).toBe("Outra estação do catálogo");
+  await page.getByRole("button", { name: "Salvar", exact: true }).click();
+  await expect(name).toHaveCount(0);
+  expect((await (await page.request.get(path)).json()).product.name).toBe("Rascunho do catálogo");
+});
+
+test("curation drag lost response adopts receipt and canonical exact order", async ({ page }) => {
+  await login(page, "orders-lab-curation");
+  await page.goto("/catalog");
+  await page.getByRole("button", { name: new RegExp(lab.curation_name) }).click();
+  const rows = page.locator("tr[data-dragkey]");
+  await expect(rows).toHaveCount(2);
+  let posts = 0;
+  let receipts = 0;
+  await page.route("**/api/v1/backstage/catalog/reorder-items/**", async route => {
+    if (route.request().method() === "POST") {
+      posts += 1;
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.abort("failed");
+    } else { receipts += 1; await route.continue(); }
+  });
+  const first = rows.first();
+  const second = rows.nth(1);
+  const initial = await rows.evaluateAll(elements => elements.map(element => element.getAttribute("data-dragkey")));
+  const from = await first.getByRole("button", { name: "Arrastar para reordenar", exact: true }).boundingBox();
+  const to = await second.boundingBox();
+  expect(from).toBeTruthy(); expect(to).toBeTruthy();
+  await page.mouse.move(from!.x + from!.width / 2, from!.y + from!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from!.x + from!.width / 2, to!.y + to!.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(() => posts).toBe(1);
+  await expect.poll(() => receipts).toBe(1);
+  await expect(page.getByText("A ordenação ainda precisa de conferência. Seu arraste foi preservado.")).toHaveCount(0);
+  const matrix = await (await page.request.get(`/api/v1/backstage/catalog/?collection=${lab.curation_ref}`)).json();
+  expect(matrix.matrix.rows.map((row: { sku: string }) => row.sku)).toEqual([...initial].reverse());
 });

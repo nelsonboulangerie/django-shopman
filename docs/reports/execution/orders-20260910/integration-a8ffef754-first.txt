@@ -1,0 +1,51 @@
+[WebServer] (node:83785) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 11 tests using 1 worker
+
+(node:83786) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘   1 [chromium] › tests/integration/operational.spec.ts:15:1 › lost response after the Django commit queries receipt and advances only once (3.2s)
+(node:83819) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   2 [chromium] › tests/integration/operational.spec.ts:38:1 › SSE during notes draft preserves text and offers explicit same-field resolution (1.6s)
+  ✓   3 [chromium] › tests/integration/operational.spec.ts:59:1 › price preview confirms exact canonical values through Nitro and Django (1.8s)
+  ✓   4 [chromium] › tests/integration/operational.spec.ts:80:1 › closed product A cannot hydrate the reopened panel for B (2.9s)
+  ✓   5 [chromium] › tests/integration/operational.spec.ts:108:1 › same person resumes a locked draft; another person never inherits it (1.7s)
+  ✓   6 [chromium] › tests/integration/operational.spec.ts:132:1 › cancel response loss retains the reason and reads the committed receipt (2.0s)
+  ✓   7 [chromium] › tests/integration/operational.spec.ts:156:1 › cash settlement response loss resolves one receipt in the observed drawer (1.7s)
+  ✓   8 [chromium] › tests/integration/operational.spec.ts:180:1 › feed selection survives response loss and consults the same scoped receipt (1.4s)
+  ✓   9 [chromium] › tests/integration/operational.spec.ts:210:1 › failed refresh leaves the live draft visible and prevents a stale mutation (1.8s)
+  ✓  10 [chromium] › tests/integration/operational.spec.ts:228:1 › product PATCH response lost after commit closes only after receipt confirmation (2.3s)
+  ✓  11 [chromium] › tests/integration/operational.spec.ts:255:1 › product same-field dispute preserves draft until explicit reviewed save (1.8s)
+
+
+  1) [chromium] › tests/integration/operational.spec.ts:15:1 › lost response after the Django commit queries receipt and advances only once 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 1
+    Received: 0
+
+      32 |   expect(canonical.order.status).toBe("preparing");
+      33 |   expect(posts).toBe(1);
+    > 34 |   expect(lookups).toBe(1);
+         |                   ^
+      35 |   await page.screenshot({ path: fileURLToPath(new URL("../../../../.orders-lab/integration-advance.png", import.meta.url)), fullPage: true });
+      36 | });
+      37 |
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:34:19
+
+    Error Context: ../../.orders-lab/playwright-results/operational-lost-response--d38e3-eipt-and-advances-only-once-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../.orders-lab/playwright-results/operational-lost-response--d38e3-eipt-and-advances-only-once-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../.orders-lab/playwright-results/operational-lost-response--d38e3-eipt-and-advances-only-once-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › tests/integration/operational.spec.ts:15:1 › lost response after the Django commit queries receipt and advances only once 
+  10 passed (24.0s)

@@ -62,3 +62,20 @@ for suffix in ('cash', 'feed', 'read'):
     tester.set_password('synthetic-lab-only-20260910')
     tester.save()
     tester.user_permissions.set(user.user_permissions.all())
+
+# Product edit and exact curation use fresh resources per run.
+from shopman.offerman.models import CollectionItem
+
+edit_sku = f'LAB-EDIT-{run}'
+edit_product = Product.objects.create(sku=edit_sku, name=f'Produto editável {run}', base_price_q=1100)
+ListingItem.objects.create(product=edit_product, listing=listing, price_q=1100)
+curation = Collection.objects.create(ref=f'lab-curation-{run}', name=f'Curadoria {run}', is_active=True)
+CollectionItem.objects.create(collection=curation, product=product, sort_order=0)
+CollectionItem.objects.create(collection=curation, product=edit_product, sort_order=1)
+refs.update(edit_sku=edit_sku, edit_name=edit_product.name, curation_ref=curation.ref, curation_name=curation.name)
+Path('.orders-lab/manifest.json').write_text(json.dumps(refs))
+for suffix in ('edit', 'curation'):
+    tester, _ = User.objects.get_or_create(username=f'orders-lab-{suffix}', defaults={'is_staff': True, 'first_name': f'Laboratório {suffix}'})
+    tester.set_password('synthetic-lab-only-20260910')
+    tester.save()
+    tester.user_permissions.set(user.user_permissions.all())
