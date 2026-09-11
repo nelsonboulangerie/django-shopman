@@ -688,3 +688,28 @@ test("queue rejection protects its reason on close and reload", async ({ page })
   const canonical = await (await page.request.get(`/api/v1/backstage/orders/${lab.reject_ref}/`)).json();
   expect(canonical.order.status).toBe("new");
 });
+
+
+test("bundled icons preserve utility size and mutually exclusive rail states", async ({ page }) => {
+  await login(page);
+  await page.mouse.move(800, 200);
+  const glyph = page.locator('.iconify[class~="size-5"][class~="group-hover:hidden"]').first();
+  const arrow = page.locator('.iconify[class~="group-hover:block"][class~="group-focus-visible:block"]').first();
+  await expect(glyph).toBeVisible();
+  await expect(arrow).toBeHidden();
+  const box = await glyph.boundingBox();
+  expect(box?.width).toBe(20);
+  expect(box?.height).toBe(20);
+  await glyph.hover();
+  await expect(glyph).toBeHidden();
+  await expect(arrow).toBeVisible();
+  await page.mouse.move(800, 200);
+  const link = glyph.locator('xpath=ancestor::a[1]');
+  const linkBox = await link.boundingBox();
+  expect(linkBox?.width).toBeGreaterThanOrEqual(44);
+  expect(linkBox?.height).toBeGreaterThanOrEqual(44);
+  await page.keyboard.press('Tab');
+  await link.focus();
+  await expect(glyph).toBeHidden();
+  await expect(arrow).toBeVisible();
+});

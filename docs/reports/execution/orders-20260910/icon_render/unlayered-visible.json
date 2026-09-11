@@ -1,0 +1,46 @@
+{
+  "count": 3376,
+  "missing": 0,
+  "first": [
+    {
+      "classes": "iconify i-lucide:clipboard-list shrink-0 size-5 group-hover:hidden group-focus-visible:hidden",
+      "width": 16,
+      "height": 16
+    },
+    {
+      "classes": "iconify i-lucide:arrow-left shrink-0 hidden size-5 group-hover:block group-focus-visible:block",
+      "width": 16,
+      "height": 16
+    },
+    {
+      "classes": "iconify i-lucide:user-round shrink-0 size-5 shrink-0",
+      "width": 16,
+      "height": 16
+    },
+    {
+      "classes": "iconify i-lucide:moon shrink-0 size-5 shrink-0",
+      "width": 16,
+      "height": 16
+    },
+    {
+      "classes": "iconify i-lucide:panel-left shrink-0 size-5",
+      "width": 16,
+      "height": 16
+    },
+    {
+      "classes": "iconify i-lucide:clipboard-list shrink-0 size-4 text-foreground",
+      "width": 14,
+      "height": 14
+    },
+    {
+      "classes": "iconify i-lucide:book-open shrink-0 size-4 text-muted-foreground",
+      "width": 14,
+      "height": 14
+    },
+    {
+      "classes": "iconify i-lucide:monitor-play shrink-0 size-4 text-muted-foreground",
+      "width": 14,
+      "height": 14
+    }
+  ]
+}

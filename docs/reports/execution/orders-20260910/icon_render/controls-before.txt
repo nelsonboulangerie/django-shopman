@@ -1,0 +1,38 @@
+[WebServer] (node:49621) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:49622) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › tests/integration/operational.spec.ts:693:1 › bundled icons preserve utility size and mutually exclusive rail states (2.6s)
+
+
+  1) [chromium] › tests/integration/operational.spec.ts:693:1 › bundled icons preserve utility size and mutually exclusive rail states 
+
+    Error: expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    40
+
+      707 |   const link = glyph.locator('xpath=ancestor::a[1]');
+      708 |   const linkBox = await link.boundingBox();
+    > 709 |   expect(linkBox?.width).toBeGreaterThanOrEqual(44);
+          |                          ^
+      710 |   expect(linkBox?.height).toBeGreaterThanOrEqual(44);
+      711 |   await page.keyboard.press('Tab');
+      712 |   await link.focus();
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:709:26
+
+    Error Context: ../../.orders-lab/playwright-results/operational-bundled-icons--adfca-ually-exclusive-rail-states-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../.orders-lab/playwright-results/operational-bundled-icons--adfca-ually-exclusive-rail-states-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../.orders-lab/playwright-results/operational-bundled-icons--adfca-ually-exclusive-rail-states-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › tests/integration/operational.spec.ts:693:1 › bundled icons preserve utility size and mutually exclusive rail states 

@@ -1628,3 +1628,14 @@ inspecionado: título/descrição não cobertos, mensagem íntegra. close_target
 Uma tentativa de preparar a asserção usou cwd errado; não é reprodução do
 defeito. Log before válido contém Received16, Expected44. Sem DDL/efeito real,
 rollback visual apenas. Leitor de tela físico/compreensão continuam sem ensaio.
+
+### WP07/WP06 — renderização nativa de ícones e regressão visual
+
+SVG anterior500:p502273,5/p953016ms,HTML4,19MB. CSS sem layer baixou tempo
+mas quebrou hidden/size e foi rejeitado visualmente. CSS na layer base mantém
+utilitários;500:p501541/p951951ms,HTML3,04MB. Ganho conservado sem cortar cards
+ou regras, mas1500ms continua reprovado. Configuração local ao Gestor.
+Rail compartilha token44 após testemunha40;29 integrações1,2min,303 Vitest
+Orders,228 kit,typecheck/build e screenshot final inspecionado. Provas e
+limites em icon_render/. Sem DDL/efeito real; rollback do renderizador conserva
+alvos e livros. Esta melhora não comprova ganho humano nem libera T/P/R.

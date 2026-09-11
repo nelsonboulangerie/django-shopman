@@ -1,0 +1,13 @@
+
+> @shopman/operator-kit@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.9 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/operator-kit
+
+
+ Test Files  23 passed (23)
+      Tests  228 passed (228)
+   Start at  05:22:06
+   Duration  3.89s (transform 4.00s, setup 1.17s, import 5.61s, tests 3.27s, environment 3.46s)
+
