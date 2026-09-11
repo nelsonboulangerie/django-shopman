@@ -6,7 +6,7 @@
 export interface KDSItemProjection {
   sku: string;
   name: string;
-  qty: number;
+  qty: number | string;
   notes: string;
   checked: boolean;
   stock_warning: string;

@@ -1,0 +1,34 @@
+diff --git a/surfaces/orders-nuxt/tests/performance/read.spec.ts b/surfaces/orders-nuxt/tests/performance/read.spec.ts
+index 7383e2be9..af6a0cbdc 100644
+--- a/surfaces/orders-nuxt/tests/performance/read.spec.ts
++++ b/surfaces/orders-nuxt/tests/performance/read.spec.ts
+@@ -9,6 +9,21 @@ const auth = JSON.parse(readFileSync(new URL("http-lab-auth.json", root), "utf8"
+ test("rendered queue becomes usable and filtering remains local", async ({ browser }) => {
+   const samples = [];
+   const context = await browser.newContext();
++  if (process.env.ORDERS_PERF_CARD_CONTAINMENT === "1") {
++    await context.addInitScript(() => {
++      const apply = () => {
++        if (!document.head) return false;
++        const style = document.createElement("style");
++        style.textContent = "main article { content-visibility: auto; contain-intrinsic-size: auto 300px; } @media print { main article { content-visibility: visible; } }";
++        document.head.appendChild(style);
++        return true;
++      };
++      if (!apply()) {
++        const observer = new MutationObserver(() => { if (apply()) observer.disconnect(); });
++        observer.observe(document, { childList: true, subtree: true });
++      }
++    });
++  }
+   await context.addCookies(Object.entries(auth.cookies).map(([name, value]) => ({ name, value: String(value), url: "http://127.0.0.1:3005", sameSite: "Lax" as const })));
+   try {
+     for (let sample = 0; sample < 20; sample++) {
+@@ -30,6 +45,6 @@ test("rendered queue becomes usable and filtering remains local", async ({ brows
+     }
+   } finally { await context.close(); }
+   const values = samples.map(sample => sample.usable_ms).sort((a, b) => a - b);
+-  writeFileSync(new URL(`browser-read-${n}.json`, root), JSON.stringify({ n, samples, first_page: samples[0], p50_ms: (values[9]! + values[10]!) / 2, p95_ms: values[18],
++  writeFileSync(new URL(`browser-read-${n}${process.env.ORDERS_PERF_CARD_CONTAINMENT === "1" ? "-containment" : ""}.json`, root), JSON.stringify({ n, samples, first_page: samples[0], p50_ms: (values[9]! + values[10]!) / 2, p95_ms: values[18],
+     scope: "Chromium desktop, localhost Nitro/Daphne/PostgreSQL/Redis; logged-in session; navigate + hydrate + type filter + observe one row; first sample cold context, later warm cache; login excluded and no field claim" }, null, 2));
+ });

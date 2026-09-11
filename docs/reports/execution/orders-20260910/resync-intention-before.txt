@@ -1,0 +1,151 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+______________ test_missing_product_or_target_cannot_claim_queued ______________
+
+client = <django.test.client.Client object at 0x10b270710>
+operator = <User: catalog-api>
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Pão>}
+
+    def test_missing_product_or_target_cannot_claim_queued(client, operator, catalog):
+        client.force_login(operator)
+        before = Directive.objects.count()
+>       assert client.post(URL, {"sku": "MISSING", "channel_ref": "ifood"}, content_type="application/json").status_code == 400
+E       assert 200 == 400
+E        +  where 200 = <Response status_code=200, "application/json">.status_code
+E        +    where <Response status_code=200, "application/json"> = post('/api/v1/backstage/catalog/resync/', {'channel_ref': 'ifood', 'sku': 'MISSING'}, content_type='application/json')
+E        +      where post = <django.test.client.Client object at 0x10b270710>.post
+
+shopman/backstage/tests/test_catalog_resync_intentions.py:34: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-11 00:26:14,451 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-11 00:26:14,653 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-11 00:26:15,751 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+WARNING 2026-09-11 00:26:19,512 shopman.orderman.dispatch No handler registered for topic catalog.project_sku, leaving queued.
+DEBUG 2026-09-11 00:26:19,513 shopman.shop.handlers.catalog_projection catalog_projection: enqueued product_created for web/PAO
+WARNING 2026-09-11 00:26:19,514 shopman.orderman.dispatch No handler registered for topic catalog.project_sku, leaving queued.
+DEBUG 2026-09-11 00:26:19,514 shopman.shop.handlers.catalog_projection catalog_projection: enqueued product_created for ifood/PAO
+WARNING 2026-09-11 00:26:19,538 shopman.orderman.dispatch No handler registered for topic catalog.project_sku, leaving queued.
+DEBUG 2026-09-11 00:26:19,538 shopman.shop.handlers.catalog_projection catalog_projection: enqueued product_created for web/BOLO
+WARNING 2026-09-11 00:26:19,539 shopman.orderman.dispatch No handler registered for topic catalog.project_sku, leaving queued.
+DEBUG 2026-09-11 00:26:19,540 shopman.shop.handlers.catalog_projection catalog_projection: enqueued product_created for ifood/BOLO
+----------------------------- Captured stderr call -----------------------------
+WARNING 2026-09-11 00:26:20,214 shopman.orderman.dispatch No handler registered for topic catalog.project_sku, leaving queued.
+DEBUG 2026-09-11 00:26:20,215 shopman.shop.handlers.catalog_projection catalog_projection: enqueued manual_resync for ifood/MISSING
+__________ test_replay_after_worker_completion_does_not_enqueue_again __________
+
+client = <django.test.client.Client object at 0x10ac9a4b0>
+operator = <User: catalog-api>
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Pão>}
+
+    def test_replay_after_worker_completion_does_not_enqueue_again(client, operator, catalog):
+>       body = observed(client, operator)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+shopman/backstage/tests/test_catalog_resync_intentions.py:39:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+client = <django.test.client.Client object at 0x10ac9a4b0>
+operator = <User: catalog-api>
+
+    def observed(client, operator):
+        client.force_login(operator)
+        response = client.get(URL, {"sku": "PAO"})
+>       assert response.status_code == 200
+E       assert 405 == 200
+E        +  where 405 = <Response status_code=405, "application/json">.status_code
+
+shopman/backstage/tests/test_catalog_resync_intentions.py:27: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+WARNING 2026-09-11 00:26:20,706 shopman.orderman.dispatch No handler registered for topic catalog.project_sku, leaving queued.
+DEBUG 2026-09-11 00:26:20,707 shopman.shop.handlers.catalog_projection catalog_projection: enqueued product_created for web/PAO
+WARNING 2026-09-11 00:26:20,708 shopman.orderman.dispatch No handler registered for topic catalog.project_sku, leaving queued.
+DEBUG 2026-09-11 00:26:20,709 shopman.shop.handlers.catalog_projection catalog_projection: enqueued product_created for ifood/PAO
+WARNING 2026-09-11 00:26:20,716 shopman.orderman.dispatch No handler registered for topic catalog.project_sku, leaving queued.
+DEBUG 2026-09-11 00:26:20,717 shopman.shop.handlers.catalog_projection catalog_projection: enqueued product_created for web/BOLO
+WARNING 2026-09-11 00:26:20,718 shopman.orderman.dispatch No handler registered for topic catalog.project_sku, leaving queued.
+DEBUG 2026-09-11 00:26:20,718 shopman.shop.handlers.catalog_projection catalog_projection: enqueued product_created for ifood/BOLO
+----------------------------- Captured stderr call -----------------------------
+WARNING 2026-09-11 00:26:20,743 django.request Method Not Allowed: /api/v1/backstage/catalog/resync/
+__________________ test_target_change_refuses_before_enqueue ___________________
+
+client = <django.test.client.Client object at 0x10a911b20>
+operator = <User: catalog-api>
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Pão>}
+
+    def test_target_change_refuses_before_enqueue(client, operator, catalog):
+        from shopman.shop.models import Channel
+
+>       body = observed(client, operator)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+shopman/backstage/tests/test_catalog_resync_intentions.py:57:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+client = <django.test.client.Client object at 0x10a911b20>
+operator = <User: catalog-api>
+
+    def observed(client, operator):
+        client.force_login(operator)
+        response = client.get(URL, {"sku": "PAO"})
+>       assert response.status_code == 200
+E       assert 405 == 200
+E        +  where 405 = <Response status_code=405, "application/json">.status_code
+
+shopman/backstage/tests/test_catalog_resync_intentions.py:27: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+WARNING 2026-09-11 00:26:21,137 shopman.orderman.dispatch No handler registered for topic catalog.project_sku, leaving queued.
+DEBUG 2026-09-11 00:26:21,138 shopman.shop.handlers.catalog_projection catalog_projection: enqueued product_created for web/PAO
+WARNING 2026-09-11 00:26:21,139 shopman.orderman.dispatch No handler registered for topic catalog.project_sku, leaving queued.
+DEBUG 2026-09-11 00:26:21,140 shopman.shop.handlers.catalog_projection catalog_projection: enqueued product_created for ifood/PAO
+WARNING 2026-09-11 00:26:21,147 shopman.orderman.dispatch No handler registered for topic catalog.project_sku, leaving queued.
+DEBUG 2026-09-11 00:26:21,148 shopman.shop.handlers.catalog_projection catalog_projection: enqueued product_created for web/BOLO
+WARNING 2026-09-11 00:26:21,148 shopman.orderman.dispatch No handler registered for topic catalog.project_sku, leaving queued.
+DEBUG 2026-09-11 00:26:21,149 shopman.shop.handlers.catalog_projection catalog_projection: enqueued product_created for ifood/BOLO
+----------------------------- Captured stderr call -----------------------------
+WARNING 2026-09-11 00:26:21,167 django.request Method Not Allowed: /api/v1/backstage/catalog/resync/
+_______ test_second_enqueue_failure_keeps_no_partial_enqueue_or_receipt ________
+
+client = <django.test.client.Client object at 0x10ac9a330>
+operator = <User: catalog-api>
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Pão>}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ad281a0>
+
+    def test_second_enqueue_failure_keeps_no_partial_enqueue_or_receipt(client, operator, catalog, monkeypatch):
+        from shopman.shop.handlers import catalog_projection
+
+>       body = observed(client, operator)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+shopman/backstage/tests/test_catalog_resync_intentions.py:68:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+client = <django.test.client.Client object at 0x10ac9a330>
+operator = <User: catalog-api>
+
+    def observed(client, operator):
+        client.force_login(operator)
+        response = client.get(URL, {"sku": "PAO"})
+>       assert response.status_code == 200
+E       assert 405 == 200
+E        +  where 405 = <Response status_code=405, "application/json">.status_code
+
+shopman/backstage/tests/test_catalog_resync_intentions.py:27: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+WARNING 2026-09-11 00:26:21,551 shopman.orderman.dispatch No handler registered for topic catalog.project_sku, leaving queued.
+DEBUG 2026-09-11 00:26:21,551 shopman.shop.handlers.catalog_projection catalog_projection: enqueued product_created for web/PAO
+WARNING 2026-09-11 00:26:21,552 shopman.orderman.dispatch No handler registered for topic catalog.project_sku, leaving queued.
+DEBUG 2026-09-11 00:26:21,553 shopman.shop.handlers.catalog_projection catalog_projection: enqueued product_created for ifood/PAO
+WARNING 2026-09-11 00:26:21,560 shopman.orderman.dispatch No handler registered for topic catalog.project_sku, leaving queued.
+DEBUG 2026-09-11 00:26:21,560 shopman.shop.handlers.catalog_projection catalog_projection: enqueued product_created for web/BOLO
+WARNING 2026-09-11 00:26:21,561 shopman.orderman.dispatch No handler registered for topic catalog.project_sku, leaving queued.
+DEBUG 2026-09-11 00:26:21,562 shopman.shop.handlers.catalog_projection catalog_projection: enqueued product_created for ifood/BOLO
+----------------------------- Captured stderr call -----------------------------
+WARNING 2026-09-11 00:26:21,580 django.request Method Not Allowed: /api/v1/backstage/catalog/resync/
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-11 00:26:21,823 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_catalog_resync_intentions.py::test_missing_product_or_target_cannot_claim_queued
+FAILED shopman/backstage/tests/test_catalog_resync_intentions.py::test_replay_after_worker_completion_does_not_enqueue_again
+FAILED shopman/backstage/tests/test_catalog_resync_intentions.py::test_target_change_refuses_before_enqueue
+FAILED shopman/backstage/tests/test_catalog_resync_intentions.py::test_second_enqueue_failure_keeps_no_partial_enqueue_or_receipt
+4 failed in 7.83s

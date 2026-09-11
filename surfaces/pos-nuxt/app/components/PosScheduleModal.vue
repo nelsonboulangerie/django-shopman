@@ -129,7 +129,7 @@ function pickDate(iso: string) {
 
         <!-- O motivo dito UMA vez, no topo, em vez de repetido em dez janelas
              apagadas. É a frase que o operador repete ao cliente. -->
-        <p v-if="note" class="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs">
+        <p v-if="note" class="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs">
           {{ note }}
         </p>
 

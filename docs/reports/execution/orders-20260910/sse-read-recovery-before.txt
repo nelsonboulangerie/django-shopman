@@ -1,0 +1,30 @@
+
+> test
+> vitest run tests/composables/useOrdersBoard.test.ts
+
+
+ RUN  v4.1.6 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt
+
+ ❯ |unit| tests/composables/useOrdersBoard.test.ts (22 tests | 1 failed) 18ms
+   × SSE aguarda recuperação do primeiro GET mesmo após transições com erro 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| tests/composables/useOrdersBoard.test.ts > SSE aguarda recuperação do primeiro GET mesmo após transições com erro
+AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ ❯ tests/composables/useOrdersBoard.test.ts:301:20
+    299|     failure.value = null;
+    300|     await nextTick();
+    301|     expect(source).toHaveBeenCalledTimes(1);
+       |                    ^
+    302|     pending.value = true;
+    303|     await nextTick();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 21 passed (22)
+   Start at  23:07:10
+   Duration  299ms (transform 81ms, setup 0ms, import 140ms, tests 18ms, environment 0ms)
+

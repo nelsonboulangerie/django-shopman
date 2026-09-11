@@ -1,0 +1,24 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________ test_equipment_return_preserves_concurrent_note ________________
+
+    def test_equipment_return_preserves_concurrent_note():
+        order = Order.objects.create(ref="EQUIPMENT-CONTEXT", status="completed", data={
+            "kitchen_note": "Initial", "dispatch": {"equipment": ["card_machine"], "equipment_out_at": "2026-09-10T12:00:00Z"}})
+        stale = Order.objects.get(pk=order.pk)
+        operator_orders.save_kitchen_note(order, notes="Concurrent note", actor="lab")
+        operator_orders.mark_equipment_returned(stale, actor="lab")
+        order.refresh_from_db()
+>       assert order.data["kitchen_note"] == "Concurrent note"
+E       AssertionError: assert 'Initial' == 'Concurrent note'
+E         
+E         - Concurrent note
+E         + Initial
+
+shopman/shop/tests/test_equipment_return_fresh_state.py:17: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-10 21:59:59,034 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-10 22:00:07,689 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_equipment_return_fresh_state.py::test_equipment_return_preserves_concurrent_note
+1 failed in 46.66s

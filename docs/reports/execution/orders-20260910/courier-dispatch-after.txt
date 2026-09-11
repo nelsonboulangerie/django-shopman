@@ -1,0 +1,24 @@
+F..........................................                              [100%]
+=================================== FAILURES ===================================
+__________________ test_dispatch_requires_observed_intention ___________________
+
+client = <django.test.client.Client object at 0x10a95cbc0>
+context = (<User: dispatch-lab>, <Order: DISPATCH-LAB>)
+
+    def test_dispatch_requires_observed_intention(client, context):
+        _, order = context
+        response = client.post(reverse("api-backstage-order-courier-dispatch", args=[order.ref]), {}, content_type="application/json")
+>       assert response.status_code == 400
+E       assert 409 == 400
+E        +  where 409 = <Response status_code=409, "application/json">.status_code
+
+shopman/backstage/tests/test_courier_dispatch_intentions.py:37: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-11 00:49:19,314 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-11 00:49:19,490 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-11 00:49:20,485 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+----------------------------- Captured stderr call -----------------------------
+WARNING 2026-09-11 00:49:24,428 django.request Conflict: /api/v1/backstage/orders/DISPATCH-LAB/courier-dispatch/
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_courier_dispatch_intentions.py::test_dispatch_requires_observed_intention
+1 failed, 42 passed in 6.60s

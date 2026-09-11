@@ -1,0 +1,38 @@
+[WebServer] (node:44361) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:44363) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › tests/integration/operational.spec.ts:662:1 › queue rejection protects its reason on close and reload (3.4s)
+
+
+  1) [chromium] › tests/integration/operational.spec.ts:662:1 › queue rejection protects its reason on close and reload 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 1
+    Received: 0
+
+      670 |   page.once("dialog", async prompt => { confirmations++; expect(prompt.type()).toBe("confirm"); await prompt.dismiss(); });
+      671 |   await page.getByRole("dialog").getByRole("button", { name: "Cancelar", exact: true }).click();
+    > 672 |   expect(confirmations).toBe(1);
+          |                         ^
+      673 |   await expect(reason).toHaveValue("Recusa ainda em avaliação");
+      674 |   const reload = page.waitForEvent("dialog");
+      675 |   await page.evaluate(() => { setTimeout(() => window.location.reload(), 0); });
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:672:25
+
+    Error Context: ../../.orders-lab/playwright-results/operational-queue-rejectio-a601a--reason-on-close-and-reload-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../.orders-lab/playwright-results/operational-queue-rejectio-a601a--reason-on-close-and-reload-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../.orders-lab/playwright-results/operational-queue-rejectio-a601a--reason-on-close-and-reload-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › tests/integration/operational.spec.ts:662:1 › queue rejection protects its reason on close and reload 

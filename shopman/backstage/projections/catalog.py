@@ -11,9 +11,124 @@ Read-only. Frozen dataclasses convertidos por ``backstage.api.projections.projec
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from shopman.utils.monetary import format_money
+
+from shopman.shop.projections.types import Action
+
+
+def product_detail_action(sku: str, detail: dict, user):
+    from shopman.backstage.services.catalog import product_field_revisions
+    from shopman.shop.projections.types import Action
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    revisions = product_field_revisions(detail)
+    allowed = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_catalog"))
+    return Action(ref="edit-product", kind="mutation", label="Salvar produto", enabled=allowed,
+        reason="" if allowed else "Identifique uma pessoa com permissão para editar o catálogo.",
+        method="PATCH", idempotency="required", payload_schema={"expected_actor_id": getattr(user, "pk", None),
+            "base_revision": mutation_fingerprint({"sku": sku, "revisions": revisions}), "base_revisions": revisions})
+
+
+def product_switch_action(product, user):
+    # Same field tokens and writer as the full editor, without loading long fields.
+    action = product_detail_action(product.sku, {"sku": product.sku,
+        "is_published": product.is_published, "is_sellable": product.is_sellable}, user)
+    return replace(action, ref="toggle-product", label="Disponibilidade em todas as superfícies", method="POST",
+        payload_schema={**action.payload_schema, "ref": product.sku})
+
+
+def resync_action(product, targets: list[str], user):
+    from shopman.backstage.services.catalog import resync_revision
+
+    allowed = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_catalog"))
+    enabled = allowed and bool(targets)
+    return Action(ref="resync", kind="mutation", label="Reenviar às plataformas", enabled=enabled,
+        reason="" if enabled else "Nenhum destino ativo e configurado." if allowed else "Sem permissão para editar o catálogo.",
+        method="POST", idempotency="required", payload_schema={"ref": product.sku,
+            "expected_actor_id": getattr(user, "pk", None), "base_revision": resync_revision(product, targets), "targets": sorted(targets)})
+
+
+def cell_action(sku: str, surface_ref: str, user, *, item=None, display=None, available=True):
+    from shopman.backstage.services.catalog import cell_field_revisions
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    revisions = cell_field_revisions(sku, surface_ref, item=item, display=display)
+    allowed = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_catalog"))
+    reason = "" if allowed and available else "O produto não pertence a esta superfície." if not available else "Sem permissão para editar o catálogo."
+    return Action(ref="edit-cell", kind="mutation", label="Alterar célula", enabled=allowed and available,
+        reason=reason, method="POST", idempotency="required", payload_schema={
+            "base_revision": mutation_fingerprint({"sku": sku, "surface": surface_ref, "revisions": revisions}),
+            "base_revisions": revisions, "expected_actor_id": getattr(user, "pk", None), "sku": sku, "surface_ref": surface_ref,
+            "ref": mutation_fingerprint({"sku": sku, "surface": surface_ref}),
+        })
+
+
+def curation_actions(collection_ref: str, user):
+    from shopman.backstage.services.catalog import curation_revision
+    from shopman.backstage.services.exceptions import CatalogError
+    from shopman.shop.projections.types import Action
+
+    allowed = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_catalog"))
+    actions = []
+    scopes = [("reorder-collections", "", "Ordenar coleções")]
+    if collection_ref:
+        scopes.append(("reorder-items", collection_ref, "Ordenar produtos"))
+    for operation, ref, label in scopes:
+        try:
+            revision = curation_revision(ref)
+            reason = "" if allowed else "Sem permissão para editar o catálogo."
+        except CatalogError as exc:
+            revision, reason = "", str(exc)
+        actions.append(Action(ref=operation, kind="mutation", label=label, enabled=allowed and not reason,
+            reason=reason, method="POST", idempotency="required", payload_schema={
+                "base_revision": revision, "expected_actor_id": getattr(user, "pk", None), "ref": ref,
+            }))
+    return tuple(actions)
+
+
+@dataclass(frozen=True)
+class CatalogPricePreviewCell:
+    id: int
+    sku: str
+    surface_ref: str
+    tier: str
+    before_q: int
+    after_q: int
+
+
+@dataclass(frozen=True)
+class CatalogPricePreview:
+    base_revision: str
+    expected_actor_id: int
+    cells: tuple[CatalogPricePreviewCell, ...]
+    limit: int
+
+
+@dataclass(frozen=True)
+class CatalogPublicationCell:
+    sku: str
+    surface_ref: str
+    tier: str
+    before: dict[str, bool]
+    after: dict[str, bool]
+
+
+@dataclass(frozen=True)
+class CatalogPublicationSkip:
+    sku: str
+    surface_ref: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class CatalogPublicationPreview:
+    base_revision: str
+    expected_actor_id: int
+    cells: tuple[CatalogPublicationCell, ...]
+    skipped: tuple[CatalogPublicationSkip, ...]
+    limit: int
 
 
 def _money(value_q: int) -> str:
@@ -70,6 +185,7 @@ class SurfaceCellProjection:
     sync_status: str = ""  # synced | pending | error | retracted | skipped | "" (nunca)
     sync_error: str = ""  # última mensagem de erro (quando status=error)
     synced_at: str = ""  # ISO do último push OK (synced/retracted)
+    action: Action | None = None
 
 
 @dataclass(frozen=True)
@@ -107,6 +223,8 @@ class CatalogRowProjection:
     # isso não cabe nos estados existentes da linha. Ver
     # ``shop.services.catalog_visibility``.
     hidden_by_inactive_collection: bool = False
+    product_action: Action | None = None
+    resync_action: Action | None = None
 
 
 @dataclass(frozen=True)
@@ -339,6 +457,7 @@ def _build_display_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]
         index[ch.ref] = {
             "members": members,
             "paused": {str(s) for s in (display.get("paused_skus") or [])},
+            "channel": ch,
         }
         is_target = get_projection_backend(ch.ref) is not None
         short = str((ch.config or {}).get("short_name", "")).strip()
@@ -360,7 +479,7 @@ def _build_display_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]
     return surfaces, index
 
 
-def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
+def build_catalog_matrix(collection_ref: str = "", *, user=None) -> CatalogMatrixProjection:
     """Monta a matriz produto × superfície com o eixo coleção.
 
     ``collection_ref`` (opcional) filtra as linhas aos produtos daquela coleção,
@@ -380,7 +499,11 @@ def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
     )
     if collection_ref:
         coll = Collection.objects.filter(ref=collection_ref).first()
-        products = products.filter(pk__in=coll.product_queryset().values("pk")) if coll else products.none()
+        if coll is None:
+            products = products.none()
+        else:
+            products = coll.product_queryset().prefetch_related("keywords", "collection_items__collection")
+            products = products.order_by("name", "sku") if coll.is_smart else products.order_by("collection_items__sort_order", "sku")
 
     products = list(products)
     skus = [p.sku for p in products]
@@ -429,6 +552,7 @@ def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
                         ),
                         price_q=None,
                         price_display="",
+                        action=cell_action(product.sku, surface.ref, user, display=sc["channel"], available=in_feed),
                         sync_status=sync_status,
                         sync_error=sync_error,
                         synced_at=synced_at,
@@ -465,6 +589,7 @@ def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
                     available=available,
                     price_q=item.price_q,
                     price_display=_money(item.price_q),
+                    action=cell_action(product.sku, surface.ref, user, item=item),
                     sync_status=sync_status,
                     sync_error=sync_error,
                     synced_at=synced_at,
@@ -497,6 +622,8 @@ def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
                 social=social_view,
                 pim_complete=pim_complete,
                 hidden_by_inactive_collection=product.sku in hidden_skus,
+                product_action=product_switch_action(product, user),
+                resync_action=resync_action(product, [surface.ref for surface in surfaces if surface.is_active and surface.is_projection_target], user),
             )
         )
 

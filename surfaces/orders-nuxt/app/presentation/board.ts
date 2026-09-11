@@ -15,7 +15,7 @@ export type Tone = "info" | "warning" | "success" | "danger" | "neutral";
 
 const STATUS_TONE: Record<string, Tone> = {
   new: "info",
-  confirmed: "info",
+  accepted: "info",
   preparing: "warning",
   ready: "success",
   dispatched: "info",
@@ -223,35 +223,30 @@ export interface Affordance {
 /** The actions a card offers, derived from the projection's pre-resolved flags.
  *  Order = visual priority (primary first). Mirrors the Admin action cell. */
 export function cardAffordances(card: OrderCardProjection): Affordance[] {
-  const out: Affordance[] = [];
-  if (card.can_confirm) {
-    out.push({ ref: "confirm", label: "Aceitar", icon: "lucide:check", priority: "primary", needsInput: false });
-  } else if (card.can_advance && card.next_action_label) {
-    out.push({ ref: "advance", label: card.next_action_label, icon: "lucide:arrow-right", priority: "primary", needsInput: false });
-  } else if (card.advance_block_label) {
-    // O botão sumia quando bloqueado, e o operador ficava sem saber se faltava
-    // algo ou se a tela tinha falhado. Agora o lugar continua ocupado, dizendo
-    // o que falta — sem virar um clique que não faz nada.
-    out.push({
-      ref: "advance",
-      label: card.advance_block_label,
-      icon: "lucide:clock",
-      priority: "secondary",
-      needsInput: false,
-      disabled: true,
-      reason: card.advance_block_reason
-    });
-  }
+  const projected = card.actions ?? [];
+  const icons: Record<string, string> = { confirm: "lucide:check", advance: "lucide:arrow-right", reject: "lucide:x" };
+  const out: Affordance[] = projected.filter((a) => a.ref !== "reject" && a.ref in icons).map((a) => ({
+    ref: a.ref as AffordanceRef,
+    label: a.label,
+    icon: a.enabled ? icons[a.ref]! : "lucide:clock",
+    priority: a.enabled ? a.priority as Affordance["priority"] : "secondary",
+    needsInput: false,
+    disabled: !a.enabled,
+    reason: a.reason,
+  }));
   if (card.can_settle_delivery_cash) {
-    out.push({ ref: "settle_cash", label: "Acerto dinheiro", icon: "lucide:banknote", priority: "secondary", needsInput: true });
+    const settle = projected.find((action) => action.ref === "settle-delivery-cash");
+    out.push({ ref: "settle_cash", label: "Acertar entrega", icon: "lucide:banknote", priority: "secondary", needsInput: true,
+      disabled: !settle?.enabled, reason: settle?.reason || (!settle ? "Atualize o pedido para conferir o caixa." : "") });
   }
   // A maquininha saiu e não voltou; sem acerto em dinheiro para marcar, o card
   // oferece o gesto sozinho (pedido em cartão, ou acerto já feito sem ela).
-  if (card.equipment_back_pending && !card.can_settle_delivery_cash) {
+  if (card.equipment_back_pending) {
     out.push({ ref: "equipment_back", label: "Maquininha voltou", icon: "lucide:smartphone-nfc", priority: "secondary", needsInput: false });
   }
-  if (card.can_confirm) {
-    out.push({ ref: "reject", label: "Recusar", icon: "lucide:x", priority: "danger", needsInput: true });
+  const reject = projected.find((a) => a.ref === "reject");
+  if (reject) {
+    out.push({ ref: "reject", label: reject.label, icon: "lucide:x", priority: "danger", needsInput: true, disabled: !reject.enabled, reason: reject.reason });
   }
   return out;
 }

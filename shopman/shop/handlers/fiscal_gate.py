@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import logging
 
-from django.core.exceptions import ValidationError
 from django.db.models.signals import pre_save
 
 from shopman.shop.services import fiscal_catalog
@@ -30,36 +29,8 @@ from shopman.shop.services import fiscal_catalog
 logger = logging.getLogger(__name__)
 
 
-def _refuse(product, listing_ref: str, errors: list[str]) -> None:
-    """Recusa a publicação dizendo o que cadastrar, onde, e como ver o resto.
-
-    A recusa chega uma por ``save()``, e quem a vê costuma estar no meio de um
-    ``seed`` ou de um sync de catálogo — ou seja, com N produtos incompletos e a
-    notícia de um só. Por isso a mensagem aponta o comando de auditoria: sem ele o
-    operador conserta um, roda de novo, descobre o próximo, e assim por diante.
-    """
-    where = f" na vitrine '{listing_ref}'" if listing_ref else ""
-    raise ValidationError(
-        f"Produto {product.sku} ({product.name}) não pode ser publicado{where}: "
-        f"{' '.join(errors)} Cadastre em Admin → Produtos → Fiscal: perfil fiscal "
-        "(fabricação própria ou revenda), NCM com 8 dígitos e, na revenda, CEST com "
-        "7 dígitos. Para ver todos os pendentes de uma vez rode "
-        "`manage.py fiscal_audit_catalog`; para voltar ao estado pré-go-live, desligue "
-        f"{fiscal_catalog.SETTING_REQUIRE_ON_PUBLISH}."
-    )
-
-
 def _on_listing_item_pre_save(sender, instance, **kwargs) -> None:
-    if not fiscal_catalog.publication_gate_enabled():
-        return
-    if not (instance.is_published and instance.is_sellable):
-        return
-    listing = instance.listing
-    if not listing.is_active:
-        return
-    errors = fiscal_catalog.publication_errors(instance.product, listing_ref=listing.ref)
-    if errors:
-        _refuse(instance.product, listing.ref, errors)
+    fiscal_catalog.validate_listing_item_publication(instance)
 
 
 def _on_product_pre_save(sender, instance, **kwargs) -> None:
@@ -69,7 +40,7 @@ def _on_product_pre_save(sender, instance, **kwargs) -> None:
         return  # produto novo ainda não está em vitrine nenhuma
     errors = fiscal_catalog.publication_errors(instance)
     if errors and fiscal_catalog.has_selling_publication(instance.pk):
-        _refuse(instance, "", errors)
+        fiscal_catalog.refuse_publication(instance, "", errors)
 
 
 def connect() -> None:

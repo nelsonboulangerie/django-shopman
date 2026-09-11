@@ -1,3 +1,4 @@
+import { useOperatorResourceKey } from "./useOperatorResourceKey";
 // Operator alerts read-side. SSE-first (ADR-016): o push do canal de alertas
 // (`/sse/alerts` no BFF → backstage-alerts-main no Django) só avisa "chegou
 // algo" e dispara o refetch; o fetch REST segue sendo a fonte da verdade e o
@@ -7,7 +8,7 @@ import type { AlertProjection, AlertsResponse } from "~/types/orders";
 export function useAlerts() {
   const config = useRuntimeConfig();
   const { data, refresh } = useFetch<AlertsResponse>("/api/v1/backstage/alerts/", {
-    key: "operator-alerts",
+    key: useOperatorResourceKey("operator-alerts"),
     server: true,
   });
 

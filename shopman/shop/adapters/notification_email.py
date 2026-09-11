@@ -221,7 +221,7 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
     )
 
     try:
-        send_mail(
+        count = send_mail(
             subject=subject,
             message=body,
             from_email=from_email,
@@ -229,11 +229,10 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
             html_message=html_body,
             fail_silently=False,
         )
-        logger.info("Email sent: %s -> %s", template, recipient)
-        return True
-    except Exception:
-        logger.exception("Email error sending to %s", recipient)
-        return False
+        logger.info("Email result: template=%s accepted=%s", template, count == 1)
+        return count == 1
+    except Exception as exc:
+        raise RuntimeError("acceptance_unconfirmed") from exc
 
 
 #: Backends que NÃO entregam a ninguém. O de console imprime em stdout, o

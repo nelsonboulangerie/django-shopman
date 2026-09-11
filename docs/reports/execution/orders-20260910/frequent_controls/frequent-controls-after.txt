@@ -1,0 +1,35 @@
+[WebServer] (node:39014) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 26 tests using 1 worker
+
+(node:39022) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [chromium] › tests/integration/operational.spec.ts:15:1 › lost response after the Django commit queries receipt and advances only once (4.7s)
+  ✓   2 [chromium] › tests/integration/operational.spec.ts:38:1 › SSE during notes draft preserves text and offers explicit same-field resolution (1.4s)
+  ✓   3 [chromium] › tests/integration/operational.spec.ts:64:1 › price preview confirms exact canonical values through Nitro and Django (2.5s)
+  ✓   4 [chromium] › tests/integration/operational.spec.ts:85:1 › closed product A cannot hydrate the reopened panel for B (2.8s)
+  ✓   5 [chromium] › tests/integration/operational.spec.ts:113:1 › same person resumes a locked draft; another person never inherits it (3.0s)
+  ✓   6 [chromium] › tests/integration/operational.spec.ts:137:1 › cancel response loss retains the reason and reads the committed receipt (2.0s)
+  ✓   7 [chromium] › tests/integration/operational.spec.ts:161:1 › cash draft survives close, queue navigation and a declined reload without settlement (2.0s)
+  ✓   8 [chromium] › tests/integration/operational.spec.ts:186:1 › cash settlement response loss resolves one receipt in the observed drawer (2.0s)
+  ✓   9 [chromium] › tests/integration/operational.spec.ts:210:1 › feed selection survives response loss and consults the same scoped receipt (2.2s)
+  ✓  10 [chromium] › tests/integration/operational.spec.ts:249:1 › failed refresh leaves the live draft visible and prevents a stale mutation (881ms)
+  ✓  11 [chromium] › tests/integration/operational.spec.ts:267:1 › product PATCH response lost after commit closes only after receipt confirmation (2.0s)
+  ✓  12 [chromium] › tests/integration/operational.spec.ts:294:1 › product same-field dispute preserves draft until explicit reviewed save (2.4s)
+  ✓  13 [chromium] › tests/integration/operational.spec.ts:318:1 › curation drag lost response adopts receipt and canonical exact order (1.3s)
+  ✓  14 [chromium] › tests/integration/operational.spec.ts:351:1 › keyboard curation and frequent targets retain exact order without pointer input (1.5s)
+  ✓  15 [chromium] › tests/integration/operational.spec.ts:384:1 › cell lost response keeps one price intent and one canonical write (1.7s)
+  ✓  16 [chromium] › tests/integration/operational.spec.ts:405:1 › global pause lost response adopts product receipt without another toggle (1.3s)
+  ✓  17 [chromium] › tests/integration/operational.spec.ts:428:1 › back navigation keeps a product draft after declining discard (1.7s)
+  ✓  18 [chromium] › tests/integration/operational.spec.ts:447:1 › delayed collection response cannot replace the selected resource (1.7s)
+  ✓  19 [chromium] › tests/integration/operational.spec.ts:468:1 › publication preview leaves flags unchanged and lost confirmation response adopts one receipt (2.2s)
+  ✓  20 [chromium] › tests/integration/operational.spec.ts:507:1 › catalog SSE through Redis and BFF updates the row while preserving a price draft (1.4s)
+  ✓  21 [chromium] › tests/integration/operational.spec.ts:534:1 › feed SSE updates active state without replacing the open collection draft (1.3s)
+  ✓  22 [chromium] › tests/integration/operational.spec.ts:560:3 › last useful read remains visible during queue read failure (1.1s)
+  ✓  23 [chromium] › tests/integration/operational.spec.ts:560:3 › last useful read remains visible during detail read failure (1.1s)
+  ✓  24 [chromium] › tests/integration/operational.spec.ts:560:3 › last useful read remains visible during catalog read failure (1.1s)
+  ✓  25 [chromium] › tests/integration/operational.spec.ts:560:3 › last useful read remains visible during feeds read failure (932ms)
+  ✓  26 [chromium] › tests/integration/operational.spec.ts:583:1 › confirmed note stays visible when the post-commit read fails (923ms)
+
+  26 passed (49.6s)

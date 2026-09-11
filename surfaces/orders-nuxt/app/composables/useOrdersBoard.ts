@@ -1,3 +1,7 @@
+import { useReadMetadata } from "./useReadMetadata";
+import { useOperatorResourceKey } from "./useOperatorResourceKey";
+import { coalesceRefresh } from "../utils/coalesceRefresh";
+import { useOrderIntention } from "./useOrderIntention";
 // Order board read-side. Single source for the live queue:
 //   - useFetch the canonical two-zone projection (GET /api/v1/backstage/orders/);
 //   - poll every 30s as a robust fallback (mirrors the Admin queue `every 30s`);
@@ -60,6 +64,7 @@ export const GESTOR_ALERT = {
 // O kit para de repetir no primeiro toque/tecla — presença cala o aviso.
 
 export function useOrdersBoard() {
+  const intentions = useOrderIntention();
   const config = useRuntimeConfig();
   const path = "/api/v1/backstage/orders/";
 
@@ -71,23 +76,32 @@ export function useOrdersBoard() {
   // o `locked` do kit nunca sabia o que o servidor acabou de dizer.
   const { flagIfStationLocked } = useStationLock();
 
-  // useFetch (not useAsyncData) so the SSR payload transfers reliably (POS gotcha).
-  const { data, pending, error, refresh } = useFetch<OrderQueueResponse>(path, {
-    key: "orders-queue",
-    server: true,
+  // Fetch the canonical queue after session hydration, avoiding duplicate rendering of the full board.
+  const { data, pending, error, refresh: fetchQueue } = useFetch<OrderQueueResponse>(path, {
+    key: useOperatorResourceKey("orders-queue"),
+    dedupe: "defer",
+    server: false,
     // Sessão expirou no meio do turno → o poll passa a 401/403. Reabre o gate de
     // operador (re-fetch da sessão) em vez de deixar "reconectando…" para sempre.
     onResponseError: operatorSessionOnError,
   });
 
+  const refresh = coalesceRefresh(() => fetchQueue());
+
   watch(error, (value) => { if (value) flagIfStationLocked(value); }, { immediate: true });
 
-  const queue = computed<TwoZoneQueueProjection | null>(() => data.value?.queue ?? null);
+  const readMetadata = useReadMetadata(data, error);
+  const lastConfirmed = shallowRef<TwoZoneQueueProjection | null>(data.value?.queue ?? null);
+  watch([data, error], ([value, failure]) => {
+    if (value?.queue && !failure) lastConfirmed.value = value.queue;
+  }, { flush: "sync" });
+  const queue = computed<TwoZoneQueueProjection | null>(() => data.value?.queue ?? (error.value ? lastConfirmed.value : null));
   const zones = computed<ZoneView[]>(() => (queue.value ? zonesView(queue.value) : []));
   const totalCount = computed(() => queue.value?.total_count ?? 0);
   // Encomendas confirmadas para datas futuras, agrupadas pela data combinada.
   const preorders = computed<PreorderGroup[]>(() => (queue.value ? preorderGroups(queue.value) : []));
   // Aparelhos na rua (maquininha): o quadro responde "onde está" sem abrir card.
+  const equipmentAvailable = computed(() => queue.value?.equipment_available ?? []);
   const equipmentOut = computed(() => queue.value?.equipment_out ?? []);
 
   // Realtime + polling (client only). `realtime` diz honestamente ao operador se o board
@@ -181,7 +195,7 @@ export function useOrdersBoard() {
         if (created !== null) announceNewOrder(created);
       };
       ["message", "backstage-orders-update"].forEach((name) => source!.addEventListener(name, onPush));
-      source.onopen = () => { realtime.value = "live"; };
+      source.onopen = () => { realtime.value = "live"; refresh(); };
       // Erro/desconexão → cai pro poll; o EventSource auto-reconecta e o onopen volta a "live".
       source.onerror = () => { realtime.value = "polling"; };
     } catch {
@@ -192,10 +206,17 @@ export function useOrdersBoard() {
 
   // SSE conecta só depois do primeiro fetch do board (sessão/canal prontos):
   // conectar antes disparava um 400 no /sse/orders a cada load.
+  let stopWaitingForRead: (() => void) | undefined;
   function connectWhenReady() {
     if (source) return;
     if (!pending.value && !error.value) { connectSse(); return; }
-    watch([pending, error], ([p, e]) => { if (!p && !e) connectSse(); }, { once: true });
+    stopWaitingForRead?.();
+    stopWaitingForRead = watch([pending, error], ([p, e]) => {
+      if (p || e) return;
+      stopWaitingForRead?.();
+      stopWaitingForRead = undefined;
+      connectSse();
+    });
   }
 
   const onVisible = () => {
@@ -212,6 +233,7 @@ export function useOrdersBoard() {
     window.addEventListener("online", onVisible);
   });
   onBeforeUnmount(() => {
+    stopWaitingForRead?.();
     if (pollTimer) clearInterval(pollTimer);
     if (source) { source.close(); source = null; }
     stopTitleAlert();
@@ -246,14 +268,25 @@ export function useOrdersBoard() {
 
   async function act(ref_: string, action: string, body?: Record<string, unknown>): Promise<boolean> {
     if (busy.value.has(ref_)) return false;
+    if (error.value) {
+      setActionError(ref_, "A leitura está desatualizada. Atualize o quadro antes de confirmar.");
+      return false;
+    }
     clearActionError(ref_); // a fresh attempt clears the previous reason
     busy.value = new Set(busy.value).add(ref_);
     try {
-      await $fetch(`/api/v1/backstage/orders/${encodeURIComponent(ref_)}/${action}/`, {
-        method: "POST",
-        body: body ?? {},
-      });
-      await refresh();
+      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "comment", "settle-delivery-cash"].includes(action)) {
+        const card = [...zones.value.flatMap((zone) => zone.cards), ...(queue.value?.preorders ?? [])].find((item) => item.ref === ref_);
+        const equipment = queue.value?.equipment_out?.find((item) => item.order_ref === ref_);
+        await intentions.execute(ref_, action, (card?.actions ?? equipment?.actions)?.find((item) => item.ref === action), body ?? {});
+      } else {
+        await $fetch(`/api/v1/backstage/orders/${encodeURIComponent(ref_)}/${action}/`, {
+          method: "POST", body: body ?? {},
+        });
+      }
+      try { await refresh(); }
+      catch { setActionError(ref_, "Ação confirmada. A leitura atualizada falhou; atualize antes da próxima ação."); }
+      if (error.value) setActionError(ref_, "Ação confirmada. A leitura atualizada falhou; atualize antes da próxima ação.");
       return true;
     } catch (error) {
       // 409 = o pedido mudou de estado antes da ação chegar (ex.: a confirmação
@@ -294,24 +327,21 @@ export function useOrdersBoard() {
     act(ref_, "reject", { reason, cancellation_code });
   // ``change_back``: o troco que voltou com o entregador (reais, zero vale);
   // obrigatório no servidor quando saiu troco no despacho.
-  const settleCash = (ref_: string, amount: string, changeBack?: string, equipmentBack?: boolean) =>
+  const settleCash = (ref_: string, amount: string, changeBack?: string, equipmentBack?: boolean, baseRevision?: string) =>
     act(ref_, "settle-delivery-cash", {
       amount,
       ...(changeBack === undefined ? {} : { change_back: changeBack }),
       ...(equipmentBack ? { equipment_back: true } : {}),
+      ...(baseRevision ? { base_revision: baseRevision } : {}),
     });
 
   // Valid cancellation reasons for a ref: for iFood, the live per-order list
   // ({code, description}); empty for channels without reason codes.
   async function fetchCancellationReasons(ref_: string): Promise<CancellationReason[]> {
-    try {
-      const res = await $fetch<{ reasons: CancellationReason[] }>(
-        `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/cancellation-reasons/`,
-      );
-      return res?.reasons ?? [];
-    } catch {
-      return [];
-    }
+    const res = await $fetch<{ reasons: CancellationReason[] }>(
+      `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/cancellation-reasons/`,
+    );
+    return res.reasons;
   }
   const assign = (ref_: string) => act(ref_, "assign");
   const unassign = (ref_: string) => act(ref_, "unassign");
@@ -327,7 +357,8 @@ export function useOrdersBoard() {
     await Promise.all(
       targets.map(async (r) => {
         try {
-          await $fetch(`/api/v1/backstage/orders/${encodeURIComponent(r)}/${action}/`, { method: "POST", body: {} });
+          const card = [...zones.value.flatMap((zone) => zone.cards), ...(queue.value?.preorders ?? [])].find((item) => item.ref === r);
+          await intentions.execute(r, action, card?.actions?.find((item) => item.ref === action), {});
         } catch (error) {
           failures += 1;
           setActionError(r, httpErrorMessage(error, "Falha na ação."));
@@ -344,5 +375,5 @@ export function useOrdersBoard() {
   const confirmMany = (refs: string[]) => actMany(refs, "confirm");
   const advanceMany = (refs: string[]) => actMany(refs, "advance");
 
-  return { queue, zones, totalCount, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, equipmentOut, assign, unassign, confirmMany, advanceMany, soundOn, soundBlocked, toggleSound };
+  return { readMetadata, queue, zones, totalCount, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, equipmentOut, equipmentAvailable, assign, unassign, confirmMany, advanceMany, soundOn, soundBlocked, toggleSound };
 }

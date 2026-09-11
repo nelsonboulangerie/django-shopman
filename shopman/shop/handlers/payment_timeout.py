@@ -88,6 +88,7 @@ class PaymentTimeoutHandler:
             reason="payment_timeout",
             actor="payment.timeout",
             extra_data={"payment_timeout_at": timezone.now().isoformat()},
+            expected_unpaid_intent_ref=str(payment_data.get("intent_ref") or ""),
         )
         if cancelled:
             from shopman.shop.services import notification

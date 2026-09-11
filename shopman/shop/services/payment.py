@@ -923,7 +923,19 @@ def cancel_stale_intents(order, *, keep_intent_ref: str) -> int:
         return 0
 
 
-def get_payment_status(order) -> str | None:
+def read_payments_for(orders):
+    """Batch observation for projections only; no model attributes or shared cache."""
+    from shopman.payman import PaymentService
+
+    refs = {(order.data.get("payment") or {}).get("intent_ref") for order in orders}
+    try:
+        return PaymentService.read_many(ref for ref in refs if ref)
+    except Exception:
+        logger.warning("payment.batch_read_failed", exc_info=True)
+        return {}  # Every referenced intent becomes unknown, never embedded paid.
+
+
+def get_payment_status(order, *, payment_reads=None) -> str | None:
     """
     Retorna o status canônico de pagamento via Payman.
 
@@ -939,6 +951,9 @@ def get_payment_status(order) -> str | None:
     intent_ref = payment_data.get("intent_ref")
     if not intent_ref:
         return embedded_status
+    if payment_reads is not None:
+        observed = payment_reads.get(intent_ref)
+        return observed.status if observed is not None else "unknown"
     try:
         from shopman.payman import PaymentService
 
@@ -954,8 +969,21 @@ def get_payment_status(order) -> str | None:
         return "unknown"
 
 
+def lock_order_payment(order) -> None:
+    """Hold the payment rows used by a local Order guard until its caller commits.
+
+    Call only after locking Order in an existing atomic block. No provider I/O.
+    Payman capture/refund/cancel use these same intent locks.
+    """
+    from django.db.models import Q
+    from shopman.payman.models import PaymentIntent
+
+    intent_ref = str(((order.data or {}).get("payment") or {}).get("intent_ref") or "")
+    list(PaymentIntent.objects.select_for_update().filter(Q(order_ref=order.ref) | Q(ref=intent_ref)).order_by("pk"))
+
+
 def captured_balance_q(order) -> int | None:
-    """Return captured minus refunded amount for the order intent, if readable."""
+    """Return captured funds minus refunds and chargebacks, if readable."""
     payment_data = (order.data or {}).get("payment") or {}
     intent_ref = payment_data.get("intent_ref")
     if not intent_ref:
@@ -963,10 +991,10 @@ def captured_balance_q(order) -> int | None:
     return _payman_captured_balance_q(intent_ref)
 
 
-def has_sufficient_captured_payment(order) -> bool:
+def has_sufficient_captured_payment(order, *, payment_reads=None) -> bool:
     """True when Payman shows captured funds still covering the order total."""
     payment_data = (order.data or {}).get("payment") or {}
-    status = (get_payment_status(order) or "").lower()
+    status = (get_payment_status(order, payment_reads=payment_reads) or "").lower()
     if status not in _PAID_STATUSES | {"refunded"}:
         return False
 
@@ -975,7 +1003,11 @@ def has_sufficient_captured_payment(order) -> bool:
         # Compatibility for imported/legacy orders without Payman intent.
         return status in _PAID_STATUSES
 
-    balance_q = _payman_captured_balance_q(intent_ref)
+    if payment_reads is None:
+        balance_q = _payman_captured_balance_q(intent_ref)
+    else:
+        observed = payment_reads.get(intent_ref)
+        balance_q = observed.captured_q - observed.refunded_q - observed.chargeback_q if observed is not None else None
     if balance_q is None:
         return False
     return balance_q >= int(getattr(order, "total_q", 0) or 0)
@@ -1234,12 +1266,9 @@ def _stamp_gateway_check(order) -> None:
     é perguntar de novo cedo demais.
     """
     try:
-        data = dict(order.data or {})
-        payment = dict(data.get("payment") or {})
-        payment["gateway_checked_at"] = timezone.now().isoformat()
-        data["payment"] = payment
-        order.data = data
-        order.save(update_fields=["data", "updated_at"])
+        from shopman.shop.services.order_helpers import merge_order_data
+
+        merge_order_data(order, {"gateway_checked_at": timezone.now().isoformat()}, block="payment")
     # O carimbo é só o throttle da pergunta ao gateway, e a liquidação não pode
     # parar por causa dele.
     # silêncio-deliberado: sem o carimbo, o pior que acontece é perguntar cedo demais.
@@ -1734,11 +1763,11 @@ def _payman_intent_captured(intent_ref: str) -> bool:
 
 
 def _payman_captured_balance_q(intent_ref: str) -> int | None:
-    """Return captured minus refunded amount for a Payman intent."""
+    """Return captured funds still held, using Payman refund/chargeback books."""
     try:
         from shopman.payman import PaymentService
 
-        return PaymentService.captured_total(intent_ref) - PaymentService.refunded_total(intent_ref)
+        return PaymentService.captured_total(intent_ref) - PaymentService.refunded_total(intent_ref) - PaymentService.chargeback_total(intent_ref)
     except Exception:
         logger.exception("payment._payman_captured_balance_q: error checking intent_ref=%s", intent_ref)
         return None

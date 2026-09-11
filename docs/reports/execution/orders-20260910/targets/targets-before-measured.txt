@@ -1,0 +1,576 @@
+
+> test:e2e
+> playwright test targets.spec.ts
+
+[WebServer] (node:21876) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 
+[WebServer]  ERROR  (node:21878) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use node --trace-warnings ... to show where the warning was created)
+[WebServer] 
+[WebServer] 
+[WebServer]  WARN  [plugin @tailwindcss/vite:generate:build] [SOURCEMAP_BROKEN] Sourcemap is likely to be incorrect: a plugin (@tailwindcss/vite:generate:build) was used to transform files, but didn't generate a sourcemap for the transformation. Consult the plugin documentation for help: https://rolldown.rs/guide/troubleshooting#warning-sourcemap-is-likely-to-be-incorrect
+[WebServer] 
+[WebServer] 
+[WebServer] 
+[WebServer]  WARN  [plugin @tailwindcss/vite:generate:build] [SOURCEMAP_BROKEN] Sourcemap is likely to be incorrect: a plugin (@tailwindcss/vite:generate:build) was used to transform files, but didn't generate a sourcemap for the transformation. Consult the plugin documentation for help: https://rolldown.rs/guide/troubleshooting#warning-sourcemap-is-likely-to-be-incorrect
+[WebServer]  (x2)
+[WebServer] 
+[WebServer] 
+[WebServer]  WARN  [plugin @tailwindcss/vite:generate:build] [SOURCEMAP_BROKEN] Sourcemap is likely to be incorrect: a plugin (@tailwindcss/vite:generate:build) was used to transform files, but didn't generate a sourcemap for the transformation. Consult the plugin documentation for help: https://rolldown.rs/guide/troubleshooting#warning-sourcemap-is-likely-to-be-incorrect
+[WebServer]  (x3)
+[WebServer] 
+[WebServer] 
+[WebServer]  WARN  [plugin @tailwindcss/vite:generate:build] [SOURCEMAP_BROKEN] Sourcemap is likely to be incorrect: a plugin (@tailwindcss/vite:generate:build) was used to transform files, but didn't generate a sourcemap for the transformation. Consult the plugin documentation for help: https://rolldown.rs/guide/troubleshooting#warning-sourcemap-is-likely-to-be-incorrect
+[WebServer]  (x4)
+[WebServer] 
+[WebServer] (node:21897) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 2 tests using 1 worker
+
+(node:21898) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › tests/e2e/targets.spec.ts:6:5 › Alvos desktop › busca, seleção, ordenação e troca de visão têm área operacional (1.8s)
+(node:21914) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [chromium] › tests/e2e/targets.spec.ts:6:5 › Alvos touch › busca, seleção, ordenação e troca de visão têm área operacional (962ms)
+
+
+  1) [chromium] › tests/e2e/targets.spec.ts:6:5 › Alvos desktop › busca, seleção, ordenação e troca de visão têm área operacional 
+
+    Error: Seleção card: largura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    16
+
+       8 |         await expect(locator).toBeVisible();
+       9 |         const box = await locator.boundingBox();
+    > 10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+      12 |       }
+      13 |       await page.goto("/");
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:10:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:15:7
+
+    Error: Seleção card: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    16
+
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+    > 11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      12 |       }
+      13 |       await page.goto("/");
+      14 |       await expect(page.getByText("Ana", { exact: true })).toBeVisible();
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:11:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:15:7
+
+    Error: Busca: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    36
+
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+    > 11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      12 |       }
+      13 |       await page.goto("/");
+      14 |       await expect(page.getByText("Ana", { exact: true })).toBeVisible();
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:11:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:17:7
+
+    Error: Limpar busca: largura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    24
+
+       8 |         await expect(locator).toBeVisible();
+       9 |         const box = await locator.boundingBox();
+    > 10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+      12 |       }
+      13 |       await page.goto("/");
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:10:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:19:7
+
+    Error: Limpar busca: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    24
+
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+    > 11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      12 |       }
+      13 |       await page.goto("/");
+      14 |       await expect(page.getByText("Ana", { exact: true })).toBeVisible();
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:11:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:19:7
+
+    Error: Ordenar: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    36
+
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+    > 11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      12 |       }
+      13 |       await page.goto("/");
+      14 |       await expect(page.getByText("Ana", { exact: true })).toBeVisible();
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:11:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:22:7
+
+    Error: Opção de ordenação: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    27.984375
+
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+    > 11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      12 |       }
+      13 |       await page.goto("/");
+      14 |       await expect(page.getByText("Ana", { exact: true })).toBeVisible();
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:11:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:24:7
+
+    Error: Modo tabela: largura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    32
+
+       8 |         await expect(locator).toBeVisible();
+       9 |         const box = await locator.boundingBox();
+    > 10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+      12 |       }
+      13 |       await page.goto("/");
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:10:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:26:7
+
+    Error: Modo tabela: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    32
+
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+    > 11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      12 |       }
+      13 |       await page.goto("/");
+      14 |       await expect(page.getByText("Ana", { exact: true })).toBeVisible();
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:11:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:26:7
+
+    Error: Modo colunas: largura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    32
+
+       8 |         await expect(locator).toBeVisible();
+       9 |         const box = await locator.boundingBox();
+    > 10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+      12 |       }
+      13 |       await page.goto("/");
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:10:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:27:7
+
+    Error: Modo colunas: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    32
+
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+    > 11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      12 |       }
+      13 |       await page.goto("/");
+      14 |       await expect(page.getByText("Ana", { exact: true })).toBeVisible();
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:11:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:27:7
+
+    Error: Selecionar todos: largura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    16
+
+       8 |         await expect(locator).toBeVisible();
+       9 |         const box = await locator.boundingBox();
+    > 10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+      12 |       }
+      13 |       await page.goto("/");
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:10:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:29:7
+
+    Error: Selecionar todos: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    16
+
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+    > 11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      12 |       }
+      13 |       await page.goto("/");
+      14 |       await expect(page.getByText("Ana", { exact: true })).toBeVisible();
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:11:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:29:7
+
+    Error: Seleção tabela: largura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    16
+
+       8 |         await expect(locator).toBeVisible();
+       9 |         const box = await locator.boundingBox();
+    > 10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+      12 |       }
+      13 |       await page.goto("/");
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:10:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:30:7
+
+    Error: Seleção tabela: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    16
+
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+    > 11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      12 |       }
+      13 |       await page.goto("/");
+      14 |       await expect(page.getByText("Ana", { exact: true })).toBeVisible();
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:11:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:30:7
+
+    Error Context: test-results/targets-Alvos-desktop-busc-c4710--visão-têm-área-operacional-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/targets-Alvos-desktop-busc-c4710--visão-têm-área-operacional-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/targets-Alvos-desktop-busc-c4710--visão-têm-área-operacional-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › tests/e2e/targets.spec.ts:6:5 › Alvos touch › busca, seleção, ordenação e troca de visão têm área operacional 
+
+    Error: Seleção card: largura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    16
+
+       8 |         await expect(locator).toBeVisible();
+       9 |         const box = await locator.boundingBox();
+    > 10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+      12 |       }
+      13 |       await page.goto("/");
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:10:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:15:7
+
+    Error: Seleção card: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    16
+
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+    > 11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      12 |       }
+      13 |       await page.goto("/");
+      14 |       await expect(page.getByText("Ana", { exact: true })).toBeVisible();
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:11:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:15:7
+
+    Error: Busca: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    36
+
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+    > 11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      12 |       }
+      13 |       await page.goto("/");
+      14 |       await expect(page.getByText("Ana", { exact: true })).toBeVisible();
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:11:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:17:7
+
+    Error: Limpar busca: largura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    24
+
+       8 |         await expect(locator).toBeVisible();
+       9 |         const box = await locator.boundingBox();
+    > 10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+      12 |       }
+      13 |       await page.goto("/");
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:10:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:19:7
+
+    Error: Limpar busca: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    24
+
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+    > 11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      12 |       }
+      13 |       await page.goto("/");
+      14 |       await expect(page.getByText("Ana", { exact: true })).toBeVisible();
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:11:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:19:7
+
+    Error: Ordenar: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    36
+
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+    > 11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      12 |       }
+      13 |       await page.goto("/");
+      14 |       await expect(page.getByText("Ana", { exact: true })).toBeVisible();
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:11:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:22:7
+
+    Error: Opção de ordenação: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    27.984375
+
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+    > 11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      12 |       }
+      13 |       await page.goto("/");
+      14 |       await expect(page.getByText("Ana", { exact: true })).toBeVisible();
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:11:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:24:7
+
+    Error: Modo tabela: largura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    32
+
+       8 |         await expect(locator).toBeVisible();
+       9 |         const box = await locator.boundingBox();
+    > 10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+      12 |       }
+      13 |       await page.goto("/");
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:10:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:26:7
+
+    Error: Modo tabela: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    32
+
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+    > 11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      12 |       }
+      13 |       await page.goto("/");
+      14 |       await expect(page.getByText("Ana", { exact: true })).toBeVisible();
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:11:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:26:7
+
+    Error: Modo colunas: largura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    32
+
+       8 |         await expect(locator).toBeVisible();
+       9 |         const box = await locator.boundingBox();
+    > 10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+      12 |       }
+      13 |       await page.goto("/");
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:10:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:27:7
+
+    Error: Modo colunas: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    32
+
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+    > 11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      12 |       }
+      13 |       await page.goto("/");
+      14 |       await expect(page.getByText("Ana", { exact: true })).toBeVisible();
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:11:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:27:7
+
+    Error: Selecionar todos: largura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    16
+
+       8 |         await expect(locator).toBeVisible();
+       9 |         const box = await locator.boundingBox();
+    > 10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+      12 |       }
+      13 |       await page.goto("/");
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:10:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:29:7
+
+    Error: Selecionar todos: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    16
+
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+    > 11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      12 |       }
+      13 |       await page.goto("/");
+      14 |       await expect(page.getByText("Ana", { exact: true })).toBeVisible();
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:11:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:29:7
+
+    Error: Seleção tabela: largura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    16
+
+       8 |         await expect(locator).toBeVisible();
+       9 |         const box = await locator.boundingBox();
+    > 10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+      12 |       }
+      13 |       await page.goto("/");
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:10:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:30:7
+
+    Error: Seleção tabela: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    16
+
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+    > 11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                      ^
+      12 |       }
+      13 |       await page.goto("/");
+      14 |       await expect(page.getByText("Ana", { exact: true })).toBeVisible();
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:11:54)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:30:7
+
+    Error Context: test-results/targets-Alvos-touch-busca--87b29--visão-têm-área-operacional-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/targets-Alvos-touch-busca--87b29--visão-têm-área-operacional-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/targets-Alvos-touch-busca--87b29--visão-têm-área-operacional-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    [chromium] › tests/e2e/targets.spec.ts:6:5 › Alvos desktop › busca, seleção, ordenação e troca de visão têm área operacional 
+    [chromium] › tests/e2e/targets.spec.ts:6:5 › Alvos touch › busca, seleção, ordenação e troca de visão têm área operacional 

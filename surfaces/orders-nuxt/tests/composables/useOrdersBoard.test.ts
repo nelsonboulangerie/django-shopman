@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { ref } from "vue";
+import { fixtureActions } from "../support/orderActions";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
 import { useStationLock } from "../../../operator-kit/app/composables/useStationLock";
@@ -6,6 +8,7 @@ import { GESTOR_ALERT, useOrdersBoard } from "../../app/composables/useOrdersBoa
 import type { TwoZoneQueueProjection } from "../../app/types/orders";
 
 const env = installNuxtGlobals();
+vi.stubGlobal("useNuxtData", () => ({ data: ref({ operator: { id: 1 } }) }));
 
 function emptyZone(): TwoZoneQueueProjection {
   return {
@@ -65,6 +68,8 @@ describe("useOrdersBoard — ações (act)", () => {
   });
 
   it("confirm posta em /orders/{ref}/confirm/ e reconcilia via refresh", async () => {
+    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-1", actions: fixtureActions({ can_confirm: true }) }] } };
+    env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });
     const board = useOrdersBoard();
     const ok = await board.confirm("WEB-1");
     expect(ok).toBe(true);
@@ -75,16 +80,28 @@ describe("useOrdersBoard — ações (act)", () => {
     expect(board.isBusy("WEB-1")).toBe(false);
   });
 
+  it("devolução após conclusão usa a ação da pendência de equipamento", async () => {
+    env.fetchData.value = { queue: { ...emptyZone(), equipment_out: [{ order_ref: "COMPLETED", actions: [{ ...fixtureActions({ can_advance: true })[0], ref: "equipment-back" }] }] } };
+    env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });
+    const board = useOrdersBoard();
+    expect(await board.equipmentBack("COMPLETED")).toBe(true);
+    expect(String(env.fetchMock.mock.calls[0]![0])).toBe("/api/v1/backstage/orders/COMPLETED/equipment-back/");
+    expect(env.fetchMock.mock.calls[0]![1].headers["Idempotency-Key"]).toBeTruthy();
+  });
+
   it("reject envia reason + cancellation_code", async () => {
+    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "IFOOD-9", actions: fixtureActions({ can_confirm: true }) }] } };
+    env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });
     const board = useOrdersBoard();
     await board.reject("IFOOD-9", "Sem estoque", "CODE_2");
     const [path, opts] = env.fetchMock.mock.calls[0]!;
     expect(String(path)).toBe("/api/v1/backstage/orders/IFOOD-9/reject/");
-    expect(opts.body).toEqual({ reason: "Sem estoque", cancellation_code: "CODE_2" });
+    expect(opts.body).toMatchObject({ reason: "Sem estoque", cancellation_code: "CODE_2" });
   });
 
   it("falha na ação acende erro inline por-ref + toast, devolve false e reconcilia via refresh", async () => {
-    env.fetchMock.mockRejectedValueOnce({ data: { detail: "Pagamento não confirmado" } });
+    env.fetchMock.mockRejectedValueOnce({ status: 400, data: { detail: "Pagamento não confirmado" } });
+    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-2", actions: fixtureActions({ can_confirm: true }) }] } };
     const board = useOrdersBoard();
     const ok = await board.confirm("WEB-2");
     expect(ok).toBe(false);
@@ -100,6 +117,7 @@ describe("useOrdersBoard — ações (act)", () => {
       status: 409,
       data: { detail: "Pedido não está mais aguardando confirmação (status atual: confirmado)." },
     });
+    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-5", actions: fixtureActions({ can_confirm: true }) }] } };
     const board = useOrdersBoard();
     const ok = await board.reject("WEB-5", "Sem estoque");
     expect(ok).toBe(false);
@@ -111,17 +129,20 @@ describe("useOrdersBoard — ações (act)", () => {
   });
 
   it("uma nova tentativa limpa o erro anterior do ref", async () => {
-    env.fetchMock.mockRejectedValueOnce({ data: { detail: "boom" } });
+    env.fetchMock.mockRejectedValueOnce({ status: 400, data: { detail: "boom" } });
+    env.fetchData.value = { queue: { ...emptyZone(), prep: [{ ref: "WEB-3", actions: fixtureActions({ can_advance: true }) }] } };
     const board = useOrdersBoard();
-    await board.confirm("WEB-3");
+    await board.advance("WEB-3");
     expect(board.actionError("WEB-3")).toBe("boom");
+    env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });
     await board.advance("WEB-3");
     expect(board.actionError("WEB-3")).toBe("");
   });
 
   it("guarda de reentrância: 2º clique enquanto em voo não dispara 2º POST", async () => {
     let release!: () => void;
-    env.fetchMock.mockReturnValueOnce(new Promise<void>((res) => { release = res; }));
+    env.fetchMock.mockReturnValueOnce(new Promise((res) => { release = () => res({ outcome: "applied" }); }));
+    env.fetchData.value = { queue: { ...emptyZone(), prep: [{ ref: "WEB-4", actions: fixtureActions({ can_advance: true }) }] } };
     const board = useOrdersBoard();
     const first = board.advance("WEB-4");
     expect(board.isBusy("WEB-4")).toBe(true);
@@ -142,9 +163,10 @@ describe("useOrdersBoard — bulk + reasons", () => {
 
   it("actMany dispara todos, reconcilia UMA vez e conta falhas", async () => {
     env.fetchMock
-      .mockResolvedValueOnce({})
-      .mockRejectedValueOnce({ data: { detail: "x" } })
-      .mockResolvedValueOnce({});
+      .mockResolvedValueOnce({ outcome: "applied" })
+      .mockRejectedValueOnce({ status: 400, data: { detail: "x" } })
+      .mockResolvedValueOnce({ outcome: "applied" });
+    env.fetchData.value = { queue: { ...emptyZone(), intake: ["WEB-1", "WEB-2", "WEB-3"].map(ref => ({ ref, actions: fixtureActions({ can_confirm: true }) })) } };
     const board = useOrdersBoard();
     const failures = await board.confirmMany(["WEB-1", "WEB-2", "WEB-3"]);
     expect(failures).toBe(1);
@@ -153,12 +175,12 @@ describe("useOrdersBoard — bulk + reasons", () => {
     expect(board.actionError("WEB-2")).toBe("x");
   });
 
-  it("fetchCancellationReasons devolve a lista, ou [] em erro", async () => {
+  it("fetchCancellationReasons devolve a lista, propaga indisponibilidade", async () => {
     env.fetchMock.mockResolvedValueOnce({ reasons: [{ code: "1", description: "Sem estoque" }] });
     const board = useOrdersBoard();
     expect(await board.fetchCancellationReasons("IFOOD-1")).toEqual([{ code: "1", description: "Sem estoque" }]);
     env.fetchMock.mockRejectedValueOnce(new Error("net"));
-    expect(await board.fetchCancellationReasons("IFOOD-2")).toEqual([]);
+    await expect(board.fetchCancellationReasons("IFOOD-2")).rejects.toThrow("net");
   });
 });
 
@@ -226,4 +248,65 @@ describe("GESTOR_ALERT — o som escolhido pelo dono", () => {
     const inarmonicas = GESTOR_ALERT.partials.filter((p) => !Number.isInteger(p.r));
     expect(inarmonicas.length).toBeGreaterThan(0);
   });
+});
+
+it("mantém a última fila após falha sem autorizar escrita desatualizada", async () => {
+  const { ref } = await import("vue");
+  const data = ref<any>({ queue: { intake: [], prep: [], expedition_pickup: [], expedition_delivery: [], expedition_delivery_transit: [], preorders: [], equipment_out: [] } });
+  const error = ref<any>(null);
+  const prior = globalThis.useFetch;
+  vi.stubGlobal("useFetch", () => ({ data, error, pending: ref(false), refresh: env.refresh }));
+  try {
+    env.fetchMock.mockClear();
+    const board = useOrdersBoard();
+    error.value = { statusCode: 503 };
+    data.value = null;
+    expect(board.queue.value).not.toBeNull();
+    expect(await board.confirm("READ-1")).toBe(false);
+    expect(env.fetchMock).not.toHaveBeenCalled();
+    expect(board.actionError("READ-1")).toContain("desatualizada");
+  } finally { vi.stubGlobal("useFetch", prior); }
+});
+
+it("SSE aguarda recuperação do primeiro GET mesmo após transições com erro", async () => {
+  const { nextTick } = await import("vue");
+  env.reset();
+  vi.useFakeTimers();
+  const pending = ref(true);
+  const failure = ref<unknown>(null);
+  const data = ref({ queue: emptyZone() });
+  let mounted!: () => void;
+  let unmount!: () => void;
+  vi.stubGlobal("onMounted", (callback: () => void) => { mounted = callback; });
+  vi.stubGlobal("onBeforeUnmount", (callback: () => void) => { unmount = callback; });
+  vi.stubGlobal("useFetch", () => ({ data, pending, error: failure, refresh: env.refresh }));
+  const listeners = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
+  vi.stubGlobal("document", { ...listeners, title: "Pedidos", visibilityState: "visible" });
+  vi.stubGlobal("window", listeners);
+  const close = vi.fn();
+  const source = vi.fn(function () { return { addEventListener: vi.fn(), close }; });
+  vi.stubGlobal("EventSource", source);
+  vi.stubGlobal("ssePath", (await import("../../../operator-kit/app/utils/ssePath")).ssePath);
+  try {
+    useOrdersBoard();
+    mounted();
+    failure.value = { status: 503 };
+    pending.value = false;
+    await nextTick();
+    expect(source).not.toHaveBeenCalled();
+    pending.value = true;
+    await nextTick();
+    pending.value = false;
+    failure.value = null;
+    await nextTick();
+    expect(source).toHaveBeenCalledTimes(1);
+    pending.value = true;
+    await nextTick();
+    pending.value = false;
+    await nextTick();
+    expect(source).toHaveBeenCalledTimes(1);
+  } finally {
+    unmount?.();
+    vi.useRealTimers();
+  }
 });

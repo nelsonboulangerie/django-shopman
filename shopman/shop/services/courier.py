@@ -20,6 +20,7 @@ import logging
 from datetime import timedelta
 
 from django.core.cache import cache
+from django.db import transaction
 from django.utils import timezone
 from shopman.orderman.models import Directive, Order
 
@@ -29,7 +30,7 @@ from shopman.shop.adapters.courier_machine import (
     TERMINAL_STATUSES,
     CourierError,
 )
-from shopman.shop.services.order_helpers import get_fulfillment_type
+from shopman.shop.services.order_helpers import get_fulfillment_type, merge_order_data
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +54,7 @@ def get_block(order) -> dict:
 
 
 def _save_block(order, block: dict, *, emit: dict | None = None) -> None:
-    data = dict(order.data or {})
-    data["courier"] = block
-    order.data = data
-    order.save(update_fields=["data", "updated_at"])
+    merge_order_data(order, {"courier": block})
     _emit_sse(order, emit or {"status": block.get("status", "")})
 
 
@@ -66,7 +64,7 @@ def _emit_sse(order, payload: dict) -> None:
 
         emit_courier_update(order, payload)
     except Exception:
-        logger.debug("courier.sse_emit_failed order=%s", order.ref, exc_info=True)
+        logger.warning("courier.sse_emit_failed order=%s", order.ref, exc_info=True)
 
 
 def has_active_ride(order) -> bool:
@@ -147,6 +145,7 @@ def estimate_for_order(order, *, store: bool = False) -> dict | None:
     Cache de 10 min por destino (a origem é sempre a loja). ``store=True``
     grava o resultado em ``Order.data["courier"]["estimate"]``.
     """
+    base_revision = dispatch_revision(order) if store else None
     adapter = get_adapter("courier")
     if adapter is None or get_fulfillment_type(order) != "delivery":
         return None
@@ -176,13 +175,52 @@ def estimate_for_order(order, *, store: bool = False) -> dict | None:
         cache.set(cache_key, estimate, ESTIMATE_CACHE_SECONDS)
 
     if store:
-        block = get_block(order)
-        block["estimate"] = estimate
-        _save_block(order, block, emit={"kind": "estimate"})
+        store_estimate(order, estimate, expected_revision=base_revision)
     return estimate
 
 
+def can_quote(order) -> bool:
+    return is_enabled_for(order) and not has_active_ride(order) and order.status not in {Order.Status.CANCELLED, Order.Status.COMPLETED}
+
+
+@transaction.atomic
+def store_estimate(order, estimate, *, expected_revision, require_quotable=False):
+    from shopman.shop.services.operator_orders import OrderStateConflict
+
+    order = Order.objects.select_for_update().get(pk=order.pk)
+    if dispatch_revision(order) != expected_revision:
+        raise OrderStateConflict("O pedido ou o destino mudou durante a cotação. Confira antes de cotar novamente.")
+    if require_quotable and not can_quote(order):
+        raise OrderStateConflict("Confira o estado do pedido e da corrida antes de cotar.")
+    block = dict(get_block(order))
+    block["estimate"] = {key: estimate[key] for key in ("value_q", "minutes", "km")}
+    _save_block(order, block, emit={"kind": "estimate"})
+
+
 # ── Despacho ────────────────────────────────────────────────────────
+
+
+def unresolved_dispatch(order, *, exclude_pk=None):
+    """Pure receipt read. Unknown/start never authorizes another provider POST."""
+    from shopman.shop.directives import COURIER_DISPATCH
+
+    tasks = Directive.objects.filter(topic=COURIER_DISPATCH, payload__order_ref=order.ref,
+        payload__dispatch_attempt__state__in=["started", "unknown", "accepted"])
+    if exclude_pk is not None:
+        tasks = tasks.exclude(pk=exclude_pk)
+    block = get_block(order)
+    known = {block.get("id_mch"), *[attempt.get("id_mch") for attempt in block.get("attempts", [])]}
+    for task in tasks.order_by("-pk"):
+        receipt = (task.payload or {}).get("dispatch_attempt", {})
+        if receipt.get("state") == "accepted" and receipt.get("courier_ref") in known:
+            continue
+        return task
+    return None
+
+
+def ensure_dispatch_resolved(order) -> None:
+    if unresolved_dispatch(order) is not None:
+        raise ValueError("Há um despacho sem resultado confirmado. Confira a solicitação na central antes de abrir outra corrida.")
 
 
 def request_dispatch(order, *, actor: str) -> Directive | None:
@@ -193,6 +231,7 @@ def request_dispatch(order, *, actor: str) -> Directive | None:
     """
     from shopman.shop.directives import COURIER_DISPATCH
 
+    ensure_dispatch_resolved(order)
     if not is_enabled_for(order):
         return None
     if order.status not in (Order.Status.READY, Order.Status.DISPATCHED):
@@ -223,8 +262,27 @@ def request_dispatch(order, *, actor: str) -> Directive | None:
     return directive
 
 
-def redispatch(order, *, actor: str) -> Directive:
+def dispatch_revision(order) -> str:
+    """Observed destination, ride and order facts for the local dispatch command."""
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    return mutation_fingerprint({"version": 1, "order": order.ref, "status": order.status,
+        "channel": order.channel_ref, "total_q": order.total_q, "snapshot": order.snapshot,
+        "data": {key: (order.data or {}).get(key) for key in (
+            "fulfillment_type", "delivery_method", "delivery_address_structured",
+            "delivery_address", "recipient", "customer", "customer_phone", "payment", "courier",
+        )}})
+
+
+@transaction.atomic
+def redispatch(order, *, actor: str, expected_revision: str | None = None) -> Directive:
     """Re-despacho manual pelo operador após corrida N/C ou erro terminal."""
+    from shopman.shop.services.operator_orders import OrderStateConflict
+
+    order = Order.objects.select_for_update().get(pk=order.pk)
+    if expected_revision is not None and dispatch_revision(order) != expected_revision:
+        raise OrderStateConflict("O pedido ou a corrida mudou. Confira o contexto antes de despachar.")
+    ensure_dispatch_resolved(order)
     if get_adapter("courier") is None:
         raise ValueError("Nenhum adapter de courier configurado.")
     if get_fulfillment_type(order) != "delivery":
@@ -246,26 +304,53 @@ def redispatch(order, *, actor: str) -> Directive:
     return directive
 
 
-def cancel_ride(order, *, actor: str, reason_id: int | None = None) -> None:
-    """Cancela a corrida ativa na Machine (ação do operador no gestor)."""
-    adapter = get_adapter("courier")
-    if adapter is None:
+def latest_cancellation(order, *, pending_only=False):
+    """The existing Directive owns queued and unresolved cancellation attempts."""
+    from django.db.models import Q
+
+    from shopman.shop.directives import COURIER_CANCEL
+
+    ride = get_block(order).get("id_mch")
+    if not ride:
+        return None
+    tasks = Directive.objects.filter(topic=COURIER_CANCEL, payload__order_ref=order.ref, payload__courier_ref=ride)
+    if pending_only:
+        tasks = tasks.filter(Q(status__in=(Directive.Status.QUEUED, Directive.Status.RUNNING)) |
+            Q(payload__cancel_attempt__state__in=("started", "unknown", "accepted")))
+    return tasks.order_by("-pk").first()
+
+
+@transaction.atomic
+def cancel_ride(order, *, actor: str, reason_id: int | None = None, expected_revision: str | None = None) -> Directive:
+    """Record a request for the observed ride; the worker owns remote I/O."""
+    from shopman.shop.directives import COURIER_CANCEL, create_deduped
+    from shopman.shop.services.operator_orders import OrderStateConflict
+
+    order = Order.objects.select_for_update().get(pk=order.pk)
+    if expected_revision is not None and dispatch_revision(order) != expected_revision:
+        raise OrderStateConflict("O pedido ou a corrida mudou. Confira antes de solicitar cancelamento.")
+    if get_adapter("courier") is None:
         raise ValueError("Nenhum adapter de courier configurado.")
     block = get_block(order)
     if not has_active_ride(order):
         raise ValueError("Não há corrida ativa para cancelar.")
     if block.get("status") not in CANCELLABLE_STATUSES:
-        raise ValueError(
-            "A corrida já está com o entregador em rota — combine o retorno "
-            "por telefone com a central."
-        )
-
-    try:
-        adapter.cancel(block["id_mch"], reason_id=reason_id)
-    except CourierError as exc:
-        raise ValueError(f"A central recusou o cancelamento: {exc}") from exc
-
-    apply_status(order, "C", source=f"operator:{actor}")
+        raise ValueError("A corrida já está com o entregador em rota — combine o retorno por telefone com a central.")
+    existing = latest_cancellation(order, pending_only=True)
+    if existing is not None:
+        state = (existing.payload or {}).get("cancel_attempt", {}).get("state")
+        if state in {"started", "unknown", "accepted"}:
+            raise OrderStateConflict("Cancelamento já iniciado. Confira o resultado na central antes de outra solicitação.")
+        return existing
+    task = create_deduped(COURIER_CANCEL,
+        payload={"order_ref": order.ref, "channel_ref": order.channel_ref or "", "actor": actor,
+            "courier_ref": block["id_mch"], "reason_id": reason_id},
+        dedupe_key=f"courier.cancel:{order.ref}:{block['id_mch']}")
+    if task is None:
+        raise OrderStateConflict("Já existe uma solicitação de cancelamento para esta corrida. Atualize o pedido.")
+    order.emit_event(event_type="courier_cancel_requested", actor=actor, payload={"directive_id": task.pk, "id_mch": block["id_mch"]})
+    _emit_sse(order, {"kind": "cancel_queued"})
+    return task
 
 
 def _archive_current_ride(block: dict) -> None:
@@ -291,66 +376,70 @@ _STATUS_EVENT = "courier_status"
 
 
 def apply_status(order, machine_status: str, *, source: str, details: dict | None = None) -> None:
-    """Aplica um status da Machine à corrida do pedido. Idempotente.
+    """Persist the external fact once; every replay retries its local derivation.
 
-    ``source``: "webhook", "poll" ou "operator:<nome>" — auditoria + supressão
-    de alerta quando o próprio operador cancelou.
+    Enrichment uses the observed ride outside the lock. A replacement ride cannot
+    adopt its response. A local custody refusal never rolls back the external fact.
     """
     status = (machine_status or "").strip().upper()
-    if not status:
+    observed = dict(get_block(order))
+    ride_id = observed.get("id_mch")
+    if not status or not ride_id:
         return
-    block = get_block(order)
-    if not block.get("id_mch"):
-        logger.warning("courier.apply_status_without_ride order=%s status=%s", order.ref, status)
-        return
-    if block.get("status") == status:
-        return
-    if block.get("status") in TERMINAL_STATUSES:
-        return  # corrida já encerrada; eventos atrasados não reabrem
+    enrichment = dict(observed)
+    if status == "A" and observed.get("status") != status and not observed.get("driver"):
+        _enrich_accepted(enrichment, details)
+    if status == "F" and observed.get("status") != status:
+        _enrich_finished(enrichment, details)
 
-    now_iso = timezone.now().isoformat()
-    block["status"] = status
-    block["last_event_at"] = now_iso
-    block["last_source"] = source
+    failed_ride = False
+    with transaction.atomic():
+        Order.objects.select_for_update().get(pk=order.pk)
+        order.refresh_from_db()
+        block = dict(get_block(order))
+        if block.get("id_mch") != ride_id:
+            return
+        previous = block.get("status")
+        if previous in TERMINAL_STATUSES and previous != status:
+            return
+        if previous != status:
+            now_iso = timezone.now().isoformat()
+            for key in ("driver", "tracking_url", "confirmation_code", "final_value_q"):
+                if key in enrichment:
+                    block[key] = enrichment[key]
+            block.update(status=status, last_event_at=now_iso, last_source=source)
+            if status == "E":
+                block.setdefault("dispatched_at", now_iso)
+            if status == "F":
+                block["finished_at"] = now_iso
+            order.emit_event(event_type=_STATUS_EVENT, actor=source,
+                             payload={"status": status, "id_mch": ride_id})
+            failed_ride = status in ("N", "C")
+            if failed_ride:
+                _archive_current_ride(block)
+            _save_block(order, block, emit={"kind": "ride_ended" if failed_ride else "status", "status": status})
+    if failed_ride and not source.startswith("operator:"):
+        _alert_ride_failed(order, status)
+    if not failed_ride:
+        recover_local_status(order, ride_id=ride_id)
 
-    if status == "A" and not block.get("driver"):
-        _enrich_accepted(block, details)
 
-    if status == "E":
-        block.setdefault("dispatched_at", now_iso)
-
-    if status == "F":
-        block["finished_at"] = now_iso
-        _enrich_finished(block, details)
-
-    order.emit_event(
-        event_type=_STATUS_EVENT,
-        actor=source,
-        payload={"status": status, "id_mch": block.get("id_mch", "")},
-    )
-
-    if status in ("N", "C"):
-        _archive_current_ride(block)
-        _save_block(order, block, emit={"kind": "ride_ended", "status": status})
-        if not source.startswith("operator:"):
-            _alert_ride_failed(order, status)
-        return
-
-    _save_block(order, block, emit={"kind": "status", "status": status})
-
-    # Transições de pedido derivadas — DEPOIS de persistir o bloco, para que a
-    # notificação/projection já leia o estado novo da corrida.
+def recover_local_status(order, *, ride_id: str) -> None:
+    """Reconcile only the known ride's due local transitions, without provider I/O."""
     from shopman.shop.services import operator_orders
 
-    if status == "E" and order.status == Order.Status.READY:
-        operator_orders.advance_order(order, actor="courier:machine")
-
+    order.refresh_from_db()
+    block = get_block(order)
+    if block.get("id_mch") != ride_id:
+        return
+    status = block.get("status")
+    if status in ("E", "F") and order.status == Order.Status.READY:
+        operator_orders.advance_order(
+            order, actor="courier:machine", target_status=Order.Status.DISPATCHED,
+            expected_courier_id=ride_id,
+        )
     if status == "F":
-        if order.status == Order.Status.READY:
-            # Coleta não observada (webhook perdido/polling largo): completa o
-            # caminho canônico para notificar "saiu" antes de "entregue".
-            operator_orders.advance_order(order, actor="courier:machine")
-        operator_orders.confirm_received(order, actor="courier:machine")
+        operator_orders.confirm_received(order, actor="courier:machine", expected_courier_id=ride_id)
 
 
 def _enrich_accepted(block: dict, details: dict | None) -> None:

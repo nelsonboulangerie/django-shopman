@@ -25,7 +25,7 @@ const emit = defineEmits<{ resendLink: [] }>();
 
 const TONE_CLASS: Record<PaymentProofView["tone"], string> = {
   info: "border-info/30 bg-info/10 text-info",
-  warning: "border-warning/30 bg-warning/10 text-amber-800 dark:text-amber-300",
+  warning: "border-warning/30 bg-warning/10 text-warning",
   success: "border-success/30 bg-success/10 text-success",
   danger: "border-destructive/40 bg-destructive/5 text-destructive",
   neutral: "border bg-muted/40",
@@ -62,7 +62,7 @@ async function copyLink() {
   >
     <div class="flex items-center gap-2">
       <Icon name="lucide:circle-check-big" class="size-5" />
-      <p class="text-sm font-semibold">Pagamento PIX confirmado · {{ proof.amountDisplay }}</p>
+      <p class="text-sm font-semibold tabular-nums">Pagamento PIX confirmado · {{ proof.amountDisplay }}</p>
     </div>
   </div>
 
@@ -70,7 +70,7 @@ async function copyLink() {
     <div class="flex items-center gap-2">
       <Icon :name="proof.icon" class="size-5" />
       <div class="min-w-0 flex-1">
-        <p class="text-sm font-semibold">{{ proof.isPix ? "Pagamento PIX" : "Link de pagamento" }} · {{ proof.amountDisplay }}</p>
+        <p class="text-sm font-semibold tabular-nums">{{ proof.isPix ? "Pagamento PIX" : "Link de pagamento" }} · {{ proof.amountDisplay }}</p>
         <!-- Duas coisas diferentes moram nesta linha, e as duas valem.
              (1) No LINK, a frase diz o que a casa FAZ com a URL — a cadeia
              WhatsApp → e-mail → SMS enfileirada na venda — e deixa a cópia
@@ -87,7 +87,7 @@ async function copyLink() {
           <Icon name="lucide:loader-circle" class="size-3 animate-spin" /> Aguardando confirmação do PIX…
         </p>
         <!-- Desistiu (expirado/cancelado): acusa honestamente, sem prometer o que não cumpre. -->
-        <p v-else-if="proof.isPix && proof.hasProof && status === 'expired'" class="mt-0.5 flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-400">
+        <p v-else-if="proof.isPix && proof.hasProof && status === 'expired'" class="mt-0.5 flex items-center gap-1 text-xs font-medium text-warning">
           <Icon name="lucide:clock-alert" class="size-3.5" /> Não confirmamos o PIX automaticamente. Confira no gestor ou gere um novo pagamento.
         </p>
       </div>
@@ -95,6 +95,7 @@ async function copyLink() {
 
     <!-- PIX: QR + copia-e-cola -->
     <template v-if="proof.isPix && proof.hasProof">
+      <!-- Fundo branco proposital: preservar leitura óptica do QR em ambos os temas. -->
       <img
         v-if="proof.qrCodeSrc"
         :src="proof.qrCodeSrc"

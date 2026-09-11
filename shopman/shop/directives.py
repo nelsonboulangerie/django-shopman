@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 
 # ── Topic constants ──
 
+# Lifecycle: missing post-commit phases, dispatched by the existing worker.
+ORDER_LIFECYCLE_PHASE = "order.lifecycle_phase"
+LIFECYCLE_PHASE_RECEIPT_SCOPE = "lifecycle:phase"
+
 # Notification
 NOTIFICATION_SEND = "notification.send"
 
@@ -35,6 +39,7 @@ DELIVERY_AUTO_COMPLETE = "delivery.auto_complete"
 # Despacho da corrida ao marcar "pronto" (retry/idempotência via Directive) e
 # heartbeat de polling do status (fallback do webhook, auto-reagendável).
 COURIER_DISPATCH = "courier.dispatch"
+COURIER_CANCEL = "courier.cancel"
 COURIER_SYNC = "courier.sync"
 
 # Confirmation

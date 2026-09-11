@@ -25,7 +25,7 @@ import logging
 
 from django.core.cache import cache
 from django.db import transaction
-from django.db.models.signals import post_save, pre_save
+from django.db.models.signals import post_delete, post_save, pre_save
 
 from shopman.shop.handlers._resilient import resilient_receiver
 
@@ -155,6 +155,7 @@ def emit_surface_changed(surface_ref: str) -> None:
     if not surface_ref:
         return
     transaction.on_commit(lambda: _publish_surface_changed(surface_ref))
+    emit_catalog_changed()
 
 
 def _publish_surface_changed(surface_ref: str) -> None:
@@ -168,13 +169,23 @@ def _publish_surface_changed(surface_ref: str) -> None:
         logger.warning("SSE surface emit failed ref=%s", surface_ref, exc_info=True)
 
 
+def emit_catalog_changed() -> None:
+    """Invalidate the private catalog/feed reads; never publish editable state."""
+    _emit_backstage("catalog", "backstage-catalog-update", {})
+
+
+def _on_catalog_saved(sender, instance, **kwargs):
+    emit_catalog_changed()
+
+
 # ── Signal receivers ────────────────────────────────────────────────
 
 
 def _connect() -> None:
     """Wire post_save / pre_save receivers. Called once from ``register_all``."""
     from shopman.craftsman.signals import production_changed
-    from shopman.offerman.models import ListingItem, Product
+    from shopman.offerman.models import Collection, CollectionItem, Listing, ListingItem, Product
+    from shopman.orderman.models import OrderEvent
     from shopman.orderman.signals import order_changed
     from shopman.payman.signals import (
         payment_authorized,
@@ -187,6 +198,12 @@ def _connect() -> None:
 
     from shopman.shop.adapters import alert as alert_adapter
     from shopman.shop.adapters import kds as kds_adapter
+    from shopman.shop.models import CatalogSyncState, Channel
+
+    for model in (Product, Listing, ListingItem, Collection, CollectionItem, Channel, CatalogSyncState):
+        for signal in (post_save, post_delete):
+            signal.connect(_on_catalog_saved, sender=model, weak=False,
+                dispatch_uid=f"shopman.catalog_sse.{model._meta.label_lower}.{signal is post_save}")
 
     post_save.connect(_on_hold_saved, sender=Hold, weak=False)
     post_save.connect(_on_move_saved, sender=Move, weak=False)
@@ -197,6 +214,7 @@ def _connect() -> None:
     kds_ticket_model = kds_adapter.get_ticket_model()
     pre_save.connect(_track_kds_ticket_state, sender=kds_ticket_model, weak=False)
     post_save.connect(_on_kds_ticket_saved, sender=kds_ticket_model, weak=False)
+    post_save.connect(_on_order_context_event, sender=OrderEvent, weak=False, dispatch_uid="shopman.shop.order_context_sse")
     order_changed.connect(
         _on_order_changed,
         dispatch_uid="shopman.shop.handlers._sse_emitters.on_order_changed",
@@ -256,6 +274,14 @@ def _publish_for_order(order_ref: str, *, event_type: str, payload: dict) -> Non
         logger.warning(
             "SSE order emit failed ref=%s type=%s", order_ref, event_type, exc_info=True,
         )
+
+
+def _on_order_context_event(sender, instance, created, **kwargs):
+    if not created or instance.type not in {"kitchen_note_changed", "order_assigned", "order_unassigned", "operator_comment", "equipment_returned", "payment_collected"}:
+        return
+    order = instance.order
+    # Operational context is private: no customer tracking channel or note text.
+    _emit_backstage("orders", "backstage-orders-update", {"ref": order.ref, "kind": instance.type}, scope=_scope_for_order(order))
 
 
 def _on_order_changed(sender, order, event_type, actor, **kwargs):
@@ -462,6 +488,11 @@ def _active_kds_count(kds_instance_id) -> int:
         return 0
 
 
+def emit_delivery_device_update() -> None:
+    """Inventory configuration changed; authorized readers reload their projection."""
+    _emit_backstage("orders", "backstage-orders-update", {"kind": "delivery_device"})
+
+
 def _emit_backstage(kind: str, event_type: str, payload: dict, *, scope: str | None = None) -> None:
     payload = dict(payload)
     transaction.on_commit(lambda: _publish_backstage(kind, event_type, payload, scope))
@@ -491,7 +522,7 @@ def _scope_for_order(order) -> str:
         if channel and channel.shop_id:
             return f"shop-{channel.shop_id}"
     except Exception:
-        logger.debug("backstage_sse.order_scope_failed order=%s", getattr(order, "ref", ""), exc_info=True)
+        logger.warning("backstage_sse.order_scope_failed order=%s", getattr(order, "ref", ""), exc_info=True)
     return _default_backstage_scope()
 
 

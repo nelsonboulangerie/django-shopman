@@ -1,0 +1,93 @@
+{
+  "cohort": "synthetic-integration",
+  "version": "ddd8f981a",
+  "counters": {
+    "cash.settled": 1,
+    "command.applied": 17,
+    "command.not_applied": 1,
+    "effect.failed": 1,
+    "effect.started": 1,
+    "endpoint.CatalogBulkPriceView.POST.other": 2,
+    "endpoint.CatalogBulkView.GET.other": 1,
+    "endpoint.CatalogBulkView.POST.other": 2,
+    "endpoint.CatalogCellView.GET.other": 1,
+    "endpoint.CatalogCellView.POST.other": 1,
+    "endpoint.CatalogMatrixView.GET.other": 56,
+    "endpoint.CatalogProductDetailView.GET.other": 13,
+    "endpoint.CatalogProductDetailView.PATCH.409": 1,
+    "endpoint.CatalogProductDetailView.PATCH.other": 4,
+    "endpoint.CatalogProductView.GET.other": 1,
+    "endpoint.CatalogProductView.POST.other": 1,
+    "endpoint.CatalogReorderItemsView.GET.other": 1,
+    "endpoint.CatalogReorderItemsView.POST.other": 2,
+    "endpoint.FeedActiveView.POST.other": 1,
+    "endpoint.FeedBoardView.GET.other": 11,
+    "endpoint.FeedCollectionsView.GET.other": 1,
+    "endpoint.FeedCollectionsView.POST.other": 1,
+    "endpoint.OrderAdvanceView.GET.other": 1,
+    "endpoint.OrderAdvanceView.POST.other": 1,
+    "endpoint.OrderCancelView.GET.other": 1,
+    "endpoint.OrderCancelView.POST.other": 1,
+    "endpoint.OrderCancellationReasonsView.GET.other": 1,
+    "endpoint.OrderDetailView.GET.other": 36,
+    "endpoint.OrderNotesView.POST.other": 2,
+    "endpoint.OrderQueueView.GET.403": 25,
+    "endpoint.OrderQueueView.GET.other": 56,
+    "endpoint.OrderSettleDeliveryCashView.GET.other": 1,
+    "endpoint.OrderSettleDeliveryCashView.POST.other": 1,
+    "receipt.applied": 9,
+    "request.GET.applied": 9,
+    "request.GET.read": 172,
+    "request.GET.unclassified": 25,
+    "request.PATCH.applied": 4,
+    "request.PATCH.not_applied": 1,
+    "request.POST.applied": 13,
+    "request.POST.unclassified": 2,
+    "status.403": 25,
+    "status.409": 1,
+    "status.other": 200,
+    "trace.present": 226
+  },
+  "view_elapsed_ms_excludes_render_and_network": {
+    "GET": {
+      "n": 206,
+      "p50": 36.766,
+      "p95": 152.12,
+      "max": 313.329
+    },
+    "PATCH": {
+      "n": 5,
+      "p50": 76.89,
+      "p95": 96.915,
+      "max": 96.915
+    },
+    "POST": {
+      "n": 15,
+      "p50": 33.606,
+      "p95": 191.794,
+      "max": 191.794
+    }
+  },
+  "server_receipt_read_after_apply_ms": {
+    "n": 9,
+    "p50": 43.211,
+    "p95": 122.268,
+    "max": 122.268
+  },
+  "last_observed_unresolved_effects": 1,
+  "last_observed_pending_age_seconds": {
+    "n": 1,
+    "p50": 44.434684,
+    "p95": 44.434684,
+    "max": 44.434684
+  },
+  "unmeasured": [
+    "canonical_due_effect_backlog",
+    "ledger_mismatch",
+    "draft_restored_or_lost",
+    "stale_refresh_or_discard",
+    "screen_reader_understanding",
+    "field_recovery_activations_or_time"
+  ],
+  "scope": "Recorded events only; missing families are unmeasured, not zero. No refs or entered text exported."
+}

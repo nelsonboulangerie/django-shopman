@@ -41,9 +41,10 @@ class CourierError(Exception):
     re-tentar não resolve.
     """
 
-    def __init__(self, message: str, *, transient: bool):
+    def __init__(self, message: str, *, transient: bool, outcome_unknown: bool | None = None):
         super().__init__(message)
         self.transient = transient
+        self.outcome_unknown = transient if outcome_unknown is None else outcome_unknown
 
 
 @dataclass(frozen=True)
@@ -128,7 +129,7 @@ def _request(method: str, path: str, *, base: str | None = None, params: dict | 
     except ValueError as exc:
         raise CourierError(
             f"Machine HTTP {resp.status_code}: resposta não-JSON: {resp.text[:200]}",
-            transient=resp.status_code >= 500,
+            transient=resp.status_code >= 500, outcome_unknown=resp.status_code < 400 or resp.status_code >= 500,
         ) from exc
 
     # O endpoint de detalhes (/integracao/v1) responde o objeto direto, sem envelope.
@@ -188,7 +189,7 @@ def dispatch(payload: dict) -> CourierDispatchResult:
     response = _request("POST", "/abrirSolicitacao", json_body=payload)
     courier_ref = str(response.get("id_mch") or "")
     if not courier_ref:
-        raise CourierError("Machine abriu a solicitação mas não devolveu id_mch", transient=False)
+        raise CourierError("Machine abriu a solicitação mas não devolveu id_mch", transient=False, outcome_unknown=True)
     return CourierDispatchResult(courier_ref=courier_ref)
 
 

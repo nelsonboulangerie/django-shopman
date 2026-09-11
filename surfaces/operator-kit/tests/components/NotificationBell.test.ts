@@ -42,6 +42,8 @@ vi.mock("../../app/composables/useNotifications", () => ({
     items,
     unread,
     loading: ref(false),
+    error: ref(""),
+    signInError: ref(""),
     refresh: vi.fn(),
     markRead,
     signIns,

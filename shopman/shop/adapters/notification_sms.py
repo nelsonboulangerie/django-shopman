@@ -130,20 +130,17 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
             body = json.loads(response.read().decode("utf-8"))
             # Comtele responde HTTP 200 com {"hasError": true/false}; confiar na flag.
             if body.get("hasError") is False:
-                logger.info("SMS sent via Comtele: %s -> %s", template, recipient)
+                logger.info("SMS accepted via Comtele: template=%s", template)
                 return True
-            logger.warning("Comtele SMS rejected: %s", str(body.get("message"))[:300])
+            if body.get("hasError") is not True:
+                raise RuntimeError("acceptance_unconfirmed")
+            logger.warning("Comtele SMS rejected: template=%s", template)
             return False
-    except HTTPError as e:
-        error_body = e.read().decode("utf-8") if e.fp else ""
-        logger.warning("Comtele SMS HTTP error: %s - %s", e.code, error_body[:300])
-        return False
-    except URLError as e:
-        logger.warning("Comtele SMS URL error: %s", e.reason)
-        return False
-    except Exception:
-        logger.exception("SMS send error")
-        return False
+    except (HTTPError, URLError) as exc:
+        raise RuntimeError("acceptance_unconfirmed") from exc
+    except Exception as exc:
+        raise RuntimeError("acceptance_unconfirmed") from exc
+
 
 
 def is_available(recipient: str | None = None, **config) -> bool:

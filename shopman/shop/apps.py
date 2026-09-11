@@ -267,7 +267,7 @@ class ShopmanConfig(AppConfig):
         """
         from shopman.orderman.signals import order_changed
 
-        from shopman.shop.lifecycle import dispatch, secure_stock
+        from shopman.shop.lifecycle import QUEUED_PHASES, dispatch, enqueue_phase, secure_stock
 
         def on_order_changed(sender, order, event_type, actor, **kwargs):
             from django.db import transaction as _tx
@@ -283,6 +283,10 @@ class ShopmanConfig(AppConfig):
             elif event_type == "status_changed":
                 phase = f"on_{order.status}"
             else:
+                return
+
+            if phase in QUEUED_PHASES:
+                enqueue_phase(order, phase)
                 return
 
             order_pk = order.pk

@@ -1,0 +1,66 @@
+
+Running 2 tests using 1 worker
+
+(node:14400) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › surfaces/orders-nuxt/tests/performance/context.spec.ts:6:3 › queue context survives detail and link return (6.1s)
+(node:14418) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [chromium] › surfaces/orders-nuxt/tests/performance/context.spec.ts:6:3 › queue context survives detail and history return (4.8s)
+
+
+  1) [chromium] › surfaces/orders-nuxt/tests/performance/context.spec.ts:6:3 › queue context survives detail and link return 
+
+    Error: expect(received).toBeGreaterThan(expected)
+
+    Expected: > 100
+    Received:   0
+
+      18 |     const viewport = page.locator("section.overflow-auto");
+      19 |     const scroll = await viewport.evaluate(el => el.scrollTop);
+    > 20 |     expect(scroll).toBeGreaterThan(100);
+         |                    ^
+      21 |     await link.click();
+      22 |     await expect(page.getByRole("link", { name: "Voltar para a fila", exact: true })).toBeVisible();
+      23 |     if (back === "link") await page.getByRole("link", { name: "Voltar para a fila", exact: true }).click();
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/performance/context.spec.ts:20:20
+
+    Error Context: .orders-lab/performance-browser-results/context-queue-context-survives-detail-and-link-return-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    .orders-lab/performance-browser-results/context-queue-context-survives-detail-and-link-return-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace .orders-lab/performance-browser-results/context-queue-context-survives-detail-and-link-return-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › surfaces/orders-nuxt/tests/performance/context.spec.ts:6:3 › queue context survives detail and history return 
+
+    Error: expect(received).toBeGreaterThan(expected)
+
+    Expected: > 100
+    Received:   0
+
+      18 |     const viewport = page.locator("section.overflow-auto");
+      19 |     const scroll = await viewport.evaluate(el => el.scrollTop);
+    > 20 |     expect(scroll).toBeGreaterThan(100);
+         |                    ^
+      21 |     await link.click();
+      22 |     await expect(page.getByRole("link", { name: "Voltar para a fila", exact: true })).toBeVisible();
+      23 |     if (back === "link") await page.getByRole("link", { name: "Voltar para a fila", exact: true }).click();
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/performance/context.spec.ts:20:20
+
+    Error Context: .orders-lab/performance-browser-results/context-queue-context-survives-detail-and-history-return-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    .orders-lab/performance-browser-results/context-queue-context-survives-detail-and-history-return-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace .orders-lab/performance-browser-results/context-queue-context-survives-detail-and-history-return-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    [chromium] › surfaces/orders-nuxt/tests/performance/context.spec.ts:6:3 › queue context survives detail and link return 
+    [chromium] › surfaces/orders-nuxt/tests/performance/context.spec.ts:6:3 › queue context survives detail and history return 

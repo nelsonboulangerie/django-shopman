@@ -1,0 +1,188 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+________________ test_preview_lists_every_tier_without_writing _________________
+
+client = <django.test.client.Client object at 0x10cbb82c0>
+operator = <User: catalog-api>
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Pão>}
+
+    def test_preview_lists_every_tier_without_writing(client, operator, catalog):
+        first = ListingItem.objects.get(product__sku="PAO", listing__ref="web")
+        ListingItem.objects.create(product=first.product, listing=first.listing, min_qty=10, price_q=400)
+        before = flags()
+>       data, seen = preview(client, operator)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+shopman/backstage/tests/test_catalog_publication_intentions.py:41:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+client = <django.test.client.Client object at 0x10cbb82c0>
+operator = <User: catalog-api>, override = {}
+data = {'is_sellable': False, 'skus': ['PAO'], 'surface_ref': '*'}
+response = <Response status_code=200, "application/json">, @py_assert1 = None
+@py_assert4 = None, @py_assert3 = None
+
+    def preview(client, operator, **override):
+        client.force_login(operator)
+        data = {"surface_ref": "*", "skus": ["PAO"], "is_sellable": False, **override}
+        response = client.post(URL, {**data, "preview": True}, content_type="application/json")
+        assert response.status_code == 200
+>       return data, response.json()["preview"]
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'preview'
+
+shopman/backstage/tests/test_catalog_publication_intentions.py:26: KeyError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-11 00:14:40,671 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-11 00:14:41,031 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-11 00:14:42,206 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+_____________ test_receipt_replay_does_not_pause_later_activation ______________
+
+client = <django.test.client.Client object at 0x10e1a56d0>
+operator = <User: catalog-api>
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Pão>}
+
+    def test_receipt_replay_does_not_pause_later_activation(client, operator, catalog):
+>       data, seen = preview(client, operator)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+shopman/backstage/tests/test_catalog_publication_intentions.py:49:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+client = <django.test.client.Client object at 0x10e1a56d0>
+operator = <User: catalog-api>, override = {}
+data = {'is_sellable': False, 'skus': ['PAO'], 'surface_ref': '*'}
+response = <Response status_code=200, "application/json">, @py_assert1 = None
+@py_assert4 = None, @py_assert3 = None
+
+    def preview(client, operator, **override):
+        client.force_login(operator)
+        data = {"surface_ref": "*", "skus": ["PAO"], "is_sellable": False, **override}
+        response = client.post(URL, {**data, "preview": True}, content_type="application/json")
+        assert response.status_code == 200
+>       return data, response.json()["preview"]
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'preview'
+
+shopman/backstage/tests/test_catalog_publication_intentions.py:26: KeyError
+_______________ test_changed_membership_refuses_entire_selection _______________
+
+client = <django.test.client.Client object at 0x10e276ab0>
+operator = <User: catalog-api>
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Pão>}
+
+    def test_changed_membership_refuses_entire_selection(client, operator, catalog):
+>       data, seen = preview(client, operator, skus=None, collection_ref="doces")
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+shopman/backstage/tests/test_catalog_publication_intentions.py:62:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+client = <django.test.client.Client object at 0x10e276ab0>
+operator = <User: catalog-api>
+override = {'collection_ref': 'doces', 'skus': None}
+data = {'collection_ref': 'doces', 'is_sellable': False, 'skus': None, 'surface_ref': '*'}
+response = <Response status_code=200, "application/json">, @py_assert1 = None
+@py_assert4 = None, @py_assert3 = None
+
+    def preview(client, operator, **override):
+        client.force_login(operator)
+        data = {"surface_ref": "*", "skus": ["PAO"], "is_sellable": False, **override}
+        response = client.post(URL, {**data, "preview": True}, content_type="application/json")
+        assert response.status_code == 200
+>       return data, response.json()["preview"]
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'preview'
+
+shopman/backstage/tests/test_catalog_publication_intentions.py:26: KeyError
+_________________________ test_old_client_cannot_write _________________________
+
+client = <django.test.client.Client object at 0x10e1d33e0>
+operator = <User: catalog-api>
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Pão>}
+
+    def test_old_client_cannot_write(client, operator, catalog):
+        client.force_login(operator)
+        before = flags()
+>       assert client.post(URL, {"surface_ref": "*", "skus": ["PAO"], "is_sellable": False}, content_type="application/json").status_code == 400
+E       assert 200 == 400
+E        +  where 200 = <Response status_code=200, "application/json">.status_code
+E        +    where <Response status_code=200, "application/json"> = post('/api/v1/backstage/catalog/bulk/', {'is_sellable': False, 'skus': ['PAO'], 'surface_ref': '*'}, content_type='application/json')
+E        +      where post = <django.test.client.Client object at 0x10e1d33e0>.post
+
+shopman/backstage/tests/test_catalog_publication_intentions.py:73: AssertionError
+___________ test_distinct_intentions_compete_on_observed_publication ___________
+
+operator = <User: catalog-api>
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Pão>}
+
+    def test_distinct_intentions_compete_on_observed_publication(operator, catalog):
+        if connection.vendor != "postgresql":
+            pytest.skip("Requires PostgreSQL locks and independent connections")
+        clients = [Client(), Client()]
+>       data, seen = preview(clients[0], operator)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+shopman/backstage/tests/test_catalog_publication_intentions.py:81:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+client = <django.test.client.Client object at 0x10e5a4260>
+operator = <User: catalog-api>, override = {}
+data = {'is_sellable': False, 'skus': ['PAO'], 'surface_ref': '*'}
+response = <Response status_code=200, "application/json">, @py_assert1 = None
+@py_assert4 = None, @py_assert3 = None
+
+    def preview(client, operator, **override):
+        client.force_login(operator)
+        data = {"surface_ref": "*", "skus": ["PAO"], "is_sellable": False, **override}
+        response = client.post(URL, {**data, "preview": True}, content_type="application/json")
+        assert response.status_code == 200
+>       return data, response.json()["preview"]
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'preview'
+
+shopman/backstage/tests/test_catalog_publication_intentions.py:26: KeyError
+___________ test_second_enqueue_failure_rolls_back_flags_and_receipt ___________
+
+client = <django.test.client.Client object at 0x10e5be030>
+operator = <User: catalog-api>
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Pão>}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e5871a0>
+
+    def test_second_enqueue_failure_rolls_back_flags_and_receipt(client, operator, catalog, monkeypatch):
+        from shopman.offerman import conf
+
+        from shopman.shop.handlers import catalog_projection
+
+>       data, seen = preview(client, operator)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+shopman/backstage/tests/test_catalog_publication_intentions.py:101:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+client = <django.test.client.Client object at 0x10e5be030>
+operator = <User: catalog-api>, override = {}
+data = {'is_sellable': False, 'skus': ['PAO'], 'surface_ref': '*'}
+response = <Response status_code=200, "application/json">, @py_assert1 = None
+@py_assert4 = None, @py_assert3 = None
+
+    def preview(client, operator, **override):
+        client.force_login(operator)
+        data = {"surface_ref": "*", "skus": ["PAO"], "is_sellable": False, **override}
+        response = client.post(URL, {**data, "preview": True}, content_type="application/json")
+        assert response.status_code == 200
+>       return data, response.json()["preview"]
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'preview'
+
+shopman/backstage/tests/test_catalog_publication_intentions.py:26: KeyError
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-11 00:14:49,677 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_catalog_publication_intentions.py::test_preview_lists_every_tier_without_writing
+FAILED shopman/backstage/tests/test_catalog_publication_intentions.py::test_receipt_replay_does_not_pause_later_activation
+FAILED shopman/backstage/tests/test_catalog_publication_intentions.py::test_changed_membership_refuses_entire_selection
+FAILED shopman/backstage/tests/test_catalog_publication_intentions.py::test_old_client_cannot_write
+FAILED shopman/backstage/tests/test_catalog_publication_intentions.py::test_distinct_intentions_compete_on_observed_publication
+FAILED shopman/backstage/tests/test_catalog_publication_intentions.py::test_second_enqueue_failure_rolls_back_flags_and_receipt
+6 failed in 9.53s

@@ -146,7 +146,11 @@ def test_detail_active_ride_shows_driver_and_labels(client, operator, shop):
 def test_courier_dispatch_action_queues_directive(client, operator, shop):
     order = _delivery_order()
     client.force_login(operator)
-    resp = client.post(reverse("api-backstage-order-courier-dispatch", args=[order.ref]))
+    from shopman.shop.services.courier import dispatch_revision
+
+    resp = client.post(reverse("api-backstage-order-courier-dispatch", args=[order.ref]),
+        {"expected_actor_id": operator.pk, "base_revision": dispatch_revision(order)},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY="dispatch-test")
     assert resp.status_code == 200
     assert Directive.objects.filter(topic=COURIER_DISPATCH, payload__order_ref=order.ref).exists()
 
@@ -155,7 +159,11 @@ def test_courier_dispatch_action_queues_directive(client, operator, shop):
 def test_courier_dispatch_blocked_for_wrong_status(client, operator, shop):
     order = _delivery_order(status=Order.Status.PREPARING)
     client.force_login(operator)
-    resp = client.post(reverse("api-backstage-order-courier-dispatch", args=[order.ref]))
+    from shopman.shop.services.courier import dispatch_revision
+
+    resp = client.post(reverse("api-backstage-order-courier-dispatch", args=[order.ref]),
+        {"expected_actor_id": operator.pk, "base_revision": dispatch_revision(order)},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY="dispatch-test")
     assert resp.status_code == 400
     assert "pronto" in resp.json()["detail"]
 
@@ -170,8 +178,16 @@ def test_courier_cancel_action(client, operator, shop):
     order.refresh_from_db()
 
     client.force_login(operator)
-    resp = client.post(reverse("api-backstage-order-courier-cancel", args=[order.ref]))
+    resp = client.post(reverse("api-backstage-order-courier-cancel", args=[order.ref]),
+        {"expected_actor_id": operator.pk, "base_revision": courier.dispatch_revision(order)},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY="cancel-test")
     assert resp.status_code == 200
+    assert resp.json()["status"] == "queued"
+    order.refresh_from_db()
+    assert courier.has_active_ride(order)
+    from shopman.shop.handlers.courier_cancel import CourierCancelHandler
+
+    CourierCancelHandler().handle(message=Directive.objects.get(pk=resp.json()["directive_id"]), ctx={})
     order.refresh_from_db()
     assert not courier.has_active_ride(order)
 
@@ -180,7 +196,9 @@ def test_courier_cancel_action(client, operator, shop):
 def test_courier_cancel_without_active_ride_fails(client, operator, shop):
     order = _delivery_order()
     client.force_login(operator)
-    resp = client.post(reverse("api-backstage-order-courier-cancel", args=[order.ref]))
+    resp = client.post(reverse("api-backstage-order-courier-cancel", args=[order.ref]),
+        {"expected_actor_id": operator.pk, "base_revision": courier.dispatch_revision(order)},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY="cancel-test")
     assert resp.status_code == 400
 
 
@@ -188,7 +206,9 @@ def test_courier_cancel_without_active_ride_fails(client, operator, shop):
 def test_courier_quote_action_returns_and_stores_estimate(client, operator, shop):
     order = _delivery_order()
     client.force_login(operator)
-    resp = client.post(reverse("api-backstage-order-courier-quote", args=[order.ref]))
+    resp = client.post(reverse("api-backstage-order-courier-quote", args=[order.ref]),
+        {"expected_actor_id": operator.pk, "base_revision": courier.dispatch_revision(order)},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY="quote-test")
     assert resp.status_code == 200
     quote = resp.json()["quote"]
     assert quote["value_q"] == 1250
@@ -201,7 +221,9 @@ def test_courier_quote_action_returns_and_stores_estimate(client, operator, shop
 def test_courier_quote_unavailable_without_coordinates(client, operator, shop):
     order = _delivery_order(delivery_address_structured={"city": "Londrina"})
     client.force_login(operator)
-    resp = client.post(reverse("api-backstage-order-courier-quote", args=[order.ref]))
+    resp = client.post(reverse("api-backstage-order-courier-quote", args=[order.ref]),
+        {"expected_actor_id": operator.pk, "base_revision": courier.dispatch_revision(order)},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY="quote-test")
     assert resp.status_code == 400
 
 

@@ -1,0 +1,18 @@
+Gate da meia-correção — escopo: caminhos explícitos
+  arquivos analisados: 106
+- [FAIL] silent_swallow: 1 arquivo(s) com contradição interna.
+
+  shopman/shop/adapters/notification_manychat.py
+    alguém já soube gritar na linha 235 (logger.warning): logger.warning("ManyChat API token not configured")
+    o irmão está calado na linha 216 (except_debug): except Exception:
+
+Como resolver — uma das duas, nunca nenhuma:
+  1. Faça o irmão gritar como o vizinho já grita neste arquivo
+     (create_operator_alert / record_*_failure / logger.error / raise).
+  2. Declare que o silêncio é de propósito, com a razão:
+         except FooError:  # silêncio-deliberado: corrida benigna, o worker relê
+             pass
+         await refresh().catch(() => null)  // silêncio-deliberado: refresh oportunista
+
+Por que este gate existe: a suíte pega o que ela cobre; ela não pega o
+IRMÃO que ficou para trás. Ver docs/reference/silencio-inventario.md.

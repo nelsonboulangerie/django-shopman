@@ -748,7 +748,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         </UiButton>
         <span
           v-if="inSaleView && !checkoutMode && unsaved"
-          class="inline-flex shrink-0 items-center gap-1 rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-xs font-medium text-amber-700 dark:text-amber-400"
+          class="inline-flex shrink-0 items-center gap-1 rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-xs font-medium text-warning"
           role="status"
           title="A comanda não pôde ser salva — tentando de novo"
         >
@@ -804,7 +804,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           @open-schedule="openScheduleHere"
           @open-customer="paymentWorkspaceRef?.openCustomer()"
         />
-        <h1 v-else class="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight">{{ screenTitle }}</h1>
+        <h1 v-else class="min-w-0 truncate text-lg font-semibold">{{ screenTitle }}</h1>
         <!-- PIX pendente que saiu da tela de resultado: chip compacto, com o
              polling seguindo por baixo até resolver/expirar (aí vira toast). -->
         <span
@@ -918,6 +918,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         :payment-collections="pos?.payment_collections || []"
         :checkout-contract="checkoutContract"
         :address-autocomplete="addressAutocomplete"
+        :customer-ref="cart.customerRef"
         :customer-lookup="customerLookup"
         :search-results="customerSearchResults"
         :search-busy="customerSearchBusy"

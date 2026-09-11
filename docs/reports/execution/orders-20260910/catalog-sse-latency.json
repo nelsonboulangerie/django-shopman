@@ -1,0 +1,15 @@
+{
+  "samples": [
+    {
+      "name": "synthetic-catalog-sse-latency",
+      "command_to_visible_ms": 150,
+      "field_pilot": false
+    },
+    {
+      "name": "synthetic-feed-sse-latency",
+      "command_to_visible_ms": 94,
+      "field_pilot": false
+    }
+  ],
+  "method": "POST/PATCH start to visible UI, native EventSource via Nitro/Daphne/Redis, one sample per journey, concurrent broad SQLite run; not p95 or field pilot"
+}

@@ -1,0 +1,126 @@
+[WebServer] (node:29834) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 26 tests using 1 worker
+
+(node:29835) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [chromium] › tests/integration/operational.spec.ts:15:1 › lost response after the Django commit queries receipt and advances only once (3.0s)
+  ✓   2 [chromium] › tests/integration/operational.spec.ts:38:1 › SSE during notes draft preserves text and offers explicit same-field resolution (1.3s)
+  ✓   3 [chromium] › tests/integration/operational.spec.ts:64:1 › price preview confirms exact canonical values through Nitro and Django (3.6s)
+  ✓   4 [chromium] › tests/integration/operational.spec.ts:85:1 › closed product A cannot hydrate the reopened panel for B (3.1s)
+  ✓   5 [chromium] › tests/integration/operational.spec.ts:113:1 › same person resumes a locked draft; another person never inherits it (3.5s)
+  ✓   6 [chromium] › tests/integration/operational.spec.ts:137:1 › cancel response loss retains the reason and reads the committed receipt (2.5s)
+  ✓   7 [chromium] › tests/integration/operational.spec.ts:161:1 › cash draft survives close, queue navigation and a declined reload without settlement (2.0s)
+  ✓   8 [chromium] › tests/integration/operational.spec.ts:186:1 › cash settlement response loss resolves one receipt in the observed drawer (1.8s)
+  ✓   9 [chromium] › tests/integration/operational.spec.ts:210:1 › feed selection survives response loss and consults the same scoped receipt (1.4s)
+  ✓  10 [chromium] › tests/integration/operational.spec.ts:240:1 › failed refresh leaves the live draft visible and prevents a stale mutation (795ms)
+  ✓  11 [chromium] › tests/integration/operational.spec.ts:258:1 › product PATCH response lost after commit closes only after receipt confirmation (2.4s)
+  ✓  12 [chromium] › tests/integration/operational.spec.ts:285:1 › product same-field dispute preserves draft until explicit reviewed save (2.3s)
+  ✓  13 [chromium] › tests/integration/operational.spec.ts:309:1 › curation drag lost response adopts receipt and canonical exact order (1.3s)
+  ✓  14 [chromium] › tests/integration/operational.spec.ts:342:1 › keyboard curation and frequent targets retain exact order without pointer input (1.3s)
+  ✓  15 [chromium] › tests/integration/operational.spec.ts:375:1 › cell lost response keeps one price intent and one canonical write (1.6s)
+  ✓  16 [chromium] › tests/integration/operational.spec.ts:396:1 › global pause lost response adopts product receipt without another toggle (1.3s)
+  ✓  17 [chromium] › tests/integration/operational.spec.ts:419:1 › back navigation keeps a product draft after declining discard (1.7s)
+  ✓  18 [chromium] › tests/integration/operational.spec.ts:438:1 › delayed collection response cannot replace the selected resource (996ms)
+  ✓  19 [chromium] › tests/integration/operational.spec.ts:459:1 › publication preview leaves flags unchanged and lost confirmation response adopts one receipt (1.7s)
+  ✘  20 [chromium] › tests/integration/operational.spec.ts:498:1 › catalog SSE through Redis and BFF updates the row while preserving a price draft (45.2s)
+(node:30412) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  21 [chromium] › tests/integration/operational.spec.ts:523:1 › feed SSE updates active state without replacing the open collection draft (1.5s)
+  ✓  22 [chromium] › tests/integration/operational.spec.ts:549:3 › last useful read remains visible during queue read failure (1.3s)
+  ✓  23 [chromium] › tests/integration/operational.spec.ts:549:3 › last useful read remains visible during detail read failure (826ms)
+  ✓  24 [chromium] › tests/integration/operational.spec.ts:549:3 › last useful read remains visible during catalog read failure (1.0s)
+  ✓  25 [chromium] › tests/integration/operational.spec.ts:549:3 › last useful read remains visible during feeds read failure (876ms)
+  ✓  26 [chromium] › tests/integration/operational.spec.ts:572:1 › confirmed note stays visible when the post-commit read fails (944ms)
+
+
+  1) [chromium] › tests/integration/operational.spec.ts:498:1 › catalog SSE through Redis and BFF updates the row while preserving a price draft 
+
+    Test timeout of 45000ms exceeded.
+
+    Error: locator.click: Test timeout of 45000ms exceeded.
+    Call log:
+      - waiting for locator('tr[data-dragkey="LAB-EDIT-a9133a2c"]').getByRole('button', { name: /^Preço em/ }).first()
+        - locator resolved to <button type="button" data-slot="popover-anchor" title="R$ 14,23 · acima do base" aria-label="Preço em Laboratório: R$ 14,23 — editar" class="flex min-h-control min-w-control items-center justify-center rounded px-0.5 py-0.5 leading-none transition hover:bg-muted disabled:opacity-40">…</button>
+      - attempting click action
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <div class="grid size-10 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">…</div> from <td class="bg-card group-hover:bg-muted sm:sticky sm:left-0 z-10 border-b border-r border-border px-4 py-2.5">…</td> subtree intercepts pointer events
+        - retrying click action
+        - waiting 20ms
+        - waiting for element to be visible, enabled and stable
+        - element is visible, enabled and stable
+        - scrolling into view if needed
+        - done scrolling
+        - <div class="grid size-10 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">…</div> from <td class="bg-card group-hover:bg-muted sm:sticky sm:left-0 z-10 border-b border-r border-border px-4 py-2.5">…</td> subtree intercepts pointer events
+      2 × retrying click action
+          - waiting 100ms
+          - waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <input type="checkbox" class="size-4 shrink-0 rounded border-border accent-foreground"/> from <td class="bg-card group-hover:bg-muted sm:sticky sm:left-0 z-10 border-b border-r border-border px-4 py-2.5">…</td> subtree intercepts pointer events
+      20 × retrying click action
+           - waiting 500ms
+           - waiting for element to be visible, enabled and stable
+           - element is visible, enabled and stable
+           - scrolling into view if needed
+           - done scrolling
+           - <div class="grid size-10 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">…</div> from <td class="bg-card group-hover:bg-muted sm:sticky sm:left-0 z-10 border-b border-r border-border px-4 py-2.5">…</td> subtree intercepts pointer events
+         - retrying click action
+           - waiting 500ms
+           - waiting for element to be visible, enabled and stable
+           - element is visible, enabled and stable
+           - scrolling into view if needed
+           - done scrolling
+           - <div class="grid size-10 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">…</div> from <td class="bg-card group-hover:bg-muted sm:sticky sm:left-0 z-10 border-b border-r border-border px-4 py-2.5">…</td> subtree intercepts pointer events
+         - retrying click action
+           - waiting 500ms
+           - waiting for element to be visible, enabled and stable
+           - element is visible, enabled and stable
+           - scrolling into view if needed
+           - done scrolling
+           - <input type="checkbox" class="size-4 shrink-0 rounded border-border accent-foreground"/> from <td class="bg-card group-hover:bg-muted sm:sticky sm:left-0 z-10 border-b border-r border-border px-4 py-2.5">…</td> subtree intercepts pointer events
+         - retrying click action
+           - waiting 500ms
+           - waiting for element to be visible, enabled and stable
+           - element is visible, enabled and stable
+           - scrolling into view if needed
+           - done scrolling
+           - <input type="checkbox" class="size-4 shrink-0 rounded border-border accent-foreground"/> from <td class="bg-card group-hover:bg-muted sm:sticky sm:left-0 z-10 border-b border-r border-border px-4 py-2.5">…</td> subtree intercepts pointer events
+      2 × retrying click action
+          - waiting 500ms
+          - waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <div class="grid size-10 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">…</div> from <td class="bg-card group-hover:bg-muted sm:sticky sm:left-0 z-10 border-b border-r border-border px-4 py-2.5">…</td> subtree intercepts pointer events
+      - retrying click action
+        - waiting 500ms
+
+
+      503 |   expect((await stream).status()).toBe(200);
+      504 |   const row = page.locator(`tr[data-dragkey="${lab.edit_sku}"]`);
+    > 505 |   await row.getByRole("button", { name: /^Preço em/ }).first().click();
+          |                                                                ^
+      506 |   const draft = page.locator('input[inputmode="decimal"]');
+      507 |   await draft.fill("18,76");
+      508 |   const detailPath = `/api/v1/backstage/catalog/product/${lab.edit_sku}/`;
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:505:64
+
+    Error Context: ../../.orders-lab/playwright-results/operational-catalog-SSE-th-b6a55-le-preserving-a-price-draft-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../.orders-lab/playwright-results/operational-catalog-SSE-th-b6a55-le-preserving-a-price-draft-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../.orders-lab/playwright-results/operational-catalog-SSE-th-b6a55-le-preserving-a-price-draft-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › tests/integration/operational.spec.ts:498:1 › catalog SSE through Redis and BFF updates the row while preserving a price draft 
+  25 passed (1.5m)

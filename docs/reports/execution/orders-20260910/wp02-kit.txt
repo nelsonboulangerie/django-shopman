@@ -1,0 +1,793 @@
+
+> @shopman/operator-kit@0.1.0 test
+> vitest run --reporter=dot
+
+
+ RUN  v4.1.9 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/operator-kit
+
+··········································································································································································stdout | tests/composables/useStationProvision.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+stdout | tests/components/NotificationBell.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+stdout | tests/composables/useRailState.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+stdout | tests/components/OperatorLock.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+stdout | tests/composables/useConnectivity.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+stderr | tests/composables/useConnectivity.test.ts > useConnectivity — reconciliação ao reconectar > dispara os handlers ao VOLTAR a rede (offline→online)
+[Vue warn] onScopeDispose() is called when there is no active effect scope to be associated with.
+[Vue warn] onScopeDispose() is called when there is no active effect scope to be associated with.
+
+stderr | tests/composables/useConnectivity.test.ts > useConnectivity — reconciliação ao reconectar > NÃO dispara se nunca esteve offline (online estável)
+[Vue warn] onScopeDispose() is called when there is no active effect scope to be associated with.
+[Vue warn] onScopeDispose() is called when there is no active effect scope to be associated with.
+
+stderr | tests/composables/useConnectivity.test.ts > useConnectivity — reconciliação ao reconectar > o unregister devolvido para de receber reconexões
+[Vue warn] onScopeDispose() is called when there is no active effect scope to be associated with.
+[Vue warn] onScopeDispose() is called when there is no active effect scope to be associated with.
+
+stderr | tests/composables/useConnectivity.test.ts > useConnectivity — reconciliação ao reconectar > um handler que lança não derruba os demais (best-effort)
+[Vue warn] onScopeDispose() is called when there is no active effect scope to be associated with.
+[Vue warn] onScopeDispose() is called when there is no active effect scope to be associated with.
+[Vue warn] onScopeDispose() is called when there is no active effect scope to be associated with.
+
+stdout | tests/composables/useOperatorSession.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+···················stderr | tests/components/OperatorLock.test.ts > OperatorLock — crachá > destrava com o crachá assim que a tela abre
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — crachá > continua lendo o crachá DEPOIS de o operador tocar na tela
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — crachá > continua lendo o crachá DEPOIS de o operador tocar na tela
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — crachá > o Enter do leitor não ativa o botão que estiver com o foco
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+·······stderr | tests/components/OperatorLock.test.ts > OperatorLock — crachá > Enter comum (sem crachá no buffer) segue sendo do teclado
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — crachá > sequência que não tem cara de crachá é ignorada
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — crachá > fica desligado durante a troca forçada de PIN
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — crachá > não deixa o token do crachá no DOM
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — crachá > para de ouvir quando a tela sai (destravou)
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — crachá > a rajada do leitor não vaza NENHUM caractere aos listeners de baixo
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > digitar o PIN e Enter destrava, sem tocar no mouse
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > digitar o PIN e Enter destrava, sem tocar no mouse
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > digitar o PIN e Enter destrava, sem tocar no mouse
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > digitador RÁPIDO (60-110ms entre teclas) não perde dígito nenhum
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > digitador RÁPIDO (60-110ms entre teclas) não perde dígito nenhum
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > digitador RÁPIDO (60-110ms entre teclas) não perde dígito nenhum
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > digitador RÁPIDO (60-110ms entre teclas) não perde dígito nenhum
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > digitador RÁPIDO (60-110ms entre teclas) não perde dígito nenhum
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > digitador RÁPIDO (60-110ms entre teclas) não perde dígito nenhum
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > rajada de crachá NO MEIO da digitação do PIN destrava pelo crachá
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > rajada de crachá NO MEIO da digitação do PIN destrava pelo crachá
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > rajada de crachá NO MEIO da digitação do PIN destrava pelo crachá
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > Enter com PIN curto não submete nada
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > Enter com PIN curto não submete nada
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > Enter com PIN curto não submete nada
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > Backspace apaga o último dígito
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > Backspace apaga o último dígito
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > Backspace apaga o último dígito
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > o número ao lado do nome escolhe a pessoa, sem mouse
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+··············stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > o número ao lado do nome escolhe a pessoa, sem mouse
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > o número ao lado do nome escolhe a pessoa, sem mouse
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > número fora da lista não escolhe ninguém
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+·stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > crachá que começa com dígito destrava pelo crachá, e não escolhe ninguém no caminho
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+·stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > tocar os botões do pad em sequência rápida registra todos os dígitos
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > tocar os botões do pad em sequência rápida registra todos os dígitos
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > tocar os botões do pad em sequência rápida registra todos os dígitos
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > tocar os botões do pad em sequência rápida registra todos os dígitos
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > tocar os botões do pad em sequência rápida registra todos os dígitos
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — PIN pelo teclado físico > tocar os botões do pad em sequência rápida registra todos os dígitos
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — diz que a sessão TROCA > anuncia que quem entra ASSUME o balcão
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — diz que a sessão TROCA > pergunta quem está OPERANDO, não quem autoriza
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > o botão é descobrível: texto legível, não menu escondido
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > o botão é descobrível: texto legível, não menu escondido
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+····stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > a tela diz o que acontece ANTES de pedir o PIN
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > a tela diz o que acontece ANTES de pedir o PIN
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > a tela diz o que acontece ANTES de pedir o PIN
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false badge-enabled=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > o leitor de crachá fica desligado aqui — quem está nesta tela não tem o crachá
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > o leitor de crachá fica desligado aqui — quem está nesta tela não tem o crachá
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > o leitor de crachá fica desligado aqui — quem está nesta tela não tem o crachá
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false badge-enabled=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > invalida o crachá do operador escolhido, provando o PIN
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > invalida o crachá do operador escolhido, provando o PIN
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > invalida o crachá do operador escolhido, provando o PIN
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false badge-enabled=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > invalida o crachá do operador escolhido, provando o PIN
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false badge-enabled=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > invalida o crachá do operador escolhido, provando o PIN
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false badge-enabled=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > invalida o crachá do operador escolhido, provando o PIN
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false badge-enabled=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > invalida o crachá do operador escolhido, provando o PIN
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false badge-enabled=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > invalida o crachá do operador escolhido, provando o PIN
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false badge-enabled=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > invalida o crachá do operador escolhido, provando o PIN
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > cancelar volta para a identificação sem invalidar nada
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > cancelar volta para a identificação sem invalidar nada
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > cancelar volta para a identificação sem invalidar nada
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false badge-enabled=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/OperatorLock.test.ts > OperatorLock — perdi meu crachá > cancelar volta para a identificação sem invalidar nada
+[Vue warn]: Failed to resolve component: UiInput
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <OperatorIdentify ref="identify" people= [
+  { id: 1, username: 'bia', name: 'Bia Forno' },
+  { id: 2, username: 'davi', name: 'Davi Sousa' }
+] busy=false  ... > 
+  at <MountSuspendedComponent perm="backstage.operate_pos" > 
+  at <MountSuspendedHelper> 
+  at <Anonymous perm="backstage.operate_pos" ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+·····
+
+ Test Files  22 passed (22)
+      Tests  221 passed (221)
+   Start at  18:46:26
+   Duration  2.57s (transform 2.32s, setup 888ms, import 2.67s, tests 2.23s, environment 2.62s)
+

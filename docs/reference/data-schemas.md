@@ -185,7 +185,7 @@ for key in (
 | `cancelled_by` | `string` | `services/cancellation.py` | `hooks._on_cancelled` | Identificador de quem cancelou: `"customer"` ou `"operator:<username>"` |
 | `session_key` | `string` | hooks._on_cancelled | hooks._on_cancelled | Chave de sessão original (referência para release holds) |
 | `hold_ids` | `list[dict]` | `StockService.hold(order)` | `StockService.fulfill(order)`, `StockService.release(order)` | Holds do Stockman adotados no commit. Cada entry: `{sku, hold_id, qty}` |
-| `lifecycle` | `dict` | `lifecycle.dispatch()` (via `_mark_phase_complete`, fases em `DURABLE_PHASES`) | `sweep_stuck_orders`, `reconcile_payments`, `lifecycle.phase_complete()` | Marcador durável de conclusão de fase: `{on_commit: "done", on_confirmed: "done", on_paid: "done", on_cancelled: "done"}` (só as chaves das fases já completas). O dispatch roda pós-commit (não durável); um crash entre o COMMIT da transição e o fim do handler perde a fase (hold, fulfill, ticket KDS, notificação, estorno). O `dispatch()` grava o marcador APÓS o handler retornar; o sweeper re-despacha, idempotente, as fases sem marcador (NEW→`on_commit`, CONFIRMED→`on_confirmed`, pagos→`on_paid`, CANCELLED→`on_cancelled`) |
+| `lifecycle` | `dict` | `lifecycle.dispatch()` via `_mark_phase_complete` | `sweep_stuck_orders`, `LifecyclePhaseHandler`, `phase_complete()` | Conclusão do handler de fase, `{on_commit: "done", on_accepted: "done", on_paid: "done", on_preparing: "done", on_ready: "done", on_dispatched: "done", on_delivered: "done", on_completed: "done", on_cancelled: "done", on_returned: "done"}`; apenas fases efetivamente retornadas com sucesso. Não prova conclusão remota dos filhos. Chaves históricas desconhecidas são preservadas. preparing/ready/dispatched/delivered/completed/returned ganham Directive no commit da transição; falha do marcador mantém a tarefa recuperável. Estado avançado não cria marcador por inferência. |
 | `loyalty` | `dict` | `LoyaltyRedeemModifier` (via `CommitService`) | `services/loyalty.py` (redeem), `LoyaltyRedeemHandler` | Resgate de pontos: `{redeem_points_q: int, applied_discount_q: int}`. `redeem_points_q` = pedido pelo cliente; `applied_discount_q` = desconto efetivamente aplicado (clampado ao subtotal) — é o valor DEBITADO. Propagada Session→Order na lista do `_do_commit()` |
 | `awaiting_wo_refs` | `list[string]` | `shop.handlers.production_order_sync` | Backstage pedidos/producao projections | Refs de WorkOrders que cobrem itens produzidos do pedido. Contextual, derivável e limpável em void. |
 | `pos_committed_at` | `string` | `shop/services/pos.py` (`_mark_tab_committed`) | — | Timestamp ISO de quando a comanda foi finalizada no POS |
@@ -195,7 +195,7 @@ for key in (
 | `merchant_id` | `string` | `shop/services/ifood_ingest.py` | — | ID do merchant na iFood. Duplicado em `ifood.merchant_id` |
 | `ifood` | `dict` | `shop/services/ifood_ingest.py` | — | Contexto da iFood (só em pedidos ingeridos via `ifood_ingest`): `{order_code, merchant_id, created_at}` |
 | `courier` | `dict` | `CourierDispatchHandler`, `services/courier.apply_status` | `_courier_block` (projection do gestor), webhook Machine (lookup por `data__courier__id_mch`), notificação (`courier_tracking_url`) | Corrida de entrega na logística externa (Machine). Ver detalhamento abaixo |
-| `dispatch` | `dict` | `operator_orders.advance_order` (despacho da entrega da casa), `mark_equipment_returned` / `settle_delivery_cash(equipment_back=True)` | `operator_orders.equipment_custody` / `equipment_out`, card e quadro do gestor (`equipment_*`) | Custódia do **dispositivo** que saiu com o entregador (maquininha): `{equipment: ["card_machine"], equipment_out_at, equipment_out_by, equipment_back_at?, equipment_back_by?}`. Refs permitidas vêm de `ChannelConfig.fulfillment.equipment`. Não é dinheiro: fora do livro do `cashman`. "Onde está a maquininha" é derivado (saiu e não voltou) |
+| `dispatch` | `dict` | `operator_orders.advance_order`, `mark_equipment_returned` | Custódia e projeções do Gestor | `equipment` conserva tipos legados (ex. `card_machine`); `equipment_out_at/by`, `equipment_back_at/by` são trilha. Novo `device_ref` (UUID string) e `device_label` registram qual aparelho foi levado, sem inferir históricos. Disponibilidade individual vem exclusivamente de `backstage.DeliveryDevice.current_order` (vínculo exclusivo), alterado na mesma transação do despacho/devolução. Pagamento é independente. |
 
 ### courier — detalhamento
 
@@ -342,8 +342,8 @@ todo canal novo (ManyChat, iFood direto) herda a mesma disciplina. Guarda:
 | `cash_received_q` | `int` | **canonical** | POS (`shop/services/pos.py`) | fechamento de caixa, B.I. de troco | Soma das linhas em espécie recebidas no terminal. É o que identifica venda em dinheiro num pagamento misto, em que `method` vira `"mixed"` |
 | `tendered_q` | `int` | measurement | POS (`shop/services/pos.py`) | B.I. de troco | Quanto o cliente entregou em espécie. **Ausente quando o operador não digitou** — ausência de medição, nunca "pagou justo" |
 | `change_q` | `int` | measurement | POS (`shop/services/pos.py`) | POS (revisão), B.I. de troco | Troco devolvido, em centavos. Escrito junto com `tendered_q`. É a única fonte de troco do sistema: `HistoricalSale` (export externo) **não tem troco**, e por isso a previsão de necessidade de troco lê só pedido nativo |
-| `cod_settled_at` / `cod_settled_by` | `string` | audit | `operator_orders.settle_delivery_cash` | acerto (guard de repetição), gestor | Quando e quem acertou o dinheiro da entrega no balcão. O turno que recebeu **não** fica aqui: é a linha `cod_settled` no livro do `cashman` |
-| `change_for_q` | `int` | **canonical** | checkout da loja (`storefront/api/views.py`, `intents/checkout.py`) e PDV (`shop/services/pos.py`, campo "Troco para quanto?" do checkout): dinheiro **na entrega** e o cliente disse com quanto paga | `operator_orders.change_out_suggested_q` (despacho: sugestão `change_for − total`, que vira `courier_out` no livro do caixa), projection do gestor (`change_for_q`/`change_label` no card) | Com quanto o cliente vai pagar na porta, em centavos. Era dado morto até o WP-9 do CASHMAN-PLAN: hoje o despacho pergunta quanto o entregador leva e o acerto quanto voltou |
+| `cod_settled_at` / `cod_settled_by` | `string` | audit | `operator_orders.settle_delivery_cash` | acerto (guard de repetição), gestor | Quando e quem confirmou dinheiro/cartão/misto da entrega. Somente a parcela cash gera `cod_settled` no `cashman`; cartão permanece no Payman. Devolução do aparelho é independente |
+| `change_for_q` | `int` | **canonical** | checkout da loja (`storefront/api/views.py`, `intents/checkout.py`) e PDV (`shop/services/pos.py`, soma das cédulas informadas no mesmo teclado de pagamento): dinheiro **na entrega** e o cliente disse com quanto paga | `operator_orders.change_out_suggested_q` (despacho: sugestão `change_for − parcela em dinheiro`, que vira `courier_out` no livro do caixa), projection do gestor (`change_for_q`/`change_label` no card) | Com quanto o cliente vai pagar a parcela em dinheiro na porta, em centavos; inclusive em pagamento misto. Era dado morto até o WP-9 do CASHMAN-PLAN: hoje o despacho pergunta quanto o entregador leva e o acerto quanto voltou |
 
 ### returns — detalhamento
 
@@ -358,10 +358,22 @@ todo canal novo (ManyChat, iFood direto) herda a mesma disciplina. Guarda:
       {"line_id": "L1", "sku": "CROIS-01", "qty": 2, "refund_q": 1500}
     ],
     "refund_total_q": 1500,
+    "stock_receipt_version": 1,
+    "stock_processed": true,
     "refund_processed": true
   }
 ]
 ```
+
+`stock_receipt_version=1` identifica devoluções criadas pelo protocolo com recibo local
+atômico. `stock_processed` é gravado pelo ReturnHandler na mesma transação dos Moves,
+sob lock do Order, para todos os itens exatos daquele índice. `refund_processed` continua
+indicando conclusão do processamento automatizado; não comprova devolução de dinheiro
+físico (fonte: cashman/Payman). Falha explícita de estorno não marca processamento concluído.
+Registro legado já `refund_processed=true` é preservado, sem novo recebimento. Registro
+legado incompleto sem versão fica pendente de inventário/autorização: um Move antigo pode
+já existir, e não é seguro receber outra vez. A fase returned delega estoque/estorno ao
+ReturnHandler quando existe registro de devolução; não recebe todos os itens novamente.
 
 ### Exemplo completo (Order.data)
 
@@ -609,6 +621,17 @@ Write-back: `intent_ref` (string)
 | `tracking` | `dict` | FulfillmentUpdateHandler | Template (não handler) |
 | `context` | `dict` | CommitService (preorder reminder) | Template (não handler) |
 
+`notification_delivery` é a evidência na própria Directive: `status` (`started`,
+`unknown`, `accepted`, `skipped`, `failed`), `recorded_at` ISO, e opcionais
+`backend`, `recipient_fingerprint` (SHA-256 truncado, sem contato), `message_id`
+(somente ID real devolvido pelo adaptador), `reason`, `error`. `started` é
+persistido antes de chamar o transporte, fora da transação. `started`/`unknown`
+não autorizam fallback nem replay externo; um aceite posterior é monotônico.
+`failed` novo contém `outcome: not_applied`; falha histórica sem essa prova não
+se torna segura por idade. Worker antigo não entende o fence: rollout requer
+drenagem/parada dos consumidores antigos e rollback não pode reativá-los sobre
+essas Directives sem reconciliação autorizada (G03/G07).
+
 Templates de notificação: `"order_confirmed"`, `"order_cancelled"`, `"order_cancelled_by_customer"`,
 `"order_rejected"`, `"order_processing"`, `"order_ready"`, `"order_dispatched"`, `"order_delivered"`,
 `"payment_confirmed"`, `"payment_link_sent"`, `"payment_expired"`, `"payment.reminder"`,
@@ -676,6 +699,18 @@ Valores de `event`: `"stock.alert.triggered"`, `"system"`.
 
 Write-back em `Order.data["courier"]` (ver detalhamento). `dedupe_key` =
 `courier.dispatch:{order_ref}:{tentativa}`.
+
+#### `courier.cancel`
+
+Usa a fila Directive existente. Payload: `order_ref`, `channel_ref`, `actor`,
+`courier_ref` (corrida observada), `reason_id` (inteiro ou null). Dedupe vivo:
+`courier.cancel:{order_ref}:{courier_ref}`. Enfileirar não confirma cancelamento.
+`cancel_attempt` registra `state` (`started`, `unknown`, `accepted`, `not_applied`),
+`updated_at`, e, no início, `started_at`. O handler grava started antes da rede,
+accepted antes da adoção local. Replay accepted só reaplica o fato à mesma corrida;
+started/unknown nunca repete o POST. Worker antigo sem handler deve ficar suspenso
+para esse tópico; rollback preserva tarefa/recibo e bloqueia novos cancelamentos
+até um recuperador compatível. Consulta externa/homologação de unknown depende G03.
 
 #### `courier.sync`
 
@@ -1740,3 +1775,69 @@ o [WP-ATRIBUTOS-RENAME](../plans/WP-ATRIBUTOS-RENAME-CHAVES-LEGADAS.md).
 `dietary_from_recipe`, e o service de atributos não o toca. Duas fontes
 escrevendo a mesma verdade é exatamente como ela diverge; unificá-lo com
 `source`/`reviewed` é do WP de rename.
+
+## IdempotencyKey.response_body — intenções locais versionadas
+
+`remote_mutations.run_idempotent_mutation(..., fingerprint=...)` usa, somente em escopos
+novos de intenção local, envelope `{contract: "local-mutation-v1", fingerprint: string,
+result: dict}`. O fingerprint é SHA-256 de JSON canônico incluindo versão, ator,
+operação, recurso, base e inputs. `result` é a resposta original ao cliente; o envelope
+não é projetado. Escopos antigos conservam seu corpo sem envelope e não podem ser
+reaproveitados como escopos locais. Efeito local, eventos, enqueue e recibo compartilham
+transação; respostas >=400 revertem as escritas do executor antes de registrar a recusa.
+Nenhuma chamada de rede é permitida no executor local. TTL global de 24h e recibos
+permanentes existentes não mudam; G08 continua pendente para qualquer nova retenção.
+
+### Catálogo: intenção local de reprecificação (`local-mutation-v1`)
+
+Escopo `catalog.bulk-price` + pessoa autenticada no IdempotencyKey existente. A prévia
+não escreve: devolve base_revision opaca, pessoa esperada e células exatas (ListingItem,
+SKU, canal, tier, preço anterior/resultante em centavos). Limite técnico provisório:
+100 células somando destinos. Confirmação relê a mesma seleção/configuração sob locks,
+compara revisão e grava valores absolutos, enqueue catalog.project_sku e recibo no mesmo
+commit. Payload do recibo: outcome/applied, count, células aplicadas e sync_pending por
+SKU/canal; não armazena texto de cliente. Replay devolve o resultado local original;
+sincronização continua governada por Directive/CatalogSyncState. GET do resultado não
+reexecuta preço nem consulta fornecedor. Sem nova tabela ou alteração de retenção.
+
+
+### Directive `order.lifecycle_phase`
+
+Extensão da fila existente para as fases preparing/ready/dispatched/delivered/completed/returned.
+Payload: `order_ref` (string), `channel_ref` (string), `phase` (string em
+`lifecycle.QUEUED_PHASES`). Writer: `lifecycle.enqueue_phase`, no commit da transição;
+consumer: `LifecyclePhaseHandler`, pelo claim/backoff/lease do orderman.
+Chave `lifecycle.phase:{order_ref}:{phase}`, scope `lifecycle:phase` em IdempotencyKey,
+mesma forma de recibo permanente de `create_persistently_deduped` (`topic`, `directive_pk`).
+G08 decide retenção antes de piloto; nenhum expurgo novo. `done` significa que o handler
+da fase foi concluído, não que fiscal/aviso/courier filho teve aceite externo. Erro de
+enqueue reverte a transição; erro depois do commit conserva tarefa. Fase incompatível
+com estado atual fica failed/alerta canônico, sem executar trabalho antigo ou marcar done.
+`on_delivered` pode retomar em completed: só conclui aviso idempotente/fechamento já feito.
+Rollback deve drenar ou manter este handler disponível enquanto houver tarefas deste topic.
+
+
+### KDSTicket.items[].qty — quantidade fracionária
+
+Writer `shop.services.kds` mantém inteiros históricos como números JSON e escreve frações
+como strings decimais exatas, sem expoente. `KDSItemProjection.qty` aceita int|string;
+a projeção normaliza ambos com `order_helpers.json_quantity`. Expansão de bundle multiplica
+Decimal antes de serializar. Nenhum backfill/truncamento é permitido. Frontend KDS mostra
+a quantidade e soma apenas para resumo visual; ledger continua sendo Order/stockman.
+Unidade histórica não é inferida de Product atual; inventário/unidade continua H08/G06.
+
+
+### courier.dispatch — recibo da tentativa externa
+
+`Directive.payload.dispatch_attempt` é escrito pelo CourierDispatchHandler: `state`
+(`started`, `unknown`, `not_applied`, `accepted`, `inert`), `started_at`, `updated_at`,
+`fingerprint` do payload exato e, quando recebido, `courier_ref`. Não duplica endereço/
+telefone. A tentativa started é persistida antes do POST; accepted com referência é
+persistido antes da adoção local. Retry de accepted só adota o fato; started/unknown
+não repete POST sem consulta confiável homologada. Sem essa consulta, alerta e detalhe do
+pedido informam verificação pendente, e redispatch fica bloqueado. Não há expiração que
+libere uma nova tentativa. Tentativa antiga já executada sem recibo não é reexecutada.
+Recusa comprovada not_applied pode receber nova intenção após correção; Machine 2xx sem
+id ou resposta ilegível é unknown. Não muda o significado do status de Order/courier.
+G03 decide verificação/adopção humana; G08 retenção antes de piloto. Rollback conserva
+os guards ou suspende despacho; nunca remove recibos de resultado desconhecido.

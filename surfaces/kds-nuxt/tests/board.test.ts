@@ -224,3 +224,11 @@ describe("kds board presentation", () => {
     expect(allDay).toEqual([{ name: "Baguete", qty: 5 }]); // café excluded (checked)
   });
 });
+
+it("soma quantidades decimais sem concatenar strings nem arredondar unidades", () => {
+  const first = ticket();
+  first.items[0]!.qty = "0.1";
+  const second = ticket();
+  second.items[0]!.qty = "0.2";
+  expect(allDayCounts([first, second])).toEqual([{ name: "Pão", qty: 0.3 }]);
+});

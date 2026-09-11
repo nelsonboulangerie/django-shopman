@@ -43,6 +43,7 @@ class NotificationResult:
     success: bool
     message_id: str | None = None
     error: str | None = None
+    outcome_unknown: bool = False
 
 
 # ── Pricing (inline — era shopman.pricing.protocols) ──

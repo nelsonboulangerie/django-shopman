@@ -1,0 +1,27 @@
+..F..                                                                    [100%]
+=================================== FAILURES ===================================
+______________ test_accepted_cancel_recovers_after_local_failure _______________
+
+context = (<Order: CANCEL-RIDE-LAB>, <Mock id='4698940112'>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ee5fe00>
+
+    def test_accepted_cancel_recovers_after_local_failure(context, monkeypatch):
+        order, adapter = context
+        task = courier.cancel_ride(order, actor="operator")
+        original = courier.apply_status
+        monkeypatch.setattr(courier, "apply_status", Mock(side_effect=RuntimeError("local save failed")))
+        with pytest.raises(RuntimeError):
+            run(task)
+        task.refresh_from_db()
+        assert task.payload["cancel_attempt"]["state"] == "accepted"
+        monkeypatch.setattr(courier, "apply_status", original)
+        run(task)
+        order.refresh_from_db()
+>       assert courier.get_block(order)["status"] == "C"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'status'
+
+shopman/shop/tests/test_courier_cancel_recovery.py:72: KeyError
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_courier_cancel_recovery.py::test_accepted_cancel_recovers_after_local_failure
+1 failed, 4 passed in 4.99s

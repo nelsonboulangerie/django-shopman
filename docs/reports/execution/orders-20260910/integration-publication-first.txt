@@ -1,0 +1,27 @@
+[WebServer] (node:98549) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 18 tests using 1 worker
+
+(node:98561) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [chromium] › tests/integration/operational.spec.ts:15:1 › lost response after the Django commit queries receipt and advances only once (3.2s)
+  ✓   2 [chromium] › tests/integration/operational.spec.ts:38:1 › SSE during notes draft preserves text and offers explicit same-field resolution (1.6s)
+  ✓   3 [chromium] › tests/integration/operational.spec.ts:59:1 › price preview confirms exact canonical values through Nitro and Django (1.8s)
+  ✓   4 [chromium] › tests/integration/operational.spec.ts:80:1 › closed product A cannot hydrate the reopened panel for B (2.4s)
+  ✓   5 [chromium] › tests/integration/operational.spec.ts:108:1 › same person resumes a locked draft; another person never inherits it (1.6s)
+  ✓   6 [chromium] › tests/integration/operational.spec.ts:132:1 › cancel response loss retains the reason and reads the committed receipt (1.7s)
+  ✓   7 [chromium] › tests/integration/operational.spec.ts:156:1 › cash settlement response loss resolves one receipt in the observed drawer (1.9s)
+  ✓   8 [chromium] › tests/integration/operational.spec.ts:180:1 › feed selection survives response loss and consults the same scoped receipt (1.3s)
+  ✓   9 [chromium] › tests/integration/operational.spec.ts:210:1 › failed refresh leaves the live draft visible and prevents a stale mutation (729ms)
+  ✓  10 [chromium] › tests/integration/operational.spec.ts:228:1 › product PATCH response lost after commit closes only after receipt confirmation (1.8s)
+  ✓  11 [chromium] › tests/integration/operational.spec.ts:255:1 › product same-field dispute preserves draft until explicit reviewed save (2.4s)
+  ✓  12 [chromium] › tests/integration/operational.spec.ts:279:1 › curation drag lost response adopts receipt and canonical exact order (1.2s)
+  ✓  13 [chromium] › tests/integration/operational.spec.ts:312:1 › keyboard curation and frequent targets retain exact order without pointer input (1.3s)
+  ✓  14 [chromium] › tests/integration/operational.spec.ts:345:1 › cell lost response keeps one price intent and one canonical write (1.4s)
+  ✓  15 [chromium] › tests/integration/operational.spec.ts:366:1 › global pause lost response adopts product receipt without another toggle (1.2s)
+  ✓  16 [chromium] › tests/integration/operational.spec.ts:389:1 › back navigation keeps a product draft after declining discard (2.3s)
+  ✓  17 [chromium] › tests/integration/operational.spec.ts:408:1 › delayed collection response cannot replace the selected resource (990ms)
+  ✓  18 [chromium] › tests/integration/operational.spec.ts:429:1 › publication preview leaves flags unchanged and lost confirmation response adopts one receipt (1.4s)
+
+  18 passed (32.0s)

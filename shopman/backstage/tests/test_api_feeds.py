@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
 from shopman.offerman.models import Collection
 
+from shopman.backstage.services import feeds as feed_service
 from shopman.shop.models import Channel, Shop
 from shopman.shop.tests._display import display_channel
 
@@ -51,6 +54,15 @@ COLLS_URL = "/api/v1/backstage/feeds/collections/"
 ROTATION_URL = "/api/v1/backstage/feeds/rotation/"
 
 
+def _post(client, url, *, data, content_type):
+    field = url.strip("/").split("/")[-1]
+    channel = Channel.objects.filter(ref=data.get("ref")).first()
+    payload = {"expected_actor_id": int(client.session["_auth_user_id"]),
+        "base_revision": feed_service.revision(channel, field) if channel else "missing",
+        "idempotency_key": str(uuid.uuid4()), **data}
+    return client.post(url, payload, content_type=content_type)
+
+
 def test_board_shape(client, operator, board):
     client.force_login(operator)
     resp = client.get(BOARD_URL)
@@ -72,7 +84,7 @@ def test_board_requires_manage_catalog(client, plain_staff, board):
 
 def test_toggle_active(client, operator, board):
     client.force_login(operator)
-    resp = client.post(
+    resp = _post(client,
         ACTIVE_URL, data={"ref": "google", "is_active": True}, content_type="application/json"
     )
     assert resp.status_code == 200
@@ -81,7 +93,7 @@ def test_toggle_active(client, operator, board):
 
 def test_set_collections(client, operator, board):
     client.force_login(operator)
-    resp = client.post(
+    resp = _post(client,
         COLLS_URL,
         data={"ref": "tv", "collections": ["doces", "paes"]},
         content_type="application/json",
@@ -92,7 +104,7 @@ def test_set_collections(client, operator, board):
 
 def test_set_collections_unknown_rejected(client, operator, board):
     client.force_login(operator)
-    resp = client.post(
+    resp = _post(client,
         COLLS_URL,
         data={"ref": "tv", "collections": ["nope"]},
         content_type="application/json",
@@ -102,7 +114,7 @@ def test_set_collections_unknown_rejected(client, operator, board):
 
 def test_toggle_unknown_feed(client, operator, board):
     client.force_login(operator)
-    resp = client.post(
+    resp = _post(client,
         ACTIVE_URL, data={"ref": "ghost", "is_active": True}, content_type="application/json"
     )
     assert resp.status_code == 400
@@ -112,7 +124,7 @@ def test_toggle_unknown_feed(client, operator, board):
 
 
 def _rotate(client, body):
-    return client.post(ROTATION_URL, data=body, content_type="application/json")
+    return _post(client, ROTATION_URL, data=body, content_type="application/json")
 
 
 def test_set_rotation_writes_display_config(client, operator, board):

@@ -1,0 +1,411 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_refund_cannot_invalidate_payment_between_guard_and_transition[confirm] __
+
+operation = 'confirm'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1193a4740>
+
+    @pytest.mark.django_db(transaction=True)
+    @pytest.mark.parametrize("operation", ["confirm", "advance", "timeout"])
+    def test_refund_cannot_invalidate_payment_between_guard_and_transition(operation, monkeypatch):
+        if connection.vendor != "postgresql":
+            pytest.skip("Payment guard interleaving requires PostgreSQL")
+        monkeypatch.setattr("shopman.orderman.dispatch._on_commit_callback", lambda *args: None)
+        Channel.objects.create(ref="guard-lock", name="Synthetic guard", config={"payment": {"timing": "pre_commit"}})
+        intent = PaymentService.create_intent("GUARD-LOCK", 1500, "pix")
+        PaymentService.authorize(intent.ref)
+        PaymentService.capture(intent.ref)
+        order = Order.objects.create(ref="GUARD-LOCK", status="accepted" if operation == "advance" else "new", channel_ref="guard-lock", total_q=1500,
+            data={"payment": {"method": "pix", "intent_ref": intent.ref}, "availability_decision": {"approved": True, "decisions": []}})
+        directive = Directive.objects.create(topic="confirmation.timeout", payload={"order_ref": order.ref, "action": "confirm",
+            "expires_at": (timezone.now() - timedelta(seconds=1)).isoformat()})
+        evaluated, resume, refund_started = Event(), Event(), Event()
+        funds_at_transition = []
+        original = Order.transition_status
+    
+        def pause_before_transition(instance, target, *args, **kwargs):
+            if kwargs.get("actor") in {"operator:guard", "confirmation.timeout"}:
+                evaluated.set()
+                assert resume.wait(10)
+                funds_at_transition.append(payment.has_sufficient_captured_payment(instance))
+            return original(instance, target, *args, **kwargs)
+    
+        monkeypatch.setattr(Order, "transition_status", pause_before_transition)
+    
+        def command():
+            try:
+                current = Order.objects.get(pk=order.pk)
+                if operation == "confirm":
+                    operator_orders.confirm_order(current, actor="operator:guard")
+                elif operation == "advance":
+                    operator_orders.advance_order(current, actor="operator:guard")
+                else:
+                    ConfirmationTimeoutHandler().handle(message=Directive.objects.get(pk=directive.pk), ctx={})
+            finally:
+                connections.close_all()
+    
+        def refund():
+            try:
+                refund_started.set()
+                PaymentService.refund(intent.ref, amount_q=1500)
+            finally:
+                connections.close_all()
+    
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            transition = pool.submit(command)
+            try:
+                assert evaluated.wait(10)
+                returned = pool.submit(refund)
+                assert refund_started.wait(10)
+                try:
+                    returned.result(timeout=0.5)
+                except TimeoutError:
+                    pass  # Refund may correctly wait until the command commits.
+            finally:
+                resume.set()
+>           transition.result(timeout=10)
+
+shopman/shop/tests/test_h03_payment_guard_lock.py:75: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/concurrent/futures/_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/concurrent/futures/_base.py:401: in __get_result
+    raise self._exception
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/concurrent/futures/thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+shopman/shop/tests/test_h03_payment_guard_lock.py:48: in command
+    operator_orders.confirm_order(current, actor="operator:guard")
+shopman/shop/services/operator_orders.py:131: in confirm_order
+    with transaction.atomic():
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/transaction.py:307: in __exit__
+    connection.set_autocommit(True)
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/base/base.py:491: in set_autocommit
+    self.run_and_clear_commit_hooks()
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/base/base.py:769: in run_and_clear_commit_hooks
+    func()
+shopman/shop/apps.py:292: in dispatch_fresh_order
+    dispatch(Order.objects.get(pk=order_pk), phase)
+shopman/shop/lifecycle.py:258: in dispatch
+    config = ChannelConfig.for_channel(order.channel_ref)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+shopman/shop/config.py:408: in for_channel
+    config.validate()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ChannelConfig(confirmation=ChannelConfig.Confirmation(mode='immediate', timeout_minutes=5, stale_new_alert_minutes=0),...ems_per_page=0), lifecycle={}, handle_label='Identificador', handle_placeholder='', short_name='', order_ref_prefix='')
+
+    def validate(self):
+        valid_modes = ("immediate", "auto_confirm", "auto_cancel", "manual")
+        if self.confirmation.mode not in valid_modes:
+            raise ValueError(f"confirmation.mode inválido: {self.confirmation.mode}")
+        if self.confirmation.mode in ("auto_confirm", "auto_cancel") and self.confirmation.timeout_minutes <= 0:
+            raise ValueError(
+                f"timeout_minutes deve ser > 0 para mode={self.confirmation.mode}",
+            )
+        valid_methods = {"cash", "pix", "card", "external"}
+        if not self.payment.available_methods:
+            raise ValueError("payment.method deve declarar pelo menos um método")
+        for m in self.payment.available_methods:
+            if m not in valid_methods:
+                raise ValueError(f"payment.method inválido: {m}")
+        if "pix" in self.payment.available_methods and self.payment.timeout_minutes <= 0:
+            raise ValueError("timeout_minutes deve ser > 0 para method=pix")
+        if self.payment.link_timeout_minutes <= 0:
+            raise ValueError("payment.link_timeout_minutes deve ser > 0")
+        valid_timings = {"at_commit", "post_commit", "external"}
+        if self.payment.timing not in valid_timings:
+>           raise ValueError(f"payment.timing inválido: {self.payment.timing}")
+E           ValueError: payment.timing inválido: pre_commit
+
+shopman/shop/config.py:433: ValueError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-10 22:41:26,586 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-10 22:41:26,818 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-10 22:41:27,788 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-10 22:41:31,048 shopman.payman Intent created
+INFO 2026-09-10 22:41:31,049 shopman.payman Intent authorized
+DEBUG 2026-09-10 22:41:31,074 shopman.shop.handlers._sse_emitters _sse_emitters._on_payment_changed degraded; using fallback
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/handlers/_sse_emitters.py", line 327, in _on_payment_changed
+    order = Order.objects.get(ref=order_ref)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py", line 639, in get
+    raise self.model.DoesNotExist(
+shopman.orderman.models.order.Order.DoesNotExist: Order matching query does not exist.
+INFO 2026-09-10 22:41:31,077 shopman.payman Intent captured
+DEBUG 2026-09-10 22:41:31,079 shopman.shop.handlers._sse_emitters _sse_emitters._on_payment_changed degraded; using fallback
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/handlers/_sse_emitters.py", line 327, in _on_payment_changed
+    order = Order.objects.get(ref=order_ref)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py", line 639, in get
+    raise self.model.DoesNotExist(
+shopman.orderman.models.order.Order.DoesNotExist: Order matching query does not exist.
+WARNING 2026-09-10 22:41:31,090 shopman.shop.lifecycle ensure_payment_captured: config lookup failed for channel=guard-lock
+INFO 2026-09-10 22:41:31,099 shopman.payman Intent refunded
+_ test_refund_cannot_invalidate_payment_between_guard_and_transition[advance] __
+
+operation = 'advance'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11a61d490>
+
+    @pytest.mark.django_db(transaction=True)
+    @pytest.mark.parametrize("operation", ["confirm", "advance", "timeout"])
+    def test_refund_cannot_invalidate_payment_between_guard_and_transition(operation, monkeypatch):
+        if connection.vendor != "postgresql":
+            pytest.skip("Payment guard interleaving requires PostgreSQL")
+        monkeypatch.setattr("shopman.orderman.dispatch._on_commit_callback", lambda *args: None)
+        Channel.objects.create(ref="guard-lock", name="Synthetic guard", config={"payment": {"timing": "pre_commit"}})
+        intent = PaymentService.create_intent("GUARD-LOCK", 1500, "pix")
+        PaymentService.authorize(intent.ref)
+        PaymentService.capture(intent.ref)
+        order = Order.objects.create(ref="GUARD-LOCK", status="accepted" if operation == "advance" else "new", channel_ref="guard-lock", total_q=1500,
+            data={"payment": {"method": "pix", "intent_ref": intent.ref}, "availability_decision": {"approved": True, "decisions": []}})
+        directive = Directive.objects.create(topic="confirmation.timeout", payload={"order_ref": order.ref, "action": "confirm",
+            "expires_at": (timezone.now() - timedelta(seconds=1)).isoformat()})
+        evaluated, resume, refund_started = Event(), Event(), Event()
+        funds_at_transition = []
+        original = Order.transition_status
+    
+        def pause_before_transition(instance, target, *args, **kwargs):
+            if kwargs.get("actor") in {"operator:guard", "confirmation.timeout"}:
+                evaluated.set()
+                assert resume.wait(10)
+                funds_at_transition.append(payment.has_sufficient_captured_payment(instance))
+            return original(instance, target, *args, **kwargs)
+    
+        monkeypatch.setattr(Order, "transition_status", pause_before_transition)
+    
+        def command():
+            try:
+                current = Order.objects.get(pk=order.pk)
+                if operation == "confirm":
+                    operator_orders.confirm_order(current, actor="operator:guard")
+                elif operation == "advance":
+                    operator_orders.advance_order(current, actor="operator:guard")
+                else:
+                    ConfirmationTimeoutHandler().handle(message=Directive.objects.get(pk=directive.pk), ctx={})
+            finally:
+                connections.close_all()
+    
+        def refund():
+            try:
+                refund_started.set()
+                PaymentService.refund(intent.ref, amount_q=1500)
+            finally:
+                connections.close_all()
+    
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            transition = pool.submit(command)
+            try:
+                assert evaluated.wait(10)
+                returned = pool.submit(refund)
+                assert refund_started.wait(10)
+                try:
+                    returned.result(timeout=0.5)
+                except TimeoutError:
+                    pass  # Refund may correctly wait until the command commits.
+            finally:
+                resume.set()
+            transition.result(timeout=10)
+            returned.result(timeout=10)
+>       assert funds_at_transition == [True]
+E       assert [False] == [True]
+E         
+E         At index 0 diff: False != True
+E         Use -v to get more diff
+
+shopman/shop/tests/test_h03_payment_guard_lock.py:77: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-10 22:41:31,611 shopman.payman Intent created
+INFO 2026-09-10 22:41:31,612 shopman.payman Intent authorized
+DEBUG 2026-09-10 22:41:31,615 shopman.shop.handlers._sse_emitters _sse_emitters._on_payment_changed degraded; using fallback
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/handlers/_sse_emitters.py", line 327, in _on_payment_changed
+    order = Order.objects.get(ref=order_ref)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py", line 639, in get
+    raise self.model.DoesNotExist(
+shopman.orderman.models.order.Order.DoesNotExist: Order matching query does not exist.
+INFO 2026-09-10 22:41:31,616 shopman.payman Intent captured
+DEBUG 2026-09-10 22:41:31,618 shopman.shop.handlers._sse_emitters _sse_emitters._on_payment_changed degraded; using fallback
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/handlers/_sse_emitters.py", line 327, in _on_payment_changed
+    order = Order.objects.get(ref=order_ref)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py", line 639, in get
+    raise self.model.DoesNotExist(
+shopman.orderman.models.order.Order.DoesNotExist: Order matching query does not exist.
+INFO 2026-09-10 22:41:31,630 shopman.payman Intent refunded
+_ test_refund_cannot_invalidate_payment_between_guard_and_transition[timeout] __
+
+operation = 'timeout'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x119de4bc0>
+
+    @pytest.mark.django_db(transaction=True)
+    @pytest.mark.parametrize("operation", ["confirm", "advance", "timeout"])
+    def test_refund_cannot_invalidate_payment_between_guard_and_transition(operation, monkeypatch):
+        if connection.vendor != "postgresql":
+            pytest.skip("Payment guard interleaving requires PostgreSQL")
+        monkeypatch.setattr("shopman.orderman.dispatch._on_commit_callback", lambda *args: None)
+        Channel.objects.create(ref="guard-lock", name="Synthetic guard", config={"payment": {"timing": "pre_commit"}})
+        intent = PaymentService.create_intent("GUARD-LOCK", 1500, "pix")
+        PaymentService.authorize(intent.ref)
+        PaymentService.capture(intent.ref)
+        order = Order.objects.create(ref="GUARD-LOCK", status="accepted" if operation == "advance" else "new", channel_ref="guard-lock", total_q=1500,
+            data={"payment": {"method": "pix", "intent_ref": intent.ref}, "availability_decision": {"approved": True, "decisions": []}})
+        directive = Directive.objects.create(topic="confirmation.timeout", payload={"order_ref": order.ref, "action": "confirm",
+            "expires_at": (timezone.now() - timedelta(seconds=1)).isoformat()})
+        evaluated, resume, refund_started = Event(), Event(), Event()
+        funds_at_transition = []
+        original = Order.transition_status
+    
+        def pause_before_transition(instance, target, *args, **kwargs):
+            if kwargs.get("actor") in {"operator:guard", "confirmation.timeout"}:
+                evaluated.set()
+                assert resume.wait(10)
+                funds_at_transition.append(payment.has_sufficient_captured_payment(instance))
+            return original(instance, target, *args, **kwargs)
+    
+        monkeypatch.setattr(Order, "transition_status", pause_before_transition)
+    
+        def command():
+            try:
+                current = Order.objects.get(pk=order.pk)
+                if operation == "confirm":
+                    operator_orders.confirm_order(current, actor="operator:guard")
+                elif operation == "advance":
+                    operator_orders.advance_order(current, actor="operator:guard")
+                else:
+                    ConfirmationTimeoutHandler().handle(message=Directive.objects.get(pk=directive.pk), ctx={})
+            finally:
+                connections.close_all()
+    
+        def refund():
+            try:
+                refund_started.set()
+                PaymentService.refund(intent.ref, amount_q=1500)
+            finally:
+                connections.close_all()
+    
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            transition = pool.submit(command)
+            try:
+                assert evaluated.wait(10)
+                returned = pool.submit(refund)
+                assert refund_started.wait(10)
+                try:
+                    returned.result(timeout=0.5)
+                except TimeoutError:
+                    pass  # Refund may correctly wait until the command commits.
+            finally:
+                resume.set()
+>           transition.result(timeout=10)
+
+shopman/shop/tests/test_h03_payment_guard_lock.py:75: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/concurrent/futures/_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/concurrent/futures/_base.py:401: in __get_result
+    raise self._exception
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/concurrent/futures/thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+shopman/shop/tests/test_h03_payment_guard_lock.py:52: in command
+    ConfirmationTimeoutHandler().handle(message=Directive.objects.get(pk=directive.pk), ctx={})
+shopman/shop/handlers/confirmation.py:92: in handle
+    _transition_if_still_new(order, Order.Status.ACCEPTED)
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py:80: in inner
+    with self._recreate_cm():
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/transaction.py:307: in __exit__
+    connection.set_autocommit(True)
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/base/base.py:491: in set_autocommit
+    self.run_and_clear_commit_hooks()
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/base/base.py:769: in run_and_clear_commit_hooks
+    func()
+shopman/shop/apps.py:292: in dispatch_fresh_order
+    dispatch(Order.objects.get(pk=order_pk), phase)
+shopman/shop/lifecycle.py:258: in dispatch
+    config = ChannelConfig.for_channel(order.channel_ref)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+shopman/shop/config.py:408: in for_channel
+    config.validate()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ChannelConfig(confirmation=ChannelConfig.Confirmation(mode='immediate', timeout_minutes=5, stale_new_alert_minutes=0),...ems_per_page=0), lifecycle={}, handle_label='Identificador', handle_placeholder='', short_name='', order_ref_prefix='')
+
+    def validate(self):
+        valid_modes = ("immediate", "auto_confirm", "auto_cancel", "manual")
+        if self.confirmation.mode not in valid_modes:
+            raise ValueError(f"confirmation.mode inválido: {self.confirmation.mode}")
+        if self.confirmation.mode in ("auto_confirm", "auto_cancel") and self.confirmation.timeout_minutes <= 0:
+            raise ValueError(
+                f"timeout_minutes deve ser > 0 para mode={self.confirmation.mode}",
+            )
+        valid_methods = {"cash", "pix", "card", "external"}
+        if not self.payment.available_methods:
+            raise ValueError("payment.method deve declarar pelo menos um método")
+        for m in self.payment.available_methods:
+            if m not in valid_methods:
+                raise ValueError(f"payment.method inválido: {m}")
+        if "pix" in self.payment.available_methods and self.payment.timeout_minutes <= 0:
+            raise ValueError("timeout_minutes deve ser > 0 para method=pix")
+        if self.payment.link_timeout_minutes <= 0:
+            raise ValueError("payment.link_timeout_minutes deve ser > 0")
+        valid_timings = {"at_commit", "post_commit", "external"}
+        if self.payment.timing not in valid_timings:
+>           raise ValueError(f"payment.timing inválido: {self.payment.timing}")
+E           ValueError: payment.timing inválido: pre_commit
+
+shopman/shop/config.py:433: ValueError
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-10 22:41:31,939 shopman.payman Intent created
+INFO 2026-09-10 22:41:31,940 shopman.payman Intent authorized
+DEBUG 2026-09-10 22:41:31,943 shopman.shop.handlers._sse_emitters _sse_emitters._on_payment_changed degraded; using fallback
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/handlers/_sse_emitters.py", line 327, in _on_payment_changed
+    order = Order.objects.get(ref=order_ref)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py", line 639, in get
+    raise self.model.DoesNotExist(
+shopman.orderman.models.order.Order.DoesNotExist: Order matching query does not exist.
+INFO 2026-09-10 22:41:31,944 shopman.payman Intent captured
+DEBUG 2026-09-10 22:41:31,946 shopman.shop.handlers._sse_emitters _sse_emitters._on_payment_changed degraded; using fallback
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/handlers/_sse_emitters.py", line 327, in _on_payment_changed
+    order = Order.objects.get(ref=order_ref)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py", line 639, in get
+    raise self.model.DoesNotExist(
+shopman.orderman.models.order.Order.DoesNotExist: Order matching query does not exist.
+WARNING 2026-09-10 22:41:31,952 shopman.shop.lifecycle ensure_payment_captured: config lookup failed for channel=guard-lock
+WARNING 2026-09-10 22:41:31,956 shopman.shop.lifecycle ensure_payment_captured: config lookup failed for channel=guard-lock
+INFO 2026-09-10 22:41:32,490 shopman.payman Intent refunded
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-10 22:41:32,780 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_h03_payment_guard_lock.py::test_refund_cannot_invalidate_payment_between_guard_and_transition[confirm]
+FAILED shopman/shop/tests/test_h03_payment_guard_lock.py::test_refund_cannot_invalidate_payment_between_guard_and_transition[advance]
+FAILED shopman/shop/tests/test_h03_payment_guard_lock.py::test_refund_cannot_invalidate_payment_between_guard_and_transition[timeout]
+3 failed in 6.43s

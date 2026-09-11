@@ -142,8 +142,8 @@ def can_cancel(order) -> bool:
     return customer_orders.can_cancel(order)
 
 
-def cancel(order) -> None:
-    customer_orders.cancel(order)
+def cancel(order) -> bool:
+    return customer_orders.cancel(order)
 
 
 def confirm_received(order) -> bool:

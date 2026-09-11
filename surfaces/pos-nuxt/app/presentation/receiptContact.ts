@@ -255,6 +255,8 @@ export function receiptContactOffer(input: ReceiptContactInput): ReceiptContactO
 }
 
 export interface ReceiptSaveOffersInput {
+  /** Cliente vinculado continua identificado mesmo durante uma falha de lookup. */
+  customerRef?: string;
   /** O e-mail do COMPROVANTE (campo da nota). */
   receiptEmail: string;
   /** O e-mail digitado no PAINEL DO CLIENTE — identidade por definição. */
@@ -279,8 +281,9 @@ export function receiptSaveOffers(state: ReceiptSaveOffersInput): {
   email: ReceiptContactOffer;
   taxId: ReceiptContactOffer;
 } {
-  const email = normalizeReceiptValue("email", state.receiptEmail);
-  const taxId = normalizeReceiptValue("tax_id", state.wantsCpfOnInvoice ? state.invoiceTaxId : "");
+  const lookupPending = !!state.customerRef && !state.customer;
+  const email = normalizeReceiptValue("email", lookupPending ? "" : state.receiptEmail);
+  const taxId = normalizeReceiptValue("tax_id", !lookupPending && state.wantsCpfOnInvoice ? state.invoiceTaxId : "");
   const emailIsIdentity = Boolean(email) && email === normalizeReceiptValue("email", state.customerEmail);
   const taxIdIsIdentity = Boolean(taxId) && taxId === normalizeReceiptValue("tax_id", state.customerTaxId);
   return {

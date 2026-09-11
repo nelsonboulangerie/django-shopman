@@ -13,6 +13,7 @@
 import type { AssistableField } from "~/types/catalog";
 
 const props = defineProps<{
+  sku: string | null;
   field: AssistableField;
   label: string;
   current: string;
@@ -25,11 +26,15 @@ const emit = defineEmits<{ accept: [text: string] }>();
 
 // Sugestão pendente: fica visível até o operador aceitar ou descartar.
 const suggestion = ref("");
+let generation = 0;
 
 async function onSuggest() {
   if (props.busy) return;
   // Erro e "não configurado" já viram toast no composable; aqui "" = nada a mostrar.
-  suggestion.value = await props.assist(props.field, props.current);
+  const request = ++generation;
+  const base = [props.sku, props.field, props.current];
+  const result = await props.assist(props.field, props.current);
+  if (request === generation && base.every((value, i) => value === [props.sku, props.field, props.current][i])) suggestion.value = result;
 }
 
 function onAccept() {
@@ -38,7 +43,8 @@ function onAccept() {
 }
 
 // Trocar de produto com uma sugestão aberta não pode vazar o texto do anterior.
-watch(() => props.field, () => (suggestion.value = ""));
+watch(() => [props.sku, props.field, props.current], () => { generation++; suggestion.value = ""; }, { flush: "sync" });
+onBeforeUnmount(() => { generation++; });
 </script>
 
 <template>
@@ -48,7 +54,7 @@ watch(() => props.field, () => (suggestion.value = ""));
       <button
         type="button"
         :disabled="busy"
-        class="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:opacity-50"
+        class="min-h-control min-w-control inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:opacity-50"
         :aria-label="`Sugerir ${label} com IA`"
         @click.prevent="onSuggest"
       >
@@ -82,12 +88,12 @@ watch(() => props.field, () => (suggestion.value = ""));
       <span class="mt-2 flex items-center gap-2">
         <button
           type="button"
-          class="rounded-md bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
+          class="min-h-action min-w-action rounded-md bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
           @click.prevent="onAccept"
         >Aceitar</button>
         <button
           type="button"
-          class="rounded-md border border-border px-2.5 py-1 text-xs font-medium transition hover:bg-accent"
+          class="min-h-control min-w-control rounded-md border border-border px-2.5 py-1 text-xs font-medium transition hover:bg-accent"
           @click.prevent="suggestion = ''"
         >Descartar</button>
       </span>

@@ -15,6 +15,7 @@ import logging
 from datetime import datetime
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from shopman.orderman.models import Directive
@@ -154,6 +155,27 @@ def latest_delivery(order, template: str) -> Directive | None:
     )
 
 
+def delivery_uncertainty_refusal(order, template: str) -> NotificationResendRefused | None:
+    """Unresolved transport evidence fences a new gesture as well as a retry."""
+    history = Directive.objects.filter(
+        topic=TOPIC, payload__order_ref=order.ref,
+        payload__template=_canonical_template(template),
+    )
+    uncertain = history.filter(payload__notification_delivery__status__in=["started", "unknown"]).exists()
+    if not uncertain:
+        for payload in history.filter(status=Directive.Status.FAILED).values_list("payload", flat=True):
+            evidence = (payload or {}).get("notification_delivery") or {}
+            if evidence.get("status") not in {"accepted", "skipped"} and evidence.get("outcome") != "not_applied":
+                uncertain = True
+                break
+    if uncertain:
+        return NotificationResendRefused(
+            "notification_acceptance_unknown",
+            "Aceite do envio anterior não confirmado. Confira o envio com o responsável antes de reenviar.",
+        )
+    return None
+
+
 def resend(order, template: str, *, min_interval_seconds: int = RESEND_MIN_INTERVAL_SECONDS) -> Directive:
     """Enfileira de novo um aviso já enviado, apesar do dedupe de ``send``.
 
@@ -175,6 +197,9 @@ def resend(order, template: str, *, min_interval_seconds: int = RESEND_MIN_INTER
     primeiro criou — nunca duas.
     """
     template = _canonical_template(template)
+    refusal = delivery_uncertainty_refusal(order, template)
+    if refusal is not None:
+        raise refusal
     history = Directive.objects.filter(topic=TOPIC, payload__order_ref=order.ref, payload__template=template)
     latest = history.order_by("-created_at", "-pk").first()
     if latest is not None:
@@ -229,7 +254,7 @@ def resend(order, template: str, *, min_interval_seconds: int = RESEND_MIN_INTER
     return created
 
 
-def payment_link_resend_refusal(order) -> NotificationResendRefused | None:
+def payment_link_resend_refusal(order, *, check_delivery: bool = True) -> NotificationResendRefused | None:
     """Por que este pedido NÃO aceita reenvio do link — ou ``None`` se aceita.
 
     Só o que é do PEDIDO (forma, URL, cancelamento, captura, vencimento). Os
@@ -263,10 +288,24 @@ def payment_link_resend_refusal(order) -> NotificationResendRefused | None:
             "payment_link_expired",
             "O link venceu. Refaça a venda para gerar um novo.",
         )
+    if check_delivery:
+        refusal = delivery_uncertainty_refusal(order, PAYMENT_LINK_TEMPLATE)
+        if refusal is not None:
+            return refusal
     return None
 
 
-def resend_payment_link(order) -> Directive:
+def payment_link_revision(order) -> str:
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    last = latest_delivery(order, PAYMENT_LINK_TEMPLATE)
+    return mutation_fingerprint({"version": 1, "ref": order.ref, "status": order.status,
+        "payment": (order.data or {}).get("payment"),
+        "delivery": [last.pk, last.status, last.updated_at.isoformat()] if last else None})
+
+
+@transaction.atomic
+def resend_payment_link(order, *, expected_revision=None) -> Directive:
     """Reenvia o aviso ``payment_link_sent`` — o gesto do operador quando o cliente diz "não chegou".
 
     Guardas do pedido (``payment_link_resend_refusal``) e de cadência
@@ -274,6 +313,14 @@ def resend_payment_link(order) -> Directive:
     falar um vocabulário só (``payment_link_send_pending``,
     ``payment_link_resend_too_soon``).
     """
+    from shopman.orderman.models import Order
+    from shopman.payman.models import PaymentIntent
+
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    list(PaymentIntent.objects.select_for_update().filter(order_ref=order.ref).order_by("pk"))
+    if expected_revision is not None and payment_link_revision(order) != expected_revision:
+        raise NotificationResendRefused("payment_link_changed", "O link ou envio mudou. Confira o estado atual antes de reenviar.")
     refusal = payment_link_resend_refusal(order)
     if refusal is not None:
         raise refusal
@@ -388,6 +435,11 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
                 message_id=str(getattr(result, "message_id", "") or ""),
             )
             return True, None
+
+        if getattr(result, "outcome_unknown", False):
+            _record_delivery(payload, status="unknown", backend=backend_name,
+                             recipient=recipient, reason="acceptance_unconfirmed")
+            return False, "acceptance_unconfirmed"
 
         last_error = result.error or "unknown"
         logger.info(
@@ -918,6 +970,8 @@ def _record_delivery(
         "status": status,
         "recorded_at": timezone.now().isoformat(),
     }
+    if status == "failed":
+        record["outcome"] = "not_applied"
     if backend:
         record["backend"] = backend
     if recipient:

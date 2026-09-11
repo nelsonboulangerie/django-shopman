@@ -12,6 +12,15 @@ class BackstageConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self) -> None:
+        from django.db.models.signals import pre_save
+        from shopman.orderman.models import Fulfillment, Order
+
+        from shopman.backstage.services.delivery_devices import guard_dispatch
+
+        for model in (Order, Fulfillment):
+            pre_save.connect(guard_dispatch, sender=model, weak=False,
+                             dispatch_uid=f"backstage.delivery_device.{model.__name__}")
+
         # "Não tenho o produto para oferecer": o que muda essa resposta é
         # estoque ou reserva. Reserva que expira por varredura em massa não
         # emite signal — quem cobre esse buraco é a reconciliação periódica

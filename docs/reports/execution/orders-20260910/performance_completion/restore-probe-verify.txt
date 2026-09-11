@@ -1,0 +1,22 @@
+{
+  "all_tables_and_sequences_still_equal": false,
+  "all_tables_still_equal": true,
+  "source_unchanged": true,
+  "probe_sequence_advances": {
+    "backstage_operatoralert_id_seq": {
+      "before": 10,
+      "after": 11
+    }
+  },
+  "table_count": 162,
+  "sequence_count": 151,
+  "book_rows": {
+    "cashman_entry": 19,
+    "orderman_order": 115,
+    "orderman_directive": 93,
+    "orderman_idempotencykey": 526,
+    "payman_paymentintent": 19,
+    "payman_paymenttransaction": 19,
+    "stockman_move": 2
+  }
+}

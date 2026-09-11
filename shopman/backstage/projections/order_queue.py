@@ -10,11 +10,12 @@ Never imports from ``shopman.backstage.views.*``.
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from django.utils import timezone
-from shopman.orderman.models import Order
+from shopman.orderman.models import Order, OrderItem
 from shopman.utils.monetary import format_money
 from shopman.utils.phone import normalize_phone
 
@@ -25,6 +26,7 @@ from shopman.backstage.presentation.status import (
     status_color,
 )
 from shopman.shop.projections.types import (
+    Action,
     OrderItemProjection,
     TimelineEventProjection,
 )
@@ -90,6 +92,8 @@ class EquipmentOptionProjection:
 
     ref: str
     label: str
+    enabled: bool = True
+    reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -101,6 +105,8 @@ class EquipmentOutProjection:
     order_ref: str
     customer_name: str
     out_at: str
+    actions: tuple[Action, ...] = ()
+    identified: bool = False
 
 
 @dataclass(frozen=True)
@@ -109,6 +115,8 @@ class OrderCardProjection:
 
     ref: str
     status: str
+    actions: tuple[Action, ...]
+    revisions: dict[str, str]
     status_label: str
     status_color: str
     channel_ref: str
@@ -262,6 +270,8 @@ class OperatorOrderProjection:
 
     ref: str
     status: str
+    actions: tuple[Action, ...]
+    revisions: dict[str, str]
     status_label: str
     status_color: str
     customer_name: str
@@ -367,7 +377,7 @@ class OperatorOrderProjection:
     # (``notification.payment_link_resend_refusal``): forma ``link`` com URL,
     # pedido vivo, não pago, link não vencido. A cadência (cedo demais, envio
     # em andamento) é recusa da hora do clique, com toast — não esconde botão.
-    # ``payment_link_notice`` é a prova de envio, lida da última Directive do
+    # ``payment_link_notice`` descreve a evidência, lida da última Directive do
     # aviso: "Enviando…", "Link enviado às 14h32" ou "falhou — reenvie".
     can_resend_payment_link: bool = False
     payment_link_notice: str = ""
@@ -407,6 +417,7 @@ class TwoZoneQueueProjection:
     # Aparelhos na rua (saíram com o entregador e não voltaram), para o quadro
     # responder "onde está a maquininha" sem procurar card por card.
     equipment_out: tuple[EquipmentOutProjection, ...] = ()
+    equipment_available: tuple[EquipmentOptionProjection, ...] = ()
 
 
 # ── Builders ───────────────────────────────────────────────────────────
@@ -435,7 +446,14 @@ def build_order_queue(
         filter_status = "all"
 
     courier_change = operator_orders.courier_change_by_order([o.ref for o in filtered])
-    cards = tuple(_build_card(o, courier_change=courier_change) for o in filtered)
+    from shopman.shop.services import waitlist
+
+    waitlist_states = waitlist.states_for(filtered)
+    payment_reads = payment_svc.read_payments_for(filtered)
+    channel_configs = _channel_configs_for(filtered)
+    cash_context = _cash_settlement_context(filtered)
+    fiscal_states = _fiscal_states_for(filtered)
+    cards = tuple(_build_card(o, fiscal_states=fiscal_states, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), courier_change=courier_change, waitlist_states=waitlist_states, payment_reads=payment_reads) for o in filtered)
 
     return OrderQueueProjection(
         orders=cards,
@@ -487,7 +505,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         OrderItemProjection(
             sku=it.sku,
             name=it.name or it.sku,
-            qty=int(it.qty),
+            qty=format(it.qty.normalize(), "f"),
             unit_price_display=_money(it.unit_price_q),
             total_display=_money(it.line_total_q),
         )
@@ -515,9 +533,58 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
     bloqueio = operator_orders.advance_block(order)
     next_status = operator_orders.next_status_for(order) if not bloqueio else ""
 
+    cancel_capability = _cancel_capability(order, user)
+    authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
+    cancel_action = Action(
+        ref="cancel", kind="mutation", label="Cancelar pedido", priority="danger",
+        enabled=authorized and cancel_capability["can_cancel"],
+        reason=cancel_capability["cancel_block_label"] if authorized else "Identifique uma pessoa com permissão para gerenciar pedidos.",
+        method="POST", idempotency="required",
+        payload_schema={"base_revision": operator_orders.operational_revision(order), "expected_actor_id": getattr(user, "pk", None)},
+        confirmation={"required": True, "manager_approval": cancel_capability["cancel_requires_approval"]},
+    )
+    extra_actions = [cancel_action, *_cash_settlement_actions(order, user, None)]
+    courier_block = _courier_block(order)
+    if courier_block:
+        from shopman.shop.services.courier import dispatch_revision
+
+        extra_actions.append(Action(ref="courier-dispatch", kind="mutation", label="Solicitar entregador",
+            enabled=authorized and courier_block["can_dispatch"],
+            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+                "" if courier_block["can_dispatch"] else "Confira o estado do pedido e da corrida antes de despachar."),
+            method="POST", idempotency="required",
+            payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+        extra_actions.append(Action(ref="courier-cancel", kind="mutation", label="Solicitar cancelamento da corrida",
+            enabled=authorized and courier_block["can_cancel"],
+            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+                "" if courier_block["can_cancel"] else "Confira o estado da corrida e de solicitações anteriores."),
+            method="POST", idempotency="required", confirmation={"required": True},
+            payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+        extra_actions.append(Action(ref="courier-quote", kind="mutation", label="Cotar entrega",
+            enabled=authorized and courier_block["can_quote"],
+            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+                "" if courier_block["can_quote"] else "Confira o estado do pedido e da corrida antes de cotar."),
+            method="POST", idempotency="required",
+            payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    if fiscal_status == "failed":
+        from shopman.backstage.services.orders import fiscal_revision
+
+        extra_actions.append(Action(ref="requeue-fiscal", kind="mutation", label="Reprocessar fiscal", enabled=authorized,
+            reason="" if authorized else "Identifique uma pessoa com permissão para gerenciar pedidos.", method="POST", idempotency="required",
+            payload_schema={"base_revision": fiscal_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    if method == "link":
+        from shopman.shop.services import notification as notification_svc
+
+        refusal = notification_svc.payment_link_resend_refusal(order)
+        extra_actions.append(Action(ref="resend-payment-link", kind="mutation", label="Reenviar link", enabled=authorized and refusal is None,
+            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else refusal.message if refusal else ""),
+            method="POST", idempotency="required",
+            payload_schema={"base_revision": notification_svc.payment_link_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
     return OperatorOrderProjection(
         ref=order.ref,
         status=order.status,
+        actions=(*operator_orders.operational_actions(order, user=user), *extra_actions),
+        revisions={field: operator_orders.operational_revision(order, field=field) for field in ("advance", "kitchen_note", "assignment")},
         status_label=order_status_label(order.status),
         status_color=status_color(order.status),
         customer_name=customer_name,
@@ -537,9 +604,9 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         payment_method_label=payment_method_label,
         payment_status=payment_status,
         payment_status_label=payment_status_label(payment_status),
-        can_confirm=order.status == "new",
+        can_confirm=not operator_orders.confirmation_block_reason(order),
         can_advance=bool(next_status),
-        **_cancel_capability(order, user),
+        **cancel_capability,
         next_action_label=_next_label(order),
         advance_block_label=advance_block_label(bloqueio),
         advance_block_reason=operator_orders.advance_block_message(bloqueio),
@@ -556,7 +623,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         cancellation_presets=_cancellation_presets(),
         kitchen_note_tags=_kitchen_note_tags(),
         customer_profile=_customer_profile(order),
-        courier=_courier_block(order),
+        courier=courier_block,
         **_courier_change_fields(order),
         **_equipment_fields(order),
         **_payment_link_fields(order, method),
@@ -620,12 +687,28 @@ def _courier_block(order: Order) -> dict | None:
         if active and block.get("id_mch"):
             position = cache.get(f"courier:pos:{block['id_mch']}")
 
+        from shopman.shop.services.courier import can_quote, latest_cancellation, unresolved_dispatch
+
+        unresolved = unresolved_dispatch(order)
+        cancellation = latest_cancellation(order) if active else None
+        cancellation_pending = False
         error = block.get("error") if isinstance(block.get("error"), dict) else None
 
+        if unresolved is not None:
+            error = {"message": "Despacho sem resultado confirmado. Confira a solicitação na central antes de abrir outra corrida.", "at": unresolved.updated_at.isoformat()}
+        if cancellation is not None:
+            cancel_state = (cancellation.payload or {}).get("cancel_attempt", {}).get("state")
+            cancellation_pending = cancellation.status in {"queued", "running"} or cancel_state in {"started", "unknown", "accepted"}
+            error = {"message": ("Cancelamento sem resultado confirmado. Confira esta corrida na central antes de reenviar."
+                if cancel_state in {"started", "unknown"} else "Solicitação de cancelamento registrada; aguardando confirmação da corrida."),
+                "at": cancellation.updated_at.isoformat()}
+            if not cancellation_pending:
+                error = {"message": cancellation.last_error or "Solicitação não aplicada. Confira o estado atual antes de tentar novamente.",
+                    "at": cancellation.updated_at.isoformat()}
         return {
             "provider": str(block.get("provider") or ("machine" if adapter_on else "")),
             "status": ride_status,
-            "status_label": COURIER_STATUS_LABELS.get(ride_status, ""),
+            "status_label": "Despacho sem resultado confirmado" if unresolved is not None else COURIER_STATUS_LABELS.get(ride_status, ""),
             "active": active,
             "driver": block.get("driver") if isinstance(block.get("driver"), dict) else None,
             "tracking_url": str(block.get("tracking_url") or ""),
@@ -642,9 +725,9 @@ def _courier_block(order: Order) -> dict | None:
             "attempts_count": len(block.get("attempts") or []),
             "position": position,
             "error": error,
-            "can_quote": adapter_on and not active and order.status not in ("cancelled", "completed"),
-            "can_dispatch": adapter_on and not active and order_can_ride,
-            "can_cancel": active and ride_status in CANCELLABLE_STATUSES,
+            "can_quote": can_quote(order),
+            "can_dispatch": adapter_on and not active and order_can_ride and unresolved is None,
+            "can_cancel": adapter_on and active and ride_status in CANCELLABLE_STATUSES and not cancellation_pending,
         }
     except Exception:
         logger.debug("orders.courier_block_failed order=%s", order.ref, exc_info=True)
@@ -881,19 +964,44 @@ def _segment_label(segment: str) -> str:
         return ""
 
 
-def build_order_card(order: Order) -> OrderCardProjection:
+def build_order_card(order: Order, *, user=None) -> OrderCardProjection:
     """Build a single order card projection (for HTMX partial re-renders)."""
-    return _build_card(order)
+    return _build_card(order, user=user)
 
 
-def build_two_zone_queue() -> TwoZoneQueueProjection:
+def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     """Build the operator queue grouped by the next physical action."""
     all_orders = list(
         Order.objects.filter(status__in=ACTIVE_STATUSES)
-        .prefetch_related("items")
         .order_by("created_at")
     )
 
+    # The queue only reads quantity/name/SKU; no full item models or metadata needed.
+    items_by_order = defaultdict(list)
+    for item in OrderItem.objects.filter(order_id__in=[order.pk for order in all_orders]).values_list("order_id", "qty", "name", "sku", named=True):
+        items_by_order[item.order_id].append(item)
+    for order in all_orders:
+        order._queue_items = items_by_order[order.pk]
+
+    from shopman.shop.services import waitlist
+
+    waitlist_states = waitlist.states_for(all_orders)
+    payment_reads = payment_svc.read_payments_for(all_orders)
+    from shopman.backstage.models import DeliveryDevice
+    from shopman.backstage.services.delivery_devices import PREFIX
+
+    devices = list(DeliveryDevice.objects.select_related("current_order"))
+    for order in all_orders:
+        order._delivery_devices = devices
+    channel_configs = _channel_configs_for(all_orders)
+    cash_context = _cash_settlement_context(all_orders)
+    fiscal_states = _fiscal_states_for(all_orders)
+    # Rótulos canônicos resolvidos uma vez por chave nesta leitura, sem cache
+    # entre requests: uma edição de copy aparece na próxima projeção.
+    status_labels = {status: order_status_label(status) for status in {order.status for order in all_orders}}
+    methods = {(order.data.get("payment") or {}).get("method", "") for order in all_orders}
+    methods.update(t.get("method", "") for order in all_orders for t in (order.data or {}).get("payment", {}).get("tenders", []))
+    method_labels = {method: payment_method_label(method) for method in methods}
     new_orders = [o for o in all_orders if o.status == "new"]
     deadlines = _confirmation_deadlines([o.ref for o in new_orders])
     # Uma consulta ao livro para todos os cards: o troco que saiu e voltou.
@@ -905,12 +1013,12 @@ def build_two_zone_queue() -> TwoZoneQueueProjection:
     # mantém o prazo de confirmação (auto-confirm) e o botão de aceitar; o
     # despertador (preorder.activate) devolve o pedido ao fluxo na data (WP-D).
     intake = tuple(
-        _build_card(o, deadline=deadlines.get(o.ref))
+        _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
         for o in new_orders
         if not _is_future_preorder(o)
     )
     prep_orders = [o for o in all_orders if o.status in ("accepted", "preparing")]
-    prep = tuple(_build_card(o, courier_change=courier_change) for o in prep_orders if not _is_future_preorder(o))
+    prep = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in prep_orders if not _is_future_preorder(o))
     # Só estados pré-fulfillment viram "Agendados"; ready/dispatched/delivered
     # seguem nas colunas de expedição mesmo que a data combinada seja futura.
     future_preorders = [
@@ -918,22 +1026,24 @@ def build_two_zone_queue() -> TwoZoneQueueProjection:
         if o.status in ("new", "accepted", "preparing") and _is_future_preorder(o)
     ]
     preorders = tuple(
-        _build_card(o, deadline=deadlines.get(o.ref))
+        _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
         for o in sorted(future_preorders, key=lambda o: (get_commitment_date(o), o.created_at))
     )
     preparing_count = len(prep)
 
     ready_orders = [o for o in all_orders if o.status == "ready"]
-    expedition_pickup = tuple(_build_card(o) for o in ready_orders if not _is_delivery(o))
-    expedition_delivery = tuple(_build_card(o, courier_change=courier_change) for o in ready_orders if _is_delivery(o))
+    expedition_pickup = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user) for o in ready_orders if not _is_delivery(o))
+    expedition_delivery = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in ready_orders if _is_delivery(o))
     expedition_delivery_transit = tuple(
-        _build_card(o, courier_change=courier_change)
+        _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change)
         for o in all_orders
         if o.status in ("dispatched", "delivered")
     )
 
     return TwoZoneQueueProjection(
-        equipment_out=_equipment_out(),
+        equipment_out=_equipment_out(user=user, devices=devices),
+        equipment_available=tuple(EquipmentOptionProjection(ref=PREFIX + str(device.ref), label=device.label)
+                                  for device in devices if device.active and device.current_order_id is None),
         intake=intake,
         preparing_count=preparing_count,
         prep=prep,
@@ -1006,7 +1116,7 @@ _WAITLIST_LABELS = {
 }
 
 
-def _waitlist_badge(order: Order) -> tuple[str, str, str]:
+def _waitlist_badge(order: Order, *, states: dict[str, str] | None = None) -> tuple[str, str, str]:
     """Estado da fila para o card do board (WP-P2E).
 
     Pedido esperando fornada não é pedido travado, e a diferença precisa estar
@@ -1015,7 +1125,7 @@ def _waitlist_badge(order: Order) -> tuple[str, str, str]:
     try:
         from shopman.shop.services import waitlist
 
-        state = waitlist.state_for(order)
+        state = states[order.ref] if states is not None else waitlist.state_for(order)
     except Exception:
         logger.debug("order_queue._waitlist_badge degraded ref=%s", order.ref, exc_info=True)
         return "", "", ""
@@ -1026,24 +1136,47 @@ def _waitlist_badge(order: Order) -> tuple[str, str, str]:
     return state, deadline, _WAITLIST_LABELS.get(state, "")
 
 
+def _channel_configs_for(orders):
+    """Resolve each channel once for this projection; commands read their own config."""
+    from shopman.shop.config import ChannelConfig
+
+    configs = {}
+    for ref in {order.channel_ref for order in orders}:
+        try:
+            configs[ref] = ChannelConfig.for_channel(ref)
+        except Exception:
+            logger.warning("orders.channel_config_read_failed channel=%s", ref, exc_info=True)
+            # Preserve existing fail-closed guards when resolution is unavailable.
+    return configs
+
+
 def _build_card(
     order: Order,
     deadline: tuple[str, str] | None = None,
     courier_change: dict[str, tuple[int, int | None]] | None = None,
+    waitlist_states: dict[str, str] | None = None,
+    user=None,
+    payment_reads=None,
+    channel_config=None,
+    cash_context=None,
+    status_labels=None,
+    method_labels=None,
+    fiscal_states=None,
 ) -> OrderCardProjection:
     now = timezone.now()
     elapsed = (now - order.created_at).total_seconds()
 
     timer_class = _timer_class(order.status, elapsed)
 
-    items_qs = list(order.items.all()[:4])
+    queue_items = getattr(order, "_queue_items", None)
+    items_qs = queue_items[:4] if queue_items is not None else list(order.items.all()[:4])
     items_summary = ", ".join(
-        f"{int(it.qty)}x {it.name or it.sku}" for it in items_qs[:3]
+        f"{format(it.qty.normalize(), "f")}x {it.name or it.sku}" for it in items_qs[:3]
     )
     if len(items_qs) > 3:
         items_summary += "..."
 
-    items_count = order.items.count()
+    items_count = len(queue_items) if queue_items is not None else order.items.count()
 
     is_delivery = _is_delivery(order)
     fulfillment_icon = "local_shipping" if is_delivery else "storefront"
@@ -1059,24 +1192,37 @@ def _build_card(
         or ""
     )
 
-    bloqueio = operator_orders.advance_block(order)
+    batch_state = waitlist_states.get(order.ref) if waitlist_states is not None else None
+    bloqueio = operator_orders.advance_block(order, waitlist_state=batch_state, payment_reads=payment_reads)
     next_status = operator_orders.next_status_for(order) if not bloqueio else ""
     next_label = _next_label(order)
 
     payment_data = order.data.get("payment", {})
     method = payment_data.get("method", "")
-    payment_status = _payment_status(order)
-    payment_method_label = _payment_method_label(method, payment_data)
-    fiscal_status, fiscal_status_label, _fiscal_links = _fiscal_status(order)
+    payment_status = (payment_svc.get_payment_status(order, payment_reads=payment_reads) or "")
+    payment_method_label = _payment_method_label(method, payment_data, labels=method_labels)
+    fiscal_status, fiscal_status_label, _fiscal_links = _fiscal_status(
+        order, directive_status=fiscal_states.get(order.ref, "") if fiscal_states is not None else None,
+    )
     commitment = get_commitment_date(order)
     is_preorder = commitment is not None and commitment > timezone.localdate()
-    waitlist_state, waitlist_deadline_iso, waitlist_label = _waitlist_badge(order)
+    waitlist_state, waitlist_deadline_iso, waitlist_label = _waitlist_badge(order, states=waitlist_states)
     recipient = order.data.get("recipient") if isinstance(order.data.get("recipient"), dict) else {}
+
+    actions = operator_orders.operational_actions(order, user=user, waitlist_state=batch_state, payment_reads=payment_reads, channel_config=channel_config)
+    # Reuse only this read's canonical action revisions; commands still recompute under lock.
+    revision_actions = {"advance": {"advance", "confirm", "reject"}, "kitchen_note": {"notes"}, "assignment": {"assign", "unassign"}}
+    revisions = {}
+    for field, refs in revision_actions.items():
+        revision = next((action.payload_schema["base_revision"] for action in actions if action.ref in refs), None)
+        revisions[field] = revision if revision is not None else operator_orders.operational_revision(order, field=field)
 
     return OrderCardProjection(
         ref=order.ref,
         status=order.status,
-        status_label=order_status_label(order.status),
+        actions=(*actions, *_cash_settlement_actions(order, user, cash_context)),
+        revisions=revisions,
+        status_label=status_labels[order.status] if status_labels is not None else order_status_label(order.status),
         status_color=status_color(order.status),
         channel_ref=order.channel_ref or "",
         channel_icon=CHANNEL_ICONS.get(order.channel_ref or "", _DEFAULT_CHANNEL_ICON),
@@ -1094,7 +1240,7 @@ def _build_card(
         fulfillment_type="delivery" if is_delivery else "pickup",
         delivery_address=delivery_address,
         delivery_instructions=delivery_instructions,
-        can_confirm=order.status == "new",
+        can_confirm=not operator_orders.confirmation_block_reason(order, payment_reads=payment_reads, channel_config=channel_config),
         can_advance=bool(next_status),
         next_status=next_status,
         next_action_label=next_label,
@@ -1123,7 +1269,7 @@ def _build_card(
         commitment_date=commitment.isoformat() if commitment else "",
         commitment_date_display=_commitment_date_display(commitment) if is_preorder else "",
         **_courier_change_fields(order, courier_change),
-        **_equipment_fields(order),
+        **_equipment_fields(order, channel_config=channel_config),
         waitlist_state=waitlist_state,
         waitlist_deadline_iso=waitlist_deadline_iso,
         waitlist_label=waitlist_label,
@@ -1138,17 +1284,27 @@ def _equipment_label(ref: str) -> str:
     return EQUIPMENT_LABELS.get(ref, ref)
 
 
-def _equipment_fields(order: Order) -> dict:
+def _equipment_fields(order: Order, *, channel_config=None) -> dict:
     if not _is_delivery(order):
         return {}
-    options = tuple(
-        EquipmentOptionProjection(ref=ref, label=_equipment_label(ref))
-        for ref in operator_orders.equipment_options(order.channel_ref or "")
-    )
+    from shopman.backstage.models import DeliveryDevice
+    from shopman.backstage.services.delivery_devices import PREFIX
+
+    allowed = operator_orders.equipment_options(order.channel_ref or "", channel_config=channel_config)
+    devices = getattr(order, "_delivery_devices", None)
+    if devices is None:
+        devices = list(DeliveryDevice.objects.select_related("current_order")) if "card_machine" in allowed else []
+    options = tuple(EquipmentOptionProjection(ref=ref, label=_equipment_label(ref)) for ref in allowed if ref != "card_machine")
+    if "card_machine" in allowed:
+        options += tuple(EquipmentOptionProjection(
+            ref=PREFIX + str(device.ref), label=device.label,
+            enabled=device.active and device.current_order_id is None,
+            reason=(f"Em trânsito no pedido {device.current_order.ref}" if device.current_order_id else "Inativa" if not device.active else ""),
+        ) for device in devices)
     custody = operator_orders.equipment_custody(order)
     label = ""
     if custody.equipment:
-        names = ", ".join(_equipment_label(ref) for ref in custody.equipment)
+        names = (order.data or {}).get("dispatch", {}).get("device_label") or ", ".join(_equipment_label(ref) for ref in custody.equipment)
         label = f"Entregador levou {names.lower()}" if custody.pending else f"{names} voltou"
     return {
         "equipment_options": options,
@@ -1158,19 +1314,24 @@ def _equipment_fields(order: Order) -> dict:
     }
 
 
-def _equipment_out() -> tuple[EquipmentOutProjection, ...]:
+def _equipment_out(*, user=None, devices=None) -> tuple[EquipmentOutProjection, ...]:
+    from shopman.backstage.models import DeliveryDevice
+
+    if devices is None:
+        devices = list(DeliveryDevice.objects.select_related("current_order"))
+    # Physical identity comes only from the exclusive relation. Old generic
+    # custody remains returnable, without assigning an invented reader to it.
+    entries = [(str(device.ref), device.current_order, device.label, True) for device in devices if device.current_order_id]
+    entries += [(ref, order, f"{_equipment_label(ref)} (registro antigo sem identificação)", False) for ref, order in operator_orders.equipment_out()
+                if not (order.data or {}).get("dispatch", {}).get("device_ref")]
     rows = []
-    for ref, order in operator_orders.equipment_out():
+    for ref, order, label, identified in entries:
         customer = order.data.get("customer", {}) if isinstance(order.data, dict) else {}
-        rows.append(
-            EquipmentOutProjection(
-                ref=ref,
-                label=_equipment_label(ref),
-                order_ref=order.ref,
-                customer_name=str(customer.get("name") or ""),
-                out_at=operator_orders.equipment_custody(order).out_at,
-            )
-        )
+        rows.append(EquipmentOutProjection(
+            ref=ref, label=label, identified=identified, order_ref=order.ref, customer_name=str(customer.get("name") or ""),
+            out_at=operator_orders.equipment_custody(order).out_at,
+            actions=tuple(action for action in operator_orders.operational_actions(order, user=user) if action.ref == "equipment-back"),
+        ))
     return tuple(rows)
 
 
@@ -1183,7 +1344,7 @@ def _courier_change_fields(order: Order, by_order: dict[str, tuple[int, int | No
     if not _is_delivery(order):
         return {}
     payment = order.data.get("payment") or {}
-    if payment.get("method") != "cash" or payment.get("collection") != "on_delivery":
+    if payment.get("method") not in {"cash", "mixed"} or payment.get("collection") != "on_delivery":
         return {}
     if by_order is None:
         change = operator_orders.courier_change(order)
@@ -1358,23 +1519,60 @@ def _payment_status(order: Order) -> str:
     return payment_svc.get_payment_status(order) or ""
 
 
-def _payment_method_label(method: str, payment_data: dict) -> str:
+def _payment_method_label(method: str, payment_data: dict, *, labels: dict | None = None) -> str:
     if _has_no_payment_info(payment_data):
         # Pill explícito em vez de rótulo vazio (que sumiria o pill). Ver
         # _has_no_payment_info: card mudo se confunde com pedido pago.
         return "Pagamento não informado"
-    label = payment_method_label(method)
+    label = labels[method] if labels is not None else payment_method_label(method)
+    if method == "mixed" and payment_data.get("tenders"):
+        label = " + ".join(
+            f"{labels[t.get('method', '')] if labels is not None and t.get('method', '') in labels else payment_method_label(t.get('method', ''))} R$ {format_money(int(t.get('amount_q') or 0))}"
+            for t in payment_data["tenders"]
+        )
     if payment_data.get("collection") == "on_delivery":
         if payment_data.get("cod_settled_at"):
-            return f"{label} entregue no caixa"
+            return f"{label} — acerto confirmado"
         return f"{label} na entrega"
     return label
+
+
+def _cash_settlement_context(orders):
+    """One canonical custody lookup per projection; GET must not create a drawer."""
+    if not any(_can_settle_delivery_cash(order, (order.data or {}).get("payment") or {}) for order in orders):
+        return None, ""
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.services import pos as pos_service
+    from shopman.backstage.services.exceptions import POSError
+
+    if not Terminal.objects.filter(is_active=True).exists():
+        return None, "Abra um turno de caixa para registrar o acerto."
+    try:
+        shift = pos_service.current_shift(strict=True)
+    except POSError as exc:
+        return None, str(exc)
+    return shift, "" if shift else "Abra um turno de caixa para registrar o acerto."
+
+
+def _cash_settlement_actions(order, user, context):
+    if not _can_settle_delivery_cash(order, (order.data or {}).get("payment") or {}):
+        return ()
+    shift, reason = context if context is not None else _cash_settlement_context([order])
+    authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
+    if not authorized:
+        reason = "Identifique uma pessoa com permissão para gerenciar pedidos."
+    return (Action(ref="settle-delivery-cash", kind="mutation", label="Registrar dinheiro recebido",
+        enabled=authorized and not reason, reason=reason, method="POST", idempotency="required",
+        payload_schema={"base_revision": operator_orders.cash_settlement_revision(order, shift),
+            "expected_actor_id": getattr(user, "pk", None), "cash_shift_id": shift.pk if shift else None},
+        confirmation={"required": True, "description": f"Recebimento no caixa {shift.terminal.label}, turno {shift.pk}." if shift else reason}),)
 
 
 def _can_settle_delivery_cash(order: Order, payment_data: dict) -> bool:
     return (
         _is_delivery(order)
-        and payment_data.get("method") == "cash"
+        and payment_data.get("method") in {"cash", "credit", "debit", "mixed"}
         and payment_data.get("collection") == "on_delivery"
         and not payment_data.get("cod_settled_at")
         and order.status in {Order.Status.DISPATCHED, Order.Status.DELIVERED, Order.Status.COMPLETED}
@@ -1394,23 +1592,39 @@ def _payment_link_fields(order: Order, method: str) -> dict:
 
 
 def payment_link_notice(order: Order) -> str:
-    """O estado do último aviso ``payment_link_sent``, na frase que o operador lê.
+    """Describe the delivery evidence; worker completion alone proves no send."""
+    from django.utils.dateparse import parse_datetime
 
-    Lê a Directive mais recente do aviso (envio original ou reenvio): em fila
-    ou rodando é "Enviando…"; concluída é "Link enviado às 14h32" (o handler
-    não grava POR QUAL canal saiu — só que saiu); falhou é o convite ao gesto.
-    Sem Directive nenhuma, nada: o pedido de link da loja online não passa por
-    este aviso.
-    """
     from shopman.shop.services import notification as notification_svc
 
     directive = notification_svc.latest_delivery(order, notification_svc.PAYMENT_LINK_TEMPLATE)
     if directive is None:
         return ""
-    if directive.status in ("queued", "running"):
-        return "Enviando o link ao cliente…"
+    delivery = (directive.payload or {}).get("notification_delivery") or {}
+    if delivery.get("status") in {"started", "unknown"}:
+        return "Aceite do envio não confirmado. Confira o envio com o responsável antes de reenviar."
+    if delivery.get("status") == "accepted":
+        recorded = parse_datetime(str(delivery.get("recorded_at") or ""))
+        when = _format_time_of_day(recorded) if recorded and timezone.is_aware(recorded) else ""
+        return f"Envio aceito pelo serviço{(' ' + when) if when else ''}. Leitura pelo cliente não confirmada."
+    if delivery.get("status") == "skipped":
+        reason = {
+            "customer_opt_out": "o cliente não autorizou notificações",
+            "expected_no_contact": "não há contato disponível",
+            "notification_not_required": "a notificação não se aplica",
+            "payment_not_pending": "o pagamento não está pendente",
+            "payment_link_already_paid": "o cliente já pagou",
+            "payment_link_order_cancelled": "o pedido foi cancelado",
+            "payment_link_expired": "o link venceu",
+            "payment_link_unavailable": "o link não está disponível",
+        }.get(delivery.get("reason"), "o envio foi omitido")
+        return f"Link não enviado: {reason}."
+    if directive.status == "queued":
+        return "Envio do link na fila."
+    if directive.status == "running":
+        return "Envio do link em processamento; aceite ainda não confirmado."
     if directive.status == "done":
-        return f"Link enviado {_format_time_of_day(directive.updated_at)}"
+        return "Processamento concluído sem confirmação de envio. Confira o contato antes de reenviar."
     return "O envio do link falhou. Reenvie ou copie o link."
 
 
@@ -1425,7 +1639,7 @@ def _format_time_of_day(dt) -> str:
     return f"em {local:%d/%m} às {hour}"
 
 
-def _fiscal_status(order: Order) -> tuple[str, str, tuple[dict[str, str], ...]]:
+def _fiscal_status(order: Order, *, directive_status: str | None = None) -> tuple[str, str, tuple[dict[str, str], ...]]:
     data = order.data or {}
     if data.get("nfce_cancelled"):
         status = "cancelled"
@@ -1433,20 +1647,19 @@ def _fiscal_status(order: Order) -> tuple[str, str, tuple[dict[str, str], ...]]:
     elif data.get("nfce_access_key"):
         status = "authorized"
         label = "NFC-e autorizada"
-    elif not _fiscal_emission_expected(order):
-        # A mesma regra que decide emitir decide o rótulo. Perguntar só ao
-        # toggle escondia como "não solicitado" a falha da nota de cartão/pix
-        # e a do fiado — casos em que o resolver emite sem o operador marcar.
-        status = "not_requested"
-        label = "Fiscal não solicitado"
     else:
-        directive_status = _latest_fiscal_directive_status(order.ref)
+        if directive_status is None:
+            directive_status = _latest_fiscal_directive_status(order.ref)
+        # Configuration governs new emission; it cannot erase an existing attempt.
         if directive_status == "failed":
             status = "failed"
             label = "NFC-e com falha"
-        elif directive_status in {"queued", "running"}:
+        elif directive_status in {"queued", "running", "done"}:
             status = "pending"
             label = "NFC-e pendente"
+        elif not _fiscal_emission_expected(order):
+            status = "not_requested"
+            label = "Fiscal não solicitado"
         elif order.status != Order.Status.COMPLETED:
             status = "waiting_completion"
             label = "Fiscal na conclusão"
@@ -1472,6 +1685,24 @@ def _fiscal_emission_expected(order: Order) -> bool:
         return bool(((order.data or {}).get("fiscal") or {}).get("issue_document"))
 
 
+def _fiscal_states_for(orders) -> dict[str, str]:
+    """Latest canonical Directive evidence in one query for this read only."""
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.directives import FISCAL_EMIT_NFCE
+
+    refs = [order.ref for order in orders]
+    if not refs:
+        return {}
+    result = {}
+    rows = Directive.objects.filter(
+        topic=FISCAL_EMIT_NFCE, payload__order_ref__in=refs,
+    ).order_by("-created_at", "-pk").values_list("payload__order_ref", "status")
+    for ref, status in rows:
+        result.setdefault(ref, status)
+    return result
+
+
 def _latest_fiscal_directive_status(order_ref: str) -> str:
     try:
         from shopman.orderman.models import Directive
@@ -1482,7 +1713,7 @@ def _latest_fiscal_directive_status(order_ref: str) -> str:
         return ""
     directive = (
         Directive.objects.filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order_ref)
-        .order_by("-created_at")
+        .order_by("-created_at", "-pk")
         .first()
     )
     return directive.status if directive else ""
@@ -1643,6 +1874,7 @@ def _status_counts(orders: list[Order]) -> dict[str, int]:
 # lia "Created" no histórico do pedido dele.
 _EVENT_LABELS = {
     "operator_comment": "Comentário",
+    "kitchen_note_changed": "Nota da cozinha atualizada",
     "order_assigned": "Atendimento assumido",
     "order_unassigned": "Atendimento liberado",
     "created": "Pedido criado",

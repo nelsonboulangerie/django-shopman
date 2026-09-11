@@ -176,23 +176,15 @@ def _api_call(endpoint: str, payload: dict, config: dict) -> dict:
         with urlopen(request, timeout=timeout) as response:
             resp_data = json.loads(response.read().decode("utf-8"))
             if resp_data.get("status") == "success":
-                # G-H03: ManyChat does not document a stable delivery receipt for
-                # this endpoint.  Subscriber id is identity, never a receipt.
+                # Subscriber identity is not a delivery receipt.
                 return {"success": True}
             return {"success": False, "error": "provider_rejected"}
-    except HTTPError as e:
-        return {
-            "success": False,
-            "error": "provider_rate_limited" if e.code == 429 else "provider_http_error",
-        }
-    except URLError:
-        return {"success": False, "error": "provider_unreachable"}
-    except Exception as exc:
-        logger.warning(
-            "manychat._send_whatsapp: unexpected error class=%s; detail redacted",
-            type(exc).__name__,
-        )
-        return {"success": False, "error": "provider_unreadable"}
+    except (HTTPError, URLError):
+        return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
+    except Exception:
+        logger.warning("manychat acceptance unconfirmed; response unavailable")
+        return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
+
 
 
 def _build_message(template: str, context: dict) -> str:
@@ -221,7 +213,8 @@ def _load_db_flow_ns(event: str) -> str | None:
         if obj and (obj.whatsapp_flow_ns or "").strip():
             return obj.whatsapp_flow_ns.strip()
     except Exception:
-        logger.warning("manychat._load_db_flow_ns: lookup failed for event=%s", event, exc_info=True)
+        logger.warning("manychat template flow lookup failed")
+
     return None
 
 
@@ -312,6 +305,8 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         }
         result = _api_call("/sending/sendContent", payload, mc_config)
 
+    if result.get("outcome_unknown"):
+        raise RuntimeError("acceptance_unconfirmed")
     if not result["success"]:
         logger.warning("ManyChat send failed; provider detail redacted")
     return result["success"]

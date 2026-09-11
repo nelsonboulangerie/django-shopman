@@ -69,7 +69,7 @@ describe("usePosSale — reenviar o link de pagamento", () => {
     const resend = actionCall.mock.calls.filter((c) => String(c[0]).includes("/resend-payment-link/"));
     expect(resend).toHaveLength(1);
     expect(String(resend[0]![0])).toBe("/api/v1/backstage/pos/orders/PED-1/resend-payment-link/");
-    expect(vi.mocked(toast.success)).toHaveBeenCalledWith("Link reenviado ao cliente");
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith("Reenvio do link solicitado.");
     expect(h.sale.resendingLink.value).toBe(false);
     h.handles.dispose();
   });

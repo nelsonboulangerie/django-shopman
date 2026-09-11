@@ -1,0 +1,51 @@
+
+> test
+> vitest run --run tests/components/CatalogAiSuggest.test.ts
+
+
+ RUN  v4.1.6 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt
+
+ ❯ |component| tests/components/CatalogAiSuggest.test.ts (2 tests | 2 failed) 20ms
+   × não exibe resposta de A no mesmo campo do SKU B 16ms
+     × digitação depois do pedido invalida a resposta antiga 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |component| tests/components/CatalogAiSuggest.test.ts > não exibe resposta de A no mesmo campo do SKU B
+AssertionError: expected 'Descrição Sugerir Sugestão Texto conf…' not to contain 'Texto confidencial'
+
+Expected: "Texto confidencial"
+Received: "Descrição Sugerir Sugestão Texto confidencial do SKU AAceitarDescartar"
+
+ ❯ tests/components/CatalogAiSuggest.test.ts:17:24
+     15|   resolve("Texto confidencial do SKU A");
+     16|   await flushPromises();
+     17|   expect(w.text()).not.toContain("Texto confidencial");
+       |                        ^
+     18|   expect(w.findAll("button").some(b => b.text() === "Aceitar")).toBe(f…
+     19| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |component| tests/components/CatalogAiSuggest.test.ts > base da sugestão > digitação depois do pedido invalida a resposta antiga
+AssertionError: expected 'Descrição Sugerir Sugestão Texto atua…' not to contain 'Sugestão para base antiga'
+
+Expected: "Sugestão para base antiga"
+Received: "Descrição Sugerir Sugestão Texto atualMeu rascunho novoSugestão para base antigaAceitarDescartar"
+
+ ❯ tests/components/CatalogAiSuggest.test.ts:30:26
+     28|     resolve("Sugestão para base antiga");
+     29|     await flushPromises();
+     30|     expect(w.text()).not.toContain("Sugestão para base antiga");
+       |                          ^
+     31|     await nextTick();
+     32|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  20:10:42
+   Duration  758ms (transform 264ms, setup 0ms, import 323ms, tests 20ms, environment 292ms)
+

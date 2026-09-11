@@ -1,0 +1,110 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_________ test_canonical_reads_include_server_time_and_contract[queue] _________
+
+resource = 'queue', client = <django.test.client.Client object at 0x109001a00>
+django_user_model = <class 'django.contrib.auth.models.User'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1090e3140>
+
+    @pytest.mark.parametrize("resource", ["queue", "detail", "catalog", "feeds"])
+    def test_canonical_reads_include_server_time_and_contract(resource, client, django_user_model, monkeypatch):
+        Shop.objects.create(name="Synthetic read metadata")
+        user = django_user_model.objects.create_user(username="metadata-reader", is_staff=True)
+        user.user_permissions.set(Permission.objects.filter(content_type__app_label="shop", codename__in=["manage_orders", "manage_catalog"]))
+        client.force_login(user)
+        order = Order.objects.create(ref="READ-METADATA", status="accepted", data={"payment": {"method": "cash"}})
+        urls = {"queue": reverse("api-backstage-orders"), "detail": f"/api/v1/backstage/orders/{order.ref}/",
+            "catalog": "/api/v1/backstage/catalog/", "feeds": "/api/v1/backstage/feeds/"}
+        fixed = datetime(2026, 9, 11, 12, 30, tzinfo=timezone.utc)
+        monkeypatch.setattr("shopman.backstage.api.projections.timezone.now", lambda: fixed)
+        response = client.get(urls[resource])
+        assert response.status_code == 200
+>       assert response.json()["generated_at"] == fixed.isoformat()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'generated_at'
+
+shopman/backstage/tests/test_orders_read_metadata.py:27: KeyError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-11 01:20:47,834 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-11 01:20:48,070 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-11 01:20:49,044 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+________ test_canonical_reads_include_server_time_and_contract[detail] _________
+
+resource = 'detail', client = <django.test.client.Client object at 0x10ace0da0>
+django_user_model = <class 'django.contrib.auth.models.User'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x108c67530>
+
+    @pytest.mark.parametrize("resource", ["queue", "detail", "catalog", "feeds"])
+    def test_canonical_reads_include_server_time_and_contract(resource, client, django_user_model, monkeypatch):
+        Shop.objects.create(name="Synthetic read metadata")
+        user = django_user_model.objects.create_user(username="metadata-reader", is_staff=True)
+        user.user_permissions.set(Permission.objects.filter(content_type__app_label="shop", codename__in=["manage_orders", "manage_catalog"]))
+        client.force_login(user)
+        order = Order.objects.create(ref="READ-METADATA", status="accepted", data={"payment": {"method": "cash"}})
+        urls = {"queue": reverse("api-backstage-orders"), "detail": f"/api/v1/backstage/orders/{order.ref}/",
+            "catalog": "/api/v1/backstage/catalog/", "feeds": "/api/v1/backstage/feeds/"}
+        fixed = datetime(2026, 9, 11, 12, 30, tzinfo=timezone.utc)
+        monkeypatch.setattr("shopman.backstage.api.projections.timezone.now", lambda: fixed)
+        response = client.get(urls[resource])
+        assert response.status_code == 200
+>       assert response.json()["generated_at"] == fixed.isoformat()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'generated_at'
+
+shopman/backstage/tests/test_orders_read_metadata.py:27: KeyError
+________ test_canonical_reads_include_server_time_and_contract[catalog] ________
+
+resource = 'catalog', client = <django.test.client.Client object at 0x10ace3680>
+django_user_model = <class 'django.contrib.auth.models.User'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ace3c50>
+
+    @pytest.mark.parametrize("resource", ["queue", "detail", "catalog", "feeds"])
+    def test_canonical_reads_include_server_time_and_contract(resource, client, django_user_model, monkeypatch):
+        Shop.objects.create(name="Synthetic read metadata")
+        user = django_user_model.objects.create_user(username="metadata-reader", is_staff=True)
+        user.user_permissions.set(Permission.objects.filter(content_type__app_label="shop", codename__in=["manage_orders", "manage_catalog"]))
+        client.force_login(user)
+        order = Order.objects.create(ref="READ-METADATA", status="accepted", data={"payment": {"method": "cash"}})
+        urls = {"queue": reverse("api-backstage-orders"), "detail": f"/api/v1/backstage/orders/{order.ref}/",
+            "catalog": "/api/v1/backstage/catalog/", "feeds": "/api/v1/backstage/feeds/"}
+        fixed = datetime(2026, 9, 11, 12, 30, tzinfo=timezone.utc)
+        monkeypatch.setattr("shopman.backstage.api.projections.timezone.now", lambda: fixed)
+        response = client.get(urls[resource])
+        assert response.status_code == 200
+>       assert response.json()["generated_at"] == fixed.isoformat()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'generated_at'
+
+shopman/backstage/tests/test_orders_read_metadata.py:27: KeyError
+_________ test_canonical_reads_include_server_time_and_contract[feeds] _________
+
+resource = 'feeds', client = <django.test.client.Client object at 0x10ace21b0>
+django_user_model = <class 'django.contrib.auth.models.User'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ace3b30>
+
+    @pytest.mark.parametrize("resource", ["queue", "detail", "catalog", "feeds"])
+    def test_canonical_reads_include_server_time_and_contract(resource, client, django_user_model, monkeypatch):
+        Shop.objects.create(name="Synthetic read metadata")
+        user = django_user_model.objects.create_user(username="metadata-reader", is_staff=True)
+        user.user_permissions.set(Permission.objects.filter(content_type__app_label="shop", codename__in=["manage_orders", "manage_catalog"]))
+        client.force_login(user)
+        order = Order.objects.create(ref="READ-METADATA", status="accepted", data={"payment": {"method": "cash"}})
+        urls = {"queue": reverse("api-backstage-orders"), "detail": f"/api/v1/backstage/orders/{order.ref}/",
+            "catalog": "/api/v1/backstage/catalog/", "feeds": "/api/v1/backstage/feeds/"}
+        fixed = datetime(2026, 9, 11, 12, 30, tzinfo=timezone.utc)
+        monkeypatch.setattr("shopman.backstage.api.projections.timezone.now", lambda: fixed)
+        response = client.get(urls[resource])
+        assert response.status_code == 200
+>       assert response.json()["generated_at"] == fixed.isoformat()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'generated_at'
+
+shopman/backstage/tests/test_orders_read_metadata.py:27: KeyError
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-11 01:20:53,071 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_orders_read_metadata.py::test_canonical_reads_include_server_time_and_contract[queue]
+FAILED shopman/backstage/tests/test_orders_read_metadata.py::test_canonical_reads_include_server_time_and_contract[detail]
+FAILED shopman/backstage/tests/test_orders_read_metadata.py::test_canonical_reads_include_server_time_and_contract[catalog]
+FAILED shopman/backstage/tests/test_orders_read_metadata.py::test_canonical_reads_include_server_time_and_contract[feeds]
+4 failed in 5.39s

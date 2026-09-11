@@ -1,0 +1,50 @@
+{
+  "cohort": "synthetic-lab-all-history",
+  "as_of": "2026-09-11T07:08:22.077758+00:00",
+  "date": "2026-09-11",
+  "database_read_only": true,
+  "directive_states": {
+    "failed": 10,
+    "queued": 16,
+    "done": 33
+  },
+  "receipt_states": {
+    "in_progress": 1,
+    "done": 346
+  },
+  "recorded_task_attempts": 76,
+  "queued_due_tasks": 16,
+  "oldest_due_task_seconds": 23119.991043,
+  "in_progress_receipts": 1,
+  "oldest_in_progress_receipt_seconds": 4825.713008,
+  "financial_issue_counts": {
+    "day_closing_missing": 1
+  },
+  "financial_severity_counts": {
+    "warning": 1,
+    "error": 0,
+    "critical": 0
+  },
+  "cash_ledger": {
+    "payman_captured_q": 12000,
+    "payman_refunded_q": 0,
+    "payman_net_q": 12000,
+    "ledger_sale_q": 0,
+    "ledger_cod_settled_q": 12000,
+    "ledger_account_settled_q": 0,
+    "ledger_refund_q": 0,
+    "ledger_net_q": 12000,
+    "difference_q": 0
+  },
+  "financial_orders": 38,
+  "financial_intents": 8,
+  "financial_transactions": 8,
+  "scope": "All synthetic history on one date. Queued due tasks are canonical queue backlog, not proof of every due lifecycle effect. No repair or real reconciliation.",
+  "unmeasured": [
+    "effects_due_without_a_directive",
+    "draft_restored_or_lost",
+    "stale_refresh_or_discard",
+    "field_recovery_time",
+    "human_understanding"
+  ]
+}

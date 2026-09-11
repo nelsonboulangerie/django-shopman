@@ -1,6 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { fixtureActions } from "../support/orderActions";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, ref, watch } from "vue";
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
+import { useOrderCashDrafts } from "../../app/composables/useOrderCashDrafts";
 
 import type { CustomerProfileProjection, OperatorOrderProjection } from "../../app/types/orders";
 
@@ -17,19 +19,34 @@ import type { CustomerProfileProjection, OperatorOrderProjection } from "../../a
 
 const detalhe = ref<OperatorOrderProjection | null>(null);
 const resendPaymentLink = vi.fn();
+const requeueFiscal = vi.fn();
+const equipmentBack = vi.fn();
+const saveNotes = vi.fn();
+const readError = ref<unknown>(null);
 
+const localStates = new Map<string, ReturnType<typeof ref>>();
+beforeEach(() => localStates.clear());
+vi.stubGlobal("useState", (key: string, initial: () => unknown) => {
+  if (!localStates.has(key)) localStates.set(key, ref(initial()));
+  return localStates.get(key);
+});
+vi.stubGlobal("useNuxtData", () => ({ data: ref({ operator: { id: 1 } }) }));
+vi.stubGlobal("useOrderCashDrafts", useOrderCashDrafts);
+vi.stubGlobal("definePageMeta", vi.fn());
+vi.stubGlobal("onBeforeRouteLeave", vi.fn());
 vi.stubGlobal("computed", computed);
 vi.stubGlobal("ref", ref);
 vi.stubGlobal("watch", watch);
 vi.stubGlobal("useRoute", () => ({ params: { ref: "WEB-1" } }));
 vi.stubGlobal("useRuntimeConfig", () => ({ public: { adminBaseUrl: "https://api.exemplo" } }));
 vi.stubGlobal("useOrderEvents", () => {});
+vi.stubGlobal("useOrdersContext", () => ({ location: ref({ path: "/", query: {} }) }));
 vi.stubGlobal("useStationLock", () => ({ denied: ref(false) }));
 vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
 vi.stubGlobal("useOrderDetail", () => ({
   order: computed(() => detalhe.value),
   pending: ref(false),
-  error: ref(null),
+  error: readError,
   refresh: vi.fn(),
   busy: ref(false),
   confirm: vi.fn(),
@@ -38,10 +55,10 @@ vi.stubGlobal("useOrderDetail", () => ({
   cancel: vi.fn(),
   fetchCancellationReasons: vi.fn(async () => []),
   settleCash: vi.fn(),
-  equipmentBack: vi.fn(),
-  requeueFiscal: vi.fn(),
+  equipmentBack,
+  requeueFiscal,
   resendPaymentLink: resendPaymentLink,
-  saveNotes: vi.fn(),
+  saveNotes,
   addComment: vi.fn(),
   courierDispatch: vi.fn(),
   courierCancel: vi.fn(),
@@ -69,7 +86,7 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     delivery_address: "",
     delivery_instructions: "",
     total_display: "R$ 15,00",
-    items: [{ sku: "PAO", name: "Pão francês", qty: 2, unit_price_display: "R$ 1,00", total_display: "R$ 2,00" }],
+    items: [{ sku: "PAO", name: "Pão francês", qty: "2", unit_price_display: "R$ 1,00", total_display: "R$ 2,00" }],
     timeline: [],
     kitchen_note: "",
     customer_note: "",
@@ -100,6 +117,8 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     can_resend_payment_link: false,
     payment_link_notice: "",
     customer_profile: null,
+    revisions: {},
+    actions: fixtureActions({ can_confirm: true, ...over }),
     ...over,
   } as OperatorOrderProjection;
 }
@@ -145,6 +164,12 @@ function abrir(projection: OperatorOrderProjection) {
 }
 
 describe("detalhe do pedido — só oferece o que o servidor aceita", () => {
+  it("preserva a quantidade fracionária projetada sem arredondar", () => {
+    const fractional = order();
+    fractional.items[0]!.qty = "0.5";
+    const w = abrir(fractional);
+    expect(w.text()).toContain("0.5×");
+  });
   it("pedido novo: oferece Aceitar e Recusar, nunca Avançar", () => {
     const w = abrir(order({ status: "new", can_confirm: true, can_advance: false }));
 
@@ -452,4 +477,103 @@ describe("detalhe do pedido — falar com o cliente", () => {
     expect(tela.find("[data-customer-phone]").exists()).toBe(false);
     expect(tela.find("[data-contact-whatsapp]").exists()).toBe(true);
   });
+});
+
+
+describe("nota da cozinha — atualização concorrente", () => {
+  it("SSE preserva texto digitado e exige comparação antes de sobrescrever", async () => {
+    const w = abrir(order({ kitchen_note: "Base", revisions: { kitchen_note: "v1" } }));
+    await w.get("#order-notes").setValue("Meu rascunho");
+    detalhe.value = order({ kitchen_note: "Outra pessoa", revisions: { kitchen_note: "v2" } });
+    await w.vm.$nextTick();
+    expect((w.get("#order-notes").element as HTMLTextAreaElement).value).toBe("Meu rascunho");
+    expect(w.text()).toContain("No servidor: Outra pessoa");
+    const save = w.findAll("button").find((button) => button.text() === "Salvar nota")!;
+    expect(save.attributes("disabled")).toBeDefined();
+    await w.findAll("button").find((button) => button.text() === "Manter meu texto")!.trigger("click");
+    expect(save.attributes("disabled")).toBeUndefined();
+    expect((w.get("#order-notes").element as HTMLTextAreaElement).value).toBe("Meu rascunho");
+    w.unmount();
+  });
+});
+
+
+describe("acerto — turno observado no diálogo", () => {
+  it("preserva o valor e pede conferência quando o turno muda", async () => {
+    const action = (base: string) => ({ ...fixtureActions({ can_confirm: true })[0]!, ref: "settle-delivery-cash",
+      payload_schema: { base_revision: base, expected_actor_id: 1 }, confirmation: { description: `Caixa sintético ${base}` } });
+    const w = abrir(order({ can_confirm: false, can_settle_delivery_cash: true, actions: [action("turno-1")] }));
+    await w.findAll("button").find((button) => button.text().includes("Acertar entrega"))!.trigger("click");
+    await w.get('[aria-label="Valor recebido"]').setValue("15,00");
+    detalhe.value = order({ can_confirm: false, can_settle_delivery_cash: true, actions: [action("turno-2")] });
+    await w.vm.$nextTick();
+    expect(w.text()).toContain("O pedido ou turno mudou");
+    expect((w.get('[aria-label="Valor recebido"]').element as HTMLInputElement).value).toBe("15,00");
+    const confirm = w.findAll("button").find((button) => button.text() === "Confirmar")!;
+    expect(confirm.attributes("disabled")).toBeDefined();
+    await w.findAll("button").find((button) => button.text() === "Conferir e manter os valores digitados")!.trigger("click");
+    expect(confirm.attributes("disabled")).toBeUndefined();
+    expect((w.get('[aria-label="Valor recebido"]').element as HTMLInputElement).value).toBe("15,00");
+    w.unmount();
+  });
+});
+
+it("falha de leitura mantém o pedido e o textarea montados junto da explicação", async () => {
+  const w = abrir(order({ kitchen_note: "Base", revisions: { kitchen_note: "v1" } }));
+  try {
+    await w.get("#order-notes").setValue("Texto ainda não salvo");
+    const field = w.get("#order-notes").element;
+    readError.value = { statusCode: 503 };
+    await w.vm.$nextTick();
+    expect(w.get("#order-notes").element).toBe(field);
+    expect((field as HTMLTextAreaElement).value).toBe("Texto ainda não salvo");
+    expect(w.get("[data-order-error]").text()).toContain("Mantivemos a última leitura");
+    expect(w.text()).toContain("Ana");
+  } finally { readError.value = null; w.unmount(); }
+});
+
+it("fechar e reabrir o acerto conserva valor e pede revisar a custódia que mudou", async () => {
+  const action = (base: string) => ({ ...fixtureActions({ can_confirm: true })[0]!, ref: "settle-delivery-cash",
+    label: "Acertar dinheiro", payload_schema: { base_revision: base }, confirmation: { required: true, description: base } });
+  const w = abrir(order({ can_confirm: false, can_settle_delivery_cash: true, actions: [action("turno-1")] }));
+  const open = () => w.findAll("button").find(button => button.text().includes("Acertar entrega"))!;
+  await open().trigger("click");
+  await w.find('[aria-label="Valor recebido"]').setValue("15,00");
+  await w.findAll("button").find(button => button.text() === "Voltar")!.trigger("click");
+  detalhe.value = order({ can_confirm: false, can_settle_delivery_cash: true, actions: [action("turno-2")] });
+  await open().trigger("click");
+  expect((w.find('[aria-label="Valor recebido"]').element as HTMLInputElement).value).toBe("15,00");
+  expect(w.text()).toContain("O pedido ou turno mudou");
+});
+
+
+it.each([
+  ["requeue-fiscal", "Reprocessar fiscal", { fiscal_status: "failed" }, requeueFiscal],
+  ["equipment-back", "Maquininha voltou", { equipment_back_pending: true }, equipmentBack],
+] as const)("respects disabled projected recovery %s without a request", async (refName, label, fields, execute) => {
+  execute.mockClear();
+  const reason = "Esta ação exige outra permissão.";
+  const w = abrir(order({ ...fields, can_confirm: false, actions: [{
+    ref: refName, kind: "mutation", label, enabled: false, reason, priority: "secondary",
+    href: "", method: "POST", idempotency: "required", payload_schema: {}, confirmation: {},
+  }] }));
+  const button = w.findAll("button").find((candidate) => candidate.text().includes(label))!;
+  expect(button.attributes("disabled")).toBeDefined();
+  expect(button.attributes("title")).toBe(reason);
+  await button.trigger("click");
+  expect(execute).not.toHaveBeenCalled();
+  w.unmount();
+});
+
+
+it("keeps a confirmed note when the following useful read fails", async () => {
+  const w = abrir(order({ can_confirm: false, kitchen_note: "Nota anterior", revisions: { kitchen_note: "old-base" } }));
+  try {
+    saveNotes.mockImplementationOnce(async () => { readError.value = new Error("synthetic read unavailable"); return true; });
+    const note = w.find('textarea[placeholder="Instruções de preparo para a cozinha…"]');
+    await note.setValue("Nota nova confirmada");
+    await w.findAll("button").find((button) => button.text() === "Salvar nota")!.trigger("click");
+    await flushPromises();
+    expect((note.element as HTMLTextAreaElement).value).toBe("Nota nova confirmada");
+  } finally { readError.value = null; w.unmount(); }
 });

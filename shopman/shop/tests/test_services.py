@@ -1227,7 +1227,10 @@ class TestNotificationSendHandler:
         with (
             patch(
                 "shopman.shop.handlers.notification.notification_svc.deliver_order_notification",
-                return_value=(False, "no active notification recipient available"),
+                side_effect=lambda order, template, payload: (
+                    payload.update(notification_delivery={"status": "failed", "outcome": "not_applied"}) or False,
+                    "no active notification recipient available",
+                ),
             ) as mock_deliver,
             patch.object(NotificationSendHandler, "_escalate") as mock_escalate,
         ):
@@ -1394,13 +1397,17 @@ class TestNotificationSendHandler:
         directive = Directive.objects.create(
             topic="notification.send",
             dedupe_key="notification.send:ORD-001:order_cancelled",
-            payload={"order_ref": "ORD-001", "template": "order_cancelled"},
+            payload={"order_ref": "ORD-001", "template": "order_cancelled",
+                     "notification_delivery": {"status": "failed", "outcome": "not_applied"}},
             attempts=5,
         )
         with (
             patch(
                 "shopman.shop.handlers.notification.notification_svc.deliver_order_notification",
-                return_value=(False, "gateway timeout"),
+                side_effect=lambda order, template, payload: (
+                    payload.update(notification_delivery={"status": "failed", "outcome": "not_applied"}) or False,
+                    "explicit rejection",
+                ),
             ) as mock_deliver,
             patch.object(NotificationSendHandler, "_escalate") as mock_escalate,
         ):
@@ -1778,16 +1785,27 @@ class TestFiscalService:
 # ══════════════════════════════════════════════════════════════════════
 
 
+@pytest.mark.django_db
 class TestCancellationService:
+    @staticmethod
+    def order(**kwargs):
+        from shopman.orderman.models import Order
+
+        return Order.objects.create(
+            ref="CANCEL-SERVICE", channel_ref="web", total_q=5000,
+            snapshot={"items": [], "data": {}}, **kwargs,
+        )
+
 
     def test_cancel_transitions_status(self):
         from shopman.shop.services.cancellation import cancel
 
-        order = _make_order(status="accepted")
+        order = self.order(status="accepted")
 
         result = cancel(order, reason="customer_request", actor="customer")
 
-        order.transition_status.assert_called_once()
+        order.refresh_from_db()
+        assert order.status == "cancelled"
         assert order.data["cancellation_reason"] == "customer_request"
         assert order.data["cancelled_by"] == "customer"
         assert result is True
@@ -1797,14 +1815,13 @@ class TestCancellationService:
 
         from shopman.shop.services.cancellation import cancel
 
-        order = _make_order(status=Order.Status.CANCELLED)
-        # A autoridade é a máquina de estados (mapa DEFAULT: cancelled não
-        # transiciona para cancelled) — o mock responde como ela responderia.
-        order.can_transition_to.return_value = False
+        order = self.order(status=Order.Status.CANCELLED)
 
+        original_status = order.status
         result = cancel(order, reason="test")
 
-        order.transition_status.assert_not_called()
+        order.refresh_from_db()
+        assert order.status == original_status
         assert result is False
 
     def test_cancel_skips_completed(self):
@@ -1812,20 +1829,19 @@ class TestCancellationService:
 
         from shopman.shop.services.cancellation import cancel
 
-        order = _make_order(status=Order.Status.COMPLETED)
-        # Mapa DEFAULT: completed→cancelled não existe. Canal que DECLARA a
-        # transição (pdv, para o desfazer do balcão) responde True e cancela.
-        order.can_transition_to.return_value = False
+        order = self.order(status=Order.Status.COMPLETED)
 
+        original_status = order.status
         result = cancel(order, reason="test")
 
-        order.transition_status.assert_not_called()
+        order.refresh_from_db()
+        assert order.status == original_status
         assert result is False
 
     def test_cancel_merges_extra_data(self):
         from shopman.shop.services.cancellation import cancel
 
-        order = _make_order(status="accepted", data={"foo": 1})
+        order = self.order(status="accepted", data={"foo": 1})
 
         cancel(
             order,

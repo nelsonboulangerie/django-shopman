@@ -5,7 +5,27 @@
 // lock overlay (Opção C): when the gate is ON and nobody unlocked, a PIN/badge is
 // required. Gated OFF → never shows.
 const OPERATOR_PERM = "shop.manage_orders";
+const { hasDirty: cashDraftDirty } = useOrderCashDrafts();
+const { hasPending: intentionPending } = useOrderIntention();
+function protectSessionExit(event: BeforeUnloadEvent) {
+  if (!cashDraftDirty.value && !intentionPending.value) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+onMounted(() => window.addEventListener("beforeunload", protectSessionExit));
+onBeforeUnmount(() => window.removeEventListener("beforeunload", protectSessionExit));
 const { canIdentify, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
+
+// Keep drafts through a lock/re-identification by the same person. A different
+// identified person receives a new page instance and their own read-cache keys.
+const workspaceOwner = ref(operator.value?.id ?? null);
+watch(() => operator.value?.id, (id) => { if (id != null) workspaceOwner.value = id; });
+
+const station = useStationLock();
+async function restoreAuthenticatedWorkspace() {
+  station.clear();
+  await refreshNuxtData();
+}
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
@@ -31,9 +51,11 @@ useHead({ title: "Gestor de Pedidos" });
     <div class="flex min-w-0 flex-1 flex-col">
       <!-- Cabeçalho de seção: controle do rail + nav do Gestor. -->
       <GestorTopBar v-if="canIdentify" />
-      <NuxtPage />
+      <div v-show="canIdentify && !locked && !mustChange" class="flex min-h-0 flex-1 flex-col">
+        <NuxtPage :key="workspaceOwner ?? 'unidentified'" />
+      </div>
     </div>
-    <OperatorLogin v-if="!canIdentify" />
+    <OperatorLogin v-if="!canIdentify" :reload-on-success="false" @success="restoreAuthenticatedWorkspace" />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
     <OperatorSonner />
   </div>

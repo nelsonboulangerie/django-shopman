@@ -1,3 +1,4 @@
+import { fixtureActions } from "./support/orderActions";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -81,6 +82,8 @@ const card = (over: Partial<OrderCardProjection> = {}): OrderCardProjection => (
   equipment_out: [],
   equipment_label: "",
   equipment_back_pending: false,
+  revisions: {},
+  actions: fixtureActions({ can_advance: true, next_action_label: "Iniciar preparo", ...over }),
   ...over,
 });
 
@@ -327,11 +330,11 @@ describe("troco da entrega", () => {
     const rows = [card({ ref: "A", can_advance: true, next_status: "dispatched", equipment_options: opt })];
     expect(bulkableRefs(rows, new Set(["A"]), "advance")).toEqual(["A"]);
   });
-  it("oferece 'Maquininha voltou' quando saiu e não há acerto em dinheiro para marcar", () => {
+  it("oferece 'Maquininha voltou' independentemente do acerto pendente", () => {
     const refs = cardAffordances(card({ can_advance: false, equipment_back_pending: true })).map((a) => a.ref);
     expect(refs).toContain("equipment_back");
     const withSettle = cardAffordances(card({ can_advance: false, equipment_back_pending: true, can_settle_delivery_cash: true })).map((a) => a.ref);
-    expect(withSettle).not.toContain("equipment_back");
+    expect(withSettle).toContain("equipment_back");
   });
   it("despacho que pede troco fica fora do lote de avançar", () => {
     const rows = [
@@ -529,4 +532,12 @@ describe("joinFacts", () => {
   it("branco só não conta como fato", () => {
     expect(joinFacts("   ", "R$ 42,00")).toBe("R$ 42,00");
   });
+});
+
+it("acerto no card exige Action autorizada e preserva o motivo de bloqueio", () => {
+  const blocked = { ...fixtureActions({ can_confirm: true })[0]!, ref: "settle-delivery-cash", enabled: false, reason: "Confira o caixa." };
+  expect(cardAffordances(card({ can_settle_delivery_cash: true, actions: [blocked] })).find((item) => item.ref === "settle_cash"))
+    .toMatchObject({ disabled: true, reason: "Confira o caixa." });
+  expect(cardAffordances(card({ can_settle_delivery_cash: true, actions: [] })).find((item) => item.ref === "settle_cash")?.disabled).toBe(true);
+  expect(cardAffordances(card({ can_settle_delivery_cash: true, actions: [{ ...blocked, enabled: true, reason: "" }] })).find((item) => item.ref === "settle_cash")?.disabled).toBe(false);
 });

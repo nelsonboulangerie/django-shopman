@@ -1,12 +1,106 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py
 // Regenerate with: python manage.py export_orders_schema
+
+/** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
+export interface CatalogPricePreviewCell {
+  id: number;
+  sku: string;
+  surface_ref: string;
+  tier: string;
+  before_q: number;
+  after_q: number;
+}
+
+/** CatalogPricePreview(base_revision: 'str', expected_actor_id: 'int', cells: 'tuple[CatalogPricePreviewCell, ...]', limit: 'int') */
+export interface CatalogPricePreview {
+  base_revision: string;
+  expected_actor_id: number;
+  cells: CatalogPricePreviewCell[];
+  limit: number;
+}
+
+/** CatalogPublicationCell(sku: 'str', surface_ref: 'str', tier: 'str', before: 'dict[str, bool]', after: 'dict[str, bool]') */
+export interface CatalogPublicationCell {
+  sku: string;
+  surface_ref: string;
+  tier: string;
+  before: Record<string, boolean>;
+  after: Record<string, boolean>;
+}
+
+/** CatalogPublicationSkip(sku: 'str', surface_ref: 'str', reason: 'str') */
+export interface CatalogPublicationSkip {
+  sku: string;
+  surface_ref: string;
+  reason: string;
+}
+
+/** CatalogPublicationPreview(base_revision: 'str', expected_actor_id: 'int', cells: 'tuple[CatalogPublicationCell, ...]', skipped: 'tuple[CatalogPublicationSkip, ...]', limit: 'int') */
+export interface CatalogPublicationPreview {
+  base_revision: string;
+  expected_actor_id: number;
+  cells: CatalogPublicationCell[];
+  skipped: CatalogPublicationSkip[];
+  limit: number;
+}
+
+/** Canonical action offered by a Shopman projection to any surface. */
+export interface Action {
+  ref: string;
+  kind: string;
+  label: string;
+  priority: string;
+  enabled: boolean;
+  reason: string;
+  href: string;
+  method: string;
+  payload_schema: Record<string, unknown>;
+  idempotency: string;
+  confirmation: Record<string, unknown>;
+}
+
+/** FeedCollectionRef(ref: 'str', name: 'str', exists: 'bool') */
+export interface FeedCollectionRef {
+  ref: string;
+  name: string;
+  exists: boolean;
+}
+
+/** FeedProjection(ref: 'str', name: 'str', kind: 'str', kind_label: 'str', kind_icon: 'str', capability: 'str', is_active: 'bool', output_path: 'str', collections: 'tuple[FeedCollectionRef, ...]', rotate_seconds: 'int', items_per_page: 'int', actions: 'tuple[Action, ...]' = ()) */
+export interface FeedProjection {
+  ref: string;
+  name: string;
+  kind: string;
+  kind_label: string;
+  kind_icon: string;
+  capability: string;
+  is_active: boolean;
+  output_path: string;
+  collections: FeedCollectionRef[];
+  rotate_seconds: number;
+  items_per_page: number;
+  actions: Action[];
+}
+
+/** CollectionOptionProjection(ref: 'str', name: 'str', product_count: 'int') */
+export interface CollectionOptionProjection {
+  ref: string;
+  name: string;
+  product_count: number;
+}
+
+/** FeedBoardProjection(feeds: 'tuple[FeedProjection, ...]', all_collections: 'tuple[CollectionOptionProjection, ...]') */
+export interface FeedBoardProjection {
+  feeds: FeedProjection[];
+  all_collections: CollectionOptionProjection[];
+}
 
 /** One line item as displayed on order tracking or confirmation. */
 export interface OrderItemProjection {
   sku: string;
   name: string;
-  qty: number;
+  qty: string;
   unit_price_display: string;
   total_display: string;
 }
@@ -35,6 +129,8 @@ export interface AwaitingWorkOrderProjection {
 export interface EquipmentOptionProjection {
   ref: string;
   label: string;
+  enabled: boolean;
+  reason: string;
 }
 
 /** Onde está o aparelho agora: saiu com o entregador deste pedido e não voltou. */
@@ -44,6 +140,8 @@ export interface EquipmentOutProjection {
   order_ref: string;
   customer_name: string;
   out_at: string;
+  actions: Action[];
+  identified: boolean;
 }
 
 /** Quem é este cliente, para o operador decidir como tratá-lo. */
@@ -67,6 +165,8 @@ export interface CustomerProfileProjection {
 export interface OrderCardProjection {
   ref: string;
   status: string;
+  actions: Action[];
+  revisions: Record<string, string>;
   status_label: string;
   status_color: string;
   channel_ref: string;
@@ -132,6 +232,8 @@ export interface OrderCardProjection {
 export interface OperatorOrderProjection {
   ref: string;
   status: string;
+  actions: Action[];
+  revisions: Record<string, string>;
   status_label: string;
   status_color: string;
   customer_name: string;
@@ -212,4 +314,5 @@ export interface TwoZoneQueueProjection {
   preorders: OrderCardProjection[];
   preorders_count: number;
   equipment_out: EquipmentOutProjection[];
+  equipment_available: EquipmentOptionProjection[];
 }

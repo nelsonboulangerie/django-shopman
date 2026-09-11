@@ -27,6 +27,8 @@ const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 export const DJANGO_CONDITIONAL_REQUEST_HEADERS = ["if-none-match", "x-request-id"] as const;
 export const DJANGO_OPERATIONAL_RESPONSE_HEADERS = [
   "retry-after",
+  "idempotency-key",
+  "x-correlation-id",
   "etag",
   "x-request-id",
   "x-api-version",
@@ -105,6 +107,15 @@ export function isSafeDjangoLocation(location: string): boolean {
     && !location.startsWith("//")
     && !location.includes("\\")
     && !/[\x00-\x1F\x7F]/.test(location);
+}
+
+export function mutationHeaders(read: (name: string) => string | undefined): Record<string, string> {
+  const headers: Record<string, string> = {};
+  for (const name of ["idempotency-key", "if-match", "x-correlation-id"]) {
+    const value = read(name);
+    if (value) headers[name] = value;
+  }
+  return headers;
 }
 
 export function csrfTokenFromCookieHeader(cookie: string | undefined): string {
@@ -213,6 +224,7 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
 
   const headers: Record<string, string> = {
     accept: getRequestHeader(event, "accept") || "application/json",
+    ...mutationHeaders((name) => getRequestHeader(event, name)),
   };
 
   let cookie = getRequestHeader(event, "cookie");

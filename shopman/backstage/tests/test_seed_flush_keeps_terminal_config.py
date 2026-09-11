@@ -58,8 +58,15 @@ def test_flush_preserva_a_config_dos_terminais(loja_configurada, monkeypatch):
     balcao, totem = loja_configurada
     monkeypatch.setenv("ADMIN_PASSWORD", "strong-seed-admin-password")
 
+    from shopman.backstage.models import DeliveryDevice
+
+    device = DeliveryDevice.objects.create(label="Aparelho preservado", identification="CONFIG-READER", active=False)
+    device_ref = device.ref
     call_command("seed", "--flush", stdout=StringIO())
 
+    device.refresh_from_db()
+    assert (device.ref, device.label, device.identification, device.active, device.current_order_id) == (
+        device_ref, "Aparelho preservado", "CONFIG-READER", False, None)
     balcao = Terminal.objects.get(ref="pdv-main")
     # Config de tela: nada disto é dado de seed, é decisão da loja.
     assert balcao.metadata["default_fulfillment_type"] == "delivery"

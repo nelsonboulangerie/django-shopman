@@ -67,7 +67,7 @@ async function goToCashSession() {
     <div class="flex min-w-0 flex-1 flex-col md:min-h-0 md:overflow-hidden">
       <header class="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-2">
         <RailToggle />
-        <h1 class="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight">Filipetas</h1>
+        <h1 class="min-w-0 truncate text-lg font-semibold">Filipetas</h1>
         <span class="ml-auto truncate text-sm text-muted-foreground">
           {{ rangeLabel(tickets.range.value, tickets.today) }}
         </span>

@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 
+from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError, InvalidTransition
@@ -79,6 +80,7 @@ class ConfirmationTimeoutHandler:
                         reason="payment_timeout",
                         actor="payment.timeout",
                         extra_data={"payment_timeout_at": timezone.now().isoformat()},
+                        expected_unpaid_intent_ref=str(((order.data or {}).get("payment") or {}).get("intent_ref") or ""),
                     )
                     return
                 message.status = "queued"
@@ -87,19 +89,36 @@ class ConfirmationTimeoutHandler:
                 message.save(update_fields=["status", "available_at", "updated_at"])
                 return
             ensure_confirmable(order)
-            order.transition_status(
-                Order.Status.ACCEPTED, actor="confirmation.timeout",
-            )
+            _transition_if_still_new(order, Order.Status.ACCEPTED)
         elif action == "cancel":
-            order.transition_status(
-                Order.Status.CANCELLED, actor="confirmation.timeout",
-            )
-            logger.info(
-                "confirmation.timeout: auto-cancelled order %s (auto_cancel mode)",
-                order_ref,
-            )
+            if _transition_if_still_new(order, Order.Status.CANCELLED):
+                logger.info(
+                    "confirmation.timeout: auto-cancelled order %s (auto_cancel mode)",
+                    order_ref,
+                )
         else:
             raise DirectiveTerminalError(f"unknown action: {action!r}")
+
+
+@transaction.atomic
+def _transition_if_still_new(order, target) -> bool:
+    """Compare the timeout precondition in the same commit as its transition."""
+    from shopman.orderman.models import Order
+
+    from shopman.shop.lifecycle import ensure_confirmable, ensure_payment_captured
+    from shopman.shop.services import payment
+
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    if order.status != Order.Status.NEW:
+        return False
+    if target == Order.Status.ACCEPTED:
+        # Capture/refund must not change the guard between this read and commit.
+        payment.lock_order_payment(order)
+        ensure_payment_captured(order)
+        ensure_confirmable(order)
+    order.transition_status(target, actor="confirmation.timeout")
+    return True
 
 
 class StaleNewOrderAlertHandler:

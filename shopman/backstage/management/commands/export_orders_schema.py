@@ -23,6 +23,19 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from shopman.backstage.contracts import render_contract_module, run_contract_export
+from shopman.backstage.projections.catalog import (
+    CatalogPricePreview,
+    CatalogPricePreviewCell,
+    CatalogPublicationCell,
+    CatalogPublicationPreview,
+    CatalogPublicationSkip,
+)
+from shopman.backstage.projections.feeds import (
+    CollectionOptionProjection,
+    FeedBoardProjection,
+    FeedCollectionRef,
+    FeedProjection,
+)
 from shopman.backstage.projections.order_queue import (
     AwaitingWorkOrderProjection,
     CustomerProfileProjection,
@@ -33,13 +46,23 @@ from shopman.backstage.projections.order_queue import (
     OrderQueueProjection,
     TwoZoneQueueProjection,
 )
-from shopman.shop.projections.types import OrderItemProjection, TimelineEventProjection
+from shopman.shop.projections.types import Action, OrderItemProjection, TimelineEventProjection
 
 #: Generated artifact, relative to the repository root (``BASE_DIR``).
 OUTPUT_RELATIVE_PATH = Path("surfaces/orders-nuxt/app/generated/ordersContract.ts")
 
 #: Every dataclass exported to the surface, dependencies first.
 CONTRACT_DATACLASSES = (
+    CatalogPricePreviewCell,
+    CatalogPricePreview,
+    CatalogPublicationCell,
+    CatalogPublicationSkip,
+    CatalogPublicationPreview,
+    Action,
+    FeedCollectionRef,
+    FeedProjection,
+    CollectionOptionProjection,
+    FeedBoardProjection,
     OrderItemProjection,
     TimelineEventProjection,
     AwaitingWorkOrderProjection,
@@ -62,7 +85,7 @@ def render_orders_contract_ts() -> str:
     return render_contract_module(
         source=(
             "shopman/backstage/projections/order_queue.py"
-            " + shopman/shop/projections/types.py"
+            " + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py"
         ),
         command="export_orders_schema",
         dataclasses=CONTRACT_DATACLASSES,

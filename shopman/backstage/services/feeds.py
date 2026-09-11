@@ -8,6 +8,8 @@ Core) e sinaliza a superfície para atualizar em tempo real.
 
 from __future__ import annotations
 
+from django.db import transaction
+
 from shopman.backstage.services.exceptions import CatalogError
 
 
@@ -24,7 +26,7 @@ def _display_channel(ref: str):
     """O canal de exibição, ou erro nomeando o que o operador vê."""
     from shopman.shop.models import Channel
 
-    channel = Channel.objects.filter(
+    channel = Channel.objects.select_for_update().filter(
         ref=ref, commerce_policy=Channel.CommercePolicy.DISPLAY
     ).first()
     if channel is None:
@@ -46,22 +48,48 @@ def _paused(channel) -> set[str]:
     return {str(s) for s in (_display(channel).get("paused_skus") or [])}
 
 
-def set_active(ref: str, is_active: bool) -> None:
+class FeedConflict(CatalogError):
+    """The selected feed field changed after the operator read it."""
+
+
+def revision(channel, field: str) -> str:
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    display = _display(channel)
+    values = {
+        "active": channel.is_active,
+        "collections": display.get("collections") or [],
+        "rotation": [display.get("rotate_seconds", 0), display.get("items_per_page", 0)],
+    }
+    return mutation_fingerprint({"version": 1, "ref": channel.ref, "policy": channel.commerce_policy,
+        "format": display.get("format") or "", "field": field, "value": values[field]})
+
+
+def _check_revision(channel, field: str, expected_revision):
+    if expected_revision is not None and revision(channel, field) != expected_revision:
+        raise FeedConflict("Este campo mudou. Seu rascunho foi preservado; confira o valor atual antes de salvar.")
+
+
+@transaction.atomic
+def set_active(ref: str, is_active: bool, *, expected_revision=None) -> None:
     sc = _display_channel(ref)
+    _check_revision(sc, "active", expected_revision)
     if sc.is_active != is_active:
         sc.is_active = is_active
         sc.save(update_fields=["is_active"])
         _notify(ref)
 
 
-def set_collections(ref: str, collection_refs: list[str]) -> None:
+@transaction.atomic
+def set_collections(ref: str, collection_refs: list[str], *, expected_revision=None) -> None:
     """Define quais coleções o feed exibe (a ORDEM é global, via Collection.sort_order)."""
     from shopman.offerman.models import Collection
 
     sc = _display_channel(ref)
+    _check_revision(sc, "collections", expected_revision)
 
     cleaned = [str(r).strip() for r in collection_refs if str(r).strip()]
-    valid = set(Collection.objects.filter(ref__in=cleaned).values_list("ref", flat=True))
+    valid = set(Collection.objects.select_for_update().filter(ref__in=cleaned).order_by("pk").values_list("ref", flat=True))
     unknown = [r for r in cleaned if r not in valid]
     if unknown:
         raise CatalogError(f"Coleção(ões) inexistente(s): {', '.join(unknown)}.")
@@ -82,7 +110,8 @@ def _nonneg_int(value, label: str) -> int:
     return value
 
 
-def set_rotation(ref: str, *, rotate_seconds: int, items_per_page: int) -> None:
+@transaction.atomic
+def set_rotation(ref: str, *, rotate_seconds: int, items_per_page: int, expected_revision=None) -> None:
     """Configura a rotação de páginas do quadro (menuboard).
 
     ``rotate_seconds`` = cadência da troca (0 desliga); ``items_per_page`` =
@@ -101,6 +130,7 @@ def set_rotation(ref: str, *, rotate_seconds: int, items_per_page: int) -> None:
         )
 
     sc = _display_channel(ref)
+    _check_revision(sc, "rotation", expected_revision)
     display = _display(sc)
     if display.get("format"):
         raise CatalogError(f"'{ref}' é um feed de plataforma — não tem páginas para rotacionar.")
@@ -115,6 +145,7 @@ def set_rotation(ref: str, *, rotate_seconds: int, items_per_page: int) -> None:
         _notify(ref)
 
 
+@transaction.atomic
 def set_item_paused(ref: str, sku: str, *, paused: bool) -> bool:
     """Pausa/reativa UM item neste feed (equivalente a pausar num canal).
 
@@ -141,6 +172,7 @@ def set_item_paused(ref: str, sku: str, *, paused: bool) -> bool:
     return paused
 
 
+@transaction.atomic
 def set_items_paused(ref: str, skus: list[str], *, paused: bool) -> int:
     """Pausa/reativa em lote vários itens neste feed. Retorna quantos mudaram."""
     cleaned = [str(s).strip() for s in skus if str(s).strip()]

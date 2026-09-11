@@ -3,8 +3,10 @@
 import { mockNuxtImport } from "@nuxt/test-utils/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "vue-sonner";
+import { injectableMethods } from "~/presentation/payment";
+import { receiptSaveOffers } from "~/presentation/receiptContact";
 
-import { makeSale } from "./_posSaleHarness";
+import { makeSale, makeTabPayload } from "./_posSaleHarness";
 
 vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 
@@ -169,5 +171,68 @@ describe("usePosSale — o toast da unificação carrega o prazo do desfazer", (
     const [, options] = vi.mocked(toast.success).mock.calls.at(-1) as [string, { description?: string }];
     expect(options.description).toBe("1 contato e 0 pedidos passaram para este cadastro.");
     expect(options.description).not.toContain("desfazer");
+  });
+});
+
+
+describe("usePosSale — cadastro de comanda reaberta", () => {
+  const disposers: Array<() => void> = [];
+  afterEach(() => { disposers.splice(0).forEach(dispose => dispose()); });
+  beforeEach(() => { dollarFetch.mockReset(); vi.mocked(toast.info).mockClear(); });
+
+  it.each([["", "save"], ["52998224725", "none"], ["11144477735", "update"]])("restaura cadastro com CPF %s e oferta %s, sem reaplicar preferências", async (taxId, kind) => {
+    const customer = lookupProjection({ tax_id: taxId, fiscal_prefs: { cpf_na_nota: true, email_receipt: true }, is_birthday_today: true, house_account: { enabled: true }, saved_addresses: [{ ref: "A1" }], memory: { favorite_item: { sku: "PAO" } } });
+    dollarFetch.mockResolvedValue({ customer });
+    const actionCall = vi.fn().mockResolvedValue(makeTabPayload({ customer_ref: customer.ref, customer_name: customer.name, fiscal_tax_id: "", fulfillment_type: "delivery", delivery_address: "Endereço desta venda" }));
+    const { sale, handles } = makeSale({ actionCall }); disposers.push(handles.dispose);
+    await sale.openTab("M1", { drawerChecked: true });
+    expect(sale.customerLookup.value).toEqual(customer);
+    expect(injectableMethods([], { houseAccount: Boolean(sale.customerLookup.value?.house_account) })).toHaveLength(1);
+    expect(sale.cart.wantsCpfOnInvoice).toBe(false);
+    expect(sale.cart.invoiceTaxId).toBe("");
+    expect(sale.cart.receiptChannels).toEqual([]);
+    expect(sale.cart.deliveryAddress).toBe("Endereço desta venda");
+    expect(toast.info).not.toHaveBeenCalled();
+    const offers = receiptSaveOffers({ customerRef: sale.cart.customerRef, customer: sale.customerLookup.value, receiptEmail: "", customerEmail: "", invoiceTaxId: "52998224725", wantsCpfOnInvoice: true, customerTaxId: "" });
+    expect(offers.taxId.kind).toBe(kind);
+    await sale.openTab("M1", { drawerChecked: true });
+    expect(dollarFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("o CPF da nota acompanha cada comanda, sem vazar para a próxima", async () => {
+    dollarFetch.mockResolvedValue({ customer: lookupProjection({ fiscal_prefs: { cpf_na_nota: false } }) });
+    const actionCall = vi.fn().mockResolvedValueOnce(makeTabPayload({ customer_ref: "CUST-9", fiscal_tax_id: "52998224725" })).mockResolvedValueOnce(makeTabPayload({ tab_ref: "M2", tab_session_key: "sess-2", customer_ref: "CUST-9", fiscal_tax_id: "" }));
+    const { sale, handles } = makeSale({ actionCall }); disposers.push(handles.dispose);
+    await sale.openTab("M1", { drawerChecked: true });
+    expect(sale.cart.wantsCpfOnInvoice).toBe(true);
+    expect(sale.cart.invoiceTaxId).toBe("52998224725");
+    await sale.openTab("M2", { drawerChecked: true });
+    expect(sale.cart.wantsCpfOnInvoice).toBe(false);
+    expect(sale.cart.invoiceTaxId).toBe("");
+  });
+
+  it("resposta atrasada não recoloca um cliente removido", async () => {
+    let resolveLookup!: (value: unknown) => void;
+    dollarFetch.mockImplementation(() => new Promise(resolve => { resolveLookup = resolve; }));
+    const { sale, handles } = makeSale(); disposers.push(handles.dispose);
+    sale.cart.customerRef = "CUST-9";
+    const pending = sale.lookupCustomer();
+    sale.clearCustomer();
+    resolveLookup({ customer: lookupProjection() });
+    await pending;
+    expect(sale.customerLookup.value).toBeNull();
+    expect(sale.cart.customerRef).toBe("");
+    expect(sale.cart.invoiceTaxId).toBe("");
+  });
+
+  it("falha de rede mantém a comanda e não oferece criar outro cliente", async () => {
+    dollarFetch.mockRejectedValue(new Error("offline"));
+    const { sale, handles } = makeSale({ actionCall: vi.fn().mockResolvedValue(makeTabPayload({ customer_ref: "CUST-9", customer_name: "Noa" })) }); disposers.push(handles.dispose);
+    await sale.openTab("M1", { drawerChecked: true });
+    expect(sale.cart.tabRef).toBe("M1");
+    expect(sale.cart.customerRef).toBe("CUST-9");
+    expect(sale.customerLookup.value).toBeNull();
+    const offers = receiptSaveOffers({ customerRef: sale.cart.customerRef, customer: null, receiptEmail: "", customerEmail: "", invoiceTaxId: "52998224725", wantsCpfOnInvoice: true, customerTaxId: "" });
+    expect(offers.taxId.kind).toBe("none");
   });
 });

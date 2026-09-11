@@ -1,0 +1,47 @@
+[WebServer] (node:94415) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:94417) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › tests/integration/operational.spec.ts:312:1 › keyboard curation and frequent targets retain exact order without pointer input (12.3s)
+
+
+  1) [chromium] › tests/integration/operational.spec.ts:312:1 › keyboard curation and frequent targets retain exact order without pointer input
+
+    Error: expect(locator).toBeInViewport() failed
+
+    Locator:  locator('tr[data-dragkey]').first().getByRole('switch').first()
+    Expected: in viewport
+    Received: viewport ratio 0
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toBeInViewport" with timeout 10000ms
+      - waiting for locator('tr[data-dragkey]').first().getByRole('switch').first()
+        24 × locator resolved to <button type="button" role="switch" aria-checked="true" title="Pausado — pausar neste canal" aria-label="Pausado — pausar neste canal" class="inline-flex size-control shrink-0 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40">…</button>
+           - unexpected value "viewport ratio 0"
+
+
+      332 |       const region = page.getByRole("region", { name: /^Produtos e canais/ });
+      333 |       await region.evaluate(element => { element.scrollLeft = 620; });
+    > 334 |       await expect(rows.first().getByRole("switch").first()).toBeInViewport();
+          |                                                              ^
+      335 |       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+      336 |     }
+      337 |     await page.screenshot({ path: fileURLToPath(new URL(`../../../../.orders-lab/integration-targets-${viewport.width}.png`, import.meta.url)), fullPage: true });
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:334:62
+
+    Error Context: ../../.orders-lab/playwright-results/operational-keyboard-curat-0268f-order-without-pointer-input-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../.orders-lab/playwright-results/operational-keyboard-curat-0268f-order-without-pointer-input-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../.orders-lab/playwright-results/operational-keyboard-curat-0268f-order-without-pointer-input-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › tests/integration/operational.spec.ts:312:1 › keyboard curation and frequent targets retain exact order without pointer input

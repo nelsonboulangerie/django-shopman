@@ -1,0 +1,16 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__ test_manychat_flow_lookup_failure_is_observable_without_exception_payload ___
+
+    def test_manychat_flow_lookup_failure_is_observable_without_exception_payload():
+        from shopman.shop.adapters import notification_manychat
+        from shopman.shop.models import NotificationTemplate
+    
+>       with patch.object(NotificationTemplate.objects, "filter", side_effect=RuntimeError("synthetic-private-payload")), patch.object(notification_manychat.logger, "warning") as warning:
+             ^^^^^
+E       NameError: name 'patch' is not defined
+
+shopman/shop/tests/test_notification_unknown_recovery.py:183: NameError
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_notification_unknown_recovery.py::test_manychat_flow_lookup_failure_is_observable_without_exception_payload
+1 failed, 11 deselected in 0.15s

@@ -19,12 +19,13 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from decimal import Decimal
 
 from django.utils import timezone
 from shopman.orderman.models import Order
 
 from shopman.shop.services import payment_gate
-from shopman.shop.services.order_helpers import get_fulfillment_type
+from shopman.shop.services.order_helpers import get_fulfillment_type, json_quantity
 
 logger = logging.getLogger(__name__)
 
@@ -272,7 +273,7 @@ def _order_to_lines(order) -> list[dict]:
             "line_id": item.line_id,
             "sku": item.sku,
             "name": item.name or item.sku,
-            "qty": int(item.qty),
+            "qty": json_quantity(item.qty),
             "notes": meta.get("notes", ""),
             "meta": meta,
         })
@@ -341,7 +342,7 @@ def _build_routable_items(lines: list[dict]) -> list[dict]:
             continue
         notes = ln.get("notes") or meta.get("notes", "")
         line_id = ln.get("line_id", "")
-        qty = int(ln["qty"])
+        qty = Decimal(str(ln["qty"]))
         name = ln.get("name") or ln["sku"]
         components = bundle_components.get(ln["sku"], [])
         if components:
@@ -349,10 +350,7 @@ def _build_routable_items(lines: list[dict]) -> list[dict]:
                 routable_items.append({
                     "sku": comp_sku,
                     "name": f"{comp_name} ({name})",
-                    # comp_qty is a DecimalField; the KDS line qty is an integral
-                    # count everywhere else (and must be JSON-serializable for the
-                    # ticket items JSONField — plain json.dumps rejects Decimal).
-                    "qty": int(qty * comp_qty),
+                    "qty": json_quantity(qty * comp_qty),
                     "notes": notes,
                     "parent_sku": ln["sku"],
                     "line_id": line_id,
@@ -362,7 +360,7 @@ def _build_routable_items(lines: list[dict]) -> list[dict]:
         routable_items.append({
             "sku": ln["sku"],
             "name": name,
-            "qty": qty,
+            "qty": json_quantity(qty),
             "notes": notes,
             "parent_sku": None,
             "line_id": line_id,
@@ -610,6 +608,11 @@ def expedition_block_reason(order, *, action: str) -> str:
         return operator_orders.advance_block_message(
             operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED
         )
+    if action == "dispatch":
+        from shopman.shop.adapters.delivery_devices import needs_card_machine
+
+        if needs_card_machine(order):
+            return "Abra este pedido no Gestor e confirme a maquininha no despacho."
     return ""
 
 

@@ -1,0 +1,30 @@
+{
+  "baseline_sha256": "346f1237702b5af45528af9aaca7f5ac566cc57dcef4f1b2fe5b3c82a3b62bd5",
+  "comparisons": [
+    {
+      "file": "projection-candidate-final.json",
+      "sha256": "346f1237702b5af45528af9aaca7f5ac566cc57dcef4f1b2fe5b3c82a3b62bd5",
+      "json_equal_to_rebased": true
+    },
+    {
+      "file": "projection-candidate-items.json",
+      "sha256": "346f1237702b5af45528af9aaca7f5ac566cc57dcef4f1b2fe5b3c82a3b62bd5",
+      "json_equal_to_rebased": true
+    },
+    {
+      "file": "projection-candidate-rows.json",
+      "sha256": "346f1237702b5af45528af9aaca7f5ac566cc57dcef4f1b2fe5b3c82a3b62bd5",
+      "json_equal_to_rebased": true
+    },
+    {
+      "file": "projection-candidate-schema.json",
+      "sha256": "346f1237702b5af45528af9aaca7f5ac566cc57dcef4f1b2fe5b3c82a3b62bd5",
+      "json_equal_to_rebased": true
+    },
+    {
+      "file": "projection-candidate.json",
+      "sha256": "346f1237702b5af45528af9aaca7f5ac566cc57dcef4f1b2fe5b3c82a3b62bd5",
+      "json_equal_to_rebased": true
+    }
+  ]
+}

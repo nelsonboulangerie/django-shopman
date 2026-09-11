@@ -1,0 +1,392 @@
+........FFF.FFFFF                                                        [100%]
+=================================== FAILURES ===================================
+______ test_product_integer_rejects_boolean_fraction_and_nonfinite[True] _______
+
+invalid = True
+
+    @pytest.mark.parametrize("invalid", [True, 12.5, float("inf"), float("nan")])
+    def test_product_integer_rejects_boolean_fraction_and_nonfinite(invalid):
+        product = Product.objects.create(sku="EXACT-INT", name="Before", base_price_q=1000)
+>       with pytest.raises(CatalogError):
+E       Failed: DID NOT RAISE <class 'shopman.backstage.services.exceptions.CatalogError'>
+
+shopman/backstage/tests/test_catalog_patch_preservation.py:43: Failed
+______ test_product_integer_rejects_boolean_fraction_and_nonfinite[12.5] _______
+
+invalid = 12.5
+
+    @pytest.mark.parametrize("invalid", [True, 12.5, float("inf"), float("nan")])
+    def test_product_integer_rejects_boolean_fraction_and_nonfinite(invalid):
+        product = Product.objects.create(sku="EXACT-INT", name="Before", base_price_q=1000)
+>       with pytest.raises(CatalogError):
+E       Failed: DID NOT RAISE <class 'shopman.backstage.services.exceptions.CatalogError'>
+
+shopman/backstage/tests/test_catalog_patch_preservation.py:43: Failed
+_______ test_product_integer_rejects_boolean_fraction_and_nonfinite[inf] _______
+
+invalid = inf
+
+    @pytest.mark.parametrize("invalid", [True, 12.5, float("inf"), float("nan")])
+    def test_product_integer_rejects_boolean_fraction_and_nonfinite(invalid):
+        product = Product.objects.create(sku="EXACT-INT", name="Before", base_price_q=1000)
+        with pytest.raises(CatalogError):
+>           catalog.update_product_detail(product.sku, {"name": "After", "base_price_q": invalid})
+
+shopman/backstage/tests/test_catalog_patch_preservation.py:44: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+shopman/backstage/services/catalog.py:775: in update_product_detail
+    value = _as_nullable_int(data.get(field), field)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = inf, label = 'base_price_q'
+
+    def _as_nullable_int(value, label: str) -> int | None:
+        if value is None or value == "":
+            return None
+        try:
+>           return int(value)
+                   ^^^^^^^^^^
+E           OverflowError: cannot convert float infinity to integer
+
+shopman/backstage/services/catalog.py:540: OverflowError
+_ test_nutrition_rejects_coercion_without_replacing_provenance[energy_kcal-True] _
+
+field = 'energy_kcal', invalid = True
+
+    @pytest.mark.parametrize("field,invalid", [
+        ("energy_kcal", True), ("energy_kcal", "NaN"), ("energy_kcal", "Infinity"),
+        ("serving_size_g", 12.5), ("servings_per_container", True),
+    ])
+    def test_nutrition_rejects_coercion_without_replacing_provenance(field, invalid):
+        facts = {"serving_size_g": 50, "energy_kcal": 120, "auto_filled": True}
+        product = Product.objects.create(sku="EXACT-NUTRIENT", name="Before", base_price_q=1000, nutrition_facts=facts)
+>       with pytest.raises(CatalogError):
+E       Failed: DID NOT RAISE <class 'shopman.backstage.services.exceptions.CatalogError'>
+
+shopman/backstage/tests/test_catalog_patch_preservation.py:57: Failed
+_ test_nutrition_rejects_coercion_without_replacing_provenance[energy_kcal-NaN] _
+
+self = <django.db.backends.utils.CursorWrapper object at 0x127d74200>
+sql = 'UPDATE "offerman_product" SET "uuid" = %s, "sku" = %s, "name" = %s, "short_description" = %s, "long_description" = %s...%s, "is_batch_produced" = %s, "metadata" = %s, "created_at" = %s, "updated_at" = %s WHERE "offerman_product"."id" = %s'
+params = (UUID('5526bab8-0582-4d4e-bbc2-cc76222c6d50'), 'EXACT-NUTRIENT', 'After', '', '', 'un', ...)
+ignored_wrapper_args = (False, {'connection': <DatabaseWrapper vendor='postgresql' alias='default'>, 'cursor': <django.db.backends.utils.CursorWrapper object at 0x127d74200>})
+
+    def _execute(self, sql, params, *ignored_wrapper_args):
+        # Raise a warning during app initialization (stored_app_configs is only
+        # ever set during testing).
+        if not apps.ready and not apps.stored_app_configs:
+            warnings.warn(self.APPS_NOT_READY_WARNING_MSG, category=RuntimeWarning)
+        self.db.validate_no_broken_transaction()
+        with self.db.wrap_database_errors:
+            if params is None:
+                # params default might be backend specific.
+                return self.cursor.execute(sql)
+            else:
+>               return self.cursor.execute(sql, params)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:105: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <django.db.backends.postgresql.base.Cursor [closed] [INTRANS] (host=127.0.0.1 port=55439 user=orders_lab database=test_orders_lab) at 0x127bc96d0>
+query = 'UPDATE "offerman_product" SET "uuid" = %s, "sku" = %s, "name" = %s, "short_description" = %s, "long_description" = %s...%s, "is_batch_produced" = %s, "metadata" = %s, "created_at" = %s, "updated_at" = %s WHERE "offerman_product"."id" = %s'
+params = (UUID('5526bab8-0582-4d4e-bbc2-cc76222c6d50'), 'EXACT-NUTRIENT', 'After', '', '', 'un', ...)
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.InvalidTextRepresentation: invalid input syntax for type json
+E           LINE 1: ... '', "ingredients_text" = '', "nutrition_facts" = '{"auto_fi...
+E                                                                        ^
+E           DETAIL:  Token "NaN" is invalid.
+E           CONTEXT:  JSON data, line 1: {"auto_filled": false, "energy_kcal": NaN...
+
+../../django-shopman/.venv/lib/python3.12/site-packages/psycopg/cursor.py:117: InvalidTextRepresentation
+
+The above exception was the direct cause of the following exception:
+
+field = 'energy_kcal', invalid = 'NaN'
+
+    @pytest.mark.parametrize("field,invalid", [
+        ("energy_kcal", True), ("energy_kcal", "NaN"), ("energy_kcal", "Infinity"),
+        ("serving_size_g", 12.5), ("servings_per_container", True),
+    ])
+    def test_nutrition_rejects_coercion_without_replacing_provenance(field, invalid):
+        facts = {"serving_size_g": 50, "energy_kcal": 120, "auto_filled": True}
+        product = Product.objects.create(sku="EXACT-NUTRIENT", name="Before", base_price_q=1000, nutrition_facts=facts)
+        with pytest.raises(CatalogError):
+>           catalog.update_product_detail(product.sku, {"name": "After", "nutrition_facts": {field: invalid}})
+
+shopman/backstage/tests/test_catalog_patch_preservation.py:58: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+shopman/backstage/services/catalog.py:804: in update_product_detail
+    product.save()
+packages/offerman/shopman/offerman/models/product.py:227: in save
+    super().save(*args, **kwargs)
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py:874: in save
+    self.save_base(
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py:966: in save_base
+    updated = self._save_table(
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py:1110: in _save_table
+    results = self._do_update(
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py:1213: in _do_update
+    return filtered._update(values, returning_fields)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:1327: in _update
+    return query.get_compiler(self.db).execute_returning_sql(returning_fields)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py:2140: in execute_returning_sql
+    row_count = self.execute_sql(ROW_COUNT)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py:2111: in execute_sql
+    row_count = super().execute_sql(result_type)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py:1624: in execute_sql
+    cursor.execute(sql, params)
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:79: in execute
+    return self._execute_with_wrappers(
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:92: in _execute_with_wrappers
+    return executor(sql, params, many, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:100: in _execute
+    with self.db.wrap_database_errors:
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/utils.py:94: in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:105: in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <django.db.backends.postgresql.base.Cursor [closed] [INTRANS] (host=127.0.0.1 port=55439 user=orders_lab database=test_orders_lab) at 0x127bc96d0>
+query = 'UPDATE "offerman_product" SET "uuid" = %s, "sku" = %s, "name" = %s, "short_description" = %s, "long_description" = %s...%s, "is_batch_produced" = %s, "metadata" = %s, "created_at" = %s, "updated_at" = %s WHERE "offerman_product"."id" = %s'
+params = (UUID('5526bab8-0582-4d4e-bbc2-cc76222c6d50'), 'EXACT-NUTRIENT', 'After', '', '', 'un', ...)
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           django.db.utils.DataError: invalid input syntax for type json
+E           LINE 1: ... '', "ingredients_text" = '', "nutrition_facts" = '{"auto_fi...
+E                                                                        ^
+E           DETAIL:  Token "NaN" is invalid.
+E           CONTEXT:  JSON data, line 1: {"auto_filled": false, "energy_kcal": NaN...
+
+../../django-shopman/.venv/lib/python3.12/site-packages/psycopg/cursor.py:117: DataError
+_ test_nutrition_rejects_coercion_without_replacing_provenance[energy_kcal-Infinity] _
+
+self = <django.db.backends.utils.CursorWrapper object at 0x1389a3e30>
+sql = 'UPDATE "offerman_product" SET "uuid" = %s, "sku" = %s, "name" = %s, "short_description" = %s, "long_description" = %s...%s, "is_batch_produced" = %s, "metadata" = %s, "created_at" = %s, "updated_at" = %s WHERE "offerman_product"."id" = %s'
+params = (UUID('9eafaccb-54b1-44b1-8ae9-bbace59290cb'), 'EXACT-NUTRIENT', 'After', '', '', 'un', ...)
+ignored_wrapper_args = (False, {'connection': <DatabaseWrapper vendor='postgresql' alias='default'>, 'cursor': <django.db.backends.utils.CursorWrapper object at 0x1389a3e30>})
+
+    def _execute(self, sql, params, *ignored_wrapper_args):
+        # Raise a warning during app initialization (stored_app_configs is only
+        # ever set during testing).
+        if not apps.ready and not apps.stored_app_configs:
+            warnings.warn(self.APPS_NOT_READY_WARNING_MSG, category=RuntimeWarning)
+        self.db.validate_no_broken_transaction()
+        with self.db.wrap_database_errors:
+            if params is None:
+                # params default might be backend specific.
+                return self.cursor.execute(sql)
+            else:
+>               return self.cursor.execute(sql, params)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:105: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <django.db.backends.postgresql.base.Cursor [closed] [INTRANS] (host=127.0.0.1 port=55439 user=orders_lab database=test_orders_lab) at 0x138892150>
+query = 'UPDATE "offerman_product" SET "uuid" = %s, "sku" = %s, "name" = %s, "short_description" = %s, "long_description" = %s...%s, "is_batch_produced" = %s, "metadata" = %s, "created_at" = %s, "updated_at" = %s WHERE "offerman_product"."id" = %s'
+params = (UUID('9eafaccb-54b1-44b1-8ae9-bbace59290cb'), 'EXACT-NUTRIENT', 'After', '', '', 'un', ...)
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.InvalidTextRepresentation: invalid input syntax for type json
+E           LINE 1: ... '', "ingredients_text" = '', "nutrition_facts" = '{"auto_fi...
+E                                                                        ^
+E           DETAIL:  Token "Infinity" is invalid.
+E           CONTEXT:  JSON data, line 1: {"auto_filled": false, "energy_kcal": Infinity...
+
+../../django-shopman/.venv/lib/python3.12/site-packages/psycopg/cursor.py:117: InvalidTextRepresentation
+
+The above exception was the direct cause of the following exception:
+
+field = 'energy_kcal', invalid = 'Infinity'
+
+    @pytest.mark.parametrize("field,invalid", [
+        ("energy_kcal", True), ("energy_kcal", "NaN"), ("energy_kcal", "Infinity"),
+        ("serving_size_g", 12.5), ("servings_per_container", True),
+    ])
+    def test_nutrition_rejects_coercion_without_replacing_provenance(field, invalid):
+        facts = {"serving_size_g": 50, "energy_kcal": 120, "auto_filled": True}
+        product = Product.objects.create(sku="EXACT-NUTRIENT", name="Before", base_price_q=1000, nutrition_facts=facts)
+        with pytest.raises(CatalogError):
+>           catalog.update_product_detail(product.sku, {"name": "After", "nutrition_facts": {field: invalid}})
+
+shopman/backstage/tests/test_catalog_patch_preservation.py:58: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+shopman/backstage/services/catalog.py:804: in update_product_detail
+    product.save()
+packages/offerman/shopman/offerman/models/product.py:227: in save
+    super().save(*args, **kwargs)
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py:874: in save
+    self.save_base(
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py:966: in save_base
+    updated = self._save_table(
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py:1110: in _save_table
+    results = self._do_update(
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py:1213: in _do_update
+    return filtered._update(values, returning_fields)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:1327: in _update
+    return query.get_compiler(self.db).execute_returning_sql(returning_fields)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py:2140: in execute_returning_sql
+    row_count = self.execute_sql(ROW_COUNT)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py:2111: in execute_sql
+    row_count = super().execute_sql(result_type)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py:1624: in execute_sql
+    cursor.execute(sql, params)
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:79: in execute
+    return self._execute_with_wrappers(
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:92: in _execute_with_wrappers
+    return executor(sql, params, many, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:100: in _execute
+    with self.db.wrap_database_errors:
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/utils.py:94: in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:105: in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <django.db.backends.postgresql.base.Cursor [closed] [INTRANS] (host=127.0.0.1 port=55439 user=orders_lab database=test_orders_lab) at 0x138892150>
+query = 'UPDATE "offerman_product" SET "uuid" = %s, "sku" = %s, "name" = %s, "short_description" = %s, "long_description" = %s...%s, "is_batch_produced" = %s, "metadata" = %s, "created_at" = %s, "updated_at" = %s WHERE "offerman_product"."id" = %s'
+params = (UUID('9eafaccb-54b1-44b1-8ae9-bbace59290cb'), 'EXACT-NUTRIENT', 'After', '', '', 'un', ...)
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           django.db.utils.DataError: invalid input syntax for type json
+E           LINE 1: ... '', "ingredients_text" = '', "nutrition_facts" = '{"auto_fi...
+E                                                                        ^
+E           DETAIL:  Token "Infinity" is invalid.
+E           CONTEXT:  JSON data, line 1: {"auto_filled": false, "energy_kcal": Infinity...
+
+../../django-shopman/.venv/lib/python3.12/site-packages/psycopg/cursor.py:117: DataError
+_ test_nutrition_rejects_coercion_without_replacing_provenance[serving_size_g-12.5] _
+
+field = 'serving_size_g', invalid = 12.5
+
+    @pytest.mark.parametrize("field,invalid", [
+        ("energy_kcal", True), ("energy_kcal", "NaN"), ("energy_kcal", "Infinity"),
+        ("serving_size_g", 12.5), ("servings_per_container", True),
+    ])
+    def test_nutrition_rejects_coercion_without_replacing_provenance(field, invalid):
+        facts = {"serving_size_g": 50, "energy_kcal": 120, "auto_filled": True}
+        product = Product.objects.create(sku="EXACT-NUTRIENT", name="Before", base_price_q=1000, nutrition_facts=facts)
+>       with pytest.raises(CatalogError):
+E       Failed: DID NOT RAISE <class 'shopman.backstage.services.exceptions.CatalogError'>
+
+shopman/backstage/tests/test_catalog_patch_preservation.py:57: Failed
+_ test_nutrition_rejects_coercion_without_replacing_provenance[servings_per_container-True] _
+
+field = 'servings_per_container', invalid = True
+
+    @pytest.mark.parametrize("field,invalid", [
+        ("energy_kcal", True), ("energy_kcal", "NaN"), ("energy_kcal", "Infinity"),
+        ("serving_size_g", 12.5), ("servings_per_container", True),
+    ])
+    def test_nutrition_rejects_coercion_without_replacing_provenance(field, invalid):
+        facts = {"serving_size_g": 50, "energy_kcal": 120, "auto_filled": True}
+        product = Product.objects.create(sku="EXACT-NUTRIENT", name="Before", base_price_q=1000, nutrition_facts=facts)
+>       with pytest.raises(CatalogError):
+E       Failed: DID NOT RAISE <class 'shopman.backstage.services.exceptions.CatalogError'>
+
+shopman/backstage/tests/test_catalog_patch_preservation.py:57: Failed
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-10 23:09:17,296 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_catalog_patch_preservation.py::test_product_integer_rejects_boolean_fraction_and_nonfinite[True]
+FAILED shopman/backstage/tests/test_catalog_patch_preservation.py::test_product_integer_rejects_boolean_fraction_and_nonfinite[12.5]
+FAILED shopman/backstage/tests/test_catalog_patch_preservation.py::test_product_integer_rejects_boolean_fraction_and_nonfinite[inf]
+FAILED shopman/backstage/tests/test_catalog_patch_preservation.py::test_nutrition_rejects_coercion_without_replacing_provenance[energy_kcal-True]
+FAILED shopman/backstage/tests/test_catalog_patch_preservation.py::test_nutrition_rejects_coercion_without_replacing_provenance[energy_kcal-NaN]
+FAILED shopman/backstage/tests/test_catalog_patch_preservation.py::test_nutrition_rejects_coercion_without_replacing_provenance[energy_kcal-Infinity]
+FAILED shopman/backstage/tests/test_catalog_patch_preservation.py::test_nutrition_rejects_coercion_without_replacing_provenance[serving_size_g-12.5]
+FAILED shopman/backstage/tests/test_catalog_patch_preservation.py::test_nutrition_rejects_coercion_without_replacing_provenance[servings_per_container-True]
+8 failed, 9 passed in 5.33s

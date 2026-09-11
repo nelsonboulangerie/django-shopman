@@ -1,0 +1,26 @@
+DEBUG 2026-09-11 06:09:07,636 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 06:09:07,636 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 06:09:07,636 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 06:09:07,640 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 06:09:07,698 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 06:09:07,699 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 06:09:07,699 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 06:09:07,702 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 06:09:07,710 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 06:09:07,715 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 06:09:07,715 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 06:09:07,715 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 06:09:07,715 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 06:09:07,716 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 06:09:07,716 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 06:09:07,716 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 06:09:07,716 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 06:09:07,717 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 06:09:07,733 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 06:09:07,734 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+System check identified some issues:
+
+WARNINGS:
+?: (SHOPMAN_W001) O banco de dados padrão é SQLite.
+	HINT: SQLite não suporta operações concorrentes adequadamente. Use PostgreSQL em produção.
+Marketing client artifacts are up to date.

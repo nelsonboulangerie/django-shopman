@@ -1,0 +1,48 @@
+{
+  "browser_source": "5a3383c9",
+  "backend_source": "c935459be",
+  "authenticated_read": true,
+  "legacy_post_status": 400,
+  "refusal_code": "intention_required",
+  "order_status_before": "accepted",
+  "order_status_after": "accepted",
+  "timeline_unchanged": true,
+  "business_tables_unchanged": {
+    "cashman_entry": {
+      "rows": 8,
+      "sha256": "bf5c289dcc2b773a088f7eedb38f62c87f43e1ae14f0c7b4b44e9ec8ec18b34a"
+    },
+    "orderman_directive": {
+      "rows": 47,
+      "sha256": "1eb02dc37cebc01921a10af810e1a5fd8bf3c161de7d983c4aa980a5b9211a3b"
+    },
+    "orderman_idempotencykey": {
+      "rows": 178,
+      "sha256": "06aaf66ce4b578731959b66e996a7938a950de58e85bcc3490f0a97c4f3afd0f"
+    },
+    "orderman_order": {
+      "rows": 49,
+      "sha256": "deed1a72c4b32d57fcceb01695e4f5eace2907c89195a6a19b770757fc570bc9"
+    },
+    "orderman_orderevent": {
+      "rows": 56,
+      "sha256": "c39d8dbce4c66ec46b86703a35996ddeb4346008c3d0446b540ee0cc0c4761a1"
+    },
+    "orderman_orderitem": {
+      "rows": 40,
+      "sha256": "c0200e90d2b142d064f34992a89052344519d993b4b175a718f0a087ad9c0ea4"
+    },
+    "payman_paymentintent": {
+      "rows": 8,
+      "sha256": "dce24571225437548aeba889ee5a10d9b2014a385e9dee6f7aadc8495417d708"
+    },
+    "payman_paymenttransaction": {
+      "rows": 8,
+      "sha256": "d5d5d6b5309ae891f1538175423665f9dd082ec40a6a2a3414dfe36cc1e90ca2"
+    },
+    "stockman_move": {
+      "rows": 2,
+      "sha256": "4dae30b563c5f1c73c55bd4820ba84ec099661c09f131670d6ccebf9ae42f121"
+    }
+  }
+}

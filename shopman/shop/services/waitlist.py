@@ -263,7 +263,7 @@ def is_waitlist_hold(hold) -> bool:
     )
 
 
-def _quant_reservation_is_sound(hold) -> bool:
+def _quant_reservation_is_sound(hold, *, available: Decimal | None = None) -> bool:
     """A reserva cabe de fato no Quant ao qual está ligada.
 
     ``Quant.available`` desconta todos os holds vivos. Validar o saldo agregado,
@@ -275,7 +275,7 @@ def _quant_reservation_is_sound(hold) -> bool:
     """
     try:
         quant = hold.quant
-        if quant.quantity < 0 or quant.available < 0:
+        if quant.quantity < 0 or (quant.available if available is None else available) < 0:
             return False
 
         metadata = hold.metadata or {}
@@ -295,13 +295,13 @@ def _quant_reservation_is_sound(hold) -> bool:
         return False
 
 
-def _is_waiting_hold(hold) -> bool:
+def _is_waiting_hold(hold, *, available: Decimal | None = None) -> bool:
     """Reserva válida ainda ancorada no lote planejado (fermata)."""
     return (
         is_waitlist_hold(hold)
         and hold.expires_at is None
         and hold.quant.target_date is not None
-        and _quant_reservation_is_sound(hold)
+        and _quant_reservation_is_sound(hold, available=available)
     )
 
 
@@ -351,7 +351,7 @@ def _order_holds(
     return list(qs.order_by("created_at"))
 
 
-def state_for(order) -> str:
+def state_for(order, *, holds=None, quant_available: dict | None = None) -> str:
     """Estado da fila deste pedido.
 
     ``fermata`` é DERIVADO do hold, não gravado: enquanto existir reserva
@@ -363,10 +363,43 @@ def state_for(order) -> str:
     stored = ((order.data or {}).get(WAITLIST_KEY) or {}).get("state")
     if stored in (CONFIRMING, CONFIRMED, RELEASED):
         return stored
-    for hold in _order_holds(order):
-        if _is_waiting_hold(hold):
+    for hold in (_order_holds(order) if holds is None else holds):
+        available = quant_available.get(hold.quant_id) if quant_available is not None else None
+        if _is_waiting_hold(hold, available=available):
             return FERMATA
     return NONE
+
+
+def states_for(orders) -> dict[str, str]:
+    """One Hold query for the board, including other reservations on its quants.
+
+    The shared predicate still decides fermata. The batch's available balance
+    includes every active hold on relevant quants, not just the visible orders.
+    No cache survives this projection.
+    """
+    from collections import defaultdict
+
+    from django.db.models import Q, Subquery
+    from shopman.stockman.models import Hold
+
+    orders = list(orders)
+    refs = [f"order:{order.ref}" for order in orders]
+    if not refs:
+        return {}
+    relevant_quants = Hold.objects.active().filter(metadata__reference__in=refs).values("quant_id")
+    holds = list(Hold.objects.active().filter(
+        Q(metadata__reference__in=refs) | Q(quant_id__in=Subquery(relevant_quants)),
+    ).select_related("quant").order_by("created_at"))
+    grouped = defaultdict(list)
+    held = defaultdict(lambda: Decimal("0"))
+    quantities = {}
+    for hold in holds:
+        grouped[(hold.metadata or {}).get("reference")].append(hold)
+        if hold.quant_id is not None:
+            held[hold.quant_id] += hold.quantity
+            quantities[hold.quant_id] = hold.quant.quantity
+    available = {pk: quantity - held[pk] for pk, quantity in quantities.items()}
+    return {order.ref: state_for(order, holds=grouped[f"order:{order.ref}"], quant_available=available) for order in orders}
 
 
 def planned_batch_date(order) -> date | None:

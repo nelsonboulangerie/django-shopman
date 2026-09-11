@@ -14,6 +14,15 @@ from django.core.exceptions import ValidationError
 
 from shopman.shop.config import ChannelConfig
 
+
+@pytest.fixture(autouse=True)
+def _isolate_marker_for_config_routing_tests():
+    # These are MagicMock routing tests. Persistence is covered by the real-DB
+    # lifecycle phase durability/recovery suites, never by a mock order.
+    with patch("shopman.shop.lifecycle._mark_phase_complete"):
+        yield
+
+
 # ── fixture helpers ──
 
 

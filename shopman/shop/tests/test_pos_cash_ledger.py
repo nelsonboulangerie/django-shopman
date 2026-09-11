@@ -823,3 +823,113 @@ def test_a_regra_do_contato_e_do_link_e_de_mais_ninguem(counter):
         payment_tenders=[{"method": "cash", "amount_q": 1200, "collection": "terminal"}],
     )
     assert r.order_ref
+
+
+@pytest.mark.parametrize("method", ["credit", "debit"])
+def test_delivery_card_settles_only_when_confirmed_and_never_adds_cash(counter, method):
+    order = _cod_order(f"COD-{method}")
+    order.data["payment"]["method"] = method
+    order.data["payment"]["tenders"][0]["method"] = method
+    order.save()
+    assert not PaymentIntent.objects.filter(order_ref=order.ref).exists()
+    operator_orders.settle_delivery_cash(order, cash_shift=counter.shift, actor="pos:marina")
+    assert PaymentIntent.objects.get(order_ref=order.ref).status == PaymentIntent.Status.CAPTURED
+    assert cash.balance(counter.shift) == 10000
+    assert not Entry.objects.filter(kind=Entry.Kind.COD_SETTLED).exists()
+    with pytest.raises(ValueError, match="já foi acertado"):
+        operator_orders.settle_delivery_cash(order, cash_shift=counter.shift, actor="pos:marina")
+
+
+def test_delivery_mixed_settlement_keeps_only_cash_in_drawer(counter):
+    order = _cod_order("COD-MIXED")
+    order.data["payment"].update({
+        "method": "mixed", "change_for_q": 2000,
+        "tenders": [
+            {"method": "cash", "amount_q": 1000, "collection": "on_delivery", "status": "pending"},
+            {"method": "credit", "amount_q": 2000, "collection": "on_delivery", "status": "pending"},
+        ],
+    })
+    order.save()
+    assert operator_orders.change_out_suggested_q(order) == 1000
+    operator_orders.settle_delivery_cash(order, cash_shift=counter.shift, actor="pos:marina")
+    assert PaymentIntent.objects.filter(order_ref=order.ref, status=PaymentIntent.Status.CAPTURED).count() == 2
+    line = Entry.objects.get(kind=Entry.Kind.COD_SETTLED)
+    assert line.amount_q == 1000
+    assert PaymentIntent.objects.get(ref=line.payment_ref).method == "cash"
+    assert cash.balance(counter.shift) == 11000
+
+
+def test_delivery_machine_return_does_not_settle_payment(counter):
+    order = _cod_order("COD-MACHINE")
+    order.data["payment"]["method"] = "credit"
+    order.data["payment"]["tenders"][0]["method"] = "credit"
+    order.data["dispatch"] = {"equipment": ["card_machine"], "equipment_out_at": "2026-09-11T12:00:00Z"}
+    order.save()
+    operator_orders.mark_equipment_returned(order, actor="pos:marina")
+    assert not PaymentIntent.objects.filter(order_ref=order.ref).exists()
+    assert not order.data["payment"].get("cod_settled_at")
+    with pytest.raises(ValueError, match="Selecione a maquininha"):
+        operator_orders._clean_equipment(order, [])
+
+
+@pytest.mark.parametrize("method", ["cash", "credit", "debit", "mixed"])
+def test_pos_delivery_records_pending_tenders_and_cash_change(counter, method):
+    tenders = ([{"method": "cash", "amount_q": 2000, "collection": "on_delivery"},
+                {"method": "credit", "amount_q": 200, "collection": "on_delivery"}]
+               if method == "mixed" else [])
+    result = counter.close(
+        client_request_id=f"delivery-{method}", fulfillment_type="delivery",
+        payment_collection="on_delivery", payment_method=method,
+        payment_tenders=tenders, tendered_q=2000 if method == "cash" else None,
+        delivery_address="Rua das Flores, 1", customer_phone="+5543999990001",
+    )
+    order = Order.objects.get(ref=result.order_ref)
+    payment = order.data["payment"]
+    assert all(t["status"] == "pending" for t in payment["tenders"])
+    assert not PaymentIntent.objects.filter(order_ref=order.ref).exists()
+    assert counter.sale_lines()[0].amount_q == 0
+    if method in {"cash", "mixed"}:
+        assert payment["change_for_q"] == 2000
+        assert operator_orders.change_out_suggested_q(order) == (1000 if method == "mixed" else 800)
+    channel = Channel.objects.get(ref="pdv")
+    channel.config["fulfillment"] = {"equipment": ["card_machine"]}
+    channel.save()
+    order.transition_status(Order.Status.ACCEPTED)
+    order.transition_status(Order.Status.READY)
+    change = operator_orders.change_out_suggested_q(order)
+    from shopman.backstage.models import DeliveryDevice
+
+    device = DeliveryDevice.objects.create(label="Maquininha", identification=f"LAB-{method}")
+    operator_orders.advance_order(
+        order, actor="pos:marina", cash_shift=counter.shift, change_out_q=change,
+        equipment=[f"card_machine:{device.ref}"] if method != "cash" else [],
+    )
+    operator_orders.settle_delivery_cash(order, cash_shift=counter.shift, actor="pos:marina", change_back_q=change)
+    assert order.data["payment"]["cod_settled_at"]
+
+
+@pytest.mark.parametrize("method", ["pix", "card", "link"])
+def test_pos_delivery_refuses_online_gateway_as_manual_future_payment(counter, method):
+    with pytest.raises(PosIntentError):
+        counter.close(
+            client_request_id=f"delivery-invalid-{method}", fulfillment_type="delivery",
+            payment_collection="on_delivery", payment_method=method,
+            delivery_address="Rua das Flores, 1", customer_phone="+5543999990001",
+        )
+    assert not PaymentIntent.objects.exists()
+
+
+
+def test_equipment_return_from_stale_order_preserves_payment_confirmation(counter):
+    order = _cod_order("COD-STALE-EQUIPMENT")
+    order.data["dispatch"] = {"equipment": ["card_machine"], "equipment_out_at": "2026-09-11T12:00:00Z"}
+    order.save()
+    stale = Order.objects.get(pk=order.pk)
+    operator_orders.settle_delivery_cash(order, cash_shift=counter.shift, actor="pos:marina")
+    operator_orders.mark_equipment_returned(stale, actor="pos:marina")
+    order.refresh_from_db()
+    assert order.data["payment"]["cod_settled_at"]
+    assert order.data["dispatch"]["equipment_back_at"]
+    with pytest.raises(ValueError, match="já foi acertado"):
+        operator_orders.settle_delivery_cash(stale, cash_shift=counter.shift, actor="pos:marina")
+    assert PaymentIntent.objects.filter(order_ref=order.ref).count() == 1

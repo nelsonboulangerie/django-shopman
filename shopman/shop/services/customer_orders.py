@@ -326,6 +326,7 @@ def resolve_payment_timeout_if_due(order) -> bool:
         reason="payment_timeout",
         actor="payment.timeout",
         extra_data={"payment_timeout_at": timezone.now().isoformat()},
+        expected_unpaid_intent_ref=str(payment.get("intent_ref") or ""),
     )
     if cancelled:
         notification.send(order, "payment_expired")
@@ -528,10 +529,18 @@ def can_cancel(order) -> bool:
     return payment_service.can_cancel(order)
 
 
-def cancel(order) -> None:
+@transaction.atomic
+def cancel(order) -> bool:
+    from shopman.orderman.models import Order
+
     from shopman.shop.services.cancellation import cancel as cancel_order
 
-    cancel_order(order, reason="customer_requested", actor="customer.self_cancel")
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    payment_service.lock_order_payment(order)
+    if not payment_service.can_cancel(order):
+        return False
+    return cancel_order(order, reason="customer_requested", actor="customer.self_cancel")
 
 
 def confirm_received(order) -> bool:

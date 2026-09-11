@@ -85,7 +85,9 @@ export default defineNuxtConfig({
       sizeLimitKb: 0
     },
 
-    mode: 'svg',
+    mode: 'css',
+    // Keep utility sizing/visibility above the bundled icon mask defaults.
+    cssLayer: 'base',
     class: 'shrink-0',
     fetchTimeout: 2000,
     serverBundle: 'local'

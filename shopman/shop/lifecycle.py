@@ -67,7 +67,7 @@ def has_availability_approval(order) -> bool:
     return bool(decision.get("items"))
 
 
-def ensure_confirmable(order) -> None:
+def ensure_confirmable(order, *, channel_config=None) -> None:
     """Enforce the operational precondition for moving an order into CONFIRMED.
 
     This checks availability only. Payment capture is guarded separately by
@@ -80,7 +80,7 @@ def ensure_confirmable(order) -> None:
         return
 
     try:
-        config = ChannelConfig.for_channel(order.channel_ref)
+        config = channel_config if channel_config is not None else ChannelConfig.for_channel(order.channel_ref)
         if config.payment.timing == "external":
             return
     except Exception:
@@ -114,7 +114,7 @@ _UPFRONT_DIGITAL_PAYMENT_METHODS = payment_gate.UPFRONT_DIGITAL_PAYMENT_METHODS
 _ACCEPTED_PAYMENT_STATUSES = {"captured", "paid"}
 
 
-def ensure_payment_captured(order) -> None:
+def ensure_payment_captured(order, *, payment_reads=None, channel_config=None) -> None:
     """Raise InvalidTransition when an upfront Shopman payment intent is not captured.
 
     Guard is skipped for channels whose ``payment.timing`` is ``external``
@@ -129,7 +129,7 @@ def ensure_payment_captured(order) -> None:
     # the guard doesn't apply.
     config_failed = False
     try:
-        config = ChannelConfig.for_channel(order.channel_ref)
+        config = channel_config if channel_config is not None else ChannelConfig.for_channel(order.channel_ref)
         if config.payment.timing == "external":
             return
     except Exception:
@@ -150,7 +150,8 @@ def ensure_payment_captured(order) -> None:
         return
 
     intent_ref = payment.get("intent_ref")
-    if _payment_is_captured(order):
+    if (_payment_is_captured(order) if payment_reads is None else
+            payment_gate.payment_is_captured(order, payment_reads=payment_reads)):
         return
 
     raise InvalidTransition(
@@ -214,7 +215,8 @@ def secure_stock(order) -> None:
 # perde a fase inteira (hold, fulfill, ticket KDS, notificação). dispatch()
 # grava o marcador após o handler retornar; sweep_stuck_orders re-despacha,
 # idempotente, as fases sem marcador.
-DURABLE_PHASES = frozenset({"on_commit", "on_accepted", "on_paid", "on_cancelled"})
+QUEUED_PHASES = frozenset({"on_preparing", "on_ready", "on_dispatched", "on_delivered", "on_completed", "on_returned"})
+DURABLE_PHASES = frozenset({"on_commit", "on_accepted", "on_paid", "on_cancelled"}) | QUEUED_PHASES
 LIFECYCLE_DATA_KEY = "lifecycle"
 PHASE_DONE = "done"
 
@@ -222,6 +224,26 @@ PHASE_DONE = "done"
 def phase_complete(order, phase: str) -> bool:
     """True quando a fase tem marcador durável de conclusão em order.data."""
     return ((order.data or {}).get(LIFECYCLE_DATA_KEY) or {}).get(phase) == PHASE_DONE
+
+
+def enqueue_phase(order, phase: str):
+    """Record missing phase work in the same transaction as its status transition."""
+    from shopman.shop.directives import (
+        LIFECYCLE_PHASE_RECEIPT_SCOPE,
+        ORDER_LIFECYCLE_PHASE,
+        create_persistently_deduped,
+    )
+
+    if phase not in QUEUED_PHASES:
+        raise ValueError(f"Unsupported queued lifecycle phase: {phase}")
+    if phase_complete(order, phase):
+        return None
+    return create_persistently_deduped(
+        ORDER_LIFECYCLE_PHASE,
+        payload={"order_ref": order.ref, "channel_ref": order.channel_ref, "phase": phase},
+        dedupe_key=f"lifecycle.phase:{order.ref}:{phase}",
+        receipt_scope=LIFECYCLE_PHASE_RECEIPT_SCOPE,
+    )
 
 
 def dispatch(order, phase: str) -> None:
@@ -315,18 +337,9 @@ def _mark_phase_complete(order, phase: str) -> None:
     (transição de status dentro do handler) pode ter marcado outra fase nesse
     meio-tempo, e um save cego do instance em memória perderia esse marcador.
     """
-    try:
-        fresh = type(order).objects.filter(pk=order.pk).values_list("data", flat=True).first()
-        data = dict(fresh) if fresh else dict(order.data or {})
-        marks = dict(data.get(LIFECYCLE_DATA_KEY) or {})
-        marks[phase] = PHASE_DONE
-        data[LIFECYCLE_DATA_KEY] = marks
-        order.data = data
-        order.save(update_fields=["data", "updated_at"])
-    except Exception:
-        logger.warning(
-            "lifecycle.mark_phase_complete falhou order=%s phase=%s", order.ref, phase, exc_info=True
-        )
+    from shopman.shop.services.order_helpers import merge_order_data
+
+    merge_order_data(order, {phase: PHASE_DONE}, block=LIFECYCLE_DATA_KEY)
 
 
 def _record_coupon_use(order) -> None:
@@ -518,14 +531,9 @@ def _on_ready(order, config: ChannelConfig) -> None:
         fulfillment.create(order)
     notification.send(order, "order_ready")
     if config.fulfillment.courier == "auto":
-        # Best-effort: o despacho vira Directive (retry próprio); um erro aqui
-        # nunca pode derrubar a transição para "pronto".
-        try:
-            from shopman.shop.services import courier
+        from shopman.shop.services import courier
 
-            courier.request_dispatch(order, actor="lifecycle.on_ready")
-        except Exception:
-            logger.warning("courier_dispatch_enqueue_failed order=%s", order.ref, exc_info=True)
+        courier.request_dispatch(order, actor="lifecycle.on_ready")
 
 
 def _on_dispatched(order, config: ChannelConfig) -> None:
@@ -547,11 +555,9 @@ def _on_completed(order, config: ChannelConfig) -> None:
 
 def _on_cancelled(order, config: ChannelConfig) -> None:
     """Order cancelled: cancel KDS tickets, release stock, settle payment, cancel fiscal + notify."""
-    try:
-        from shopman.shop.services import kds
-        kds.cancel_tickets(order)
-    except ImportError:
-        pass
+    from shopman.shop.services import kds
+
+    kds.cancel_tickets(order)
     stock.release(order)
     # Canais com fulfill no ato (PDV) já baixaram o estoque quando o cancel
     # chega — release é no-op em hold FULFILLED. Devolver ao ledger, senão o
@@ -592,8 +598,11 @@ def _settle_cancelled_payment(order) -> None:
 
 def _on_returned(order, config: ChannelConfig) -> None:
     """Order returned: revert stock + refund + revoke loyalty + cancel fiscal + notify."""
-    stock.revert(order)
-    payment.refund(order)
+    # A recorded return has its own exact items, amount and retry identity.
+    # ReturnHandler owns stock/payment; replaying the whole order doubles goods.
+    if not (order.data or {}).get("returns"):
+        stock.revert(order)
+        payment.refund(order)
     fiscal.cancel(order)
     loyalty.revoke(order, reason="returned")
     loyalty.restore(order, reason="returned")

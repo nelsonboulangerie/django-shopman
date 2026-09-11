@@ -344,7 +344,6 @@ Expected important codes:
 - `manager_approval_required`
 - `manager_approval_invalid`
 - `receipt_email_required`
-- `fiscal_delivery_fee_pending`
 - `cart_empty`
 
 Recovery must be field/action specific where possible. Generic "try again" is

@@ -1,0 +1,47 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__ test_manychat_flow_lookup_failure_is_observable_without_exception_payload ___
+
+    def test_manychat_flow_lookup_failure_is_observable_without_exception_payload():
+        from shopman.shop.adapters import notification_manychat
+        from shopman.shop.models import NotificationTemplate
+    
+        with patch.object(NotificationTemplate.objects, "filter", side_effect=RuntimeError("synthetic-private-payload")), patch.object(notification_manychat.logger, "warning") as warning:
+            assert notification_manychat._load_db_flow_ns("order_ready") is None
+>       warning.assert_called_once()
+
+shopman/shop/tests/test_notification_unknown_recovery.py:185: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock name='warning' id='4482367024'>
+
+    def assert_called_once(self):
+        """assert that the mock was called only once.
+        """
+        if not self.call_count == 1:
+            msg = ("Expected '%s' to have been called once. Called %s times.%s"
+                   % (self._mock_name or 'mock',
+                      self.call_count,
+                      self._calls_repr()))
+>           raise AssertionError(msg)
+E           AssertionError: Expected 'warning' to have been called once. Called 0 times.
+
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/unittest/mock.py:926: AssertionError
+----------------------------- Captured stderr call -----------------------------
+DEBUG 2026-09-11 04:19:12,280 shopman.shop.adapters.notification_manychat manychat._load_db_flow_ns: lookup failed for event=order_ready
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/adapters/notification_manychat.py", line 213, in _load_db_flow_ns
+    obj = NotificationTemplate.objects.filter(event=event, is_active=True).first()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/unittest/mock.py", line 1137, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/unittest/mock.py", line 1141, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/unittest/mock.py", line 1196, in _execute_mock_call
+    raise effect
+RuntimeError: synthetic-private-payload
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_notification_unknown_recovery.py::test_manychat_flow_lookup_failure_is_observable_without_exception_payload
+1 failed, 11 deselected in 0.18s

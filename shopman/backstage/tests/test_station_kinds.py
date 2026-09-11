@@ -220,9 +220,11 @@ def test_a_trilha_sai_no_nome_do_TOTEM(client):
     )
     trust_station(client, "totem-1")
 
+    from shopman.backstage.tests._order_intent import context_payload
+
     resposta = client.post(
         reverse("api-backstage-order-comment", args=[pedido.ref]),
-        {"note": "Retirada pelo totem"},
+        context_payload(client, pedido.ref, "comment", note="Retirada pelo totem"),
         content_type="application/json",
     )
 

@@ -86,6 +86,7 @@ from shopman.backstage.api.production_freshness import (
     signed_override_proof,
     validate_override_proof,
 )
+from shopman.backstage.api.telemetry import OperationalObservationMixin
 from shopman.backstage.constants import POS_CHANNEL_REF
 from shopman.backstage.models import SignInMethod, SignInOutcome
 from shopman.backstage.parsing import as_bool
@@ -139,6 +140,7 @@ from shopman.backstage.services.production import ProductionOrderShortError, Pro
 from shopman.shop.services import cancellation as cancellation_service
 from shopman.shop.services import fiscal as fiscal_service
 from shopman.shop.services import notification as notification_service
+from shopman.shop.services import operator_orders
 from shopman.shop.services import pos as pos_tabs_service
 from shopman.shop.services.pos import (
     PosCustomerConflict,
@@ -154,7 +156,7 @@ from .permissions import (
     IsTrustedStation,
     deny_production_capability,
 )
-from .projections import projection_data
+from .projections import projection_data, read_data
 
 logger = logging.getLogger(__name__)
 
@@ -1503,7 +1505,7 @@ def _reconcile_payment_if_due(order) -> None:
         responses={200: OpenApiResponse(description="Full operator order projection.")},
     ),
 )
-class OrderDetailView(APIView):
+class OrderDetailView(OperationalObservationMixin, APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "shop.manage_orders"
 
@@ -1526,7 +1528,7 @@ class OrderDetailView(APIView):
         # chamada por card viraria enxurrada no provedor.
         _reconcile_payment_if_due(order)
         proj = build_operator_order(order, user=request.user)
-        return Response({"order": projection_data(proj)})
+        return Response(read_data(order=projection_data(proj)))
 
 
 @extend_schema_view(
@@ -1536,23 +1538,90 @@ class OrderDetailView(APIView):
         responses={200: OpenApiResponse(description="Active and recent orders for operator.")},
     ),
 )
-class OrderQueueView(APIView):
+class OrderQueueView(OperationalObservationMixin, APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "shop.manage_orders"
 
     def get(self, request):
-        queue = build_two_zone_queue()
-        return Response({"queue": projection_data(queue)})
+        queue = build_two_zone_queue(user=request.user)
+        return Response(read_data(queue=projection_data(queue)))
 
 
 # ── Order action endpoints ────────────────────────────────────────────
 
 
-class _OrderActionBase(APIView):
+class _OrderActionBase(OperationalObservationMixin, APIView):
     """Shared base for order action endpoints (advance/confirm/reject/cancel)."""
 
     permission_classes = [HasBackstagePermission]
     required_permission = "shop.manage_orders"
+
+    def _context_response(self, request, order, operation, inputs, execute, *, prepare=None):
+        from shopman.shop.services.operator_orders import OrderStateConflict
+        from shopman.shop.services.remote_mutations import (
+            RemoteMutationConflict,
+            RemoteMutationInProgress,
+            lookup_local_mutation,
+            mutation_fingerprint,
+            run_idempotent_mutation,
+        )
+
+        if request.data.get("expected_actor_id") != request.user.pk:
+            return Response({"detail": "A identificação mudou. Atualize o pedido antes de gravar.", "code": "actor_changed"}, status=409)
+        key = str(request.headers.get("Idempotency-Key") or request.data.get("idempotency_key") or "").strip()
+        base = str(request.data.get("base_revision") or "")
+        if not key or len(key) > 128 or not base:
+            return Response({"detail": "Atualize o pedido: a gravação exige intenção e revisão.", "code": "intention_required"}, status=400)
+        scope = mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": f"orders.{operation}", "ref": order.ref})
+        fingerprint = mutation_fingerprint({"scope": scope, "base": base, "inputs": inputs})
+
+        def apply():
+            try:
+                extra = execute(base) or {}
+            except (OrderStateConflict, OrderConflict) as exc:
+                return {"detail": str(exc), "outcome": "not_applied", "intention": key}, 409
+            except notification_service.NotificationResendRefused as exc:
+                return {"detail": exc.message, "error": {"code": exc.code, "message": exc.message}, "outcome": "not_applied", "intention": key}, exc.status
+            except OrderError as exc:
+                return {"detail": str(exc), "outcome": "not_applied", "intention": key}, 400
+            return {"ok": True, "ref": order.ref, "outcome": "applied", "intention": key, **extra}, 200
+
+        try:
+            result = lookup_local_mutation(scope=scope, key=key, fingerprint=fingerprint)
+            if result is None:
+                # Provider reads and approval checks precede the local transaction.
+                # A committed replay never repeats this preparation.
+                if prepare is not None:
+                    refusal = prepare()
+                    if refusal is not None:
+                        return refusal
+                result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=apply)
+        except RemoteMutationConflict as exc:
+            return Response({"detail": str(exc), "code": "intention_conflict"}, status=409)
+        except RemoteMutationInProgress:
+            return Response({"outcome": "in_progress", "intention": key}, status=202)
+        order.refresh_from_db()
+        return Response({**result.response_body, "replayed": result.replayed, "order": projection_data(build_operator_order(order, user=request.user))}, status=result.response_code)
+
+    def get(self, request, ref: str):
+        from shopman.shop.services.remote_mutations import (
+            RemoteMutationInProgress,
+            lookup_local_mutation,
+            mutation_fingerprint,
+        )
+
+        operation = getattr(self, "intention_operation", "")
+        key = str(request.query_params.get("idempotency_key") or "")
+        if not operation or not key or len(key) > 128:
+            return Response({"detail": "Intenção indisponível."}, status=400)
+        scope = mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": f"orders.{operation}", "ref": ref})
+        try:
+            result = lookup_local_mutation(scope=scope, key=key)
+        except RemoteMutationInProgress:
+            result = None
+        if result is None:
+            return Response({"outcome": "unknown", "intention": key}, status=202)
+        return Response({**result.response_body, "replayed": True}, status=result.response_code)
 
     def _get_order(self, ref: str):
         order = orders_service.find_order(ref)
@@ -1569,34 +1638,84 @@ class _OrderActionBase(APIView):
     ),
 )
 class OrderAdvanceView(_OrderActionBase):
+    def _scope(self, request, ref):
+        from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+        return mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": "orders.advance", "ref": ref})
+
+    def get(self, request, ref: str):
+        from shopman.shop.services.remote_mutations import RemoteMutationInProgress, lookup_local_mutation
+
+        key = str(request.query_params.get("idempotency_key") or "")
+        if not key or len(key) > 128:
+            return Response({"detail": "Informe a intenção a consultar."}, status=400)
+        try:
+            result = lookup_local_mutation(scope=self._scope(request, ref), key=key)
+        except RemoteMutationInProgress:
+            result = None
+        if result is None:
+            return Response({"intention": key, "outcome": "unknown", "detail": "Ainda não há resultado confirmado para esta intenção."}, status=202)
+        return Response({**result.response_body, "replayed": True}, status=result.response_code)
+
     def post(self, request, ref: str):
+        from shopman.shop.services.remote_mutations import (
+            RemoteMutationConflict,
+            RemoteMutationInProgress,
+            mutation_fingerprint,
+            run_idempotent_mutation,
+        )
+
         order, err = self._get_order(ref)
         if err:
             return err
-        # ``change_out``: troco que o entregador leva da gaveta no despacho de
-        # entrega em dinheiro (reais; "0" = levou sem troco). Ausente em pedido
-        # que pede troco → 409 com a sugestão, para a tela perguntar.
         body = request.data or {}
-        change_out = body.get("change_out")
+        if body.get("expected_actor_id") is not None and body.get("expected_actor_id") != request.user.pk:
+            return Response({"detail": "A identificação mudou. Atualize o pedido antes de continuar.", "code": "actor_changed"}, status=409)
+        key = str(request.headers.get("Idempotency-Key") or body.get("idempotency_key") or "").strip()
+        base = str(body.get("base_revision") or request.headers.get("If-Match") or "").strip('"')
+        target = body.get("target_status")
+        if not key or len(key) > 128 or not base or not isinstance(target, str) or not target or body.get("expected_actor_id") != request.user.pk:
+            return Response({"detail": "Atualize o pedido: esta ação exige intenção, revisão e etapa de destino.", "code": "intention_required"}, status=400)
         equipment = body.get("equipment") or []
-        if not isinstance(equipment, list):
-            equipment = [equipment]
+        if not isinstance(equipment, list) or any(not isinstance(value, str) for value in equipment):
+            return Response({"detail": "Aparelhos devem ser uma lista de referências."}, status=400)
+        equipment = sorted(set(equipment))
+        change_out = body.get("change_out")
+        if change_out is not None:
+            from shopman.backstage.services.exceptions import POSError
+            from shopman.backstage.services.pos import parse_money_to_q
+
+            try:
+                change_q = parse_money_to_q(str(change_out))
+            except POSError as exc:
+                return Response({"detail": str(exc)}, status=400)
+        else:
+            change_q = None
+        fingerprint = mutation_fingerprint({"version": 1, "scope": self._scope(request, ref), "base": base, "target": target, "equipment": equipment, "change_out_q": change_q})
+
+        def execute():
+            try:
+                orders_service.advance_order(
+                    order, actor=_actor(request), operator=request.user,
+                    change_out_raw=None if change_out is None else str(change_out),
+                    equipment=equipment, expected_revision=base, target_status=target,
+                )
+            except orders_service.OrderChangeOutRequired as exc:
+                return {"detail": str(exc), "code": "change_out_required", "suggested_q": exc.suggested_q, "outcome": "not_applied", "intention": key}, 409
+            except OrderConflict as exc:
+                return {"detail": str(exc), "outcome": "not_applied", "intention": key}, 409
+            except OrderError as exc:
+                return {"detail": str(exc) or "Ação inválida.", "outcome": "not_applied", "intention": key}, 400
+            return {"ok": True, "ref": ref, "intention": key, "outcome": "applied", "applied": {"status": target}, "pending": ["lifecycle"]}, 200
+
         try:
-            orders_service.advance_order(
-                order,
-                actor=_actor(request),
-                operator=request.user,
-                change_out_raw=None if change_out is None else str(change_out),
-                equipment=[str(ref) for ref in equipment],
-            )
-        except orders_service.OrderChangeOutRequired as exc:
-            return Response(
-                {"detail": str(exc), "code": "change_out_required", "suggested_q": exc.suggested_q},
-                status=409,
-            )
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Ação inválida."}, status=400)
-        return Response({"ok": True, "ref": ref})
+            result = run_idempotent_mutation(scope=self._scope(request, ref), key=key, fingerprint=fingerprint, execute=execute)
+        except RemoteMutationConflict as exc:
+            return Response({"detail": str(exc), "code": "intention_conflict", "outcome": "not_applied"}, status=409)
+        except RemoteMutationInProgress:
+            return Response({"intention": key, "outcome": "in_progress", "detail": "A intenção está em andamento; consulte o resultado."}, status=202)
+        order.refresh_from_db()
+        return Response({**result.response_body, "replayed": result.replayed, "order": projection_data(build_operator_order(order, user=request.user))}, status=result.response_code)
 
 
 @extend_schema_view(
@@ -1610,17 +1729,14 @@ class OrderAdvanceView(_OrderActionBase):
     ),
 )
 class OrderConfirmView(_OrderActionBase):
+    intention_operation = "confirm"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        try:
-            orders_service.confirm_order(order, actor=_actor(request))
-        except OrderConflict as exc:
-            return Response({"detail": str(exc)}, status=409)
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Falha ao aceitar o pedido."}, status=400)
-        return Response({"ok": True, "ref": ref})
+        return self._context_response(request, order, "confirm", {},
+            lambda base: orders_service.confirm_order(order, actor=_actor(request), expected_revision=base))
 
 
 @extend_schema_view(
@@ -1634,27 +1750,32 @@ class OrderConfirmView(_OrderActionBase):
     ),
 )
 class OrderRejectView(_OrderActionBase):
+    intention_operation = "reject"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        reason = (request.data.get("reason") or "").strip() if hasattr(request, "data") else ""
+        reason = str(request.data.get("reason") or "").strip()
         if not reason:
             return Response({"detail": "Motivo da recusa é obrigatório."}, status=400)
-        cancellation_code = (request.data.get("cancellation_code") or "").strip()
-        try:
-            orders_service.reject_order(
-                order,
-                reason=reason,
-                actor=_actor(request),
-                rejected_by="operator",
-                cancellation_code=cancellation_code,
-            )
-        except OrderConflict as exc:
-            return Response({"detail": str(exc)}, status=409)
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Falha ao recusar."}, status=400)
-        return Response({"ok": True, "ref": ref})
+        code = str(request.data.get("cancellation_code") or "").strip()
+        prepared = {}
+
+        def prepare():
+            try:
+                prepared["identity"] = orders_service.prepare_cancellation(order, code)
+            except operator_orders.CancellationReasonsUnavailable as exc:
+                return Response({"detail": str(exc), "error": {"code": "cancellation_reasons_unavailable"}}, status=503)
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=400)
+
+        def execute(base):
+            orders_service.reject_order(order, reason=reason, actor=_actor(request),
+                rejected_by="operator", cancellation_code=code, expected_revision=base,
+                prepared_identity=prepared["identity"])
+
+        return self._context_response(request, order, "reject", {"reason": reason, "cancellation_code": code}, execute, prepare=prepare)
 
 
 @extend_schema_view(
@@ -1679,57 +1800,61 @@ class OrderCancelView(_OrderActionBase):
     caminho de operador em vez de só naquele endpoint.
     """
 
+    intention_operation = "cancel"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-
-        policy = cancellation_service.operator_cancel_policy(order)
-        if not policy.allowed:
-            return Response({"detail": policy.reason}, status=409)
-
-        if cancellation_service.is_advanced_cancel(order) and not request.user.has_perm(
-            cancellation_service.ADVANCED_CANCEL_PERMISSION
-        ):
-            return Response(
-                {
-                    "detail": f"Cancelar pedido em {order.get_status_display()} é do gerente.",
-                    "error": {"code": "cancel_requires_manager"},
-                },
-                status=403,
-            )
-
-        if policy.requires_approval:
-            try:
-                # O validador levanta com código próprio (`manager_approval_required`
-                # x `manager_approval_invalid`) e devolve o User que assinou — a
-                # tela distingue "falta gerente" de "PIN errado" sem ler a frase.
-                pos_tabs_service.validate_manager_override(
-                    request.data.get("manager_approval"),
-                    operator_username=_username(request),
-                    action="cancel_paid_order",
-                )
-            except PosIntentError as exc:
-                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
-
-        # The operator's typed/preset text (may be blank). It rides through as the
-        # customer-facing note; the audit reason falls back to a generic label.
-        operator_reason = (request.data.get("reason") or "").strip()
+        operator_reason = str(request.data.get("reason") or "").strip()
         reason = operator_reason or "Cancelado pelo operador"
-        cancellation_code = (request.data.get("cancellation_code") or "").strip()
-        try:
-            orders_service.cancel_order(
-                order,
-                reason=reason,
-                actor=_actor(request),
-                cancellation_code=cancellation_code,
-                customer_note=operator_reason,
-            )
-        except OrderConflict as exc:
-            return Response({"detail": str(exc)}, status=409)
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Falha ao cancelar."}, status=400)
-        return Response({"ok": True, "ref": ref})
+        code = str(request.data.get("cancellation_code") or "").strip()
+        prepared = {}
+
+        def prepare():
+            prepared["authority"] = cancellation_service.authority_revision(order)
+            policy = cancellation_service.operator_cancel_policy(order)
+            if not policy.allowed:
+                return Response({"detail": policy.reason}, status=409)
+
+            if cancellation_service.is_advanced_cancel(order) and not request.user.has_perm(
+                cancellation_service.ADVANCED_CANCEL_PERMISSION
+            ):
+                return Response(
+                    {
+                        "detail": f"Cancelar pedido em {order.get_status_display()} é do gerente.",
+                        "error": {"code": "cancel_requires_manager"},
+                    },
+                    status=403,
+                )
+
+            if policy.requires_approval:
+                try:
+                    # O validador levanta com código próprio (`manager_approval_required`
+                    # x `manager_approval_invalid`) e devolve o User que assinou — a
+                    # tela distingue "falta gerente" de "PIN errado" sem ler a frase.
+                    pos_tabs_service.validate_manager_override(
+                        request.data.get("manager_approval"),
+                        operator_username=_username(request),
+                        action="cancel_paid_order",
+                    )
+                except PosIntentError as exc:
+                    return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+
+            try:
+                prepared["identity"] = orders_service.prepare_cancellation(order, code)
+            except operator_orders.CancellationReasonsUnavailable as exc:
+                return Response({"detail": str(exc), "error": {"code": "cancellation_reasons_unavailable"}}, status=503)
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=400)
+
+        def execute(base):
+            orders_service.cancel_order(order, reason=reason, actor=_actor(request),
+                cancellation_code=code, customer_note=operator_reason, expected_revision=base,
+                expected_authority_revision=prepared["authority"], prepared_identity=prepared["identity"])
+
+        # Credentials are validated transiently; they are never fingerprinted or retained.
+        return self._context_response(request, order, "cancel", {"reason": operator_reason, "cancellation_code": code}, execute, prepare=prepare)
 
 
 @extend_schema_view(
@@ -1744,7 +1869,11 @@ class OrderCancellationReasonsView(_OrderActionBase):
         order, err = self._get_order(ref)
         if err:
             return err
-        return Response({"reasons": orders_service.cancellation_reasons(order)})
+        try:
+            reasons = orders_service.cancellation_reasons(order)
+        except operator_orders.CancellationReasonsUnavailable as exc:
+            return Response({"detail": str(exc), "error": {"code": "cancellation_reasons_unavailable"}}, status=503)
+        return Response({"reasons": reasons})
 
 
 @extend_schema_view(
@@ -1755,24 +1884,27 @@ class OrderCancellationReasonsView(_OrderActionBase):
     ),
 )
 class OrderSettleDeliveryCashView(_OrderActionBase):
+    intention_operation = "settle-delivery-cash"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        try:
-            change_back = (request.data or {}).get("change_back")
-            equipment_back = str((request.data or {}).get("equipment_back", "")).lower() in {"1", "true", "on", "yes"}
-            amount_q = orders_service.settle_delivery_cash(
-                order,
-                operator=request.user,
-                amount_raw=str(request.data.get("amount", "")),
-                actor=_actor(request),
-                change_back_raw=None if change_back is None else str(change_back),
-                equipment_back=equipment_back,
-            )
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Falha no acerto de dinheiro."}, status=400)
-        return Response({"ok": True, "ref": ref, "amount_q": amount_q})
+        change_back = request.data.get("change_back")
+        equipment_back = request.data.get("equipment_back", False)
+        if not isinstance(equipment_back, bool):
+            return Response({"detail": "Informe a devolução do aparelho como verdadeiro ou falso."}, status=400)
+        amount = str(request.data.get("amount", ""))
+        change = None if change_back is None else str(change_back)
+
+        def execute(base):
+            amount_q = orders_service.settle_delivery_cash(order, operator=request.user,
+                amount_raw=amount, actor=_actor(request), change_back_raw=change,
+                equipment_back=equipment_back, expected_revision=base)
+            return {"amount_q": amount_q}
+
+        return self._context_response(request, order, "settle-delivery-cash",
+            {"amount": amount, "change_back": change, "equipment_back": equipment_back}, execute)
 
 
 @extend_schema_view(
@@ -1783,15 +1915,18 @@ class OrderSettleDeliveryCashView(_OrderActionBase):
     ),
 )
 class OrderEquipmentBackView(_OrderActionBase):
+    intention_operation = "equipment-back"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        try:
-            custody = orders_service.mark_equipment_returned(order, actor=_actor(request))
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Falha ao registrar a volta da maquininha."}, status=400)
-        return Response({"ok": True, "ref": ref, "equipment": list(custody.equipment), "back_at": custody.back_at})
+
+        def execute(base):
+            custody = orders_service.mark_equipment_returned(order, actor=_actor(request), expected_revision=base)
+            return {"equipment": list(custody.equipment), "back_at": custody.back_at}
+
+        return self._context_response(request, order, "equipment-back", {}, execute)
 
 
 @extend_schema_view(
@@ -1802,15 +1937,18 @@ class OrderEquipmentBackView(_OrderActionBase):
     ),
 )
 class OrderRequeueFiscalView(_OrderActionBase):
+    intention_operation = "requeue-fiscal"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        try:
-            orders_service.requeue_fiscal_emission(order, actor=_actor(request))
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Falha ao reprocessar fiscal."}, status=400)
-        return Response({"ok": True, "ref": ref})
+
+        def execute(base):
+            directive = orders_service.requeue_fiscal_emission(order, actor=_actor(request), expected_revision=base)
+            return {"effect_status": "queued", "directive_id": directive.pk}
+
+        return self._context_response(request, order, "requeue-fiscal", {}, execute)
 
 
 def _resend_payment_link_response(order) -> Response:
@@ -1832,7 +1970,7 @@ def _resend_payment_link_response(order) -> Response:
         {
             "ok": True,
             "ref": order.ref,
-            "detail": "Link reenviado ao cliente.",
+            "detail": "Reenvio do link solicitado.",
             "payment_link_notice": payment_link_notice(order),
         }
     )
@@ -1849,13 +1987,20 @@ def _resend_payment_link_response(order) -> Response:
     ),
 )
 class OrderResendPaymentLinkView(_OrderActionBase):
-    """O cliente disse "não chegou": o gestor manda de novo a MESMA URL, enquanto vale."""
+    """O cliente disse não chegou: reenviar a mesma URL mediante recibo local."""
+    intention_operation = "resend-payment-link"
 
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        return _resend_payment_link_response(order)
+
+        def execute(base):
+            directive = notification_service.resend_payment_link(order, expected_revision=base)
+            return {"detail": "Reenvio do link solicitado.", "effect_status": "queued", "directive_id": directive.pk,
+                "payment_link_notice": payment_link_notice(order)}
+
+        return self._context_response(request, order, "resend-payment-link", {}, execute)
 
 
 @extend_schema_view(
@@ -2301,41 +2446,43 @@ class POSResendPaymentLinkView(APIView):
     ),
 )
 class OrderCourierDispatchView(_OrderActionBase):
+    intention_operation = "courier-dispatch"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        try:
-            orders_service.courier_dispatch(order, actor=_actor(request))
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Falha ao despachar."}, status=400)
-        return Response({"ok": True, "ref": ref})
+
+        def enqueue(base):
+            task = orders_service.courier_dispatch(order, actor=_actor(request), expected_revision=base)
+            return {"directive_id": task.pk, "status": task.status}
+
+        return self._context_response(request, order, self.intention_operation, {}, enqueue)
 
 
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
         summary="Cancel the active external courier ride",
-        responses={200: OpenApiResponse(description="Courier ride cancelled.")},
+        responses={200: OpenApiResponse(description="Courier cancellation queued; remote outcome pending.")},
     ),
 )
 class OrderCourierCancelView(_OrderActionBase):
+    intention_operation = "courier-cancel"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
         reason_id = request.data.get("reason_id")
-        try:
-            orders_service.courier_cancel(
-                order,
-                actor=_actor(request),
-                reason_id=int(reason_id) if reason_id is not None else None,
-            )
-        except (TypeError, ValueError):
-            return Response({"detail": "reason_id inválido."}, status=400)
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Falha ao cancelar a corrida."}, status=400)
-        return Response({"ok": True, "ref": ref})
+        if reason_id is not None and (type(reason_id) is not int or reason_id <= 0):
+            return Response({"detail": "reason_id deve ser inteiro positivo."}, status=400)
+
+        def enqueue(base):
+            task = orders_service.courier_cancel(order, actor=_actor(request), reason_id=reason_id, expected_revision=base)
+            return {"directive_id": task.pk, "status": task.status}
+
+        return self._context_response(request, order, self.intention_operation, {"reason_id": reason_id}, enqueue)
 
 
 @extend_schema_view(
@@ -2346,15 +2493,28 @@ class OrderCourierCancelView(_OrderActionBase):
     ),
 )
 class OrderCourierQuoteView(_OrderActionBase):
+    intention_operation = "courier-quote"
+
     def post(self, request, ref: str):
+        from shopman.shop.services import courier
+
         order, err = self._get_order(ref)
         if err:
             return err
-        try:
-            quote = orders_service.courier_quote(order)
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Cotação indisponível."}, status=400)
-        return Response({"ok": True, "ref": ref, "quote": quote})
+        prepared = {}
+
+        def prepare():
+            try:
+                prepared.update(orders_service.courier_quote(order))
+            except OrderError as exc:
+                return Response({"detail": str(exc) or "Cotação indisponível."}, status=400)
+            return None
+
+        def save(base):
+            courier.store_estimate(order, prepared, expected_revision=base, require_quotable=True)
+            return {"quote": prepared}
+
+        return self._context_response(request, order, self.intention_operation, {}, save, prepare=prepare)
 
 
 @extend_schema_view(
@@ -2365,13 +2525,16 @@ class OrderCourierQuoteView(_OrderActionBase):
     ),
 )
 class OrderNotesView(_OrderActionBase):
+    intention_operation = "notes"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        notes = str(request.data.get("notes", "") or "")
-        orders_service.save_kitchen_note(order, notes=notes)
-        return Response({"ok": True, "ref": ref})
+        notes = request.data.get("notes", "")
+        if not isinstance(notes, str):
+            return Response({"detail": "Nota deve ser texto."}, status=400)
+        return self._context_response(request, order, "notes", {"notes": notes}, lambda base: orders_service.save_kitchen_note(order, notes=notes, expected_revision=base, actor=_actor(request)))
 
 
 def _operator_identity(request) -> tuple[int, str]:
@@ -2388,35 +2551,42 @@ def _operator_identity(request) -> tuple[int, str]:
 
 
 class OrderAssignView(_OrderActionBase):
+    intention_operation = "assign"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
         operator_id, operator_name = _operator_identity(request)
-        orders_service.assign_order(order, operator_id=operator_id, operator_name=operator_name, actor=_actor(request))
-        return Response({"ok": True, "ref": ref, "assigned_operator": operator_name})
+        def execute(base):
+            orders_service.assign_order(order, operator_id=operator_id, operator_name=operator_name, actor=_actor(request), expected_revision=base)
+            return {"assigned_operator": operator_name}
+
+        return self._context_response(request, order, "assign", {}, execute)
 
 
 class OrderUnassignView(_OrderActionBase):
+    intention_operation = "unassign"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        orders_service.unassign_order(order, actor=_actor(request))
-        return Response({"ok": True, "ref": ref})
+        return self._context_response(request, order, "unassign", {}, lambda base: orders_service.unassign_order(order, actor=_actor(request), expected_revision=base))
 
 
 class OrderCommentView(_OrderActionBase):
+    intention_operation = "comment"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        note = str(request.data.get("note", "") or "")
-        try:
-            orders_service.add_comment(order, note=note, actor=_actor(request))
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Comentário inválido."}, status=400)
-        return Response({"ok": True, "ref": ref})
+        note = str(request.data.get("note", "") or "").strip()
+        if not note:
+            return Response({"detail": "Comentário vazio"}, status=400)
+        return self._context_response(request, order, "comment", {"note": note},
+            lambda base: orders_service.add_comment(order, note=note, actor=_actor(request), expected_revision=base))
 
 
 # ── Production action endpoints ───────────────────────────────────────

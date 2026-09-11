@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 ALL_HANDLERS = [
     # Lifecycle
+    "shopman.shop.handlers.lifecycle_phase.LifecyclePhaseHandler",
     "shopman.shop.handlers.confirmation.ConfirmationTimeoutHandler",
     "shopman.shop.handlers.confirmation.StaleNewOrderAlertHandler",
     "shopman.shop.handlers.payment_timeout.PaymentTimeoutHandler",
@@ -46,6 +47,7 @@ ALL_HANDLERS = [
     "shopman.shop.handlers.delivery_auto_complete.DeliveryAutoCompleteHandler",
     # Courier (logística externa — no-op sem adapter "courier" resolvido)
     "shopman.shop.handlers.courier_dispatch.CourierDispatchHandler",
+    "shopman.shop.handlers.courier_cancel.CourierCancelHandler",
     "shopman.shop.handlers.courier_sync.CourierSyncHandler",
     # Notification
     "shopman.shop.handlers.notification.NotificationSendHandler",
@@ -85,6 +87,9 @@ def register_all() -> None:
     """Register all directive handlers, modifiers, validators, and signals."""
     _register_notification_handlers()
     _register_confirmation_handler()
+    from shopman.shop.handlers.lifecycle_phase import LifecyclePhaseHandler
+
+    registry.register_directive_handler(LifecyclePhaseHandler())
     _register_payment_timeout_handler()
     _register_payment_refund_handler()
     _register_mock_pix_handler()
@@ -254,9 +259,11 @@ def _register_courier_handlers() -> None:
     # "courier" resolve (request_dispatch checa), e os handlers revalidam. O
     # adapter pode vir de Shop.integrations (DB), invisível no boot — gate por
     # settings deixaria directives órfãos com handler_not_found.
+    from shopman.shop.handlers.courier_cancel import CourierCancelHandler
     from shopman.shop.handlers.courier_dispatch import CourierDispatchHandler
     from shopman.shop.handlers.courier_sync import CourierSyncHandler
     registry.register_directive_handler(CourierDispatchHandler())
+    registry.register_directive_handler(CourierCancelHandler())
     registry.register_directive_handler(CourierSyncHandler())
 
 

@@ -1,0 +1,45 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_capture_between_policy_and_transition_requires_new_approval _______
+
+client = <django.test.client.Client object at 0x10da23860>
+caixa = <User: caixa>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10d89b830>
+
+    @pytest.mark.django_db
+    def test_capture_between_policy_and_transition_requires_new_approval(client, caixa, monkeypatch):
+        from shopman.payman import PaymentService
+    
+        from shopman.backstage.services import orders
+    
+        order = _order("CANCEL-CAPTURE-RACE", "accepted")
+        intent = PaymentService.create_intent(order.ref, 1500, "pix", ref="CANCEL-CAPTURE-INTENT")
+        order.data["payment"] = {"method": "pix", "intent_ref": intent.ref}
+        order.save(update_fields=["data"])
+        client.force_login(caixa)
+        original = orders.cancel_order
+    
+        def capture_then_cancel(*args, **kwargs):
+            PaymentService.authorize(intent.ref)
+            PaymentService.capture(intent.ref)
+            return original(*args, **kwargs)
+    
+        monkeypatch.setattr(orders, "cancel_order", capture_then_cancel)
+        response = _cancel(client, order)
+>       assert response.status_code in {403, 409}, response.content
+E       AssertionError: b'{"ok":true,"ref":"CANCEL-CAPTURE-RACE"}'
+E       assert 200 in {403, 409}
+E        +  where 200 = <Response status_code=200, "application/json">.status_code
+
+shopman/backstage/tests/test_api_orders_cancel_policy.py:259: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-10 20:52:11,752 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-10 20:52:12,936 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-10 20:52:17,126 shopman.payman Intent created
+INFO 2026-09-10 20:52:17,986 shopman.payman Intent authorized
+INFO 2026-09-10 20:52:17,987 shopman.payman Intent captured
+INFO 2026-09-10 20:52:17,992 shopman.shop.services.cancellation cancellation.cancel: order CANCEL-CAPTURE-RACE cancelled by caixa — cliente desistiu
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_api_orders_cancel_policy.py::test_capture_between_policy_and_transition_requires_new_approval
+1 failed, 10 deselected in 6.57s

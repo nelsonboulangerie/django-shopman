@@ -17,7 +17,7 @@ function sevChip(sev: AlertProjection["severity"]): string {
   <div class="relative">
     <button
       type="button"
-      class="relative grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
+      class="relative grid size-control place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
       :aria-label="`Alertas (${activeCount})`"
       title="Alertas"
       @click="open = !open"

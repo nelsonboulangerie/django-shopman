@@ -1,0 +1,71 @@
+[WebServer] (node:62099) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 29 tests using 1 worker
+
+(node:62113) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [chromium] › tests/integration/operational.spec.ts:15:1 › lost response after the Django commit queries receipt and advances only once (5.2s)
+  ✓   2 [chromium] › tests/integration/operational.spec.ts:38:1 › SSE during notes draft preserves text and offers explicit same-field resolution (2.0s)
+  ✓   3 [chromium] › tests/integration/operational.spec.ts:64:1 › price preview confirms exact canonical values through Nitro and Django (3.3s)
+  ✓   4 [chromium] › tests/integration/operational.spec.ts:85:1 › closed product A cannot hydrate the reopened panel for B (3.2s)
+  ✓   5 [chromium] › tests/integration/operational.spec.ts:113:1 › same person resumes a locked draft; another person never inherits it (2.2s)
+  ✘   6 [chromium] › tests/integration/operational.spec.ts:137:1 › cancel response loss retains the reason and reads the committed receipt (2.2s)
+(node:62252) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   7 [chromium] › tests/integration/operational.spec.ts:165:1 › cash draft survives close, queue navigation and a declined reload without settlement (3.2s)
+  ✓   8 [chromium] › tests/integration/operational.spec.ts:190:1 › cash settlement response loss resolves one receipt in the observed drawer (2.5s)
+  ✓   9 [chromium] › tests/integration/operational.spec.ts:214:1 › feed selection survives response loss and consults the same scoped receipt (3.2s)
+  ✓  10 [chromium] › tests/integration/operational.spec.ts:253:1 › failed refresh leaves the live draft visible and prevents a stale mutation (1.5s)
+  ✓  11 [chromium] › tests/integration/operational.spec.ts:271:1 › product PATCH response lost after commit closes only after receipt confirmation (4.1s)
+  ✓  12 [chromium] › tests/integration/operational.spec.ts:298:1 › product same-field dispute preserves draft until explicit reviewed save (4.9s)
+  ✓  13 [chromium] › tests/integration/operational.spec.ts:322:1 › curation drag lost response adopts receipt and canonical exact order (3.6s)
+  ✓  14 [chromium] › tests/integration/operational.spec.ts:355:1 › keyboard curation and frequent targets retain exact order without pointer input (3.4s)
+  ✓  15 [chromium] › tests/integration/operational.spec.ts:388:1 › cell lost response keeps one price intent and one canonical write (3.2s)
+  ✓  16 [chromium] › tests/integration/operational.spec.ts:409:1 › global pause lost response adopts product receipt without another toggle (3.7s)
+  ✓  17 [chromium] › tests/integration/operational.spec.ts:432:1 › back navigation keeps a product draft after declining discard (3.2s)
+  ✓  18 [chromium] › tests/integration/operational.spec.ts:451:1 › delayed collection response cannot replace the selected resource (2.4s)
+  ✓  19 [chromium] › tests/integration/operational.spec.ts:472:1 › publication preview leaves flags unchanged and lost confirmation response adopts one receipt (5.5s)
+  ✓  20 [chromium] › tests/integration/operational.spec.ts:511:1 › catalog SSE through Redis and BFF updates the row while preserving a price draft (2.9s)
+  ✓  21 [chromium] › tests/integration/operational.spec.ts:538:1 › feed SSE updates active state without replacing the open collection draft (2.8s)
+  ✓  22 [chromium] › tests/integration/operational.spec.ts:564:3 › last useful read remains visible during queue read failure (2.4s)
+  ✓  23 [chromium] › tests/integration/operational.spec.ts:564:3 › last useful read remains visible during detail read failure (1.8s)
+  ✓  24 [chromium] › tests/integration/operational.spec.ts:564:3 › last useful read remains visible during catalog read failure (4.6s)
+  ✓  25 [chromium] › tests/integration/operational.spec.ts:564:3 › last useful read remains visible during feeds read failure (3.1s)
+  ✓  26 [chromium] › tests/integration/operational.spec.ts:587:1 › confirmed note stays visible when the post-commit read fails (2.3s)
+  ✓  27 [chromium] › tests/integration/operational.spec.ts:618:1 › reason and note drafts require explicit discard across close, reload and navigation (4.1s)
+  ✓  28 [chromium] › tests/integration/operational.spec.ts:667:1 › queue rejection protects its reason on close and reload (4.2s)
+  ✓  29 [chromium] › tests/integration/operational.spec.ts:693:1 › bundled icons preserve utility size and mutually exclusive rail states (2.7s)
+
+
+  1) [chromium] › tests/integration/operational.spec.ts:137:1 › cancel response loss retains the reason and reads the committed receipt 
+
+    Error: Confirmar: ação principal
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 48
+    Received:    47.825469970703125
+
+      152 |   const confirm = page.getByRole("button", { name: "Confirmar", exact: true });
+      153 |   await confirm.click({ trial: true });
+    > 154 |   expect.soft((await confirm.boundingBox())?.height, "Confirmar: ação principal").toBeGreaterThanOrEqual(48);
+          |                                                                                   ^
+      155 |   await page.getByRole("dialog").screenshot({ path: fileURLToPath(new URL("../../../../.orders-lab/integration-reason-targets.png", import.meta.url)) });
+      156 |   await confirm.click();
+      157 |   await expect(page.getByRole("dialog")).toHaveCount(0);
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:154:83
+
+    Error Context: ../../.orders-lab/playwright-results/operational-cancel-respons-5b761-reads-the-committed-receipt-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../.orders-lab/playwright-results/operational-cancel-respons-5b761-reads-the-committed-receipt-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../.orders-lab/playwright-results/operational-cancel-respons-5b761-reads-the-committed-receipt-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › tests/integration/operational.spec.ts:137:1 › cancel response loss retains the reason and reads the committed receipt 
+  28 passed (1.6m)

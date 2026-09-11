@@ -10,6 +10,7 @@ from .closing import DayClosing
 from .consumption import Beverage, ConsumptionRole, ProductConsumptionTag, Reading
 from .daily_sales import DailySalesFact
 from .day_context import DayContext, HolidayScope
+from .delivery_device import DeliveryDevice
 from .historical_sale import HistoricalSale, HistoricalSaleItem
 from .import_batch import ImportBatch
 from .kds import KDSInstance, KDSTicket
@@ -53,6 +54,7 @@ __all__ = [
     "DailySalesFact",
     "DayClosing",
     "DayContext",
+    "DeliveryDevice",
     "HolidayScope",
     "HistoricalSale",
     "HistoricalSaleItem",

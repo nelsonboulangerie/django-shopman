@@ -1,0 +1,21 @@
+[WebServer] (node:84190) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 12 tests using 1 worker
+
+(node:84202) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [chromium] › tests/integration/operational.spec.ts:15:1 › lost response after the Django commit queries receipt and advances only once (2.3s)
+  ✓   2 [chromium] › tests/integration/operational.spec.ts:38:1 › SSE during notes draft preserves text and offers explicit same-field resolution (1.6s)
+  ✓   3 [chromium] › tests/integration/operational.spec.ts:59:1 › price preview confirms exact canonical values through Nitro and Django (1.8s)
+  ✓   4 [chromium] › tests/integration/operational.spec.ts:80:1 › closed product A cannot hydrate the reopened panel for B (2.8s)
+  ✓   5 [chromium] › tests/integration/operational.spec.ts:108:1 › same person resumes a locked draft; another person never inherits it (2.5s)
+  ✓   6 [chromium] › tests/integration/operational.spec.ts:132:1 › cancel response loss retains the reason and reads the committed receipt (1.8s)
+  ✓   7 [chromium] › tests/integration/operational.spec.ts:156:1 › cash settlement response loss resolves one receipt in the observed drawer (1.8s)
+  ✓   8 [chromium] › tests/integration/operational.spec.ts:180:1 › feed selection survives response loss and consults the same scoped receipt (1.4s)
+  ✓   9 [chromium] › tests/integration/operational.spec.ts:210:1 › failed refresh leaves the live draft visible and prevents a stale mutation (854ms)
+  ✓  10 [chromium] › tests/integration/operational.spec.ts:228:1 › product PATCH response lost after commit closes only after receipt confirmation (2.2s)
+  ✓  11 [chromium] › tests/integration/operational.spec.ts:255:1 › product same-field dispute preserves draft until explicit reviewed save (1.9s)
+  ✓  12 [chromium] › tests/integration/operational.spec.ts:279:1 › curation drag lost response adopts receipt and canonical exact order (1.2s)
+
+  12 passed (23.8s)

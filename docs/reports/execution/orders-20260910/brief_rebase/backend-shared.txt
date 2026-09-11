@@ -1,0 +1,24 @@
+DEBUG 2026-09-11 05:37:35,613 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 05:37:35,613 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 05:37:35,613 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 05:37:35,614 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 05:37:35,648 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 05:37:35,649 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 05:37:35,650 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 05:37:35,653 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 05:37:35,659 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 05:37:35,661 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 05:37:35,661 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 05:37:35,662 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 05:37:35,662 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 05:37:35,663 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 05:37:35,664 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 05:37:35,664 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 05:37:35,664 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 05:37:35,664 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 05:37:35,671 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 05:37:35,671 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+ERROR: file or directory not found: shopman/backstage/tests/test_client_telemetry.py
+
+
+no tests ran in 0.00s

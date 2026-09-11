@@ -145,6 +145,7 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
             _model("Estações KDS", "backstage_kdsinstance", "As telas da cozinha e o que cada uma exibe.", "tv"),
             _model("Comandas do PDV", "backstage_postab", "As comandas fixas do balcão.", "receipt"),
             _model("Lugares do salão", "backstage_seatingspot", "Mesas, balcão e o que só é usado em dia cheio.", "table_restaurant"),
+            _model("Maquininhas de entrega", "backstage_deliverydevice", "Identificação e disponibilidade dos aparelhos que acompanham entregas.", "credit_card"),
             _model("Terminais do PDV", "cashman_terminal", "Os caixas físicos e a gaveta de dinheiro de cada um.", "point_of_sale"),
             _model("Modelos de checklist", "backstage_operationchecklisttemplate", "As rotinas de abertura e fechamento da casa.", "fact_check"),
             _model("Modelos de tarefa", "backstage_operationtasktemplate", "As tarefas que compõem cada rotina.", "task_alt"),

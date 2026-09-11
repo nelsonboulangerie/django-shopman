@@ -12,12 +12,15 @@ import {
   statusTone,
   toneBadge,
 } from "~/presentation/board";
+import { onMounted, onBeforeUnmount } from "vue";
 import type { CancellationReason } from "~/types/orders";
 
+definePageMeta({ key: (route) => route.path });
 const route = useRoute();
+const { location: queueLocation } = useOrdersContext();
 const orderRef = computed(() => String(route.params.ref || ""));
 
-const { order, pending, error, refresh, busy, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge } =
+const { readMetadata, order, pending, error, refresh, busy, mutationError, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge } =
   useOrderDetail(orderRef.value);
 
 // Realtime: SSE push (filtrado a este pedido) + poll de 30s + wake-on-visibility.
@@ -57,9 +60,53 @@ const hasCustomerContact = computed(() =>
 
 // kitchen-note editor (seeded from the projection; saved explicitly). The note —
 // preset tags one-tap-appended + free text — is shown on the KDS ticket.
+const projectedAction = (ref_: string) => order.value?.actions?.find((action) => action.ref === ref_);
+
 const notes = ref("");
-watch(order, (o) => { if (o) notes.value = o.kitchen_note || ""; }, { immediate: true });
-const notesDirty = computed(() => order.value != null && notes.value !== (order.value.kitchen_note || ""));
+const notesBase = ref("");
+const notesRevision = ref("");
+const notesDirty = computed(() => notes.value !== notesBase.value);
+const notesConflict = computed(() => notesDirty.value && (order.value?.kitchen_note || "") !== notesBase.value);
+function acceptLatestNotesBase() {
+  notesBase.value = order.value?.kitchen_note || "";
+  notesRevision.value = order.value?.revisions?.kitchen_note || "";
+}
+function useLatestNotes() {
+  acceptLatestNotesBase();
+  notes.value = notesBase.value;
+}
+watch(order, (o) => {
+  if (o && !notesDirty.value) {
+    notes.value = o.kitchen_note || "";
+    notesBase.value = notes.value;
+    notesRevision.value = o.revisions?.kitchen_note || "";
+  }
+}, { immediate: true });
+async function saveKitchenNote() {
+  const submitted = notes.value;
+  if (await saveNotes(submitted, notesRevision.value)) {
+    notesBase.value = submitted;
+    if (notes.value === submitted && !error.value) {
+      notes.value = order.value?.kitchen_note || "";
+      notesBase.value = notes.value;
+    }
+    if (!error.value) notesRevision.value = order.value?.revisions?.kitchen_note || "";
+  }
+}
+const reasonDirty = ref(false);
+const hasUnsavedText = computed(() => notesDirty.value || Boolean(comment.value.trim()) || reasonDirty.value);
+// Session-only drafts: leaving requires an explicit discard while text is dirty.
+onBeforeRouteLeave(() => {
+  if (!hasUnsavedText.value) return true;
+  return window.confirm("Há texto não salvo neste pedido. Descartar e sair?");
+});
+function beforeUnload(event: BeforeUnloadEvent) {
+  if (!hasUnsavedText.value) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+onMounted(() => window.addEventListener("beforeunload", beforeUnload));
+onBeforeUnmount(() => window.removeEventListener("beforeunload", beforeUnload));
 // Store-configured kitchen-note tags (Admin/Unfold). One tap appends the tag to the
 // note, preserving the free text; already-present tags aren't duplicated.
 const noteTags = computed(() => order.value?.kitchen_note_tags ?? []);
@@ -71,10 +118,24 @@ function applyNoteTag(tag: string) {
 // marketplace-aware: for an iFood order it shows the provider's required coded reasons
 // (fetched live per order); other channels get the store presets + free text.
 const dialog = ref<"" | "reject" | "cancel" | "settle" | "dispatch">("");
-const amount = ref("");
+const cashDrafts = useOrderCashDrafts();
+const settlementDraft = computed(() => cashDrafts.settlements.value[orderRef.value] ?? ({
+  amount: "", changeBack: order.value?.change_back_pending ? moneyInput(changeBackSuggestionQ(order.value)) : "", equipmentBack: false,
+  revision: String(settleAction.value?.payload_schema.base_revision || ""), custody: String(settleAction.value?.confirmation.description || ""),
+}));
+const dispatchDraft = computed(() => cashDrafts.dispatches.value[orderRef.value] ?? ({ amount: moneyInput(order.value?.change_out_suggested_q ?? 0), equipment: [] as string[] }));
+const amount = computed({ get: () => settlementDraft.value.amount, set: (v: string) => { settlementDraft.value.amount = v; } });
+const settleAction = computed(() => order.value?.actions.find((action) => action.ref === "settle-delivery-cash"));
+const settleRevision = computed(() => settlementDraft.value.revision);
+const settleCustody = computed(() => settlementDraft.value.custody);
+const settleChanged = computed(() => settleRevision.value !== String(settleAction.value?.payload_schema.base_revision || ""));
+function reviewSettleCustody() {
+  settlementDraft.value.revision = String(settleAction.value?.payload_schema.base_revision || "");
+  settlementDraft.value.custody = String(settleAction.value?.confirmation.description || "");
+}
 // troco da entrega: o que voltou (acerto) e o que o entregador leva (despacho)
-const changeBack = ref("");
-const changeOut = ref("");
+const changeBack = computed({ get: () => settlementDraft.value.changeBack, set: (v: string) => { settlementDraft.value.changeBack = v; } });
+const changeOut = computed({ get: () => dispatchDraft.value.amount, set: (v: string) => { dispatchDraft.value.amount = v; } });
 const asksChangeBack = computed(() => Boolean(order.value?.change_back_pending));
 // Pronto + delivery + a loja sugere troco: o despacho pergunta antes de avançar
 // (o servidor recusa com 409 se ninguém disser quanto saiu).
@@ -85,36 +146,43 @@ const dispatchAsksChange = computed(
 const dispatchAsks = computed(
   () => dispatchAsksChange.value || (order.value?.status === "ready" && (order.value?.equipment_options.length ?? 0) > 0),
 );
-const dispatchEquipment = ref<string[]>([]);
-const settleEquipmentBack = ref(true);
+const dispatchEquipment = computed({ get: () => dispatchDraft.value.equipment, set: (v: string[]) => { dispatchDraft.value.equipment = v; } });
+const settleEquipmentBack = computed({ get: () => settlementDraft.value.equipmentBack, set: (v: boolean) => { settlementDraft.value.equipmentBack = v; } });
 const asksEquipmentBack = computed(() => Boolean(order.value?.equipment_back_pending));
 function toggleDispatchEquipment(ref_: string) {
   dispatchEquipment.value = dispatchEquipment.value.includes(ref_)
     ? dispatchEquipment.value.filter((r) => r !== ref_)
-    : [...dispatchEquipment.value, ref_];
+    : [...dispatchEquipment.value.filter(r => !ref_.startsWith("card_machine:") || !r.startsWith("card_machine:")), ref_];
 }
 const reasons = ref<CancellationReason[]>([]);
 const reasonsLoading = ref(false);
+const reasonsError = ref("");
+let reasonsRequest = 0;
+async function loadReasons() {
+  const request = ++reasonsRequest;
+  reasonsLoading.value = true;
+  reasonsError.value = "";
+  try {
+    const result = await fetchCancellationReasons();
+    if (request === reasonsRequest) reasons.value = result;
+  } catch {
+    if (request === reasonsRequest) reasonsError.value = "Não foi possível consultar os motivos. Nenhuma ação foi aplicada.";
+  } finally {
+    if (request === reasonsRequest) reasonsLoading.value = false;
+  }
+}
 
 // Store-configured justification presets (Admin/Unfold) for non-marketplace channels.
 const presets = computed(() => order.value?.cancellation_presets ?? []);
 
 async function openDialog(kind: "reject" | "cancel" | "settle" | "dispatch") {
+  if (kind === "settle") cashDrafts.settlement(orderRef.value, settlementDraft.value);
+  if (kind === "dispatch") cashDrafts.dispatch(orderRef.value, dispatchDraft.value);
   dialog.value = kind;
-  amount.value = "";
-  changeBack.value = order.value?.change_back_pending ? moneyInput(changeBackSuggestionQ(order.value)) : "";
-  changeOut.value = moneyInput(order.value?.change_out_suggested_q ?? 0);
-  dispatchEquipment.value = [];
-  settleEquipmentBack.value = true;
   if (kind === "reject" || kind === "cancel") {
     // Pull the order's valid cancellation reasons — a coded list for iFood, [] else.
     reasons.value = [];
-    reasonsLoading.value = true;
-    try {
-      reasons.value = await fetchCancellationReasons();
-    } finally {
-      reasonsLoading.value = false;
-    }
+    await loadReasons();
   }
 }
 
@@ -147,8 +215,8 @@ async function signWithBadge(badge: string) {
 
 async function submitSettle() {
   const back = asksChangeBack.value ? changeBack.value.trim() || "0" : undefined;
-  const ok = await settleCash(amount.value.trim(), back, asksEquipmentBack.value && settleEquipmentBack.value);
-  if (ok) dialog.value = "";
+  const ok = await settleCash(amount.value.trim(), back, asksEquipmentBack.value && settleEquipmentBack.value, settleRevision.value);
+  if (ok) { cashDrafts.clear("settlement", orderRef.value); dialog.value = ""; }
 }
 
 function onAdvance() {
@@ -159,7 +227,7 @@ function onAdvance() {
 async function submitDispatch(value: string | null) {
   const changeOut = dispatchAsksChange.value ? (value ?? "").trim() || "0" : undefined;
   const ok = await advance(changeOut, dispatchEquipment.value);
-  if (ok) dialog.value = "";
+  if (ok) { cashDrafts.clear("dispatch", orderRef.value); dialog.value = ""; }
 }
 
 // Quem é este cliente (WP-360). O servidor manda os fatos já em português e só
@@ -189,30 +257,28 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
   <main class="mx-auto flex min-h-screen w-full max-w-3xl flex-col gap-4 p-4 md:p-6">
     <!-- header -->
     <header class="flex items-center gap-3">
-      <NuxtLink to="/" class="grid size-9 shrink-0 place-items-center rounded-md border bg-card text-foreground transition hover:bg-accent" aria-label="Voltar para a fila">
+      <NuxtLink :to="queueLocation" class="grid min-h-control min-w-control shrink-0 place-items-center rounded-md border bg-card text-foreground transition hover:bg-accent" aria-label="Voltar para a fila">
         <Icon name="lucide:arrow-left" class="size-4" />
       </NuxtLink>
       <div class="min-w-0">
         <p class="text-xs text-muted-foreground">{{ code.prefix }}</p>
         <h1 class="truncate text-3xl font-bold leading-tight tabular-nums">{{ code.code }}</h1>
       </div>
-      <button type="button" class="ml-auto grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent" aria-label="Atualizar" @click="refresh()">
+      <button type="button" class="min-h-control min-w-control ml-auto grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent" aria-label="Atualizar" @click="refresh()">
         <Icon name="lucide:refresh-cw" class="size-4" />
       </button>
     </header>
+    <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />
 
     <p v-if="pending && !order" class="text-sm text-muted-foreground">Carregando…</p>
     <!-- `!stationLocked`: com a estação travada a leitura volta 403 e este aviso
          dizia "Pedido não encontrado", que é falso e assusta. Nesse estado quem
          fala é a identificação, que sobe por cima. -->
     <p v-else-if="(error || !order) && !stationLocked" class="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive dark:text-orange-400" data-order-error>
-      Pedido não encontrado ou falha ao carregar.
+      {{ order ? "Falha ao atualizar. Mantivemos a última leitura e seu rascunho; atualize antes de confirmar ações." : "Pedido não encontrado ou falha ao carregar." }}
     </p>
 
-    <!-- `v-else-if="order"` e não `v-else`: com a estação travada suprimimos o
-         aviso de erro, e sem este guard o bloco abaixo passaria a renderizar
-         sem pedido nenhum e estouraria em `order.status`. -->
-    <template v-else-if="order">
+    <template v-if="order">
       <!-- summary -->
       <section class="flex flex-col gap-3 rounded-lg border bg-card p-4">
         <div class="flex flex-wrap items-center gap-2">
@@ -260,7 +326,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             :href="order.customer_whatsapp_url"
             target="_blank"
             rel="noopener"
-            class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
+            class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
             data-contact-whatsapp
           >
             <Icon name="lucide:message-circle" class="size-4" /> WhatsApp
@@ -268,7 +334,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           <a
             v-if="order.customer_phone_uri"
             :href="order.customer_phone_uri"
-            class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
+            class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
             data-contact-phone
           >
             <Icon name="lucide:phone" class="size-4" /> Ligar
@@ -276,7 +342,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           <a
             v-if="order.customer_email"
             :href="`mailto:${order.customer_email}`"
-            class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
+            class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
             data-contact-email
           >
             <Icon name="lucide:mail" class="size-4" /> E-mail
@@ -286,7 +352,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             :href="customerAdminUrl"
             target="_blank"
             rel="noopener"
-            class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             data-contact-cadastro
           >
             <Icon name="lucide:id-card" class="size-4" /> Abrir cadastro
@@ -324,41 +390,41 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
            que decide é o servidor, e quando ele bloqueia o lugar do botão
            continua ocupado dizendo o motivo, em vez de sumir. -->
       <section class="flex flex-wrap gap-2">
-        <button v-if="order.can_confirm" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="confirm" @click="confirm">
+        <button v-if="projectedAction('confirm')" type="button" :disabled="busy || !projectedAction('confirm')?.enabled" :title="projectedAction('confirm')?.reason" class="inline-flex min-h-action min-w-action items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="confirm" @click="confirm">
           <Icon name="lucide:check" class="size-4" /> Aceitar
         </button>
-        <button v-else-if="order.can_advance && order.next_action_label" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="advance" @click="onAdvance">
+        <button v-else-if="projectedAction('advance')?.enabled" type="button" :disabled="busy" class="inline-flex min-h-action min-w-action items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="advance" @click="onAdvance">
           <Icon name="lucide:arrow-right" class="size-4" /> {{ order.next_action_label }}
         </button>
-        <button v-else-if="order.advance_block_label" type="button" disabled :title="order.advance_block_reason" class="inline-flex cursor-not-allowed items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold text-muted-foreground opacity-60" data-action="advance-blocked">
-          <Icon name="lucide:clock" class="size-4" /> {{ order.advance_block_label }}
+        <button v-else-if="projectedAction('advance')" type="button" disabled :title="projectedAction('advance')?.reason" class="inline-flex min-h-control min-w-control cursor-not-allowed items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold text-muted-foreground opacity-60" data-action="advance-blocked">
+          <Icon name="lucide:clock" class="size-4" /> {{ projectedAction('advance')?.reason }}
         </button>
-        <button v-if="order.can_settle_delivery_cash" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="openDialog('settle')">
-          <Icon name="lucide:banknote" class="size-4" /> Acerto dinheiro
+        <button v-if="order.can_settle_delivery_cash" type="button" :disabled="busy || !settleAction?.enabled" :title="settleAction?.reason" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="openDialog('settle')">
+          <Icon name="lucide:banknote" class="size-4" /> Acertar entrega
         </button>
-        <button v-if="order.equipment_back_pending && !order.can_settle_delivery_cash" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="equipmentBack">
+        <button v-if="order.equipment_back_pending" type="button" :disabled="busy || !projectedAction('equipment-back')?.enabled" :title="projectedAction('equipment-back')?.reason || (projectedAction('equipment-back')?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="equipmentBack">
           <Icon name="lucide:smartphone-nfc" class="size-4" /> Maquininha voltou
         </button>
-        <button v-if="order.fiscal_status === 'failed'" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="requeueFiscal">
+        <button v-if="order.fiscal_status === 'failed'" type="button" :disabled="busy || !projectedAction('requeue-fiscal')?.enabled" :title="projectedAction('requeue-fiscal')?.reason || (projectedAction('requeue-fiscal')?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="requeueFiscal">
           <Icon name="lucide:file-text" class="size-4" /> Reprocessar fiscal
         </button>
         <!-- Só para o pedido de LINK ainda cobrável (forma link com URL, vivo,
              não pago, não vencido) — o servidor decide, a tela obedece. A
              cadência (cedo demais, envio em andamento) é recusa da hora do
              clique, com o motivo no toast. -->
-        <button v-if="order.can_resend_payment_link" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" data-action="resend-payment-link" @click="resendPaymentLink">
+        <button v-if="order.can_resend_payment_link" type="button" :disabled="busy" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" data-action="resend-payment-link" @click="resendPaymentLink">
           <Icon name="lucide:send" class="size-4" /> Reenviar link de pagamento
         </button>
         <!-- Recusar é a resposta ao pedido que ACABOU de chegar; depois de
              aceito o gesto certo é Cancelar. -->
-        <button v-if="order.can_confirm" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3.5 py-2 text-sm font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50 dark:text-orange-300" data-action="reject" @click="openDialog('reject')">
+        <button v-if="projectedAction('reject')" type="button" :disabled="busy || !projectedAction('reject')?.enabled" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border border-destructive/40 px-3.5 py-2 text-sm font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50 dark:text-orange-300" data-action="reject" @click="openDialog('reject')">
           <Icon name="lucide:x" class="size-4" /> Recusar
         </button>
         <!-- `can_cancel` já é régua + política + permissão, resolvidas no
              servidor. O botão ficava sempre visível e o servidor respondia
              "ok" sem cancelar; agora, quando não dá, a tela diz por quê em vez
              de oferecer um gesto que não acontece. -->
-        <button v-if="order.can_cancel" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent disabled:opacity-50" data-action="cancel" @click="openDialog('cancel')">
+        <button v-if="order.can_cancel" type="button" :disabled="busy" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent disabled:opacity-50" data-action="cancel" @click="openDialog('cancel')">
           <Icon name="lucide:ban" class="size-4" />
           {{ order.cancel_requires_approval ? "Cancelar (gerente)" : "Cancelar" }}
         </button>
@@ -411,6 +477,9 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
       <OrderCourierPanel
         v-if="order.courier"
         :courier="order.courier"
+        :cancel-action="order.actions.find(action => action.ref === 'courier-cancel')"
+        :quote-action="order.actions.find(action => action.ref === 'courier-quote')"
+        :dispatch-action="order.actions.find(action => action.ref === 'courier-dispatch')"
         :busy="busy"
         @quote="courierQuote"
         @dispatch="courierDispatch"
@@ -459,7 +528,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             v-for="(tag, i) in noteTags"
             :key="i"
             type="button"
-            class="inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            class="min-h-control min-w-control inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
             @click="applyNoteTag(tag)"
           >
             <Icon name="lucide:plus" class="size-3" />{{ tag }}
@@ -470,14 +539,23 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           v-model="notes"
           rows="3"
           placeholder="Instruções de preparo para a cozinha…"
-          class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+          class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
         />
         <p class="text-xs text-muted-foreground">Aparece no ticket da cozinha (KDS).</p>
+        <div v-if="notesConflict" role="alert" class="rounded-md border p-3 text-sm">
+          <p>A nota mudou enquanto você escrevia. Seu texto está preservado acima.</p>
+          <p class="my-2 whitespace-pre-wrap">No servidor: {{ order.kitchen_note || "(vazia)" }}</p>
+          <div class="flex gap-2">
+            <button type="button" class="min-h-control min-w-control rounded border px-2 py-1" @click="acceptLatestNotesBase">Manter meu texto</button>
+            <button type="button" class="min-h-control min-w-control rounded border px-2 py-1" @click="useLatestNotes">Usar texto do servidor</button>
+          </div>
+        </div>
+        <p v-if="mutationError" role="alert" class="text-sm text-destructive">{{ mutationError }}</p>
         <button
           type="button"
-          :disabled="busy || !notesDirty"
-          class="self-end rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
-          @click="saveNotes(notes)"
+          :disabled="busy || !notesDirty || notesConflict"
+          class="min-h-action min-w-action self-end rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
+          @click="saveKitchenNote"
         >
           Salvar nota
         </button>
@@ -502,14 +580,14 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             v-model="comment"
             rows="1"
             placeholder="Comentar no histórico…"
-            class="min-h-9 flex-1 resize-y rounded-md border bg-background p-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+            class="min-h-control flex-1 resize-y rounded-md border bg-background p-2 text-sm outline-none focus:ring-1 focus:ring-ring"
             aria-label="Comentar no histórico"
             @keydown.enter.meta.prevent="submitComment"
           />
           <button
             type="button"
             :disabled="!comment.trim() || busy"
-            class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-transparent bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+            class="inline-flex min-h-action shrink-0 items-center gap-1.5 rounded-md border border-transparent bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             @click="submitComment"
           >
             <Icon name="lucide:message-square-plus" class="size-4" /> Comentar
@@ -521,9 +599,13 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
     <!-- reject / cancel: marketplace-aware reason dialog (iFood coded reasons or
          store presets + free text) -->
     <OrderReasonDialog
+      @dirty-change="reasonDirty = $event"
       :open="dialog === 'reject' || dialog === 'cancel'"
       :mode="dialog === 'cancel' ? 'cancel' : 'reject'"
       :loading="reasonsLoading"
+      :error="reasonsError"
+      :marketplace="order?.channel_ref === 'ifood'"
+      @retry="loadReasons"
       :reasons="reasons"
       :presets="presets"
       :busy="busy"
@@ -535,15 +617,19 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
     <UiDialog :open="dialog === 'settle'" @update:open="(v) => { if (!v) dialog = '' }">
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
-          <UiDialogTitle>Acerto de dinheiro</UiDialogTitle>
-          <UiDialogDescription>Valor recebido na entrega. Em branco usa o total.</UiDialogDescription>
+          <UiDialogTitle>Acerto da entrega</UiDialogTitle>
+          <UiDialogDescription>Confirme após conferir o dinheiro e os comprovantes da maquininha.</UiDialogDescription>
         </UiDialogHeader>
+        <p class="text-sm text-muted-foreground">{{ settleCustody }}</p>
+        <p v-if="settleChanged" role="alert" class="text-sm text-destructive">O pedido ou turno mudou. Confira o contexto atual: {{ settleAction?.confirmation.description }}
+          <button type="button" class="min-h-control min-w-control underline" @click="reviewSettleCustody">Conferir e manter os valores digitados</button>
+        </p>
         <input
           v-model="amount"
           type="text"
           inputmode="decimal"
           placeholder="Ex.: 15,00"
-          class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+          class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
           aria-label="Valor recebido"
         />
         <label v-if="asksChangeBack" class="flex flex-col gap-1 text-sm" data-change-back>
@@ -553,20 +639,20 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             type="text"
             inputmode="decimal"
             placeholder="0,00"
-            class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+            class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
             aria-label="Troco que voltou"
           />
         </label>
-        <label v-if="asksEquipmentBack" class="flex items-center gap-2 text-sm" data-equipment-back>
+        <label v-if="asksEquipmentBack" class="flex min-h-control items-center gap-2 text-sm" data-equipment-back>
           <input v-model="settleEquipmentBack" type="checkbox" />
           <span>{{ order?.equipment_label }}. Voltou junto</span>
         </label>
         <UiDialogFooter>
-          <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dialog = ''">Voltar</button>
+          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dialog = ''">Voltar</button>
           <button
             type="button"
-            :disabled="busy"
-            class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+            :disabled="busy || settleChanged || !settleAction?.enabled"
+            class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             @click="submitSettle"
           >
             Confirmar
@@ -586,9 +672,9 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           </UiDialogDescription>
         </UiDialogHeader>
         <div v-if="order?.equipment_options.length" class="flex flex-col gap-1.5" data-dispatch-equipment>
-          <label v-for="opt in order.equipment_options" :key="opt.ref" class="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
-            <input type="checkbox" :checked="dispatchEquipment.includes(opt.ref)" @change="toggleDispatchEquipment(opt.ref)" />
-            <span>Levou a {{ opt.label.toLowerCase() }}</span>
+          <label v-for="opt in order.equipment_options" :key="opt.ref" class="flex min-h-control items-center gap-2 rounded-md border px-3 py-2 text-sm">
+            <input type="checkbox" :disabled="opt.enabled === false" :checked="dispatchEquipment.includes(opt.ref)" @change="toggleDispatchEquipment(opt.ref)" />
+            <span>{{ opt.label }}<span v-if="opt.reason"> · {{ opt.reason }}</span></span>
           </label>
         </div>
         <label v-if="dispatchAsksChange" class="flex items-center gap-2 text-sm">
@@ -598,17 +684,17 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             type="text"
             inputmode="decimal"
             placeholder="Ex.: 20,00"
-            class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+            class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
             aria-label="Troco que o entregador leva"
           />
         </label>
         <UiDialogFooter>
-          <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dialog = ''">Voltar</button>
-          <button v-if="dispatchAsksChange" type="button" :disabled="busy" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent disabled:opacity-50" @click="submitDispatch('0')">Saiu sem troco</button>
+          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dialog = ''">Voltar</button>
+          <button v-if="dispatchAsksChange" type="button" :disabled="busy" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent disabled:opacity-50" @click="submitDispatch('0')">Saiu sem troco</button>
           <button
             type="button"
             :disabled="busy"
-            class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+            class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             @click="submitDispatch(changeOut)"
           >
             {{ dispatchAsksChange ? "Levou o troco" : "Saiu para entrega" }}

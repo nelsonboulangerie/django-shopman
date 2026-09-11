@@ -1,0 +1,93 @@
+DEBUG 2026-09-11 02:11:14,365 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 02:11:14,365 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 02:11:14,366 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 02:11:14,367 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 02:11:14,442 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 02:11:14,444 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 02:11:14,449 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 02:11:14,452 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 02:11:14,459 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 02:11:14,461 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 02:11:14,461 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 02:11:14,463 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 02:11:14,463 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 02:11:14,467 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 02:11:14,469 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 02:11:14,469 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 02:11:14,469 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 02:11:14,470 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 02:11:14,474 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 02:11:14,475 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+         934753 function calls (854510 primitive calls) in 0.309 seconds
+
+   Ordered by: cumulative time
+   List reduced from 1249 to 65 due to restriction <65>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.320    0.320 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/test/client.py:1113(get)
+        1    0.000    0.000    0.320    0.320 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/test/client.py:467(get)
+        1    0.000    0.000    0.320    0.320 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/test/client.py:633(generic)
+        1    0.000    0.000    0.320    0.320 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/test/client.py:1066(request)
+        1    0.000    0.000    0.320    0.320 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/test/client.py:169(__call__)
+        1    0.000    0.000    0.320    0.320 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/core/handlers/base.py:137(get_response)
+     21/1    0.000    0.000    0.320    0.320 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/core/handlers/exception.py:52(inner)
+        1    0.000    0.000    0.320    0.320 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/docs/reports/execution/orders-20260910/http_read_lab/http_lab_metrics.py:13(__call__)
+        1    0.000    0.000    0.318    0.318 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/middleware.py:31(__call__)
+        1    0.000    0.000    0.318    0.318 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/middleware.py:75(__call__)
+        1    0.000    0.000    0.318    0.318 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/middleware.py:135(__call__)
+      9/1    0.000    0.000    0.318    0.318 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/utils/deprecation.py:302(__call__)
+        1    0.000    0.000    0.318    0.318 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/whitenoise/middleware.py:116(__call__)
+        1    0.000    0.000    0.318    0.318 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django_otp/middleware.py:39(__call__)
+        1    0.000    0.000    0.315    0.315 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/simple_history/middleware.py:39(middleware)
+        1    0.000    0.000    0.315    0.315 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/storefront/middleware.py:27(__call__)
+        1    0.000    0.000    0.315    0.315 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/middleware.py:32(__call__)
+        1    0.000    0.000    0.315    0.315 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/middleware_2fa.py:24(__call__)
+        1    0.000    0.000    0.315    0.315 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/middleware.py:105(__call__)
+        1    0.000    0.000    0.314    0.314 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/core/handlers/base.py:175(_get_response)
+        1    0.000    0.000    0.303    0.303 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/views/decorators/csrf.py:64(_view_wrapper)
+        1    0.000    0.000    0.303    0.303 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/views/generic/base.py:98(view)
+        1    0.000    0.000    0.303    0.303 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py:491(dispatch)
+        1    0.000    0.000    0.301    0.301 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/api/operations.py:1518(get)
+        1    0.001    0.001    0.244    0.244 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/projections/order_queue.py:966(build_two_zone_queue)
+      500    0.011    0.000    0.136    0.000 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/projections/order_queue.py:1131(_build_card)
+    17/14    0.001    0.000    0.098    0.007 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:1998(_fetch_all)
+     11/9    0.000    0.000    0.096    0.011 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:375(__iter__)
+     2512    0.002    0.000    0.069    0.000 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:89(__iter__)
+      500    0.005    0.000    0.064    0.000 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/services/operator_orders.py:1038(operational_actions)
+  63413/1    0.031    0.000    0.056    0.056 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/api/projections.py:45(projection_data)
+      201    0.000    0.000    0.055    0.000 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/projections/order_queue.py:1001(<genexpr>)
+        1    0.000    0.000    0.041    0.041 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:1367(_prefetch_related_objects)
+        1    0.000    0.000    0.041    0.041 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:2348(prefetch_related_objects)
+       13    0.000    0.000    0.041    0.003 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py:1594(execute_sql)
+        1    0.001    0.001    0.040    0.040 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:2576(prefetch_one_level)
+     3600    0.004    0.000    0.031    0.000 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/services/operator_orders.py:1011(operational_revision)
+        1    0.001    0.001    0.031    0.031 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/services/waitlist.py:373(states_for)
+      101    0.000    0.000    0.030    0.000 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/projections/order_queue.py:995(<genexpr>)
+     4701    0.003    0.000    0.029    0.000 /opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/__init__.py:183(dumps)
+114349/104475    0.013    0.000    0.027    0.000 {built-in method builtins.getattr}
+        1    0.001    0.001    0.026    0.026 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/fields/related_descriptors.py:760(get_prefetch_querysets)
+     4701    0.003    0.000    0.026    0.000 /opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/encoder.py:183(encode)
+     3600    0.003    0.000    0.025    0.000 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/services/remote_mutations.py:135(mutation_fingerprint)
+      101    0.000    0.000    0.025    0.000 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/projections/order_queue.py:1017(<genexpr>)
+     3601    0.022    0.000    0.022    0.000 /opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/encoder.py:205(iterencode)
+     3003    0.002    0.000    0.022    0.000 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py:597(from_db)
+     2600    0.001    0.000    0.021    0.000 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/services/operator_orders.py:1090(<genexpr>)
+       13    0.000    0.000    0.019    0.001 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:120(execute)
+       13    0.000    0.000    0.019    0.001 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:78(execute)
+       13    0.000    0.000    0.019    0.001 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:88(_execute_with_wrappers)
+       13    0.000    0.000    0.019    0.001 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:94(_execute)
+       13    0.000    0.000    0.019    0.001 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/psycopg/cursor.py:100(execute)
+       13    0.008    0.001    0.019    0.001 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/psycopg/connection.py:476(wait)
+     3003    0.009    0.000    0.017    0.000 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py:482(__init__)
+       51    0.000    0.000    0.014    0.000 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/projections/order_queue.py:1016(<genexpr>)
+       51    0.000    0.000    0.014    0.000 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/projections/order_queue.py:1015(<genexpr>)
+       47    0.000    0.000    0.012    0.000 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py:2248(cursor_iter)
+8281/4155    0.004    0.000    0.012    0.000 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/utils/functional.py:249(inner)
+       47    0.000    0.000    0.012    0.000 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py:2254(<lambda>)
+       47    0.000    0.000    0.012    0.000 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/utils.py:99(inner)
+       47    0.002    0.000    0.012    0.000 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/psycopg/cursor.py:255(fetchmany)
+     3009    0.001    0.000    0.012    0.000 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py:1535(apply_converters)
+       96    0.000    0.000    0.011    0.000 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/psycopg/_cursor_base.py:195(_execute_gen)
+     2100    0.005    0.000    0.011    0.000 /opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/dataclasses.py:1540(replace)
+
+

@@ -25,6 +25,7 @@ from django.urls import reverse
 from shopman.orderman.models import Order, OrderItem
 
 from shopman.shop.models import Shop
+from shopman.shop.services.operator_orders import operational_revision
 
 # A régua do canal de balcão: cancela na esteira, cancela depois de fechada, e
 # — com o conserto — cancela também com o pão pronto no balcão. `dispatched` e
@@ -88,7 +89,7 @@ def _order(ref: str, status: str, *, regua: dict | None = None) -> Order:
 def _cancel(client, order, **payload):
     return client.post(
         reverse("api-backstage-order-cancel", args=[order.ref]),
-        data=payload or {"reason": "cliente desistiu"},
+        data={"reason": "cliente desistiu", "expected_actor_id": int(client.session["_auth_user_id"]), "base_revision": operational_revision(order), "idempotency_key": f"cancel-{order.ref}", **payload},
         content_type="application/json",
     )
 
@@ -234,3 +235,29 @@ def test_capability_avisa_o_desafio_antes_de_o_operador_digitar(gerente, monkeyp
 
     assert projecao.can_cancel is True
     assert projecao.cancel_requires_approval is True
+
+
+@pytest.mark.django_db
+def test_capture_between_policy_and_transition_requires_new_approval(client, caixa, monkeypatch):
+    from shopman.payman import PaymentService
+
+    from shopman.backstage.services import orders
+
+    order = _order("CANCEL-CAPTURE-RACE", "accepted")
+    intent = PaymentService.create_intent(order.ref, 1500, "pix", ref="CANCEL-CAPTURE-INTENT")
+    order.data["payment"] = {"method": "pix", "intent_ref": intent.ref}
+    order.save(update_fields=["data"])
+    client.force_login(caixa)
+    original = orders.cancel_order
+
+    def capture_then_cancel(*args, **kwargs):
+        PaymentService.authorize(intent.ref)
+        PaymentService.capture(intent.ref)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(orders, "cancel_order", capture_then_cancel)
+    response = _cancel(client, order)
+    assert response.status_code in {403, 409}, response.content
+    order.refresh_from_db()
+    assert order.status == "accepted"
+    assert PaymentService.refunded_total(intent.ref) == 0

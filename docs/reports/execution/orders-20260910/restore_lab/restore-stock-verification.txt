@@ -1,0 +1,14 @@
+{
+  "all_tables_and_sequences_still_equal": true,
+  "table_count": 140,
+  "sequence_count": 129,
+  "book_rows": {
+    "cashman_entry": 7,
+    "orderman_order": 44,
+    "orderman_directive": 43,
+    "orderman_idempotencykey": 157,
+    "payman_paymentintent": 7,
+    "payman_paymenttransaction": 7,
+    "stockman_move": 2
+  }
+}

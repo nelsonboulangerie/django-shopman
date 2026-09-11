@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from django.db import transaction
 from shopman.orderman.exceptions import InvalidTransition
 
 from shopman.backstage.services.exceptions import OrderConflict, OrderError
@@ -13,16 +14,16 @@ def find_order(ref: str):
     return operator_orders.find_order(ref)
 
 
-def confirm_order(order, *, actor: str):
+def confirm_order(order, *, actor: str, expected_revision: str | None = None):
     try:
-        return operator_orders.confirm_order(order, actor=actor)
+        return operator_orders.confirm_order(order, actor=actor, **({"expected_revision": expected_revision} if expected_revision is not None else {}))
     except OrderStateConflict as exc:
         raise OrderConflict(str(exc)) from exc
     except (ValueError, InvalidTransition) as exc:
         raise OrderError(str(exc) or "Não foi possível aceitar o pedido.") from exc
 
 
-def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellation_code: str = ""):
+def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellation_code: str = "", expected_revision=None, prepared_identity=None):
     if not reason.strip():
         raise OrderError("Motivo obrigatório")
     try:
@@ -32,6 +33,8 @@ def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellati
             actor=actor,
             rejected_by=rejected_by,
             cancellation_code=cancellation_code,
+            **({"expected_revision": expected_revision} if expected_revision is not None else {}),
+            **({"prepared_identity": prepared_identity} if prepared_identity is not None else {}),
         )
     except OrderStateConflict as exc:
         raise OrderConflict(str(exc)) from exc
@@ -39,7 +42,7 @@ def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellati
         raise OrderError(str(exc)) from exc
 
 
-def advance_order(order, *, actor: str, operator=None, change_out_raw: str | None = None, equipment=None):
+def advance_order(order, *, actor: str, operator=None, change_out_raw: str | None = None, equipment=None, expected_revision=None, target_status=None):
     """Avança o pedido; no despacho de entrega em dinheiro, leva o troco da gaveta.
 
     ``change_out_raw`` é o valor que o entregador leva (texto em reais; vazio é
@@ -71,8 +74,11 @@ def advance_order(order, *, actor: str, operator=None, change_out_raw: str | Non
         shift = pos_service.current_shift()
     try:
         return operator_orders.advance_order(
-            order, actor=actor, change_out_q=change_out_q, cash_shift=shift, equipment=list(equipment or [])
+            order, actor=actor, change_out_q=change_out_q, cash_shift=shift, equipment=list(equipment or []),
+            expected_revision=expected_revision, target_status=target_status,
         )
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
     except operator_orders.ChangeOutRequired as exc:
         raise OrderChangeOutRequired(str(exc), suggested_q=exc.suggested_q) from exc
     except (ValueError, InvalidTransition) as exc:
@@ -89,7 +95,7 @@ class OrderChangeOutRequired(OrderError):
         self.suggested_q = int(suggested_q)
 
 
-def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "", customer_note: str = ""):
+def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "", customer_note: str = "", expected_authority_revision: str | None = None, expected_revision=None, prepared_identity=None):
     """Cancela o pedido, ou levanta ``OrderConflict`` se o estado não permitir.
 
     ``cancellation.cancel`` devolve ``False`` sem levantar quando a máquina de
@@ -105,8 +111,13 @@ def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "",
             actor=actor,
             cancellation_code=cancellation_code,
             customer_note=customer_note,
+            **({"expected_revision": expected_revision} if expected_revision is not None else {}),
+            **({"prepared_identity": prepared_identity} if prepared_identity is not None else {}),
+            **({"expected_authority_revision": expected_authority_revision} if expected_authority_revision is not None else {}),
         )
-    except InvalidTransition as exc:
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
+    except (ValueError, InvalidTransition) as exc:
         raise OrderError(str(exc)) from exc
     if not cancelled:
         order.refresh_from_db(fields=["status"])
@@ -114,34 +125,17 @@ def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "",
     return cancelled
 
 
+def prepare_cancellation(order, code):
+    """Resolve the provider reason before the local mutation transaction."""
+    return operator_orders._validate_operator_cancellation_code(order, code)
+
+
 def cancellation_reasons(order) -> list[dict]:
-    """Valid cancellation reasons for an order.
-
-    For iFood orders, the live per-order list from the marketplace
-    (``code`` + ``description``); empty for channels without reason codes.
-    """
-    if (order.channel_ref or "") != "ifood":
-        return []
-    ifood_order_id = (order.external_ref or "").strip() or (order.data or {}).get(
-        "external_order_code", ""
-    )
-    if not ifood_order_id:
-        return []
-    from shopman.shop.services import ifood_callbacks
-
-    try:
-        reasons = ifood_callbacks.fetch_cancellation_reasons(ifood_order_id)
-    except ifood_callbacks.IFoodCallbackError:
-        return []
-    return [
-        {"code": str(r.get("cancelCodeId", "")), "description": r.get("description", "")}
-        for r in reasons
-        if r.get("cancelCodeId")
-    ]
+    return operator_orders.cancellation_reasons(order)
 
 
 def settle_delivery_cash(
-    order, *, operator, amount_raw: str = "", actor: str, change_back_raw: str | None = None, equipment_back: bool = False
+    order, *, operator, amount_raw: str = "", actor: str, change_back_raw: str | None = None, equipment_back: bool = False, expected_revision=None
 ):
     """Acerto do dinheiro de entrega: entra no turno ABERTO (``cashman``) de quem recebeu.
 
@@ -152,17 +146,19 @@ def settle_delivery_cash(
     from shopman.cashman.exceptions import CashError
 
     from shopman.backstage.services import pos as pos_service
-    from shopman.backstage.services.exceptions import POSError
+    from shopman.backstage.services.exceptions import POSError, POSTerminalAmbiguous
     from shopman.backstage.services.pos import parse_money_to_q
 
-    shift = pos_service.current_shift()
     # Mesma razão do `advance_order`: sem este try, um typo no campo de acerto
     # respondia 500 em vez do 400 com a mensagem do pacote.
     try:
+        shift = pos_service.current_shift(strict=True)
         amount_q = parse_money_to_q(amount_raw) if str(amount_raw or "").strip() else None
         change_back_q = None
         if change_back_raw is not None and str(change_back_raw).strip() != "":
             change_back_q = parse_money_to_q(str(change_back_raw))
+    except POSTerminalAmbiguous as exc:
+        raise OrderConflict(str(exc)) from exc
     except POSError as exc:
         raise OrderError(str(exc) or "Valor inválido.") from exc
     try:
@@ -173,7 +169,10 @@ def settle_delivery_cash(
             amount_q=amount_q,
             change_back_q=change_back_q,
             equipment_back=equipment_back,
+            **({"expected_revision": expected_revision} if expected_revision is not None else {}),
         )
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
     except CashError as exc:
         # Dois acertos do mesmo pedido no mesmo turno (duplo toque no gestor) são
         # recusados pela constraint do livro; a tela merece o 400 com a mensagem
@@ -183,15 +182,31 @@ def settle_delivery_cash(
         raise OrderError(str(exc)) from exc
 
 
-def mark_equipment_returned(order, *, actor: str):
+def mark_equipment_returned(order, *, actor: str, expected_revision=None):
     """O entregador devolveu a maquininha que levou neste pedido."""
     try:
-        return operator_orders.mark_equipment_returned(order, actor=actor)
+        return operator_orders.mark_equipment_returned(order, actor=actor, **({"expected_revision": expected_revision} if expected_revision is not None else {}))
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
     except ValueError as exc:
         raise OrderError(str(exc)) from exc
 
 
-def requeue_fiscal_emission(order, *, actor: str):
+def fiscal_revision(order) -> str:
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.directives import FISCAL_EMIT_NFCE
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    directive = Directive.objects.filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order.ref).order_by("-created_at", "-pk").first()
+    data = order.data or {}
+    return mutation_fingerprint({"version": 1, "ref": order.ref, "status": order.status, "total_q": order.total_q,
+        "fiscal": data.get("fiscal"), "payment": data.get("payment"), "access_key": data.get("nfce_access_key"),
+        "directive": [directive.pk, directive.status, directive.attempts, directive.updated_at.isoformat()] if directive else None})
+
+
+@transaction.atomic
+def requeue_fiscal_emission(order, *, actor: str, expected_revision=None):
     try:
         from django.utils import timezone
         from shopman.orderman.models import Directive
@@ -201,6 +216,14 @@ def requeue_fiscal_emission(order, *, actor: str):
     except Exception as exc:
         raise OrderError("Fiscal indisponível") from exc
 
+    from shopman.orderman.models import Order
+
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    # The worker claim also updates these rows. Keep retry eligibility stable.
+    list(Directive.objects.select_for_update().filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order.ref).order_by("pk"))
+    if expected_revision is not None and fiscal_revision(order) != expected_revision:
+        raise OrderConflict("O estado fiscal mudou. Confira a emissão atual antes de reprocessar.")
     if (order.data or {}).get("nfce_access_key"):
         raise OrderError("NFC-e já autorizada.")
     # A mesma regra que decide emitir decide o requeue. Perguntar só ao toggle
@@ -215,7 +238,7 @@ def requeue_fiscal_emission(order, *, actor: str):
 
     directive = (
         Directive.objects.filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order.ref)
-        .order_by("-created_at")
+        .order_by("-created_at", "-pk")
         .first()
     )
     if directive and directive.status == "failed":
@@ -226,26 +249,32 @@ def requeue_fiscal_emission(order, *, actor: str):
         directive.save(update_fields=["status", "error_code", "last_error", "available_at", "updated_at"])
     else:
         fiscal.emit(order)
+    current = Directive.objects.filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order.ref).order_by("-created_at", "-pk").first()
+    if current is None or current.status not in {"queued", "running"}:
+        raise OrderError("A emissão não foi enfileirada. Confira a configuração fiscal antes de tentar novamente.")
     order.emit_event(event_type="fiscal_requeued", actor=actor, payload={"topic": FISCAL_EMIT_NFCE})
+    return current
 
 
-def save_kitchen_note(order, *, notes: str):
-    return operator_orders.save_kitchen_note(order, notes=notes)
+def save_kitchen_note(order, *, notes: str, expected_revision=None, actor="system"):
+    return operator_orders.save_kitchen_note(order, notes=notes, expected_revision=expected_revision, actor=actor)
 
 
-def assign_order(order, *, operator_id: int, operator_name: str, actor: str):
+def assign_order(order, *, operator_id: int, operator_name: str, actor: str, expected_revision=None):
     return operator_orders.assign_order(
-        order, operator_id=operator_id, operator_name=operator_name, actor=actor
+        order, operator_id=operator_id, operator_name=operator_name, actor=actor, expected_revision=expected_revision
     )
 
 
-def unassign_order(order, *, actor: str):
-    return operator_orders.unassign_order(order, actor=actor)
+def unassign_order(order, *, actor: str, expected_revision=None):
+    return operator_orders.unassign_order(order, actor=actor, expected_revision=expected_revision)
 
 
-def add_comment(order, *, note: str, actor: str):
+def add_comment(order, *, note: str, actor: str, expected_revision=None):
     try:
-        return operator_orders.add_comment(order, note=note, actor=actor)
+        return operator_orders.add_comment(order, note=note, actor=actor, **({"expected_revision": expected_revision} if expected_revision is not None else {}))
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
     except ValueError as exc:
         raise OrderError(str(exc) or "Comentário inválido") from exc
 
@@ -254,22 +283,26 @@ def recent_history(*, limit: int = 20):
     return operator_orders.recent_history(limit=limit)
 
 
-def courier_dispatch(order, *, actor: str):
+def courier_dispatch(order, *, actor: str, expected_revision=None):
     """Despacha (ou re-despacha) a corrida de entrega externa."""
     from shopman.shop.services import courier
 
     try:
-        return courier.redispatch(order, actor=actor)
+        return courier.redispatch(order, actor=actor, expected_revision=expected_revision)
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
     except ValueError as exc:
         raise OrderError(str(exc) or "Não foi possível despachar a corrida.") from exc
 
 
-def courier_cancel(order, *, actor: str, reason_id=None):
+def courier_cancel(order, *, actor: str, reason_id=None, expected_revision=None):
     """Cancela a corrida ativa na central de entregas."""
     from shopman.shop.services import courier
 
     try:
-        return courier.cancel_ride(order, actor=actor, reason_id=reason_id)
+        return courier.cancel_ride(order, actor=actor, reason_id=reason_id, expected_revision=expected_revision)
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
     except ValueError as exc:
         raise OrderError(str(exc) or "Não foi possível cancelar a corrida.") from exc
 
@@ -280,7 +313,9 @@ def courier_quote(order) -> dict:
 
     from shopman.shop.services import courier
 
-    estimate = courier.estimate_for_order(order, store=True)
+    if not courier.can_quote(order):
+        raise OrderError("Confira o estado do pedido e da corrida antes de cotar.")
+    estimate = courier.estimate_for_order(order, store=False)
     if estimate is None:
         raise OrderError(
             "Cotação indisponível — verifique o endereço do pedido e a "

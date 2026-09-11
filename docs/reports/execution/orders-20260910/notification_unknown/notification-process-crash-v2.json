@@ -1,0 +1,21 @@
+{
+  "exit_code": 17,
+  "fresh_process": true,
+  "canonical_reaper": true,
+  "clock_advanced_minutes": 10,
+  "before_recovery": {
+    "status": "running",
+    "attempts": 1,
+    "delivery": {
+      "status": "started",
+      "recorded_at": "2026-09-11T06:30:23.381489+00:00"
+    }
+  },
+  "after_recovery": {
+    "status": "failed",
+    "attempts": 2
+  },
+  "synthetic_external_acceptances": 1,
+  "blind_retries": 0,
+  "existing_operational_alerts": 1
+}

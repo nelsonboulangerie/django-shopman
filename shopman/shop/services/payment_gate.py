@@ -40,7 +40,7 @@ UPFRONT_DIGITAL_PAYMENT_METHODS = frozenset({"pix", "card", "link"})
 
 # Dinheiro que a casa recebe no mundo físico — no terminal (já recebido na venda)
 # ou na porta (COD). Não passa por captura de intent antes da entrega.
-ON_DELIVERY_PAYMENT_METHODS = frozenset({"cash", "mixed"})
+ON_DELIVERY_PAYMENT_METHODS = frozenset({"cash", "credit", "debit", "mixed"})
 
 
 def collects_on_delivery(order) -> bool:
@@ -90,12 +90,13 @@ def requires_captured_payment(order) -> bool:
     return bool(payment.get("intent_ref") or payment.get("status"))
 
 
-def payment_is_captured(order) -> bool:
+def payment_is_captured(order, *, payment_reads=None) -> bool:
     """O Payman mostra dinheiro capturado cobrindo o total? Degrada para False."""
     from shopman.shop.services import payment as payment_service
 
     try:
-        return payment_service.has_sufficient_captured_payment(order) is True
+        return (payment_service.has_sufficient_captured_payment(order) if payment_reads is None else
+                payment_service.has_sufficient_captured_payment(order, payment_reads=payment_reads)) is True
     except Exception:
         logger.warning(
             "payment_gate.capture_lookup_failed order=%s", getattr(order, "ref", "?"), exc_info=True
@@ -129,7 +130,7 @@ def transition_hands_over_goods(current_status: str, target_status: str) -> bool
     return False
 
 
-def payment_blocks_transition(order, *, current_status: str, target_status: str) -> bool:
+def payment_blocks_transition(order, *, current_status: str, target_status: str, payment_reads=None) -> bool:
     """A régua: este pedido está barrado por falta de dinheiro nesta transição?
 
     Devolve True só quando as três coisas valem ao mesmo tempo: a transição
@@ -140,7 +141,7 @@ def payment_blocks_transition(order, *, current_status: str, target_status: str)
         return False
     if not requires_captured_payment(order):
         return False
-    return not payment_is_captured(order)
+    return not (payment_is_captured(order) if payment_reads is None else payment_is_captured(order, payment_reads=payment_reads))
 
 
 __all__ = [

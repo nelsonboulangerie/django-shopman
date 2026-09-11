@@ -1,3 +1,5 @@
+import type { ReadMetadata } from "./readMetadata";
+import type { Action } from "~/generated/ordersContract";
 // TS mirror of the Django catalog matrix projection
 // (shopman/backstage/projections/catalog.py), serialised by backstage/api/projections.py.
 // Kept in lockstep — the surface renders intent, the backend owns rules.
@@ -41,6 +43,7 @@ export interface SurfaceProjection {
 }
 
 export interface SurfaceCellProjection {
+  action?: Action | null;
   surface_ref: string;
   in_listing: boolean;
   is_published: boolean;
@@ -54,6 +57,8 @@ export interface SurfaceCellProjection {
 }
 
 export interface CatalogRowProjection {
+  product_action?: Action | null;
+  resync_action?: Action | null;
   sku: string;
   name: string;
   image_url: string;
@@ -92,8 +97,10 @@ export interface CatalogMatrixProjection {
   collections: CollectionProjection[];
 }
 
-export interface CatalogMatrixResponse {
+export interface CatalogMatrixResponse extends ReadMetadata {
   matrix: CatalogMatrixProjection;
+  collection_ref?: string;
+  actions?: Action[];
 }
 
 // Tabela nutricional (ANVISA) — espelha a dataclass `offerman.nutrition.NutritionFacts`.
@@ -163,6 +170,7 @@ export interface ProductDetailProjection {
   readonly primary_collection: string;
   readonly primary_collection_name: string;
   // somente-leitura: dado veio da receita; editar à mão congela a derivação.
+  readonly field_sources?: Record<string, string>;
   readonly dietary_from_recipe: boolean;
   readonly nutrition_auto_filled: boolean;
   readonly fiscal_profiles: FiscalProfileChoice[];
@@ -176,6 +184,7 @@ export type ProductDetailPatch = Partial<
     | "sku"
     | "primary_collection"
     | "primary_collection_name"
+    | "field_sources"
     | "dietary_from_recipe"
     | "nutrition_auto_filled"
     | "fiscal_profiles"
@@ -191,6 +200,11 @@ export type ProductDetailPatch = Partial<
 
 export interface ProductDetailResponse {
   product: ProductDetailProjection;
+  action?: Action;
+}
+
+export interface ProductEditConflict extends ProductDetailResponse {
+  conflicting_fields: string[];
 }
 
 // Assist de IA — sugestão de conteúdo para UM campo de texto de UM produto

@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/docs/reports/execution/orders-20260910/restore_lab/verify.py", line 8, in <module>
+    assert json.loads(json.dumps(snapshot(database))) == expected, database
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: orders_restore_lab_922fb

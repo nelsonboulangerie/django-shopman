@@ -147,7 +147,7 @@ function runClear() {
       <Icon name="lucide:pencil" class="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
     </button>
     <h1 v-else-if="hasOpenTab" class="truncate text-lg font-semibold leading-tight tabular-nums tracking-tight">#{{ tabDisplay || "..." }}</h1>
-    <h1 v-else class="truncate text-lg font-semibold leading-tight tracking-tight">Venda rápida</h1>
+    <h1 v-else class="truncate text-lg font-semibold">Venda rápida</h1>
 
     <!-- OS TRÊS CHIPS CARREGAM A PRÓPRIA TECLA — F6 · F7 · F8, na ordem em que
          aparecem. O atalho existia e só vivia no dicionário (tecla `?`), que é
@@ -170,7 +170,7 @@ function runClear() {
       type="button"
       class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
       :class="customerRequired
-        ? 'border-warning bg-warning/10 font-medium text-amber-700 motion-safe:animate-pulse dark:text-amber-400'
+        ? 'border-warning bg-warning/10 font-medium text-warning motion-safe:animate-pulse'
         : 'border-border'"
       aria-haspopup="dialog"
       :title="customerRequired ? 'Encomenda precisa de cliente — é o contato se algo mudar até a data' : undefined"
@@ -179,7 +179,7 @@ function runClear() {
       <Icon
         :name="customerRequired ? 'lucide:user-round-plus' : 'lucide:user-round'"
         class="size-4 shrink-0"
-        :class="customerRequired ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'"
+        :class="customerRequired ? 'text-warning' : 'text-muted-foreground'"
       />
       <span v-if="customerName" class="min-w-0 max-w-40 truncate font-medium">{{ customerName }}</span>
       <span v-else class="min-w-0 truncate" :class="customerRequired ? '' : 'text-muted-foreground'">Identificar cliente</span>

@@ -3,7 +3,7 @@
 // (SSE + 30s poll) via useOrdersBoard; renders Entrada / Preparo / Saída columns of
 // OrderCards; the gestures POST through the django proxy (CSRF handled there) and
 // reconcile. Desktop-first (3 columns), responsive (stacks on tablet/phone).
-import type { AffordanceRef, FulfillmentFilter, SortKey, ViewMode, ZoneView } from "~/presentation/board";
+import type { AffordanceRef, SortKey, ZoneView } from "~/presentation/board";
 import {
   bulkableRefs,
   cardAffordances,
@@ -32,7 +32,7 @@ import {
 import type { OrderCardProjection } from "~/types/orders";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
 
-const { zones, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, assign, unassign, confirmMany, advanceMany, equipmentOut, soundOn, soundBlocked, toggleSound } = useOrdersBoard();
+const { readMetadata, queue, zones, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, assign, unassign, confirmMany, advanceMany, equipmentOut, equipmentAvailable, soundOn, soundBlocked, toggleSound } = useOrdersBoard();
 
 // Sinal honesto de tempo-real vs poll (indicador de degradação do SSE).
 const realtimeView = computed(() => realtimeIndicator(realtime.value));
@@ -42,12 +42,50 @@ const realtimeView = computed(() => realtimeIndicator(realtime.value));
 const { denied: stationLocked } = useStationLock();
 
 // ── triage: search + channel filter + sort + view-mode (Arc 1) ──────────────
-// query/channel are transient; sort/view persist per operator (cookie, SSR-safe).
-const query = ref("");
-const channel = ref("all");
-const fulfillment = ref<FulfillmentFilter>("all");
-const sort = useCookie<SortKey>("gestor-sort", { default: () => "arrival", sameSite: "lax" });
-const viewMode = useCookie<ViewMode>("gestor-view", { default: () => "board", sameSite: "lax" });
+definePageMeta({ key: (route) => route.path });
+const route = useRoute();
+const router = useRouter();
+const context = useOrdersContext();
+const { query, channel, fulfillment, sort, viewMode, selected } = context;
+// O recorte vive na URL; seleção/posição/foco ficam só na sessão e pessoa atual.
+context.readLocation(route.query);
+watch(() => route.query, (params) => { if (route.path === "/") context.readLocation(params); });
+watch(context.location, (location) => {
+  if (route.path === "/" && JSON.stringify(route.query) !== JSON.stringify(location.query)) void router.replace(location);
+}, { deep: true });
+const queueViewport = ref<HTMLElement | null>(null);
+function rememberPosition(event: Event) {
+  context.state.value.scrollTop = (event.currentTarget as HTMLElement).scrollTop;
+}
+function rememberFocus(event: MouseEvent) {
+  const link = (event.target as HTMLElement).closest('a[aria-label^="Abrir pedido "]');
+  if (link) {
+    context.state.value.focusLabel = link.getAttribute("aria-label") || "";
+    context.state.value.windowY = window.scrollY;
+  }
+}
+async function restorePosition() {
+  if (!queue.value) return;
+  await nextTick();
+  const viewport = queueViewport.value;
+  if (!viewport) return;
+  viewport.scrollTop = context.state.value.scrollTop;
+  window.scrollTo({ top: context.state.value.windowY, behavior: "instant" });
+  const label = context.state.value.focusLabel;
+  if (label) {
+    const link = [...viewport.querySelectorAll<HTMLAnchorElement>("a[aria-label]")].find(item => item.getAttribute("aria-label") === label);
+    link?.focus({ preventScroll: true });
+    context.state.value.focusLabel = "";
+  }
+}
+let restoreFrame = 0;
+function scheduleRestore() {
+  cancelAnimationFrame(restoreFrame);
+  restoreFrame = requestAnimationFrame(() => { restoreFrame = requestAnimationFrame(() => { void restorePosition(); }); });
+}
+onMounted(scheduleRestore);
+onBeforeUnmount(() => cancelAnimationFrame(restoreFrame));
+watch(() => Boolean(queue.value), (available) => { if (available) scheduleRestore(); });
 
 const allCards = computed<OrderCardProjection[]>(() => zones.value.flatMap((z) => z.cards));
 const channels = computed(() => channelOptions(allCards.value));
@@ -78,7 +116,6 @@ const triagedPreorders = computed(() =>
 const preordersCount = computed(() => triagedPreorders.value.reduce((n, g) => n + g.cards.length, 0));
 
 // ── bulk selection (Arc 4) ──────────────────────────────────────────────────
-const selected = ref<Set<string>>(new Set());
 const isSelected = (ref_: string) => selected.value.has(ref_);
 function toggleSelect(ref_: string) {
   const next = new Set(selected.value);
@@ -98,12 +135,14 @@ function toggleSelectAll() {
 const confirmableSel = computed(() => bulkableRefs(allCards.value, selected.value, "confirm"));
 const advanceableSel = computed(() => bulkableRefs(allCards.value, selected.value, "advance"));
 async function bulkConfirm() {
-  await confirmMany(confirmableSel.value);
-  clearSelection();
+  const targets = confirmableSel.value.filter((ref) => !isBusy(ref));
+  await confirmMany(targets);
+  selected.value = new Set([...selected.value].filter((ref) => !targets.includes(ref) || actionError(ref)));
 }
 async function bulkAdvance() {
-  await advanceMany(advanceableSel.value);
-  clearSelection();
+  const targets = advanceableSel.value.filter((ref) => !isBusy(ref));
+  await advanceMany(targets);
+  selected.value = new Set([...selected.value].filter((ref) => !targets.includes(ref) || actionError(ref)));
 }
 
 // sort menu (house pattern: button + backdrop + absolute panel).
@@ -155,23 +194,50 @@ const rejectRef = ref<string | null>(null);
 const rejectReason = ref("");
 const rejectReasons = ref<CancellationReason[]>([]);
 const rejectCode = ref("");
+const rejectDirty = computed(() => rejectRef.value !== null && Boolean(rejectReason.value.trim() || rejectCode.value));
+function closeReject() {
+  if (rejectRef.value && isBusy(rejectRef.value)) return;
+  if (rejectDirty.value && !window.confirm("Descartar o motivo digitado?")) return;
+  rejectRef.value = null;
+}
+onBeforeRouteLeave(() => !rejectDirty.value || window.confirm("Há um motivo não salvo. Descartar e sair?"));
+function beforeUnload(event: BeforeUnloadEvent) {
+  if (!rejectDirty.value) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+onMounted(() => window.addEventListener("beforeunload", beforeUnload));
+onBeforeUnmount(() => window.removeEventListener("beforeunload", beforeUnload));
 const rejectReasonsLoading = ref(false);
-const isMarketplaceReject = computed(() => rejectReasons.value.length > 0);
+const rejectReasonsError = ref("");
+const isMarketplaceReject = computed(() => allCards.value.find((c) => c.ref === rejectRef.value)?.channel_ref === "ifood");
 const canConfirmReject = computed(() =>
-  isMarketplaceReject.value ? rejectCode.value !== "" : rejectReason.value.trim() !== "",
+  !rejectReasonsLoading.value && !rejectReasonsError.value && (isMarketplaceReject.value ? rejectReasons.value.some((r) => r.code === rejectCode.value) : rejectReason.value.trim() !== ""),
 );
 async function openReject(ref_: string) {
   rejectRef.value = ref_;
   rejectReason.value = "";
   rejectCode.value = "";
   rejectReasons.value = [];
+  await loadRejectReasons();
+}
+let rejectReasonsRequest = 0;
+async function loadRejectReasons() {
+  const ref_ = rejectRef.value;
+  if (!ref_) return;
+  const request = ++rejectReasonsRequest;
   rejectReasonsLoading.value = true;
+  rejectReasonsError.value = "";
   try {
-    rejectReasons.value = await fetchCancellationReasons(ref_);
+    const result = await fetchCancellationReasons(ref_);
+    if (request === rejectReasonsRequest && ref_ === rejectRef.value) rejectReasons.value = result;
+  } catch {
+    if (request === rejectReasonsRequest && ref_ === rejectRef.value) rejectReasonsError.value = "Não foi possível consultar os motivos. Nenhuma ação foi aplicada.";
   } finally {
-    rejectReasonsLoading.value = false;
+    if (request === rejectReasonsRequest) rejectReasonsLoading.value = false;
   }
 }
+
 function onRejectCodeChange() {
   // Mirror the picked reason's text into the customer-facing reason.
   const picked = rejectReasons.value.find((r) => r.code === rejectCode.value);
@@ -179,7 +245,7 @@ function onRejectCodeChange() {
 }
 async function confirmReject() {
   const ref_ = rejectRef.value;
-  if (!ref_ || !canConfirmReject.value) return;
+  if (!ref_ || isBusy(ref_) || !canConfirmReject.value) return;
   const ok = await reject(ref_, rejectReason.value.trim() || "Pedido recusado", rejectCode.value);
   if (ok) rejectRef.value = null;
 }
@@ -187,45 +253,59 @@ async function confirmReject() {
 // settle-cash dialog (needs an amount; and, when the courier took change from
 // the drawer, how much of it came back — zero included; the server requires it).
 const settleRef = ref<string | null>(null);
-const settleAmount = ref("");
-const settleChangeBack = ref("");
+const cashDrafts = useOrderCashDrafts();
 const settleCard = computed(() => allCards.value.find((c) => c.ref === settleRef.value) ?? null);
+const settleAction = computed(() => settleCard.value?.actions.find((action) => action.ref === "settle-delivery-cash"));
+const settlementDraft = computed(() => {
+  const initial = { amount: "", changeBack: settleCard.value?.change_back_pending ? moneyInput(changeBackSuggestionQ(settleCard.value)) : "", equipmentBack: false,
+    revision: String(settleAction.value?.payload_schema.base_revision || ""), custody: String(settleAction.value?.confirmation.description || "") };
+  return (settleRef.value ? cashDrafts.settlements.value[settleRef.value] : null) ?? initial;
+});
+const settleAmount = computed({ get: () => settlementDraft.value.amount, set: (v: string) => { settlementDraft.value.amount = v; } });
+const settleChangeBack = computed({ get: () => settlementDraft.value.changeBack, set: (v: string) => { settlementDraft.value.changeBack = v; } });
+const settleEquipmentBack = computed({ get: () => settlementDraft.value.equipmentBack, set: (v: boolean) => { settlementDraft.value.equipmentBack = v; } });
+const settleRevision = computed(() => settlementDraft.value.revision);
+const settleCustody = computed(() => settlementDraft.value.custody);
+const settleChanged = computed(() => settleRevision.value !== String(settleAction.value?.payload_schema.base_revision || ""));
+function reviewSettleCustody() {
+  settlementDraft.value.revision = String(settleAction.value?.payload_schema.base_revision || "");
+  settlementDraft.value.custody = String(settleAction.value?.confirmation.description || "");
+}
 const settleAsksChangeBack = computed(() => Boolean(settleCard.value?.change_back_pending));
-const settleEquipmentBack = ref(true);
 const settleAsksEquipment = computed(() => Boolean(settleCard.value?.equipment_back_pending));
 function openSettle(ref_: string) {
   settleRef.value = ref_;
-  settleAmount.value = "";
-  const card = allCards.value.find((c) => c.ref === ref_);
-  settleChangeBack.value = card?.change_back_pending ? moneyInput(changeBackSuggestionQ(card)) : "";
-  settleEquipmentBack.value = true;
+  cashDrafts.settlement(ref_, settlementDraft.value);
 }
 async function confirmSettle() {
   const ref_ = settleRef.value;
   if (!ref_) return;
   const changeBack = settleAsksChangeBack.value ? settleChangeBack.value.trim() || "0" : undefined;
-  const ok = await settleCash(ref_, settleAmount.value.trim(), changeBack, settleAsksEquipment.value && settleEquipmentBack.value);
-  if (ok) settleRef.value = null;
+  const ok = await settleCash(ref_, settleAmount.value.trim(), changeBack, settleAsksEquipment.value && settleEquipmentBack.value, settleRevision.value);
+  if (ok) { cashDrafts.clear("settlement", ref_); settleRef.value = null; }
 }
 
 // dispatch dialog: the store collected "troco para quanto?" at checkout; leaving
 // for delivery is when that becomes cash out of the drawer (courier_out). The
 // operator confirms the amount the courier actually takes (or "sem troco").
 const dispatchRef = ref<string | null>(null);
-const dispatchAmount = ref("");
+const dispatchDraft = computed(() => {
+  const initial = { amount: moneyInput(dispatchCard.value?.change_out_suggested_q ?? 0), equipment: [] as string[] };
+  return (dispatchRef.value ? cashDrafts.dispatches.value[dispatchRef.value] : null) ?? initial;
+});
+const dispatchAmount = computed({ get: () => dispatchDraft.value.amount, set: (v: string) => { dispatchDraft.value.amount = v; } });
 // Aparelhos marcados para sair com o entregador (refs do canal, ex. card_machine).
-const dispatchEquipment = ref<string[]>([]);
+const dispatchEquipment = computed({ get: () => dispatchDraft.value.equipment, set: (v: string[]) => { dispatchDraft.value.equipment = v; } });
 const dispatchCard = computed(() => allCards.value.find((c) => c.ref === dispatchRef.value) ?? null);
 const dispatchAsksChangeNow = computed(() => Boolean(dispatchCard.value && dispatchAsksChange(dispatchCard.value)));
 function openDispatch(card: OrderCardProjection) {
   dispatchRef.value = card.ref;
-  dispatchAmount.value = moneyInput(card.change_out_suggested_q);
-  dispatchEquipment.value = [];
+  cashDrafts.dispatch(card.ref, dispatchDraft.value);
 }
 function toggleDispatchEquipment(ref_: string) {
   dispatchEquipment.value = dispatchEquipment.value.includes(ref_)
     ? dispatchEquipment.value.filter((r) => r !== ref_)
-    : [...dispatchEquipment.value, ref_];
+    : [...dispatchEquipment.value.filter(r => !ref_.startsWith("card_machine:") || !r.startsWith("card_machine:")), ref_];
 }
 async function confirmDispatch(amount: string | null) {
   const ref_ = dispatchRef.value;
@@ -233,7 +313,7 @@ async function confirmDispatch(amount: string | null) {
   // Sem troco a perguntar, o valor não vai (o servidor só exige quando sugere).
   const changeOut = dispatchAsksChangeNow.value ? (amount ?? "").trim() || "0" : undefined;
   const ok = await advance(ref_, changeOut, dispatchEquipment.value);
-  if (ok) dispatchRef.value = null;
+  if (ok) { cashDrafts.clear("dispatch", ref_); dispatchRef.value = null; }
 }
 
 function onAction(ref_: string, action: AffordanceRef) {
@@ -284,6 +364,11 @@ function printQueue() {
         aria-label="Buscar por código, cliente ou item (atalho: /)"
         @update:model-value="(v) => (query = v)"
       />
+      <p class="text-sm" data-equipment-available>
+        Maquininhas disponíveis: {{ equipmentAvailable.length }}<template v-if="equipmentAvailable.length"> · {{ equipmentAvailable.map(item => item.label).join(', ') }}</template>
+        · Em trânsito: {{ equipmentOut.filter(item => item.identified).length }}
+        <template v-if="equipmentOut.some(item => !item.identified)"> · Registros antigos sem aparelho identificado: {{ equipmentOut.filter(item => !item.identified).length }}</template>
+      </p>
       <!-- onde está a maquininha: saiu com o entregador e não voltou -->
       <div v-if="equipmentOut.length" class="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm" data-equipment-out>
         <Icon name="lucide:smartphone-nfc" class="size-4 text-muted-foreground" />
@@ -342,7 +427,7 @@ function printQueue() {
              mesmo toque pede a permissão de notificação do browser. -->
         <button
           type="button"
-          class="relative grid size-9 place-items-center rounded-md border transition hover:bg-accent hover:text-foreground"
+          class="relative grid size-control place-items-center rounded-md border transition hover:bg-accent hover:text-foreground"
           :class="soundOn && soundBlocked ? 'border-warning/50 text-amber-600 dark:text-amber-400' : 'text-muted-foreground'"
           :aria-label="soundOn && soundBlocked ? 'Som bloqueado — toque para ativar' : soundOn ? 'Som de pedido novo ativo' : 'Som de pedido novo desativado'"
           :title="soundOn && soundBlocked ? 'Som bloqueado — toque para ativar' : 'Som de pedido novo'"
@@ -359,7 +444,7 @@ function printQueue() {
         <div class="relative">
           <button
             type="button"
-            class="inline-flex h-9 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            class="inline-flex h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
             aria-haspopup="menu"
             :aria-expanded="sortOpen"
             title="Ordenar (atalho: s)"
@@ -376,7 +461,7 @@ function printQueue() {
               type="button"
               role="menuitemradio"
               :aria-checked="sort === opt.key"
-              class="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs transition hover:bg-accent"
+              class="flex min-h-control w-full items-center justify-between px-3 py-1.5 text-left text-xs transition hover:bg-accent"
               @click="pickSort(opt.key)"
             >
               {{ opt.label }}
@@ -389,10 +474,10 @@ function printQueue() {
         <UiIconButton icon="lucide:printer" label="Imprimir fila" @click="printQueue" />
 
         <!-- view-mode -->
-        <div class="inline-flex h-9 items-center rounded-md border p-0.5">
+        <div class="inline-flex items-center rounded-md border p-0.5">
           <button
             type="button"
-            class="grid size-8 place-items-center rounded transition"
+            class="grid size-control place-items-center rounded transition"
             :class="viewMode === 'board' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'"
             aria-label="Ver em colunas"
             title="Colunas (atalho: v)"
@@ -402,7 +487,7 @@ function printQueue() {
           </button>
           <button
             type="button"
-            class="grid size-8 place-items-center rounded transition"
+            class="grid size-control place-items-center rounded transition"
             :class="viewMode === 'table' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'"
             aria-label="Ver em tabela"
             title="Tabela (atalho: v)"
@@ -415,6 +500,7 @@ function printQueue() {
         <UiIconButton icon="lucide:refresh-cw" label="Atualizar (atalho: r)" :spinning="pending" @click="refresh()" />
       </template>
     </UiToolbar>
+    <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />
 
     <!-- bulk action bar -->
     <div v-if="selected.size" class="flex shrink-0 flex-wrap items-center gap-2 border-b bg-primary/10 px-4 py-2 text-sm print:hidden">
@@ -424,7 +510,7 @@ function printQueue() {
         <button
           v-if="confirmableSel.length"
           type="button"
-          class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
+          class="min-h-action min-w-action inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
           @click="bulkConfirm"
         >
           <Icon name="lucide:check" class="size-3.5" /> Aceitar {{ confirmableSel.length }}
@@ -432,18 +518,18 @@ function printQueue() {
         <button
           v-if="advanceableSel.length"
           type="button"
-          class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition hover:bg-accent"
+          class="min-h-control min-w-control inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition hover:bg-accent"
           @click="bulkAdvance"
         >
           <Icon name="lucide:arrow-right" class="size-3.5" /> Avançar {{ advanceableSel.length }}
         </button>
-        <button type="button" class="rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-accent" @click="clearSelection">
+        <button type="button" class="min-h-control min-w-control rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-accent" @click="clearSelection">
           Limpar
         </button>
       </div>
     </div>
 
-    <section class="min-h-0 flex-1 overflow-auto p-3 md:p-4">
+    <section ref="queueViewport" class="min-h-0 flex-1 overflow-auto p-3 md:p-4" @scroll.passive="rememberPosition" @click.capture="rememberFocus">
       <p v-if="pending && !zones.length" class="text-sm text-muted-foreground">Carregando…</p>
       <!-- `!stationLocked`: antes do PIN toda leitura volta 403 `station_locked`
            e este parágrafo dizia "Falha ao carregar a fila. Reconectando…" —
@@ -451,14 +537,14 @@ function printQueue() {
            turno e a cada auto-lock. Quem fala nesse estado é a identificação
            que sobe por cima (app.vue), e ela não é uma falha. -->
       <p v-else-if="error && !stationLocked" class="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive dark:text-orange-400" data-queue-error>
-        Falha ao carregar a fila. Reconectando…
+        Falha ao atualizar a fila. Mantivemos a última leitura; atualize antes de confirmar ações.
       </p>
 
-      <template v-else>
+      <template v-if="queue">
         <!-- no results across all zones for the active filters -->
         <p v-if="hasFilter && !visibleCount" class="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
           Nenhum pedido para os filtros atuais.
-          <button type="button" class="ml-1 font-medium text-primary hover:underline" @click="query = ''; channel = 'all'; fulfillment = 'all'">Limpar filtros</button>
+          <button type="button" class="min-h-control min-w-control ml-1 font-medium text-primary hover:underline" @click="query = ''; channel = 'all'; fulfillment = 'all'">Limpar filtros</button>
         </p>
 
         <!-- board view (clean, default) -->
@@ -500,13 +586,14 @@ function printQueue() {
                 <th class="w-9 px-3 py-2">
                   <button
                     type="button"
-                    class="grid size-4 place-items-center rounded border transition"
-                    :class="allVisibleSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 hover:border-primary'"
+                    class="grid size-control place-items-center rounded transition hover:bg-accent"
                     :aria-label="allVisibleSelected ? 'Desmarcar todos' : 'Selecionar todos'"
                     :aria-pressed="allVisibleSelected"
                     @click="toggleSelectAll"
                   >
-                    <Icon v-if="allVisibleSelected" name="lucide:check" class="size-3" />
+                    <span class="grid size-4 place-items-center rounded border" :class="allVisibleSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 hover:border-primary'">
+                      <Icon v-if="allVisibleSelected" name="lucide:check" class="size-3" />
+                    </span>
                   </button>
                 </th>
                 <th class="px-3 py-2">Código</th>
@@ -525,17 +612,18 @@ function printQueue() {
                 <td class="px-3 py-2">
                   <button
                     type="button"
-                    class="grid size-4 place-items-center rounded border transition"
-                    :class="isSelected(row.card.ref) ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 hover:border-primary'"
+                    class="grid size-control place-items-center rounded transition hover:bg-accent"
                     :aria-label="isSelected(row.card.ref) ? 'Desmarcar pedido' : 'Selecionar pedido'"
                     :aria-pressed="isSelected(row.card.ref)"
                     @click="toggleSelect(row.card.ref)"
                   >
-                    <Icon v-if="isSelected(row.card.ref)" name="lucide:check" class="size-3" />
+                    <span class="grid size-4 place-items-center rounded border" :class="isSelected(row.card.ref) ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 hover:border-primary'">
+                      <Icon v-if="isSelected(row.card.ref)" name="lucide:check" class="size-3" />
+                    </span>
                   </button>
                 </td>
                 <td class="px-3 py-2">
-                  <NuxtLink :to="`/${row.card.ref}`" class="font-bold tabular-nums hover:underline" :aria-label="`Abrir pedido ${row.card.ref}`">
+                  <NuxtLink :to="`/${row.card.ref}`" class="inline-flex min-h-control min-w-control items-center font-bold tabular-nums hover:underline" :aria-label="`Abrir pedido ${row.card.ref}`">
                     {{ splitRef(row.card.ref).code }}
                   </NuxtLink>
                 </td>
@@ -568,7 +656,7 @@ function printQueue() {
                     <button
                       type="button"
                       :disabled="isBusy(row.card.ref)"
-                      class="grid size-7 place-items-center rounded border transition disabled:opacity-50"
+                      class="grid size-control place-items-center rounded border transition disabled:opacity-50"
                       :class="row.card.assigned_operator ? 'border-primary/40 bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent'"
                       :aria-label="row.card.assigned_operator ? `Atendido por ${row.card.assigned_operator} — liberar` : 'Atender'"
                       :title="row.card.assigned_operator ? `${row.card.assigned_operator} — liberar` : 'Atender'"
@@ -580,11 +668,11 @@ function printQueue() {
                       v-for="a in cardAffordances(row.card)"
                       :key="a.ref"
                       type="button"
-                      :disabled="isBusy(row.card.ref)"
-                      class="grid size-7 place-items-center rounded border transition disabled:opacity-50"
-                      :class="a.priority === 'primary' ? 'border-transparent bg-primary text-primary-foreground hover:bg-primary/90' : a.priority === 'danger' ? 'border-destructive/40 text-destructive hover:bg-destructive/10 dark:text-orange-300' : 'hover:bg-accent'"
+                      :disabled="isBusy(row.card.ref) || a.disabled"
+                      class="grid size-control place-items-center rounded border transition disabled:opacity-50"
+                      :class="a.priority === 'primary' ? 'min-h-action min-w-action border-transparent bg-primary text-primary-foreground hover:bg-primary/90' : a.priority === 'danger' ? 'border-destructive/40 text-destructive hover:bg-destructive/10 dark:text-orange-300' : 'hover:bg-accent'"
                       :aria-label="a.label"
-                      :title="a.label"
+                      :title="a.reason || a.label"
                       @click="onAction(row.card.ref, a.ref)"
                     >
                       <Icon :name="a.icon" class="size-3.5" />
@@ -598,7 +686,7 @@ function printQueue() {
                   <div class="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive dark:text-orange-300" role="alert">
                     <Icon name="lucide:alert-triangle" class="mt-px size-3.5 shrink-0" />
                     <span class="min-w-0 flex-1">{{ actionError(row.card.ref) }}</span>
-                    <button type="button" class="shrink-0 rounded p-0.5 transition hover:bg-destructive/20" aria-label="Dispensar aviso" @click="clearActionError(row.card.ref)">
+                    <button type="button" class="min-h-control min-w-control shrink-0 rounded p-0.5 transition hover:bg-destructive/20" aria-label="Dispensar aviso" @click="clearActionError(row.card.ref)">
                       <Icon name="lucide:x" class="size-3.5" />
                     </button>
                   </div>
@@ -641,7 +729,7 @@ function printQueue() {
     </section>
 
     <!-- reject dialog -->
-    <UiDialog :open="rejectRef != null" @update:open="(v) => { if (!v) rejectRef = null }">
+    <UiDialog :open="rejectRef != null" @update:open="(v) => { if (!v) closeReject() }">
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
           <UiDialogTitle>Recusar pedido {{ rejectRef }}</UiDialogTitle>
@@ -650,6 +738,11 @@ function printQueue() {
           </UiDialogDescription>
         </UiDialogHeader>
         <p v-if="rejectReasonsLoading" class="text-sm text-muted-foreground">Carregando motivos do iFood…</p>
+        <div v-else-if="rejectReasonsError" role="alert" class="text-sm text-destructive">
+          <p>{{ rejectReasonsError }}</p>
+          <button type="button" class="min-h-control min-w-control underline" @click="loadRejectReasons">Consultar novamente</button>
+        </div>
+        <p v-else-if="isMarketplaceReject && !rejectReasons.length" class="text-sm">O iFood não oferece motivos de cancelamento neste momento.</p>
         <!-- Marketplace (iFood): coded reason picker from the provider's live list -->
         <UiNativeSelect
           v-else-if="isMarketplaceReject"
@@ -667,15 +760,15 @@ function printQueue() {
           v-model="rejectReason"
           rows="3"
           placeholder="Motivo da recusa…"
-          class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+          class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
           aria-label="Motivo da recusa"
         />
         <UiDialogFooter>
-          <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="rejectRef = null">Cancelar</button>
+          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" :disabled="Boolean(rejectRef && isBusy(rejectRef))" @click="closeReject">Cancelar</button>
           <button
             type="button"
-            :disabled="!canConfirmReject"
-            class="rounded-md border border-transparent bg-destructive px-3 py-2 text-sm font-semibold text-white transition hover:bg-destructive/90 disabled:opacity-50"
+            :disabled="!canConfirmReject || Boolean(rejectRef && isBusy(rejectRef))"
+            class="min-h-action min-w-action rounded-md border border-transparent bg-destructive px-3 py-2 text-sm font-semibold text-white transition hover:bg-destructive/90 disabled:opacity-50"
             @click="confirmReject"
           >
             Recusar pedido
@@ -697,14 +790,14 @@ function printQueue() {
             <template v-else>O que sai com o entregador ({{ dispatchRef }}).</template>
           </UiDialogDescription>
         </UiDialogHeader>
-        <label v-if="dispatchAsksChangeNow" class="flex items-center gap-2 text-sm">
+        <label v-if="dispatchAsksChangeNow" class="min-h-control flex items-center gap-2 text-sm">
           <span class="text-muted-foreground">R$</span>
           <input
             v-model="dispatchAmount"
             type="text"
             inputmode="decimal"
             placeholder="Ex.: 20,00"
-            class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+            class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
             aria-label="Troco que o entregador leva"
           />
         </label>
@@ -713,16 +806,16 @@ function printQueue() {
           <label
             v-for="opt in dispatchCard.equipment_options"
             :key="opt.ref"
-            class="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+            class="min-h-control flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
           >
-            <input type="checkbox" :checked="dispatchEquipment.includes(opt.ref)" @change="toggleDispatchEquipment(opt.ref)" />
-            <span>Levou a {{ opt.label.toLowerCase() }}</span>
+            <input type="checkbox" :disabled="opt.enabled === false" :checked="dispatchEquipment.includes(opt.ref)" @change="toggleDispatchEquipment(opt.ref)" />
+            <span>{{ opt.label }}<span v-if="opt.reason"> · {{ opt.reason }}</span></span>
           </label>
         </div>
         <UiDialogFooter>
-          <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dispatchRef = null">Cancelar</button>
-          <button v-if="dispatchAsksChangeNow" type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="confirmDispatch('0')">Saiu sem troco</button>
-          <button type="button" class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90" @click="confirmDispatch(dispatchAmount)">
+          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dispatchRef = null">Cancelar</button>
+          <button v-if="dispatchAsksChangeNow" type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="confirmDispatch('0')">Saiu sem troco</button>
+          <button type="button" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90" @click="confirmDispatch(dispatchAmount)">
             {{ dispatchAsksChangeNow ? "Levou o troco" : "Saiu para entrega" }}
           </button>
         </UiDialogFooter>
@@ -733,36 +826,39 @@ function printQueue() {
     <UiDialog :open="settleRef != null" @update:open="(v) => { if (!v) settleRef = null }">
       <UiDialogContent class="sm:max-w-sm">
         <UiDialogHeader>
-          <UiDialogTitle>Acerto de dinheiro</UiDialogTitle>
-          <UiDialogDescription>Valor recebido na entrega ({{ settleRef }}). Em branco usa o total do pedido.</UiDialogDescription>
+          <UiDialogTitle>Acerto da entrega</UiDialogTitle>
+          <UiDialogDescription>Valor recebido na entrega ({{ settleRef }}). Em branco usa o total de {{ settleCard?.total_display }}. {{ settleCustody }}</UiDialogDescription>
         </UiDialogHeader>
+        <p v-if="settleChanged" role="alert" class="text-sm text-destructive">O pedido ou turno mudou. Confira o contexto atual: {{ settleAction?.confirmation.description }}
+          <button type="button" class="min-h-control min-w-control underline" @click="reviewSettleCustody">Conferir e manter os valores digitados</button>
+        </p>
         <input
           v-model="settleAmount"
           type="text"
           inputmode="decimal"
           placeholder="Ex.: 15,00"
-          class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+          class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
           aria-label="Valor recebido"
         />
         <!-- o entregador levou troco da gaveta: quanto voltou (zero vale) -->
-        <label v-if="settleAsksChangeBack" class="flex flex-col gap-1 text-sm" data-change-back>
+        <label v-if="settleAsksChangeBack" class="min-h-control flex flex-col gap-1 text-sm" data-change-back>
           <span class="text-muted-foreground">{{ settleCard?.change_label }}. Quanto voltou?</span>
           <input
             v-model="settleChangeBack"
             type="text"
             inputmode="decimal"
             placeholder="0,00"
-            class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+            class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
             aria-label="Troco que voltou"
           />
         </label>
-        <label v-if="settleAsksEquipment" class="flex items-center gap-2 text-sm" data-equipment-back>
+        <label v-if="settleAsksEquipment" class="min-h-control flex items-center gap-2 text-sm" data-equipment-back>
           <input v-model="settleEquipmentBack" type="checkbox" />
           <span>{{ settleCard?.equipment_label }}. Voltou junto</span>
         </label>
         <UiDialogFooter>
-          <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="settleRef = null">Cancelar</button>
-          <button type="button" class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90" @click="confirmSettle">
+          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="settleRef = null">Cancelar</button>
+          <button type="button" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" :disabled="settleChanged || !settleAction?.enabled || (settleRef ? isBusy(settleRef) : false)" @click="confirmSettle">
             Confirmar acerto
           </button>
         </UiDialogFooter>

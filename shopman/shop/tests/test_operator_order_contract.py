@@ -69,7 +69,7 @@ class OperatorOrderContractTests(TestCase):
             Order.Status.COMPLETED,
             Order.Status.RETURNED,
         ):
-            with self.subTest(status=status):
+            with self.subTest(status=str(status)):
                 order = _order(f"CONTRACT-CANCEL-{status}", status)
 
                 changed = cancel(order, reason="operator_requested", actor="operator:ana")

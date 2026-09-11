@@ -1,0 +1,1090 @@
+{
+  "source": "orders_lab",
+  "target": "orders_restore_lab_stock",
+  "dump_seconds": 0.23057183297351003,
+  "restore_seconds": 0.6717852910514921,
+  "archive_bytes": 635722,
+  "all_tables_and_sequences_equal": true,
+  "manifest": {
+    "tables": {
+      "auth_group": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "auth_group_permissions": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "auth_permission": {
+        "rows": 608,
+        "sha256": "010ab79424a62438f067d3c79263a33cd1b9893fdc18baac7449defbbb8cfdc4"
+      },
+      "auth_user": {
+        "rows": 12,
+        "sha256": "fae773b631766d70d445f6ffc997e544b38280f08d212cc4c9212db81a8fa991"
+      },
+      "auth_user_groups": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "auth_user_user_permissions": {
+        "rows": 24,
+        "sha256": "3ef065804bc32c72fb45b286c31e43be528b42b0c00613955865941de74a91be"
+      },
+      "backstage_bialertevent": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_bialertrule": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_biscenarioreport": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_biview": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_blindprepcode": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_categoryalias": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_consumptionrole": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_dailysalesfact": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_dayclosing": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_daycontext": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_historicalsale": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_historicalsaleitem": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_importbatch": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_kdsinstance": {
+        "rows": 1,
+        "sha256": "e67285564815a4aaed5d7778b08d35631ff3107a1fa498dc69ae39c33d99ccb5"
+      },
+      "backstage_kdsinstance_collections": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_kdsticket": {
+        "rows": 10,
+        "sha256": "846010fecfdd658a91cf9dca77cdae408fe25f190e378b4d36891a1e16aa8a64"
+      },
+      "backstage_operationchecklistrun": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_operationchecklisttemplate": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_operationchecklisttemplatetask": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_operationepisode": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_operationepisodekind": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_operationtaskrun": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_operationtasktemplate": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_operatoralert": {
+        "rows": 2,
+        "sha256": "fda9ee18eb6d861bb541569c4c664be548debd703c7cd13948ac268215afc411"
+      },
+      "backstage_ovenrun": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_paymentmethodalias": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_postab": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_productalias": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_productconsumptiontag": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_seatingspot": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "backstage_shelfoutage": {
+        "rows": 1,
+        "sha256": "2deb3eded99c455312c49b38b248bef8e4bd81277ed6230e44d904cdc7ac3208"
+      },
+      "backstage_signinevent": {
+        "rows": 170,
+        "sha256": "71f48f551ec2585df894aa63be14612e17ff0c89503dcf7713033b20bffb996e"
+      },
+      "buyman_material": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "buyman_materialconversion": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "buyman_supplier": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "buyman_suppliercontact": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "buyman_suppliermaterialcost": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "cashman_entry": {
+        "rows": 7,
+        "sha256": "11d0f7fb24fe979853d6ec30ef6f09998dd432c96338471023e000ed4f0eccaa"
+      },
+      "cashman_shift": {
+        "rows": 1,
+        "sha256": "c49a6f7ebe94d2e8e0ed82e475e845b61fc44d6508287740de285a1cc54359ae"
+      },
+      "cashman_terminal": {
+        "rows": 1,
+        "sha256": "f94348aec7ab46fb5f5dd839fef83302ebd253840f99d0cc4476d8edecbb2634"
+      },
+      "crafting_code_sequence": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "crafting_recipe": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "crafting_recipe_entry": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "crafting_recipe_item": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "crafting_recipe_version": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "crafting_work_order": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "crafting_work_order_event": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "crafting_work_order_item": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "customer_consent_communicationconsent": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "customer_identifiers_customeridentifier": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "customer_insights_customerinsight": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "customer_loyalty_loyaltyaccount": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "customer_loyalty_loyaltytransaction": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "customer_merge_mergeaudit": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "customer_preferences_customerpreference": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "customer_timeline_timelineevent": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "customers_contact_point": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "customers_external_identity": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "customers_processed_event": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "django_admin_log": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "django_content_type": {
+        "rows": 142,
+        "sha256": "72abb3c237ba20f3a6ffdb9de6797c56e9c9fc25cc07c313a94a48bbe31db7d8"
+      },
+      "django_eventstream_event": {
+        "rows": 488,
+        "sha256": "4905bb07800f0fb9596227099dedc24e93b89787bb4a9f2214d655379a19490b"
+      },
+      "django_eventstream_eventcounter": {
+        "rows": 51,
+        "sha256": "f6aa84472940256858ef5f4679ef52927185b103823622ddc4a2492a4b029672"
+      },
+      "django_migrations": {
+        "rows": 189,
+        "sha256": "bf376f09e728df58929006ec9737246adae67c477f700bdcfe6ee51057fe13cc"
+      },
+      "django_session": {
+        "rows": 151,
+        "sha256": "ed8308b8ea7fa86df0114f163fe8f2f38332d5e5e3aaf0056d3027bfe6375626"
+      },
+      "doorman_access_link": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "doorman_customer_user": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "doorman_passkey": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "doorman_pin_credential": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "doorman_trusted_device": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "doorman_verification_code": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "guestman_customer": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "guestman_customeraddress": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "guestman_customertag": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "guestman_pricetier": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "guestman_taggedcustomer": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "offerman_collection": {
+        "rows": 7,
+        "sha256": "642c2cc2a476419d00c25f03779e06838b273d0793430328fb9f5623476958d0"
+      },
+      "offerman_collectionitem": {
+        "rows": 12,
+        "sha256": "a3b39fbfc2181283bdc550a994e2ff8e181f711bf8db0f5ff8ce9dbabb14622f"
+      },
+      "offerman_historicallistingitem": {
+        "rows": 11,
+        "sha256": "c8396c1a74a603a987a54378d56fd86e0b13fc8815a7bc2bde29bedce10cd004"
+      },
+      "offerman_historicalproduct": {
+        "rows": 34,
+        "sha256": "7b60455dcf9086d86e42cff19dcc8f58d1de29c10e7fcbe6c1691a3c22d711e6"
+      },
+      "offerman_listing": {
+        "rows": 1,
+        "sha256": "289b6c74191a21b4d1b72e2fd1a84c930c5df0330d25841396f55a3a63eb4818"
+      },
+      "offerman_listingitem": {
+        "rows": 7,
+        "sha256": "0e3f9d84c5af36c748db9d22321f02fb72f34653563c310a0acd7b3503998a0c"
+      },
+      "offerman_product": {
+        "rows": 8,
+        "sha256": "6cf7e485750ec629776e30acfe57251c42cf0b182fae08605b5b9719591b64f5"
+      },
+      "offerman_productcomponent": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "orderman_directive": {
+        "rows": 43,
+        "sha256": "38d11ffc38a88b785b14e22bb32b08735aacd3f08242777e9860ef8e05bef6a7"
+      },
+      "orderman_fulfillment": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "orderman_fulfillmentitem": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "orderman_idempotencykey": {
+        "rows": 157,
+        "sha256": "0813c96a32c5b7b7aed19d2597f816444b17ce1ff53c734fc6ddd6351e5a3774"
+      },
+      "orderman_order": {
+        "rows": 44,
+        "sha256": "1c9e927b45fe360223fdb359caa2973fee0309e3d6492182530e6351f15344e4"
+      },
+      "orderman_orderevent": {
+        "rows": 51,
+        "sha256": "d1d073fde405095c66e40e54e1311edd8e18115f6bb6a91c85ac0ba461bfdeb4"
+      },
+      "orderman_orderitem": {
+        "rows": 36,
+        "sha256": "06375c7f419747e467945da141e510fc77c4db4e2db4c6883d275802766aefb1"
+      },
+      "orderman_session": {
+        "rows": 2,
+        "sha256": "e588e0f66f66ce1394493aaabb4de035d86b4c7f74d38e8b6faa124fb2092792"
+      },
+      "orderman_sessionevent": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "orderman_sessionitem": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "otp_totp_totpdevice": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "payman_paymentintent": {
+        "rows": 7,
+        "sha256": "fb2a391b6ab916f780077cbfb26173835df52fc95198e1818b8a0d462cb9d671"
+      },
+      "payman_paymenttransaction": {
+        "rows": 7,
+        "sha256": "3d017e1def5a408bd1db1b3ce215c7cd33c204f68e9923e6eb9fda1df4fd2b16"
+      },
+      "refs_ref": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "refs_refsequence": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shop_announcement": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shop_announcementtemplate": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shop_attributedefinition": {
+        "rows": 7,
+        "sha256": "27354b7562ec2031dfb2111b7f3a04f4f25e0d06069c9fcaca1294b290b326dd"
+      },
+      "shop_campaign": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shop_catalogsyncstate": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shop_channel": {
+        "rows": 8,
+        "sha256": "5be28e01030f74af2d1a64efd2bdd53da957eb93dfed8910fa8942ef67f7f628"
+      },
+      "shop_contactrelease": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shop_conversation": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shop_conversationmessage": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shop_coupon": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shop_deliverydistanceband": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shop_deliveryzone": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shop_historicalomotenashicopy": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shop_historicalruleconfig": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shop_notificationtemplate": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shop_omotenashicopy": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shop_productaffinity": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shop_promotion": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shop_promotion_channels": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shop_qualitydefect": {
+        "rows": 7,
+        "sha256": "cb56efdfd9781c15ae47ddbe17ffb864c008114bbec447ec12046f2d7c97a990"
+      },
+      "shop_qualitygrade": {
+        "rows": 4,
+        "sha256": "3e1d0651a89c0cbf72f7199f17bb54239e0b71eef277fec8e9b600915d0ef4ad"
+      },
+      "shop_ruleconfig": {
+        "rows": 2,
+        "sha256": "346385bf655a2b692e6372ebcbf1b04438da3d592d612c40ea7ed1a38ecaf89c"
+      },
+      "shop_ruleconfig_channels": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "shop_shop": {
+        "rows": 1,
+        "sha256": "afe7097549388553f2e507c37a69e0a43e7cdea37c78962013b4d1bd02a4e490"
+      },
+      "shop_usernotification": {
+        "rows": 170,
+        "sha256": "ea5b345cf6bf6330a2709a1fd8d3874e3ca2dccc2d061d1122b9bf35a3fb7d84"
+      },
+      "stockman_batch": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stockman_hold": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stockman_move": {
+        "rows": 2,
+        "sha256": "4dae30b563c5f1c73c55bd4820ba84ec099661c09f131670d6ccebf9ae42f121"
+      },
+      "stockman_position": {
+        "rows": 1,
+        "sha256": "6a05aa469675308972065e7e3ee5f81158f76541685e5b25ae498e704b13bd91"
+      },
+      "stockman_quant": {
+        "rows": 1,
+        "sha256": "d3c4e2e097a03ee797d00dc5528869cb5271a9f8bb7035605623b9445e7ffbd4"
+      },
+      "stockman_stockalert": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "storefront_customerfavorite": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "storefront_stockalertsubscription": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "taggit_tag": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "taggit_taggeditem": {
+        "rows": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "sequences": [
+      [
+        "auth_group_id_seq",
+        null
+      ],
+      [
+        "auth_group_permissions_id_seq",
+        null
+      ],
+      [
+        "auth_permission_id_seq",
+        608
+      ],
+      [
+        "auth_user_groups_id_seq",
+        null
+      ],
+      [
+        "auth_user_id_seq",
+        12
+      ],
+      [
+        "auth_user_user_permissions_id_seq",
+        24
+      ],
+      [
+        "backstage_bialertevent_id_seq",
+        null
+      ],
+      [
+        "backstage_bialertrule_id_seq",
+        null
+      ],
+      [
+        "backstage_biscenarioreport_id_seq",
+        null
+      ],
+      [
+        "backstage_biview_id_seq",
+        null
+      ],
+      [
+        "backstage_blindprepcode_id_seq",
+        null
+      ],
+      [
+        "backstage_categoryalias_id_seq",
+        null
+      ],
+      [
+        "backstage_consumptionrole_id_seq",
+        null
+      ],
+      [
+        "backstage_dailysalesfact_id_seq",
+        null
+      ],
+      [
+        "backstage_dayclosing_id_seq",
+        null
+      ],
+      [
+        "backstage_daycontext_id_seq",
+        null
+      ],
+      [
+        "backstage_historicalsale_id_seq",
+        null
+      ],
+      [
+        "backstage_historicalsaleitem_id_seq",
+        null
+      ],
+      [
+        "backstage_importbatch_id_seq",
+        null
+      ],
+      [
+        "backstage_kdsinstance_collections_id_seq",
+        null
+      ],
+      [
+        "backstage_kdsinstance_id_seq",
+        1
+      ],
+      [
+        "backstage_kdsticket_id_seq",
+        10
+      ],
+      [
+        "backstage_operationchecklistrun_id_seq",
+        null
+      ],
+      [
+        "backstage_operationchecklisttemplate_id_seq",
+        null
+      ],
+      [
+        "backstage_operationchecklisttemplatetask_id_seq",
+        null
+      ],
+      [
+        "backstage_operationepisode_id_seq",
+        null
+      ],
+      [
+        "backstage_operationepisodekind_id_seq",
+        null
+      ],
+      [
+        "backstage_operationtaskrun_id_seq",
+        null
+      ],
+      [
+        "backstage_operationtasktemplate_id_seq",
+        null
+      ],
+      [
+        "backstage_operatoralert_id_seq",
+        2
+      ],
+      [
+        "backstage_ovenrun_id_seq",
+        null
+      ],
+      [
+        "backstage_paymentmethodalias_id_seq",
+        null
+      ],
+      [
+        "backstage_postab_id_seq",
+        null
+      ],
+      [
+        "backstage_productalias_id_seq",
+        null
+      ],
+      [
+        "backstage_productconsumptiontag_id_seq",
+        null
+      ],
+      [
+        "backstage_seatingspot_id_seq",
+        null
+      ],
+      [
+        "backstage_shelfoutage_id_seq",
+        1
+      ],
+      [
+        "backstage_signinevent_id_seq",
+        170
+      ],
+      [
+        "buyman_material_id_seq",
+        null
+      ],
+      [
+        "buyman_materialconversion_id_seq",
+        null
+      ],
+      [
+        "buyman_supplier_id_seq",
+        null
+      ],
+      [
+        "buyman_suppliercontact_id_seq",
+        null
+      ],
+      [
+        "buyman_suppliermaterialcost_id_seq",
+        null
+      ],
+      [
+        "cashman_entry_id_seq",
+        7
+      ],
+      [
+        "cashman_shift_id_seq",
+        1
+      ],
+      [
+        "cashman_terminal_id_seq",
+        1
+      ],
+      [
+        "crafting_code_sequence_id_seq",
+        null
+      ],
+      [
+        "crafting_recipe_entry_id_seq",
+        null
+      ],
+      [
+        "crafting_recipe_id_seq",
+        null
+      ],
+      [
+        "crafting_recipe_item_id_seq",
+        null
+      ],
+      [
+        "crafting_recipe_version_id_seq",
+        null
+      ],
+      [
+        "crafting_work_order_event_id_seq",
+        null
+      ],
+      [
+        "crafting_work_order_id_seq",
+        null
+      ],
+      [
+        "crafting_work_order_item_id_seq",
+        null
+      ],
+      [
+        "customer_consent_communicationconsent_id_seq",
+        null
+      ],
+      [
+        "customer_identifiers_customeridentifier_id_seq",
+        null
+      ],
+      [
+        "customer_insights_customerinsight_id_seq",
+        null
+      ],
+      [
+        "customer_loyalty_loyaltyaccount_id_seq",
+        null
+      ],
+      [
+        "customer_loyalty_loyaltytransaction_id_seq",
+        null
+      ],
+      [
+        "customer_preferences_customerpreference_id_seq",
+        null
+      ],
+      [
+        "customer_timeline_timelineevent_id_seq",
+        null
+      ],
+      [
+        "customers_processed_event_id_seq",
+        null
+      ],
+      [
+        "django_admin_log_id_seq",
+        null
+      ],
+      [
+        "django_content_type_id_seq",
+        142
+      ],
+      [
+        "django_eventstream_event_id_seq",
+        488
+      ],
+      [
+        "django_eventstream_eventcounter_id_seq",
+        51
+      ],
+      [
+        "django_migrations_id_seq",
+        189
+      ],
+      [
+        "doorman_customer_user_id_seq",
+        null
+      ],
+      [
+        "doorman_passkey_id_seq",
+        null
+      ],
+      [
+        "guestman_customer_id_seq",
+        null
+      ],
+      [
+        "guestman_customeraddress_id_seq",
+        null
+      ],
+      [
+        "guestman_customergroup_id_seq",
+        null
+      ],
+      [
+        "guestman_customertag_id_seq",
+        null
+      ],
+      [
+        "guestman_taggedcustomer_id_seq",
+        null
+      ],
+      [
+        "offerman_collection_id_seq",
+        7
+      ],
+      [
+        "offerman_collectionitem_id_seq",
+        12
+      ],
+      [
+        "offerman_historicallistingitem_history_id_seq",
+        11
+      ],
+      [
+        "offerman_historicalproduct_history_id_seq",
+        34
+      ],
+      [
+        "offerman_listing_id_seq",
+        1
+      ],
+      [
+        "offerman_listingitem_id_seq",
+        7
+      ],
+      [
+        "offerman_product_id_seq",
+        8
+      ],
+      [
+        "offerman_productcomponent_id_seq",
+        null
+      ],
+      [
+        "orderman_directive_id_seq",
+        43
+      ],
+      [
+        "orderman_fulfillment_id_seq",
+        null
+      ],
+      [
+        "orderman_fulfillmentitem_id_seq",
+        null
+      ],
+      [
+        "orderman_idempotencykey_id_seq",
+        157
+      ],
+      [
+        "orderman_order_id_seq",
+        44
+      ],
+      [
+        "orderman_orderevent_id_seq",
+        51
+      ],
+      [
+        "orderman_orderitem_id_seq",
+        36
+      ],
+      [
+        "orderman_session_id_seq",
+        2
+      ],
+      [
+        "orderman_sessionevent_id_seq",
+        null
+      ],
+      [
+        "orderman_sessionitem_id_seq",
+        null
+      ],
+      [
+        "otp_totp_totpdevice_id_seq",
+        null
+      ],
+      [
+        "payman_paymentintent_id_seq",
+        7
+      ],
+      [
+        "payman_paymenttransaction_id_seq",
+        7
+      ],
+      [
+        "shop_announcement_id_seq",
+        null
+      ],
+      [
+        "shop_announcementtemplate_id_seq",
+        null
+      ],
+      [
+        "shop_attributedefinition_id_seq",
+        7
+      ],
+      [
+        "shop_campaign_id_seq",
+        null
+      ],
+      [
+        "shop_catalogsyncstate_id_seq",
+        null
+      ],
+      [
+        "shop_channel_id_seq",
+        8
+      ],
+      [
+        "shop_conversation_id_seq",
+        null
+      ],
+      [
+        "shop_conversationmessage_id_seq",
+        null
+      ],
+      [
+        "shop_coupon_id_seq",
+        null
+      ],
+      [
+        "shop_deliverydistanceband_id_seq",
+        null
+      ],
+      [
+        "shop_deliveryzone_id_seq",
+        null
+      ],
+      [
+        "shop_historicalomotenashicopy_history_id_seq",
+        null
+      ],
+      [
+        "shop_historicalruleconfig_history_id_seq",
+        null
+      ],
+      [
+        "shop_notificationtemplate_id_seq",
+        null
+      ],
+      [
+        "shop_omotenashicopy_id_seq",
+        null
+      ],
+      [
+        "shop_productaffinity_id_seq",
+        null
+      ],
+      [
+        "shop_promotion_channels_id_seq",
+        null
+      ],
+      [
+        "shop_promotion_id_seq",
+        null
+      ],
+      [
+        "shop_qualitydefect_id_seq",
+        7
+      ],
+      [
+        "shop_qualitygrade_id_seq",
+        4
+      ],
+      [
+        "shop_ruleconfig_channels_id_seq",
+        null
+      ],
+      [
+        "shop_ruleconfig_id_seq",
+        2
+      ],
+      [
+        "shop_shop_id_seq",
+        1
+      ],
+      [
+        "shop_usernotification_id_seq",
+        170
+      ],
+      [
+        "stockman_batch_id_seq",
+        null
+      ],
+      [
+        "stockman_hold_id_seq",
+        null
+      ],
+      [
+        "stockman_move_id_seq",
+        2
+      ],
+      [
+        "stockman_position_id_seq",
+        1
+      ],
+      [
+        "stockman_quant_id_seq",
+        1
+      ],
+      [
+        "stockman_stockalert_id_seq",
+        null
+      ],
+      [
+        "storefront_customerfavorite_id_seq",
+        null
+      ],
+      [
+        "storefront_stockalertsubscription_id_seq",
+        null
+      ],
+      [
+        "taggit_tag_id_seq",
+        null
+      ],
+      [
+        "taggit_taggeditem_id_seq",
+        null
+      ]
+    ]
+  }
+}

@@ -123,3 +123,32 @@ def test_production_change_publishes_shop_scoped_backstage_event(
     channels = [call.args[0] for call in mock_send.call_args_list]
     assert "backstage-production-main" in channels
     assert f"backstage-production-shop-{shop.pk}" in channels
+
+
+@pytest.mark.django_db
+@patch("django_eventstream.send_event")
+def test_note_commit_invalidates_operator_projection_without_exposing_note(mock_send, channel, django_capture_on_commit_callbacks):
+    from shopman.shop.services.operator_orders import save_kitchen_note
+    order = Order.objects.create(ref="SSE-NOTE", channel_ref=channel.ref, status="accepted")
+    with django_capture_on_commit_callbacks(execute=True):
+        save_kitchen_note(order, notes="private preparation text", actor="operator")
+    calls = [call for call in mock_send.call_args_list if call.args[1] == "backstage-orders-update"]
+    assert len(calls) == 1
+    assert calls[0].args[2] == {"ref": "SSE-NOTE", "kind": "kitchen_note_changed"}
+    assert not any(call.args[0] == "order-SSE-NOTE" for call in mock_send.call_args_list)
+    assert order.events.get(type="kitchen_note_changed").actor == "operator"
+
+
+@pytest.mark.django_db
+@patch("django_eventstream.send_event")
+def test_rolled_back_note_never_publishes_context(mock_send, channel, django_capture_on_commit_callbacks):
+    from django.db import transaction
+
+    from shopman.shop.services.operator_orders import save_kitchen_note
+    order = Order.objects.create(ref="SSE-NOTE-ROLLBACK", channel_ref=channel.ref, status="accepted")
+    with django_capture_on_commit_callbacks(execute=True):
+        with transaction.atomic():
+            save_kitchen_note(order, notes="must roll back")
+            transaction.set_rollback(True)
+    assert not any(call.args[1] == "backstage-orders-update" for call in mock_send.call_args_list)
+    assert not order.events.filter(type="kitchen_note_changed").exists()

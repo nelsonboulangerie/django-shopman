@@ -90,11 +90,11 @@ export function allDayCounts(
     if (isExpeditionCard(card)) continue;
     for (const item of card.items) {
       if (item.checked) continue;
-      counts.set(item.name, (counts.get(item.name) || 0) + item.qty);
+      counts.set(item.name, (counts.get(item.name) || 0) + Number(item.qty));
     }
   }
   return [...counts.entries()]
-    .map(([name, qty]) => ({ name, qty }))
+    .map(([name, qty]) => ({ name, qty: Number(qty.toFixed(9)) }))
     .sort((a, b) => b.qty - a.qty);
 }
 

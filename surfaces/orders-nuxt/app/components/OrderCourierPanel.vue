@@ -4,9 +4,10 @@
 // and the ride actions (quote / dispatch / cancel). Status text comes from the
 // server projection; steps/tones are derived from the raw letter.
 import { courierFailed, courierSteps, courierTone, courierToneBadge } from "~/presentation/courier";
+import type { Action } from "~/generated/ordersContract";
 import type { CourierBlock } from "~/types/orders";
 
-const props = defineProps<{ courier: CourierBlock; busy: boolean }>();
+const props = defineProps<{ courier: CourierBlock; busy: boolean; cancelAction?: Action; quoteAction?: Action; dispatchAction?: Action }>();
 const emit = defineEmits<{ quote: []; dispatch: []; cancel: [] }>();
 
 const steps = computed(() => courierSteps(props.courier.status));
@@ -16,6 +17,7 @@ const hasRide = computed(() => Boolean(props.courier.status));
 
 // Cancelar corrida é irreversível para a solicitação em curso → confirm de 1 toque.
 const confirmingCancel = ref(false);
+watch(() => JSON.stringify(props.cancelAction?.payload_schema), () => { confirmingCancel.value = false; });
 function requestCancel() {
   if (!confirmingCancel.value) {
     confirmingCancel.value = true;
@@ -91,7 +93,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
       <a
         v-if="courier.driver.phone"
         :href="telHref(courier.driver.phone)"
-        class="flex items-center gap-1.5 font-medium text-primary underline-offset-2 hover:underline"
+        class="min-h-control min-w-control flex items-center gap-1.5 font-medium text-primary underline-offset-2 hover:underline"
       >
         <Icon name="lucide:phone" class="size-4" /> {{ courier.driver.phone }}
       </a>
@@ -108,7 +110,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
         :href="courier.tracking_url"
         target="_blank"
         rel="noopener"
-        class="flex items-center gap-1.5 font-medium text-primary underline-offset-2 hover:underline"
+        class="min-h-control min-w-control flex items-center gap-1.5 font-medium text-primary underline-offset-2 hover:underline"
       >
         <Icon name="lucide:map-pin" class="size-4" /> Acompanhar corrida
       </a>
@@ -122,8 +124,9 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
       <button
         v-if="courier.can_dispatch"
         type="button"
-        :disabled="busy"
-        class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+        :disabled="busy || !dispatchAction?.enabled"
+        :title="dispatchAction?.reason || (dispatchAction?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')"
+        class="min-h-action min-w-action inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
         @click="emit('dispatch')"
       >
         <Icon name="lucide:send" class="size-4" />
@@ -132,8 +135,9 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
       <button
         v-if="courier.can_quote"
         type="button"
-        :disabled="busy"
-        class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50"
+        :disabled="busy || !quoteAction?.enabled"
+        :title="quoteAction?.reason || (quoteAction?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')"
+        class="min-h-control min-w-control inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50"
         @click="emit('quote')"
       >
         <Icon name="lucide:calculator" class="size-4" /> Cotar entrega
@@ -141,8 +145,8 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
       <button
         v-if="courier.can_cancel"
         type="button"
-        :disabled="busy"
-        class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition disabled:opacity-50"
+        :disabled="busy || !cancelAction?.enabled"
+        class="inline-flex min-h-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition disabled:opacity-50"
         :class="confirmingCancel
           ? 'border-destructive/60 bg-destructive/10 text-destructive dark:text-orange-300'
           : 'border-destructive/40 text-destructive hover:bg-destructive/10 dark:text-orange-300'"
@@ -150,7 +154,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
         @click="requestCancel"
       >
         <Icon name="lucide:ban" class="size-4" />
-        {{ confirmingCancel ? "Confirmar cancelamento?" : "Cancelar corrida" }}
+        {{ confirmingCancel ? "Confirmar solicitação?" : "Solicitar cancelamento" }}
       </button>
     </div>
   </section>

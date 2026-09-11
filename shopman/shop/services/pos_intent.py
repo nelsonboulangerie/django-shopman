@@ -198,13 +198,13 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
     payment_collection = _payment_collection(payload.get("payment_collection") or "terminal")
     if fulfillment_type != "delivery":
         payment_collection = "terminal"
-    if payment_collection == "on_delivery" and payment_method not in {"cash", "mixed"}:
+    if payment_collection == "on_delivery" and payment_method not in {"cash", "credit", "debit", "mixed"}:
         raise PosIntentError(
             code="invalid_on_delivery_payment",
-            message="Pagamento na entrega só é permitido para dinheiro.",
+            message="Na entrega, use dinheiro ou cartão na maquininha.",
             field="payment_collection",
             focus="payment",
-            recovery="Receba no caixa ou altere a forma para dinheiro.",
+            recovery="PIX Efí e pagamentos online exigem confirmação automática antes da entrega.",
         )
     payload["payment_method"] = payment_method
     payload["payment_collection"] = payment_collection
@@ -241,10 +241,6 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
                 recovery="Corrija o documento ou desligue \"CPF na nota\".",
             )
         payload["fiscal_tax_id"] = digits
-    # A porta "fiscal com taxa de entrega" mudou de lugar, não de regra: agora
-    # que a taxa é RESOLVIDA (e não digitada), só quem resolveu sabe se ela
-    # existe. Ela vive em `pos._validate_fiscal_delivery_fee`, junto da
-    # resolução — aqui não há como saber.
     payload["receipt_channels"] = _receipt_channels(payload.get("receipt_channels"))
     payload["receipt_email"] = _emailish(payload.get("receipt_email"), field="receipt_email")
     if for_commit and "email" in payload["receipt_channels"] and not payload["receipt_email"]:

@@ -1,9 +1,14 @@
+import { useReadMetadata } from "./useReadMetadata";
+import { coalesceRefresh } from "../utils/coalesceRefresh";
+import { useOperatorResourceKey } from "./useOperatorResourceKey";
+import { useOrderIntention } from "./useOrderIntention";
 // Order detail read-side. Reads the expanded operator projection (items, timeline,
 // notes, fiscal links) and exposes the full action set. Writes go through the django
 // proxy and reconcile via refresh. Mirrors useOrdersBoard's in-flight guard.
 import type { CancellationReason, OperatorOrderProjection, OrderDetailResponse } from "~/types/orders";
 
 export function useOrderDetail(orderRef: string) {
+  const intentions = useOrderIntention();
   const path = `/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/`;
   // Estação travada: a leitura volta 403 `station_locked` e a tela dizia "Pedido
   // não encontrado ou falha ao carregar" — o pedido existe, quem não se
@@ -11,16 +16,26 @@ export function useOrderDetail(orderRef: string) {
   // calar o aviso de erro (mesmo gesto do `usePosTerminal`).
   const { flagIfStationLocked } = useStationLock();
 
-  const { data, pending, error, refresh } = useFetch<OrderDetailResponse>(path, {
-    key: `order-detail-${orderRef}`,
+  const { data, pending, error, refresh: fetchOrder } = useFetch<OrderDetailResponse>(path, {
+    key: useOperatorResourceKey(`order-detail-${orderRef}`),
     server: true,
+    dedupe: "defer",
+    onResponseError: operatorSessionOnError,
   });
+
+  const refresh = coalesceRefresh(() => fetchOrder());
 
   watch(error, (value) => { if (value) flagIfStationLocked(value); }, { immediate: true });
 
-  const order = computed<OperatorOrderProjection | null>(() => data.value?.order ?? null);
+  const readMetadata = useReadMetadata(data, error);
+  const lastConfirmed = shallowRef<OperatorOrderProjection | null>(data.value?.order ?? null);
+  watch([data, error], ([value, failure]) => {
+    if (value?.order && !failure) lastConfirmed.value = value.order;
+  }, { flush: "sync" });
+  const order = computed<OperatorOrderProjection | null>(() => data.value?.order ?? (error.value ? lastConfirmed.value : null));
 
   const busy = ref(false);
+  const mutationError = ref("");
 
   // ── Desafio de gerente ─────────────────────────────────────────────────────
   //
@@ -41,15 +56,25 @@ export function useOrderDetail(orderRef: string) {
     approval?: Record<string, string>,
   ): Promise<boolean> {
     if (busy.value) return false;
+    if (error.value) {
+      mutationError.value = "A leitura está desatualizada. Atualize o pedido antes de confirmar; seu rascunho foi mantido.";
+      return false;
+    }
     busy.value = true;
+    mutationError.value = "";
     try {
-      await $fetch(`/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/${action}/`, {
-        method: "POST",
-        body: { ...(body ?? {}), ...(approval ? { manager_approval: approval } : {}) },
-      });
+      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "comment", "settle-delivery-cash", "requeue-fiscal", "resend-payment-link", "courier-dispatch", "courier-cancel", "courier-quote"].includes(action)) {
+        await intentions.execute(orderRef, action, order.value?.actions?.find((item) => item.ref === action), body ?? {}, approval);
+      } else {
+        await $fetch(`/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/${action}/`, {
+          method: "POST", body: { ...(body ?? {}), ...(approval ? { manager_approval: approval } : {}) },
+        });
+      }
       managerChallenge.value = null;
       lastAttempt = null;
-      await refresh();
+      try { await refresh(); }
+      catch { mutationError.value = "Ação confirmada. A leitura atualizada falhou; atualize antes da próxima ação."; }
+      if (error.value) mutationError.value = "Ação confirmada. A leitura atualizada falhou; atualize antes da próxima ação.";
       return true;
     } catch (error) {
       const code = httpErrorCode(error);
@@ -63,7 +88,13 @@ export function useOrderDetail(orderRef: string) {
         };
         return false;
       }
-      useSonner.error(httpErrorMessage(error, "Falha na ação. Tente de novo."));
+      mutationError.value = httpErrorMessage(error, error instanceof Error ? error.message : "Não foi possível confirmar o resultado da ação.");
+      useSonner.error(mutationError.value);
+      try {
+        await refresh();
+      } catch {
+        mutationError.value += " A leitura atualizada também falhou. Preserve o rascunho e tente atualizar.";
+      }
       return false;
     } finally {
       busy.value = false;
@@ -93,11 +124,12 @@ export function useOrderDetail(orderRef: string) {
   // relays a valid reason to the provider; empty string for other channels.
   const reject = (reason: string, cancellation_code = "") => act("reject", { reason, cancellation_code });
   const cancel = (reason: string, cancellation_code = "") => act("cancel", { reason, cancellation_code });
-  const settleCash = (amount: string, changeBack?: string, equipmentBack?: boolean) =>
+  const settleCash = (amount: string, changeBack?: string, equipmentBack?: boolean, baseRevision?: string) =>
     act("settle-delivery-cash", {
       amount,
       ...(changeBack === undefined ? {} : { change_back: changeBack }),
       ...(equipmentBack ? { equipment_back: true } : {}),
+      ...(baseRevision ? { base_revision: baseRevision } : {}),
     });
   const requeueFiscal = () => act("requeue-fiscal");
 
@@ -106,25 +138,21 @@ export function useOrderDetail(orderRef: string) {
   // cedo demais) — o motivo chega como `detail` e vira o toast do `act`.
   async function resendPaymentLink(): Promise<boolean> {
     const ok = await act("resend-payment-link");
-    if (ok) useSonner.success("Link reenviado ao cliente.");
+    if (ok) useSonner.success("Reenvio do link solicitado.");
     return ok;
   }
 
   // Valid cancellation reasons for this order: for iFood, the live per-order coded
   // list ({code, description}); empty for channels without reason codes.
   async function fetchCancellationReasons(): Promise<CancellationReason[]> {
-    try {
-      const res = await $fetch<{ reasons: CancellationReason[] }>(
-        `/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/cancellation-reasons/`,
-      );
-      return res?.reasons ?? [];
-    } catch {
-      return [];
-    }
+    const res = await $fetch<{ reasons: CancellationReason[] }>(
+      `/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/cancellation-reasons/`,
+    );
+    return res.reasons;
   }
 
-  async function saveNotes(notes: string): Promise<boolean> {
-    const ok = await act("notes", { notes });
+  async function saveNotes(notes: string, baseRevision?: string): Promise<boolean> {
+    const ok = await act("notes", { notes, ...(baseRevision ? { base_revision: baseRevision } : {}) });
     if (ok) useSonner.success("Notas salvas.");
     return ok;
   }
@@ -139,13 +167,13 @@ export function useOrderDetail(orderRef: string) {
   // ride, and "just quote" (stores the estimate; refresh shows it in the panel).
   async function courierDispatch(): Promise<boolean> {
     const ok = await act("courier-dispatch");
-    if (ok) useSonner.success("Corrida solicitada.");
+    if (ok) useSonner.success("Solicitação de entregador enfileirada.");
     return ok;
   }
 
   async function courierCancel(): Promise<boolean> {
     const ok = await act("courier-cancel");
-    if (ok) useSonner.success("Corrida cancelada.");
+    if (ok) useSonner.success("Solicitação de cancelamento enfileirada; aguardando a central.");
     return ok;
   }
 
@@ -155,5 +183,5 @@ export function useOrderDetail(orderRef: string) {
     return ok;
   }
 
-  return { order, pending, error, refresh, busy, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge };
+  return { readMetadata, order, pending, error, refresh, busy, mutationError, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge };
 }

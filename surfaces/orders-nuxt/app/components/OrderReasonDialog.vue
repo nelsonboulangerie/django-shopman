@@ -15,10 +15,14 @@ const props = defineProps<{
   reasons: CancellationReason[];
   presets: string[];
   busy: boolean;
+  marketplace: boolean;
+  error?: string;
 }>();
 
 const emit = defineEmits<{
   "update:open": [value: boolean];
+  "dirty-change": [value: boolean];
+  retry: [];
   confirm: [payload: { reason: string; cancellationCode: string }];
 }>();
 
@@ -32,10 +36,18 @@ watch(
   (open) => { if (open) { reason.value = ""; code.value = ""; } },
 );
 
-const isMarketplace = computed(() => props.reasons.length > 0);
+const dirty = computed(() => props.open && Boolean(reason.value.trim() || code.value));
+watch(dirty, value => emit("dirty-change", value), { immediate: true });
+function requestOpen(open: boolean) {
+  if (!open && (props.busy || (dirty.value && !window.confirm("Descartar o motivo digitado?")))) return;
+  emit("update:open", open);
+}
+
+const isMarketplace = computed(() => props.marketplace);
 
 const canConfirm = computed(() => {
-  if (isMarketplace.value) return code.value !== "";
+  if (props.loading || props.error) return false;
+  if (isMarketplace.value) return props.reasons.some((r) => r.code === code.value);
   // Free text: a reject needs a reason (the customer is told why); a cancel may go
   // out with the generic fallback, so an empty reason is allowed.
   return props.mode === "cancel" || reason.value.trim() !== "";
@@ -67,7 +79,7 @@ const description = computed(() =>
 </script>
 
 <template>
-  <UiDialog :open="open" @update:open="(v) => emit('update:open', v)">
+  <UiDialog :open="open" @update:open="requestOpen">
     <UiDialogContent class="sm:max-w-md">
       <UiDialogHeader>
         <UiDialogTitle>{{ title }}</UiDialogTitle>
@@ -75,6 +87,12 @@ const description = computed(() =>
       </UiDialogHeader>
 
       <p v-if="loading" class="text-sm text-muted-foreground">Carregando motivos do iFood…</p>
+
+      <div v-else-if="error" role="alert" class="text-sm text-destructive">
+        <p>{{ error }}</p>
+        <button type="button" class="min-h-control min-w-control underline" @click="emit('retry')">Consultar novamente</button>
+      </div>
+      <p v-else-if="isMarketplace && !reasons.length" class="text-sm">O iFood não oferece motivos de cancelamento neste momento.</p>
 
       <!-- Marketplace (iFood): coded reason picker from the provider's live list -->
       <UiNativeSelect
@@ -96,7 +114,7 @@ const description = computed(() =>
             :key="i"
             type="button"
             :aria-pressed="reason === preset"
-            class="rounded-full border px-3 py-1 text-xs font-medium transition hover:bg-accent"
+            class="min-h-control min-w-control rounded-full border px-3 py-1 text-xs font-medium transition hover:bg-accent"
             :class="reason === preset ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground'"
             @click="applyPreset(preset)"
           >
@@ -107,19 +125,19 @@ const description = computed(() =>
           v-model="reason"
           rows="3"
           :placeholder="mode === 'reject' ? 'Motivo da recusa…' : 'Motivo do cancelamento (opcional)…'"
-          class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+          class="min-h-control min-w-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
           aria-label="Motivo"
         />
       </template>
 
       <UiDialogFooter>
-        <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="emit('update:open', false)">
+        <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"  :disabled="busy" @click="requestOpen(false)">
           Voltar
         </button>
         <button
           type="button"
           :disabled="busy || !canConfirm"
-          class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+          class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
           @click="submit"
         >
           {{ mode === "reject" ? "Recusar pedido" : "Confirmar" }}

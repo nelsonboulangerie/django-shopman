@@ -1,0 +1,21 @@
+DEBUG 2026-09-11 02:12:40,271 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 02:12:40,271 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 02:12:40,272 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 02:12:40,273 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 02:12:40,330 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 02:12:40,332 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 02:12:40,335 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 02:12:40,338 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 02:12:40,344 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 02:12:40,346 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 02:12:40,346 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 02:12:40,348 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 02:12:40,348 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 02:12:40,353 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 02:12:40,354 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 02:12:40,354 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 02:12:40,354 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 02:12:40,355 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 02:12:40,359 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 02:12:40,361 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+{"n": 500, "summary": {"queue_1": {"http_p50_ms": 168.8746665022336, "http_p95_ms": 266.05000003473833, "backend_p95_ms": null}, "queue_2": {"http_p50_ms": 335.51193750463426, "http_p95_ms": 433.5207919939421, "backend_p95_ms": null}, "queue_10": {"http_p50_ms": 1793.80770798889, "http_p95_ms": 1903.5495839780197, "backend_p95_ms": null}, "detail_1": {"http_p50_ms": 19.86937498440966, "http_p95_ms": 21.491457999218255, "backend_p95_ms": null}, "detail_2": {"http_p50_ms": 24.15822903276421, "http_p95_ms": 36.16687504108995, "backend_p95_ms": null}, "detail_10": {"http_p50_ms": 109.62825000751764, "http_p95_ms": 128.6051250062883, "backend_p95_ms": null}}}

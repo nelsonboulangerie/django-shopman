@@ -7,7 +7,9 @@ from django.contrib.contenttypes.models import ContentType
 from django.test import TestCase
 from shopman.orderman.models import Order
 
+from shopman.backstage.tests._order_intent import context_payload
 from shopman.shop.models import Channel, Shop
+from shopman.shop.services.operator_orders import operational_revision
 
 
 class OrderConfirmTests(TestCase):
@@ -34,7 +36,7 @@ class OrderConfirmTests(TestCase):
             total_q=1500,
         )
 
-        resp = self.client.post(f"/api/v1/backstage/orders/{order.ref}/confirm/")
+        resp = self.client.post(f"/api/v1/backstage/orders/{order.ref}/confirm/", data=context_payload(self.client, order.ref, "confirm"), content_type="application/json")
 
         self.assertEqual(resp.status_code, 400)
         order.refresh_from_db()
@@ -57,7 +59,7 @@ class OrderConfirmTests(TestCase):
             total_q=1500,
         )
 
-        resp = self.client.post(f"/api/v1/backstage/orders/{order.ref}/confirm/")
+        resp = self.client.post(f"/api/v1/backstage/orders/{order.ref}/confirm/", data=context_payload(self.client, order.ref, "confirm"), content_type="application/json")
 
         self.assertEqual(resp.status_code, 200)
         order.refresh_from_db()
@@ -91,7 +93,7 @@ class OrderConfirmTests(TestCase):
         )
 
         with patch("shopman.shop.services.payment.get_payment_status", return_value="pending"):
-            resp = self.client.post(f"/api/v1/backstage/orders/{order.ref}/confirm/")
+            resp = self.client.post(f"/api/v1/backstage/orders/{order.ref}/confirm/", data=context_payload(self.client, order.ref, "confirm"), content_type="application/json")
 
         self.assertEqual(resp.status_code, 400)
         order.refresh_from_db()
@@ -128,7 +130,7 @@ class OrderConfirmTests(TestCase):
             patch("shopman.shop.services.payment.get_payment_status", return_value="refunded"),
             patch("shopman.shop.services.payment._payman_captured_balance_q", return_value=0),
         ):
-            resp = self.client.post(f"/api/v1/backstage/orders/{order.ref}/confirm/")
+            resp = self.client.post(f"/api/v1/backstage/orders/{order.ref}/confirm/", data=context_payload(self.client, order.ref, "confirm"), content_type="application/json")
 
         self.assertEqual(resp.status_code, 400)
         order.refresh_from_db()
@@ -151,7 +153,7 @@ class OrderConfirmTests(TestCase):
             total_q=1500,
         )
 
-        resp = self.client.post(f"/api/v1/backstage/orders/{order.ref}/confirm/")
+        resp = self.client.post(f"/api/v1/backstage/orders/{order.ref}/confirm/", data={"expected_actor_id": self.staff.pk, "base_revision": operational_revision(order), "idempotency_key": "non-new-shortcut"}, content_type="application/json")
 
         # Conflito de estado (pedido já saiu de NEW) é 409, não 400: o guard
         # reavalia o status na linha travada e sinaliza a corrida com a

@@ -99,7 +99,10 @@ wait_for() {
 # ── Servidor com settings de produção ──
 "${PYTHON_BIN}" manage.py runserver --noreload "127.0.0.1:${DJANGO_PORT}" >"${DJANGO_LOG}" 2>&1 &
 DJANGO_PID=$!
-wait_for "${DJANGO_BASE_URL}/ready/" "${DJANGO_PID}" "Servidor Django (DEBUG=false)" "${DJANGO_LOG}"
+# O seed contém fila sintética e este ensaio de CSP não inicia workers.
+# Aguarde o processo, como os demais harnesses de navegador; a prontidão
+# operacional da fila continua coberta pelo runtime gate e pelo deploy.
+wait_for "${DJANGO_BASE_URL}/health/live/" "${DJANGO_PID}" "Servidor Django (DEBUG=false)" "${DJANGO_LOG}"
 
 # ── Navegar o Admin coletando violações de CSP ──
 # `-m browser` re-seleciona a suíte que o config default de-seleciona.

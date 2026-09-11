@@ -753,30 +753,17 @@ def test_events_webhook_accepts_single_event_object(db):
     mock_proc.assert_called_once_with([event])
 
 
-def test_process_events_reflects_ifood_cancellation():
+def test_process_events_reflects_ifood_cancellation(db):
     """Evento CAN do iFood cancela o Order local (actor system:ifood) e acka."""
     from shopman.orderman.models import Order
 
     from shopman.shop.services import ifood_events
 
-    class _Order:
-        ref = "WEB-IFD-1"
-        status = "accepted"
-        data = {}
-
-        def can_transition_to(self, target):
-            return True
-
-        def save(self, **kwargs):
-            pass
-
-        def transition_status(self, status, actor):
-            self.status = status
-            self._actor = actor
-
-    fake = _Order()
+    order = Order.objects.create(
+        ref="WEB-IFD-1", channel_ref="ifood", external_ref="ifd-uuid",
+        status="accepted", total_q=1500, data={}, snapshot={"items": [], "data": {}},
+    )
     with (
-        patch.object(Order.objects, "filter", return_value=MagicMock(first=lambda: fake)),
         patch("shopman.shop.services.ifood_events.webhook_idempotency") as idem,
         patch("shopman.shop.services.ifood_events.acknowledge", return_value=True) as ack,
     ):
@@ -784,8 +771,10 @@ def test_process_events_reflects_ifood_cancellation():
         summary = ifood_events.process_events([
             {"id": "evt-can-1", "code": "CAN", "orderId": "ifd-uuid"},
         ])
-    assert fake.status == "cancelled"
-    assert fake._actor == "system:ifood"
+    order.refresh_from_db()
+    assert order.status == "cancelled"
+    assert order.data["cancelled_by"] == "system:ifood"
+    assert order.data["ifood_cancelled"] is True
     assert summary["ingested"] == 1
     ack.assert_called_once_with(["evt-can-1"])
 

@@ -21,7 +21,7 @@ const isOpen = computed(() => props.reading.status === "open");
 </script>
 
 <template>
-  <section class="grid gap-3 rounded-lg border bg-card p-4">
+  <section class="grid gap-3 rounded-md border bg-card p-4">
     <div class="flex flex-wrap items-center gap-2">
       <Icon :name="isOpen ? 'lucide:receipt-text' : 'lucide:archive'" class="size-4 text-muted-foreground" />
       <h2 class="text-base font-semibold">{{ readingTitle(reading) }}</h2>

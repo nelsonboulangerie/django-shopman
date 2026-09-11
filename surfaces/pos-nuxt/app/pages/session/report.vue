@@ -49,7 +49,7 @@ async function goToCashSession() {
       >
         <Icon name="lucide:arrow-left" class="size-5" />
       </UiButton>
-      <h1 class="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight">Relatório de caixa</h1>
+      <h1 class="min-w-0 truncate text-lg font-semibold">Relatório de caixa</h1>
       <span v-if="report" class="ml-auto truncate text-sm text-muted-foreground">
         {{ report.date_display }} · leituras X/Z do dia
       </span>
@@ -67,7 +67,7 @@ async function goToCashSession() {
 
     <div class="mx-auto grid w-full max-w-2xl gap-4 p-4 md:py-8">
       <!-- Sem permissão de operação do PDV. -->
-      <section v-if="accessDenied" class="grid gap-2 rounded-lg border bg-card p-4">
+      <section v-if="accessDenied" class="grid gap-2 rounded-md border bg-card p-4">
         <div class="flex items-center gap-2">
           <Icon name="lucide:lock" class="size-4 text-muted-foreground" />
           <h2 class="text-base font-semibold">Relatório é de quem audita</h2>
@@ -88,7 +88,7 @@ async function goToCashSession() {
           :busy="busy"
           @reprint="reprint"
         />
-        <section v-else class="grid gap-2 rounded-lg border bg-card p-4">
+        <section v-else class="grid gap-2 rounded-md border bg-card p-4">
           <div class="flex items-center gap-2">
             <Icon name="lucide:receipt-text" class="size-4 text-muted-foreground" />
             <h2 class="text-base font-semibold">Leitura X</h2>
@@ -109,7 +109,7 @@ async function goToCashSession() {
             @reprint="reprint"
           />
         </template>
-        <section v-else class="grid gap-2 rounded-lg border bg-card p-4">
+        <section v-else class="grid gap-2 rounded-md border bg-card p-4">
           <div class="flex items-center gap-2">
             <Icon name="lucide:archive" class="size-4 text-muted-foreground" />
             <h2 class="text-base font-semibold">Leituras Z</h2>
@@ -118,7 +118,7 @@ async function goToCashSession() {
         </section>
 
         <!-- Histórico do dia: totais agregados dos turnos fechados. -->
-        <section v-if="report.has_closed_shifts" class="grid gap-2 rounded-lg border bg-card p-4">
+        <section v-if="report.has_closed_shifts" class="grid gap-2 rounded-md border bg-card p-4">
           <div class="flex items-center gap-2">
             <Icon name="lucide:history" class="size-4 text-muted-foreground" />
             <h2 class="text-base font-semibold">Histórico do dia</h2>

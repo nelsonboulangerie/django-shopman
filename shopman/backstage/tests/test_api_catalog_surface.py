@@ -150,11 +150,7 @@ def test_matrix_filtered_by_smart_collection(client, operator, catalog):
 
 def test_cell_pause(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
-        CELL_URL,
-        data={"sku": "PAO", "surface_ref": "web", "is_sellable": False},
-        content_type="application/json",
-    )
+    resp = _post_cell(client, operator, {"sku": "PAO", "surface_ref": "web", "is_sellable": False})
     assert resp.status_code == 200
     assert resp.json()["is_sellable"] is False
     item = ListingItem.objects.get(listing__ref="web", product__sku="PAO")
@@ -163,32 +159,20 @@ def test_cell_pause(client, operator, catalog):
 
 def test_cell_price(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
-        CELL_URL,
-        data={"sku": "PAO", "surface_ref": "web", "price_q": 720},
-        content_type="application/json",
-    )
+    resp = _post_cell(client, operator, {"sku": "PAO", "surface_ref": "web", "price_q": 720})
     assert resp.status_code == 200
     assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").price_q == 720
 
 
 def test_cell_unknown_returns_400(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
-        CELL_URL,
-        data={"sku": "BOLO", "surface_ref": "ifood", "is_sellable": False},
-        content_type="application/json",
-    )
+    resp = _post_cell(client, operator, {"sku": "BOLO", "surface_ref": "ifood", "is_sellable": False})
     assert resp.status_code == 400  # BOLO não está na superfície ifood
 
 
 def test_cell_negative_price_rejected(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
-        CELL_URL,
-        data={"sku": "PAO", "surface_ref": "web", "price_q": -1},
-        content_type="application/json",
-    )
+    resp = _post_cell(client, operator, {"sku": "PAO", "surface_ref": "web", "price_q": -1})
     assert resp.status_code == 400
 
 
@@ -219,8 +203,13 @@ def test_preco_ausente_continua_significando_nao_mexa(client, operator, catalog)
 
 
 def _post_cell(client, operator, payload):
+    from uuid import uuid4
+
     client.force_login(operator)
-    return client.post(CELL_URL, data=payload, content_type="application/json")
+    matrix = client.get(MATRIX_URL).json()["matrix"]
+    cell = next((cell for row in matrix["rows"] if row["sku"] == payload["sku"] for cell in row["cells"] if cell["surface_ref"] == payload["surface_ref"]), {})
+    action = cell.get("action") or {"payload_schema": {"base_revision": "unavailable", "base_revisions": {}, "expected_actor_id": operator.pk}}
+    return client.post(CELL_URL, data={**action["payload_schema"], **payload}, content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
 
 
 # ── write: produto ("globalzinho") ─────────────────────────────────────────────
@@ -229,13 +218,9 @@ def _post_cell(client, operator, payload):
 def test_product_pause_gates_every_surface(client, operator, catalog):
     """Pausar no nível produto derruba a disponibilidade em TODOS os canais."""
     client.force_login(operator)
-    resp = client.post(
-        PRODUCT_URL,
-        data={"sku": "PAO", "is_sellable": False},
-        content_type="application/json",
-    )
+    resp = _post_product(client, operator, {"sku": "PAO", "is_sellable": False})
     assert resp.status_code == 200
-    assert resp.json()["is_sellable"] is False
+    assert resp.json()["product"]["is_sellable"] is False
 
     pao = Product.objects.get(sku="PAO")
     assert pao.is_sellable is False
@@ -252,29 +237,21 @@ def test_product_pause_gates_every_surface(client, operator, catalog):
 def test_product_reactivate(client, operator, catalog):
     Product.objects.filter(sku="PAO").update(is_sellable=False)
     client.force_login(operator)
-    resp = client.post(
-        PRODUCT_URL,
-        data={"sku": "PAO", "is_sellable": True},
-        content_type="application/json",
-    )
+    resp = _post_product(client, operator, {"sku": "PAO", "is_sellable": True})
     assert resp.status_code == 200
     assert Product.objects.get(sku="PAO").is_sellable is True
 
 
 def test_product_requires_field(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(PRODUCT_URL, data={"sku": "PAO"}, content_type="application/json")
+    resp = _post_product(client, operator, {"sku": "PAO"})
     assert resp.status_code == 400
 
 
-def test_product_unknown_returns_400(client, operator, catalog):
+def test_product_unknown_returns_404(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
-        PRODUCT_URL,
-        data={"sku": "NOPE", "is_sellable": False},
-        content_type="application/json",
-    )
-    assert resp.status_code == 400
+    resp = _post_product(client, operator, {"sku": "NOPE", "is_sellable": False})
+    assert resp.status_code == 404
 
 
 def test_product_requires_manage_catalog(client, plain_staff, catalog):
@@ -292,7 +269,7 @@ def test_product_requires_manage_catalog(client, plain_staff, catalog):
 
 def test_bulk_by_skus(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_URL,
         data={"surface_ref": "web", "skus": ["PAO", "BOLO"], "is_sellable": False},
         content_type="application/json",
@@ -304,7 +281,7 @@ def test_bulk_by_skus(client, operator, catalog):
 
 def test_bulk_by_collection(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_URL,
         data={"surface_ref": "web", "collection_ref": "doces", "is_published": False},
         content_type="application/json",
@@ -325,7 +302,7 @@ def test_bulk_by_smart_collection(client, operator, catalog):
         rule={"match": "all", "conditions": [{"field": "base_price_q", "op": "gte", "value": 1000}]},
     )
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_URL,
         data={"surface_ref": "web", "collection_ref": "caros", "is_sellable": False},
         content_type="application/json",
@@ -338,7 +315,7 @@ def test_bulk_by_smart_collection(client, operator, catalog):
 
 def test_bulk_requires_field(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_URL,
         data={"surface_ref": "web", "skus": ["PAO"]},
         content_type="application/json",
@@ -349,9 +326,21 @@ def test_bulk_requires_field(client, operator, catalog):
 # ── write: preço em lote ───────────────────────────────────────────────────────
 
 
+def _post_price_intention(client, url, *, data, **kwargs):
+    from uuid import uuid4
+
+    response = client.post(url, {**data, "preview": True}, content_type="application/json")
+    if response.status_code != 200:
+        return response
+    preview = response.json()["preview"]
+    return client.post(url, {**data, "base_revision": preview["base_revision"],
+                            "expected_actor_id": preview["expected_actor_id"]},
+                       HTTP_IDEMPOTENCY_KEY=str(uuid4()), **kwargs)
+
+
 def test_bulk_price_set(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_PRICE_URL,
         data={"surface_ref": "web", "skus": ["PAO", "BOLO"], "op": "set", "value": 999},
         content_type="application/json",
@@ -365,7 +354,7 @@ def test_bulk_price_set(client, operator, catalog):
 def test_bulk_price_pct_rounds(client, operator, catalog):
     client.force_login(operator)
     # PAO web = 600 → +10% = 660
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_PRICE_URL,
         data={"surface_ref": "web", "skus": ["PAO"], "op": "pct", "value": 10},
         content_type="application/json",
@@ -377,7 +366,7 @@ def test_bulk_price_pct_rounds(client, operator, catalog):
 def test_bulk_price_delta_clamps_at_zero(client, operator, catalog):
     client.force_login(operator)
     # PAO web = 600; delta -1000 → clamp 0 (nunca negativo)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_PRICE_URL,
         data={"surface_ref": "web", "skus": ["PAO"], "op": "delta", "value": -1000},
         content_type="application/json",
@@ -389,7 +378,7 @@ def test_bulk_price_delta_clamps_at_zero(client, operator, catalog):
 def test_bulk_price_by_collection(client, operator, catalog):
     client.force_login(operator)
     # BOLO web = 4800; coleção Doces só tem BOLO; +50% = 7200
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_PRICE_URL,
         data={"surface_ref": "web", "collection_ref": "doces", "op": "pct", "value": 50},
         content_type="application/json",
@@ -403,7 +392,7 @@ def test_bulk_price_by_collection(client, operator, catalog):
 
 def test_bulk_price_invalid_op(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_PRICE_URL,
         data={"surface_ref": "web", "skus": ["PAO"], "op": "multiply", "value": 2},
         content_type="application/json",
@@ -413,7 +402,7 @@ def test_bulk_price_invalid_op(client, operator, catalog):
 
 def test_bulk_price_set_negative_rejected(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_PRICE_URL,
         data={"surface_ref": "web", "skus": ["PAO"], "op": "set", "value": -1},
         content_type="application/json",
@@ -424,7 +413,7 @@ def test_bulk_price_set_negative_rejected(client, operator, catalog):
 def test_bulk_all_channels_pause(client, operator, catalog):
     """surface_ref='*' aplica em todos os canais ativos."""
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_URL,
         data={"surface_ref": "*", "skus": ["PAO"], "is_sellable": False},
         content_type="application/json",
@@ -436,7 +425,7 @@ def test_bulk_all_channels_pause(client, operator, catalog):
 
 def test_bulk_price_all_channels(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_PRICE_URL,
         data={"surface_ref": "*", "skus": ["PAO"], "op": "set", "value": 1234},
         content_type="application/json",
@@ -448,7 +437,7 @@ def test_bulk_price_all_channels(client, operator, catalog):
 
 def test_bulk_price_requires_manage_catalog(client, plain_staff, catalog):
     client.force_login(plain_staff)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_PRICE_URL,
         data={"surface_ref": "web", "skus": ["PAO"], "op": "set", "value": 100},
         content_type="application/json",
@@ -463,11 +452,7 @@ def test_reorder_collections(client, operator, catalog):
     Collection.objects.create(ref="paes", name="Pães", is_active=True, sort_order=0)
     Collection.objects.filter(ref="doces").update(sort_order=9)
     client.force_login(operator)
-    resp = client.post(
-        REORDER_COLLECTIONS_URL,
-        data={"ordered_refs": ["doces", "paes"]},
-        content_type="application/json",
-    )
+    resp = _reorder(client, REORDER_COLLECTIONS_URL, {"ordered_refs": ["doces", "paes"]})
     assert resp.status_code == 200
     assert Collection.objects.get(ref="doces").sort_order == 0
     assert Collection.objects.get(ref="paes").sort_order == 1
@@ -480,11 +465,7 @@ def test_reorder_items_manual(client, operator, catalog):
     )
     CollectionItem.objects.filter(collection=coll, product__sku="BOLO").update(sort_order=9)
     client.force_login(operator)
-    resp = client.post(
-        REORDER_ITEMS_URL,
-        data={"collection_ref": "doces", "ordered_skus": ["BOLO", "PAO"]},
-        content_type="application/json",
-    )
+    resp = _reorder(client, REORDER_ITEMS_URL, {"ref": "doces", "ordered_skus": ["BOLO", "PAO"]})
     assert resp.status_code == 200
     assert CollectionItem.objects.get(collection=coll, product__sku="BOLO").sort_order == 0
     assert CollectionItem.objects.get(collection=coll, product__sku="PAO").sort_order == 1
@@ -574,11 +555,7 @@ def test_feed_cell_membership_and_no_price(client, operator, catalog_with_displa
 def test_feed_cell_pause_routes_to_feed(client, operator, catalog_with_display):
     """Pausar a célula grava em config.display.paused_skus (sem tocar listings)."""
     client.force_login(operator)
-    resp = client.post(
-        CELL_URL,
-        data={"sku": "BOLO", "surface_ref": "tv-salao", "is_sellable": False},
-        content_type="application/json",
-    )
+    resp = _post_cell(client, operator, {"sku": "BOLO", "surface_ref": "tv-salao", "is_sellable": False})
     assert resp.status_code == 200
     assert resp.json()["is_sellable"] is False
     assert _paused_skus("tv-salao") == {"BOLO"}
@@ -591,11 +568,7 @@ def test_feed_cell_pause_routes_to_feed(client, operator, catalog_with_display):
     assert bolo_tv["available"] is False
 
     # ativar remove da lista
-    resp = client.post(
-        CELL_URL,
-        data={"sku": "BOLO", "surface_ref": "tv-salao", "is_sellable": True},
-        content_type="application/json",
-    )
+    resp = _post_cell(client, operator, {"sku": "BOLO", "surface_ref": "tv-salao", "is_sellable": True})
     assert resp.status_code == 200
     assert _paused_skus("tv-salao") == set()
 
@@ -603,18 +576,14 @@ def test_feed_cell_pause_routes_to_feed(client, operator, catalog_with_display):
 def test_feed_cell_price_rejected(client, operator, catalog_with_display):
     """Feed não aceita preço/publicação — só pausar/ativar."""
     client.force_login(operator)
-    resp = client.post(
-        CELL_URL,
-        data={"sku": "BOLO", "surface_ref": "tv-salao", "price_q": 100},
-        content_type="application/json",
-    )
+    resp = _post_cell(client, operator, {"sku": "BOLO", "surface_ref": "tv-salao", "price_q": 100})
     assert resp.status_code == 400
 
 
 def test_global_pause_gates_feed_column(client, operator, catalog_with_display):
     """A pausa global do produto atinge o feed (cada um é um)."""
     client.force_login(operator)
-    client.post(PRODUCT_URL, data={"sku": "BOLO", "is_sellable": False}, content_type="application/json")
+    _post_product(client, operator, {"sku": "BOLO", "is_sellable": False})
     matrix = client.get(MATRIX_URL).json()["matrix"]
     bolo_tv = next(
         c for r in matrix["rows"] if r["sku"] == "BOLO" for c in r["cells"] if c["surface_ref"] == "tv-salao"
@@ -625,7 +594,7 @@ def test_global_pause_gates_feed_column(client, operator, catalog_with_display):
 def test_feed_bulk_pause(client, operator, catalog_with_display):
     """Bulk numa coluna de feed pausa os itens (options[paused_skus])."""
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_URL,
         data={"surface_ref": "tv-salao", "skus": ["BOLO"], "is_sellable": False},
         content_type="application/json",
@@ -695,15 +664,21 @@ def test_resync_requires_sku(client, operator, catalog):
     assert resp.status_code == 400
 
 
-def test_resync_enqueues_directive(client, operator, catalog):
+def test_resync_enqueues_directive(client, operator, catalog, monkeypatch):
+    from uuid import uuid4
+
+    from shopman.offerman import conf
     from shopman.orderman.models import Directive
 
     from shopman.shop.directives import CATALOG_PROJECT_SKU
 
+    monkeypatch.setattr(conf, "get_projection_backend_channels", lambda: ["ifood"])
     client.force_login(operator)
+    action = client.get(RESYNC_URL, {"sku": "PAO"}).json()["action"]
     resp = client.post(
         RESYNC_URL,
-        data={"sku": "PAO", "channel_ref": "ifood"},
+        data={**action["payload_schema"], "sku": "PAO", "channel_ref": "ifood"},
+        HTTP_IDEMPOTENCY_KEY=str(uuid4()),
         content_type="application/json",
     )
     assert resp.status_code == 200
@@ -760,10 +735,21 @@ def test_social_write_requires_manage_catalog(client, plain_staff, catalog):
     assert resp.status_code == 403
 
 
+def _post_social_intention(client, url, *, data, **kwargs):
+    from uuid import uuid4
+
+    observed = client.get(url, {"sku": data["sku"]})
+    if observed.status_code != 200:
+        return observed
+    patch = {key: value for key, value in data.items() if key != "sku"}
+    return client.post(url, {**observed.json()["action"]["payload_schema"], "sku": data["sku"], "patch": {"social": patch}},
+        HTTP_IDEMPOTENCY_KEY=str(uuid4()), **kwargs)
+
+
 def test_social_write_persists_and_validates(client, operator, catalog):
     client.force_login(operator)
     # grava marca + categoria
-    resp = client.post(
+    resp = _post_social_intention(client,
         SOCIAL_URL,
         data={"sku": "PAO", "brand": "Nelson", "google_product_category": "Food"},
         content_type="application/json",
@@ -775,7 +761,7 @@ def test_social_write_persists_and_validates(client, operator, catalog):
     assert catalog["pao"].metadata["social"]["brand"] == "Nelson"
 
     # merge parcial: enviar só hashtags mantém a marca
-    resp = client.post(
+    resp = _post_social_intention(client,
         SOCIAL_URL,
         data={"sku": "PAO", "hashtags": ["pão", "artesanal"]},
         content_type="application/json",
@@ -785,7 +771,7 @@ def test_social_write_persists_and_validates(client, operator, catalog):
     assert resp.json()["social"]["hashtags"] == ["pão", "artesanal"]
 
     # GTIN inválido → 400 com mensagem
-    resp = client.post(
+    resp = _post_social_intention(client,
         SOCIAL_URL,
         data={"sku": "PAO", "gtin": "123"},
         content_type="application/json",
@@ -796,7 +782,7 @@ def test_social_write_persists_and_validates(client, operator, catalog):
 
 def test_social_read_roundtrips(client, operator, catalog):
     client.force_login(operator)
-    client.post(
+    _post_social_intention(client,
         SOCIAL_URL,
         data={"sku": "BOLO", "brand": "Nelson", "condition": "new"},
         content_type="application/json",
@@ -830,13 +816,13 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
         "is_published", "is_sellable", "base_price_q", "base_price_display", "edit_url",
         "stock_tracked", "stock_qty", "sold_out", "low_stock", "replenish_qty",
         "keywords", "cells", "social", "pim_complete",
-        "hidden_by_inactive_collection",
+        "hidden_by_inactive_collection", "product_action", "resync_action",
     }
 
     cell = row["cells"][0]
     assert set(cell) == {
         "surface_ref", "in_listing", "is_published", "is_sellable", "available",
-        "price_q", "price_display", "sync_status", "sync_error", "synced_at",
+        "price_q", "price_display", "sync_status", "sync_error", "synced_at", "action",
     }
 
     assert set(row["social"]) == {
@@ -890,7 +876,7 @@ def test_product_detail_get_shape(client, operator, catalog):
         "allows_next_day_sale", "made_to_order", "ready_from",
         "nutrition_facts", "social", "fiscal",
         # somente-leitura: sentinels de derivação + escolhas de perfil fiscal
-        "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles",
+        "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "field_sources",
     }
     assert product["sku"] == "BOLO"
     assert product["base_price_q"] == 4500
@@ -906,9 +892,7 @@ def test_product_detail_get_unknown_sku(client, operator, catalog):
 
 def test_product_detail_patch_updates_fields(client, operator, catalog):
     client.force_login(operator)
-    resp = client.patch(
-        DETAIL_URL.format(sku="PAO"),
-        data={
+    resp = _patch(client, 'PAO', {
             "name": "Pão francês",
             "short_description": "Crocante por fora",
             "base_price_q": 700,
@@ -916,9 +900,7 @@ def test_product_detail_patch_updates_fields(client, operator, catalog):
             "shelf_life_days": 1,
             "ingredients_text": "Farinha de trigo, água, sal.",
             "keywords": ["padaria", "pão"],
-        },
-        content_type="application/json",
-    )
+        })
     assert resp.status_code == 200
     product = resp.json()["product"]
     assert product["name"] == "Pão francês"
@@ -939,9 +921,7 @@ def test_product_detail_patch_is_partial(client, operator, catalog):
     pao.save()
 
     client.force_login(operator)
-    resp = client.patch(
-        DETAIL_URL.format(sku="PAO"), data={"name": "Só o nome"}, content_type="application/json"
-    )
+    resp = _patch(client, 'PAO', {"name": "Só o nome"})
     assert resp.status_code == 200
     product = resp.json()["product"]
     assert product["name"] == "Só o nome"
@@ -953,9 +933,7 @@ def test_product_detail_patch_is_partial(client, operator, catalog):
 
 def test_product_detail_patch_rejects_negative_price(client, operator, catalog):
     client.force_login(operator)
-    resp = client.patch(
-        DETAIL_URL.format(sku="PAO"), data={"base_price_q": -1}, content_type="application/json"
-    )
+    resp = _patch(client, 'PAO', {"base_price_q": -1})
     assert resp.status_code == 400
     catalog["pao"].refresh_from_db()
     assert catalog["pao"].base_price_q == 500
@@ -963,21 +941,13 @@ def test_product_detail_patch_rejects_negative_price(client, operator, catalog):
 
 def test_product_detail_patch_rejects_invalid_policy(client, operator, catalog):
     client.force_login(operator)
-    resp = client.patch(
-        DETAIL_URL.format(sku="PAO"),
-        data={"availability_policy": "inventada"},
-        content_type="application/json",
-    )
+    resp = _patch(client, 'PAO', {"availability_policy": "inventada"})
     assert resp.status_code == 400
 
 
 def test_product_detail_patch_toggles_publication(client, operator, catalog):
     client.force_login(operator)
-    resp = client.patch(
-        DETAIL_URL.format(sku="PAO"),
-        data={"is_published": False, "is_sellable": False},
-        content_type="application/json",
-    )
+    resp = _patch(client, 'PAO', {"is_published": False, "is_sellable": False})
     assert resp.status_code == 200
     catalog["pao"].refresh_from_db()
     assert catalog["pao"].is_published is False
@@ -991,9 +961,12 @@ def test_product_detail_patch_toggles_publication(client, operator, catalog):
 
 
 def _patch(client, sku, payload):
-    return client.patch(
-        DETAIL_URL.format(sku=sku), data=payload, content_type="application/json"
-    )
+    from uuid import uuid4
+
+    url = DETAIL_URL.format(sku=sku)
+    action = client.get(url).json()["action"]
+    return client.patch(url, {**action["payload_schema"], "patch": payload},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
 
 
 def test_product_detail_patches_the_made_to_order_promise(client, operator, catalog):
@@ -1179,3 +1152,247 @@ def test_product_detail_clears_the_declared_ready_time(client, operator, catalog
     assert resp.json()["product"]["ready_from"] == ""
     catalog["pao"].refresh_from_db()
     assert "ready_from" not in (catalog["pao"].metadata or {})
+
+
+@pytest.mark.parametrize("invalid", ["not-a-list", [123], None])
+def test_invalid_last_keywords_field_never_saves_product(client, operator, catalog, invalid):
+    client.force_login(operator)
+    product = Product.objects.get(sku="PAO")
+    before = (product.name, product.metadata, list(product.keywords.names()))
+    response = _patch(client, 'PAO', {"name": "Changed", "keywords": invalid})
+    assert response.status_code == 400
+    product.refresh_from_db()
+    assert (product.name, product.metadata, list(product.keywords.names())) == before
+
+
+def test_manual_matrix_reads_saved_order_not_alphabetic(client, operator, catalog):
+    from shopman.backstage.projections.catalog import build_catalog_matrix
+    from shopman.backstage.services.catalog import reorder_collection_items
+    coll = Collection.objects.get(ref="doces")
+    CollectionItem.objects.create(collection=coll, product=Product.objects.get(sku="PAO"))
+    reorder_collection_items("doces", ["PAO", "BOLO"])
+    assert [row.sku for row in build_catalog_matrix("doces").rows] == ["PAO", "BOLO"]
+
+
+def test_bulk_fiscal_refusal_matches_cell_and_leaves_all_items_unchanged(client, operator, catalog, settings):
+    settings.SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH = True
+    ListingItem.objects.filter(listing__ref="web").update(is_published=False)
+    client.force_login(operator)
+    for path, body in [
+        (CELL_URL, {"sku": "PAO", "surface_ref": "web", "is_published": True}),
+        (BULK_URL, {"skus": ["PAO", "BOLO"], "surface_ref": "web", "is_published": True}),
+    ]:
+        response = _post_cell(client, operator, body) if path == CELL_URL else _post_price_intention(client, path, data=body, content_type="application/json")
+        assert response.status_code == 400
+        assert "fiscal" in response.json()["detail"].lower()
+        assert not ListingItem.objects.filter(listing__ref="web", is_published=True).exists()
+
+
+@pytest.mark.parametrize("path,body", [
+    (CELL_URL, {"sku": "PAO", "surface_ref": "web"}),
+    (BULK_URL, {"skus": ["PAO"], "surface_ref": "web"}),
+])
+def test_invalid_boolean_does_not_toggle_catalog(client, operator, catalog, path, body):
+    client.force_login(operator)
+    response = _post_cell(client, operator, {**body, "is_sellable": "not-a-boolean"}) if path == CELL_URL else _post_price_intention(client, path, data={**body, "is_sellable": "not-a-boolean"}, content_type="application/json")
+    assert response.status_code == 400
+    assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").is_sellable
+
+
+def test_all_channel_publication_rolls_back_when_later_channel_refuses(catalog, monkeypatch):
+    from django.core.exceptions import ValidationError
+
+    from shopman.backstage.services import catalog as service
+    from shopman.shop.services import fiscal_catalog
+
+    ListingItem.objects.update(is_published=False)
+    original = fiscal_catalog.validate_listing_item_publication
+
+    def reject_second(item):
+        if item.listing.ref == "ifood":
+            raise ValidationError("Classificação fiscal incompleta no segundo destino")
+        return original(item)
+
+    monkeypatch.setattr(fiscal_catalog, "validate_listing_item_publication", reject_second)
+    with pytest.raises(ValidationError, match="segundo destino"):
+        service.bulk_set(["PAO"], "*", is_published=True, actor="lab")
+    assert not ListingItem.objects.filter(is_published=True).exists()
+
+
+def test_publication_enqueue_failure_rolls_back_every_channel(catalog, monkeypatch):
+    from shopman.backstage.services import catalog as service
+
+    ListingItem.objects.update(is_published=False)
+    monkeypatch.setattr("shopman.offerman.conf.get_projection_backend", lambda _ref: object())
+    calls = []
+
+    def enqueue(sku, ref, **kwargs):
+        calls.append((sku, ref))
+        if len(calls) == 2:
+            raise RuntimeError("second enqueue failed")
+
+    monkeypatch.setattr("shopman.shop.handlers.catalog_projection.enqueue_project", enqueue)
+    with pytest.raises(RuntimeError, match="second enqueue"):
+        service.bulk_set(["PAO"], "*", is_published=True, actor="lab")
+    assert not ListingItem.objects.filter(is_published=True).exists()
+
+
+def test_publication_queues_sync_without_calling_provider_under_lock(catalog, monkeypatch):
+    from shopman.backstage.services import catalog as service
+
+    ListingItem.objects.update(is_published=False)
+    monkeypatch.setattr("shopman.offerman.conf.get_projection_backend", lambda _ref: object())
+    calls = []
+    monkeypatch.setattr("shopman.shop.handlers.catalog_projection.enqueue_project", lambda sku, ref, **kw: calls.append((sku, ref)))
+    monkeypatch.setattr(service, "_reconcile_if_projected", lambda *_: pytest.fail("provider I/O in local write"))
+    assert service.bulk_set(["PAO"], "*", is_published=True, actor="lab") == 2
+    assert sorted(calls) == [("PAO", "ifood"), ("PAO", "web")]
+
+
+def test_product_intention_preserves_independent_fields_and_refuses_same_field(client, operator, catalog):
+    from uuid import uuid4
+
+    client.force_login(operator)
+    url = DETAIL_URL.format(sku="PAO")
+    observed = client.get(url).json()["action"]["payload_schema"]
+    assert _patch(client, "PAO", {"name": "Nome de outra pessoa"}).status_code == 200
+    independent = client.patch(url, {**observed, "patch": {"storage_tip": "Local fresco"}},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
+    assert independent.status_code == 200
+    assert independent.json()["product"]["name"] == "Nome de outra pessoa"
+    key = str(uuid4())
+    conflict = client.patch(url, {**observed, "patch": {"name": "Meu rascunho"}},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+    assert conflict.status_code == 409
+    assert conflict.json()["conflicting_fields"] == ["name"]
+    assert conflict.json()["product"]["name"] == "Nome de outra pessoa"
+    assert client.get(url, {"idempotency_key": key}).json()["outcome"] == "not_applied"
+    reviewed = conflict.json()["action"]["payload_schema"]
+    saved = client.patch(url, {**reviewed, "patch": {"name": "Meu rascunho"}},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
+    assert saved.status_code == 200
+    assert saved.json()["product"]["storage_tip"] == "Local fresco"
+
+
+def test_product_intention_replay_does_not_overwrite_later_edit(client, operator, catalog):
+    from uuid import uuid4
+
+    client.force_login(operator)
+    url = DETAIL_URL.format(sku="PAO")
+    body = {**client.get(url).json()["action"]["payload_schema"], "patch": {"name": "Primeira edição"}}
+    key = str(uuid4())
+    first = client.patch(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+    assert first.status_code == 200
+    assert _patch(client, "PAO", {"name": "Segunda edição"}).status_code == 200
+    receipt = client.get(url, {"idempotency_key": key})
+    assert receipt.json()["outcome"] == "applied"
+    replay = client.patch(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+    assert replay.status_code == 200
+    assert replay.json()["replayed"] is True
+    assert replay.json()["product"]["name"] == "Segunda edição"
+    different = client.patch(url, {**body, "patch": {"name": "Outra intenção"}},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+    assert different.status_code == 409
+    assert different.json()["code"] == "intention_conflict"
+
+
+def test_product_intention_requires_current_actor_and_revision(client, operator, catalog):
+    from uuid import uuid4
+
+    client.force_login(operator)
+    url = DETAIL_URL.format(sku="PAO")
+    assert client.patch(url, {"name": "Cliente antigo"}, content_type="application/json").status_code == 400
+    body = {**client.get(url).json()["action"]["payload_schema"], "patch": {"name": "Pessoa errada"}, "expected_actor_id": -1}
+    assert client.patch(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4())).status_code == 409
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].name == "Pão"
+
+
+def _reorder(client, url, payload):
+    from uuid import uuid4
+
+    operation = "reorder-items" if payload.get("ref") else "reorder-collections"
+    actions = client.get(MATRIX_URL, {"collection": payload.get("ref", "")}).json()["actions"]
+    action = next(action for action in actions if action["ref"] == operation)
+    return client.post(url, {**action["payload_schema"], **payload},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
+
+
+def test_cell_action_cannot_pause_a_product_outside_display_membership(client, operator, catalog_with_display):
+    client.force_login(operator)
+    response = _post_cell(client, operator, {"sku": "PAO", "surface_ref": "tv-salao", "is_sellable": False})
+    assert response.status_code == 409
+    assert "PAO" not in _paused_skus("tv-salao")
+
+
+def _post_product(client, operator, payload):
+    from uuid import uuid4
+
+    client.force_login(operator)
+    matrix = client.get(MATRIX_URL).json()["matrix"]
+    row = next((row for row in matrix["rows"] if row["sku"] == payload["sku"]), {})
+    action = row.get("product_action") or {"payload_schema": {"base_revision": "unavailable", "base_revisions": {}, "expected_actor_id": operator.pk}}
+    patch = {key: value for key, value in payload.items() if key != "sku"}
+    return client.post(PRODUCT_URL, {**action["payload_schema"], "sku": payload["sku"], "patch": patch},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
+
+
+def test_global_product_receipt_shares_detail_writer_without_losing_other_fields(client, operator, catalog):
+    from uuid import uuid4
+
+    client.force_login(operator)
+    matrix = client.get(MATRIX_URL).json()["matrix"]
+    row = next(row for row in matrix["rows"] if row["sku"] == "PAO")
+    observed = row["product_action"]["payload_schema"]
+    assert _patch(client, "PAO", {"storage_tip": "Conservar em local fresco"}).status_code == 200
+    key = str(uuid4())
+    body = {**observed, "sku": "PAO", "patch": {"is_sellable": False}}
+    saved = client.post(PRODUCT_URL, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+    assert saved.status_code == 200
+    assert saved.json()["product"]["storage_tip"] == "Conservar em local fresco"
+    assert client.get(PRODUCT_URL, {"ref": "PAO", "idempotency_key": key}).json()["outcome"] == "applied"
+    assert _patch(client, "PAO", {"is_sellable": True}).status_code == 200
+    replay = client.post(PRODUCT_URL, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+    assert replay.status_code == 200
+    assert replay.json()["replayed"] is True
+    assert replay.json()["product"]["is_sellable"] is True
+    # Identical key is the identical product intention even through the detail URL.
+    detail_replay = client.patch(DETAIL_URL.format(sku="PAO"), body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+    assert detail_replay.status_code == 200
+    assert detail_replay.json()["replayed"] is True
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].is_sellable is True
+    assert catalog["pao"].storage_tip == "Conservar em local fresco"
+
+
+def test_global_product_route_refuses_unapproved_fields_and_legacy_payload(client, operator, catalog):
+    from uuid import uuid4
+
+    client.force_login(operator)
+    row = next(row for row in client.get(MATRIX_URL).json()["matrix"]["rows"] if row["sku"] == "PAO")
+    body = {**row["product_action"]["payload_schema"], "sku": "PAO", "patch": {"name": "Wrong scope"}}
+    assert client.post(PRODUCT_URL, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4())).status_code == 400
+    assert client.post(PRODUCT_URL, {"sku": "PAO", "is_sellable": False}, content_type="application/json").status_code == 400
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].name == "Pão"
+    assert catalog["pao"].is_sellable
+
+
+def test_global_pause_does_not_require_repairing_untouched_legacy_nutrition(client, operator, catalog):
+    # The previous global switch used save's canonical gates, not a new label review.
+    Product.objects.filter(sku="PAO").update(nutrition_facts={"serving_size_g": 0, "proteins_g": 4})
+    response = _post_product(client, operator, {"sku": "PAO", "is_sellable": False})
+    assert response.status_code == 200
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].nutrition_facts == {"serving_size_g": 0, "proteins_g": 4}
+    assert not catalog["pao"].is_sellable
+
+
+def test_global_publication_preserves_canonical_fiscal_gate(client, operator, catalog, settings):
+    Product.objects.filter(sku="PAO").update(is_published=False)
+    settings.SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH = True
+    response = _post_product(client, operator, {"sku": "PAO", "is_published": True})
+    assert response.status_code == 400
+    assert "fiscal" in response.json()["detail"].lower()
+    catalog["pao"].refresh_from_db()
+    assert not catalog["pao"].is_published

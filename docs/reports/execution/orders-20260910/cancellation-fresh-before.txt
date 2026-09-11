@@ -1,0 +1,52 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_____________ test_cancellation_preserves_concurrently_saved_note ______________
+
+    def test_cancellation_preserves_concurrently_saved_note():
+        order = Order.objects.create(ref="CANCEL-FRESH", status="accepted", data={})
+        stale = Order.objects.get(pk=order.pk)
+        order.data = {"kitchen_note": "Contexto novo", "payment": {"method": "cash"}}
+        order.save(update_fields=["data"])
+        assert cancellation.cancel(stale, reason="Teste", actor="lab")
+        order.refresh_from_db()
+>       assert order.data["kitchen_note"] == "Contexto novo"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'kitchen_note'
+
+shopman/shop/tests/test_cancellation_fresh_state.py:23: KeyError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-10 20:50:30,637 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-10 20:50:31,859 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-10 20:50:36,218 shopman.shop.services.cancellation cancellation.cancel: order CANCEL-FRESH cancelled by lab — Teste
+________ test_capture_after_gateway_read_prevents_timeout_cancellation _________
+
+    def test_capture_after_gateway_read_prevents_timeout_cancellation():
+        Channel.objects.create(ref="timeout-lab", name="Lab")
+        intent = PaymentService.create_intent("TIMEOUT-CAPTURE", 5000, "pix", ref="TIMEOUT-INTENT")
+        order = Order.objects.create(ref="TIMEOUT-CAPTURE", channel_ref="timeout-lab", status="accepted", total_q=5000,
+            data={"payment": {"method": "pix", "intent_ref": intent.ref,
+                "expires_at": (timezone.now() - timedelta(minutes=2)).isoformat()}})
+    
+        def capture_after_read(_order):
+            PaymentService.authorize(intent.ref)
+            PaymentService.capture(intent.ref)
+            return "unpaid"  # stale gateway response, capture committed meanwhile
+    
+        with patch.object(payment, "settle_from_gateway", side_effect=capture_after_read):
+>           assert customer_orders.resolve_payment_timeout_if_due(order) is False
+E           assert True is False
+E            +  where True = <function resolve_payment_timeout_if_due at 0x11349b100>(<Order: TIMEOUT-CAPTURE>)
+E            +    where <function resolve_payment_timeout_if_due at 0x11349b100> = customer_orders.resolve_payment_timeout_if_due
+
+shopman/shop/tests/test_cancellation_fresh_state.py:39: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-10 20:50:36,318 shopman.payman Intent created
+INFO 2026-09-10 20:50:36,320 shopman.payman Intent authorized
+INFO 2026-09-10 20:50:36,320 shopman.payman Intent captured
+INFO 2026-09-10 20:50:36,323 shopman.shop.services.cancellation cancellation.cancel: order TIMEOUT-CAPTURE cancelled by payment.timeout — payment_timeout
+INFO 2026-09-10 20:50:36,324 shopman.shop.services.notification notification.send: queued payment_expired for order TIMEOUT-CAPTURE
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_cancellation_fresh_state.py::test_cancellation_preserves_concurrently_saved_note
+FAILED shopman/shop/tests/test_cancellation_fresh_state.py::test_capture_after_gateway_read_prevents_timeout_cancellation
+2 failed in 6.03s

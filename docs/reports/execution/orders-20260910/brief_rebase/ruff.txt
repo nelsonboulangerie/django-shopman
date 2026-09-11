@@ -1,0 +1,49 @@
+I001 [*] Import block is un-sorted or un-formatted
+  --> shopman/backstage/api/telemetry.py:14:1
+   |
+12 |   """
+13 |
+14 | / from __future__ import annotations
+15 | |
+16 | | import hashlib
+17 | | import logging
+18 | | import math
+19 | |
+20 | | import re
+21 | | import time
+22 | | import uuid
+23 | | from typing import Any
+24 | |
+25 | | from django.utils.decorators import method_decorator
+26 | | from django_ratelimit.decorators import ratelimit
+27 | | from drf_spectacular.utils import extend_schema
+28 | | from rest_framework import status
+29 | | from rest_framework.permissions import AllowAny
+30 | | from rest_framework.response import Response
+31 | | from rest_framework.views import APIView
+32 | |
+33 | | from shopman.backstage.api.permissions import HasMarketingCapability
+34 | | from shopman.shop.services.marketing_observability import emit_metric
+35 | | from shopman.shop.telemetry_redaction import redact_text, strip_url_query
+36 | |
+37 | | from shopman.shop.services.observability import operational_context, operational_event
+   | |______________________________________________________________________________________^
+38 |
+39 |   logger = logging.getLogger("shopman.backstage.client")
+   |
+help: Organize imports
+
+F401 [*] `re` imported but unused
+  --> shopman/backstage/api/telemetry.py:20:8
+   |
+18 | import math
+19 |
+20 | import re
+   |        ^^
+21 | import time
+22 | import uuid
+   |
+help: Remove unused import: `re`
+
+Found 2 errors.
+[*] 2 fixable with the `--fix` option.

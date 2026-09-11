@@ -1,0 +1,139 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_self_cancel_revalidates_the_canonical_policy_after_the_surface_read[captured] _
+
+intervening = 'captured'
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize("intervening", ["captured", "preparing"])
+    def test_self_cancel_revalidates_the_canonical_policy_after_the_surface_read(intervening):
+        intent = PaymentService.create_intent("SELF-CANCEL-RACE", 1500, "pix")
+        order = Order.objects.create(ref="SELF-CANCEL-RACE", status="accepted", total_q=1500,
+            data={"payment": {"method": "pix", "intent_ref": intent.ref}})
+        assert customer_orders.can_cancel(order)
+        if intervening == "captured":
+            PaymentService.authorize(intent.ref)
+            PaymentService.capture(intent.ref)
+        else:
+            Order.objects.filter(pk=order.pk).update(status="preparing")
+        customer_orders.cancel(order)
+        order.refresh_from_db()
+>       assert order.status == ("accepted" if intervening == "captured" else "preparing")
+E       AssertionError: assert 'cancelled' == 'accepted'
+E         
+E         - accepted
+E         + cancelled
+
+shopman/shop/tests/test_h03_confirmation_barriers.py:31: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-10 22:38:39,918 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-10 22:38:40,272 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-10 22:38:41,524 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-10 22:38:45,631 shopman.payman Intent created
+INFO 2026-09-10 22:38:45,634 shopman.payman Intent authorized
+INFO 2026-09-10 22:38:45,636 shopman.payman Intent captured
+INFO 2026-09-10 22:38:45,642 shopman.shop.services.cancellation cancellation.cancel: order SELF-CANCEL-RACE cancelled by customer.self_cancel — customer_requested
+_ test_self_cancel_revalidates_the_canonical_policy_after_the_surface_read[preparing] _
+
+intervening = 'preparing'
+
+    @pytest.mark.django_db
+    @pytest.mark.parametrize("intervening", ["captured", "preparing"])
+    def test_self_cancel_revalidates_the_canonical_policy_after_the_surface_read(intervening):
+        intent = PaymentService.create_intent("SELF-CANCEL-RACE", 1500, "pix")
+        order = Order.objects.create(ref="SELF-CANCEL-RACE", status="accepted", total_q=1500,
+            data={"payment": {"method": "pix", "intent_ref": intent.ref}})
+        assert customer_orders.can_cancel(order)
+        if intervening == "captured":
+            PaymentService.authorize(intent.ref)
+            PaymentService.capture(intent.ref)
+        else:
+            Order.objects.filter(pk=order.pk).update(status="preparing")
+        customer_orders.cancel(order)
+        order.refresh_from_db()
+>       assert order.status == ("accepted" if intervening == "captured" else "preparing")
+E       AssertionError: assert 'cancelled' == 'preparing'
+E         
+E         - preparing
+E         + cancelled
+
+shopman/shop/tests/test_h03_confirmation_barriers.py:31: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-10 22:38:45,727 shopman.payman Intent created
+INFO 2026-09-10 22:38:45,732 shopman.shop.services.cancellation cancellation.cancel: order SELF-CANCEL-RACE cancelled by customer.self_cancel — customer_requested
+__ test_successful_operator_confirmation_cannot_be_overruled_by_stale_timeout __
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x109ce5670>
+
+    @pytest.mark.django_db(transaction=True)
+    def test_successful_operator_confirmation_cannot_be_overruled_by_stale_timeout(monkeypatch):
+        if connection.vendor != "postgresql":
+            pytest.skip("Independent row locks require PostgreSQL")
+        monkeypatch.setattr("shopman.orderman.dispatch._on_commit_callback", lambda *args: None)
+        Channel.objects.create(ref="h03-confirm", name="Synthetic confirmation", config={"payment": {"timing": "external"}})
+        order = Order.objects.create(ref="CONFIRM-TIMEOUT-RACE", status="new", channel_ref="h03-confirm", total_q=1500,
+            data={"payment": {"method": "cash"}, "availability_decision": {"approved": True, "decisions": []}})
+        directive = Directive.objects.create(topic="confirmation.timeout", payload={"order_ref": order.ref, "action": "cancel",
+            "expires_at": (timezone.now() - timedelta(seconds=1)).isoformat()})
+        evaluated, resume = Event(), Event()
+        transition = Order.transition_status
+    
+        def pause_timeout(instance, status, *args, **kwargs):
+            if kwargs.get("actor") == "confirmation.timeout":
+                evaluated.set()
+                assert resume.wait(10)
+            return transition(instance, status, *args, **kwargs)
+    
+        monkeypatch.setattr(Order, "transition_status", pause_timeout)
+    
+        def timeout():
+            try:
+                ConfirmationTimeoutHandler().handle(message=Directive.objects.get(pk=directive.pk), ctx={})
+            finally:
+                connections.close_all()
+    
+        def confirm():
+            try:
+                try:
+                    operator_orders.confirm_order(Order.objects.get(pk=order.pk), actor="operator:h03")
+                    return True
+                except (ValueError, operator_orders.OrderStateConflict):
+                    return False
+            finally:
+                connections.close_all()
+    
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            automatic = pool.submit(timeout)
+            try:
+                assert evaluated.wait(10)
+                explicit = pool.submit(confirm)
+                try:
+                    explicit.result(timeout=0.5)
+                except TimeoutError:
+                    pass  # A serialized timeout is allowed to win before the operator.
+            finally:
+                resume.set()
+            automatic.result(timeout=10)
+            accepted = explicit.result(timeout=10)
+        order.refresh_from_db()
+        # Either decision can win the lock. A reported operator success must persist.
+>       assert order.status == ("accepted" if accepted else "cancelled")
+E       AssertionError: assert 'cancelled' == 'accepted'
+E         
+E         - accepted
+E         + cancelled
+
+shopman/shop/tests/test_h03_confirmation_barriers.py:87: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-10 22:38:45,796 shopman.shop.services.notification notification.send: queued order_accepted for order CONFIRM-TIMEOUT-RACE
+INFO 2026-09-10 22:38:45,810 shopman.shop.services.loyalty loyalty.revoke: queued for order CONFIRM-TIMEOUT-RACE (cancelled)
+INFO 2026-09-10 22:38:45,812 shopman.shop.services.notification notification.send: queued order_cancelled for order CONFIRM-TIMEOUT-RACE
+INFO 2026-09-10 22:38:45,813 shopman.shop.handlers.confirmation confirmation.timeout: auto-cancelled order CONFIRM-TIMEOUT-RACE (auto_cancel mode)
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-10 22:38:46,102 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_h03_confirmation_barriers.py::test_self_cancel_revalidates_the_canonical_policy_after_the_surface_read[captured]
+FAILED shopman/shop/tests/test_h03_confirmation_barriers.py::test_self_cancel_revalidates_the_canonical_policy_after_the_surface_read[preparing]
+FAILED shopman/shop/tests/test_h03_confirmation_barriers.py::test_successful_operator_confirmation_cannot_be_overruled_by_stale_timeout
+3 failed in 6.41s

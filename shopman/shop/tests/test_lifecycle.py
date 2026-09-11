@@ -17,6 +17,15 @@ from shopman.orderman.models import Directive, Order
 from shopman.shop.config import ChannelConfig
 from shopman.shop.lifecycle import dispatch, ensure_confirmable
 
+
+@pytest.fixture(autouse=True)
+def isolate_phase_marker_for_coordination_tests():
+    # These tests use MagicMock orders to assert service routing. Durable writes
+    # have their own real-Order tests in test_lifecycle_phase_durability/recovery.
+    with patch("shopman.shop.lifecycle._mark_phase_complete"):
+        yield
+
+
 # ── helpers ──
 
 

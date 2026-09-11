@@ -50,7 +50,7 @@ const tTone = computed(() => timerTone(props.card.timer_class));
 
 // Countdown do prazo da confirmação otimista (só em cards com timer agendado).
 // Usa o relógio compartilhado (um só interval no board, não um por card).
-const nowMs = useNowTick();
+const nowMs = useNowTick(() => props.card.server_now_iso);
 const confirmationLeft = computed(() =>
   confirmationRemainingLabel(props.card.confirmation_deadline_iso, nowMs.value),
 );
@@ -78,15 +78,16 @@ function buttonClass(priority: string): string {
     <div class="flex items-start gap-2">
       <button
         type="button"
-        class="mt-0.5 grid size-4 shrink-0 place-items-center rounded border transition"
-        :class="selected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 hover:border-primary'"
+        class="mt-0.5 grid size-control shrink-0 place-items-center rounded transition hover:bg-accent"
         :aria-label="selected ? 'Desmarcar pedido' : 'Selecionar pedido'"
         :aria-pressed="selected"
         @click="emit('toggle-select')"
       >
-        <Icon v-if="selected" name="lucide:check" class="size-3" />
+        <span class="grid size-4 place-items-center rounded border" :class="selected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 hover:border-primary'">
+          <Icon v-if="selected" name="lucide:check" class="size-3" />
+        </span>
       </button>
-      <NuxtLink :to="`/${card.ref}`" class="group min-w-0" :aria-label="`Abrir pedido ${card.ref}`">
+      <NuxtLink :to="`/${card.ref}`" class="group flex min-h-control min-w-control flex-col justify-center" :aria-label="`Abrir pedido ${card.ref}`">
         <span class="flex items-center gap-1.5">
           <Icon :name="`lucide:${lucideIcon(card.channel_icon)}`" class="size-3.5 shrink-0 text-muted-foreground" />
           <span class="truncate text-xs text-muted-foreground">{{ code.prefix }}</span>
@@ -95,7 +96,7 @@ function buttonClass(priority: string): string {
       </NuxtLink>
       <button
         type="button"
-        class="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium transition"
+        class="ml-auto inline-flex min-h-control min-w-control shrink-0 items-center justify-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium transition"
         :class="card.assigned_operator ? 'border-primary/40 bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent'"
         :aria-label="card.assigned_operator ? `Atendido por ${card.assigned_operator} — liberar` : 'Atender este pedido'"
         :title="card.assigned_operator ? `${card.assigned_operator} — liberar` : 'Atender'"
@@ -249,7 +250,7 @@ function buttonClass(priority: string): string {
     >
       <Icon name="lucide:alert-triangle" class="mt-px size-3.5 shrink-0" />
       <span class="min-w-0 flex-1">{{ error }}</span>
-      <button type="button" class="shrink-0 rounded p-0.5 transition hover:bg-destructive/20" aria-label="Dispensar aviso" @click="emit('dismiss-error')">
+      <button type="button" class="grid size-control shrink-0 place-items-center rounded transition hover:bg-destructive/20" aria-label="Dispensar aviso" @click="emit('dismiss-error')">
         <Icon name="lucide:x" class="size-3.5" />
       </button>
     </div>
@@ -263,7 +264,7 @@ function buttonClass(priority: string): string {
         :disabled="busy || aff.disabled"
         :title="aff.reason || undefined"
         class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-semibold transition disabled:opacity-60"
-        :class="[aff.disabled ? 'cursor-default border-dashed text-muted-foreground' : 'active:scale-[0.98] ' + buttonClass(aff.priority)]"
+        :class="[aff.priority === 'primary' ? 'min-h-action min-w-action' : 'min-h-control min-w-control', aff.disabled ? 'cursor-default border-dashed text-muted-foreground' : 'active:scale-[0.98] ' + buttonClass(aff.priority)]"
         @click="!aff.disabled && emit('action', aff.ref)"
       >
         <Icon :name="aff.icon" class="size-3.5" />

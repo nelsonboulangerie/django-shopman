@@ -21,6 +21,7 @@ def _order(ref: str, status: str, fulfillment_type: str = "pickup") -> Order:
             "customer": {"name": f"Cliente {ref}"},
             "fulfillment_type": fulfillment_type,
             "payment": {"method": "cash"},
+            "availability_decision": {"approved": True, "decisions": []},
         },
     )
     OrderItem.objects.create(

@@ -1,0 +1,39 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_all_channel_publication_rolls_back_when_later_channel_refuses ______
+
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Pão>}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x113ca25d0>
+
+    def test_all_channel_publication_rolls_back_when_later_channel_refuses(catalog, monkeypatch):
+        from django.core.exceptions import ValidationError
+    
+        from shopman.backstage.services import catalog as service
+        from shopman.shop.services import fiscal_catalog
+    
+        ListingItem.objects.update(is_published=False)
+        original = fiscal_catalog.validate_listing_item_publication
+    
+        def reject_second(item):
+            if item.listing.ref == "ifood":
+                raise ValidationError("Classificação fiscal incompleta no segundo destino")
+            return original(item)
+    
+        monkeypatch.setattr(fiscal_catalog, "validate_listing_item_publication", reject_second)
+        with pytest.raises(ValidationError, match="segundo destino"):
+            service.bulk_set(["PAO"], "*", is_published=True, actor="lab")
+>       assert not ListingItem.objects.filter(is_published=True).exists()
+E       assert not True
+E        +  where True = exists()
+E        +    where exists = <QuerySet [<ListingItem: PAO @ web>]>.exists
+E        +      where <QuerySet [<ListingItem: PAO @ web>]> = filter(is_published=True)
+E        +        where filter = <django.db.models.manager.Manager object at 0x115076720>.filter
+E        +          where <django.db.models.manager.Manager object at 0x115076720> = ListingItem.objects
+
+shopman/backstage/tests/test_api_catalog_surface.py:1258: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-10 21:01:07,657 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-10 21:01:08,757 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_api_catalog_surface.py::test_all_channel_publication_rolls_back_when_later_channel_refuses
+1 failed, 83 deselected in 4.99s

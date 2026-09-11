@@ -186,8 +186,8 @@ def test_dispatch_handler_terminal_failure_records_error_and_alerts(shop, monkey
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
-def test_dispatch_handler_transient_failure_raises_for_retry(shop, monkeypatch):
-    from shopman.orderman.exceptions import DirectiveTransientError
+def test_dispatch_handler_unknown_failure_requires_verification(shop, monkeypatch):
+    from shopman.orderman.exceptions import DirectiveTerminalError
 
     from shopman.shop.adapters.courier_machine import CourierError
 
@@ -198,11 +198,13 @@ def test_dispatch_handler_transient_failure_raises_for_retry(shop, monkeypatch):
     order = _delivery_order()
     courier.request_dispatch(order, actor="test")
     directive = Directive.objects.filter(topic=COURIER_DISPATCH).first()
-    with pytest.raises(DirectiveTransientError):
+    with pytest.raises(DirectiveTerminalError):
         CourierDispatchHandler().handle(message=directive, ctx={})
     order.refresh_from_db()
-    assert "error" not in courier.get_block(order)  # transient não marca erro terminal
-    assert not OperatorAlert.objects.exists()
+    assert "sem resultado confirmado" in courier.get_block(order)["error"]["message"]
+    assert OperatorAlert.objects.filter(type="courier_dispatch_failed").exists()
+    directive.refresh_from_db()
+    assert directive.payload["dispatch_attempt"]["state"] == "unknown"
 
 
 # ── apply_status: transições derivadas ──────────────────────────────
@@ -319,7 +321,10 @@ def test_redispatch_blocked_with_active_ride(shop):
 def test_cancel_ride_before_pickup(shop):
     order = _dispatched_order(shop)
     courier.apply_status(order, "A", source="poll")
-    courier.cancel_ride(order, actor="maria")
+    task = courier.cancel_ride(order, actor="maria")
+    from shopman.shop.handlers.courier_cancel import CourierCancelHandler
+
+    CourierCancelHandler().handle(message=task, ctx={})
     order.refresh_from_db()
     assert not courier.has_active_ride(order)
     # cancelamento pelo operador não gera alerta (ele mesmo agiu)
@@ -472,3 +477,193 @@ def test_channel_config_validates_courier_values():
     config = ChannelConfig.from_dict({"fulfillment": {"courier": "sempre"}})
     with pytest.raises(ValueError, match="fulfillment.courier"):
         config.validate()
+
+
+@pytest.mark.parametrize("status", ["E", "F"])
+def test_repeated_external_fact_keeps_custody_refusal_until_operator_resolves(status, django_user_model):
+    from shopman.cashman import services as cash
+
+    from shopman.shop.services import operator_orders
+
+    order = _delivery_order(payment={"method": "cash", "collection": "on_delivery", "change_for_q": 5500},
+                            courier={"id_mch": "LAB-RIDE", "status": "A"})
+    for _ in range(2):
+        with pytest.raises(operator_orders.ChangeOutRequired):
+            courier.apply_status(order, status, source="poll")
+        order.refresh_from_db()
+        assert order.status == "ready"
+        assert courier.get_block(order)["status"] == status
+    assert order.events.filter(type="courier_status").count() == 1
+    # An explicit synthetic operator/custody action, never an invented provider cash movement.
+    user = django_user_model.objects.create_user(username="custodian")
+    shift = cash.open_shift(operator=user, float_q=1000)
+    operator_orders.advance_order(order, actor=user.username, change_out_q=500, cash_shift=shift)
+    courier.apply_status(order, status, source="poll")
+    order.refresh_from_db()
+    assert order.status in ({"dispatched"} if status == "E" else {"delivered", "completed"})
+    assert order.events.filter(type="courier_status").count() == 1
+
+
+def test_terminal_fact_recovers_local_failure_without_polling_provider(monkeypatch):
+    from shopman.shop.services import operator_orders
+
+    order = _delivery_order(status="dispatched", courier={"id_mch": "LAB-F", "status": "E"})
+    real = operator_orders.confirm_received
+    monkeypatch.setattr(operator_orders, "confirm_received", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("local failure")))
+    with pytest.raises(RuntimeError, match="local failure"):
+        courier.apply_status(order, "F", source="poll")
+    order.refresh_from_db()
+    assert courier.get_block(order)["status"] == "F"
+    monkeypatch.setattr(operator_orders, "confirm_received", real)
+    directive = Directive.objects.create(topic=COURIER_SYNC, payload={"order_ref": order.ref})
+    CourierSyncHandler().handle(message=directive, ctx={})
+    order.refresh_from_db()
+    assert order.status in {"delivered", "completed"}
+    assert order.events.filter(type="courier_status").count() == 1
+
+
+def test_old_ride_response_does_not_modify_replacement():
+    order = _delivery_order(courier={"id_mch": "OLD", "status": "A"})
+    stale = Order.objects.get(pk=order.pk)
+    courier._save_block(order, {"id_mch": "NEW", "status": "A"})
+    courier.apply_status(stale, "F", source="webhook")
+    order.refresh_from_db()
+    assert courier.get_block(order) == {"id_mch": "NEW", "status": "A"}
+    assert order.status == "ready"
+    assert not order.events.filter(type="courier_status").exists()
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_remote_accept_with_lost_response_never_repeats_dispatch_blindly(shop, monkeypatch):
+    from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
+
+    from shopman.shop.adapters.courier_machine import CourierDispatchResult, CourierError
+
+    accepted = []
+
+    def accepted_but_response_lost(payload):
+        accepted.append(payload)
+        if len(accepted) == 1:
+            raise CourierError("Resposta perdida após aceite remoto sintético", transient=True)
+        return CourierDispatchResult(courier_ref="SECOND-REMOTE-RIDE")
+
+    monkeypatch.setattr(courier_mock, "dispatch", accepted_but_response_lost)
+    order = _delivery_order(ref="LOST-REMOTE-RESPONSE")
+    task = courier.request_dispatch(order, actor="lab")
+    for _ in range(2):
+        try:
+            CourierDispatchHandler().handle(message=task, ctx={})
+        except (DirectiveTransientError, DirectiveTerminalError):
+            pass
+    assert len(accepted) == 1
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_known_acceptance_recovers_local_failure_without_remote_retry(shop, monkeypatch):
+    order = _delivery_order(ref="KNOWN-ACCEPTANCE")
+    task = courier.request_dispatch(order, actor="lab")
+    original = courier._save_block
+
+    def fail_adoption(order, block, **kwargs):
+        if block.get("id_mch"):
+            raise RuntimeError("local adoption failed")
+        return original(order, block, **kwargs)
+
+    monkeypatch.setattr(courier, "_save_block", fail_adoption)
+    with pytest.raises(RuntimeError, match="local adoption failed"):
+        CourierDispatchHandler().handle(message=task, ctx={})
+    task.refresh_from_db()
+    assert task.payload["dispatch_attempt"]["state"] == "accepted"
+    assert len(courier_mock.rides()) == 1
+    monkeypatch.setattr(courier, "_save_block", original)
+    CourierDispatchHandler().handle(message=task, ctx={})
+    order.refresh_from_db()
+    assert courier.has_active_ride(order)
+    assert len(courier_mock.rides()) == 1
+    assert order.events.filter(type="courier_ride_opened").count() == 1
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_lost_acceptance_receipt_blocks_new_remote_attempt(shop, monkeypatch):
+    from shopman.orderman.exceptions import DirectiveTerminalError
+
+    order = _delivery_order(ref="LOST-ACCEPTANCE-RECEIPT")
+    task = courier.request_dispatch(order, actor="lab")
+    handler = CourierDispatchHandler()
+    original = handler._set_attempt
+
+    def fail_receipt(message, state, **values):
+        if state == "accepted":
+            raise RuntimeError("receipt storage failed")
+        return original(message, state, **values)
+
+    monkeypatch.setattr(handler, "_set_attempt", fail_receipt)
+    with pytest.raises(RuntimeError, match="receipt storage failed"):
+        handler.handle(message=task, ctx={})
+    task.refresh_from_db()
+    assert task.payload["dispatch_attempt"]["state"] == "started"
+    with pytest.raises(DirectiveTerminalError, match="sem resultado confirmado"):
+        handler.handle(message=task, ctx={})
+    with pytest.raises(ValueError, match="resultado"):
+        courier.redispatch(order, actor="lab")
+    assert len(courier_mock.rides()) == 1
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_legacy_retried_attempt_without_receipt_requires_verification(shop):
+    from shopman.orderman.exceptions import DirectiveTerminalError
+
+    order = _delivery_order(ref="LEGACY-UNCONFIRMED")
+    task = Directive.objects.create(topic=COURIER_DISPATCH, attempts=2, payload={"order_ref": order.ref})
+    with pytest.raises(DirectiveTerminalError, match="sem resultado confirmado"):
+        CourierDispatchHandler().handle(message=task, ctx={})
+    assert not courier_mock.rides()
+
+
+@pytest.mark.django_db(transaction=True)
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_two_dispatch_workers_do_not_open_two_remote_rides(shop, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    from django.db import connection, connections
+    from shopman.orderman.exceptions import DirectiveTerminalError
+
+    if connection.vendor != "postgresql":
+        pytest.skip("Independent row locks require PostgreSQL")
+    monkeypatch.setattr("shopman.orderman.dispatch._on_commit_callback", lambda *a: None)
+    order = _delivery_order(ref="TWO-DISPATCH-WORKERS")
+    tasks = [Directive.objects.create(topic=COURIER_DISPATCH, payload={"order_ref": order.ref}) for _ in range(2)]
+    entered, release = Event(), Event()
+    original = courier_mock.dispatch
+    calls = []
+
+    def delayed_remote(body):
+        calls.append(body)
+        entered.set()
+        assert release.wait(10)
+        return original(body)
+
+    monkeypatch.setattr(courier_mock, "dispatch", delayed_remote)
+
+    def worker(task):
+        try:
+            CourierDispatchHandler().handle(message=task, ctx={})
+            return "accepted"
+        except DirectiveTerminalError:
+            return "verification"
+        finally:
+            connections.close_all()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(worker, tasks[0])
+        try:
+            assert entered.wait(10)
+            second = pool.submit(worker, tasks[1])
+            assert second.result(timeout=10) == "verification"
+        finally:
+            release.set()
+        assert first.result(timeout=10) == "accepted"
+    assert len(calls) == 1
+    order.refresh_from_db()
+    assert courier.has_active_ride(order)

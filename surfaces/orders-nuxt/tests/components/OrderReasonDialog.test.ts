@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, defineComponent, h, mergeProps, ref, watch } from "vue";
+
 import { mount } from "@vue/test-utils";
 
 import OrderReasonDialog from "../../app/components/OrderReasonDialog.vue";
@@ -52,9 +53,11 @@ function mountDialog(props: Partial<{
   reasons: CancellationReason[];
   presets: string[];
   busy: boolean;
+  marketplace: boolean;
+  error: string;
 }> = {}) {
   return mount(OrderReasonDialog, {
-    props: { open: true, mode: "reject", loading: false, reasons: [], presets: [], busy: false, ...props },
+    props: { marketplace: Boolean(props.reasons?.length), open: true, mode: "reject", loading: false, reasons: [], presets: [], busy: false, ...props },
     global: { stubs },
   });
 }
@@ -140,5 +143,72 @@ describe("OrderReasonDialog — estados", () => {
     await w.setProps({ open: false });
     await w.setProps({ open: true });
     expect(confirmBtn(w, "Recusar pedido").attributes("disabled")).toBeDefined();
+  });
+});
+
+
+describe("motivos indisponíveis", () => {
+  it("bloqueia cancelar durante leitura e não converte vazio iFood em texto livre", () => {
+    const loading = mountDialog({ mode: "cancel", loading: true });
+    expect(confirmBtn(loading, "Confirmar").attributes("disabled")).toBeDefined();
+    const empty = mountDialog({ mode: "cancel", marketplace: true, reasons: [] });
+    expect(empty.find("textarea").exists()).toBe(false);
+    expect(empty.text()).toContain("não oferece motivos");
+    expect(confirmBtn(empty, "Confirmar").attributes("disabled")).toBeDefined();
+  });
+  it("mantém seleção no erro e permite consultar novamente sem reabrir", async () => {
+    const w = mountDialog({ marketplace: true, reasons: [{ code: "A", description: "Motivo" }] });
+    await w.find("select").setValue("A");
+    await w.setProps({ error: "Consulta indisponível" });
+    expect(confirmBtn(w, "Recusar pedido").attributes("disabled")).toBeDefined();
+    await w.findAll("button").find(b => b.text() === "Consultar novamente")!.trigger("click");
+    expect(w.emitted("retry")).toHaveLength(1);
+    await w.setProps({ error: "", reasons: [{ code: "A", description: "Motivo" }] });
+    expect((w.find("select").element as HTMLSelectElement).value).toBe("A");
+    await w.setProps({ reasons: [{ code: "B", description: "Novo" }] });
+    expect(confirmBtn(w, "Recusar pedido").attributes("disabled")).toBeDefined();
+  });
+});
+
+
+describe("descarte explícito do motivo", () => {
+  beforeEach(() => { window.confirm = vi.fn(); });
+  afterEach(() => vi.restoreAllMocks());
+  it("preserva texto quando a pessoa recusa descartar", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const w = mountDialog();
+    await w.find("textarea").setValue("Contexto importante");
+    await confirmBtn(w, "Voltar").trigger("click");
+    expect(w.emitted("update:open")).toBeUndefined();
+    expect(w.find("textarea").element.value).toBe("Contexto importante");
+    expect(confirm).toHaveBeenCalledTimes(1);
+    confirm.mockRestore();
+  });
+  it("permite descartar explicitamente e informa o estado do draft", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const w = mountDialog();
+    await w.find("textarea").setValue("Contexto importante");
+    expect(w.emitted("dirty-change")?.at(-1)).toEqual([true]);
+    await confirmBtn(w, "Voltar").trigger("click");
+    expect(w.emitted("update:open")?.at(-1)).toEqual([false]);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    await w.setProps({ open: false });
+    expect(w.emitted("dirty-change")?.at(-1)).toEqual([false]);
+    await w.setProps({ open: true });
+    expect(w.find("textarea").element.value).toBe("");
+    confirm.mockRestore();
+  });
+  it("fecha draft vazio sem confirmação redundante", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const w = mountDialog();
+    await confirmBtn(w, "Voltar").trigger("click");
+    expect(w.emitted("update:open")?.at(-1)).toEqual([false]);
+    expect(confirm).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+  it("não dispensa o editor enquanto a operação está pendente", async () => {
+    const w = mountDialog({ busy: true });
+    await confirmBtn(w, "Voltar").trigger("click");
+    expect(w.emitted("update:open")).toBeUndefined();
   });
 });

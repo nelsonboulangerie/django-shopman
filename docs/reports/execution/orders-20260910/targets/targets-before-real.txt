@@ -1,0 +1,112 @@
+
+> test:e2e
+> playwright test targets.spec.ts
+
+[WebServer] (node:21760) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 
+[WebServer]  ERROR  (node:21762) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use node --trace-warnings ... to show where the warning was created)
+[WebServer] 
+[WebServer] 
+[WebServer]  WARN  [plugin @tailwindcss/vite:generate:build] [SOURCEMAP_BROKEN] Sourcemap is likely to be incorrect: a plugin (@tailwindcss/vite:generate:build) was used to transform files, but didn't generate a sourcemap for the transformation. Consult the plugin documentation for help: https://rolldown.rs/guide/troubleshooting#warning-sourcemap-is-likely-to-be-incorrect
+[WebServer] 
+[WebServer] 
+[WebServer] 
+[WebServer]  WARN  [plugin @tailwindcss/vite:generate:build] [SOURCEMAP_BROKEN] Sourcemap is likely to be incorrect: a plugin (@tailwindcss/vite:generate:build) was used to transform files, but didn't generate a sourcemap for the transformation. Consult the plugin documentation for help: https://rolldown.rs/guide/troubleshooting#warning-sourcemap-is-likely-to-be-incorrect
+[WebServer]  (x2)
+[WebServer] 
+[WebServer] 
+[WebServer]  WARN  [plugin @tailwindcss/vite:generate:build] [SOURCEMAP_BROKEN] Sourcemap is likely to be incorrect: a plugin (@tailwindcss/vite:generate:build) was used to transform files, but didn't generate a sourcemap for the transformation. Consult the plugin documentation for help: https://rolldown.rs/guide/troubleshooting#warning-sourcemap-is-likely-to-be-incorrect
+[WebServer]  (x3)
+[WebServer] 
+[WebServer] 
+[WebServer]  WARN  [plugin @tailwindcss/vite:generate:build] [SOURCEMAP_BROKEN] Sourcemap is likely to be incorrect: a plugin (@tailwindcss/vite:generate:build) was used to transform files, but didn't generate a sourcemap for the transformation. Consult the plugin documentation for help: https://rolldown.rs/guide/troubleshooting#warning-sourcemap-is-likely-to-be-incorrect
+[WebServer]  (x4)
+[WebServer] 
+[WebServer] (node:21785) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 2 tests using 1 worker
+
+(node:21786) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › tests/e2e/targets.spec.ts:6:5 › Alvos desktop › busca, seleção, ordenação e troca de visão têm área operacional (973ms)
+(node:21805) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [chromium] › tests/e2e/targets.spec.ts:6:5 › Alvos touch › busca, seleção, ordenação e troca de visão têm área operacional (424ms)
+
+
+  1) [chromium] › tests/e2e/targets.spec.ts:6:5 › Alvos desktop › busca, seleção, ordenação e troca de visão têm área operacional 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('button', { name: 'Selecionar pedido', exact: true })
+    Expected: visible
+    Error: strict mode violation: getByRole('button', { name: 'Selecionar pedido', exact: true }) resolved to 2 elements:
+        1) <button type="button" aria-pressed="false" aria-label="Selecionar pedido" class="border-muted-foreground/40 hover:border-primary mt-0.5 grid size-4 shrink-0 place-items-center rounded border transition">…</button> aka getByRole('article').filter({ hasText: 'WEB-20260625-0007 30sAna' }).getByLabel('Selecionar pedido')
+        2) <button type="button" aria-pressed="false" aria-label="Selecionar pedido" class="border-muted-foreground/40 hover:border-primary mt-0.5 grid size-4 shrink-0 place-items-center rounded border transition">…</button> aka getByRole('article').filter({ hasText: 'WEB-BLOCKED 30sPagamento' }).getByLabel('Selecionar pedido')
+
+    Call log:
+      - Expect "toBeVisible" with timeout 8000ms
+      - waiting for getByRole('button', { name: 'Selecionar pedido', exact: true })
+
+
+       6 |     test("busca, seleção, ordenação e troca de visão têm área operacional", async ({ page }) => {
+       7 |       async function target(locator: Locator, label: string) {
+    >  8 |         await expect(locator).toBeVisible();
+         |                               ^
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+      11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:8:31)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:15:13
+
+    Error Context: test-results/targets-Alvos-desktop-busc-c4710--visão-têm-área-operacional-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/targets-Alvos-desktop-busc-c4710--visão-têm-área-operacional-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/targets-Alvos-desktop-busc-c4710--visão-têm-área-operacional-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › tests/e2e/targets.spec.ts:6:5 › Alvos touch › busca, seleção, ordenação e troca de visão têm área operacional 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('button', { name: 'Selecionar pedido', exact: true })
+    Expected: visible
+    Error: strict mode violation: getByRole('button', { name: 'Selecionar pedido', exact: true }) resolved to 2 elements:
+        1) <button type="button" aria-pressed="false" aria-label="Selecionar pedido" class="border-muted-foreground/40 hover:border-primary mt-0.5 grid size-4 shrink-0 place-items-center rounded border transition">…</button> aka getByRole('article').filter({ hasText: 'WEB-20260625-0007 30sAna' }).getByLabel('Selecionar pedido')
+        2) <button type="button" aria-pressed="false" aria-label="Selecionar pedido" class="border-muted-foreground/40 hover:border-primary mt-0.5 grid size-4 shrink-0 place-items-center rounded border transition">…</button> aka getByRole('article').filter({ hasText: 'WEB-BLOCKED 30sPagamento' }).getByLabel('Selecionar pedido')
+
+    Call log:
+      - Expect "toBeVisible" with timeout 8000ms
+      - waiting for getByRole('button', { name: 'Selecionar pedido', exact: true })
+
+
+       6 |     test("busca, seleção, ordenação e troca de visão têm área operacional", async ({ page }) => {
+       7 |       async function target(locator: Locator, label: string) {
+    >  8 |         await expect(locator).toBeVisible();
+         |                               ^
+       9 |         const box = await locator.boundingBox();
+      10 |         expect.soft(box?.width, `${label}: largura`).toBeGreaterThanOrEqual(44);
+      11 |         expect.soft(box?.height, `${label}: altura`).toBeGreaterThanOrEqual(44);
+        at target (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:8:31)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/e2e/targets.spec.ts:15:13
+
+    Error Context: test-results/targets-Alvos-touch-busca--87b29--visão-têm-área-operacional-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/targets-Alvos-touch-busca--87b29--visão-têm-área-operacional-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/targets-Alvos-touch-busca--87b29--visão-têm-área-operacional-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    [chromium] › tests/e2e/targets.spec.ts:6:5 › Alvos desktop › busca, seleção, ordenação e troca de visão têm área operacional 
+    [chromium] › tests/e2e/targets.spec.ts:6:5 › Alvos touch › busca, seleção, ordenação e troca de visão têm área operacional 

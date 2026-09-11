@@ -79,7 +79,7 @@ function confirmTyped() {
       </UiDialogHeader>
 
       <form class="grid gap-2" @submit.prevent="confirmTyped">
-        <label class="grid gap-1 text-sm">
+        <label class="grid gap-1 text-xs">
           <span class="font-medium text-muted-foreground">Referência da comanda</span>
           <div class="flex gap-2">
             <UiInput
@@ -116,7 +116,7 @@ function confirmTyped() {
             <span v-if="tab.item_count" class="text-xs font-semibold tabular-nums">
               {{ tab.item_count }} · {{ tab.total_display }}
             </span>
-            <span v-if="hasDraft && !canAssociate(tab)" class="text-xs text-amber-700 dark:text-amber-400">
+            <span v-if="hasDraft && !canAssociate(tab)" class="text-xs text-warning">
               Abra separadamente para evitar mistura de pedidos.
             </span>
           </button>

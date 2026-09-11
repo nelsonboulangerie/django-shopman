@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from shopman.shop.projections.types import Action
+
 # O `kind` da tela deriva de `display.format`: formato VAZIO é quadro (rota nossa),
 # formato preenchido é feed de plataforma (dialeto de terceiro).
 _FORMAT_META = {
@@ -60,6 +62,7 @@ class FeedProjection:
     collections: tuple[FeedCollectionRef, ...]  # coleções que ele exibe (em ordem global)
     rotate_seconds: int  # menuboard: cadência da troca de páginas (0 = sem rotação)
     items_per_page: int  # menuboard: teto de itens por tela (0 = tudo numa página)
+    actions: tuple[Action, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -75,15 +78,17 @@ class FeedBoardProjection:
     all_collections: tuple[CollectionOptionProjection, ...]  # opções p/ o picker (ordem global)
 
 
-def build_feed_board() -> FeedBoardProjection:
+def build_feed_board(*, user=None) -> FeedBoardProjection:
     from shopman.offerman.models import Collection
 
+    from shopman.backstage.services import feeds as feed_service
     from shopman.shop.models import Channel
 
     collections = list(Collection.objects.filter(is_active=True).order_by("sort_order", "name"))
     coll_by_ref = {c.ref: c for c in collections}
     order_index = {c.ref: i for i, c in enumerate(collections)}
 
+    authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_catalog"))
     feeds: list[FeedProjection] = []
     channels = Channel.objects.filter(
         commerce_policy=Channel.CommercePolicy.DISPLAY
@@ -105,6 +110,13 @@ def build_feed_board() -> FeedBoardProjection:
         resolved.sort(key=lambda c: order_index.get(c.ref, 10_000))
         feeds.append(
             FeedProjection(
+                actions=tuple(Action(
+                    ref=field, kind="mutation", label=label, enabled=authorized and (field != "rotation" or not fmt),
+                    reason=("Identifique uma pessoa com permissão para editar o catálogo." if not authorized else
+                            "Feed de plataforma não tem páginas para rotacionar." if field == "rotation" and fmt else ""),
+                    method="POST", idempotency="required",
+                    payload_schema={"base_revision": feed_service.revision(sc, field), "expected_actor_id": getattr(user, "pk", None)},
+                ) for field, label in (("active", "Ligar/pausar"), ("collections", "Salvar coleções"), ("rotation", "Salvar rotação"))),
                 ref=sc.ref,
                 name=sc.name or sc.ref,
                 kind=meta["kind"],

@@ -1,0 +1,82 @@
+[WebServer] (node:37957) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:37958) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › tests/integration/operational.spec.ts:210:1 › feed selection survives response loss and consults the same scoped receipt (4.2s)
+
+
+  1) [chromium] › tests/integration/operational.spec.ts:210:1 › feed selection survives response loss and consults the same scoped receipt 
+
+    Error: expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    36
+
+      228 |   for (const control of [feed.getByRole("switch"), feed.getByRole("button", { name: "Coleções", exact: true })]) {
+      229 |     const box = await control.boundingBox();
+    > 230 |     expect.soft(box?.width).toBeGreaterThanOrEqual(44);
+          |                             ^
+      231 |     expect.soft(box?.height).toBeGreaterThanOrEqual(44);
+      232 |   }
+      233 |   await feed.getByRole("button", { name: "Coleções", exact: true }).click();
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:230:29
+
+    Error: expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    20
+
+      229 |     const box = await control.boundingBox();
+      230 |     expect.soft(box?.width).toBeGreaterThanOrEqual(44);
+    > 231 |     expect.soft(box?.height).toBeGreaterThanOrEqual(44);
+          |                              ^
+      232 |   }
+      233 |   await feed.getByRole("button", { name: "Coleções", exact: true }).click();
+      234 |   const applyBox = await page.getByRole("button", { name: "Aplicar", exact: true }).boundingBox();
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:231:30
+
+    Error: expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    32
+
+      229 |     const box = await control.boundingBox();
+      230 |     expect.soft(box?.width).toBeGreaterThanOrEqual(44);
+    > 231 |     expect.soft(box?.height).toBeGreaterThanOrEqual(44);
+          |                              ^
+      232 |   }
+      233 |   await feed.getByRole("button", { name: "Coleções", exact: true }).click();
+      234 |   const applyBox = await page.getByRole("button", { name: "Aplicar", exact: true }).boundingBox();
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:231:30
+
+    Error: Aplicar: ação principal
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 48
+    Received:    28.65325927734375
+
+      233 |   await feed.getByRole("button", { name: "Coleções", exact: true }).click();
+      234 |   const applyBox = await page.getByRole("button", { name: "Aplicar", exact: true }).boundingBox();
+    > 235 |   expect.soft(applyBox?.height, "Aplicar: ação principal").toBeGreaterThanOrEqual(48);
+          |                                                            ^
+      236 |   await page.getByLabel(new RegExp(lab.collection_name)).check();
+      237 |   await page.getByRole("button", { name: "Aplicar", exact: true }).click();
+      238 |   await expect(page.getByText("Coleções exibidas", { exact: true })).toHaveCount(0);
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:235:60
+
+    Error Context: ../../.orders-lab/playwright-results/operational-feed-selection-c11af-lts-the-same-scoped-receipt-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../.orders-lab/playwright-results/operational-feed-selection-c11af-lts-the-same-scoped-receipt-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../.orders-lab/playwright-results/operational-feed-selection-c11af-lts-the-same-scoped-receipt-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › tests/integration/operational.spec.ts:210:1 › feed selection survives response loss and consults the same scoped receipt 

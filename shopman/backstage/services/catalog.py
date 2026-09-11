@@ -17,6 +17,9 @@ Superfície = Channel; célula = ListingItem da listing de mesmo ref.
 from __future__ import annotations
 
 from dataclasses import asdict
+from math import isfinite
+
+from django.db import transaction
 
 from shopman.backstage.services.exceptions import CatalogError
 from shopman.shop.services import attributes
@@ -79,6 +82,37 @@ def _is_display_surface(surface_ref: str) -> bool:
     ).exists()
 
 
+def cell_field_revisions(sku: str, surface_ref: str, *, item=None, display=None) -> dict[str, str]:
+    """A cell's relevant canonical target and independent field values."""
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    if display is not None:
+        config = (display.config or {}).get("display") or {}
+        context = {"display_id": display.pk, "collections": config.get("collections") or []}
+        values = {"is_sellable": sku not in (config.get("paused_skus") or [])}
+    elif item is not None:
+        context = {"item_id": item.pk, "product_id": item.product_id, "listing_id": item.listing_id, "tier": str(item.min_qty)}
+        values = {field: getattr(item, field) for field in ("is_published", "is_sellable", "price_q")}
+    else:
+        return {}
+    return {field: mutation_fingerprint({"version": 1, "sku": sku, "surface": surface_ref, "target": context, "field": field, "value": value})
+        for field, value in values.items()}
+
+
+def _check_cell_revisions(patch: dict, current: dict, expected: dict | None, values: dict):
+    from shopman.backstage.services.exceptions import CatalogConflict
+
+    if expected is None:
+        return
+    changed = [field for field in patch if expected.get(field) != current.get(field)]
+    if changed:
+        error = CatalogConflict("A célula mudou nos campos editados. Confira os valores atuais; sua edição foi mantida.")
+        error.current = values
+        error.fields = changed
+        raise error
+
+
+@transaction.atomic
 def set_cell(
     sku: str,
     surface_ref: str,
@@ -87,76 +121,70 @@ def set_cell(
     is_sellable: bool | None = None,
     price_q: int | None = None,
     actor: str = "",
+    expected_revisions: dict | None = None,
 ):
-    """Edita uma célula (produto × superfície). save() dispara o auto-trigger.
+    """Merge one cell under Channel → Product → Listing → ListingItem locks."""
+    from shopman.offerman.models import Collection, Listing, ListingItem, Product
 
-    Superfície de FEED (menuboard/plataforma) só aceita pausar/ativar: ``is_sellable``
-    vira a pausa local do item (não há preço nem publicação — feed não transaciona).
-    """
-    if _is_display_surface(surface_ref):
+    from shopman.shop.models import Channel
+
+    patch = {}
+    if is_published is not None:
+        patch["is_published"] = _as_flag(is_published, "is_published")
+    if is_sellable is not None:
+        patch["is_sellable"] = _as_flag(is_sellable, "is_sellable")
+    if price_q is not None:
+        patch["price_q"] = _as_nullable_int(price_q, "price_q")
+        if patch["price_q"] is None or patch["price_q"] < 0:
+            raise CatalogError("Preço não pode ser negativo.")
+    if not patch:
+        raise CatalogError("Informe o campo que deseja alterar na célula.")
+    channel = Channel.objects.select_for_update().filter(ref=surface_ref).first()
+    groups = []
+    if channel is not None and channel.commerce_policy == Channel.CommercePolicy.DISPLAY and expected_revisions is not None:
+        refs = ((channel.config or {}).get("display") or {}).get("collections") or []
+        groups = list(Collection.objects.select_for_update().filter(ref__in=refs).order_by("pk"))
+    product = Product.objects.select_for_update().filter(sku=sku).first()
+    if channel is None or product is None:
+        raise CatalogError("O produto ou a superfície não foi encontrado.")
+    if channel.commerce_policy == Channel.CommercePolicy.DISPLAY:
         from types import SimpleNamespace
 
         from shopman.backstage.services import feeds as display_service
 
-        if is_sellable is None:
+        if set(patch) != {"is_sellable"}:
             raise CatalogError("Feed aceita apenas pausar/ativar (is_sellable).")
-        display_service.set_item_paused(surface_ref, sku, paused=not is_sellable)
-        # Duck-type com o que a API lê: feed está sempre "publicado", sem preço.
-        return SimpleNamespace(is_published=True, is_sellable=bool(is_sellable), price_q=None)
+        if expected_revisions is not None and not any(group.product_queryset().filter(pk=product.pk).exists() for group in groups):
+            from shopman.backstage.services.exceptions import CatalogConflict
 
-    from shopman.offerman.models import ListingItem
-
-    item = (
-        ListingItem.objects.filter(listing__ref=surface_ref, product__sku=sku)
-        .select_related("product", "listing")
-        .order_by("min_qty")
-        .first()
-    )
+            raise CatalogConflict("O produto não pertence mais ao recorte desta superfície. Atualize o catálogo.")
+        _check_cell_revisions(patch, cell_field_revisions(sku, surface_ref, display=channel), expected_revisions,
+            {"is_sellable": sku not in (((channel.config or {}).get("display") or {}).get("paused_skus") or [])})
+        display_service.set_item_paused(surface_ref, sku, paused=not patch["is_sellable"])
+        return SimpleNamespace(is_published=True, is_sellable=patch["is_sellable"], price_q=None)
+    listing = Listing.objects.select_for_update().filter(ref=surface_ref).first()
+    item = ListingItem.objects.select_for_update().filter(listing=listing, product=product).order_by("min_qty", "pk").first()
     if item is None:
         raise CatalogError(f"Produto '{sku}' não está na superfície '{surface_ref}'.")
-
-    if price_q is not None:
-        if price_q < 0:
-            raise CatalogError("Preço não pode ser negativo.")
-        item.price_q = price_q
-    if is_published is not None:
-        item.is_published = is_published
-    if is_sellable is not None:
-        item.is_sellable = is_sellable
-
-    item.save()
+    item.product, item.listing = product, listing
+    _check_cell_revisions(patch, cell_field_revisions(sku, surface_ref, item=item), expected_revisions,
+        {field: getattr(item, field) for field in ("price_q", "is_published", "is_sellable")})
+    for field, value in patch.items():
+        setattr(item, field, value)
+    # Preserve the canonical save/history/signals, limiting the write to the patch.
+    item.save(update_fields=list(patch))
     return item
 
 
-def set_product(
-    sku: str,
-    *,
-    is_published: bool | None = None,
-    is_sellable: bool | None = None,
-    actor: str = "",
-):
-    """Pausa/publica o produto em TODOS os canais de uma vez ("globalzinho").
-
-    Escreve no switch produto-level (``Product.is_sellable`` / ``is_published``),
-    que gateia toda superfície. ``save()`` emite ``product_updated`` → o auto-trigger
-    re-projeta o produto em cada listing alvo (retract-aware). Um único ponto de
-    verdade; não itera célula por célula.
-    """
+def set_product(sku: str, *, is_published: bool | None = None, is_sellable: bool | None = None, actor: str = ""):
+    """Compatibility facade; global flags use the canonical partial product writer."""
     from shopman.offerman.models import Product
 
-    product = Product.objects.filter(sku=sku).first()
-    if product is None:
-        raise CatalogError(f"Produto '{sku}' não encontrado.")
-
-    if is_published is None and is_sellable is None:
+    patch = {field: value for field, value in {"is_published": is_published, "is_sellable": is_sellable}.items() if value is not None}
+    if not patch:
         raise CatalogError("Nada a atualizar (informe is_published e/ou is_sellable).")
-    if is_published is not None:
-        product.is_published = is_published
-    if is_sellable is not None:
-        product.is_sellable = is_sellable
-
-    product.save()
-    return product
+    update_product_detail(sku, patch, actor=actor)
+    return Product.objects.get(sku=sku)
 
 
 def bulk_set(
@@ -171,15 +199,17 @@ def bulk_set(
 
     Retorna o número de células afetadas.
     """
-    from shopman.offerman.models import ListingItem
+    if is_published is not None:
+        is_published = _as_flag(is_published, "is_published")
+    if is_sellable is not None:
+        is_sellable = _as_flag(is_sellable, "is_sellable")
+
+    from shopman.offerman.models import Listing, ListingItem, Product
+
+    from shopman.shop.models import Channel
 
     if not skus:
         return 0
-    if surface_ref == ALL_SURFACES:
-        return sum(
-            bulk_set(skus, ref, is_published=is_published, is_sellable=is_sellable, actor=actor)
-            for ref in _all_channel_refs()
-        )
     if _is_display_surface(surface_ref):
         # Feed: bulk só pausa/ativa (is_sellable). Sem preço/publicação.
         if is_sellable is None:
@@ -195,12 +225,41 @@ def bulk_set(
     if not updates:
         raise CatalogError("Nada a atualizar (informe is_published e/ou is_sellable).")
 
-    count = (
-        ListingItem.objects.filter(listing__ref=surface_ref, product__sku__in=skus).update(**updates)
-    )
-    if count:
-        _reconcile_if_projected(surface_ref)
-        _notify_surface(surface_ref)
+    from shopman.shop.services.fiscal_catalog import validate_listing_item_publication
+
+    refs = _all_channel_refs() if surface_ref == ALL_SURFACES else [surface_ref]
+    with transaction.atomic():
+        # Same lock order as the exact price preview. Every selected destination
+        # validates before any update; provider sync is a separately queued effect.
+        list(Channel.objects.select_for_update().filter(ref__in=refs).order_by("pk"))
+        products = list(Product.objects.select_for_update().filter(sku__in=skus).order_by("pk"))
+        listings = list(Listing.objects.select_for_update().filter(ref__in=refs).order_by("pk"))
+        by_product = {product.pk: product for product in products}
+        by_listing = {listing.pk: listing for listing in listings}
+        items = list(ListingItem.objects.select_for_update().filter(
+            listing_id__in=by_listing, product_id__in=by_product,
+        ).order_by("listing_id", "product_id", "min_qty", "pk"))
+        if len(items) > MAX_BULK_PRICE_CELLS:
+            raise CatalogError(f"Selecione no máximo {MAX_BULK_PRICE_CELLS} células somando os canais e faixas.")
+        for item in items:
+            item.product = by_product[item.product_id]
+            item.listing = by_listing[item.listing_id]
+            for field, value in updates.items():
+                setattr(item, field, value)
+            validate_listing_item_publication(item)
+        count = ListingItem.objects.filter(pk__in=[item.pk for item in items]).update(**updates)
+        from shopman.offerman.conf import get_projection_backend
+
+        from shopman.shop.handlers.catalog_projection import enqueue_project
+        from shopman.shop.services.catalog_sync import record_sync
+
+        destinations = sorted({(item.product.sku, item.listing.ref) for item in items})
+        for sku, ref in destinations:
+            if get_projection_backend(ref) is not None:
+                record_sync(sku, ref, status="pending")
+                enqueue_project(sku, ref, trigger="operator_publication")
+        for ref in sorted({ref for _sku, ref in destinations}):
+            transaction.on_commit(lambda ref=ref: _notify_surface(ref))
     return count
 
 
@@ -443,11 +502,59 @@ def _detail_payload(product) -> dict:
         # somente-leitura: o painel avisa que o dado veio da FICHA e que editar
         # à mão congela a derivação (ver ``dietary_from_recipe``). Vem da
         # proveniência do valor, não mais de um sentinela à parte.
+        "field_sources": {
+            **{field: attributes.source(product, ref) or "" for field, ref in {**_DETAIL_ATTR_LIST_FIELDS, **_DETAIL_ATTR_TEXT_FIELDS}.items()},
+            "nutrition_facts": "recipe" if (product.nutrition_facts or {}).get("auto_filled", False) else "manual",
+        },
         "dietary_from_recipe": _from_recipe(product),
         "nutrition_auto_filled": bool((product.nutrition_facts or {}).get("auto_filled", False)),
         "fiscal_profiles": _fiscal_profile_choices(),
     }
 
+
+
+def product_field_revisions(detail: dict) -> dict[str, str]:
+    """Tokens for editable leaf fields, derived from the canonical read payload."""
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "field_sources"}
+    values = _patch_leaves({key: value for key, value in detail.items() if key not in readonly})
+    revisions = {}
+    for path, value in values.items():
+        if path in {"nutrition_facts.auto_filled", "social.has_data"}:
+            continue
+        state = {"version": 1, "sku": detail["sku"], "field": path, "value": value}
+        root = path.split(".", 1)[0]
+        if root in {"nutrition_facts", *_DETAIL_ATTR_LIST_FIELDS, *_DETAIL_ATTR_TEXT_FIELDS}:
+            state["source"] = (detail.get("field_sources") or {}).get(root, "")
+        revisions[path] = mutation_fingerprint(state)
+    return revisions
+
+
+def _patch_leaves(data: dict, prefix: str = "") -> dict:
+    leaves = {}
+    for key, value in data.items():
+        path = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            leaves.update(_patch_leaves(value, path))
+        else:
+            leaves[path] = value
+    return leaves
+
+
+def _check_product_revisions(product, patch: dict, expected: dict) -> None:
+    from shopman.backstage.services.exceptions import CatalogConflict
+
+    current = product_field_revisions(_detail_payload(product))
+    paths = _patch_leaves(patch)
+    unknown = set(paths) - set(current)
+    if unknown:
+        raise CatalogError("O patch contém campos que não são editáveis neste produto.")
+    changed = [path for path in paths if expected.get(path) != current[path]]
+    if changed:
+        error = CatalogConflict("O produto mudou nos campos editados. Confira os valores atuais; seu rascunho foi preservado.")
+        error.fields = changed
+        raise error
 
 def get_product_detail(sku: str) -> dict:
     """Todos os campos editáveis de um produto (para o painel do Gestor)."""
@@ -457,6 +564,8 @@ def get_product_detail(sku: str) -> dict:
 def _as_nullable_int(value, label: str) -> int | None:
     if value is None or value == "":
         return None
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        raise CatalogError(f"{label} deve ser um número inteiro.")
     try:
         return int(value)
     except (TypeError, ValueError) as exc:
@@ -495,9 +604,9 @@ def _as_flag(value, label: str) -> bool:
 
 
 def _as_str_list(value, label: str) -> list[str]:
-    if not isinstance(value, list):
-        raise CatalogError(f"{label} deve ser uma lista.")
-    return [str(item).strip() for item in value if str(item).strip()]
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise CatalogError(f"{label} deve ser uma lista de textos.")
+    return [item.strip() for item in value if item.strip()]
 
 
 def _apply_nutrition(product, raw) -> None:
@@ -513,7 +622,8 @@ def _apply_nutrition(product, raw) -> None:
     # interno e nunca vem do operador.
     accepted = {f.name: f.type for f in dataclass_fields(NutritionFacts) if f.name != "auto_filled"}
 
-    collected: dict = {}
+    collected: dict = dict(product.nutrition_facts or {})
+    changed = False
     for key in accepted:
         if key not in raw:
             continue
@@ -521,13 +631,19 @@ def _apply_nutrition(product, raw) -> None:
         if value in (None, ""):
             continue
         try:
-            collected[key] = int(value) if "int" in str(accepted[key]) else float(value)
-        except (TypeError, ValueError) as exc:
+            if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+                raise CatalogError(f"{key} deve ser um número.")
+            parsed = _as_nullable_int(value, key) if "int" in str(accepted[key]) else float(value)
+            if parsed is None or not isfinite(parsed):
+                raise CatalogError(f"{key} deve ser um número finito.")
+            changed = changed or collected.get(key) != parsed
+            collected[key] = parsed
+        except (TypeError, ValueError, OverflowError) as exc:
             raise CatalogError(f"{key} deve ser um número.") from exc
 
     # Editar à mão desliga a derivação a partir da receita — senão o próximo save
     # da Recipe sobrescreveria em silêncio o que o operador acabou de digitar.
-    if collected:
+    if changed:
         collected["auto_filled"] = False
     product.nutrition_facts = collected
 
@@ -577,7 +693,7 @@ def _apply_labelling(product, data: dict) -> None:
     for field, ref in _DETAIL_ATTR_LIST_FIELDS.items():
         if field not in data:
             continue
-        novo = [str(v).strip() for v in (data.get(field) or []) if str(v).strip()]
+        novo = _as_str_list(data.get(field), field)
         if novo == (attributes.get(product, ref) or []):
             continue
         attributes.set(product, ref, novo or None, source="manual", save=False)
@@ -661,17 +777,30 @@ def _apply_fiscal(product, raw) -> None:
     product.metadata = metadata
 
 
-def update_product_detail(sku: str, data: dict, *, actor: str = "") -> dict:
+@transaction.atomic
+def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_revisions: dict | None = None) -> dict:
     """Merge parcial dos campos do produto (chave ausente = sem mudança).
 
-    Valida com ``full_clean()`` (inclui as invariantes ANVISA de nutrition_facts) e
-    persiste com ``save()``, que emite ``product_updated`` quando um campo projetável
+    Edição de conteúdo valida com ``full_clean()``; switches globais preservam a
+    validação de flags e o gate fiscal de save, sem rever rotulagem não editada.
+    Persiste com ``save()``, que emite ``product_updated`` quando um campo projetável
     muda — o auto-trigger re-projeta nas plataformas alvo. Os blocos em JSONField
     (nutricional, social, fiscal) são validados pelo dono do schema antes disso.
     """
     from django.core.exceptions import ValidationError
+    from shopman.offerman.models import Product
 
-    product = _get_product(sku)
+    product = Product.objects.select_for_update().filter(sku=sku).first()
+    if product is None:
+        raise CatalogError(f"Produto '{sku}' não encontrado.")
+    if expected_revisions is not None:
+        _check_product_revisions(product, data, expected_revisions)
+    keywords = None
+    if "keywords" in data:
+        raw = data["keywords"]
+        if not isinstance(raw, list) or any(not isinstance(value, str) for value in raw):
+            raise CatalogError("keywords deve ser uma lista de textos.")
+        keywords = [value.strip() for value in raw if value.strip()]
 
     for field in _DETAIL_TEXT_FIELDS:
         if field in data:
@@ -693,24 +822,27 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "") -> dict:
         _apply_nutrition(product, data.get("nutrition_facts"))
     # Rotulagem e blocos de metadata em sequência: cada um lê o metadata já
     # atualizado pelo anterior, então não há escrita perdida.
-    _apply_labelling(product, data)
+    try:
+        _apply_labelling(product, data)
+    except attributes.AttributeError_ as exc:
+        raise CatalogError(str(exc)) from exc
     if "social" in data:
         _apply_social(product, data.get("social"))
     if "fiscal" in data:
         _apply_fiscal(product, data.get("fiscal"))
 
-    try:
-        product.full_clean()
-    except ValidationError as exc:
-        raise CatalogError(_first_validation_message(exc)) from exc
+    # Availability and social-only edits already had their own strict validators
+    # plus save's fiscal gate. Do not require review of untouched legacy labels.
+    if not (set(data).issubset({"is_published", "is_sellable"}) or set(data) == {"social"}):
+        try:
+            product.full_clean()
+        except ValidationError as exc:
+            raise CatalogError(_first_validation_message(exc)) from exc
 
     product.save()
 
-    if "keywords" in data:
-        raw = data.get("keywords") or []
-        if not isinstance(raw, list):
-            raise CatalogError("keywords deve ser uma lista.")
-        product.keywords.set([str(k).strip() for k in raw if str(k).strip()])
+    if keywords is not None:
+        product.keywords.set(keywords)
 
     product.refresh_from_db()
     return _detail_payload(product)
@@ -874,51 +1006,339 @@ def ai_assist_field(sku: str, field: str, current_value: str = "") -> str:
 # (produtos dentro da coleção). Storefront, menuboard e feeds usam essa ordem.
 
 
-def reorder_collections(ordered_refs: list[str], *, actor: str = "") -> int:
-    """Grava a ordem das coleções (Collection.sort_order) na sequência recebida."""
-    from shopman.offerman.models import Collection
-
-    if not ordered_refs:
-        return 0
-    colls = {c.ref: c for c in Collection.objects.filter(ref__in=ordered_refs)}
-    changed = []
-    for index, ref in enumerate(ordered_refs):
-        coll = colls.get(ref)
-        if coll is not None and coll.sort_order != index:
-            coll.sort_order = index
-            changed.append(coll)
-    if changed:
-        Collection.objects.bulk_update(changed, ["sort_order"])
-    return len(changed)
-
-
-def reorder_collection_items(collection_ref: str, ordered_skus: list[str], *, actor: str = "") -> int:
-    """Grava a ordem dos produtos dentro de uma coleção MANUAL (CollectionItem.sort_order).
-
-    Coleção por regra (smart) não tem ordem manual — a pertinência é por condição.
-    """
+def _curation_snapshot(collection_ref: str = "", *, lock: bool = False):
+    """Read the canonical ordering and membership; locking callers are atomic."""
     from shopman.offerman.models import Collection, CollectionItem
 
-    coll = Collection.objects.filter(ref=collection_ref).first()
-    if coll is None:
-        raise CatalogError(f"Coleção '{collection_ref}' não encontrada.")
-    if coll.is_smart:
-        raise CatalogError("Coleção por regra não tem ordem manual.")
-    if not ordered_skus:
-        return 0
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-    items = {
-        ci.product.sku: ci
-        for ci in CollectionItem.objects.filter(collection=coll).select_related("product")
-    }
+    groups = Collection.objects.all()
+    if lock:
+        groups = groups.select_for_update()
+    if collection_ref:
+        group = groups.filter(ref=collection_ref).first()
+        if group is None:
+            raise CatalogError("A coleção não foi encontrada.")
+        if group.is_smart:
+            raise CatalogError("Coleção por regra não tem ordem manual.")
+        items = CollectionItem.objects.filter(collection=group).select_related("product").order_by("pk")
+        if lock:
+            items = items.select_for_update(of=("self",))
+        records = list(items)
+        rows = [(item.pk, item.product.sku, item.sort_order) for item in records]
+        context = {"ref": group.ref, "active": group.is_active, "rule": group.rule}
+    else:
+        records = list(groups.filter(is_active=True).order_by("pk"))
+        rows = [(group.pk, group.ref, group.sort_order) for group in records]
+        context = {"scope": "active-collections"}
+    revision = mutation_fingerprint({"version": 1, "context": context, "rows": rows})
+    return revision, records, [row[1] for row in rows]
+
+
+def curation_revision(collection_ref: str = "") -> str:
+    return _curation_snapshot(collection_ref)[0]
+
+
+def _validate_curated_order(ordered, members, observed, expected):
+    from shopman.backstage.services.exceptions import CatalogConflict
+
+    if not isinstance(ordered, list) or any(not isinstance(value, str) for value in ordered):
+        raise CatalogError("A ordem deve ser uma lista de referências.")
+    if expected is not None and expected != observed:
+        raise CatalogConflict("A ordem mudou durante a edição. Confira a ordem atual antes de aplicar seu arraste.")
+    if len(ordered) != len(set(ordered)) or set(ordered) != set(members):
+        raise CatalogError("A lista mudou ou está incompleta. Atualize e reordene o conjunto completo.")
+
+
+@transaction.atomic
+def reorder_collections(ordered_refs: list[str], *, actor: str = "", expected_revision: str | None = None) -> int:
+    """Reorder exactly the observed active collections; preserve inactive groups."""
+    from shopman.offerman.models import Collection
+
+    revision, records, members = _curation_snapshot(lock=True)
+    _validate_curated_order(ordered_refs, members, revision, expected_revision)
+    positions = {ref: index for index, ref in enumerate(ordered_refs)}
     changed = []
-    for index, sku in enumerate(ordered_skus):
-        ci = items.get(sku)
-        if ci is not None and ci.sort_order != index:
-            ci.sort_order = index
-            changed.append(ci)
+    for group in records:
+        if group.sort_order != positions[group.ref]:
+            group.sort_order = positions[group.ref]
+            changed.append(group)
     if changed:
-        CollectionItem.objects.bulk_update(changed, ["sort_order"])
+        Collection.objects.bulk_update(changed, ["sort_order"])
+        from shopman.shop.handlers._sse_emitters import emit_catalog_changed
+
+        emit_catalog_changed()
     return len(changed)
 
 
+@transaction.atomic
+def reorder_collection_items(collection_ref: str, ordered_skus: list[str], *, actor: str = "", expected_revision: str | None = None) -> int:
+    """Reorder exact manual membership under the collection and item locks."""
+    from shopman.offerman.models import CollectionItem
+
+    revision, records, members = _curation_snapshot(collection_ref, lock=True)
+    _validate_curated_order(ordered_skus, members, revision, expected_revision)
+    positions = {sku: index for index, sku in enumerate(ordered_skus)}
+    changed = []
+    for item in records:
+        if item.sort_order != positions[item.product.sku]:
+            item.sort_order = positions[item.product.sku]
+            changed.append(item)
+    if changed:
+        CollectionItem.objects.bulk_update(changed, ["sort_order"])
+        from shopman.shop.handlers._sse_emitters import emit_catalog_changed
+
+        emit_catalog_changed()
+    return len(changed)
+
+
+# 100 destination cells is the measured provisional lab envelope, not a field SLA.
+MAX_BULK_PRICE_CELLS = 100
+
+
+def _bulk_selection(data: dict, *, lock: bool, allow_display: bool = False):
+    from shopman.offerman.models import Collection, Listing, ListingItem, Product
+
+    from shopman.shop.models import Channel
+    surface = data.get("surface_ref")
+    if not isinstance(surface, str) or not surface:
+        raise CatalogError("surface_ref é obrigatório.")
+    refs = _all_channel_refs() if surface == ALL_SURFACES else [surface]
+    channels = Channel.objects.filter(ref__in=refs).order_by("pk")
+    if lock:
+        channels = channels.select_for_update()
+    channels = list(channels)
+    if len(channels) != len(refs) or any(channel.commerce_policy != Channel.CommercePolicy.ORDER for channel in channels) and not (allow_display and len(channels) == 1 and channels[0].commerce_policy == Channel.CommercePolicy.DISPLAY):
+        raise CatalogError("Selecione uma superfície existente compatível com a operação.")
+    collection = None
+    if data.get("collection_ref"):
+        collections = Collection.objects.filter(ref=data["collection_ref"])
+        collection = (collections.select_for_update() if lock else collections).first()
+        if collection is None:
+            raise CatalogError("Coleção não encontrada.")
+        skus = list(collection.product_queryset().order_by("sku").values_list("sku", flat=True))
+    else:
+        skus = data.get("skus")
+        if not isinstance(skus, list) or not skus or any(not isinstance(sku, str) or not sku.strip() for sku in skus):
+            raise CatalogError("Informe collection_ref ou uma lista skus.")
+        skus = sorted(set(skus))
+    group_refs = [ref for channel in channels if channel.commerce_policy == Channel.CommercePolicy.DISPLAY
+        for ref in ((channel.config or {}).get("display") or {}).get("collections", [])]
+    groups = Collection.objects.filter(ref__in=group_refs).order_by("pk")
+    groups = list(groups.select_for_update() if lock else groups)
+    products = Product.objects.filter(sku__in=skus).order_by("pk")
+    listings = Listing.objects.filter(ref__in=refs).order_by("pk")
+    if lock:
+        products, listings = products.select_for_update(), listings.select_for_update()
+    products, listings = list(products), list(listings)
+    if len(products) != len(skus):
+        raise CatalogError("A seleção contém produto que não existe mais.")
+    queryset = ListingItem.objects.filter(listing__ref__in=refs, product__sku__in=skus).order_by("listing_id", "product_id", "min_qty", "pk")
+    if lock:
+        queryset = queryset.select_for_update()
+    all_items = list(queryset)
+    return refs, channels, collection, skus, products, listings, all_items, groups
+
+
+def _price_snapshot(data: dict, *, actor_id: int, lock: bool = False) -> tuple[dict, list]:
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    op, value = data.get("op"), data.get("value")
+    if op not in _PRICE_OPS or not isinstance(value, int) or isinstance(value, bool):
+        raise CatalogError("Informe operação de preço e valor inteiro válidos.")
+    if op == "set" and value < 0:
+        raise CatalogError("Preço não pode ser negativo.")
+    refs, channels, collection, skus, products, listings, all_items, _groups = _bulk_selection(data, lock=lock)
+    by_product = {product.pk: product for product in products}
+    by_listing = {listing.pk: listing for listing in listings}
+    seen = set()
+    items, cells = [], []
+    for item in all_items:
+        identity = (item.listing_id, item.product_id)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        product, listing = by_product[item.product_id], by_listing[item.listing_id]
+        cells.append({"id": item.pk, "sku": product.sku, "surface_ref": listing.ref,
+                      "tier": str(item.min_qty), "before_q": item.price_q,
+                      "after_q": _apply_price_op(item.price_q, op, value)})
+        items.append(item)
+    if len(cells) > MAX_BULK_PRICE_CELLS:
+        raise CatalogError(f"Selecione no máximo {MAX_BULK_PRICE_CELLS} células somando os canais.")
+    state = {
+        "actor": actor_id, "operation": "bulk-price", "op": op, "value": value,
+        "skus": skus, "refs": refs, "cells": cells,
+        "tiers": [(item.pk, str(item.min_qty), item.price_q, item.is_published, item.is_sellable) for item in all_items],
+        "products": [(product.pk, product.base_price_q, product.is_published, product.is_sellable, product.metadata) for product in products],
+        "listings": [(listing.pk, listing.is_active) for listing in listings],
+        "channels": [(channel.pk, channel.is_active, channel.commerce_policy, channel.config) for channel in channels],
+        "collection": (collection.ref, collection.rule) if collection else None,
+    }
+    from shopman.backstage.projections.catalog import CatalogPricePreview, CatalogPricePreviewCell
+
+    preview = CatalogPricePreview(
+        base_revision=mutation_fingerprint(state), expected_actor_id=actor_id,
+        cells=tuple(CatalogPricePreviewCell(**cell) for cell in cells), limit=MAX_BULK_PRICE_CELLS,
+    )
+    return asdict(preview), items
+
+
+def preview_bulk_price(data: dict, *, actor_id: int) -> dict:
+    preview, _items = _price_snapshot(data, actor_id=actor_id)
+    return preview
+
+
+@transaction.atomic
+def apply_bulk_price_intention(data: dict, *, actor_id: int) -> dict:
+    from shopman.offerman.conf import get_projection_backend
+    from shopman.offerman.models import ListingItem
+
+    from shopman.backstage.services.exceptions import CatalogConflict
+    from shopman.shop.handlers.catalog_projection import enqueue_project
+    from shopman.shop.services.catalog_sync import record_sync
+
+    preview, items = _price_snapshot(data, actor_id=actor_id, lock=True)
+    if data.get("expected_actor_id") != actor_id or data.get("base_revision") != preview["base_revision"]:
+        raise CatalogConflict("O catálogo ou a identificação mudou. Revise a prévia; nenhum preço foi alterado.")
+    changed, pending = [], []
+    surfaces = set()
+    for item, cell in zip(items, preview["cells"], strict=True):
+        if item.price_q == cell["after_q"]:
+            continue
+        item.price_q = cell["after_q"]
+        changed.append(item)
+        surfaces.add(cell["surface_ref"])
+    ListingItem.objects.bulk_update(changed, ["price_q"])
+    for cell in preview["cells"]:
+        if cell["before_q"] == cell["after_q"] or get_projection_backend(cell["surface_ref"]) is None:
+            continue
+        record_sync(cell["sku"], cell["surface_ref"], status="pending")
+        enqueue_project(cell["sku"], cell["surface_ref"], trigger="operator_price_intention")
+        pending.append({"sku": cell["sku"], "surface_ref": cell["surface_ref"]})
+    for surface in surfaces:
+        transaction.on_commit(lambda ref=surface: _notify_surface(ref))
+    return {"ok": True, "outcome": "applied", "count": len(changed), "cells": preview["cells"], "sync_pending": pending}
+
+
+def _publication_snapshot(data: dict, *, actor_id: int, lock: bool = False) -> dict:
+    from shopman.backstage.projections.catalog import (
+        CatalogPublicationCell,
+        CatalogPublicationPreview,
+        CatalogPublicationSkip,
+    )
+    from shopman.shop.models import Channel
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    patch = {field: _as_flag(data[field], field) for field in ("is_published", "is_sellable") if field in data}
+    if not patch:
+        raise CatalogError("Informe is_published e/ou is_sellable.")
+    refs, channels, collection, skus, products, listings, items, groups = _bulk_selection(data, lock=lock, allow_display=True)
+    display = channels[0] if len(channels) == 1 and channels[0].commerce_policy == Channel.CommercePolicy.DISPLAY else None
+    cells, skipped = [], []
+    if display is not None:
+        if set(patch) != {"is_sellable"}:
+            raise CatalogError("Feed aceita apenas pausar/ativar (is_sellable).")
+        membership = {sku for group in groups for sku in group.product_queryset().filter(sku__in=skus).values_list("sku", flat=True)}
+        paused = ((display.config or {}).get("display") or {}).get("paused_skus") or []
+        for sku in skus:
+            if sku not in membership:
+                skipped.append({"sku": sku, "surface_ref": display.ref, "reason": "Produto fora do recorte do feed."})
+                continue
+            before = {"is_sellable": sku not in paused}
+            cells.append(CatalogPublicationCell(sku=sku, surface_ref=display.ref, tier="", before=before, after={**before, **patch}))
+    else:
+        by_product = {product.pk: product for product in products}
+        by_listing = {listing.pk: listing for listing in listings}
+        from shopman.shop.services.fiscal_catalog import validate_listing_item_publication
+
+        for item in items:
+            item.product, item.listing = by_product[item.product_id], by_listing[item.listing_id]
+            before = {field: getattr(item, field) for field in ("is_published", "is_sellable")}
+            after = {**before, **patch}
+            for field, value in patch.items():
+                setattr(item, field, value)
+            validate_listing_item_publication(item)
+            cells.append(CatalogPublicationCell(sku=item.product.sku, surface_ref=item.listing.ref,
+                tier=str(item.min_qty), before=before, after=after))
+        present = {(cell.sku, cell.surface_ref) for cell in cells}
+        skipped = [{"sku": sku, "surface_ref": ref, "reason": "Produto sem célula neste canal."}
+            for sku in skus for ref in refs if (sku, ref) not in present]
+    if not cells:
+        raise CatalogError("Nenhuma célula da seleção pertence ao destino.")
+    if len(cells) > MAX_BULK_PRICE_CELLS:
+        raise CatalogError(f"Selecione no máximo {MAX_BULK_PRICE_CELLS} células somando os canais e faixas.")
+    state = {"version": 1, "actor": actor_id, "operation": "catalog.publication", "patch": patch,
+        "skus": skus, "refs": refs, "cells": [asdict(cell) for cell in cells], "skipped": skipped,
+        "items": [(item.pk, item.price_q) for item in items],
+        "products": [(product.pk, product.base_price_q, product.is_published, product.is_sellable, product.metadata) for product in products],
+        "listings": [(listing.pk, listing.is_active) for listing in listings],
+        "channels": [(channel.pk, channel.is_active, channel.commerce_policy, channel.config) for channel in channels],
+        "collection": (collection.ref, collection.rule) if collection else None,
+        "groups": [(group.pk, group.rule) for group in groups]}
+    return asdict(CatalogPublicationPreview(base_revision=mutation_fingerprint(state), expected_actor_id=actor_id,
+        cells=tuple(cells), skipped=tuple(CatalogPublicationSkip(**cell) for cell in skipped), limit=MAX_BULK_PRICE_CELLS))
+
+
+def preview_bulk_publication(data: dict, *, actor_id: int) -> dict:
+    return _publication_snapshot(data, actor_id=actor_id)
+
+
+@transaction.atomic
+def apply_bulk_publication_intention(data: dict, *, actor_id: int) -> dict:
+    from shopman.backstage.services.exceptions import CatalogConflict
+
+    preview = _publication_snapshot(data, actor_id=actor_id, lock=True)
+    if data.get("expected_actor_id") != actor_id or data.get("base_revision") != preview["base_revision"]:
+        raise CatalogConflict("O catálogo ou a seleção mudou. Revise a prévia; nada foi alterado.")
+    patch = {field: _as_flag(data[field], field) for field in ("is_published", "is_sellable") if field in data}
+    # Frozen destinations from the validated snapshot; a newly created channel
+    # cannot silently join the operator's intention between validation and commit.
+    targets = sorted({cell["surface_ref"] for cell in preview["cells"]})
+    for ref in targets:
+        skus = sorted({cell["sku"] for cell in preview["cells"] if cell["surface_ref"] == ref})
+        bulk_set(skus, ref, **patch)
+    changed = sum(cell["before"] != cell["after"] for cell in preview["cells"])
+    return {"ok": True, "outcome": "applied", "count": changed, "cells": preview["cells"], "skipped": preview["skipped"]}
+
+
+def resync_revision(product, targets: list[str]) -> str:
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    return mutation_fingerprint({"version": 1, "product_id": product.pk, "sku": product.sku, "targets": sorted(targets)})
+
+
+def resync_snapshot(sku: str, *, lock: bool = False):
+    from shopman.offerman.conf import get_projection_backend_channels
+    from shopman.offerman.models import Product
+
+    from shopman.shop.models import Channel
+
+    channels = Channel.objects.filter(ref__in=get_projection_backend_channels(), is_active=True).order_by("pk")
+    channels = list(channels.select_for_update() if lock else channels)
+    products = Product.objects.filter(sku=sku)
+    product = (products.select_for_update() if lock else products).first()
+    if product is None:
+        raise CatalogError("Produto não encontrado.")
+    return product, sorted(channel.ref for channel in channels)
+
+
+@transaction.atomic
+def apply_resync_intention(data: dict) -> dict:
+    from shopman.backstage.services.exceptions import CatalogConflict
+    from shopman.shop.handlers.catalog_projection import enqueue_project
+    from shopman.shop.services.catalog_sync import record_sync
+
+    product, targets = resync_snapshot(data["sku"], lock=True)
+    if data.get("base_revision") != resync_revision(product, targets):
+        raise CatalogConflict("Os destinos de sincronização mudaram. Atualize antes de reenviar.")
+    chosen = [data["channel_ref"]] if data.get("channel_ref") else targets
+    if not chosen or any(ref not in targets for ref in chosen):
+        raise CatalogError("Não há destino ativo e configurado para este reenvio.")
+    tasks = []
+    for ref in chosen:
+        directive = enqueue_project(product.sku, ref, trigger="manual_resync")
+        if directive is None or directive.status not in {"queued", "running"}:
+            raise CatalogError("O enfileiramento não foi confirmado. Consulte novamente o resultado.")
+        record_sync(product.sku, ref, status="pending")
+        tasks.append({"channel_ref": ref, "directive_id": directive.pk, "status": directive.status})
+    return {"ok": True, "outcome": "applied", "sku": product.sku, "channels": chosen, "tasks": tasks}

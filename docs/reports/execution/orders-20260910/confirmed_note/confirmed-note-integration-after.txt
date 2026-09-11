@@ -1,0 +1,7 @@
+Error: /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/playwright.integration.config.ts does not exist
+    at resolveConfigFile2 (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/node_modules/playwright/lib/common/index.js:1543:11)
+    at resolveConfigLocation (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/node_modules/playwright/lib/common/index.js:1524:30)
+    at Object.loadConfigFromFile (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/node_modules/playwright/lib/common/index.js:1553:27)
+    at runTests (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/node_modules/playwright/lib/cli/testActions.js:46:51)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async _Command.<anonymous> (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/node_modules/playwright/lib/program.js:53:7)

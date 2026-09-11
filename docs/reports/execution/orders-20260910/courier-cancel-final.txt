@@ -1,0 +1,42 @@
+................................................................F.       [100%]
+=================================== FAILURES ===================================
+__________________ test_two_workers_claim_one_remote_attempt ___________________
+
+context = (<Order: CANCEL-RIDE-LAB>, <Mock id='4979864400'>)
+
+    @pytest.mark.django_db(transaction=True)
+    def test_two_workers_claim_one_remote_attempt(context):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Event
+
+        from django.db import connections
+        from shopman.orderman.exceptions import DirectiveTerminalError
+
+        order, adapter = context
+        task = courier.cancel_ride(order, actor="operator")
+        entered, release = Event(), Event()
+
+        def remote(*args, **kwargs):
+            entered.set()
+            assert release.wait(5)
+            return True
+
+        def worker():
+            try:
+                run(Directive.objects.get(pk=task.pk))
+            finally:
+                connections.close_all()
+
+        adapter.cancel.side_effect = remote
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(worker)
+            try:
+>               assert entered.wait(5)
+E               assert False
+E                +  where False = wait(5)
+E                +    where wait = <threading.Event at 0x129fbff80: unset>.wait
+
+shopman/shop/tests/test_courier_cancel_recovery.py:149: AssertionError
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_courier_cancel_recovery.py::test_two_workers_claim_one_remote_attempt
+1 failed, 65 passed in 18.71s

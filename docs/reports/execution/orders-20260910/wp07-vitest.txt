@@ -1,0 +1,33 @@
+
+> test
+> vitest run
+
+
+ RUN  v4.1.6 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt
+
+ ❯ |unit| tests/composables/useNowTick.test.ts (2 tests | 2 failed) 16ms
+     × ignores browser drift -300000 and reanchors after resume 13ms
+     × ignores browser drift 300000 and reanchors after resume 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| tests/composables/useNowTick.test.ts > server clock > ignores browser drift -300000 and reanchors after resume
+ FAIL  |unit| tests/composables/useNowTick.test.ts > server clock > ignores browser drift 300000 and reanchors after resume
+ReferenceError: document is not defined
+ ❯ mount node_modules/@vue/test-utils/dist/vue-test-utils.cjs.js:8278:16
+ ❯ tests/composables/useNowTick.test.ts:16:21
+     14|     const { useNowTick } = await import("../../app/composables/useNowT…
+     15|     const component = defineComponent({ setup() { return { now: useNow…
+     16|     const wrapper = mount(component);
+       |                     ^
+     17|     expect(Number(wrapper.text())).toBe(server);
+     18|     vi.advanceTimersByTime(5000);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed | 14 passed (15)
+      Tests  2 failed | 229 passed (231)
+   Start at  19:23:24
+   Duration  2.46s (transform 2.15s, setup 0ms, import 5.50s, tests 1.33s, environment 2.00s)
+

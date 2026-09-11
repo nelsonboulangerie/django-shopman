@@ -1,0 +1,98 @@
+...F                                                                     [100%]
+=================================== FAILURES ===================================
+_________ test_product_receipt_remains_readable_when_projection_fails __________
+
+client = <django.test.client.Client object at 0x13037da90>
+operator = <User: catalog-api>
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Committed before read outage>}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1302feba0>
+
+    def test_product_receipt_remains_readable_when_projection_fails(client, operator, catalog, monkeypatch):
+        from shopman.backstage.api.catalog import CatalogProductDetailView
+
+        client.force_login(operator)
+        body = {**client.get(URL).json()["action"]["payload_schema"], "patch": {"name": "Committed before read outage"}}
+        key = str(uuid4())
+
+        def unavailable(*args, **kwargs):
+            raise RuntimeError("synthetic product projection outage")
+
+        monkeypatch.setattr(CatalogProductDetailView, "_read", unavailable)
+        client.raise_request_exception = False
+        response = client.patch(URL, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+        assert response.status_code == 500
+        catalog["pao"].refresh_from_db()
+        assert catalog["pao"].name == "Committed before read outage"
+        receipt = client.get(URL, {"idempotency_key": key})
+>       assert receipt.status_code == 200
+E       assert 500 == 200
+E        +  where 500 = <HttpResponseServerError status_code=500, "text/html; charset=utf-8">.status_code
+
+shopman/backstage/tests/test_catalog_product_intentions.py:89: AssertionError
+----------------------------- Captured stderr call -----------------------------
+WARNING 2026-09-11 00:11:10,733 shopman.operational operator_alert.created
+ERROR 2026-09-11 00:11:10,733 django.request Internal Server Error: /api/v1/backstage/catalog/product/PAO/
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/core/handlers/exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/core/handlers/base.py", line 198, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/views/generic/base.py", line 106, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/api/catalog.py", line 185, in patch
+    return Response({**result.response_body, "replayed": result.replayed, **self._read(request, sku)}, status=result.response_code)
+                                                                            ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/tests/test_catalog_product_intentions.py", line 80, in unavailable
+    raise RuntimeError("synthetic product projection outage")
+RuntimeError: synthetic product projection outage
+ERROR 2026-09-11 00:11:10,737 django.request Internal Server Error: /api/v1/backstage/catalog/product/PAO/
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/core/handlers/exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/core/handlers/base.py", line 198, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/views/generic/base.py", line 106, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/api/catalog.py", line 141, in get
+    current = self._read(request, sku)
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/tests/test_catalog_product_intentions.py", line 80, in unavailable
+    raise RuntimeError("synthetic product projection outage")
+RuntimeError: synthetic product projection outage
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-11 00:11:11,162 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_catalog_product_intentions.py::test_product_receipt_remains_readable_when_projection_fails
+1 failed, 3 passed in 8.07s

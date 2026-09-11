@@ -13,8 +13,11 @@ via ``reportClientError`` → ``/api/v1/backstage/client-error/``.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import math
+import time
+import uuid
 from typing import Any
 
 from django.utils.decorators import method_decorator
@@ -27,6 +30,7 @@ from rest_framework.views import APIView
 
 from shopman.backstage.api.permissions import HasMarketingCapability
 from shopman.shop.services.marketing_observability import emit_metric
+from shopman.shop.services.observability import operational_context, operational_event
 from shopman.shop.telemetry_redaction import redact_text, strip_url_query
 
 logger = logging.getLogger("shopman.backstage.client")
@@ -172,3 +176,44 @@ class MarketingVitalView(APIView):
             theme=str(sample["theme"]),
         )
         return Response({"ok": True}, status=status.HTTP_202_ACCEPTED)
+
+class OperationalObservationMixin:
+    """Metadados limitados das APIs operacionais; nunca texto/payload do pedido."""
+
+    def dispatch(self, request, *args, **kwargs):
+        start = time.perf_counter()
+        with operational_context(request_id=uuid.uuid4().hex, operation=type(self).__name__, method=request.method) as context:
+            self._operation_observation = context
+            operational_event("operator.request.started")
+            try:
+                response = super().dispatch(request, *args, **kwargs)
+            except Exception as exc:
+                operational_event("operator.request.finished", response_status=500, outcome="transport_unknown", exception_class=type(exc).__name__, view_elapsed_ms=round((time.perf_counter() - start) * 1000, 3))
+                raise
+            body = getattr(response, "data", None)
+            body = body if isinstance(body, dict) else {}
+            outcome = body.get("outcome")
+            outcome = outcome if outcome in {"applied", "not_applied", "unknown", "in_progress"} else "read" if request.method == "GET" and response.status_code < 400 else "unclassified"
+            operational_event("operator.request.finished", response_status=response.status_code, outcome=outcome, replayed=body.get("replayed") is True, view_elapsed_ms=round((time.perf_counter() - start) * 1000, 3))
+            response["X-Request-ID"] = context["request_id"]
+            return response
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        # initial já aplicou autenticação/permissão. Nunca confiar em actor do body.
+        context = self._operation_observation
+        context["actor_id"] = request.user.pk
+        data = request.data if request.method in {"POST", "PATCH"} and callable(getattr(self, request.method.lower(), None)) else {}
+        data = data if isinstance(data, dict) else {}
+        resource = kwargs.get("ref") or kwargs.get("sku") or data.get("ref") or data.get("sku") or request.query_params.get("ref")
+        if isinstance(resource, str):
+            context["resource_ref"] = resource[:128]
+        surface = data.get("surface_ref")
+        if isinstance(surface, str):
+            context["surface_ref"] = surface[:128]
+        key = request.headers.get("Idempotency-Key") or data.get("idempotency_key") or request.query_params.get("idempotency_key")
+        base = data.get("base_revision") or request.headers.get("If-Match")
+        # Chaves/precondições opacas são digests: não podem virar dreno de tokens.
+        for field, value in (("intention_digest", key), ("base_revision_digest", base)):
+            if isinstance(value, str) and value:
+                context[field] = hashlib.sha256(value.encode()).hexdigest()

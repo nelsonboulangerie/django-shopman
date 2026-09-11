@@ -14,7 +14,9 @@ import {
   isSafeDjangoLocation,
   isSafeDjangoSetCookieHeader,
   mergeSetCookieIntoCookieHeader,
+  mutationHeaders,
 } from "../server/utils/djangoProxy";
+
 import {
   assertProductionDjangoConfiguration,
   configuredDjangoBaseUrl,
@@ -141,5 +143,24 @@ describe("Django proxy — transporte de CSRF/cookie do BFF de operador", () => 
     ).toBe("http://127.0.0.1:8000");
     expect(() => configuredDjangoBaseUrl({ NODE_ENV: "production", SHOPMAN_ENVIRONMENT: "test" })).toThrow();
     expect(configuredDjangoBaseUrl({ NODE_ENV: "development" })).toBe("http://127.0.0.1:8000");
+  });
+});
+
+
+describe("BFF — intenção e precondição", () => {
+  it("preserva somente os headers autorizados da intenção, sem aceitar identidade do cliente", () => {
+    const input: Record<string, string> = {
+      "idempotency-key": "same-intention",
+      "if-match": '"revision-1"',
+      "x-correlation-id": "trace-1",
+      "x-operator-id": "other-user",
+      authorization: "Bearer forged",
+    };
+    expect(mutationHeaders((name) => input[name])).toEqual({
+      "idempotency-key": "same-intention",
+      "if-match": '"revision-1"',
+      "x-correlation-id": "trace-1",
+    });
+    expect(mutationHeaders(() => undefined)).toEqual({});
   });
 });

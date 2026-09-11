@@ -69,6 +69,7 @@ const itemCountLabel = computed(() => {
     <!-- BOAS-VINDAS: a loja dá o tom; nada de venda na parede. -->
     <section v-if="phase === 'idle'" class="grid flex-1 place-items-center p-10">
       <div class="grid gap-4 text-center">
+        <!-- Escala e espaçamento propositais para leitura à distância no monitor do cliente. -->
         <p class="text-5xl font-semibold leading-tight tracking-tight md:text-7xl">
           {{ shopName || "Olá!" }}
         </p>
@@ -143,7 +144,7 @@ const itemCountLabel = computed(() => {
         </div>
 
         <div v-if="snapshot?.pix" class="grid justify-items-center gap-4">
-          <!-- QR sempre sobre branco: leitora de celular não perdoa dark mode. -->
+          <!-- QR branco com margem e raio próprios: leitura óptica, independente do tema. -->
           <img
             v-if="snapshot.pix.qrCodeSrc"
             :src="snapshot.pix.qrCodeSrc"
@@ -170,6 +171,7 @@ const itemCountLabel = computed(() => {
           <p class="text-7xl font-semibold tabular-nums tracking-tight md:text-8xl">{{ snapshot.changeDisplay }}</p>
         </div>
         <div class="grid gap-3">
+          <!-- Escala e espaçamento propositais para leitura à distância no monitor do cliente. -->
           <p class="text-5xl font-semibold tracking-tight md:text-7xl">
             Obrigado{{ snapshot?.customerFirstName ? `, ${snapshot.customerFirstName}` : "" }}!
           </p>

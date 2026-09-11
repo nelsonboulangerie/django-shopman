@@ -1,0 +1,8 @@
+
+> typecheck
+> nuxi typecheck
+
+✔ Nuxt Icon discovered local-installed 1 collections: lucide
+ℹ Nuxt Icon client bundle consist of 76 icons with 22.65KB(uncompressed) in size
+app/pages/catalog.vue(509,46): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
