@@ -1739,7 +1739,7 @@ def _checkout_contract(
             "supports_on_delivery_cash": "delivery" in fulfillment_types,
             "supports_customer_lookup": True,
             "supports_customer_memory": True,
-            "supports_delivery_address_autocomplete": bool(getattr(settings, "GOOGLE_MAPS_API_KEY", "")),
+            "supports_delivery_address_autocomplete": bool(_address_autocomplete_api_key()),
             "supports_receipt_email": True,
             "supports_manual_discount": True,
             "provider_readiness": tuple(
@@ -1975,8 +1975,14 @@ def _pending_change_requests(cash_shift) -> tuple[POSChangeRequestProjection, ..
     )
 
 
+def _address_autocomplete_api_key() -> str:
+    from shopman.shop.services.google_maps_credentials import browser_api_key
+
+    return browser_api_key()
+
+
 def _address_autocomplete_capability() -> AddressAutocompleteProjection:
-    api_key = getattr(settings, "GOOGLE_MAPS_API_KEY", "") or ""
+    api_key = _address_autocomplete_api_key()
     lat, lng = _shop_coordinates()
     return AddressAutocompleteProjection(
         enabled=bool(api_key),
