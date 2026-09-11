@@ -1,0 +1,91 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_chargeback_funds_are_not_available_for_preparation_or_second_refund[300] _
+
+returned = 300
+
+    @pytest.mark.parametrize("returned", [300, 1500])
+    def test_chargeback_funds_are_not_available_for_preparation_or_second_refund(returned):
+        order = Order.objects.create(ref="CHARGEBACK-BALANCE", status="accepted", total_q=1500,
+            data={"payment": {"method": "card"}})
+        intent = PaymentService.create_intent(order.ref, 1500, "card")
+        PaymentService.authorize(intent.ref)
+        PaymentService.capture(intent.ref)
+        order.data["payment"]["intent_ref"] = intent.ref
+        order.save(update_fields=["data"])
+        PaymentService.reconcile_gateway_status(intent.ref, gateway_status="captured", captured_q=1500, chargeback_q=returned)
+        intent.refresh_from_db()
+        assert intent.status == "captured"  # Existing Payman contract: amounts, no new state.
+        assert PaymentService.chargeback_total(intent.ref) == returned
+>       assert payment.captured_balance_q(order) == 1500 - returned
+E       assert 1500 == (1500 - 300)
+E        +  where 1500 = <function captured_balance_q at 0x11d8d6de0>(<Order: CHARGEBACK-BALANCE>)
+E        +    where <function captured_balance_q at 0x11d8d6de0> = payment.captured_balance_q
+
+shopman/shop/tests/test_payment_chargeback_balance.py:24: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-10 22:45:39,197 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-10 22:45:39,408 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-10 22:45:40,423 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-10 22:45:46,893 shopman.payman Intent created
+INFO 2026-09-10 22:45:46,894 shopman.payman Intent authorized
+INFO 2026-09-10 22:45:46,897 shopman.payman Intent captured
+INFO 2026-09-10 22:45:46,901 shopman.payman payment.reconciled
+_ test_chargeback_funds_are_not_available_for_preparation_or_second_refund[1500] _
+
+returned = 1500
+
+    @pytest.mark.parametrize("returned", [300, 1500])
+    def test_chargeback_funds_are_not_available_for_preparation_or_second_refund(returned):
+        order = Order.objects.create(ref="CHARGEBACK-BALANCE", status="accepted", total_q=1500,
+            data={"payment": {"method": "card"}})
+        intent = PaymentService.create_intent(order.ref, 1500, "card")
+        PaymentService.authorize(intent.ref)
+        PaymentService.capture(intent.ref)
+        order.data["payment"]["intent_ref"] = intent.ref
+        order.save(update_fields=["data"])
+        PaymentService.reconcile_gateway_status(intent.ref, gateway_status="captured", captured_q=1500, chargeback_q=returned)
+        intent.refresh_from_db()
+        assert intent.status == "captured"  # Existing Payman contract: amounts, no new state.
+        assert PaymentService.chargeback_total(intent.ref) == returned
+>       assert payment.captured_balance_q(order) == 1500 - returned
+E       assert 1500 == (1500 - 1500)
+E        +  where 1500 = <function captured_balance_q at 0x11d8d6de0>(<Order: CHARGEBACK-BALANCE>)
+E        +    where <function captured_balance_q at 0x11d8d6de0> = payment.captured_balance_q
+
+shopman/shop/tests/test_payment_chargeback_balance.py:24: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-10 22:45:46,989 shopman.payman Intent created
+INFO 2026-09-10 22:45:46,989 shopman.payman Intent authorized
+INFO 2026-09-10 22:45:46,991 shopman.payman Intent captured
+INFO 2026-09-10 22:45:46,994 shopman.payman payment.reconciled
+_ test_mixed_refund_and_chargeback_use_the_same_book_without_double_subtraction _
+
+    def test_mixed_refund_and_chargeback_use_the_same_book_without_double_subtraction():
+        intent = PaymentService.create_intent("MIXED-RETURNED", 2000, "pix")
+        PaymentService.authorize(intent.ref)
+        PaymentService.capture(intent.ref)
+        order = Order.objects.create(ref="MIXED-RETURNED", status="accepted", total_q=1500,
+            data={"payment": {"method": "pix", "intent_ref": intent.ref}})
+        PaymentService.refund(intent.ref, amount_q=200)
+        PaymentService.reconcile_gateway_status(intent.ref, gateway_status="captured", captured_q=2000, refunded_q=200, chargeback_q=300)
+>       assert payment.captured_balance_q(order) == 1500
+E       assert 1800 == 1500
+E        +  where 1800 = <function captured_balance_q at 0x11d8d6de0>(<Order: MIXED-RETURNED>)
+E        +    where <function captured_balance_q at 0x11d8d6de0> = payment.captured_balance_q
+
+shopman/shop/tests/test_payment_chargeback_balance.py:39: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-10 22:45:46,999 shopman.payman Intent created
+INFO 2026-09-10 22:45:47,000 shopman.payman Intent authorized
+INFO 2026-09-10 22:45:47,001 shopman.payman Intent captured
+INFO 2026-09-10 22:45:47,003 shopman.payman Intent refunded
+INFO 2026-09-10 22:45:47,006 shopman.payman payment.reconciled
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-10 22:45:47,014 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_payment_chargeback_balance.py::test_chargeback_funds_are_not_available_for_preparation_or_second_refund[300]
+FAILED shopman/shop/tests/test_payment_chargeback_balance.py::test_chargeback_funds_are_not_available_for_preparation_or_second_refund[1500]
+FAILED shopman/shop/tests/test_payment_chargeback_balance.py::test_mixed_refund_and_chargeback_use_the_same_book_without_double_subtraction
+3 failed in 7.99s

@@ -983,7 +983,7 @@ def lock_order_payment(order) -> None:
 
 
 def captured_balance_q(order) -> int | None:
-    """Return captured minus refunded amount for the order intent, if readable."""
+    """Return captured funds minus refunds and chargebacks, if readable."""
     payment_data = (order.data or {}).get("payment") or {}
     intent_ref = payment_data.get("intent_ref")
     if not intent_ref:
@@ -1007,7 +1007,7 @@ def has_sufficient_captured_payment(order, *, payment_reads=None) -> bool:
         balance_q = _payman_captured_balance_q(intent_ref)
     else:
         observed = payment_reads.get(intent_ref)
-        balance_q = observed.captured_q - observed.refunded_q if observed is not None else None
+        balance_q = observed.captured_q - observed.refunded_q - observed.chargeback_q if observed is not None else None
     if balance_q is None:
         return False
     return balance_q >= int(getattr(order, "total_q", 0) or 0)
@@ -1763,11 +1763,11 @@ def _payman_intent_captured(intent_ref: str) -> bool:
 
 
 def _payman_captured_balance_q(intent_ref: str) -> int | None:
-    """Return captured minus refunded amount for a Payman intent."""
+    """Return captured funds still held, using Payman refund/chargeback books."""
     try:
         from shopman.payman import PaymentService
 
-        return PaymentService.captured_total(intent_ref) - PaymentService.refunded_total(intent_ref)
+        return PaymentService.captured_total(intent_ref) - PaymentService.refunded_total(intent_ref) - PaymentService.chargeback_total(intent_ref)
     except Exception:
         logger.exception("payment._payman_captured_balance_q: error checking intent_ref=%s", intent_ref)
         return None
