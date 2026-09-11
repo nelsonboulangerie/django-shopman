@@ -1579,6 +1579,8 @@ class _OrderActionBase(APIView):
                 extra = execute(base) or {}
             except (OrderStateConflict, OrderConflict) as exc:
                 return {"detail": str(exc), "outcome": "not_applied", "intention": key}, 409
+            except notification_service.NotificationResendRefused as exc:
+                return {"detail": exc.message, "error": {"code": exc.code, "message": exc.message}, "outcome": "not_applied", "intention": key}, exc.status
             except OrderError as exc:
                 return {"detail": str(exc), "outcome": "not_applied", "intention": key}, 400
             return {"ok": True, "ref": order.ref, "outcome": "applied", "intention": key, **extra}, 200
@@ -1937,15 +1939,18 @@ class OrderEquipmentBackView(_OrderActionBase):
     ),
 )
 class OrderRequeueFiscalView(_OrderActionBase):
+    intention_operation = "requeue-fiscal"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        try:
-            orders_service.requeue_fiscal_emission(order, actor=_actor(request))
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Falha ao reprocessar fiscal."}, status=400)
-        return Response({"ok": True, "ref": ref})
+
+        def execute(base):
+            directive = orders_service.requeue_fiscal_emission(order, actor=_actor(request), expected_revision=base)
+            return {"effect_status": "queued", "directive_id": directive.pk}
+
+        return self._context_response(request, order, "requeue-fiscal", {}, execute)
 
 
 def _resend_payment_link_response(order) -> Response:
@@ -1984,13 +1989,20 @@ def _resend_payment_link_response(order) -> Response:
     ),
 )
 class OrderResendPaymentLinkView(_OrderActionBase):
-    """O cliente disse "não chegou": o gestor manda de novo a MESMA URL, enquanto vale."""
+    """O cliente disse não chegou: reenviar a mesma URL mediante recibo local."""
+    intention_operation = "resend-payment-link"
 
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        return _resend_payment_link_response(order)
+
+        def execute(base):
+            directive = notification_service.resend_payment_link(order, expected_revision=base)
+            return {"detail": "Reenvio do link solicitado.", "effect_status": "queued", "directive_id": directive.pk,
+                "payment_link_notice": payment_link_notice(order)}
+
+        return self._context_response(request, order, "resend-payment-link", {}, execute)
 
 
 @extend_schema_view(

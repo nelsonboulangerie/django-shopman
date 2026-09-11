@@ -10,6 +10,7 @@ dialeto ``{detail, error: {code, message}}``, permissão e 404.
 from __future__ import annotations
 
 from datetime import timedelta
+from uuid import uuid4
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
@@ -84,7 +85,11 @@ class _ResendContract:
         raise NotImplementedError
 
     def post(self, ref: str):
-        return self.client.post(self.url.format(ref=ref), data="{}", content_type="application/json")
+        body = {}
+        if self.url == GESTOR_URL:
+            order = Order.objects.filter(ref=ref).first()
+            body = {"expected_actor_id": self.operator.pk, "base_revision": notification_svc.payment_link_revision(order) if order else "missing", "idempotency_key": str(uuid4())}
+        return self.client.post(self.url.format(ref=ref), data=body, content_type="application/json")
 
     # ── contrato ──
 

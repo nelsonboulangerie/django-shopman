@@ -15,6 +15,7 @@ import logging
 from datetime import datetime
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from shopman.orderman.models import Directive
@@ -266,7 +267,17 @@ def payment_link_resend_refusal(order) -> NotificationResendRefused | None:
     return None
 
 
-def resend_payment_link(order) -> Directive:
+def payment_link_revision(order) -> str:
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    last = latest_delivery(order, PAYMENT_LINK_TEMPLATE)
+    return mutation_fingerprint({"version": 1, "ref": order.ref, "status": order.status,
+        "payment": (order.data or {}).get("payment"),
+        "delivery": [last.pk, last.status, last.updated_at.isoformat()] if last else None})
+
+
+@transaction.atomic
+def resend_payment_link(order, *, expected_revision=None) -> Directive:
     """Reenvia o aviso ``payment_link_sent`` — o gesto do operador quando o cliente diz "não chegou".
 
     Guardas do pedido (``payment_link_resend_refusal``) e de cadência
@@ -274,6 +285,14 @@ def resend_payment_link(order) -> Directive:
     falar um vocabulário só (``payment_link_send_pending``,
     ``payment_link_resend_too_soon``).
     """
+    from shopman.orderman.models import Order
+    from shopman.payman.models import PaymentIntent
+
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    list(PaymentIntent.objects.select_for_update().filter(order_ref=order.ref).order_by("pk"))
+    if expected_revision is not None and payment_link_revision(order) != expected_revision:
+        raise NotificationResendRefused("payment_link_changed", "O link ou envio mudou. Confira o estado atual antes de reenviar.")
     refusal = payment_link_resend_refusal(order)
     if refusal is not None:
         raise refusal

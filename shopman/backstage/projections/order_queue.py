@@ -536,10 +536,25 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         payload_schema={"base_revision": operator_orders.operational_revision(order), "expected_actor_id": getattr(user, "pk", None)},
         confirmation={"required": True, "manager_approval": cancel_capability["cancel_requires_approval"]},
     )
+    extra_actions = [cancel_action]
+    if fiscal_status == "failed":
+        from shopman.backstage.services.orders import fiscal_revision
+
+        extra_actions.append(Action(ref="requeue-fiscal", kind="mutation", label="Reprocessar fiscal", enabled=authorized,
+            reason="" if authorized else "Identifique uma pessoa com permissão para gerenciar pedidos.", method="POST", idempotency="required",
+            payload_schema={"base_revision": fiscal_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    if method == "link":
+        from shopman.shop.services import notification as notification_svc
+
+        refusal = notification_svc.payment_link_resend_refusal(order)
+        extra_actions.append(Action(ref="resend-payment-link", kind="mutation", label="Reenviar link", enabled=authorized and refusal is None,
+            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else refusal.message if refusal else ""),
+            method="POST", idempotency="required",
+            payload_schema={"base_revision": notification_svc.payment_link_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
     return OperatorOrderProjection(
         ref=order.ref,
         status=order.status,
-        actions=(*operator_orders.operational_actions(order, user=user), cancel_action),
+        actions=(*operator_orders.operational_actions(order, user=user), *extra_actions),
         revisions={field: operator_orders.operational_revision(order, field=field) for field in ("advance", "kitchen_note", "assignment")},
         status_label=order_status_label(order.status),
         status_color=status_color(order.status),

@@ -12,7 +12,7 @@ describe("useOrderDetail", () => {
   beforeEach(() => {
     env.reset();
     const actions = fixtureActions({ can_confirm: true });
-    env.fetchData.value = { order: { actions: [...actions, { ...actions[1]!, ref: "cancel" }] } };
+    env.fetchData.value = { order: { actions: [...actions, { ...actions[1]!, ref: "cancel" }, { ...actions[1]!, ref: "resend-payment-link" }] } };
     env.fetchMock.mockResolvedValue({ outcome: "applied" });
   });
 
@@ -88,7 +88,7 @@ describe("useOrderDetail", () => {
   });
 
   it("reenvio recusado pelo servidor → o motivo vira toast, sem sucesso", async () => {
-    env.fetchMock.mockRejectedValueOnce({ data: { detail: "O link venceu. Refaça a venda para gerar um novo.", error: { code: "payment_link_expired" } } });
+    env.fetchMock.mockRejectedValueOnce({ status: 409, data: { detail: "O link venceu. Refaça a venda para gerar um novo.", error: { code: "payment_link_expired" } } });
     const d = useOrderDetail("PDV-10");
     expect(await d.resendPaymentLink()).toBe(false);
     expect(env.sonner.error).toHaveBeenCalledWith("O link venceu. Refaça a venda para gerar um novo.");

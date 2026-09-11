@@ -241,7 +241,9 @@ def test_requeue_fiscal_requeues_failed_directive(client, operator):
         error_code="terminal",
     )
     client.force_login(operator)
-    response = client.post(reverse("api-backstage-order-requeue-fiscal", args=[order.ref]))
+    from shopman.backstage.services.orders import fiscal_revision
+
+    response = client.post(reverse("api-backstage-order-requeue-fiscal", args=[order.ref]), {"base_revision": fiscal_revision(order), "expected_actor_id": operator.pk, "idempotency_key": "fiscal-requeue"}, content_type="application/json")
     assert response.status_code == 200
     directive.refresh_from_db()
     assert directive.status == "queued"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from django.db import transaction
 from shopman.orderman.exceptions import InvalidTransition
 
 from shopman.backstage.services.exceptions import OrderConflict, OrderError
@@ -186,7 +187,21 @@ def mark_equipment_returned(order, *, actor: str, expected_revision=None):
         raise OrderError(str(exc)) from exc
 
 
-def requeue_fiscal_emission(order, *, actor: str):
+def fiscal_revision(order) -> str:
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.directives import FISCAL_EMIT_NFCE
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    directive = Directive.objects.filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order.ref).order_by("-created_at", "-pk").first()
+    data = order.data or {}
+    return mutation_fingerprint({"version": 1, "ref": order.ref, "status": order.status, "total_q": order.total_q,
+        "fiscal": data.get("fiscal"), "payment": data.get("payment"), "access_key": data.get("nfce_access_key"),
+        "directive": [directive.pk, directive.status, directive.attempts, directive.updated_at.isoformat()] if directive else None})
+
+
+@transaction.atomic
+def requeue_fiscal_emission(order, *, actor: str, expected_revision=None):
     try:
         from django.utils import timezone
         from shopman.orderman.models import Directive
@@ -196,6 +211,14 @@ def requeue_fiscal_emission(order, *, actor: str):
     except Exception as exc:
         raise OrderError("Fiscal indisponível") from exc
 
+    from shopman.orderman.models import Order
+
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    # The worker claim also updates these rows. Keep retry eligibility stable.
+    list(Directive.objects.select_for_update().filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order.ref).order_by("pk"))
+    if expected_revision is not None and fiscal_revision(order) != expected_revision:
+        raise OrderConflict("O estado fiscal mudou. Confira a emissão atual antes de reprocessar.")
     if (order.data or {}).get("nfce_access_key"):
         raise OrderError("NFC-e já autorizada.")
     # A mesma regra que decide emitir decide o requeue. Perguntar só ao toggle
@@ -210,7 +233,7 @@ def requeue_fiscal_emission(order, *, actor: str):
 
     directive = (
         Directive.objects.filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order.ref)
-        .order_by("-created_at")
+        .order_by("-created_at", "-pk")
         .first()
     )
     if directive and directive.status == "failed":
@@ -221,7 +244,11 @@ def requeue_fiscal_emission(order, *, actor: str):
         directive.save(update_fields=["status", "error_code", "last_error", "available_at", "updated_at"])
     else:
         fiscal.emit(order)
+    current = Directive.objects.filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order.ref).order_by("-created_at", "-pk").first()
+    if current is None or current.status not in {"queued", "running"}:
+        raise OrderError("A emissão não foi enfileirada. Confira a configuração fiscal antes de tentar novamente.")
     order.emit_event(event_type="fiscal_requeued", actor=actor, payload={"topic": FISCAL_EMIT_NFCE})
+    return current
 
 
 def save_kitchen_note(order, *, notes: str, expected_revision=None, actor="system"):

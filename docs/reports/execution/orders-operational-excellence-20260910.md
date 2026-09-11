@@ -762,3 +762,16 @@ Os dois comandos exigem intenção/ator/base e devolvem recibo consultável. Um 
 Validação PostgreSQL: 26 passed dos caminhos afetados + 3 passed de recibo/pendência completed. Orders: **245 passed + typecheck**. Os testes conferem um evento por intenção e desaparecimento da pendência após o retorno. Export de schema regenerado pelo comando existente. Migração: nenhuma. Rollback: revert coordenado de UI/API/schema, conservando recibos; retirar o lock reabre perda de contexto, portanto não deve ser usado como mitigação de rollout.
 
 Validação ampla independente em andamento: worktree `/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-validation-20260910`, branch `codex/orders-validation-20260910`, fixado em `9eb5d9525`. Os próximos commits não alteram aquela árvore durante a execução.
+
+### WP02/WP04 — recibos de reprocessamento fiscal e reenvio do link
+
+- **Antes:** `fiscal-requeue-before.txt` reproduz 1 falha: com emissão solicitada, sem backend e sem Directive, o serviço anunciava reprocessamento e emitia evento sem trabalho enfileirado. O resolver fiscal permanece dono da regra; a correção exige evidência concreta de enqueue.
+- **Implementação:** ambos os comandos do Gestor usam intenção por pessoa/operação/pedido, revisão relevante, GET de recibo e commit local único. Reprocessamento trava Order e Directives fiscais, relê e preserva o mesmo mecanismo de retry/adoption. Reenvio trava Order/Payman, relê e conserva URL, consentimento e cadência existentes. Resposta informa `queued` e Directive; não afirma entrega/emissão. POS conserva seu contrato HTTP e recebe a proteção de estado fresco no serviço compartilhado.
+- **Testes:** 61 testes PostgreSQL de serviços/API passaram; 5 adicionais provaram ausência de falso enqueue, resposta perdida consultável, replay único nas duas ações, revisão obsoleta sem efeito e cadência contra uma segunda intenção. Orders: 245 testes e typecheck passaram. Ruff dos arquivos alterados e diff-check passaram. Adaptadores externos não foram executados.
+- **Esforço:** J14 mantém 1 ativação; perda de resposta usa GET automático (0 redigitação). J13 fiscal só confirma agendamento comprovado; falha de configuração permanece junto ao pedido. Nenhuma medição em campo.
+- **Migração/rollback:** sem DDL; novos escopos usam IdempotencyKey existente e retenção vigente. Manter API/UI na mesma versão; reversão dos arquivos remove novo protocolo sem excluir recibos ou Directives. Não repetir efeito desconhecido após rollback. Retenção alternativa continua em G08.
+- **Limites:** fila fiscal não comprova aceite remoto; recuperação remota/homologação continuam dependentes de G03. Esta fatia não conclui os WPs inteiros.
+
+### Gate amplo em fonte imutável
+
+O ensaio SQLite em worktree de validação fixado em `9eb5d9525` terminou com **8574 passed, 57 skipped, 3 warnings, 38 subtests passed**, em 767,39 s. Log integral: `orders-20260910/broad-runtime-stable-9eb5d9525.txt`. Os skips não são ensaios PostgreSQL aprovados; as 3 advertências são de testes que substituem DATABASES. Equipamento/comentário e fiscal/link posteriores têm validações direcionadas separadas. A execução anterior contaminada por edição simultânea não foi renomeada como sucesso. Os achados PostgreSQL reproduzidos na base continuam explicitamente registrados.
