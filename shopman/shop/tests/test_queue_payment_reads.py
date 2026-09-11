@@ -70,6 +70,6 @@ def test_channel_projection_read_does_not_stale_the_next_confirmation():
         configs = _channel_configs_for([order] * 100)
     assert resolver.call_count == 1
     assert not operator_orders.confirmation_block_reason(order, channel_config=configs["web"])
-    channel.config = {"payment": {"timing": "pre_commit"}}
+    channel.config = {"payment": {"timing": "at_commit"}}
     channel.save()
     assert operator_orders.confirmation_block_reason(order)

@@ -969,6 +969,19 @@ def get_payment_status(order, *, payment_reads=None) -> str | None:
         return "unknown"
 
 
+def lock_order_payment(order) -> None:
+    """Hold the payment rows used by a local Order guard until its caller commits.
+
+    Call only after locking Order in an existing atomic block. No provider I/O.
+    Payman capture/refund/cancel use these same intent locks.
+    """
+    from django.db.models import Q
+    from shopman.payman.models import PaymentIntent
+
+    intent_ref = str(((order.data or {}).get("payment") or {}).get("intent_ref") or "")
+    list(PaymentIntent.objects.select_for_update().filter(Q(order_ref=order.ref) | Q(ref=intent_ref)).order_by("pk"))
+
+
 def captured_balance_q(order) -> int | None:
     """Return captured minus refunded amount for the order intent, if readable."""
     payment_data = (order.data or {}).get("payment") or {}

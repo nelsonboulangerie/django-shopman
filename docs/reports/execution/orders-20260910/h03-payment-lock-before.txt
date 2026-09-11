@@ -1,0 +1,165 @@
+FF.                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_refund_cannot_invalidate_payment_between_guard_and_transition[confirm] __
+
+operation = 'confirm'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x118f442c0>
+
+    @pytest.mark.django_db(transaction=True)
+    @pytest.mark.parametrize("operation", ["confirm", "advance", "timeout"])
+    def test_refund_cannot_invalidate_payment_between_guard_and_transition(operation, monkeypatch):
+        if connection.vendor != "postgresql":
+            pytest.skip("Payment guard interleaving requires PostgreSQL")
+        monkeypatch.setattr("shopman.orderman.dispatch._on_commit_callback", lambda *args: None)
+        Channel.objects.create(ref="guard-lock", name="Synthetic guard", config={"payment": {"timing": "at_commit"}})
+        intent = PaymentService.create_intent("GUARD-LOCK", 1500, "pix")
+        order = Order.objects.create(ref="GUARD-LOCK", status="accepted" if operation == "advance" else "new", channel_ref="guard-lock", total_q=1500,
+            data={"payment": {"method": "pix", "intent_ref": intent.ref}, "availability_decision": {"approved": True, "decisions": []}})
+        PaymentService.authorize(intent.ref)
+        PaymentService.capture(intent.ref)
+        directive = Directive.objects.create(topic="confirmation.timeout", payload={"order_ref": order.ref, "action": "confirm",
+            "expires_at": (timezone.now() - timedelta(seconds=1)).isoformat()})
+        evaluated, resume, refund_started = Event(), Event(), Event()
+        funds_at_transition = []
+        original = Order.transition_status
+    
+        def pause_before_transition(instance, target, *args, **kwargs):
+            if kwargs.get("actor") in {"operator:guard", "confirmation.timeout"}:
+                evaluated.set()
+                assert resume.wait(10)
+                funds_at_transition.append(payment.has_sufficient_captured_payment(instance))
+            return original(instance, target, *args, **kwargs)
+    
+        monkeypatch.setattr(Order, "transition_status", pause_before_transition)
+    
+        def command():
+            try:
+                current = Order.objects.get(pk=order.pk)
+                if operation == "confirm":
+                    operator_orders.confirm_order(current, actor="operator:guard")
+                elif operation == "advance":
+                    operator_orders.advance_order(current, actor="operator:guard")
+                else:
+                    ConfirmationTimeoutHandler().handle(message=Directive.objects.get(pk=directive.pk), ctx={})
+            finally:
+                connections.close_all()
+    
+        def refund():
+            try:
+                refund_started.set()
+                PaymentService.refund(intent.ref, amount_q=1500)
+            finally:
+                connections.close_all()
+    
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            transition = pool.submit(command)
+            try:
+                assert evaluated.wait(10)
+                returned = pool.submit(refund)
+                assert refund_started.wait(10)
+                try:
+                    returned.result(timeout=0.5)
+                except TimeoutError:
+                    pass  # Refund may correctly wait until the command commits.
+            finally:
+                resume.set()
+            transition.result(timeout=10)
+            returned.result(timeout=10)
+>       assert funds_at_transition == [True]
+E       assert [False] == [True]
+E         
+E         At index 0 diff: False != True
+E         Use -v to get more diff
+
+shopman/shop/tests/test_h03_payment_guard_lock.py:77: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-10 22:42:03,943 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-10 22:42:04,503 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-10 22:42:05,575 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-10 22:42:09,052 shopman.payman Intent created
+INFO 2026-09-10 22:42:09,054 shopman.payman Intent authorized
+INFO 2026-09-10 22:42:09,113 shopman.payman Intent captured
+INFO 2026-09-10 22:42:09,148 shopman.payman Intent refunded
+INFO 2026-09-10 22:42:09,182 shopman.shop.services.notification notification.send: queued payment_requested for order GUARD-LOCK
+_ test_refund_cannot_invalidate_payment_between_guard_and_transition[advance] __
+
+operation = 'advance'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x119c246b0>
+
+    @pytest.mark.django_db(transaction=True)
+    @pytest.mark.parametrize("operation", ["confirm", "advance", "timeout"])
+    def test_refund_cannot_invalidate_payment_between_guard_and_transition(operation, monkeypatch):
+        if connection.vendor != "postgresql":
+            pytest.skip("Payment guard interleaving requires PostgreSQL")
+        monkeypatch.setattr("shopman.orderman.dispatch._on_commit_callback", lambda *args: None)
+        Channel.objects.create(ref="guard-lock", name="Synthetic guard", config={"payment": {"timing": "at_commit"}})
+        intent = PaymentService.create_intent("GUARD-LOCK", 1500, "pix")
+        order = Order.objects.create(ref="GUARD-LOCK", status="accepted" if operation == "advance" else "new", channel_ref="guard-lock", total_q=1500,
+            data={"payment": {"method": "pix", "intent_ref": intent.ref}, "availability_decision": {"approved": True, "decisions": []}})
+        PaymentService.authorize(intent.ref)
+        PaymentService.capture(intent.ref)
+        directive = Directive.objects.create(topic="confirmation.timeout", payload={"order_ref": order.ref, "action": "confirm",
+            "expires_at": (timezone.now() - timedelta(seconds=1)).isoformat()})
+        evaluated, resume, refund_started = Event(), Event(), Event()
+        funds_at_transition = []
+        original = Order.transition_status
+    
+        def pause_before_transition(instance, target, *args, **kwargs):
+            if kwargs.get("actor") in {"operator:guard", "confirmation.timeout"}:
+                evaluated.set()
+                assert resume.wait(10)
+                funds_at_transition.append(payment.has_sufficient_captured_payment(instance))
+            return original(instance, target, *args, **kwargs)
+    
+        monkeypatch.setattr(Order, "transition_status", pause_before_transition)
+    
+        def command():
+            try:
+                current = Order.objects.get(pk=order.pk)
+                if operation == "confirm":
+                    operator_orders.confirm_order(current, actor="operator:guard")
+                elif operation == "advance":
+                    operator_orders.advance_order(current, actor="operator:guard")
+                else:
+                    ConfirmationTimeoutHandler().handle(message=Directive.objects.get(pk=directive.pk), ctx={})
+            finally:
+                connections.close_all()
+    
+        def refund():
+            try:
+                refund_started.set()
+                PaymentService.refund(intent.ref, amount_q=1500)
+            finally:
+                connections.close_all()
+    
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            transition = pool.submit(command)
+            try:
+                assert evaluated.wait(10)
+                returned = pool.submit(refund)
+                assert refund_started.wait(10)
+                try:
+                    returned.result(timeout=0.5)
+                except TimeoutError:
+                    pass  # Refund may correctly wait until the command commits.
+            finally:
+                resume.set()
+            transition.result(timeout=10)
+            returned.result(timeout=10)
+>       assert funds_at_transition == [True]
+E       assert [False] == [True]
+E         
+E         At index 0 diff: False != True
+E         Use -v to get more diff
+
+shopman/shop/tests/test_h03_payment_guard_lock.py:77: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-10 22:42:10,121 shopman.payman Intent created
+INFO 2026-09-10 22:42:10,124 shopman.payman Intent authorized
+INFO 2026-09-10 22:42:10,143 shopman.payman Intent captured
+INFO 2026-09-10 22:42:10,219 shopman.payman Intent refunded
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_h03_payment_guard_lock.py::test_refund_cannot_invalidate_payment_between_guard_and_transition[confirm]
+FAILED shopman/shop/tests/test_h03_payment_guard_lock.py::test_refund_cannot_invalidate_payment_between_guard_and_transition[advance]
+2 failed, 1 passed in 8.27s

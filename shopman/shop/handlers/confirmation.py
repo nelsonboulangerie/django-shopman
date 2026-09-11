@@ -104,9 +104,9 @@ class ConfirmationTimeoutHandler:
 def _transition_if_still_new(order, target) -> bool:
     """Compare the timeout precondition in the same commit as its transition."""
     from shopman.orderman.models import Order
-    from shopman.payman.models import PaymentIntent
 
     from shopman.shop.lifecycle import ensure_confirmable, ensure_payment_captured
+    from shopman.shop.services import payment
 
     Order.objects.select_for_update().get(pk=order.pk)
     order.refresh_from_db()
@@ -114,7 +114,7 @@ def _transition_if_still_new(order, target) -> bool:
         return False
     if target == Order.Status.ACCEPTED:
         # Capture/refund must not change the guard between this read and commit.
-        list(PaymentIntent.objects.select_for_update().filter(order_ref=order.ref).order_by("pk"))
+        payment.lock_order_payment(order)
         ensure_payment_captured(order)
         ensure_confirmable(order)
     order.transition_status(target, actor="confirmation.timeout")

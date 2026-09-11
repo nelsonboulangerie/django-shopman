@@ -532,14 +532,12 @@ def can_cancel(order) -> bool:
 @transaction.atomic
 def cancel(order) -> bool:
     from shopman.orderman.models import Order
-    from shopman.payman.models import PaymentIntent
 
     from shopman.shop.services.cancellation import cancel as cancel_order
 
     Order.objects.select_for_update().get(pk=order.pk)
     order.refresh_from_db()
-    intent_ref = str(((order.data or {}).get("payment") or {}).get("intent_ref") or "")
-    list(PaymentIntent.objects.select_for_update().filter(Q(order_ref=order.ref) | Q(ref=intent_ref)).order_by("pk"))
+    payment_service.lock_order_payment(order)
     if not payment_service.can_cancel(order):
         return False
     return cancel_order(order, reason="customer_requested", actor="customer.self_cancel")

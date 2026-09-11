@@ -820,3 +820,11 @@ Screenshot de nota inspecionado visualmente: ref/valor/quantidade fracionária/n
 **Testes:** 50 PostgreSQL passaram (barreiras, cancelamento fresco, conformance, customer orders); 8 adicionais/overlap passaram (barreiras/API + IDOR), incluindo captura entre leitura da API e comando, respondendo 409 sem cancelar. No teste com duas conexões, qualquer decisão pode vencer o lock, mas nunca se reporta aceite do operador seguido de cancelamento por timeout obsoleto; exatamente um evento de transição. Ruff e diff-check passaram.
 
 **Migração/rollback:** sem DDL. Compatibilidade do facade passa de retorno ignorado a bool explícito; chamada HTTP antiga continua protegida pelo guarda sob lock. Reverter API/facade/domínio juntos, sem apagar eventos, Directives ou recibos. Nenhum cancelamento real executado. Esta prova não encerra todos os interleavings H03 nem constitui piloto.
+
+### WP03/H03 — pagamento estável do guarda ao commit
+
+A primeira preparação usou timing `pre_commit`, inexistente neste checkout; as falhas de configuração foram registradas, não classificadas como corrida. Com `at_commit` válido, **2 falhas/1 proteção aprovada**: confirmação e avanço manuais podiam transicionar após refund já comprometido na janela entre guarda e transição; timeout já protegido em `e123ff737` passou.
+
+Os comandos agora mantêm Order→Payman durante o guarda e commit, pelo helper local `payment.lock_order_payment` (nenhuma rede), também reutilizado pelo timeout e self-cancel. Ele trava os intents por Order e a referência efetivamente lida, em ordem de PK. Não muda a regra de saldo ou cria livro paralelo. O teste mede saldo no ponto imediatamente anterior à transição em uma conexão enquanto outra tenta o refund canônico; o refund conclui depois do commit quando o comando ganha.
+
+**Validação:** 17 PostgreSQL passaram na matriz/barreiras/leitura; 92 + 18 subtests passaram nas regressões de projeção, política, APIs e contrato do operador. A testemunha de mudança de config da fila também foi corrigida para `at_commit` válido. Ruff/diff-check passaram. **Migração/rollback:** sem DDL, trava de linha transitória; reversão conserva Payman/eventos/chaves. Budget de contenção sob carga ainda precisa medição, e o lock não equivale a reconciliar um provedor real.

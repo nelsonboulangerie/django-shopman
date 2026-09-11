@@ -14,6 +14,7 @@ from enum import StrEnum
 from django.db import transaction
 from shopman.orderman.models import Order
 
+from shopman.shop.services import payment as payment_service
 from shopman.shop.services import payment_gate
 from shopman.shop.services.cancellation import cancel
 from shopman.shop.services.order_helpers import get_fulfillment_type
@@ -137,6 +138,7 @@ def confirm_order(order: Order, *, actor: str, expected_revision: str | None = N
                 "Pedido não está mais aguardando confirmação "
                 f"(status atual: {locked.get_status_display()})."
             )
+        payment_service.lock_order_payment(locked)
         ensure_payment_captured(locked)
         ensure_confirmable(locked)
         # transition_status re-lê a mesma linha já travada nesta transação,
@@ -297,6 +299,7 @@ def advance_order(
         raise OrderStateConflict("O pedido mudou. Confira o estado atualizado antes de continuar.")
     if target_status is not None and target_status != next_status_for(order):
         raise OrderStateConflict("A etapa solicitada não é mais a próxima ação deste pedido.")
+    payment_service.lock_order_payment(order)
     blocked = advance_block_reason(order)
     if blocked:
         raise ValueError(blocked)
