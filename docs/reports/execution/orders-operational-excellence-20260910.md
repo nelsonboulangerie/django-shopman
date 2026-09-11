@@ -1531,3 +1531,18 @@ conteúdo da exceção/template. **74 PostgreSQL/7,19s**, Ruff e gate completo d
 fontes aprovados. Logs manychat_flow. Sem DDL/efeito real; rollback reduz diagnóstico,
 não apaga recibo nem autoriza repetir envio unknown. A suíte ampla1d84 precede
 este ajuste pontual de logging, validado aqui com família e gate específicos.
+
+### WP07 — processos separados não bastam para budget de500/10
+
+Mesma fixture500 rica,20 amostras/combinação1/2/10 clientes. Um processo:
+backend p95230,597/372,149/1863,013ms; quatro processos:262,731/283,036/898,565ms.
+Ainda falha500ms com10 clientes. HTTP direto com round-robin no cliente, não
+BFF/load balancer ou mudança produtiva. Raw/limites process_read_lab/README.md.
+Quatro servidores próprios encerrados; sem DDL/efeitos/novo budget.
+
+### WP08 — pendência de fase pelo recuperador existente
+
+Snapshot readonly chama sweep_stuck_orders em dry-run:38 fases incompletas
+sintéticas, limiar padrão15min; sem reexecutar ou criar Directive. Não são
+incidentes operacionais. Fonte/limites canonical_scoreboard; docstring do
+comando corrigida para refletir durabilidade atual, sem alterar comportamento.

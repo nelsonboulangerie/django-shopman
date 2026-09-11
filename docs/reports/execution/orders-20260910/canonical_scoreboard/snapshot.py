@@ -2,6 +2,7 @@
 
 Fixed lab DB only. Does not run workers, repair data, persist a closing, or alert.
 """
+import io
 import json
 import os
 import sys
@@ -18,12 +19,14 @@ import django
 
 django.setup()
 
+from django.core.management import call_command
 from django.db import connection, transaction
 from django.db.models import Count, Min, Sum
 from django.utils import timezone
 from shopman.orderman.models import Directive, IdempotencyKey
 
 from shopman.backstage.services.financial_reconciliation import build_financial_reconciliation
+from shopman.shop.management.commands.sweep_stuck_orders import Command as SweepCommand
 
 assert connection.settings_dict["NAME"] == "orders_lab"
 reconciliation_date = date.fromisoformat(sys.argv[1])
@@ -38,11 +41,15 @@ with transaction.atomic():
     attempts = Directive.objects.aggregate(total=Sum("attempts"))["total"] or 0
     report = build_financial_reconciliation(reconciliation_date=reconciliation_date, require_closing=False)
     assert not report.persisted and not report.alert_created
+    sweep = SweepCommand()
+    call_command(sweep, dry_run=True, stdout=io.StringIO())
     result = {
         "cohort": "synthetic-lab-all-history", "as_of": now.isoformat(), "date": reconciliation_date.isoformat(),
         "database_read_only": True, "directive_states": task_states, "receipt_states": receipt_states,
         "recorded_task_attempts": attempts,
         "queued_due_tasks": due["count"],
+        "incomplete_phases_canonical_dry_run": sweep._recovered,
+        "phase_scan_minimum_minutes": 15,
         "oldest_due_task_seconds": (now - due["oldest"]).total_seconds() if due["oldest"] else None,
         "in_progress_receipts": pending["count"],
         "oldest_in_progress_receipt_seconds": (now - pending["oldest"]).total_seconds() if pending["oldest"] else None,

@@ -1,9 +1,10 @@
 """Re-despacha fases de lifecycle perdidas por crash pós-commit.
 
-O lifecycle não é durável: ``order_changed`` → ``transaction.on_commit(dispatch)``
-roda síncrono no processo. Um crash/deploy entre o COMMIT da transição e o fim
-do handler perde a fase inteira — sem hold (on_commit), sem ticket KDS/baixa de
-estoque (on_accepted/on_paid), sem devolução de estoque/estorno (on_cancelled).
+O lifecycle registra conclusão por fase; fases operacionais tardias têm Directive
+atômica com a transição. Este sweeper cobre marcadores incompletos, inclusive
+pedidos anteriores a esse contrato e fases cujo processamento foi interrompido.
+Não deduz conclusão só do status nem transforma resultado externo desconhecido
+em autorização para repetir o envio.
 
 Um dispatch completo grava ``order.data["lifecycle"][fase] = "done"``
 (``DURABLE_PHASES`` em shopman/shop/lifecycle.py). Este sweeper acha pedidos

@@ -22,3 +22,12 @@ fonte financeira, regra de conciliação ou endpoint.
 Ruff aprovado; execução real do helper aprovada. Sem migration. Rollback remove
 só este artefato; não apaga chaves, tarefas ou evidências. Qualquer uso de dados
 reais requer autorização específica, não contemplada pelo script fixo de lab.
+
+Atualização: o mesmo snapshot readonly executa o **dry-run canônico** de
+`sweep_stuck_orders` com limiar padrão15min:38 fases incompletas detectadas.
+As fixtures semeiam status sem executar suas fases de propósito; a contagem
+não representa38 incidentes reais. O dry-run não fecha marcador, não agenda
+tarefa e não acessa fornecedor. Esse contador cobre o escopo do sweeper, não
+todas as possíveis dependências externas sem Directive. Nenhuma regra copiada
+para outro coletor. Docstring do comando atualizada para refletir fases duráveis
+e evitar repetir o diagnóstico antigo de lifecycle sem durabilidade.
