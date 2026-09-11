@@ -41,7 +41,7 @@ from .auth import (
     TrustDeviceView,
     VerifyCodeView,
 )
-from .availability import AvailabilityView, StockAlertSubscribeView
+from .availability import AvailabilityView, StockAlertManagementView, StockAlertSubscribeView
 from .catalog import CollectionListView, ProductDetailView, ProductListView
 from .conversation import OrderConversationView
 from .fomo import FomoBadgesView
@@ -104,6 +104,7 @@ urlpatterns = [
     # Availability
     path("availability/<str:sku>/", AvailabilityView.as_view(), name="api-availability"),
     path("availability/<str:sku>/notify/", StockAlertSubscribeView.as_view(), name="api-availability-notify"),
+    path("stock-alert/manage/", StockAlertManagementView.as_view(), name="api-stock-alert-manage"),
     # FOMO — badges de urgência real (últimas unidades, saiu do forno…).
     # Fetch canônico do canal SSE ``fomo-<sku>``: o push só avisa que mudou.
     path("fomo/<str:sku>/", FomoBadgesView.as_view(), name="api-fomo"),

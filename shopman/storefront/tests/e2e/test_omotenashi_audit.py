@@ -416,7 +416,7 @@ def test_13_mutation_success_shape_is_consistent(client):
     subscription = resp.json()
     assert subscription["ok"] is True
     assert subscription["subscription_ref"]
-    assert subscription["expires_at"]
+    assert subscription["expires_at"] is None
     # Cart mutation also acknowledges with ok:true (plus its projection).
     status, add = J.set_cart_qty(client, SKU, 1)
     assert status == 200
@@ -530,7 +530,7 @@ def test_18_unavailable_product_exposes_notify_affordance(client):
     subscription = resp.json()
     assert subscription["ok"] is True
     assert subscription["subscription_ref"]
-    assert subscription["expires_at"]
+    assert subscription["expires_at"] is None
     from shopman.storefront.services import stock_alerts
 
     # The subscription was persisted (phone is normalised on the way in).

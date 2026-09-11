@@ -22,9 +22,13 @@ async function request (headers: Record<string, string> = {}, status = 200) {
 
 describe('BFF transport through an H3 request', () => {
   it('passes both key spellings unchanged and preserves retry/cache/cookie protections', async () => {
-    const response = await request({ origin: 'http://store.test', 'Idempotency-Key': 'intent-A', 'X-Idempotency-Key': 'intent-A' }, 429)
+    const response = await request({ origin: 'http://store.test', 'Idempotency-Key': 'intent-A', 'X-Idempotency-Key': 'intent-A', 'X-Stock-Alert-Capability': 'opaque' }, 429)
     expect(upstream).toHaveBeenCalledTimes(1)
-    expect(upstream.mock.calls[0]?.[1].headers).toMatchObject({ 'idempotency-key': 'intent-A', 'x-idempotency-key': 'intent-A' })
+    expect(upstream.mock.calls[0]?.[1].headers).toMatchObject({
+      'idempotency-key': 'intent-A',
+      'x-idempotency-key': 'intent-A',
+      'x-stock-alert-capability': 'opaque'
+    })
     expect(response.status).toBe(429)
     expect(response.headers.get('retry-after')).toBe('60')
     expect(response.headers.get('cache-control')).toContain('no-store')

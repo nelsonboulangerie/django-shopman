@@ -47,7 +47,7 @@ Limites
 - O teste humano J06 ocorreu antes do rebase. Os commits de identidade e interface
   foram reaplicados sem conflito; a candidata final recebeu regressão automatizada,
   mas a observação humana não foi repetida e não é apresentada como medição nova.
-- TalkBack, rollout de código, promoção do ambiente, produção e retenção definitiva
+- TalkBack, rollout de código, promoção do ambiente, produção e retenção de recibos/dados
   continuam fora desta execução.
 - Servidores manuais encerrados; bancos PostgreSQL descartáveis removidos e Redis
   DB 14 esvaziado após a validação.

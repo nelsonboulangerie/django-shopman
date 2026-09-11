@@ -10,6 +10,7 @@ from datetime import timedelta
 from decimal import Decimal
 from io import StringIO
 from unittest.mock import MagicMock, patch
+from urllib.parse import urlsplit
 
 import pytest
 from django.core.management import call_command
@@ -99,7 +100,7 @@ def test_subscribe_dedupes_phone_formats_and_keeps_verifiable_evidence():
     assert first.disclosure_version == stock_alerts.STOCK_ALERT_DISCLOSURE_VERSION
     assert len(first.disclosure_hash) == 64
     assert len(first.evidence_hash) == 64
-    assert first.expires_at > first.subscribed_at
+    assert first.expires_at is None
 
 
 def test_database_unique_rejects_two_pending_rows_for_same_target():
@@ -184,6 +185,9 @@ def test_notify_context_includes_truthful_availability_phrase():
     context = nf.call_args.kwargs["context"]
     assert context["available_qty"] == "12"
     assert context["availability_phrase"] == "Neste momento ainda temos 12 unidades."
+    assert urlsplit(context["management_url"]).path == "/gerenciar-aviso"
+    assert urlsplit(context["management_url"]).fragment
+    assert context["management_url"] in context["management_note"]
 
 
 def test_notify_context_uses_neutral_phrase_when_quantity_is_unknown():
@@ -396,7 +400,24 @@ def test_endpoint_anonymous_subscribes(client):
     resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {"phone": PHONE})
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
+    assert urlsplit(resp.json()["management_url"]).path == "/gerenciar-aviso"
+    assert urlsplit(resp.json()["management_url"]).fragment
+    assert "?" not in resp.json()["management_url"]
+    assert resp["Cache-Control"] == "private, no-store, max-age=0"
     assert StockAlertSubscription.objects.filter(sku=p.sku, notified_at__isnull=True).exists()
+
+
+def test_endpoint_retry_after_lost_response_returns_same_subscription_and_capability(client):
+    product = _publish(sku="SKU-SUBSCRIBE-LOST-RESPONSE")
+    path = f"/api/v1/availability/{product.sku}/notify/"
+
+    first = client.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.200")
+    repeated = client.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.200")
+
+    assert first.status_code == repeated.status_code == 200
+    assert repeated.json()["subscription_ref"] == first.json()["subscription_ref"]
+    assert repeated.json()["management_url"] == first.json()["management_url"]
+    assert StockAlertSubscription.objects.filter(sku=product.sku).count() == 1
 
 
 def test_endpoint_repairs_legacy_mobile_and_persists_pending_session_marker(client):
@@ -1053,7 +1074,7 @@ def test_anonymous_can_pause_and_resume_the_exact_session_subscription(client):
     assert StockAlertSubscription.objects.get(ref=created["subscription_ref"]).is_active
 
 
-def test_expired_subscription_cannot_be_resumed(client):
+def test_former_expiry_does_not_disable_or_prevent_resuming(client):
     product = _publish(sku="SKU-EXPIRED-API")
     created = client.post(f"/api/v1/availability/{product.sku}/notify/", {"phone": PHONE}).json()
     StockAlertSubscription.objects.filter(ref=created["subscription_ref"]).update(
@@ -1067,5 +1088,167 @@ def test_expired_subscription_cannot_be_resumed(client):
         content_type="application/json",
     )
 
+    assert response.status_code == 200
+    assert StockAlertSubscription.objects.get(ref=created["subscription_ref"]).is_active
+
+
+def test_verified_subscription_remains_eligible_after_more_than_30_days():
+    sub = stock_alerts.subscribe("SKU-PERSISTENT-31-DAYS", phone=PHONE)
+    StockAlertSubscription.objects.filter(pk=sub.pk).update(
+        subscribed_at=timezone.now() - timedelta(days=31),
+        expires_at=timezone.now() - timedelta(days=1),
+    )
+
+    sub.refresh_from_db()
+    assert sub.is_active
+    assert StockAlertSubscription.objects.active().filter(pk=sub.pk).exists()
+    with patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)):
+        assert stock_alerts.notify_back_in_stock(sub.sku, source_ref="move-after-31-days") == 1
+
+    assert StockAlertDelivery.objects.get(subscription=sub).status == StockAlertDelivery.Status.QUEUED
+
+
+def _management_token(sub) -> str:
+    return urlsplit(stock_alerts.management_url(sub)).fragment
+
+
+def _management_headers(sub) -> dict:
+    return {"HTTP_X_STOCK_ALERT_CAPABILITY": _management_token(sub)}
+
+
+def test_management_capability_works_cross_device_and_get_is_read_only(client):
+    from django.test import Client
+
+    product = _publish(sku="SKU-MANAGE-CROSS-DEVICE")
+    sub = stock_alerts.subscribe(product.sku, phone=PHONE)
+    token = _management_token(sub)
+    other_device = Client()
+
+    response = other_device.get(
+        "/api/v1/stock-alert/manage/",
+        HTTP_X_STOCK_ALERT_CAPABILITY=token,
+    )
+
+    assert response.status_code == 200
+    assert response["Cache-Control"] == "private, no-store, max-age=0"
+    assert response["Referrer-Policy"] == "no-referrer"
+    assert response.json()["state"] == "active"
+    body = response.content.decode()
+    assert PHONE not in body
+    assert str(sub.ref) not in body
+    assert token not in body
+    sub.refresh_from_db()
+    assert sub.paused_at is None and sub.revoked_at is None
+
+
+@pytest.mark.parametrize("candidate", ["simple-ref", "altered-token"])
+def test_management_rejects_simple_ref_and_altered_token(client, candidate):
+    sub = stock_alerts.subscribe("SKU-MANAGE-TAMPER", phone=PHONE)
+    management_token = _management_token(sub)
+    altered_token = f"{management_token[:-1]}{'A' if management_token[-1] != 'A' else 'B'}"
+    token = str(sub.ref) if candidate == "simple-ref" else altered_token
+
+    response = client.get(
+        "/api/v1/stock-alert/manage/",
+        HTTP_X_STOCK_ALERT_CAPABILITY=token,
+    )
+
     assert response.status_code == 404
-    assert not StockAlertSubscription.objects.get(ref=created["subscription_ref"]).is_active
+    sub.refresh_from_db()
+    assert sub.is_active
+
+
+@pytest.mark.parametrize(
+    ("method", "body", "reason"),
+    [
+        ("patch", {"action": "pause"}, "subscription_paused"),
+        ("delete", None, "subscription_cancelled"),
+    ],
+)
+def test_capability_pause_or_cancel_immediately_suppresses_enqueued_delivery(
+    client,
+    method,
+    body,
+    reason,
+):
+    sub = stock_alerts.subscribe(f"SKU-MANAGE-{method.upper()}", phone=PHONE)
+    with patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)):
+        stock_alerts.notify_back_in_stock(sub.sku, source_ref=f"move-{method}")
+
+    request = getattr(client, method)
+    response = request(
+        "/api/v1/stock-alert/manage/",
+        data=body,
+        content_type="application/json",
+        **_management_headers(sub),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["suppressed_deliveries"] == 1
+    delivery = StockAlertDelivery.objects.get(subscription=sub)
+    assert delivery.status == StockAlertDelivery.Status.SUPPRESSED
+    assert delivery.last_error_code == reason
+
+
+def test_resume_applies_only_to_future_occurrences(client):
+    sub = stock_alerts.subscribe("SKU-MANAGE-FUTURE", phone=PHONE, alert_type="production_ready")
+    with (
+        patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True, 3)),
+        patch("shopman.shop.services.quality.reviewed_saleable_quantity", return_value=Decimal("3")),
+    ):
+        assert stock_alerts.review_bake_ready(sub.sku, source_ref="bake-old") == 1
+        client.patch(
+            "/api/v1/stock-alert/manage/",
+            data={"action": "pause"},
+            content_type="application/json",
+            **_management_headers(sub),
+        )
+        client.patch(
+            "/api/v1/stock-alert/manage/",
+            data={"action": "resume"},
+            content_type="application/json",
+            **_management_headers(sub),
+        )
+        assert stock_alerts.review_bake_ready(sub.sku, source_ref="bake-old") == 0
+        assert stock_alerts.review_bake_ready(sub.sku, source_ref="bake-new") == 1
+
+    statuses = list(StockAlertDelivery.objects.filter(subscription=sub).order_by("pk").values_list("status", flat=True))
+    assert statuses == [StockAlertDelivery.Status.SUPPRESSED, StockAlertDelivery.Status.QUEUED]
+
+
+def test_logged_in_account_cannot_control_another_customers_alert(client):
+    from shopman.doorman.protocols.customer import AuthCustomerInfo
+    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+
+    owner = Customer.objects.create(ref="CUS-ALERT-OWNER", first_name="Ana", phone=PHONE)
+    stranger = Customer.objects.create(ref="CUS-ALERT-STRANGER", first_name="Bia", phone="+5543999990099")
+    sub = stock_alerts.subscribe("SKU-ACCOUNT-IDOR", customer=owner)
+    info = AuthCustomerInfo(uuid=stranger.uuid, name=stranger.name, phone=stranger.phone, email=None, is_active=True)
+    user, _created = get_or_create_user_for_customer(info)
+    client.force_login(user, backend="shopman.doorman.backends.PhoneOTPBackend")
+
+    response = client.delete(
+        f"/api/v1/availability/{sub.sku}/notify/",
+        data={"subscription_ref": str(sub.ref)},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 404
+    sub.refresh_from_db()
+    assert sub.revoked_at is None
+
+
+def test_capability_never_appears_in_application_logs(client, caplog):
+    sub = stock_alerts.subscribe("SKU-MANAGE-LOG", phone=PHONE)
+    token = _management_token(sub)
+
+    assert client.get(
+        "/api/v1/stock-alert/manage/",
+        HTTP_X_STOCK_ALERT_CAPABILITY=token,
+    ).status_code == 200
+    assert client.get(
+        "/api/v1/stock-alert/manage/",
+        HTTP_X_STOCK_ALERT_CAPABILITY=f"{token[:-1]}Z",
+    ).status_code == 404
+
+    assert token not in caplog.text

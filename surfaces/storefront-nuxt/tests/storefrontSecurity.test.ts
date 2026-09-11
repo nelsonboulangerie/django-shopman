@@ -25,4 +25,12 @@ describe('storefront security headers', () => {
   it('does not emit HSTS for a plain HTTP development request', () => {
     expect(storefrontResponseHeaders(false)['Strict-Transport-Security']).toBeUndefined()
   })
+
+  it('never caches or sends a referrer from the stock-alert capability page', () => {
+    const headers = storefrontResponseHeaders(true, '/gerenciar-aviso')
+
+    expect(headers['Cache-Control']).toBe('private, no-store, max-age=0')
+    expect(headers.Pragma).toBe('no-cache')
+    expect(headers['Referrer-Policy']).toBe('no-referrer')
+  })
 })

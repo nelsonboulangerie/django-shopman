@@ -613,12 +613,11 @@ def _stock_alert_preferences(customer) -> list[dict]:
     from shopman.storefront.models import StockAlertSubscription
     from shopman.storefront.services.stock_alerts import product_name
 
-    now = timezone.now()
     rows = StockAlertSubscription.objects.filter(
         Q(customer_ref=customer.ref) | Q(contact_phone=customer.phone),
         revoked_at__isnull=True,
         proof_status="verified",
-    ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
+    )
     labels = dict(StockAlertSubscription.AlertType.choices)
     return [
         {

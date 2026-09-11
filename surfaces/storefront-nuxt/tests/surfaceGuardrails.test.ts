@@ -897,6 +897,9 @@ describe('surface UX guardrails', () => {
     expect(prefs).toContain('v-for="pref in summary?.notification_preferences || []"')
     expect(prefs).not.toContain(':checked')
     expect(prefs).not.toContain('@update:checked')
+    expect(prefs).toContain('@click="stockAlertCancelTarget = subscription"')
+    expect(prefs).toContain('<UiAlertDialogTitle>Cancelar este aviso?</UiAlertDialogTitle>')
+    expect(prefs).toContain("@click=\"changeStockAlert(stockAlertCancelTarget, 'cancel')\"")
 
     const security = read('app/pages/conta/seguranca.vue')
     expect(security).toContain("apiPath('/api/v1/account/devices/')")
@@ -1398,11 +1401,15 @@ describe('customer surface never names the reason behind unavailability', () => 
     const offenders = collectSourceFiles('app')
       // "Pausado" is a customer-controlled state for a persistent alert, not
       // the internal reason a product is unavailable.
-      .filter(file => file !== 'app/pages/conta/preferencias.vue')
+      .filter(file => ![
+        'app/pages/conta/preferencias.vue',
+        'app/pages/gerenciar-aviso.vue'
+      ].includes(file))
       .filter(file => forbidden.test(withoutComments(read(file))))
 
     expect(offenders).toEqual([])
     expect(read('app/pages/conta/preferencias.vue')).toContain("subscription.active ? 'Ativo' : 'Pausado'")
+    expect(read('app/pages/gerenciar-aviso.vue')).toContain("alertState.state === 'paused'")
   })
 
   it('shows one label for every unavailable cause on the product page', () => {

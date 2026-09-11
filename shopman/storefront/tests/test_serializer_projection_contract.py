@@ -77,11 +77,18 @@ NON_MIRROR = {
     "CheckoutSerializer",
     "CheckoutAddressLabelSerializer",
     "ReverseGeocodeRequestSerializer",
+    "StockAlertSubscribeRequestSerializer",
+    "StockAlertSubscriptionRefSerializer",
+    "StockAlertSubscriptionControlRequestSerializer",
+    "StockAlertManagementActionSerializer",
     # Envelope de erro canônico ({detail, ...}).
     "DetailSerializer",
     # Respostas montadas como dict ad-hoc no view (não há dataclass fonte).
     "CheckoutResponseSerializer",
     "AvailabilityResponseSerializer",
+    "StockAlertSubscribeResponseSerializer",
+    "StockAlertSubscriptionControlResponseSerializer",
+    "StockAlertManagementStateSerializer",
     "ReverseGeocodeResponseSerializer",
     "CollectionSerializer",
     "OrderHistoryItemSerializer",

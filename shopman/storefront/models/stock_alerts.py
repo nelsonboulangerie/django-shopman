@@ -16,18 +16,17 @@ import uuid
 
 from django.db import models
 from django.db.models import Q
-from django.utils import timezone
 from shopman.utils.refs import RefField
 
 
 class StockAlertSubscriptionQuerySet(models.QuerySet):
     def active(self, *, now=None):
-        now = now or timezone.now()
+        del now  # rollout compatibility: callers may still pass the former clock argument
         return self.filter(
             revoked_at__isnull=True,
             paused_at__isnull=True,
             proof_status="verified",
-        ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
+        )
 
 
 class StockAlertSubscription(models.Model):
@@ -106,7 +105,6 @@ class StockAlertSubscription(models.Model):
             self.revoked_at is None
             and self.paused_at is None
             and self.proof_status == "verified"
-            and (self.expires_at is None or self.expires_at > timezone.now())
         )
 
     @property

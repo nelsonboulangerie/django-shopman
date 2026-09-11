@@ -8,6 +8,7 @@ const csrfHeaders = useShopmanCsrfHeaders()
 const requestHeaders = import.meta.server ? useRequestHeaders(['cookie']) : undefined
 
 const preferencePending = ref<Record<string, boolean>>({})
+const stockAlertCancelTarget = ref<AccountStockAlertSubscription | null>(null)
 
 const { data: summary, pending, refresh: refreshSummary } = await useFetch<AccountSummary>(apiPath('/api/v1/account/summary/'), {
   credentials: 'include',
@@ -73,6 +74,7 @@ async function changeStockAlert (subscription: AccountStockAlertSubscription, ac
     if (import.meta.client) {
       useSonner.success(action === 'cancel' ? 'Aviso cancelado.' : action === 'pause' ? 'Aviso pausado.' : 'Aviso retomado.')
     }
+    if (action === 'cancel') stockAlertCancelTarget.value = null
   } catch (e) {
     await refreshSummary()
     if (import.meta.client) useSonner.error(errorDetail(e, 'Não foi possível alterar este aviso.'))
@@ -171,7 +173,7 @@ useSeoMeta({ title: 'Preferências' })
                   variant="ghost"
                   size="sm"
                   :disabled="!!preferencePending[subscription.ref]"
-                  @click="changeStockAlert(subscription, 'cancel')"
+                  @click="stockAlertCancelTarget = subscription"
                 >
                   Cancelar
                 </UiButton>
@@ -180,6 +182,31 @@ useSeoMeta({ title: 'Preferências' })
           </UiFieldGroup>
         </UiFieldSet>
       </div>
+
+      <UiAlertDialog
+        :open="!!stockAlertCancelTarget"
+        @update:open="open => { if (!open) stockAlertCancelTarget = null }"
+      >
+        <UiAlertDialogContent>
+          <UiAlertDialogHeader>
+            <UiAlertDialogTitle>Cancelar este aviso?</UiAlertDialogTitle>
+            <UiAlertDialogDescription>
+              O cancelamento é definitivo para este aviso. Mensagens já aceitas pelo provedor não podem ser retiradas.
+            </UiAlertDialogDescription>
+          </UiAlertDialogHeader>
+          <UiAlertDialogFooter>
+            <UiAlertDialogCancel>Voltar</UiAlertDialogCancel>
+            <UiAlertDialogAction
+              v-if="stockAlertCancelTarget"
+              variant="destructive"
+              :disabled="!!preferencePending[stockAlertCancelTarget.ref]"
+              @click="changeStockAlert(stockAlertCancelTarget, 'cancel')"
+            >
+              Cancelar aviso
+            </UiAlertDialogAction>
+          </UiAlertDialogFooter>
+        </UiAlertDialogContent>
+      </UiAlertDialog>
     </div>
   </main>
 </template>

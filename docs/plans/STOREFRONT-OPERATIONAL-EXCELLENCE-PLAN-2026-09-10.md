@@ -101,7 +101,7 @@ Não entram como defeito comprovado: falta geral de idempotência, ausência ger
 | D04 · Core/pagamento/estoque | Aprovar contrato compartilhado com diff/testes de consumidores. Sem bypass nem estado financeiro próprio. |
 | D05 · Produto/pesquisa | Aprovar roteiro/amostra/acessibilidade, incluindo convidados/WhatsApp/aparelho compartilhado; fixtures sem dados reais. |
 | D06 · Operação/release | Aprovar coorte/janela/limiares/plantão/rollback e reconciliação. Merge não autoriza piloto, produção ou disparos. |
-| D07 · Produto/privacidade · 2026-09-11 | **Aprovada:** “Avise-me” é assinatura persistente por SKU + tipo de evento + canal/contato. Cada nova ocorrência legítima pode gerar um aviso até pausa/cancelamento/expiração; retry do mesmo evento não gera outra ocorrência. `stock_back` é a transição indisponível→disponível; `production_ready` é uma fornada distinta e só envia com QC vendável. Retenção definitiva continua pendente e a proteção de 30 dias permanece. Ver ADR-029. |
+| D07 · Produto/privacidade · 2026-09-11 | **Aprovada e consolidada:** “Avise-me” é assinatura persistente por SKU + tipo de evento + canal/contato até pausa ou cancelamento, sem expiração automática. Retry do mesmo evento não gera outra ocorrência. `stock_back` é a transição indisponível→disponível; `production_ready` é uma fornada distinta e só envia com QC vendável. Controle anônimo entre aparelhos usa capacidade opaca e revogável; `GET` não altera estado. A retenção de recibos/dados históricos permanece pendente sob a proteção atual. Ver ADR-029. |
 
 Preparar propostas e provas antes de solicitar decisão; continuar trabalho independente. Não transferir decisões técnicas ao cliente.
 

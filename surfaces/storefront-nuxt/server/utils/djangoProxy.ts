@@ -136,7 +136,7 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
     accept: getRequestHeader(event, 'accept') || 'application/json'
   }
 
-  for (const name of ['idempotency-key', 'x-idempotency-key']) {
+  for (const name of ['idempotency-key', 'x-idempotency-key', 'x-stock-alert-capability']) {
     const value = getRequestHeader(event, name)
     if (value) headers[name] = value
   }

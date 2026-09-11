@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from django.contrib import admin
-from django.db.models import Q
-from django.utils import timezone
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
@@ -23,7 +21,6 @@ class PendingAlertFilter(admin.SimpleListFilter):
         return [
             ("ativa", "Ativa"),
             ("pausada", "Pausada"),
-            ("expirada", "Expirada"),
             ("sem_prova", "Sem prova válida"),
             ("cancelada", "Cancelada"),
         ]
@@ -36,15 +33,9 @@ class PendingAlertFilter(admin.SimpleListFilter):
                 revoked_at__isnull=True,
                 paused_at__isnull=False,
                 proof_status="verified",
-            ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()))
-        if self.value() == "expirada":
-            return queryset.filter(revoked_at__isnull=True, expires_at__lte=timezone.now())
-        if self.value() == "sem_prova":
-            return (
-                queryset.filter(revoked_at__isnull=True)
-                .filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()))
-                .exclude(proof_status="verified")
             )
+        if self.value() == "sem_prova":
+            return queryset.filter(revoked_at__isnull=True).exclude(proof_status="verified")
         if self.value() == "cancelada":
             return queryset.filter(revoked_at__isnull=False)
         return queryset
@@ -81,7 +72,6 @@ class StockAlertSubscriptionAdmin(ModelAdmin):
         label={
             "Ativa": "success",
             "Pausada": "warning",
-            "Expirada": "info",
             "Sem prova": "danger",
             "Cancelada": "danger",
         },
@@ -91,8 +81,6 @@ class StockAlertSubscriptionAdmin(ModelAdmin):
             return "Cancelada"
         if obj.proof_status != "verified":
             return "Sem prova"
-        if obj.expires_at is not None and obj.expires_at <= timezone.now():
-            return "Expirada"
         if obj.paused_at:
             return "Pausada"
         return "Ativa"

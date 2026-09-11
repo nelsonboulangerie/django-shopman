@@ -8194,8 +8194,8 @@ class Command(BaseCommand):
             # Alertas por SKU. Sem linha aqui, o adapter caía no texto genérico e o
             # operador não tinha onde mapear o flow — logo o alerta nunca alcançava quem
             # está fora da janela de 24h, que é justamente o caso de "me avise".
-            "stock_arrived": {"subject": "{product_name} disponível", "body": "Olá{customer_name_greeting}! O {product_name} que você pediu para acompanhar está disponível: {action_url}"},
-            "production_ready": {"subject": "{product_name} saiu do forno", "body": "Olá{customer_name_greeting}! O {product_name} acabou de sair do forno: {action_url}"},
+            "stock_arrived": {"subject": "{product_name} disponível", "body": "Olá{customer_name_greeting}! O {product_name} que você pediu para acompanhar está disponível: {action_url}{management_note}"},
+            "production_ready": {"subject": "{product_name} saiu do forno", "body": "Olá{customer_name_greeting}! O {product_name} acabou de sair do forno: {action_url}{management_note}"},
             "order_received": {"subject": "Pedido {order_ref} recebido", "body": "Olá{customer_name_greeting}! Recebemos seu pedido *{order_ref}*. O estabelecimento vai conferir a disponibilidade. Acompanhe por aqui: {tracking_url}"},
             "order_received_outside_hours": {"subject": "Pedido {order_ref} recebido", "body": "Olá{customer_name_greeting}! Recebemos seu pedido *{order_ref}* fora do nosso horário de atendimento. Vamos processar assim que abrirmos. Total: *{total}*."},
             "order_accepted": {"subject": "Pedido {order_ref} confirmado", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* foi confirmado. Total: *{total}*.\n\nObrigado pela preferência!"},

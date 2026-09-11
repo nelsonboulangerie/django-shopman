@@ -1,7 +1,7 @@
 """Persistent stock/bake alerts with occurrence-scoped delivery.
 
 Subscribe is open to anonymous shoppers (phone only) and logged-in customers.
-The opt-in stays active until pause, expiry or revocation.  Each real occurrence
+The opt-in stays active until pause or revocation.  Each real occurrence
 gets a semantic identity and one durable delivery receipt per subscription.
 """
 
@@ -12,7 +12,7 @@ import hmac
 import json
 import logging
 import uuid
-from datetime import timedelta
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -23,11 +23,14 @@ from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 
 logger = logging.getLogger(__name__)
 
-STOCK_ALERT_DISCLOSURE_VERSION = "stock-availability-pt-BR-v2"
+STOCK_ALERT_DISCLOSURE_VERSION = "stock-availability-pt-BR-v3"
 STOCK_ALERT_DISCLOSURE = (
     "Quero receber avisos por WhatsApp sobre novas ocorrências deste produto. "
-    "Posso pausar ou cancelar este aviso; a proteção atual expira em 30 dias."
+    "O aviso continua ativo até eu pausar ou cancelar."
 )
+
+_MANAGEMENT_CAPABILITY_VERSION = b"stock-alert-management:v1"
+_MANAGEMENT_CAPABILITY_BYTES = 48
 
 
 def has_pending(sku: str, *, alert_types: tuple[str, ...] = ()) -> bool:
@@ -158,7 +161,6 @@ def subscribe(
     if not contact or not disclosure_text or not disclosure_version:
         return None
 
-    now = timezone.now()
     channel_ref = channel_ref or "web"
     _lock_channel_if_configured(channel_ref)
     target_key = _target_key(customer_ref=customer_ref, phone=contact)
@@ -169,16 +171,6 @@ def subscribe(
         "target_key": target_key,
         "revoked_at__isnull": True,
     }
-    stale = StockAlertSubscription.objects.filter(
-        **selector,
-        expires_at__lte=now,
-    )
-    for old in stale.only("pk", "ref"):
-        old.revoked_at = now
-        old.revoke_reason = "expired"
-        old.revocation_evidence_hash = _revocation_hash(old.ref, now, "expired")
-        old.save(update_fields=["revoked_at", "revoke_reason", "revocation_evidence_hash"])
-
     existing = StockAlertSubscription.objects.filter(
         **selector,
         proof_status="verified",
@@ -194,11 +186,13 @@ def subscribe(
     # a fresh subscription carrying the text the shopper has just accepted.
     legacy = StockAlertSubscription.objects.filter(**selector).first()
     if legacy:
+        now = timezone.now()
         legacy.revoked_at = now
         legacy.revoke_reason = "reconfirmed_with_evidence"
         legacy.revocation_evidence_hash = _revocation_hash(legacy.ref, now, legacy.revoke_reason)
         legacy.save(update_fields=["revoked_at", "revoke_reason", "revocation_evidence_hash"])
 
+    now = timezone.now()
     subscription_ref = uuid.uuid4()
     disclosure_hash = hashlib.sha256(disclosure_text.encode()).hexdigest()
     evidence_hash = _subscription_evidence_hash(
@@ -228,7 +222,7 @@ def subscribe(
                 disclosure_hash=disclosure_hash,
                 evidence_hash=evidence_hash,
                 proof_status="verified",
-                expires_at=now + timedelta(days=30),
+                expires_at=None,
             )
     except IntegrityError:
         # The database unique is the race winner. A simultaneous equivalent click
@@ -269,6 +263,7 @@ def revoke(
     sub.revoke_reason = (reason or "customer_request")[:100]
     sub.revocation_evidence_hash = _revocation_hash(sub.ref, now, sub.revoke_reason)
     sub.save(update_fields=["revoked_at", "revoke_reason", "revocation_evidence_hash"])
+    _suppress_pending_deliveries(sub, reason="subscription_cancelled")
     return True
 
 
@@ -283,8 +278,6 @@ def set_paused(
     reason: str = "customer_request",
 ) -> bool:
     """Pause/resume one opt-in after the same ownership check used by revoke."""
-    from django.db.models import Q
-
     from shopman.storefront.models import StockAlertSubscription
 
     _lock_channel_if_configured(
@@ -292,12 +285,11 @@ def set_paused(
         or STOREFRONT_CHANNEL_REF
     )
 
-    now = timezone.now()
     qs = StockAlertSubscription.objects.select_for_update().filter(
         ref=subscription_ref,
         revoked_at__isnull=True,
         proof_status="verified",
-    ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
+    )
     if sku:
         qs = qs.filter(sku=sku)
     sub = qs.first()
@@ -306,7 +298,97 @@ def set_paused(
     sub.paused_at = timezone.now() if paused else None
     sub.pause_reason = (reason or "customer_request")[:100] if paused else ""
     sub.save(update_fields=["paused_at", "pause_reason"])
+    if paused:
+        _suppress_pending_deliveries(sub, reason="subscription_paused")
     return True
+
+
+def management_capability(sub) -> str:
+    """Return a purpose-scoped bearer capability without persisting plaintext."""
+    ref_bytes = uuid.UUID(str(sub.ref)).bytes
+    scope = b":".join(
+        (
+            _MANAGEMENT_CAPABILITY_VERSION,
+            str(sub.purpose or "").encode(),
+            str(sub.channel_ref or "").encode(),
+        )
+    )
+    signature = hmac.new(settings.SECRET_KEY.encode(), scope + b":" + ref_bytes, hashlib.sha256).digest()
+    return urlsafe_b64encode(ref_bytes + signature).rstrip(b"=").decode("ascii")
+
+
+def management_url(sub) -> str:
+    """Return the public management page; the capability stays in the URL fragment."""
+    from shopman.shop.services import storefront_links
+
+    return storefront_links.stock_alert_management_url(management_capability(sub))
+
+
+def subscription_for_management(capability: str, *, for_update: bool = False):
+    """Resolve one active verified subscription without logging the bearer token."""
+    from shopman.storefront.models import StockAlertSubscription
+
+    raw = str(capability or "").strip()
+    if not raw or len(raw) > 128:
+        return None
+    try:
+        decoded = urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
+        if len(decoded) != _MANAGEMENT_CAPABILITY_BYTES:
+            return None
+        canonical = urlsafe_b64encode(decoded).rstrip(b"=").decode("ascii")
+        if not hmac.compare_digest(raw, canonical):
+            return None
+        subscription_ref = uuid.UUID(bytes=decoded[:16])
+    except (ValueError, TypeError):
+        return None
+    queryset = StockAlertSubscription.objects
+    if for_update:
+        queryset = queryset.select_for_update()
+    sub = queryset.filter(
+        ref=subscription_ref,
+        purpose="stock_availability",
+        proof_status="verified",
+        revoked_at__isnull=True,
+    ).first()
+    if sub is None or not hmac.compare_digest(raw, management_capability(sub)):
+        return None
+    return sub
+
+
+@transaction.atomic
+def set_paused_by_capability(capability: str, *, paused: bool):
+    """Pause/resume through a bearer capability; suppressed history never revives."""
+    candidate = subscription_for_management(capability)
+    if candidate is None:
+        return None
+    _lock_channel_if_configured(candidate.channel_ref)
+    sub = subscription_for_management(capability, for_update=True)
+    if sub is None:
+        return None
+    sub.paused_at = timezone.now() if paused else None
+    sub.pause_reason = "customer_capability" if paused else ""
+    sub.save(update_fields=["paused_at", "pause_reason"])
+    suppressed = _suppress_pending_deliveries(sub, reason="subscription_paused") if paused else 0
+    return sub, suppressed
+
+
+@transaction.atomic
+def revoke_by_capability(capability: str):
+    """Irreversibly cancel the exact subscription granted by the capability."""
+    candidate = subscription_for_management(capability)
+    if candidate is None:
+        return None
+    _lock_channel_if_configured(candidate.channel_ref)
+    sub = subscription_for_management(capability, for_update=True)
+    if sub is None:
+        return None
+    now = timezone.now()
+    sub.revoked_at = now
+    sub.revoke_reason = "customer_capability"
+    sub.revocation_evidence_hash = _revocation_hash(sub.ref, now, sub.revoke_reason)
+    sub.save(update_fields=["revoked_at", "revoke_reason", "revocation_evidence_hash"])
+    suppressed = _suppress_pending_deliveries(sub, reason="subscription_cancelled")
+    return sub, suppressed
 
 
 def notify_back_in_stock(sku: str, *, source_ref: str = "", also_bake_waiters: bool = False) -> int:
@@ -665,6 +747,24 @@ def _queue_delivery(delivery) -> None:
         delivery.save(update_fields=["directive_id", "updated_at"])
 
 
+def _suppress_pending_deliveries(sub, *, reason: str) -> int:
+    """Stop every delivery that has not crossed the provider boundary."""
+    from shopman.storefront.models import StockAlertDelivery
+
+    return sub.deliveries.filter(
+        status__in=(
+            StockAlertDelivery.Status.QUEUED,
+            StockAlertDelivery.Status.CLAIMED,
+            StockAlertDelivery.Status.RETRYABLE,
+        )
+    ).update(
+        status=StockAlertDelivery.Status.SUPPRESSED,
+        claimed_at=None,
+        last_error_code=reason[:100],
+        updated_at=timezone.now(),
+    )
+
+
 def _globally_opted_out(sub) -> bool:
     if not sub.customer_ref:
         return False
@@ -756,6 +856,7 @@ def _deliver(
         backend = "manychat"
 
     try:
+        alert_management_url = management_url(sub)
         return notify(
             event=event,
             recipient=recipient,
@@ -784,6 +885,8 @@ def _deliver(
                 "availability_phrase": availability_phrase(available_qty),
                 "cta": "Garanta o seu:",
                 "action_url": storefront_links.product_url(sub.sku),
+                "management_url": alert_management_url,
+                "management_note": f"\nGerenciar este aviso: {alert_management_url}",
             },
             backend=backend,
         )

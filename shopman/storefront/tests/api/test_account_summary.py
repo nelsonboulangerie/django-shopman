@@ -73,7 +73,7 @@ def test_account_summary_exposes_specific_alert_controls_without_contact_data(cl
         "event_type": "production_ready",
         "event_label": "saiu do forno",
         "active": False,
-        "expires_at": sub.expires_at.isoformat(),
+        "expires_at": None,
     }
     assert "phone" not in item and "customer_ref" not in item
 

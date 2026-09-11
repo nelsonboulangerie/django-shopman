@@ -57,7 +57,7 @@ describe('StockNotifyButton', () => {
 
   it('authenticated one-click subscribe hits the notify endpoint and confirms', async () => {
     await setAuthenticated(true)
-    fetchMock.mockResolvedValue({})
+    fetchMock.mockResolvedValue({ management_url: '/gerenciar-aviso#opaque-capability' })
     const wrapper = await mountSuspended(StockNotifyButton, {
       props: { sku: 'PAO', name: 'Pão', subscribed: false }
     })
@@ -69,6 +69,8 @@ describe('StockNotifyButton', () => {
     expect(fetchMock).toHaveBeenCalledOnce()
     expect(fetchMock.mock.calls[0]?.[0]).toContain('/availability/PAO/notify/')
     expect(wrapper.text()).toContain('Aviso ativo') // virou estado confirmado
+    expect(wrapper.text()).toContain('Gerenciar este aviso')
+    expect(wrapper.get('a').attributes('href')).toBe('/gerenciar-aviso#opaque-capability')
   })
 
   it('renders the notify affordance with an accessible label when not subscribed', async () => {
@@ -121,5 +123,7 @@ describe('StockNotifyButton', () => {
     // Espaço na borda de nó de texto some no compilador do Vue; a frase inteira
     // é o que prova que o número não colou na palavra anterior.
     expect(sheetText).toContain('Mandaremos a mensagem para +55 (43) 99840-4900.')
+    expect(sheetText).toContain('continua ativo até você pausar ou cancelar')
+    expect(sheetText).not.toContain('30 dias')
   })
 })

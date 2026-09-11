@@ -129,12 +129,12 @@ BODY_TEMPLATES: dict[str, str] = {
     "stock_arrived": (
         "Boa notícia!\n\n"
         "{product_name} chegou.{reserve_note}{deadline_note}\n\n"
-        "{cta} {action_url}\n"
+        "{cta} {action_url}{management_note}\n"
     ),
     "production_ready": (
         "Saiu do forno agora!\n\n"
         "{product_name} acabou de ficar pronto.\n\n"
-        "{cta} {action_url}\n"
+        "{cta} {action_url}{management_note}\n"
     ),
     "announcement_published": "{body}\n\n{cta} {action_url}\n",
     "purchase_request": (

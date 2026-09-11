@@ -163,3 +163,73 @@ def test_concurrent_quality_review_releases_one_bake_delivery():
     occurrence = StockAlertOccurrence.objects.get(sku="PG-QC-BAKE")
     assert occurrence.status == StockAlertOccurrence.Status.ELIGIBLE
     assert StockAlertDelivery.objects.filter(occurrence=occurrence).count() == 1
+
+
+@pytest.mark.parametrize("control", ["pause", "cancel"])
+def test_subscription_control_race_with_worker_has_one_documented_boundary(control):
+    from shopman.shop.models import Channel
+    from shopman.shop.protocols import NotificationResult
+    from shopman.storefront.models import StockAlertDelivery
+    from shopman.storefront.services import stock_alerts
+    from shopman.storefront.stock_alert_delivery import StockAlertDeliveryHandler
+
+    Channel.objects.get_or_create(ref="web", defaults={"name": "Web", "is_active": True})
+    sub = stock_alerts.subscribe(
+        f"PG-CONTROL-{control.upper()}",
+        phone=f"+55439999900{91 if control == 'pause' else 92}",
+        alert_type="stock_back",
+    )
+    with patch(
+        "shopman.storefront.services.sku_state.resolve",
+        return_value=SimpleNamespace(can_add_to_cart=True, available_qty=Decimal("5")),
+    ):
+        stock_alerts.notify_back_in_stock(sub.sku, source_ref=f"move-{control}")
+    delivery = StockAlertDelivery.objects.get(subscription=sub)
+    capability = stock_alerts.management_capability(sub)
+    barrier = Barrier(2)
+
+    def run_worker():
+        try:
+            barrier.wait(timeout=10)
+            StockAlertDeliveryHandler().handle(
+                message=SimpleNamespace(payload={"delivery_id": delivery.pk}),
+                ctx={},
+            )
+        finally:
+            connections.close_all()
+
+    def run_control():
+        try:
+            barrier.wait(timeout=10)
+            if control == "pause":
+                return stock_alerts.set_paused_by_capability(capability, paused=True)
+            return stock_alerts.revoke_by_capability(capability)
+        finally:
+            connections.close_all()
+
+    with (
+        patch(
+            "shopman.storefront.services.sku_state.resolve",
+            return_value=SimpleNamespace(can_add_to_cart=True, available_qty=Decimal("5")),
+        ),
+        patch(
+            "shopman.shop.notifications.notify",
+            return_value=NotificationResult(success=True, message_id="provider-accepted"),
+        ) as notify,
+        ThreadPoolExecutor(max_workers=2) as pool,
+    ):
+        jobs = [pool.submit(run_worker), pool.submit(run_control)]
+        for job in jobs:
+            job.result(timeout=30)
+
+    sub.refresh_from_db()
+    delivery.refresh_from_db()
+    if control == "pause":
+        assert sub.paused_at is not None
+    else:
+        assert sub.revoked_at is not None
+    assert delivery.status in {
+        StockAlertDelivery.Status.ACCEPTED,
+        StockAlertDelivery.Status.SUPPRESSED,
+    }
+    assert notify.call_count == (1 if delivery.status == StockAlertDelivery.Status.ACCEPTED else 0)

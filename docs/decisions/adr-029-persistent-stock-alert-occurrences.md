@@ -15,10 +15,9 @@ não oferecia pausa da autorização específica.
 ## Decisão
 
 - A assinatura persiste entre ocorrências por SKU, tipo de evento, canal da loja, finalidade e
-  contato enquanto estiver ativa. A implementação atual ainda a expira em 30 dias: esse prazo é
-  uma proteção provisória mantida por decisão do solicitante, não a semântica definitiva de
-  duração da assinatura. Renovação, prazo final ou vigência até pausa/cancelamento permanecem uma
-  decisão explícita de produto e privacidade.
+  contato até o cliente pausar ou cancelar. Não há expiração automática. A migração remove o prazo
+  somente de linhas verificadas e não revogadas; não reativa cancelamentos nem promove legado sem
+  prova. O campo `expires_at` permanece durante o rollout para compatibilidade de schema.
 - `stock_back` nasce uma vez por ciclo indisponível→disponível. Movimentos e retries enquanto o
   ciclo segue disponível reutilizam a ocorrência aberta. Nova indisponibilidade fecha o ciclo.
 - `production_ready` usa a identidade estável da ordem/fornada. O fechamento cria a ocorrência
@@ -30,9 +29,13 @@ não oferecia pausa da autorização específica.
   indisponibilidade fecham apenas a ocorrência como bloqueada; a assinatura permanece ativa.
 - Cada entrega tem unicidade por assinatura, ocorrência, finalidade e canal. A `Directive`
   existente é a outbox; seu recibo permanente impede recriação depois da conclusão.
-- Pausa, cancelamento, expiração, opt-out global e disponibilidade são rechecados sob o mutex do
+- Pausa, cancelamento, opt-out global e disponibilidade são rechecados sob o mutex do
   canal imediatamente antes do adapter. Resultado incerto fica `indeterminate`, alerta o operador
   e não é reenviado sem reconciliação.
+- Cada aviso oferece controle no aparelho atual e por uma capacidade opaca, restrita à finalidade
+  e revogável, enviada no fragmento de um link “Gerenciar este aviso”. A página remove o fragmento
+  imediatamente, `GET` apenas consulta e `PATCH`/`DELETE` pausam, retomam ou cancelam. Cancelamento
+  é irreversível; retomada vale apenas para ocorrências futuras.
 - Uma correção de QC antes do adapter suprime recibos ainda enfileirados ou reclamados. Se o
   provedor já aceitou a entrega, o fato não é apagado e um alerta operacional exige conciliação.
 - O contato pode ser usado apenas para a finalidade e ocorrência autorizadas. Quando outra fonte
@@ -46,5 +49,5 @@ sem controlar atividade. `StockAlertOccurrence` registra o evento e seu motivo; 
 registra fila, claim, aceite, falha recuperável, supressão ou incerteza. O Admin é somente leitura e
 o runbook orienta a ação sem oferecer reenvio cego. A tela de Expedição identifica fornadas que
 aguardam revisão e oferece a ação gerencial na mesma projeção e permissão usadas pela correção.
-Até a decisão de retenção, “persistente” significa que um aceite não consome a autorização e que
-ela pode atender várias ocorrências dentro da vigência atual; não significa duração indefinida.
+Retenção de recibos e dados históricos continua sendo uma decisão separada: sua janela permanece
+pendente e os recibos protegidos atuais não são apagados por idade.

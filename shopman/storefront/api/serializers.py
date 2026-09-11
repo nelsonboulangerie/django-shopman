@@ -124,6 +124,55 @@ class AvailabilityResponseSerializer(serializers.Serializer):
     is_bundle = serializers.BooleanField()
 
 
+class StockAlertSubscribeRequestSerializer(serializers.Serializer):
+    phone = serializers.CharField(required=False, allow_blank=True, max_length=32)
+    alert_type = serializers.ChoiceField(
+        choices=["stock_back", "production_ready"],
+        required=False,
+        allow_blank=True,
+    )
+
+
+class StockAlertSubscribeResponseSerializer(serializers.Serializer):
+    ok = serializers.BooleanField()
+    subscription_ref = serializers.UUIDField()
+    active = serializers.BooleanField()
+    expires_at = serializers.DateTimeField(allow_null=True)
+    management_url = serializers.URLField()
+
+
+class StockAlertSubscriptionRefSerializer(serializers.Serializer):
+    subscription_ref = serializers.UUIDField()
+
+
+class StockAlertSubscriptionControlRequestSerializer(StockAlertSubscriptionRefSerializer):
+    action = serializers.ChoiceField(choices=["pause", "resume"])
+
+
+class StockAlertSubscriptionControlResponseSerializer(serializers.Serializer):
+    ok = serializers.BooleanField()
+    active = serializers.BooleanField(required=False)
+    cancelled = serializers.BooleanField(required=False)
+
+
+class StockAlertManagementActionSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=["pause", "resume"])
+
+
+class StockAlertManagementStateSerializer(serializers.Serializer):
+    ok = serializers.BooleanField()
+    product_name = serializers.CharField()
+    event_label = serializers.CharField()
+    state = serializers.ChoiceField(choices=["active", "paused", "cancelled"])
+    can_pause = serializers.BooleanField()
+    can_resume = serializers.BooleanField()
+    can_cancel = serializers.BooleanField()
+    suppressed_deliveries = serializers.IntegerField(min_value=0)
+    accepted_deliveries = serializers.IntegerField(min_value=0)
+    unresolved_deliveries = serializers.IntegerField(min_value=0)
+    delivery_note = serializers.CharField()
+
+
 class ReverseGeocodeRequestSerializer(serializers.Serializer):
     lat = serializers.FloatField()
     lng = serializers.FloatField()

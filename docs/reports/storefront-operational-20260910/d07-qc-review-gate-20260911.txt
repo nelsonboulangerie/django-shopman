@@ -46,8 +46,7 @@ Evidência humana relacionada
 
 Limites
 - Nenhum provider externo, mensagem, pedido, pagamento, rollout ou promoção de código ocorreu.
-- TalkBack, jornadas humanas restantes, retenção definitiva e execução de jobs/providers reais
-  continuam dependentes de ambiente ou decisão já registrados no relatório principal. Os 30 dias
-  atuais são proteção provisória aplicada, não decisão definitiva sobre duração ou renovação da
-  assinatura persistente.
+- TalkBack, jornadas humanas restantes, retenção de recibos/dados históricos e execução de
+  jobs/providers reais continuam dependentes de ambiente ou decisão já registrados no relatório
+  principal. A decisão posterior consolidou a assinatura até pausa/cancelamento, sem expiração.
 - Estes resultados não medem esforço, compreensão, abandono nem ganho humano.

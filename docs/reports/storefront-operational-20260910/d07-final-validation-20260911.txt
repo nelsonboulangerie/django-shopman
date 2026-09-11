@@ -4,7 +4,7 @@ Branch: codex/storefront-operational-excellence-20260910
 
 Contrato comprovado
 - A assinatura continua ativa após uma entrega aceita e só deixa de ser elegível por
-  pausa, cancelamento, expiração, prova inválida ou opt-out global.
+  pausa, cancelamento, prova inválida ou opt-out global. Não expira por idade.
 - stock_back cria uma ocorrência por ciclo indisponível→disponível e fecha o ciclo
   mesmo quando a última assinatura foi cancelada ou pausada.
 - production_ready usa a identidade estável da ordem/fornada; replay não cria outra
@@ -18,8 +18,8 @@ Contrato comprovado
 - Falha parcial mantém recibos independentes: a entrega aceita não é repetida e a
   entrega recusada permanece recuperável.
 - Grade/QC não vendável cria ocorrência bloqueada sem consumir a assinatura.
-- Preferências permitem pausar, retomar e cancelar o aviso específico sem expor
-  telefone ou customer_ref.
+- Preferências e a capacidade anônima permitem pausar, retomar e cancelar o aviso
+  específico em outro aparelho sem expor telefone ou customer_ref. GET não altera estado.
 - Uma inscrição legada sem prova não aparece como ativa nem é promovida silenciosamente;
   nova confirmação encerra a linha legada e cria evidência verificável.
 - No público de Marketing, o merge canônico já deduplica o telefone na mesma campanha
@@ -54,5 +54,6 @@ Resultados amplos já executados depois da implementação D07
 Limites
 - Nenhum provider externo, mensagem, pagamento, pedido real, rollout ou promoção de
   configuração foi executado.
-- Retenção definitiva continua pendente; a proteção atual de 30 dias foi mantida.
+- Retenção de recibos e dados históricos continua pendente sob a proteção atual; a
+  vigência da assinatura foi definida até pausa/cancelamento, sem expiração automática.
 - Os testes automatizados não medem compreensão, esforço, abandono ou ganho humano.

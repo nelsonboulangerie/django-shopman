@@ -38,7 +38,7 @@ export const STOREFRONT_PERMISSIONS_POLICY = [
   'usb=()',
 ].join(', ')
 
-export function storefrontResponseHeaders(secure: boolean): Record<string, string> {
+export function storefrontResponseHeaders(secure: boolean, pathname = ''): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Security-Policy': STOREFRONT_CONTENT_SECURITY_POLICY,
     'Permissions-Policy': STOREFRONT_PERMISSIONS_POLICY,
@@ -48,6 +48,11 @@ export function storefrontResponseHeaders(secure: boolean): Record<string, strin
   }
   if (secure) {
     headers['Strict-Transport-Security'] = `max-age=${ONE_YEAR_SECONDS}; includeSubDomains; preload`
+  }
+  if (pathname === '/gerenciar-aviso') {
+    headers['Cache-Control'] = 'private, no-store, max-age=0'
+    headers.Pragma = 'no-cache'
+    headers['Referrer-Policy'] = 'no-referrer'
   }
   return headers
 }
@@ -62,5 +67,6 @@ function requestIsHttps(event: H3Event): boolean {
 }
 
 export function applyStorefrontSecurityHeaders(event: H3Event): void {
-  setResponseHeaders(event, storefrontResponseHeaders(requestIsHttps(event)))
+  const headers = storefrontResponseHeaders(requestIsHttps(event), getRequestURL(event).pathname)
+  setResponseHeaders(event, headers)
 }

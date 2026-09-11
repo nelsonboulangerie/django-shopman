@@ -32,6 +32,7 @@ const defaultDdd = computed(() => publicConfig.value?.default_ddd || '')
 
 const submitting = ref(false)
 const isSubscribed = ref(!!props.subscribed)
+const managementUrl = ref('')
 const sheetOpen = ref(false)
 const phoneInput = ref('')
 const phoneError = ref('')
@@ -51,12 +52,13 @@ async function subscribe (phoneValue: string) {
   submitting.value = true
   phoneError.value = ''
   try {
-    await $fetch(apiPath(`/api/v1/availability/${encodeURIComponent(props.sku)}/notify/`), {
+    const result = await $fetch<{ management_url?: string }>(apiPath(`/api/v1/availability/${encodeURIComponent(props.sku)}/notify/`), {
       method: 'POST',
       headers: await csrfHeaders(),
       credentials: 'include',
       body: phoneValue ? { phone: phoneValue } : {}
     })
+    managementUrl.value = String(result?.management_url || '')
     isSubscribed.value = true
     sheetOpen.value = false
     if (import.meta.client) useSonner.success(notifyConfirmationMessage(phoneValue))
@@ -110,6 +112,15 @@ function onAnonymousSubmit () {
       :title="subscribedLabel"
     >
       Aviso ativo
+    </UiButton>
+    <UiButton
+      v-if="managementUrl"
+      :to="managementUrl"
+      variant="ghost"
+      size="sm"
+      icon="lucide:settings-2"
+    >
+      Gerenciar este aviso
     </UiButton>
   </template>
 
@@ -173,7 +184,7 @@ function onAnonymousSubmit () {
       v-model:open="sheetOpen"
       max-width="sm"
       title="Avisamos quando estiver disponível"
-      description="Deixe seu WhatsApp para receber um aviso a cada nova ocorrência elegível deste produto. Você pode pausar ou cancelar; o aviso expira em 30 dias."
+      description="Deixe seu WhatsApp para receber um aviso a cada nova ocorrência elegível deste produto. O aviso continua ativo até você pausar ou cancelar."
       data-stock-notify-sheet
     >
       <form class="shop-stack-block px-4 py-4" @submit.prevent="onAnonymousSubmit">

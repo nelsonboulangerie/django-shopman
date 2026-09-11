@@ -1,0 +1,50 @@
+D07 — vigência definitiva e gestão anônima do “Avise-me”
+Data: 2026-09-11
+Branch: codex/storefront-operational-excellence-20260910
+
+Decisão humana
+- A assinatura fica ativa até pausa ou cancelamento, sem expiração automática.
+- Retenção de recibos/dados históricos permanece pendente; a proteção atual continua.
+
+Defeitos comprovados antes da correção
+- O runtime e a copy ainda aplicavam prazo provisório de 30 dias.
+- Um aparelho sem a sessão de criação não tinha controle real sobre a assinatura.
+- Na primeira inspeção local, Django respondeu 200 para a capacidade, mas o BFF Nuxt
+  respondeu 404 porque stock-alert/manage não estava na allowlist canônica.
+- Um teste de adulteração mostrou que trocar o último caractere base64 podia preservar
+  os mesmos bytes decodificados; o parser agora exige representação canônica.
+
+Depois
+- Novas assinaturas usam expires_at=NULL; a migração limpa o prazo somente de linhas
+  verificadas e não revogadas. Canceladas e legado sem prova não são reativados.
+- Linhas verificadas com mais de 30 dias continuam elegíveis.
+- A mensagem e a confirmação de cadastro incluem “Gerenciar este aviso”. A capacidade
+  opaca fica no fragmento, é removida da barra ao abrir e não é persistida em claro.
+- GET só consulta. PATCH pausa/retoma; DELETE cancela de forma irreversível. Pausa e
+  cancelamento suprimem queued/claimed/retryable; retomar vale só para fatos futuros.
+- O worker e o controle usam o mesmo mutex de canal. Se o controle vence antes da
+  chamada externa, a entrega é suprimida; se o provedor já aceitou, o recibo permanece.
+- Respostas e página usam no-store/no-referrer; payload e logs testados não expõem
+  telefone, customer_ref, ref da assinatura nem a capacidade.
+- Repetir o cadastro após perder a resposta devolve a mesma assinatura e a mesma
+  capacidade, sem duplicar a autorização.
+
+Provas frescas
+- Backend direcionado: 95 passed.
+- Storefront completo em SQLite: 1.533 passed, 9 skips declarados de PostgreSQL.
+- PostgreSQL concorrente: 6 passed, incluindo pausa/cancelamento contra o worker.
+- Migração PostgreSQL com 1.000 recibos, recuo/avanço: 1 passed.
+- Nuxt completo final: 556 passed em 61 arquivos; typecheck, lint e build passaram.
+  A inspeção real detectou o 404 que o teste de transporte isolado não alcançava; após
+  incluir a rota na allowlist, 13 testes direcionados e a suíte completa passaram.
+- Navegador local, viewport 390×844, Nuxt BFF + Django + PostgreSQL: abriu ativo,
+  removeu o fragmento, pausou, retomou, exigiu confirmação e cancelou. Django registrou
+  GET 200, PATCH 200, PATCH 200 e DELETE 200. Nenhum provider foi chamado.
+- makemigrations --check --dry-run e Ruff: passaram. Typecheck passou; lint teve zero
+  erros e cinco warnings preexistentes em WhatsappVerifyPanel.vue.
+- O schema OpenAPI inclui cadastro, controle por sessão e gestão por capacidade; a
+  geração não reporta erro nos endpoints de disponibilidade.
+
+Limites
+- Não houve deploy, rollout, provider externo, mensagem, cobrança, pedido ou transação real.
+- Testes automatizados e inspeção técnica não medem compreensão, esforço ou ganho humano.

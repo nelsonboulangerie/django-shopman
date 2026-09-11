@@ -1,6 +1,7 @@
 """Isolated expansion rehearsal; never a production down-migration recipe."""
 
 import uuid
+from datetime import timedelta
 
 import pytest
 from django.db import connection
@@ -44,6 +45,7 @@ def test_additive_migrations_preserve_legacy_unknown_receipts_and_subscriptions(
             target_key="duplicate-migration-target",
             proof_status="verified",
             notified_at=timezone.now(),
+            expires_at=timezone.now() + timedelta(days=5),
         )
         unverified = LegacySub.objects.create(
             ref=uuid.uuid4(),
@@ -52,6 +54,27 @@ def test_additive_migrations_preserve_legacy_unknown_receipts_and_subscriptions(
             evidence_hash="unverified-migration-evidence",
             target_key="duplicate-migration-target",
             proof_status="legacy_unverified",
+        )
+        unverified_only = LegacySub.objects.create(
+            ref=uuid.uuid4(),
+            sku="UNVERIFIED-MIGRATION",
+            contact_phone="+5543999990011",
+            evidence_hash="unverified-only-migration-evidence",
+            target_key="unverified-only-migration-target",
+            proof_status="legacy_unverified",
+            expires_at=timezone.now() + timedelta(days=5),
+        )
+        cancelled_expiry = timezone.now() + timedelta(days=5)
+        cancelled = LegacySub.objects.create(
+            ref=uuid.uuid4(),
+            sku="CANCELLED-MIGRATION",
+            contact_phone="+5543999990012",
+            evidence_hash="cancelled-migration-evidence",
+            target_key="cancelled-migration-target",
+            proof_status="verified",
+            expires_at=cancelled_expiry,
+            revoked_at=timezone.now(),
+            revoke_reason="customer_request",
         )
         executor = MigrationExecutor(connection)
         executor.migrate(latest)
@@ -75,6 +98,8 @@ def test_additive_migrations_preserve_legacy_unknown_receipts_and_subscriptions(
         current = StockAlertSubscription.objects.get(pk=sub.pk)
         current_verified = StockAlertSubscription.objects.get(pk=verified.pk)
         current_unverified = StockAlertSubscription.objects.get(pk=unverified.pk)
+        current_unverified_only = StockAlertSubscription.objects.get(pk=unverified_only.pk)
+        current_cancelled = StockAlertSubscription.objects.get(pk=cancelled.pk)
         assert IdempotencyKey.objects.get(pk=mixed.pk).request_fingerprint == ""
         assert IdempotencyKey.objects.filter(scope="synthetic-volume", request_fingerprint="").count() == 1000
         # A new worker may claim an intention immediately before a code rollback.
@@ -102,9 +127,14 @@ def test_additive_migrations_preserve_legacy_unknown_receipts_and_subscriptions(
         assert current.dispatch_accepted_at is None
         assert current.notified_at is None
         assert current_verified.revoked_at is None
+        assert current_verified.expires_at is None
         assert current_unverified.revoked_at is not None
         assert current_unverified.revoke_reason == "superseded_during_persistent_migration"
         assert current_unverified.revocation_evidence_hash
+        assert current_unverified_only.revoked_at is None
+        assert current_unverified_only.expires_at is not None
+        assert current_cancelled.revoked_at is not None
+        assert current_cancelled.expires_at == cancelled_expiry
         assert StockAlertSubscription.objects.get(evidence_hash="mixed-worker-evidence").pause_reason == ""
     finally:
         MigrationExecutor(connection).migrate(latest)

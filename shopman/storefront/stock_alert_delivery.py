@@ -40,7 +40,13 @@ def _claim(delivery_id: int) -> str:
     from shopman.storefront.models import StockAlertDelivery
     from shopman.storefront.services import sku_state
 
+    channel_ref = StockAlertDelivery.objects.filter(pk=delivery_id).values_list(
+        "subscription__channel_ref", flat=True
+    ).first()
+    if channel_ref is None:
+        raise DirectiveTerminalError("stock alert delivery not found")
     with transaction.atomic():
+        lock_subscription_channel(channel_ref)
         delivery = (
             StockAlertDelivery.objects.select_for_update()
             .select_related("subscription", "occurrence")
@@ -61,7 +67,6 @@ def _claim(delivery_id: int) -> str:
 
         sub = delivery.subscription
         occurrence = delivery.occurrence
-        lock_subscription_channel(sub.channel_ref)
         if not sub.is_active:
             return _suppress(delivery, "subscription_inactive")
         if occurrence.status != occurrence.Status.ELIGIBLE:
@@ -91,7 +96,13 @@ def _send_claimed(delivery_id: int) -> str:
     from shopman.storefront.models import StockAlertDelivery
     from shopman.storefront.services import sku_state, stock_alerts
 
+    channel_ref = StockAlertDelivery.objects.filter(pk=delivery_id).values_list(
+        "subscription__channel_ref", flat=True
+    ).first()
+    if channel_ref is None:
+        raise DirectiveTerminalError("stock alert delivery not found")
     with transaction.atomic():
+        lock_subscription_channel(channel_ref)
         delivery = (
             StockAlertDelivery.objects.select_for_update()
             .select_related("subscription", "occurrence")
@@ -101,7 +112,6 @@ def _send_claimed(delivery_id: int) -> str:
             return delivery.status
         sub = delivery.subscription
         occurrence = delivery.occurrence
-        lock_subscription_channel(sub.channel_ref)
         if not sub.is_active or not subscription_notification_allowed(
             customer_ref=sub.customer_ref, phone=sub.contact_phone
         ):
