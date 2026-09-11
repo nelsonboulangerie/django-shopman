@@ -55,6 +55,22 @@ limites, requisitos de mídia, CTA e insights. `provider_fields` aceita campos
 escalares desconhecidos que o adapter pode ignorar, o que é inadequado para ampliar
 recursos com promessa de prévia fiel.
 
+## Decisão relacionada ainda não implementada — Avise-me
+
+A decisão do produto é manter a inscrição ativa até a própria pessoa pausar ou
+cancelar. O código atual ainda implementa o contrato anterior: cria a inscrição com
+30 dias de validade, considera ativa apenas a linha ainda não avisada e grava
+`notified_at` como estado terminal depois do primeiro envio. A loja também mostra o
+estado inscrito como botão desabilitado, sem oferecer pausa ou cancelamento no mesmo
+lugar.
+
+Essa evolução precisa de pacote próprio: assinatura persistente com estados
+`active/paused/cancelled`, comprovante de consentimento e revogação, deduplicação por
+novo episódio de disponibilidade (não por vida inteira da assinatura), migração que
+não reative consentimento vencido/legado e autosserviço de pausa/cancelamento. Ela
+não deve ser confundida com a simples remoção de `expires_at`, que repetiria avisos
+ou conservaria consentimento sem controle adequado.
+
 ## Gate humano proposto — MKT-CAP-01
 
 Antes de adicionar Instagram DM, novos formatos ou opções avançadas, aprovar:
@@ -83,4 +99,3 @@ usar a existência de credencial como prova de que uma capacidade está disponí
 - `surfaces/marketing-nuxt/app/components/AnnouncementPreview.vue`
 - `surfaces/marketing-nuxt/app/components/AnnouncementCard.vue`
 - `surfaces/marketing-nuxt/app/components/CampaignForm.vue`
-
