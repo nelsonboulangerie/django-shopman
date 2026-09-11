@@ -1,14 +1,17 @@
 """Budgets never follow test exit status or silently drop slow samples."""
 import json
+import os
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[5] / '.orders-lab'
 backend = json.loads((root / 'process-read-result.json').read_text())
 browser = json.loads((root / 'browser-read-500.json').read_text())
 assert backend['samples_per_configuration'] == 60
-assert [(r['processes'], r['clients']) for r in backend['results']] == [(1, 1), (1, 2), (1, 10)]
+readers = int(os.environ.get('ORDERS_CAPACITY_READERS', '1'))
+assert readers in {1, 5}
+assert [(r['processes'], r['clients']) for r in backend['results']] == [(readers, 1), (readers, 2), (readers, 10)]
 assert len(browser['samples']) == 20
-verdict = {'backend_limit_ms': 500, 'browser_limit_ms': 1500,
+verdict = {'readers': readers, 'backend_limit_ms': 500, 'browser_limit_ms': 1500,
            'backend_p95_ms': [r['backend_ms']['p95'] for r in backend['results']],
            'browser_p95_ms': browser['p95_ms'],
            'scope': 'Ephemeral CI with application CPU/memory ceilings; no store PC/network or managed DB equivalence.'}

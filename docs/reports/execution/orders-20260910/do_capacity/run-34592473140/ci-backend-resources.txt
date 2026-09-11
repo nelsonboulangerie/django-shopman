@@ -1,0 +1,4 @@
+MemoryPeak=289464320
+CPUUsageNSec=38476440000
+CPUQuotaPerSecUSec=1s
+MemoryMax=1073741824

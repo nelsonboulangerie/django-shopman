@@ -13,6 +13,8 @@ test("rendered queue becomes usable and filtering remains local", async ({ brows
   try {
     for (let sample = 0; sample < 20; sample++) {
       const page = await context.newPage();
+      const metrics = await context.newCDPSession(page);
+      await metrics.send("Performance.enable");
       const start = Date.now();
       await page.goto("/", { waitUntil: "domcontentloaded" });
       await expect(page.getByRole("link", { name: `Abrir pedido HTTP-LAB-${n}-0`, exact: true })).toBeVisible();
@@ -26,7 +28,9 @@ test("rendered queue becomes usable and filtering remains local", async ({ brows
         return { ttfb_ms: nav.responseStart - nav.requestStart, dom_content_ms: nav.domContentLoadedEventEnd - nav.startTime,
           transfer_bytes: nav.transferSize, encoded_bytes: nav.encodedBodySize };
       });
-      samples.push({ sample, usable_ms: usableMs, ...navigation });
+      const measured = await metrics.send("Performance.getMetrics");
+      const work = Object.fromEntries(measured.metrics.filter(({ name }) => ["ScriptDuration", "LayoutDuration", "RecalcStyleDuration", "TaskDuration"].includes(name)).map(({ name, value }) => [name, value]));
+      samples.push({ sample, usable_ms: usableMs, ...navigation, work });
       await page.close();
     }
   } finally { await context.close(); }

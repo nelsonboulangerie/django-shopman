@@ -41,3 +41,28 @@ Tentativa inicial de checker com `.venv` ausente nesta worktree falhou antes de
 executar; repetido com interpretador canônico. Docker não instalado neste host;
 escolhido runner CI já existente, sem instalar engine ou reservar recurso novo.
 Execução remota e resultados serão acrescentados após a rodada, sem antecipar passe.
+
+
+## Rodada34592473140 — fontef25cb67cd, topologia atual
+
+Preparação passou em runner Linux4CPUs/16GB; PostgreSQL16/Valkey8 novos,3 jornadas
+browser passaram. Cgroup comprovado1CPU/1GiB, pico backend289464320B (~276MiB).
+Backend p951/2/10clientes:239,558 /386,044 /2500,444ms. Browser p952229ms,
+p502134ms. **Budget reprovado**, exit1 no gate final; nenhum skip disfarçou falha.
+Primeira leitura backend1050,619ms está registrada separadamente.15 consultas
+estáveis (primeira16), Hold1, payload~1,99MB. Não é OOM nem falha de instalação.
+Logo, a reprovação não pode ser atribuída somente ao swap do host local.
+
+## Próximo experimento, não uma alteração da DigitalOcean
+
+Testar cinco leitores independentes, cada um com teto1CPU/1GiB, no MESMO runner
+existente (4CPUs totais, registrar essa limitação), preservando60/20 amostras e
+budgets500/1500. Diagnosticar separadamente CPU/layout/script do navegador com CDP
+após terminar o cronômetro, sem retirar nenhum passo da jornada. Nenhum código da
+aplicação muda neste experimento, nenhuma infraestrutura é contratada.
+
+Preço consultado read-only na API DO: instância atual1CPU/1GB US$12/mês;
+cinco seriam US$60/mês para o componente web, diferença nominalUS$48/mês, antes de
+impostos/câmbio/extras. **Não é recomendação aprovada nem compra**: uma mudança paga
+só será proposta após evidência de benefício e revisão do spec. O serviço Gestor
+atual512MB custaUS$5/mês nessa consulta e não foi alterado.

@@ -4,7 +4,7 @@ import sys
 import time
 
 port = int(sys.argv[1])
-assert port in {8016, 3005}
+assert port in {8016, 8017, 8018, 8019, 8020, 3005}
 deadline = time.monotonic() + 60
 while True:
     with socket.socket() as connection:
