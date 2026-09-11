@@ -312,7 +312,6 @@ def close_sale(
     # desconto lá embaixo. Ver `build_session_ops`.
     approver = validate_manager_approval(payload, operator_username=operator_username)
     approved_by = approver.get_username() if approver is not None else ""
-    _validate_fiscal_delivery_fee(payload)
     _validate_schedule(payload)
     _require_customer_if_scheduled(payload)
     _require_contact_if_payment_link(payload)
@@ -2456,28 +2455,6 @@ def _waive_delivery_fee_if_due(base_fee_q: int, merchandise_q: int) -> int:
 
 def _payload_delivery_fee_q(payload: dict) -> int:
     return _resolve_delivery_fee(payload).fee_q
-
-
-def _validate_fiscal_delivery_fee(payload: dict) -> None:
-    """Nota fiscal + taxa de entrega ainda pede conferência no gestor.
-
-    A regra é a de sempre; mudou o lugar. Enquanto a taxa era digitada, o
-    parser do intent conseguia vê-la sem tocar no banco. Agora ela é RESOLVIDA
-    pelo motor de entrega, e só quem resolveu sabe se existe — então a porta
-    mora aqui, ao lado da resolução, em vez de olhar para um campo que o PDV
-    não preenche mais.
-    """
-    if not str(payload.get("fiscal_tax_id") or "").strip():
-        return
-    if _resolve_delivery_fee(payload).fee_q <= 0:
-        return
-    raise PosIntentError(
-        code="fiscal_delivery_fee_pending",
-        message="Fiscal com taxa de entrega ainda exige revisão no gestor.",
-        field="delivery_fee_q",
-        focus="delivery_address",
-        recovery="Finalize sem taxa, ou finalize sem fiscal e reprocesse no gestor após conferência.",
-    )
 
 
 def _validate_payment_completion(payload: dict) -> None:

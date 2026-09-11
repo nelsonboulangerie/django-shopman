@@ -101,7 +101,7 @@ async function confirmSubmit() {
       >
         <Icon name="lucide:arrow-left" class="size-5" />
       </UiButton>
-      <h1 class="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight">Fechamento do dia</h1>
+      <h1 class="min-w-0 truncate text-lg font-semibold">Fechamento do dia</h1>
       <span v-if="closing" class="ml-auto truncate text-sm text-muted-foreground">
         {{ closing.today_display }} · contagem cega de sobras e perdas
       </span>
@@ -109,7 +109,7 @@ async function confirmSubmit() {
 
     <div class="mx-auto grid w-full max-w-2xl gap-4 p-4 md:py-8">
       <!-- Sem permissão: fechamento é ritual do gerente. -->
-      <section v-if="accessDenied" class="grid gap-2 rounded-lg border bg-card p-4">
+      <section v-if="accessDenied" class="grid gap-2 rounded-md border bg-card p-4">
         <div class="flex items-center gap-2">
           <Icon name="lucide:lock" class="size-4 text-muted-foreground" />
           <h2 class="text-base font-semibold">Fechamento é do gerente</h2>
@@ -130,7 +130,7 @@ async function confirmSubmit() {
         <!-- Fim de dia encadeado: registrado o fechamento, o próximo passo vem
              até a mão. Relatório só para quem audita — porta que bateria na
              cara não é oferta. -->
-        <section v-if="justClosedDay && closing.already_closed" class="grid gap-2 rounded-lg border bg-card p-4">
+        <section v-if="justClosedDay && closing.already_closed" class="grid gap-2 rounded-md border bg-card p-4">
           <p class="text-sm text-muted-foreground">
             Fechamento registrado. O quadro do dia está logo abaixo.
           </p>
@@ -151,7 +151,7 @@ async function confirmSubmit() {
              A tabela completa aparece depois que a contagem é registrada. -->
         <section
           v-if="!closing.already_closed && closing.has_pending_production"
-          class="grid gap-2 rounded-lg border border-warning/40 bg-warning/10 p-4"
+          class="grid gap-2 rounded-md border border-warning/40 bg-warning/10 p-4"
         >
           <div class="flex items-center gap-2">
             <Icon name="lucide:triangle-alert" class="size-4 text-amber-700 dark:text-amber-400" />
@@ -174,7 +174,7 @@ async function confirmSubmit() {
         </section>
 
         <!-- Produção pendente -->
-        <section v-if="closing.already_closed && closing.has_pending_production" class="grid gap-2 rounded-lg border bg-card p-4">
+        <section v-if="closing.already_closed && closing.has_pending_production" class="grid gap-2 rounded-md border bg-card p-4">
           <div class="flex items-center gap-2">
             <h2 class="text-base font-semibold">Produção pendente</h2>
             <span class="inline-flex items-center rounded-md border border-warning/50 bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
@@ -217,7 +217,7 @@ async function confirmSubmit() {
         </section>
 
         <!-- Produção do dia (pós-contagem: é a resposta da prova) -->
-        <section v-if="closing.already_closed" class="grid gap-2 rounded-lg border bg-card p-4">
+        <section v-if="closing.already_closed" class="grid gap-2 rounded-md border bg-card p-4">
           <h2 class="text-base font-semibold">Produção do dia</h2>
           <p v-if="!dayProduction.length" class="text-sm text-muted-foreground">Sem produção registrada hoje.</p>
           <div v-else class="overflow-x-auto">
@@ -243,7 +243,7 @@ async function confirmSubmit() {
         </section>
 
         <!-- Encomendas dos próximos dias -->
-        <section v-if="closing.already_closed && closing.has_upcoming_preorders" class="grid gap-2 rounded-lg border bg-card p-4">
+        <section v-if="closing.already_closed && closing.has_upcoming_preorders" class="grid gap-2 rounded-md border bg-card p-4">
           <div class="flex items-center gap-2">
             <h2 class="text-base font-semibold">Encomendas para os próximos dias</h2>
             <span class="inline-flex items-center rounded-md border border-border bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
@@ -274,7 +274,7 @@ async function confirmSubmit() {
         </section>
 
         <!-- Discrepâncias -->
-        <section v-if="closing.already_closed && closing.reconciliation_errors.length" class="grid gap-2 rounded-lg border border-destructive/40 bg-card p-4">
+        <section v-if="closing.already_closed && closing.reconciliation_errors.length" class="grid gap-2 rounded-md border border-destructive/40 bg-card p-4">
           <h2 class="text-base font-semibold text-destructive">Discrepâncias detectadas</h2>
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
@@ -299,7 +299,7 @@ async function confirmSubmit() {
         </section>
 
         <!-- Contagem final (cega) -->
-        <section class="grid gap-2 rounded-lg border bg-card p-4">
+        <section class="grid gap-2 rounded-md border bg-card p-4">
           <h2 class="text-base font-semibold">Contagem final</h2>
           <p class="text-sm text-muted-foreground">
             Informe apenas o que sobrou fisicamente. O sistema trata destino e perdas automaticamente.
@@ -363,7 +363,7 @@ async function confirmSubmit() {
         </section>
       </template>
 
-      <section v-else-if="pending" class="grid place-items-center rounded-lg border bg-card p-8">
+      <section v-else-if="pending" class="grid place-items-center rounded-md border bg-card p-8">
         <Icon name="line-md:loading-loop" class="size-6 text-muted-foreground" />
       </section>
     </div>

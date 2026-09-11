@@ -71,6 +71,7 @@ const props = defineProps<{
   checkoutContract: POSCheckoutContractProjection | null;
   addressAutocomplete: POSAddressAutocompleteProjection | null;
   customerLookup: POSCustomerLookupProjection | null;
+  customerRef?: string;
   searchResults: POSCustomerSearchResult[];
   searchBusy: boolean;
   /** O cliente associado foi criado agora (resolve just-in-time). */
@@ -430,6 +431,7 @@ const offerCustomer = computed(() =>
 // endereço e o payload levar outro, a confirmação vira mentira.
 const receiptOffers = computed(() =>
   receiptSaveOffers({
+    customerRef: props.customerRef,
     receiptEmail: props.receiptEmail,
     customerEmail: props.customerEmail,
     invoiceTaxId: props.invoiceTaxId,
@@ -666,15 +668,6 @@ const ctaLabel = computed(() => {
 const scheduleConflictReason = computed(
   () => selectedWindowConflict(props.deliverySlots, props.deliveryTimeSlot),
 );
-// O CPF só viaja no intent quando o switch está ligado (`usePosSale`), e a taxa
-// é a RESOLVIDA pelo servidor — as duas metades exatas de
-// `_validate_fiscal_delivery_fee`.
-const fiscalWithDeliveryFee = computed(
-  () => props.wantsCpfOnInvoice
-    && !!props.invoiceTaxId.replace(/\D/g, "")
-    && props.fulfillmentType === "delivery"
-    && props.deliveryFeeQ > 0,
-);
 // Levar o foco ao campo que resolve. Por `aria-label` porque é o nome que o
 // campo já carrega para quem não enxerga — um `ref` a mais seria um segundo
 // nome para a mesma coisa, e o primeiro a envelhecer.
@@ -689,10 +682,7 @@ function focusByAriaLabel(label: string) {
 
 type CheckoutAction = { label: string; run: () => void };
 // TODA RECUSA DO COMMIT TEM QUE TER GÊMEA AQUI. O servidor recusa a venda em
-// oito portões; a tela replicava três. Os outros cinco viravam 422 seco com o
-// cliente na frente, depois de o combinado já ter sido feito em voz alta — e um
-// deles ("Fiscal com taxa de entrega") a tela até CONTRADIZIA, escrevendo "Sai
-// na nota: CPF …" enquanto o Validar ficava verde.
+// sete portões; a tela apresenta a mesma recusa e o caminho para resolvê-la.
 //
 // A ordem é a da conversa do balcão: quem é o cliente, o que foi prometido, o
 // que sai na nota, e só então o dinheiro.
@@ -726,16 +716,6 @@ const ctaBlock = computed<{ message: string; hint?: string; action?: CheckoutAct
       message: "O horário combinado não cabe mais.",
       hint: scheduleConflictReason.value,
       action: { label: "Escolher horário", run: () => { scheduleSheetOpen.value = true; } },
-    };
-  }
-  // `_validate_fiscal_delivery_fee`: nota com CPF + taxa de entrega ainda passa
-  // pela conferência do gestor. É o único portão que a tela não só ignorava como
-  // desmentia, com o eco "Sai na nota" logo abaixo do switch.
-  if (fiscalWithDeliveryFee.value) {
-    return {
-      message: "Nota com CPF e taxa de entrega, não.",
-      hint: "O gestor precisa conferir antes. Finalize sem o CPF.",
-      action: { label: "Tirar o CPF", run: () => { emit("update:wantsCpfOnInvoice", false); } },
     };
   }
   // `receipt_email_required`: o canal ligado sem endereço nenhum. O composable
@@ -1211,21 +1191,22 @@ defineExpose({
                cédulas à direita (só dinheiro: as 6 notas BR que o cliente entrega) -->
           <div class="flex gap-1.5">
           <div class="grid gap-1.5" :class="cashSelected ? 'flex-[3] basis-0' : 'flex-1'">
+          <!-- Teclas h-11/text-xl propositais: números legíveis num console compacto de toque. -->
           <div class="grid grid-cols-3 gap-1.5" role="group" aria-label="Teclado de valor">
             <button
               v-for="digit in digitKeys"
               :key="digit"
               type="button"
-              class="grid place-items-center rounded-md border bg-card h-11 text-xl font-semibold tabular-nums transition hover:bg-accent active:translate-y-px disabled:opacity-40"
+              class="grid place-items-center rounded-md border bg-card h-11 text-xl font-semibold tabular-nums transition hover:bg-accent active:translate-y-px disabled:opacity-50"
               :disabled="!numpadActive"
               :aria-label="`Dígito ${digit}`"
               @click="$emit('tenderDigit', digit)"
             >
               {{ digit }}
             </button>
-            <button type="button" class="grid place-items-center rounded-md border bg-card h-11 text-xl font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Vírgula (centavos)" @click="$emit('tenderComma')">,</button>
-            <button type="button" class="grid place-items-center rounded-md border bg-card h-11 text-xl font-semibold tabular-nums transition hover:bg-accent active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Dígito 0" @click="$emit('tenderDigit', '0')">0</button>
-            <button type="button" class="grid place-items-center rounded-md border border-destructive/25 bg-destructive/5 h-11 text-destructive transition hover:bg-destructive/10 active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Apagar um dígito" title="Apaga o último dígito do valor (Backspace)" @click="$emit('tenderBackspace')">
+            <button type="button" class="grid place-items-center rounded-md border bg-card h-11 text-xl font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-50" :disabled="!numpadActive" aria-label="Vírgula (centavos)" @click="$emit('tenderComma')">,</button>
+            <button type="button" class="grid place-items-center rounded-md border bg-card h-11 text-xl font-semibold tabular-nums transition hover:bg-accent active:translate-y-px disabled:opacity-50" :disabled="!numpadActive" aria-label="Dígito 0" @click="$emit('tenderDigit', '0')">0</button>
+            <button type="button" class="grid place-items-center rounded-md border border-destructive/25 bg-destructive/5 h-11 text-destructive transition hover:bg-destructive/10 active:translate-y-px disabled:opacity-50" :disabled="!numpadActive" aria-label="Apagar um dígito" title="Apaga o último dígito do valor (Backspace)" @click="$emit('tenderBackspace')">
               <Icon name="lucide:delete" class="size-5" />
             </button>
           </div>
@@ -1241,7 +1222,7 @@ defineExpose({
             <div class="grid grid-cols-2 gap-1.5">
             <button
               type="button"
-              class="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40"
+              class="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-50"
               :disabled="!numpadActive"
               aria-label="Exato: a linha assume o restante"
               title="A forma selecionada assume o que falta para cobrir o total (=)"
@@ -1252,7 +1233,7 @@ defineExpose({
             </button>
             <button
               type="button"
-              class="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40"
+              class="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-50"
               :disabled="!numpadActive"
               aria-label="Limpar: zera o valor da linha"
               title="Zera o valor da linha inteira (o Backspace apaga um dígito)"
@@ -1276,7 +1257,7 @@ defineExpose({
               v-for="note in cashNotesQ"
               :key="note"
               type="button"
-              class="flex items-center justify-center gap-1 rounded-md border border-success/30 bg-success/10 text-sm font-semibold tabular-nums text-success transition hover:bg-success/20 active:translate-y-px disabled:opacity-40"
+              class="flex items-center justify-center gap-1 rounded-md border border-success/30 bg-success/10 text-sm font-semibold tabular-nums text-success transition hover:bg-success/20 active:translate-y-px disabled:opacity-50"
               :disabled="!numpadActive"
               :aria-label="`Recebi nota de ${formatBRL(note)}`"
               @click="$emit('tenderAdd', note)"
@@ -1962,7 +1943,7 @@ defineExpose({
               {{ option.label }}
             </UiButton>
           </div>
-          <label class="grid gap-1 text-sm">
+          <label class="grid gap-1 text-xs">
             <span class="font-medium text-muted-foreground">{{ discountType === "fixed" ? "Valor (R$)" : "Percentual (%)" }}</span>
             <UiInput :model-value="discountValue" inputmode="decimal" placeholder="0" @update:model-value="$emit('update:discountValue', String($event || ''))" />
           </label>

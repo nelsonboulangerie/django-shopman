@@ -835,24 +835,12 @@ describe("PosPaymentWorkspace — toda recusa do commit tem gêmea na tela", () 
     paymentRemainingQ: 0,
     ...overrides,
   });
-  it("nota com CPF + taxa de entrega trava — era o portão que a tela CONTRADIZIA", async () => {
-    // `pos._validate_fiscal_delivery_fee` aborta a venda. A tela escrevia "Sai
-    // na nota: CPF …" logo abaixo do switch e deixava o Validar verde.
+  it("CPF com taxa de entrega mantém o pagamento disponível", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
-      props: ready({
-        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [] },
-        wantsCpfOnInvoice: true,
-        invoiceTaxId: "52998224725",
-        fulfillmentType: "delivery",
-        deliveryFeeQ: 800,
-      }),
+      props: ready({ wantsCpfOnInvoice: true, invoiceTaxId: "52998224725", fulfillmentType: "delivery", deliveryFeeQ: 800 }),
     });
-    expect(cta(wrapper)!.attributes("disabled")).toBeDefined();
-    expect(avisos(wrapper).text()).toContain("Nota com CPF e taxa de entrega, não.");
-
-    const tirar = avisos(wrapper).findAll("button").find((b) => b.text().includes("Tirar o CPF"));
-    await tirar!.trigger("click");
-    expect(wrapper.emitted("update:wantsCpfOnInvoice")?.[0]).toEqual([false]);
+    expect(cta(wrapper)!.attributes("disabled")).toBeUndefined();
+    expect(wrapper.text()).not.toContain("Tirar o CPF");
   });
 
   it("comprovante por e-mail sem endereço nenhum trava", async () => {

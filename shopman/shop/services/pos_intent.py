@@ -241,10 +241,6 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
                 recovery="Corrija o documento ou desligue \"CPF na nota\".",
             )
         payload["fiscal_tax_id"] = digits
-    # A porta "fiscal com taxa de entrega" mudou de lugar, não de regra: agora
-    # que a taxa é RESOLVIDA (e não digitada), só quem resolveu sabe se ela
-    # existe. Ela vive em `pos._validate_fiscal_delivery_fee`, junto da
-    # resolução — aqui não há como saber.
     payload["receipt_channels"] = _receipt_channels(payload.get("receipt_channels"))
     payload["receipt_email"] = _emailish(payload.get("receipt_email"), field="receipt_email")
     if for_commit and "email" in payload["receipt_channels"] and not payload["receipt_email"]:

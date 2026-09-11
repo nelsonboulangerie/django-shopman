@@ -79,7 +79,7 @@ function confirmTyped() {
       </UiDialogHeader>
 
       <form class="grid gap-2" @submit.prevent="confirmTyped">
-        <label class="grid gap-1 text-sm">
+        <label class="grid gap-1 text-xs">
           <span class="font-medium text-muted-foreground">Referência da comanda</span>
           <div class="flex gap-2">
             <UiInput

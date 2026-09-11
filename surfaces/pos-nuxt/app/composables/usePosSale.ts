@@ -293,6 +293,7 @@ export function usePosSale(deps: PosSaleDeps) {
   /** As ofertas do comprovante — a MESMA função que a tela lê para perguntar. */
   const receiptOffers = () =>
     receiptSaveOffers({
+      customerRef: cart.customerRef,
       receiptEmail: cart.receiptEmail,
       customerEmail: cart.customerEmail,
       invoiceTaxId: cart.invoiceTaxId,
@@ -996,7 +997,7 @@ export function usePosSale(deps: PosSaleDeps) {
     showTabs.value = false;
   }
 
-  function setFromTabPayload(payload: POSTabPayload, options: { preserveCheckout?: boolean } = {}) {
+  async function setFromTabPayload(payload: POSTabPayload, options: { preserveCheckout?: boolean } = {}) {
     tabLoading.value = true;
     assignTabIdentityFromPayload(payload);
     cart.items = (payload.items || []).map((item) => ({ ...item }));
@@ -1031,7 +1032,8 @@ export function usePosSale(deps: PosSaleDeps) {
       selectedTenderIndex.value = -1;
       cart.tenderedAmountInput = payload.tendered_q ? (Number(payload.tendered_q) / 100).toFixed(2).replace(".", ",") : "";
       cart.changeForInput = "";
-      cart.invoiceTaxId = cart.invoiceTaxId || String(payload.fiscal_tax_id || "");
+      cart.invoiceTaxId = String(payload.fiscal_tax_id || "");
+      cart.wantsCpfOnInvoice = Boolean(cart.invoiceTaxId);
       cart.receiptChannels = [...(payload.receipt_channels || [])];
       cart.receiptEmail = payload.receipt_email || "";
       // A ordem não volta da comanda reaberta: é decisão de QUEM está fechando
@@ -1046,7 +1048,11 @@ export function usePosSale(deps: PosSaleDeps) {
       cart.managerPin = "";
     }
     cart.clientRequestId = "";
-    customerLookup.value = null;
+    if (!cart.customerRef) customerLookup.value = null;
+    else if (customerLookup.value?.ref !== cart.customerRef) {
+      customerLookup.value = null;
+      await fetchCustomerLookup();
+    }
     // preserveCheckout: o checkout otimista recarrega a comanda POR BAIXO do shell
     // de pagamento já aberto — sair do modo aqui devolveria o operador à venda.
     if (!options.preserveCheckout) {
@@ -1103,7 +1109,7 @@ export function usePosSale(deps: PosSaleDeps) {
         checkoutMode.value = false;
         review.value = null;
       } else {
-        setFromTabPayload(payload);
+        await setFromTabPayload(payload);
       }
       tabInput.value = "";
       await refresh();
@@ -1228,13 +1234,16 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.deliveryAddress = address.route || address.formatted_address;
   }
 
-  async function lookupCustomer() {
+  let customerLookupRequest = 0;
+  async function fetchCustomerLookup() {
     // O ref vence: é a chave exata do cadastro (cliente sem telefone existe, e
     // dois cadastros podem dividir um telefone de recado). O telefone segue
     // como fallback do fluxo antigo (digitou o fone no form e pediu lookup).
     const customerRef = cart.customerRef.trim();
     const phone = cart.customerPhone.trim();
     if (!customerRef && !phone) return;
+    const requestId = ++customerLookupRequest;
+    const tabSessionKey = cart.tabSessionKey;
     lookupBusy.value = true;
     serverError.value = "";
     try {
@@ -1249,47 +1258,61 @@ export function usePosSale(deps: PosSaleDeps) {
         credentials: "include",
         headers: requestHeaders,
       });
+      if (requestId !== customerLookupRequest || cart.customerRef.trim() !== customerRef || cart.customerPhone.trim() !== phone || cart.tabSessionKey !== tabSessionKey) return null;
       customerLookup.value = response.customer;
-      if (!response.customer) return;
-      cart.customerRef = response.customer.ref;
-      cart.customerName = response.customer.name || cart.customerName;
-      cart.customerPhone = response.customer.phone || cart.customerPhone;
-      cart.customerEmail = response.customer.email || cart.customerEmail;
-      // CPF conhecido entra como DEFAULT; o campo continua editável — o cliente
-      // pode pedir outro CPF nesta venda sem tocar no cadastro.
-      cart.customerTaxId = cart.customerTaxId || response.customer.tax_id || "";
-      // O cliente que já optou uma vez chega com o checkout PRÉ-MARCADO — e o
-      // operador pode desligar nesta venda ("hoje não"): pré-marcar não é impor.
-      // O CPF do cadastro entra como DEFAULT do campo da nota; o switch é que
-      // decide se ele viaja.
-      const prefs = response.customer.fiscal_prefs || {};
-      cart.invoiceTaxId = cart.invoiceTaxId || response.customer.tax_id || "";
-      if (prefs.cpf_na_nota) cart.wantsCpfOnInvoice = true;
-      if (prefs.email_receipt && !cart.receiptChannels.includes("email")) {
-        cart.receiptChannels = [...cart.receiptChannels, "email"];
-      }
-      // Aniversário HOJE: aviso elegante e discreto ao operador — omotenashi de
-      // balcão. Só promete desconto se uma promoção de aniversariante EXISTE
-      // configurada (o Core a aplica sozinho no reprice); sem promoção, o aviso
-      // é só o parabéns.
-      if (response.customer.is_birthday_today) {
-        const nome = (response.customer.name || "").split(" ")[0] || "o cliente";
-        toast.info(`🎂 Hoje é aniversário de ${nome}!`, {
-          description: response.customer.birthday_promo_label
-            ? `A promoção "${response.customer.birthday_promo_label}" se aplica sozinha na venda.`
-            : "Um parabéns cai bem.",
-          duration: 8000,
-        });
-      }
-      if (response.customer.is_staff) cart.customerMemoryAction = "";
-      if (cart.fulfillmentType === "delivery" && response.customer.default_address && !cart.deliveryAddress.trim()) {
-        applySavedAddress(response.customer.default_address);
-      }
+      return response.customer;
+
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Falha ao buscar cliente.");
+      if (requestId === customerLookupRequest && cart.customerRef.trim() === customerRef && cart.tabSessionKey === tabSessionKey) {
+        serverError.value = httpErrorMessage(error, "Falha ao buscar cliente.");
+      }
+      return null;
     } finally {
-      lookupBusy.value = false;
+      if (requestId === customerLookupRequest) lookupBusy.value = false;
     }
+  }
+
+  // Defaults pertencem à escolha de um cliente; reabrir comanda só recupera o cadastro.
+  function applyCustomerDefaults(customer: POSCustomerLookupProjection) {
+    cart.customerRef = customer.ref;
+    cart.customerName = customer.name || cart.customerName;
+    cart.customerPhone = customer.phone || cart.customerPhone;
+    cart.customerEmail = customer.email || cart.customerEmail;
+    // CPF conhecido entra como DEFAULT; o campo continua editável — o cliente
+    // pode pedir outro CPF nesta venda sem tocar no cadastro.
+    cart.customerTaxId = cart.customerTaxId || customer.tax_id || "";
+    // O cliente que já optou uma vez chega com o checkout PRÉ-MARCADO — e o
+    // operador pode desligar nesta venda ("hoje não"): pré-marcar não é impor.
+    // O CPF do cadastro entra como DEFAULT do campo da nota; o switch é que
+    // decide se ele viaja.
+    const prefs = customer.fiscal_prefs || {};
+    cart.invoiceTaxId = cart.invoiceTaxId || customer.tax_id || "";
+    if (prefs.cpf_na_nota) cart.wantsCpfOnInvoice = true;
+    if (prefs.email_receipt && !cart.receiptChannels.includes("email")) {
+      cart.receiptChannels = [...cart.receiptChannels, "email"];
+    }
+    // Aniversário HOJE: aviso elegante e discreto ao operador — omotenashi de
+    // balcão. Só promete desconto se uma promoção de aniversariante EXISTE
+    // configurada (o Core a aplica sozinho no reprice); sem promoção, o aviso
+    // é só o parabéns.
+    if (customer.is_birthday_today) {
+      const nome = (customer.name || "").split(" ")[0] || "o cliente";
+      toast.info(`🎂 Hoje é aniversário de ${nome}!`, {
+        description: customer.birthday_promo_label
+          ? `A promoção "${customer.birthday_promo_label}" se aplica sozinha na venda.`
+          : "Um parabéns cai bem.",
+        duration: 8000,
+      });
+    }
+    if (customer.is_staff) cart.customerMemoryAction = "";
+    if (cart.fulfillmentType === "delivery" && customer.default_address && !cart.deliveryAddress.trim()) {
+      applySavedAddress(customer.default_address);
+    }
+  }
+
+  async function lookupCustomer() {
+    const customer = await fetchCustomerLookup();
+    if (customer) applyCustomerDefaults(customer);
   }
 
   // Just-in-time get-or-create: when the operator finishes defining a customer
@@ -1815,7 +1838,7 @@ export function usePosSale(deps: PosSaleDeps) {
       { tab_ref: cart.tabRef },
     );
     const payload = await action.call<POSTabPayload>(path);
-    setFromTabPayload(payload, options);
+    await setFromTabPayload(payload, options);
     await refresh();
   }
 
@@ -2101,7 +2124,7 @@ export function usePosSale(deps: PosSaleDeps) {
       if (response.source_closed || !response.source) {
         resetCart();
       } else {
-        setFromTabPayload(response.source);
+        await setFromTabPayload(response.source);
       }
       await refresh();
     } catch (error) {
@@ -2146,7 +2169,7 @@ export function usePosSale(deps: PosSaleDeps) {
         actionHref(actions.value, "fire_tab", "/api/v1/backstage/pos/tabs/fire/"),
         { body },
       );
-      if (response.tab) setFromTabPayload(response.tab);
+      if (response.tab) await setFromTabPayload(response.tab);
       await refresh();
       return true;
     } catch (error) {
@@ -2163,7 +2186,7 @@ export function usePosSale(deps: PosSaleDeps) {
       actionHref(actions.value, "unfire_tab", "/api/v1/backstage/pos/tabs/unfire/"),
       { body: { session_key: cart.tabSessionKey, line_ids: ids } },
     );
-    if (response.tab) setFromTabPayload(response.tab);
+    if (response.tab) await setFromTabPayload(response.tab);
     await refresh();
   }
 
@@ -2208,7 +2231,7 @@ export function usePosSale(deps: PosSaleDeps) {
         actionHref(actions.value, "rename_tab", "/api/v1/backstage/pos/tabs/rename/"),
         { body: { session_key: cart.tabSessionKey, new_tab_ref: newTabRef } },
       );
-      if (response.tab) setFromTabPayload(response.tab);
+      if (response.tab) await setFromTabPayload(response.tab);
       await refresh();
     } catch (error) {
       serverError.value = httpErrorMessage(error, "Falha ao renomear comanda.");

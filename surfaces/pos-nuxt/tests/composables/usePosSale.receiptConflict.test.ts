@@ -125,6 +125,10 @@ describe("usePosSale — a recusa do comprovante nomeia e limpa o campo CERTO", 
     disposers.push(h.handles.dispose);
 
     h.sale.cart.customerRef = "CUST-A";
+    // Cadastro identificado: salvar é escolha explícita, não o default de venda anônima.
+    h.sale.customerLookup.value = { ref: "CUST-A", name: "Ana Prado", email: "", tax_id: "" } as NonNullable<typeof h.sale.customerLookup.value>;
+    h.sale.cart.saveReceiptContact = true;
+    h.sale.cart.saveReceiptTaxId = true;
     h.sale.cart.customerName = "Ana Prado";
     h.sale.cart.customerPhone = "(43) 99999-0000";
     h.sale.cart.receiptEmail = "bia@example.org";
@@ -150,6 +154,10 @@ describe("usePosSale — a recusa do comprovante nomeia e limpa o campo CERTO", 
     disposers.push(h.handles.dispose);
 
     h.sale.cart.customerRef = "CUST-A";
+    // Cadastro identificado: salvar é escolha explícita, não o default de venda anônima.
+    h.sale.customerLookup.value = { ref: "CUST-A", name: "Ana Prado", email: "", tax_id: "" } as NonNullable<typeof h.sale.customerLookup.value>;
+    h.sale.cart.saveReceiptContact = true;
+    h.sale.cart.saveReceiptTaxId = true;
     h.sale.cart.customerName = "Ana Prado";
     h.sale.cart.customerPhone = "(43) 99999-0000";
     h.sale.cart.customerEmail = "";
@@ -191,6 +199,10 @@ describe("usePosSale — a recusa do comprovante nomeia e limpa o campo CERTO", 
     disposers.push(h.handles.dispose);
 
     h.sale.cart.customerRef = "CUST-A";
+    // Cadastro identificado: salvar é escolha explícita, não o default de venda anônima.
+    h.sale.customerLookup.value = { ref: "CUST-A", name: "Ana Prado", email: "", tax_id: "" } as NonNullable<typeof h.sale.customerLookup.value>;
+    h.sale.cart.saveReceiptContact = true;
+    h.sale.cart.saveReceiptTaxId = true;
     h.sale.cart.customerName = "Ana Prado";
     h.sale.cart.customerPhone = "(43) 99999-0000";
     h.sale.cart.wantsCpfOnInvoice = true;

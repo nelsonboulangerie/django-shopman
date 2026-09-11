@@ -62,7 +62,7 @@ async function copyLink() {
   >
     <div class="flex items-center gap-2">
       <Icon name="lucide:circle-check-big" class="size-5" />
-      <p class="text-sm font-semibold">Pagamento PIX confirmado · {{ proof.amountDisplay }}</p>
+      <p class="text-sm font-semibold tabular-nums">Pagamento PIX confirmado · {{ proof.amountDisplay }}</p>
     </div>
   </div>
 
@@ -70,7 +70,7 @@ async function copyLink() {
     <div class="flex items-center gap-2">
       <Icon :name="proof.icon" class="size-5" />
       <div class="min-w-0 flex-1">
-        <p class="text-sm font-semibold">{{ proof.isPix ? "Pagamento PIX" : "Link de pagamento" }} · {{ proof.amountDisplay }}</p>
+        <p class="text-sm font-semibold tabular-nums">{{ proof.isPix ? "Pagamento PIX" : "Link de pagamento" }} · {{ proof.amountDisplay }}</p>
         <!-- Duas coisas diferentes moram nesta linha, e as duas valem.
              (1) No LINK, a frase diz o que a casa FAZ com a URL — a cadeia
              WhatsApp → e-mail → SMS enfileirada na venda — e deixa a cópia
@@ -95,6 +95,7 @@ async function copyLink() {
 
     <!-- PIX: QR + copia-e-cola -->
     <template v-if="proof.isPix && proof.hasProof">
+      <!-- Fundo branco proposital: preservar leitura óptica do QR em ambos os temas. -->
       <img
         v-if="proof.qrCodeSrc"
         :src="proof.qrCodeSrc"

@@ -729,6 +729,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
       <div class="flex items-center gap-2">
         <h3 class="whitespace-nowrap text-base font-semibold">{{ items.length }} {{ items.length === 1 ? "item" : "itens" }}</h3>
       </div>
+      <!-- Pílula proposital: ação contextual, como Retirada e Para hoje. -->
       <button
         ref="listEntry"
         aria-keyshortcuts="Alt+s"
@@ -1096,7 +1097,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
           v-model="discountReason"
           aria-label="Motivo do desconto"
           :disabled="mutationBusy"
-          class="w-full text-xs"
+          class="w-full text-sm"
           @change="commitDiscount"
         >
           <option

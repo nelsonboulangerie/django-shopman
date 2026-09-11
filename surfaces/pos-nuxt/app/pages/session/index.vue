@@ -138,7 +138,11 @@ async function goToDayClosing() {
 // virado ao cliente. Janela nomeada de propósito — clicar de novo reaproveita a
 // existente em vez de empilhar outra.
 function openCustomerDisplay() {
-  if (import.meta.client) window.open("/display", "pos-customer-display");
+  if (!import.meta.client) return;
+  const display = window.open("/display", "pos-customer-display");
+  if (!display) toast.error("O navegador bloqueou a Tela do Cliente.", {
+    description: "Permita pop-ups para este site e tente novamente.",
+  });
 }
 
 // Movimentos de gaveta: sangria (sai) / suprimento (entra).
@@ -408,7 +412,7 @@ async function confirmClose() {
     <div class="flex min-w-0 flex-1 flex-col md:min-h-0 md:overflow-hidden">
       <header class="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-2">
         <RailToggle />
-        <h1 class="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight">Sessão de caixa</h1>
+        <h1 class="min-w-0 truncate text-lg font-semibold">Sessão de caixa</h1>
         <span v-if="pos" class="ml-auto truncate text-sm text-muted-foreground">
           {{ pos.terminal_label || "Terminal" }}
           <template v-if="screen === 'open'"> · {{ activeOperator?.name || cashRuntime?.operator_username }}</template>
@@ -421,7 +425,7 @@ async function confirmClose() {
           class="shrink-0"
           :class="pos ? '' : 'ml-auto'"
           aria-label="Abrir tela do cliente"
-          title="Tela do cliente (nova janela, para o segundo monitor)"
+          title="Tela do cliente: segundo monitor da mesma máquina e navegador (não conecta outro tablet)"
           @click="openCustomerDisplay"
         >
           <Icon name="lucide:monitor" class="size-5" />
@@ -436,7 +440,7 @@ async function confirmClose() {
                falavam viravam três lembranças; agora são um corredor. -->
           <section
             v-if="screen === 'closed' && justClosedShift"
-            class="grid gap-3 rounded-lg border border-success/30 bg-success/10 p-4"
+            class="grid gap-3 rounded-md border border-success/30 bg-success/10 p-4"
           >
             <div class="flex items-center gap-2">
               <Icon name="lucide:circle-check" class="size-4 text-success" />
@@ -459,7 +463,7 @@ async function confirmClose() {
           </section>
 
           <!-- Caixa fechado: abrir turno -->
-          <section v-if="screen === 'closed'" class="grid gap-3 rounded-lg border bg-card p-4">
+          <section v-if="screen === 'closed'" class="grid gap-3 rounded-md border bg-card p-4">
             <div class="grid gap-1">
               <h2 class="text-base font-semibold">Abrir caixa</h2>
               <p class="text-sm text-muted-foreground">
@@ -512,7 +516,7 @@ async function confirmClose() {
 
           <!-- Turno aberto: status (cego), continuar, movimentos, fechamento -->
           <template v-else>
-            <section class="grid gap-3 rounded-lg border bg-card p-4">
+            <section class="grid gap-3 rounded-md border bg-card p-4">
               <div class="grid grid-cols-2 gap-2 rounded-md border bg-muted/40 p-3 text-sm">
                 <div class="flex flex-col">
                   <span class="text-xs text-muted-foreground">Aberto em</span>
@@ -536,7 +540,7 @@ async function confirmClose() {
             <!-- Cancelar não é devolver. O gestor cancela de noite e ninguém abriu
                  gaveta: a devolução fica aqui, visível, até quem está com a gaveta
                  aberta entregar as notas. Só então Payman e livro registram. -->
-            <section v-if="pendingCashRefunds.length" class="grid gap-3 rounded-lg border bg-card p-4">
+            <section v-if="pendingCashRefunds.length" class="grid gap-3 rounded-md border bg-card p-4">
               <div class="flex items-center gap-2">
                 <Icon name="lucide:rotate-ccw" class="size-4 text-muted-foreground" />
                 <h2 class="text-base font-semibold">Devoluções em dinheiro pendentes</h2>
@@ -548,7 +552,7 @@ async function confirmClose() {
                   class="grid gap-2 rounded-md border bg-muted/30 p-3"
                 >
                   <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                    <span class="text-sm font-medium">{{ refund.amount_display }}</span>
+                    <span class="text-sm font-medium tabular-nums">{{ refund.amount_display }}</span>
                     <span class="text-xs text-muted-foreground">
                       pedido {{ refund.order_ref }}<template v-if="refund.customer_name"> · {{ refund.customer_name }}</template>
                     </span>
@@ -566,7 +570,7 @@ async function confirmClose() {
 
             <!-- Conta na casa: quem deve quanto, e o acerto. Só aparece quando há
                  saldo em aberto: dado opcional faz a tela crescer. -->
-            <section v-if="accountBalances.length" class="grid gap-3 rounded-lg border bg-card p-4" data-house-accounts>
+            <section v-if="accountBalances.length" class="grid gap-3 rounded-md border bg-card p-4" data-house-accounts>
               <div class="flex items-center gap-2">
                 <Icon name="lucide:book-user" class="size-4 text-muted-foreground" />
                 <h2 class="text-base font-semibold">Contas na casa</h2>
@@ -627,7 +631,7 @@ async function confirmClose() {
               </ul>
             </section>
 
-            <section class="grid gap-3 rounded-lg border bg-card p-4">
+            <section class="grid gap-3 rounded-md border bg-card p-4">
               <div class="flex items-center gap-2">
                 <Icon name="lucide:coins" class="size-4 text-muted-foreground" />
                 <h2 class="text-base font-semibold">Pedido de troco</h2>
@@ -765,7 +769,7 @@ async function confirmClose() {
               </p>
             </section>
 
-            <section class="grid gap-3 rounded-lg border bg-card p-4">
+            <section class="grid gap-3 rounded-md border bg-card p-4">
               <h2 class="text-base font-semibold">Movimento de caixa</h2>
               <div class="grid gap-1.5">
                 <span id="movement-kind-label" class="text-sm font-medium text-muted-foreground">Tipo</span>
@@ -854,7 +858,7 @@ async function confirmClose() {
                  O mesmo vale para "Fechar caixa" logo abaixo: dois campos de
                  dinheiro abertos o turno inteiro são ruído em 99% das visitas e
                  um toque errado no 1% restante. -->
-            <section class="grid gap-2 rounded-lg border bg-card p-4">
+            <section class="grid gap-2 rounded-md border bg-card p-4">
               <div class="flex items-center justify-between gap-3">
                 <div class="flex items-center gap-2">
                   <Icon name="lucide:archive" class="size-4 text-muted-foreground" />
@@ -914,7 +918,7 @@ async function confirmClose() {
               </template>
             </section>
 
-            <section class="grid gap-2 rounded-lg border bg-card p-4">
+            <section class="grid gap-2 rounded-md border bg-card p-4">
               <div class="flex items-center justify-between gap-3">
                 <h2 class="text-base font-semibold">Fechar caixa</h2>
                 <UiButton v-if="!closingPanel" variant="ghost" size="sm" @click="closingPanel = true">
@@ -990,7 +994,7 @@ async function confirmClose() {
                visível para o balcão nem para o gerente. O servidor recusa por
                conta própria (`cashman.audit_shift`); isto aqui só evita oferecer
                uma porta que vai bater na cara. -->
-          <section v-if="canAuditCash" class="grid gap-2 rounded-lg border bg-card p-4">
+          <section v-if="canAuditCash" class="grid gap-2 rounded-md border bg-card p-4">
             <div class="flex items-center gap-2">
               <Icon name="lucide:receipt-text" class="size-4 text-muted-foreground" />
               <h2 class="text-base font-semibold">Relatório de caixa</h2>
@@ -1004,7 +1008,7 @@ async function confirmClose() {
           </section>
 
           <!-- Fechamento do DIA (gerente): contagem cega de sobras/perdas. -->
-          <section v-if="dayClosing" class="grid gap-2 rounded-lg border bg-card p-4">
+          <section v-if="dayClosing" class="grid gap-2 rounded-md border bg-card p-4">
             <div class="flex items-center gap-2">
               <Icon name="lucide:clipboard-check" class="size-4 text-muted-foreground" />
               <h2 class="text-base font-semibold">Fechamento do dia</h2>

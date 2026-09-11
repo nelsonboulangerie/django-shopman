@@ -88,6 +88,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydownCapture, 
           Aguardando a gaveta fechar
         </p>
 
+      <!-- Proposital: acesso de emergência discreto do gerente, com alvo de toque de 44px. -->
       <!-- A porta da emergência para quem NÃO tem teclado.
            Três pontinhos, sem rótulo, sem cadeado, sem explicação — quem foi
            treinado sabe; quem não foi não aprende olhando. O alvo de toque é
