@@ -2,7 +2,7 @@
 
 **Implementação técnica candidata de W00–W10 concluída; aceite G2 ainda não satisfeito.** PostgreSQL 16, Redis 7 e Chromium executaram em laboratório local descartável, sem skips no gate de runtime nem no E2E. O piloto sintético e a inspeção manual de navegador/árvore de acessibilidade estão registrados abaixo. D01–D06 foram aprovadas pelo solicitante em 2026-09-11, com responsabilidade assumida e retenção definitiva pendente sob a proteção atual. J01–J16 com pessoas e leitor de tela continuam sem execução. Nenhum rollout, produção, mensagem ou transação externa foi executado. Não se atribui ganho humano a testes automatizados ou à inspeção feita pelo implementador.
 
-Commits técnicos consolidados antes do fechamento: `83bf2dbb6`, `4708354f4` e `f106a58a4`.
+O histórico completo e auditável está em `origin/main..HEAD`; o fechamento técnico com as correções manuais é `a5647774f`.
 
 ## Proveniência e preservação
 
@@ -57,7 +57,7 @@ Os diagnósticos originais são assertivas de reprodução do defeito, portanto 
 
 D01–D06 foram aprovadas em 2026-09-11 pelo solicitante, que assumiu todos os papéis responsáveis. A retenção definitiva ficou expressamente pendente, mantendo-se a proteção atual: recibos vinculados já finalizados/em curso não são limpos por idade; a janela definitiva, auditoria produtiva, saneamento e eventual contração exigem decisão posterior. Essa aprovação não autoriza exposição externa.
 
-### Pacote de decisão pronto para aprovação
+### Decisões registradas
 
 As propostas abaixo consolidam D01–D06 sem criar contrato, regra ou fonte de verdade adicional. A aprovação deve ser registrada nesta seção; autorização de decisão não autoriza produção, rollout, mensagens, cobranças ou transações reais.
 
