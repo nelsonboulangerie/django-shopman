@@ -7,7 +7,7 @@ sys.path.insert(0, str(ROOT / "docs/reports/execution/orders-20260910/http_read_
 import run_http_lab  # noqa: F401 — fixed synthetic settings/environment
 
 port = int(sys.argv[1])
-assert port in {8016, 8017, 8018, 8019}
+assert port in {8016, 8017, 8018, 8019, 8020}
 from daphne.cli import CommandLineInterface
 
 CommandLineInterface().run(["-b", "127.0.0.1", "-p", str(port), "--access-log", "/dev/null", "config.asgi:application"])

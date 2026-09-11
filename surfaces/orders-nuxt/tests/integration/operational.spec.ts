@@ -151,7 +151,8 @@ test("cancel response loss retains the reason and reads the committed receipt", 
   await page.getByRole("textbox", { name: "Motivo", exact: true }).fill("Motivo sintético preservado");
   const confirm = page.getByRole("button", { name: "Confirmar", exact: true });
   await confirm.click({ trial: true });
-  expect.soft((await confirm.boundingBox())?.height, "Confirmar: ação principal").toBeGreaterThanOrEqual(48);
+  // The dialog enters at scale .95; assert its settled target without lowering the floor.
+  await expect.poll(async () => (await confirm.boundingBox())?.height, { message: "Confirmar: ação principal" }).toBeGreaterThanOrEqual(48);
   await page.getByRole("dialog").screenshot({ path: fileURLToPath(new URL("../../../../.orders-lab/integration-reason-targets.png", import.meta.url)) });
   await confirm.click();
   await expect(page.getByRole("dialog")).toHaveCount(0);

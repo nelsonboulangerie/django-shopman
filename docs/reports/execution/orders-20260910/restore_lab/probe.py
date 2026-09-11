@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 checkout = Path(sys.argv[1]).resolve()
 mode = sys.argv[2]
 database = sys.argv[3] if len(sys.argv) > 3 else "orders_restore_lab"
-assert database in {"orders_restore_lab", "orders_restore_lab_stock"}
+assert database in {"orders_restore_lab", "orders_restore_lab_stock", "orders_restore_lab_922fb"}
 assert checkout.name in {"django-shopman-orders-execution-20260910", "orders-audit-base-5a3383c9"}
 assert mode in {"current", "previous"}
 sys.path[:0] = [str(checkout), *[str(path) for path in sorted((checkout / "packages").iterdir()) if path.is_dir()]]
@@ -53,7 +53,7 @@ if mode == "current":
         pass
     else:
         raise AssertionError("Pending key was lost or treated as permission")
-if database == "orders_restore_lab_stock":
+if database in {"orders_restore_lab_stock", "orders_restore_lab_922fb"}:
     from decimal import Decimal
 
     from django.db.models import Sum
@@ -65,4 +65,4 @@ if database == "orders_restore_lab_stock":
     assert Move.objects.filter(quant=quant, delta=Decimal("-0.500")).count() == 1
 print(json.dumps({"mode": mode, "database": database, "old_schema_reads_new_json": True,
     "synthetic_remote_calls": external.call_count, "unknown_safe_to_consume": mode == "current",
-    "all_probe_writes_rolled_back": True}))
+    "all_probe_row_writes_rolled_back": True}))

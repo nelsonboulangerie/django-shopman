@@ -14,7 +14,7 @@ LAB = ROOT / ".orders-lab"
 CONN = {"host": "127.0.0.1", "port": 55439, "user": "orders_lab"}
 SOURCE = "orders_lab"
 TARGET = sys.argv[1] if len(sys.argv) > 1 else "orders_restore_lab"
-assert TARGET in {"orders_restore_lab", "orders_restore_lab_stock"}
+assert TARGET in {"orders_restore_lab", "orders_restore_lab_stock", "orders_restore_lab_922fb"}
 CLI = ["-h", CONN["host"], "-p", str(CONN["port"]), "-U", CONN["user"]]
 
 

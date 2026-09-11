@@ -1,7 +1,9 @@
-"""Compare one/four localhost Daphne readers; fixed rich synthetic 500-order DB."""
+"""Compare one/four/five localhost Daphne readers; fixed rich synthetic 500-order DB."""
 import json
 import math
+import os
 import platform
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -30,16 +32,20 @@ def distribution(samples, key):
     return {"p50": ordered[math.ceil(len(ordered) * .5) - 1], "p95": ordered[math.ceil(len(ordered) * .95) - 1], "max": ordered[-1]}
 
 
-first = [once(port) for port in (8016, 8017, 8018, 8019)]
+process_counts = tuple(map(int, sys.argv[1:])) or (1, 4)
+assert process_counts and set(process_counts) <= {1, 4, 5}
+first = [once(port) for port in range(8016, 8016 + max(process_counts))]
+sample_count = int(os.environ.get("ORDERS_PERF_SAMPLES", "20"))
+assert sample_count in {20, 60}
 results = []
-for processes in (1, 4):
+for processes in process_counts:
     for clients in (1, 2, 10):
         with ThreadPoolExecutor(max_workers=clients) as pool:
-            samples = list(pool.map(lambda index, processes=processes: once(8016 + index % processes), range(20)))
+            samples = list(pool.map(lambda index, processes=processes: once(8016 + index % processes), range(sample_count)))
         results.append({"processes": processes, "clients": clients, "samples": samples,
                         "http_ms": distribution(samples, "http_ms"), "backend_ms": distribution(samples, "backend_ms")})
-result = {"platform": platform.platform(), "logical_cpus": psutil.cpu_count(), "memory_bytes": psutil.virtual_memory().total,
+result = {"samples_per_configuration": sample_count, "platform": platform.platform(), "logical_cpus": psutil.cpu_count(), "memory_bytes": psutil.virtual_memory().total,
           "first_request_each_process": first, "results": results,
-          "scope": "One/four Daphne reader processes; client-side round robin, no BFF/load balancer, localhost, same rich 500 fixture. Not production topology or pilot approval."}
+          "scope": "Explicit Daphne reader process counts; client-side round robin, no BFF/load balancer, localhost, same rich 500 fixture. Not production topology or pilot approval."}
 (ROOT / ".orders-lab/process-read-result.json").write_text(json.dumps(result, indent=2))
 print(json.dumps([{k: v for k, v in row.items() if k != "samples"} for row in results]))
