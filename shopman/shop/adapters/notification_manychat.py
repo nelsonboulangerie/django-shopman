@@ -221,7 +221,7 @@ def _load_db_flow_ns(event: str) -> str | None:
         if obj and (obj.whatsapp_flow_ns or "").strip():
             return obj.whatsapp_flow_ns.strip()
     except Exception:
-        logger.debug("manychat._load_db_flow_ns: lookup failed for event=%s", event, exc_info=True)
+        logger.warning("manychat._load_db_flow_ns: lookup failed for event=%s", event, exc_info=True)
     return None
 
 

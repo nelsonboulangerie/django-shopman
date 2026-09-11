@@ -65,7 +65,7 @@ def default_alert_type(sku: str) -> str:
         if catalog_context.comes_out_of_the_oven(sku):
             return StockAlertSubscription.AlertType.PRODUCTION_READY
     except Exception:
-        logger.debug("stock_alerts: alert_type derivation failed sku=%s", sku, exc_info=True)
+        logger.warning("stock_alerts: alert_type derivation failed sku=%s", sku, exc_info=True)
     return StockAlertSubscription.AlertType.STOCK_BACK
 
 

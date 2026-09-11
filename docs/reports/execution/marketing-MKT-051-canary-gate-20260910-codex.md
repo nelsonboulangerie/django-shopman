@@ -25,6 +25,11 @@ passou em banco vazio e preserva as folhas paralelas por migrations de merge. Qu
 falha de CI, backup ausente, deployment concorrente, migration reprovada ou correlação
 de digest incerta resulta em `no-go` sem tentativa de contorno.
 
+O primeiro run do PR #597 foi bloqueado pelo gate de “meia-correção”: duas degradações
+registravam exceções somente em `DEBUG`, uma ao consultar o flow ManyChat e outra ao
+derivar o tipo de alerta de estoque. Ambas passaram a emitir `WARNING` seguro, sem PII;
+o checker dirigido e 69 testes de ManyChat/campanha/alerta passaram antes do novo push.
+
 `SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED` e
 `SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` permanecem ausentes e `false` por default;
 o app não possui worker de entrega Marketing. `SHOPMAN_MARKETING_TEST_TARGETS_JSON`
