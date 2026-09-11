@@ -22,7 +22,7 @@ import type {
 const collectionRef = ref("");
 const {
   matrix, pending, error, refresh, isBusy, cellKey, productKey, detailKey, setCell, setProduct, bulkSet, bulkPrice, previewBulkPrice,
-  resync, fetchProductDetail, saveProductDetail, reorderCollections, reorderItems, bulkBusy,
+  resync, fetchProductDetail, saveProductDetail, productConflict, acknowledgeProductConflict, errorMsg, reorderCollections, reorderItems, bulkBusy,
   aiAssist, aiAssistKey,
 } = useCatalogMatrix(collectionRef);
 
@@ -306,6 +306,12 @@ async function saveDetail(patch: ProductDetailPatch) {
   const request = detailRequest;
   const ok = await saveProductDetail(sku, patch);
   if (ok && sku === detailSku.value && request === detailRequest) closeDetail();
+}
+
+function reviewProductConflict(keepDraft: boolean) {
+  if (!detailSku.value) return;
+  const current = acknowledgeProductConflict(detailSku.value);
+  if (!keepDraft && current) detail.value = current;
 }
 
 // assist de IA — o painel é presentacional, então a página injeta a chamada e o
@@ -793,6 +799,9 @@ useHead({ title: "Catálogo · Gestor" });
       :assist="detailAssist.assist"
       :assist-busy="detailAssist.assistBusy"
       :initial-tab="detailTab"
+      :conflict="detailSku ? productConflict(detailSku) : null"
+      :error="errorMsg"
+      @review-conflict="reviewProductConflict"
       @update:open="(v) => { if (!v) closeDetail(); }"
       @save="saveDetail"
     />

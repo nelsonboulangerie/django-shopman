@@ -918,9 +918,7 @@ def test_product_detail_get_unknown_sku(client, operator, catalog):
 
 def test_product_detail_patch_updates_fields(client, operator, catalog):
     client.force_login(operator)
-    resp = client.patch(
-        DETAIL_URL.format(sku="PAO"),
-        data={
+    resp = _patch(client, 'PAO', {
             "name": "Pão francês",
             "short_description": "Crocante por fora",
             "base_price_q": 700,
@@ -928,9 +926,7 @@ def test_product_detail_patch_updates_fields(client, operator, catalog):
             "shelf_life_days": 1,
             "ingredients_text": "Farinha de trigo, água, sal.",
             "keywords": ["padaria", "pão"],
-        },
-        content_type="application/json",
-    )
+        })
     assert resp.status_code == 200
     product = resp.json()["product"]
     assert product["name"] == "Pão francês"
@@ -951,9 +947,7 @@ def test_product_detail_patch_is_partial(client, operator, catalog):
     pao.save()
 
     client.force_login(operator)
-    resp = client.patch(
-        DETAIL_URL.format(sku="PAO"), data={"name": "Só o nome"}, content_type="application/json"
-    )
+    resp = _patch(client, 'PAO', {"name": "Só o nome"})
     assert resp.status_code == 200
     product = resp.json()["product"]
     assert product["name"] == "Só o nome"
@@ -965,9 +959,7 @@ def test_product_detail_patch_is_partial(client, operator, catalog):
 
 def test_product_detail_patch_rejects_negative_price(client, operator, catalog):
     client.force_login(operator)
-    resp = client.patch(
-        DETAIL_URL.format(sku="PAO"), data={"base_price_q": -1}, content_type="application/json"
-    )
+    resp = _patch(client, 'PAO', {"base_price_q": -1})
     assert resp.status_code == 400
     catalog["pao"].refresh_from_db()
     assert catalog["pao"].base_price_q == 500
@@ -975,21 +967,13 @@ def test_product_detail_patch_rejects_negative_price(client, operator, catalog):
 
 def test_product_detail_patch_rejects_invalid_policy(client, operator, catalog):
     client.force_login(operator)
-    resp = client.patch(
-        DETAIL_URL.format(sku="PAO"),
-        data={"availability_policy": "inventada"},
-        content_type="application/json",
-    )
+    resp = _patch(client, 'PAO', {"availability_policy": "inventada"})
     assert resp.status_code == 400
 
 
 def test_product_detail_patch_toggles_publication(client, operator, catalog):
     client.force_login(operator)
-    resp = client.patch(
-        DETAIL_URL.format(sku="PAO"),
-        data={"is_published": False, "is_sellable": False},
-        content_type="application/json",
-    )
+    resp = _patch(client, 'PAO', {"is_published": False, "is_sellable": False})
     assert resp.status_code == 200
     catalog["pao"].refresh_from_db()
     assert catalog["pao"].is_published is False
@@ -1003,9 +987,12 @@ def test_product_detail_patch_toggles_publication(client, operator, catalog):
 
 
 def _patch(client, sku, payload):
-    return client.patch(
-        DETAIL_URL.format(sku=sku), data=payload, content_type="application/json"
-    )
+    from uuid import uuid4
+
+    url = DETAIL_URL.format(sku=sku)
+    action = client.get(url).json()["action"]
+    return client.patch(url, {**action["payload_schema"], "patch": payload},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
 
 
 def test_product_detail_patches_the_made_to_order_promise(client, operator, catalog):
@@ -1198,7 +1185,7 @@ def test_invalid_last_keywords_field_never_saves_product(client, operator, catal
     client.force_login(operator)
     product = Product.objects.get(sku="PAO")
     before = (product.name, product.metadata, list(product.keywords.names()))
-    response = client.patch(DETAIL_URL.format(sku="PAO"), {"name": "Changed", "keywords": invalid}, content_type="application/json")
+    response = _patch(client, 'PAO', {"name": "Changed", "keywords": invalid})
     assert response.status_code == 400
     product.refresh_from_db()
     assert (product.name, product.metadata, list(product.keywords.names())) == before
@@ -1286,3 +1273,62 @@ def test_publication_queues_sync_without_calling_provider_under_lock(catalog, mo
     monkeypatch.setattr(service, "_reconcile_if_projected", lambda *_: pytest.fail("provider I/O in local write"))
     assert service.bulk_set(["PAO"], "*", is_published=True, actor="lab") == 2
     assert sorted(calls) == [("PAO", "ifood"), ("PAO", "web")]
+
+
+def test_product_intention_preserves_independent_fields_and_refuses_same_field(client, operator, catalog):
+    from uuid import uuid4
+
+    client.force_login(operator)
+    url = DETAIL_URL.format(sku="PAO")
+    observed = client.get(url).json()["action"]["payload_schema"]
+    assert _patch(client, "PAO", {"name": "Nome de outra pessoa"}).status_code == 200
+    independent = client.patch(url, {**observed, "patch": {"storage_tip": "Local fresco"}},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
+    assert independent.status_code == 200
+    assert independent.json()["product"]["name"] == "Nome de outra pessoa"
+    key = str(uuid4())
+    conflict = client.patch(url, {**observed, "patch": {"name": "Meu rascunho"}},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+    assert conflict.status_code == 409
+    assert conflict.json()["conflicting_fields"] == ["name"]
+    assert conflict.json()["product"]["name"] == "Nome de outra pessoa"
+    assert client.get(url, {"idempotency_key": key}).json()["outcome"] == "not_applied"
+    reviewed = conflict.json()["action"]["payload_schema"]
+    saved = client.patch(url, {**reviewed, "patch": {"name": "Meu rascunho"}},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
+    assert saved.status_code == 200
+    assert saved.json()["product"]["storage_tip"] == "Local fresco"
+
+
+def test_product_intention_replay_does_not_overwrite_later_edit(client, operator, catalog):
+    from uuid import uuid4
+
+    client.force_login(operator)
+    url = DETAIL_URL.format(sku="PAO")
+    body = {**client.get(url).json()["action"]["payload_schema"], "patch": {"name": "Primeira edição"}}
+    key = str(uuid4())
+    first = client.patch(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+    assert first.status_code == 200
+    assert _patch(client, "PAO", {"name": "Segunda edição"}).status_code == 200
+    receipt = client.get(url, {"idempotency_key": key})
+    assert receipt.json()["outcome"] == "applied"
+    replay = client.patch(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+    assert replay.status_code == 200
+    assert replay.json()["replayed"] is True
+    assert replay.json()["product"]["name"] == "Segunda edição"
+    different = client.patch(url, {**body, "patch": {"name": "Outra intenção"}},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+    assert different.status_code == 409
+    assert different.json()["code"] == "intention_conflict"
+
+
+def test_product_intention_requires_current_actor_and_revision(client, operator, catalog):
+    from uuid import uuid4
+
+    client.force_login(operator)
+    url = DETAIL_URL.format(sku="PAO")
+    assert client.patch(url, {"name": "Cliente antigo"}, content_type="application/json").status_code == 400
+    body = {**client.get(url).json()["action"]["payload_schema"], "patch": {"name": "Pessoa errada"}, "expected_actor_id": -1}
+    assert client.patch(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4())).status_code == 409
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].name == "Pão"

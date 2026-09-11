@@ -492,6 +492,42 @@ def _detail_payload(product) -> dict:
     }
 
 
+
+def product_field_revisions(detail: dict) -> dict[str, str]:
+    """Tokens for editable leaf fields, derived from the canonical read payload."""
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles"}
+    values = _patch_leaves({key: value for key, value in detail.items() if key not in readonly})
+    return {path: mutation_fingerprint({"version": 1, "sku": detail["sku"], "field": path, "value": value})
+        for path, value in values.items() if path not in {"nutrition_facts.auto_filled", "social.has_data"}}
+
+
+def _patch_leaves(data: dict, prefix: str = "") -> dict:
+    leaves = {}
+    for key, value in data.items():
+        path = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            leaves.update(_patch_leaves(value, path))
+        else:
+            leaves[path] = value
+    return leaves
+
+
+def _check_product_revisions(product, patch: dict, expected: dict) -> None:
+    from shopman.backstage.services.exceptions import CatalogConflict
+
+    current = product_field_revisions(_detail_payload(product))
+    paths = _patch_leaves(patch)
+    unknown = set(paths) - set(current)
+    if unknown:
+        raise CatalogError("O patch contém campos que não são editáveis neste produto.")
+    changed = [path for path in paths if expected.get(path) != current[path]]
+    if changed:
+        error = CatalogConflict("O produto mudou nos campos editados. Confira os valores atuais; seu rascunho foi preservado.")
+        error.fields = changed
+        raise error
+
 def get_product_detail(sku: str) -> dict:
     """Todos os campos editáveis de um produto (para o painel do Gestor)."""
     return _detail_payload(_get_product(sku))
@@ -708,7 +744,7 @@ def _apply_fiscal(product, raw) -> None:
 
 
 @transaction.atomic
-def update_product_detail(sku: str, data: dict, *, actor: str = "") -> dict:
+def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_revisions: dict | None = None) -> dict:
     """Merge parcial dos campos do produto (chave ausente = sem mudança).
 
     Valida com ``full_clean()`` (inclui as invariantes ANVISA de nutrition_facts) e
@@ -722,6 +758,8 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "") -> dict:
     product = Product.objects.select_for_update().filter(sku=sku).first()
     if product is None:
         raise CatalogError(f"Produto '{sku}' não encontrado.")
+    if expected_revisions is not None:
+        _check_product_revisions(product, data, expected_revisions)
     keywords = None
     if "keywords" in data:
         raw = data["keywords"]

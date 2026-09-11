@@ -13,6 +13,7 @@ import type {
   AssistableField,
   NutritionFacts,
   ProductDetailPatch,
+  ProductEditConflict,
   ProductDetailProjection,
 } from "~/types/catalog";
 
@@ -29,11 +30,14 @@ const props = defineProps<{
   // aba em que o painel abre — o menu da linha tem um atalho direto para "Redes
   // sociais", que antes era um slide-over separado.
   initialTab?: string;
+  conflict?: ProductEditConflict | null;
+  error?: string;
 }>();
 
 const emit = defineEmits<{
   "update:open": [value: boolean];
   save: [patch: ProductDetailPatch];
+  "review-conflict": [keepDraft: boolean];
 }>();
 
 const TABS = [
@@ -316,11 +320,44 @@ function buildPatch(): ProductDetailPatch {
 
 const patchSize = computed(() => Object.keys(buildPatch()).length);
 const formInvalid = computed(() => priceInvalid.value || ncmInvalid.value || cestInvalid.value);
-const canSave = computed(() => !props.busy && !props.loading && !formInvalid.value && patchSize.value > 0);
+const canSave = computed(() => !props.busy && !props.loading && !props.conflict && !formInvalid.value && patchSize.value > 0);
 
 function onSave() {
   if (!canSave.value) return;
   emit("save", buildPatch());
+}
+
+const discardRequested = ref(false);
+function requestClose(open: boolean) {
+  if (!open && props.busy) return;
+  if (!open && patchSize.value) { discardRequested.value = true; return; }
+  emit("update:open", open);
+}
+watch(() => props.open, () => { discardRequested.value = false; });
+const conflictLabels: Record<string, string> = {
+  name: "Nome", short_description: "Descrição curta", long_description: "Descrição completa",
+  keywords: "Palavras-chave", image_url: "Imagem", base_price_q: "Preço base",
+  unit: "Unidade", unit_weight_g: "Peso por unidade", availability_policy: "Disponibilidade",
+  shelf_life_days: "Validade", storage_tip: "Conservação", production_cycle_hours: "Tempo de produção",
+  is_batch_produced: "Produção em lote", is_published: "Publicado", is_sellable: "Disponível para venda",
+  allows_next_day_sale: "Venda no dia seguinte", ingredients_text: "Ingredientes", allergens: "Alérgenos",
+  dietary_info: "Informações alimentares", serves: "Rendimento", approx_dimensions: "Dimensões",
+  "social.brand": "Marca", "social.gtin": "GTIN", "social.mpn": "Código do fabricante",
+  "social.condition": "Condição", "social.google_product_category": "Categoria Google",
+  "social.tiktok_category_id": "Categoria TikTok", "social.hashtags": "Hashtags",
+  "social.social_caption": "Legenda", "fiscal.profile": "Perfil fiscal", "fiscal.ncm": "NCM",
+  "fiscal.cest": "CEST", "fiscal.unit": "Unidade fiscal",
+  ...Object.fromEntries([...SERVING_FIELDS, ...MACRO_FIELDS, ...MICRO_FIELDS].map(f => [`nutrition_facts.${f.key}`, f.label])),
+};
+function currentValue(path: string): string {
+  let value: unknown = props.conflict?.product;
+  for (const part of path.split(".")) {
+    value = value && typeof value === "object" ? (value as Record<string, unknown>)[part] : undefined;
+  }
+  if (value === null || value === undefined || value === "") return "Não informado";
+  if (typeof value === "boolean") return value ? "Sim" : "Não";
+  if (path === "base_price_q" && typeof value === "number") return `R$ ${centsToText(value)}`;
+  return Array.isArray(value) ? value.join(", ") : String(value);
 }
 
 const fieldClass =
@@ -332,7 +369,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
 </script>
 
 <template>
-  <UiSheet :open="open" @update:open="(v) => emit('update:open', v)">
+  <UiSheet :open="open" @update:open="requestClose">
     <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg" :title="undefined">
       <div class="border-b border-border px-5 py-4">
         <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Editar produto</p>
@@ -344,6 +381,21 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
             <span class="rounded bg-muted px-1.5 py-0.5">{{ detail.primary_collection_name }}</span>
           </template>
         </p>
+      </div>
+
+      <div v-if="conflict" role="alert" class="space-y-2 border-b border-border bg-muted p-4 text-sm">
+        <p>Seu rascunho foi preservado. Confira os campos alterados por outra pessoa:</p>
+        <ul><li v-for="field in conflict.conflicting_fields" :key="field">
+          {{ conflictLabels[field] || "Campo editado" }} — atual: {{ currentValue(field) }}
+        </li></ul>
+        <button type="button" class="min-h-12 rounded border px-3" @click="emit('review-conflict', true)">Manter meu rascunho</button>
+        <button type="button" class="min-h-12 rounded border px-3" @click="emit('review-conflict', false)">Descartar minhas alterações e usar valores atuais</button>
+      </div>
+      <p v-else-if="error" role="alert" class="p-4 text-sm text-destructive">{{ error }}</p>
+      <div v-if="discardRequested" role="alert" class="space-y-2 border-b p-4 text-sm">
+        <p>Há alterações não salvas neste produto.</p>
+        <button type="button" class="min-h-12 rounded border px-3" @click="discardRequested = false">Continuar editando</button>
+        <button type="button" class="min-h-12 rounded border px-3" @click="emit('update:open', false)">Descartar e fechar</button>
       </div>
 
       <!-- abas: o formulário é longo demais para uma coluna só. Rolam na horizontal
@@ -704,7 +756,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
         <button
           type="button"
           class="rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-accent"
-          @click="emit('update:open', false)"
+          @click="requestClose(false)"
         >Cancelar</button>
         <button
           type="button"

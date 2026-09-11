@@ -73,3 +73,12 @@ describe("avanço — uma intenção, um resultado", () => {
   });
 
 });
+
+it("PATCH perdido recupera o recibo sem executar outra edição", async () => {
+  env.fetchMock.mockRejectedValueOnce({ status: 502 }).mockResolvedValueOnce({ outcome: "applied" });
+  const client = useOrderIntention();
+  expect(await client.executePath("catalog:A:detail", "/api/v1/backstage/catalog/product/A/", { ...action, method: "PATCH" }, { patch: { name: "Meu nome" } })).toEqual({ outcome: "applied" });
+  expect(env.fetchMock.mock.calls[0]![1].method).toBe("PATCH");
+  expect(env.fetchMock.mock.calls[1]![1].method).toBeUndefined();
+  expect(env.fetchMock).toHaveBeenCalledTimes(2);
+});

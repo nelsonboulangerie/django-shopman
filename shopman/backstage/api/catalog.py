@@ -122,27 +122,74 @@ class CatalogProductView(_CatalogBase):
 
 
 class CatalogProductDetailView(_CatalogBase):
-    """Lê/edita os campos escalares de UM produto (painel de produto do Gestor).
+    """Partial product edits have leaf revisions and an atomic local receipt."""
 
-    GET devolve todos os campos editáveis + contexto somente-leitura (SKU, coleção
-    primária). PATCH faz merge parcial: chave ausente no corpo mantém o valor atual.
-    A escrita passa por ``full_clean`` + ``save`` no facade (preserva a re-projeção).
-    """
+    def _scope(self, request, sku):
+        from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+        return mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": "catalog.product-detail", "sku": sku})
+
+    def _read(self, request, sku):
+        from shopman.backstage.projections.catalog import product_detail_action
+
+        product = catalog_service.get_product_detail(sku)
+        return {"product": product, "action": projection_data(product_detail_action(sku, product, request.user))}
 
     def get(self, request, sku: str):
+        from shopman.shop.services.remote_mutations import RemoteMutationInProgress, lookup_local_mutation
+
         try:
-            return Response({"product": catalog_service.get_product_detail(sku)})
+            current = self._read(request, sku)
+            key = request.query_params.get("idempotency_key")
+            if not key:
+                return Response(current)
+            receipt = lookup_local_mutation(scope=self._scope(request, sku), key=key)
+            if receipt is None:
+                return Response({"outcome": "unknown", **current}, status=202)
+            return Response({**receipt.response_body, **current}, status=receipt.response_code)
+        except RemoteMutationInProgress:
+            return Response({"outcome": "in_progress"}, status=202)
         except (CatalogError, ValidationError) as exc:
             return Response({"detail": str(exc)}, status=404)
 
     def patch(self, request, sku: str):
+        from shopman.backstage.services.exceptions import CatalogConflict
+        from shopman.shop.services.remote_mutations import (
+            RemoteMutationConflict,
+            RemoteMutationInProgress,
+            mutation_fingerprint,
+            run_idempotent_mutation,
+        )
+
+        data = request.data
+        key = request.headers.get("Idempotency-Key") or data.get("idempotency_key")
+        patch = data.get("patch")
+        revisions = data.get("base_revisions")
+        if not isinstance(key, str) or not key or len(key) > 128 or not isinstance(patch, dict) or not isinstance(revisions, dict) or not data.get("base_revision"):
+            return Response({"detail": "Atualize o produto: a gravação exige intenção e revisão.", "code": "intention_required"}, status=400)
+        if data.get("expected_actor_id") != request.user.pk:
+            return Response({"detail": "A identificação mudou. Confira o produto.", "code": "actor_changed"}, status=409)
+        scope = self._scope(request, sku)
+        fingerprint = mutation_fingerprint({"scope": scope, "patch": patch, "revisions": revisions, "base": data["base_revision"]})
+
+        def execute():
+            try:
+                catalog_service.update_product_detail(sku, patch, actor=_actor(request), expected_revisions=revisions)
+            except CatalogConflict as exc:
+                return {"outcome": "not_applied", "detail": str(exc), "conflicting_fields": getattr(exc, "fields", [])}, 409
+            except (CatalogError, ValidationError) as exc:
+                return {"outcome": "not_applied", "detail": str(exc)}, 400
+            return {"ok": True, "outcome": "applied", "intention": key, "sku": sku, "changed_fields": list(patch)}, 200
+
         try:
-            product = catalog_service.update_product_detail(
-                sku, request.data, actor=_actor(request)
-            )
+            result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=execute)
+            return Response({**result.response_body, "replayed": result.replayed, **self._read(request, sku)}, status=result.response_code)
+        except RemoteMutationConflict:
+            return Response({"detail": "Esta intenção já representa outra edição.", "code": "intention_conflict"}, status=409)
+        except RemoteMutationInProgress:
+            return Response({"outcome": "in_progress"}, status=202)
         except (CatalogError, ValidationError) as exc:
-            return Response({"detail": str(exc)}, status=400)
-        return Response({"ok": True, "product": product})
+            return Response({"detail": str(exc)}, status=404)
 
 
 class CatalogAiAssistView(_CatalogBase):

@@ -1,6 +1,6 @@
 import type { Action } from "~/generated/ordersContract";
 
-type Intention = { key: string; owner: number; body: Record<string, unknown> };
+type Intention = { key: string; owner: number; body: Record<string, unknown>; method: "POST" | "PATCH" };
 type Result = { outcome?: string; detail?: string; count?: number };
 
 /** Session-only, person-bound intentions. Unknown results never create a new key. */
@@ -11,7 +11,7 @@ export function useOrderIntention() {
     if (next) pending.value = Object.fromEntries(Object.entries(pending.value).filter(([, intent]) => intent.owner === next));
   });
 
-  async function executePath(resource: string, path: string, action: Pick<Action, "enabled" | "reason" | "payload_schema"> | undefined, inputs: Record<string, unknown>, approval?: Record<string, string>) {
+  async function executePath(resource: string, path: string, action: (Pick<Action, "enabled" | "reason" | "payload_schema"> & Partial<Pick<Action, "method">>) | undefined, inputs: Record<string, unknown>, approval?: Record<string, string>) {
     const owner = session.value?.operator?.id;
     if (!owner) throw new Error("Identifique-se antes de continuar.");
     let intent = pending.value[resource];
@@ -19,7 +19,7 @@ export function useOrderIntention() {
       if (!action?.enabled || !action.payload_schema.base_revision) {
         throw new Error(action?.reason || "Atualize os dados antes de continuar.");
       }
-      intent = { owner, key: crypto.randomUUID(), body: JSON.parse(JSON.stringify({ ...action.payload_schema, ...inputs })) };
+      intent = { owner, key: crypto.randomUUID(), method: action.method === "PATCH" ? "PATCH" : "POST", body: JSON.parse(JSON.stringify({ ...action.payload_schema, ...inputs })) };
       pending.value[resource] = intent;
     }
     const current = intent;
@@ -43,14 +43,15 @@ export function useOrderIntention() {
     };
     try {
       const result = await $fetch<Result>(path, {
-        method: "POST", headers: { "Idempotency-Key": current.key }, body: { ...current.body, ...(approval ? { manager_approval: approval } : {}) },
+        method: current.method, headers: { "Idempotency-Key": current.key }, body: { ...current.body, ...(approval ? { manager_approval: approval } : {}) },
       });
       return finish(result);
     } catch (error) {
       if (!samePerson()) throw error;
       const status = httpError(error).status;
       if (status && status >= 400 && status < 500) {
-        const code = httpErrorCode(error);
+        const directCode = (httpError(error).data as { code?: unknown } | null)?.code;
+        const code = httpErrorCode(error) || (typeof directCode === "string" ? directCode : "");
         if (status !== 401 && status !== 403 && !["intention_conflict", "manager_approval_required", "manager_approval_invalid"].includes(code)) delete pending.value[resource];
         throw error;
       }

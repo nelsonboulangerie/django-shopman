@@ -1,3 +1,4 @@
+import type { Action } from "~/generated/ordersContract";
 // TS mirror of the Django catalog matrix projection
 // (shopman/backstage/projections/catalog.py), serialised by backstage/api/projections.py.
 // Kept in lockstep — the surface renders intent, the backend owns rules.
@@ -191,6 +192,11 @@ export type ProductDetailPatch = Partial<
 
 export interface ProductDetailResponse {
   product: ProductDetailProjection;
+  action?: Action;
+}
+
+export interface ProductEditConflict extends ProductDetailResponse {
+  conflicting_fields: string[];
 }
 
 // Assist de IA — sugestão de conteúdo para UM campo de texto de UM produto

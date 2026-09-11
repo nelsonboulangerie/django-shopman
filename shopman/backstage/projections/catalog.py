@@ -16,6 +16,19 @@ from dataclasses import dataclass
 from shopman.utils.monetary import format_money
 
 
+def product_detail_action(sku: str, detail: dict, user):
+    from shopman.backstage.services.catalog import product_field_revisions
+    from shopman.shop.projections.types import Action
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    revisions = product_field_revisions(detail)
+    allowed = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_catalog"))
+    return Action(ref="edit-product", kind="mutation", label="Salvar produto", enabled=allowed,
+        reason="" if allowed else "Identifique uma pessoa com permissão para editar o catálogo.",
+        method="PATCH", idempotency="required", payload_schema={"expected_actor_id": getattr(user, "pk", None),
+            "base_revision": mutation_fingerprint({"sku": sku, "revisions": revisions}), "base_revisions": revisions})
+
+
 @dataclass(frozen=True)
 class CatalogPricePreviewCell:
     id: int

@@ -1,6 +1,6 @@
 import { useOperatorResourceKey } from "./useOperatorResourceKey";
 import { useOrderIntention } from "./useOrderIntention";
-import type { CatalogPricePreview } from "~/generated/ordersContract";
+import type { Action, CatalogPricePreview } from "~/generated/ordersContract";
 // Catalog matrix read/write. Single source for the produto × superfície grid:
 //   - useFetch the canonical matrix projection (GET /api/v1/backstage/catalog/);
 //   - poll every 60s as a light fallback (catalog changes less often than orders);
@@ -14,6 +14,7 @@ import type {
   ProductDetailPatch,
   ProductDetailProjection,
   ProductDetailResponse,
+  ProductEditConflict,
   ProductSocial,
 } from "~/types/catalog";
 
@@ -28,6 +29,17 @@ export type SocialPatch = Partial<Omit<ProductSocial, "has_data">>;
 
 export function useCatalogMatrix(collectionRef?: Ref<string>) {
   const intentions = useOrderIntention();
+  const detailActions = new Map<string, Action>();
+  const productConflicts = ref<Record<string, ProductEditConflict>>({});
+  const productConflict = (sku: string) => productConflicts.value[sku] ?? null;
+  function acknowledgeProductConflict(sku: string): ProductDetailProjection | null {
+    const conflict = productConflicts.value[sku];
+    if (!conflict?.action) return null;
+    detailActions.set(sku, conflict.action);
+    delete productConflicts.value[sku];
+    clearError();
+    return conflict.product;
+  }
   const path = "/api/v1/backstage/catalog/";
   // Reactive collection filter → server-side row scoping (smart-aware via
   // product_queryset). Changing the ref refetches the matrix.
@@ -243,6 +255,8 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     clearError();
     try {
       const res = await $fetch<ProductDetailResponse>(`/api/v1/backstage/catalog/product/${encodeURIComponent(sku)}/`);
+      if (res?.action) detailActions.set(sku, res.action);
+      delete productConflicts.value[sku];
       return res?.product ?? null;
     } catch (error) {
       errorMsg.value = httpErrorMessage(error, "Falha ao carregar o produto.");
@@ -253,18 +267,22 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
 
   async function saveProductDetail(sku: string, patch: ProductDetailPatch): Promise<boolean> {
     const key = detailKey(sku);
-    if (busy.value.has(key)) return false;
+    if (busy.value.has(key) || productConflicts.value[sku]) return false;
     clearError();
     busy.value = new Set(busy.value).add(key);
     try {
-      await $fetch(`/api/v1/backstage/catalog/product/${encodeURIComponent(sku)}/`, {
-        method: "PATCH",
-        body: patch,
-      });
+      await intentions.executePath(`catalog:${sku}:detail`, `/api/v1/backstage/catalog/product/${encodeURIComponent(sku)}/`,
+        detailActions.get(sku), { patch });
       useSonner.success("Produto salvo.");
-      await refresh();
+      try { await refresh(); }
+      catch { errorMsg.value = "Produto salvo. A leitura do catálogo falhou; atualize antes de continuar."; }
       return true;
     } catch (error) {
+      const failure = httpError(error);
+      const data = failure.data as Partial<ProductEditConflict> | null;
+      if (failure.status === 409 && data?.product?.sku === sku && data.action && Array.isArray(data.conflicting_fields)) {
+        productConflicts.value[sku] = data as ProductEditConflict;
+      }
       errorMsg.value = httpErrorMessage(error, "Falha ao salvar. Confira os campos.");
       useSonner.error(errorMsg.value);
       return false;
@@ -350,6 +368,6 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   return {
     matrix, pending, error, refresh, isBusy, cellKey, productKey, socialKey, detailKey, errorMsg, clearError,
     setCell, setProduct, bulkSet, bulkPrice, previewBulkPrice, resync, saveSocial, fetchProductDetail, saveProductDetail,
-    reorderCollections, reorderItems, bulkBusy, aiAssist, aiAssistKey,
+    reorderCollections, reorderItems, bulkBusy, aiAssist, aiAssistKey, productConflict, acknowledgeProductConflict,
   };
 }
