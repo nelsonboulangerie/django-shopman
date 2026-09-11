@@ -1,0 +1,4 @@
+Source HEAD: 8318b9b0356d992766145149df4ad903b0fcc78c
+Routes: 39
+Direct symbol occurrences: 47
+Only read source. No Django initialization, database or remote call.
