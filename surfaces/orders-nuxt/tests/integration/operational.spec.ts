@@ -450,3 +450,67 @@ test("publication preview leaves flags unchanged and lost confirmation response 
   await expect.poll(() => receipts).toBe(1); expect(posts).toBe(1);
   expect(await state()).toBe(false);
 });
+
+async function observeCatalogStream(page: Page) {
+  await page.addInitScript(() => {
+    const state = window as unknown as { catalogPushes: number };
+    state.catalogPushes = 0;
+    const NativeEventSource = window.EventSource;
+    window.EventSource = class extends NativeEventSource {
+      constructor(url: string | URL, options?: EventSourceInit) {
+        super(url, options);
+        this.addEventListener("backstage-catalog-update", () => { state.catalogPushes += 1; });
+      }
+    };
+  });
+}
+
+test("catalog SSE through Redis and BFF updates the row while preserving a price draft", async ({ page }, testInfo) => {
+  await observeCatalogStream(page);
+  await login(page, "orders-lab-price");
+  const stream = page.waitForResponse(response => response.url().endsWith("/sse/catalog"));
+  await page.goto("/catalog");
+  expect((await stream).status()).toBe(200);
+  const row = page.locator(`tr[data-dragkey="${lab.edit_sku}"]`);
+  await row.getByRole("button", { name: /^Preço em/ }).first().click();
+  const draft = page.locator('input[inputmode="decimal"]');
+  await draft.fill("18,76");
+  const detailPath = `/api/v1/backstage/catalog/product/${lab.edit_sku}/`;
+  const observed = await (await page.request.get(detailPath)).json();
+  const pushes = await page.evaluate(() => (window as unknown as { catalogPushes: number }).catalogPushes);
+  const start = Date.now();
+  const updatedName = `Atualização SSE ${start}`;
+  const response = await page.request.patch(detailPath, { headers: { "Idempotency-Key": crypto.randomUUID() },
+    data: { ...observed.action.payload_schema, patch: { name: updatedName } } });
+  expect(response.status()).toBe(200);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { catalogPushes: number }).catalogPushes), { timeout: 5000 }).toBeGreaterThan(pushes);
+  await expect(row).toContainText(updatedName);
+  await expect(draft).toHaveValue("18,76");
+  await expect(draft).toBeFocused();
+  await testInfo.attach("synthetic-catalog-sse-latency", { body: JSON.stringify({ command_to_visible_ms: Date.now() - start, field_pilot: false }), contentType: "application/json" });
+});
+
+test("feed SSE updates active state without replacing the open collection draft", async ({ page }, testInfo) => {
+  await observeCatalogStream(page);
+  await login(page, "orders-lab-feed");
+  const stream = page.waitForResponse(response => response.url().endsWith("/sse/catalog"));
+  await page.goto("/feeds");
+  expect((await stream).status()).toBe(200);
+  const feed = page.locator("article").filter({ hasText: lab.feed_name });
+  await feed.getByRole("button", { name: "Coleções", exact: true }).click();
+  const draft = page.getByLabel(new RegExp(lab.collection_name));
+  const initiallyChecked = await draft.isChecked();
+  await draft.setChecked(!initiallyChecked);
+  const state = await (await page.request.get("/api/v1/backstage/feeds/")).json();
+  const observed = state.board.feeds.find((item: { ref: string }) => item.ref === lab.feed_ref);
+  const action = observed.actions.find((item: { ref: string }) => item.ref === "active");
+  const start = Date.now();
+  const response = await page.request.post("/api/v1/backstage/feeds/active/", { headers: { "Idempotency-Key": crypto.randomUUID() },
+    data: { ...action.payload_schema, ref: lab.feed_ref, is_active: !observed.is_active } });
+  expect(response.status()).toBe(200);
+  await expect(feed.getByRole("switch")).toHaveAttribute("aria-checked", String(!observed.is_active));
+  await expect(draft).toHaveJSProperty("checked", !initiallyChecked);
+  await expect(draft).toBeFocused();
+  await expect(page.getByText("Coleções exibidas", { exact: true })).toBeVisible();
+  await testInfo.attach("synthetic-feed-sse-latency", { body: JSON.stringify({ command_to_visible_ms: Date.now() - start, field_pilot: false }), contentType: "application/json" });
+});

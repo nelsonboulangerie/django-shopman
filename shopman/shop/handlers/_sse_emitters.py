@@ -25,7 +25,7 @@ import logging
 
 from django.core.cache import cache
 from django.db import transaction
-from django.db.models.signals import post_save, pre_save
+from django.db.models.signals import post_delete, post_save, pre_save
 
 from shopman.shop.handlers._resilient import resilient_receiver
 
@@ -155,6 +155,7 @@ def emit_surface_changed(surface_ref: str) -> None:
     if not surface_ref:
         return
     transaction.on_commit(lambda: _publish_surface_changed(surface_ref))
+    emit_catalog_changed()
 
 
 def _publish_surface_changed(surface_ref: str) -> None:
@@ -168,13 +169,22 @@ def _publish_surface_changed(surface_ref: str) -> None:
         logger.warning("SSE surface emit failed ref=%s", surface_ref, exc_info=True)
 
 
+def emit_catalog_changed() -> None:
+    """Invalidate the private catalog/feed reads; never publish editable state."""
+    _emit_backstage("catalog", "backstage-catalog-update", {})
+
+
+def _on_catalog_saved(sender, instance, **kwargs):
+    emit_catalog_changed()
+
+
 # ── Signal receivers ────────────────────────────────────────────────
 
 
 def _connect() -> None:
     """Wire post_save / pre_save receivers. Called once from ``register_all``."""
     from shopman.craftsman.signals import production_changed
-    from shopman.offerman.models import ListingItem, Product
+    from shopman.offerman.models import Collection, CollectionItem, Listing, ListingItem, Product
     from shopman.orderman.models import OrderEvent
     from shopman.orderman.signals import order_changed
     from shopman.payman.signals import (
@@ -188,6 +198,12 @@ def _connect() -> None:
 
     from shopman.shop.adapters import alert as alert_adapter
     from shopman.shop.adapters import kds as kds_adapter
+    from shopman.shop.models import CatalogSyncState, Channel
+
+    for model in (Product, Listing, ListingItem, Collection, CollectionItem, Channel, CatalogSyncState):
+        for signal in (post_save, post_delete):
+            signal.connect(_on_catalog_saved, sender=model, weak=False,
+                dispatch_uid=f"shopman.catalog_sse.{model._meta.label_lower}.{signal is post_save}")
 
     post_save.connect(_on_hold_saved, sender=Hold, weak=False)
     post_save.connect(_on_move_saved, sender=Move, weak=False)

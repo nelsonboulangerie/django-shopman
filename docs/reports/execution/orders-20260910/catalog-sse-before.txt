@@ -1,0 +1,49 @@
+FF.                                                                      [100%]
+=================================== FAILURES ===================================
+_______________ test_catalog_channel_requires_catalog_permission _______________
+
+django_user_model = <class 'django.contrib.auth.models.User'>
+
+    def test_catalog_channel_requires_catalog_permission(django_user_model):
+        user = django_user_model.objects.create_user(username="catalog-stream", is_staff=True)
+        manager = ShopmanChannelManager()
+        user.user_permissions.add(Permission.objects.get(codename="manage_orders", content_type__app_label="shop"))
+        assert not manager.can_read_channel(user, "backstage-catalog-main")
+        user.user_permissions.add(Permission.objects.get(codename="manage_catalog", content_type__app_label="shop"))
+        user = django_user_model.objects.get(pk=user.pk)
+>       assert manager.can_read_channel(user, "backstage-catalog-main")
+E       AssertionError: assert False
+E        +  where False = can_read_channel(<User: catalog-stream>, 'backstage-catalog-main')
+E        +    where can_read_channel = <shopman.shop.eventstream.ShopmanChannelManager object at 0x121bb3110>.can_read_channel
+
+shopman/shop/tests/test_catalog_backstage_sse.py:22: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-11 01:08:28,470 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-11 01:08:28,731 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-11 01:08:30,124 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+----------------------------- Captured stderr call -----------------------------
+WARNING 2026-09-11 01:08:33,870 shopman.shop.eventstream eventstream_backstage_channel_unmapped kind=catalog
+WARNING 2026-09-11 01:08:33,871 shopman.shop.eventstream eventstream_backstage_channel_unmapped kind=catalog
+_____________ test_product_metadata_invalidates_only_after_commit ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x115fe10a0>
+django_capture_on_commit_callbacks = <bound method TestCase.captureOnCommitCallbacks of <class 'django.test.testcases.TestCase'>>
+
+    def test_product_metadata_invalidates_only_after_commit(monkeypatch, django_capture_on_commit_callbacks):
+        Shop.objects.create(name="Synthetic catalog stream")
+        product = Product.objects.create(sku="STREAM-LAB", name="Before")
+        publish = Mock()
+        monkeypatch.setattr("shopman.shop.handlers._sse_emitters._publish_backstage", publish)
+        with django_capture_on_commit_callbacks(execute=True):
+            product.name = "After"
+            product.save(update_fields=["name"])
+            publish.assert_not_called()
+>       assert any(call.args[:2] == ("catalog", "backstage-catalog-update") for call in publish.call_args_list)
+E       assert False
+E        +  where False = any(<generator object test_product_metadata_invalidates_only_after_commit.<locals>.<genexpr> at 0x121dcb5e0>)
+
+shopman/shop/tests/test_catalog_backstage_sse.py:35: AssertionError
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_catalog_backstage_sse.py::test_catalog_channel_requires_catalog_permission
+FAILED shopman/shop/tests/test_catalog_backstage_sse.py::test_product_metadata_invalidates_only_after_commit
+2 failed, 1 passed in 5.69s

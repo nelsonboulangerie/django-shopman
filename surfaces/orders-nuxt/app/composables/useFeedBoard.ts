@@ -1,3 +1,4 @@
+import { useBackstageEvents } from "./useBackstageEvents";
 import { coalesceRefresh } from "../utils/coalesceRefresh";
 import { useOrderIntention } from "./useOrderIntention";
 import { useOperatorResourceKey } from "./useOperatorResourceKey";
@@ -13,18 +14,7 @@ export function useFeedBoard() {
     onResponseError: operatorSessionOnError,
   });
   const refresh = coalesceRefresh(() => fetchBoard());
-  let pollTimer: ReturnType<typeof setInterval> | null = null;
-  const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
-  onMounted(() => {
-    pollTimer = setInterval(() => refresh(), 30_000);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("online", onVisible);
-  });
-  onBeforeUnmount(() => {
-    if (pollTimer) clearInterval(pollTimer);
-    document.removeEventListener("visibilitychange", onVisible);
-    window.removeEventListener("online", onVisible);
-  });
+  const { realtime } = useBackstageEvents("catalog", refresh);
   const lastConfirmed = shallowRef<FeedBoardProjection | null>(data.value?.board ?? null);
   watch([data, error], ([value, failure]) => {
     if (value?.board && !failure) lastConfirmed.value = value.board;
@@ -80,5 +70,5 @@ export function useFeedBoard() {
       "/api/v1/backstage/feeds/rotation/",
     );
 
-  return { board, pending, error, refresh, isBusy, errorMsg, setActive, setCollections, setRotation };
+  return { realtime, board, pending, error, refresh, isBusy, errorMsg, setActive, setCollections, setRotation };
 }

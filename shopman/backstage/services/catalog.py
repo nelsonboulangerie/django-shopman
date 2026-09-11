@@ -1065,6 +1065,9 @@ def reorder_collections(ordered_refs: list[str], *, actor: str = "", expected_re
             changed.append(group)
     if changed:
         Collection.objects.bulk_update(changed, ["sort_order"])
+        from shopman.shop.handlers._sse_emitters import emit_catalog_changed
+
+        emit_catalog_changed()
     return len(changed)
 
 
@@ -1083,6 +1086,9 @@ def reorder_collection_items(collection_ref: str, ordered_skus: list[str], *, ac
             changed.append(item)
     if changed:
         CollectionItem.objects.bulk_update(changed, ["sort_order"])
+        from shopman.shop.handlers._sse_emitters import emit_catalog_changed
+
+        emit_catalog_changed()
     return len(changed)
 
 

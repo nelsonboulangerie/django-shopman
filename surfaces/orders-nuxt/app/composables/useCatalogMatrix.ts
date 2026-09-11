@@ -1,3 +1,4 @@
+import { useBackstageEvents } from "./useBackstageEvents";
 import { coalesceRefresh } from "../utils/coalesceRefresh";
 import { useOperatorResourceKey } from "./useOperatorResourceKey";
 import { useOrderIntention } from "./useOrderIntention";
@@ -63,18 +64,7 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   }, { flush: "sync" });
   const matrix = computed<CatalogMatrixProjection | null>(() => matchesScope(data.value) ? data.value?.matrix ?? lastConfirmed.value : lastConfirmed.value);
 
-  let pollTimer: ReturnType<typeof setInterval> | null = null;
-  const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
-  onMounted(() => {
-    pollTimer = setInterval(() => refresh(), 30_000);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("online", onVisible);
-  });
-  onBeforeUnmount(() => {
-    if (pollTimer) clearInterval(pollTimer);
-    document.removeEventListener("visibilitychange", onVisible);
-    window.removeEventListener("online", onVisible);
-  });
+  const { realtime } = useBackstageEvents("catalog", refresh);
 
   // Per-cell in-flight guard: a cell key is `${sku}@${surface}`.
   const busy = ref<Set<string>>(new Set());
@@ -406,6 +396,7 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   const reorderItems = (ref_: string, ordered: string[], action?: Action) => reorder("reorder-items", ref_, ordered, action);
 
   return {
+    realtime,
     matrix, pending, error, refresh, isBusy, cellKey, productKey, socialKey, detailKey, errorMsg, clearError,
     setCell, setProduct, bulkSet, previewBulkSet, bulkPrice, previewBulkPrice, resync, saveSocial, fetchProductDetail, saveProductDetail,
     reorderCollections, reorderItems, curationAction, verifyOrder, bulkBusy, aiAssist, aiAssistKey, productConflict, acknowledgeProductConflict,

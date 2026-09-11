@@ -126,6 +126,7 @@ class ShopmanChannelManager(DefaultChannelManager):
 #: de ``adapters/`` (test_architecture / test_import_boundaries), e um seam de
 #: adapter para ler cinco strings seria cerimônia sem consumidor.
 _BACKSTAGE_CHANNEL_RULES = {
+    "catalog": ("shop.manage_catalog",),
     "orders": ("shop.manage_orders", "backstage.operate_kds"),
     "kds": ("backstage.operate_kds",),
     "production": (
