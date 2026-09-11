@@ -49,6 +49,7 @@ export type RecipeKind =
   | "bread"
   | "viennoiserie"
   | "sweet_dough"
+  | "cookie"
   | "filling"
   | "cream"
   | "sauce"

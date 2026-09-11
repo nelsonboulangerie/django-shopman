@@ -50,7 +50,7 @@ ACCEPTED_IMAGE_MEDIA_TYPES = ("image/jpeg", "image/png", "image/webp", "image/gi
 MAX_IMAGE_BASE64_BYTES = 7_000_000
 
 ROLES = ("flour", "liquid", "salt", "yeast", "fat", "sugar", "egg", "dairy", "inclusion", "other")
-KINDS = ("bread", "viennoiserie", "sweet_dough", "filling", "cream", "sauce", "beverage", "other")
+KINDS = ("bread", "viennoiserie", "sweet_dough", "cookie", "filling", "cream", "sauce", "beverage", "other")
 UNITS = ("g", "kg", "ml", "L", "un")
 
 #: Apelidos de unidade que o modelo pode devolver apesar da instrução. Grafia,
@@ -90,7 +90,7 @@ SYSTEM_PROMPT = (
     "vegetal, cerveja), salt, yeast (fermento biológico, levain, poolish), fat (manteiga, azeite, "
     "óleo, banha), sugar (açúcar, mel, malte), egg, dairy (leite, creme, queijo, iogurte), "
     "inclusion (o que se mistura por cima: chocolate, passas, sementes, azeitona) ou other.\n"
-    "- kind classifica a receita: bread, viennoiserie, sweet_dough, filling, cream, sauce, "
+    "- kind classifica a receita: bread, viennoiserie, sweet_dough, cookie, filling, cream, sauce, "
     "beverage ou other.\n"
     "- Se a fonte está em porcentagem do padeiro (farinha 100%, água 70%...), converta para gramas "
     "sobre 1000 g de farinha total e diga isso em notes.\n"

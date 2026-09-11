@@ -148,6 +148,7 @@ describe("labels", () => {
     expect(roleLabel("weird")).toBe("Outro");
     expect(kindLabel("bread")).toBe("Pão");
     expect(kindLabel("sweet_dough")).toBe("Massa doce");
+    expect(kindLabel("cookie")).toBe("Biscoito");
     expect(kindLabel("nope")).toBe("Outra");
     expect(partKindLabel("old_dough")).toBe("Massa velha");
     expect(partKindLabel("custom")).toBe("custom");
