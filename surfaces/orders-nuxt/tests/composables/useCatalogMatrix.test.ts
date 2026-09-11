@@ -107,14 +107,18 @@ describe("useCatalogMatrix — lote + reordenação", () => {
 });
 
 describe("useCatalogMatrix — sync + PIM (Arc H)", () => {
-  beforeEach(() => env.reset());
+  beforeEach(() => {
+    env.reset();
+    env.fetchData.value = { matrix: { rows: [{ sku: "PAO", resync_action: { ...cellAction, payload_schema: { ...cellAction.payload_schema, ref: "PAO" } } }] } };
+    env.fetchMock.mockResolvedValue({ outcome: "applied" });
+  });
 
   it("resync(sku, channelRef) posta {sku, channel_ref} e reconcilia", async () => {
     const m = useCatalogMatrix();
     expect(await m.resync("PAO", "ifood")).toBe(true);
     const [url, opts] = env.fetchMock.mock.calls[0]!;
     expect(String(url)).toBe("/api/v1/backstage/catalog/resync/");
-    expect(opts.body).toEqual({ sku: "PAO", channel_ref: "ifood" });
+    expect(opts.body).toEqual({ ...cellAction.payload_schema, ref: "PAO", sku: "PAO", channel_ref: "ifood" });
     expect(env.refresh).toHaveBeenCalledTimes(1);
     expect(env.sonner.success).toHaveBeenCalledWith("Reenvio agendado.");
   });
@@ -123,7 +127,7 @@ describe("useCatalogMatrix — sync + PIM (Arc H)", () => {
     const m = useCatalogMatrix();
     await m.resync("PAO");
     const [, opts] = env.fetchMock.mock.calls[0]!;
-    expect(opts.body).toEqual({ sku: "PAO" });
+    expect(opts.body).toEqual({ ...cellAction.payload_schema, ref: "PAO", sku: "PAO" });
     expect(env.sonner.success).toHaveBeenCalledWith("Reenvio agendado em todos os canais.");
   });
 
@@ -280,4 +284,15 @@ it("publicação é primeiro prévia sem sucesso, depois uma intenção com cons
   const key = env.fetchMock.mock.calls[1]![1].headers["Idempotency-Key"];
   expect(env.fetchMock.mock.calls[2]![1]).toEqual({ query: { idempotency_key: key } });
   expect(env.fetchMock).toHaveBeenCalledTimes(3);
+});
+
+it("resync perdido consulta o recibo sem repetir o enqueue", async () => {
+  env.reset();
+  env.fetchData.value = { matrix: { rows: [{ sku: "PAO", resync_action: { ...cellAction, payload_schema: { ...cellAction.payload_schema, ref: "PAO" } } }] } };
+  env.fetchMock.mockRejectedValueOnce({ status: 502 }).mockResolvedValueOnce({ outcome: "applied" });
+  const m = useCatalogMatrix();
+  expect(await m.resync("PAO", "ifood")).toBe(true);
+  const key = env.fetchMock.mock.calls[0]![1].headers["Idempotency-Key"];
+  expect(env.fetchMock.mock.calls[1]![1]).toEqual({ query: { idempotency_key: key, ref: "PAO" } });
+  expect(env.fetchMock).toHaveBeenCalledTimes(2);
 });

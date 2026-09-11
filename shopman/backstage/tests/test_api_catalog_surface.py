@@ -664,15 +664,21 @@ def test_resync_requires_sku(client, operator, catalog):
     assert resp.status_code == 400
 
 
-def test_resync_enqueues_directive(client, operator, catalog):
+def test_resync_enqueues_directive(client, operator, catalog, monkeypatch):
+    from uuid import uuid4
+
+    from shopman.offerman import conf
     from shopman.orderman.models import Directive
 
     from shopman.shop.directives import CATALOG_PROJECT_SKU
 
+    monkeypatch.setattr(conf, "get_projection_backend_channels", lambda: ["ifood"])
     client.force_login(operator)
+    action = client.get(RESYNC_URL, {"sku": "PAO"}).json()["action"]
     resp = client.post(
         RESYNC_URL,
-        data={"sku": "PAO", "channel_ref": "ifood"},
+        data={**action["payload_schema"], "sku": "PAO", "channel_ref": "ifood"},
+        HTTP_IDEMPOTENCY_KEY=str(uuid4()),
         content_type="application/json",
     )
     assert resp.status_code == 200
@@ -799,7 +805,7 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
         "is_published", "is_sellable", "base_price_q", "base_price_display", "edit_url",
         "stock_tracked", "stock_qty", "sold_out", "low_stock", "replenish_qty",
         "keywords", "cells", "social", "pim_complete",
-        "hidden_by_inactive_collection", "product_action",
+        "hidden_by_inactive_collection", "product_action", "resync_action",
     }
 
     cell = row["cells"][0]

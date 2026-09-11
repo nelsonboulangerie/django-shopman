@@ -476,22 +476,65 @@ class CatalogSocialView(_CatalogBase):
 
 
 class CatalogResyncView(_CatalogBase):
-    """Re-enfileira a projeção de um SKU (uma plataforma ou todas as configuradas)."""
+    """One enqueue decision, with canonical task refs and a durable receipt."""
+
+    def _scope(self, request, sku):
+        from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+        return mutation_fingerprint({"operation": "catalog.resync", "sku": sku, "actor": request.user.pk})
+
+    def get(self, request):
+        from shopman.backstage.projections.catalog import resync_action
+        from shopman.shop.services.remote_mutations import RemoteMutationInProgress, lookup_local_mutation
+
+        sku = request.query_params.get("sku") or request.query_params.get("ref")
+        if not isinstance(sku, str) or not sku:
+            return Response({"detail": "Informe o produto."}, status=400)
+        try:
+            key = request.query_params.get("idempotency_key")
+            if key:
+                receipt = lookup_local_mutation(scope=self._scope(request, sku), key=key)
+                return Response(receipt.response_body, status=receipt.response_code) if receipt else Response({"outcome": "unknown"}, status=202)
+            product, targets = catalog_service.resync_snapshot(sku)
+            return Response({"action": projection_data(resync_action(product, targets, request.user))})
+        except RemoteMutationInProgress:
+            return Response({"outcome": "in_progress"}, status=202)
+        except CatalogError as exc:
+            return Response({"detail": str(exc)}, status=404)
 
     def post(self, request):
-        sku = (request.data.get("sku") or "").strip()
-        channel_ref = (request.data.get("channel_ref") or "").strip()
-        if not sku:
-            return Response({"detail": "sku é obrigatório."}, status=400)
+        from shopman.backstage.services.exceptions import CatalogConflict
+        from shopman.shop.services.remote_mutations import (
+            RemoteMutationConflict,
+            RemoteMutationInProgress,
+            mutation_fingerprint,
+            run_idempotent_mutation,
+        )
 
-        from shopman.offerman.conf import get_projection_backend_channels
+        data = request.data
+        sku, key = data.get("sku"), request.headers.get("Idempotency-Key") or data.get("idempotency_key")
+        if not isinstance(sku, str) or not sku or not isinstance(key, str) or not key or len(key) > 128 or not data.get("base_revision"):
+            return Response({"detail": "Atualize o catálogo: o reenvio exige intenção e revisão."}, status=400)
+        if data.get("expected_actor_id") != request.user.pk:
+            return Response({"detail": "A identificação mudou. Confira o produto."}, status=409)
+        payload = {"sku": sku, "channel_ref": data.get("channel_ref") or "", "base_revision": data["base_revision"]}
+        scope = self._scope(request, sku)
 
-        from shopman.shop.handlers.catalog_projection import enqueue_project
+        def execute():
+            try:
+                return catalog_service.apply_resync_intention(payload), 200
+            except CatalogConflict as exc:
+                return {"outcome": "not_applied", "detail": str(exc)}, 409
+            except CatalogError as exc:
+                return {"outcome": "not_applied", "detail": str(exc)}, 400
 
-        targets = [channel_ref] if channel_ref else list(get_projection_backend_channels())
-        for listing_ref in targets:
-            enqueue_project(sku, listing_ref, trigger="manual_resync")
-        return Response({"ok": True, "sku": sku, "channels": targets})
+        try:
+            result = run_idempotent_mutation(scope=scope, key=key, fingerprint=mutation_fingerprint(payload), execute=execute)
+            return Response(result.response_body, status=result.response_code)
+        except RemoteMutationConflict:
+            return Response({"detail": "Esta intenção já representa outro reenvio.", "code": "intention_conflict"}, status=409)
+        except RemoteMutationInProgress:
+            return Response({"outcome": "in_progress"}, status=202)
 
 
 def _field(data, key: str, current: str) -> str:

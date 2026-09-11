@@ -20,6 +20,7 @@ import json
 import logging
 from datetime import timedelta
 
+from django.db import transaction
 from django.utils import timezone
 from shopman.offerman.protocols.projection import ProjectedItem
 from shopman.orderman.exceptions import DirectiveTransientError
@@ -189,22 +190,23 @@ def on_availability_changed(sender, instance, listing_ref: str, sku: str, **kwar
     _enqueue_project(sku, listing_ref, trigger="availability_changed", extra={})
 
 
-def enqueue_project(sku: str, listing_ref: str, *, trigger: str = "manual_resync") -> None:
+def enqueue_project(sku: str, listing_ref: str, *, trigger: str = "manual_resync") -> Directive | None:
     """Public re-projection enqueue — used by the backstage "sincronizar agora" action."""
-    _enqueue_project(sku, listing_ref, trigger=trigger, extra={})
+    return _enqueue_project(sku, listing_ref, trigger=trigger, extra={})
 
 
-def _enqueue_project(sku: str, listing_ref: str, trigger: str, extra: dict) -> None:
+@transaction.atomic
+def _enqueue_project(sku: str, listing_ref: str, trigger: str, extra: dict) -> Directive | None:
     fingerprint_data = json.dumps({"trigger": trigger, **extra}, sort_keys=True)
     fingerprint = hashlib.sha256(fingerprint_data.encode()).hexdigest()[:16]
     dedupe_key = f"{CATALOG_PROJECT_SKU}:{listing_ref}:{sku}:{fingerprint}"
 
-    exists = Directive.objects.filter(
+    existing = Directive.objects.select_for_update().filter(
         dedupe_key=dedupe_key,
         status__in=("queued", "running"),
-    ).exists()
-    if exists:
-        return
+    ).first()
+    if existing is not None:
+        return existing
 
     from shopman.shop.directives import create_deduped
 
@@ -214,5 +216,8 @@ def _enqueue_project(sku: str, listing_ref: str, trigger: str, extra: dict) -> N
         dedupe_key=dedupe_key,
     )
     if created is None:
-        return
+        return Directive.objects.select_for_update().filter(
+            topic=CATALOG_PROJECT_SKU, dedupe_key=dedupe_key, status__in=("queued", "running"),
+        ).first()
     logger.debug("catalog_projection: enqueued %s for %s/%s", trigger, listing_ref, sku)
+    return created

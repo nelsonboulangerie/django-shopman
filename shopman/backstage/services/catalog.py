@@ -1281,3 +1281,46 @@ def apply_bulk_publication_intention(data: dict, *, actor_id: int) -> dict:
         bulk_set(skus, ref, **patch)
     changed = sum(cell["before"] != cell["after"] for cell in preview["cells"])
     return {"ok": True, "outcome": "applied", "count": changed, "cells": preview["cells"], "skipped": preview["skipped"]}
+
+
+def resync_revision(product, targets: list[str]) -> str:
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    return mutation_fingerprint({"version": 1, "product_id": product.pk, "sku": product.sku, "targets": sorted(targets)})
+
+
+def resync_snapshot(sku: str, *, lock: bool = False):
+    from shopman.offerman.conf import get_projection_backend_channels
+    from shopman.offerman.models import Product
+
+    from shopman.shop.models import Channel
+
+    channels = Channel.objects.filter(ref__in=get_projection_backend_channels(), is_active=True).order_by("pk")
+    channels = list(channels.select_for_update() if lock else channels)
+    products = Product.objects.filter(sku=sku)
+    product = (products.select_for_update() if lock else products).first()
+    if product is None:
+        raise CatalogError("Produto não encontrado.")
+    return product, sorted(channel.ref for channel in channels)
+
+
+@transaction.atomic
+def apply_resync_intention(data: dict) -> dict:
+    from shopman.backstage.services.exceptions import CatalogConflict
+    from shopman.shop.handlers.catalog_projection import enqueue_project
+    from shopman.shop.services.catalog_sync import record_sync
+
+    product, targets = resync_snapshot(data["sku"], lock=True)
+    if data.get("base_revision") != resync_revision(product, targets):
+        raise CatalogConflict("Os destinos de sincronização mudaram. Atualize antes de reenviar.")
+    chosen = [data["channel_ref"]] if data.get("channel_ref") else targets
+    if not chosen or any(ref not in targets for ref in chosen):
+        raise CatalogError("Não há destino ativo e configurado para este reenvio.")
+    tasks = []
+    for ref in chosen:
+        directive = enqueue_project(product.sku, ref, trigger="manual_resync")
+        if directive is None or directive.status not in {"queued", "running"}:
+            raise CatalogError("O enfileiramento não foi confirmado. Consulte novamente o resultado.")
+        record_sync(product.sku, ref, status="pending")
+        tasks.append({"channel_ref": ref, "directive_id": directive.pk, "status": directive.status})
+    return {"ok": True, "outcome": "applied", "sku": product.sku, "channels": chosen, "tasks": tasks}

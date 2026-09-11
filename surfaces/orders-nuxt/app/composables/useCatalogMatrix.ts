@@ -245,10 +245,9 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     clearError();
     busy.value = new Set(busy.value).add(key);
     try {
-      await $fetch("/api/v1/backstage/catalog/resync/", {
-        method: "POST",
-        body: channelRef ? { sku, channel_ref: channelRef } : { sku },
-      });
+      const action = matrix.value?.rows.find(row => row.sku === sku)?.resync_action;
+      await intentions.executePath(`catalog:resync:${sku}:${channelRef ?? "*"}`, "/api/v1/backstage/catalog/resync/", action ?? undefined,
+        { sku, ...(channelRef ? { channel_ref: channelRef } : {}) });
       useSonner.success(channelRef ? "Reenvio agendado." : "Reenvio agendado em todos os canais.");
       await refreshAfterCommit();
       return true;

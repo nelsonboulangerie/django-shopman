@@ -646,7 +646,7 @@ useHead({ title: "Catálogo · Gestor" });
                         v-if="rowSyncErrors(row)"
                         type="button"
                         class="inline-flex shrink-0 items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-xs font-medium text-destructive transition hover:bg-destructive/20 disabled:opacity-50"
-                        :disabled="isBusy(productKey(row.sku))"
+                        :disabled="isBusy(productKey(row.sku)) || !row.resync_action?.enabled"
                         :title="`Erro de sync em ${rowSyncErrors(row)} plataforma(s) — reenviar tudo`"
                         @click.stop="resyncRow(row)"
                       >
@@ -715,7 +715,7 @@ useHead({ title: "Catálogo · Gestor" });
                       >Incompleto</span>
                     </button>
                     <button
-                      type="button" :disabled="isBusy(productKey(row.sku))"
+                      type="button" :disabled="isBusy(productKey(row.sku)) || !row.resync_action?.enabled"
                       class="flex min-h-control w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50"
                       @click="resyncRow(row)"
                     >
@@ -817,7 +817,7 @@ useHead({ title: "Catálogo · Gestor" });
                     type="button"
                     class="grid size-control shrink-0 place-items-center rounded-full text-xs leading-none transition hover:scale-125 disabled:opacity-40"
                     :class="cellSync(cell).toneClass"
-                    :disabled="isBusy(cellKey(row.sku, cell.surface_ref))"
+                    :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !row.resync_action?.enabled"
                     :title="`${cellSync(cell).label}${cell.sync_error ? ' · ' + cell.sync_error : ''} — reenviar agora`"
                     :aria-label="`${cellSync(cell).label} em ${surfaceName(cell.surface_ref)} — reenviar agora`"
                     @click="resyncCell(row, cell)"

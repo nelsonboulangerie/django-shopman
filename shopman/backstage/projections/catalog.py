@@ -39,6 +39,17 @@ def product_switch_action(product, user):
         payload_schema={**action.payload_schema, "ref": product.sku})
 
 
+def resync_action(product, targets: list[str], user):
+    from shopman.backstage.services.catalog import resync_revision
+
+    allowed = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_catalog"))
+    enabled = allowed and bool(targets)
+    return Action(ref="resync", kind="mutation", label="Reenviar às plataformas", enabled=enabled,
+        reason="" if enabled else "Nenhum destino ativo e configurado." if allowed else "Sem permissão para editar o catálogo.",
+        method="POST", idempotency="required", payload_schema={"ref": product.sku,
+            "expected_actor_id": getattr(user, "pk", None), "base_revision": resync_revision(product, targets), "targets": sorted(targets)})
+
+
 def cell_action(sku: str, surface_ref: str, user, *, item=None, display=None, available=True):
     from shopman.backstage.services.catalog import cell_field_revisions
     from shopman.shop.services.remote_mutations import mutation_fingerprint
@@ -213,6 +224,7 @@ class CatalogRowProjection:
     # ``shop.services.catalog_visibility``.
     hidden_by_inactive_collection: bool = False
     product_action: Action | None = None
+    resync_action: Action | None = None
 
 
 @dataclass(frozen=True)
@@ -611,6 +623,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None) -> CatalogMatri
                 pim_complete=pim_complete,
                 hidden_by_inactive_collection=product.sku in hidden_skus,
                 product_action=product_switch_action(product, user),
+                resync_action=resync_action(product, [surface.ref for surface in surfaces if surface.is_active and surface.is_projection_target], user),
             )
         )
 
