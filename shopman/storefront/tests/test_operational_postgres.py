@@ -118,6 +118,33 @@ def test_concurrent_stock_moves_create_one_occurrence_and_one_delivery():
     assert StockAlertDelivery.objects.filter(occurrence__sku="PG-STOCK-CYCLE").count() == 1
 
 
+def test_concurrent_anonymous_subscribe_grants_new_browser_ownership_once():
+    from shopman.shop.models import Channel
+    from shopman.storefront.models import StockAlertSubscription
+    from shopman.storefront.services import stock_alerts
+
+    Channel.objects.get_or_create(ref="web", defaults={"name": "Web", "is_active": True})
+    barrier = Barrier(2)
+
+    def run():
+        try:
+            barrier.wait(timeout=10)
+            return stock_alerts.subscribe_with_outcome(
+                "PG-SUBSCRIBE-OWNERSHIP",
+                phone="+5543999990087",
+                resume_existing=False,
+            )
+        finally:
+            connections.close_all()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = [job.result(timeout=30) for job in [pool.submit(run), pool.submit(run)]]
+
+    assert sorted(outcome.created for outcome in outcomes) == [False, True]
+    assert len({str(outcome.subscription.ref) for outcome in outcomes}) == 1
+    assert StockAlertSubscription.objects.filter(sku="PG-SUBSCRIBE-OWNERSHIP").count() == 1
+
+
 def test_concurrent_quality_review_releases_one_bake_delivery():
     from shopman.shop.models import Channel
     from shopman.storefront.models import StockAlertDelivery, StockAlertOccurrence

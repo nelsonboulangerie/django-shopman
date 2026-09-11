@@ -183,13 +183,20 @@ class StockAlertSubscribeView(APIView):
             )
 
         channel_ref = request.GET.get("channel") or STOREFRONT_CHANNEL_REF
-        sub = stock_alerts.subscribe(
+        if customer is not None:
+            # A sessão autenticada usa sempre o contato da identidade canônica;
+            # um telefone no corpo não pode redirecionar o aviso.
+            phone = ""
+
+        outcome = stock_alerts.subscribe_with_outcome(
             sku,
             channel_ref=channel_ref,
             customer=customer,
             phone=phone,
             alert_type=alert_type,
+            resume_existing=False,
         )
+        sub = outcome.subscription
         if sub is None:
             return Response(
                 {"detail": "Não foi possível registrar o aviso."},
@@ -198,10 +205,28 @@ class StockAlertSubscribeView(APIView):
         # Persiste o estado do sino p/ anônimo com contato + SKU. O marcador
         # legado guardava só o SKU e ficava preso depois que o aviso era enviado.
         session = getattr(request, "session", None)
+        marked: list[dict] = []
         if session is not None:
             session.pop("stock_alert_skus", None)
             marked = session.get("stock_alert_subscriptions")
             marked = list(marked) if isinstance(marked, (list, tuple)) else []
+        owned_marker = _marker_for_subscription(marked, sub)
+        may_manage = customer is not None or outcome.created or owned_marker is not None
+
+        # subscribe_with_outcome deliberately leaves an existing paused row
+        # untouched. Only its authenticated customer or the browser session
+        # that created it may explicitly repeat the opt-in and resume it.
+        if may_manage and sub.paused_at is not None:
+            stock_alerts.set_paused(
+                sub.ref,
+                paused=False,
+                sku=sub.sku,
+                customer=customer,
+                phone=str(owned_marker.get("contact_phone") or "") if owned_marker else "",
+            )
+            sub.refresh_from_db()
+
+        if session is not None and may_manage:
             marker = {
                 "ref": str(sub.ref),
                 "sku": sub.sku,
@@ -211,6 +236,13 @@ class StockAlertSubscribeView(APIView):
             if marker not in marked:
                 marked.append(marker)
                 session["stock_alert_subscriptions"] = marked
+
+        # Anonymous POSTs are deliberately indistinguishable. A new row is
+        # bound to this server-side session and its capability is recovered by
+        # the subsequent GET; a different session repeating phone + SKU gets
+        # the same acknowledgement without learning or controlling the row.
+        if customer is None:
+            return _no_store_response({"ok": True}, status_code=status.HTTP_200_OK)
         return _no_store_response(
             {
                 "ok": True,
@@ -308,6 +340,22 @@ def _anonymous_marker(request, subscription_ref: str) -> tuple[str, dict | None]
     markers = list(markers) if isinstance(markers, (list, tuple)) else []
     marker = next((item for item in markers if str(item.get("ref") or "") == subscription_ref), None)
     return (str(marker.get("contact_phone") or "") if marker else "", marker)
+
+
+def _marker_for_subscription(markers: list[dict], sub) -> dict | None:
+    """Return the exact trusted session marker for ``sub``, if present."""
+
+    for marker in markers:
+        if not isinstance(marker, dict):
+            continue
+        if (
+            str(marker.get("ref") or "") == str(sub.ref)
+            and str(marker.get("sku") or "") == str(sub.sku)
+            and str(marker.get("alert_type") or "") == str(sub.alert_type)
+            and str(marker.get("contact_phone") or "") == str(sub.contact_phone)
+        ):
+            return marker
+    return None
 
 
 _MANAGEMENT_CAPABILITY_HEADER = OpenApiParameter(

@@ -1,9 +1,11 @@
 TESTE HUMANO ASSISTIDO — USO GERAL / APARELHO COMPARTILHADO — 2026-09-11
 
 Ambiente
-- Candidata local isolada em iPhone físico, com Django settings_test, Nuxt e SQLite descartável.
-- Identidades, estoque e endereço eram sintéticos. OTP foi exibido somente pelo backend de desenvolvimento.
-- Nenhum pedido foi confirmado pela pessoa B; nenhum pagamento, mensagem, mapa, provider ou transação real foi acionado.
+- iPhone físico contra o backend online de pré-go-live. A revalidação posterior encontrou
+  o pedido e o endereço no PostgreSQL gerenciado; portanto, este percurso humano não é
+  evidência da candidata isolada nem de SQLite.
+- Identidades, estoque e endereço eram sintéticos.
+- Nenhum pedido foi confirmado pela pessoa B e nenhum pagamento foi capturado.
 
 Percurso observado
 1. Pessoa A entrou, informou nome uma vez, escolheu entrega, informou endereço e instrução de portaria e gravou o endereço.
@@ -14,9 +16,24 @@ Percurso observado
 6. No checkout da pessoa B, o solicitante observou: nenhum dado da pessoa A e nenhum endereço cadastrado.
 
 Resultado e limites
-- J06, recorte candidata/aparelho compartilhado: PII anterior observada = 0; contexto legítimo da sacola preservado.
+- J06, recorte base online/aparelho compartilhado: PII anterior observada = 0; contexto legítimo da sacola preservado.
 - O percurso teve orientação passo a passo. Não demonstra conclusão sem ajuda, tempo economizado, compreensão populacional nem comparação contrabalançada com a base.
 - VoiceOver não fez parte deste percurso. TalkBack e o restante de J01–J16 permanecem sem execução humana estruturada.
+
+Revalidação do endereço
+- A identidade que confirmou o pedido de entrega tem exatamente um endereço canônico,
+  criado cinco segundos depois do pedido. A outra identidade do ensaio tem zero endereço.
+- Os logs do backend registram GET da lista e PATCH da etiqueta desse endereço, ambos 200.
+- A candidata passou numa regressão adicional do percurso checkout → logout → novo login
+  da mesma pessoa → GET da lista, sem redigitação. O relato posterior de lista vazia não
+  reproduziu perda no banco; a hipótese remanescente é consulta da outra identidade ou de
+  uma superfície que não carregou a lista canônica.
+
+Incidente de diagnóstico
+- Uma tentativa posterior de leitura autenticada solicitou um OTP para o contato sintético.
+  Apesar de `DOORMAN_MESSAGE_SENDER_CLASS=LogSender` na app spec, a cadeia efetiva não usa
+  essa chave: resolveu `sms` para Comtele e enviou um SMS. O código não foi usado e o probe
+  foi interrompido. Nenhuma outra mensagem foi solicitada.
 
 Incidente encontrado no percurso
 - Antes: a sacola consultava disponibilidade no fim do horizonte de dois dias; Croissant, com validade de zero dias, tinha estoque fresco hoje, mas a linha calculava available_qty=0 depois do hold expirar.

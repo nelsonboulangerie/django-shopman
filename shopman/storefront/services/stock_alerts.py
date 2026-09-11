@@ -13,6 +13,7 @@ import json
 import logging
 import uuid
 from base64 import urlsafe_b64decode, urlsafe_b64encode
+from dataclasses import dataclass
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -31,6 +32,12 @@ STOCK_ALERT_DISCLOSURE = (
 
 _MANAGEMENT_CAPABILITY_VERSION = b"stock-alert-management:v1"
 _MANAGEMENT_CAPABILITY_BYTES = 48
+
+
+@dataclass(frozen=True)
+class SubscribeOutcome:
+    subscription: object | None
+    created: bool
 
 
 def has_pending(sku: str, *, alert_types: tuple[str, ...] = ()) -> bool:
@@ -126,7 +133,6 @@ def has_pending_for(*, sku: str, customer=None, phone: str = "", alert_type: str
     return qs.filter(cond).exists()
 
 
-@transaction.atomic
 def subscribe(
     sku: str,
     *,
@@ -151,6 +157,36 @@ def subscribe(
     ``customer`` is a Guestman Customer (or None for anonymous); ``phone`` is
     the anonymous contact.
     """
+    return subscribe_with_outcome(
+        sku,
+        channel_ref=channel_ref,
+        customer=customer,
+        phone=phone,
+        alert_type=alert_type,
+        disclosure_text=disclosure_text,
+        disclosure_version=disclosure_version,
+    ).subscription
+
+
+@transaction.atomic
+def subscribe_with_outcome(
+    sku: str,
+    *,
+    channel_ref: str = STOREFRONT_CHANNEL_REF,
+    customer=None,
+    phone: str = "",
+    alert_type: str = "",
+    disclosure_text: str = STOCK_ALERT_DISCLOSURE,
+    disclosure_version: str = STOCK_ALERT_DISCLOSURE_VERSION,
+    resume_existing: bool = True,
+) -> SubscribeOutcome:
+    """Subscribe and report whether this transaction created the row.
+
+    Public anonymous endpoints set ``resume_existing=False`` until the caller
+    proves ownership through authenticated identity or trusted server-side
+    session state. Merely knowing a phone number must not resume or take over a
+    subscription created in another browser session.
+    """
     from shopman.storefront.models import StockAlertSubscription
 
     alert_type = alert_type or default_alert_type(sku)
@@ -159,7 +195,7 @@ def subscribe(
     disclosure_text = (disclosure_text or "").strip()
     disclosure_version = (disclosure_version or "").strip()
     if not contact or not disclosure_text or not disclosure_version:
-        return None
+        return SubscribeOutcome(None, False)
 
     channel_ref = channel_ref or "web"
     _lock_channel_if_configured(channel_ref)
@@ -176,11 +212,11 @@ def subscribe(
         proof_status="verified",
     ).first()
     if existing:
-        if existing.paused_at is not None:
+        if resume_existing and existing.paused_at is not None:
             existing.paused_at = None
             existing.pause_reason = ""
             existing.save(update_fields=["paused_at", "pause_reason"])
-        return existing
+        return SubscribeOutcome(existing, False)
 
     # An old row without evidence cannot silently become proof. Close it and create
     # a fresh subscription carrying the text the shopper has just accepted.
@@ -207,7 +243,7 @@ def subscribe(
     )
     try:
         with transaction.atomic():
-            return StockAlertSubscription.objects.create(
+            created = StockAlertSubscription.objects.create(
                 ref=subscription_ref,
                 sku=sku,
                 alert_type=alert_type,
@@ -224,10 +260,11 @@ def subscribe(
                 proof_status="verified",
                 expires_at=None,
             )
+            return SubscribeOutcome(created, True)
     except IntegrityError:
         # The database unique is the race winner. A simultaneous equivalent click
         # receives that same subscription instead of surfacing a transient 500.
-        return StockAlertSubscription.objects.active().get(**selector)
+        return SubscribeOutcome(StockAlertSubscription.objects.active().get(**selector), False)
 
 
 @transaction.atomic
