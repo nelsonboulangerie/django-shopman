@@ -10,7 +10,7 @@ const cellAction = { ref: "edit-cell", enabled: true, reason: "", method: "POST"
 describe("useCatalogMatrix — leitura + célula", () => {
   beforeEach(() => {
     env.reset();
-    env.fetchData.value = { matrix: { rows: [{ sku: "PAO", cells: [{ surface_ref: "web", action: cellAction }] }] } };
+    env.fetchData.value = { matrix: { rows: [{ sku: "PAO", product_action: { ...cellAction, payload_schema: { ...cellAction.payload_schema, ref: "PAO" } }, cells: [{ surface_ref: "web", action: cellAction }] }] } };
     env.fetchMock.mockResolvedValue({ outcome: "applied" });
   });
 
@@ -35,7 +35,7 @@ describe("useCatalogMatrix — leitura + célula", () => {
     await m.setProduct("PAO", { is_published: false });
     const [url, opts] = env.fetchMock.mock.calls[0]!;
     expect(String(url)).toBe("/api/v1/backstage/catalog/product/");
-    expect(opts.body).toEqual({ sku: "PAO", is_published: false });
+    expect(opts.body).toEqual({ ...cellAction.payload_schema, ref: "PAO", sku: "PAO", patch: { is_published: false } });
   });
 
   it("guarda de reentrância por-célula", async () => {
@@ -228,5 +228,18 @@ it("célula com resposta perdida consulta recibo no recurso exato e conserva a b
   const post = env.fetchMock.mock.calls[0]![1];
   expect(post.body.base_revision).toBe("base");
   expect(env.fetchMock.mock.calls[1]![1]).toEqual({ query: { idempotency_key: post.headers["Idempotency-Key"], ref: "cell-ref" } });
+  expect(env.fetchMock).toHaveBeenCalledTimes(2);
+});
+
+
+it("pausa global perdida consulta o mesmo recibo de produto", async () => {
+  env.reset();
+  const action = { ...cellAction, payload_schema: { ...cellAction.payload_schema, ref: "PAO" } };
+  env.fetchData.value = { matrix: { rows: [{ sku: "PAO", product_action: action }] } };
+  env.fetchMock.mockRejectedValueOnce({ status: 502 }).mockResolvedValueOnce({ outcome: "applied" });
+  const m = useCatalogMatrix();
+  expect(await m.setProduct("PAO", { is_sellable: false })).toBe(true);
+  const post = env.fetchMock.mock.calls[0]![1];
+  expect(env.fetchMock.mock.calls[1]![1]).toEqual({ query: { idempotency_key: post.headers["Idempotency-Key"], ref: "PAO" } });
   expect(env.fetchMock).toHaveBeenCalledTimes(2);
 });

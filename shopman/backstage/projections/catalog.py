@@ -11,7 +11,7 @@ Read-only. Frozen dataclasses convertidos por ``backstage.api.projections.projec
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from shopman.utils.monetary import format_money
 
@@ -29,6 +29,14 @@ def product_detail_action(sku: str, detail: dict, user):
         reason="" if allowed else "Identifique uma pessoa com permissão para editar o catálogo.",
         method="PATCH", idempotency="required", payload_schema={"expected_actor_id": getattr(user, "pk", None),
             "base_revision": mutation_fingerprint({"sku": sku, "revisions": revisions}), "base_revisions": revisions})
+
+
+def product_switch_action(product, user):
+    # Same field tokens and writer as the full editor, without loading long fields.
+    action = product_detail_action(product.sku, {"sku": product.sku,
+        "is_published": product.is_published, "is_sellable": product.is_sellable}, user)
+    return replace(action, ref="toggle-product", label="Disponibilidade em todas as superfícies", method="POST",
+        payload_schema={**action.payload_schema, "ref": product.sku})
 
 
 def cell_action(sku: str, surface_ref: str, user, *, item=None, display=None, available=True):
@@ -179,6 +187,7 @@ class CatalogRowProjection:
     # isso não cabe nos estados existentes da linha. Ver
     # ``shop.services.catalog_visibility``.
     hidden_by_inactive_collection: bool = False
+    product_action: Action | None = None
 
 
 @dataclass(frozen=True)
@@ -576,6 +585,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None) -> CatalogMatri
                 social=social_view,
                 pim_complete=pim_complete,
                 hidden_by_inactive_collection=product.sku in hidden_skus,
+                product_action=product_switch_action(product, user),
             )
         )
 

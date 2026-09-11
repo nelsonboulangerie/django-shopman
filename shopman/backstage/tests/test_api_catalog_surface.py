@@ -218,13 +218,9 @@ def _post_cell(client, operator, payload):
 def test_product_pause_gates_every_surface(client, operator, catalog):
     """Pausar no nível produto derruba a disponibilidade em TODOS os canais."""
     client.force_login(operator)
-    resp = client.post(
-        PRODUCT_URL,
-        data={"sku": "PAO", "is_sellable": False},
-        content_type="application/json",
-    )
+    resp = _post_product(client, operator, {"sku": "PAO", "is_sellable": False})
     assert resp.status_code == 200
-    assert resp.json()["is_sellable"] is False
+    assert resp.json()["product"]["is_sellable"] is False
 
     pao = Product.objects.get(sku="PAO")
     assert pao.is_sellable is False
@@ -241,29 +237,21 @@ def test_product_pause_gates_every_surface(client, operator, catalog):
 def test_product_reactivate(client, operator, catalog):
     Product.objects.filter(sku="PAO").update(is_sellable=False)
     client.force_login(operator)
-    resp = client.post(
-        PRODUCT_URL,
-        data={"sku": "PAO", "is_sellable": True},
-        content_type="application/json",
-    )
+    resp = _post_product(client, operator, {"sku": "PAO", "is_sellable": True})
     assert resp.status_code == 200
     assert Product.objects.get(sku="PAO").is_sellable is True
 
 
 def test_product_requires_field(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(PRODUCT_URL, data={"sku": "PAO"}, content_type="application/json")
+    resp = _post_product(client, operator, {"sku": "PAO"})
     assert resp.status_code == 400
 
 
-def test_product_unknown_returns_400(client, operator, catalog):
+def test_product_unknown_returns_404(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
-        PRODUCT_URL,
-        data={"sku": "NOPE", "is_sellable": False},
-        content_type="application/json",
-    )
-    assert resp.status_code == 400
+    resp = _post_product(client, operator, {"sku": "NOPE", "is_sellable": False})
+    assert resp.status_code == 404
 
 
 def test_product_requires_manage_catalog(client, plain_staff, catalog):
@@ -595,7 +583,7 @@ def test_feed_cell_price_rejected(client, operator, catalog_with_display):
 def test_global_pause_gates_feed_column(client, operator, catalog_with_display):
     """A pausa global do produto atinge o feed (cada um é um)."""
     client.force_login(operator)
-    client.post(PRODUCT_URL, data={"sku": "BOLO", "is_sellable": False}, content_type="application/json")
+    _post_product(client, operator, {"sku": "BOLO", "is_sellable": False})
     matrix = client.get(MATRIX_URL).json()["matrix"]
     bolo_tv = next(
         c for r in matrix["rows"] if r["sku"] == "BOLO" for c in r["cells"] if c["surface_ref"] == "tv-salao"
@@ -811,7 +799,7 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
         "is_published", "is_sellable", "base_price_q", "base_price_display", "edit_url",
         "stock_tracked", "stock_qty", "sold_out", "low_stock", "replenish_qty",
         "keywords", "cells", "social", "pim_complete",
-        "hidden_by_inactive_collection",
+        "hidden_by_inactive_collection", "product_action",
     }
 
     cell = row["cells"][0]
@@ -1318,3 +1306,76 @@ def test_cell_action_cannot_pause_a_product_outside_display_membership(client, o
     response = _post_cell(client, operator, {"sku": "PAO", "surface_ref": "tv-salao", "is_sellable": False})
     assert response.status_code == 409
     assert "PAO" not in _paused_skus("tv-salao")
+
+
+def _post_product(client, operator, payload):
+    from uuid import uuid4
+
+    client.force_login(operator)
+    matrix = client.get(MATRIX_URL).json()["matrix"]
+    row = next((row for row in matrix["rows"] if row["sku"] == payload["sku"]), {})
+    action = row.get("product_action") or {"payload_schema": {"base_revision": "unavailable", "base_revisions": {}, "expected_actor_id": operator.pk}}
+    patch = {key: value for key, value in payload.items() if key != "sku"}
+    return client.post(PRODUCT_URL, {**action["payload_schema"], "sku": payload["sku"], "patch": patch},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
+
+
+def test_global_product_receipt_shares_detail_writer_without_losing_other_fields(client, operator, catalog):
+    from uuid import uuid4
+
+    client.force_login(operator)
+    matrix = client.get(MATRIX_URL).json()["matrix"]
+    row = next(row for row in matrix["rows"] if row["sku"] == "PAO")
+    observed = row["product_action"]["payload_schema"]
+    assert _patch(client, "PAO", {"storage_tip": "Conservar em local fresco"}).status_code == 200
+    key = str(uuid4())
+    body = {**observed, "sku": "PAO", "patch": {"is_sellable": False}}
+    saved = client.post(PRODUCT_URL, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+    assert saved.status_code == 200
+    assert saved.json()["product"]["storage_tip"] == "Conservar em local fresco"
+    assert client.get(PRODUCT_URL, {"ref": "PAO", "idempotency_key": key}).json()["outcome"] == "applied"
+    assert _patch(client, "PAO", {"is_sellable": True}).status_code == 200
+    replay = client.post(PRODUCT_URL, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+    assert replay.status_code == 200
+    assert replay.json()["replayed"] is True
+    assert replay.json()["product"]["is_sellable"] is True
+    # Identical key is the identical product intention even through the detail URL.
+    detail_replay = client.patch(DETAIL_URL.format(sku="PAO"), body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+    assert detail_replay.status_code == 200
+    assert detail_replay.json()["replayed"] is True
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].is_sellable is True
+    assert catalog["pao"].storage_tip == "Conservar em local fresco"
+
+
+def test_global_product_route_refuses_unapproved_fields_and_legacy_payload(client, operator, catalog):
+    from uuid import uuid4
+
+    client.force_login(operator)
+    row = next(row for row in client.get(MATRIX_URL).json()["matrix"]["rows"] if row["sku"] == "PAO")
+    body = {**row["product_action"]["payload_schema"], "sku": "PAO", "patch": {"name": "Wrong scope"}}
+    assert client.post(PRODUCT_URL, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4())).status_code == 400
+    assert client.post(PRODUCT_URL, {"sku": "PAO", "is_sellable": False}, content_type="application/json").status_code == 400
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].name == "Pão"
+    assert catalog["pao"].is_sellable
+
+
+def test_global_pause_does_not_require_repairing_untouched_legacy_nutrition(client, operator, catalog):
+    # The previous global switch used save's canonical gates, not a new label review.
+    Product.objects.filter(sku="PAO").update(nutrition_facts={"serving_size_g": 0, "proteins_g": 4})
+    response = _post_product(client, operator, {"sku": "PAO", "is_sellable": False})
+    assert response.status_code == 200
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].nutrition_facts == {"serving_size_g": 0, "proteins_g": 4}
+    assert not catalog["pao"].is_sellable
+
+
+def test_global_publication_preserves_canonical_fiscal_gate(client, operator, catalog, settings):
+    Product.objects.filter(sku="PAO").update(is_published=False)
+    settings.SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH = True
+    response = _post_product(client, operator, {"sku": "PAO", "is_published": True})
+    assert response.status_code == 400
+    assert "fiscal" in response.json()["detail"].lower()
+    catalog["pao"].refresh_from_db()
+    assert not catalog["pao"].is_published

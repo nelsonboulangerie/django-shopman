@@ -129,15 +129,16 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     clearError();
     busy.value = new Set(busy.value).add(key);
     try {
-      await $fetch("/api/v1/backstage/catalog/product/", {
-        method: "POST",
-        body: { sku, ...patch },
-      });
+      const action = matrix.value?.rows.find(row => row.sku === sku)?.product_action;
+      await intentions.executePath(`catalog:product:${sku}`, "/api/v1/backstage/catalog/product/", action ?? undefined, { sku, patch });
       await refreshAfterCommit();
       return true;
     } catch (error) {
-      errorMsg.value = httpErrorMessage(error, "Falha ao atualizar. Tente de novo.");
+      errorMsg.value = httpErrorMessage(error, error instanceof Error ? error.message : "Falha ao atualizar. Tente de novo.");
       useSonner.error(errorMsg.value);
+      if (httpError(error).status === 409) {
+        try { await refresh(); } catch { errorMsg.value += " A leitura atualizada também falhou."; }
+      }
       return false;
     } finally {
       const next = new Set(busy.value);

@@ -1,0 +1,27 @@
+F.                                                                       [100%]
+=================================== FAILURES ===================================
+___ test_global_pause_does_not_require_repairing_untouched_legacy_nutrition ____
+
+client = <django.test.client.Client object at 0x121c8ac60>
+operator = <User: catalog-api>
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Pão>}
+
+    def test_global_pause_does_not_require_repairing_untouched_legacy_nutrition(client, operator, catalog):
+        # The previous global switch used save's canonical gates, not a new label review.
+        Product.objects.filter(sku="PAO").update(nutrition_facts={"serving_size_g": 0, "proteins_g": 4})
+        response = _post_product(client, operator, {"sku": "PAO", "is_sellable": False})
+>       assert response.status_code == 200
+E       assert 400 == 200
+E        +  where 400 = <Response status_code=400, "application/json">.status_code
+
+shopman/backstage/tests/test_api_catalog_surface.py:1368: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-10 23:49:31,009 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-10 23:49:31,359 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-10 23:49:32,969 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+----------------------------- Captured stderr call -----------------------------
+DEBUG 2026-09-10 23:49:39,405 shopman.stockman.adapters.sku_validation Loaded SKU validator: shopman.shop.adapters.sku_validator.ComposedSkuValidator
+WARNING 2026-09-10 23:49:39,581 django.request Bad Request: /api/v1/backstage/catalog/product/
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_api_catalog_surface.py::test_global_pause_does_not_require_repairing_untouched_legacy_nutrition
+1 failed, 1 passed, 92 deselected in 9.51s

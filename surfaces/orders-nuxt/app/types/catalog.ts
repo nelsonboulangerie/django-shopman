@@ -56,6 +56,7 @@ export interface SurfaceCellProjection {
 }
 
 export interface CatalogRowProjection {
+  product_action?: Action | null;
   sku: string;
   name: string;
   image_url: string;

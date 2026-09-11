@@ -120,39 +120,6 @@ class CatalogCellView(_CatalogBase):
             return Response({"outcome": "in_progress"}, status=202)
 
 
-class CatalogProductView(_CatalogBase):
-    """Pausa/publica o produto em TODOS os canais de uma vez ("globalzinho")."""
-
-    def post(self, request):
-        sku = (request.data.get("sku") or "").strip()
-        if not sku:
-            return Response({"detail": "sku é obrigatório."}, status=400)
-
-        is_published = request.data.get("is_published")
-        is_sellable = request.data.get("is_sellable")
-        if is_published is None and is_sellable is None:
-            return Response({"detail": "Informe is_published e/ou is_sellable."}, status=400)
-
-        try:
-            product = catalog_service.set_product(
-                sku,
-                is_published=is_published,
-                is_sellable=is_sellable,
-                actor=_actor(request),
-            )
-        except (CatalogError, ValidationError) as exc:
-            return Response({"detail": str(exc)}, status=400)
-
-        return Response(
-            {
-                "ok": True,
-                "sku": sku,
-                "is_published": product.is_published,
-                "is_sellable": product.is_sellable,
-            }
-        )
-
-
 class CatalogProductDetailView(_CatalogBase):
     """Partial product edits have leaf revisions and an atomic local receipt."""
 
@@ -222,6 +189,27 @@ class CatalogProductDetailView(_CatalogBase):
             return Response({"outcome": "in_progress"}, status=202)
         except (CatalogError, ValidationError) as exc:
             return Response({"detail": str(exc)}, status=404)
+
+
+class CatalogProductView(CatalogProductDetailView):
+    """Global switches reuse the product editor's atomic writer and receipt."""
+
+    http_method_names = ["get", "post", "head", "options"]
+
+    def get(self, request):
+        sku = request.query_params.get("ref")
+        if not isinstance(sku, str) or not sku:
+            return Response({"detail": "Informe o produto da intenção."}, status=400)
+        return super().get(request, sku)
+
+    def post(self, request):
+        data = request.data
+        if not isinstance(data, dict):
+            return Response({"detail": "Informe os campos do produto."}, status=400)
+        sku, patch = data.get("sku"), data.get("patch")
+        if not isinstance(sku, str) or not sku or not isinstance(patch, dict) or not patch or set(patch) - {"is_published", "is_sellable"} or any(value is None for value in patch.values()):
+            return Response({"detail": "Atualize o catálogo e confirme a disponibilidade do produto."}, status=400)
+        return super().patch(request, sku)
 
 
 class CatalogAiAssistView(_CatalogBase):

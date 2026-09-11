@@ -176,40 +176,15 @@ def set_cell(
     return item
 
 
-def set_product(
-    sku: str,
-    *,
-    is_published: bool | None = None,
-    is_sellable: bool | None = None,
-    actor: str = "",
-):
-    """Pausa/publica o produto em TODOS os canais de uma vez ("globalzinho").
-
-    Escreve no switch produto-level (``Product.is_sellable`` / ``is_published``),
-    que gateia toda superfície. ``save()`` emite ``product_updated`` → o auto-trigger
-    re-projeta o produto em cada listing alvo (retract-aware). Um único ponto de
-    verdade; não itera célula por célula.
-    """
-    if is_published is not None:
-        is_published = _as_flag(is_published, "is_published")
-    if is_sellable is not None:
-        is_sellable = _as_flag(is_sellable, "is_sellable")
-
+def set_product(sku: str, *, is_published: bool | None = None, is_sellable: bool | None = None, actor: str = ""):
+    """Compatibility facade; global flags use the canonical partial product writer."""
     from shopman.offerman.models import Product
 
-    product = Product.objects.filter(sku=sku).first()
-    if product is None:
-        raise CatalogError(f"Produto '{sku}' não encontrado.")
-
-    if is_published is None and is_sellable is None:
+    patch = {field: value for field, value in {"is_published": is_published, "is_sellable": is_sellable}.items() if value is not None}
+    if not patch:
         raise CatalogError("Nada a atualizar (informe is_published e/ou is_sellable).")
-    if is_published is not None:
-        product.is_published = is_published
-    if is_sellable is not None:
-        product.is_sellable = is_sellable
-
-    product.save()
-    return product
+    update_product_detail(sku, patch, actor=actor)
+    return Product.objects.get(sku=sku)
 
 
 def bulk_set(
@@ -794,8 +769,9 @@ def _apply_fiscal(product, raw) -> None:
 def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_revisions: dict | None = None) -> dict:
     """Merge parcial dos campos do produto (chave ausente = sem mudança).
 
-    Valida com ``full_clean()`` (inclui as invariantes ANVISA de nutrition_facts) e
-    persiste com ``save()``, que emite ``product_updated`` quando um campo projetável
+    Edição de conteúdo valida com ``full_clean()``; switches globais preservam a
+    validação de flags e o gate fiscal de save, sem rever rotulagem não editada.
+    Persiste com ``save()``, que emite ``product_updated`` quando um campo projetável
     muda — o auto-trigger re-projeta nas plataformas alvo. Os blocos em JSONField
     (nutricional, social, fiscal) são validados pelo dono do schema antes disso.
     """
@@ -843,10 +819,13 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_rev
     if "fiscal" in data:
         _apply_fiscal(product, data.get("fiscal"))
 
-    try:
-        product.full_clean()
-    except ValidationError as exc:
-        raise CatalogError(_first_validation_message(exc)) from exc
+    # Global availability already had strict flag parsing and save's fiscal gate.
+    # Do not turn a pause into a mandatory review of untouched legacy label data.
+    if not set(data).issubset({"is_published", "is_sellable"}):
+        try:
+            product.full_clean()
+        except ValidationError as exc:
+            raise CatalogError(_first_validation_message(exc)) from exc
 
     product.save()
 

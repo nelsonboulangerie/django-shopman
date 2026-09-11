@@ -612,7 +612,7 @@ useHead({ title: "Catálogo · Gestor" });
                       <Icon name="lucide:pencil" class="size-4 text-muted-foreground" /> Editar detalhes
                     </button>
                     <button
-                      type="button" :disabled="isBusy(productKey(row.sku))"
+                      type="button" :disabled="isBusy(productKey(row.sku)) || !row.product_action?.enabled"
                       class="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50"
                       @click="toggleProduct(row)"
                     >
@@ -620,7 +620,7 @@ useHead({ title: "Catálogo · Gestor" });
                       {{ row.is_sellable ? "Pausar em todos os canais" : "Ativar em todos os canais" }}
                     </button>
                     <button
-                      type="button" :disabled="isBusy(productKey(row.sku))"
+                      type="button" :disabled="isBusy(productKey(row.sku)) || !row.product_action?.enabled"
                       class="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50"
                       @click="toggleProductPublish(row)"
                     >
