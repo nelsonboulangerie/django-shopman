@@ -127,3 +127,27 @@ test("same person resumes a locked draft; another person never inherits it", asy
   await identify("orders-lab-b");
   await expect(editor).toHaveValue(serverNote);
 });
+
+
+test("cancel response loss retains the reason and reads the committed receipt", async ({ page }) => {
+  await login(page, "orders-lab-cancel");
+  let posts = 0;
+  let lookups = 0;
+  await page.route(`**/api/v1/backstage/orders/${lab.cancel_ref}/cancel/**`, async (route) => {
+    if (route.request().method() === "POST") {
+      posts += 1;
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.abort("failed");
+    } else { lookups += 1; await route.continue(); }
+  });
+  await page.goto(`/${lab.cancel_ref}`);
+  await page.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await page.getByRole("textbox", { name: "Motivo", exact: true }).fill("Motivo sintético preservado");
+  await page.getByRole("button", { name: "Confirmar", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const canonical = await (await page.request.get(`/api/v1/backstage/orders/${lab.cancel_ref}/`)).json();
+  expect(canonical.order.status).toBe("cancelled");
+  expect(posts).toBe(1);
+  expect(lookups).toBe(1);
+});

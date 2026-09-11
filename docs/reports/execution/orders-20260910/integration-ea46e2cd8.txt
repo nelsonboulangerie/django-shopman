@@ -1,0 +1,15 @@
+[WebServer] (node:42363) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 6 tests using 1 worker
+
+(node:42364) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › tests/integration/operational.spec.ts:15:1 › lost response after the Django commit queries receipt and advances only once (10.7s)
+  ✓  2 [chromium] › tests/integration/operational.spec.ts:38:1 › SSE during notes draft preserves text and offers explicit same-field resolution (3.9s)
+  ✓  3 [chromium] › tests/integration/operational.spec.ts:59:1 › price preview confirms exact canonical values through Nitro and Django (3.7s)
+  ✓  4 [chromium] › tests/integration/operational.spec.ts:80:1 › closed product A cannot hydrate the reopened panel for B (3.7s)
+  ✓  5 [chromium] › tests/integration/operational.spec.ts:108:1 › same person resumes a locked draft; another person never inherits it (4.6s)
+  ✓  6 [chromium] › tests/integration/operational.spec.ts:132:1 › cancel response loss retains the reason and reads the committed receipt (3.2s)
+
+  6 passed (32.5s)

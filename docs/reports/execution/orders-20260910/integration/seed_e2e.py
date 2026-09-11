@@ -18,7 +18,7 @@ from pathlib import Path
 from uuid import uuid4
 
 run = uuid4().hex[:8]
-refs = {'advance_ref': f'LAB-ADVANCE-{run}', 'notes_ref': f'LAB-NOTES-{run}'}
+refs = {'advance_ref': f'LAB-ADVANCE-{run}', 'notes_ref': f'LAB-NOTES-{run}', 'cancel_ref': f'LAB-CANCEL-{run}'}
 Path('.orders-lab/manifest.json').write_text(json.dumps(refs))
 for ref in refs.values():
     order, created = Order.objects.get_or_create(ref=ref, defaults={'channel_ref':'lab','status':'accepted','total_q':500,'session_key':ref,'snapshot':{'items':[{'sku':'LAB-PROD','qty':'0.500','name':'Produto laboratório'}]},'data':{'fulfillment_type':'pickup','payment':{'method':'cash'},'customer':{'name':ref},'kitchen_note':'Nota inicial'}})
@@ -31,7 +31,7 @@ second, _ = User.objects.get_or_create(username='orders-lab-b', defaults={'is_st
 second.set_password('synthetic-lab-only-20260910')
 second.save()
 second.user_permissions.set(user.user_permissions.all())
-for suffix in ('advance', 'notes', 'price', 'product'):
+for suffix in ('advance', 'notes', 'price', 'product', 'cancel'):
     tester, _ = User.objects.get_or_create(username=f'orders-lab-{suffix}', defaults={'is_staff':True,'first_name':f'Laboratório {suffix}'})
     tester.set_password('synthetic-lab-only-20260910')
     tester.save()
