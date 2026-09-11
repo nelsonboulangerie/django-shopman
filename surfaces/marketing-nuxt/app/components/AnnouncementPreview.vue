@@ -483,8 +483,8 @@ const shortHash = computed(
         <span>
           Sem valor nesta amostra:
           <span class="font-mono">{{ emptyFields.join(", ") }}</span
-          >. Campos por destinatário serão resolvidos apenas no boundary
-          protegido.
+          >. Campos por destinatário serão resolvidos apenas na etapa protegida
+          de envio.
         </span>
       </p>
 

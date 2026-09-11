@@ -38,12 +38,15 @@ function result(platform: string, status: string): PlatformResult {
 
 describe("alertsNote", () => {
   it("separates an empty queue from a queue already served", () => {
-    expect(alertsNote({ alerts_count: 0, alerts_notified_count: 0 }))
-      .toBe("Ninguém pediu para ser avisado deste produto ainda");
-    expect(alertsNote({ alerts_count: 0, alerts_notified_count: 1 }))
-      .toBe("A pessoa que pediu aviso deste produto já foi avisada");
-    expect(alertsNote({ alerts_count: 0, alerts_notified_count: 4 }))
-      .toBe("As 4 pessoas que pediram aviso deste produto já foram avisadas");
+    expect(alertsNote({ alerts_count: 0, alerts_notified_count: 0 })).toBe(
+      "Ninguém pediu para ser avisado deste produto ainda",
+    );
+    expect(alertsNote({ alerts_count: 0, alerts_notified_count: 1 })).toBe(
+      "A pessoa que pediu aviso deste produto já foi avisada",
+    );
+    expect(alertsNote({ alerts_count: 0, alerts_notified_count: 4 })).toBe(
+      "As 4 pessoas que pediram aviso deste produto já foram avisadas",
+    );
   });
 
   it("stays quiet when the rule did not run or found somebody", () => {
@@ -55,35 +58,48 @@ describe("alertsNote", () => {
 
 describe("audienceSummary", () => {
   it("lists each source and closes with the deduplicated total", () => {
-    expect(audienceSummary({ favorites_count: 12, bought_count: 28, alerts_count: 3, total: 43 }))
-      .toBe("12 favoritos, 28 recompra, 3 alertas = 43 clientes");
+    expect(
+      audienceSummary({
+        favorites_count: 12,
+        bought_count: 28,
+        alerts_count: 3,
+        total: 43,
+      }),
+    ).toBe("12 favoritos, 28 recompra, 3 alertas = 43 clientes");
   });
 
   it("uses the backend total instead of summing the parts", () => {
     // Quem favoritou E recompra é uma pessoa só: somar (12+28) mentiria pra cima.
-    expect(audienceSummary({ favorites_count: 12, bought_count: 28, total: 30 }))
-      .toBe("12 favoritos, 28 recompra = 30 clientes");
+    expect(
+      audienceSummary({ favorites_count: 12, bought_count: 28, total: 30 }),
+    ).toBe("12 favoritos, 28 recompra = 30 clientes");
   });
 
   it("omits sources that resolved to nobody", () => {
-    expect(audienceSummary({ favorites_count: 5, alerts_count: 0, total: 5 }))
-      .toBe("5 favoritos = 5 clientes");
+    expect(
+      audienceSummary({ favorites_count: 5, alerts_count: 0, total: 5 }),
+    ).toBe("5 favoritos = 5 clientes");
   });
 
   it("says nobody rather than showing a zero", () => {
-    expect(audienceSummary({ total: 0 })).toBe("Ninguém para avisar por enquanto");
+    expect(audienceSummary({ total: 0 })).toBe(
+      "Ninguém para avisar por enquanto",
+    );
     expect(audienceSummary(undefined)).toBe("Ninguém para avisar por enquanto");
   });
 
   it("explains a zero that came from an already-served alert queue", () => {
     // O caso do Pablo: quatro pessoas pediram aviso da Baguette, o estoque voltou e
     // todas foram avisadas. "Ninguém para avisar" era verdade e parecia bug.
-    expect(audienceSummary({ alerts_count: 0, alerts_notified_count: 4, total: 0 }))
-      .toBe("As 4 pessoas que pediram aviso deste produto já foram avisadas");
+    expect(
+      audienceSummary({ alerts_count: 0, alerts_notified_count: 4, total: 0 }),
+    ).toBe("As 4 pessoas que pediram aviso deste produto já foram avisadas");
   });
 
   it("agrees in the singular", () => {
-    expect(audienceSummary({ alerts_count: 1, total: 1 })).toBe("1 alertas = 1 cliente");
+    expect(audienceSummary({ alerts_count: 1, total: 1 })).toBe(
+      "1 alertas = 1 cliente",
+    );
   });
 
   it("falls back to the bare total when no source is broken out", () => {
@@ -93,7 +109,9 @@ describe("audienceSummary", () => {
 
 describe("vipSummary", () => {
   it("states the head start", () => {
-    expect(vipSummary({ vip_count: 4, vip_delay_minutes: 15 })).toBe("4 VIPs recebem 15 min antes");
+    expect(vipSummary({ vip_count: 4, vip_delay_minutes: 15 })).toBe(
+      "4 VIPs recebem 15 min antes",
+    );
   });
 
   it("stays silent when there is no head start to talk about", () => {
@@ -133,13 +151,21 @@ describe("expiryTone", () => {
 
 describe("announcementOutcome", () => {
   it("only calls it published when every platform published", () => {
-    expect(announcementOutcome([result("instagram", "published"), result("facebook", "published")]))
-      .toBe("published");
+    expect(
+      announcementOutcome([
+        result("instagram", "published"),
+        result("facebook", "published"),
+      ]),
+    ).toBe("published");
   });
 
   it("treats a mixed result as partial, not as success", () => {
-    expect(announcementOutcome([result("instagram", "failed"), result("facebook", "published")]))
-      .toBe("partial");
+    expect(
+      announcementOutcome([
+        result("instagram", "failed"),
+        result("facebook", "published"),
+      ]),
+    ).toBe("partial");
   });
 
   it("reports a total failure as failed", () => {
@@ -151,8 +177,12 @@ describe("announcementOutcome", () => {
   });
 
   it("counts a still-queued platform as pending", () => {
-    expect(announcementOutcome([result("instagram", "queued"), result("facebook", "pending_manual")]))
-      .toBe("pending");
+    expect(
+      announcementOutcome([
+        result("instagram", "queued"),
+        result("facebook", "pending_manual"),
+      ]),
+    ).toBe("pending");
   });
 
   it("treats a announcement with no targeted platform as pending", () => {
@@ -190,7 +220,10 @@ describe("hashtags", () => {
   it("parses whatever the gestor pasted", () => {
     expect(parseHashtags("#padaria #fornada")).toEqual(["padaria", "fornada"]);
     expect(parseHashtags("padaria, fornada")).toEqual(["padaria", "fornada"]);
-    expect(parseHashtags("  #padaria \n fornada  ")).toEqual(["padaria", "fornada"]);
+    expect(parseHashtags("  #padaria \n fornada  ")).toEqual([
+      "padaria",
+      "fornada",
+    ]);
     expect(parseHashtags("")).toEqual([]);
   });
 });
@@ -202,38 +235,56 @@ describe("audienceRulesSummary", () => {
   };
 
   it("spells out the sources in order", () => {
-    expect(audienceRulesSummary({ favorites: true, alerts: true, bought_within_days: 90 }))
-      .toBe("Favoritos, alertas, recompra em 90 dias");
+    expect(
+      audienceRulesSummary({
+        favorites: true,
+        alerts: true,
+        bought_within_days: 90,
+      }),
+    ).toBe("Favoritos, alertas, recompra em 90 dias");
   });
 
   it("appends the VIP head start", () => {
-    expect(audienceRulesSummary({ favorites: true, vip_first_minutes: 15 }))
-      .toBe("Favoritos, melhores clientes 15 min antes");
+    expect(
+      audienceRulesSummary({ favorites: true, vip_first_minutes: 15 }),
+    ).toBe("Favoritos, melhores clientes 15 min antes");
   });
 
   // ⚠️ O resumo conhecia só três das nove regras. Uma campanha para "cliente fiel" ou
   // para o grupo atacado — configurada, funcionando, alcançando gente — aparecia na lista
   // como "sem audiência". Mentia sobre a decisão mais importante da campanha.
   it("spells out the audiences the manager chooses, not only the event ones", () => {
-    expect(audienceRulesSummary({ price_tiers: ["atacado"] }, labels)).toBe("Atacado");
-    expect(audienceRulesSummary({ rfm_segments: ["loyal_customer"] }, labels))
-      .toBe("Cliente fiel");
-    expect(audienceRulesSummary({ churn_risk_min: 0.7 })).toBe("Quem está sumindo");
-    expect(audienceRulesSummary({ birthday_today: true })).toBe("Aniversariantes de hoje");
+    expect(audienceRulesSummary({ price_tiers: ["atacado"] }, labels)).toBe(
+      "Atacado",
+    );
+    expect(
+      audienceRulesSummary({ rfm_segments: ["loyal_customer"] }, labels),
+    ).toBe("Cliente fiel");
+    expect(audienceRulesSummary({ churn_risk_min: 0.7 })).toBe(
+      "Quem está sumindo",
+    );
+    expect(audienceRulesSummary({ birthday_today: true })).toBe(
+      "Aniversariantes de hoje",
+    );
   });
 
   // Somar e cruzar as MESMAS regras alcançam gente diferente, então o resumo não pode
   // desenhar as duas coisas igual.
   it("says when the rules are crossed instead of added", () => {
-    const rules = { price_tiers: ["atacado"], rfm_segments: ["loyal_customer"] };
+    const rules = {
+      price_tiers: ["atacado"],
+      rfm_segments: ["loyal_customer"],
+    };
     expect(audienceRulesSummary(rules, labels)).toBe("Atacado, Cliente fiel");
-    expect(audienceRulesSummary({ ...rules, match: "all" as const }, labels))
-      .toBe("Cruzando Atacado, Cliente fiel");
+    expect(
+      audienceRulesSummary({ ...rules, match: "all" as const }, labels),
+    ).toBe("Cruzando Atacado, Cliente fiel");
   });
 
   it("does not say 'crossed' with a single rule, where it would mean nothing", () => {
-    expect(audienceRulesSummary({ price_tiers: ["atacado"], match: "all" }, labels))
-      .toBe("Atacado");
+    expect(
+      audienceRulesSummary({ price_tiers: ["atacado"], match: "all" }, labels),
+    ).toBe("Atacado");
   });
 
   // Rótulo tem dono no servidor (`CustomerGroup.name`, `RFM_SEGMENTS`). Sem mapa, o ref
@@ -249,11 +300,15 @@ describe("audienceRulesSummary", () => {
 });
 
 describe("platformsSummary", () => {
-  const labels = { instagram: "Instagram", google_business: "Google Meu Negócio" };
+  const labels = {
+    instagram: "Instagram",
+    google_business: "Google Meu Negócio",
+  };
 
   it("uses the labels and keeps the chosen order", () => {
-    expect(platformsSummary(["google_business", "instagram"], labels))
-      .toBe("Google Meu Negócio, Instagram");
+    expect(platformsSummary(["google_business", "instagram"], labels)).toBe(
+      "Google Meu Negócio, Instagram",
+    );
   });
 
   it("falls back to the ref when a label is unknown", () => {
@@ -278,24 +333,34 @@ describe("shortDateTime", () => {
 
 describe("isStillReviewable", () => {
   const announcement = (over: Partial<Announcement>) =>
-    ({ status: "pending_review", expires_in_minutes: 30, ...over }) as Announcement;
+    ({
+      status: "pending_review",
+      expires_in_minutes: 30,
+      ...over,
+    }) as Announcement;
 
   it("accepts a pending announcement inside its window", () => {
     expect(isStillReviewable(announcement({}))).toBe(true);
   });
 
   it("accepts a pending announcement with no deadline", () => {
-    expect(isStillReviewable(announcement({ expires_in_minutes: -1 }))).toBe(true);
+    expect(isStillReviewable(announcement({ expires_in_minutes: -1 }))).toBe(
+      true,
+    );
   });
 
   it("refuses one whose deadline already passed", () => {
     // O sweeper roda em ciclos de minutos: a tela não pode oferecer "Publicar"
     // num card que venceu entre um fetch e outro.
-    expect(isStillReviewable(announcement({ expires_in_minutes: 0 }))).toBe(false);
+    expect(isStillReviewable(announcement({ expires_in_minutes: 0 }))).toBe(
+      false,
+    );
   });
 
   it("refuses one that was already decided", () => {
-    expect(isStillReviewable(announcement({ status: "published" }))).toBe(false);
+    expect(isStillReviewable(announcement({ status: "published" }))).toBe(
+      false,
+    );
   });
 });
 
@@ -303,17 +368,17 @@ describe("approvalMessage", () => {
   it("says scheduled when the SERVER scheduled", () => {
     // ⚠️ O toast dizia "publicado" sempre. Uma campanha com janela de horas preferidas
     // faz o servidor AGENDAR, e o gestor fechava a tela achando que já estava no ar.
-    expect(approvalMessage({ scheduled: true })).toBe("Anúncio agendado.");
+    expect(approvalMessage({ scheduled: true })).toBe("Entrega agendada.");
   });
 
   it("says published when the server dispatched", () => {
-    expect(approvalMessage({ scheduled: false })).toBe("Anúncio publicado.");
+    expect(approvalMessage({ scheduled: false })).toBe("Entrega iniciada.");
   });
 
   it("does not invent a schedule when the server said nothing", () => {
-    expect(approvalMessage({})).toBe("Anúncio publicado.");
-    expect(approvalMessage(null)).toBe("Anúncio publicado.");
-    expect(approvalMessage(undefined)).toBe("Anúncio publicado.");
+    expect(approvalMessage({})).toBe("Entrega iniciada.");
+    expect(approvalMessage(null)).toBe("Entrega iniciada.");
+    expect(approvalMessage(undefined)).toBe("Entrega iniciada.");
   });
 });
 
@@ -354,7 +419,10 @@ describe("mergeAudienceRules", () => {
       rfm_segment: "champions",
       min_orders: 3,
     };
-    const resultado = mergeAudienceRules(original, { favorites: true, alerts: false });
+    const resultado = mergeAudienceRules(original, {
+      favorites: true,
+      alerts: false,
+    });
 
     expect(resultado.match).toBe("all");
     expect(resultado.tags).toEqual(["vip", "padaria"]);
@@ -363,7 +431,10 @@ describe("mergeAudienceRules", () => {
   });
 
   it("lets the form win on the keys it owns", () => {
-    const resultado = mergeAudienceRules({ favorites: false }, { favorites: true, alerts: true });
+    const resultado = mergeAudienceRules(
+      { favorites: false },
+      { favorites: true, alerts: true },
+    );
     expect(resultado.favorites).toBe(true);
     expect(resultado.alerts).toBe(true);
   });
@@ -380,11 +451,15 @@ describe("mergeAudienceRules", () => {
   });
 
   it("works on a campaign that had no rules yet", () => {
-    expect(mergeAudienceRules(null, { favorites: true, alerts: false })).toEqual({
+    expect(
+      mergeAudienceRules(null, { favorites: true, alerts: false }),
+    ).toEqual({
       favorites: true,
       alerts: false,
     });
-    expect(mergeAudienceRules(undefined, { favorites: false, alerts: true })).toEqual({
+    expect(
+      mergeAudienceRules(undefined, { favorites: false, alerts: true }),
+    ).toEqual({
       favorites: false,
       alerts: true,
     });

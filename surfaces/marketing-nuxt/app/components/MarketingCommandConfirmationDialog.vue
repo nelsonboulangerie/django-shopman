@@ -266,7 +266,7 @@ function submit() {
           :disabled="busy"
           @click="emit('cancel')"
         >
-          {{ isFire ? "Voltar sem criar" : "Voltar sem publicar" }}
+          {{ isFire ? "Voltar sem criar" : "Voltar sem confirmar" }}
         </UiButton>
         <UiButton type="button" :disabled="!ready" @click="submit">
           {{
