@@ -89,13 +89,13 @@ const FILTERS = [
 const TONE_CLASS = {
   ok: "border-emerald-500/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400",
   attention:
-    "border-amber-500/40 bg-amber-500/5 text-amber-700 dark:text-amber-400",
+    "border-warning/40 bg-warning/5 text-warning",
   danger: "border-destructive/40 bg-destructive/5 text-destructive",
   quiet: "border-border bg-muted/40 text-muted-foreground",
 } as const;
 const TONE_TEXT = {
   ok: "text-emerald-700 dark:text-emerald-400",
-  attention: "text-amber-700 dark:text-amber-400",
+  attention: "text-warning",
   danger: "text-destructive",
   quiet: "text-muted-foreground",
 } as const;
@@ -112,14 +112,15 @@ useHead({ title: "Histórico · Marketing" });
   <main class="mx-auto w-full max-w-5xl flex-1 px-4 py-6">
     <div class="mb-5 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
       <div class="min-w-0">
-        <h1 class="text-xl font-bold">Histórico</h1>
+        <h1 class="text-lg font-semibold">Histórico</h1>
         <p class="mt-1 text-sm text-muted-foreground">
           Resultado rastreado por plataforma, sem confundir aceite com entrega.
         </p>
       </div>
-      <button
+      <UiButton
         type="button"
-        class="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border px-3 text-sm text-muted-foreground transition hover:bg-muted sm:ml-auto"
+        variant="outline"
+        class="text-muted-foreground sm:ml-auto"
         :disabled="loading"
         @click="refresh()"
       >
@@ -129,31 +130,31 @@ useHead({ title: "Histórico · Marketing" });
           :class="loading ? 'animate-spin' : ''"
         />
         Atualizar
-      </button>
+      </UiButton>
     </div>
 
     <section
-      class="mb-5 rounded-xl border border-border bg-card p-4"
+      class="mb-5 rounded-md border border-border bg-card p-4"
       aria-labelledby="history-filters-title"
     >
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h2 id="history-filters-title" class="text-sm font-semibold">
           Encontrar um resultado
         </h2>
-        <button
+        <UiButton
           v-if="hasActiveFilters"
           type="button"
-          class="min-h-11 text-sm font-semibold underline underline-offset-2"
+          variant="link"
           @click="clearFilters()"
         >
           Limpar filtros
-        </button>
+        </UiButton>
       </div>
       <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label
           v-for="filter in FILTERS"
           :key="filter.name"
-          class="grid gap-1.5 text-sm font-medium"
+          class="grid gap-1.5 text-xs font-medium text-muted-foreground"
         >
           {{ filter.label }}
           <UiNativeSelect
@@ -179,14 +180,15 @@ useHead({ title: "Histórico · Marketing" });
     >
       <p class="font-semibold text-destructive">{{ loadFailure.title }}</p>
       <p class="mt-1 text-muted-foreground">{{ loadFailure.detail }}</p>
-      <button
+      <UiButton
         v-if="loadFailure.canRetry"
         type="button"
-        class="mt-2 min-h-11 font-semibold underline underline-offset-2"
+        variant="link"
+        class="mt-2"
         @click="refresh()"
       >
         Tentar de novo
-      </button>
+      </UiButton>
     </div>
 
     <div
@@ -198,13 +200,13 @@ useHead({ title: "Histórico · Marketing" });
       <div
         v-for="n in 3"
         :key="n"
-        class="h-36 animate-pulse rounded-xl bg-muted"
+        class="h-36 animate-pulse rounded-md bg-muted"
       ></div>
     </div>
 
     <div
       v-else-if="announcements.length === 0"
-      class="rounded-xl border border-dashed border-border bg-card/50 px-6 py-10 text-center"
+      class="rounded-md border border-dashed border-border bg-card/50 px-6 py-10 text-center"
     >
       <Icon
         name="lucide:megaphone-off"
@@ -224,14 +226,15 @@ useHead({ title: "Histórico · Marketing" });
             : "Quando uma decisão ou entrega começar, ela aparecerá aqui."
         }}
       </p>
-      <button
+      <UiButton
         v-if="hasActiveFilters"
         type="button"
-        class="mt-3 min-h-11 font-semibold underline underline-offset-2"
+        variant="link"
+        class="mt-3"
         @click="clearFilters()"
       >
         Limpar filtros
-      </button>
+      </UiButton>
     </div>
 
     <template v-else>
@@ -246,7 +249,7 @@ useHead({ title: "Histórico · Marketing" });
 
       <div
         v-if="error"
-        class="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/5 px-4 py-3 text-sm"
+        class="mb-3 rounded-lg border border-warning/40 bg-warning/5 px-4 py-3 text-sm"
         role="alert"
       >
         <p class="font-semibold">
@@ -262,7 +265,7 @@ useHead({ title: "Histórico · Marketing" });
         <li
           v-for="announcement in announcements"
           :key="announcement.ref"
-          class="rounded-xl border border-border bg-card p-4"
+          class="rounded-md border border-border bg-card p-4"
         >
           <div class="flex flex-wrap items-start gap-3">
             <div
@@ -366,10 +369,10 @@ useHead({ title: "Histórico · Marketing" });
       </ul>
 
       <div class="mt-5 flex flex-col items-center gap-2">
-        <button
+        <UiButton
           v-if="hasMore"
           type="button"
-          class="inline-flex min-h-11 items-center gap-2 rounded-md border border-border px-4 text-sm font-semibold hover:bg-muted disabled:opacity-50"
+          variant="outline"
           :disabled="loadingMore"
           @click="loadMore()"
         >
@@ -379,7 +382,7 @@ useHead({ title: "Histórico · Marketing" });
             :class="loadingMore ? 'animate-pulse' : ''"
           />
           {{ loadingMore ? "Carregando…" : "Carregar mais resultados" }}
-        </button>
+        </UiButton>
         <div
           v-if="loadMoreError"
           class="w-full rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm"
@@ -392,13 +395,14 @@ useHead({ title: "Histórico · Marketing" });
             Os {{ announcements.length }} resultados acima e seus filtros foram
             preservados.
           </p>
-          <button
+          <UiButton
             type="button"
-            class="mt-2 min-h-11 font-semibold underline underline-offset-2"
+            variant="link"
+            class="mt-2"
             @click="loadMore()"
           >
             Tentar de novo
-          </button>
+          </UiButton>
         </div>
       </div>
     </template>

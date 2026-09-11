@@ -166,7 +166,7 @@ function submit() {
 
         <div
           v-if="challenge.dual_control"
-          class="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm"
+          class="rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm"
           role="alert"
         >
           <p class="font-semibold">Este volume exige duas pessoas.</p>
@@ -179,37 +179,37 @@ function submit() {
         <div v-if="challenge.typed_phrase">
           <label
             for="decision-typed-confirmation"
-            class="block text-sm font-medium"
+            class="block text-xs font-medium text-muted-foreground"
           >
             Digite exatamente
             <code class="rounded bg-muted px-1.5 py-0.5">{{
               challenge.typed_phrase
             }}</code>
           </label>
-          <textarea
+          <UiTextarea
             id="decision-typed-confirmation"
             v-model="typedConfirmation"
             name="typed_confirmation"
-            rows="1"
+            :rows="1"
             autocomplete="off"
             spellcheck="false"
-            class="mt-1 min-h-11 w-full resize-none rounded-md border border-border bg-background px-3 py-2.5 font-mono text-sm outline-none focus:ring-2 focus:ring-ring"
+            class="mt-1 min-h-11 resize-none font-mono"
           />
         </div>
 
         <div v-if="challenge.step_up !== 'none'">
           <div v-if="challenge.step_up === 'password'" class="mb-3">
-            <label for="decision-username" class="block text-sm font-medium">
+            <label for="decision-username" class="block text-xs font-medium text-muted-foreground">
               Usuário
             </label>
-            <input
+            <UiInput
               id="decision-username"
               name="username"
-              :value="operatorUsername"
+              :model-value="operatorUsername"
               type="text"
               autocomplete="username"
               readonly
-              class="mt-1 h-11 w-full rounded-md border border-border bg-muted px-3 text-sm text-muted-foreground"
+              class="mt-1 bg-muted text-muted-foreground"
             />
           </div>
           <UiVerificationCodeInput
@@ -220,17 +220,17 @@ function submit() {
             @keydown.enter="submit"
           />
           <template v-else>
-            <label for="decision-credential" class="block text-sm font-medium">
+            <label for="decision-credential" class="block text-xs font-medium text-muted-foreground">
               Sua senha
             </label>
-            <input
+            <UiInput
               id="decision-credential"
               v-model="credential"
               name="current_password"
               type="password"
               autocomplete="current-password"
-              maxlength="200"
-              class="mt-1 h-11 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+              :maxlength="200"
+              class="mt-1"
               @keyup.enter="submit"
             />
           </template>
@@ -242,22 +242,21 @@ function submit() {
       </p>
 
       <UiDialogFooter>
-        <button
+        <UiButton
           type="button"
-          class="min-h-11 rounded-md border border-border px-3 text-sm font-medium transition hover:bg-muted"
+          variant="outline"
           :disabled="busy"
           @click="emit('cancel')"
         >
           {{ isFire ? "Voltar sem criar" : "Voltar sem publicar" }}
-        </button>
-        <button
+        </UiButton>
+        <UiButton
           type="button"
-          class="min-h-11 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           :disabled="!ready"
           @click="submit"
         >
           {{ busy ? "Registrando…" : isFire ? "Criar para revisão" : "Confirmar consequência" }}
-        </button>
+        </UiButton>
       </UiDialogFooter>
     </UiDialogContent>
   </UiDialog>

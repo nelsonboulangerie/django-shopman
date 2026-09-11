@@ -20,7 +20,7 @@ import { preserveMarketingReceipt } from "~/utils/marketingReceipt";
 // Se o Google saiu e o Instagram falhou, a linha precisa chamar atenção.
 const OUTCOME_META = {
   published: { icon: "lucide:check-circle-2", class: "text-emerald-600" },
-  partial: { icon: "lucide:alert-circle", class: "text-amber-600" },
+  partial: { icon: "lucide:alert-circle", class: "text-warning" },
   failed: { icon: "lucide:x-circle", class: "text-destructive" },
   pending: { icon: "lucide:clock", class: "text-muted-foreground" },
 } as const;
@@ -130,7 +130,7 @@ useHead({ title: "Painel · Marketing" });
   <main class="mx-auto w-full max-w-4xl flex-1 px-4 py-6">
     <section
       v-if="pendingReauthentication"
-      class="mb-5 rounded-xl border border-amber-500/40 bg-amber-500/5 p-4"
+      class="mb-5 rounded-md border border-warning/40 bg-warning/5 p-4"
       role="status"
     >
       <p class="font-semibold">Sua sessão voltou. A decisão não foi enviada.</p>
@@ -139,22 +139,21 @@ useHead({ title: "Painel · Marketing" });
         conferir tudo de novo antes de pedir sua confirmação.
       </p>
       <div class="mt-3 flex flex-wrap gap-2">
-        <button
+        <UiButton
           type="button"
-          class="min-h-11 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
           :disabled="confirmingDecision"
           @click="resumeServerDecision"
         >
           {{ confirmingDecision ? "Retomando…" : "Retomar e reconfirmar" }}
-        </button>
-        <button
+        </UiButton>
+        <UiButton
           type="button"
-          class="min-h-11 rounded-md border border-border px-4 text-sm font-medium hover:bg-muted"
+          variant="outline"
           :disabled="confirmingDecision"
           @click="cancelDecision"
         >
           Agora não
-        </button>
+        </UiButton>
       </div>
       <p
         v-if="decisionError"
@@ -166,26 +165,27 @@ useHead({ title: "Painel · Marketing" });
     </section>
 
     <div class="mb-5 flex items-center gap-3">
-      <h1 class="text-xl font-bold">Painel</h1>
-      <button
+      <h1 class="text-lg font-semibold">Painel</h1>
+      <UiButton
         type="button"
-        class="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground transition hover:bg-muted"
+        variant="outline"
+        class="ml-auto text-muted-foreground"
         @click="refresh()"
       >
         <Icon name="lucide:refresh-cw" class="size-3.5" />
         Atualizar
-      </button>
+      </UiButton>
     </div>
 
     <section
       v-if="freshness && freshness.state !== 'fresh' && !error"
-      class="mb-5 flex items-start gap-2.5 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-3"
+      class="mb-5 flex items-start gap-2.5 rounded-lg border border-warning/40 bg-warning/5 px-3 py-3"
       role="status"
       aria-label="Atualidade dos dados"
     >
       <Icon
         name="lucide:clock-alert"
-        class="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400"
+        class="mt-0.5 size-4 shrink-0 text-warning"
       />
       <div>
         <p class="text-sm font-semibold">
@@ -220,7 +220,7 @@ useHead({ title: "Painel · Marketing" });
         :class="
           limit.blocking
             ? 'border-destructive/40 bg-destructive/5'
-            : 'border-amber-500/40 bg-amber-500/5'
+            : 'border-warning/40 bg-warning/5'
         "
         role="status"
       >
@@ -229,7 +229,7 @@ useHead({ title: "Painel · Marketing" });
             limit.blocking ? 'lucide:circle-slash' : 'lucide:triangle-alert'
           "
           class="mt-0.5 size-4 shrink-0"
-          :class="limit.blocking ? 'text-destructive' : 'text-amber-600'"
+          :class="limit.blocking ? 'text-destructive' : 'text-warning'"
         />
         <div class="min-w-0">
           <p class="text-sm font-semibold">{{ limit.title }}</p>
@@ -261,15 +261,15 @@ useHead({ title: "Painel · Marketing" });
       aria-label="Situação operacional"
     >
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
-        <p class="text-2xl font-bold">{{ formatCount(stats.pending_decision_count) }}</p>
+        <p class="text-2xl font-bold tabular-nums">{{ formatCount(stats.pending_decision_count) }}</p>
         <p class="text-xs text-muted-foreground">Aguardando decisão</p>
       </div>
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
-        <p class="text-2xl font-bold">{{ formatCount(stats.confirmed_targets_today) }}</p>
+        <p class="text-2xl font-bold tabular-nums">{{ formatCount(stats.confirmed_targets_today) }}</p>
         <p class="text-xs text-muted-foreground">Entregas confirmadas hoje</p>
       </div>
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
-        <p class="text-2xl font-bold">
+        <p class="text-2xl font-bold tabular-nums">
           {{ formatCount(stats.accepted_unconfirmed_targets_today) }}
         </p>
         <p class="text-xs text-muted-foreground">
@@ -285,7 +285,7 @@ useHead({ title: "Painel · Marketing" });
         "
       >
         <p
-          class="text-2xl font-bold"
+          class="text-2xl font-bold tabular-nums"
           :class="
             stats.failed_final_targets_today > 0 ? 'text-destructive' : ''
           "
@@ -298,13 +298,13 @@ useHead({ title: "Painel · Marketing" });
         class="rounded-lg border px-3 py-2.5"
         :class="
           stats.unknown_targets_open > 0
-            ? 'border-amber-500/40 bg-amber-500/5'
+            ? 'border-warning/40 bg-warning/5'
             : 'border-border bg-card'
         "
       >
         <p
-          class="text-2xl font-bold"
-          :class="stats.unknown_targets_open > 0 ? 'text-amber-700' : ''"
+          class="text-2xl font-bold tabular-nums"
+          :class="stats.unknown_targets_open > 0 ? 'text-warning' : ''"
         >
           {{ formatCount(stats.unknown_targets_open) }}
         </p>
@@ -321,13 +321,14 @@ useHead({ title: "Painel · Marketing" });
       <p class="font-semibold text-destructive">
         Não conseguimos carregar o painel.
       </p>
-      <button
+      <UiButton
         type="button"
-        class="mt-1 underline underline-offset-2"
+        variant="link"
+        class="mt-1"
         @click="refresh()"
       >
         Tentar de novo
-      </button>
+      </UiButton>
     </div>
 
     <!-- Pendentes -->
@@ -346,13 +347,13 @@ useHead({ title: "Painel · Marketing" });
         <div
           v-for="n in 2"
           :key="n"
-          class="h-48 animate-pulse rounded-xl bg-muted"
+          class="h-48 animate-pulse rounded-md bg-muted"
         ></div>
       </div>
 
       <div
         v-else-if="pendingPosts.length === 0"
-        class="rounded-xl border border-dashed border-border bg-card/50 px-6 py-10 text-center"
+        class="rounded-md border border-dashed border-border bg-card/50 px-6 py-10 text-center"
       >
         <Icon
           name="lucide:coffee"
@@ -418,7 +419,7 @@ useHead({ title: "Painel · Marketing" });
         </NuxtLink>
       </div>
       <ul
-        class="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card"
+        class="divide-y divide-border overflow-hidden rounded-md border border-border bg-card"
       >
         <li
           v-for="announcement in recentPosts"
@@ -486,34 +487,33 @@ useHead({ title: "Painel · Marketing" });
         <!-- Opcional de propósito: campo obrigatório aqui só produziria "não" digitado
              com pressa. Quando o gestor escreve, a recusa passa a explicar a campanha. -->
         <div>
-          <label for="reject-reason" class="mb-1 block text-sm font-medium">
+          <label for="reject-reason" class="mb-1 block text-xs font-medium text-muted-foreground">
             Motivo (opcional)
           </label>
-          <input
+          <UiInput
             id="reject-reason"
             v-model="rejectReason"
             type="text"
-            maxlength="200"
+            :maxlength="200"
             placeholder="Foto ruim, texto errado, produto acabou…"
-            class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
             @keyup.enter="confirmReject"
           />
         </div>
         <UiDialogFooter>
-          <button
+          <UiButton
             type="button"
-            class="rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-muted"
+            variant="outline"
             @click="rejecting = null"
           >
             Manter na fila
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             type="button"
-            class="rounded-md bg-destructive px-3 py-2 text-sm font-semibold text-destructive-foreground transition hover:bg-destructive/90"
+            variant="destructive"
             @click="confirmReject"
           >
             Recusar
-          </button>
+          </UiButton>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>

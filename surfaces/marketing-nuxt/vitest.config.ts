@@ -36,6 +36,7 @@ export default defineConfig({
           name: "component",
           environment: "happy-dom",
           globals: true,
+          setupFiles: ["./tests/support/uiPrimitives.ts"],
           include: ["tests/components/**/*.test.ts"],
         },
       },

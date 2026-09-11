@@ -86,8 +86,8 @@
           icon: "text-success",
         },
         warning: {
-          base: "border-warning/50 text-amber-600",
-          icon: "text-amber-600",
+          base: "border-warning/50 text-warning",
+          icon: "text-warning",
         },
       },
       filled: {

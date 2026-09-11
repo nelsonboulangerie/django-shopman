@@ -123,7 +123,7 @@ function tone(platform: Pick<Platform, "state" | "source_status">) {
     };
   if (platform.state === "degraded")
     return {
-      chip: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+      chip: "bg-warning/10 text-warning",
       icon: "lucide:triangle-alert",
       label: "Alcance limitado",
     };
@@ -155,14 +155,14 @@ useHead({ title: "Plataformas · Marketing" });
 
 <template>
   <main class="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
-    <h1 class="mb-1 text-xl font-semibold">Plataformas</h1>
+    <h1 class="mb-1 text-lg font-semibold">Plataformas</h1>
     <p class="mb-4 text-sm text-muted-foreground">
       Por onde o anúncio sai. Quem vende é o canal; aqui é quem fala.
     </p>
 
     <div
       v-if="error && !platforms.length"
-      class="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-5"
+      class="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-5"
       role="alert"
     >
       <div class="flex items-start gap-3">
@@ -176,14 +176,15 @@ useHead({ title: "Plataformas · Marketing" });
             Isso é uma indisponibilidade de leitura, não significa que nenhuma
             plataforma esteja configurada. Nenhuma configuração foi alterada.
           </p>
-          <button
+          <UiButton
             type="button"
-            class="mt-3 min-h-11 rounded-md border border-border bg-background px-4 text-sm font-semibold hover:bg-muted"
+            variant="outline"
+            class="mt-3"
             :disabled="loading"
             @click="loadPlatforms()"
           >
             {{ loading ? "Verificando…" : "Verificar novamente" }}
-          </button>
+          </UiButton>
         </div>
       </div>
     </div>
@@ -192,13 +193,13 @@ useHead({ title: "Plataformas · Marketing" });
       <div
         v-for="n in 4"
         :key="n"
-        class="h-24 animate-pulse rounded-xl bg-muted"
+        class="h-24 animate-pulse rounded-md bg-muted"
       ></div>
     </div>
 
     <div
       v-else-if="!platforms.length"
-      class="rounded-xl border border-dashed border-border bg-card/50 px-6 py-10 text-center"
+      class="rounded-md border border-dashed border-border bg-card/50 px-6 py-10 text-center"
     >
       <Icon
         name="lucide:share-2"
@@ -209,20 +210,22 @@ useHead({ title: "Plataformas · Marketing" });
         A verificação respondeu sem opções. Atualize antes de preparar uma
         publicação.
       </p>
-      <button
+      <UiButton
         type="button"
-        class="mt-3 min-h-11 font-semibold underline underline-offset-2"
+        variant="link"
+        class="mt-3"
         @click="loadPlatforms()"
       >
         Atualizar verificação
-      </button>
+      </UiButton>
     </div>
 
     <ul
       v-else
-      class="divide-y divide-border rounded-xl border border-border bg-card"
+      class="divide-y divide-border rounded-md border border-border bg-card"
     >
       <li v-for="platform in platforms" :key="platform.platform">
+        <!-- A linha inteira abre os detalhes; o alvo amplo reduz precisão e navegação do operador. -->
         <button
           type="button"
           class="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-muted"
@@ -345,17 +348,19 @@ useHead({ title: "Plataformas · Marketing" });
                   Última resposta válida:
                   {{ checkedAt(waTemplate.catalogAsOf.value) }}.
                 </p>
-                <button
+                <UiButton
                   type="button"
-                  class="mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-semibold"
+                  variant="outline"
+                  class="mt-3"
                   @click="onVerifyCatalog"
                 >
                   <Icon name="lucide:refresh-cw" class="size-4" />
                   Verificar novamente
-                </button>
+                </UiButton>
               </div>
 
               <div v-else class="mt-3 space-y-1.5">
+                <!-- Cartões de seleção preservam contexto e estado que um botão genérico esconderia. -->
                 <button
                   type="button"
                   class="flex w-full items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition hover:bg-muted"
@@ -384,6 +389,7 @@ useHead({ title: "Plataformas · Marketing" });
                   </span>
                 </button>
 
+                <!-- Um único cartão v-for representa cada modelo remoto selecionável. -->
                 <button
                   v-for="option in waTemplate.available.value"
                   :key="option.ns"
@@ -471,7 +477,7 @@ useHead({ title: "Plataformas · Marketing" });
                 <div>
                   <label
                     for="test-target"
-                    class="mb-1 block text-xs font-medium"
+                    class="mb-1 block text-xs font-medium text-muted-foreground"
                   >
                     Aparelho verificado
                   </label>
@@ -490,21 +496,20 @@ useHead({ title: "Plataformas · Marketing" });
                   </UiNativeSelect>
                 </div>
                 <div>
-                  <label for="test-sku" class="mb-1 block text-xs font-medium"
+                  <label for="test-sku" class="mb-1 block text-xs font-medium text-muted-foreground"
                     >SKU (opcional)</label
                   >
-                  <input
+                  <UiInput
                     id="test-sku"
                     v-model="testSku"
                     type="text"
                     placeholder="BAGUETE"
-                    class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
                   />
                 </div>
-                <button
+                <UiButton
                   type="button"
                   :disabled="!testTargetRef || waTemplate.testing.value"
-                  class="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition disabled:opacity-40"
+                  class="w-full"
                   @click="onSendTest"
                 >
                   <Icon
@@ -517,7 +522,7 @@ useHead({ title: "Plataformas · Marketing" });
                     :class="waTemplate.testing.value ? 'animate-spin' : ''"
                   />
                   {{ waTemplate.testing.value ? "Enviando…" : "Enviar teste" }}
-                </button>
+                </UiButton>
               </div>
 
               <p
@@ -581,7 +586,7 @@ useHead({ title: "Plataformas · Marketing" });
         </UiDialogHeader>
 
         <div
-          class="flex gap-3 rounded-xl border border-sky-500/30 bg-sky-500/5 p-2.5 text-sm"
+          class="flex gap-3 rounded-md border border-sky-500/30 bg-sky-500/5 p-2.5 text-sm"
         >
           <Icon
             name="lucide:shield-check"
@@ -597,7 +602,7 @@ useHead({ title: "Plataformas · Marketing" });
         </div>
 
         <dl
-          class="grid grid-cols-2 overflow-hidden rounded-xl border border-border bg-muted/40 text-center text-sm"
+          class="grid grid-cols-2 overflow-hidden rounded-md border border-border bg-muted/40 text-center text-sm"
         >
           <div class="border-r border-border p-3">
             <dt class="text-xs text-muted-foreground">Configuração atual</dt>
@@ -631,17 +636,18 @@ useHead({ title: "Plataformas · Marketing" });
         />
 
         <UiDialogFooter class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <button
+          <UiButton
             type="button"
-            class="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-border px-4 text-sm font-semibold"
+            variant="outline"
+            class="w-full"
             :disabled="savingTemplate"
             @click="pendingFlow = null"
           >
             Voltar sem alterar
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             type="button"
-            class="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-40"
+            class="w-full"
             :disabled="savingTemplate || totp.length !== 6"
             @click="onConfirmTemplate"
           >
@@ -653,7 +659,7 @@ useHead({ title: "Plataformas · Marketing" });
               :class="savingTemplate ? 'animate-spin' : ''"
             />
             {{ savingTemplate ? "Salvando…" : "Salvar configuração" }}
-          </button>
+          </UiButton>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>

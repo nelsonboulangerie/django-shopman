@@ -218,7 +218,7 @@ watch(
     class="space-y-4"
     aria-labelledby="fire-result-title"
   >
-    <div class="rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-4">
+    <div class="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-4">
       <div class="flex items-start gap-3">
         <Icon
           name="lucide:badge-check"
@@ -252,13 +252,13 @@ watch(
     </dl>
 
     <div class="flex flex-wrap justify-end gap-2">
-      <button
+      <UiButton
         type="button"
-        class="min-h-11 rounded-md border border-border px-3 text-sm font-medium hover:bg-muted"
+        variant="outline"
         @click="emit('cancel')"
       >
         Fechar
-      </button>
+      </UiButton>
       <NuxtLink
         :to="`/announcements/${result.announcement.pk}#review`"
         class="inline-flex min-h-11 items-center rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground"
@@ -288,7 +288,7 @@ watch(
     </div>
 
     <div v-if="needsProduct">
-      <label for="fire-product" class="mb-1 block text-sm font-medium">
+      <label for="fire-product" class="mb-1 block text-xs font-medium text-muted-foreground">
         Produto desta ocorrência
       </label>
       <UiNativeSelect
@@ -314,8 +314,9 @@ watch(
     </div>
 
     <fieldset class="space-y-2">
-      <legend class="text-sm font-semibold">Para quem</legend>
+      <legend class="text-xs font-medium text-muted-foreground">Para quem</legend>
 
+      <!-- Rádios nativos tornam explícita a escolha exclusiva entre público salvo e escolha avulsa. -->
       <label class="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-3">
         <input v-model="useSaved" type="radio" :value="true" class="mt-0.5" name="audience-mode">
         <span>
@@ -345,6 +346,7 @@ watch(
           Etiquetas
         </legend>
         <div class="flex flex-wrap gap-1.5">
+          <!-- Chips nativos preservam seleção múltipla e aria-pressed em pouco espaço. -->
           <button
             v-for="tag in tags"
             :key="tag.value"
@@ -369,6 +371,7 @@ watch(
           Faixa de preço
         </legend>
         <div class="flex flex-wrap gap-1.5">
+          <!-- Chips nativos preservam seleção múltipla e aria-pressed em pouco espaço. -->
           <button
             v-for="tier in priceTiers"
             :key="tier.value"
@@ -390,6 +393,7 @@ watch(
           Comportamento de compra
         </legend>
         <div class="flex flex-wrap gap-1.5">
+          <!-- Chips nativos preservam seleção múltipla e aria-pressed em pouco espaço. -->
           <button
             v-for="segment in rfmSegments"
             :key="segment.value"
@@ -406,6 +410,7 @@ watch(
         </div>
       </fieldset>
 
+      <!-- Checkboxes permanecem nativos porque não há primitivo compartilhado de seleção binária. -->
       <label class="flex items-start gap-2 text-sm">
         <input v-model="winBack" type="checkbox" class="mt-0.5 size-4 rounded border-border">
         <span>
@@ -439,6 +444,7 @@ watch(
       <fieldset v-if="rulesChosen > 1" class="border-t border-border pt-3">
         <legend class="sr-only">Como combinar as regras</legend>
         <div class="flex gap-2">
+          <!-- Cartões nativos mantêm a escolha exclusiva e o significado de cada combinação visíveis. -->
           <button
             v-for="mode in ([
               { value: 'any', title: 'Qualquer uma', hint: 'Quem se encaixa em pelo menos uma regra' },
@@ -475,7 +481,7 @@ watch(
           </span>
         </template>
         <span v-else-if="counting" class="text-sm text-muted-foreground">Contando…</span>
-        <span v-else-if="countFailed" class="text-sm font-medium text-amber-700 dark:text-amber-400">
+        <span v-else-if="countFailed" class="text-sm font-medium text-warning">
           Não foi possível conferir o público. O disparo está bloqueado.
         </span>
         <Icon
@@ -508,18 +514,19 @@ watch(
 
       <p
         v-if="count && !count.empty_selection && count.total === 0"
-        class="mt-2 text-xs text-amber-700 dark:text-amber-400"
+        class="mt-2 text-xs text-warning"
       >
         Ninguém se encaixa neste público hoje. Nada será enviado.
       </p>
-      <button
+      <UiButton
         v-if="countFailed"
         type="button"
-        class="mt-3 min-h-11 rounded-md border border-border px-3 text-sm font-semibold hover:bg-muted"
+        variant="outline"
+        class="mt-3"
         @click="measureAgain"
       >
         Contar novamente
-      </button>
+      </UiButton>
 
       <!-- O zero da fila de "me avise" precisa dizer QUAL zero é: ninguém pediu, ou
            pediram e a fila já foi servida. Ver `alertsNote`. -->
@@ -538,17 +545,16 @@ watch(
     </p>
 
     <div class="flex items-center justify-end gap-2">
-      <button
+      <UiButton
         type="button"
-        class="rounded-md px-3 py-1.5 text-sm font-medium hover:bg-muted"
+        variant="ghost"
         @click="emit('cancel')"
       >
         Cancelar
-      </button>
-      <button
+      </UiButton>
+      <UiButton
         type="submit"
         :disabled="cannotSubmit"
-        class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
       >
         <Icon name="lucide:send" class="size-4" />
         {{
@@ -558,7 +564,7 @@ watch(
               ? "Aguardando contagem"
               : "Disparar agora"
         }}
-      </button>
+      </UiButton>
     </div>
   </form>
 </template>

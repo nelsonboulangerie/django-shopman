@@ -40,7 +40,7 @@ function value(value: unknown): string {
     v-if="state"
     class="rounded-lg border px-3 py-2.5 text-sm"
     :class="state === 'conflict'
-      ? 'border-amber-500/50 bg-amber-500/5'
+      ? 'border-warning/50 bg-warning/5'
       : 'border-emerald-600/30 bg-emerald-500/5'"
     :role="state === 'conflict' ? 'alert' : 'status'"
     aria-live="polite"
@@ -58,20 +58,21 @@ function value(value: unknown): string {
         </div>
       </dl>
       <div class="mt-2 flex flex-wrap gap-2">
-        <button
+        <UiButton
           type="button"
-          class="rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground"
+          size="sm"
           @click="$emit('keepLocal')"
         >
           Manter minhas mudanças
-        </button>
-        <button
+        </UiButton>
+        <UiButton
           type="button"
-          class="rounded-md border border-border px-2.5 py-1.5 text-xs font-medium"
+          variant="outline"
+          size="sm"
           @click="$emit('keepServer')"
         >
           Usar a versão atual nos conflitos
-        </button>
+        </UiButton>
       </div>
     </template>
     <template v-else>
@@ -82,13 +83,15 @@ function value(value: unknown): string {
           <template v-else-if="state === 'rebased'">Rascunho combinado com a versão atual</template>
           <template v-else>Rascunho salvo neste dispositivo</template><template v-if="savedTime"> às {{ savedTime }}</template>.
         </p>
-        <button
+        <UiButton
           type="button"
-          class="shrink-0 text-xs font-medium underline underline-offset-2"
+          variant="link"
+          size="sm"
+          class="shrink-0"
           @click="$emit('discard')"
         >
           Descartar
-        </button>
+        </UiButton>
       </div>
     </template>
   </section>

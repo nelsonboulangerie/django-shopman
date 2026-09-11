@@ -122,6 +122,7 @@ onBeforeUnmount(() => setBackgroundInert(false));
 
 <template>
   <div class="relative shrink-0">
+    <!-- O gatilho preserva o badge dinâmico, indisponível no botão de ícone canônico. -->
     <button
       ref="trigger"
       type="button"
@@ -181,27 +182,18 @@ onBeforeUnmount(() => setBackgroundInert(false));
           </p>
         </div>
         <div class="flex items-center gap-1">
-          <button
-            type="button"
-            class="grid size-11 place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-50"
+          <UiIconButton
+            icon="lucide:refresh-cw"
+            label="Atualizar alertas"
+            :spinning="loading"
             :disabled="loading"
-            aria-label="Atualizar alertas"
             @click="refresh"
-          >
-            <Icon
-              name="lucide:refresh-cw"
-              class="size-4"
-              :class="loading ? 'animate-spin motion-reduce:animate-none' : ''"
-            />
-          </button>
-          <button
-            type="button"
-            class="grid size-11 place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
-            aria-label="Fechar alertas"
+          />
+          <UiIconButton
+            icon="lucide:x"
+            label="Fechar alertas"
             @click="closePanel()"
-          >
-            <Icon name="lucide:x" class="size-4" />
-          </button>
+          />
         </div>
       </header>
 
@@ -238,13 +230,14 @@ onBeforeUnmount(() => setBackgroundInert(false));
           <p class="text-xs text-muted-foreground">
             Nada foi descartado. Tente novamente.
           </p>
-          <button
+          <UiButton
             type="button"
-            class="mt-1 min-h-11 rounded-md border border-border px-4 text-sm font-semibold transition hover:bg-muted"
+            variant="outline"
+            class="mt-1"
             @click="refresh"
           >
             Tentar novamente
-          </button>
+          </UiButton>
         </div>
 
         <div
@@ -304,28 +297,28 @@ onBeforeUnmount(() => setBackgroundInert(false));
             </p>
 
             <div class="mt-3 flex flex-wrap gap-2">
-              <button
+              <UiButton
                 type="button"
-                class="min-h-11 flex-1 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                class="flex-1"
                 :disabled="!reviewAction(notification)?.enabled"
                 @click="review(notification)"
               >
                 Revisar anúncio
-              </button>
-              <button
+              </UiButton>
+              <UiButton
                 v-if="
                   notificationAction(notification, 'acknowledge_notification')
                     ?.enabled
                 "
                 type="button"
-                class="min-h-11 rounded-md border border-border px-3 text-sm font-semibold transition hover:bg-muted disabled:opacity-50"
+                variant="outline"
                 :disabled="acknowledging.has(notification.pk)"
                 @click="acknowledge(notification)"
               >
                 {{
                   acknowledging.has(notification.pk) ? "Assumindo…" : "Assumir"
                 }}
-              </button>
+              </UiButton>
             </div>
             <p
               v-if="reviewReason(notification)"

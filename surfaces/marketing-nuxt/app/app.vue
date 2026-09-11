@@ -63,24 +63,25 @@ watch(sessionState, async (next, previous) => {
         v-else-if="sessionUnavailable"
         class="grid min-h-screen flex-1 place-items-center p-4"
       >
-        <div class="max-w-sm rounded-xl border bg-card p-6 text-center">
+        <div class="max-w-sm rounded-md border bg-card p-6 text-center">
           <Icon
             name="lucide:wifi-off"
             class="mx-auto size-7 text-muted-foreground"
           />
-          <h1 class="mt-3 text-lg font-bold">
+          <h1 class="mt-3 text-lg font-semibold">
             Não foi possível conferir seu acesso
           </h1>
           <p class="mt-1 text-sm text-muted-foreground">
             O painel continua fechado e nenhum dado de Marketing foi carregado.
           </p>
-          <button
+          <UiButton
             type="button"
-            class="mt-4 min-h-11 rounded-md border border-border px-4 text-sm font-semibold hover:bg-muted"
+            variant="outline"
+            class="mt-4"
             @click="refreshSession()"
           >
             Tentar novamente
-          </button>
+          </UiButton>
         </div>
       </main>
 
@@ -102,12 +103,12 @@ watch(sessionState, async (next, previous) => {
         v-else-if="sessionState === 'forbidden'"
         class="grid min-h-screen flex-1 place-items-center p-4"
       >
-        <div class="max-w-sm rounded-xl border bg-card p-6 text-center">
+        <div class="max-w-sm rounded-md border bg-card p-6 text-center">
           <Icon
             name="lucide:shield-x"
             class="mx-auto size-7 text-muted-foreground"
           />
-          <h1 class="mt-3 text-lg font-bold">
+          <h1 class="mt-3 text-lg font-semibold">
             Seu acesso não inclui Marketing
           </h1>
           <p class="mt-1 text-sm text-muted-foreground">

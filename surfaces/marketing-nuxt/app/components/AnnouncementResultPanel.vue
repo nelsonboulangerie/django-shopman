@@ -41,14 +41,14 @@ const emit = defineEmits<{
 const TONE_CLASS = {
   ok: "border-emerald-500/40 bg-emerald-500/5 text-emerald-800 dark:text-emerald-300",
   attention:
-    "border-amber-500/40 bg-amber-500/5 text-amber-800 dark:text-amber-300",
+    "border-warning/40 bg-warning/5 text-warning",
   danger: "border-destructive/40 bg-destructive/5 text-destructive",
   quiet: "border-border bg-muted/40 text-foreground",
 } as const;
 
 const COUNT_TONE_CLASS = {
   ok: "bg-emerald-500/10 text-emerald-800 dark:text-emerald-300",
-  attention: "bg-amber-500/10 text-amber-800 dark:text-amber-300",
+  attention: "bg-warning/10 text-warning",
   danger: "bg-destructive/10 text-destructive",
   quiet: "bg-muted text-muted-foreground",
 } as const;
@@ -345,7 +345,7 @@ function closeDialog(open: boolean) {
 <template>
   <section class="space-y-4" aria-labelledby="delivery-result-heading">
     <div
-      class="rounded-xl border p-4"
+      class="rounded-md border p-4"
       :class="TONE_CLASS[result.tone]"
       role="status"
     >
@@ -375,7 +375,7 @@ function closeDialog(open: boolean) {
 
     <section
       v-if="receipt && receiptSummary"
-      class="rounded-xl border border-sky-500/40 bg-sky-500/5 p-4"
+      class="rounded-md border border-sky-500/40 bg-sky-500/5 p-4"
       aria-labelledby="command-receipt-heading"
     >
       <div class="flex items-start gap-2.5">
@@ -396,7 +396,7 @@ function closeDialog(open: boolean) {
           </p>
           <dl
             v-if="approvalEvidence"
-            class="mt-3 grid overflow-hidden rounded-xl border border-sky-500/20 bg-background/60 text-sm sm:grid-cols-2"
+            class="mt-3 grid overflow-hidden rounded-md border border-sky-500/20 bg-background/60 text-sm sm:grid-cols-2"
           >
             <div class="border-b border-sky-500/20 p-3 sm:col-span-2">
               <dt class="text-xs font-medium text-muted-foreground">
@@ -489,7 +489,7 @@ function closeDialog(open: boolean) {
         <li
           v-for="platform in announcement.delivery.platforms"
           :key="platform.platform_ref"
-          class="rounded-xl border border-border bg-card p-3"
+          class="rounded-md border border-border bg-card p-3"
         >
           <div class="flex items-center justify-between gap-2">
             <h3 class="font-semibold">
@@ -527,7 +527,7 @@ function closeDialog(open: boolean) {
         <li
           v-for="action in recoveryActions"
           :key="action.ref"
-          class="rounded-xl border border-border bg-card p-3"
+          class="rounded-md border border-border bg-card p-3"
         >
           <div class="flex flex-col gap-2 sm:flex-row sm:items-start">
             <div class="min-w-0 flex-1">
@@ -542,19 +542,22 @@ function closeDialog(open: boolean) {
                 }}
               </p>
             </div>
-            <button
+            <UiButton
               type="button"
-              class="min-h-11 shrink-0 rounded-md px-3 text-sm font-semibold transition"
+              class="shrink-0"
+              :variant="
+                action.kind === 'cancel_announcement' ? 'outline' : 'default'
+              "
               :class="
                 action.kind === 'cancel_announcement'
-                  ? 'border border-destructive/40 text-destructive hover:bg-destructive/5'
-                  : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                  ? 'border-destructive/40 text-destructive hover:bg-destructive/5'
+                  : ''
               "
               :disabled="!action.enabled || pending"
               @click="startRecovery(action)"
             >
               {{ recoveryActionLabel(action) }}
-            </button>
+            </UiButton>
           </div>
         </li>
       </ul>
@@ -585,16 +588,16 @@ function closeDialog(open: boolean) {
           v-if="activeAction?.kind === 'cancel_announcement' && !challenge"
           class="mx-auto w-full max-w-sm"
         >
-          <label for="recovery-cancel-reason" class="block text-sm font-medium">
+          <label for="recovery-cancel-reason" class="block text-xs font-medium text-muted-foreground">
             Motivo do cancelamento
           </label>
-          <textarea
+          <UiTextarea
             id="recovery-cancel-reason"
             v-model="reason"
-            rows="3"
-            maxlength="500"
+            :rows="3"
+            :maxlength="500"
             autofocus
-            class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+            class="mt-1"
             placeholder="Ex.: horário alterado ou conteúdo precisa de revisão"
           />
           <p class="mt-1 text-xs text-muted-foreground">
@@ -613,7 +616,7 @@ function closeDialog(open: boolean) {
 
         <div v-else-if="challenge" class="space-y-4">
           <div
-            class="flex gap-3 rounded-xl border border-sky-500/30 bg-sky-500/5 p-3 text-sm"
+            class="flex gap-3 rounded-md border border-sky-500/30 bg-sky-500/5 p-3 text-sm"
           >
             <Icon
               name="lucide:shield-check"
@@ -629,7 +632,7 @@ function closeDialog(open: boolean) {
           </div>
 
           <dl
-            class="grid grid-cols-2 divide-x divide-border rounded-xl border border-border bg-muted/40 py-3 text-center"
+            class="grid grid-cols-2 divide-x divide-border rounded-md border border-border bg-muted/40 py-3 text-center"
           >
             <div class="px-3">
               <dt class="text-xs text-muted-foreground">Destinos elegíveis</dt>
@@ -655,7 +658,7 @@ function closeDialog(open: boolean) {
 
           <div
             v-if="challenge.dual_control"
-            class="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm"
+            class="rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm"
             role="alert"
           >
             <p class="font-semibold">
@@ -670,21 +673,21 @@ function closeDialog(open: boolean) {
           <div v-if="challenge.typed_phrase" class="mx-auto w-full max-w-sm">
             <label
               for="recovery-typed-confirmation"
-              class="block text-sm font-medium"
+              class="block text-xs font-medium text-muted-foreground"
             >
               Digite exatamente
               <code class="rounded bg-muted px-1.5 py-0.5">{{
                 challenge.typed_phrase
               }}</code>
             </label>
-            <textarea
+            <UiTextarea
               id="recovery-typed-confirmation"
               v-model="typedConfirmation"
               name="typed_confirmation"
-              rows="1"
+              :rows="1"
               autocomplete="off"
               spellcheck="false"
-              class="mt-1 min-h-11 w-full resize-none rounded-md border border-border bg-background px-3 py-2.5 font-mono text-sm outline-none focus:ring-2 focus:ring-ring"
+              class="mt-1 min-h-11 resize-none font-mono"
             />
           </div>
 
@@ -693,17 +696,17 @@ function closeDialog(open: boolean) {
             class="mx-auto w-full max-w-sm"
           >
             <div v-if="challenge.step_up === 'password'" class="mb-3">
-              <label for="recovery-username" class="block text-sm font-medium">
+              <label for="recovery-username" class="block text-xs font-medium text-muted-foreground">
                 Usuário
               </label>
-              <input
+              <UiInput
                 id="recovery-username"
                 name="username"
-                :value="operatorUsername"
+                :model-value="operatorUsername"
                 type="text"
                 autocomplete="username"
                 readonly
-                class="mt-1 h-11 w-full rounded-md border border-border bg-muted px-3 text-sm text-muted-foreground"
+                class="mt-1 bg-muted text-muted-foreground"
               />
             </div>
             <UiVerificationCodeInput
@@ -715,17 +718,17 @@ function closeDialog(open: boolean) {
               @keydown.enter="confirmRecovery"
             />
             <template v-else>
-              <label for="recovery-credential" class="block text-sm font-medium">
+              <label for="recovery-credential" class="block text-xs font-medium text-muted-foreground">
                 Sua senha
               </label>
-              <input
+              <UiInput
                 id="recovery-credential"
                 v-model="credential"
                 name="current_password"
                 type="password"
                 autocomplete="current-password"
-                maxlength="200"
-                class="mt-1 h-11 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+                :maxlength="200"
+                class="mt-1"
                 @keyup.enter="confirmRecovery"
               />
             </template>
@@ -737,43 +740,44 @@ function closeDialog(open: boolean) {
         </p>
 
         <UiDialogFooter class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <button
+          <UiButton
             type="button"
-            class="min-h-11 w-full rounded-md border border-border px-3 text-sm font-medium transition hover:bg-muted"
+            variant="outline"
+            class="w-full"
             :disabled="pending"
             @click="closeDialog(false)"
           >
             Voltar sem alterar
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             v-if="activeAction?.kind === 'cancel_announcement' && !challenge"
             type="button"
-            class="min-h-11 w-full rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            class="w-full"
             :disabled="pending || !reason.trim()"
             @click="requestRecovery"
           >
             {{ pending ? "Conferindo…" : "Conferir cancelamento" }}
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             v-if="challenge"
             type="button"
-            class="min-h-11 w-full rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            class="w-full"
             :disabled="!confirmationReady"
             @click="confirmRecovery"
           >
             {{ pending ? "Registrando…" : recoveryDialogPresentation.confirmLabel }}
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             v-else-if="
               commandError && activeAction?.kind !== 'cancel_announcement'
             "
             type="button"
-            class="min-h-11 w-full rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground"
+            class="w-full"
             :disabled="pending || !activeAction"
             @click="requestRecovery"
           >
             Tentar de novo
-          </button>
+          </UiButton>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>

@@ -550,21 +550,20 @@ function submit() {
       @discard="draft.discard()"
     />
     <div>
-      <label for="rule-name" class="mb-1 block text-sm font-medium"
+      <label for="rule-name" class="mb-1 block text-xs font-medium text-muted-foreground"
         >Nome da campanha</label
       >
-      <input
+      <UiInput
         id="rule-name"
         v-model="name"
         type="text"
         placeholder="Fornada de pães → redes"
-        class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
       />
     </div>
 
     <div class="grid gap-4 sm:grid-cols-2">
       <div>
-        <label for="rule-trigger" class="mb-1 block text-sm font-medium"
+        <label for="rule-trigger" class="mb-1 block text-xs font-medium text-muted-foreground"
           >Quando acontecer</label
         >
         <UiNativeSelect
@@ -583,7 +582,7 @@ function submit() {
       </div>
 
       <div>
-        <label for="rule-template" class="mb-1 block text-sm font-medium"
+        <label for="rule-template" class="mb-1 block text-xs font-medium text-muted-foreground"
           >Usar o modelo</label
         >
         <UiNativeSelect
@@ -629,7 +628,7 @@ function submit() {
          para a oferta e o clique monta a sacola com o preço resolvido NA HORA — não no
          envio, que é quando o preço envelheceria. -->
     <div v-if="offers.length">
-      <label for="rule-offer" class="mb-1 block text-sm font-medium"
+      <label for="rule-offer" class="mb-1 block text-xs font-medium text-muted-foreground"
         >Anunciar a oferta</label
       >
       <UiNativeSelect
@@ -653,9 +652,10 @@ function submit() {
       v-if="schedules"
       class="rounded-lg border border-border bg-card p-4"
     >
-      <legend class="px-1 text-sm font-medium">Quando disparar</legend>
+      <legend class="px-1 text-xs font-medium text-muted-foreground">Quando disparar</legend>
 
       <div class="flex gap-2">
+        <!-- Segmentos nativos mantêm aria-pressed e a troca exclusiva sem fingir envio de formulário. -->
         <button
           v-for="option in [
             { value: 'recurring', label: 'Toda semana' },
@@ -677,16 +677,16 @@ function submit() {
       </div>
 
       <div v-if="scheduleKind === 'once'" class="mt-3">
-        <label for="rule-once-at" class="mb-1 block text-sm font-medium"
+        <label for="rule-once-at" class="mb-1 block text-xs font-medium text-muted-foreground"
           >Dia e hora</label
         >
         <div class="flex flex-wrap items-center gap-2">
-          <input
+          <UiInput
             id="rule-once-at"
             v-model="onceAt"
             type="datetime-local"
-            class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring sm:w-64"
-            @input="
+            class="sm:w-64"
+            @update:model-value="
               scheduleTouched = true;
               onceFold = '';
             "
@@ -708,7 +708,7 @@ function submit() {
         </p>
         <fieldset
           v-if="scheduleTouched && onceResolution.problem === 'ambiguous'"
-          class="mt-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2"
+          class="mt-2 rounded-md border border-warning/40 bg-warning/5 p-2"
         >
           <legend class="px-1 text-xs font-semibold">
             Horário repetido pela mudança do relógio
@@ -717,6 +717,7 @@ function submit() {
             {{ onceResolution.detail }}
           </p>
           <div class="mt-1 flex flex-wrap gap-3 text-xs">
+            <!-- Rádios nativos distinguem as duas ocorrências do mesmo horário ambíguo. -->
             <label
               v-for="(candidate, index) in onceResolution.candidates"
               :key="candidate.instant"
@@ -752,21 +753,22 @@ function submit() {
 
       <div v-else class="mt-3 space-y-3">
         <div>
-          <label for="rule-fire-at" class="mb-1 block text-sm font-medium"
+          <label for="rule-fire-at" class="mb-1 block text-xs font-medium text-muted-foreground"
             >Hora</label
           >
-          <input
+          <UiInput
             id="rule-fire-at"
             v-model="fireAt"
             type="time"
-            class="h-9 w-28 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
-            @input="scheduleTouched = true"
+            class="w-28"
+            @update:model-value="scheduleTouched = true"
           />
         </div>
 
         <div>
-          <p class="mb-1 text-sm font-medium">Nos dias</p>
+          <p class="mb-1 text-xs font-medium text-muted-foreground">Nos dias</p>
           <div class="flex flex-wrap gap-1.5">
+            <!-- Botões de dia permanecem nativos para expor o estado múltiplo com aria-pressed. -->
             <button
               v-for="(label, day) in WEEKDAY_LABELS"
               :key="label"
@@ -790,27 +792,25 @@ function submit() {
 
         <div class="grid gap-3 sm:grid-cols-2">
           <div>
-            <label for="rule-starts-on" class="mb-1 block text-sm font-medium">
+            <label for="rule-starts-on" class="mb-1 block text-xs font-medium text-muted-foreground">
               Começar em (opcional)
             </label>
-            <input
+            <UiInput
               id="rule-starts-on"
               v-model="startsOn"
               type="date"
-              class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
-              @input="scheduleTouched = true"
+              @update:model-value="scheduleTouched = true"
             />
           </div>
           <div>
-            <label for="rule-ends-on" class="mb-1 block text-sm font-medium">
+            <label for="rule-ends-on" class="mb-1 block text-xs font-medium text-muted-foreground">
               Parar depois de (opcional)
             </label>
-            <input
+            <UiInput
               id="rule-ends-on"
               v-model="endsOn"
               type="date"
-              class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
-              @input="scheduleTouched = true"
+              @update:model-value="scheduleTouched = true"
             />
           </div>
         </div>
@@ -838,8 +838,9 @@ function submit() {
     </p>
 
     <fieldset>
-      <legend class="mb-1 text-sm font-medium">Entregar por</legend>
+      <legend class="mb-1 text-xs font-medium text-muted-foreground">Entregar por</legend>
       <div class="flex flex-wrap gap-1.5">
+        <!-- Checkboxes nativos sr-only preservam semântica enquanto as pílulas ampliam os alvos. -->
         <label
           v-for="option in platformOptions"
           :key="option.value"
@@ -868,8 +869,9 @@ function submit() {
     </fieldset>
 
     <fieldset class="rounded-lg border border-border p-3">
-      <legend class="px-1 text-sm font-medium">Avisar quem</legend>
+      <legend class="px-1 text-xs font-medium text-muted-foreground">Avisar quem</legend>
       <div class="space-y-2.5">
+        <!-- Checkboxes permanecem nativos porque não há primitivo compartilhado de seleção binária. -->
         <label class="flex items-center gap-2 text-sm">
           <input
             v-model="favorites"
@@ -891,6 +893,7 @@ function submit() {
             </span>
            </span>
         </label>
+        <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
         <div class="flex flex-wrap items-center gap-2 text-sm">
           <label class="flex items-center gap-2">
             <input
@@ -911,6 +914,7 @@ function submit() {
           />
           <span :class="boughtOn ? '' : 'text-muted-foreground'">dias</span>
         </div>
+        <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
         <div class="flex flex-wrap items-center gap-2 text-sm">
           <label for="rule-vip">VIPs recebem</label>
           <input
@@ -930,7 +934,7 @@ function submit() {
         <div class="border-t border-border pt-3">
           <label
             for="rule-audience-match"
-            class="mb-1 block text-sm font-medium"
+            class="mb-1 block text-xs font-medium text-muted-foreground"
           >
             Quando houver vários critérios
           </label>
@@ -951,6 +955,7 @@ function submit() {
             Etiquetas
           </legend>
           <div class="flex flex-wrap gap-1.5">
+            <!-- Chips nativos preservam seleção múltipla e aria-pressed em pouco espaço. -->
             <button
               v-for="tag in tags"
               :key="tag.value"
@@ -976,6 +981,7 @@ function submit() {
             Faixa de preço
           </legend>
           <div class="flex flex-wrap gap-1.5">
+            <!-- Chips nativos preservam seleção múltipla e aria-pressed em pouco espaço. -->
             <button
               v-for="tier in priceTiers"
               :key="tier.value"
@@ -1001,6 +1007,7 @@ function submit() {
             Comportamento de compra
           </legend>
           <div class="flex flex-wrap gap-1.5">
+            <!-- Chips nativos preservam seleção múltipla e aria-pressed em pouco espaço. -->
             <button
               v-for="segment in rfmSegments"
               :key="segment.value"
@@ -1028,6 +1035,7 @@ function submit() {
           Aniversariantes de hoje
         </label>
 
+        <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
         <div class="flex flex-wrap items-center gap-2 text-sm">
           <label class="flex items-center gap-2">
             <input
@@ -1049,6 +1057,7 @@ function submit() {
           />
         </div>
 
+        <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
         <div class="flex flex-wrap items-center gap-2 text-sm">
           <label for="rule-preferred-window"
             >Respeitar horário preferido em uma janela de</label
@@ -1081,6 +1090,7 @@ function submit() {
       </p>
     </fieldset>
 
+    <!-- Checkboxes permanecem nativos porque não há primitivo compartilhado de seleção binária. -->
     <div class="space-y-2.5">
       <label class="flex items-center gap-2 text-sm">
         <input
@@ -1092,10 +1102,11 @@ function submit() {
       </label>
       <p
         v-if="!requiresApproval"
-        class="pl-6 text-xs text-amber-700 dark:text-amber-400"
+        class="pl-6 text-xs text-warning"
       >
         Sem revisão, o anúncio sai sozinho assim que o evento acontecer.
       </p>
+      <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
       <div class="flex flex-wrap items-center gap-2 text-sm">
         <label for="rule-expiry">O anúncio aguarda revisão por</label>
         <input
@@ -1120,24 +1131,16 @@ function submit() {
     </div>
 
     <div class="flex items-center gap-2 pt-1">
-      <button
-        type="submit"
-        :disabled="!canSubmit"
-        class="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-      >
+      <UiButton type="submit" :disabled="!canSubmit">
         <Icon
           :name="busy ? 'line-md:loading-loop' : 'lucide:check'"
           class="size-4"
         />
         {{ rule ? "Salvar" : "Criar campanha" }}
-      </button>
-      <button
-        type="button"
-        class="rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-muted"
-        @click="emit('cancel')"
-      >
+      </UiButton>
+      <UiButton type="button" variant="outline" @click="emit('cancel')">
         Cancelar
-      </button>
+      </UiButton>
     </div>
   </form>
 </template>
