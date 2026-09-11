@@ -61,6 +61,62 @@ def test_url_without_query_survives_intact(scrub):
     assert scrub(event, None)["request"]["url"] == "https://api.exemplo.test/health/"
 
 
+def test_request_headers_body_cookies_and_user_never_leave(scrub):
+    event = {
+        "request": {
+            "url": "https://api.exemplo.test/api/v1/marketing/?campaign=segredo",
+            "query_string": "campaign=segredo",
+            "data": {"body": "Oferta para cliente@example.test"},
+            "cookies": {"sessionid": "cookie-secreto"},
+            "headers": {
+                "Authorization": "Bearer token-secreto",
+                "Cookie": "sessionid=cookie-secreto",
+                "Content-Type": "application/json",
+                "X-Request-Id": "request-safe-123",
+            },
+        },
+        "user": {"email": "cliente@example.test"},
+    }
+
+    cleaned = scrub(event, None)
+    serialized = str(cleaned)
+
+    assert "segredo" not in serialized
+    assert "cliente@example.test" not in serialized
+    assert "cookie-secreto" not in serialized
+    assert "user" not in cleaned
+    assert cleaned["request"] == {
+        "url": "https://api.exemplo.test/api/v1/marketing/",
+        "headers": {
+            "content-type": "application/json",
+            "x-request-id": "request-safe-123",
+        },
+    }
+
+
+def test_breadcrumb_exception_and_provider_payload_are_redacted(scrub):
+    event = {
+        "breadcrumbs": {
+            "values": [{"message": "GET https://x.test/?phone=43999998888"}],
+        },
+        "exception": {
+            "values": [{"value": "Authorization: Bearer abc.def.ghi"}],
+        },
+        "extra": {
+            "provider_response": {"phone": "+55 43 99999-8888"},
+            "safe_code": "provider_timeout",
+        },
+    }
+
+    cleaned = scrub(event, None)
+    serialized = str(cleaned)
+
+    assert "43999998888" not in serialized
+    assert "99999-8888" not in serialized
+    assert "abc.def.ghi" not in serialized
+    assert "provider_timeout" in serialized
+
+
 @pytest.mark.parametrize("event", [{}, {"request": None}, {"request": {}}])
 def test_event_without_request_does_not_explode(scrub, event):
     """`before_send` que levanta derruba o envio do evento inteiro."""

@@ -22,6 +22,8 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E017  Catálogo de qualidade não tem grau ativo a preço cheio
   SHOPMAN_E018  Catálogo de qualidade tem política ativa incoerente
   SHOPMAN_E019  Configuração de produção da loja é inválida
+  SHOPMAN_E020  WhatsApp Marketing ativo sem isolamento ManyChat comprovado
+  SHOPMAN_E021  Allowlist de mídia Marketing contém host inseguro
 
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode
@@ -890,7 +892,7 @@ def POS_CHANNEL_REF() -> str:
 
 @register(deploy=True)
 def check_whatsapp_flow_coverage(app_configs, **kwargs):
-    """W010 — campanha ativa com WhatsApp e sem flow aprovado só alcança 24h.
+    """Block an unsafe ManyChat Marketing lane and explain missing flow setup.
 
     A Meta não deixa texto livre sair para quem não interagiu nas últimas 24 horas
     (`code 3011`). O escape é um **template aprovado**, que no ManyChat vira um *flow* e
@@ -902,8 +904,9 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
     número frio, e um erro opaco. É o tipo de configuração faltando que só aparece no
     dia em que importa, então ela passa a aparecer na subida.
 
-    Aviso, não erro: campanha que alcança só a janela de 24h ainda é campanha válida
-    (quem conversou hoje recebe). O que não pode é a surpresa.
+    A ausência de flow remains a setup warning because runtime approval is already
+    blocked.  A configured flow whose persistent custom-field isolation has not
+    passed G-H03 is a deploy error: credentials must never turn an unproven path on.
     """
     warnings = []
 
@@ -927,8 +930,24 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
         return warnings
 
     event = "announcement_published"
-    has_flow = NotificationTemplate.objects.filter(event=event).exclude(whatsapp_flow_ns="").exists()
+    has_flow = (
+        NotificationTemplate.objects.filter(event=event, is_active=True)
+        .exclude(whatsapp_flow_ns="")
+        .exists()
+    )
     if has_flow:
+        from shopman.shop.services import manychat_marketing_safety
+
+        safety = manychat_marketing_safety.safety_state()
+        if not safety.safe:
+            warnings.append(
+                Error(
+                    "WhatsApp Marketing permanece bloqueado: a isolação dos campos "
+                    "persistentes do ManyChat ainda não foi comprovada.",
+                    hint=safety.action,
+                    id="SHOPMAN_E020",
+                )
+            )
         return warnings
 
     names = ", ".join(sorted(campaign.name for campaign in targets_whatsapp)[:5])
@@ -936,16 +955,38 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
         Warning(
             f"{len(targets_whatsapp)} campanha(s) ativa(s) enviam por WhatsApp sem template aprovado: {names}.",
             hint=(
-                "Sem flow em NotificationTemplate('announcement_published'), a Meta "
-                "recusa texto livre para quem não interagiu nas últimas 24h (code 3011): "
-                "a onda registra falha por destinatário. Crie o template no ManyChat, "
-                "aprove na Meta e cole o ns no Admin — `manage.py manychat_flows` lista "
-                "os ns disponíveis."
+                "Escolha um flow aprovado e ativo no cockpit Marketing → Plataformas. "
+                "A configuração exige versão, lista fresca, TOTP e auditoria; o Admin "
+                "é somente leitura."
             ),
             id="SHOPMAN_W014",
         )
     )
     return warnings
+
+
+@register(deploy=True)
+def check_marketing_media_hosts(app_configs, **kwargs):
+    """Fail deployment when a URL/port/wildcard/private IP entered the host list."""
+
+    from shopman.shop.services.marketing_url_policy import (
+        invalid_trusted_media_hosts,
+    )
+
+    invalid = invalid_trusted_media_hosts()
+    if not invalid:
+        return []
+    return [
+        Error(
+            "A allowlist de mídia Marketing contém entrada insegura: "
+            + ", ".join(invalid),
+            hint=(
+                "Use somente hostnames exatos controlados, sem esquema, caminho, "
+                "porta, wildcard ou IP privado."
+            ),
+            id="SHOPMAN_E021",
+        )
+    ]
 
 
 @register()

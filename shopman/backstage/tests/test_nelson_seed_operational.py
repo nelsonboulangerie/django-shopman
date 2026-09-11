@@ -727,6 +727,18 @@ def test_nelson_seed_qa_profile_builds_named_scenarios(monkeypatch):
     existing = set(Order.objects.filter(ref__startswith="QA-").values_list("ref", flat=True))
     assert named <= existing, f"faltando cenários qa: {named - existing}"
 
+    # Marketing: a coorte QA atravessa o mesmo piso de 10 pessoas exigido pelo
+    # comando real; sem isso o seed jamais permite ensaiar WhatsApp ponta a ponta.
+    from shopman.shop.services import audience
+
+    marketing_refs = set(
+        Customer.objects.filter(ref__startswith="QA-MKT-").values_list("ref", flat=True)
+    )
+    assert marketing_refs == {f"QA-MKT-{index:03d}" for index in range(1, 13)}
+    marketing_audience = audience.resolve({"tags": ["qa-marketing-e2e"]})
+    assert marketing_audience.total == 12
+    assert marketing_audience.degraded_sources == ()
+
     # Preorder: novo + confirmado, encomenda para amanhã.
     p1 = Order.objects.get(ref="QA-PREORDER-01")
     assert p1.status == Order.Status.NEW

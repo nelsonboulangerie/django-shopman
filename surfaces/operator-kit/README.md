@@ -1,8 +1,12 @@
 # operator-kit — Nuxt layer compartilhado das superfícies de operador
 
-Fundação comum das superfícies de operador (`pos-nuxt`, `orders-nuxt`, `kds-nuxt`,
-`production-nuxt`) e da central **Central de Apps** (`hub-nuxt`). Mata o copy-paste que
-a auditoria encontrou (BFF/resiliência/DS byte-idênticos duplicados nos 4 apps).
+Fundação comum das oito superfícies de operador: `pos-nuxt`, `orders-nuxt`,
+`kds-nuxt`, `production-nuxt`, `purchase-nuxt`, `marketing-nuxt`, `bi-nuxt` e a
+Central de Apps (`hub-nuxt`). Centraliza BFF, segurança, resiliência, sessão e a base
+do design system sem absorver regras específicas de cada domínio.
+
+**Última verificação dos consumidores:** 2026-09-10, contra os oito
+`nuxt.config.ts` do `HEAD`.
 
 O **storefront-nuxt fica de fora** (superfície de cliente, branded, harness próprio).
 
@@ -45,15 +49,16 @@ O layer contribui, via auto-import do Nuxt:
 
 Os testes também têm harness compartilhado: `tests/support/composableEnv.ts`
 (`installNuxtGlobals()`, env `node` com Vue real + fronteira de dados mockada) é importado
-pelos testes de composables de kds/orders/production — os projetos `unit` desses apps
+pelos testes de composables que o adotam — os projetos `unit` desses apps
 declaram `resolve.dedupe: ["vue"]` para garantir instância única do Vue.
 
 Apps que ativam `runtimeConfig.operatorSecurityHeaders` recebem documentos e APIs
 privados (`private, no-store`, `Vary: Cookie`). Assets compilados mantêm o cache do
 Nitro. HSTS só é emitido quando a requisição chega como HTTPS; o edge continua
 responsável por preservar `X-Forwarded-Proto: https` e a verificação final deve ocorrer
-no host publicado. O Produção é o primeiro consumidor; os demais apps migram em WPs
-próprios para não quebrar conexões cross-origin preexistentes por surpresa.
+no host publicado. Marketing usa ainda uma política CSP local mais estrita, com nonce e
+branch de HMR limitado a desenvolvimento; essa necessidade não foi promovida ao kit
+porque ainda não tem dois consumidores comprovados.
 
 ## O que ainda NÃO vive aqui (roadmap — ver docs/plans/completed/BACKSTAGE-EXCELLENCE-HARDENING-PLAN.md)
 
@@ -74,5 +79,6 @@ próprios para não quebrar conexões cross-origin preexistentes por surpresa.
 npm test   # vitest: utils puros + guardrails de design system (paridade de tokens)
 ```
 
-Os guardrails (`tests/guardrails.test.ts`) leem os `tailwind.css` dos 4 apps e falham
-se um token canônico divergir — travam a drift do design system (Lente 7 do plano).
+Os guardrails (`tests/guardrails.test.ts`) verificam a fonte única de tokens e os
+consumidores já incorporados a cada regra. A cobertura cresce por app; a ausência de
+um app numa regra específica não deve ser documentada como cobertura existente.

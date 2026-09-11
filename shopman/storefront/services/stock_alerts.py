@@ -8,20 +8,34 @@ stamps ``notified_at`` so each subscription notifies exactly once.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import logging
+import uuid
+from datetime import timedelta
 
+from django.conf import settings
+from django.db import IntegrityError, transaction
 from django.utils import timezone
+from shopman.utils.phone import normalize_phone
 
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 
 logger = logging.getLogger(__name__)
+
+STOCK_ALERT_DISCLOSURE_VERSION = "stock-availability-pt-BR-v1"
+STOCK_ALERT_DISCLOSURE = (
+    "Quero receber um aviso por WhatsApp sobre este produto. A assinatura termina "
+    "no primeiro aviso, quando eu cancelar ou em 30 dias."
+)
 
 
 def has_pending(sku: str, *, alert_types: tuple[str, ...] = ()) -> bool:
     """Cheap guard for the arrival/bake receivers (indexed exists())."""
     from shopman.storefront.models import StockAlertSubscription
 
-    qs = StockAlertSubscription.objects.filter(sku=sku, notified_at__isnull=True)
+    qs = StockAlertSubscription.objects.active().filter(sku=sku)
     if alert_types:
         qs = qs.filter(alert_type__in=alert_types)
     return qs.exists()
@@ -51,7 +65,7 @@ def default_alert_type(sku: str) -> str:
         if catalog_context.comes_out_of_the_oven(sku):
             return StockAlertSubscription.AlertType.PRODUCTION_READY
     except Exception:
-        logger.debug("stock_alerts: alert_type derivation failed sku=%s", sku, exc_info=True)
+        logger.warning("stock_alerts: alert_type derivation failed sku=%s", sku, exc_info=True)
     return StockAlertSubscription.AlertType.STOCK_BACK
 
 
@@ -75,7 +89,7 @@ def subscribed_skus(*, customer=None, phone: str = "") -> set[str]:
     if contact:
         cond |= Q(contact_phone=contact)
     return set(
-        StockAlertSubscription.objects.filter(notified_at__isnull=True)
+        StockAlertSubscription.objects.active()
         .filter(cond)
         .values_list("sku", flat=True)
     )
@@ -92,7 +106,7 @@ def has_pending_for(*, sku: str, customer=None, phone: str = "", alert_type: str
     if not sku or (not customer_ref and not contact):
         return False
 
-    qs = StockAlertSubscription.objects.filter(sku=sku, notified_at__isnull=True)
+    qs = StockAlertSubscription.objects.active().filter(sku=sku)
     if alert_type:
         qs = qs.filter(alert_type=alert_type)
     cond = Q()
@@ -110,6 +124,8 @@ def subscribe(
     customer=None,
     phone: str = "",
     alert_type: str = "",
+    disclosure_text: str = STOCK_ALERT_DISCLOSURE,
+    disclosure_version: str = STOCK_ALERT_DISCLOSURE_VERSION,
 ):
     """Register a pending alert. Returns the subscription or None.
 
@@ -129,28 +145,130 @@ def subscribe(
 
     alert_type = alert_type or default_alert_type(sku)
     customer_ref = (getattr(customer, "ref", "") or "").strip()
-    contact = (phone or getattr(customer, "phone", "") or "").strip()
-    if not customer_ref and not contact:
+    contact = normalize_phone(phone or getattr(customer, "phone", "") or "")
+    disclosure_text = (disclosure_text or "").strip()
+    disclosure_version = (disclosure_version or "").strip()
+    if not contact or not disclosure_text or not disclosure_version:
         return None
 
-    pending = StockAlertSubscription.objects.filter(
-        sku=sku, alert_type=alert_type, notified_at__isnull=True
+    now = timezone.now()
+    channel_ref = channel_ref or "web"
+    target_key = _target_key(customer_ref=customer_ref, phone=contact)
+    selector = {
+        "sku": sku,
+        "alert_type": alert_type,
+        "channel_ref": channel_ref,
+        "target_key": target_key,
+        "notified_at__isnull": True,
+        "revoked_at__isnull": True,
+    }
+    stale = StockAlertSubscription.objects.filter(
+        **selector,
+        expires_at__lte=now,
     )
-    existing = (
-        pending.filter(customer_ref=customer_ref).first()
-        if customer_ref
-        else pending.filter(contact_phone=contact).first()
-    )
+    for old in stale.only("pk", "ref"):
+        old.revoked_at = now
+        old.revoke_reason = "expired"
+        old.revocation_evidence_hash = _revocation_hash(old.ref, now, "expired")
+        old.save(
+            update_fields=["revoked_at", "revoke_reason", "revocation_evidence_hash"]
+        )
+
+    existing = StockAlertSubscription.objects.active(now=now).filter(**selector).first()
     if existing:
         return existing
 
-    return StockAlertSubscription.objects.create(
+    # An old row without evidence cannot silently become proof. Close it and create
+    # a fresh subscription carrying the text the shopper has just accepted.
+    legacy = StockAlertSubscription.objects.filter(**selector).first()
+    if legacy:
+        legacy.revoked_at = now
+        legacy.revoke_reason = "reconfirmed_with_evidence"
+        legacy.revocation_evidence_hash = _revocation_hash(
+            legacy.ref, now, legacy.revoke_reason
+        )
+        legacy.save(
+            update_fields=["revoked_at", "revoke_reason", "revocation_evidence_hash"]
+        )
+
+    subscription_ref = uuid.uuid4()
+    disclosure_hash = hashlib.sha256(disclosure_text.encode()).hexdigest()
+    evidence_hash = _subscription_evidence_hash(
+        subscription_ref=subscription_ref,
         sku=sku,
         alert_type=alert_type,
-        channel_ref=channel_ref or STOREFRONT_CHANNEL_REF,
-        customer_ref=customer_ref,
-        contact_phone=contact,
+        channel_ref=channel_ref,
+        target_key=target_key,
+        disclosure_hash=disclosure_hash,
+        disclosure_version=disclosure_version,
+        occurred_at=now,
     )
+    try:
+        with transaction.atomic():
+            return StockAlertSubscription.objects.create(
+                ref=subscription_ref,
+                sku=sku,
+                alert_type=alert_type,
+                channel_ref=channel_ref,
+                delivery_channel="whatsapp",
+                purpose="stock_availability",
+                customer_ref=customer_ref,
+                contact_phone=contact,
+                target_key=target_key,
+                disclosure_text=disclosure_text,
+                disclosure_version=disclosure_version,
+                disclosure_hash=disclosure_hash,
+                evidence_hash=evidence_hash,
+                proof_status="verified",
+                expires_at=now + timedelta(days=30),
+            )
+    except IntegrityError:
+        # The database unique is the race winner. A simultaneous equivalent click
+        # receives that same subscription instead of surfacing a transient 500.
+        return StockAlertSubscription.objects.active().get(**selector)
+
+
+@transaction.atomic
+def revoke(
+    subscription_ref,
+    *,
+    sku: str = "",
+    customer=None,
+    phone: str = "",
+    reason: str = "customer_request",
+) -> bool:
+    """Cancel one subscription after checking ownership; safe to repeat."""
+
+    from shopman.storefront.models import StockAlertSubscription
+
+    subscriptions = StockAlertSubscription.objects.select_for_update().filter(
+        ref=subscription_ref
+    )
+    if sku:
+        subscriptions = subscriptions.filter(sku=sku)
+    sub = subscriptions.first()
+    if sub is None:
+        return False
+    customer_ref = (getattr(customer, "ref", "") or "").strip()
+    contact = normalize_phone(phone or getattr(customer, "phone", "") or "")
+    owned = (customer_ref and sub.customer_ref == customer_ref) or (
+        contact and sub.contact_phone == contact
+    )
+    if not owned:
+        return False
+    if sub.revoked_at is not None:
+        return True
+    if sub.notified_at is not None:
+        return False
+
+    now = timezone.now()
+    sub.revoked_at = now
+    sub.revoke_reason = (reason or "customer_request")[:100]
+    sub.revocation_evidence_hash = _revocation_hash(
+        sub.ref, now, sub.revoke_reason
+    )
+    sub.save(update_fields=["revoked_at", "revoke_reason", "revocation_evidence_hash"])
+    return True
 
 
 def notify_back_in_stock(sku: str, *, also_bake_waiters: bool = False) -> int:
@@ -216,8 +334,9 @@ def _notify(sku: str, *, alert_types: list[str], event: str) -> int:
     from shopman.storefront.services import sku_state
 
     pending = list(
-        StockAlertSubscription.objects.filter(
-            sku=sku, alert_type__in=alert_types, notified_at__isnull=True
+        StockAlertSubscription.objects.active().filter(
+            sku=sku,
+            alert_type__in=alert_types,
         )
     )
     if not pending:
@@ -241,22 +360,67 @@ def _notify(sku: str, *, alert_types: list[str], event: str) -> int:
             continue
         if not state.can_add_to_cart:
             continue  # still unavailable for this channel — keep pending
-        if not _deliver(
-            subs[0], product_name=product_name, event=event,
+        if _deliver_group_if_still_active(
+            [sub.pk for sub in subs],
+            product_name=product_name,
+            event=event,
             available_qty=state.available_qty,
         ):
-            continue
-        stamped = timezone.now()
-        for sub in subs:
-            sub.notified_at = stamped
-            sub.save(update_fields=["notified_at"])
-        notified += 1
+            notified += 1
     if notified:
         logger.info(
             "stock_alerts: notified %s subscriber(s) for sku=%s event=%s",
             notified, sku, event,
         )
     return notified
+
+
+@transaction.atomic
+def _deliver_group_if_still_active(
+    subscription_pks: list[int],
+    *,
+    product_name: str,
+    event: str,
+    available_qty: int | None,
+) -> bool:
+    """Lock, recheck revocation/expiry/global opt-out, then deliver once.
+
+    This intentionally holds the row lock across the legacy adapter call. WP-03
+    replaces that temporary boundary with a persisted DeliveryAttempt, without
+    weakening this revoke-before-send guarantee in the meantime.
+    """
+
+    from shopman.storefront.models import StockAlertSubscription
+
+    subscriptions = list(
+        StockAlertSubscription.objects.select_for_update()
+        .active()
+        .filter(pk__in=subscription_pks)
+        .order_by("pk")
+    )
+    if not subscriptions or any(_globally_opted_out(sub) for sub in subscriptions):
+        return False
+    sub = subscriptions[0]
+    if not _deliver(
+        sub,
+        product_name=product_name,
+        event=event,
+        available_qty=available_qty,
+    ):
+        return False
+    stamped = timezone.now()
+    for item in subscriptions:
+        item.notified_at = stamped
+        item.save(update_fields=["notified_at"])
+    return True
+
+
+def _globally_opted_out(sub) -> bool:
+    if not sub.customer_ref:
+        return False
+    from shopman.shop.services.communication_consent import customer_is_opted_out
+
+    return customer_is_opted_out(sub.customer_ref, sub.delivery_channel)
 
 
 # ── private ──────────────────────────────────────────────────────────
@@ -359,3 +523,52 @@ def _deliver(
     except Exception:
         logger.warning("stock_alerts: delivery failed sub=%s sku=%s", sub.pk, sub.sku, exc_info=True)
         return False
+
+
+def _target_key(*, customer_ref: str, phone: str) -> str:
+    identity = f"customer:{customer_ref}" if customer_ref else f"phone:{phone}"
+    return hmac.new(
+        settings.SECRET_KEY.encode(),
+        identity.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _subscription_evidence_hash(
+    *,
+    subscription_ref,
+    sku: str,
+    alert_type: str,
+    channel_ref: str,
+    target_key: str,
+    disclosure_hash: str,
+    disclosure_version: str,
+    occurred_at,
+) -> str:
+    evidence = json.dumps(
+        {
+            "ref": str(subscription_ref),
+            "sku": sku,
+            "alert_type": alert_type,
+            "channel_ref": channel_ref,
+            "delivery_channel": "whatsapp",
+            "purpose": "stock_availability",
+            "target_key": target_key,
+            "disclosure_hash": disclosure_hash,
+            "disclosure_version": disclosure_version,
+            "occurred_at": occurred_at.isoformat(),
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hmac.new(
+        settings.SECRET_KEY.encode(), evidence.encode(), hashlib.sha256
+    ).hexdigest()
+
+
+def _revocation_hash(subscription_ref, occurred_at, reason: str) -> str:
+    value = f"{subscription_ref}:{occurred_at.isoformat()}:{reason}"
+    return hmac.new(
+        settings.SECRET_KEY.encode(), value.encode(), hashlib.sha256
+    ).hexdigest()

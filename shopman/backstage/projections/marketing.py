@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
+from math import ceil
 
 from django.utils import timezone
 
@@ -34,6 +35,7 @@ from shopman.shop.models import (
     Campaign,
     Trigger,
 )
+from shopman.shop.services import marketing_time
 
 #: Plataformas que uma regra pode alvejar, na ordem em que aparecem no formulário.
 PLATFORM_CHOICES: tuple[tuple[str, str], ...] = (
@@ -45,6 +47,19 @@ PLATFORM_CHOICES: tuple[tuple[str, str], ...] = (
 
 #: Janela do "publicados recentemente" no painel.
 RECENT_WINDOW = timedelta(hours=24)
+
+# Transitional v1 consumers still own the content card while v2 owns delivery
+# facts/Actions. Keep every state the operator may need to inspect or recover
+# reachable until the full history cutover (MKT-045).
+RESULT_VISIBLE_STATUSES = (
+    AnnouncementStatus.APPROVED,
+    AnnouncementStatus.PUBLISHING,
+    AnnouncementStatus.SETTLED,
+    AnnouncementStatus.PUBLISHED,
+    AnnouncementStatus.FAILED,
+    AnnouncementStatus.CANCELLED,
+    AnnouncementStatus.EXPIRED,
+)
 
 
 @dataclass(frozen=True)
@@ -61,6 +76,7 @@ class PlatformResultProjection:
 @dataclass(frozen=True)
 class AnnouncementProjection:
     pk: int
+    version: int
     status: str
     status_label: str
     body: str
@@ -79,12 +95,15 @@ class AnnouncementProjection:
     created_at: str
     expires_at: str
     expires_in_minutes: int  # -1 = não expira
+    scheduled_for: str
     published_at: str
     approved_by: str
     #: Quem recusou e por quê. Vazio em tudo que não foi recusado — mostrar "recusado
     #: por —" num anúncio publicado seria ruído.
     rejected_by: str
     rejected_reason: str
+    #: Template opted into a review-only suggestion. This never implies publication.
+    ai_suggestion_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -135,7 +154,14 @@ class PlatformProjection:
     #: `publication` (uma peça na plataforma) ou `direct_message` (uma mensagem por pessoa).
     #: A exigência de cada um é diferente, e é isso que o cartão explica.
     kind: str
+    state: str
+    reason_code: str
+    version: int
     ready: bool
+    checked_at: datetime
+    facts_as_of: datetime | None = None
+    fresh_until: datetime | None = None
+    source_status: str = ""
     reason: str = ""
     action: str = ""
     limitation: str = ""
@@ -153,11 +179,14 @@ class CampaignBoardProjection:
     #: Há credencial de IA neste ambiente? A tela pergunta ANTES de oferecer o botão de
     #: reescrever: oferecer e falhar depois ensina o gestor a não confiar no recurso.
     ai_assist_available: bool = False
+    shop_timezone: str = "UTC"
+    quiet_hours_suspended_for_local_simulation: bool = False
 
 
 @dataclass(frozen=True)
 class CampaignProjection:
     pk: int
+    version: int
     name: str
     trigger: str
     trigger_label: str
@@ -188,6 +217,8 @@ class CampaignProjection:
     requires_approval: bool
     expires_after_minutes: int
     is_active: bool
+    #: Versão de leitura para isolar/reconciliar rascunhos locais. Não autoriza write.
+    updated_at: datetime
 
 
 @dataclass(frozen=True)
@@ -195,7 +226,10 @@ class AnnouncementTemplateProjection:
     pk: int
     name: str
     body: str
+    platform_variants: dict
     variables: tuple[str, ...]
+    #: Verdade quando a ocorrência precisa nomear um produto antes de renderizar.
+    requires_product: bool
     use_ai_generation: bool
     #: ⚠️ A API aceitava GRAVAR `ai_prompt` e a projection não o devolvia: o gestor
     #: escrevia a instrução da IA e nunca mais a via. Config que só se escreve é config
@@ -203,6 +237,10 @@ class AnnouncementTemplateProjection:
     ai_prompt: str
     image_source: str
     is_active: bool
+    #: Versão de leitura para detectar conteúdo concorrente antes de restaurar draft.
+    updated_at: datetime
+    #: Dependências nomeadas permitem explicar o bloqueio antes do gesto destrutivo.
+    used_by_campaigns: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -230,10 +268,13 @@ class CampaignOptionsProjection:
     #: sozinho: RFM e churn são calculados, faixa é comercial, aniversário é cadastral.
     tags: tuple[ChoiceProjection, ...] = ()
     rfm_segments: tuple[ChoiceProjection, ...] = ()
+    #: Produtos publicáveis para preencher uma ocorrência disparada manualmente.
+    products: tuple[ChoiceProjection, ...] = ()
     #: Ofertas vivas que a campanha pode anunciar. Só as que MONTAM sacola: uma promoção
     #: que vale para o cardápio todo não tem itens para montar, e oferecê-la aqui daria
     #: ao gestor um botão que promete o que não cumpre.
     offers: tuple[ChoiceProjection, ...] = ()
+    shop_timezone: str = "UTC"
 
 
 # ── Quantas pessoas isto alcança ─────────────────────────────────────
@@ -287,6 +328,15 @@ class AudienceCountProjection:
     #: Ninguém escolhido ainda — separa "não pedi nada" de "pedi e não achei ninguém",
     #: que na tela precisam dizer coisas diferentes.
     empty_selection: bool
+    excluded_by_reason: dict[str, int]
+    deduplicated_count: int
+    degraded_sources: tuple[str, ...]
+    calculated_at: str
+    expires_at: str
+    policy_version: str
+    cohort_hash: str
+    can_approve: bool
+    blocked_reason: str
     #: A fila de "me avise" deste produto, em dois números: quantos ainda esperam e
     #: quantos já foram avisados. ``-1`` = a regra ``alerts`` nem rodou (sem SKU, ou
     #: desligada), que é diferente de "rodou e achou zero".
@@ -325,13 +375,23 @@ def build_audience_count(rules: dict | None, *, sku: str = "") -> AudienceCountP
     return AudienceCountProjection(
         total=result.total,
         match=result.match,
-        match_label=(
-            "Cruzando as regras" if result.match == audience_service.MATCH_ALL
-            else "Somando as regras"
-        ),
+        match_label=("Cruzando as regras" if result.match == audience_service.MATCH_ALL else "Somando as regras"),
         parts=parts,
         vip_count=len(result.vip),
         empty_selection=not parts,
+        excluded_by_reason=dict(result.excluded_by_reason),
+        deduplicated_count=result.deduplicated_count,
+        degraded_sources=result.degraded_sources,
+        calculated_at=result.calculated_at.isoformat() if result.calculated_at else "",
+        expires_at=result.expires_at.isoformat() if result.expires_at else "",
+        policy_version=result.policy_version,
+        cohort_hash=result.cohort_hash,
+        can_approve=not result.degraded_sources,
+        blocked_reason=(
+            "Não foi possível conferir todas as fontes da audiência. Aguarde a recuperação."
+            if result.degraded_sources
+            else ""
+        ),
         alerts_pending=int(counts["alerts_count"]) if "alerts_count" in counts else -1,
         alerts_notified=(
             int(counts.get("alerts_notified_count") or 0) if "alerts_count" in counts else -1
@@ -351,7 +411,9 @@ def _expires_in_minutes(announcement: Announcement, *, now) -> int:
     if not announcement.expires_at:
         return -1
     remaining = (announcement.expires_at - now).total_seconds() / 60
-    return max(0, int(remaining))
+    # Never show "0 min" while the announcement is still actionable. That
+    # forces the operator to second-guess whether it already expired.
+    return max(0, ceil(remaining))
 
 
 def _result_detail(result: dict) -> str:
@@ -409,14 +471,17 @@ def build_announcement(announcement: Announcement, *, now=None) -> AnnouncementP
     approver = announcement.approved_by
     rejecter = announcement.rejected_by
 
+    from shopman.shop.services import marketing_url_policy
+
     return AnnouncementProjection(
         pk=announcement.pk,
+        version=announcement.version,
         status=announcement.status,
         status_label=announcement.get_status_display(),
         body=str(content.get("body") or ""),
-        image_url=str(content.get("image_url") or ""),
+        image_url=marketing_url_policy.safe_browser_media_url(content.get("image_url")),
         hashtags=tuple(content.get("hashtags") or ()),
-        link=str(content.get("link") or ""),
+        link=marketing_url_policy.safe_browser_customer_link(content.get("link")),
         platforms=tuple(announcement.platforms or ()),
         audience=dict(audience),
         audience_total=int(audience.get("total") or 0),
@@ -429,10 +494,12 @@ def build_announcement(announcement: Announcement, *, now=None) -> AnnouncementP
         created_at=_iso(announcement.created_at),
         expires_at=_iso(announcement.expires_at),
         expires_in_minutes=_expires_in_minutes(announcement, now=now),
+        scheduled_for=_iso(announcement.publish_at),
         published_at=_iso(announcement.published_at),
         approved_by=(approver.get_full_name() or approver.username) if approver else "",
         rejected_by=(rejecter.get_full_name() or rejecter.username) if rejecter else "",
         rejected_reason=announcement.rejected_reason,
+        ai_suggestion_enabled=bool(announcement.template_id and announcement.template.use_ai_generation),
     )
 
 
@@ -452,13 +519,14 @@ def build_board(*, now=None) -> CampaignBoardProjection:
     ]
     recent = list(
         _announcements_queryset().filter(
-            status__in=(AnnouncementStatus.PUBLISHED, AnnouncementStatus.PUBLISHING, AnnouncementStatus.FAILED),
+            status__in=RESULT_VISIBLE_STATUSES,
             created_at__gte=now - RECENT_WINDOW,
         )[:50]
     )
 
     published_today = [
-        announcement for announcement in recent
+        announcement
+        for announcement in recent
         if announcement.published_at and timezone.localtime(announcement.published_at).date() == today
     ]
     reached = sum(int((announcement.audience or {}).get("total") or 0) for announcement in published_today)
@@ -474,13 +542,17 @@ def build_board(*, now=None) -> CampaignBoardProjection:
         ),
         reach_limits=_reach_limits(),
         ai_assist_available=_ai_assist_available(),
+        shop_timezone=_marketing_timezone_name(),
+        quiet_hours_suspended_for_local_simulation=(
+            marketing_time.quiet_hours_suspended_for_local_simulation()
+        ),
     )
 
 
 def _ai_assist_available() -> bool:
-    from shopman.shop.services import copy_assist
+    from shopman.shop.services import marketing_ai
 
-    return copy_assist.is_configured()
+    return marketing_ai.is_available()
 
 
 def _reach_limits() -> tuple[ReachLimitProjection, ...]:
@@ -553,7 +625,14 @@ def build_platforms() -> tuple[PlatformProjection, ...]:
             platform=state.platform,
             label=labels.get(state.platform, state.platform),
             kind=state.kind,
+            state=state.state,
+            reason_code=state.reason_code,
+            version=state.version,
             ready=state.ready,
+            checked_at=state.checked_at,
+            facts_as_of=state.facts_as_of,
+            fresh_until=state.fresh_until,
+            source_status=state.source_status,
             reason=state.reason,
             action=state.action,
             limitation=state.limitation,
@@ -567,7 +646,7 @@ def build_history(*, limit: int = 100, now=None) -> tuple[AnnouncementProjection
     """Tudo que já saiu (ou tentou sair), do mais recente para o mais antigo."""
     now = now or timezone.now()
     announcements = _announcements_queryset().filter(
-        status__in=(AnnouncementStatus.PUBLISHED, AnnouncementStatus.PUBLISHING, AnnouncementStatus.FAILED)
+        status__in=RESULT_VISIBLE_STATUSES,
     )[:limit]
     return tuple(build_announcement(announcement, now=now) for announcement in announcements)
 
@@ -578,10 +657,13 @@ def build_history(*, limit: int = 100, now=None) -> tuple[AnnouncementProjection
 def build_rule(rule: Campaign, *, performance: dict | None = None) -> CampaignProjection:
     """Uma campanha. ``performance`` pronto evita N+1 quando a lista inteira é montada."""
     from shopman.shop.services import campaign_schedule as sched
+    from shopman.shop.services.audience import PUBLIC_RULE_KEYS
 
     fires = sched.fires_on_its_own(rule.schedule)
+    audience_rules = rule.audience_rules if isinstance(rule.audience_rules, dict) else {}
     return CampaignProjection(
         pk=rule.pk,
+        version=rule.version,
         name=rule.name,
         trigger=rule.trigger,
         trigger_label=rule.get_trigger_display(),
@@ -589,7 +671,7 @@ def build_rule(rule: Campaign, *, performance: dict | None = None) -> CampaignPr
         template_id=rule.template_id,
         template_name=rule.template.name if rule.template_id else "",
         platforms=tuple(rule.platforms or ()),
-        audience_rules=dict(rule.audience_rules or {}),
+        audience_rules={key: audience_rules[key] for key in sorted(PUBLIC_RULE_KEYS) if key in audience_rules},
         promotion_ref=rule.promotion_ref,
         schedule=dict(rule.schedule or {}),
         **(performance if performance is not None else _performance_by_rule([rule.pk])[rule.pk]),
@@ -599,6 +681,7 @@ def build_rule(rule: Campaign, *, performance: dict | None = None) -> CampaignPr
         requires_approval=rule.requires_approval,
         expires_after_minutes=rule.expires_after_minutes,
         is_active=rule.is_active,
+        updated_at=rule.updated_at,
     )
 
 
@@ -632,10 +715,7 @@ def _performance_by_rule(rule_ids: list[int]) -> dict[int, dict]:
         bucket = out.get(announcement.rule_id)
         if bucket is None:
             continue
-        entries = [
-            entry for entry in (announcement.platform_results or {}).values()
-            if isinstance(entry, dict)
-        ]
+        entries = [entry for entry in (announcement.platform_results or {}).values() if isinstance(entry, dict)]
         if any(entry.get("status") == "published" for entry in entries):
             bucket["sent_count"] += 1
             bucket["reached_total"] += int((announcement.audience or {}).get("total") or 0)
@@ -655,40 +735,71 @@ def build_rules() -> tuple[CampaignProjection, ...]:
     return tuple(build_rule(rule, performance=performance[rule.pk]) for rule in rules)
 
 
-def build_template(template: AnnouncementTemplate) -> AnnouncementTemplateProjection:
+def build_template(
+    template: AnnouncementTemplate,
+    *,
+    used_by_campaigns: tuple[str, ...] = (),
+) -> AnnouncementTemplateProjection:
+    from shopman.shop.services.marketing_facts import (
+        referenced_variables,
+        requires_product,
+    )
+
+    content_variables = referenced_variables(template.body, template.platform_variants)
+
     return AnnouncementTemplateProjection(
         pk=template.pk,
         name=template.name,
         body=template.body,
+        platform_variants=dict(template.platform_variants or {}),
         variables=tuple(template.variables or ()),
+        requires_product=requires_product(content_variables),
         use_ai_generation=template.use_ai_generation,
         ai_prompt=template.ai_prompt,
         image_source=template.image_source,
         is_active=template.is_active,
+        updated_at=template.updated_at,
+        used_by_campaigns=used_by_campaigns,
     )
 
 
 def build_templates() -> tuple[AnnouncementTemplateProjection, ...]:
-    return tuple(build_template(template) for template in AnnouncementTemplate.objects.all())
+    templates = list(AnnouncementTemplate.objects.all())
+    names_by_template: dict[int, list[str]] = {template.pk: [] for template in templates}
+    for template_id, name in Campaign.objects.filter(
+        template_id__in=names_by_template,
+    ).order_by("name").values_list("template_id", "name"):
+        names_by_template[template_id].append(name)
+    return tuple(
+        build_template(
+            template,
+            used_by_campaigns=tuple(names_by_template[template.pk]),
+        )
+        for template in templates
+    )
 
 
 def build_options() -> CampaignOptionsProjection:
     from shopman.shop.services.campaign import available_variables
 
     return CampaignOptionsProjection(
-        triggers=tuple(
-            ChoiceProjection(value=value, label=label) for value, label in Trigger.choices
-        ),
-        platforms=tuple(
-            ChoiceProjection(value=value, label=label) for value, label in PLATFORM_CHOICES
-        ),
+        triggers=tuple(ChoiceProjection(value=value, label=label) for value, label in Trigger.choices),
+        platforms=tuple(ChoiceProjection(value=value, label=label) for value, label in PLATFORM_CHOICES),
         templates=build_templates(),
         variables=available_variables(),
         price_tiers=_price_tier_choices(),
         tags=_tag_choices(),
         rfm_segments=_rfm_segment_choices(),
+        products=_product_choices(),
         offers=_offer_choices(),
+        shop_timezone=_marketing_timezone_name(),
     )
+
+
+def _marketing_timezone_name() -> str:
+    from shopman.shop.services.marketing_time import configured_timezone_name
+
+    return configured_timezone_name()
 
 
 def _offer_choices() -> tuple[ChoiceProjection, ...]:
@@ -709,14 +820,28 @@ def _offer_choices() -> tuple[ChoiceProjection, ...]:
     )
 
 
+def _product_choices() -> tuple[ChoiceProjection, ...]:
+    """Produtos que podem sustentar fatos verdadeiros em um anúncio novo."""
+
+    try:
+        from shopman.offerman.models import Product
+
+        return tuple(
+            ChoiceProjection(value=str(product.sku), label=f"{product.name} ({product.sku})")
+            for product in Product.objects.filter(is_published=True, is_sellable=True).order_by("name", "sku")
+        )
+    except Exception:
+        logger.warning("marketing.products_failed", exc_info=True)
+        return ()
+
+
 def _price_tier_choices() -> tuple[ChoiceProjection, ...]:
     """Grupos de cliente do guestman, para o seletor de público."""
     try:
         from shopman.guestman.models import PriceTier
 
         return tuple(
-            ChoiceProjection(value=tier.ref, label=tier.name)
-            for tier in PriceTier.objects.all().order_by("name")
+            ChoiceProjection(value=tier.ref, label=tier.name) for tier in PriceTier.objects.all().order_by("name")
         )
     except Exception:
         logger.warning("marketing.price_tiers_failed", exc_info=True)
@@ -750,9 +875,7 @@ def _rfm_segment_choices() -> tuple[ChoiceProjection, ...]:
     try:
         from shopman.guestman.contrib.insights.models import RFM_SEGMENTS
 
-        return tuple(
-            ChoiceProjection(value=value, label=label) for value, label in RFM_SEGMENTS
-        )
+        return tuple(ChoiceProjection(value=value, label=label) for value, label in RFM_SEGMENTS)
     except Exception:
         logger.warning("marketing.rfm_segments_failed", exc_info=True)
         return ()

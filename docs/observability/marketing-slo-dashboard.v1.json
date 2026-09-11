@@ -1,0 +1,116 @@
+{
+  "schema": "shopman.marketing.slo-dashboard.v1",
+  "status": "local_candidate",
+  "activation_gate": "G-H08",
+  "production_write_performed": false,
+  "data_classification": "aggregate_no_pii",
+  "owners": {
+    "operations": "Marketing Ops",
+    "reliability": "SRE/Platform",
+    "channels": "Platform Owner",
+    "privacy": "DPO/Security",
+    "experience": "Product"
+  },
+  "budgets": {
+    "board_projection": {"p95_seconds": 0.5, "max_bytes": 307200, "max_queries": 25},
+    "navigation": {"lcp_p75_ms": 2500, "inp_p75_ms": 200, "cls_p75": 0.1},
+    "audience_100k": {"p95_seconds": 2.0, "max_queries": 30},
+    "command_acceptance": {"p95_seconds": 1.0, "db_p95_seconds": 0.5},
+    "immediate_queue": {"p95_seconds": 10},
+    "scheduled_lag": {"p95_seconds": 30},
+    "result_freshness": {"p95_seconds": 10, "stale_after_seconds": 30},
+    "unknown": {"max_ratio": 0.001, "max_unowned_age_seconds": 900},
+    "readiness": {"max_age_seconds_before_blast": 300},
+    "worker": {"chunk_size": 100, "concurrency": 4, "lease_seconds": 60},
+    "manychat": {"max_requests_per_second": 8},
+    "duplicate_confirmed": {"maximum": 0},
+    "post_optout_or_expiry": {"maximum": 0}
+  },
+  "dashboards": [
+    {
+      "id": "decision-path",
+      "title": "Decisão e aceite",
+      "owner": "Product",
+      "panels": [
+        {"metric": "marketing_command_seconds", "group_by": ["kind"], "stat": "p95", "objective": "<=1s"},
+        {"metric": "marketing_command_total", "group_by": ["kind", "outcome"], "stat": "rate"},
+        {"metric": "marketing_action_total", "group_by": ["kind", "outcome"], "stat": "rate"}
+      ]
+    },
+    {
+      "id": "queue-and-recovery",
+      "title": "Fila e recuperação",
+      "owner": "SRE/Platform",
+      "panels": [
+        {"metric": "marketing_outbox_age_seconds", "group_by": [], "stat": "p95", "objective": "<=30s"},
+        {"metric": "marketing_stuck_total", "group_by": ["stage"], "stat": "max", "objective": "0"},
+        {"metric": "marketing_unknown_age_seconds", "group_by": ["platform"], "stat": "max", "objective": "<=900s"},
+        {"metric": "marketing_alert_total", "group_by": ["type", "lifecycle"], "stat": "rate"},
+        {"metric": "marketing_alert_seconds", "group_by": ["type", "lifecycle"], "stat": "p95"}
+      ]
+    },
+    {
+      "id": "delivery-safety",
+      "title": "Entrega e invariantes",
+      "owner": "Marketing Ops",
+      "panels": [
+        {"metric": "marketing_delivery_target_total", "group_by": ["platform", "state"], "stat": "max"},
+        {"metric": "marketing_delivery_attempt_total", "group_by": ["platform", "outcome"], "stat": "rate"},
+        {"metric": "marketing_duplicate_prevented_total", "group_by": ["effect"], "stat": "rate"},
+        {"metric": "marketing_suppressed_total", "group_by": ["reason", "platform"], "stat": "rate"},
+        {"metric": "marketing_consent_violation_total", "group_by": [], "stat": "sum", "objective": "0"}
+      ]
+    },
+    {
+      "id": "read-performance",
+      "title": "Leitura e capacidade",
+      "owner": "SRE/Platform",
+      "panels": [
+        {"metric": "marketing_audience_resolution_seconds", "group_by": ["source_state"], "stat": "p95", "objective": "<=2s"},
+        {"metric": "marketing_audience_size_bucket", "group_by": ["bucket"], "stat": "rate"},
+        {"metric": "marketing_projection_seconds", "group_by": ["projection"], "stat": "p95", "objective": "board<=0.5s"},
+        {"metric": "projection_bytes", "group_by": ["projection"], "stat": "p95", "objective": "board<=307200"},
+        {"metric": "projection_queries", "group_by": ["projection"], "stat": "p95", "objective": "board<=25"}
+      ]
+    },
+    {
+      "id": "channel-readiness",
+      "title": "Prontidão por canal",
+      "owner": "Platform Owner",
+      "panels": [
+        {"metric": "marketing_readiness", "group_by": ["platform", "state"], "stat": "min"},
+        {"metric": "readiness_age_seconds", "group_by": ["platform"], "stat": "max", "objective": "<300s before blast"}
+      ]
+    },
+    {
+      "id": "operator-experience",
+      "title": "Experiência do operador",
+      "owner": "Product",
+      "panels": [
+        {"metric": "marketing_frontend_vital", "group_by": ["name", "rating", "route", "theme"], "stat": "p75"},
+        {"metric": "marketing_session_total", "group_by": ["outcome"], "stat": "rate"},
+        {"metric": "marketing_sse_connection", "group_by": ["state"], "stat": "max"},
+        {"metric": "marketing_sse_invalidations_total", "group_by": ["outcome"], "stat": "rate"},
+        {"metric": "marketing_sse_refetch_total", "group_by": ["outcome"], "stat": "rate"},
+        {"metric": "marketing_ai_total", "group_by": ["outcome"], "stat": "rate"}
+      ]
+    }
+  ],
+  "alerts": [
+    {"id": "consent-violation", "severity": "critical", "condition": "marketing_consent_violation_total > 0", "filter": "stage=delivery", "owner": "DPO/Security", "runbook": "docs/runbooks/marketing-consent-or-privacy-incident.md", "automatic_effect": "freeze_marketing"},
+    {"id": "duplicate-confirmed", "severity": "critical", "condition": "confirmed duplicate > 0", "filter": "stage=provider_effect", "owner": "SRE/Platform", "runbook": "docs/runbooks/marketing-cancel-and-reconcile.md", "automatic_effect": "freeze_marketing"},
+    {"id": "unknown-stale", "severity": "high", "condition": "marketing_unknown_age_seconds > 900", "filter": "platform,stage=provider_reconciliation", "owner": "Platform Owner", "runbook": "docs/runbooks/marketing-unknown-provider-effect.md", "automatic_effect": "none"},
+    {"id": "outbox-stuck", "severity": "high", "condition": "marketing_outbox_age_seconds > 30 or marketing_stuck_total > 0", "filter": "stage", "owner": "SRE/Platform", "runbook": "docs/runbooks/marketing-stuck-command.md", "automatic_effect": "none"},
+    {"id": "reconciliation-mismatch", "severity": "high", "condition": "mismatch count > 0", "filter": "stage=outbox_directive", "owner": "SRE/Platform", "runbook": "docs/runbooks/marketing-cancel-and-reconcile.md", "automatic_effect": "none"},
+    {"id": "partial-without-action", "severity": "high", "condition": "partial without recovery action > 0", "filter": "platform,stage=projection", "owner": "Marketing Ops", "runbook": "docs/runbooks/marketing-partial-retry.md", "automatic_effect": "none"},
+    {"id": "readiness-stale", "severity": "high", "condition": "readiness_age_seconds >= 300 before blast", "filter": "platform,stage=readiness", "owner": "Platform Owner", "runbook": "docs/runbooks/marketing-channel-readiness-outage.md", "automatic_effect": "block_action"},
+    {"id": "board-burn", "severity": "medium", "condition": "board latency burn rate breaches 5m/1h", "filter": "projection=board", "owner": "SRE/Platform", "runbook": "docs/runbooks/marketing-rollout-rollback.md", "automatic_effect": "none"}
+  ],
+  "activation_requirements": [
+    "Name the primary and backup human for every owner role.",
+    "Configure paging destinations and escalation windows.",
+    "Capture a 7-14 day authorized pilot baseline.",
+    "Exercise each linked runbook in MKT-044.",
+    "Reconfirm G-H08 before any dashboard or alert provider write."
+  ]
+}

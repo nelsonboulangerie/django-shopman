@@ -189,6 +189,36 @@ def _iso(value) -> str:
 # ── Directive handlers ───────────────────────────────────────────────
 
 
+def _stage_durable_delivery(*, message, topic: str) -> bool:
+    """Route v2 outbox payloads through fan-out/ledger, preserving legacy input."""
+
+    payload = message.payload if isinstance(message.payload, dict) else {}
+    if not payload.get("outbox_ref"):
+        return False
+    from shopman.orderman.exceptions import (
+        DirectiveTerminalError,
+        DirectiveTransientError,
+    )
+
+    from shopman.shop.services.marketing_contracts import MarketingContractError
+    from shopman.shop.services.marketing_delivery_runtime import stage_outbox_directive
+
+    try:
+        report = stage_outbox_directive(payload=payload, topic=topic)
+    except MarketingContractError as exc:
+        error_class = DirectiveTransientError if exc.retryable else DirectiveTerminalError
+        raise error_class(exc.code) from None
+    logger.info(
+        "marketing.delivery_staged outbox=%s platform=%s targets=%d queued=%d replayed=%s",
+        report.outbox_ref,
+        report.platform,
+        report.targets,
+        report.queued,
+        str(report.replayed).lower(),
+    )
+    return True
+
+
 class AnnouncementHandler:
     """Publica o announcement numa plataforma externa. Topic: announcement.publish
 
@@ -201,6 +231,8 @@ class AnnouncementHandler:
     topic = "announcement.publish"
 
     def handle(self, *, message, ctx: dict) -> None:
+        if _stage_durable_delivery(message=message, topic=self.topic):
+            return
         from shopman.shop.models import Announcement, AnnouncementStatus
 
         payload = message.payload or {}
@@ -226,6 +258,36 @@ class AnnouncementHandler:
             _settle(announcement)
             return
 
+        from shopman.shop.services.marketing_security import (
+            MarketingAuthorizationError,
+            require_external_effects_enabled,
+        )
+
+        try:
+            require_external_effects_enabled()
+        except MarketingAuthorizationError:
+            _record_result(
+                announcement,
+                platform,
+                {"status": "cancelled", "reason": "marketing_frozen"},
+            )
+            _settle(announcement)
+            return
+        from shopman.shop.services import marketing_url_policy
+        from shopman.shop.services.marketing_contracts import MarketingContractError
+
+        content = announcement.content if isinstance(announcement.content, dict) else {}
+        try:
+            marketing_url_policy.validate_customer_link(content.get("link"))
+            marketing_url_policy.validate_media_url(content.get("image_url"))
+        except MarketingContractError as exc:
+            _record_result(
+                announcement,
+                platform,
+                {"status": "failed", "reason": exc.code},
+            )
+            _settle(announcement)
+            return
         try:
             result = adapter.publish(announcement, platform=platform)
         except Exception as exc:
@@ -281,6 +343,8 @@ class AnnouncementNotifyHandler:
     topic = "announcement.notify"
 
     def handle(self, *, message, ctx: dict) -> None:
+        if _stage_durable_delivery(message=message, topic=self.topic):
+            return
         from shopman.shop.models import Announcement, AnnouncementStatus
         from shopman.shop.services import audience as audience_service
 
@@ -309,21 +373,12 @@ class AnnouncementNotifyHandler:
             rules = chosen
         else:
             rules = (announcement.rule.audience_rules or {}) if announcement.rule_id else {}
-        # ⚠️ `select_wave`, e NÃO um dicionário de três chaves.
-        #
-        # As ondas são produzidas com chave `nome@hora` para quem tem hora preferida e
-        # a regra tem janela. O dicionário só conhecia `vip`, `general` e `all`, então
-        # `general@14` caía no default VAZIO: zero destinatários, a onda gravada com
-        # "0 enviados, 0 falharam", e — como "onda vazia não é falha" — o status virava
-        # `sent` e o anúncio fechava como publicado.
-        #
-        # Ninguém daquela onda recebia, e NADA indicava isso. Relatório de entrega
-        # mentindo é o pior modo de falha que esta superfície tem.
-        #
-        # A função certa já existia, já era descrita no docstring do despacho como se
-        # fosse o contrato em uso, e não tinha um único chamador no repositório — código
-        # morto que a documentação afirmava estar em uso.
-        recipients = audience_service.select_wave(rules, wave, sku=sku)
+        recipients = audience_service.select_wave(
+            rules,
+            wave,
+            sku=sku,
+            available_wave_keys=payload.get("wave_keys"),
+        )
 
         sent, failed = _send_to(recipients, announcement=announcement)
         _record_wave(announcement, wave, sent=sent, failed=failed,
@@ -335,7 +390,7 @@ class AnnouncementNotifyHandler:
 
 
 def _whatsapp_backend() -> str | None:
-    """O backend que entrega a onda de WhatsApp, ou ``None`` se nenhum está pronto.
+    """Resolve only the ADR-009 ManyChat lane (plus an inert local console).
 
     ⚠️ Este handler chamava ``notify()`` **sem nomear backend**, e o default é
     ``"console"`` — registrado só em DEBUG. Em staging e produção isso significava
@@ -350,15 +405,24 @@ def _whatsapp_backend() -> str | None:
     (``audience.DELIVERY_CONSENT_CHANNEL``); entregar por SMS seria alcançar a pessoa
     num canal que ela não autorizou. Minha primeira versão desta função incluía `sms`
     como fallback e, sem token de ManyChat, ela escolhia SMS — uma campanha inteira
-    sairia pelo canal errado. Quando o WhatsApp Meta-direto entrar, ele entra AQUI; um
-    canal novo passa a exigir o consentimento dele próprio.
+    sairia pelo canal errado. Qualquer revisão de fornecedor exige nova decisão da
+    ADR-009; não nasce como fallback oportunista neste resolver.
 
-    A ordem é deliberada: o transporte real primeiro, console por último — console é
-    ferramenta de desenvolvimento e nunca deve ganhar de um canal configurado.
+    Meta Cloud API direto deixou de ser fallback de Marketing. Console existe apenas
+    em development/test para tornar fluxos locais observáveis e nunca conta como
+    readiness de produção.
     """
+    from django.conf import settings
+
     from shopman.shop.notifications import get_backend
 
-    for name in ("manychat", "whatsapp", "console"):
+    names = ["manychat"]
+    if getattr(settings, "SHOPMAN_ENVIRONMENT", "development") in {
+        "development",
+        "test",
+    }:
+        names.append("console")
+    for name in names:
         adapter = get_backend(name)
         if adapter is None:
             continue
@@ -413,7 +477,19 @@ def _send_to(recipients, *, announcement) -> tuple[int, int]:
     destination = _relative_destination(link)
 
     sent = failed = 0
-    for recipient in targets:
+    from shopman.shop.services.marketing_security import (
+        MarketingAuthorizationError,
+        require_external_effects_enabled,
+    )
+
+    for index, recipient in enumerate(targets):
+        try:
+            require_external_effects_enabled()
+        except MarketingAuthorizationError:
+            # Legacy directives have no per-target receipt.  Stop at the first
+            # reversible target and do not raise/retry the already-sent prefix.
+            failed += len(targets) - index
+            break
         try:
             # ⚠️ Link PESSOAL por destinatário. O link comum fazia a pessoa chegar anônima
             # e o checkout pedir login — num canal onde escolhemos o número justamente
@@ -462,17 +538,14 @@ def _relative_destination(link: str) -> str:
     Link de outro host (ou vazio) devolve a sacola: é o destino honesto de uma mensagem que
     convida a comprar, e nunca um caminho que não controlamos.
     """
-    from shopman.shop.services import storefront_links
+    from shopman.shop.services import marketing_url_policy, storefront_links
 
     if not link:
         return storefront_links.path_cart()
-
-    base = storefront_links.storefront_base_url()
-    if base and link.startswith(base):
-        return link[len(base):] or "/"
-    if link.startswith("/") and not link.startswith("//"):
-        return link
-    return storefront_links.path_cart()
+    return (
+        marketing_url_policy.canonical_customer_path(link)
+        or storefront_links.path_cart()
+    )
 
 
 def _posting_adapter(platform: str):

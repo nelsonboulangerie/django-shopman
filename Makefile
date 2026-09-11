@@ -14,8 +14,9 @@ COMPOSE ?= docker compose
 APP_COMPOSE := $(COMPOSE) --profile app
 RELEASE_COMPOSE := $(COMPOSE) --profile release
 NUXT_DIR := surfaces/storefront-nuxt
+SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils
 
-.PHONY: surfaces surfaces-types help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-counter-agent test-migrations test-silent-swallow deploy-spec-drift test-runtime-preflight test-runtime load-test storefront-e2e test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
+.PHONY: surfaces surfaces-types help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-counter-agent test-migrations test-silent-swallow deploy-spec-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -254,6 +255,35 @@ test-counter-agent: ## Testes do agente do balcão (tools/pos-counter-agent)
 test-migrations: ## Gate de migrations: nada sem migration + schema limpo do zero + grafo consistente
 	@echo "── Migrations gate ──"
 	$(PYTHON) scripts/check_migrations.py $(if $(json),--json,)
+
+marketing-capacity: ## Gate local isolado: 200k candidatos + 20k targets, sem provider
+	@echo "── Marketing capacity 2× (banco de teste descartável; sem provider) ──"
+	SHOPMAN_RUN_MARKETING_CAPACITY=1 DATABASE_URL='' DJANGO_SETTINGS_MODULE=config.settings_test \
+	PYTHONPATH="$(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils" \
+	$(PYTHON) -m pytest shopman/shop/tests/test_marketing_capacity.py -q -s --durations=3 \
+		--log-disable=shopman.operational
+
+marketing-diagnose: ## Snapshot Marketing read-only/sem PII (receipt=UUID platform=... opcionais)
+	DJANGO_SETTINGS_MODULE="$${DJANGO_SETTINGS_MODULE:-config.settings_test}" PYTHONPATH="$(SHOPMAN_PYTHONPATH)" $(PYTHON) manage.py diagnose_marketing --json $(if $(receipt),--receipt $(receipt),) $(if $(platform),--platform $(platform),)
+
+marketing-docs: ## Confere docs, rotas e probes de deploy do Marketing contra o HEAD
+	$(PYTHON) scripts/check_marketing_docs.py
+
+marketing-drills: ## Oito drills sintéticos locais; zero provider/escrita externa
+	DATABASE_URL='' DJANGO_SETTINGS_MODULE=config.settings_test PYTHONPATH="$(SHOPMAN_PYTHONPATH)" $(PYTHON) -m pytest -q \
+		shopman/shop/tests/test_marketing_outbox.py::test_stale_lease_is_observably_requeued_and_reclaimable \
+		shopman/shop/tests/test_marketing_delivery_recovery.py::test_retry_queues_only_retryable_and_replay_changes_nothing_twice \
+		shopman/shop/tests/test_marketing_delivery_recovery.py::test_lookup_outage_is_sanitized_and_safely_requeued \
+		shopman/shop/tests/test_delivery_readiness.py::test_direct_message_transport_probe_failure_is_unknown \
+		shopman/shop/tests/test_marketing_delivery_worker.py::test_revocation_after_fanout_suppresses_before_claim_and_provider \
+		shopman/shop/tests/test_marketing_url_policy.py::test_external_redirect_and_tracking_link_shapes_fail_closed \
+		shopman/shop/tests/test_marketing_transitions.py::test_cancel_now_wins_all_pending_lanes_and_is_idempotent \
+		shopman/shop/tests/test_marketing_outbox.py::test_force_cannot_bypass_safe_flag_in_production \
+		shopman/shop/tests/test_marketing_runbooks.py
+	cd surfaces/marketing-nuxt && npm run test:unit -- --run tests/healthProbe.test.ts
+
+marketing-simulator: ## Worker E2E local: outbox + ledger + recibo simulado; zero rede
+	DATABASE_URL='' DJANGO_SETTINGS_MODULE=config.settings_marketing_demo PYTHONPATH="$(SHOPMAN_PYTHONPATH)" $(PYTHON) manage.py process_marketing_delivery --watch --with-outbox --with-reconciliation
 
 test-constraints: ## Gate de pins: o constraints.txt cobre tudo que a imagem instala?
 	@echo "── Constraints gate ──"

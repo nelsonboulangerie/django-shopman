@@ -28,10 +28,14 @@ aparece; sem uma pessoa identificada, nenhuma leitura passa.
 
 from __future__ import annotations
 
+import logging
+
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import BasePermission
 
 from shopman.backstage.station_trust import is_trusted_station, station_operator
+
+logger = logging.getLogger(__name__)
 
 #: Código estável da recusa por estação sem ninguém identificado. A superfície
 #: REAGE a ele (sobe a tela de identificação) em vez de casar a mensagem em
@@ -208,6 +212,67 @@ class HasProductionCapability(BasePermission):
         if not getattr(access, capability, False):
             deny_production_capability(capability)
         return True
+
+
+class HasMarketingCapability(BasePermission):
+    """Capability gate do Marketing com transição legada deny-safe.
+
+    Views declaram ``permission_map`` por método HTTP. A antiga
+    ``shop.manage_campaigns`` só mantém leitura/edição/preview durante a janela
+    de migração; nunca autoriza aprovação, publicação, fire, teste ou config.
+    Cada decisão divergente é registrada sem payload nem PII para comparação do
+    modo de auditoria antes de a permissão ampla sair do runtime.
+    """
+
+    message = _MSG_FORBIDDEN
+    legacy_permission = "shop.manage_campaigns"
+    legacy_safe_permissions = frozenset({
+        "shop.view_marketing",
+        "shop.edit_marketing_campaigns",
+        "shop.edit_marketing_templates",
+        "shop.preview_marketing_audience",
+    })
+
+    def has_permission(self, request, view) -> bool:
+        self.message = _MSG_FORBIDDEN
+        operador = _operador(request)
+        if operador is None:
+            if is_trusted_station(request):
+                _recusa_travada()
+            return False
+
+        resolver = getattr(view, "get_required_permissions", None)
+        declared = resolver(request) if callable(resolver) else getattr(
+            view, "required_permission", None
+        )
+        required = _required_codes(declared)
+        missing = tuple(code for code in required if not operador.has_perm(code))
+        if not missing:
+            return True
+
+        has_legacy = operador.has_perm(self.legacy_permission)
+        safe_fallback = has_legacy and set(required).issubset(self.legacy_safe_permissions)
+        decision = "legacy_safe_allow" if safe_fallback else "deny"
+        reason = "legacy_permission" if has_legacy else "missing_capability"
+        logger.info(
+            "marketing.authorization_diff decision=%s reason=%s actor=%s "
+            "method=%s path=%s required=%s",
+            decision,
+            reason,
+            operador.pk,
+            request.method,
+            request.path,
+            ",".join(required),
+        )
+        if safe_fallback:
+            return True
+
+        from shopman.shop.services.marketing_security import record_security_denial
+
+        record_security_denial(actor=operador, reason_code=reason)
+
+        self.message = "Operador sem capacidade para esta ação de Marketing."
+        return False
 
 
 class IsTrustedStation(BasePermission):

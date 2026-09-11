@@ -1,4 +1,4 @@
-"""A variável do template aprovado precisa de alguém que a preencha.
+"""Legacy flow variables and the shared campaign vocabulary.
 
 Este arquivo existe por causa de um defeito silencioso. Quando o evento tem flow
 configurado, o envio vai por `sendFlow`: o texto vive **dentro do ManyChat**, e as
@@ -7,8 +7,9 @@ mandávamos. Resultado: um template aprovado que diga "O {{product_name}} que vo
 chegou" saía com o nome do produto em branco, nos dois caminhos que usam flow (alerta de
 estoque e anúncio de campanha). Nada falhava; a mensagem só chegava incompleta.
 
-O teste que guarda o desenho é `test_the_fields_go_before_the_flow`: gravar depois do
-envio seria escrever no perfil do cliente para a mensagem seguinte, não para esta.
+The low-level sequence remains covered for transactional templates. Marketing flows
+are now blocked before this sequence until G-H03 proves subscriber-state isolation;
+that negative contract lives in ``test_manychat_marketing_safety.py``.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ def with_flow(db):
     from shopman.shop.models import NotificationTemplate
 
     NotificationTemplate.objects.create(
-        event="stock_arrived", subject="x", body="y",
+        event="order_accepted", subject="x", body="y",
         whatsapp_flow_ns="content20260101120000_1",
     )
 
@@ -59,7 +60,7 @@ def _field_payloads(calls) -> dict[str, str]:
 
 def test_the_fields_go_before_the_flow(calls, with_flow, monkeypatch):
     """⚠️ Ordem importa: gravar depois do envio preencheria a mensagem SEGUINTE."""
-    mc.send("+5543984049009", "stock_arrived", {"product_name": "Croissant"})
+    mc.send("+5543984049009", "order_accepted", {"product_name": "Croissant"})
 
     endpoints = _endpoints(calls)
     assert endpoints[-1].endswith("sendFlow")
@@ -70,7 +71,7 @@ def test_the_product_name_reaches_the_template(calls, with_flow):
     """O caso concreto: sem isto, "O ___ que você pediu chegou"."""
     mc.send(
         "+5543984049009",
-        "stock_arrived",
+        "order_accepted",
         {"product_name": "Croissant", "cta": "Garanta o seu:", "action_url": "/p/cro"},
     )
 
@@ -83,7 +84,7 @@ def test_internal_state_never_becomes_a_customer_field(calls, with_flow):
     """⚠️ Contexto inteiro no perfil do cliente vazaria estado interno para o marketing."""
     mc.send(
         "+5543984049009",
-        "stock_arrived",
+        "order_accepted",
         {"product_name": "Croissant", "session_key": "abc123", "sku": "CRO-001"},
     )
 
@@ -97,7 +98,7 @@ def test_empty_values_are_not_written(calls, with_flow):
     """`deadline_note` vazio é o caso normal do "me avise": não sobrescreve com nada."""
     mc.send(
         "+5543984049009",
-        "stock_arrived",
+        "order_accepted",
         {"product_name": "Croissant", "deadline_note": "", "reserve_note": "   "},
     )
 
@@ -120,13 +121,13 @@ def test_a_field_that_does_not_exist_does_not_block_the_alert(with_flow, monkeyp
     monkeypatch.setattr(mc, "_get_config", lambda: {"api_token": "tok", "flow_map": {}})
     monkeypatch.setattr(mc, "_resolve_subscriber", lambda *a, **k: "sub-1")
 
-    assert mc.send("+5543984049009", "stock_arrived", {"product_name": "Croissant"}) is True
+    assert mc.send("+5543984049009", "order_accepted", {"product_name": "Croissant"}) is True
     assert any(e.endswith("sendFlow") for e in seen)
 
 
 def test_without_a_flow_nothing_is_pushed(calls, db):
     """Sem template aprovado o texto é nosso (`sendContent`): campo não tem função."""
-    mc.send("+5543984049009", "stock_arrived", {"product_name": "Croissant"})
+    mc.send("+5543984049009", "order_accepted", {"product_name": "Croissant"})
 
     endpoints = _endpoints(calls)
     assert endpoints == ["/sending/sendContent"]
@@ -141,14 +142,14 @@ def test_the_quantity_is_the_real_one(calls, with_flow):
     A quantidade sai da MESMA checagem de disponibilidade que libera o alerta, então o
     "ainda tenho X unidades" é o que a loja pode honrar naquele instante.
     """
-    mc.send("+5543984049009", "stock_arrived", {"product_name": "Baguete", "available_qty": "12"})
+    mc.send("+5543984049009", "order_accepted", {"product_name": "Baguete", "available_qty": "12"})
 
     assert _field_payloads(calls)["available_qty"] == "12"
 
 
 def test_an_unknown_quantity_says_nothing(calls, with_flow):
     """Canal que não sabe contar não inventa número: o campo não é gravado."""
-    mc.send("+5543984049009", "stock_arrived", {"product_name": "Baguete", "available_qty": ""})
+    mc.send("+5543984049009", "order_accepted", {"product_name": "Baguete", "available_qty": ""})
 
     assert "available_qty" not in _field_payloads(calls)
 
@@ -311,7 +312,7 @@ def test_the_personal_access_link_is_never_written_into_the_profile(calls, with_
     """
     mc.send(
         "+5543984049009",
-        "stock_arrived",
+        "order_accepted",
         {
             "action_url": "https://loja.example.com/a?t=segredo-de-login",
             "action_url_public": "/p/cro",
@@ -330,7 +331,7 @@ def test_a_caller_that_forgets_the_common_link_still_does_not_leak(calls, with_f
     """
     mc.send(
         "+5543984049009",
-        "stock_arrived",
+        "order_accepted",
         {"action_url": "https://loja.example.com/a?t=segredo-de-login"},
     )
 

@@ -29,7 +29,7 @@ import { describe, expect, it } from "vitest";
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 /** Dívida medida em 02/09/2026. Só desce. Ver WP-IDENT-PT-BR.md. */
-const BASELINE = 35;
+const BASELINE = 32;
 
 // Allowlist do que já se sabe existir — NÃO é detector. Nome novo em pt-br não
 // aparece aqui; contra isso vale a revisão e a varredura morfológica periódica

@@ -226,3 +226,64 @@ class TestDescribeOccurrence:
     )
     def test_config_torta_e_dita_e_o_resto_e_silencio(self, schedule, expected):
         assert campaign_schedule.describe_occurrence(schedule) == expected
+
+
+class TestTimezoneAndDst:
+    def test_once_with_named_timezone_keeps_the_exact_offset(self):
+        schedule = {
+            "type": "once",
+            "at": "2026-11-01T01:30:00-05:00",
+            "timezone": "America/New_York",
+        }
+
+        result = campaign_schedule.next_occurrence(
+            schedule,
+            now=datetime.fromisoformat("2026-10-31T12:00:00-04:00"),
+        )
+
+        assert result.isoformat() == "2026-11-01T01:30:00-05:00"
+
+    def test_once_rejects_ambiguous_naive_wall_time(self):
+        schedule = {
+            "type": "once",
+            "at": "2026-11-01T01:30:00",
+            "timezone": "America/New_York",
+        }
+
+        assert campaign_schedule.next_occurrence(
+            schedule,
+            now=datetime.fromisoformat("2026-10-31T12:00:00-04:00"),
+        ) is None
+
+    def test_recurring_gap_is_skipped_instead_of_shifted(self):
+        schedule = {
+            "type": "recurring",
+            "windows": [["02:30", "03:30"]],
+            "weekdays": [6],
+            "timezone": "America/New_York",
+        }
+
+        result = campaign_schedule.next_occurrence(
+            schedule,
+            now=datetime.fromisoformat("2026-03-07T12:00:00-05:00"),
+        )
+
+        assert result.isoformat() == "2026-03-15T02:30:00-04:00"
+
+    def test_recurring_fold_fires_only_the_earlier_occurrence(self):
+        schedule = {
+            "type": "recurring",
+            "windows": [["01:30", "02:30"]],
+            "weekdays": [6],
+            "timezone": "America/New_York",
+        }
+        before = datetime.fromisoformat("2026-10-31T12:00:00-04:00")
+        first = campaign_schedule.next_occurrence(schedule, now=before)
+
+        assert first.isoformat() == "2026-11-01T01:30:00-04:00"
+        following = campaign_schedule.next_occurrence(
+            schedule,
+            now=before,
+            after=first,
+        )
+        assert following.isoformat() == "2026-11-08T01:30:00-05:00"

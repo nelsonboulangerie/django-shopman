@@ -75,10 +75,17 @@ class ShopmanConfig(AppConfig):
         #    Material (Buyman) — neither core can see the other (ADR-001)
         self._connect_sku_namespace_guard()
 
-        # 10. Register curated-data backup resources (shop + Core packages)
+        # 10. Any RBAC membership edit invalidates open Marketing transaction
+        #     authorizations and recent-auth evidence.
+        import shopman.shop.marketing_security_signals  # noqa: F401
+
+        # 11. Announcement truth closes/refreshes every personal alert sibling.
+        import shopman.shop.user_notification_signals  # noqa: F401
+
+        # 12. Register curated-data backup resources (shop + Core packages)
         self._register_backup_resources()
 
-        # 11. Connect got_request_exception → OperatorAlert (o 500 deixa de
+        # 13. Connect got_request_exception → OperatorAlert (o 500 deixa de
         #     morrer no log). Ver shopman/shop/services/unhandled_errors.py.
         self._connect_unhandled_exception_alert()
 

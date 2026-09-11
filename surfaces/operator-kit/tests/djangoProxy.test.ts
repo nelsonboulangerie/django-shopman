@@ -7,7 +7,14 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { csrfTokenFromCookieHeader, mergeSetCookieIntoCookieHeader } from "../server/utils/djangoProxy";
+import {
+  csrfTokenFromCookieHeader,
+  DJANGO_CONDITIONAL_REQUEST_HEADERS,
+  DJANGO_OPERATIONAL_RESPONSE_HEADERS,
+  isSafeDjangoLocation,
+  isSafeDjangoSetCookieHeader,
+  mergeSetCookieIntoCookieHeader,
+} from "../server/utils/djangoProxy";
 import {
   assertProductionDjangoConfiguration,
   configuredDjangoBaseUrl,
@@ -37,16 +44,53 @@ describe("Django proxy — transporte de CSRF/cookie do BFF de operador", () => 
     );
   });
 
+  it("aceita cookies Django válidos e recusa atributos, prefixos ou bytes inseguros", () => {
+    expect(isSafeDjangoSetCookieHeader(
+      "sessionid=abc.def=ghi==; expires=Wed, 09 Sep 2026 20:00:00 GMT; Max-Age=31449600; Path=/; Secure; HttpOnly; SameSite=Lax",
+    )).toBe(true);
+    expect(isSafeDjangoSetCookieHeader("__Host-sessionid=s1; Path=/; Secure; HttpOnly; SameSite=Strict")).toBe(true);
+    expect(isSafeDjangoSetCookieHeader("__Host-sessionid=s1; Path=/; HttpOnly")).toBe(false);
+    expect(isSafeDjangoSetCookieHeader("sessionid=s1; Path=/; Surprise=enabled")).toBe(false);
+    expect(isSafeDjangoSetCookieHeader("sessionid=s1\r\nX-Injected: yes; Path=/")).toBe(false);
+  });
+
+  it("repassa somente redirects same-origin por caminho absoluto", () => {
+    expect(isSafeDjangoLocation("/admin/login/?next=%2Fcampaigns%2F")).toBe(true);
+    expect(isSafeDjangoLocation("https://evil.example/steal")).toBe(false);
+    expect(isSafeDjangoLocation("//evil.example/steal")).toBe(false);
+    expect(isSafeDjangoLocation("/\\evil.example/steal")).toBe(false);
+    expect(isSafeDjangoLocation("/ok\r\nX-Injected: yes")).toBe(false);
+  });
+
   it("normaliza origin/referer de método inseguro para o origin do Django", () => {
     expect(proxySource).toContain("headers.origin = djangoOrigin");
     expect(proxySource).toContain("headers.referer = `${djangoOrigin}/`");
+    expect(proxySource).toContain('getRequestHeader(event, "idempotency-key")');
     expect(proxySource).not.toContain('getRequestHeader(event, "origin")');
     expect(proxySource).not.toContain('getRequestHeader(event, "referer")');
   });
 
+  it("preserva por allowlist a revalidação e os metadados operacionais", () => {
+    expect(DJANGO_CONDITIONAL_REQUEST_HEADERS).toEqual(["if-none-match", "x-request-id"]);
+    expect(DJANGO_OPERATIONAL_RESPONSE_HEADERS).toEqual(expect.arrayContaining([
+      "retry-after",
+      "etag",
+      "x-request-id",
+      "x-api-version",
+      "x-contract-version",
+      "x-resource-version",
+      "ratelimit-limit",
+      "ratelimit-remaining",
+      "ratelimit-reset",
+    ]));
+    expect(DJANGO_OPERATIONAL_RESPONSE_HEADERS).not.toContain("cache-control");
+    expect(proxySource).toContain("for (const name of DJANGO_CONDITIONAL_REQUEST_HEADERS)");
+    expect(proxySource).toContain("for (const name of DJANGO_OPERATIONAL_RESPONSE_HEADERS)");
+  });
+
   it("mantém a checagem de X-API-Version fiada dentro do proxy", () => {
     expect(proxySource).toContain('warnOnApiVersionMismatch(response.headers.get("x-api-version")');
-    expect(proxySource).toContain('appendResponseHeader(event, "x-api-version"');
+    expect(DJANGO_OPERATIONAL_RESPONSE_HEADERS).toContain("x-api-version");
     expect(proxySource).toContain('applyPrivateNoStore(event, response.headers.get("vary"))');
   });
 

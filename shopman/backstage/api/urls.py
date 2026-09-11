@@ -52,27 +52,43 @@ from .kds import (
 )
 from .marketing import (
     AnnouncementApproveView,
+    AnnouncementCancelView,
+    AnnouncementDeliveryActionsView,
+    AnnouncementDetailV2View,
     AnnouncementDetailView,
+    AnnouncementReconcileDeliveriesView,
     AnnouncementRejectView,
+    AnnouncementRescheduleView,
+    AnnouncementRetryDeliveriesView,
     AnnouncementRewriteView,
+    AnnouncementSuggestionDispositionView,
     AnnouncementTemplateDetailView,
     AnnouncementTemplateListView,
     AudienceCountView,
+    CampaignBoardV2View,
     CampaignBoardView,
     CampaignDetailView,
     CampaignFireView,
+    CampaignHistoryV2View,
     CampaignHistoryView,
     CampaignListView,
     CampaignOptionsView,
+    MarketingDualControlView,
+    MarketingFreezeView,
+    MarketingStepUpView,
+    MarketingUnfreezeView,
     PlatformsView,
     PreviewView,
     WhatsAppTemplateView,
     WhatsAppTestSendView,
 )
 from .notifications import (
+    NotificationAcknowledgeView,
     NotificationActionView,
+    NotificationListV2View,
     NotificationListView,
     NotificationReadView,
+    NotificationSeenBatchView,
 )
 from .operations import (
     DayClosingView,
@@ -208,13 +224,18 @@ from .recipe_book import (
     RecipeVersionView,
 )
 from .sign_ins import SignInListView
-from .telemetry import ClientErrorView
+from .telemetry import ClientErrorView, MarketingVitalView
 
 urlpatterns = [
     # Cofre de dados curados — persona GESTOR (perm fina backstage.export_backup)
     path("backup/export/", BackupExportView.as_view(), name="api-backstage-backup-export"),
     # Telemetria — erro de cliente das superfícies de operador (operator-kit)
     path("client-error/", ClientErrorView.as_view(), name="api-backstage-client-error"),
+    path(
+        "marketing/telemetry/vital/",
+        MarketingVitalView.as_view(),
+        name="api-backstage-marketing-vital",
+    ),
     # Central de Apps — launcher do operador (surfaces/hub-nuxt)
     path("hub/", HubView.as_view(), name="api-backstage-hub"),
     # KDS
@@ -461,22 +482,47 @@ urlpatterns = [
     # Auditoria no Admin). É para onde o aviso de acesso aponta.
     path("sign-ins/", SignInListView.as_view(), name="api-backstage-sign-ins"),
     path("notifications/", NotificationListView.as_view(), name="api-backstage-notifications"),
+    path("notifications/v2/", NotificationListV2View.as_view(), name="api-backstage-notifications-v2"),
+    path(
+        "notifications/v2/seen/",
+        NotificationSeenBatchView.as_view(),
+        name="api-backstage-notifications-v2-seen",
+    ),
     path(
         "notifications/<int:pk>/read/",
         NotificationReadView.as_view(),
         name="api-backstage-notification-read",
     ),
     path(
+        "notifications/<int:pk>/acknowledge/",
+        NotificationAcknowledgeView.as_view(),
+        name="api-backstage-notification-acknowledge",
+    ),
+    path(
         "notifications/<int:pk>/action/",
         NotificationActionView.as_view(),
         name="api-backstage-notification-action",
     ),
-    # Campanha — marketing operacional (surfaces/marketing-nuxt). Gate próprio
-    # (`shop.manage_campaigns`): o gestor de marketing não é o de pedidos.
+    # Marketing operacional: capabilities por ação; abrir o app não publica.
     path("marketing/", CampaignBoardView.as_view(), name="api-backstage-marketing"),
+    path("marketing/v2/", CampaignBoardV2View.as_view(), name="api-backstage-marketing-v2"),
+    path(
+        "marketing/v2/announcements/<int:pk>/",
+        AnnouncementDetailV2View.as_view(),
+        name="api-backstage-marketing-v2-announcement",
+    ),
+    path(
+        "marketing/v2/history/",
+        CampaignHistoryV2View.as_view(),
+        name="api-backstage-marketing-v2-history",
+    ),
     path("marketing/audience/count/", AudienceCountView.as_view(), name="api-backstage-marketing-audience-count"),
     path("marketing/history/", CampaignHistoryView.as_view(), name="api-backstage-marketing-history"),
     path("marketing/options/", CampaignOptionsView.as_view(), name="api-backstage-marketing-options"),
+    path("marketing/security/step-up/", MarketingStepUpView.as_view(), name="api-backstage-marketing-step-up"),
+    path("marketing/security/dual-control/", MarketingDualControlView.as_view(), name="api-backstage-marketing-dual-control"),
+    path("marketing/security/freeze/", MarketingFreezeView.as_view(), name="api-backstage-marketing-freeze"),
+    path("marketing/security/unfreeze/", MarketingUnfreezeView.as_view(), name="api-backstage-marketing-unfreeze"),
     path("marketing/platforms/", PlatformsView.as_view(), name="api-backstage-marketing-platforms"),
     path("marketing/preview/", PreviewView.as_view(), name="api-backstage-marketing-preview"),
     path("marketing/rules/", CampaignListView.as_view(), name="api-backstage-marketing-rules"),
@@ -489,7 +535,17 @@ urlpatterns = [
     path("marketing/announcements/<int:pk>/", AnnouncementDetailView.as_view(), name="api-backstage-marketing-announcement"),
     path("marketing/announcements/<int:pk>/approve/", AnnouncementApproveView.as_view(), name="api-backstage-marketing-approve"),
     path("marketing/announcements/<int:pk>/reject/", AnnouncementRejectView.as_view(), name="api-backstage-marketing-reject"),
+    path("marketing/announcements/<int:pk>/cancel/", AnnouncementCancelView.as_view(), name="api-backstage-marketing-cancel"),
+    path("marketing/announcements/<int:pk>/reschedule/", AnnouncementRescheduleView.as_view(), name="api-backstage-marketing-reschedule"),
+    path("marketing/announcements/<int:pk>/delivery-actions/", AnnouncementDeliveryActionsView.as_view(), name="api-backstage-marketing-delivery-actions"),
+    path("marketing/announcements/<int:pk>/retry-deliveries/", AnnouncementRetryDeliveriesView.as_view(), name="api-backstage-marketing-retry-deliveries"),
+    path("marketing/announcements/<int:pk>/reconcile-deliveries/", AnnouncementReconcileDeliveriesView.as_view(), name="api-backstage-marketing-reconcile-deliveries"),
     path("marketing/announcements/<int:pk>/rewrite/", AnnouncementRewriteView.as_view(), name="api-backstage-marketing-rewrite"),
+    path(
+        "marketing/announcements/<int:pk>/suggestions/<uuid:ref>/disposition/",
+        AnnouncementSuggestionDispositionView.as_view(),
+        name="api-backstage-marketing-suggestion-disposition",
+    ),
     # Production — work order actions
     path("production/plan/", WorkOrderPlanView.as_view(), name="api-backstage-wo-plan"),
     path("production/<int:wo_id>/start/", WorkOrderStartView.as_view(), name="api-backstage-wo-start"),

@@ -964,6 +964,7 @@ class Command(BaseCommand):
         self._seed_notification_templates()
         self._seed_rule_configs()
         self._seed_omotenashi_copy()
+        self._seed_qa_marketing_audience(customers)
         self._seed_loyalty(customers)
         self._seed_operation_checklists()
 
@@ -1001,6 +1002,52 @@ class Command(BaseCommand):
         # B.I.: sem movimento de prateleira o painel de abastecimento nasce
         # vazio. Vai depois da vitrine para não disputar os quants dela.
         self._seed_bi_history(products, positions)
+
+    def _seed_qa_marketing_audience(self, customers: dict) -> None:
+        """Named consented cohort large enough to cross the real send guardrail.
+
+        The generic seed intentionally has only five marketing consents, while a
+        normal WhatsApp campaign requires ten eligible people.  That makes the
+        guardrail impossible to exercise.  QA gets twelve obviously synthetic,
+        tagged customers; demo/production-shaped data stays untouched.
+        """
+
+        from shopman.guestman import ConsentService
+
+        tier = PriceTier.objects.get(ref="varejo")
+        tag = CustomerTag.resolve(["QA Marketing E2E"])[0]
+        for index in range(1, 13):
+            ref = f"QA-MKT-{index:03d}"
+            phone = f"+554390000{index:04d}"
+            customer, _created = Customer.objects.update_or_create(
+                ref=ref,
+                defaults={
+                    "first_name": "Teste",
+                    "last_name": f"Marketing {index:02d}",
+                    "customer_type": "individual",
+                    "price_tier": tier,
+                    "phone": phone,
+                    "birthday": timezone.localdate(),
+                    "is_active": True,
+                },
+            )
+            ContactPoint.objects.update_or_create(
+                customer=customer,
+                type="whatsapp",
+                value_normalized=phone,
+                defaults={"is_primary": True, "value_display": phone},
+            )
+            customer.tags.add(tag)
+            ConsentService.grant_consent(
+                customer.ref,
+                "whatsapp",
+                source="seed:qa:marketing-e2e",
+            )
+            customers[ref] = customer
+        self.stdout.write(
+            "  ✅ 12 clientes sintéticos QA-MKT-* com consentimento e tag "
+            "'QA Marketing E2E'"
+        )
 
     #: SKU canônico de cada estado de vitrine no perfil qa (datas relativas).
     #: Fonte única no módulo — o `qa_scenarios` arma os mesmos estados sem reseed.
@@ -1452,6 +1499,62 @@ class Command(BaseCommand):
         hard_delete(PaymentTransaction)
         PaymentIntent.objects.all().delete()
 
+        # Marketing é um ledger protegido e precisa sair antes de cliente, catálogo e
+        # usuário. Não basta apagar ``Announcement`` no fim: snapshots ainda ligados a
+        # clientes usam SET_NULL, mas a própria constraint exige customer OU
+        # subscription_ref. O SET_NULL intermediário portanto falha antes de o anúncio
+        # ser alcançado. A ordem abaixo percorre o grafo do filho para a raiz; raw delete
+        # é deliberado porque os eventos/artefatos são imutáveis durante a operação do
+        # app, mas ``seed --flush`` é justamente o boundary destrutivo já protegido pelo
+        # guard de ambiente acima.
+        from shopman.shop.models import (
+            AudienceSnapshot,
+            AudienceSnapshotMember,
+            DeliveryAttempt,
+            DeliveryReconciliation,
+            DeliveryTarget,
+            MarketingAISuggestion,
+            MarketingAISuggestionEvent,
+            MarketingAuditEvent,
+            MarketingCommandReceipt,
+            MarketingConfirmation,
+            MarketingContentArtifact,
+            MarketingOutbox,
+            MarketingPlatformAuditEvent,
+            MarketingQuotaUsage,
+            MarketingSafetyState,
+            MarketingSecurityEvent,
+            MarketingTestReceipt,
+            UserNotification,
+            UserNotificationEvent,
+        )
+
+        for model in [
+            DeliveryReconciliation,
+            DeliveryAttempt,
+            DeliveryTarget,
+            MarketingOutbox,
+            MarketingAISuggestionEvent,
+            MarketingSecurityEvent,
+            MarketingPlatformAuditEvent,
+            MarketingAuditEvent,
+            UserNotificationEvent,
+            MarketingConfirmation,
+            MarketingAISuggestion,
+            MarketingContentArtifact,
+            AudienceSnapshotMember,
+            AudienceSnapshot,
+            MarketingCommandReceipt,
+            MarketingTestReceipt,
+            MarketingQuotaUsage,
+            MarketingSafetyState,
+            UserNotification,
+            Announcement,
+            Campaign,
+            AnnouncementTemplate,
+        ]:
+            hard_delete(model)
+
         # Orderman
         for model in [
             FulfillmentItem,
@@ -1578,9 +1681,6 @@ class Command(BaseCommand):
         DayClosing.objects.all().delete()
 
         # Shop
-        Announcement.objects.all().delete()
-        Campaign.objects.all().delete()
-        AnnouncementTemplate.objects.all().delete()
         Coupon.objects.all().delete()
         Promotion.objects.all().delete()
         # O catálogo de QC é parte do cenário canônico, não configuração que o

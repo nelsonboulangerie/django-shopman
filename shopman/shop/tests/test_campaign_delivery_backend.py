@@ -14,6 +14,7 @@ quebrada em dois pontos que nenhum teste cobria:
 from __future__ import annotations
 
 import pytest
+from django.test import override_settings
 
 from shopman.shop import notifications
 from shopman.shop.handlers import campaign as handlers
@@ -60,6 +61,12 @@ def test_manychat_wins_when_configured(adapters):
     assert handlers._whatsapp_backend() == "manychat"
 
 
+def test_direct_meta_adapter_is_never_a_marketing_fallback(adapters):
+    adapters["whatsapp"] = _Adapter()
+
+    assert handlers._whatsapp_backend() is None
+
+
 def test_an_unconfigured_manychat_is_skipped(adapters):
     """Adapter registrado mas sem credencial não conta como transporte pronto."""
     adapters["manychat"] = _Adapter(available=False)
@@ -73,6 +80,13 @@ def test_console_never_beats_a_real_channel(adapters):
     adapters["manychat"] = _Adapter()
 
     assert handlers._whatsapp_backend() == "manychat"
+
+
+@override_settings(SHOPMAN_ENVIRONMENT="production")
+def test_console_is_never_a_production_transport(adapters):
+    adapters["console"] = _Adapter()
+
+    assert handlers._whatsapp_backend() is None
 
 
 def test_no_backend_counts_everyone_as_failed(adapters):

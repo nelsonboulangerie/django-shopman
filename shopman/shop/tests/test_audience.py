@@ -7,7 +7,7 @@ canal de entrega, ninguém entra na audiência. Todo o resto é otimização.
 from __future__ import annotations
 
 import types
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from django.utils import timezone
@@ -119,15 +119,19 @@ class TestConsent:
 class TestAlerts:
     def test_subscription_is_its_own_consent(self):
         """Quem pediu para ser avisado daquele SKU já consentiu naquele SKU."""
-        StockAlertSubscription.objects.create(sku=SKU, contact_phone="+5543999990002")
+        from shopman.storefront.services import stock_alerts
+
+        stock_alerts.subscribe(SKU, phone="+5543999990002")
 
         result = audience.resolve({"alerts": True}, sku=SKU)
         assert [r.phone for r in result.general] == ["+5543999990002"]
 
     def test_already_notified_subscription_is_skipped(self):
-        StockAlertSubscription.objects.create(
-            sku=SKU, contact_phone="+5543999990002", notified_at=timezone.now()
-        )
+        from shopman.storefront.services import stock_alerts
+
+        sub = stock_alerts.subscribe(SKU, phone="+5543999990002")
+        sub.notified_at = timezone.now()
+        sub.save(update_fields=["notified_at"])
         assert audience.resolve({"alerts": True}, sku=SKU).total == 0
 
     def test_subscription_without_phone_is_unreachable(self):
@@ -151,11 +155,17 @@ class TestAlerts:
 class TestBoughtWithinDays:
     def _insight(self, customer, *, last_order_days_ago: int, sku: str = SKU):
         """Entrada no formato que ``insights/service.py`` realmente grava."""
-        last = timezone.localdate() - timedelta(days=last_order_days_ago)
+        last = timezone.now() - timedelta(days=last_order_days_ago)
         return CustomerInsight.objects.create(
             customer=customer,
+            last_order_at=last,
             favorite_products=[
-                {"sku": sku, "name": "Croissant", "qty": "4", "last_order_at": last.isoformat()}
+                {
+                    "sku": sku,
+                    "name": "Croissant",
+                    "qty": "4",
+                    "last_order_at": last.date().isoformat(),
+                }
             ],
         )
 
@@ -187,6 +197,30 @@ class TestBoughtWithinDays:
         self._insight(customer, last_order_days_ago=1, sku="pao-frances")
         assert audience.resolve({"bought_within_days": 90}, sku=SKU).total == 0
 
+    def test_coarse_timestamp_filter_never_overrides_the_exact_json_date(self):
+        """A timezone edge remains eligible for the existing date contract."""
+
+        customer = _customer("+5543999990043")
+        cutoff = timezone.localdate() - timedelta(days=90)
+        local_midnight = timezone.make_aware(
+            datetime.combine(cutoff, datetime.min.time()),
+            timezone.get_current_timezone(),
+        )
+        CustomerInsight.objects.create(
+            customer=customer,
+            last_order_at=local_midnight - timedelta(hours=2),
+            favorite_products=[
+                {
+                    "sku": SKU,
+                    "name": "Croissant",
+                    "qty": "1",
+                    "last_order_at": cutoff.isoformat(),
+                }
+            ],
+        )
+
+        assert audience.resolve({"bought_within_days": 90}, sku=SKU).total == 1
+
     def test_writer_shape_is_what_the_reader_reads(self):
         """A chave que o Guestman grava é a chave que a audiência lê.
 
@@ -217,25 +251,31 @@ class TestBoughtWithinDays:
 
 class TestDedupe:
     def test_same_phone_across_rules_receives_once(self):
+        from shopman.storefront.services import stock_alerts
+
         customer = _customer("+5543999990001")
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
-        StockAlertSubscription.objects.create(sku=SKU, contact_phone=customer.phone)
+        stock_alerts.subscribe(SKU, customer=customer)
 
         result = audience.resolve({"favorites": True, "alerts": True}, sku=SKU)
         assert result.total == 1
 
     def test_reasons_accumulate(self):
+        from shopman.storefront.services import stock_alerts
+
         customer = _customer("+5543999990001")
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
-        StockAlertSubscription.objects.create(sku=SKU, contact_phone=customer.phone)
+        stock_alerts.subscribe(SKU, customer=customer)
 
         recipient = audience.resolve({"favorites": True, "alerts": True}, sku=SKU).general[0]
         assert recipient.reasons == frozenset({"favorites", "alerts"})
 
     def test_counts_report_each_rule_before_dedupe(self):
+        from shopman.storefront.services import stock_alerts
+
         customer = _customer("+5543999990001")
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
-        StockAlertSubscription.objects.create(sku=SKU, contact_phone=customer.phone)
+        stock_alerts.subscribe(SKU, customer=customer)
 
         summary = audience.resolve({"favorites": True, "alerts": True}, sku=SKU).summary()
         assert summary["favorites_count"] == 1

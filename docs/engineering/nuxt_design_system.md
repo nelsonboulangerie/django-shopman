@@ -1,163 +1,112 @@
-# Nuxt Design System — Storefront e Backstage
+# Design compartilhado das superfícies Nuxt
 
-Guia operacional para superficies Nuxt v4 do Shopman. Aplica a `surfaces/storefront-nuxt/`
-e a futura `surfaces/backstage-nuxt/`.
+- **Owner:** Design/Produto
+- **Última verificação:** 2026-09-10 contra as superfícies do `HEAD`
 
-**Princípio mestre:** se Nuxt UI v4 já resolve, use Nuxt UI v4. Não copie classes nem
-imite aparência. `:ui` overrides são exceção, não regra. **Máximo 1 `:ui` override por
-elemento.** Mais que isso significa que o componente errado foi escolhido.
+Este documento registra somente padrões realmente compartilhados. O storefront é
+branded; as oito superfícies de operador estendem `surfaces/operator-kit` e seguem o
+canon de [`backstage-design-system.md`](backstage-design-system.md). Quando precisa de
+uma família de controles, o app mantém primitivas vendadas em `app/components/Ui`,
+construídas sobre Vue/Reka/Tailwind.
+O repositório atual não depende de Nuxt UI; nomes `UButton`/`UCard` de documentos
+antigos não são contrato do produto.
 
-## Tipografia — 5 níveis, fim
+## Regra de composição
 
-| Nível       | Mobile        | Desktop       | Peso       | Cor token            | Uso                                             |
-|-------------|---------------|---------------|------------|----------------------|-------------------------------------------------|
-| Display     | `text-4xl`    | `text-5xl`    | `font-bold`| `text-highlighted`   | Hero único da página, raro                      |
-| Title       | `text-2xl`    | `text-3xl`    | `font-bold`| `text-highlighted`   | `UPageHeader` title, página/seção principal     |
-| Section     | `text-lg`     | `text-xl`     | `font-semibold` | `text-highlighted` | Card header, subseção                          |
-| Body        | `text-base`   | `text-base`   | `font-normal` | `text-default`     | Conteúdo principal — **sempre 16px no mobile**  |
-| Caption     | `text-sm`     | `text-sm`     | `font-normal` | `text-muted`       | Metadados, hints, descrições secundárias        |
+1. Reuse a primitiva `Ui*` existente na própria família de superfície.
+2. Use props, variantes e slots antes de acrescentar classes locais.
+3. Promova algo ao `operator-kit` somente quando dois consumidores reais provarem a
+   mesma semântica. Necessidade exclusiva continua local.
+4. Página coordena; componente apresenta; composable orquestra estado; função de
+   `presentation/` transforma dados sem I/O.
+5. Nenhuma camada visual deriva autorização, preço, estoque, consentimento, prazo ou
+   transição. Renderize Projection + Actions do backend.
 
-**Regras inegociáveis:**
-- Body em mobile **nunca** abaixo de `text-base` (16px). Usuário idoso é first-class.
-- `text-xs` reservado para badges (`UBadge size="xs"`) e timestamps. Nunca em parágrafos.
-- Contraste mínimo: `text-muted` em `bg-default`. Nunca `text-dimmed` para conteúdo.
-- Preço/total: `tabular-nums` sempre. Sem exceção.
+## Hierarquia e ergonomia
 
-## Cores — só tokens semânticos
+- Um título principal por página; títulos de seção não competem com ele.
+- Corpo de texto em mobile nunca abaixo de 16 px; `text-xs` é reservado a badge ou
+  metadado curto.
+- Números comparáveis usam `tabular-nums`; cor nunca é o único portador de estado.
+- Layout começa em uma coluna e acrescenta colunas sem remover informação.
+- Todo alvo interativo mede ao menos 44×44 px ou possui área de toque equivalente
+  testada. Ícone sem texto exige nome acessível.
+- Modal tem nome, descrição, foco inicial, trap, fundo inerte, Escape quando seguro e
+  restauração de foco. Código de X dígitos usa o componente de verificação, com grupo
+  centralizado, colagem e anúncio acessível — nunca vários inputs artesanais soltos.
+- A ação principal é inequívoca e ocupa a largura útil no mobile quando isso reduz
+  erro. Ação perigosa não ganha destaque visual maior do que a opção segura recomendada.
 
-Use os tokens do tema. **Nunca** Tailwind cores diretas (`bg-amber-500`, `text-gray-700`).
+## Omotenashi operacional
 
-| Token              | Quando usar                                              |
-|--------------------|----------------------------------------------------------|
-| `text-highlighted` | Títulos, valores em destaque, nomes de produto           |
-| `text-default`     | Corpo de texto, conteúdo principal                       |
-| `text-muted`       | Descrições secundárias, hints, metadados                 |
-| `text-dimmed`      | Decorativo apenas (ex: counters em background)           |
-| `text-inverted`    | Texto sobre `bg-inverted`                                 |
-| `text-toned`       | Variação do default; usar quando `text-default` for forte demais |
-| `bg-default`       | Fundo da página                                           |
-| `bg-elevated`      | Cards, containers elevados                                |
-| `bg-muted`         | Áreas de descanso visual                                  |
-| `bg-inverted`      | Hero, CTA invertido                                       |
+A interface deve reduzir trabalho real, não apenas parecer agradável:
 
-Cores semânticas (`primary`, `success`, `warning`, `error`, `info`, `neutral`) **só** via
-`color="..."` em componentes Nuxt UI. Não escreva `bg-primary` solto — use `UBadge color="primary"`.
+- estado + consequência + próximo passo ficam no mesmo contexto;
+- escolha segura aparece como recomendada, sem esconder alternativas legítimas;
+- não pedir redigitação de dado já conhecido nem exigir memória entre telas;
+- rascunho sobrevive a reload, navegação e expiração de sessão;
+- conflito oferece comparação e reaproveitamento, nunca sobrescrita silenciosa;
+- loading preserva contexto; vazio só aparece após fetch bem-sucedido; erro distingue
+  login, proibição, conflito, validação, limite, indisponibilidade e offline;
+- feedback persistente usa o próprio painel/comprovante; toast é apenas confirmação
+  transitória;
+- apresentação ao operador é pt-BR. Termo técnico em inglês só aparece quando é o
+  identificador necessário para suporte ou auditoria.
 
-## Hierarquia de componentes
+Para fluxos de decisão, medir e registrar ao menos: decisões/toques, digitação,
+mudanças de tela, espera, consultas externas, recuperação e certeza da consequência.
+Guardas de segurança deliberadas podem exceder o budget, mas precisam de justificativa
+explícita; não podem ser escondidas como fricção acidental.
 
-**Página** = `UContainer` + `UPageHeader` + sections. Não inventar wrappers.
+## Estados e acessibilidade
 
-**Section** = `UPageSection` (com headline/title/description props), ou `<section>` simples
-quando a section não precisa de header (ex: hero).
+- Loading: esqueleto da forma final ou mensagem específica; nunca vazio enganoso.
+- Vazio: o que foi consultado, por que não há itens e uma única recuperação útil.
+- Erro: causa em linguagem humana, request ID copiável quando útil e próximo passo.
+- Resultado parcial/incerto: separar confirmado, aceito, falho, pendente e desconhecido.
+- Teclado: ordem previsível, foco visível, sem armadilha fora de modal.
+- WCAG 2.2 AA: axe sem `serious`/`critical`, 200% zoom, reflow a 320 px, contraste,
+  forced colors, reduced motion e text spacing sem perda de conteúdo ou ação.
+- Light/dark não mudam semântica; screenshots cobrem os dois quando suportados.
 
-**Card** decisão:
-- `UCard` quando estrutura é simples (header + body + footer slots).
-- `UPageCard` quando precisa de `to`, `title`, `description` props (CTA cards, marketing).
-- `UCard variant="subtle"` para sidebars/resumos.
-- `UCard variant="outline"` (default) para conteúdo principal.
+## Segurança de entrega
 
-**Lista de itens repetidos** = componente próprio (ex: `CartLineItem.vue`,
-`ProductCard.vue`). Markup inline em `v-for` proibido para qualquer item com >3 elementos.
+- Apps de operador são privados (`private, no-store`, `Vary: Cookie`) e não
+  indexáveis.
+- Assets compilados podem ser imutáveis; documentos, BFF, erros e SSE não.
+- Fontes e assets de runtime são locais ou explicitamente aprovados.
+- CSP, frame protection, HSTS em HTTPS, nosniff, referrer e permissions policy têm
+  testes. Exceção de HMR existe somente em branch compile-time de desenvolvimento.
+- Telemetria aceita allowlist e nunca conteúdo de anúncio, contato, membership,
+  credencial ou segredo.
 
-**Form** = `UForm` + `UFormField` + Nuxt UI inputs. Não compor com `<form>` + `<input>` cru.
+## Estrutura esperada
 
-**Modal** = `UModal` com `v-model:open`. Não inventar overlay.
-
-## CTAs
-
-- **Primário** (ação principal da tela): `<UButton size="xl">` (mobile) ou `size="lg"` (componentes embed).
-- **Secundário**: `color="neutral" variant="outline"`.
-- **Ghost** (link): `color="neutral" variant="ghost"`.
-- **Inverted** (sobre `bg-inverted`): `color="neutral" variant="solid"` dentro de `dark` class.
-
-Ícone-only só com `aria-label`. Sempre.
-
-## Mobile-first
-
-- Layout começa em uma coluna. `lg:grid-cols-...` adiciona colunas, nunca remove conteúdo.
-- Toque mínimo 44×44px. Use `size="md"` ou maior em controles primários mobile.
-- Bottom nav fixa só em mobile (`lg:hidden`). Header reage com `UHeader`.
-- Sticky CTA bar mobile para checkout/finalizar — `lg:hidden`, acima do bottom nav.
-- Imagens: `loading="lazy"` exceto a primeira above-the-fold.
-
-## Omotenashi
-
-Copy é cuidado, não floreio. Princípios:
-
-- **Verbos no presente, voz ativa.** "Confirme até 18h" > "Será necessário confirmar".
-- **Trate o cliente por você.** "Como podemos te chamar?" > "Informe seu nome".
-- **Antecipe a próxima ação.** Toda mensagem de estado tem um próximo passo claro ou
-  uma promessa ("a casa avisa quando").
-- **Sem jargão técnico.** "Carrinho aguardando" > "Itens com hold preventivo".
-- **Idoso-first.** Nada de copy fofo que dependa de contexto cultural digital.
-
-## Estados visuais (loading / empty / error)
-
-- **Loading**: `<USkeleton>` com forma aproximada. Nunca spinner solto centralizado.
-- **Empty**: `<UEmpty>` com `icon`, `title`, `description`, `:actions=[{label, to, icon}]`.
-- **Error**: `<UAlert color="error" variant="soft" :title :description>`.
-
-Toast: `useToast().add({icon, color, title, description})` para feedback transitório.
-Modal: `<UModal>` para confirmações destrutivas/decisão.
-
-## Imagens
-
-Hero: 1600px wide, `auto=format&fit=crop&q=80` (Unsplash). `loading="eager"`.
-Cards: 800px wide, `loading="lazy"`. Aspect ratio fixo via `aspect-4/3`.
-Avatar: `<UAvatar>` com `text` (iniciais) fallback. Nunca `<img>` solto pra avatar.
-
-## :ui overrides — limite duro
-
-Se você está prestes a escrever `:ui="{ ... }"` em um componente:
-
-1. O prop `variant` resolve? Use o variant.
-2. O prop `size` resolve? Use o size.
-3. Slot resolve? Use slot.
-4. **Só então** `:ui` com **uma** classe override.
-
-Anti-pattern:
-```vue
-<UCard :ui="{ root: 'rounded-xl shadow-lg', body: 'p-6 sm:p-8', header: 'border-b-2' }" class="bg-amber-50">
-```
-
-Pattern:
-```vue
-<UCard variant="subtle">
-```
-
-## Estrutura de pastas Nuxt
-
-```
+```text
 app/
-  components/        Componentes reutilizáveis. Nome PascalCase, prefixo opcional.
-                     Ex: ProductCard.vue, CartLineItem.vue, AddressFormModal.vue.
-  composables/       useShopSession, useCartState, useReorder, useGoogleMaps.
-                     Sempre `use*`, retorno reativo (refs/computed).
-  pages/             Rotas. Cada página é fina — delega lógica a composables, layout a componentes.
-  layouts/           default.vue, e variantes para superficies (ex: `auth.vue`).
-  plugins/           Bootstrap client/server (ex: session.client.ts).
-  types/             Tipos compartilhados (shopman.ts mirror dos projections Django).
-  utils/             Helpers puros (sem reativo, sem composição).
-  assets/css/        main.css com tokens globais e overrides mínimos.
-server/              Proxy para Django. `[...path].ts` por superfície.
+  components/       blocos reutilizáveis e primitivas Ui vendadas
+  composables/      coordenação reativa e fronteiras HTTP
+  pages/            rotas finas
+  presentation/     transformação pura e copy pt-BR
+  types/            tipos de consumo/apresentação
+  assets/css/       tema canônico importado + exceções locais justificadas
+server/
+  api/              BFF same-origin
+  routes/           SSE e health quando aplicáveis
 ```
 
-## Testando o design
+## Gate antes de concluir
 
-Antes de marcar uma tela como pronta:
+- unit/component cobrindo lógica e estados;
+- lint, typecheck e build de produção;
+- E2E do caminho principal e da recuperação crítica;
+- axe + teclado + foco;
+- matriz visual nos viewports/temas/estados relevantes;
+- contratos de segurança e auditoria de dependências;
+- instalação limpa e determinística.
 
-1. **Mobile 375×812** primeiro. Tudo legível? Botões alcançáveis com polegar? Bottom-bar não cobre conteúdo?
-2. **Desktop 1280×800**. Não exagera no espaço — max-width consistente.
-3. **Dark mode**. Tokens funcionam? Imagens têm contraste? Imagens decorativas sem `alt`.
-4. **Sem JS**: SSR renderiza algo útil?
-5. **Idoso na tela**: peça pra alguém de 70+ usar. Sério.
-
-## Deprecations / banidos
-
-- `bg-{color}-{shade}` solto fora de Nuxt UI components → use `color` prop.
-- `text-gray-*`, `text-amber-*` etc. → use tokens semânticos.
-- `:onclick="..."`, `document.getElementById` → use `@click`, refs Vue.
-- `prose` em conteúdo de aplicação → use hierarquia tipográfica acima.
-- `style="..."` inline → Tailwind utility ou `:ui`.
-- `:ui` com mais de 1 chave sem motivo justificado em comentário.
-- `text-xs` em parágrafo de body.
+No Marketing, essa cadeia é o job `Marketing — cadeia completa`: 320 px, mobile,
+desktop, 200% zoom, light/dark, reduced motion, forced colors, conteúdo extremo,
+confirmação, sessão expirada, conflito, parcial e `unknown`. O contrato factual e seus
+budgets estão em
+[`../reference/marketing-surface-contract.md`](../reference/marketing-surface-contract.md).

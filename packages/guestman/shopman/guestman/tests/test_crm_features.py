@@ -651,6 +651,7 @@ class TestCommunicationConsentModel:
             customer=customer,
             channel="email",
             status="opted_in",
+            proof_status="verified",
         )
         assert consent.is_active is True
 

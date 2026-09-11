@@ -14,7 +14,7 @@ via ``reportClientError`` → ``/api/v1/backstage/client-error/``.
 from __future__ import annotations
 
 import logging
-import re
+import math
 from typing import Any
 
 from django.utils.decorators import method_decorator
@@ -25,6 +25,10 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from shopman.backstage.api.permissions import HasMarketingCapability
+from shopman.shop.services.marketing_observability import emit_metric
+from shopman.shop.telemetry_redaction import redact_text, strip_url_query
+
 logger = logging.getLogger("shopman.backstage.client")
 
 # Campos aceitos do relatório; qualquer outra chave é ignorada (evita virar dreno de
@@ -33,20 +37,13 @@ _ALLOWED_FIELDS = ("message", "kind", "source", "url", "stack", "user_agent", "a
 _MAX_LEN = {"message": 500, "stack": 4000, "url": 300, "user_agent": 300, "app_version": 60}
 _MAX_DEFAULT = 120
 
-_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
-# Sequências longas de dígitos (telefones, com separadores) → redige.
-_PHONE_RE = re.compile(r"(?<!\w)(?:\+?\d[\d\s().-]{7,}\d)(?!\w)")
-
-
 def _redact(text: str) -> str:
-    text = _EMAIL_RE.sub("[email]", text)
-    text = _PHONE_RE.sub("[phone]", text)
-    return text
+    return redact_text(text)
 
 
 def _strip_query(url: str) -> str:
     # Guarda só caminho + host: query/fragment podem carregar tokens ou dados.
-    return url.split("?", 1)[0].split("#", 1)[0]
+    return strip_url_query(url)
 
 
 def sanitize_client_report(payload: Any) -> dict[str, str]:
@@ -97,4 +94,81 @@ class ClientErrorView(APIView):
                 message,
                 extra={"client_report": report},
             )
+        return Response({"ok": True}, status=status.HTTP_202_ACCEPTED)
+
+
+_VITAL_NAMES = frozenset({"LCP", "INP", "CLS"})
+_VITAL_RATINGS = frozenset({"good", "needs_improvement", "poor"})
+_VITAL_ROUTES = frozenset({
+    "board",
+    "campaigns",
+    "templates",
+    "platforms",
+    "history",
+    "announcement_detail",
+    "other",
+})
+_VITAL_THEMES = frozenset({"light", "dark"})
+
+
+def sanitize_marketing_vital(payload: Any) -> dict[str, str | float]:
+    """Accept one bounded Web Vital sample with no free-form dimensions."""
+
+    if not isinstance(payload, dict):
+        return {}
+    name = payload.get("name")
+    rating = payload.get("rating")
+    route = payload.get("route")
+    theme = payload.get("theme")
+    value = payload.get("value")
+    if (
+        name not in _VITAL_NAMES
+        or rating not in _VITAL_RATINGS
+        or route not in _VITAL_ROUTES
+        or theme not in _VITAL_THEMES
+        or isinstance(value, bool)
+        or not isinstance(value, int | float)
+        or not math.isfinite(value)
+        or value < 0
+        or value > 120_000
+    ):
+        return {}
+    return {
+        "name": name,
+        "rating": rating,
+        "route": route,
+        "theme": theme,
+        "value": round(float(value), 3),
+    }
+
+
+@method_decorator(
+    ratelimit(key="ip", rate="60/m", method="POST", block=False), name="dispatch"
+)
+class MarketingVitalView(APIView):
+    """Authenticated, write-only and dimension-closed Web Vitals ingestion."""
+
+    permission_classes = [HasMarketingCapability]
+    permission_map = {"POST": "shop.view_marketing"}
+
+    @extend_schema(tags=["telemetry"], summary="Report one Marketing Web Vital")
+    def post(self, request):
+        if getattr(request, "limited", False):
+            return Response(status=status.HTTP_429_TOO_MANY_REQUESTS)
+        sample = sanitize_marketing_vital(
+            request.data if hasattr(request, "data") else {}
+        )
+        if not sample:
+            return Response(
+                {"code": "invalid_metric"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        emit_metric(
+            "marketing_frontend_vital",
+            sample["value"],
+            name=str(sample["name"]),
+            rating=str(sample["rating"]),
+            route=str(sample["route"]),
+            theme=str(sample["theme"]),
+        )
         return Response({"ok": True}, status=status.HTTP_202_ACCEPTED)

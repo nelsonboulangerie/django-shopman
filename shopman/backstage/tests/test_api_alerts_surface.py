@@ -113,6 +113,18 @@ def test_list_returns_alerts_and_counts(client, operator, alert):
     assert body["counts"] == {"active": 1, "critical": 0}
     assert len(body["alerts"]) == 1
     first = body["alerts"][0]
+    assert {
+        "pk",
+        "type",
+        "type_label",
+        "severity",
+        "severity_label",
+        "message",
+        "created_at_display",
+        "actions",
+    } <= set(first)
+    assert first["actions"][0]["kind"] == "acknowledge_alert"
+    assert first["actions"][0]["enabled"] is True
     assert first["audience"] == "orders"
     assert first["actions"][0] == {
         "ref": f"acknowledge:{alert.pk}",

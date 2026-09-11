@@ -27,6 +27,10 @@
 | [`fiscal_audit_catalog`](#fiscal_audit_catalog) | shop | Operação | Lista vendáveis publicados sem classificação fiscal completa (NFC-e) |
 | [`check_catalog_visibility`](#check_catalog_visibility) | shop | Manutenção | Alerta produto que sumiu do cardápio porque a coleção dele foi desativada |
 | [`check_integration_drift`](#check_integration_drift) | backstage | Manutenção | Alerta integração em configuração insegura/incompleta — a prontidão deixa de esperar alguém abrir a tela |
+| [`export_marketing_client`](#export_marketing_client) | backstage | Dev/CI | Gera e verifica schema, OpenAPI e cliente TypeScript de Marketing v2 |
+| [`diagnose_marketing`](#diagnose_marketing) | shop | Diagnóstico | Resume outbox/ledger/alertas sem PII, escrita ou provider |
+| [`process_marketing_outbox`](#process_marketing_outbox) | shop | Worker | Reconcilia e entrega intents commitadas à fila durável |
+| [`process_marketing_delivery`](#process_marketing_delivery) | shop | Worker | Processa destinos com leases, outcomes e reconciliação segura |
 | [`inject_ifood_order`](#inject_ifood_order) | shop | Dev | Injeta pedido iFood simulado pela ingestão canônica (apenas DEBUG) |
 | [`reconcile_financial_day`](#reconcile_financial_day) | backstage | Operação | Reconcilia pedido, intent, transação e fechamento diário |
 | [`smoke_gateways`](#smoke_gateways) | backstage | Operação | Estressa webhooks/gateways com fixtures locais e matriz sandbox |
@@ -1142,6 +1146,73 @@ Cria ou atualiza um superuser nominal de forma idempotente, sem depender do
 | `--email` | `SHOPMAN_ADMIN_EMAIL` | Email do usuário administrativo |
 | `--password-env` | `SHOPMAN_ADMIN_PASSWORD` | Env var que contém a senha |
 | `--deactivate-seed-admin` | — | Desativa o usuário técnico `admin` criado pelo seed |
+
+---
+
+### export_marketing_client
+
+**App:** `shopman.backstage`
+**Arquivo:** `shopman/backstage/management/commands/export_marketing_client.py`
+
+Regenera, pela mesma fonte, o JSON Schema da projection v2, o OpenAPI 3.1 e o cliente
+TypeScript do Marketing. `--check` é somente leitura e falha se qualquer byte estiver
+stale; é a forma usada pelo Runtime Gate.
+
+```bash
+python manage.py export_marketing_client          # mudança intencional de contrato
+python manage.py export_marketing_client --check  # CI/revisão
+```
+
+### diagnose_marketing
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/diagnose_marketing.py`
+
+Snapshot read-only de comprovante, outbox, destinos, tentativas, reconciliação e alertas.
+Não serializa conteúdo, recipient ou PII e não chama provider.
+
+| Flag | Default | Descrição |
+|---|---|---|
+| `--receipt` | todos | Filtra por UUID técnica do comprovante |
+| `--platform` | `all` | Filtra por plataforma |
+| `--json` | — | Saída única copiável para incidente |
+
+Prefira o wrapper: `make marketing-diagnose receipt=<UUID> platform=<plataforma>`.
+
+### process_marketing_outbox
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/process_marketing_outbox.py`
+
+Reconcilia leases e publica outboxes commitadas para directives. Fica inerte quando
+`SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED=false`. `--force` só é aceito em
+development/test; não atravessa produção.
+
+| Flag | Default | Descrição |
+|---|---|---|
+| `--limit` | `100` | Máximo por ciclo, limitado a 1.000 |
+| `--lease-seconds` | `60` | Lease entre 10 e 900 segundos |
+| `--worker-id` | UUID local | Identidade explícita do worker |
+| `--watch` | — | Executa ciclos contínuos |
+| `--interval` | `2.0` | Espera entre ciclos |
+| `--force` | — | Ignora somente a flag em development/test |
+
+### process_marketing_delivery
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/process_marketing_delivery.py`
+
+Processa destinos aprovados pelo ledger durável. Cada plataforma resolve seu próprio
+adapter, sem fallback; lease, consentimento, prazo, cancelamento e freeze são
+revalidados. Resultado incerto é reconciliado por lookup, nunca repetido às cegas.
+
+Além das flags de limite/lease/worker/watch/interval/force acima, aceita
+`--with-outbox` e `--with-reconciliation`. O ensaio seguro é
+`make marketing-simulator`, exclusivamente com `config.settings_marketing_demo` e
+adapter `SIMULATION_ONLY`.
+
+Contrato e estado de rollout:
+[`marketing-surface-contract.md`](marketing-surface-contract.md).
 
 ---
 

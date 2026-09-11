@@ -18,7 +18,7 @@ O Shopman é composto por **3 camadas**:
 |--------|-----------|-----------|
 | **Core Apps** | `packages/` | 11 pacotes pip independentes, cada um com domínio próprio |
 | **Framework** | `shopman/` | Orquestrador (`shop`) + superfícies headless (`storefront`, `backstage`) que servem API JSON e projections |
-| **Superfícies** | `surfaces/` | 6 apps Nuxt 4 SSR (loja, hub, POS, KDS, gestor, produção) + layer `operator-kit` |
+| **Superfícies** | `surfaces/` | 9 apps Nuxt 4 SSR + layer `operator-kit` |
 
 > **Tenant = config + dados + marca, zero código.** Não há pacote Python de instância.
 > "Nelson Boulangerie" é o `Shop` singleton + dados no DB (via `seed`) + marca + settings do deployment.
@@ -69,7 +69,8 @@ make run
 # 4. Subir as superfícies Nuxt (cada uma em seu diretório)
 cd surfaces/storefront-nuxt && npm install && npm run dev   # loja      → http://127.0.0.1:3000
 cd surfaces/pos-nuxt        && npm install && npm run dev   # PDV       → http://127.0.0.1:3002
-# hub :3001 · kds :3003 · orders :3004 · production :3005
+# hub :3001 · kds :3003 · orders :3004 · production :3005 · marketing :3006
+# bi :3007 · purchase :3008
 ```
 
 > Postgres é o default de dev — casa com os testes de concorrência do Stockman
@@ -108,7 +109,7 @@ django-shopman/
 │   ├── storefront/             # Superfície customer HEADLESS: api/, presentation/, intents/
 │   └── backstage/              # Superfícies operador HEADLESS + Admin/Unfold
 │
-├── surfaces/                   # 6 apps Nuxt 4 (SSR) + 1 layer
+├── surfaces/                   # 9 apps Nuxt 4 (SSR) + 1 layer
 │   ├── storefront-nuxt/        # loja do cliente (apex, :3000)
 │   ├── hub-nuxt/               # Central de Apps do operador (:3001)
 │   ├── pos-nuxt/               # PDV (:3002)
@@ -116,6 +117,8 @@ django-shopman/
 │   ├── orders-nuxt/            # gestor de pedidos (:3004)
 │   ├── production-nuxt/        # produção/fornadas (:3005)
 │   ├── marketing-nuxt/         # marketing do gestor — campanhas e anúncios (:3006)
+│   ├── bi-nuxt/                # B.I. do gestor (:3007)
+│   ├── purchase-nuxt/          # compras e recebimento (:3008)
 │   └── operator-kit/           # Nuxt layer compartilhada dos apps de operador
 │
 ├── config/                     # Django project wrapper + seed do deployment (Nelson)
@@ -147,6 +150,7 @@ O framework conecta os core apps para cenários de negócio concretos:
 - **KDS** — Kitchen Display System com múltiplas instâncias (prep, picking, expedição)
 - **POS** — Ponto de venda desktop-first com tabs, turno e caixa
 - **Produção** — receitas, work orders, BOM, sugestão automática, kiosk de fornadas
+- **Marketing** — campanhas e anúncios com aprovação, público consentido, entrega durável e resultado por plataforma
 - **Auth WhatsApp-first** — access link, OTP com fallback SMS, magic links, device trust
 - **Multi-canal** — balcão, delivery, WhatsApp, marketplace (iFood direto, polling)
 - **Delivery** — zonas, geocoding em cascata, logística externa (Machine/courier)

@@ -3,6 +3,52 @@
 /* Tokens do TEMA OPERADOR (quente) — fonte única no layer compartilhado. */
 @import "../../../../operator-kit/app/assets/css/operator-theme.css";
 
+/* Webfonts incorporadas: zero DNS/HTTP de terceiros no carregamento do app.
+   Os dois arquivos de cada família cobrem latin + latin-ext (inclui pt-BR). */
+@font-face {
+  font-family: "Instrument Sans";
+  src: url("/fonts/instrument-sans-latin-ext-21fac8da.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400 700;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Instrument Sans";
+  src: url("/fonts/instrument-sans-latin-6219bc4b.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400 700;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Fira Code";
+  src: url("/fonts/fira-code-latin-ext-e085302e.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Fira Code";
+  src: url("/fonts/fira-code-latin-5c18638f.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 /* O Tailwind v4 auto-detecta fontes só a partir da raiz do app; o `operator-kit` (Nuxt
    layer irmão, via `extends`) fica fora dela. Sem este `@source`, classes usadas SÓ nos
    componentes do kit (OperatorRail/RailItem/RailToggle/OfflineBanner) somem silenciosamente. */
@@ -210,6 +256,25 @@
   [role="button"]:not(:disabled) {
     cursor: pointer;
   }
+  :where(button, a[href], [role="button"]) {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    touch-action: manipulation;
+  }
+  :where(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select,
+    textarea
+  ) {
+    min-height: 2.75rem;
+  }
+  :where(label:has(input[type="checkbox"]), label:has(input[type="radio"])) {
+    min-height: 2.75rem;
+  }
+  :where(button, a[href], input, select, textarea, [role="button"]):focus-visible {
+    outline: 3px solid var(--ring) !important;
+    outline-offset: 2px !important;
+  }
   html {
     color-scheme: light dark;
   }
@@ -218,6 +283,26 @@
   }
   html.light {
     color-scheme: light;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  :where(button, a[href], input, select, textarea, [role="button"]) {
+    forced-color-adjust: auto;
+  }
+  :where(button, a[href], input, select, textarea, [role="button"]):focus-visible {
+    outline-color: Highlight !important;
   }
 }
 

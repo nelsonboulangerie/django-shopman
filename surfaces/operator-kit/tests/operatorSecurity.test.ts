@@ -14,7 +14,7 @@ const middlewareSource = readFileSync(
 
 describe("operator-kit — borda HTTP segura", () => {
   it("instala o middleware no layer compartilhado", () => {
-    expect(middlewareSource).toContain("applyOperatorSecurityHeaders(event)");
+    expect(middlewareSource).toContain("applyOperatorBaselineSecurityHeaders(event)");
   });
 
   it("fecha frame/object e envia os headers defensivos em documentos privados", () => {

@@ -121,3 +121,4 @@ Nao aceitamos:
 - [ADR-009 - WhatsApp via ManyChat](adr-009-whatsapp-via-manychat.md).
 - [docs/reference/headless-surface-contract.md](../reference/headless-surface-contract.md).
 - [docs/reference/storefront-surface-parity-contract.md](../reference/storefront-surface-parity-contract.md).
+- [Contrato realizado da superfície Marketing](../reference/marketing-surface-contract.md).

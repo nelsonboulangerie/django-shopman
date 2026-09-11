@@ -404,7 +404,7 @@ def test_12b_profile_update_error_does_not_leak_exception(client):
 
 
 def test_13_mutation_success_shape_is_consistent(client):
-    """✅ Simple mutations answer with a consistent `{ok: true}` acknowledgement."""
+    """✅ Mutations acknowledge success and return handles needed for recovery."""
     _seed(stock_qty=5)
     # Stock-alert subscribe.
     resp = client.post(
@@ -413,7 +413,10 @@ def test_13_mutation_success_shape_is_consistent(client):
         content_type="application/json",
     )
     assert resp.status_code == 200
-    assert resp.json() == {"ok": True}
+    subscription = resp.json()
+    assert subscription["ok"] is True
+    assert subscription["subscription_ref"]
+    assert subscription["expires_at"]
     # Cart mutation also acknowledges with ok:true (plus its projection).
     status, add = J.set_cart_qty(client, SKU, 1)
     assert status == 200
@@ -523,7 +526,11 @@ def test_18_unavailable_product_exposes_notify_affordance(client):
         data=json.dumps({"phone": "43999997777"}),
         content_type="application/json",
     )
-    assert resp.status_code == 200 and resp.json() == {"ok": True}
+    assert resp.status_code == 200
+    subscription = resp.json()
+    assert subscription["ok"] is True
+    assert subscription["subscription_ref"]
+    assert subscription["expires_at"]
     from shopman.storefront.services import stock_alerts
 
     # The subscription was persisted (phone is normalised on the way in).

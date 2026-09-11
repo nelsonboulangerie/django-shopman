@@ -2,8 +2,8 @@
 
 O que este arquivo protege, em ordem de importância:
 
-1. **O gate.** ``shop.manage_campaigns`` é o portão. Staff comum não publica —
-   quem cuida da fila de pedidos não decide o que a padaria diz ao mundo.
+1. **Os gates.** Capabilities separam leitura, edição, decisão, publicação,
+   teste e configuração. Staff comum não publica.
 2. **Anúncio que já saiu não se reescreve.** Editar o corpo depois de publicado
    seria mentira retroativa sobre o que o cliente leu.
 3. **As chaves que o Nuxt lê.** Se a projection mudar de forma, o app quebra em
@@ -12,14 +12,26 @@ O que este arquivo protege, em ordem de importância:
 
 from __future__ import annotations
 
-from datetime import timedelta
+import json
+from datetime import datetime, timedelta
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.utils import timezone
+from shopman.orderman.models import Directive
 
-from shopman.shop.models import Announcement, AnnouncementStatus, AnnouncementTemplate, Campaign
+from shopman.shop.models import (
+    Announcement,
+    AnnouncementStatus,
+    AnnouncementTemplate,
+    AudienceSnapshot,
+    Campaign,
+    MarketingAuditEvent,
+    MarketingCommandReceipt,
+    MarketingContentArtifact,
+    MarketingOutbox,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -30,12 +42,23 @@ RULES_URL = "/api/v1/backstage/marketing/rules/"
 TEMPLATES_URL = "/api/v1/backstage/marketing/templates/"
 OPTIONS_URL = "/api/v1/backstage/marketing/options/"
 HISTORY_URL = "/api/v1/backstage/marketing/history/"
+PREVIEW_URL = "/api/v1/backstage/marketing/preview/"
 
 
 @pytest.fixture
 def gestor():
     user = User.objects.create_user(username="marketing", password="x", is_staff=True)
-    user.user_permissions.add(Permission.objects.get(codename="manage_campaigns"))
+    user.user_permissions.add(*Permission.objects.filter(codename__in={
+        "view_marketing",
+        "edit_marketing_campaigns",
+        "edit_marketing_templates",
+        "preview_marketing_audience",
+        "approve_marketing_announcements",
+        "publish_marketing_announcements",
+        "fire_marketing_campaigns",
+        "send_marketing_test",
+        "configure_marketing_platforms",
+    }))
     return user
 
 
@@ -57,7 +80,11 @@ def rule(template):
 
 def _post(rule, template, *, status=AnnouncementStatus.PENDING_REVIEW, **kwargs) -> Announcement:
     defaults = {
-        "content": {"body": "Croissant saiu do forno", "hashtags": ["padaria"], "link": "/p/cro"},
+        "content": {
+            "body": "Croissant saiu do forno",
+            "hashtags": ["padaria"],
+            "link": "/produto/cro",
+        },
         "platforms": ["instagram", "google_business"],
         "audience": {"favorites": 12, "alerts": 3, "total": 15},
         "trigger_context": {"sku": "CRO-001"},
@@ -67,12 +94,45 @@ def _post(rule, template, *, status=AnnouncementStatus.PENDING_REVIEW, **kwargs)
     )
 
 
+def _confirmed_post(client, url: str, payload: dict, *, key: str):
+    """Exercise the operator contract without inventing confirmation facts client-side."""
+
+    response = client.post(
+        url,
+        data=payload,
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY=key,
+    )
+    if response.status_code != 428:
+        return response
+    confirmation = response.json()["confirmation"]
+    if confirmation["step_up"] != "none":
+        method = confirmation["step_up"]
+        credential = "x" if method == "password" else "000000"
+        stepped = client.post(
+            "/api/v1/backstage/marketing/security/step-up/",
+            data={"method": method, "credential": credential},
+            content_type="application/json",
+        )
+        assert stepped.status_code == 200
+    return client.post(
+        url,
+        data={
+            **payload,
+            "confirmation_token": confirmation["token"],
+            "typed_confirmation": confirmation["typed_phrase"],
+        },
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY=key,
+    )
+
+
 # ── Gate ─────────────────────────────────────────────────────────────
 
 
 class TestGate:
     def test_anonymous_is_rejected(self, client):
-        assert client.get(BOARD_URL).status_code in (401, 403)
+        assert client.get(BOARD_URL).status_code == 401
 
     def test_staff_without_permission_is_rejected(self, client):
         User.objects.create_user(username="caixa", password="x", is_staff=True)
@@ -87,7 +147,12 @@ class TestGate:
         announcement = _post(rule, template)
         User.objects.create_user(username="caixa", password="x", is_staff=True)
         client.login(username="caixa", password="x")
-        response = client.post(f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/")
+        response = _confirmed_post(
+            client,
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            {"base_version": 1, "publish_mode": "now"},
+            key="legacy-contract-replaced-0001",
+        )
         assert response.status_code == 403
         announcement.refresh_from_db()
         assert announcement.status == AnnouncementStatus.PENDING_REVIEW
@@ -98,21 +163,38 @@ class TestGate:
 
 class TestBoard:
     def test_pending_post_carries_the_keys_the_surface_reads(self, client, gestor, rule, template):
-        _post(rule, template)
+        suggested = timezone.localtime(timezone.now() + timedelta(hours=2))
+        _post(rule, template, publish_at=suggested)
         client.force_login(gestor)
 
         board = client.get(BOARD_URL).json()["board"]
 
         assert board["stats"]["pending_count"] == 1
+        assert board["shop_timezone"] == "America/Sao_Paulo"
         card = board["pending"][0]
         assert card["body"] == "Croissant saiu do forno"
         assert card["audience_total"] == 15
         assert card["rule_name"] == "Fornada de pães"
         assert card["sku"] == "CRO-001"
+        assert datetime.fromisoformat(card["scheduled_for"]) == suggested
         assert [r["platform"] for r in card["platform_results"]] == [
             "instagram",
             "google_business",
         ]
+
+    def test_expiry_never_reads_zero_while_the_card_is_still_actionable(
+        self,
+        client,
+        gestor,
+        rule,
+        template,
+    ):
+        _post(rule, template, expires_at=timezone.now() + timedelta(seconds=30))
+        client.force_login(gestor)
+
+        card = client.get(BOARD_URL).json()["board"]["pending"][0]
+
+        assert card["expires_in_minutes"] == 1
 
     def test_expired_pending_post_leaves_the_board(self, client, gestor, rule, template):
         """Anúncio vencido não pede decisão: propaganda velha destrói confiança."""
@@ -132,6 +214,31 @@ class TestBoard:
         assert len(announcements) == 1
         assert announcements[0]["status"] == AnnouncementStatus.PUBLISHED
 
+    def test_result_states_remain_reachable_for_inline_recovery(
+        self, client, gestor, rule, template
+    ):
+        visible = (
+            AnnouncementStatus.APPROVED,
+            AnnouncementStatus.SETTLED,
+            AnnouncementStatus.CANCELLED,
+            AnnouncementStatus.EXPIRED,
+        )
+        posts = [_post(rule, template, status=state) for state in visible]
+        _post(rule, template)  # pending review belongs only to the decision queue
+        client.force_login(gestor)
+
+        history = client.get(HISTORY_URL)
+        board = client.get(BOARD_URL)
+
+        assert history.status_code == board.status_code == 200
+        expected = {post.pk for post in posts}
+        assert {
+            item["pk"] for item in history.json()["announcements"]
+        } == expected
+        assert {
+            item["pk"] for item in board.json()["board"]["recent"]
+        } == expected
+
 
 # ── Decisão sobre o announcement ─────────────────────────────────────────────
 
@@ -141,12 +248,294 @@ class TestPostDecision:
         announcement = _post(rule, template)
         client.force_login(gestor)
 
-        response = client.post(f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/")
+        response = _confirmed_post(
+            client,
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            {"base_version": 1, "publish_mode": "now"},
+            key="approve-dispatch-contract-0001",
+        )
 
         assert response.status_code == 200
         announcement.refresh_from_db()
-        assert announcement.status in (AnnouncementStatus.APPROVED, AnnouncementStatus.PUBLISHING, AnnouncementStatus.PUBLISHED)
+        assert announcement.status in (
+            AnnouncementStatus.APPROVED,
+            AnnouncementStatus.PUBLISHING,
+            AnnouncementStatus.PUBLISHED,
+        )
         assert announcement.approved_by_id == gestor.pk
+
+    def test_approval_points_an_unsafe_image_back_to_the_exact_field(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+
+        response = _confirmed_post(
+            client,
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            {
+                "base_version": 1,
+                "publish_mode": "now",
+                "image_url": "https://169.254.169.254/latest/meta-data",
+            },
+            key="approve-private-media-contract",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "marketing_media_private_host"
+        assert "content.image_url" in response.json()["field_errors"]
+        assert MarketingContentArtifact.objects.count() == 0
+        assert MarketingOutbox.objects.count() == 0
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
+
+    def test_v2_approval_returns_one_receipt_and_only_durable_outbox(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+        url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/"
+        payload = {
+            "base_version": 1,
+            "publish_mode": "now",
+            "body": "Croissant revisado",
+            "hashtags": ["feitohoje"],
+            "platforms": ["instagram", "google_business"],
+        }
+
+        first = _confirmed_post(
+            client,
+            url,
+            payload,
+            key="idem-api-approval-000001",
+        )
+        replay = client.post(
+            url,
+            data=payload,
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="idem-api-approval-000001",
+        )
+
+        assert first.status_code == replay.status_code == 200
+        assert first.json()["receipt"] == replay.json()["receipt"]
+        assert first.json()["replayed"] is False
+        assert replay.json()["replayed"] is True
+        assert first.json()["announcement"]["version"] == 2
+        assert MarketingCommandReceipt.objects.count() == 1
+        assert MarketingContentArtifact.objects.count() == 1
+        assert AudienceSnapshot.objects.count() == 1
+        assert MarketingAuditEvent.objects.count() == 1
+        assert MarketingOutbox.objects.count() == 2
+        assert Directive.objects.count() == 0
+
+    def test_v2_approval_never_downgrades_when_idempotency_header_is_missing(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+
+        response = client.post(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            data={"base_version": 1, "publish_mode": "now"},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "invalid_idempotency_key"
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
+        assert Directive.objects.count() == 0
+
+    def test_v2_now_overrides_the_announcement_suggested_schedule(
+        self, client, gestor, rule, template
+    ):
+        suggested = timezone.now() + timedelta(hours=3)
+        announcement = _post(rule, template, publish_at=suggested)
+        client.force_login(gestor)
+
+        response = _confirmed_post(
+            client,
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            {"base_version": 1, "publish_mode": "now"},
+            key="idem-api-now-beats-schedule",
+        )
+
+        assert response.status_code == 200
+        assert response.json()["scheduled"] is False
+        assert response.json()["receipt"]["outcome"]["publish_mode"] == "now"
+        assert response.json()["receipt"]["outcome"]["audience_count"] == 0
+        assert response.json()["receipt"]["outcome"]["platforms"] == [
+            "instagram",
+            "google_business",
+        ]
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.PUBLISHING
+        assert announcement.publish_at is None
+        assert suggested not in set(
+            MarketingOutbox.objects.values_list("available_at", flat=True)
+        )
+
+    def test_v2_now_with_a_timestamp_is_rejected_instead_of_guessing(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+
+        response = client.post(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            data={
+                "base_version": 1,
+                "publish_mode": "now",
+                "publish_at": (timezone.now() + timedelta(hours=3)).isoformat(),
+            },
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="idem-api-now-no-timestamp",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "publish_now_has_schedule"
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
+        assert MarketingOutbox.objects.count() == 0
+
+    def test_v2_same_key_with_changed_content_returns_conflict_not_second_approval(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+        url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/"
+        base = {"base_version": 1, "publish_mode": "now", "body": "Primeiro"}
+
+        assert _confirmed_post(
+            client,
+            url,
+            base,
+            key="idem-api-approval-000002",
+        ).status_code == 200
+        conflict = client.post(
+            url,
+            data={**base, "body": "Segundo"},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="idem-api-approval-000002",
+        )
+
+        assert conflict.status_code == 409
+        assert conflict.json()["code"] == "idempotency_conflict"
+        assert MarketingCommandReceipt.objects.count() == 1
+
+    def test_v2_replays_its_version_conflict_even_if_server_content_changes_again(
+        self, client, gestor, rule, template
+    ):
+        from shopman.shop.services import campaign as campaign_service
+
+        announcement = _post(rule, template)
+        campaign_service.update_content(announcement.pk, body="Versão dois", base_version=1)
+        client.force_login(gestor)
+        url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/"
+        payload = {"base_version": 1, "publish_mode": "now", "body": "Minha revisão"}
+
+        first = client.post(
+            url,
+            data=payload,
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="idem-api-approval-000003",
+        )
+        campaign_service.update_content(announcement.pk, body="Versão três", base_version=2)
+        replay = client.post(
+            url,
+            data=payload,
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="idem-api-approval-000003",
+        )
+
+        assert first.status_code == replay.status_code == 409
+        assert first.json()["code"] == replay.json()["code"] == "version_conflict"
+        assert first.json()["receipt_ref"] == replay.json()["receipt_ref"]
+        assert first.json()["current_version"] == replay.json()["current_version"] == 2
+        assert MarketingCommandReceipt.objects.count() == 1
+
+    def test_v2_reject_has_version_receipt_and_session_actor(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+
+        response = client.post(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/reject/",
+            data={"base_version": 1, "reason": "Imagem incorreta"},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="idem-api-reject-0000001",
+        )
+
+        assert response.status_code == 200
+        assert response.json()["receipt"]["kind"] == "reject"
+        assert response.json()["announcement"]["version"] == 2
+        receipt = MarketingCommandReceipt.objects.get()
+        assert receipt.actor_id == gestor.pk
+        assert receipt.actor_ref == f"user:{gestor.pk}"
+
+    def test_v2_cancel_tombstones_scheduled_outbox(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+        base_url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}"
+        when = timezone.now() + timedelta(hours=2)
+        approved = _confirmed_post(
+            client,
+            f"{base_url}/approve/",
+            {
+                "base_version": 1,
+                "publish_mode": "scheduled",
+                "publish_at": when.isoformat(),
+            },
+            key="idem-api-schedule-00001",
+        )
+        cancelled = _confirmed_post(
+            client,
+            f"{base_url}/cancel/",
+            {"base_version": 2, "reason": "Oferta interrompida"},
+            key="idem-api-cancel-0000001",
+        )
+
+        assert approved.status_code == cancelled.status_code == 200
+        assert cancelled.json()["announcement"]["status"] == "cancelled"
+        assert cancelled.json()["receipt"]["outcome"]["outbox_cancelled"] == 2
+        assert MarketingOutbox.objects.filter(
+            state=MarketingOutbox.State.CANCELLED,
+            cancelled_by_command__kind="cancel",
+        ).count() == 2
+
+    def test_v2_reschedule_moves_pending_outbox_and_returns_absolute_time(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+        base_url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}"
+        first_at = timezone.now() + timedelta(hours=2)
+        next_at = first_at + timedelta(hours=4)
+        _confirmed_post(
+            client,
+            f"{base_url}/approve/",
+            {
+                "base_version": 1,
+                "publish_mode": "scheduled",
+                "publish_at": first_at.isoformat(),
+            },
+            key="idem-api-schedule-00002",
+        )
+
+        response = _confirmed_post(
+            client,
+            f"{base_url}/reschedule/",
+            {"base_version": 2, "publish_at": next_at.isoformat()},
+            key="idem-api-reschedule-0001",
+        )
+
+        assert response.status_code == 200
+        assert response.json()["receipt"]["kind"] == "reschedule"
+        assert response.json()["receipt"]["outcome"]["publish_at"] == next_at.isoformat()
+        assert set(MarketingOutbox.objects.values_list("available_at", flat=True)) == {next_at}
 
     def test_rejecting_keeps_it_off_the_air_and_records_who(self, client, gestor, rule, template):
         announcement = _post(rule, template)
@@ -154,8 +543,9 @@ class TestPostDecision:
 
         response = client.post(
             f"/api/v1/backstage/marketing/announcements/{announcement.pk}/reject/",
-            data={"reason": "Foto ruim"},
+            data={"base_version": 1, "reason": "Foto ruim"},
             content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="reject-photo-reason-0001",
         )
 
         assert response.status_code == 200
@@ -165,15 +555,20 @@ class TestPostDecision:
         assert announcement.rejected_by_id == gestor.pk
         assert announcement.rejected_reason == "Foto ruim"
 
-    def test_rejecting_without_a_reason_still_works(self, client, gestor, rule, template):
+    def test_rejecting_without_a_reason_is_blocked(self, client, gestor, rule, template):
         announcement = _post(rule, template)
         client.force_login(gestor)
 
-        assert client.post(
-            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/reject/"
-        ).status_code == 200
+        response = client.post(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/reject/",
+            data={"base_version": 1},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="reject-reason-required-0001",
+        )
+        assert response.status_code == 422
+        assert response.json()["code"] == "reason_required"
         announcement.refresh_from_db()
-        assert announcement.status == AnnouncementStatus.REJECTED
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
         assert announcement.rejected_reason == ""
 
     def test_the_projection_tells_the_screen_who_rejected_and_why(self, client, gestor, rule, template):
@@ -183,8 +578,9 @@ class TestPostDecision:
 
         response = client.post(
             f"/api/v1/backstage/marketing/announcements/{announcement.pk}/reject/",
-            data={"reason": "Produto acabou"},
+            data={"base_version": 1, "reason": "Produto acabou"},
             content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="reject-projection-reason-001",
         )
 
         body = response.json()["announcement"]
@@ -208,6 +604,68 @@ class TestPostDecision:
         assert announcement.content["body"] == "Fornada quentinha agora"
         # O "#" é do texto, não do dado: guardar a tag limpa evita "##paes".
         assert announcement.content["hashtags"] == ["paes", "artesanal"]
+
+    def test_edit_with_unknown_variable_returns_a_field_addressed_error(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+
+        response = client.patch(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/",
+            data={"body": "Olá {{nome_errado}}", "base_version": 1},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "unknown_template_variable"
+        assert response.json()["field_errors"] == {
+            "body": ["Variável não reconhecida: nome_errado."]
+        }
+        announcement.refresh_from_db()
+        assert announcement.version == 1
+        assert announcement.content["body"] == "Croissant saiu do forno"
+
+    def test_edit_returns_next_version_and_stale_edit_preserves_current_draft(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+        url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}/"
+
+        first = client.patch(
+            url,
+            data={"body": "Primeira revisão", "base_version": 1},
+            content_type="application/json",
+        )
+        stale = client.patch(
+            url,
+            data={"body": "Revisão que chegou tarde", "base_version": 1},
+            content_type="application/json",
+        )
+
+        assert first.status_code == 200
+        assert first.json()["announcement"]["version"] == 2
+        assert stale.status_code == 409
+        assert stale.json()["code"] == "version_conflict"
+        assert stale.json()["current_version"] == 2
+        announcement.refresh_from_db()
+        assert announcement.content["body"] == "Primeira revisão"
+
+    def test_boolean_is_not_accepted_as_a_resource_version(self, client, gestor, rule, template):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+
+        response = client.patch(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/",
+            data={"body": "Texto", "base_version": True},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["field"] == "base_version"
+        announcement.refresh_from_db()
+        assert announcement.version == 1
 
     def test_published_post_cannot_be_rewritten(self, client, gestor, rule, template):
         announcement = _post(rule, template, status=AnnouncementStatus.PUBLISHED)
@@ -241,6 +699,27 @@ class TestPostDecision:
 
 
 class TestRules:
+    def test_list_actions_use_the_same_campaign_version_as_the_projection(
+        self, client, gestor, rule
+    ):
+        rule.version = 7
+        rule.save(update_fields=["version"])
+        client.force_login(gestor)
+
+        response = client.get(RULES_URL)
+
+        assert response.status_code == 200
+        body = response.json()
+        projected = next(item for item in body["rules"] if item["pk"] == rule.pk)
+        fire = next(
+            action
+            for action in body["actions"]
+            if action["kind"] == "fire_campaign"
+            and action["resource_ref"] == f"campaign:{rule.pk}"
+        )
+        assert projected["version"] == 7
+        assert fire["ref"] == f"campaign:{rule.pk}:fire_campaign:v7"
+
     def test_create_rule(self, client, gestor, template):
         client.force_login(gestor)
 
@@ -343,6 +822,7 @@ class TestRules:
         body = response.json()["rule"]
         assert body["fires_on_its_own"] is True
         assert body["exhausted"] is False
+        assert body["updated_at"]
         assert "17:30" in body["schedule_label"], body["schedule_label"]
 
     def test_patching_into_the_impossible_pairing_is_refused(self, client, gestor, rule):
@@ -373,11 +853,148 @@ class TestRules:
         rule.refresh_from_db()
         assert rule.is_active is False
 
+    def test_rule_projection_exposes_the_complete_public_schema_but_no_members(
+        self, client, gestor, rule
+    ):
+        rule.audience_rules = {
+            "favorites": True,
+            "bought_skus": ["PAO-01"],
+            "bought_collections": ["cafe-da-manha"],
+            "preferred_hour_window_hours": 2,
+            "customer_refs": ["customer:secret"],
+            "legacy_private_selector": {"ref": "secret"},
+        }
+        rule.save(update_fields=["audience_rules"])
+        client.force_login(gestor)
+
+        response = client.get(f"{RULES_URL}{rule.pk}/")
+
+        assert response.status_code == 200
+        audience = response.json()["rule"]["audience_rules"]
+        assert audience == {
+            "bought_collections": ["cafe-da-manha"],
+            "bought_skus": ["PAO-01"],
+            "favorites": True,
+            "preferred_hour_window_hours": 2,
+        }
+        assert "customer:secret" not in json.dumps(response.json())
+
+    def test_patch_replaces_public_schema_without_erasing_private_or_legacy_state(
+        self, client, gestor, rule
+    ):
+        rule.audience_rules = {
+            "favorites": True,
+            "price_tiers": ["varejo"],
+            "customer_refs": ["customer:secret"],
+            "legacy_private_selector": {"ref": "secret"},
+        }
+        rule.save(update_fields=["audience_rules"])
+        client.force_login(gestor)
+
+        response = client.patch(
+            f"{RULES_URL}{rule.pk}/",
+            data={"audience_rules": {"tags": ["sem-gluten"]}},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        rule.refresh_from_db()
+        assert rule.audience_rules == {
+            "customer_refs": ["customer:secret"],
+            "legacy_private_selector": {"ref": "secret"},
+            "tags": ["sem-gluten"],
+        }
+        assert response.json()["rule"]["audience_rules"] == {"tags": ["sem-gluten"]}
+        assert "customer:secret" not in json.dumps(response.json())
+
+    def test_unknown_or_private_audience_field_is_rejected_without_hidden_write(
+        self, client, gestor, rule
+    ):
+        original = dict(rule.audience_rules)
+        client.force_login(gestor)
+
+        response = client.patch(
+            f"{RULES_URL}{rule.pk}/",
+            data={"audience_rules": {"customer_refs": ["customer:injected"]}},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert response.json()["field"] == "audience_rules"
+        assert response.json()["fields"] == ["customer_refs"]
+        rule.refresh_from_db()
+        assert rule.audience_rules == original
+
+    def test_unknown_top_level_field_is_rejected_without_hidden_write(
+        self, client, gestor, rule
+    ):
+        client.force_login(gestor)
+
+        response = client.patch(
+            f"{RULES_URL}{rule.pk}/",
+            data={"name": "Nome alterado", "silent_flag": True},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert response.json()["field"] == "payload"
+        assert response.json()["fields"] == ["silent_flag"]
+        rule.refresh_from_db()
+        assert rule.name == "Fornada de pães"
+
+    def test_edit_uses_updated_at_as_cas_and_returns_the_current_rule_on_conflict(
+        self, client, gestor, rule
+    ):
+        client.force_login(gestor)
+        loaded = client.get(f"{RULES_URL}{rule.pk}/").json()["rule"]
+        rule.name = "Alterada em outra sessão"
+        rule.save()
+
+        response = client.patch(
+            f"{RULES_URL}{rule.pk}/",
+            data={"name": "Minha edição", "base_updated_at": loaded["updated_at"]},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "version_conflict"
+        assert response.json()["current"]["name"] == "Alterada em outra sessão"
+        rule.refresh_from_db()
+        assert rule.name == "Alterada em outra sessão"
+
+    def test_edit_with_current_read_version_succeeds(self, client, gestor, rule):
+        client.force_login(gestor)
+        loaded = client.get(f"{RULES_URL}{rule.pk}/").json()["rule"]
+
+        response = client.patch(
+            f"{RULES_URL}{rule.pk}/",
+            data={"name": "Minha edição", "base_updated_at": loaded["updated_at"]},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        assert response.json()["rule"]["name"] == "Minha edição"
+        assert response.json()["rule"]["updated_at"] != loaded["updated_at"]
+
 
 # ── Modelos de announcement ──────────────────────────────────────────────────
 
 
 class TestTemplates:
+    def test_dependency_projection_has_constant_query_cost(
+        self, rule, django_assert_num_queries
+    ):
+        """A ajuda prévia à exclusão não pode virar N+1 ao crescer o catálogo."""
+        spare = AnnouncementTemplate.objects.create(name="Livre", body="x")
+        from shopman.backstage.projections import marketing as marketing_projection
+
+        with django_assert_num_queries(2):
+            projected = marketing_projection.build_templates()
+
+        dependencies = {item.pk: item.used_by_campaigns for item in projected}
+        assert dependencies[rule.template_id] == (rule.name,)
+        assert dependencies[spare.pk] == ()
+
     def test_create_template(self, client, gestor):
         client.force_login(gestor)
 
@@ -394,6 +1011,10 @@ class TestTemplates:
         """PROTECT no model: apagar deixaria a regra disparando no vazio."""
         client.force_login(gestor)
 
+        listed = client.get(TEMPLATES_URL).json()["templates"]
+        projected = next(item for item in listed if item["pk"] == template.pk)
+        assert projected["used_by_campaigns"] == [rule.name]
+
         response = client.delete(f"{TEMPLATES_URL}{template.pk}/")
 
         assert response.status_code == 400
@@ -403,8 +1024,32 @@ class TestTemplates:
         template = AnnouncementTemplate.objects.create(name="Órfão", body="x")
         client.force_login(gestor)
 
+        listed = client.get(TEMPLATES_URL).json()["templates"]
+        projected = next(item for item in listed if item["pk"] == template.pk)
+        assert projected["used_by_campaigns"] == []
+
         assert client.delete(f"{TEMPLATES_URL}{template.pk}/").status_code == 200
         assert not AnnouncementTemplate.objects.filter(pk=template.pk).exists()
+
+    def test_concurrent_template_edit_returns_current_content_without_overwrite(
+        self, client, gestor, template
+    ):
+        client.force_login(gestor)
+        loaded = client.get(f"{TEMPLATES_URL}{template.pk}/").json()["template"]
+        template.body = "Texto de outra sessão"
+        template.save()
+
+        response = client.patch(
+            f"{TEMPLATES_URL}{template.pk}/",
+            data={"body": "Meu texto", "base_updated_at": loaded["updated_at"]},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "version_conflict"
+        assert response.json()["current"]["body"] == "Texto de outra sessão"
+        template.refresh_from_db()
+        assert template.body == "Texto de outra sessão"
 
 
 # ── Opções do formulário ─────────────────────────────────────────────
@@ -412,6 +1057,9 @@ class TestTemplates:
 
 class TestOptions:
     def test_options_feed_the_rule_form(self, client, gestor, template):
+        from shopman.offerman.models import Product
+
+        Product.objects.create(sku="MDL", name="Madeleine", base_price_q=700)
         client.force_login(gestor)
 
         options = client.get(OPTIONS_URL).json()["options"]
@@ -419,7 +1067,129 @@ class TestOptions:
         assert {t["value"] for t in options["triggers"]} >= {"production_finished", "low_stock"}
         assert {p["value"] for p in options["platforms"]} >= {"instagram", "google_business"}
         assert template.pk in {t["pk"] for t in options["templates"]}
+        projected_template = next(t for t in options["templates"] if t["pk"] == template.pk)
+        assert projected_template["requires_product"] is True
         assert "product_name" in options["variables"]
+        assert {p["value"]: p["label"] for p in options["products"]}["MDL"] == (
+            "Madeleine (MDL)"
+        )
+        assert options["shop_timezone"] == "America/Sao_Paulo"
+
+    def test_template_options_preserve_platform_variants_for_faithful_preview(
+        self, client, gestor, template
+    ):
+        template.platform_variants = {
+            "whatsapp": {"body": "WhatsApp {{product_name}}"},
+        }
+        template.save(update_fields=["platform_variants"])
+        client.force_login(gestor)
+
+        options = client.get(OPTIONS_URL).json()["options"]
+        projected = next(item for item in options["templates"] if item["pk"] == template.pk)
+
+        assert projected["platform_variants"] == template.platform_variants
+        assert projected["updated_at"]
+
+    def test_preview_batch_returns_exact_artifact_for_each_platform(
+        self, client, gestor, monkeypatch
+    ):
+        from shopman.offerman.models import Product
+
+        from shopman.shop.models import NotificationTemplate
+        from shopman.shop.services.manychat_flows import FlowCatalog
+
+        Product.objects.create(
+            sku="CRO-PREVIEW",
+            name="Croissant da prévia",
+            base_price_q=850,
+            is_published=True,
+            is_sellable=True,
+        )
+        NotificationTemplate.objects.create(
+            event="announcement_published",
+            subject="x",
+            body="y",
+            whatsapp_flow_ns="content_preview_api_flow",
+            version=5,
+        )
+        checked_at = timezone.now()
+        monkeypatch.setattr(
+            "shopman.shop.services.manychat_flows.flow_catalog",
+            lambda **kwargs: FlowCatalog(
+                flows=(("content_preview_api_flow", "Campanha API"),),
+                state="fresh",
+                checked_at=checked_at,
+                facts_as_of=checked_at,
+                fresh_until=checked_at + timedelta(minutes=5),
+                catalog_hash="b" * 64,
+            ),
+        )
+        client.force_login(gestor)
+
+        response = client.post(
+            PREVIEW_URL,
+            data={
+                "body": "Base {{product_name}}",
+                "platforms": ["instagram", "whatsapp"],
+                "platform_content": {
+                    "instagram": {"body": "Instagram {{price}}"},
+                    "whatsapp": {"body": "WhatsApp {{product_name}}"},
+                },
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["sample"] is True
+        assert payload["previews"]["instagram"]["artifact"]["body"] == "Instagram R$ 8,50"
+        assert payload["previews"]["whatsapp"]["artifact"]["body"] == (
+            "WhatsApp Croissant da prévia"
+        )
+        assert payload["previews"]["whatsapp"]["flow"] == {
+            "configured": True,
+            "name": "Campanha API",
+            "version": 5,
+            "catalog_as_of": checked_at.isoformat(),
+        }
+
+    def test_whatsapp_preview_outage_is_retryable_not_an_empty_flow_list(
+        self, client, gestor, monkeypatch
+    ):
+        from shopman.shop.models import NotificationTemplate
+        from shopman.shop.services.manychat_flows import FlowCatalog
+
+        NotificationTemplate.objects.create(
+            event="announcement_published",
+            subject="x",
+            body="y",
+            whatsapp_flow_ns="content_last_known",
+        )
+        checked_at = timezone.now()
+        monkeypatch.setattr(
+            "shopman.shop.services.manychat_flows.flow_catalog",
+            lambda **kwargs: FlowCatalog(
+                flows=(("content_last_known", "Último nome conhecido"),),
+                state="stale",
+                checked_at=checked_at,
+                facts_as_of=checked_at - timedelta(minutes=10),
+                fresh_until=checked_at - timedelta(minutes=5),
+                catalog_hash="c" * 64,
+                reason_code="manychat_catalog_unreachable",
+            ),
+        )
+        client.force_login(gestor)
+
+        response = client.post(
+            PREVIEW_URL,
+            data={"body": "Fornada pronta", "platforms": ["whatsapp"]},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 503
+        assert response["Retry-After"] == "30"
+        assert response.json()["code"] == "whatsapp_flow_verification_unavailable"
+        assert response.json()["retryable"] is True
 
 
 class TestScheduledPublishing:
@@ -430,19 +1200,100 @@ class TestScheduledPublishing:
     ):
         announcement = _post(rule, template)
         client.force_login(gestor)
-        when = timezone.now() + timedelta(hours=3)
+        when = timezone.localtime(timezone.now() + timedelta(hours=3))
 
-        response = client.post(
+        response = _confirmed_post(
+            client,
             f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
-            data={"publish_at": when.isoformat()},
-            content_type="application/json",
+            {
+                "base_version": 1,
+                "publish_mode": "scheduled",
+                "publish_at": when.isoformat(),
+                "publish_timezone": "America/Sao_Paulo",
+            },
+            key="scheduled-publish-contract-0001",
         )
 
         assert response.status_code == 200
         assert response.json()["scheduled"] is True
+        assert response.json()["receipt"]["outcome"]["publish_at"] == when.isoformat()
+        assert response.json()["receipt"]["outcome"]["publish_timezone"] == (
+            "America/Sao_Paulo"
+        )
+        assert list(MarketingOutbox.objects.values_list("available_at", flat=True)) == [
+            when
+        ] * 2
         announcement.refresh_from_db()
         assert announcement.status == AnnouncementStatus.APPROVED
         assert announcement.publish_at is not None
+
+    def test_named_timezone_rejects_a_naive_instant(self, client, gestor, rule, template):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+
+        response = client.post(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            data={
+                "base_version": 1,
+                "publish_mode": "scheduled",
+                "publish_at": "2026-09-10T10:00:00",
+                "publish_timezone": "America/Sao_Paulo",
+            },
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="naive-schedule-contract-0001",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "scheduled_publish_at_naive"
+        assert MarketingCommandReceipt.objects.count() == 0
+
+    def test_named_timezone_rejects_a_forged_offset(self, client, gestor, rule, template):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+
+        response = client.post(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            data={
+                "base_version": 1,
+                "publish_mode": "scheduled",
+                "publish_at": "2026-09-10T10:00:00-02:00",
+                "publish_timezone": "America/Sao_Paulo",
+            },
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="offset-schedule-contract-001",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "timezone_offset_mismatch"
+        assert MarketingCommandReceipt.objects.count() == 0
+
+    def test_schedule_at_expiry_is_rejected_without_delivery_rows(
+        self,
+        client,
+        gestor,
+        rule,
+        template,
+    ):
+        expires_at = timezone.localtime(timezone.now() + timedelta(hours=3))
+        announcement = _post(rule, template, expires_at=expires_at)
+        client.force_login(gestor)
+
+        response = _confirmed_post(
+            client,
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            {
+                "base_version": 1,
+                "publish_mode": "scheduled",
+                "publish_at": expires_at.isoformat(),
+                "publish_timezone": "America/Sao_Paulo",
+            },
+            key="expiry-schedule-contract-0001",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "scheduled_after_expiry"
+        assert MarketingContentArtifact.objects.count() == 0
+        assert MarketingOutbox.objects.count() == 0
 
     def test_approve_applies_the_card_edits_in_the_same_request(
         self, client, gestor, rule, template
@@ -450,10 +1301,16 @@ class TestScheduledPublishing:
         announcement = _post(rule, template)
         client.force_login(gestor)
 
-        response = client.post(
+        response = _confirmed_post(
+            client,
             f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
-            data={"body": "Texto revisado pelo gestor", "platforms": ["instagram"]},
-            content_type="application/json",
+            {
+                "base_version": 1,
+                "publish_mode": "now",
+                "body": "Texto revisado pelo gestor",
+                "platforms": ["instagram"],
+            },
+            key="approval-with-edits-contract-01",
         )
 
         assert response.status_code == 200
@@ -469,12 +1326,17 @@ class TestScheduledPublishing:
 
         response = client.post(
             f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
-            data={"publish_at": "amanhã cedo"},
+            data={
+                "base_version": 1,
+                "publish_mode": "scheduled",
+                "publish_at": "amanhã cedo",
+            },
             content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="invalid-schedule-contract-0001",
         )
 
-        assert response.status_code == 400
-        assert response.json()["field"] == "publish_at"
+        assert response.status_code == 422
+        assert response.json()["code"] == "invalid_publish_at"
         announcement.refresh_from_db()
         assert announcement.status == AnnouncementStatus.PENDING_REVIEW
 
@@ -484,12 +1346,13 @@ class TestScheduledPublishing:
 
         response = client.post(
             f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
-            data={"body": "   "},
+            data={"base_version": 1, "publish_mode": "now", "body": "   "},
             content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="empty-body-contract-000001",
         )
 
-        assert response.status_code == 400
-        assert response.json()["field"] == "body"
+        assert response.status_code == 422
+        assert response.json()["code"] == "invalid_approval_content"
 
 
 class TestPlatformResultDetail:
@@ -564,109 +1427,264 @@ def _fire_url(rule) -> str:
 
 
 class TestManualFire:
-    def test_firing_creates_an_announcement_now(self, client, gestor, rule):
+    def test_body_bypass_is_rejected_before_any_announcement_or_effect(
+        self, client, gestor, rule
+    ):
         client.force_login(gestor)
-        resp = client.post(_fire_url(rule), data={}, content_type="application/json")
+        resp = client.post(
+            _fire_url(rule),
+            data={
+                "base_version": rule.version,
+                "body": "Fornada extra hoje, a partir das 16h.",
+            },
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="fire-body-bypass-0001",
+        )
 
-        assert resp.status_code == 201
-        body = resp.json()
-        assert body["ok"] is True
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "unknown_command_fields"
+        assert resp.json()["field_errors"]["payload"] == ["body"]
+        assert Announcement.objects.filter(rule=rule).count() == 0
+        assert MarketingCommandReceipt.objects.count() == 0
+
+    def test_confirmed_fire_creates_review_snapshot_receipt_and_audit_without_delivery(
+        self, client, gestor, rule, template
+    ):
+        from shopman.guestman import ConsentService
+        from shopman.guestman.models import Customer, PriceTier
+
+        template.body = "Novidades frescas hoje!"
+        template.save(update_fields=["body"])
+        tier = PriceTier.objects.create(ref="fire-local", name="Disparo local")
+        customer = Customer.objects.create(
+            ref="CLI-FIRE-1",
+            first_name="Ana",
+            phone="+5543999998801",
+            price_tier=tier,
+        )
+        ConsentService.grant_consent(customer.ref, "whatsapp", source="test")
+        rule.audience_rules = {"price_tiers": [tier.ref]}
+        rule.requires_approval = False
+        rule.save(update_fields=["audience_rules", "requires_approval"])
+        client.force_login(gestor)
+        payload = {"base_version": rule.version}
+        key = "fire-safe-command-0001"
+
+        challenge = client.post(
+            _fire_url(rule),
+            data=payload,
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY=key,
+        )
+
+        assert challenge.status_code == 428
+        confirmation = challenge.json()["confirmation"]
+        assert confirmation["resource_ref"] == f"campaign:{rule.pk}"
+        assert confirmation["base_version"] == rule.version
+        assert confirmation["audience_count"] == 1
+        assert confirmation["typed_phrase"] == "PUBLICAR 1"
+        assert Announcement.objects.filter(rule=rule).count() == 0
+        assert MarketingCommandReceipt.objects.count() == 0
+
+        response = _confirmed_post(client, _fire_url(rule), payload, key=key)
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["replayed"] is False
+        assert result["receipt"]["kind"] == "fire"
+        assert result["receipt"]["state"] == "completed"
+        assert result["receipt"]["base_version"] == 1
+        assert result["receipt"]["resulting_version"] == 2
+        assert result["receipt"]["outcome"]["audience_count"] == 1
+        announcement = Announcement.objects.get(rule=rule)
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
+        assert announcement.approved_by_id is None
+        assert AudienceSnapshot.objects.filter(
+            announcement=announcement,
+            version=announcement.version,
+        ).count() == 1
+        receipt = MarketingCommandReceipt.objects.get(ref=result["receipt"]["ref"])
+        event = MarketingAuditEvent.objects.get(command=receipt)
+        assert event.event_type == MarketingAuditEvent.EventType.CAMPAIGN_FIRED
+        assert event.snapshot_id is not None
+        assert event.facts["requires_review"] is True
+        rule.refresh_from_db()
+        assert rule.version == 2
+        assert MarketingOutbox.objects.count() == 0
+        assert Directive.objects.count() == 0
+
+        replay = client.post(
+            _fire_url(rule),
+            data=payload,
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY=key,
+        )
+        assert replay.status_code == 200
+        assert replay.json()["replayed"] is True
+        assert replay.json()["receipt"]["ref"] == result["receipt"]["ref"]
         assert Announcement.objects.filter(rule=rule).count() == 1
 
-    def test_firing_without_a_text_still_goes_to_review(self, client, gestor, rule):
-        """Sem texto escrito, quem escreveu foi o modelo — e aí a revisão tem função."""
-        client.force_login(gestor)
-        client.post(_fire_url(rule), data={}, content_type="application/json")
-
-        announcement = Announcement.objects.get(rule=rule)
-        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
-
-    def test_a_text_written_now_publishes_straight_away(self, client, gestor, rule):
-        """⚠️ "Quem cria publica" (ADR-020 §8).
-
-        Não existe segundo par de olhos quando o autor e o revisor são a mesma pessoa. A
-        revisão continua valendo para o que a OPERAÇÃO gerou — fornada, estoque baixo —,
-        que é o caso em que existe outra pessoa para conferir.
-        """
-        client.force_login(gestor)
-
-        resp = client.post(
+        reused_for_another_audience = client.post(
             _fire_url(rule),
-            data={"body": "Fornada extra hoje, a partir das 16h."},
+            data={"base_version": 1, "audience_rules": {"tags": ["outra-intencao"]}},
             content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY=key,
         )
+        assert reused_for_another_audience.status_code == 409
+        assert reused_for_another_audience.json()["code"] == "idempotency_conflict"
+        assert Announcement.objects.filter(rule=rule).count() == 1
 
-        assert resp.status_code == 201
-        announcement = Announcement.objects.get(rule=rule)
-        assert announcement.status != AnnouncementStatus.PENDING_REVIEW
-        assert announcement.content["body"] == "Fornada extra hoje, a partir das 16h."
-
-    def test_publishing_without_review_still_records_who_decided(self, client, gestor, rule):
-        """Anúncio que saiu sem revisão não pode ficar sem nome atrás."""
-        client.force_login(gestor)
-
-        client.post(
+        conflict = client.post(
             _fire_url(rule),
-            data={"body": "Fornada extra hoje."},
+            data={"base_version": 1},
             content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="fire-stale-version-0001",
         )
+        assert conflict.status_code == 409
+        assert conflict.json()["code"] == "version_conflict"
+        assert conflict.json()["current_version"] == 2
+        assert conflict.json()["receipt_ref"]
+        assert Announcement.objects.filter(rule=rule).count() == 1
 
-        announcement = Announcement.objects.get(rule=rule)
-        assert announcement.approved_by_id == gestor.pk
-        assert announcement.approved_at is not None
+    def test_product_is_chosen_before_confirmation_and_sealed_in_the_result(
+        self, client, gestor, rule, monkeypatch
+    ):
+        from shopman.guestman import ConsentService
+        from shopman.guestman.models import Customer, PriceTier
+        from shopman.offerman.models import Product
 
-    def test_a_blank_text_is_not_a_text(self, client, gestor, rule):
-        """⚠️ Só espaços publicaria uma mensagem em branco, sem ninguém revisar."""
-        client.force_login(gestor)
-
-        client.post(_fire_url(rule), data={"body": "   "}, content_type="application/json")
-
-        announcement = Announcement.objects.get(rule=rule)
-        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
-
-    def test_writing_the_text_does_not_change_the_saved_campaign(self, client, gestor, rule):
-        """`requires_approval` da campanha não é atropelado em silêncio."""
-        client.force_login(gestor)
-
-        client.post(
-            _fire_url(rule), data={"body": "Fornada extra."}, content_type="application/json"
+        product = Product.objects.create(
+            sku="MDL",
+            name="Madeleine",
+            base_price_q=700,
         )
-
-        rule.refresh_from_db()
-        assert rule.requires_approval is True
-
-    def test_a_chosen_audience_applies_to_this_shot_only(self, client, gestor, rule):
-        """A campanha salva mantém o público dela; a escolha vale para este disparo."""
+        tier = PriceTier.objects.create(ref="madeleine-local", name="Madeleine local")
+        customer = Customer.objects.create(
+            ref="CLI-MDL-1",
+            first_name="Bia",
+            phone="+5543999998802",
+            price_tier=tier,
+        )
+        ConsentService.grant_consent(customer.ref, "whatsapp", source="test")
+        rule.audience_rules = {"price_tiers": [tier.ref]}
+        rule.save(update_fields=["audience_rules"])
         client.force_login(gestor)
-        resp = client.post(
+
+        missing = client.post(
             _fire_url(rule),
-            data={"audience_rules": {"birthday_today": True}},
+            data={"base_version": rule.version},
             content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="fire-product-missing-0001",
         )
-        assert resp.status_code == 201
 
-        rule.refresh_from_db()
-        assert rule.audience_rules == {"favorites": True}, "a campanha não devia ter mudado"
+        assert missing.status_code == 422
+        assert missing.json()["code"] == "marketing_product_required"
+        assert missing.json()["field_errors"]["sku"] == ["Escolha um produto para a prévia."]
+        assert MarketingCommandReceipt.objects.count() == 0
 
-    def test_an_inactive_campaign_refuses_instead_of_going_quiet(self, client, gestor, rule):
-        """Disparar campanha desligada é quase sempre engano; silêncio esconderia."""
-        rule.is_active = False
-        rule.save(update_fields=["is_active"])
+        from shopman.shop.services import campaign as campaign_service
+
+        real_resolve_content = campaign_service.resolve_content
+        resolved = []
+
+        def counted_resolve_content(*args, **kwargs):
+            content = real_resolve_content(*args, **kwargs)
+            resolved.append(content)
+            return content
+
+        monkeypatch.setattr(campaign_service, "resolve_content", counted_resolve_content)
+        payload = {"base_version": rule.version, "sku": product.sku}
+        response = _confirmed_post(
+            client,
+            _fire_url(rule),
+            payload,
+            key="fire-product-selected-0001",
+        )
+
+        assert response.status_code == 200
+        # Uma leitura no desafio e uma na confirmação. O conteúdo autorizado é
+        # entregue à criação sem uma terceira resolução sujeita a TOCTOU.
+        assert len(resolved) == 2
+        result = response.json()
+        assert result["receipt"]["outcome"]["sku"] == product.sku
+        announcement = Announcement.objects.get(rule=rule)
+        assert announcement.trigger_context["sku"] == product.sku
+        assert announcement.content["body"] == "Madeleine saiu do forno!"
+        receipt = MarketingCommandReceipt.objects.get(ref=result["receipt"]["ref"])
+        assert MarketingAuditEvent.objects.get(command=receipt).facts["sku"] == product.sku
+
+    def test_zero_and_degraded_audience_fail_closed(self, client, gestor, rule, monkeypatch):
+        from shopman.shop.services.audience import AudienceResult
+
+        rule.audience_rules = {"price_tiers": ["nobody"]}
+        rule.save(update_fields=["audience_rules"])
         client.force_login(gestor)
 
-        resp = client.post(_fire_url(rule), data={}, content_type="application/json")
-        assert resp.status_code == 400
+        zero = client.post(
+            _fire_url(rule),
+            data={"base_version": rule.version},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="fire-zero-audience-0001",
+        )
+        assert zero.status_code == 422
+        assert zero.json()["code"] == "no_eligible_audience"
+        assert zero.json()["receipt_ref"]
         assert Announcement.objects.filter(rule=rule).count() == 0
 
-    def test_a_malformed_audience_is_a_400_not_a_500(self, client, gestor, rule):
-        client.force_login(gestor)
-        resp = client.post(
+        zero_replay = client.post(
             _fire_url(rule),
-            data={"audience_rules": ["nao", "e", "objeto"]},
+            data={"base_version": rule.version},
             content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="fire-zero-audience-0001",
         )
-        assert resp.status_code == 400
-        assert resp.json()["field"] == "audience_rules"
+        assert zero_replay.status_code == 422
+        assert zero_replay.json()["receipt_ref"] == zero.json()["receipt_ref"]
+
+        monkeypatch.setattr(
+            "shopman.shop.services.marketing_fire.audience_service.resolve",
+            lambda *args, **kwargs: AudienceResult(degraded_sources=("consent",)),
+        )
+        degraded = client.post(
+            _fire_url(rule),
+            data={"base_version": rule.version},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="fire-degraded-audience-0001",
+        )
+        assert degraded.status_code == 503
+        assert degraded.json()["code"] == "audience_degraded"
+        assert degraded.json()["retryable"] is True
+        assert degraded.json()["receipt_ref"]
+        assert Announcement.objects.filter(rule=rule).count() == 0
+
+    def test_inactive_and_private_audience_are_rejected_safely(
+        self, client, gestor, rule
+    ):
+        client.force_login(gestor)
+        private = client.post(
+            _fire_url(rule),
+            data={
+                "base_version": rule.version,
+                "audience_rules": {"customer_refs": ["CLI-SEGREDO"]},
+            },
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="fire-private-audience-0001",
+        )
+        assert private.status_code == 422
+        assert private.json()["code"] == "invalid_audience_rules"
+        assert MarketingCommandReceipt.objects.count() == 0
+
+        rule.is_active = False
+        rule.save(update_fields=["is_active"])
+        inactive = client.post(
+            _fire_url(rule),
+            data={"base_version": rule.version},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="fire-inactive-campaign-0001",
+        )
+        assert inactive.status_code == 422
+        assert inactive.json()["code"] == "campaign_inactive"
+        assert inactive.json()["receipt_ref"]
+        assert Announcement.objects.count() == 0
 
     def test_firing_requires_the_permission(self, client, rule):
         outsider = User.objects.create_user(username="curioso", password="x", is_staff=True)
@@ -692,15 +1710,50 @@ FAKE_FLOWS = (
 def flows(monkeypatch):
     from shopman.shop.services import manychat_flows
 
-    monkeypatch.setattr(manychat_flows, "list_flows", lambda **kw: FAKE_FLOWS)
+    now = timezone.now()
+    catalog = manychat_flows.FlowCatalog(
+        flows=FAKE_FLOWS,
+        state="fresh",
+        checked_at=now,
+        facts_as_of=now,
+        fresh_until=now + timedelta(minutes=5),
+        catalog_hash="a" * 64,
+    )
+    monkeypatch.setattr(manychat_flows, "flow_catalog", lambda **kw: catalog)
 
 
 @pytest.fixture
 def no_flows(monkeypatch):
-    """A plataforma não respondeu — diferente de "não há template"."""
+    """A plataforma não respondeu — diferente de uma lista vazia conhecida."""
     from shopman.shop.services import manychat_flows
 
-    monkeypatch.setattr(manychat_flows, "list_flows", lambda **kw: ())
+    now = timezone.now()
+    catalog = manychat_flows.FlowCatalog(
+        flows=(),
+        state="unavailable",
+        checked_at=now,
+        facts_as_of=None,
+        fresh_until=None,
+        catalog_hash="",
+        reason_code="manychat_catalog_unreachable",
+    )
+    monkeypatch.setattr(manychat_flows, "flow_catalog", lambda **kw: catalog)
+
+
+@pytest.fixture
+def empty_flows(monkeypatch):
+    from shopman.shop.services import manychat_flows
+
+    now = timezone.now()
+    catalog = manychat_flows.FlowCatalog(
+        flows=(),
+        state="fresh",
+        checked_at=now,
+        facts_as_of=now,
+        fresh_until=now + timedelta(minutes=5),
+        catalog_hash="b" * 64,
+    )
+    monkeypatch.setattr(manychat_flows, "flow_catalog", lambda **kw: catalog)
 
 
 class TestWhatsAppTemplateFromTheSurface:
@@ -712,56 +1765,135 @@ class TestWhatsAppTemplateFromTheSurface:
         assert {t["ns"] for t in body["available"]} == {ns for ns, _ in FAKE_FLOWS}
         assert body["current"] == ""
         assert body["configured"] is False
+        assert body["version"] == 1
+        assert body["catalog_state"] == "fresh"
+        assert body["command_available"] is True
 
-    def test_choosing_one_configures_the_event(self, client, gestor, flows):
+    def test_config_write_requires_version_idempotency_and_confirmation(
+        self, client, gestor, flows
+    ):
         from shopman.shop.models import NotificationTemplate
 
         client.force_login(gestor)
         resp = client.post(
             WA_TEMPLATE_URL,
-            data={"flow_ns": FAKE_FLOWS[0][0]},
+            data={"flow_ns": FAKE_FLOWS[0][0], "base_version": 1},
             content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="configure-flow-command-0001",
         )
 
-        assert resp.status_code == 200
-        assert resp.json()["configured"] is True
-        saved = NotificationTemplate.objects.get(event="announcement_published")
-        assert saved.whatsapp_flow_ns == FAKE_FLOWS[0][0]
+        assert resp.status_code == 428
+        assert resp.json()["code"] == "confirmation_required"
+        assert resp.json()["confirmation"]["step_up"] == "totp"
+        assert not NotificationTemplate.objects.filter(
+            event="announcement_published"
+        ).exists()
 
-    def test_clearing_is_allowed_and_says_what_it_costs(self, client, gestor, flows):
+    def test_confirmed_command_returns_durable_receipt_and_new_version(
+        self, client, gestor, flows, monkeypatch
+    ):
+        from shopman.shop.models import (
+            MarketingPlatformAuditEvent,
+            NotificationTemplate,
+        )
+
+        monkeypatch.setattr(
+            "shopman.backstage.api.marketing._command_authorizer",
+            lambda *args, **kwargs: (lambda context, receipt: None),
+        )
+        client.force_login(gestor)
+        response = client.post(
+            WA_TEMPLATE_URL,
+            data={"flow_ns": FAKE_FLOWS[0][0], "base_version": 1},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="configure-flow-confirmed-0001",
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["receipt"]["state"] == "completed"
+        assert body["receipt"]["resulting_version"] == 2
+        assert body["receipt"]["resource_ref"] == "platform:whatsapp"
+        assert NotificationTemplate.objects.get(
+            event="announcement_published"
+        ).version == 2
+        assert MarketingPlatformAuditEvent.objects.count() == 1
+
+        replay = client.post(
+            WA_TEMPLATE_URL,
+            data={"flow_ns": FAKE_FLOWS[0][0], "base_version": 1},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="configure-flow-confirmed-0001",
+        )
+        assert replay.status_code == 200
+        assert replay.json()["replayed"] is True
+        assert MarketingPlatformAuditEvent.objects.count() == 1
+
+    def test_clearing_cannot_bypass_the_command_protocol(self, client, gestor, flows):
         from shopman.shop.models import NotificationTemplate
 
         client.force_login(gestor)
-        client.post(WA_TEMPLATE_URL, data={"flow_ns": FAKE_FLOWS[0][0]},
-                    content_type="application/json")
         resp = client.post(WA_TEMPLATE_URL, data={"flow_ns": ""},
                            content_type="application/json")
 
-        assert resp.status_code == 200
-        assert resp.json()["configured"] is False
-        assert NotificationTemplate.objects.get(event="announcement_published").whatsapp_flow_ns == ""
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "invalid_base_version"
+        assert not NotificationTemplate.objects.filter(
+            event="announcement_published"
+        ).exists()
 
     def test_a_template_that_no_longer_exists_is_refused(self, client, gestor, flows):
         client.force_login(gestor)
-        resp = client.post(WA_TEMPLATE_URL, data={"flow_ns": "content20200101000000_000000"},
-                           content_type="application/json")
+        resp = client.post(
+            WA_TEMPLATE_URL,
+            data={
+                "flow_ns": "content20200101000000_000000",
+                "base_version": 1,
+            },
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="configure-missing-flow-0001",
+        )
 
-        assert resp.status_code == 400
-        assert resp.json()["field"] == "flow_ns"
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "flow_not_active"
 
-    def test_with_the_platform_down_the_choice_is_not_blocked(self, client, gestor, no_flows):
-        """Indisponibilidade de terceiro não pode travar o operador."""
+    def test_platform_outage_cannot_turn_into_an_unverified_write(
+        self, client, gestor, no_flows
+    ):
         client.force_login(gestor)
-        resp = client.post(WA_TEMPLATE_URL, data={"flow_ns": "content20991231235959_999999"},
-                           content_type="application/json")
+        resp = client.post(
+            WA_TEMPLATE_URL,
+            data={
+                "flow_ns": "content20991231235959_999999",
+                "base_version": 1,
+            },
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="configure-during-outage-0001",
+        )
 
-        assert resp.status_code == 200, "sem lista para validar, aceita e confia"
+        assert resp.status_code == 503
+        assert resp.json()["code"] == "platform_catalog_unavailable"
+        assert resp["Retry-After"] == "30"
 
     def test_the_surface_distinguishes_cannot_list_from_empty(self, client, gestor, no_flows):
         client.force_login(gestor)
         body = client.get(WA_TEMPLATE_URL).json()
 
         assert body["can_list"] is False, "a tela precisa saber que não foi possível perguntar"
+        assert body["catalog_state"] == "unavailable"
+        assert body["command_available"] is False
+
+    def test_successful_empty_catalog_is_not_reported_as_outage(
+        self, client, gestor, empty_flows
+    ):
+        client.force_login(gestor)
+
+        body = client.get(WA_TEMPLATE_URL).json()
+
+        assert body["can_list"] is True
+        assert body["available"] == []
+        assert body["catalog_state"] == "fresh"
+        assert body["command_available"] is True
 
     def test_it_requires_the_campaign_permission(self, client, flows):
         outsider = User.objects.create_user(username="curioso2", password="x", is_staff=True)
@@ -769,14 +1901,53 @@ class TestWhatsAppTemplateFromTheSurface:
         assert client.get(WA_TEMPLATE_URL).status_code == 403
 
 
-class TestWhatsAppTestSend:
-    """Testar o template é conferência de dez segundos, e mora na tela.
+class _SandboxAdapter:
+    def __init__(self, *, accepted=True, available=True, error=None):
+        self.accepted = accepted
+        self.available = available
+        self.error = error
+        self.calls = []
 
-    Existia só como comando de terminal, e o dono foi direto ao ponto: por que ele abriria
-    um terminal para isso? Este endpoint é o mesmo serviço, alcançável pelo painel.
-    """
+    def is_available(self, _recipient):
+        return self.available
+
+    def send(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.error:
+            raise self.error
+        return self.accepted
+
+
+@pytest.fixture
+def test_lane(settings, monkeypatch):
+    recipient = "4605528796186498"
+    settings.SHOPMAN_MARKETING_TEST_TARGETS = {
+        "owner-sandbox": {
+            "label": "Aparelho verificado",
+            "recipient": recipient,
+            "backend": "manychat",
+            "sandbox": True,
+            "ownership_verified": True,
+        },
+    }
+    adapter = _SandboxAdapter()
+    monkeypatch.setattr("shopman.shop.notifications._adapters", {"manychat": adapter})
+    return adapter, recipient
+
+
+class TestWhatsAppTestSend:
+    """Teste isolado: ref verificada, receipt, max-1, quota e zero PII."""
 
     URL = "/api/v1/backstage/marketing/whatsapp-template/test/"
+    KEY = "test-send-0123456789"
+
+    def _post(self, client, payload, *, key=None):
+        return client.post(
+            self.URL,
+            data=payload,
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY=key or self.KEY,
+        )
 
     @pytest.fixture(autouse=True)
     def _balde_limpo(self):
@@ -796,127 +1967,206 @@ class TestWhatsAppTestSend:
         client.login(username="caixa2", password="x")
         assert client.post(self.URL).status_code == 403
 
-    def test_a_recipient_is_required(self, client, gestor):
+    def test_a_verified_target_is_required(self, client, gestor):
         client.force_login(gestor)
-        response = client.post(self.URL, data={}, content_type="application/json")
-        assert response.status_code == 400
+        response = self._post(client, {})
+        assert response.status_code == 422
 
-    def test_it_refuses_a_list(self, client, gestor):
-        """⚠️ Um destinatário por chamada: aceitar lista transformaria isto em disparo."""
+    def test_free_recipient_and_audience_payload_are_rejected_before_adapter(
+        self, client, gestor, test_lane
+    ):
+        adapter, _recipient = test_lane
+        client.force_login(gestor)
+        response = self._post(client, {
+            "target_ref": "owner-sandbox",
+            "recipient": "4605528796186498,4605528796186499",
+            "audience_rules": {"favorites": True},
+        })
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "test_payload_not_isolated"
+        assert adapter.calls == []
+
+    def test_missing_idempotency_key_is_rejected(self, client, gestor, test_lane):
         client.force_login(gestor)
         response = client.post(
             self.URL,
-            data={"recipient": "4605528796186498,4605528796186499"},
+            data={"target_ref": "owner-sandbox"},
             content_type="application/json",
         )
-        assert response.status_code == 400
+        assert response.status_code == 422
 
-    def test_without_transport_it_says_so_instead_of_pretending(self, client, gestor, monkeypatch):
-        client.force_login(gestor)
-        monkeypatch.setattr("shopman.shop.handlers.campaign._whatsapp_backend", lambda: None)
-
-        response = client.post(
-            self.URL, data={"recipient": "4605528796186498"}, content_type="application/json"
-        )
-
-        assert response.status_code == 400
-        assert "transporte" in response.json()["detail"]
-
-    def test_it_sends_the_real_variables_and_reports_them(self, client, gestor, monkeypatch):
-        """A tela mostra o que o template recebeu — campo vazio explica variável vazia."""
+    def test_it_sends_once_and_returns_safe_receipt(self, client, gestor, test_lane):
         from shopman.offerman.models import Product
 
+        from shopman.shop.models import MarketingTestReceipt
+
+        adapter, recipient = test_lane
         Product.objects.create(
             sku="BAGUETE-TEST", name="Baguete", base_price_q=1600,
             is_published=True, is_sellable=True,
         )
         client.force_login(gestor)
-        monkeypatch.setattr("shopman.shop.handlers.campaign._whatsapp_backend", lambda: "manychat")
-        monkeypatch.setattr(
-            "shopman.shop.notifications.notify",
-            lambda **kw: type("R", (), {"success": True, "message_id": "m1"})(),
-        )
-
-        response = client.post(
-            self.URL,
-            data={"recipient": "4605528796186498", "sku": "BAGUETE-TEST", "name": "Pablo"},
-            content_type="application/json",
-        )
+        response = self._post(client, {
+            "target_ref": "owner-sandbox", "sku": "BAGUETE-TEST",
+        })
 
         assert response.status_code == 200
         body = response.json()
         assert body["ok"] is True
-        assert body["fields"]["customer_name"] == "Pablo"
+        assert body["state"] == "accepted_unconfirmed"
+        assert body["sandbox"] is True
+        assert body["max_targets"] == 1
+        assert body["target_ref"] == "owner-sandbox"
+        assert body["fields"]["customer_name"] == "Cliente teste"
         assert body["fields"]["product_name"] == "Baguete"
         assert body["fields"]["product_sku"] == "BAGUETE-TEST"
+        assert len(adapter.calls) == 1
+        assert adapter.calls[0]["recipient"] == recipient
+        assert recipient not in json.dumps(body)
+        receipt = MarketingTestReceipt.objects.get(ref=body["receipt_ref"])
+        assert receipt.sandbox is True
+        assert receipt.max_targets == 1
+        assert receipt.retention_until >= timezone.now() + timedelta(days=179)
+        stored_fields = {field.name for field in receipt._meta.fields}
+        assert "recipient" not in stored_fields
+        assert "body" not in stored_fields
+        assert "idempotency_key" not in stored_fields
 
-    def test_o_texto_da_mensagem_nao_e_do_chamador(self, client, gestor, monkeypatch):
-        """⚠️ Havia um `body` que virava a mensagem e saía pelo transporte REAL.
-
-        Texto livre para número livre, sem formato, sem vínculo com o operador e sem
-        limite. A tela nunca o mandou — era dívida sem consumidor —, e o que ela pede
-        (ver se o template renderiza) é o oposto de escrever a mensagem à mão.
-        """
-        enviados: list[dict] = []
+    def test_target_options_expose_safe_refs_never_recipient(
+        self, client, gestor, test_lane, monkeypatch
+    ):
+        _adapter, recipient = test_lane
+        monkeypatch.setattr("shopman.shop.services.manychat_flows.list_flows", lambda: [])
         client.force_login(gestor)
-        monkeypatch.setattr("shopman.shop.handlers.campaign._whatsapp_backend", lambda: "manychat")
-        monkeypatch.setattr(
-            "shopman.shop.notifications.notify",
-            lambda **kw: enviados.append(kw)
-            or type("R", (), {"success": True, "message_id": "m1"})(),
-        )
 
-        response = client.post(
-            self.URL,
-            data={"recipient": "4605528796186498", "body": "COMPRE JÁ, LIQUIDAÇÃO"},
-            content_type="application/json",
+        response = client.get("/api/v1/backstage/marketing/whatsapp-template/")
+
+        assert response.json()["test_targets"] == [{
+            "ref": "owner-sandbox",
+            "label": "Aparelho verificado",
+            "backend": "manychat",
+        }]
+        assert recipient not in response.content.decode()
+
+    def test_same_key_same_payload_replays_receipt_without_second_effect(
+        self, client, gestor, test_lane
+    ):
+        adapter, _recipient = test_lane
+        client.force_login(gestor)
+        payload = {"target_ref": "owner-sandbox"}
+
+        first = self._post(client, payload).json()
+        second = self._post(client, payload).json()
+
+        assert first["receipt_ref"] == second["receipt_ref"]
+        assert second["replayed"] is True
+        assert len(adapter.calls) == 1
+
+    def test_same_key_different_payload_is_conflict(self, client, gestor, test_lane):
+        client.force_login(gestor)
+        assert self._post(client, {"target_ref": "owner-sandbox", "body": "A"}).status_code == 200
+
+        response = self._post(client, {"target_ref": "owner-sandbox", "body": "B"})
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "idempotency_conflict"
+
+    def test_provider_exception_is_unknown_and_redacted(
+        self, client, gestor, test_lane, monkeypatch
+    ):
+        adapter, recipient = test_lane
+        adapter.error = RuntimeError(f"vendor exploded for {recipient}")
+        emitted = []
+        monkeypatch.setattr(
+            "shopman.shop.services.campaign.logger.warning",
+            lambda message, *args: emitted.append(message % args),
         )
+        client.force_login(gestor)
+
+        response = self._post(client, {"target_ref": "owner-sandbox"})
+        serialized = json.dumps(response.json()) + " ".join(emitted)
 
         assert response.status_code == 200
-        assert "LIQUIDAÇÃO" not in str(enviados)
+        assert response.json()["state"] == "unknown"
+        assert response.json()["detail"] == "provider_outcome_unknown"
+        assert recipient not in serialized
+        assert "vendor exploded" not in serialized
 
-    def test_muitos_testes_seguidos_sao_travados(self, client, gestor, monkeypatch):
-        """O teste manda mensagem DE VERDADE, e o número do outro lado sente.
+    def test_unavailable_sandbox_is_503_with_a_safe_receipt(
+        self, client, gestor, test_lane
+    ):
+        from shopman.shop.models import MarketingTestReceipt
 
-        ⚠️ E há um efeito colateral que o número escolhido paga: havendo flow, o adapter
-        grava o contexto como campos personalizados do assinante. Testar contra o número
-        de um cliente sobrescreve o perfil dele, e a próxima mensagem legítima renderiza
-        com os valores do teste.
-        """
+        adapter, _recipient = test_lane
+        adapter.available = False
         client.force_login(gestor)
-        monkeypatch.setattr("shopman.shop.handlers.campaign._whatsapp_backend", lambda: "manychat")
-        monkeypatch.setattr(
-            "shopman.shop.notifications.notify",
-            lambda **kw: type("R", (), {"success": True, "message_id": "m1"})(),
+
+        response = self._post(client, {"target_ref": "owner-sandbox"})
+
+        assert response.status_code == 503
+        assert response.json()["code"] == "sandbox_unavailable"
+        receipt = MarketingTestReceipt.objects.get(ref=response.json()["receipt_ref"])
+        assert receipt.state == MarketingTestReceipt.State.FAILED_FINAL
+
+    def test_sixth_test_in_an_hour_is_throttled_with_retry_after(
+        self, client, gestor, test_lane
+    ):
+        adapter, _recipient = test_lane
+        client.force_login(gestor)
+        for index in range(5):
+            response = self._post(
+                client,
+                {"target_ref": "owner-sandbox"},
+                key=f"test-send-throttle-{index:04d}",
+            )
+            assert response.status_code == 200
+
+        response = self._post(
+            client,
+            {"target_ref": "owner-sandbox"},
+            key="test-send-throttle-9999",
         )
 
-        codigos = [
-            client.post(
-                self.URL,
-                data={"recipient": "4605528796186498"},
-                content_type="application/json",
-            ).status_code
-            for _ in range(7)
-        ]
+        assert response.status_code == 429
+        assert int(response.headers["Retry-After"]) > 0
+        assert len(adapter.calls) == 5
 
-        assert 429 in codigos, codigos
-        # Assert-positivo: o limite morde DEPOIS de o gestor conseguir testar.
-        assert codigos[0] == 200
-
-    def test_a_refused_send_is_reported_as_refused(self, client, gestor, monkeypatch):
-        client.force_login(gestor)
-        monkeypatch.setattr("shopman.shop.handlers.campaign._whatsapp_backend", lambda: "manychat")
+    def test_twenty_first_test_in_rolling_day_is_shop_throttled(
+        self, client, gestor, test_lane, monkeypatch
+    ):
+        adapter, _recipient = test_lane
         monkeypatch.setattr(
-            "shopman.shop.notifications.notify",
-            lambda **kw: type("R", (), {"success": False, "error": "sem janela"})(),
+            "shopman.shop.services.campaign._TEST_USER_HOURLY_LIMIT", 100
+        )
+        client.force_login(gestor)
+        for index in range(20):
+            assert self._post(
+                client,
+                {"target_ref": "owner-sandbox"},
+                key=f"test-send-daily-{index:04d}",
+            ).status_code == 200
+
+        response = self._post(
+            client,
+            {"target_ref": "owner-sandbox"},
+            key="test-send-daily-9999",
         )
 
-        body = client.post(
-            self.URL, data={"recipient": "4605528796186498"}, content_type="application/json"
-        ).json()
+        assert response.status_code == 429
+        assert int(response.headers["Retry-After"]) > 3600
+        assert len(adapter.calls) == 20
 
-        assert body["ok"] is False
-        assert body["detail"]
+    def test_test_path_never_calls_audience_resolver(
+        self, client, gestor, test_lane, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "shopman.shop.services.audience.resolve",
+            lambda *_args, **_kwargs: pytest.fail("test-send alcançou audience resolver"),
+        )
+        client.force_login(gestor)
+
+        assert self._post(client, {"target_ref": "owner-sandbox"}).status_code == 200
 
 
 # ── Quantas pessoas isto alcança ─────────────────────────────────────
@@ -1034,10 +2284,16 @@ class TestAudienceCount:
 
         client.force_login(gestor)
         StockAlertSubscription.objects.create(
-            sku="BF", contact_phone="+5543999993010", notified_at=timezone.now(),
+            sku="BF",
+            contact_phone="+5543999993010",
+            notified_at=timezone.now(),
+            evidence_hash="a" * 64,
         )
         StockAlertSubscription.objects.create(
-            sku="BF", contact_phone="+5543999993011", notified_at=timezone.now(),
+            sku="BF",
+            contact_phone="+5543999993011",
+            notified_at=timezone.now(),
+            evidence_hash="b" * 64,
         )
 
         data = client.post(
@@ -1083,6 +2339,25 @@ class TestAudienceCount:
 
         assert "5543999993001" not in raw
         assert "CLI-BOTH" not in raw
+
+    def test_source_outage_is_explicit_and_blocks_approval(self, client, gestor):
+        from unittest.mock import patch
+
+        client.force_login(gestor)
+        with patch(
+            "shopman.shop.adapters.audience_sources.favorite_customer_refs",
+            side_effect=RuntimeError("unavailable"),
+        ):
+            data = client.post(
+                COUNT_URL,
+                {"sku": "SKU-OUTAGE", "audience_rules": {"favorites": True}},
+                content_type="application/json",
+            ).json()
+
+        assert data["total"] == 0
+        assert data["degraded_sources"] == ["favorites"]
+        assert data["can_approve"] is False
+        assert data["blocked_reason"]
 
     def test_a_broken_payload_counts_nobody_instead_of_exploding(self, client, gestor):
         client.force_login(gestor)

@@ -52,10 +52,12 @@ Regras do padrão:
 
 - **Já usam:** acompanhamento de pedido (`order-<ref>`), estado de estoque
   (`stock-`), verificação por WhatsApp (`wa-verify-<token>`), PDV
-  (`backstage-cash-*`: pedido de troco, devolução pendente, turno).
+  (`backstage-cash-*`: pedido de troco, devolução pendente, turno) e Marketing
+  (`/sse/notifications`: invalidação pessoal seguida de refetch/ETag).
 - **Candidatos a migrar/adotar:** KDS, gestor de pedidos, produção/fornadas,
   qualquer badge/contador que hoje faz poll. Migração incremental — cada tela
   ganha o push mantendo o poll como rede de segurança.
 
 Ver [guia lifecycle](../guides/lifecycle.md), `shopman/shop/eventstream.py`,
-`shopman/shop/handlers/_sse_emitters.py` e `surfaces/*/server/utils/eventStream.ts`.
+`shopman/shop/handlers/_sse_emitters.py`, `surfaces/*/server/utils/eventStream.ts` e o
+[contrato da superfície Marketing](../reference/marketing-surface-contract.md).

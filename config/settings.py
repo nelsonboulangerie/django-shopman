@@ -103,6 +103,35 @@ SHOPMAN_EXPOSE_DEBUG_OTP = _env_bool("SHOPMAN_EXPOSE_DEBUG_OTP", False)
 # pessoa. Ver `storefront/api/auth.py::_debug_otp_allowed`.
 SHOPMAN_DEBUG_OTP_TOKEN = os.environ.get("SHOPMAN_DEBUG_OTP_TOKEN", "").strip()
 
+# Expand/canary flags. Approval may persist a transactional outbox, but neither
+# boundary hands work to a provider until its independent switch is explicit.
+SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED",
+    False,
+)
+SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED",
+    False,
+)
+SHOPMAN_MARKETING_SIMULATION_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_SIMULATION_ENABLED",
+    False,
+)
+# Local rehearsal affordances remain inert unless the final delivery adapter is
+# itself a hermetic simulator. Production must never gain either capability by
+# setting one flag in isolation.
+SHOPMAN_MARKETING_SIMULATION_IGNORE_QUIET_HOURS = False
+SHOPMAN_MARKETING_SIMULATION_FLOWS: tuple[tuple[str, str], ...] = ()
+SHOPMAN_MARKETING_DELIVERY_ADAPTERS: dict[str, str | None] = {}
+SHOPMAN_MARKETING_TARGET_HMAC_KEY = os.environ.get(
+    "SHOPMAN_MARKETING_TARGET_HMAC_KEY",
+    "",
+).strip()
+SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION = max(
+    1,
+    _env_int("SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION", 1),
+)
+
 # ⚠️ PRODUÇÃO: Restringir a domínios reais. "*" é apenas para desenvolvimento.
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
@@ -178,6 +207,9 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # CustomerInsight declares a PostgreSQL GinIndex. Django requires this app
+    # to be installed so its backend-specific index checks are registered.
+    "django.contrib.postgres",
     # Third-party
     "csp",
     "taggit",
@@ -480,6 +512,18 @@ SHOPMAN_MANYCHAT = {
     ),
     "flow_map": MANYCHAT_FLOW_MAP,
 }
+
+# Test-send de Marketing é fechado por padrão. A env contém um objeto por ref
+# segura; o recipient real jamais volta à API/log. Exemplo operacional:
+# {"owner-sandbox":{"label":"Aparelho verificado","recipient":"123456",
+#  "backend":"manychat","sandbox":true,"ownership_verified":true}}
+try:
+    SHOPMAN_MARKETING_TEST_TARGETS = json.loads(
+        os.environ.get("SHOPMAN_MARKETING_TEST_TARGETS_JSON", "{}")
+    )
+except json.JSONDecodeError:
+    # Fail closed: configuração inválida equivale a nenhum alvo autorizado.
+    SHOPMAN_MARKETING_TEST_TARGETS = {}
 
 # ── WhatsApp (Meta Cloud API direto — spike/avaliação) ──────────────
 # Seam para o adapter notification_whatsapp (Meta Cloud API direto, sem ManyChat).
@@ -863,6 +907,13 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_THROTTLE_RATES": {
         "anon": _ANON_THROTTLE_RATE or None,
+        "marketing_audience_user": "30/minute",
+        "marketing_audience_shop": "120/minute",
+        "marketing_dangerous_user": "10/minute",
+        "marketing_dangerous_shop": "30/minute",
+        "marketing_fire_user": "3/hour",
+        "marketing_fire_shop": "10/day",
+        "marketing_ai": os.environ.get("SHOPMAN_MARKETING_AI_THROTTLE_RATE", "10/hour"),
     },
     # ⚠️ Sem isto, `BaseThrottle.get_ident` lê o PRIMEIRO valor do
     # X-Forwarded-For — o da ESQUERDA, que é o que o cliente escreve e portanto
@@ -938,6 +989,20 @@ OFFERMAN = {
 AI_ASSIST_PROVIDER = os.environ.get("AI_ASSIST_PROVIDER", "anthropic")
 AI_ASSIST_API_KEY = os.environ.get("AI_ASSIST_API_KEY", "")
 AI_ASSIST_MODEL = os.environ.get("AI_ASSIST_MODEL", "claude-opus-5")
+
+# MKT-038: the generic copy transport is not authorization to use it for Marketing.
+# Both switches are deliberately false by default.  The second one records the human
+# vendor-policy gate (retention, no-training and transfer); a credential alone must
+# never make customer-facing AI appear in the operator surface.
+SHOPMAN_MARKETING_AI_ASSIST_V2 = os.environ.get(
+    "SHOPMAN_MARKETING_AI_ASSIST_V2", "false"
+).lower() in ("true", "1", "yes")
+SHOPMAN_MARKETING_AI_PROVIDER_POLICY_APPROVED = os.environ.get(
+    "SHOPMAN_MARKETING_AI_PROVIDER_POLICY_APPROVED", "false"
+).lower() in ("true", "1", "yes")
+SHOPMAN_MARKETING_AI_TIMEOUT_SECONDS = float(
+    os.environ.get("SHOPMAN_MARKETING_AI_TIMEOUT_SECONDS", "12")
+)
 
 # ── Concierge de WhatsApp (venda conversacional) ─────────────────────
 #
@@ -1342,6 +1407,15 @@ SHOPMAN_STOREFRONT_BASE_URL = (
     .rstrip("/")
 )
 
+# Hosts exatos cujas imagens podem chegar ao browser do operador e aos fetchers
+# de plataformas de Marketing. Vazio é fail-closed; o host da storefront é
+# incluído automaticamente. Sem wildcard, URL, porta ou IP privado.
+SHOPMAN_MARKETING_MEDIA_HOSTS = tuple(
+    host.strip()
+    for host in os.environ.get("SHOPMAN_MARKETING_MEDIA_HOSTS", "").split(",")
+    if host.strip()
+)
+
 # Magic links (doorman AccessLink) land on the Nuxt store, so the session cookie
 # is set on the store host — same single source as every other customer link.
 DOORMAN["ACCESS_LINK_ENTRY_URL"] = SHOPMAN_STOREFRONT_BASE_URL
@@ -1568,7 +1642,7 @@ if SENTRY_DSN:
         _sentry_traces = float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0") or "0")
 
         def _strip_query_string(event, hint):
-            """Tira a query string da URL antes do evento sair daqui.
+            """Aplica a barreira única de privacidade antes do evento sair daqui.
 
             `send_default_pii=False` NÃO remove query string. E o webhook da
             Efí autentica por `?token=` — não por escolha nossa: a Efí não
@@ -1580,13 +1654,9 @@ if SENTRY_DSN:
             Vale para TODA URL, não só a da Efí: query string é onde token de
             acesso, chave de assinatura e telefone de cliente costumam viajar.
             """
-            request = event.get("request")
-            if isinstance(request, dict):
-                url = request.get("url")
-                if isinstance(url, str) and "?" in url:
-                    request["url"] = url.split("?", 1)[0]
-                request.pop("query_string", None)
-            return event
+            from shopman.shop.telemetry_redaction import scrub_sentry_event
+
+            return scrub_sentry_event(event)
 
         sentry_sdk.init(
             dsn=SENTRY_DSN,
@@ -1626,6 +1696,8 @@ SECURE_SSL_REDIRECT = os.environ.get(
     "true" if not DEBUG else "false",
 ).lower() in ("true", "1", "yes")
 SECURE_REDIRECT_EXEMPT = [
+    r"^health/live/$",
+    r"^health/ready/$",
     r"^health/$",
     r"^ready/$",
 ]

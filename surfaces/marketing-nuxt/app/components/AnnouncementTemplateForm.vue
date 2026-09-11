@@ -5,6 +5,9 @@
 // backend (`options.variables`), nunca hardcoded — variável nova no domínio aparece aqui
 // sem deploy de front, e a tela nunca oferece uma que o resolvedor não conhece.
 import type { AnnouncementTemplate } from "~/types/campaign";
+import { useMarketingDraft } from "~/composables/useMarketingDraft";
+import type { MarketingDraftPayload } from "~/utils/marketingDraft";
+import { marketingVariableLabel } from "~/presentation/marketingVariables";
 
 const props = defineProps<{
   template: AnnouncementTemplate | null; // null = criando
@@ -12,6 +15,7 @@ const props = defineProps<{
   /** Há credencial de IA no ambiente? Sem ela o bloco de IA não aparece. */
   aiAvailable?: boolean;
   busy?: boolean;
+  draftOwner?: string;
 }>();
 
 const emit = defineEmits<{
@@ -33,6 +37,15 @@ const IMAGE_SOURCES = [
   { value: "none", label: "Sem imagem" },
 ];
 
+const DRAFT_LABELS = {
+  name: "Nome",
+  body: "Texto",
+  image_source: "Imagem",
+  use_ai_generation: "Uso de IA",
+  ai_prompt: "Instrução para IA",
+  is_active: "Modelo ativo",
+};
+
 // Estado novo a cada modelo aberto — senão o formulário herdaria o anterior.
 watch(
   () => props.template?.pk ?? null,
@@ -49,7 +62,8 @@ watch(
 );
 
 const canSubmit = computed(
-  () => !props.busy && name.value.trim().length > 0 && body.value.trim().length > 0,
+  () =>
+    !props.busy && name.value.trim().length > 0 && body.value.trim().length > 0,
 );
 
 /** Variáveis que o corpo realmente usa — para o gestor ver o que vai ser substituído. */
@@ -57,12 +71,56 @@ const usedVariables = computed(() =>
   props.variables.filter((v) => body.value.includes(`{{${v}}}`)),
 );
 
+function templatePayload(): MarketingDraftPayload {
+  return {
+    name: name.value,
+    body: body.value,
+    image_source: imageSource.value,
+    use_ai_generation: useAi.value,
+    ai_prompt: aiPrompt.value,
+    is_active: isActive.value,
+  };
+}
+
+function templateBase(): MarketingDraftPayload {
+  const template = props.template;
+  return {
+    name: template?.name ?? "",
+    body: template?.body ?? "",
+    image_source: template?.image_source || "product",
+    use_ai_generation: Boolean(template?.use_ai_generation),
+    ai_prompt: template?.ai_prompt ?? "",
+    is_active: template?.is_active ?? true,
+  };
+}
+
+function applyTemplateDraft(payload: MarketingDraftPayload) {
+  name.value = typeof payload.name === "string" ? payload.name : "";
+  body.value = typeof payload.body === "string" ? payload.body : "";
+  imageSource.value =
+    typeof payload.image_source === "string" ? payload.image_source : "product";
+  useAi.value = Boolean(payload.use_ai_generation);
+  aiPrompt.value =
+    typeof payload.ai_prompt === "string" ? payload.ai_prompt : "";
+  isActive.value = payload.is_active !== false;
+}
+
+const draft = useMarketingDraft({
+  owner: () => props.draftOwner ?? "",
+  resource: () => `template:${props.template?.pk ?? "new"}`,
+  version: () => props.template?.updated_at ?? "new",
+  base: templateBase,
+  current: templatePayload,
+  apply: applyTemplateDraft,
+});
+
 function insertVariable(variable: string) {
   body.value = `${body.value}{{${variable}}}`;
 }
 
 function submit() {
   if (!canSubmit.value) return;
+  draft.flush();
   emit("submit", {
     name: name.value.trim(),
     body: body.value.trim(),
@@ -79,15 +137,26 @@ function submit() {
 
 <template>
   <form class="space-y-5" @submit.prevent="submit">
+    <DraftRecoveryNotice
+      :state="draft.state.value"
+      :saved-at="draft.savedAt.value"
+      :conflicts="draft.conflicts.value"
+      :labels="DRAFT_LABELS"
+      @keep-local="draft.keepLocal()"
+      @keep-server="draft.keepServer()"
+      @discard="draft.discard()"
+    />
     <div>
-      <label for="tpl-name" class="mb-1 block text-sm font-medium">Nome do modelo</label>
+      <label for="tpl-name" class="mb-1 block text-sm font-medium"
+        >Nome do modelo</label
+      >
       <input
         id="tpl-name"
         v-model="name"
         type="text"
         placeholder="Saiu do forno"
         class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
-      >
+      />
     </div>
 
     <div>
@@ -96,7 +165,7 @@ function submit() {
         id="tpl-body"
         v-model="body"
         rows="4"
-        placeholder="{{product_name}} acabou de sair do forno!"
+        placeholder="O pão acabou de sair do forno!"
         class="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
       ></textarea>
 
@@ -108,43 +177,63 @@ function submit() {
           v-for="variable in variables"
           :key="variable"
           type="button"
-          class="rounded border border-border px-1.5 py-0.5 font-mono text-xs transition hover:bg-muted"
-          :class="usedVariables.includes(variable) ? 'border-primary text-primary' : ''"
+          :title="`Insere {{${variable}}}`"
+          class="rounded border border-border px-2 py-1 text-xs transition hover:bg-muted"
+          :class="
+            usedVariables.includes(variable)
+              ? 'border-primary text-primary'
+              : ''
+          "
           @click="insertVariable(variable)"
         >
-          {{ variable }}
+          {{ marketingVariableLabel(variable) }}
         </button>
       </div>
     </div>
 
     <div>
-      <label for="tpl-image" class="mb-1 block text-sm font-medium">Imagem</label>
+      <label for="tpl-image" class="mb-1 block text-sm font-medium"
+        >Imagem</label
+      >
       <select
         id="tpl-image"
         v-model="imageSource"
         class="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
       >
-        <option v-for="source in IMAGE_SOURCES" :key="source.value" :value="source.value">
+        <option
+          v-for="source in IMAGE_SOURCES"
+          :key="source.value"
+          :value="source.value"
+        >
           {{ source.label }}
         </option>
       </select>
     </div>
 
-    <!-- IA só aparece com credencial: oferecer e falhar depois ensina o gestor a não
-         confiar no recurso. -->
-    <fieldset v-if="aiAvailable" class="rounded-lg border border-border bg-card p-4">
-      <legend class="px-1 text-sm font-medium">Escrever com IA</legend>
+    <!-- Two server-side gates plus the credential decide availability. -->
+    <fieldset
+      v-if="aiAvailable"
+      class="rounded-lg border border-border bg-card p-4"
+    >
+      <legend class="px-1 text-sm font-medium">Sugestão de texto</legend>
       <label class="flex items-start gap-2 text-sm">
-        <input v-model="useAi" type="checkbox" class="mt-0.5 size-4 rounded border-border">
+        <input
+          v-model="useAi"
+          type="checkbox"
+          class="mt-0.5 size-4 rounded border-border"
+        />
         <span>
-          A IA escreve o texto no lugar do modelo
+          Oferecer “Sugerir texto” durante a revisão
           <span class="block text-xs text-muted-foreground">
-            O texto acima passa a ser referência de formato. Se a IA falhar, ele vale.
+            A sugestão aparece ao lado do texto e só entra no rascunho se alguém
+            escolher usar. Nunca publica sozinha.
           </span>
         </span>
       </label>
       <div v-if="useAi" class="mt-3">
-        <label for="tpl-ai" class="mb-1 block text-xs font-medium">Instrução para a IA</label>
+        <label for="tpl-ai" class="mb-1 block text-xs font-medium"
+          >Orientação de estilo</label
+        >
         <textarea
           id="tpl-ai"
           v-model="aiPrompt"
@@ -152,11 +241,19 @@ function submit() {
           placeholder="Fale do cheiro e do miolo. Uma frase."
           class="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
         ></textarea>
+        <p class="mt-1 text-xs text-muted-foreground">
+          Não inclua preço, validade, estoque, link ou dados pessoais: esses
+          fatos continuam sob controle do sistema.
+        </p>
       </div>
     </fieldset>
 
     <label class="flex items-center gap-2 text-sm">
-      <input v-model="isActive" type="checkbox" class="size-4 rounded border-border">
+      <input
+        v-model="isActive"
+        type="checkbox"
+        class="size-4 rounded border-border"
+      />
       Ativo
     </label>
 

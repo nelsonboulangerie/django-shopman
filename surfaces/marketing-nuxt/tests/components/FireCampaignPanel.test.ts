@@ -9,6 +9,7 @@ import type { AudienceCount, Campaign } from "~/types/campaign";
 let counted: AudienceCount;
 /** As regras que o painel MANDOU contar. É por aqui que se prova o `match`. */
 let lastCountedRules: Record<string, unknown> | null = null;
+let lastCountedSku = "";
 
 function fakeCount(over: Partial<AudienceCount> = {}): AudienceCount {
   return {
@@ -30,9 +31,10 @@ function fakeCount(over: Partial<AudienceCount> = {}): AudienceCount {
 // o descarte de resposta velha, e um stub aqui deixaria justamente essa parte sem teste.
 beforeAll(() => {
   Object.assign(globalThis, {
-    computed, ref, watch, onBeforeUnmount, useAudienceCount,
+    computed, flagMarketingSessionError: () => false, ref, watch, onBeforeUnmount, useAudienceCount,
     $fetch: vi.fn(async (_url: string, opts: { body?: Record<string, unknown> }) => {
       lastCountedRules = (opts?.body?.audience_rules ?? null) as Record<string, unknown> | null;
+      lastCountedSku = String(opts?.body?.sku ?? "");
       return counted;
     }),
   });
@@ -41,6 +43,7 @@ beforeAll(() => {
 beforeEach(() => {
   counted = fakeCount();
   lastCountedRules = null;
+  lastCountedSku = "";
   vi.useFakeTimers();
 });
 
@@ -62,15 +65,20 @@ const SEGMENTS = [
   { value: "champion", label: "Campeão" },
   { value: "at_risk", label: "Em risco" },
 ];
+const PRODUCTS = [
+  { value: "MDL", label: "Madeleine (MDL)" },
+  { value: "FOA", label: "Focaccia Alecrim (FOA)" },
+];
 
 function makeRule(over: Partial<Campaign> = {}): Campaign {
   return {
     pk: 3,
+    version: 1,
     name: "Novidade da semana",
     trigger: "manual",
     trigger_label: "Disparo manual",
     platforms: ["whatsapp"],
-    audience_rules: { favorites: true },
+    audience_rules: { tags: ["clientes-da-casa"] },
     requires_approval: true,
     is_active: true,
     ...over,
@@ -91,7 +99,9 @@ describe("FireCampaignPanel — disparar agora", () => {
     await wrapper.find("form").trigger("submit");
 
     // Objeto vazio = usa o público salvo. A campanha não é alterada.
-    expect(wrapper.emitted("submit")?.[0]).toEqual([{ body: "", audience: {} }]);
+    expect(wrapper.emitted("submit")?.[0]).toEqual([
+      { audience: {}, sku: "", productLabel: "" },
+    ]);
   });
 
   it("não deixa disparar sem escolher ninguém", async () => {
@@ -114,7 +124,11 @@ describe("FireCampaignPanel — disparar agora", () => {
     await wrapper.find("form").trigger("submit");
 
     expect(wrapper.emitted("submit")?.[0]).toEqual([
-      { body: "", audience: { price_tiers: ["atacado"], rfm_segments: ["at_risk"] } },
+      {
+        audience: { price_tiers: ["atacado"], rfm_segments: ["at_risk"] },
+        sku: "",
+        productLabel: "",
+      },
     ]);
   });
 
@@ -125,7 +139,7 @@ describe("FireCampaignPanel — disparar agora", () => {
     await wrapper.find("form").trigger("submit");
 
     expect(wrapper.emitted("submit")?.[0]).toEqual([
-      { body: "", audience: { churn_risk_min: 0.7 } },
+      { audience: { churn_risk_min: 0.7 }, sku: "", productLabel: "" },
     ]);
   });
 
@@ -138,7 +152,11 @@ describe("FireCampaignPanel — disparar agora", () => {
     await wrapper.find("form").trigger("submit");
 
     expect(wrapper.emitted("submit")?.[0]).toEqual([
-      { body: "", audience: { birthday_today: true, vip_first_minutes: 15 } },
+      {
+        audience: { birthday_today: true, vip_first_minutes: 15 },
+        sku: "",
+        productLabel: "",
+      },
     ]);
   });
 
@@ -152,7 +170,9 @@ describe("FireCampaignPanel — disparar agora", () => {
     await wrapper.setProps({ rule: makeRule({ pk: 99, name: "Outra" }) });
     await wrapper.find("form").trigger("submit");
 
-    expect(wrapper.emitted("submit")?.at(-1)).toEqual([{ body: "", audience: {} }]);
+    expect(wrapper.emitted("submit")?.at(-1)).toEqual([
+      { audience: {}, sku: "", productLabel: "" },
+    ]);
   });
 
   it("diz que o consentimento manda, mesmo com público escolhido", () => {
@@ -164,47 +184,78 @@ describe("FireCampaignPanel — disparar agora", () => {
   });
 });
 
-describe("FireCampaignPanel — o texto escrito na hora", () => {
-  it("manda o texto que o gestor escreveu", async () => {
+describe("FireCampaignPanel — conteúdo sob revisão", () => {
+  it("não oferece corpo livre capaz de contornar a revisão", () => {
     const wrapper = panel();
 
-    await wrapper.find("#fire-body").setValue("Fornada extra às 16h.");
-    await wrapper.find("form").trigger("submit");
-
-    const [payload] = wrapper.emitted("submit")![0] as [{ body: string }];
-    expect(payload.body).toBe("Fornada extra às 16h.");
+    expect(wrapper.find("textarea").exists()).toBe(false);
+    expect(wrapper.text()).toContain("Texto protegido pelo fluxo de revisão");
+    expect(wrapper.text()).toContain("cria um anúncio para revisão");
   });
 
-  it("texto só de espaços conta como vazio", async () => {
-    // ⚠️ Senão " " publicaria direto uma mensagem em branco, sem ninguém revisar.
-    const wrapper = panel();
+  it("pede o produto antes da senha quando o modelo depende do catálogo", async () => {
+    const wrapper = mount(FireCampaignPanel, {
+      props: {
+        rule: makeRule(),
+        priceTiers: TIERS,
+        tags: TAGS,
+        rfmSegments: SEGMENTS,
+        products: PRODUCTS,
+        productRequired: true,
+      },
+      global: { stubs: { Icon: true } },
+    });
+    await settleCount(wrapper);
 
-    await wrapper.find("#fire-body").setValue("   ");
+    expect(wrapper.text()).toContain("Produto desta ocorrência");
+    expect(wrapper.find('button[type="submit"]').attributes("disabled")).toBeDefined();
+
+    await wrapper.get("#fire-product").setValue("MDL");
+    expect(wrapper.find('button[type="submit"]').attributes("disabled")).toBeDefined();
+    await settleCount(wrapper);
+    expect(wrapper.find('button[type="submit"]').attributes("disabled")).toBeUndefined();
     await wrapper.find("form").trigger("submit");
 
-    const [payload] = wrapper.emitted("submit")![0] as [{ body: string }];
-    expect(payload.body).toBe("");
+    expect(lastCountedSku).toBe("MDL");
+    expect(wrapper.emitted("submit")?.[0]).toEqual([
+      { audience: {}, sku: "MDL", productLabel: "Madeleine (MDL)" },
+    ]);
   });
 
-  it("diz que escrever publica direto, e que em branco vai para revisão", async () => {
-    const wrapper = panel();
-    expect(wrapper.text()).toContain("nasce para você revisar");
+  it("mantém o comprovante e o próximo passo no painel", () => {
+    const wrapper = mount(FireCampaignPanel, {
+      props: {
+        rule: makeRule(),
+        priceTiers: TIERS,
+        tags: TAGS,
+        rfmSegments: SEGMENTS,
+        result: {
+          ok: true,
+          replayed: false,
+          receipt: {
+            ref: "fire-receipt-local",
+            kind: "fire",
+            state: "completed",
+            base_version: 1,
+            resulting_version: 2,
+            resource_ref: "campaign:3",
+            outcome: { audience_count: 2 },
+            created_at: "2026-09-10T10:00:00-03:00",
+            completed_at: "2026-09-10T10:00:01-03:00",
+          },
+          announcement: { pk: 77 },
+        } as never,
+      },
+      global: { stubs: { Icon: true, NuxtLink: true } },
+    });
 
-    await wrapper.find("#fire-body").setValue("Fornada extra às 16h.");
-
-    expect(wrapper.text()).toContain("Publica direto");
-  });
-
-  it("trocar de campanha zera o texto anterior", async () => {
-    // Mandar o texto de uma campanha no disparo de outra não tem desfazer.
-    const wrapper = panel();
-    await wrapper.find("#fire-body").setValue("Texto da campanha antiga");
-
-    await wrapper.setProps({ rule: makeRule({ pk: 99, name: "Outra" }) });
-    await wrapper.find("form").trigger("submit");
-
-    const [payload] = wrapper.emitted("submit")!.at(-1) as [{ body: string }];
-    expect(payload.body).toBe("");
+    expect(wrapper.text()).toContain("Anúncio criado para revisão");
+    expect(wrapper.text()).toContain("Nenhuma publicação ou mensagem foi enviada");
+    expect(wrapper.text()).toContain("fire-receipt-local");
+    expect(wrapper.find("nuxt-link-stub").attributes("to")).toBe(
+      "/announcements/77#review",
+    );
+    expect(wrapper.find("form").exists()).toBe(false);
   });
 });
 
@@ -230,7 +281,7 @@ describe("FireCampaignPanel — quantas pessoas isto alcança", () => {
     const wrapper = panel();
     await settleCount(wrapper);
 
-    expect(lastCountedRules).toEqual({ favorites: true });
+    expect(lastCountedRules).toEqual({ tags: ["clientes-da-casa"] });
   });
 
   it("diz que ninguém se encaixa, em vez de deixar um zero sem explicação", async () => {
@@ -243,14 +294,16 @@ describe("FireCampaignPanel — quantas pessoas isto alcança", () => {
     expect(wrapper.text()).toContain("Ninguém se encaixa neste público hoje");
   });
 
-  it("cala o número quando a contagem falha, em vez de mostrar um zero que mentiria", async () => {
+  it("bloqueia o disparo quando não consegue validar o público", async () => {
     const failing = vi.fn(async () => { throw new Error("offline"); });
     Object.assign(globalThis, { $fetch: failing });
     const wrapper = panel();
     await settleCount(wrapper);
 
-    expect(wrapper.text()).toContain("Não foi possível contar agora");
-    expect(wrapper.text()).toContain("O disparo continua valendo");
+    expect(wrapper.text()).toContain("Não foi possível conferir o público");
+    expect(wrapper.text()).toContain("O disparo está bloqueado");
+    expect(wrapper.find('button[type="submit"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.text()).toContain("Contar novamente");
 
     Object.assign(globalThis, {
       $fetch: vi.fn(async (_url: string, opts: { body?: Record<string, unknown> }) => {
@@ -317,7 +370,9 @@ describe("FireCampaignPanel — somar ou cruzar as regras", () => {
     await wrapper.setProps({ rule: makeRule({ pk: 77, name: "Outra" }) });
     await wrapper.find("form").trigger("submit");
 
-    expect(wrapper.emitted("submit")?.at(-1)).toEqual([{ body: "", audience: {} }]);
+    expect(wrapper.emitted("submit")?.at(-1)).toEqual([
+      { audience: {}, sku: "", productLabel: "" },
+    ]);
   });
 });
 
@@ -352,11 +407,14 @@ describe("FireCampaignPanel — etiquetas", () => {
     expect((await chooseNow()).text()).toContain("Quem etiqueta é quem atende");
   });
 
-  it("etiqueta sozinha já habilita o disparo", async () => {
+  it("etiqueta sozinha habilita o disparo só depois da contagem segura", async () => {
     const wrapper = panel();
     await wrapper.findAll('input[name="audience-mode"]')[1]!.setValue();
     const chips = wrapper.findAll("button[aria-pressed]");
     await chips.find((c) => c.text() === "corredores (3)")!.trigger("click");
+
+    expect(wrapper.find('button[type="submit"]').attributes("disabled")).toBeDefined();
+    await settleCount(wrapper);
 
     expect(wrapper.find('button[type="submit"]').attributes("disabled")).toBeUndefined();
   });

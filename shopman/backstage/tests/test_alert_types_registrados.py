@@ -57,6 +57,7 @@ _SINKS: dict[str, tuple[int | None, str]] = {
 _ENCANAMENTO = frozenset({
     "shopman/backstage/services/alerts.py",
     "shopman/shop/adapters/alert.py",
+    "shopman/shop/services/marketing_observability.py",
 })
 
 

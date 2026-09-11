@@ -1,226 +1,102 @@
-"""Enviar UM anúncio de teste para UM telefone, de verdade.
+"""Pré-visualiza ou envia um teste Marketing pela mesma lane sandbox da API.
 
-Existe porque "o painel diz enviado" e "o celular vibrou" são fatos diferentes, e só o
-segundo prova que o transporte funciona ponta a ponta. O caminho normal de campanha
-resolve audiência a partir de consentimento e mapeamento de subscriber; para provar o
-TRANSPORTE isso é ruído — este comando fala direto com o adapter e conta exatamente o
-que ele respondeu.
-
-**Não é porta dos fundos do consentimento.** Um telefone por execução, nomeado na linha
-de comando por quem tem acesso ao servidor, e envio real só com ``--send``. Não resolve
-audiência, não lê `CommunicationConsent`, e por isso mesmo não serve para alcançar
-cliente: serve para o dono testar o próprio número.
-
-## O que funciona hoje — medido em 2026-08-10, não suposto
-
-**Nenhum transporte entrega neste momento.** O comando está certo; as credenciais não.
-
-· **sms** (Comtele) — chave e rota presentes (`.env` local e staging), mas a API devolve
-  **HTTP 500** com um `message` opaco. Não é este caminho: o remetente de OTP
-  (`otp_sms_comtele`), que usa payload idêntico, falha igual. É a conta/chave/rota na
-  Comtele que precisa de atenção.
-· **manychat** (WhatsApp) — token só no staging. E `_resolve_subscriber` aceita apenas
-  `subscriber_id` numérico ou um resolver configurado (não há): telefone com `+` falha
-  com "Could not resolve subscriber". Passe o subscriber_id do ManyChat se o tiver.
-· **whatsapp-meta** — `WHATSAPP_PHONE_NUMBER_ID`/`ACCESS_TOKEN` ausentes; inerte.
-
-Quando qualquer um destes três for resolvido, este comando entrega sem mudança de
-código — é por isso que ele existe: separar "o software está errado" de "a credencial
-está errada", que são consertos de pessoas diferentes.
-
-## Como usar
-
-Ver o que sairia, sem enviar nada:
-
-    python manage.py send_test_announcement --phone "+5543984049009"
-
-Enviar de verdade (staging, ou local com a trava aberta):
-
-    python manage.py send_test_announcement --phone "+5543984049009" --send
-    SHOPMAN_SMS_ALLOW_IN_DEBUG=true python manage.py send_test_announcement \\
-        --phone "+5543984049009" --send
-
-⚠️ Em DEBUG os adapters externos são **inertes** por padrão (`_external.inert`), então
-localmente o comando relata "inerte" em vez de enviar — é a trava que impede um reseed
-de disparar SMS para número de verdade. Abrir a trava é explícito, por isso o comando
-diz na cara quando ela está fechada.
+Não aceita telefone, subscriber, audience rules nem backend livre. O operador
+escolhe uma ``target_ref`` verificada na configuração e, para enviar, informa um
+ator com capability própria e uma chave idempotente. Sem ``--send`` é dry-run.
 """
 
 from __future__ import annotations
 
-import logging
-
 from django.core.management.base import BaseCommand, CommandError
-
-#: Corpo padrão quando não se aponta um anúncio real.
-DEFAULT_BODY = "Teste do Shopman: se você recebeu isto, o transporte está de pé."
-
-
-logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = "Envia um anúncio de teste para UM telefone (SMS ou WhatsApp), de verdade com --send."
+    help = "Testa um anúncio em destino sandbox verificado; dry-run por padrão."
 
     def add_arguments(self, parser):
         parser.add_argument(
-            "--phone",
+            "--target-ref",
             required=True,
-            help='Telefone único, E.164. Ex: "+5543984049009". Para o WhatsApp via '
-                 "ManyChat, aceita também o subscriber_id numérico.",
+            help="Ref segura de SHOPMAN_MARKETING_TEST_TARGETS_JSON; nunca um telefone.",
         )
+        parser.add_argument("--sku", default="", help="SKU opcional para preencher variáveis.")
+        parser.add_argument("--body", default="", help="Texto opcional do artifact de teste.")
         parser.add_argument(
-            "--channel",
-            default="sms",
-            # Os nomes são os do registro real (`SHOPMAN_NOTIFICATION_ADAPTERS`), não
-            # apelidos: "whatsapp" não é adapter, "manychat" é. Um nome por coisa.
-            choices=["sms", "manychat", "console", "email"],
-            help="Transporte, pelo nome do adapter. 'sms' = Comtele. "
-                 "'manychat' = WhatsApp via ManyChat (exige subscriber_id).",
-        )
-        parser.add_argument(
-            "--announcement",
-            type=int,
-            default=None,
-            help="pk de um Announcement real, para enviar o texto DELE. "
-                 "Sem isto, usa um corpo de teste.",
-        )
-        parser.add_argument(
-            "--body",
+            "--actor",
             default="",
-            help="Texto avulso, quando você quer escolher a mensagem na mão.",
+            help="Username staff com send_marketing_test; obrigatório com --send.",
         )
         parser.add_argument(
-            "--sku",
+            "--idempotency-key",
             default="",
-            help="SKU real para preencher as variáveis do template (nome, quantidade, "
-                 "link do botão). Sem ele o teste não prova nada sobre um template "
-                 "aprovado, porque as variáveis chegariam vazias.",
-        )
-        parser.add_argument(
-            "--name",
-            default="",
-            help="Primeiro nome de quem recebe, para o {{customer_name}} do template.",
+            help="Chave única de 16–128 caracteres; obrigatória com --send.",
         )
         parser.add_argument(
             "--send",
             action="store_true",
-            help="Envia DE VERDADE. Sem esta flag o comando só mostra o que sairia.",
+            help="Executa na lane sandbox. Sem esta flag nada sai.",
         )
 
     def handle(self, *args, **options):
-        from shopman.shop.adapters import _external
-        from shopman.shop.notifications import get_backend, notify
+        from shopman.shop.services import campaign
 
-        phone = str(options["phone"]).strip()
-        if not phone:
-            raise CommandError("--phone é obrigatório.")
-        if "," in phone or " " in phone:
-            # Um telefone por execução, de propósito: este comando não é ferramenta de
-            # disparo em lote, e aceitar lista o transformaria numa.
-            raise CommandError("Um telefone por execução. Este comando não faz lote.")
-
-        channel = options["channel"]
-        body, source = self._resolve_body(options)
-        link = ""
-        # As MESMAS chaves que o caminho real manda. Um teste que mande menos prova só
-        # que o transporte responde — não que o template aprovado renderiza.
-        from shopman.shop.services import campaign as campaign_service
-
-        fields = campaign_service.test_fields(
-            sku=str(options.get("sku") or ""), name=str(options.get("name") or "")
-        )
-
-        announcement_pk = options["announcement"]
-        if announcement_pk:
-            from shopman.shop.models import Announcement
-
-            announcement = Announcement.objects.filter(pk=announcement_pk).first()
-            if announcement is None:
-                raise CommandError(f"Announcement {announcement_pk} não encontrado.")
-            link = (announcement.content or {}).get("link", "") or ""
-
-        adapter = get_backend(channel)
-        if adapter is None:
+        target_ref = str(options["target_ref"] or "").strip()
+        targets = {item["ref"]: item for item in campaign.marketing_test_target_options()}
+        target = targets.get(target_ref)
+        if target is None:
+            available = ", ".join(sorted(targets)) or "nenhum"
             raise CommandError(
-                f"O transporte '{channel}' não está registrado neste ambiente. "
-                "Registrados: ver SHOPMAN_NOTIFICATION_ADAPTERS."
+                f"Destino sandbox não autorizado. Refs disponíveis: {available}."
             )
 
-        probe = getattr(adapter, "is_available", None)
-        available = True if probe is None else bool(probe())
-
-        self.stdout.write("")
-        self.stdout.write(self.style.MIGRATE_HEADING("O que vai sair"))
-        self.stdout.write(f"  telefone   : {phone}")
-        self.stdout.write(f"  transporte : {channel}")
-        self.stdout.write(f"  credencial : {'ok' if available else 'AUSENTE — não vai entregar'}")
-        self.stdout.write(f"  texto ({source}): {body}")
-        if link:
-            self.stdout.write(f"  link       : {link}")
-        self.stdout.write("  variáveis do template (viram campos no ManyChat):")
-        for key, value in fields.items():
-            shown = value if value else "(vazio — o template renderiza sem)"
-            self.stdout.write(f"    {key} = {shown}")
-
-        # A trava de DEBUG é o motivo mais comum de "mandei e não chegou". Dizer antes.
-        if _external.inert(f"SHOPMAN_{channel.upper()}_ALLOW_IN_DEBUG"):
-            self.stdout.write("")
-            self.stdout.write(self.style.WARNING(
-                "  ⚠️  A trava de adapters externos está FECHADA neste processo "
-                "(DEBUG sem opt-in, ou seed suprimindo).\n"
-                f"      O adapter vai logar e devolver sucesso SEM enviar nada.\n"
-                f"      Para enviar de verdade daqui: "
-                f"SHOPMAN_{channel.upper()}_ALLOW_IN_DEBUG=true"
-            ))
-
-        if channel == "manychat" and not phone.lstrip("+").isdigit():
-            self.stdout.write(self.style.WARNING(
-                "  ⚠️  ManyChat resolve subscriber por ID numérico; telefone não resolve "
-                "sem resolver configurado. Provavelmente vai falhar."
-            ))
+        self.stdout.write(self.style.MIGRATE_HEADING("Teste Marketing isolado"))
+        self.stdout.write(f"  destino    : {target['label']} ({target_ref})")
+        self.stdout.write(f"  transporte : {target['backend']} sandbox")
+        self.stdout.write("  alcance    : exatamente 1")
+        self.stdout.write(f"  SKU        : {str(options['sku'] or '').strip() or '(amostra)'}")
 
         if not options["send"]:
-            self.stdout.write("")
-            self.stdout.write("Nada foi enviado. Repita com --send para enviar de verdade.")
+            self.stdout.write("Nada foi enviado. Use --send com ator e idempotency key.")
             return
 
-        self.stdout.write("")
-        result = notify(
-            event="announcement_published",
-            recipient=phone,
-            context={
-                "body": body,
-                "action_url": link or fields.get("link", ""),
-                "cta": "Garanta o seu:",
-                **fields,
-            },
-            backend=channel,
-        )
+        username = str(options["actor"] or "").strip()
+        if not username:
+            raise CommandError("--actor é obrigatório com --send.")
 
-        if getattr(result, "success", False):
-            self.stdout.write(self.style.SUCCESS(
-                f"  ✅ o adapter '{channel}' aceitou o envio (id: {result.message_id})."
-            ))
-            self.stdout.write(
-                "     Aceito pelo provedor ≠ entregue no aparelho. Confira o celular; "
-                "se não chegar, o log do provedor é a próxima parada."
+        from django.contrib.auth import get_user_model
+
+        actor = get_user_model().objects.filter(
+            username=username,
+            is_active=True,
+            is_staff=True,
+        ).first()
+        if actor is None:
+            raise CommandError("Ator staff ativo não encontrado.")
+
+        try:
+            outcome = campaign.send_test(
+                target_ref,
+                actor=actor,
+                idempotency_key=str(options["idempotency_key"] or ""),
+                sku=str(options["sku"] or ""),
+                body=str(options["body"] or ""),
             )
-        else:
-            self.stdout.write(self.style.ERROR(
-                f"  ❌ o adapter '{channel}' recusou: {result.error}"
+        except campaign.MarketingTestThrottled as exc:
+            raise CommandError(
+                f"Limite de testes atingido; tente em {exc.retry_after}s."
+            ) from None
+        except campaign.CampaignError as exc:
+            raise CommandError(str(exc)) from None
+
+        self.stdout.write(f"  receipt    : {outcome.receipt_ref}")
+        self.stdout.write(f"  estado     : {outcome.state}")
+        if outcome.replayed:
+            self.stdout.write("  repetição  : receipt existente; nenhum segundo envio")
+        if outcome.accepted:
+            self.stdout.write(self.style.SUCCESS(
+                "Sandbox aceitou; isso ainda não confirma entrega no aparelho."
             ))
-
-    def _resolve_body(self, options) -> tuple[str, str]:
-        """O texto que vai sair, e de onde ele veio."""
-        if options["body"]:
-            return options["body"], "avulso"
-
-        if options["announcement"]:
-            from shopman.shop.models import Announcement
-
-            announcement = Announcement.objects.filter(pk=options["announcement"]).first()
-            if announcement is not None and announcement.body:
-                return announcement.body, f"anúncio {announcement.pk}"
-
-        return DEFAULT_BODY, "padrão"
+        else:
+            self.stdout.write(self.style.WARNING(
+                "Sandbox não confirmou aceite. Consulte o receipt; não repita unknown."
+            ))

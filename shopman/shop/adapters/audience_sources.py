@@ -10,6 +10,16 @@ Devolve dados crus (refs, telefones) — quem decide quem recebe é o
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from dataclasses import dataclass
+from datetime import datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ActiveAlertSubscription:
+    ref: object
+    contact_phone: str
+
 
 def favorite_customer_refs(sku: str) -> list[str]:
     """Refs de clientes que favoritaram este SKU."""
@@ -37,7 +47,7 @@ def pending_alert_count(sku: str) -> int:
     from shopman.storefront.models import StockAlertSubscription
 
     return (
-        StockAlertSubscription.objects.filter(sku=sku, notified_at__isnull=True)
+        StockAlertSubscription.objects.active().filter(sku=sku)
         .values("contact_phone")
         .distinct()
         .count()
@@ -65,8 +75,8 @@ def notified_alert_count(sku: str) -> int:
     )
 
 
-def pending_alert_contacts(sku: str) -> list[tuple[str, str]]:
-    """``(telefone, customer_ref)`` de cada assinatura pendente deste SKU.
+def pending_alert_contacts(sku: str) -> list[tuple[str, str, object]]:
+    """``(telefone, customer_ref, ref)`` de cada assinatura pendente deste SKU.
 
     Inclui os dois gatilhos (``stock_back`` e ``production_ready``): quem pediu
     para ser avisado sobre o produto quer saber, seja qual for o motivo.
@@ -74,7 +84,39 @@ def pending_alert_contacts(sku: str) -> list[tuple[str, str]]:
     from shopman.storefront.models import StockAlertSubscription
 
     return list(
-        StockAlertSubscription.objects.filter(
-            sku=sku, notified_at__isnull=True
-        ).values_list("contact_phone", "customer_ref")
+        StockAlertSubscription.objects.active()
+        .filter(sku=sku)
+        .values_list("contact_phone", "customer_ref", "ref")
+    )
+
+
+def active_alert_subscriptions(
+    refs: Iterable[object], *, now: datetime
+) -> tuple[ActiveAlertSubscription, ...]:
+    """Minimal late-bound contact facts for protected snapshot members."""
+
+    from shopman.storefront.models import StockAlertSubscription
+
+    rows = (
+        StockAlertSubscription.objects.active(now=now)
+        .filter(ref__in=tuple(refs))
+        .values_list("ref", "contact_phone")
+    )
+    return tuple(
+        ActiveAlertSubscription(ref=ref, contact_phone=phone)
+        for ref, phone in rows
+    )
+
+
+def active_alert_subscription_refs(
+    refs: Iterable[object], *, now: datetime
+) -> set[object]:
+    """Active refs only, without returning a storefront model into the core."""
+
+    from shopman.storefront.models import StockAlertSubscription
+
+    return set(
+        StockAlertSubscription.objects.active(now=now)
+        .filter(ref__in=tuple(refs))
+        .values_list("ref", flat=True)
     )

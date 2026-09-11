@@ -27,12 +27,12 @@
     >(),
     {
       icon: "heroicons:x-mark",
-      srText: "Close",
+      srText: "Fechar",
     }
   );
   const forwarded = useForwardProps(reactiveOmit(props, "icon", "srText", "class"));
 
   const styles = tv({
-    base: "ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none",
+    base: "ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-2 right-2 grid size-11 place-items-center rounded-md opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none",
   });
 </script>

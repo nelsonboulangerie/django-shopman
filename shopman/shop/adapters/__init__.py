@@ -32,6 +32,7 @@ _SETTINGS_MAP = {
     "production": "SHOPMAN_PRODUCTION_ADAPTER",
     "customer": "SHOPMAN_CUSTOMER_ADAPTER",
     "courier": "SHOPMAN_COURIER_ADAPTER",
+    "marketing_delivery": "SHOPMAN_MARKETING_DELIVERY_ADAPTERS",
 }
 
 # Defaults when settings are absent
@@ -56,6 +57,7 @@ _DEFAULTS = {
     "production": "shopman.shop.adapters.production",
     "customer": "shopman.shop.adapters.customer",
     "courier": None,
+    "marketing_delivery": {},
 }
 
 
@@ -93,7 +95,7 @@ def _from_shop_integrations(adapter_type: str, method=None):
 # "card" numa config que só define "pix" devolvia o adapter do Pix, calado —
 # e um operador editando `Shop.integrations["payment"]` no Admin (JSON livre,
 # prioridade máxima) consegue exatamente isso. Método não configurado é None.
-_NO_METHOD_FALLBACK = {"payment"}
+_NO_METHOD_FALLBACK = {"payment", "marketing_delivery"}
 
 
 def _method_value(mapping: dict, adapter_type: str, method):

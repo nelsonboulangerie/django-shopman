@@ -113,6 +113,7 @@ Documentação de consulta rápida gerada a partir do código.
 | [Glossário](reference/glossary.md) | Termos de domínio: Quant, Hold, Move, Session, Order, Channel, etc. |
 | [Data Schemas](reference/data-schemas.md) | Inventário de chaves em Session.data, Order.data, Directive.payload |
 | [Headless Surface Contract](reference/headless-surface-contract.md) | Contrato canônico para Nuxt, Ionic, ManyChat, POS e futuras superfícies: Projection com Actions |
+| [Contrato da superfície Marketing](reference/marketing-surface-contract.md) | Ownership, rotas verificadas, plataformas, capabilities, flags, probes e estado de rollout |
 | [ManyChat Conversation Projection](reference/manychat-conversation-projection.md) | Contrato conversacional derivado de tracking, payment e channel policy canônicos |
 | [Remote Mutation Contract](reference/remote-mutation-contract.md) | Mutations remotas idempotentes sobre services canônicos |
 | [Filtro de Design de Superfícies](reference/design-surface-filter.md) | Checklist transversal para UI: tipografia, ícones, espaçamento, contraste, foco, responsividade e estados |
@@ -134,7 +135,7 @@ packages/                            shopman/
 ├── payman       (pagamentos)        ├── storefront/       (API headless do cliente)
 ├── buyman       (compras)           └── backstage/        (API headless operador + Admin)
 └── fiscalman    (fiscal NFC-e)
-                                     surfaces/  7 apps Nuxt 4 + operator-kit (layer)
+                                     surfaces/  9 apps Nuxt 4 + operator-kit (layer)
                                      config/    settings, urls, seed do deployment
 ```
 

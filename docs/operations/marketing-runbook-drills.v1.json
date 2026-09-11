@@ -1,0 +1,59 @@
+{
+  "schema": "shopman.marketing.runbook-drills.v1",
+  "scope": "local_synthetic_only",
+  "production_write_performed": false,
+  "provider_calls_expected": 0,
+  "human_gate": "MKT-044/G-H08",
+  "operator_requirement": "A non-author operator must make and record each decision before pilot.",
+  "single_command": "make marketing-drills",
+  "scenarios": [
+    {
+      "id": "stuck-command",
+      "runbook": "docs/runbooks/marketing-stuck-command.md",
+      "automated_test": "test_stale_lease_is_observably_requeued_and_reclaimable",
+      "operator_decision": "Diagnose and reconcile before any selective retry."
+    },
+    {
+      "id": "partial-retry",
+      "runbook": "docs/runbooks/marketing-partial-retry.md",
+      "automated_test": "test_retry_queues_only_retryable_and_replay_changes_nothing_twice",
+      "operator_decision": "Authorize only the failed_retryable subset."
+    },
+    {
+      "id": "unknown-provider-effect",
+      "runbook": "docs/runbooks/marketing-unknown-provider-effect.md",
+      "automated_test": "test_lookup_outage_is_sanitized_and_safely_requeued",
+      "operator_decision": "Reconcile; refuse blind retry and assign the 15-minute owner."
+    },
+    {
+      "id": "channel-readiness-outage",
+      "runbook": "docs/runbooks/marketing-channel-readiness-outage.md",
+      "automated_test": "test_direct_message_transport_probe_failure_is_unknown",
+      "operator_decision": "Keep the channel blocked and authorize only a safe recheck."
+    },
+    {
+      "id": "consent-or-privacy",
+      "runbook": "docs/runbooks/marketing-consent-or-privacy-incident.md",
+      "automated_test": "test_revocation_after_fanout_suppresses_before_claim_and_provider",
+      "operator_decision": "Freeze, preserve evidence and escalate to DPO/Security first."
+    },
+    {
+      "id": "bad-content-or-link",
+      "runbook": "docs/runbooks/marketing-bad-content-or-link.md",
+      "automated_test": "test_external_redirect_and_tracking_link_shapes_fail_closed",
+      "operator_decision": "Cancel reversible work and require a new artifact/version."
+    },
+    {
+      "id": "cancel-and-reconcile",
+      "runbook": "docs/runbooks/marketing-cancel-and-reconcile.md",
+      "automated_test": "test_cancel_now_wins_all_pending_lanes_and_is_idempotent",
+      "operator_decision": "Cancel once, reconcile uncertainty and never promise retract."
+    },
+    {
+      "id": "rollout-rollback",
+      "runbook": "docs/runbooks/marketing-rollout-rollback.md",
+      "automated_test": "test_force_cannot_bypass_safe_flag_in_production",
+      "operator_decision": "Hold/freeze; refuse deploy or rollback without G-H09/G-H10."
+    }
+  ]
+}

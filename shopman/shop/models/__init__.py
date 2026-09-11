@@ -9,9 +9,27 @@ from .attributes import (
 )
 from .campaign import (
     Announcement,
+    AnnouncementDeliveryState,
     AnnouncementStatus,
     AnnouncementTemplate,
+    AudienceSnapshot,
+    AudienceSnapshotMember,
     Campaign,
+    DeliveryAttempt,
+    DeliveryReconciliation,
+    DeliveryTarget,
+    MarketingAISuggestion,
+    MarketingAISuggestionEvent,
+    MarketingAuditEvent,
+    MarketingCommandReceipt,
+    MarketingConfirmation,
+    MarketingContentArtifact,
+    MarketingOutbox,
+    MarketingPlatformAuditEvent,
+    MarketingQuotaUsage,
+    MarketingSafetyState,
+    MarketingSecurityEvent,
+    MarketingTestReceipt,
     Trigger,
 )
 from .catalog_sync import CatalogSyncState, SyncStatus
@@ -35,7 +53,14 @@ from .settings_proxies import (
     ShopPurchase,
 )
 from .shop import NotificationTemplate, Shop
-from .user_notification import NotificationCategory, UserNotification
+from .user_notification import (
+    NotificationCategory,
+    NotificationEventType,
+    NotificationLifecycle,
+    NotificationSeverity,
+    UserNotification,
+    UserNotificationEvent,
+)
 
 __all__ = [
     "Shop",
@@ -70,10 +95,32 @@ __all__ = [
     "ShopProduction",
     "ShopIntegrations",
     "Campaign",
+    "DeliveryTarget",
+    "DeliveryAttempt",
+    "DeliveryReconciliation",
     "Announcement",
+    "AnnouncementDeliveryState",
     "AnnouncementTemplate",
     "AnnouncementStatus",
+    "AudienceSnapshot",
+    "AudienceSnapshotMember",
+    "MarketingAuditEvent",
+    "MarketingAISuggestion",
+    "MarketingAISuggestionEvent",
+    "MarketingCommandReceipt",
+    "MarketingConfirmation",
+    "MarketingContentArtifact",
+    "MarketingOutbox",
+    "MarketingPlatformAuditEvent",
+    "MarketingQuotaUsage",
+    "MarketingSafetyState",
+    "MarketingSecurityEvent",
+    "MarketingTestReceipt",
     "Trigger",
     "UserNotification",
+    "UserNotificationEvent",
     "NotificationCategory",
+    "NotificationEventType",
+    "NotificationLifecycle",
+    "NotificationSeverity",
 ]

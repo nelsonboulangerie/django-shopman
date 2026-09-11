@@ -677,7 +677,7 @@ _OPERATOR_UNLOCK_PERMS = {
     "shop.manage_orders",
     # Campanha (surfaces/marketing-nuxt): sem esta entrada a tela de destravar
     # rejeita a permissão e o app fica trancado para sempre com o gate ligado.
-    "shop.manage_campaigns",
+    "shop.view_marketing",
     # B.I. (surfaces/bi-nuxt, ADR-021): mesma armadilha da campanha acima.
     "backstage.view_bi",
 }
@@ -704,18 +704,26 @@ class OperatorSessionView(APIView):
         from shopman.backstage.services.operator import operator_card, pin_must_change
         from shopman.backstage.station_trust import station_ref
 
+        required_perm, valid_perm = _validated_unlock_perm(request.query_params.get("perm"))
+        if not valid_perm:
+            return Response({"detail": "Permissão desconhecida."}, status=400)
         operador = request.user if getattr(request.user, "is_authenticated", False) else None
-        return Response(
-            {
-                # `station` substituiu `device_user`: o que a tela precisa saber é de
-                # QUE BALCÃO ela é, não com que conta a máquina entrou — porque não
-                # há mais conta de máquina.
-                "station": station_ref(request),
-                "operator": operator_card(operador) if operador else None,
-                "locked": operador is None,
-                "pin_must_change": pin_must_change(operador),
-            }
-        )
+        return Response({
+            # `station` substituiu `device_user`: o que a tela precisa saber é de
+            # QUE BALCÃO ela é, não com que conta a máquina entrou — porque não
+            # há mais conta de máquina.
+            "station": station_ref(request),
+            "operator": operator_card(operador) if operador else None,
+            "locked": operador is None,
+            "pin_must_change": pin_must_change(operador),
+            # A antessala responde sobre a capability pedida pela superfície sem
+            # concedê-la nem listar permissões. Assim o shell barra o mount antes
+            # de qualquer fetch protegido e diferencia login de acesso negado.
+            "authorized": bool(
+                operador
+                and (required_perm is None or operador.has_perm(required_perm))
+            ),
+        })
 
 
 def _login_username_key(group, request):

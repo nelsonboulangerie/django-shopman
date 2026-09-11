@@ -11,6 +11,27 @@ operador nao executa Docker diretamente: use os wrappers `make`.
 
 ## Runbooks
 
+### Marketing — decisão e recuperação
+
+Todos começam pelo mesmo snapshot seguro: `make marketing-diagnose`
+(`receipt=<UUID>` e `platform=<canal>` são filtros opcionais). Ele é read-only,
+não chama provider e não exibe PII. O gate sintético inteiro é um comando:
+`make marketing-drills`.
+
+- [Command, outbox ou worker travado](marketing-stuck-command.md)
+- [Entrega parcial e retry seletivo](marketing-partial-retry.md)
+- [Efeito do provider desconhecido](marketing-unknown-provider-effect.md)
+- [Readiness de canal indisponível](marketing-channel-readiness-outage.md)
+- [Incidente de consentimento ou privacidade](marketing-consent-or-privacy-incident.md)
+- [Conteúdo, oferta, mídia ou link incorreto](marketing-bad-content-or-link.md)
+- [Cancelamento, duplicidade e reconciliação](marketing-cancel-and-reconcile.md)
+- [Rollback e rollout interrompido](marketing-rollout-rollback.md)
+
+Execução automatizada não fecha sozinha o gate: antes do piloto, um operador que
+não implementou deve percorrer as oito decisões e assinar a evidência do MKT-044.
+
+### Demais domínios
+
 - [Webhook falhando](webhook-falhando.md)
 - [Pagamento divergente](pagamento-divergente.md)
 - [Pedido pago sem confirmacao](pedido-pago-sem-confirmacao.md)

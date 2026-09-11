@@ -44,6 +44,7 @@ pegue o próximo livre e acrescente uma linha aqui.
 | [014](adr-014-surface-data-presentation-cut.md) | Corte dado/apresentação: Projection de dado vs Presentation |
 | [016](adr-016-sse-first-realtime.md) | Tempo real por SSE, cross-surface e site-wide |
 | [018](adr-018-surface-is-channel-with-commerce-policy.md) | Superfície é canal: uma entidade, com política comercial |
+| [026](adr-026-operator-surface-security-envelope.md) | Envelope CSP/security compartilhado, opt-in e provado por surface de operador |
 
 ## Catálogo, produção e compras
 

@@ -74,6 +74,8 @@ describe("proxyEventStream — BFF SSE das superfícies de operador", () => {
     expect(res.getHeader("content-type")).toBe("text/event-stream");
     expect(res.getHeader("cache-control")).toBe("no-cache, no-transform");
     expect(res.getHeader("x-accel-buffering")).toBe("no");
+    expect(res.getHeader("content-security-policy")).toContain("frame-ancestors 'none'");
+    expect(res.getHeader("x-frame-options")).toBe("DENY");
   });
 
   it("não envia cookie nem last-event-id quando ausentes", async () => {
@@ -102,6 +104,8 @@ describe("proxyEventStream — BFF SSE das superfícies de operador", () => {
     expect(res.statusCode).toBe(403);
     // Não vaza headers de SSE numa recusa.
     expect(res.getHeader("content-type")).not.toBe("text/event-stream");
+    expect(res.getHeader("cache-control")).toBe("private, no-store");
+    expect(res.getHeader("x-content-type-options")).toBe("nosniff");
   });
 
   it("responde 502 quando o upstream do Django falha", async () => {
@@ -112,6 +116,8 @@ describe("proxyEventStream — BFF SSE das superfícies de operador", () => {
 
     expect(result).toBe("");
     expect(res.statusCode).toBe(502);
+    expect(res.getHeader("cache-control")).toBe("private, no-store");
+    expect(res.getHeader("x-frame-options")).toBe("DENY");
   });
 
   it("aborta o upstream quando o cliente fecha a conexão", async () => {

@@ -1,48 +1,62 @@
-"""O comando de teste de envio — dry-run por default, e nunca disparo em lote.
-
-O comando fala com provedor externo de verdade, então o que precisa de teste aqui não é
-a entrega (isso é a rede), e sim as travas: sem `--send` não sai nada, um telefone por
-execução, e o relato distingue "o adapter recusou" de "não havia adapter".
-"""
+"""O CLI usa a mesma lane sandbox, receipt e autoridade da API."""
 
 from __future__ import annotations
 
 from io import StringIO
 
 import pytest
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from shopman.shop import notifications
+from shopman.shop.services.marketing_security import activate_freeze
 
 pytestmark = pytest.mark.django_db
 
-PHONE = "+5543984049009"
+RECIPIENT = "4605528796186498"
+TARGET_REF = "owner-sandbox"
+KEY = "cli-test-send-0123456789"
 
 
 class _Adapter:
-    """Adapter de mentira que registra o que recebeu, sem tocar a rede."""
-
     def __init__(self, *, available: bool = True, ok: bool = True):
         self._available = available
         self._ok = ok
         self.calls: list[dict] = []
 
-    def is_available(self, *a, **kw) -> bool:
+    def is_available(self, *_args, **_kwargs) -> bool:
         return self._available
 
-    def send(self, *, recipient, template, context=None, **kw) -> bool:
+    def send(self, *, recipient, template, context=None, **_kwargs) -> bool:
         self.calls.append({"recipient": recipient, "template": template, "context": context})
         return self._ok
 
 
 @pytest.fixture
-def adapter(monkeypatch):
+def adapter(settings, monkeypatch):
     fake = _Adapter()
-    monkeypatch.setattr(notifications, "_adapters", {"sms": fake})
-    # A trava de DEBUG devolveria "inerte" e o adapter nunca seria chamado.
-    monkeypatch.setattr("django.conf.settings.SHOPMAN_ALLOW_EXTERNAL_IN_DEBUG", True, raising=False)
+    settings.SHOPMAN_MARKETING_TEST_TARGETS = {
+        TARGET_REF: {
+            "label": "Aparelho verificado",
+            "recipient": RECIPIENT,
+            "backend": "manychat",
+            "sandbox": True,
+            "ownership_verified": True,
+        },
+    }
+    monkeypatch.setattr(notifications, "_adapters", {"manychat": fake})
     return fake
+
+
+@pytest.fixture
+def actor():
+    user = get_user_model().objects.create_user(
+        username="marketing-test", password="x", is_staff=True
+    )
+    user.user_permissions.add(Permission.objects.get(codename="send_marketing_test"))
+    return user
 
 
 def _run(*args) -> str:
@@ -51,73 +65,92 @@ def _run(*args) -> str:
     return out.getvalue()
 
 
-def test_dry_run_is_the_default(adapter):
-    """A trava que mais importa: sem --send, nada sai."""
-    output = _run("--phone", PHONE)
+def _send_args():
+    return (
+        "--target-ref", TARGET_REF,
+        "--actor", "marketing-test",
+        "--idempotency-key", KEY,
+        "--send",
+    )
+
+
+def test_dry_run_is_default_and_never_prints_recipient(adapter):
+    output = _run("--target-ref", TARGET_REF)
 
     assert adapter.calls == []
     assert "Nada foi enviado" in output
+    assert "exatamente 1" in output
+    assert RECIPIENT not in output
 
 
-def test_send_actually_calls_the_adapter(adapter):
-    output = _run("--phone", PHONE, "--send")
+def test_send_calls_sandbox_once_and_returns_receipt(adapter, actor):
+    output = _run(*_send_args())
 
     assert len(adapter.calls) == 1
-    assert adapter.calls[0]["recipient"] == PHONE
+    assert adapter.calls[0]["recipient"] == RECIPIENT
     assert adapter.calls[0]["template"] == "announcement_published"
-    assert "aceitou o envio" in output
+    assert "accepted_unconfirmed" in output
+    assert "Aceitou" not in output  # a copy não afirma entrega confirmada
+    assert "Sandbox aceitou" in output
+    assert RECIPIENT not in output
 
 
-def test_a_list_of_phones_is_refused(adapter):
-    """Este comando não é ferramenta de disparo em lote, e não vira uma por descuido."""
-    with pytest.raises(CommandError, match="não faz lote"):
-        _run("--phone", f"{PHONE},+5543999990001", "--send")
+def test_repeating_command_key_does_not_send_again(adapter, actor):
+    _run(*_send_args())
+    output = _run(*_send_args())
+
+    assert len(adapter.calls) == 1
+    assert "nenhum segundo envio" in output
+
+
+def test_emergency_freeze_blocks_sandbox_at_the_last_boundary(adapter, actor):
+    security = get_user_model().objects.create_user(
+        username="marketing-security", password="x", is_staff=True
+    )
+    security.user_permissions.add(Permission.objects.get(codename="freeze_marketing"))
+    activate_freeze(actor=security, reason="Exercício local do kill switch")
+
+    with pytest.raises(CommandError, match="congelado"):
+        _run(*_send_args())
+
     assert adapter.calls == []
 
 
-def test_an_unregistered_channel_says_so_instead_of_failing_obscurely(adapter):
-    with pytest.raises(CommandError, match="não está registrado"):
-        _run("--phone", PHONE, "--channel", "manychat", "--send")
+def test_unconfigured_target_is_fail_closed(adapter):
+    with pytest.raises(CommandError, match="não autorizado"):
+        _run("--target-ref", "telefone-livre")
+    assert adapter.calls == []
 
 
-def test_a_refusal_is_reported_as_refusal(monkeypatch):
-    """Adapter que devolve False não pode virar "enviado" no relato."""
+def test_send_requires_named_authorized_actor(adapter):
+    get_user_model().objects.create_user(
+        username="sem-capacidade", password="x", is_staff=True
+    )
+
+    with pytest.raises(CommandError, match="capacidade"):
+        _run(
+            "--target-ref", TARGET_REF,
+            "--actor", "sem-capacidade",
+            "--idempotency-key", KEY,
+            "--send",
+        )
+    assert adapter.calls == []
+
+
+def test_refused_sandbox_is_not_reported_as_accepted(settings, monkeypatch, actor):
     fake = _Adapter(ok=False)
-    monkeypatch.setattr(notifications, "_adapters", {"sms": fake})
-    monkeypatch.setattr("django.conf.settings.SHOPMAN_ALLOW_EXTERNAL_IN_DEBUG", True, raising=False)
+    settings.SHOPMAN_MARKETING_TEST_TARGETS = {
+        TARGET_REF: {
+            "label": "Sintético",
+            "recipient": RECIPIENT,
+            "backend": "manychat",
+            "sandbox": True,
+            "synthetic": True,
+        },
+    }
+    monkeypatch.setattr(notifications, "_adapters", {"manychat": fake})
 
-    output = _run("--phone", PHONE, "--send")
-    assert "recusou" in output
-    assert "aceitou" not in output
+    output = _run(*_send_args())
 
-
-def test_a_missing_credential_is_announced_before_sending(monkeypatch):
-    fake = _Adapter(available=False)
-    monkeypatch.setattr(notifications, "_adapters", {"sms": fake})
-
-    output = _run("--phone", PHONE)
-    assert "AUSENTE" in output
-
-
-def test_the_body_of_a_real_announcement_can_be_used(adapter):
-    from shopman.shop.models import Announcement, AnnouncementTemplate, Campaign, Trigger
-
-    template = AnnouncementTemplate.objects.create(name="T", body="oi")
-    rule = Campaign.objects.create(
-        name="C", trigger=Trigger.MANUAL, template=template, platforms=["whatsapp"]
-    )
-    announcement = Announcement.objects.create(
-        rule=rule, template=template, platforms=["whatsapp"],
-        content={"body": "Croissant saiu do forno", "link": "/p/cro"},
-    )
-
-    _run("--phone", PHONE, "--announcement", str(announcement.pk), "--send")
-
-    context = adapter.calls[0]["context"]
-    assert context["body"] == "Croissant saiu do forno"
-    assert context["action_url"] == "/p/cro"
-
-
-def test_an_unknown_announcement_is_refused(adapter):
-    with pytest.raises(CommandError, match="não encontrado"):
-        _run("--phone", PHONE, "--announcement", "99999", "--send")
+    assert "failed_final" in output
+    assert "Sandbox aceitou" not in output

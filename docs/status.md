@@ -1,6 +1,7 @@
 # Status — Django Shopman
 
-> Última atualização: 2026-08-13
+> Última atualização estrutural: 2026-09-10. Contagens históricas mantêm a data
+> explícita de sua medição.
 
 Retrato factual do que está implementado e funcionando. Não é um plano — é o estado atual.
 Para gaps e roadmap, ver [ROADMAP.md](ROADMAP.md) e os planos ativos em `docs/plans/`.
@@ -22,7 +23,9 @@ falando com o Django via BFF Nitro (cookie de sessão cross-subdomínio `.boulan
 | Cozinha (KDS) | `surfaces/kds-nuxt` | :3003 | prep, picking, expedição, painel de retirada |
 | Gestor de pedidos | `surfaces/orders-nuxt` | :3004 | fila, cardápio, showcases |
 | Produção/fornadas | `surfaces/production-nuxt` | :3005 | kiosk Solari (plan/mise-en-place/expedite/board) |
-| Marketing | `surfaces/marketing-nuxt` | :3006 | campanhas, público (audience), anúncios e broadcast (FOMO); absorveu o antigo broadcast-nuxt |
+| Marketing | `surfaces/marketing-nuxt` | :3006 | cockpit de campanhas/anúncios; publicação pública e mensagem direta são fluxos distintos |
+| B.I. | `surfaces/bi-nuxt` | :3007 | leitura analítica cross-suite |
+| Compras | `surfaces/purchase-nuxt` | :3008 | compras, recebimento e inventário de insumos |
 | — layer | `surfaces/operator-kit` | — | Nuxt layer compartilhada dos apps de operador (httpError, retry, connectivity, OperatorLock/PIN, telemetria) |
 
 Tempo real é **SSE-first** ([ADR-016](decisions/adr-016-sse-first-realtime.md)) com
@@ -70,8 +73,8 @@ bloco do framework, não o total — o total é a SOMA dos blocos.
 | **Qualidade de fornada** (ADR-017) | Fundação pronta | Partição no `finish` (grupos por grau/defeito), catálogos `QualityGrade`/`QualityDefect` editáveis, N lotes por fornada com `Batch.nonconformity_percent` **congelado**, veto de segurança → perda, `quality_min_share` no broadcast, relatório receita×grau×defeito. **Falta** para aposentar o D-1: preço por lote na venda, write-off no fechamento, gate por canal, quiosque de QC |
 | **Storefront (API)** | Estável | `api/` + `presentation/` + `intents/`; rate-limiting, delivery zones, favoritos, stock alerts |
 | **Backstage (API)** | Estável | POS, KDS, produção, orders, closing, operator; guards e idempotência endurecidos (PR #58) |
-| **Admin (Unfold)** | Estável | Unfold Canonical Gate (`make admin`); telas de produção e fechamento |
-| **Marketing** (campanhas) | Estável | `Campaign` + público por interseção (`match: any/all`, CustomerTag/grupos), disparo com identidade no link, posting Meta/Google pendente (F13b) |
+| **Admin (Unfold)** | Estável | Unfold Canonical Gate (`make admin`); Marketing é auditoria agregada read-only, sem cockpit ou dual write |
+| **Marketing** (campanhas) | Implementação técnica local pronta | Nuxt é o único cockpit; projection v2/Actions, RBAC granular, consentimento, outbox/ledger, recovery, simulador e CI completo. Providers reais, shadow/canário, staging e rollout permanecem pendentes de gate |
 | **PDV: caixa e gaveta** | Construído | troco/teto/sangria endurecidos (PR cd4b41c1), gaveta por software via agente local (tools/pos-counter-agent), crachá com leitor; falta instalar no balcão |
 | **Fiscal** | Parcial | NFC-e via Focus NFe (S0–S4); e2e homolog + emissão em produção pendentes |
 | **iFood direto** | Staging | Polling + sync de catálogo; homologação de produção pendente |

@@ -20,13 +20,19 @@ Duas escolhas estruturais:
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import logging
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
+from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from shopman.shop.directives import ANNOUNCEMENT_NOTIFY, ANNOUNCEMENT_PUBLISH, create_deduped
@@ -34,11 +40,13 @@ from shopman.shop.models import (
     Announcement,
     AnnouncementStatus,
     Campaign,
+    MarketingTestReceipt,
     Trigger,
 )
 from shopman.shop.services import audience as audience_service
 from shopman.shop.services import campaign_schedule
 from shopman.shop.services.availability_copy import availability_phrase
+from shopman.shop.services.marketing_contracts import MarketingContractError
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +64,42 @@ _REVERSIBLE_ANNOUNCEMENT_STATUSES = frozenset(
 
 class CampaignError(Exception):
     """Erro de negócio da campanha (announcement inexistente, estado inválido)."""
+
+
+class CampaignVersionConflict(CampaignError):
+    """O rascunho mudou depois da versão que a superfície carregou."""
+
+    def __init__(self, current_version: int):
+        super().__init__("O anúncio mudou enquanto você revisava.")
+        self.current_version = current_version
+
+
+class MarketingTestConflict(CampaignError):
+    """A mesma idempotency key foi reutilizada para outro payload."""
+
+
+class MarketingTestUnavailable(CampaignError):
+    """A lane sandbox não está pronta; nenhum fallback externo é permitido."""
+
+    def __init__(self, message: str, *, receipt_ref: str):
+        super().__init__(message)
+        self.receipt_ref = receipt_ref
+
+
+class MarketingTestForbidden(CampaignError):
+    """Capability foi revogada depois da reserva, antes do efeito."""
+
+    def __init__(self, message: str, *, receipt_ref: str):
+        super().__init__(message)
+        self.receipt_ref = receipt_ref
+
+
+class MarketingTestThrottled(CampaignError):
+    """Quota conservadora do G-H04 atingida."""
+
+    def __init__(self, retry_after: int):
+        super().__init__("Limite de testes atingido. Aguarde antes de tentar novamente.")
+        self.retry_after = max(1, int(retry_after))
 
 
 # ── Avaliação ────────────────────────────────────────────────────────
@@ -99,6 +143,9 @@ def fire_now(
     audience_rules: dict | None = None,
     body: str = "",
     author=None,
+    force_review: bool = False,
+    resolved_audience=None,
+    prepared_content: dict | None = None,
 ) -> Announcement:
     """Disparar UMA campanha agora, sem esperar evento. É a Action do gestor.
 
@@ -139,13 +186,24 @@ def fire_now(
         rule.audience_rules = dict(audience_rules)
         payload["audience_rules"] = dict(audience_rules)
 
+    if force_review:
+        # O comando seguro de disparo cria a ocasião, nunca a publicação. Mesmo uma
+        # campanha automática passa pela revisão humana quando acordada manualmente.
+        rule.requires_approval = True
+
     written = (body or "").strip()
     if written:
         # Escrito pelo gestor: não passa por revisão, e o `requires_approval` da campanha
         # não é atropelado em silêncio — ele vale para o que a OPERAÇÃO gerou (fornada,
         # estoque baixo), que é o caso em que existe alguém diferente para conferir.
         rule.requires_approval = False
-    announcement = _create_announcement(rule, payload, body=written)
+    announcement = _create_announcement(
+        rule,
+        payload,
+        body=written,
+        resolved_audience=resolved_audience,
+        prepared_content=prepared_content,
+    )
 
     if written and author is not None and getattr(author, "pk", None):
         # O autor fica gravado como aprovador porque foi ele quem decidiu publicar. Sem
@@ -158,13 +216,27 @@ def fire_now(
 
 
 def _create_announcement(
-    rule: Campaign, context: dict, *, occurrence_key: str = "", body: str = ""
+    rule: Campaign,
+    context: dict,
+    *,
+    occurrence_key: str = "",
+    body: str = "",
+    resolved_audience=None,
+    prepared_content: dict | None = None,
 ) -> Announcement:
     sku = context.get("sku", "")
-    content = resolve_content(
-        rule.template, context, promotion_ref=rule.promotion_ref, override_body=body
+    content = (
+        dict(prepared_content)
+        if prepared_content is not None
+        else resolve_content(
+            rule.template, context, promotion_ref=rule.promotion_ref, override_body=body
+        )
     )
-    resolved = audience_service.resolve(rule.audience_rules, sku=sku)
+    resolved = resolved_audience or audience_service.resolve(rule.audience_rules, sku=sku)
+    if resolved.degraded_sources:
+        raise CampaignError(
+            "Não foi possível validar toda a audiência. Nenhum anúncio foi criado."
+        )
 
     # Fora da janela preferida, o announcement nasce com hora marcada. Vale para os dois
     # caminhos: no automático o ``dispatch_due`` abre a porta na hora; no que
@@ -177,7 +249,11 @@ def _create_announcement(
         template=rule.template,
         status=AnnouncementStatus.PENDING_REVIEW if rule.requires_approval else AnnouncementStatus.APPROVED,
         content=content,
-        platform_content=_platform_content(rule.template, content),
+        platform_content=_platform_content(
+            rule.template,
+            content,
+            platforms=rule.platforms,
+        ),
         platforms=list(rule.platforms or []),
         audience=resolved.summary(),
         trigger_context=context,
@@ -519,17 +595,33 @@ def resolve_content(
     A `Action` vai junto, para a superfície montar a sacola (ADR-012 + ADR-020 §9).
     """
     variables = resolve_variables(context, promotion_ref=promotion_ref)
-    # `override_body` é o texto que o gestor escreveu, e ele vence tudo — inclusive a IA,
-    # que **nem é chamada**: pedir sugestão para substituir por um texto que já existe
-    # gastaria uma chamada para jogar fora. As outras chaves seguem vindo do modelo:
-    # hashtags, imagem e link da oferta não são o que ele digitou.
-    body = override_body or _ai_body(template, variables) or render(template.body, variables)
+    from shopman.shop.services import marketing_facts
+
+    facts = marketing_facts.resolve_facts(
+        sku=str(context.get("sku") or ""),
+        promotion_ref=promotion_ref,
+        referenced=marketing_facts.referenced_variables(
+            override_body or template.body,
+            getattr(template, "platform_variants", {}),
+        ),
+        seed_variables=variables,
+    )
+    variables.update(facts.variable_values())
+    # Birth is deterministic.  AI is available only as a separate suggestion during
+    # human review; it can never enter this path and therefore can never inherit a
+    # campaign's ``requires_approval=False`` auto-dispatch permission.
+    body = render(
+        override_body or template.body,
+        variables,
+        field="body",
+    )
     content = {
         "body": body,
         "hashtags": variables["hashtags_list"],
         "link": variables["link"],
         "image_url": _image_url(template, context),
         "variables": {k: v for k, v in variables.items() if not k.endswith("_list")},
+        "facts": facts.as_payload(),
     }
     if promotion_ref:
         from shopman.shop.services.offers import offer_action
@@ -538,116 +630,297 @@ def resolve_content(
     return content
 
 
-def _ai_body(template, variables: dict) -> str:
-    """Corpo escrito pela IA, quando o modelo pede. Vazio = usar o template.
-
-    ⚠️ Falha da IA **nunca** trava a operação: a fornada saiu, e o anúncio dela precisa
-    existir com ou sem assistente. Toda saída ruim (sem credencial, provedor mudo,
-    resposta vazia) devolve vazio e o template renderizado vale — mesma assimetria do
-    agendamento que adia, e pelo mesmo motivo.
-
-    Este é o leitor que faltava: `use_ai_generation` e `ai_prompt` eram configuráveis no
-    Admin, na API e na projection, e **ninguém os lia** — um interruptor ligado em nada.
-    """
-    if not getattr(template, "use_ai_generation", False):
-        return ""
-
-    from shopman.shop.services import copy_assist
-
-    if not copy_assist.is_configured():
-        logger.info("campaign.ai_body_skipped template=%s reason=not_configured", template.pk)
-        return ""
-
-    try:
-        return copy_assist.suggest(_ai_prompt(template, variables), max_tokens=600)
-    except Exception:
-        logger.warning("campaign.ai_body_failed template=%s", template.pk, exc_info=True)
-        return ""
-
-
 @dataclass(frozen=True)
 class TestSend:
-    """O que saiu num envio de teste, e o que o transporte respondeu."""
+    """Receipt seguro do teste; target real e resposta do vendor não atravessam."""
 
     accepted: bool
     backend: str
-    recipient: str
+    target_ref: str
     fields: dict
-    detail: str = ""
+    receipt_ref: str
+    state: str
+    detail: str
+    replayed: bool = False
+    sandbox: bool = True
+    max_targets: int = 1
+
+
+@dataclass(frozen=True)
+class _MarketingTestTarget:
+    ref: str
+    label: str
+    recipient: str
+    backend: str
+
+
+_TEST_TARGET_REF = re.compile(r"^[a-z0-9][a-z0-9_-]{0,79}$")
+_TEST_IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9._:-]{16,128}$")
+_TEST_USER_HOURLY_LIMIT = 5
+_TEST_SHOP_DAILY_LIMIT = 20
+
+
+def _marketing_test_targets() -> dict[str, _MarketingTestTarget]:
+    raw = getattr(settings, "SHOPMAN_MARKETING_TEST_TARGETS", {}) or {}
+    if not isinstance(raw, dict):
+        return {}
+
+    targets: dict[str, _MarketingTestTarget] = {}
+    for raw_ref, config in raw.items():
+        ref = str(raw_ref).strip()
+        if not _TEST_TARGET_REF.fullmatch(ref) or not isinstance(config, dict):
+            continue
+        recipient = str(config.get("recipient") or "").strip()
+        backend = str(config.get("backend") or "").strip()
+        verified = config.get("ownership_verified") is True or config.get("synthetic") is True
+        if (
+            not recipient
+            or "," in recipient
+            or any(character.isspace() for character in recipient)
+            or backend != "manychat"
+            or config.get("sandbox") is not True
+            or not verified
+        ):
+            continue
+        targets[ref] = _MarketingTestTarget(
+            ref=ref,
+            label=str(config.get("label") or ref).strip()[:80],
+            recipient=recipient,
+            backend=backend,
+        )
+    return targets
+
+
+def marketing_test_target_options() -> list[dict[str, str]]:
+    """Opções seguras para o operador; recipient real nunca é projetado."""
+    return [
+        {"ref": target.ref, "label": target.label, "backend": target.backend}
+        for target in sorted(_marketing_test_targets().values(), key=lambda item: item.label)
+    ]
+
+
+def _test_hash(domain: str, value: str) -> str:
+    return hmac.new(
+        str(settings.SECRET_KEY).encode("utf-8"),
+        f"marketing-test:{domain}:{value}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _actor_has_test_capability(actor) -> bool:
+    actor_id = getattr(actor, "pk", None)
+    if not actor_id:
+        return False
+    from django.contrib.auth import get_user_model
+
+    return get_user_model().objects.filter(pk=actor_id, is_active=True).filter(
+        Q(is_superuser=True)
+        | Q(user_permissions__codename="send_marketing_test")
+        | Q(groups__permissions__codename="send_marketing_test")
+    ).exists()
+
+
+def _test_throttle_retry_after(actor, now) -> int | None:
+    per_actor = MarketingTestReceipt.objects.filter(
+        actor_id=actor.pk,
+        created_at__gte=now - timedelta(hours=1),
+    ).order_by("created_at")
+    if per_actor.count() >= _TEST_USER_HOURLY_LIMIT:
+        first = per_actor.values_list("created_at", flat=True).first()
+        return max(1, int(((first + timedelta(hours=1)) - now).total_seconds()))
+
+    per_shop = MarketingTestReceipt.objects.filter(
+        created_at__gte=now - timedelta(days=1),
+    ).order_by("created_at")
+    if per_shop.count() >= _TEST_SHOP_DAILY_LIMIT:
+        first = per_shop.values_list("created_at", flat=True).first()
+        return max(1, int(((first + timedelta(days=1)) - now).total_seconds()))
+    return None
+
+
+def _reserve_test_receipt(
+    *, actor, key_hash: str, payload_hash: str, artifact_hash: str, target: _MarketingTestTarget,
+) -> tuple[MarketingTestReceipt, bool]:
+    from django.contrib.contenttypes.models import ContentType
+
+    with transaction.atomic():
+        # Um lock canônico serializa a reserva de todos os test-sends. A taxa é
+        # minúscula (máx. 20/dia), e isso torna as duas quotas verdadeiras mesmo
+        # com atores/workers concorrentes, sem segurar lock durante o provider.
+        content_type = ContentType.objects.get_for_model(MarketingTestReceipt)
+        ContentType.objects.select_for_update().get(pk=content_type.pk)
+
+        receipt = MarketingTestReceipt.objects.filter(
+            actor_id=actor.pk, idempotency_key_hash=key_hash
+        ).first()
+        if receipt is not None:
+            if receipt.payload_hash != payload_hash:
+                raise MarketingTestConflict(
+                    "Esta chave de idempotência já pertence a outro teste. Gere uma nova chave."
+                )
+            return receipt, True
+
+        now = timezone.now()
+        retry_after = _test_throttle_retry_after(actor, now)
+        if retry_after is not None:
+            raise MarketingTestThrottled(retry_after)
+
+        return MarketingTestReceipt.objects.create(
+            actor_id=actor.pk,
+            idempotency_key_hash=key_hash,
+            payload_hash=payload_hash,
+            artifact_hash=artifact_hash,
+            target_ref=target.ref,
+            backend=target.backend,
+            retention_until=now + timedelta(days=180),
+        ), False
+
+
+def _test_send_result(receipt, fields: dict, *, replayed: bool) -> TestSend:
+    return TestSend(
+        accepted=receipt.state == MarketingTestReceipt.State.ACCEPTED_UNCONFIRMED,
+        backend=receipt.backend,
+        target_ref=receipt.target_ref,
+        fields=fields,
+        receipt_ref=str(receipt.ref),
+        state=receipt.state,
+        detail=receipt.failure_code or receipt.state,
+        replayed=replayed,
+    )
 
 
 def send_test(
-    recipient: str, *, sku: str = "", name: str = "", backend: str = "",
+    target_ref: str,
+    *,
+    actor,
+    idempotency_key: str,
+    sku: str = "",
+    body: str = "",
 ) -> TestSend:
-    """Mandar UM anúncio de teste para UM destinatário. Sem audiência, sem consentimento.
+    """Envia por lane sandbox allowlisted, max-1 e idempotente, sem audiência."""
+    from shopman.shop.notifications import get_backend
 
-    Existe porque "o painel diz enviado" e "o celular vibrou" são fatos diferentes, e só o
-    segundo prova que o template aprovado renderiza. Manda as MESMAS chaves do caminho de
-    produção, com valores REAIS do catálogo e da disponibilidade — um teste que mande
-    menos prova só que o transporte responde.
-
-    **Não é porta dos fundos do consentimento:** um destinatário por chamada, escolhido
-    por quem tem a permissão de campanha, e nenhuma resolução de audiência. Serve para o
-    gestor testar o próprio número, e é assim que a tela o oferece.
-
-    ⚠️ **O texto não é do chamador.** Havia um parâmetro `body` que virava a mensagem e
-    saía pelo transporte real — texto livre para número livre, sem formato, sem vínculo
-    e sem limite. A tela nunca o mandou: era dívida sem consumidor, e o que ela pedia
-    (ver se o template renderiza) é o oposto de escrever a mensagem à mão.
-
-    ⚠️ **E há um efeito colateral que o número escolhido paga.** Havendo flow
-    configurado, o adapter grava o contexto como CAMPOS PERSONALIZADOS do assinante:
-    testar contra o número de um cliente real sobrescreve nome, produto e link no perfil
-    dele, e a próxima mensagem legítima renderiza com os valores do teste. É por isso
-    que este caminho é limitado por usuário e por IP na borda, e é por isso que a tela
-    diz "seu próprio número".
-    """
-    from shopman.shop.handlers.campaign import _whatsapp_backend
-    from shopman.shop.notifications import notify
-
-    target = (recipient or "").strip()
-    if not target:
-        raise CampaignError("Informe o WhatsApp (ou o subscriber) que vai receber o teste.")
-    if "," in target or " " in target:
-        # Um por chamada, de propósito: aceitar lista transformaria isto em disparo.
-        raise CampaignError("Um destinatário por teste. Isto não faz lote.")
-
-    transport = backend or _whatsapp_backend()
-    if transport is None:
+    ref = str(target_ref or "").strip()
+    target = _marketing_test_targets().get(ref)
+    if target is None:
         raise CampaignError(
-            "Nenhum transporte de WhatsApp configurado neste ambiente. Sem credencial, "
-            "o teste não prova nada."
+            "Escolha um destino sandbox verificado. Nenhum número livre é aceito."
         )
+    key = str(idempotency_key or "").strip()
+    if not _TEST_IDEMPOTENCY_KEY.fullmatch(key):
+        raise CampaignError("Idempotency-Key inválida ou ausente.")
+    if not _actor_has_test_capability(actor):
+        raise CampaignError("A capacidade de teste não está mais disponível. Atualize a tela.")
 
-    fields = test_fields(sku=sku, name=name)
-    message = "Teste do Shopman: se você recebeu isto, o template está de pé."
-    try:
-        result = notify(
-            event="announcement_published",
-            recipient=target,
-            context={
-                "body": message,
-                "cta": "Garanta o seu:",
-                "action_url": fields.get("link", ""),
-                **fields,
-            },
-            backend=transport,
-        )
-    except Exception as exc:
-        logger.warning("campaign.test_send_failed recipient=%s", target, exc_info=True)
-        return TestSend(
-            accepted=False, backend=transport, recipient=target,
-            fields=fields, detail=str(exc),
-        )
-
-    accepted = bool(getattr(result, "success", False))
-    return TestSend(
-        accepted=accepted,
-        backend=transport,
-        recipient=target,
-        fields=fields,
-        detail="" if accepted else str(getattr(result, "error", "") or "o transporte recusou"),
+    fields = test_fields(sku=sku, name="Cliente teste")
+    message = (body or "").strip() or (
+        "Teste do Shopman: se você recebeu isto, o template está de pé."
     )
+    payload = json.dumps(
+        {"target_ref": target.ref, "sku": str(sku or "").strip(), "body": message},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    artifact = json.dumps(
+        {"body": message, "fields": fields},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    receipt, replayed = _reserve_test_receipt(
+        actor=actor,
+        key_hash=_test_hash("idempotency", key),
+        payload_hash=_test_hash("payload", payload),
+        artifact_hash=_test_hash("artifact", artifact),
+        target=target,
+    )
+    if replayed:
+        return _test_send_result(receipt, fields, replayed=True)
+
+    transport = get_backend(target.backend)
+    probe = getattr(transport, "is_available", None) if transport is not None else None
+    if transport is None or (probe is not None and not probe(target.recipient)):
+        receipt.state = MarketingTestReceipt.State.FAILED_FINAL
+        receipt.failure_code = "sandbox_transport_unavailable"
+        receipt.finished_at = timezone.now()
+        receipt.save(update_fields=["state", "failure_code", "finished_at"])
+        raise MarketingTestUnavailable(
+            "O sandbox de teste não está disponível agora.",
+            receipt_ref=str(receipt.ref),
+        )
+
+    # Recheck fresco imediatamente antes do efeito: cache de request não pode
+    # manter uma capability revogada enquanto a Action estava aberta.
+    if not _actor_has_test_capability(actor):
+        receipt.state = MarketingTestReceipt.State.DENIED
+        receipt.failure_code = "capability_revoked"
+        receipt.finished_at = timezone.now()
+        receipt.save(update_fields=["state", "failure_code", "finished_at"])
+        raise MarketingTestForbidden(
+            "A capacidade de teste foi revogada. Nenhuma mensagem saiu.",
+            receipt_ref=str(receipt.ref),
+        )
+    from shopman.shop.services.marketing_security import (
+        MarketingAuthorizationError,
+        require_external_effects_enabled,
+    )
+
+    try:
+        require_external_effects_enabled()
+    except MarketingAuthorizationError as exc:
+        receipt.state = MarketingTestReceipt.State.DENIED
+        receipt.failure_code = "marketing_frozen"
+        receipt.finished_at = timezone.now()
+        receipt.save(update_fields=["state", "failure_code", "finished_at"])
+        raise MarketingTestForbidden(
+            "Marketing está congelado. Nenhuma mensagem saiu.",
+            receipt_ref=str(receipt.ref),
+        ) from exc
+
+    try:
+        from shopman.shop.services.manychat_marketing_safety import (
+            sandbox_probe_context,
+        )
+
+        test_context = {
+            "body": message,
+            "cta": "Garanta o seu:",
+            "action_url": fields.get("link", ""),
+            **fields,
+        }
+        if target.backend == "manychat":
+            test_context = sandbox_probe_context(test_context)
+        accepted = bool(transport.send(
+            recipient=target.recipient,
+            template="announcement_published",
+            context=test_context,
+        ))
+    except Exception as exc:  # outcome pós-boundary é desconhecido; nunca retry automático
+        receipt.state = MarketingTestReceipt.State.UNKNOWN
+        receipt.failure_code = "provider_outcome_unknown"
+        logger.warning(
+            "campaign.test_send receipt=%s state=unknown exception_class=%s",
+            receipt.ref,
+            type(exc).__name__,
+        )
+    else:
+        receipt.state = (
+            MarketingTestReceipt.State.ACCEPTED_UNCONFIRMED
+            if accepted
+            else MarketingTestReceipt.State.FAILED_FINAL
+        )
+        receipt.failure_code = "" if accepted else "provider_rejected"
+
+    receipt.finished_at = timezone.now()
+    receipt.save(update_fields=["state", "failure_code", "finished_at"])
+    logger.info(
+        "campaign.test_send receipt=%s backend=%s state=%s sandbox=true max_targets=1",
+        receipt.ref,
+        receipt.backend,
+        receipt.state,
+    )
+    return _test_send_result(receipt, fields, replayed=False)
 
 
 def test_fields(*, sku: str = "", name: str = "") -> dict:
@@ -688,48 +961,166 @@ def test_fields(*, sku: str = "", name: str = "") -> dict:
 
 
 def preview(
-    body: str, *, sku: str = "", promotion_ref: str = "", use_ai: bool = False,
+    body: str,
+    *,
+    sku: str = "",
+    promotion_ref: str = "",
+    use_ai: bool = False,
+    platform: str = "instagram",
+    platform_content: dict | None = None,
+    content_version: int = 1,
 ) -> dict:
     """Como a mensagem VAI FICAR, resolvida pelo mesmo caminho do envio.
 
-    Existe porque até agora o gestor escrevia `{{product_name}}` e só descobria o resultado
-    quando a mensagem chegava no celular de um cliente. Variável com nome errado renderiza
-    vazio em silêncio, e foi assim que passaram despercebidos um `customer_name` que ninguém
-    mandava e uma foto em caminho relativo que a Meta não carrega.
+    Variável desconhecida bloqueia a prévia e aponta o campo antes de o conteúdo chegar à
+    aprovação. O operador corrige no mesmo contexto, sem descobrir o erro no aparelho.
 
     ⚠️ **Mesmo resolvedor do envio, de propósito.** Se a prévia tivesse a própria montagem,
     ela concordaria com o envio hoje e divergiria no primeiro ajuste — e uma prévia que mente
     é pior que prévia nenhuma, porque ela é acreditada.
 
-    ⚠️ **A IA não é chamada aqui.** `use_ai` só informa a tela de que o corpo final será
-    escrito por ela; gerar texto a cada tecla digitada gastaria chamada para jogar fora. Quem
-    pede sugestão é o botão de reescrever, explicitamente.
+    ⚠️ **A IA não é chamada aqui.** `use_ai` só informa que o modelo oferece uma sugestão
+    separada durante a revisão; gerar texto a cada tecla gastaria uma chamada para jogar
+    fora. Quem pede é o botão explícito, e a sugestão nunca substitui esta prévia sozinha.
 
     ``sku`` vazio escolhe um produto real da loja, para a prévia funcionar sem o gestor ter de
     saber um SKU de cabeça — e devolve qual usou, porque prévia com produto anônimo não
     explica o que está vendo.
     """
+    normalized_platform = str(platform or "").strip()
+    batch = preview_platforms(
+        body,
+        sku=sku,
+        promotion_ref=promotion_ref,
+        use_ai=use_ai,
+        platforms=(normalized_platform,),
+        platform_content=platform_content,
+        content_version=content_version,
+    )
+    resolved = batch["previews"][normalized_platform]
+    artifact = resolved["artifact"]
+    return {
+        **{key: value for key, value in batch.items() if key != "previews"},
+        "body": artifact["body"],
+        "product_image_url": artifact["image_url"],
+        "link": artifact["link"],
+        "hashtags": artifact["hashtags"],
+        "artifact": artifact,
+        "artifact_hash": resolved["artifact_hash"],
+    }
+
+
+def preview_platforms(
+    body: str,
+    *,
+    platforms,
+    sku: str = "",
+    promotion_ref: str = "",
+    use_ai: bool = False,
+    platform_content: dict | None = None,
+    content_version: int = 1,
+) -> dict:
+    """Resolve every selected platform from one fact read and one request epoch."""
+
+    normalized_platforms = tuple(dict.fromkeys(
+        str(value or "").strip() for value in platforms if str(value or "").strip()
+    ))
+    if not normalized_platforms:
+        raise MarketingContractError(
+            code="preview_platform_required",
+            detail="Escolha ao menos uma plataforma para a prévia.",
+            field_errors={"platforms": ("Escolha ao menos uma plataforma.",)},
+        )
+    raw_variants = platform_content if platform_content is not None else {}
+    if not isinstance(raw_variants, dict):
+        raise MarketingContractError(
+            code="invalid_platform_variants",
+            detail="As variantes da prévia precisam ser um objeto.",
+            field_errors={"platform_content": ("Use um objeto por plataforma.",)},
+        )
+
     sample = (sku or "").strip() or _sample_sku()
     variables = resolve_variables({"sku": sample}, promotion_ref=promotion_ref)
+    from shopman.shop.services import marketing_facts
+    from shopman.shop.services.marketing_artifacts import (
+        resolve_all_dispatch_artifacts,
+    )
+    from shopman.shop.services.marketing_platform_configuration import (
+        verified_whatsapp_flow_binding,
+    )
 
+    selected_variants = {
+        platform: raw_variants[platform]
+        for platform in normalized_platforms
+        if platform in raw_variants
+    }
+    facts = marketing_facts.resolve_facts(
+        sku=sample,
+        promotion_ref=promotion_ref,
+        referenced=marketing_facts.referenced_variables(body, selected_variants),
+        seed_variables=variables,
+    )
+    variables.update(facts.variable_values())
+    rendered_variants = _render_platform_variants(
+        raw_variants,
+        variables=variables,
+        platforms=normalized_platforms,
+    )
+    flow_binding = (
+        verified_whatsapp_flow_binding()
+        if "whatsapp" in normalized_platforms
+        else None
+    )
+    platform_bindings = (
+        {"whatsapp": flow_binding.artifact_payload()}
+        if flow_binding is not None
+        else {}
+    )
+    artifacts = resolve_all_dispatch_artifacts(
+        platforms=normalized_platforms,
+        content={
+            "body": render(body or "", variables, field="body"),
+            "hashtags": variables["hashtags_list"],
+            "link": variables["link"],
+            "image_url": variables["product_image_url"],
+        },
+        platform_content=rendered_variants,
+        content_version=content_version,
+        facts_as_of=facts.as_of.isoformat(),
+        facts_hash=facts.source_hash,
+        platform_bindings=platform_bindings,
+    )
     return {
         "sku": sample,
-        "body": render(body or "", variables),
+        "sample": not bool((sku or "").strip()),
         "product_name": variables["product_name"],
-        "product_image_url": variables["product_image_url"],
-        "link": variables["link"],
-        "hashtags": variables["hashtags_list"],
-        # Os campos discretos que o template aprovado recebe. É o que explica variável vazia
-        # no aparelho antes de o aparelho existir.
+        # Os campos discretos que o template aprovado recebe. O operador vê os valores
+        # usados sem precisar conferir o aparelho ou memorizar o contexto do evento.
         "fields": {
             key: variables[key]
             for key in (
-                "customer_name", "product_name", "product_sku",
-                "available_qty", "availability_phrase",
+                "customer_name",
+                "product_name",
+                "product_sku",
+                "available_qty",
+                "availability_phrase",
             )
             if key in variables
         },
         "ai_writes": bool(use_ai),
+        "facts": facts.as_payload(),
+        "previews": {
+            artifact.platform: {
+                "artifact": artifact.as_payload(),
+                "artifact_hash": artifact.artifact_hash,
+                **(
+                    {"flow": flow_binding.display_payload()}
+                    if artifact.platform == "whatsapp" and flow_binding is not None
+                    else {}
+                ),
+            }
+            for artifact in artifacts
+        },
     }
 
 
@@ -750,104 +1141,98 @@ def _sample_sku() -> str:
         return ""
 
 
-def rewrite_body(announcement_id: int, *, current_body: str = "") -> str:
-    """Uma sugestão de corpo para um anúncio em revisão. Não grava nada.
+def _platform_content(
+    template,
+    content: dict,
+    *,
+    platforms=None,
+) -> dict:
+    """Resolve only explicit variant fields; absent fields inherit at dispatch."""
 
-    Existe porque o `use_ai_generation` do modelo decide no NASCIMENTO do anúncio, e o
-    gestor às vezes quer a IA justamente no anúncio que nasceu do template. Aqui ele pede,
-    lê e aceita ou descarta — quem persiste é o PATCH do anúncio, depois do "Aceitar".
-
-    Levanta as exceções do `copy_assist` para a camada HTTP mapear (503 sem credencial).
-    """
-    from shopman.shop.services import copy_assist
-
-    try:
-        announcement = Announcement.objects.select_related("template", "rule").get(pk=announcement_id)
-    except Announcement.DoesNotExist as exc:
-        raise CampaignError("Anúncio não encontrado.") from exc
-
-    if announcement.status not in (AnnouncementStatus.DRAFT, AnnouncementStatus.PENDING_REVIEW):
-        raise CampaignError("Este anúncio já saiu. Não dá para reescrever o que já foi lido.")
-
-    variables = resolve_variables(
-        announcement.trigger_context or {},
-        promotion_ref=announcement.rule.promotion_ref if announcement.rule_id else "",
+    variables = content.get("variables")
+    variables = variables if isinstance(variables, dict) else {}
+    return _render_platform_variants(
+        template.platform_variants or {},
+        variables=variables,
+        platforms=platforms,
     )
-    template = announcement.template
-    prompt = _ai_prompt(template, variables) if template else _ai_prompt(_BareTemplate(), variables)
 
-    body = (current_body or (announcement.content or {}).get("body") or "").strip()
-    if body:
-        prompt += (
-            "\n\nO anúncio está escrito assim agora. Proponha uma versão melhor, "
-            f"mantendo os fatos:\n{body}"
+
+def _render_platform_variants(variants, *, variables: dict, platforms=None) -> dict:
+    """Render variant fields for both persisted content and the faithful preview."""
+
+    selected = set(platforms) if platforms is not None else None
+    if not isinstance(variants, dict):
+        raise MarketingContractError(
+            code="invalid_platform_variants",
+            detail="As variantes por plataforma precisam ser um objeto.",
+            field_errors={
+                "platform_variants": ("Use um objeto indexado pela plataforma.",)
+            },
         )
-    return copy_assist.suggest(prompt, max_tokens=600)
-
-
-class _BareTemplate:
-    """Modelo ausente: anúncio órfão de template ainda merece sugestão."""
-
-    pk = None
-    body = ""
-    ai_prompt = ""
-    use_ai_generation = False
-
-
-def _ai_prompt(template, variables: dict) -> str:
-    """A instrução do modelo + o que aconteceu de fato.
-
-    O contexto do evento vai junto porque sem ele a IA escreve propaganda genérica: o
-    valor do anúncio é dizer que ESTE pão saiu do forno AGORA, e é isso que as variáveis
-    carregam. O template renderizado entra como referência de formato, não para ser
-    repetido.
-    """
-    facts = "\n".join(
-        f"{key}: {value}"
-        for key, value in variables.items()
-        if value and not key.endswith("_list")
-    )
-    parts = [
-        "O que acabou de acontecer na padaria:",
-        facts,
-        "",
-        "Tarefa: escreva a mensagem do anúncio, 1 a 3 frases curtas, pronta para sair no "
-        "WhatsApp e nas redes. Use só os fatos acima — não invente preço, prazo, sabor "
-        "nem quantidade que não estejam aí.",
-    ]
-    instruction = (getattr(template, "ai_prompt", "") or "").strip()
-    if instruction:
-        parts += ["", "Instrução desta campanha:", instruction]
-    reference = render(template.body, variables).strip()
-    if reference:
-        parts += ["", "Versão do modelo, como referência de formato (não repita):", reference]
-    return "\n".join(parts)
-
-
-def _platform_content(template, content: dict) -> dict:
-    """Só grava override onde o template realmente diverge do corpo padrão."""
     out = {}
-    for platform, variant in (template.platform_variants or {}).items():
-        if not isinstance(variant, dict) or not variant.get("body"):
+    for platform, variant in variants.items():
+        if selected is not None and platform not in selected:
             continue
-        out[platform] = {**variant, "body": content["body"]}
+        field = f"platform_variants.{platform}"
+        if not isinstance(variant, dict):
+            raise MarketingContractError(
+                code="invalid_platform_variant",
+                detail="Cada variante precisa ser um objeto.",
+                field_errors={field: ("Use um objeto de campos da plataforma.",)},
+            )
+        out[platform] = {
+            key: _render_variant_value(
+                value,
+                variables=variables,
+                field=f"{field}.{key}",
+            )
+            for key, value in variant.items()
+        }
     return out
 
 
-def render(body: str, variables: dict) -> str:
-    """Substituir ``{{var}}`` pelos valores. Variável desconhecida vira vazio.
+def render(body: str, variables: dict, *, field: str = "body") -> str:
+    """Substitute known variables and reject every unknown placeholder."""
 
-    Deixar o ``{{cru}}`` na tela seria pior que o silêncio: o gestor aprovaria
-    sem perceber e o cliente veria o template.
-    """
-    import re
+    referenced = {
+        match.group(1).strip()
+        for match in re.finditer(r"\{\{\s*([\w_]+)\s*\}\}", body or "")
+    }
+    unknown = sorted(referenced - set(variables))
+    if unknown:
+        joined = ", ".join(unknown)
+        raise MarketingContractError(
+            code="unknown_template_variable",
+            detail="O conteúdo usa uma variável desconhecida.",
+            field_errors={field: (f"Variável não reconhecida: {joined}.",)},
+        )
 
     def _replace(match):
         return str(variables.get(match.group(1).strip(), ""))
 
     rendered = re.sub(r"\{\{\s*([\w_]+)\s*\}\}", _replace, body or "")
+    if "{{" in rendered or "}}" in rendered:
+        raise MarketingContractError(
+            code="malformed_template_variable",
+            detail="O conteúdo contém uma variável malformada.",
+            field_errors={field: ("Revise a abertura e o fechamento com {{variavel}}.",)},
+        )
     # Um {{price}} vazio no meio da frase deixa espaço duplo.
     return re.sub(r"[ \t]{2,}", " ", rendered).strip()
+
+
+def _render_variant_value(value, *, variables: dict, field: str):
+    if isinstance(value, str):
+        return render(value, variables, field=field)
+    if isinstance(value, list):
+        return [
+            render(item, variables, field=f"{field}.{index}")
+            if isinstance(item, str)
+            else item
+            for index, item in enumerate(value)
+        ]
+    return value
 
 
 def resolve_variables(context: dict, *, promotion_ref: str = "") -> dict:
@@ -1052,16 +1437,19 @@ def approve(announcement_id: int, user, *, publish_at=None, respect_schedule: bo
             publish_at = announcement.publish_at
         scheduled = publish_at is not None and publish_at > now
 
-        if announcement.status in (AnnouncementStatus.PUBLISHED, AnnouncementStatus.PUBLISHING):
+        if announcement.status in {
+            AnnouncementStatus.PUBLISHED,
+            AnnouncementStatus.PUBLISHING,
+            AnnouncementStatus.SETTLED,
+            AnnouncementStatus.FAILED,
+            AnnouncementStatus.CANCELLED,
+        }:
             return announcement
         if announcement.status == AnnouncementStatus.APPROVED and not announcement.publish_at:
             # Já despachado (aprovação imediata anterior) — nada a refazer.
             return announcement
         if announcement.status == AnnouncementStatus.EXPIRED or announcement.is_expired(now=now):
-            raise CampaignError("Este announcement expirou. O momento dele já passou.")
-        # ⚠️ Recusado não é publicável. Antes de a recusa existir como estado, ela virava
-        # `expired` e caía na guarda acima por acidente; agora precisa da sua própria, ou
-        # um anúncio recusado com prazo em aberto voltaria ao ar por uma segunda aprovação.
+            raise CampaignError("Este anúncio expirou. O momento dele já passou.")
         if announcement.status == AnnouncementStatus.REJECTED:
             raise CampaignError("Este anúncio foi recusado. Crie outro em vez de reaproveitar.")
         if announcement.status == AnnouncementStatus.SUPERSEDED:
@@ -1081,35 +1469,58 @@ def approve(announcement_id: int, user, *, publish_at=None, respect_schedule: bo
 
 
 def update_content(
-    announcement_id: int, *, body=None, hashtags=None, platforms=None, image_url=None
+    announcement_id: int,
+    *,
+    body=None,
+    hashtags=None,
+    platforms=None,
+    image_url=None,
+    base_version: int | None = None,
 ) -> Announcement:
     """Editar o announcement antes de aprovar. Só o que o gestor de fato mexeu.
 
     Texto gerado por regra é rascunho, não sentença: o gestor ajusta o tom e as
     plataformas no próprio card. Depois de sair, não se reescreve o passado.
     """
-    try:
-        announcement = Announcement.objects.get(pk=announcement_id)
-    except Announcement.DoesNotExist as exc:
-        raise CampaignError("Anúncio não encontrado.") from exc
+    with transaction.atomic():
+        try:
+            announcement = Announcement.objects.select_for_update().get(pk=announcement_id)
+        except Announcement.DoesNotExist as exc:
+            raise CampaignError("Anúncio não encontrado.") from exc
 
-    if announcement.status not in (AnnouncementStatus.DRAFT, AnnouncementStatus.PENDING_REVIEW):
-        raise CampaignError("Este announcement não está mais em revisão.")
+        if base_version is not None and announcement.version != base_version:
+            raise CampaignVersionConflict(announcement.version)
+        if announcement.status not in (AnnouncementStatus.DRAFT, AnnouncementStatus.PENDING_REVIEW):
+            raise CampaignError("Este announcement não está mais em revisão.")
 
-    content = dict(announcement.content or {})
-    if body is not None:
-        content["body"] = str(body)
-    if hashtags is not None:
-        content["hashtags"] = [str(tag).strip() for tag in hashtags if str(tag).strip()]
-    if image_url is not None:
-        content["image_url"] = str(image_url)
+        content = dict(announcement.content or {})
+        if body is not None:
+            variables = content.get("variables")
+            content["body"] = render(
+                str(body),
+                variables if isinstance(variables, dict) else {},
+                field="body",
+            )
+        if hashtags is not None:
+            content["hashtags"] = [str(tag).strip() for tag in hashtags if str(tag).strip()]
+        if image_url is not None:
+            content["image_url"] = str(image_url)
 
-    announcement.content = content
-    announcement.platform_content = _platform_content(announcement.template, content) if announcement.template_id else {}
-    if platforms is not None:
-        announcement.platforms = [str(platform) for platform in platforms]
-    announcement.save(update_fields=["content", "platform_content", "platforms"])
-    return announcement
+        announcement.content = content
+        if platforms is not None:
+            announcement.platforms = [str(platform) for platform in platforms]
+        announcement.platform_content = (
+            _platform_content(
+                announcement.template,
+                content,
+                platforms=announcement.platforms,
+            )
+            if announcement.template_id
+            else {}
+        )
+        announcement.version += 1
+        announcement.save(update_fields=["content", "platform_content", "platforms", "version"])
+        return announcement
 
 
 def reject(announcement_id: int, by=None, *, reason: str = "") -> Announcement:
@@ -1131,7 +1542,13 @@ def reject(announcement_id: int, by=None, *, reason: str = "") -> Announcement:
     # `publishing` entra junto: as Directives já estão na fila, então "recusar" daria
     # ao gestor a impressão de ter parado algo que sai de qualquer jeito. Aprovado COM
     # hora marcada segue recusável de propósito — esse ainda está na mão dele.
-    if announcement.status in (AnnouncementStatus.PUBLISHED, AnnouncementStatus.PUBLISHING):
+    if announcement.status in {
+        AnnouncementStatus.PUBLISHED,
+        AnnouncementStatus.PUBLISHING,
+        AnnouncementStatus.SETTLED,
+        AnnouncementStatus.FAILED,
+        AnnouncementStatus.CANCELLED,
+    }:
         raise CampaignError("Este anúncio já saiu. Não dá para recusar o que foi publicado.")
 
     announcement.status = AnnouncementStatus.REJECTED
@@ -1213,7 +1630,13 @@ def _queue_notify(announcement: Announcement) -> int:
     rules = (announcement.rule.audience_rules or {}) if announcement.rule_id else {}
     sku = (announcement.trigger_context or {}).get("sku", "")
 
-    waves = audience_service.resolve(rules, sku=sku).waves()
+    resolved = audience_service.resolve(rules, sku=sku)
+    if resolved.degraded_sources:
+        raise CampaignError(
+            "Não foi possível revalidar toda a audiência. O envio permanece bloqueado."
+        )
+    waves = resolved.waves()
+    wave_keys = [wave.key for wave in waves]
 
     created = 0
     for wave in waves:
@@ -1222,6 +1645,7 @@ def _queue_notify(announcement: Announcement) -> int:
             payload={
                 "announcement_id": announcement.pk,
                 "wave": wave.key,
+                "wave_keys": wave_keys,
                 "sku": sku,
                 "waves_expected": len(waves),
             },
@@ -1244,9 +1668,15 @@ def notify_reviewers(rule: Campaign, announcement: Announcement) -> int:
     """Criar ``UserNotification`` acionável para quem pode aprovar.
 
     Destinatários: ``rule.notify_users`` quando declarado, senão todo mundo
-    com ``shop.manage_campaigns``. Retorna quantas notificações criou.
+    com ``shop.approve_marketing_announcements``. Retorna quantas notificações criou.
     """
-    from shopman.shop.models import NotificationCategory, UserNotification
+    from shopman.shop.models import NotificationCategory, NotificationSeverity
+    from shopman.shop.services.user_notifications import (
+        ANNOUNCEMENT_REVIEW,
+        ESCALATION_OPS,
+        OWNER_PRODUCT,
+        create_condition_alert,
+    )
 
     users = _reviewers(rule)
     if not users:
@@ -1260,56 +1690,52 @@ def notify_reviewers(rule: Campaign, announcement: Announcement) -> int:
 
     created = 0
     for user in users:
-        notification = UserNotification.objects.create(
+        source_ref = f"announcement:{announcement.pk}"
+        result = create_condition_alert(
             user=user,
             category=NotificationCategory.CAMPAIGN,
             title=f"Anúncio pronto para revisão: {rule.name}",
             message=message,
-            action_url=f"/campaign/announcements/{announcement.pk}/",
-            action_data={"announcement_id": announcement.pk},
-            is_actionable=True,
+            source_condition=ANNOUNCEMENT_REVIEW,
+            source_ref=source_ref,
+            source_version=announcement.version,
+            action_data={
+                "announcement_id": announcement.pk,
+                "resource_ref": source_ref,
+                "base_version": announcement.version,
+            },
+            severity=NotificationSeverity.ACTION_REQUIRED,
+            owner_role=OWNER_PRODUCT,
+            escalation_role=ESCALATION_OPS,
+            expires_at=announcement.expires_at,
         )
-        push_user_notification(notification)
-        created += 1
+        created += int(result.created)
     return created
 
 
 def _reviewers(rule: Campaign):
     from django.contrib.auth import get_user_model
+    from django.db.models import Q
 
     User = get_user_model()
     explicit = [int(uid) for uid in (rule.notify_users or []) if str(uid).isdigit()]
-    if explicit:
-        return list(User.objects.filter(pk__in=explicit, is_active=True))
-
-    from django.db.models import Q
-
-    return list(
-        User.objects.filter(
-            Q(is_superuser=True)
-            | Q(user_permissions__codename="manage_campaigns")
-            | Q(groups__permissions__codename="manage_campaigns"),
-            is_active=True,
-        ).distinct()
+    capable = (
+        Q(is_superuser=True)
+        | Q(user_permissions__codename="approve_marketing_announcements")
+        | Q(groups__permissions__codename="approve_marketing_announcements")
     )
+    users = User.objects.filter(capable, is_active=True)
+    if explicit:
+        users = users.filter(pk__in=explicit)
+    return list(users.distinct())
 
 
 def push_user_notification(notification) -> None:
-    """Push SSE no canal pessoal ``user-<id>`` (ADR-016: só avisa que chegou)."""
-    payload = {"id": notification.pk, "category": notification.category}
-    user_id = notification.user_id
+    """Compatibilidade para imports antigos; emissão vive no serviço de alertas."""
 
-    def _send():
-        try:
-            from django_eventstream import send_event
+    from shopman.shop.services.user_notifications import push_user_notification as push
 
-            send_event(f"user-{user_id}", "user-notification", payload)
-        except ImportError:
-            return
-        except Exception:
-            logger.warning("campaign.user_push_failed user=%s", user_id, exc_info=True)
-
-    transaction.on_commit(_send)
+    push(notification)
 
 
 # ── Manutenção ───────────────────────────────────────────────────────
@@ -1412,9 +1838,16 @@ def dispatch_due(*, now=None) -> int:
     zerá-la impede que um ciclo seguinte despache o mesmo announcement de novo.
     """
     now = now or timezone.now()
-    due_ids = list(Announcement.objects.filter(
-        status=AnnouncementStatus.APPROVED, publish_at__isnull=False, publish_at__lte=now
-    ).order_by("pk").values_list("pk", flat=True))
+    due_ids = list(
+        Announcement.objects.filter(
+            status=AnnouncementStatus.APPROVED,
+            publish_at__isnull=False,
+            publish_at__lte=now,
+            marketing_outbox_entries__isnull=True,
+        )
+        .order_by("pk")
+        .values_list("pk", flat=True)
+    )
 
     dispatched = 0
     for announcement_id in due_ids:
@@ -1441,10 +1874,7 @@ def dispatch_due(*, now=None) -> int:
 
 
 def expire_stale_announcements(*, now=None) -> int:
-    """Caducar announcements pendentes que passaram do prazo. Retorna quantos."""
-    now = now or timezone.now()
-    return Announcement.objects.filter(
-        status=AnnouncementStatus.PENDING_REVIEW,
-        expires_at__isnull=False,
-        expires_at__lte=now,
-    ).update(status=AnnouncementStatus.EXPIRED)
+    """Caducar announcements com version, receipt e audit por item."""
+    from shopman.shop.services.marketing_transitions import expire_due
+
+    return expire_due(now=now)

@@ -176,19 +176,23 @@ def _api_call(endpoint: str, payload: dict, config: dict) -> dict:
         with urlopen(request, timeout=timeout) as response:
             resp_data = json.loads(response.read().decode("utf-8"))
             if resp_data.get("status") == "success":
-                return {
-                    "success": True,
-                    "message_id": f"mc_{payload.get('subscriber_id')}",
-                }
-            return {"success": False, "error": resp_data.get("message", "Manychat error")}
+                # G-H03: ManyChat does not document a stable delivery receipt for
+                # this endpoint.  Subscriber id is identity, never a receipt.
+                return {"success": True}
+            return {"success": False, "error": "provider_rejected"}
     except HTTPError as e:
-        error_body = e.read().decode("utf-8") if e.fp else ""
-        return {"success": False, "error": f"HTTP {e.code}: {error_body[:200]}"}
-    except URLError as e:
-        return {"success": False, "error": f"URL error: {e.reason}"}
-    except Exception as e:
-        logger.warning("manychat._send_whatsapp: unexpected error: %s", e, exc_info=True)
-        return {"success": False, "error": str(e)}
+        return {
+            "success": False,
+            "error": "provider_rate_limited" if e.code == 429 else "provider_http_error",
+        }
+    except URLError:
+        return {"success": False, "error": "provider_unreachable"}
+    except Exception as exc:
+        logger.warning(
+            "manychat._send_whatsapp: unexpected error class=%s; detail redacted",
+            type(exc).__name__,
+        )
+        return {"success": False, "error": "provider_unreadable"}
 
 
 def _build_message(template: str, context: dict) -> str:
@@ -217,7 +221,7 @@ def _load_db_flow_ns(event: str) -> str | None:
         if obj and (obj.whatsapp_flow_ns or "").strip():
             return obj.whatsapp_flow_ns.strip()
     except Exception:
-        logger.debug("manychat._load_db_flow_ns: lookup failed for event=%s", event, exc_info=True)
+        logger.warning("manychat._load_db_flow_ns: lookup failed for event=%s", event, exc_info=True)
     return None
 
 
@@ -238,23 +242,32 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         logger.warning("ManyChat API token not configured")
         return False
 
+    ctx = dict(context or {})
+    from shopman.shop.services import manychat_marketing_safety
+
+    sandbox_probe = manychat_marketing_safety.consume_sandbox_probe(ctx)
+    if template in manychat_marketing_safety.MARKETING_FLOW_EVENTS and not sandbox_probe:
+        # The unsafe sequence is fields write(s) → sendFlow.  Blocking before
+        # subscriber resolution guarantees zero provider calls and zero PII egress.
+        logger.warning("manychat.marketing_blocked code=%s", manychat_marketing_safety.BLOCK_CODE)
+        return False
+
     from ._external import inert
 
     if inert("SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG"):
         logger.info(
-            "ManyChat externo inerte (trava dev/seed): %s -> %s",
-            template, recipient,
+            "ManyChat externo inerte (trava dev/seed): template=%s",
+            template,
         )
         return True
-
     from shopman.shop.adapters._notification_templates import derive_context
 
     # Também no caminho de FLOW: as variáveis do template aprovado saem dos campos
     # personalizados, e `customer_name_greeting` é uma delas nos textos semeados.
-    ctx = derive_context(context)
+    ctx = derive_context(ctx)
     subscriber_id = _resolve_subscriber(recipient, mc_config)
     if subscriber_id is None:
-        logger.warning("Could not resolve subscriber for: %s", recipient)
+        logger.warning("Could not resolve ManyChat subscriber; target redacted")
         return False
 
     # Flow configurado no Admin (NotificationTemplate.whatsapp_flow_ns) tem precedência;
@@ -300,7 +313,7 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         result = _api_call("/sending/sendContent", payload, mc_config)
 
     if not result["success"]:
-        logger.warning("ManyChat send failed: %s", result.get("error"))
+        logger.warning("ManyChat send failed; provider detail redacted")
     return result["success"]
 
 
@@ -404,9 +417,9 @@ def _push_custom_fields(subscriber_id: str, ctx: dict, config: dict) -> int:
             pushed += 1
         else:
             logger.warning(
-                "ManyChat custom field não gravado: %s (%s). O template vai renderizar "
+                "ManyChat custom field não gravado: %s. O template vai renderizar "
                 "sem ele — crie o campo com este nome no ManyChat.",
-                name, result.get("error"),
+                name,
             )
     return pushed
 

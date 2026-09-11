@@ -40,7 +40,7 @@ const appIconName = computed(() => (props.appIcon.startsWith("lucide:") ? props.
   <aside
     v-if="!isCollapsed"
     class="flex shrink-0 flex-col bg-rail py-2 text-rail-foreground print:hidden"
-    :class="isExtended ? 'w-52 px-2' : 'w-14 items-center px-2'"
+    :class="isExtended ? 'w-52 px-2' : 'w-14 items-center px-1.5'"
     :aria-label="`Barra do app ${appLabel}`"
     :data-rail-state="state"
   >
@@ -56,7 +56,7 @@ const appIconName = computed(() => (props.appIcon.startsWith("lucide:") ? props.
       :class="isExtended ? 'w-full' : ''"
     >
       <span
-        class="grid size-10 shrink-0 place-items-center rounded-md bg-rail-foreground/15 transition"
+        class="grid size-11 shrink-0 place-items-center rounded-md bg-rail-foreground/15 transition"
         :class="centralUrl ? 'group-hover:bg-rail-foreground/25 group-focus-visible:bg-rail-foreground/25' : ''"
       >
         <Icon
@@ -104,7 +104,7 @@ const appIconName = computed(() => (props.appIcon.startsWith("lucide:") ? props.
           @activate="toggleTheme"
         />
         <template #fallback>
-          <span class="grid h-10 w-10 place-items-center rounded-md text-rail-foreground/80">
+          <span class="grid size-11 place-items-center rounded-md text-rail-foreground/80">
             <Icon name="lucide:moon" class="size-5" />
           </span>
         </template>

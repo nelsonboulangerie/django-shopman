@@ -28,12 +28,18 @@ janela da regra, porque fornada quente não espera o dia inteiro.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
+import re
+import time
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
+from django.conf import settings
 from django.utils import timezone
+from shopman.utils.phone import normalize_phone
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +48,10 @@ logger = logging.getLogger(__name__)
 #: Consentir WhatsApp não é consentir SMS: quando outro canal de entrega entrar,
 #: ele passa a exigir o consentimento do próprio canal, não deste.
 DELIVERY_CONSENT_CHANNEL = "whatsapp"
+AUDIENCE_DB_ITERATOR_CHUNK_SIZE = 1_000
+AUDIENCE_LOOKUP_BATCH_SIZE = 20_000
+POSTGRES_JSON_SKU_FILTER_LIMIT = 50
+_E164_PHONE_RE = re.compile(r"^\+[1-9][0-9]{9,14}$")
 
 #: RFM + tier que valem tratamento VIP (mesma régua do ``CustomerInsight.is_vip``).
 VIP_RFM_SEGMENTS = ("champion", "loyal_customer")
@@ -60,9 +70,39 @@ VIP_LOYALTY_TIERS = ("gold", "platinum")
 MATCH_ANY = "any"
 MATCH_ALL = "all"
 MATCH_MODES = (MATCH_ANY, MATCH_ALL)
+RULE_KEYS = frozenset({
+    "alerts",
+    "birthday_today",
+    "bought_collections",
+    "bought_skus",
+    "bought_within_days",
+    "churn_risk_min",
+    "customer_refs",
+    "favorites",
+    "match",
+    "preferred_hour_window_hours",
+    "price_tiers",
+    "rfm_segments",
+    "tags",
+    "vip_first_minutes",
+})
+# Customer refs identify cohort members and never belong in a browser Projection.
+# Existing server-side rows retain them during a patch, but the CRUD API cannot
+# create or replace that private selector.
+PUBLIC_RULE_KEYS = RULE_KEYS - {"customer_refs"}
+AUDIENCE_POLICY_VERSION = "marketing-audience-v1"
+AUDIENCE_PREVIEW_TTL = timedelta(minutes=15)
 
 
-@dataclass(frozen=True)
+class AudienceSourceUnavailable(RuntimeError):
+    """A required source failed; callers must not present the result as zero."""
+
+    def __init__(self, source: str):
+        self.source = source
+        super().__init__(source)
+
+
+@dataclass(frozen=True, slots=True)
 class Recipient:
     """Um destinatário resolvido. ``phone`` é a identidade (e a chave de dedupe)."""
 
@@ -83,6 +123,8 @@ class Recipient:
     #: Hora habitual de compra (0-23), de ``CustomerInsight.preferred_hour``.
     #: ``None`` para quem ainda não tem padrão — esse recebe na hora.
     preferred_hour: int | None = None
+    #: Safe late-binding pointer for an anonymous/known stock-alert subscription.
+    source_subscription_ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -112,6 +154,13 @@ class AudienceResult:
     #: resumo porque um "2 destinatários" sem isto é indecifrável depois: o gestor não
     #: tem como saber se a lista era pequena ou se ele mesmo a estreitou.
     match: str = MATCH_ANY
+    excluded_by_reason: dict[str, int] = field(default_factory=dict)
+    deduplicated_count: int = 0
+    degraded_sources: tuple[str, ...] = ()
+    calculated_at: datetime | None = None
+    expires_at: datetime | None = None
+    policy_version: str = AUDIENCE_POLICY_VERSION
+    cohort_hash: str = ""
 
     @property
     def total(self) -> int:
@@ -183,6 +232,14 @@ class AudienceResult:
         """
         return {
             **self.counts,
+            "eligible_count": self.total,
+            "excluded_by_reason": dict(self.excluded_by_reason),
+            "deduplicated_count": self.deduplicated_count,
+            "degraded_sources": list(self.degraded_sources),
+            "calculated_at": self.calculated_at.isoformat() if self.calculated_at else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "policy_version": self.policy_version,
+            "cohort_hash": self.cohort_hash,
             "match": self.match,
             "vip_count": len(self.vip),
             "general_count": len(self.general),
@@ -192,7 +249,12 @@ class AudienceResult:
         }
 
 
-def resolve(rules: dict | None = None, *, sku: str = "") -> AudienceResult:
+def resolve(
+    rules: dict | None = None,
+    *,
+    sku: str = "",
+    now: datetime | None = None,
+) -> AudienceResult:
     """Resolver a audiência segundo as regras da Campaign.
 
     ``sku`` é OPCIONAL porque campanha manual não tem evento nem SKU: o gestor decide
@@ -220,24 +282,46 @@ def resolve(rules: dict | None = None, *, sku: str = "") -> AudienceResult:
         ``AudienceResult`` vazio quando nenhuma regra está ligada ou ninguém passa no
         consentimento. Audiência vazia é resposta normal, não erro.
     """
+    started_at = time.perf_counter()
     rules = rules or {}
+    calculated_at = now or timezone.now()
     by_phone: dict[str, Recipient] = {}
     counts: dict[str, int] = {}
+    degraded: set[str] = set()
+    deduplicated_count = 0
+    invalid_contact_count = 0
     #: Os motivos que REALMENTE rodaram. É por eles que a interseção se define, não pelas
     #: chaves pedidas: regra ligada que não pôde rodar (``favorites`` sem SKU) não vira
     #: exigência, senão o disparo manual de uma campanha de evento zeraria calado.
     applied: list[str] = []
 
-    def apply(found: list, *, reason: str, count_key: str) -> None:
+    def apply(loader, *, reason: str, count_key: str, source: str) -> None:
+        nonlocal deduplicated_count, invalid_contact_count
+        try:
+            found = loader()
+        except AudienceSourceUnavailable as exc:
+            logger.warning("audience.source_degraded source=%s", exc.source, exc_info=True)
+            degraded.add(exc.source)
+            counts[count_key] = 0
+            applied.append(reason)
+            return
+        except Exception:
+            logger.warning("audience.source_degraded source=%s", source, exc_info=True)
+            degraded.add(source)
+            counts[count_key] = 0
+            applied.append(reason)
+            return
         counts[count_key] = len(found)
         applied.append(reason)
-        _merge(by_phone, found, reason=reason)
+        duplicates, invalid = _merge(by_phone, found, reason=reason)
+        deduplicated_count += duplicates
+        invalid_contact_count += invalid
 
     if sku and rules.get("favorites"):
-        apply(_favorites(sku), reason="favorites", count_key="favorites_count")
+        apply(lambda: _favorites(sku), reason="favorites", count_key="favorites_count", source="favorites")
 
     if sku and rules.get("alerts"):
-        apply(_pending_alerts(sku), reason="alerts", count_key="alerts_count")
+        apply(lambda: _pending_alerts(sku), reason="alerts", count_key="alerts_count", source="stock_alerts")
         # Fica ao lado do ``alerts_count`` sempre que a regra roda, porque é o
         # que faz o ZERO dizer o que é. "Ninguém para avisar" tem duas causas
         # que a tela mostrava igual: ninguém pediu, ou pediram e a fila já foi
@@ -247,31 +331,34 @@ def resolve(rules: dict | None = None, *, sku: str = "") -> AudienceResult:
 
     days = int(rules.get("bought_within_days") or 0)
     if sku and days > 0:
-        apply(_bought_within_days(sku, days), reason="bought", count_key="bought_count")
+        apply(lambda: _bought_within_days(sku, days), reason="bought", count_key="bought_count", source="customer_insights")
 
     # ── Públicos escolhidos pelo gestor ──────────────────────────────
     if rules.get("customer_refs"):
         apply(
-            _chosen_customers(rules.get("customer_refs")),
+            lambda: _chosen_customers(rules.get("customer_refs")),
             reason="chosen", count_key="chosen_count",
+            source="customers",
         )
 
     if rules.get("price_tiers"):
         apply(
-            _by_price_tiers(rules.get("price_tiers")),
+            lambda: _by_price_tiers(rules.get("price_tiers")),
             reason="price_tiers", count_key="price_tiers_count",
+            source="price_tiers",
         )
 
     if rules.get("tags"):
-        apply(_by_tags(rules.get("tags")), reason="tags", count_key="tags_count")
+        apply(lambda: _by_tags(rules.get("tags")), reason="tags", count_key="tags_count", source="customer_tags")
 
     if rules.get("rfm_segments"):
-        apply(_by_rfm_segments(rules.get("rfm_segments")), reason="rfm", count_key="rfm_count")
+        apply(lambda: _by_rfm_segments(rules.get("rfm_segments")), reason="rfm", count_key="rfm_count", source="customer_insights")
 
     if rules.get("churn_risk_min"):
         apply(
-            _by_churn_risk(rules.get("churn_risk_min")),
+            lambda: _by_churn_risk(rules.get("churn_risk_min")),
             reason="churn_risk", count_key="churn_risk_count",
+            source="customer_insights",
         )
 
     chosen_skus = rules.get("bought_skus") or []
@@ -281,39 +368,67 @@ def resolve(rules: dict | None = None, *, sku: str = "") -> AudienceResult:
         # faria a interseção aceitar "comprou o SKU da fornada" como se fosse "comprou o
         # SKU que o gestor escolheu" — duas perguntas satisfeitas por uma resposta.
         apply(
-            _bought(skus=chosen_skus, collections=chosen_collections, days=days),
+            lambda: _bought(skus=chosen_skus, collections=chosen_collections, days=days),
             reason="bought_chosen", count_key="bought_chosen_count",
+            source="purchase_insights",
         )
 
     if rules.get("birthday_today"):
-        apply(_birthday_today(), reason="birthday", count_key="birthday_count")
+        apply(lambda: _birthday_today(), reason="birthday", count_key="birthday_count", source="customers")
 
     mode = _match_mode(rules)
+    before_intersection = len(by_phone)
     if mode == MATCH_ALL:
         by_phone = _narrow_to_all(by_phone, applied)
+    rule_mismatch = before_intersection - len(by_phone)
 
-    recipients = _filter_opted_in(by_phone.values())
+    recipients, consent_exclusions, consent_degraded = _filter_opted_in(by_phone.values())
+    degraded.update(consent_degraded)
+    excluded_by_reason = dict(consent_exclusions)
+    if rule_mismatch:
+        excluded_by_reason["rule_mismatch"] = rule_mismatch
+    if invalid_contact_count:
+        excluded_by_reason["invalid_contact"] = invalid_contact_count
     window = max(int(rules.get("preferred_hour_window_hours") or 0), 0)
+    common = {
+        "counts": counts,
+        "match": mode,
+        "excluded_by_reason": excluded_by_reason,
+        "deduplicated_count": deduplicated_count,
+        "degraded_sources": tuple(sorted(degraded)),
+        "calculated_at": calculated_at,
+        "expires_at": calculated_at + AUDIENCE_PREVIEW_TTL,
+        "cohort_hash": _cohort_hash(recipients),
+    }
 
     vip_delay = int(rules.get("vip_first_minutes") or 0)
     if vip_delay <= 0:
-        return AudienceResult(
+        result = AudienceResult(
             general=tuple(recipients),
             preferred_hour_window_hours=window,
-            counts=counts,
-            match=mode,
+            **common,
+        )
+    else:
+        vips = tuple(r for r in recipients if r.is_vip)
+        general = tuple(r for r in recipients if not r.is_vip)
+        result = AudienceResult(
+            general=general,
+            vip=vips,
+            vip_delay_minutes=vip_delay,
+            preferred_hour_window_hours=window,
+            **common,
         )
 
-    vips = tuple(r for r in recipients if r.is_vip)
-    general = tuple(r for r in recipients if not r.is_vip)
-    return AudienceResult(
-        general=general,
-        vip=vips,
-        vip_delay_minutes=vip_delay,
-        preferred_hour_window_hours=window,
-        counts=counts,
-        match=mode,
+    from shopman.shop.services.marketing_observability import (
+        record_audience_resolution,
     )
+
+    record_audience_resolution(
+        seconds=time.perf_counter() - started_at,
+        degraded=bool(result.degraded_sources),
+        size=result.total,
+    )
+    return result
 
 
 def _match_mode(rules: dict) -> str:
@@ -342,18 +457,44 @@ def _narrow_to_all(by_phone: dict[str, Recipient], applied: list[str]) -> dict[s
     return {phone: r for phone, r in by_phone.items() if required <= r.reasons}
 
 
-def select_wave(rules: dict | None, wave_key: str, *, sku: str = "", now=None) -> tuple[Recipient, ...]:
+def select_wave(
+    rules: dict | None,
+    wave_key: str,
+    *,
+    sku: str = "",
+    now=None,
+    available_wave_keys=None,
+) -> tuple[Recipient, ...]:
     """Os destinatários de uma onda, resolvidos agora.
 
-    Contrato de despacho: a Directive carrega só ``wave_key``, e quem envia
-    volta aqui. Onda que sumiu (ninguém mais se encaixa) devolve tupla vazia,
-    que é resposta normal, não erro.
+    Contrato de despacho: a Directive carrega ``wave_key`` e, nas directives
+    novas, o conjunto inteiro aprovado em ``available_wave_keys``. Isso mantém
+    ``all@H`` estável quando H chega. Onda legada que sumiu devolve tupla vazia.
     """
     result = resolve(rules, sku=sku)
-    for wave in result.waves(now=now):
-        if wave.key == wave_key:
-            return wave.recipients
-    return ()
+    if available_wave_keys is None and "@" not in str(wave_key or ""):
+        return {
+            "vip": result.vip,
+            "general": result.general,
+            "all": result.all_recipients(),
+        }.get(wave_key, ())
+    keys = available_wave_keys or tuple(
+        wave.key for wave in result.waves(now=now)
+    )
+    from shopman.shop.services.marketing_contracts import MarketingContractError
+    from shopman.shop.services.marketing_wave_selector import select_partition
+
+    try:
+        return select_partition(
+            result.all_recipients(),
+            wave_key=wave_key,
+            available_wave_keys=keys,
+        )
+    except MarketingContractError:
+        if available_wave_keys is not None:
+            raise
+        logger.warning("audience.wave_selection_invalid wave=%r", wave_key)
+        return ()
 
 
 def _defer_minutes(preferred_hour, *, now, window_hours: int) -> int:
@@ -391,16 +532,16 @@ def _favorites(sku: str) -> list[Recipient]:
         refs = audience_sources.favorite_customer_refs(sku)
     except Exception:
         logger.warning("audience.favorites_failed sku=%s", sku, exc_info=True)
-        return []
+        raise AudienceSourceUnavailable("favorites") from None
     return _recipients_for_refs(refs)
 
 
 def _pending_alerts(sku: str) -> list[Recipient]:
     """F9 — quem pediu explicitamente para ser avisado sobre este SKU.
 
-    A assinatura já é opt-in daquele produto, então dispensa o opt-in geral
-    de marketing (``_filter_opted_in`` respeita isso). Anônimo entra só com
-    telefone, sem ``customer_ref``.
+    A assinatura é opt-in limitado àquele produto, mas nunca revoga um opt-out
+    global já registrado no mesmo canal. Anônimo entra só com telefone, sem
+    ``customer_ref``; não existe identidade global para consultar nesse caso.
     """
     try:
         from shopman.shop.adapters import audience_sources
@@ -408,21 +549,29 @@ def _pending_alerts(sku: str) -> list[Recipient]:
         rows = audience_sources.pending_alert_contacts(sku)
     except Exception:
         logger.warning("audience.alerts_failed sku=%s", sku, exc_info=True)
-        return []
+        raise AudienceSourceUnavailable("stock_alerts") from None
 
+    profiles = _profiles_for_refs(
+        [str(row[1] or "").strip() for row in rows]
+    )
     out = []
-    for phone, customer_ref in rows:
+    for row in rows:
+        phone, customer_ref = row[:2]
+        source_subscription_ref = str(row[2]) if len(row) > 2 and row[2] else ""
         phone = (phone or "").strip()
         if not phone:
             continue
         customer_ref = (customer_ref or "").strip()
-        is_vip, preferred_hour = _profile(customer_ref)
+        profile = profiles.get(customer_ref, {})
         out.append(
             Recipient(
                 phone=phone,
                 customer_ref=customer_ref,
-                is_vip=is_vip,
-                preferred_hour=preferred_hour,
+                customer_uuid=profile.get("customer_uuid", ""),
+                first_name=profile.get("first_name", ""),
+                is_vip=bool(profile.get("is_vip", False)),
+                preferred_hour=profile.get("preferred_hour"),
+                source_subscription_ref=source_subscription_ref,
             )
         )
     return out
@@ -449,37 +598,82 @@ def _bought_within_days(sku: str, days: int) -> list[Recipient]:
     Lê ``CustomerInsight.favorite_products`` (já agregado pelo Guestman) em vez
     de varrer o histórico de pedidos: o insight é o índice desse cruzamento.
     """
+    return _bought_skus_within_days({sku}, days)
+
+
+def _bought_skus_within_days(skus, days: int) -> list[Recipient]:
+    """Resolve several SKUs with one indexed, streamed insight query.
+
+    ``last_order_at`` is a safe coarse filter: a customer cannot have bought a
+    particular SKU after their latest order. PostgreSQL can additionally use
+    JSON containment to discard rows whose top-five product summary has none of
+    the requested SKUs. The final date/SKU decision remains in Python so both
+    database paths have exactly the same semantics.
+    """
+
+    wanted = frozenset(str(value).strip() for value in skus if str(value).strip())
+    if not wanted:
+        return []
+    cutoff = timezone.localdate() - timedelta(days=days)
+    cutoff_at = timezone.make_aware(
+        datetime.combine(cutoff, datetime.min.time()),
+        timezone.get_current_timezone(),
+    )
     try:
+        from django.db import connection
+        from django.db.models import Q
         from shopman.guestman.contrib.insights.models import CustomerInsight
 
-        insights = list(
-            CustomerInsight.objects.filter(favorite_products__isnull=False)
+        insights = (
+            CustomerInsight.objects.filter(
+                # The JSON writer preserves the order timestamp's own date,
+                # while this coarse bound is local. One day covers every UTC
+                # offset; the exact JSON date check below remains authoritative.
+                last_order_at__gte=cutoff_at - timedelta(days=1),
+                favorite_products__isnull=False,
+            )
             .select_related("customer")
-        )
-    except Exception:
-        logger.warning("audience.bought_lookup_failed sku=%s", sku, exc_info=True)
-        return []
-
-    cutoff = timezone.localdate() - timedelta(days=days)
-    out = []
-    for insight in insights:
-        if not _bought_recently(insight, sku=sku, cutoff=cutoff):
-            continue
-        customer = insight.customer
-        phone = (getattr(customer, "phone", "") or "").strip()
-        if not phone:
-            continue
-        out.append(
-            Recipient(
-                phone=phone,
-                customer_ref=getattr(customer, "ref", "") or "",
-                customer_uuid=str(getattr(customer, "uuid", "") or ""),
-                first_name=(getattr(customer, "first_name", "") or "").strip(),
-                is_vip=bool(getattr(insight, "is_vip", False)),
-                preferred_hour=getattr(insight, "preferred_hour", None),
+            .only(
+                "favorite_products",
+                "preferred_hour",
+                "rfm_segment",
+                "customer__ref",
+                "customer__uuid",
+                "customer__first_name",
+                "customer__phone",
             )
         )
-    return out
+        if (
+            connection.vendor == "postgresql"
+            and len(wanted) <= POSTGRES_JSON_SKU_FILTER_LIMIT
+        ):
+            sku_filter = Q()
+            for wanted_sku in sorted(wanted):
+                sku_filter |= Q(favorite_products__contains=[{"sku": wanted_sku}])
+            insights = insights.filter(sku_filter)
+
+        out = []
+        for insight in insights.iterator(chunk_size=AUDIENCE_DB_ITERATOR_CHUNK_SIZE):
+            if not _bought_any_recently(insight, skus=wanted, cutoff=cutoff):
+                continue
+            customer = insight.customer
+            phone = (getattr(customer, "phone", "") or "").strip()
+            if not phone:
+                continue
+            out.append(
+                Recipient(
+                    phone=phone,
+                    customer_ref=getattr(customer, "ref", "") or "",
+                    customer_uuid=str(getattr(customer, "uuid", "") or ""),
+                    first_name=(getattr(customer, "first_name", "") or "").strip(),
+                    is_vip=bool(getattr(insight, "is_vip", False)),
+                    preferred_hour=getattr(insight, "preferred_hour", None),
+                )
+            )
+        return out
+    except Exception:
+        logger.warning("audience.bought_lookup_failed", exc_info=True)
+        raise AudienceSourceUnavailable("customer_insights") from None
 
 
 # ── Públicos escolhidos pelo gestor (disparo manual) ─────────────────
@@ -508,15 +702,14 @@ def _by_price_tiers(tier_refs) -> list[Recipient]:
     try:
         from shopman.guestman.models import Customer
 
-        refs = list(
+        customers = (
             Customer.objects.filter(price_tier__ref__in=cleaned, is_active=True)
             .exclude(phone="")
-            .values_list("ref", flat=True)
         )
     except Exception:
         logger.warning("audience.price_tiers_failed", exc_info=True)
-        return []
-    return _recipients_for_refs(refs)
+        raise AudienceSourceUnavailable("price_tiers") from None
+    return _recipients_from_customers(customers, reason="price_tiers")
 
 
 def _by_tags(tag_slugs) -> list[Recipient]:
@@ -537,18 +730,17 @@ def _by_tags(tag_slugs) -> list[Recipient]:
         from django.db.models import Q
         from shopman.guestman.models import Customer
 
-        refs = list(
+        customers = (
             Customer.objects.filter(
                 Q(tags__slug__in=cleaned) | Q(tags__name__in=cleaned), is_active=True
             )
             .exclude(phone="")
-            .values_list("ref", flat=True)
             .distinct()
         )
     except Exception:
         logger.warning("audience.tags_failed", exc_info=True)
-        return []
-    return _recipients_for_refs(refs)
+        raise AudienceSourceUnavailable("customer_tags") from None
+    return _recipients_from_customers(customers, reason="tags")
 
 
 def _by_rfm_segments(segments) -> list[Recipient]:
@@ -557,17 +749,19 @@ def _by_rfm_segments(segments) -> list[Recipient]:
     if not cleaned:
         return []
     try:
-        from shopman.guestman.contrib.insights.models import CustomerInsight
+        from shopman.guestman.models import Customer
 
-        refs = list(
-            CustomerInsight.objects.filter(rfm_segment__in=cleaned)
-            .select_related("customer")
-            .values_list("customer__ref", flat=True)
+        customers = (
+            Customer.objects.filter(
+                insight__rfm_segment__in=cleaned,
+                is_active=True,
+            )
+            .exclude(phone="")
         )
     except Exception:
         logger.warning("audience.rfm_failed", exc_info=True)
-        return []
-    return _recipients_for_refs([r for r in refs if r])
+        raise AudienceSourceUnavailable("customer_insights") from None
+    return _recipients_from_customers(customers, reason="rfm")
 
 
 def _by_churn_risk(minimum) -> list[Recipient]:
@@ -580,17 +774,19 @@ def _by_churn_risk(minimum) -> list[Recipient]:
     if floor <= 0:
         return []
     try:
-        from shopman.guestman.contrib.insights.models import CustomerInsight
+        from shopman.guestman.models import Customer
 
-        refs = list(
-            CustomerInsight.objects.filter(churn_risk__gte=floor)
-            .select_related("customer")
-            .values_list("customer__ref", flat=True)
+        customers = (
+            Customer.objects.filter(
+                insight__churn_risk__gte=floor,
+                is_active=True,
+            )
+            .exclude(phone="")
         )
     except Exception:
         logger.warning("audience.churn_risk_failed", exc_info=True)
-        return []
-    return _recipients_for_refs([r for r in refs if r])
+        raise AudienceSourceUnavailable("customer_insights") from None
+    return _recipients_from_customers(customers, reason="churn_risk")
 
 
 def _birthday_today() -> list[Recipient]:
@@ -603,17 +799,16 @@ def _birthday_today() -> list[Recipient]:
     try:
         from shopman.guestman.models import Customer
 
-        refs = list(
+        customers = (
             Customer.objects.filter(
                 birthday__month=today.month, birthday__day=today.day, is_active=True
             )
             .exclude(phone="")
-            .values_list("ref", flat=True)
         )
     except Exception:
         logger.warning("audience.birthday_failed", exc_info=True)
-        return []
-    return _recipients_for_refs(refs)
+        raise AudienceSourceUnavailable("customers") from None
+    return _recipients_from_customers(customers, reason="birthday")
 
 
 def _bought(*, skus, collections, days: int) -> list[Recipient]:
@@ -633,14 +828,11 @@ def _bought(*, skus, collections, days: int) -> list[Recipient]:
                 wanted.update(coll.product_queryset().values_list("sku", flat=True))
         except Exception:
             logger.warning("audience.bought_collections_failed", exc_info=True)
+            raise AudienceSourceUnavailable("collections") from None
     if not wanted:
         return []
 
-    seen: dict[str, Recipient] = {}
-    for sku in sorted(wanted):
-        for recipient in _bought_within_days(sku, days):
-            seen.setdefault(recipient.phone, recipient)
-    return list(seen.values())
+    return _bought_skus_within_days(wanted, days)
 
 
 def _bought_recently(insight, *, sku: str, cutoff) -> bool:
@@ -663,51 +855,72 @@ def _bought_recently(insight, *, sku: str, cutoff) -> bool:
     tem data como dentro dela desmancha justamente o que o operador pediu. O
     escritor sempre grava a data, então isto só alcança lixo.
     """
+    return _bought_any_recently(insight, skus={sku}, cutoff=cutoff)
+
+
+def _bought_any_recently(insight, *, skus: frozenset[str] | set[str], cutoff) -> bool:
+    """Whether one summarized SKU matches the requested purchase window."""
+
     for entry in insight.favorite_products or []:
-        if not isinstance(entry, dict) or entry.get("sku") != sku:
+        if not isinstance(entry, dict) or entry.get("sku") not in skus:
             continue
         last = _as_date(entry.get("last_order_at"))
-        return last is not None and last >= cutoff
+        if last is not None and last >= cutoff:
+            return True
     return False
 
 
 # ── Opt-in ───────────────────────────────────────────────────────────
 
 
-def _filter_opted_in(recipients, *, channel: str = DELIVERY_CONSENT_CHANNEL) -> list[Recipient]:
-    """Manter só quem consentiu — no canal de entrega ou por assinatura de SKU."""
+def _filter_opted_in(
+    recipients, *, channel: str = DELIVERY_CONSENT_CHANNEL
+) -> tuple[list[Recipient], dict[str, int], set[str]]:
+    """Aplicar precedência: opt-out global > assinatura específica > opt-in geral."""
     recipients = list(recipients)
     refs = {r.customer_ref for r in recipients if r.customer_ref}
-    opted_in = _opted_in_refs(refs, channel=channel)
+    statuses = _consent_statuses(refs, channel=channel)
+    if statuses is None:
+        # Falha de leitura é fail-closed para identidades conhecidas. Assinatura
+        # anônima continua limitada ao SKU e não tem consent global consultável.
+        kept = [r for r in recipients if "alerts" in r.reasons and not r.customer_ref]
+        return kept, {"consent_unavailable": len(recipients) - len(kept)}, {"consent"}
 
     kept = []
+    excluded = {"global_optout": 0, "missing_consent": 0}
     for recipient in recipients:
-        if "alerts" in recipient.reasons:
-            kept.append(recipient)  # a assinatura por SKU é o próprio consentimento
+        status = statuses.get(recipient.customer_ref, "")
+        if status == "opted_out":
+            excluded["global_optout"] += 1
             continue
-        if recipient.customer_ref and recipient.customer_ref in opted_in:
+        if "alerts" in recipient.reasons:
             kept.append(recipient)
-    return kept
+            continue
+        if recipient.customer_ref and status == "opted_in":
+            kept.append(recipient)
+            continue
+        excluded["missing_consent"] += 1
+    return kept, {key: count for key, count in excluded.items() if count}, set()
 
 
-def _opted_in_refs(customer_refs: set[str], *, channel: str) -> set[str]:
-    """Refs com consentimento ativo no canal. Ausência e revogação valem opt-out.
+def _consent_statuses(
+    customer_refs: set[str], *, channel: str
+) -> dict[str, str] | None:
+    """Estados explícitos no canal; ``None`` significa fonte indisponível.
 
-    Uma consulta, pela API pública do guestman. Falha de leitura devolve conjunto
-    vazio de propósito: na dúvida ninguém recebe, porque o erro seguro aqui é não
-    enviar.
+    Uma consulta limitada ao cohort, pela API pública do Guestman. Ausência continua
+    distinguível de opt-out para que uma assinatura específica legítima funcione sem
+    fabricar um opt-in geral.
     """
     if not customer_refs:
-        return set()
+        return {}
     try:
         from shopman.guestman import ConsentService
 
-        marketable = set(ConsentService.get_marketable_customers(channel))
+        return ConsentService.get_customer_statuses(channel, customer_refs)
     except Exception:
         logger.warning("audience.consent_lookup_failed channel=%s", channel, exc_info=True)
-        return set()
-
-    return {ref for ref in customer_refs if ref in marketable}
+        return None
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -717,32 +930,121 @@ def _recipients_for_refs(customer_refs: list[str]) -> list[Recipient]:
     refs = [ref for ref in customer_refs if ref]
     if not refs:
         return []
-    try:
-        from shopman.guestman.models import Customer
-
-        customers = list(
-            Customer.objects.filter(ref__in=refs, is_active=True)
-            .exclude(phone="")
-            .select_related("insight")
-        )
-    except Exception:
-        logger.warning("audience.customer_lookup_failed", exc_info=True)
-        return []
-
+    profiles = _profiles_for_refs(refs)
     out = []
-    for customer in customers:
-        is_vip, preferred_hour = _profile(customer.ref, customer=customer)
+    for ref in dict.fromkeys(refs):
+        profile = profiles.get(ref)
+        if not profile or not profile["phone"]:
+            continue
         out.append(
             Recipient(
-                phone=customer.phone,
-                customer_ref=customer.ref,
-                customer_uuid=str(getattr(customer, "uuid", "") or ""),
-                first_name=(getattr(customer, "first_name", "") or "").strip(),
-                is_vip=is_vip,
-                preferred_hour=preferred_hour,
+                phone=profile["phone"],
+                customer_ref=ref,
+                customer_uuid=profile["customer_uuid"],
+                first_name=profile["first_name"],
+                is_vip=profile["is_vip"],
+                preferred_hour=profile["preferred_hour"],
             )
         )
     return out
+
+
+def _profiles_for_refs(customer_refs: list[str]) -> dict[str, dict]:
+    """Load profiles in parameter-safe batches without per-customer queries."""
+
+    refs = list(dict.fromkeys(ref for ref in customer_refs if ref))
+    if not refs:
+        return {}
+    try:
+        from shopman.guestman.models import Customer
+
+        profiles = {}
+        for batch in _batches(refs, AUDIENCE_LOOKUP_BATCH_SIZE):
+            rows = (
+                Customer.objects.filter(ref__in=batch, is_active=True)
+                .exclude(phone="")
+                .values_list(
+                    "phone",
+                    "ref",
+                    "uuid",
+                    "first_name",
+                    "insight__rfm_segment",
+                    "insight__preferred_hour",
+                    "loyalty_account__tier",
+                )
+            )
+            for (
+                phone,
+                ref,
+                customer_uuid,
+                first_name,
+                rfm_segment,
+                preferred_hour,
+                loyalty_tier,
+            ) in rows.iterator(chunk_size=AUDIENCE_DB_ITERATOR_CHUNK_SIZE):
+                profiles[ref] = {
+                    "phone": phone,
+                    "customer_uuid": str(customer_uuid or ""),
+                    "first_name": (first_name or "").strip(),
+                    "is_vip": bool(
+                        rfm_segment in VIP_RFM_SEGMENTS
+                        or loyalty_tier in VIP_LOYALTY_TIERS
+                    ),
+                    "preferred_hour": preferred_hour,
+                }
+    except Exception:
+        logger.warning("audience.customer_lookup_failed", exc_info=True)
+        raise AudienceSourceUnavailable("customers") from None
+    return profiles
+
+
+def _recipients_from_customers(customers, *, reason: str) -> list[Recipient]:
+    """Project a customer queryset to compact tuples in one streamed query."""
+
+    rows = customers.values_list(
+        "phone",
+        "ref",
+        "uuid",
+        "first_name",
+        "insight__rfm_segment",
+        "insight__preferred_hour",
+        "loyalty_account__tier",
+    )
+    recipients = []
+    for (
+        phone,
+        ref,
+        customer_uuid,
+        first_name,
+        rfm_segment,
+        preferred_hour,
+        loyalty_tier,
+    ) in rows.iterator(chunk_size=AUDIENCE_DB_ITERATOR_CHUNK_SIZE):
+        phone = _canonical_phone(phone)
+        if not phone:
+            continue
+        recipients.append(
+            Recipient(
+                phone=phone,
+                customer_ref=ref or "",
+                customer_uuid=str(customer_uuid or ""),
+                first_name=(first_name or "").strip(),
+                reasons=frozenset({reason}),
+                is_vip=bool(
+                    rfm_segment in VIP_RFM_SEGMENTS
+                    or loyalty_tier in VIP_LOYALTY_TIERS
+                ),
+                preferred_hour=preferred_hour,
+            )
+        )
+    return recipients
+
+
+def _batches(values: list[str], size: int):
+    """Yield bounded SQL parameter groups while preserving caller order."""
+
+    for offset in range(0, len(values), size):
+        yield values[offset : offset + size]
 
 
 def _profile(customer_ref: str, *, customer=None) -> tuple[bool, int | None]:
@@ -780,22 +1082,33 @@ def _profile(customer_ref: str, *, customer=None) -> tuple[bool, int | None]:
         return False, None
 
 
-def _merge(by_phone: dict, found: list, *, reason: str) -> None:
+def _merge(by_phone: dict, found: list, *, reason: str) -> tuple[int, int]:
     """Somar destinatários deduplicando por telefone e acumulando os motivos."""
+    duplicates = 0
+    invalid = 0
     for recipient in found:
-        existing = by_phone.get(recipient.phone)
+        phone = _canonical_phone(recipient.phone)
+        if not phone:
+            invalid += 1
+            continue
+        existing = by_phone.get(phone)
         if existing is None:
-            by_phone[recipient.phone] = Recipient(
-                phone=recipient.phone,
+            if phone == recipient.phone and recipient.reasons == frozenset({reason}):
+                by_phone[phone] = recipient
+                continue
+            by_phone[phone] = Recipient(
+                phone=phone,
                 customer_ref=recipient.customer_ref,
                 customer_uuid=recipient.customer_uuid,
                 first_name=recipient.first_name,
                 reasons=frozenset({reason}),
                 is_vip=recipient.is_vip,
                 preferred_hour=recipient.preferred_hour,
+                source_subscription_ref=recipient.source_subscription_ref,
             )
             continue
-        by_phone[recipient.phone] = Recipient(
+        duplicates += 1
+        by_phone[phone] = Recipient(
             phone=existing.phone,
             # Um match anônimo (só telefone) não apaga o vínculo já conhecido.
             customer_ref=existing.customer_ref or recipient.customer_ref,
@@ -809,7 +1122,40 @@ def _merge(by_phone: dict, found: list, *, reason: str) -> None:
                 if existing.preferred_hour is not None
                 else recipient.preferred_hour
             ),
+            source_subscription_ref=(
+                existing.source_subscription_ref or recipient.source_subscription_ref
+            ),
         )
+    return duplicates, invalid
+
+
+def _canonical_phone(value: str) -> str:
+    """Keep stored E.164 identities on the zero-allocation fast path."""
+
+    value = (value or "").strip()
+    if _E164_PHONE_RE.fullmatch(value):
+        return value
+    return normalize_phone(value)
+
+
+def _cohort_hash(recipients: list[Recipient]) -> str:
+    """Hash do conjunto elegível sem publicar telefone ou customer ref."""
+
+    secret = settings.SECRET_KEY.encode()
+    protected = []
+    for recipient in recipients:
+        identity = (
+            f"customer:{recipient.customer_ref}"
+            if recipient.customer_ref
+            else f"subscription:{recipient.source_subscription_ref}"
+            if recipient.source_subscription_ref
+            else f"phone:{_canonical_phone(recipient.phone)}"
+        )
+        protected.append(
+            hmac.new(secret, identity.encode(), hashlib.sha256).hexdigest()
+        )
+    material = ":".join(sorted(protected))
+    return hashlib.sha256(material.encode()).hexdigest()
 
 
 def _as_date(value):

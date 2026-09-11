@@ -24,6 +24,9 @@ export function useAudienceCount() {
   let epoch = 0;
 
   function clear() {
+    // Também invalida um fetch que já saiu. Limpar só o timer ainda deixava a
+    // resposta anterior repor uma contagem que já não descrevia a tela.
+    epoch += 1;
     if (timer) clearTimeout(timer);
     timer = null;
     count.value = null;
@@ -33,17 +36,22 @@ export function useAudienceCount() {
 
   function measure(rules: ChosenAudience, sku = "") {
     if (timer) clearTimeout(timer);
+    timer = null;
+    const mine = ++epoch;
     if (!Object.keys(rules).length) {
       count.value = null;
       failed.value = false;
+      pending.value = false;
       return;
     }
-    timer = setTimeout(() => void load(rules, sku), DEBOUNCE_MS);
+    // A contagem antiga pode continuar visível como referência, mas não pode
+    // autorizar o botão enquanto a nova escolha espera o debounce.
+    pending.value = true;
+    failed.value = false;
+    timer = setTimeout(() => void load(rules, sku, mine), DEBOUNCE_MS);
   }
 
-  async function load(rules: ChosenAudience, sku: string) {
-    const mine = ++epoch;
-    pending.value = true;
+  async function load(rules: ChosenAudience, sku: string, mine: number) {
     try {
       const data = await $fetch<AudienceCount>("/api/v1/backstage/marketing/audience/count/", {
         method: "POST",
@@ -52,12 +60,16 @@ export function useAudienceCount() {
       if (mine !== epoch) return;
       count.value = data;
       failed.value = false;
-    } catch {
+    } catch (error) {
       if (mine !== epoch) return;
+      flagMarketingSessionError(error);
       count.value = null;
       failed.value = true;
     } finally {
-      if (mine === epoch) pending.value = false;
+      if (mine === epoch) {
+        pending.value = false;
+        timer = null;
+      }
     }
   }
 

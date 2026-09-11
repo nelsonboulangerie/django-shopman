@@ -103,7 +103,7 @@ export function requestIsHttps(event: H3Event): boolean {
   return getRequestURL(event).protocol === "https:";
 }
 
-export function applyOperatorSecurityHeaders(event: H3Event): void {
+export function applyOperatorBaselineSecurityHeaders(event: H3Event): void {
   const pathname = getRequestURL(event).pathname;
   const headers = operatorResponseHeaders({
     pathname,

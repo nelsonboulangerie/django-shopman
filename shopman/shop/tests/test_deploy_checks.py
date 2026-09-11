@@ -368,6 +368,27 @@ def test_release_readiness_runs_django_deploy_checks():
     assert 'call_command("check", deploy=True' in source
 
 
+@override_settings(
+    SHOPMAN_MARKETING_MEDIA_HOSTS=(
+        "*.example.com",
+        "http://cdn.example.com",
+        "127.0.0.1",
+    )
+)
+def test_marketing_media_allowlist_rejects_wildcard_url_and_private_ip():
+    messages = checks.check_marketing_media_hosts(None)
+
+    assert [message.id for message in messages] == ["SHOPMAN_E021"]
+    assert "127.0.0.1" in messages[0].msg
+
+
+@override_settings(
+    SHOPMAN_MARKETING_MEDIA_HOSTS=("menu.example.com", "images.example-cdn.com")
+)
+def test_marketing_media_allowlist_accepts_exact_public_hostnames():
+    assert checks.check_marketing_media_hosts(None) == []
+
+
 # ── fiscal: resolver de emissão (silêncio fiscal é o pior modo de falha) ──────
 
 

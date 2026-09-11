@@ -1,0 +1,54 @@
+{
+  "schema_version": "marketing-capacity-evidence.v1",
+  "work_item": "MKT-043",
+  "captured_at": "2026-09-09T17:18:11-03:00",
+  "status": "passed",
+  "environment": {
+    "scope": "local disposable pytest database",
+    "database": "SQLite",
+    "python": "3.12.5",
+    "django": "6.0.5",
+    "provider_calls": 0,
+    "production_writes": 0
+  },
+  "audience": {
+    "candidates": 200000,
+    "eligible": 100000,
+    "latency_seconds": {
+      "samples": [1.4295, 1.4672, 1.3385, 1.3779, 1.3552],
+      "p95": 1.4672,
+      "budget": 2.0
+    },
+    "queries": {
+      "samples": [6, 6, 6, 6, 6],
+      "max": 6,
+      "budget": 30
+    },
+    "peak_memory_mib": 82.6,
+    "peak_memory_budget_mib": 256
+  },
+  "workers": {
+    "targets": 20000,
+    "commands": 4,
+    "targets_per_command": 5000,
+    "runtime_cap_changed": false,
+    "queue_seconds": 7.9011,
+    "lanes": [
+      {"lane": 0, "calls": 5, "chunks": 50, "fanout_seconds": 0.9248},
+      {"lane": 1, "calls": 5, "chunks": 50, "fanout_seconds": 0.9966},
+      {"lane": 2, "calls": 5, "chunks": 50, "fanout_seconds": 0.9935},
+      {"lane": 3, "calls": 5, "chunks": 50, "fanout_seconds": 0.9699}
+    ],
+    "claims": [
+      {"worker": "capacity-worker-one", "targets": 100, "seconds": 0.0663, "queries": 6},
+      {"worker": "capacity-worker-two", "targets": 100, "seconds": 0.1005, "queries": 6}
+    ],
+    "claimed_target_intersection": 0
+  },
+  "gate_h08": {
+    "local_engineering_evidence": true,
+    "authorized_7_14_day_baseline": false,
+    "named_on_call_and_paging": false,
+    "pilot_closed": true
+  }
+}

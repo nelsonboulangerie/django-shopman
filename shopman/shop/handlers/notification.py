@@ -24,6 +24,38 @@ from shopman.shop.services import notification as notification_svc
 logger = logging.getLogger(__name__)
 
 
+def _enrich_system_context(template: str, raw_context: object) -> dict:
+    """Resolve human labels at the integration boundary, keeping Stockman generic."""
+
+    context = dict(raw_context) if isinstance(raw_context, dict) else {}
+    if template != "stock_alert":
+        return context
+
+    sku = str(context.get("sku") or "").strip()
+    if not sku or str(context.get("product_name") or "").strip():
+        return context
+    try:
+        from shopman.offerman.models import Product
+
+        product_name = (
+            Product.objects.filter(sku=sku)
+            .values_list("name", flat=True)
+            .first()
+        )
+    except Exception:
+        # O alerta continua útil pelo SKU se o catálogo estiver indisponível; o
+        # worker registra o diagnóstico sem incluir destinatário ou conteúdo.
+        logger.warning(
+            "notification.system: product label unavailable for sku=%s",
+            sku,
+            exc_info=True,
+        )
+        return context
+    if product_name:
+        context["product_name"] = str(product_name).strip()
+    return context
+
+
 class NotificationSendHandler:
     """Processa directives de notificação. Topic: notification.send"""
 
@@ -144,6 +176,7 @@ class NotificationSendHandler:
             context = _stock_alert_context(context)
         else:
             template = context.get("template") or event
+        context = _enrich_system_context(template, context)
 
         fallback_recipient = getattr(settings, "SHOPMAN_OPERATOR_EMAIL", None) or getattr(
             settings, "DEFAULT_FROM_EMAIL", "admin@shopman.local"

@@ -224,12 +224,11 @@ def test_o_perfil_de_rfm_nao_sobrevive():
 def test_a_loja_apaga_o_que_e_dela():
     """Favoritos e aviso de reposição vivem em `storefront` e ficavam para trás."""
     from shopman.storefront.models import CustomerFavorite, StockAlertSubscription
+    from shopman.storefront.services import stock_alerts
 
     customer = _customer()
     CustomerFavorite.objects.create(customer_ref=customer.ref, sku="CROIS-01")
-    StockAlertSubscription.objects.create(
-        sku="CROIS-01", customer_ref=customer.ref, contact_phone=customer.phone
-    )
+    stock_alerts.subscribe("CROIS-01", customer=customer)
 
     anonymize_customer(customer)
 

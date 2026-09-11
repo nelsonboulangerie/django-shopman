@@ -5,7 +5,11 @@
 // se inventa. Audiência vazia é resposta normal (ninguém opt-in ainda), e a
 // frase precisa dizer isso em vez de fingir alcance.
 
-import type { AudienceRules, Announcement, PlatformResult } from "~/types/campaign";
+import type {
+  AudienceRules,
+  Announcement,
+  PlatformResult,
+} from "~/types/campaign";
 
 /** Rótulos das origens de audiência, na ordem em que a frase os lê. */
 const AUDIENCE_LABELS: ReadonlyArray<readonly [string, string]> = [
@@ -14,22 +18,35 @@ const AUDIENCE_LABELS: ReadonlyArray<readonly [string, string]> = [
   ["alerts_count", "alertas"],
 ];
 
+const PT_BR_INTEGER = new Intl.NumberFormat("pt-BR", {
+  maximumFractionDigits: 0,
+});
+
+/** Inteiro operacional localizado sem abreviar nem esconder ordem de grandeza. */
+export function formatCount(value: number): string {
+  return PT_BR_INTEGER.format(Number.isFinite(value) ? value : 0);
+}
+
 /**
  * "12 favoritos, 28 recompra, 3 alertas = 43 clientes".
  *
  * O total vem do backend (já deduplicado por telefone), NÃO da soma das partes:
  * quem favoritou e também recompra é uma pessoa só, e somar mentiria pra cima.
  */
-export function audienceSummary(audience: Record<string, number> | undefined): string {
+export function audienceSummary(
+  audience: Record<string, number> | undefined,
+): string {
   const counts = audience ?? {};
   const parts = AUDIENCE_LABELS.filter(([key]) => (counts[key] ?? 0) > 0).map(
-    ([key, label]) => `${counts[key]} ${label}`,
+    ([key, label]) => `${formatCount(counts[key] ?? 0)} ${label}`,
   );
   const total = counts.total ?? 0;
 
-  if (total === 0) return alertsNote(counts) || "Ninguém para avisar por enquanto";
-  if (parts.length === 0) return `${total} ${total === 1 ? "cliente" : "clientes"}`;
-  return `${parts.join(", ")} = ${total} ${total === 1 ? "cliente" : "clientes"}`;
+  if (total === 0)
+    return alertsNote(counts) || "Ninguém para avisar por enquanto";
+  if (parts.length === 0)
+    return `${formatCount(total)} ${total === 1 ? "cliente" : "clientes"}`;
+  return `${parts.join(", ")} = ${formatCount(total)} ${total === 1 ? "cliente" : "clientes"}`;
 }
 
 /**
@@ -59,12 +76,14 @@ export function alertsNote(
 }
 
 /** Quantos VIPs recebem antes, e com quanto de vantagem. */
-export function vipSummary(audience: Record<string, number> | undefined): string {
+export function vipSummary(
+  audience: Record<string, number> | undefined,
+): string {
   const counts = audience ?? {};
   const vips = counts.vip_count ?? 0;
   const delay = counts.vip_delay_minutes ?? 0;
   if (vips === 0 || delay === 0) return "";
-  return `${vips} ${vips === 1 ? "VIP recebe" : "VIPs recebem"} ${delay} min antes`;
+  return `${formatCount(vips)} ${vips === 1 ? "VIP recebe" : "VIPs recebem"} ${delay} min antes`;
 }
 
 /**
@@ -82,7 +101,9 @@ export function expiryLabel(minutes: number): string {
 }
 
 /** Prazo curto pede destaque; prazo largo não deve gritar. */
-export function expiryTone(minutes: number): "urgent" | "warning" | "calm" | "none" {
+export function expiryTone(
+  minutes: number,
+): "urgent" | "warning" | "calm" | "none" {
   if (minutes < 0) return "none";
   if (minutes <= 10) return "urgent";
   if (minutes <= 30) return "warning";
@@ -111,6 +132,13 @@ const RESULT_LABELS: Record<string, string> = {
   queued: "na fila",
   pending_manual: "aguardando envio manual",
   failed: "falhou",
+  accepted: "aceito; ainda não confirmado",
+  confirmed: "entrega confirmada",
+  failed_retryable: "falhou; pode tentar novamente",
+  failed_final: "falha final",
+  unknown: "resultado incerto; não reenviar",
+  cancelled: "cancelado antes do envio",
+  expired: "expirado antes do envio",
 };
 
 export function resultLabel(status: string): string {
@@ -119,10 +147,20 @@ export function resultLabel(status: string): string {
 
 export function resultTone(status: string): "ok" | "pending" | "fail" {
   // `sent` é o "publicado" do WhatsApp: a onda saiu para a audiência.
-  if (status === "published" || status === "sent") return "ok";
+  if (status === "published" || status === "sent" || status === "confirmed")
+    return "ok";
   // Parcial pende para FALHA, não para ok: alguém não recebeu, e o gestor tem de
   // decidir o que fazer com essas pessoas.
-  if (status === "failed" || status === "partial") return "fail";
+  if (
+    [
+      "failed",
+      "partial",
+      "failed_retryable",
+      "failed_final",
+      "unknown",
+    ].includes(status)
+  )
+    return "fail";
   return "pending";
 }
 
@@ -132,11 +170,23 @@ export function resultTone(status: string): "ok" | "pending" | "fail" {
  * Parcial não é sucesso: se o Google saiu e o Instagram falhou, o gestor
  * precisa ver isso como pendência, não como pronto.
  */
-export function announcementOutcome(results: PlatformResult[]): "published" | "partial" | "failed" | "pending" {
+export function announcementOutcome(
+  results: PlatformResult[],
+): "published" | "partial" | "failed" | "pending" {
   if (results.length === 0) return "pending";
   // `sent` conta como saída: é o "publicado" do WhatsApp.
-  const published = results.filter((r) => r.status === "published" || r.status === "sent").length;
-  const failed = results.filter((r) => r.status === "failed" || r.status === "partial").length;
+  const published = results.filter((r) =>
+    ["published", "sent", "confirmed"].includes(r.status),
+  ).length;
+  const failed = results.filter((r) =>
+    [
+      "failed",
+      "partial",
+      "failed_retryable",
+      "failed_final",
+      "unknown",
+    ].includes(r.status),
+  ).length;
 
   if (published === results.length) return "published";
   if (failed === results.length) return "failed";
@@ -175,17 +225,29 @@ export function audienceRulesSummary(
   if (rules?.favorites) parts.push({ text: "favoritos", fixed: true });
   if (rules?.alerts) parts.push({ text: "alertas", fixed: true });
   if (rules?.bought_within_days) {
-    parts.push({ text: `recompra em ${rules.bought_within_days} dias`, fixed: true });
+    parts.push({
+      text: `recompra em ${rules.bought_within_days} dias`,
+      fixed: true,
+    });
   }
   if (rules?.price_tiers?.length) {
-    parts.push({ text: named(rules.price_tiers, labels.priceTiers), fixed: false });
+    parts.push({
+      text: named(rules.price_tiers, labels.priceTiers),
+      fixed: false,
+    });
   }
-  if (rules?.tags?.length) parts.push({ text: named(rules.tags, labels.tags), fixed: false });
+  if (rules?.tags?.length)
+    parts.push({ text: named(rules.tags, labels.tags), fixed: false });
   if (rules?.rfm_segments?.length) {
-    parts.push({ text: named(rules.rfm_segments, labels.segments), fixed: false });
+    parts.push({
+      text: named(rules.rfm_segments, labels.segments),
+      fixed: false,
+    });
   }
-  if (rules?.churn_risk_min) parts.push({ text: "quem está sumindo", fixed: true });
-  if (rules?.birthday_today) parts.push({ text: "aniversariantes de hoje", fixed: true });
+  if (rules?.churn_risk_min)
+    parts.push({ text: "quem está sumindo", fixed: true });
+  if (rules?.birthday_today)
+    parts.push({ text: "aniversariantes de hoje", fixed: true });
   if (parts.length === 0) return "Sem público definido";
 
   // "Cruzando" primeiro, porque muda o SENTIDO do que vem depois: a mesma lista de
@@ -215,17 +277,25 @@ export type AudienceLabels = {
 };
 
 /** Refs em rótulos, na ordem escolhida. Ref sem rótulo conhecido volta como veio. */
-function named(refs: string[], labels: Record<string, string> | undefined): string {
+function named(
+  refs: string[],
+  labels: Record<string, string> | undefined,
+): string {
   return refs.map((ref) => labels?.[ref] ?? ref).join(", ");
 }
 
 /** `Choice[]` (como a projection entrega) em mapa ref → rótulo. */
-export function choiceLabels(choices: { value: string; label: string }[] | undefined) {
+export function choiceLabels(
+  choices: { value: string; label: string }[] | undefined,
+) {
   return Object.fromEntries((choices ?? []).map((c) => [c.value, c.label]));
 }
 
 /** "Instagram, Google Meu Negócio" a partir dos refs, na ordem escolhida. */
-export function platformsSummary(platforms: string[], labels: Record<string, string>): string {
+export function platformsSummary(
+  platforms: string[],
+  labels: Record<string, string>,
+): string {
   if (platforms.length === 0) return "Nenhuma plataforma";
   return platforms.map((ref) => labels[ref] ?? ref).join(", ");
 }
@@ -250,7 +320,10 @@ export function shortDateTime(iso: string): string {
  * "Publicar" num card que já venceu entre um fetch e outro.
  */
 export function isStillReviewable(announcement: Announcement): boolean {
-  return announcement.status === "pending_review" && announcement.expires_in_minutes !== 0;
+  return (
+    announcement.status === "pending_review" &&
+    announcement.expires_in_minutes !== 0
+  );
 }
 
 /**
@@ -309,9 +382,9 @@ export function mergeAudienceRules(
   original: AudienceRules | null | undefined,
   doFormulario: AudienceRules,
 ): AudienceRules {
-  const merged: AudienceRules = { ...(original ?? {}) };
-  for (const chave of AUDIENCE_KEYS_OWNED_BY_THE_FORM) {
-    delete merged[chave];
-  }
+  const owned = new Set<string>(AUDIENCE_KEYS_OWNED_BY_THE_FORM);
+  const merged = Object.fromEntries(
+    Object.entries(original ?? {}).filter(([chave]) => !owned.has(chave)),
+  ) as AudienceRules;
   return { ...merged, ...doFormulario };
 }

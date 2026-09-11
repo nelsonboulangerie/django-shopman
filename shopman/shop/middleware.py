@@ -13,7 +13,12 @@ from django.conf import settings
 
 API_V1_PREFIX = "/api/v1/"
 API_VERSION = "1"
-HEALTH_PROBE_PATHS = {"/health/", "/ready/"}
+HEALTH_PROBE_PATHS = {
+    "/health/live/",
+    "/health/ready/",
+    "/health/",
+    "/ready/",
+}
 APP_PLATFORM_PROBE_NETWORK = ip_network("100.64.0.0/10")
 
 

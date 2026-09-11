@@ -4,7 +4,12 @@ from shopman.shop.admin.attributes import AttributeDefinitionAdmin  # noqa: F401
 from shopman.shop.admin.campaign import (  # noqa: F401
     AnnouncementAdmin,
     AnnouncementTemplateAdmin,
+    AudienceSnapshotAdmin,
     CampaignAdmin,
+    MarketingAuditEventAdmin,
+    MarketingCommandReceiptAdmin,
+    MarketingPlatformAuditEventAdmin,
+    MarketingSecurityEventAdmin,
 )
 from shopman.shop.admin.channel import ChannelAdmin  # noqa: F401
 from shopman.shop.admin.delivery import (  # noqa: F401

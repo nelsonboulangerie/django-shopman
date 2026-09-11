@@ -30,11 +30,11 @@
     >(),
     {
       icon: "lucide:x",
-      srText: "Close",
+      srText: "Fechar",
     }
   );
   const forwarded = reactiveOmit(props, "class", "icon", "srText");
   const styles = tv({
-    base: "ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none",
+    base: "ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-2 right-2 grid size-11 place-items-center rounded-md opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none",
   });
 </script>

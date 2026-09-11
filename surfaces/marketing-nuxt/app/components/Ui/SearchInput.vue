@@ -28,13 +28,13 @@ defineExpose({ focus: () => input.value?.focus() });
       inputmode="search"
       :placeholder="placeholder"
       :aria-label="ariaLabel"
-      class="h-9 w-44 rounded-md border bg-card pl-8 pr-8 text-sm outline-none transition-[width,box-shadow] focus:w-56 focus:ring-1 focus:ring-ring sm:w-52 sm:focus:w-64"
+      class="h-11 w-44 rounded-md border bg-card pl-8 pr-12 text-sm outline-none transition-[width,box-shadow] focus:w-56 focus:ring-1 focus:ring-ring sm:w-52 sm:focus:w-64"
       @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
     />
     <button
       v-if="modelValue"
       type="button"
-      class="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded text-muted-foreground transition hover:text-foreground"
+      class="absolute right-0 top-1/2 grid size-11 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition hover:text-foreground"
       aria-label="Limpar busca"
       @click="emit('update:modelValue', '')"
     >

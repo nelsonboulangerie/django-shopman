@@ -52,6 +52,11 @@ def _purchase_base_url() -> str:
     return (getattr(settings, "SHOPMAN_PURCHASE_BASE_URL", "") or "").rstrip("/")
 
 
+def _marketing_base_url() -> str:
+    """Base absoluta do cockpit de Marketing. Vazio mantém o link oculto."""
+    return (getattr(settings, "SHOPMAN_MARKETING_BASE_URL", "") or "").rstrip("/")
+
+
 def get_sidebar_navigation(request):
     """Return the canonical Admin sidebar for this Shopman installation.
 
@@ -108,6 +113,9 @@ def get_sidebar_navigation(request):
     purchase_url = _purchase_base_url()
     if purchase_url:
         live_items.append(_item("Compras", "package_check", purchase_url, permission=_can_operate_purchase))
+    marketing_url = _marketing_base_url()
+    if marketing_url:
+        live_items.append(_item("Marketing", "campaign", marketing_url, permission=_can_view_marketing))
     return [
         # O alarme não tem item no menu: a home do Admin já mostra os alertas numa
         # seção, com severidade, mensagem e pedido. Um link destacado aqui era a
@@ -202,6 +210,22 @@ def get_sidebar_navigation(request):
             # Admin; o USO não deixava nenhum. Esta é a outra metade.
             _model_item("Acessos de operador", "login", "backstage.SignInEvent"),
         ]),
+        _group(
+            "Marketing — auditoria",
+            "fact_check",
+            [
+                _model_item("Anúncios", "campaign", "shop.Announcement"),
+                _model_item("Comprovantes", "receipt_long", "shop.MarketingCommandReceipt"),
+                _model_item("Públicos selados", "groups", "shop.AudienceSnapshot"),
+                _model_item("Decisões", "history", "shop.MarketingAuditEvent"),
+                _model_item(
+                    "Configurações de plataforma",
+                    "settings_input_component",
+                    "shop.MarketingPlatformAuditEvent",
+                ),
+                _model_item("Segurança", "shield", "shop.MarketingSecurityEvent"),
+            ],
+        ),
         # O que entrou de fora no B.I. — trilha, como Auditoria, mas com dono
         # próprio: Auditoria está no teto que ainda se escaneia, e o B.I. vai
         # ganhar mais telas desta família (de-paras, cenários). Nasce aqui para
@@ -424,3 +448,7 @@ def _can_operate_production(request) -> bool:
 
 def _can_operate_purchase(request) -> bool:
     return permissions.can_operate_purchase(request.user)
+
+
+def _can_view_marketing(request) -> bool:
+    return request.user.has_perm("shop.view_marketing")

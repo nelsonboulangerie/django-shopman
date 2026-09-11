@@ -1,5 +1,30 @@
-// Contrato do Marketing — espelha `shopman/backstage/projections/marketing.py`.
-// Chaves em inglês (convenção de projection); rótulos ficam na apresentação.
+// Tipos v1 permanecem abaixo durante o cutover. O contrato v2 é reexportado do
+// cliente gerado a partir do OpenAPI; não o redescrever manualmente neste arquivo.
+import type { MarketingActionProjectionV2 } from "~/generated/marketingClient";
+
+export type {
+  ActionConfirmationProjectionV2,
+  AnnouncementProjectionV2,
+  AudienceSummaryProjectionV2,
+  DeliveryAggregateProjectionV2,
+  DeliveryCountsProjectionV2,
+  FreshnessProjectionV2,
+  MarketingHistoryActor,
+  MarketingHistoryDataV2,
+  MarketingHistoryOutcome,
+  MarketingHistoryPeriod,
+  MarketingHistoryPlatform,
+  MarketingActionKind,
+  MarketingActionProjectionV2,
+  MarketingAnnouncementDataV2,
+  MarketingBoardDataV2,
+  MarketingEnvelopeV2,
+  MarketingFreshnessState,
+  OperationalCountersProjectionV2,
+  PlatformDeliveryProjectionV2,
+  PlatformReadinessProjectionV2,
+  ReadinessProjectionV2,
+} from "~/generated/marketingClient";
 
 export interface PlatformResult {
   platform: string;
@@ -9,8 +34,13 @@ export interface PlatformResult {
   url: string;
 }
 
+/** Explicit consequence carried from the CTA to the command receipt. */
+export type PublishMode = "now" | "scheduled";
+
 export interface Announcement {
   pk: number;
+  /** Compare-and-set token required by mutating commands. */
+  version: number;
   status: string;
   status_label: string;
   body: string;
@@ -30,11 +60,15 @@ export interface Announcement {
   expires_at: string;
   /** -1 = não expira; 0 = o prazo já passou. */
   expires_in_minutes: number;
+  /** Suggested or confirmed exact instant, always offset-bearing when present. */
+  scheduled_for: string;
   published_at: string;
   approved_by: string;
   /** Quem recusou, e por quê. Vazios em tudo que não foi recusado. */
   rejected_by: string;
   rejected_reason: string;
+  /** Review-only AI suggestion opted in by the template. */
+  ai_suggestion_enabled?: boolean;
 }
 
 export interface CampaignStats {
@@ -66,21 +100,27 @@ export interface CampaignBoard {
   reach_limits: ReachLimit[];
   /** Credencial de IA presente neste ambiente. */
   ai_assist_available: boolean;
+  /** IANA timezone owned by the backend; browser timezone never overrides it. */
+  shop_timezone: string;
+  /** True only when the hermetic local simulator suspends quiet hours for a rehearsal. */
+  quiet_hours_suspended_for_local_simulation: boolean;
 }
 
 export interface Campaign {
   pk: number;
+  /** Compare-and-set token required by operational commands. */
+  version: number;
   name: string;
   trigger: string;
   trigger_label: string;
-  trigger_filter: Record<string, unknown>;
+  trigger_filter: CampaignTriggerFilter;
   template_id: number;
   template_name: string;
   platforms: string[];
   audience_rules: AudienceRules;
   /** `ref` da oferta anunciada. Vazio = campanha sem desconto atrás. */
   promotion_ref: string;
-  schedule: Record<string, unknown>;
+  schedule: CampaignSchedule;
   /** Frase pronta do agendamento — decidida no servidor, nunca reinterpretada aqui. */
   schedule_label: string;
   /** Cria a ocasião sozinho (`once`/`recurring`), em vez de só adiar um evento. */
@@ -96,10 +136,32 @@ export interface Campaign {
   requires_approval: boolean;
   expires_after_minutes: number;
   is_active: boolean;
+  /** Read version used only to isolate/reconcile local drafts. */
+  updated_at: string;
 }
 
 /** Como as regras se combinam: `any` soma (união), `all` cruza (interseção). */
 export type AudienceMatch = "any" | "all";
+
+export interface CampaignTriggerFilter {
+  collections?: string[];
+  skus?: string[];
+  quality_min?: string;
+  quality_min_share?: number;
+  max_remaining?: number;
+  [key: string]: unknown;
+}
+
+export interface CampaignSchedule {
+  type?: "immediate" | "preferred_hours" | "once" | "recurring";
+  at?: string;
+  windows?: string[][];
+  weekdays?: number[];
+  starts_on?: string;
+  ends_on?: string;
+  timezone?: string;
+  [key: string]: unknown;
+}
 
 export interface AudienceRules {
   favorites?: boolean;
@@ -114,18 +176,28 @@ export interface AudienceRules {
   rfm_segments?: string[];
   churn_risk_min?: number;
   birthday_today?: boolean;
+  bought_skus?: string[];
+  bought_collections?: string[];
+  preferred_hour_window_hours?: number;
 }
 
 export interface AnnouncementTemplate {
   pk: number;
   name: string;
   body: string;
+  platform_variants: Record<string, Record<string, unknown>>;
   variables: string[];
+  /** A ocorrência precisa trazer um produto para resolver o texto fielmente. */
+  requires_product: boolean;
   use_ai_generation: boolean;
   /** Instrução da IA. A projection devolve para o gestor poder conferir o que escreveu. */
   ai_prompt: string;
   image_source: string;
   is_active: boolean;
+  /** Read version used only to isolate/reconcile local drafts. */
+  updated_at: string;
+  /** Nomes das campanhas que impedem exclusão segura. */
+  used_by_campaigns?: string[];
 }
 
 export interface Choice {
@@ -144,9 +216,13 @@ export interface CampaignOptions {
   /** Etiquetas existentes, com a contagem de gente no rótulo. */
   tags: Choice[];
   rfm_segments: Choice[];
+  /** Produtos publicáveis, já nomeados para a escolha da ocorrência manual. */
+  products: Choice[];
   /** Ofertas vivas que MONTAM sacola. O servidor já tirou as que valem para tudo:
    *  oferecê-las daria ao gestor um botão que promete o que não cumpre. */
   offers: Choice[];
+  /** Named IANA timezone used to resolve every wall-clock field. */
+  shop_timezone: string;
 }
 
 /** Público escolhido para UM disparo. Não altera a campanha salva. */
@@ -194,10 +270,42 @@ export interface AudienceCount {
 /** Templates aprovados da plataforma + o escolhido agora. */
 export interface WhatsAppTemplateResponse {
   current: string;
+  current_name: string;
+  current_active: boolean;
+  version: number;
   available: { ns: string; name: string }[];
   /** `false` = não foi possível consultar a plataforma (≠ "não há template"). */
   can_list: boolean;
   configured: boolean;
+  command_available: boolean;
+  command_disabled_reason: string;
+  catalog_state: "fresh" | "stale" | "unavailable" | "not_configured";
+  catalog_checked_at: string;
+  catalog_as_of: string | null;
+  catalog_fresh_until: string | null;
+  catalog_hash: string;
+  readiness_state: "ready" | "degraded" | "blocked" | "unknown";
+  readiness_reason_code: string;
+  can_send_test: boolean;
+  test_targets: { ref: string; label: string; backend: string }[];
+}
+
+export interface MarketingTestReceipt {
+  ok: boolean;
+  backend: string;
+  target_ref: string;
+  fields: Record<string, string>;
+  receipt_ref: string;
+  state:
+    | "processing"
+    | "accepted_unconfirmed"
+    | "failed_final"
+    | "unknown"
+    | "denied";
+  sandbox: true;
+  max_targets: 1;
+  replayed: boolean;
+  detail: string;
 }
 
 export interface BoardResponse {
@@ -206,6 +314,7 @@ export interface BoardResponse {
 
 export interface RulesResponse {
   rules: Campaign[];
+  actions: MarketingActionProjectionV2[];
 }
 
 export interface OptionsResponse {
@@ -216,6 +325,43 @@ export interface HistoryResponse {
   announcements: Announcement[];
 }
 
+/** Receipt persistido pelo command service. Nunca contém recipient, conteúdo ou segredo. */
+export interface MarketingCommandReceipt {
+  ref: string;
+  kind: string;
+  state: string;
+  base_version: number;
+  resulting_version: number | null;
+  resource_ref: string;
+  outcome: Record<string, unknown>;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface MarketingCommandResponse {
+  ok: true;
+  replayed: boolean;
+  receipt: MarketingCommandReceipt;
+  announcement: Announcement;
+}
+
+/** Consequência exata emitida pelo servidor antes de qualquer efeito externo. */
+export interface MarketingConfirmationChallenge {
+  token: string;
+  ref: string;
+  expires_at: string;
+  mode: "none" | "simple" | "summary" | "typed";
+  step_up: "none" | "password" | "totp";
+  dual_control: boolean;
+  typed_phrase: string;
+  consequence: string;
+  resource_ref: string;
+  base_version: number;
+  audience_count: number;
+  platforms: string[];
+  scheduled_for: string | null;
+}
+
 /** Edições do card enviadas junto com a aprovação. */
 export interface AnnouncementEdits {
   body?: string;
@@ -223,4 +369,26 @@ export interface AnnouncementEdits {
   platforms?: string[];
   image_url?: string;
   publish_at?: string;
+  /** Trace only; publishing still requires the independent approval command. */
+  ai_suggestion_ref?: string;
+}
+
+export interface MarketingAIFact {
+  id: string;
+  label: string;
+  value: string;
+}
+
+export interface MarketingAISuggestion {
+  ref: string;
+  body: string;
+  hashtags: string[];
+  used_fact_ids: string[];
+  warnings: string[];
+  policy_version: string;
+  model_ref: string;
+  suggestion_hash: string;
+  facts_hash: string;
+  base_version: number;
+  facts: MarketingAIFact[];
 }

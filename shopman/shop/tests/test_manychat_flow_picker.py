@@ -1,21 +1,11 @@
-"""O flow do WhatsApp escolhido por NOME, e o que acontece quando a API não responde.
-
-O `ns` é opaco (`content20240614222050_512341`) e a falha dele é silenciosa: ns errado não
-estoura, só faz a onda falhar destinatário por destinatário com erro do provedor. Por isso
-o Admin oferece a lista por nome — e por isso os casos de borda importam mais que o caminho
-felizardo:
-
-· API fora ou sem token → o campo volta a ser TEXTO LIVRE, não trava o formulário;
-· flow apagado no ManyChat → continua visível na lista, marcado, porque sumir com ele
-  esconderia justamente a causa da campanha que falha calada.
-"""
+"""Flow catalog states and containment of the legacy Admin write path."""
 
 from __future__ import annotations
 
 import pytest
 from django.core.cache import cache
 
-from shopman.shop.admin.shop import NotificationTemplateForm
+from shopman.shop.admin.shop import NotificationTemplateAdmin, NotificationTemplateForm
 from shopman.shop.models import NotificationTemplate
 from shopman.shop.services import manychat_flows
 
@@ -30,19 +20,12 @@ FLOWS = (
 @pytest.fixture(autouse=True)
 def clean_cache():
     cache.delete("shopman.manychat.flows.v1")
+    cache.delete("shopman.manychat.flows.v2")
+    cache.delete("shopman.manychat.flows.last-good.v2")
     yield
     cache.delete("shopman.manychat.flows.v1")
-
-
-@pytest.fixture
-def with_flows(monkeypatch):
-    monkeypatch.setattr(manychat_flows, "list_flows", lambda **kw: FLOWS)
-
-
-@pytest.fixture
-def without_flows(monkeypatch):
-    """A API não respondeu, ou não há token — os dois casos são o mesmo para a tela."""
-    monkeypatch.setattr(manychat_flows, "list_flows", lambda **kw: ())
+    cache.delete("shopman.manychat.flows.v2")
+    cache.delete("shopman.manychat.flows.last-good.v2")
 
 
 def _template(ns: str = "") -> NotificationTemplate:
@@ -51,48 +34,16 @@ def _template(ns: str = "") -> NotificationTemplate:
     )
 
 
-def test_the_field_offers_flows_by_name(with_flows):
-    form = NotificationTemplateForm(instance=_template())
-    labels = [label for _value, label in form.fields["whatsapp_flow_ns"].choices]
-
-    assert any("Teste Webhook API Manychat" in label for label in labels)
-    assert any("Arrays" in label for label in labels)
-
-
-def test_the_empty_option_says_what_empty_means(with_flows):
-    form = NotificationTemplateForm(instance=_template())
-    empty = [label for value, label in form.fields["whatsapp_flow_ns"].choices if value == ""]
-
-    assert empty and "24h" in empty[0], "o operador precisa saber o custo de deixar vazio"
-
-
-def test_without_the_api_the_field_stays_free_text(without_flows):
-    """Não travar o operador é mais importante que forçar a lista."""
+def test_the_legacy_admin_field_is_read_only_even_when_provider_is_unavailable():
     form = NotificationTemplateForm(instance=_template())
     field = form.fields["whatsapp_flow_ns"]
 
-    assert not getattr(field, "choices", None), "sem lista, não vira ChoiceField"
-    assert "manychat_flows" in field.help_text, "a ajuda tem de dizer como descobrir o ns"
+    assert field.disabled is True
+    assert "Marketing → Plataformas" in field.help_text
 
 
-def test_a_deleted_flow_stays_visible_and_marked(with_flows):
-    """Flow apagado no ManyChat é a causa da campanha que falha calada. Não esconder."""
-    form = NotificationTemplateForm(instance=_template("content20200101000000_000000"))
-    choices = dict(form.fields["whatsapp_flow_ns"].choices)
-
-    assert "content20200101000000_000000" in choices
-    assert "apagado" in choices["content20200101000000_000000"]
-
-
-def test_a_valid_flow_is_not_marked_as_deleted(with_flows):
-    form = NotificationTemplateForm(instance=_template(FLOWS[0][0]))
-    choices = dict(form.fields["whatsapp_flow_ns"].choices)
-
-    assert "apagado" not in choices[FLOWS[0][0]]
-
-
-def test_choosing_a_flow_saves_the_ns(with_flows):
-    template = _template()
+def test_posting_an_arbitrary_ref_to_legacy_form_cannot_change_it():
+    template = _template(FLOWS[1][0])
     form = NotificationTemplateForm(
         data={
             "event": template.event,
@@ -105,11 +56,10 @@ def test_choosing_a_flow_saves_the_ns(with_flows):
     )
     assert form.is_valid(), form.errors
     saved = form.save()
-    assert saved.whatsapp_flow_ns == FLOWS[0][0]
+    assert saved.whatsapp_flow_ns == FLOWS[1][0]
 
 
-def test_empty_stays_allowed(with_flows):
-    """Sem flow é configuração legítima: texto livre dentro da janela de 24h."""
+def test_posting_empty_to_legacy_form_cannot_clear_the_flow():
     template = _template(FLOWS[0][0])
     form = NotificationTemplateForm(
         data={"event": template.event, "subject": "Novidade na padaria", "body": "oi",
@@ -117,7 +67,13 @@ def test_empty_stays_allowed(with_flows):
         instance=template,
     )
     assert form.is_valid(), form.errors
-    assert form.save().whatsapp_flow_ns == ""
+    assert form.save().whatsapp_flow_ns == FLOWS[0][0]
+
+
+def test_notification_template_admin_has_no_flow_or_activation_quick_write():
+    assert "whatsapp_flow_ns" in NotificationTemplateAdmin.readonly_fields
+    assert "is_active" in NotificationTemplateAdmin.readonly_fields
+    assert not getattr(NotificationTemplateAdmin, "list_editable", ())
 
 
 # ── O serviço por baixo ──────────────────────────────────────────────
@@ -150,3 +106,55 @@ def test_flow_name_resolves_and_admits_ignorance(monkeypatch):
     assert manychat_flows.flow_name(FLOWS[0][0]) == "Teste Webhook API Manychat"
     assert manychat_flows.flow_name("content20200101000000_000000") == ""
     assert manychat_flows.flow_name("") == ""
+
+
+def test_successful_empty_catalog_is_known_not_an_outage(monkeypatch):
+    monkeypatch.setattr(manychat_flows, "_fetch", lambda: ())
+
+    catalog = manychat_flows.flow_catalog(force=True)
+
+    assert catalog.state == "fresh"
+    assert catalog.flows == ()
+    assert catalog.mutation_safe is True
+
+
+def test_outage_without_history_is_unavailable(monkeypatch):
+    monkeypatch.setattr(
+        manychat_flows,
+        "_fetch",
+        lambda: manychat_flows._FetchResult(
+            state="unavailable",
+            reason_code="manychat_catalog_unreachable",
+        ),
+    )
+
+    catalog = manychat_flows.flow_catalog(force=True)
+
+    assert catalog.state == "unavailable"
+    assert catalog.mutation_safe is False
+
+
+def test_outage_retains_last_known_catalog_only_for_diagnosis(monkeypatch):
+    monkeypatch.setattr(manychat_flows, "_fetch", lambda: FLOWS)
+    assert manychat_flows.flow_catalog(force=True).mutation_safe is True
+    monkeypatch.setattr(
+        manychat_flows,
+        "_fetch",
+        lambda: manychat_flows._FetchResult(
+            state="unavailable",
+            reason_code="manychat_catalog_unreachable",
+        ),
+    )
+
+    catalog = manychat_flows.flow_catalog(force=True)
+
+    assert catalog.state == "stale"
+    assert catalog.flows == FLOWS
+    assert catalog.mutation_safe is False
+    assert manychat_flows.list_flows() == ()
+
+
+def test_explicitly_inactive_provider_rows_are_not_selectable():
+    assert manychat_flows._row_is_active({"is_active": False}) is False
+    assert manychat_flows._row_is_active({"status": "archived"}) is False
+    assert manychat_flows._row_is_active({}) is True

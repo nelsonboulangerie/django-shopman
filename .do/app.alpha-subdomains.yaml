@@ -554,7 +554,7 @@ services:
     window: TEN_MINUTES
   health_check:
     failure_threshold: 5
-    http_path: /ready/
+    http_path: /health/ready/
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -564,7 +564,7 @@ services:
   instance_size_slug: apps-s-1vcpu-1gb
   liveness_health_check:
     failure_threshold: 3
-    http_path: /health/
+    http_path: /health/live/
     initial_delay_seconds: 30
     period_seconds: 30
     success_threshold: 1
@@ -896,7 +896,7 @@ services:
     type: GENERAL
   health_check:
     failure_threshold: 5
-    http_path: /
+    http_path: /health/ready
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -904,6 +904,13 @@ services:
   http_port: 3000
   instance_count: 1
   instance_size_slug: apps-s-1vcpu-0.5gb
+  liveness_health_check:
+    failure_threshold: 3
+    http_path: /health/live
+    initial_delay_seconds: 30
+    period_seconds: 30
+    success_threshold: 1
+    timeout_seconds: 5
   name: marketing-nuxt
   image:
     registry_type: DOCR

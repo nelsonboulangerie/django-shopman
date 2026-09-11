@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { installNuxtGlobals } from "./support/composableEnv";
 import { useOperatorLock } from "../app/composables/useOperatorLock";
+import { useOperatorSession } from "../app/composables/useOperatorSession";
 
 const env = installNuxtGlobals();
 const PERM = "backstage.operate_production";
@@ -14,13 +15,19 @@ describe("useOperatorLock — session derivations", () => {
       operator: { name: "Nelson" },
       locked: true,
       pin_must_change: true,
+      authorized: true,
     };
-    const { canIdentify, stationRef, locked, operator, mustChange } = useOperatorLock(PERM);
+    const { canIdentify, stationRef, locked, operator, mustChange, sessionState } = useOperatorLock(PERM);
     expect(canIdentify.value).toBe(true);
     expect(stationRef.value).toBe("balcao");
     expect(locked.value).toBe(true);
     expect(operator.value?.name).toBe("Nelson");
     expect(mustChange.value).toBe(true);
+    expect(sessionState.value).toBe("anonymous");
+    expect(env.useFetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/operator/session/",
+      expect.objectContaining({ query: { perm: PERM } }),
+    );
   });
 
   it("sessão nula (403 da antessala) = dispositivo desconhecido, e não travado", () => {
@@ -35,10 +42,46 @@ describe("useOperatorLock — session derivations", () => {
   });
 
   it("estação reconhecida e vazia PODE pedir identificação, e está travada", () => {
-    env.fetchData.value = { station: "balcao", operator: null, locked: true };
+    env.fetchData.value = { station: "balcao", operator: null, locked: true, pin_must_change: false, authorized: false };
     const { canIdentify, locked } = useOperatorLock(PERM);
     expect(canIdentify.value).toBe(true);
     expect(locked.value).toBe(true);
+  });
+
+  it("só autentica depois da checagem e separa falta de capability", () => {
+    env.fetchStatus.value = "pending";
+    env.fetchData.value = {
+      station: "balcao",
+      operator: { name: "Nelson" },
+      locked: false,
+      pin_must_change: false,
+      authorized: true,
+    };
+    expect(useOperatorLock(PERM).sessionState.value).toBe("checking");
+
+    env.fetchStatus.value = "success";
+    env.fetchData.value = { ...(env.fetchData.value as object), authorized: false };
+    expect(useOperatorLock(PERM).sessionState.value).toBe("forbidden");
+  });
+
+  it("expiração global vence a sessão stale e outage não vira login", () => {
+    env.fetchData.value = {
+      station: "balcao",
+      operator: { name: "Nelson" },
+      locked: false,
+      pin_must_change: false,
+      authorized: true,
+    };
+    useOperatorSession().flagIfUnauthenticated({ status: 401 });
+    expect(useOperatorLock(PERM).sessionState.value).toBe("expired");
+
+    env.states.clear();
+    env.fetchData.value = null;
+    env.fetchStatus.value = "error";
+    env.fetchError.value = { status: 503 };
+    const unavailable = useOperatorLock(PERM);
+    expect(unavailable.sessionUnavailable.value).toBe(true);
+    expect(unavailable.sessionState.value).toBe("anonymous");
   });
 });
 
@@ -106,7 +149,11 @@ describe("useOperatorLock — unlock", () => {
     expect(ok).toBe(true);
     expect(env.fetchMock).toHaveBeenCalledWith(
       "/api/v1/backstage/operator/unlock/",
-      expect.objectContaining({ method: "POST", body: expect.objectContaining({ operator_id: 3, pin: "1234", perm: PERM }) }),
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        body: expect.objectContaining({ operator_id: 3, pin: "1234", perm: PERM }),
+      }),
     );
     expect(env.refresh).toHaveBeenCalled();
     expect(env.refreshNuxtData).toHaveBeenCalled();
@@ -152,7 +199,7 @@ describe("useOperatorLock — lock / changePin / eligible", () => {
     await useOperatorLock(PERM).lock();
     expect(env.fetchMock).toHaveBeenCalledWith(
       "/api/v1/backstage/operator/lock/",
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
     );
     expect(env.refresh).toHaveBeenCalled();
   });

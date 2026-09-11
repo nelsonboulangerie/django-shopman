@@ -114,7 +114,13 @@ def can_manage_campaigns(user) -> bool:
     pedidos não é necessariamente quem decide o que a padaria publica
     (FOMO-MARKETING-SPECS §8).
     """
-    return is_superuser(user) or user.has_perm("shop.manage_campaigns")
+    return (
+        is_superuser(user)
+        or user.has_perm("shop.view_marketing")
+        # Janela de migração: só decide se o app aparece. O backend de cada
+        # mutação não herda esta compatibilidade.
+        or user.has_perm("shop.manage_campaigns")
+    )
 
 
 def can_view_operator_alerts(user) -> bool:

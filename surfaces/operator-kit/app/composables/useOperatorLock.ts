@@ -16,15 +16,21 @@ import {
   isLocked,
   type UnlockInput,
 } from "../presentation/operatorLock";
-import { httpErrorMessage } from "../utils/httpError";
+import {
+  operatorSessionState,
+  type OperatorSessionRequestStatus,
+} from "../presentation/operatorSessionState";
+import { httpError, httpErrorMessage } from "../utils/httpError";
+import { useOperatorSession } from "./useOperatorSession";
 import { useStationLock } from "./useStationLock";
 
 export function useOperatorLock(perm: string) {
-  const { data, refresh } = useFetch<OperatorSession>(
+  const { data, refresh, status, error } = useFetch<OperatorSession>(
     "/api/v1/backstage/operator/session/",
     {
       key: "operator-session",
       server: true,
+      query: { perm },
     },
   );
 
@@ -32,8 +38,21 @@ export function useOperatorLock(perm: string) {
   // com a sessão: a sessão pode estar velha, e enquanto ela mente a tela segue
   // montada com toda leitura negada. Estado puro no kit; aqui ele é composto.
   const station = useStationLock();
+  const operatorSession = useOperatorSession();
 
   const session = computed<OperatorSession | null>(() => data.value ?? null);
+  const sessionState = computed(() =>
+    operatorSessionState({
+      expired: operatorSession.expired.value,
+      requestStatus: status.value as OperatorSessionRequestStatus,
+      session: session.value,
+    }),
+  );
+  const sessionUnavailable = computed(
+    () =>
+      status.value === "error" &&
+      ![401, 403].includes(httpError(error.value).status ?? 0),
+  );
   // Este dispositivo pode PEDIR identificação? Sim quando a antessala respondeu — ou
   // seja, quando ele é uma estação reconhecida, ou já tem alguém logado. Quando
   // não é nenhum dos dois o endpoint responde 403 (`data` nulo) e a única saída
@@ -65,6 +84,7 @@ export function useOperatorLock(perm: string) {
       const res = await $fetch<OperatorEligibleResponse>(
         "/api/v1/backstage/operator/eligible/",
         {
+          credentials: "same-origin",
           query: { perm },
         },
       );
@@ -82,9 +102,11 @@ export function useOperatorLock(perm: string) {
     try {
       await $fetch("/api/v1/backstage/operator/unlock/", {
         method: "POST",
+        credentials: "same-origin",
         body: buildUnlockPayload({ ...input, perm }),
       });
       station.clear();
+      operatorSession.reset();
       await refresh();
       // Os fetches que rodaram TRANCADOS falharam (403) e ficariam com o erro grudado na
       // tela até o próximo poll (≤15s) — destravou, recarrega tudo já (paridade POS/Produção).
@@ -102,6 +124,7 @@ export function useOperatorLock(perm: string) {
     try {
       await $fetch("/api/v1/backstage/operator/lock/", {
         method: "POST",
+        credentials: "same-origin",
         body: {},
       });
       await refresh();
@@ -124,6 +147,7 @@ export function useOperatorLock(perm: string) {
     try {
       await $fetch("/api/v1/backstage/operator/pin/change/", {
         method: "POST",
+        credentials: "same-origin",
         body: {
           operator_id: input.operatorId,
           current_pin: input.currentPin,
@@ -171,6 +195,8 @@ export function useOperatorLock(perm: string) {
 
   return {
     session,
+    sessionState,
+    sessionUnavailable,
     canIdentify,
     stationRef,
     locked,

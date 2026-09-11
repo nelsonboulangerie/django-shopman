@@ -126,7 +126,11 @@ build_surface "surfaces/pos-nuxt" "PDV"
 # ── Start Django (API + Admin/Unfold) ──
 "${PYTHON_BIN}" manage.py runserver --noreload "127.0.0.1:${DJANGO_PORT}" >"${DJANGO_LOG}" 2>&1 &
 DJANGO_PID=$!
-wait_for "${DJANGO_BASE_URL}/ready/" "${DJANGO_PID}" "Servidor Django" "${DJANGO_LOG}"
+# O gate navega as superfícies e não sobe o worker de directives. Após os builds,
+# a fila sintética do seed já é antiga o bastante para `/ready/` reprová-la —
+# corretamente. Para iniciar o browser basta provar que o processo HTTP vive;
+# o readiness completo permanece nos gates próprios.
+wait_for "${DJANGO_BASE_URL}/health/live/" "${DJANGO_PID}" "Servidor Django" "${DJANGO_LOG}"
 
 serve_surface() {
   local dir="$1" port="$2" label="$3" log="$4"

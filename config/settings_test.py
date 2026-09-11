@@ -42,6 +42,12 @@ from config.settings import *  # noqa: E402,F403 — base primeiro, pinos depois
 # ── Flags de comportamento (runtime) ─────────────────────────────────────────
 SHOPMAN_ENVIRONMENT = "development"
 SHOPMAN_EXPOSE_DEBUG_OTP = True
+SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED = False
+SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED = False
+SHOPMAN_MARKETING_SIMULATION_ENABLED = False
+SHOPMAN_MARKETING_DELIVERY_ADAPTERS = {}
+SHOPMAN_MARKETING_TARGET_HMAC_KEY = "test-only-marketing-target-hmac-key"
+SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION = 1
 # ⚠️ TRUE, que é o valor do STAGING (.do/app.staging-subdomains.yaml).
 #
 SHOPMAN_ADMIN_REQUIRE_2FA = False
@@ -113,6 +119,9 @@ SHOPMAN_MANYCHAT.update(  # noqa: F405
     whatsapp_id_field_id="",
     resolver="shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.resolve",
 )
+SHOPMAN_MARKETING_TEST_TARGETS = {}
+SHOPMAN_MARKETING_SIMULATION_IGNORE_QUIET_HOURS = False
+SHOPMAN_MARKETING_SIMULATION_FLOWS = ()
 SHOPMAN_WHATSAPP.update(  # noqa: F405
     VERIFY_TOKEN="",
     STOREFRONT_URL="",
@@ -234,4 +243,16 @@ SHOPMAN_OPERATOR_COOKIE_DOMAIN = ""
 SHOPMAN_OPERATOR_API_HOST = ""
 
 # ── DRF: rate limit no default do CI ─────────────────────────────────────────
-REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {"anon": "120/minute"}  # noqa: F405
+REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {  # noqa: F405
+    "anon": "120/minute",
+    "marketing_audience_user": "10000/minute",
+    "marketing_audience_shop": "10000/minute",
+    "marketing_dangerous_user": "10000/minute",
+    "marketing_dangerous_shop": "10000/minute",
+    "marketing_fire_user": "10000/hour",
+    "marketing_fire_shop": "10000/day",
+    "marketing_ai": "10000/hour",
+}
+
+SHOPMAN_MARKETING_AI_ASSIST_V2 = False
+SHOPMAN_MARKETING_AI_PROVIDER_POLICY_APPROVED = False

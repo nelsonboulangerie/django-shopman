@@ -28,6 +28,23 @@ do Surfaces Gate, então rename de chave no BE reprova o typecheck do FE; (2) o
 atravessa pelas funções de presentation reais — o FE nunca testa contra uma
 forma que o BE não produz mais.
 
+### Marketing v2
+
+Marketing usa geração estrita, não fixture TypeScript manual:
+
+| Artefato | Fonte/consumidor |
+|---|---|
+| `contracts/projections/marketing_v2.schema.json` | schema da projection v2 |
+| `contracts/openapi/marketing_v2.openapi.json` | contrato HTTP OpenAPI 3.1 |
+| `surfaces/marketing-nuxt/app/generated/marketingClient.ts` | cliente Nuxt gerado |
+
+`python manage.py export_marketing_client` grava os três; `--check` compara a saída
+em memória byte a byte com o repositório e é bloqueante no Runtime Gate. O contrato
+cobre painel, detalhe de anúncio e histórico paginado, com ETag, versão, request ID e
+erro estável. Projection v2 não transporta copy de UX, PII ou membership; ações vêm
+resolvidas pelo backend. Rotas e ownership:
+[`marketing-surface-contract.md`](marketing-surface-contract.md).
+
 ## Mudou o contrato de propósito?
 
 ```bash
@@ -43,5 +60,5 @@ consumidor se preciso, e commite **BE + JSON + FE no mesmo PR**. O diff do JSON
 O padrão é por superfície: um módulo gerador no app Django dono da projection,
 um teste consumidor no app Nuxt dono da tela, e os JSONs em
 `contracts/projections/<superficie>_<projection>.json`. Fatia atual:
-`storefront_catalog` e `storefront_product_detail`. Candidatas seguintes:
-`order_tracking`, `pos` (comanda/checkout), `kds`, `order_queue`.
+`storefront_catalog`, `storefront_product_detail` e `marketing_v2`. Candidatas
+seguintes: `order_tracking`, `pos` (comanda/checkout), `kds`, `order_queue`.

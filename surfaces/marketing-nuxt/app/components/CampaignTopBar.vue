@@ -10,23 +10,37 @@ const route = useRoute();
 const section = computed(() =>
   // `/templates` conta como Campanhas: a biblioteca de modelos é vista secundária dela,
   // não seção irmã — o gestor pensa "o que a padaria diz", não "modelos e regras".
-  route.path.startsWith("/campaigns") || route.path.startsWith("/templates") ? "campaigns"
-  : route.path.startsWith("/platforms") ? "platforms"
-  : "board",
+  route.path.startsWith("/campaigns") || route.path.startsWith("/templates")
+    ? "campaigns"
+    : route.path.startsWith("/platforms")
+      ? "platforms"
+      : "board",
 );
 
 const tabs = [
   { to: "/", key: "board", label: "Painel", icon: "lucide:megaphone" },
   // "Campanhas", não "Regras": a entidade é `Campaign`, e a tela tinha um terceiro nome.
-  { to: "/campaigns", key: "campaigns", label: "Campanhas", icon: "lucide:sliders-horizontal" },
+  {
+    to: "/campaigns",
+    key: "campaigns",
+    label: "Campanhas",
+    icon: "lucide:sliders-horizontal",
+  },
   // Plataformas: por onde o anúncio SAI. Não confundir com canal, que é por onde se vende
   // (ADR-020 §10). Era a casa que faltava — sem ela, a config vazava para o painel.
-  { to: "/platforms", key: "platforms", label: "Plataformas", icon: "lucide:share-2" },
+  {
+    to: "/platforms",
+    key: "platforms",
+    label: "Plataformas",
+    icon: "lucide:share-2",
+  },
 ] as const;
 </script>
 
 <template>
-  <header class="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-2.5 print:hidden">
+  <header
+    class="flex shrink-0 items-center gap-3 border-b border-border bg-card px-3 py-2 print:hidden sm:px-4"
+  >
     <RailToggle />
     <div class="h-6 w-px shrink-0 bg-border"></div>
     <!-- min-w-0 + overflow-x-auto: no celular a nav rola DENTRO de si mesma. Sem
@@ -39,14 +53,23 @@ const tabs = [
         v-for="t in tabs"
         :key="t.key"
         :to="t.to"
-        class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-3 text-sm transition-all"
-        :class="section === t.key
-          ? 'bg-card font-semibold text-foreground shadow-sm'
-          : 'text-muted-foreground hover:bg-card/60 hover:text-foreground'"
+        class="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md px-3 text-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        :class="
+          section === t.key
+            ? 'bg-card font-semibold text-foreground shadow-sm'
+            : 'text-muted-foreground hover:bg-card/60 hover:text-foreground'
+        "
       >
-        <Icon :name="t.icon" class="size-4" :class="section === t.key ? 'text-foreground' : 'text-muted-foreground'" />
+        <Icon
+          :name="t.icon"
+          class="size-4"
+          :class="
+            section === t.key ? 'text-foreground' : 'text-muted-foreground'
+          "
+        />
         <span>{{ t.label }}</span>
       </NuxtLink>
     </nav>
+    <MarketingNotificationsBell />
   </header>
 </template>

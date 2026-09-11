@@ -7,6 +7,8 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from shopman.shop.telemetry_redaction import redact_observability_value
+
 _RESERVED_ATTRS = {
     "args",
     "asctime",
@@ -42,18 +44,24 @@ class JsonLogFormatter(logging.Formatter):
             "timestamp": datetime.fromtimestamp(record.created, UTC).isoformat().replace("+00:00", "Z"),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": redact_observability_value(record.getMessage(), key="message"),
         }
 
         for key, value in record.__dict__.items():
             if key in _RESERVED_ATTRS or key.startswith("_"):
                 continue
-            payload[key] = _json_safe(value)
+            payload[key] = _json_safe(redact_observability_value(value, key=key))
 
         if record.exc_info:
-            payload["exception"] = self.formatException(record.exc_info)
+            payload["exception"] = redact_observability_value(
+                self.formatException(record.exc_info),
+                key="exception",
+            )
         if record.stack_info:
-            payload["stack"] = self.formatStack(record.stack_info)
+            payload["stack"] = redact_observability_value(
+                self.formatStack(record.stack_info),
+                key="stack",
+            )
 
         return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 

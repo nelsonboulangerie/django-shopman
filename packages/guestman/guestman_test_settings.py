@@ -11,6 +11,7 @@ DEBUG = True
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.auth",
+    "django.contrib.postgres",
     "rest_framework",
     "django_filters",
     # Etiquetas de cliente (`CustomerTag`) — modelo de tag PRÓPRIO, mas a app do

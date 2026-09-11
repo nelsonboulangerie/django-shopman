@@ -24,6 +24,7 @@ from shopman.shop.models import (
     UserNotification,
 )
 from shopman.shop.services import campaign
+from shopman.shop.services.marketing_contracts import MarketingContractError
 
 pytestmark = pytest.mark.django_db
 
@@ -102,6 +103,20 @@ class TestEvaluate:
         announcement = campaign.evaluate("production_finished", _context(work_order_ref="WO-1"))[0]
         assert announcement.trigger_context["work_order_ref"] == "WO-1"
 
+    def test_degraded_audience_source_never_becomes_an_automatic_zero(self, product, rule):
+        rule.audience_rules = {"favorites": True}
+        rule.requires_approval = False
+        rule.save(update_fields=["audience_rules", "requires_approval"])
+
+        with patch(
+            "shopman.shop.adapters.audience_sources.favorite_customer_refs",
+            side_effect=RuntimeError("source unavailable"),
+        ):
+            assert campaign.evaluate("production_finished", _context()) == []
+
+        assert Announcement.objects.count() == 0
+        assert Directive.objects.filter(topic=ANNOUNCEMENT_PUBLISH).count() == 0
+
 
 # ── trigger_filter ───────────────────────────────────────────────────
 
@@ -160,8 +175,21 @@ class TestContent:
         announcement = campaign.evaluate("production_finished", _context())[0]
         assert announcement.body.startswith("Croissant Tradicional acabou de sair do forno!")
 
-    def test_unknown_variable_becomes_empty(self):
-        assert campaign.render("Olá {{inexistente}}!", {}) == "Olá !"
+    def test_unknown_variable_is_field_addressed(self):
+        with pytest.raises(MarketingContractError) as caught:
+            campaign.render("Olá {{inexistente}}!", {}, field="body")
+
+        assert caught.value.code == "unknown_template_variable"
+        assert caught.value.field_errors == {
+            "body": ("Variável não reconhecida: inexistente.",)
+        }
+
+    def test_malformed_variable_is_rejected(self):
+        with pytest.raises(MarketingContractError) as caught:
+            campaign.render("Olá {{product_name!", {"product_name": "Pão"})
+
+        assert caught.value.code == "malformed_template_variable"
+        assert "body" in caught.value.field_errors
 
     def test_render_never_leaks_raw_placeholders(self, product, rule):
         announcement = campaign.evaluate("production_finished", _context())[0]
@@ -410,7 +438,7 @@ class TestNotifyReviewers:
 
         gestor = User.objects.create_user(username="gestor", password="x")
         gestor.user_permissions.add(
-            Permission.objects.get(codename="manage_campaigns")
+            Permission.objects.get(codename="approve_marketing_announcements")
         )
         announcement = campaign.evaluate("production_finished", _context())[0]
 
@@ -424,13 +452,27 @@ class TestNotifyReviewers:
         assert UserNotification.objects.count() == 0
 
     def test_explicit_notify_users_wins(self, product, rule):
+        from django.contrib.auth.models import Permission
+
         chosen = User.objects.create_user(username="escolhido", password="x")
+        chosen.user_permissions.add(
+            Permission.objects.get(codename="approve_marketing_announcements")
+        )
         User.objects.create_superuser(username="root", password="x")
         rule.notify_users = [chosen.pk]
         rule.save()
 
         campaign.evaluate("production_finished", _context())
         assert list(UserNotification.objects.values_list("user", flat=True)) == [chosen.pk]
+
+    def test_explicit_user_without_capability_does_not_receive_dead_action(self, product, rule):
+        chosen = User.objects.create_user(username="sem-capacidade", password="x")
+        rule.notify_users = [chosen.pk]
+        rule.save()
+
+        campaign.evaluate("production_finished", _context())
+
+        assert UserNotification.objects.count() == 0
 
     def test_auto_post_rule_notifies_nobody(self, product, rule):
         User.objects.create_superuser(username="root", password="x")
@@ -445,6 +487,7 @@ class TestNotifyReviewers:
             campaign.audience_service, "resolve"
         ) as resolve:
             resolve.return_value.summary.return_value = {"total": 43}
+            resolve.return_value.degraded_sources = ()
             campaign.evaluate("production_finished", _context())
         assert "43 cliente(s)" in UserNotification.objects.get().message
 
@@ -509,9 +552,10 @@ class TestContentEditing:
 
         edited = campaign.update_content(announcement.pk, body="Texto do gestor")
         assert edited.content["body"] == "Texto do gestor"
-        # A variação por plataforma acompanha a edição — senão o Instagram
-        # publicaria o texto antigo.
-        assert edited.platform_content
+        # O corpo explícito da plataforma é uma decisão editorial independente.
+        assert edited.platform_content["instagram"]["body"] == (
+            "Croissant Tradicional no forno!"
+        )
 
     def test_hashtags_are_trimmed_and_emptied_out(self, product, rule):
         announcement = campaign.evaluate("production_finished", _context())[0]
@@ -552,11 +596,12 @@ class TestPreview:
         assert result["body"] == f"{product.name} saiu do forno!"
         assert result["product_name"] == product.name
 
-    def test_an_unknown_variable_shows_up_empty(self, product):
-        """⚠️ O achado que a prévia entrega: nome errado NÃO estoura, renderiza vazio."""
-        result = campaign.preview("Oi {{nome_errado}}, chegou!", sku=product.sku)
+    def test_an_unknown_variable_blocks_preview_at_the_field(self, product):
+        with pytest.raises(MarketingContractError) as caught:
+            campaign.preview("Oi {{nome_errado}}, chegou!", sku=product.sku)
 
-        assert result["body"] == "Oi , chegou!"
+        assert caught.value.code == "unknown_template_variable"
+        assert "body" in caught.value.field_errors
 
     def test_without_a_sku_it_picks_a_real_product(self, product):
         """Prévia que exige SKU de cabeça não é usada. E ela diz qual escolheu."""
@@ -568,7 +613,7 @@ class TestPreview:
     def test_the_ai_is_never_called(self, product, monkeypatch):
         """⚠️ Gerar texto a cada tecla gastaria chamada para jogar fora.
 
-        `use_ai` só INFORMA a tela; quem pede sugestão é o botão de reescrever.
+        `use_ai` só INFORMA a tela; quem pede sugestão é o botão explícito da revisão.
         """
         from shopman.shop.services import copy_assist
 
@@ -604,3 +649,68 @@ class TestPreview:
         result = campaign.preview("{{link}}", sku=product.sku, promotion_ref="semana")
 
         assert "/oferta/semana" in result["body"]
+
+    def test_batch_uses_one_fact_snapshot_and_exact_platform_variants(
+        self, product, monkeypatch
+    ):
+        from shopman.shop.models import NotificationTemplate
+        from shopman.shop.services.manychat_flows import FlowCatalog
+
+        NotificationTemplate.objects.create(
+            event="announcement_published",
+            subject="x",
+            body="y",
+            whatsapp_flow_ns="content_preview_flow",
+            version=3,
+        )
+        checked_at = timezone.now()
+        monkeypatch.setattr(
+            "shopman.shop.services.manychat_flows.flow_catalog",
+            lambda **kwargs: FlowCatalog(
+                flows=(("content_preview_flow", "Campanha geral"),),
+                state="fresh",
+                checked_at=checked_at,
+                facts_as_of=checked_at,
+                fresh_until=checked_at + timedelta(minutes=5),
+                catalog_hash="a" * 64,
+            ),
+        )
+        result = campaign.preview_platforms(
+            "Base {{product_name}}",
+            sku=product.sku,
+            platforms=("instagram", "whatsapp"),
+            platform_content={
+                "instagram": {
+                    "body": "Instagram {{product_name}} por {{price}}",
+                    "hashtags": ["insta"],
+                },
+                "whatsapp": {
+                    "body": "WhatsApp {{product_name}}",
+                    "template_name": "fornada",
+                },
+            },
+        )
+
+        instagram = result["previews"]["instagram"]["artifact"]
+        whatsapp = result["previews"]["whatsapp"]["artifact"]
+        assert instagram["body"] == "Instagram Croissant Tradicional por R$ 8,50"
+        assert instagram["hashtags"] == ["insta"]
+        assert whatsapp["body"] == "WhatsApp Croissant Tradicional"
+        assert whatsapp["provider_fields"] == {"template_name": "fornada"}
+        assert whatsapp["flow_ref"] == "content_preview_flow"
+        assert result["previews"]["whatsapp"]["flow"] == {
+            "configured": True,
+            "name": "Campanha geral",
+            "version": 3,
+            "catalog_as_of": checked_at.isoformat(),
+        }
+        assert (
+            instagram["facts_hash"]
+            == whatsapp["facts_hash"]
+            == result["facts"]["source_hash"]
+        )
+        assert (
+            instagram["facts_as_of"]
+            == whatsapp["facts_as_of"]
+            == result["facts"]["as_of"]
+        )

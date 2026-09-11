@@ -202,6 +202,21 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   - **NUNCA**: `onclick="..."`, `onchange="..."`, `document.getElementById`, `classList.toggle/add/remove` em templates. Usar `@click`, `x-show`, `x-data`, `x-text`, `$store`.
   - **Exceção**: IntersectionObserver e APIs do browser que não têm equivalente Alpine (geolocation, clipboard, service worker).
 - **Tempo real por SSE (cross-surface, site-wide)**: sempre que houver estado que muda no servidor e importa na tela (acompanhamento, estoque, verificação, KDS, badges), preferir **push por SSE** em vez de depender de polling. O SSE é camada de push sobre um **fetch canônico** que continua sendo a fonte da verdade (no evento, refaça o fetch REST); o **poll fica só como fallback** em cadência calma. Canais nomeados + permissão no `ShopmanChannelManager`, proxy same-origin no BFF via `server/utils/eventStream.ts` (`proxyEventStream`). Ver [ADR-016](docs/decisions/adr-016-sse-first-realtime.md).
+- **Envelope de segurança das surfaces de operador**: CSP/cache/security do HTML, BFF,
+  erros e SSE é capability compartilhada e **opt-in** do `operator-kit`, nunca arquivos
+  copiados nem ativação implícita em todos os consumers. O Marketing é o piloto; não o
+  enfraqueça para imitar apps ainda não migrados. Vite HMR pode liberar somente
+  `style-src-elem` via `import.meta.dev`; `script-src` continua nonce-only e produção
+  estrita. Antes de habilitar outro app, inventarie recursos externos, use allowlist
+  mínima por diretiva e rode testes do kit + consumer. POS (Maps/ViaCEP) e Storefront
+  exigem tratamento específico. Ver [ADR-026](docs/decisions/adr-026-operator-surface-security-envelope.md)
+  e o follow-up `SEC-SURF-001`.
+- **Marketing tem um contrato factual único**: antes de alterar cockpit, rotas, projeções,
+  permissões, canais ou deploy, leia
+  [docs/reference/marketing-surface-contract.md](docs/reference/marketing-surface-contract.md).
+  Nuxt é o único cockpit; Admin é auditoria agregada; Instagram/Facebook/Google são
+  publicação pública e WhatsApp é mensagem direta. Rode `make marketing-docs` para
+  impedir deriva entre documentação, rotas e probes.
 
 ## Admin/Unfold — Regra de Canonicidade
 
