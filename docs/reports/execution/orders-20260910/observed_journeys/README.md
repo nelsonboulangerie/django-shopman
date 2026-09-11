@@ -40,3 +40,13 @@ pedido remoto foi atualizado no caminho existente, com responsabilidade por
 papel (nomes/SLA dependem G01/G03). Nenhum alerta pessoal/audiência novo foi criado.
 Sem migration. Rollback do relatório apaga apenas artefatos derivados; preservar
 logs/chaves/livros de acordo com G08, sem cleanup automático.
+
+Atualização do sumarizador em 11/09: contagem por classe de endpoint/método/status
+com allowlist das39 rotas e4 entradas de sessão. Classe não reconhecida vira
+other, nunca label arbitrário. Presença/ausência de request_id é contada sem
+exportar o identificador. Três testes passaram, incluindo não vazar texto/ref e
+não contar receipt como nova aplicação. endpoint-summary.json reprocessa a mesma
+rodada ddd8f981a; não é uma nova execução do produto nem mede a versão atual.
+Draft/refresh supervisionados receberam colunas explícitas no CSV do piloto;
+campos vazios são não observados. Nenhuma telemetria de sucesso foi enviada ao
+endpoint client-error, nenhuma coleta de pessoas ou persistência nova.

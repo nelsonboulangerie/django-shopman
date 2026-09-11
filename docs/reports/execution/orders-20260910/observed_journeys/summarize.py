@@ -7,6 +7,51 @@ from datetime import datetime
 from pathlib import Path
 
 OUTCOMES = {"applied", "not_applied", "unknown", "in_progress", "transport_unknown", "read", "unclassified"}
+OPERATIONS = {
+    "CatalogAiAssistView",
+    "CatalogBulkPriceView",
+    "CatalogBulkView",
+    "CatalogCellView",
+    "CatalogMatrixView",
+    "CatalogProductDetailView",
+    "CatalogProductView",
+    "CatalogPromiseView",
+    "CatalogReorderCollectionsView",
+    "CatalogReorderItemsView",
+    "CatalogResyncView",
+    "CatalogSocialView",
+    "CatalogSyncStatusView",
+    "FeedActiveView",
+    "FeedBoardView",
+    "FeedCollectionsView",
+    "FeedRotationView",
+    "OperatorLockView",
+    "OperatorLoginView",
+    "OperatorSessionView",
+    "OperatorUnlockView",
+    "OrderAdvanceView",
+    "OrderAssignView",
+    "OrderCancelView",
+    "OrderCancellationReasonsView",
+    "OrderCommentView",
+    "OrderConfirmView",
+    "OrderCourierCancelView",
+    "OrderCourierDispatchView",
+    "OrderCourierQuoteView",
+    "OrderDetailView",
+    "OrderEquipmentBackView",
+    "OrderNotesView",
+    "OrderQueueView",
+    "OrderRejectView",
+    "OrderRequeueFiscalView",
+    "OrderResendPaymentLinkView",
+    "OrderSettleDeliveryCashView",
+    "OrderTicketBatchEscposView",
+    "OrderTicketBatchView",
+    "OrderTicketEscposView",
+    "OrderUnassignView",
+    "ProductPromiseView",
+}
 METHODS = {"GET", "POST", "PATCH", "PUT", "DELETE"}
 STATES = {"started", "unknown", "accepted", "skipped", "failed", "not_applied"}
 
@@ -48,6 +93,9 @@ def summarize(lines):
             status = row.get("response_status")
             bucket = str(status) if status in {401, 403, 409, 422, 500, 503} else "other"
             counters[f"status.{bucket}"] += 1
+            operation = row.get("operation") if row.get("operation") in OPERATIONS else "other"
+            counters[f"endpoint.{operation}.{method}.{bucket}"] += 1
+            counters[f"trace.{('present' if row.get('request_id') else 'missing')}"] += 1
             value = row.get("view_elapsed_ms")
             if isinstance(value, int | float) and math.isfinite(value) and value >= 0:
                 latency[method].append(value)

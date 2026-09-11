@@ -42,6 +42,12 @@ legítima inicial não é R. Login, confirmação, segunda assinatura e entradas
 obrigatórias ficam separados para análise **e incluídos no total**. Registrar espera
 remota separadamente; não remover abandono ou recuperação da distribuição.
 
+Os quatro contadores draft/refresh ao final do CSV são observações explícitas:
+restaurado sem redigitar, perdido, leitura stale observada e resposta descartada.
+Deixar vazio quando não foi observado; zero só após verificar o cenário.
+Conferir descarte de resposta com trace do ensaio, sem inferi-lo de uma tela igual.
+São coleta supervisionada, não telemetria automática já instalada no produto.
+
 No instante da falha, perguntar sem explicar antes: “O que ocorreu?”, “O que falta?”
 e “Como continuar?”. Registrar resposta/classificação sem texto sensível. Exigir
 ≥95% de acerto e 100% nos casos de dinheiro, cancelamento e unknown. Qualquer erro

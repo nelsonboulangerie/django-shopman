@@ -1608,3 +1608,13 @@ reload de nota/comentário/motivo protegido e busy impedindo fechamento do modal
 preparação falha e limites em reason_discard/. R=0 no escopo ensaiado; nenhum
 comando de cancelamento na nova jornada, estado canônico conservado.
 Sem migration/efeito real; rollback visual/comportamental não mexe em livros.
+
+### WP00/WP08 — mapa de consumidores e placar por endpoint
+
+contract_inventory/ registra39 rotas, hashes e47 usos diretos de recibo/merge;
+matriz por fonte, política, fixture, owner/rollback e D/H/G→C→WP. AST não prova
+execução de aliases/fornecedores. Fonte8318b9b03, nenhuma alteração de runtime.
+Sumarizador de eventos passa a contar endpoint/status e correlação com labels
+limitados;3 testes passaram. Reprocessa eventos sintéticos ddd8f981a, sem nova
+rodada ou ganho de campo alegado. CSV do piloto distingue contadores observados
+de campos vazios; não instala coleta silenciosa de texto. Sem migration.

@@ -20,6 +20,17 @@ class SummaryTests(unittest.TestCase):
         self.assertNotIn("SECRET", json.dumps(result))
         self.assertNotIn("synthetic-key", json.dumps(result))
 
+    def test_endpoint_labels_are_bounded_and_missing_trace_is_not_zero(self):
+        common = {"timestamp": "2026-09-11T00:00:00Z", "event": "operator.request.finished", "method": "POST", "response_status": 403}
+        rows = [{**common, "operation": "OrderCancelView", "request_id": "SECRET-ID"},
+                {**common, "operation": "SECRET-CUSTOMER-PATH"}]
+        result = summarize(map(json.dumps, rows))
+        self.assertEqual(result["counters"]["endpoint.OrderCancelView.POST.403"], 1)
+        self.assertEqual(result["counters"]["endpoint.other.POST.403"], 1)
+        self.assertEqual(result["counters"]["trace.missing"], 1)
+        self.assertEqual(result["counters"]["trace.present"], 1)
+        self.assertNotIn("SECRET", json.dumps(result))
+
     def test_known_acceptance_clears_only_the_observed_pending_effect(self):
         rows = [
             {"timestamp": "2026-09-11T00:00:00Z", "event": "operator.effect.state", "directive_id": 1, "effect_state": "started"},
