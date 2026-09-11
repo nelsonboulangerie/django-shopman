@@ -119,7 +119,7 @@ def recent_history(*, limit: int = 20) -> list[Order]:
     )
 
 
-def confirm_order(order: Order, *, actor: str) -> None:
+def confirm_order(order: Order, *, actor: str, expected_revision: str | None = None) -> None:
     """Confirm a manually accepted order.
 
     Guard + transição rodam na MESMA transação com lock: o guard reavalia o
@@ -130,6 +130,8 @@ def confirm_order(order: Order, *, actor: str) -> None:
 
     with transaction.atomic():
         locked = Order.objects.select_for_update().get(pk=order.pk)
+        if expected_revision is not None and operational_revision(locked) != expected_revision:
+            raise OrderStateConflict("O pedido mudou. Confira os dados antes de aceitar.")
         if locked.status != Order.Status.NEW:
             raise OrderStateConflict(
                 "Pedido não está mais aguardando confirmação "
@@ -1002,6 +1004,7 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
         actions.append(Action(
             ref="confirm", kind="mutation", label="Aceitar", priority="primary",
             enabled=not reason, reason=reason, method="POST", idempotency="required",
+            payload_schema={"base_revision": operational_revision(order)},
         ))
         actions.append(Action(
             ref="reject", kind="mutation", label="Recusar", priority="danger",

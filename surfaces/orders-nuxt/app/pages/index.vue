@@ -98,12 +98,14 @@ function toggleSelectAll() {
 const confirmableSel = computed(() => bulkableRefs(allCards.value, selected.value, "confirm"));
 const advanceableSel = computed(() => bulkableRefs(allCards.value, selected.value, "advance"));
 async function bulkConfirm() {
-  await confirmMany(confirmableSel.value);
-  clearSelection();
+  const targets = confirmableSel.value.filter((ref) => !isBusy(ref));
+  await confirmMany(targets);
+  selected.value = new Set([...selected.value].filter((ref) => !targets.includes(ref) || actionError(ref)));
 }
 async function bulkAdvance() {
-  await advanceMany(advanceableSel.value);
-  clearSelection();
+  const targets = advanceableSel.value.filter((ref) => !isBusy(ref));
+  await advanceMany(targets);
+  selected.value = new Set([...selected.value].filter((ref) => !targets.includes(ref) || actionError(ref)));
 }
 
 // sort menu (house pattern: button + backdrop + absolute panel).

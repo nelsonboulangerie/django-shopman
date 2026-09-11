@@ -256,7 +256,7 @@ export function useOrdersBoard() {
     clearActionError(ref_); // a fresh attempt clears the previous reason
     busy.value = new Set(busy.value).add(ref_);
     try {
-      if (["advance", "notes", "assign", "unassign"].includes(action)) {
+      if (["confirm", "advance", "notes", "assign", "unassign"].includes(action)) {
         const card = [...zones.value.flatMap((zone) => zone.cards), ...(queue.value?.preorders ?? [])].find((item) => item.ref === ref_);
         await intentions.execute(ref_, action, card?.actions?.find((item) => item.ref === action), body ?? {});
       } else {
@@ -334,7 +334,8 @@ export function useOrdersBoard() {
     await Promise.all(
       targets.map(async (r) => {
         try {
-          await $fetch(`/api/v1/backstage/orders/${encodeURIComponent(r)}/${action}/`, { method: "POST", body: {} });
+          const card = [...zones.value.flatMap((zone) => zone.cards), ...(queue.value?.preorders ?? [])].find((item) => item.ref === r);
+          await intentions.execute(r, action, card?.actions?.find((item) => item.ref === action), {});
         } catch (error) {
           failures += 1;
           setActionError(r, httpErrorMessage(error, "Falha na ação."));

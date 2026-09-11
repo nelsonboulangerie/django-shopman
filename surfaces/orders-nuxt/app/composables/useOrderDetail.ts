@@ -48,7 +48,7 @@ export function useOrderDetail(orderRef: string) {
     busy.value = true;
     mutationError.value = "";
     try {
-      if (["advance", "notes", "assign", "unassign"].includes(action)) {
+      if (["confirm", "advance", "notes", "assign", "unassign"].includes(action)) {
         await intentions.execute(orderRef, action, order.value?.actions?.find((item) => item.ref === action), body ?? {});
       } else {
         await $fetch(`/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/${action}/`, {

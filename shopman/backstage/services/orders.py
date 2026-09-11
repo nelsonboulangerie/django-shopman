@@ -13,9 +13,9 @@ def find_order(ref: str):
     return operator_orders.find_order(ref)
 
 
-def confirm_order(order, *, actor: str):
+def confirm_order(order, *, actor: str, expected_revision: str | None = None):
     try:
-        return operator_orders.confirm_order(order, actor=actor)
+        return operator_orders.confirm_order(order, actor=actor, **({"expected_revision": expected_revision} if expected_revision is not None else {}))
     except OrderStateConflict as exc:
         raise OrderConflict(str(exc)) from exc
     except (ValueError, InvalidTransition) as exc:

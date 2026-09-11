@@ -17,6 +17,7 @@ from shopman.orderman.models import Directive, Order, OrderItem
 
 from shopman.backstage.tests._order_intent import advance_payload, context_payload
 from shopman.shop.models import Shop
+from shopman.shop.services.operator_orders import operational_revision
 
 
 def _manage_orders_perm() -> Permission:
@@ -198,7 +199,7 @@ def test_confirm_conflicts_when_order_already_left_new(client, operator, order):
     # `order` já está CONFIRMED (a auto-confirmação venceu a corrida):
     # conflito de estado responde 409, não 400.
     client.force_login(operator)
-    response = client.post(reverse("api-backstage-order-confirm", args=[order.ref]))
+    response = client.post(reverse("api-backstage-order-confirm", args=[order.ref]), data={"expected_actor_id": operator.pk, "base_revision": operational_revision(order), "idempotency_key": "already-confirmed"}, content_type="application/json")
     assert response.status_code == 409
     assert "não está mais aguardando confirmação" in response.json()["detail"]
 

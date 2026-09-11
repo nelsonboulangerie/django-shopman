@@ -640,3 +640,24 @@ mais recentes foram informadas, sem atualização dos pins. Sem build/deploy de 
 Orders Nuxt após inbox/coalescedor: **240 testes passaram**, typecheck passou; operator-kit
 **228 passaram**. Não somar suites sobrepostas como cenários independentes. Suíte ampla
 shop/backstage/storefront ainda em execução e com falhas a triar; WP09 NÃO concluído.
+
+### WP01/WP02 — confirmação com intenção, incluindo seleção de pedidos
+
+Prova anterior: repetição da mesma chave confirmava uma vez mas devolvia 409 sem recibo;
+cliente sem chave ainda confirmava. Agora Action confirm anuncia a base e API usa o mesmo
+helper de recibo atômico, escopo pessoa/operação/ref e GET puro já usado em contexto/avanço.
+Guard compara revisão sob lock antes da confirmação canônica. Recusas de domínio são
+not_applied; cliente antigo não contorna a exigência. Nenhuma nova máquina de estados.
+
+Board/detalhe usam transporte de intenção existente. actMany também usa uma intenção por
+ref; página conserva selecionadas as falhas, retirando somente resultados conhecidos.
+Não há atomicidade fictícia entre pedidos. Confirmação e permissões existentes preservadas.
+
+**32 testes PostgreSQL passaram**, 32 SQLite, **240 testes Orders Nuxt passaram**, typecheck
+passou. As primeiras rodadas detectaram testes antigos sem contrato e um caso tentando
+obter Action confirm de pedido já accepted; atualizado para testar recusa autoritativa com
+intenção explícita. Cinco fixtures frontend também não declaravam Action nem outcome;
+agora modelam o contrato real, mantendo o teste próprio que recusa cliente legado.
+Migração sem DDL; publicar cliente compatível antes de exigir contrato em ambiente autorizado.
+Rollback não pode reabrir confirmação sem intenção; conservar recibos e GET durante G08.
+Concorrência/retomada dos demais comandos e jornadas completas seguem no escopo pendente.

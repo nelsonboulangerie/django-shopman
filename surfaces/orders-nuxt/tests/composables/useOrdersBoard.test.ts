@@ -68,6 +68,8 @@ describe("useOrdersBoard — ações (act)", () => {
   });
 
   it("confirm posta em /orders/{ref}/confirm/ e reconcilia via refresh", async () => {
+    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-1", actions: fixtureActions({ can_confirm: true }) }] } };
+    env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });
     const board = useOrdersBoard();
     const ok = await board.confirm("WEB-1");
     expect(ok).toBe(true);
@@ -87,7 +89,8 @@ describe("useOrdersBoard — ações (act)", () => {
   });
 
   it("falha na ação acende erro inline por-ref + toast, devolve false e reconcilia via refresh", async () => {
-    env.fetchMock.mockRejectedValueOnce({ data: { detail: "Pagamento não confirmado" } });
+    env.fetchMock.mockRejectedValueOnce({ status: 400, data: { detail: "Pagamento não confirmado" } });
+    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-2", actions: fixtureActions({ can_confirm: true }) }] } };
     const board = useOrdersBoard();
     const ok = await board.confirm("WEB-2");
     expect(ok).toBe(false);
@@ -114,10 +117,10 @@ describe("useOrdersBoard — ações (act)", () => {
   });
 
   it("uma nova tentativa limpa o erro anterior do ref", async () => {
-    env.fetchMock.mockRejectedValueOnce({ data: { detail: "boom" } });
+    env.fetchMock.mockRejectedValueOnce({ status: 400, data: { detail: "boom" } });
     env.fetchData.value = { queue: { ...emptyZone(), prep: [{ ref: "WEB-3", actions: fixtureActions({ can_advance: true }) }] } };
     const board = useOrdersBoard();
-    await board.confirm("WEB-3");
+    await board.advance("WEB-3");
     expect(board.actionError("WEB-3")).toBe("boom");
     env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });
     await board.advance("WEB-3");
@@ -148,9 +151,10 @@ describe("useOrdersBoard — bulk + reasons", () => {
 
   it("actMany dispara todos, reconcilia UMA vez e conta falhas", async () => {
     env.fetchMock
-      .mockResolvedValueOnce({})
-      .mockRejectedValueOnce({ data: { detail: "x" } })
-      .mockResolvedValueOnce({});
+      .mockResolvedValueOnce({ outcome: "applied" })
+      .mockRejectedValueOnce({ status: 400, data: { detail: "x" } })
+      .mockResolvedValueOnce({ outcome: "applied" });
+    env.fetchData.value = { queue: { ...emptyZone(), intake: ["WEB-1", "WEB-2", "WEB-3"].map(ref => ({ ref, actions: fixtureActions({ can_confirm: true }) })) } };
     const board = useOrdersBoard();
     const failures = await board.confirmMany(["WEB-1", "WEB-2", "WEB-3"]);
     expect(failures).toBe(1);

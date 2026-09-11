@@ -1576,8 +1576,10 @@ class _OrderActionBase(APIView):
         def apply():
             try:
                 extra = execute(base) or {}
-            except OrderStateConflict as exc:
+            except (OrderStateConflict, OrderConflict) as exc:
                 return {"detail": str(exc), "outcome": "not_applied", "intention": key}, 409
+            except OrderError as exc:
+                return {"detail": str(exc), "outcome": "not_applied", "intention": key}, 400
             return {"ok": True, "ref": order.ref, "outcome": "applied", "intention": key, **extra}, 200
 
         try:
@@ -1721,17 +1723,14 @@ class OrderAdvanceView(_OrderActionBase):
     ),
 )
 class OrderConfirmView(_OrderActionBase):
+    intention_operation = "confirm"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        try:
-            orders_service.confirm_order(order, actor=_actor(request))
-        except OrderConflict as exc:
-            return Response({"detail": str(exc)}, status=409)
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Falha ao aceitar o pedido."}, status=400)
-        return Response({"ok": True, "ref": ref})
+        return self._context_response(request, order, "confirm", {},
+            lambda base: orders_service.confirm_order(order, actor=_actor(request), expected_revision=base))
 
 
 @extend_schema_view(

@@ -19,6 +19,8 @@ describe("useOrderDetail", () => {
   });
 
   it("confirm posta em /orders/{ref}/confirm/ e reconcilia via refresh", async () => {
+    env.fetchData.value = { order: { ref: "WEB-1", actions: fixtureActions({ can_confirm: true }) } };
+    env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });
     const d = useOrderDetail("WEB-1");
     expect(await d.confirm()).toBe(true);
     expect(String(env.fetchMock.mock.calls[0]![0])).toBe("/api/v1/backstage/orders/WEB-1/confirm/");
@@ -65,7 +67,8 @@ describe("useOrderDetail", () => {
   });
 
   it("falha → toast do detalhe do servidor + false", async () => {
-    env.fetchMock.mockRejectedValueOnce({ data: { detail: "Pagamento pendente" } });
+    env.fetchMock.mockRejectedValueOnce({ status: 400, data: { detail: "Pagamento pendente" } });
+    env.fetchData.value = { order: { ref: "WEB-4", actions: fixtureActions({ can_confirm: true }) } };
     const d = useOrderDetail("WEB-4");
     expect(await d.confirm()).toBe(false);
     expect(env.sonner.error).toHaveBeenCalledWith("Pagamento pendente");
