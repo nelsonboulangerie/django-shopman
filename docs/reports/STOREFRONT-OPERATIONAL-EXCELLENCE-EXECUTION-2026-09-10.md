@@ -57,6 +57,30 @@ Os diagnósticos originais são assertivas de reprodução do defeito, portanto 
 
 D01–D06 continuam sem aprovação humana. Donos acima são papéis propostos, não pessoas designadas. Preservar opt-out canônico não inventa política de consentimento. A retenção provisória protege recibos com fingerprint já finalizados/em curso contra limpeza por idade; a janela definitiva, saneamento, unicidade de legado e contração dependem D03. Copy/budgets/coortes/plantão dependem das decisões do plano.
 
+### Pacote de decisão pronto para aprovação
+
+As propostas abaixo consolidam D01–D06 sem criar contrato, regra ou fonte de verdade adicional. A aprovação deve ser registrada nesta seção; autorização de decisão não autoriza produção, rollout, mensagens, cobranças ou transações reais.
+
+| Decisão | Recomendação concreta | Dado humano ainda necessário |
+|---|---|---|
+| D01 · Produto/operação | Adotar os budgets do §6 do plano: feedback local p95 ≤100 ms; estado pendente acessível ≤300 ms; mutação local p95 ≤1,5 s; reconciliação consultável ≤5 s depois de backend/recibo disponível; fallback de tracking ≤30 s. Ao detectar dependência remota indisponível, em até 2 s manter a mesma tentativa e usar a copy canônica já implementada: “A confirmação ainda está em consulta. Mantenha esta tentativa.” | Quem responde por produto/operação e seu aceite. |
+| D02 · Dono/operação | Preservar adição direta quando explicitamente rotulada. Resultado parcial nomeia adicionados e faltantes; zero itens e erro técnico não são sucesso. Troca de sacola, SKU, substituto ou pontos sempre exige escolha explícita. Janela, prazo e suporte continuam vindo da configuração canônica. | Quem responde pela operação e seu aceite das regras comerciais. |
+| D03 · Privacidade/marketing | Revogação global posterior prevalece sobre inscrição específica e silencia envio/retry; falha ao consultar elegibilidade também silencia. Novo opt-in exige escolha inequívoca; histórico não é reinterpretado. Recibos vinculados e claims incertos permanecem protegidos de limpeza por idade até reconciliação e janela aprovadas; o default de sete dias continua apenas para recibos descartáveis. | Prazo definitivo de retenção e responsáveis por privacidade/marketing. A política pública deve ser conferida com esse prazo antes de exposição. |
+| D04 · Core/pagamento/estoque | Aprovar C01–C06 e o diff testado: Session/Order/IdempotencyKey/Directive e serviços de domínio continuam canônicos; não há bypass, ledger ou estado financeiro paralelo. Resultado remoto desconhecido exige consulta/reconciliação antes de retry. | Aceite dos responsáveis por Core, pagamento e estoque. |
+| D05 · Produto/pesquisa | Piloto humano apenas simulado, com 8–12 participantes, fixtures sintéticas, ordem base/candidata contrabalançada e pelo menos uma observação de cada J01–J16. Incluir novo/recorrente, convidado/aparelho confiável, aparelho compartilhado, WhatsApp simulado, um percurso com VoiceOver e um com TalkBack. | Responsável pela pesquisa, participantes e dispositivos; consentimento específico caso se grave vídeo. |
+| D06 · Operação/release | Adotar as paradas do plano: qualquer duplicidade não reconciliada, valor não confirmado, PII cruzada, opt-out violado ou ação financeira bem-sucedida apresentada como falha interrompe exposição. Degradação repetida de budget, ajuda ou abandono impede expansão. Após resultado humano e nova autorização, progressão proposta: coorte pequena → 25% → 50% → 100%, mínimo de 48 h e 30 jornadas elegíveis por etapa. | Responsáveis nominais por plantão, release e reconciliação; cada piloto real/etapa continua exigindo autorização explícita. |
+
+**Registro de decisão:** pendente. Forma mínima de aceite: `Aprovo D01–D06 como proposto; retenção = ___ dias; responsáveis: produto/operação = ___, privacidade/marketing = ___, Core/pagamento/estoque = ___, pesquisa = ___, plantão/release/reconciliação = ___.` Uma mesma pessoa pode ocupar mais de um papel. Se quem responde não tiver autoridade sobre algum domínio, registrar somente os papéis autorizados e manter os demais pendentes.
+
+### Protocolo de observação humana preparado
+
+1. Usar somente o ambiente isolado e fixtures sintéticas. Alternar qual versão vem primeiro e não explicar a interface antes da tentativa.
+2. Distribuir J01–J16 entre 8–12 participantes, cobrindo cada jornada ao menos uma vez. Todos respondem, após estados confirmado, parcial e indeterminado: “foi pedido/pago?”, “o que faltou?” e “como continuar?”. Não forçar falha de cobrança real.
+3. Em cada tentativa registrar versão, jornada, dispositivo, leitor de tela quando aplicável, conclusão, abandono, ajuda, tempo ativo e A/T/M/N/R. Anotações não contêm nome, telefone, endereço, OTP, pagamento, cookies ou chaves. Vídeo é opcional e requer consentimento específico.
+4. No VoiceOver e no TalkBack, verificar ordem do foco, nome/estado dos controles, anúncio de erro/pendência/resultado e conclusão da próxima ação sem referência visual. Teclado, zoom e storage negado já têm prova automatizada, mas continuam no roteiro humano de J16.
+5. Aprovação do piloto exige ≥90% de conclusão sem ajuda e ≥90% de respostas corretas às três perguntas, além dos budgets de cada jornada. Qualquer compreensão financeira grave, PII cruzada, opt-out violado ou duplicidade não reconciliada reprova a expansão.
+6. Registrar os resultados e limites da amostra neste mesmo relatório. Ausência de evento, observação ou resposta conta como dado ausente; nunca como sucesso. A amostra é qualitativa e não sustenta alegação populacional.
+
 ## Medição e observabilidade
 
 O ensaio sintético de 24 alterações de quantidade por Django test client teve 24 sucessos em SQLite e em PostgreSQL. Na candidata PostgreSQL, p95 foi 36,41 ms e máximo 456,54 ms. As execuções não têm carga controlada e **não são comparação causal**; não medem feedback visual de 100 ms nem experiência humana. Cada amostra ficou abaixo de 1.500 ms. A/T/M/N/R, conclusão sem ajuda e compreensão financeira: **não medidos**, nunca zero presumido.
