@@ -1,0 +1,6 @@
+
+> typecheck
+> NUXT_SHOPMAN_ENVIRONMENT=development nuxi typecheck
+
+✔ Nuxt Icon discovered local-installed 1 collections: lucide
+ℹ Nuxt Icon client bundle consist of 59 icons with 16.34KB(uncompressed) in size

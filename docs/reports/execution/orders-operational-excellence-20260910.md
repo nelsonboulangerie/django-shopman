@@ -2,6 +2,9 @@
 
 Estado: execução técnica em andamento; piloto e rollout não autorizados nem executados.
 
+Consolidação atual: [CURRENT-STATUS.md](orders-20260910/CURRENT-STATUS.md).
+As entradas seguintes preservam cronologia, inclusive estados parciais antigos.
+
 ## Proveniência
 
 Worktree exclusivo: `/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910`.
@@ -1546,3 +1549,13 @@ Snapshot readonly chama sweep_stuck_orders em dry-run:38 fases incompletas
 sintéticas, limiar padrão15min; sem reexecutar ou criar Directive. Não são
 incidentes operacionais. Fonte/limites canonical_scoreboard; docstring do
 comando corrigida para refletir durabilidade atual, sem alterar comportamento.
+
+### WP09 — dez superfícies e cores canônicos
+
+2459 Vitest nas10 superfícies;9 typechecks aprovados (kit não tem script).
+2646 casos nos12 cores/21skip/2subtests;96 agente balcão/1skip Linux-only.
+Preparação global incorreta dos cores falhou e foi substituída pelo runner por
+pacote exigido no Makefile, sem adaptar regras. Logs e limites final_gates/.
+CURRENT-STATUS consolida pacotes, D/H, esforço, migrations/rollback e gates.
+T permanece em andamento; budgets grandes e outros aceites explicitados não
+foram encerrados por estes testes. Sem efeito real ou migration neste incremento.

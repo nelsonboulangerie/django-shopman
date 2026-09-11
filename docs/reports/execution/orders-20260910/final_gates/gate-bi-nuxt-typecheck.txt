@@ -1,0 +1,6 @@
+
+> typecheck
+> nuxi typecheck
+
+[nuxt:icon] ✔ Nuxt Icon discovered local-installed 1 collections: lucide
+ℹ Nuxt Icon client bundle consist of 39 icons with 11.15KB(uncompressed) in size
