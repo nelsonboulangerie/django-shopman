@@ -1218,3 +1218,24 @@ WP07/T não encerrados; G06 permanece pendente. Não se aumentou a meta.
 
 Migração: nenhuma. Rollback retorna apenas resolução/serialização anterior,
 sem tocar livros/recibos. Nenhum dado, ação, permissão ou confirmação retirado.
+
+### WP07 — hipótese de renderização refutada no ensaio
+
+Após otimizar backend, 20 páginas com build 4b265ca86: navegador p50 2131,5 ms,
+p95 2473 ms. Experimento apenas no harness (CSS injetado antes do documento,
+`content-visibility:auto`/tamanho intrínseco por article): 20 páginas p50 2895 ms,
+p95 3179 ms. Ambos funcionais passaram; a hipótese de melhora foi refutada neste
+ambiente. **Nenhum CSS dessa alternativa foi incluído na aplicação.** O patch do
+experimento e as distribuições foram preservados em `read_work/` para reprodução;
+o harness padrão voltou ao conteúdo anterior.
+
+Referência técnica consultada: [MDN content-visibility](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/content-visibility).
+A propriedade auto permite adiar layout/pintura mantendo foco e acesso ao
+conteúdo; também exige cuidado com descendentes intencionalmente ocultos. Essa
+possibilidade não substitui medir o aplicativo nem comprova acessibilidade por
+leitor de tela. Aqui não houve ganho, portanto não se adotou a alternativa.
+
+G06 continua sem aprovação; 500/dez clientes e renderização de 500 não atendem
+aos budgets propostos. Evidência não autoriza diminuir a meta, restringir coorte
+por conta própria ou declarar WP07/T concluído. Pacotes técnicos independentes
+continuam; não há autorização de piloto/rollout.
