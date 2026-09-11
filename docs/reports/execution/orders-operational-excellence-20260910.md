@@ -699,3 +699,26 @@ PostgreSQL amplo: 8.494 passed, 61 failed, 16 errors, 35 skipped, 26 deselected.
 SQLite amplo no HEAD `6a8daa373`: 8.551 passed, 8 failed, 56 skipped, 28 subtests, 585,14 s. A triagem dos cinco módulos passou integralmente: **178 passed, 10 subtests**. Cinco testes de cancelamento usavam objetos simulados sem banco, incompatíveis com a leitura sob lock; agora verificam persistência real e ator/motivo. Dois subtestes falhavam na serialização xdist de Path/Enum; somente os parâmetros de diagnóstico viraram strings. A cópia auditada local confundia o scanner do gate: foi movida para `/Users/pablovalentini/Dev/Claude/.codex-worktrees/orders-audit-base-5a3383c9`, fora da árvore de código, sem relaxar o gate. Logs originais preservados no laboratório. Migração: nenhuma. Rollback: revert dos ajustes de teste; não remover locks do cancelamento.
 
 Feed: a versão final do watcher foi reexecutada, **241 testes Orders aprovados** (`feed-final-unit.txt`).
+
+### WP07 — fila rica: leituras Payman e ChannelConfig em lote
+
+Evidência anterior reproduzida: 10 pedidos, 3 itens fracionados e 6 eventos cada, pagamento capturado, Hold planejado e contexto de entrega geravam **50 consultas Payman**. Depois de corrigir somente Payman, 500 pedidos ainda faziam 457 consultas; a segunda testemunha isolou **9 leituras Channel para 10 pedidos**. Não era uma hipótese baseada só no plano.
+
+Implementação: `PaymentService.read_many` agrega os mesmos tipos de transação canônicos em uma instrução SQL. A projeção fornece observações explícitas aos mesmos guards; não grava cache no Order, não usa estado global e não envia observações ao comando. ChannelConfig é resolvido uma vez por canal na requisição, pela cascata existente. Falha de leitura financeira continua `unknown`, sem confiar no status embutido. O tratamento vigente de chargeback não foi modificado neste pacote de desempenho; sua adequação operacional ainda exige a matriz H03.
+
+Testes: **78 passed + 13 subtests** no PostgreSQL (fila/Actions/gates), **4 passed** de isolamento SQLite, Payman canônico **189 passed, 2 skipped, 2 subtests**. Provas: 100 intents com múltiplas transações concordam com as somas individuais; estorno posterior ao snapshot bloqueia a próxima ação; alteração do canal posterior à leitura é relida na confirmação; intent ausente/falha permanece desconhecido.
+
+Ensaio sintético `rich_queue_assay.py`, PostgreSQL local, 20 amostras por cenário, projeção + JSON (não HTTP), cache do processo aquecido:
+
+| Pedidos | Consultas | p50 ms | p95 ms |
+| --- | ---: | ---: | ---: |
+| 1 | 7 | 4,17 | 4,69 |
+| 10 | 8 | 7,57 | 7,92 |
+| 100 | 8 | 38,63 | 44,76 |
+| 500, um leitor | 8 | 171,24 | 238,82 |
+| 500, dois leitores concorrentes | 8 | 402,41 | 454,18 |
+| 500, dez leitores concorrentes | 8 | 1.826,04 | 3.071,05 |
+
+Em 500 pedidos, após apenas o lote Payman o p95 era 453,87/718,30/4.061,02 ms (1/2/10 leitores); resolver canais uma vez reduziu esses valores, sem mudar os 1,6 MB aproximados da resposta. A testemunha inicial de 10 pedidos rodou junto da suíte ampla: sua latência não é comparação controlada. A primeira preparação falhou por ausência de `Hold.target_date`; fixture corrigida, sem mascarar o erro. Os dois ensaios finais completos estão arquivados com todas as amostras, primeira leitura e contagem por tabela. Dez threads compartilham um processo Python; não equivalem a dez dispositivos nem a um pool de servidores. **Budget concorrente de 500 ms não demonstrado para dez clientes; HTTP/BFF/render e campo permanecem pendentes.** R e A não mudam por este ajuste; nenhuma confirmação foi retirada.
+
+Migração: nenhuma, nenhuma tabela ou configuração nova. Rollback: revert deste commit volta às leituras individuais; recibos, histórico e regras permanecem íntegros. Nenhum efeito financeiro, fiscal ou externo foi executado.

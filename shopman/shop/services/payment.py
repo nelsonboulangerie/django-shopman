@@ -923,7 +923,19 @@ def cancel_stale_intents(order, *, keep_intent_ref: str) -> int:
         return 0
 
 
-def get_payment_status(order) -> str | None:
+def read_payments_for(orders):
+    """Batch observation for projections only; no model attributes or shared cache."""
+    from shopman.payman import PaymentService
+
+    refs = {(order.data.get("payment") or {}).get("intent_ref") for order in orders}
+    try:
+        return PaymentService.read_many(ref for ref in refs if ref)
+    except Exception:
+        logger.warning("payment.batch_read_failed", exc_info=True)
+        return {}  # Every referenced intent becomes unknown, never embedded paid.
+
+
+def get_payment_status(order, *, payment_reads=None) -> str | None:
     """
     Retorna o status canônico de pagamento via Payman.
 
@@ -939,6 +951,9 @@ def get_payment_status(order) -> str | None:
     intent_ref = payment_data.get("intent_ref")
     if not intent_ref:
         return embedded_status
+    if payment_reads is not None:
+        observed = payment_reads.get(intent_ref)
+        return observed.status if observed is not None else "unknown"
     try:
         from shopman.payman import PaymentService
 
@@ -963,10 +978,10 @@ def captured_balance_q(order) -> int | None:
     return _payman_captured_balance_q(intent_ref)
 
 
-def has_sufficient_captured_payment(order) -> bool:
+def has_sufficient_captured_payment(order, *, payment_reads=None) -> bool:
     """True when Payman shows captured funds still covering the order total."""
     payment_data = (order.data or {}).get("payment") or {}
-    status = (get_payment_status(order) or "").lower()
+    status = (get_payment_status(order, payment_reads=payment_reads) or "").lower()
     if status not in _PAID_STATUSES | {"refunded"}:
         return False
 
@@ -975,7 +990,11 @@ def has_sufficient_captured_payment(order) -> bool:
         # Compatibility for imported/legacy orders without Payman intent.
         return status in _PAID_STATUSES
 
-    balance_q = _payman_captured_balance_q(intent_ref)
+    if payment_reads is None:
+        balance_q = _payman_captured_balance_q(intent_ref)
+    else:
+        observed = payment_reads.get(intent_ref)
+        balance_q = observed.captured_q - observed.refunded_q if observed is not None else None
     if balance_q is None:
         return False
     return balance_q >= int(getattr(order, "total_q", 0) or 0)

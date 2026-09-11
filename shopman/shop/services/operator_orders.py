@@ -226,7 +226,7 @@ def next_status_for(order: Order) -> str:
     return _NEXT_STATUS_MAP.get(order.status, "")
 
 
-def advance_block(order: Order, *, waitlist_state: str | None = None) -> AdvanceBlock:
+def advance_block(order: Order, *, waitlist_state: str | None = None, payment_reads=None) -> AdvanceBlock:
     """Why advancing is blocked right now, as a code.
 
     Single source for the operator-advance gate: ``advance_order`` raises with
@@ -242,7 +242,7 @@ def advance_block(order: Order, *, waitlist_state: str | None = None) -> Advance
     if not next_status:
         return AdvanceBlock.NO_NEXT_STEP
     if payment_gate.payment_blocks_transition(
-        order, current_status=order.status, target_status=next_status
+        order, current_status=order.status, target_status=next_status, payment_reads=payment_reads
     ):
         return AdvanceBlock.PAYMENT_NOT_CAPTURED
     if order.status == Order.Status.ACCEPTED and _preorder_not_due(order):
@@ -257,9 +257,9 @@ def advance_block_message(bloqueio: AdvanceBlock) -> str:
     return _ADVANCE_BLOCK_MESSAGES.get(bloqueio, "")
 
 
-def advance_block_reason(order: Order, *, waitlist_state: str | None = None) -> str:
+def advance_block_reason(order: Order, *, waitlist_state: str | None = None, payment_reads=None) -> str:
     """A frase que o operador lê, ou '' se ``advance_order`` rodaria agora."""
-    return advance_block_message(advance_block(order, waitlist_state=waitlist_state))
+    return advance_block_message(advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads))
 
 
 @transaction.atomic
@@ -378,12 +378,13 @@ class CourierChange:
 # ── Aparelho que sai com o entregador (maquininha) ─────────────────────────
 
 
-def equipment_options(channel_ref: str) -> list[str]:
+def equipment_options(channel_ref: str, *, channel_config=None) -> list[str]:
     """Os aparelhos que o canal permite levar no despacho (``fulfillment.equipment``)."""
     from shopman.shop.config import ChannelConfig
 
     try:
-        return [str(ref) for ref in (ChannelConfig.for_channel(channel_ref).fulfillment.equipment or [])]
+        config = channel_config if channel_config is not None else ChannelConfig.for_channel(channel_ref)
+        return [str(ref) for ref in (config.fulfillment.equipment or [])]
     except Exception:
         logger.debug("operator_orders.equipment_options: config indisponível channel=%s", channel_ref, exc_info=True)
         return []
@@ -955,7 +956,7 @@ def _advance_fulfillment_to(fulfillment, target_status: str, fulfillment_service
             fulfillment_service.update(fulfillment, Fulfillment.Status.DELIVERED)
 
 
-def confirmation_block_reason(order: Order) -> str:
+def confirmation_block_reason(order: Order, *, payment_reads=None, channel_config=None) -> str:
     """Consulta os mesmos guards do aceite, sem captura, reserva ou escrita."""
     from shopman.orderman.exceptions import InvalidTransition
 
@@ -964,8 +965,8 @@ def confirmation_block_reason(order: Order) -> str:
     if order.status != Order.Status.NEW:
         return "Pedido não está aguardando confirmação."
     try:
-        ensure_payment_captured(order)
-        ensure_confirmable(order)
+        ensure_payment_captured(order, payment_reads=payment_reads, channel_config=channel_config)
+        ensure_confirmable(order, channel_config=channel_config)
     except InvalidTransition as exc:
         return exc.message
     return ""
@@ -992,7 +993,7 @@ def operational_revision(order: Order, *, field: str = "advance") -> str:
     return mutation_fingerprint({"version": 1, "order": order.ref, "field": field, "state": state})
 
 
-def operational_actions(order: Order, *, user=None, waitlist_state: str | None = None):
+def operational_actions(order: Order, *, user=None, waitlist_state: str | None = None, payment_reads=None, channel_config=None):
     """Elegibilidade canônica; cliente só renderiza. API ainda revalida sob lock."""
     from shopman.shop.projections.types import Action
 
@@ -1000,7 +1001,7 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
     permission_reason = "Identifique uma pessoa com permissão para gerenciar pedidos."
     actions = []
     if order.status == Order.Status.NEW:
-        reason = confirmation_block_reason(order) if authorized else permission_reason
+        reason = confirmation_block_reason(order, payment_reads=payment_reads, channel_config=channel_config) if authorized else permission_reason
         actions.append(Action(
             ref="confirm", kind="mutation", label="Aceitar", priority="primary",
             enabled=not reason, reason=reason, method="POST", idempotency="required",
@@ -1019,7 +1020,7 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
             "completed": "Marcar como Retirado" if order.status == "ready" else "Concluir",
         }
         target = next_status_for(order)
-        reason = advance_block_reason(order, waitlist_state=waitlist_state) if authorized else permission_reason
+        reason = advance_block_reason(order, waitlist_state=waitlist_state, payment_reads=payment_reads) if authorized else permission_reason
         actions.append(Action(
             ref="advance", kind="mutation", label=labels[target], priority="primary",
             enabled=not reason, reason=reason, method="POST", idempotency="required",

@@ -67,7 +67,7 @@ def has_availability_approval(order) -> bool:
     return bool(decision.get("items"))
 
 
-def ensure_confirmable(order) -> None:
+def ensure_confirmable(order, *, channel_config=None) -> None:
     """Enforce the operational precondition for moving an order into CONFIRMED.
 
     This checks availability only. Payment capture is guarded separately by
@@ -80,7 +80,7 @@ def ensure_confirmable(order) -> None:
         return
 
     try:
-        config = ChannelConfig.for_channel(order.channel_ref)
+        config = channel_config if channel_config is not None else ChannelConfig.for_channel(order.channel_ref)
         if config.payment.timing == "external":
             return
     except Exception:
@@ -114,7 +114,7 @@ _UPFRONT_DIGITAL_PAYMENT_METHODS = payment_gate.UPFRONT_DIGITAL_PAYMENT_METHODS
 _ACCEPTED_PAYMENT_STATUSES = {"captured", "paid"}
 
 
-def ensure_payment_captured(order) -> None:
+def ensure_payment_captured(order, *, payment_reads=None, channel_config=None) -> None:
     """Raise InvalidTransition when an upfront Shopman payment intent is not captured.
 
     Guard is skipped for channels whose ``payment.timing`` is ``external``
@@ -129,7 +129,7 @@ def ensure_payment_captured(order) -> None:
     # the guard doesn't apply.
     config_failed = False
     try:
-        config = ChannelConfig.for_channel(order.channel_ref)
+        config = channel_config if channel_config is not None else ChannelConfig.for_channel(order.channel_ref)
         if config.payment.timing == "external":
             return
     except Exception:
@@ -150,7 +150,8 @@ def ensure_payment_captured(order) -> None:
         return
 
     intent_ref = payment.get("intent_ref")
-    if _payment_is_captured(order):
+    if (_payment_is_captured(order) if payment_reads is None else
+            payment_gate.payment_is_captured(order, payment_reads=payment_reads)):
         return
 
     raise InvalidTransition(

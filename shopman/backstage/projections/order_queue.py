@@ -443,7 +443,9 @@ def build_order_queue(
     from shopman.shop.services import waitlist
 
     waitlist_states = waitlist.states_for(filtered)
-    cards = tuple(_build_card(o, courier_change=courier_change, waitlist_states=waitlist_states) for o in filtered)
+    payment_reads = payment_svc.read_payments_for(filtered)
+    channel_configs = _channel_configs_for(filtered)
+    cards = tuple(_build_card(o, channel_config=channel_configs.get(o.channel_ref), courier_change=courier_change, waitlist_states=waitlist_states, payment_reads=payment_reads) for o in filtered)
 
     return OrderQueueProjection(
         orders=cards,
@@ -912,6 +914,8 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     from shopman.shop.services import waitlist
 
     waitlist_states = waitlist.states_for(all_orders)
+    payment_reads = payment_svc.read_payments_for(all_orders)
+    channel_configs = _channel_configs_for(all_orders)
     new_orders = [o for o in all_orders if o.status == "new"]
     deadlines = _confirmation_deadlines([o.ref for o in new_orders])
     # Uma consulta ao livro para todos os cards: o troco que saiu e voltou.
@@ -923,12 +927,12 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     # mantém o prazo de confirmação (auto-confirm) e o botão de aceitar; o
     # despertador (preorder.activate) devolve o pedido ao fluxo na data (WP-D).
     intake = tuple(
-        _build_card(o, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
+        _build_card(o, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
         for o in new_orders
         if not _is_future_preorder(o)
     )
     prep_orders = [o for o in all_orders if o.status in ("accepted", "preparing")]
-    prep = tuple(_build_card(o, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in prep_orders if not _is_future_preorder(o))
+    prep = tuple(_build_card(o, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in prep_orders if not _is_future_preorder(o))
     # Só estados pré-fulfillment viram "Agendados"; ready/dispatched/delivered
     # seguem nas colunas de expedição mesmo que a data combinada seja futura.
     future_preorders = [
@@ -936,16 +940,16 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         if o.status in ("new", "accepted", "preparing") and _is_future_preorder(o)
     ]
     preorders = tuple(
-        _build_card(o, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
+        _build_card(o, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
         for o in sorted(future_preorders, key=lambda o: (get_commitment_date(o), o.created_at))
     )
     preparing_count = len(prep)
 
     ready_orders = [o for o in all_orders if o.status == "ready"]
-    expedition_pickup = tuple(_build_card(o, waitlist_states=waitlist_states, user=user) for o in ready_orders if not _is_delivery(o))
-    expedition_delivery = tuple(_build_card(o, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in ready_orders if _is_delivery(o))
+    expedition_pickup = tuple(_build_card(o, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user) for o in ready_orders if not _is_delivery(o))
+    expedition_delivery = tuple(_build_card(o, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in ready_orders if _is_delivery(o))
     expedition_delivery_transit = tuple(
-        _build_card(o, waitlist_states=waitlist_states, user=user, courier_change=courier_change)
+        _build_card(o, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change)
         for o in all_orders
         if o.status in ("dispatched", "delivered")
     )
@@ -1044,12 +1048,28 @@ def _waitlist_badge(order: Order, *, states: dict[str, str] | None = None) -> tu
     return state, deadline, _WAITLIST_LABELS.get(state, "")
 
 
+def _channel_configs_for(orders):
+    """Resolve each channel once for this projection; commands read their own config."""
+    from shopman.shop.config import ChannelConfig
+
+    configs = {}
+    for ref in {order.channel_ref for order in orders}:
+        try:
+            configs[ref] = ChannelConfig.for_channel(ref)
+        except Exception:
+            logger.warning("orders.channel_config_read_failed channel=%s", ref, exc_info=True)
+            # Preserve existing fail-closed guards when resolution is unavailable.
+    return configs
+
+
 def _build_card(
     order: Order,
     deadline: tuple[str, str] | None = None,
     courier_change: dict[str, tuple[int, int | None]] | None = None,
     waitlist_states: dict[str, str] | None = None,
     user=None,
+    payment_reads=None,
+    channel_config=None,
 ) -> OrderCardProjection:
     now = timezone.now()
     elapsed = (now - order.created_at).total_seconds()
@@ -1080,13 +1100,13 @@ def _build_card(
     )
 
     batch_state = waitlist_states.get(order.ref) if waitlist_states is not None else None
-    bloqueio = operator_orders.advance_block(order, waitlist_state=batch_state)
+    bloqueio = operator_orders.advance_block(order, waitlist_state=batch_state, payment_reads=payment_reads)
     next_status = operator_orders.next_status_for(order) if not bloqueio else ""
     next_label = _next_label(order)
 
     payment_data = order.data.get("payment", {})
     method = payment_data.get("method", "")
-    payment_status = _payment_status(order)
+    payment_status = (payment_svc.get_payment_status(order, payment_reads=payment_reads) or "")
     payment_method_label = _payment_method_label(method, payment_data)
     fiscal_status, fiscal_status_label, _fiscal_links = _fiscal_status(order)
     commitment = get_commitment_date(order)
@@ -1097,7 +1117,7 @@ def _build_card(
     return OrderCardProjection(
         ref=order.ref,
         status=order.status,
-        actions=operator_orders.operational_actions(order, user=user, waitlist_state=batch_state),
+        actions=operator_orders.operational_actions(order, user=user, waitlist_state=batch_state, payment_reads=payment_reads, channel_config=channel_config),
         revisions={field: operator_orders.operational_revision(order, field=field) for field in ("advance", "kitchen_note", "assignment")},
         status_label=order_status_label(order.status),
         status_color=status_color(order.status),
@@ -1117,7 +1137,7 @@ def _build_card(
         fulfillment_type="delivery" if is_delivery else "pickup",
         delivery_address=delivery_address,
         delivery_instructions=delivery_instructions,
-        can_confirm=not operator_orders.confirmation_block_reason(order),
+        can_confirm=not operator_orders.confirmation_block_reason(order, payment_reads=payment_reads, channel_config=channel_config),
         can_advance=bool(next_status),
         next_status=next_status,
         next_action_label=next_label,
@@ -1146,7 +1166,7 @@ def _build_card(
         commitment_date=commitment.isoformat() if commitment else "",
         commitment_date_display=_commitment_date_display(commitment) if is_preorder else "",
         **_courier_change_fields(order, courier_change),
-        **_equipment_fields(order),
+        **_equipment_fields(order, channel_config=channel_config),
         waitlist_state=waitlist_state,
         waitlist_deadline_iso=waitlist_deadline_iso,
         waitlist_label=waitlist_label,
@@ -1161,12 +1181,12 @@ def _equipment_label(ref: str) -> str:
     return EQUIPMENT_LABELS.get(ref, ref)
 
 
-def _equipment_fields(order: Order) -> dict:
+def _equipment_fields(order: Order, *, channel_config=None) -> dict:
     if not _is_delivery(order):
         return {}
     options = tuple(
         EquipmentOptionProjection(ref=ref, label=_equipment_label(ref))
-        for ref in operator_orders.equipment_options(order.channel_ref or "")
+        for ref in operator_orders.equipment_options(order.channel_ref or "", channel_config=channel_config)
     )
     custody = operator_orders.equipment_custody(order)
     label = ""

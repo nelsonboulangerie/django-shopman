@@ -1,0 +1,27 @@
+DEBUG 2026-09-10 21:17:52,651 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-10 21:17:52,651 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-10 21:17:52,653 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-10 21:17:52,656 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-10 21:17:52,761 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-10 21:17:52,765 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-10 21:17:52,770 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-10 21:17:52,780 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-10 21:17:52,797 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-10 21:17:52,801 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-10 21:17:52,801 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-10 21:17:52,807 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-10 21:17:52,807 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-10 21:17:52,816 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-10 21:17:52,820 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-10 21:17:52,826 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-10 21:17:52,826 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-10 21:17:52,829 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-10 21:17:52,846 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-10 21:17:52,851 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+DEBUG 2026-09-10 21:17:53,326 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-10 21:17:54,002 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-10 21:17:57,774 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+RICH_QUEUE={"n": 10, "platform": "macOS-15.4.1-arm64-arm-64bit", "database": "postgresql", "transport": "projection+JSON (not HTTP)", "first_read": {"ms": 164.55137502634898, "queries": 67, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, "results": {"single": {"samples": [{"ms": 111.08954204246402, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, {"ms": 111.54266603989527, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, {"ms": 91.64766600588337, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, {"ms": 85.89870802825317, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, {"ms": 108.03450003731996, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, {"ms": 84.59879201836884, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, {"ms": 93.07737502967939, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, {"ms": 85.87887499015778, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, {"ms": 104.77929096668959, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, {"ms": 82.87591696716845, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, {"ms": 111.13795801065862, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, {"ms": 90.29908297816291, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, {"ms": 126.03466596920043, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, {"ms": 112.88220901042223, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, {"ms": 97.68358297878876, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, {"ms": 99.13379198405892, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, {"ms": 89.63454200420529, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, {"ms": 102.3790420149453, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, {"ms": 88.07975001400337, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}, {"ms": 138.99937499081716, "queries": 65, "bytes": 32479, "payman_queries": 50, "hold_queries": 1}], "p50_ms": 98.40868748142384, "p95_ms": 126.03466596920043}}}
+.DEBUG 2026-09-10 21:18:14,840 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+
+1 passed in 22.31s

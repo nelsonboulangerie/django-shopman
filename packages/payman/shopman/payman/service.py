@@ -82,6 +82,16 @@ logger = logging.getLogger("shopman.payman")
 
 
 @dataclass(frozen=True)
+class PaymentRead:
+    """Request-local ledger observation, never an authorization or persisted cache."""
+
+    status: str
+    captured_q: int
+    refunded_q: int
+    chargeback_q: int
+
+
+@dataclass(frozen=True)
 class PaymentReconciliationResult:
     """Result of applying a cumulative gateway snapshot to a Payman intent."""
 
@@ -1206,6 +1216,23 @@ class PaymentService:
     # ================================================================
     # Aggregates
     # ================================================================
+
+    @classmethod
+    def read_many(cls, refs) -> dict[str, PaymentRead]:
+        """Read status and canonical transaction sums in one database statement.
+
+        Missing intents are absent. Callers must treat absence as unknown, and
+        mutation paths must perform their own fresh read under their locks.
+        """
+        rows = PaymentIntent.objects.filter(ref__in=set(refs)).annotate(
+            read_captured=Sum("transactions__amount_q", filter=Q(transactions__type=PaymentTransaction.Type.CAPTURE), default=0),
+            read_refunded=Sum("transactions__amount_q", filter=Q(transactions__type=PaymentTransaction.Type.REFUND), default=0),
+            read_chargeback=Sum("transactions__amount_q", filter=Q(transactions__type=PaymentTransaction.Type.CHARGEBACK), default=0),
+        ).values("ref", "status", "read_captured", "read_refunded", "read_chargeback")
+        return {
+            row["ref"]: PaymentRead(row["status"], row["read_captured"], row["read_refunded"], row["read_chargeback"])
+            for row in rows
+        }
 
     @classmethod
     def captured_total(cls, ref: str) -> int:
