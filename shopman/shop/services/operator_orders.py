@@ -254,15 +254,10 @@ def advance_block(order: Order, *, waitlist_state: str | None = None, payment_re
     ):
         return AdvanceBlock.PAYMENT_NOT_CAPTURED
     if next_status == Order.Status.DISPATCHED:
-        from shopman.backstage.models import DeliveryDevice
-        from shopman.backstage.services.delivery_devices import needs_card_machine
+        from shopman.shop.adapters import delivery_devices
 
-        if needs_card_machine(order):
-            devices = getattr(order, "_delivery_devices", None)
-            available = (any(device.active and device.current_order_id is None for device in devices)
-                         if devices is not None else DeliveryDevice.objects.filter(active=True, current_order__isnull=True).exists())
-            if not available:
-                return AdvanceBlock.DEVICE_UNAVAILABLE
+        if delivery_devices.needs_card_machine(order) and not delivery_devices.has_available(order):
+            return AdvanceBlock.DEVICE_UNAVAILABLE
     if order.status == Order.Status.ACCEPTED and _preorder_not_due(order):
         return AdvanceBlock.PREORDER_NOT_DUE
     if order.status == Order.Status.ACCEPTED and _waiting_for_the_batch(order, state=waitlist_state):
@@ -329,11 +324,11 @@ def advance_order(
         if change_out > 0 and (cash_shift is None or not getattr(cash_shift, "is_open", False)):
             raise ValueError("Abra um turno de caixa para o entregador levar troco da gaveta.")
         taken = _clean_equipment(order, equipment)
-        from shopman.backstage.services import delivery_devices
+        from shopman.shop.adapters import delivery_devices
 
         device = delivery_devices.allocate(order, taken, allowed=equipment_options(order.channel_ref or ""))
         if device:
-            taken = [ref for ref in taken if not ref.startswith(delivery_devices.PREFIX)] + ["card_machine"]
+            taken = [ref for ref in taken if not ref.startswith(delivery_devices.reference_prefix())] + ["card_machine"]
     else:
         taken = []
 
@@ -417,7 +412,9 @@ def equipment_options(channel_ref: str, *, channel_config=None) -> list[str]:
 
 def _clean_equipment(order: Order, equipment) -> list[str]:
     wanted = [str(ref).strip() for ref in (equipment or []) if str(ref).strip()]
-    from shopman.backstage.services.delivery_devices import PREFIX, needs_card_machine
+    from shopman.shop.adapters.delivery_devices import needs_card_machine, reference_prefix
+
+    PREFIX = reference_prefix()
 
     if needs_card_machine(order) and not any(ref.startswith(PREFIX) for ref in wanted):
         raise ValueError("Selecione a maquininha disponível no despacho do Gestor; se não houver, aguarde a devolução.")
@@ -468,7 +465,7 @@ def mark_equipment_returned(order: Order, *, actor: str, expected_revision: str 
         raise ValueError("Este pedido não levou aparelho.")
     if custody.back_at:
         raise ValueError("O aparelho deste pedido já voltou.")
-    from shopman.backstage.services.delivery_devices import release
+    from shopman.shop.adapters.delivery_devices import release
 
     release(order)
     data = dict(order.data or {})

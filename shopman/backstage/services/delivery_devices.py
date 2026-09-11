@@ -17,6 +17,12 @@ def needs_card_machine(order):
     )
 
 
+def has_available(order):
+    devices = getattr(order, "_delivery_devices", None)
+    return (any(device.active and device.current_order_id is None for device in devices)
+            if devices is not None else DeliveryDevice.objects.filter(active=True, current_order__isnull=True).exists())
+
+
 def allocate(order, equipment, *, allowed):
     """Called inside advance_order's transaction after its fresh order lock."""
     from shopman.shop.services.operator_orders import OrderStateConflict

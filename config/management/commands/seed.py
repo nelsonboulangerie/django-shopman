@@ -1495,6 +1495,13 @@ class Command(BaseCommand):
 
         OvenRun.objects.all().delete()
 
+        # The environment-guarded --flush removes all demo orders. Keep the
+        # physical reader configuration, but do not leave a FK to erased orders.
+        # This is only the existing destructive seed boundary, never a return API.
+        from shopman.backstage.models import DeliveryDevice
+
+        DeliveryDevice.objects.update(current_order=None)
+
         # Payments
         hard_delete(PaymentTransaction)
         PaymentIntent.objects.all().delete()
@@ -8662,6 +8669,14 @@ class Command(BaseCommand):
         customer = Customer.objects.filter(ref="CLI-003").first()
         if croissant is None or baguete is None or customer is None:
             return
+        from shopman.backstage.models import DeliveryDevice
+
+        # This method belongs only to the dynamic demo profile. A named demo
+        # reader exercises the same allocation/return contract, never a bypass.
+        device, _ = DeliveryDevice.objects.get_or_create(
+            identification="DEMO-COURIER-READER", defaults={"label": "Maquininha de demonstração"},
+        )
+        equipment_ref = f"card_machine:{device.ref}"
         base_data = {
             "customer_ref": customer.ref,
             "customer": {"name": customer.name, "phone": customer.phone or ""},
@@ -8680,7 +8695,7 @@ class Command(BaseCommand):
         )
         change_out = operator_orders.change_out_suggested_q(settled)
         operator_orders.advance_order(
-            settled, actor=admin.get_username(), change_out_q=change_out, cash_shift=shift, equipment=["card_machine"]
+            settled, actor=admin.get_username(), change_out_q=change_out, cash_shift=shift, equipment=[equipment_ref]
         )
         settled.refresh_from_db()
         operator_orders.advance_order(settled, actor=admin.get_username())  # entregue
@@ -8703,7 +8718,7 @@ class Command(BaseCommand):
             actor=admin.get_username(),
             change_out_q=operator_orders.change_out_suggested_q(on_the_road),
             cash_shift=shift,
-            equipment=["card_machine"],
+            equipment=[equipment_ref],
         )
         self.stdout.write("  ✅ Conta na casa (2 clientes), acerto em dinheiro, entregas com troco e maquininha")
 
