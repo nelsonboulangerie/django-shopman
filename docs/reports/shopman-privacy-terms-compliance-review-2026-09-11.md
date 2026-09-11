@@ -224,11 +224,27 @@ prazo deve virar campo/rotina testada e monitorada. Até lá, exclusão de conta
 esses dados no autoatendimento, mas isso não substitui o descarte proativo exigido
 quando a finalidade termina.[^1]
 
+### Gate L8 — alertas de dependência nas demais superfícies
+
+O manifest do Storefront ficou com `npm audit` zerado, mas o Dependabot do
+repositório ainda apontava, em 11 de setembro de 2026, **36 alertas abertos no
+branch padrão** (15 altos e 21 moderados). Eles repetem as mesmas famílias
+`js-yaml`, SVGO e Vitest em BI, Hub, KDS, Pedidos, PDV, Produção e Compras. Cinco
+desses alertas pertencem ao Storefront e são fechados por esta branch; os demais
+devem ser atualizados nas branches donas de cada superfície para evitar conflito
+com trabalhos já em andamento.
+
+Os achados de Vitest e `js-yaml` estão em dependências de desenvolvimento. SVGO
+aparece como runtime no inventário do GitHub, embora seja usado pela cadeia de
+build; conteúdo SVG não confiável não deve entrar nessa cadeia até todas as
+superfícies adotarem a versão corrigida. Este gate não prova exploração ou
+ilegalidade, mas impede alegar segurança integral do repositório.
+
 ## Gate de release proposto
 
 1. Jurídico/dono valida o texto, dados empresariais e tratamento de perecíveis.
-2. L1–L7 recebem responsável, evidência e decisão; L1, L2 e L7 impedem a alegação
-   de conformidade integral.
+2. L1–L8 recebem responsável, evidência e decisão; L1, L2, L7 e L8 impedem a
+   alegação de conformidade integral.
 3. CI, testes de backend, frontend, typecheck, build e `check --deploy` verdes.
 4. Merge autorizado; deploy continua sendo ato separado e explícito.
 5. Após deploy, smoke externo confirma 200 e canonical de `/privacidade`,
