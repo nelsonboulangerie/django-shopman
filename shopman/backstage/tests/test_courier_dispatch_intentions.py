@@ -96,3 +96,54 @@ def test_cancel_does_not_coerce_reason(client, context, reason):
     response = client.post(reverse("api-backstage-order-courier-cancel", args=[order.ref]),
         {"reason_id": reason}, content_type="application/json")
     assert response.status_code == 400
+
+
+@pytest.mark.django_db(transaction=True)
+def test_quote_preparation_outside_transaction_and_replay_skips_provider(client, context, monkeypatch):
+    from unittest.mock import Mock
+
+    from django.db import connection
+
+    from shopman.shop.services.courier import dispatch_revision
+
+    user, order = context
+    quote = {"value_q": 1250, "minutes": 15, "km": 4, "value_display": "R$ 12,50"}
+
+    def prepare(observed):
+        assert not connection.in_atomic_block
+        assert observed.ref == order.ref
+        return quote
+
+    provider = Mock(side_effect=prepare)
+    monkeypatch.setattr("shopman.backstage.services.orders.courier_quote", provider)
+    body = {"expected_actor_id": user.pk, "base_revision": dispatch_revision(order)}
+    url = reverse("api-backstage-order-courier-quote", args=[order.ref])
+    response = client.post(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY="quote-once")
+    assert response.status_code == 200, response.content
+    assert response.json()["quote"] == quote
+    again = client.post(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY="quote-once")
+    assert again.json()["replayed"]
+    provider.assert_called_once()
+    assert client.get(url, {"idempotency_key": "quote-once"}).json()["quote"] == quote
+    order.refresh_from_db()
+    assert order.data["courier"]["estimate"] == {"value_q": 1250, "minutes": 15, "km": 4}
+
+
+def test_quote_response_for_changed_destination_is_not_stored(client, context, monkeypatch):
+    from shopman.shop.services.courier import dispatch_revision
+
+    user, order = context
+    body = {"expected_actor_id": user.pk, "base_revision": dispatch_revision(order)}
+
+    def delayed(observed):
+        other = Order.objects.get(pk=order.pk)
+        other.data["delivery_address"] = "Different destination"
+        other.save(update_fields=["data"])
+        return {"value_q": 1250, "minutes": 15, "km": 4}
+
+    monkeypatch.setattr("shopman.backstage.services.orders.courier_quote", delayed)
+    response = client.post(reverse("api-backstage-order-courier-quote", args=[order.ref]), body,
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY="quote-stale")
+    assert response.status_code == 409
+    order.refresh_from_db()
+    assert "estimate" not in order.data.get("courier", {})

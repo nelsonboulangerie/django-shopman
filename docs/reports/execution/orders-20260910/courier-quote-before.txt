@@ -1,0 +1,32 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________________ test_estimate_does_not_adopt_old_destination _________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x122469250>
+
+    def test_estimate_does_not_adopt_old_destination(monkeypatch):
+        cache.clear()
+        Shop.objects.create(name="Synthetic quote", latitude=-23.34, longitude=-51.16)
+        order = Order.objects.create(ref="QUOTE-LAB", status="ready", data={"fulfillment_type": "delivery",
+            "delivery_address_structured": {"latitude": -23.31, "longitude": -51.15}})
+
+        def estimate(**kwargs):
+            other = Order.objects.get(pk=order.pk)
+            other.data["delivery_address_structured"]["latitude"] = -23.39
+            other.save(update_fields=["data"])
+            return SimpleNamespace(value_q=1250, minutes=15, km=4)
+
+        monkeypatch.setattr(courier, "get_adapter", lambda name: Mock(estimate=estimate))
+>       with pytest.raises(OrderStateConflict):
+E       Failed: DID NOT RAISE <class 'shopman.shop.services.operator_orders.OrderStateConflict'>
+
+shopman/shop/tests/test_courier_quote_context.py:29: Failed
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-11 01:03:44,413 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-11 01:03:44,633 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-11 01:03:45,592 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-11 01:03:48,847 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_courier_quote_context.py::test_estimate_does_not_adopt_old_destination
+1 failed in 4.58s

@@ -145,6 +145,7 @@ def estimate_for_order(order, *, store: bool = False) -> dict | None:
     Cache de 10 min por destino (a origem é sempre a loja). ``store=True``
     grava o resultado em ``Order.data["courier"]["estimate"]``.
     """
+    base_revision = dispatch_revision(order) if store else None
     adapter = get_adapter("courier")
     if adapter is None or get_fulfillment_type(order) != "delivery":
         return None
@@ -174,13 +175,26 @@ def estimate_for_order(order, *, store: bool = False) -> dict | None:
         cache.set(cache_key, estimate, ESTIMATE_CACHE_SECONDS)
 
     if store:
-        with transaction.atomic():
-            Order.objects.select_for_update().get(pk=order.pk)
-            order.refresh_from_db()
-            block = dict(get_block(order))
-            block["estimate"] = estimate
-            _save_block(order, block, emit={"kind": "estimate"})
+        store_estimate(order, estimate, expected_revision=base_revision)
     return estimate
+
+
+def can_quote(order) -> bool:
+    return is_enabled_for(order) and not has_active_ride(order) and order.status not in {Order.Status.CANCELLED, Order.Status.COMPLETED}
+
+
+@transaction.atomic
+def store_estimate(order, estimate, *, expected_revision, require_quotable=False):
+    from shopman.shop.services.operator_orders import OrderStateConflict
+
+    order = Order.objects.select_for_update().get(pk=order.pk)
+    if dispatch_revision(order) != expected_revision:
+        raise OrderStateConflict("O pedido ou o destino mudou durante a cotação. Confira antes de cotar novamente.")
+    if require_quotable and not can_quote(order):
+        raise OrderStateConflict("Confira o estado do pedido e da corrida antes de cotar.")
+    block = dict(get_block(order))
+    block["estimate"] = {key: estimate[key] for key in ("value_q", "minutes", "km")}
+    _save_block(order, block, emit={"kind": "estimate"})
 
 
 # ── Despacho ────────────────────────────────────────────────────────

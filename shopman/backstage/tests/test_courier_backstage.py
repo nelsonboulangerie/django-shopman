@@ -206,7 +206,9 @@ def test_courier_cancel_without_active_ride_fails(client, operator, shop):
 def test_courier_quote_action_returns_and_stores_estimate(client, operator, shop):
     order = _delivery_order()
     client.force_login(operator)
-    resp = client.post(reverse("api-backstage-order-courier-quote", args=[order.ref]))
+    resp = client.post(reverse("api-backstage-order-courier-quote", args=[order.ref]),
+        {"expected_actor_id": operator.pk, "base_revision": courier.dispatch_revision(order)},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY="quote-test")
     assert resp.status_code == 200
     quote = resp.json()["quote"]
     assert quote["value_q"] == 1250
@@ -219,7 +221,9 @@ def test_courier_quote_action_returns_and_stores_estimate(client, operator, shop
 def test_courier_quote_unavailable_without_coordinates(client, operator, shop):
     order = _delivery_order(delivery_address_structured={"city": "Londrina"})
     client.force_login(operator)
-    resp = client.post(reverse("api-backstage-order-courier-quote", args=[order.ref]))
+    resp = client.post(reverse("api-backstage-order-courier-quote", args=[order.ref]),
+        {"expected_actor_id": operator.pk, "base_revision": courier.dispatch_revision(order)},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY="quote-test")
     assert resp.status_code == 400
 
 

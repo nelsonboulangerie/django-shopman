@@ -313,7 +313,9 @@ def courier_quote(order) -> dict:
 
     from shopman.shop.services import courier
 
-    estimate = courier.estimate_for_order(order, store=True)
+    if not courier.can_quote(order):
+        raise OrderError("Confira o estado do pedido e da corrida antes de cotar.")
+    estimate = courier.estimate_for_order(order, store=False)
     if estimate is None:
         raise OrderError(
             "Cotação indisponível — verifique o endereço do pedido e a "

@@ -554,6 +554,12 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
                 "" if courier_block["can_cancel"] else "Confira o estado da corrida e de solicitações anteriores."),
             method="POST", idempotency="required", confirmation={"required": True},
             payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+        extra_actions.append(Action(ref="courier-quote", kind="mutation", label="Cotar entrega",
+            enabled=authorized and courier_block["can_quote"],
+            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+                "" if courier_block["can_quote"] else "Confira o estado do pedido e da corrida antes de cotar."),
+            method="POST", idempotency="required",
+            payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
     if fiscal_status == "failed":
         from shopman.backstage.services.orders import fiscal_revision
 
@@ -675,7 +681,7 @@ def _courier_block(order: Order) -> dict | None:
         if active and block.get("id_mch"):
             position = cache.get(f"courier:pos:{block['id_mch']}")
 
-        from shopman.shop.services.courier import latest_cancellation, unresolved_dispatch
+        from shopman.shop.services.courier import can_quote, latest_cancellation, unresolved_dispatch
 
         unresolved = unresolved_dispatch(order)
         cancellation = latest_cancellation(order) if active else None
@@ -713,7 +719,7 @@ def _courier_block(order: Order) -> dict | None:
             "attempts_count": len(block.get("attempts") or []),
             "position": position,
             "error": error,
-            "can_quote": adapter_on and not active and order.status not in ("cancelled", "completed"),
+            "can_quote": can_quote(order),
             "can_dispatch": adapter_on and not active and order_can_ride and unresolved is None,
             "can_cancel": adapter_on and active and ride_status in CANCELLABLE_STATUSES and not cancellation_pending,
         }

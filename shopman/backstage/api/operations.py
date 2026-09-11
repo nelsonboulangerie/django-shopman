@@ -2495,15 +2495,28 @@ class OrderCourierCancelView(_OrderActionBase):
     ),
 )
 class OrderCourierQuoteView(_OrderActionBase):
+    intention_operation = "courier-quote"
+
     def post(self, request, ref: str):
+        from shopman.shop.services import courier
+
         order, err = self._get_order(ref)
         if err:
             return err
-        try:
-            quote = orders_service.courier_quote(order)
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Cotação indisponível."}, status=400)
-        return Response({"ok": True, "ref": ref, "quote": quote})
+        prepared = {}
+
+        def prepare():
+            try:
+                prepared.update(orders_service.courier_quote(order))
+            except OrderError as exc:
+                return Response({"detail": str(exc) or "Cotação indisponível."}, status=400)
+            return None
+
+        def save(base):
+            courier.store_estimate(order, prepared, expected_revision=base, require_quotable=True)
+            return {"quote": prepared}
+
+        return self._context_response(request, order, self.intention_operation, {}, save, prepare=prepare)
 
 
 @extend_schema_view(
