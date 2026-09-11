@@ -7,6 +7,8 @@ o card do quadro carrega os campos que a tela usa para perguntar antes.
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
@@ -17,6 +19,7 @@ from shopman.orderman.models import Order, OrderItem
 
 from shopman.backstage.tests._order_intent import advance_payload
 from shopman.shop.models import Shop
+from shopman.shop.services.operator_orders import operational_revision
 
 pytestmark = pytest.mark.django_db
 
@@ -140,6 +143,13 @@ def test_sem_pedido_de_troco_o_despacho_segue_direto_e_sem_turno_nao_leva(client
     assert plain.status == "dispatched"
 
 
+def _equipment_return(client, ref):
+    order = Order.objects.get(ref=ref)
+    return client.post(reverse("api-backstage-order-equipment-back", args=[ref]),
+        {"expected_actor_id": int(client.session["_auth_user_id"]), "idempotency_key": str(uuid.uuid4()),
+         "base_revision": operational_revision(order, field="equipment")}, content_type="application/json")
+
+
 def test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao(client, operator):
     """Custódia do aparelho, não de dinheiro: mora no pedido (``data.dispatch``),
     o canal diz o que pode sair, o quadro diz onde está, e o acerto (ou o botão)
@@ -197,8 +207,8 @@ def test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao(client, oper
         reverse("api-backstage-order-advance", args=["DLV-M2"]), advance_payload(client, "DLV-M2", **{"equipment": ["card_machine"]}), content_type="application/json",
     )
     assert response.status_code == 200
-    response = client.post(reverse("api-backstage-order-equipment-back", args=["DLV-M2"]))
+    response = _equipment_return(client, "DLV-M2")
     assert response.status_code == 200
     assert response.json()["equipment"] == ["card_machine"]
-    assert client.post(reverse("api-backstage-order-equipment-back", args=["DLV-M2"])).status_code == 400
-    assert client.post(reverse("api-backstage-order-equipment-back", args=["DLV-M1"])).status_code == 400
+    assert _equipment_return(client, "DLV-M2").status_code == 400
+    assert _equipment_return(client, "DLV-M1").status_code == 400

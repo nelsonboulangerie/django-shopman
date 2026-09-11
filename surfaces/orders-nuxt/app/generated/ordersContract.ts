@@ -113,6 +113,7 @@ export interface EquipmentOutProjection {
   order_ref: string;
   customer_name: string;
   out_at: string;
+  actions: Action[];
 }
 
 /** Quem é este cliente, para o operador decidir como tratá-lo. */

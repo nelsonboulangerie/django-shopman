@@ -752,3 +752,13 @@ Testes: 34 passed PostgreSQL de feeds/schema/motivos iFood, seguido de 21 passed
 Migração: nenhum DDL nem campo persistido novo. API/UI/export precisam andar juntos; clientes antigos são recusados antes da mutação. Rollback: revert coordenado, preservando recibos; retorno às leituras sem lock reabre o defeito, portanto não é estratégia de rollout. G05/G08 e ganho em campo continuam pendentes.
 
 Suíte SQLite iniciada em `ea46e2cd8`: 8.565 passed, 3 failed, 56 skipped, 38 subtests, 694,13 s. Duas fixtures de indisponibilidade iFood ainda enviavam o contrato antigo; atualizadas e aprovadas mantendo a exigência de 503 sem efeito. A terceira foi o drift de schema porque o arquivo foi regenerado para feeds enquanto o processo da suíte ainda tinha o renderizador anterior importado. A execução ampla não é declarada verde; o teste em processo fresco passou. Próxima execução ampla deve usar árvore estável durante todo o ensaio.
+
+### WP02/WP03/WP08 — comentário e devolução de equipamento
+
+Testemunha anterior: `mark_equipment_returned` usando instância antiga apagou nota concorrente (1 failed). Agora a custódia é relida sob lock e gravação/evento ficam no mesmo commit. Revisão de equipamento cobre somente seus campos de custódia, preservando notas/atribuição; comentário é append-only, com revisão da identidade selada, e não conflita com outro comentário legítimo.
+
+Os dois comandos exigem intenção/ator/base e devolvem recibo consultável. Um replay não duplica comentário ou evento de retorno. A pendência `equipment_out` existente carrega sua própria Action autorizada: **pedido completed continua permitindo registrar o aparelho que efetivamente voltou**, sem reabrir venda nem inferir dinheiro. O cliente usa essa Action mesmo se o pedido saiu das colunas ativas. Permissões e gesto físico existentes foram mantidos; nenhum aparelho ou valor real foi movimentado.
+
+Validação PostgreSQL: 26 passed dos caminhos afetados + 3 passed de recibo/pendência completed. Orders: **245 passed + typecheck**. Os testes conferem um evento por intenção e desaparecimento da pendência após o retorno. Export de schema regenerado pelo comando existente. Migração: nenhuma. Rollback: revert coordenado de UI/API/schema, conservando recibos; retirar o lock reabre perda de contexto, portanto não deve ser usado como mitigação de rollout.
+
+Validação ampla independente em andamento: worktree `/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-validation-20260910`, branch `codex/orders-validation-20260910`, fixado em `9eb5d9525`. Os próximos commits não alteram aquela árvore durante a execução.

@@ -132,14 +132,14 @@ describe("useOrderDetail", () => {
   });
 
   it("saveNotes/addComment enviam o corpo e tostam sucesso", async () => {
-    env.fetchData.value = { order: { actions: [{ ...fixtureActions({ can_advance: true })[0], ref: "notes", payload_schema: { base_revision: "note-base" } }] } };
+    env.fetchData.value = { order: { actions: [{ ...fixtureActions({ can_advance: true })[0], ref: "notes", payload_schema: { base_revision: "note-base" } }, { ...fixtureActions({ can_advance: true })[0], ref: "comment", payload_schema: { base_revision: "comment-base" } }] } };
     env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });
     const d = useOrderDetail("WEB-5");
     await d.saveNotes("frágil");
     expect(env.fetchMock.mock.calls[0]![1].body).toEqual({ notes: "frágil", base_revision: "note-base" });
     expect(env.sonner.success).toHaveBeenCalledWith("Notas salvas.");
     await d.addComment("ligar antes");
-    expect(env.fetchMock.mock.calls[1]![1].body).toEqual({ note: "ligar antes" });
+    expect(env.fetchMock.mock.calls[1]![1].body).toEqual({ note: "ligar antes", base_revision: "comment-base" });
     expect(env.sonner.success).toHaveBeenCalledWith("Comentário adicionado.");
   });
 });

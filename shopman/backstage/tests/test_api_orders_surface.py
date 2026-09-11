@@ -118,7 +118,7 @@ def test_comment_appears_in_timeline(client, operator, order):
 
     ok = client.post(
         reverse("api-backstage-order-comment", args=[ref]),
-        data={"note": "Cliente vai retirar às 18h"},
+        data={"note": "Cliente vai retirar às 18h", "expected_actor_id": operator.pk, "base_revision": operational_revision(order, field="comment"), "idempotency_key": "comment-18h"},
         content_type="application/json",
     )
     assert ok.status_code == 200

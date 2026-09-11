@@ -80,6 +80,15 @@ describe("useOrdersBoard — ações (act)", () => {
     expect(board.isBusy("WEB-1")).toBe(false);
   });
 
+  it("devolução após conclusão usa a ação da pendência de equipamento", async () => {
+    env.fetchData.value = { queue: { ...emptyZone(), equipment_out: [{ order_ref: "COMPLETED", actions: [{ ...fixtureActions({ can_advance: true })[0], ref: "equipment-back" }] }] } };
+    env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });
+    const board = useOrdersBoard();
+    expect(await board.equipmentBack("COMPLETED")).toBe(true);
+    expect(String(env.fetchMock.mock.calls[0]![0])).toBe("/api/v1/backstage/orders/COMPLETED/equipment-back/");
+    expect(env.fetchMock.mock.calls[0]![1].headers["Idempotency-Key"]).toBeTruthy();
+  });
+
   it("reject envia reason + cancellation_code", async () => {
     env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "IFOOD-9", actions: fixtureActions({ can_confirm: true }) }] } };
     env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });

@@ -1915,15 +1915,18 @@ class OrderSettleDeliveryCashView(_OrderActionBase):
     ),
 )
 class OrderEquipmentBackView(_OrderActionBase):
+    intention_operation = "equipment-back"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        try:
-            custody = orders_service.mark_equipment_returned(order, actor=_actor(request))
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Falha ao registrar a volta da maquininha."}, status=400)
-        return Response({"ok": True, "ref": ref, "equipment": list(custody.equipment), "back_at": custody.back_at})
+
+        def execute(base):
+            custody = orders_service.mark_equipment_returned(order, actor=_actor(request), expected_revision=base)
+            return {"equipment": list(custody.equipment), "back_at": custody.back_at}
+
+        return self._context_response(request, order, "equipment-back", {}, execute)
 
 
 @extend_schema_view(
@@ -2548,16 +2551,17 @@ class OrderUnassignView(_OrderActionBase):
 
 
 class OrderCommentView(_OrderActionBase):
+    intention_operation = "comment"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        note = str(request.data.get("note", "") or "")
-        try:
-            orders_service.add_comment(order, note=note, actor=_actor(request))
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Comentário inválido."}, status=400)
-        return Response({"ok": True, "ref": ref})
+        note = str(request.data.get("note", "") or "").strip()
+        if not note:
+            return Response({"detail": "Comentário vazio"}, status=400)
+        return self._context_response(request, order, "comment", {"note": note},
+            lambda base: orders_service.add_comment(order, note=note, actor=_actor(request), expected_revision=base))
 
 
 # ── Production action endpoints ───────────────────────────────────────

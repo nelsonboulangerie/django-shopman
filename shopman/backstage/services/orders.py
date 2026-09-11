@@ -176,10 +176,12 @@ def settle_delivery_cash(
         raise OrderError(str(exc)) from exc
 
 
-def mark_equipment_returned(order, *, actor: str):
+def mark_equipment_returned(order, *, actor: str, expected_revision=None):
     """O entregador devolveu a maquininha que levou neste pedido."""
     try:
-        return operator_orders.mark_equipment_returned(order, actor=actor)
+        return operator_orders.mark_equipment_returned(order, actor=actor, **({"expected_revision": expected_revision} if expected_revision is not None else {}))
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
     except ValueError as exc:
         raise OrderError(str(exc)) from exc
 
@@ -236,9 +238,11 @@ def unassign_order(order, *, actor: str, expected_revision=None):
     return operator_orders.unassign_order(order, actor=actor, expected_revision=expected_revision)
 
 
-def add_comment(order, *, note: str, actor: str):
+def add_comment(order, *, note: str, actor: str, expected_revision=None):
     try:
-        return operator_orders.add_comment(order, note=note, actor=actor)
+        return operator_orders.add_comment(order, note=note, actor=actor, **({"expected_revision": expected_revision} if expected_revision is not None else {}))
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
     except ValueError as exc:
         raise OrderError(str(exc) or "Comentário inválido") from exc
 

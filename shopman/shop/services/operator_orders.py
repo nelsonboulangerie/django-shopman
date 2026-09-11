@@ -431,8 +431,13 @@ def equipment_custody(order: Order) -> EquipmentCustody:
     )
 
 
-def mark_equipment_returned(order: Order, *, actor: str) -> EquipmentCustody:
+@transaction.atomic
+def mark_equipment_returned(order: Order, *, actor: str, expected_revision: str | None = None) -> EquipmentCustody:
     """O entregador devolveu o aparelho: fecha a custódia no pedido que o levou."""
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    if expected_revision is not None and operational_revision(order, field="equipment") != expected_revision:
+        raise OrderStateConflict("A custódia mudou. Confira o aparelho antes de registrar a devolução.")
     custody = equipment_custody(order)
     if not custody.equipment:
         raise ValueError("Este pedido não levou aparelho.")
@@ -859,13 +864,18 @@ def unassign_order(order: Order, *, actor: str, expected_revision: str | None = 
     order.emit_event(event_type="order_unassigned", actor=actor)
 
 
-def add_comment(order: Order, *, note: str, actor: str) -> None:
+@transaction.atomic
+def add_comment(order: Order, *, note: str, actor: str, expected_revision: str | None = None) -> None:
     """Append a timestamped operator comment to the order timeline (OrderEvent).
 
     Distinct from ``kitchen_note`` (a single editable blob): a comment is an
     immutable, attributed entry that shows up in the timeline like any other
     event — useful for a running operator log/handover.
     """
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    if expected_revision is not None and operational_revision(order, field="comment") != expected_revision:
+        raise OrderStateConflict("A referência mudou. Confira o pedido antes de comentar.")
     text = (note or "").strip()
     if not text:
         raise ValueError("Comentário vazio")
@@ -987,6 +997,12 @@ def operational_revision(order: Order, *, field: str = "advance") -> str:
     data = order.data or {}
     if field in {"kitchen_note", "assignment"}:
         state = data.get(field)
+    elif field == "equipment":
+        dispatch = data.get("dispatch") or {}
+        state = {key: dispatch.get(key) for key in ("equipment", "equipment_out_at", "equipment_out_by", "equipment_back_at", "equipment_back_by")}
+    elif field == "comment":
+        # Append-only comments commute; unrelated comments/notes need no overwrite.
+        state = {"channel_ref": order.channel_ref}
     elif field == "advance":
         state = {
             "status": order.status, "total_q": order.total_q,
@@ -1036,11 +1052,21 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
         ))
     for ref, label, field in (
         ("notes", "Salvar nota", "kitchen_note"),
+        ("comment", "Adicionar comentário", "comment"),
         ("unassign", "Liberar atendimento", "assignment") if (order.data or {}).get("assignment") else ("assign", "Atender", "assignment"),
     ):
         actions.append(Action(
             ref=ref, kind="mutation", label=label, enabled=authorized,
             reason="" if authorized else permission_reason, method="POST", idempotency="required",
             payload_schema={"base_revision": operational_revision(order, field=field)},
+        ))
+    custody = equipment_custody(order)
+    if custody.equipment:
+        actions.append(Action(
+            ref="equipment-back", kind="mutation", label="Registrar devolução do aparelho",
+            enabled=authorized and custody.pending,
+            reason=(permission_reason if not authorized else "O aparelho deste pedido já voltou." if not custody.pending else ""),
+            method="POST", idempotency="required",
+            payload_schema={"base_revision": operational_revision(order, field="equipment")},
         ))
     return tuple(replace(action, payload_schema={**action.payload_schema, "expected_actor_id": getattr(user, "pk", None)}) for action in actions)

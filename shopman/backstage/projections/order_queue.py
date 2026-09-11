@@ -102,6 +102,7 @@ class EquipmentOutProjection:
     order_ref: str
     customer_name: str
     out_at: str
+    actions: tuple[Action, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -965,7 +966,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     )
 
     return TwoZoneQueueProjection(
-        equipment_out=_equipment_out(),
+        equipment_out=_equipment_out(user=user),
         intake=intake,
         preparing_count=preparing_count,
         prep=prep,
@@ -1211,7 +1212,7 @@ def _equipment_fields(order: Order, *, channel_config=None) -> dict:
     }
 
 
-def _equipment_out() -> tuple[EquipmentOutProjection, ...]:
+def _equipment_out(*, user=None) -> tuple[EquipmentOutProjection, ...]:
     rows = []
     for ref, order in operator_orders.equipment_out():
         customer = order.data.get("customer", {}) if isinstance(order.data, dict) else {}
@@ -1222,6 +1223,7 @@ def _equipment_out() -> tuple[EquipmentOutProjection, ...]:
                 order_ref=order.ref,
                 customer_name=str(customer.get("name") or ""),
                 out_at=operator_orders.equipment_custody(order).out_at,
+                actions=tuple(action for action in operator_orders.operational_actions(order, user=user) if action.ref == "equipment-back"),
             )
         )
     return tuple(rows)
