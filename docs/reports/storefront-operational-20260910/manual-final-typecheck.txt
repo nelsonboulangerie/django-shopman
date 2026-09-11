@@ -1,0 +1,10 @@
+
+> typecheck
+> nuxi typecheck
+
+
+ ERROR  (node:93519) [DEP0205] DeprecationWarning: module.register() is deprecated. Use module.registerHooks() instead.
+(Use node --trace-deprecation ... to show where the warning was created)
+
+✔ Nuxt Icon discovered local-installed 1 collections: lucide
+ℹ Nuxt Icon client bundle consist of 83 icons with 24.97KB(uncompressed) in size

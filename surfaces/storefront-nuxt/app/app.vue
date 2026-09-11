@@ -13,6 +13,11 @@ const requestUrl = useRequestURL()
 const AUTH_SHELL_ROUTES = new Set(['/entrar', '/a'])
 const authShellRoute = computed(() => AUTH_SHELL_ROUTES.has(route.path))
 
+function focusMainContent () {
+  if (!import.meta.client) return
+  requestAnimationFrame(() => document.getElementById('main-content')?.focus())
+}
+
 // Reconexão / retorno de foco reconcilia o carrinho (a fonte de verdade que muda
 // fora da aba). Falha silenciosa aqui é aceitável: é reconciliação de fundo.
 watchConnectivity(() => { void refreshCart().catch(() => null) })
@@ -100,11 +105,12 @@ useSeoMeta({
     <a
       href="#main-content"
       class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground"
+      @click="focusMainContent"
     >
       Pular para o conteúdo
     </a>
     <ShopHeader />
-    <div id="main-content" class="flex-1 min-h-[calc(100svh-4rem)]">
+    <div id="main-content" tabindex="-1" class="flex-1 min-h-[calc(100svh-4rem)]">
       <NuxtPage />
     </div>
     <ShopFooter v-if="!hideFooter" />

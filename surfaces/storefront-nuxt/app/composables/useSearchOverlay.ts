@@ -7,12 +7,16 @@ import { ref } from 'vue'
 // foco após navegação de página é bloqueado pelo Safari).
 const open = ref(false)
 let inputEl: HTMLInputElement | null = null
+const returnFocusEl = shallowRef<HTMLElement | null>(null)
 
 export function useSearchOverlay () {
   function registerInput (el: HTMLInputElement | null) {
     inputEl = el
   }
   function openSearch () {
+    returnFocusEl.value = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null
     // Foco PRIMEIRO (síncrono, dentro do gesto) — o input está sempre no DOM e focável
     // (escondido por opacidade, não display:none). Depois revela.
     inputEl?.focus()
@@ -22,5 +26,5 @@ export function useSearchOverlay () {
     open.value = false
     inputEl?.blur()
   }
-  return { open, registerInput, openSearch, closeSearch }
+  return { open, returnFocusEl, registerInput, openSearch, closeSearch }
 }

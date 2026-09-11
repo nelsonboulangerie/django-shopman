@@ -108,6 +108,18 @@ class TestCustomerStore:
         expect(page.get_by_text(re.compile(r"R\$")).first).to_be_visible()
         expect(page.get_by_role("button", name=ADD_TO_CART).first).to_be_visible()
 
+    def test_02a_search_escape_restores_trigger_focus(self, page, store_base_url):
+        """Search keeps the keyboard user in context after closing the overlay."""
+        page.goto(f"{store_base_url}{storefront_links.path_menu()}", wait_until="networkidle")
+        trigger = page.get_by_role("button", name="Buscar no cardápio")
+        trigger.click()
+        searchbox = page.get_by_role("searchbox", name="Buscar no cardápio")
+        expect(searchbox).to_be_focused()
+        searchbox.fill("croissant")
+        expect(page.get_by_role("heading", name="Croissant", exact=True).first).to_be_visible()
+        searchbox.press("Escape")
+        expect(trigger).to_be_focused()
+
     def test_03_add_to_cart_then_cart_shows_item(self, page, store_base_url):
         """Add from the PDP, then the cart shows THAT item.
 
@@ -122,12 +134,15 @@ class TestCustomerStore:
         )
         product_name = page.locator("h1").first.inner_text().strip()
         assert product_name, "PDP should name the product"
+        add_button = page.get_by_role("button", name=ADD_TO_CART).first
+        add_button.focus()
         with page.expect_response(
             lambda response: "/api/v1/cart/skus/" in response.url
             and response.request.method == "PUT"
         ) as mutation:
-            page.get_by_role("button", name=ADD_TO_CART).first.click()
+            add_button.press("Enter")
         assert mutation.value.status == 200
+        expect(page.get_by_role("button", name=re.compile(r"Aumentar", re.IGNORECASE)).first).to_be_focused()
         cart = page.goto(f"{store_base_url}{storefront_links.path_cart()}", wait_until="networkidle")
         assert cart.status == 200, f"sacola respondeu {cart.status}"
         expect(page.get_by_text(product_name, exact=False).first).to_be_visible()

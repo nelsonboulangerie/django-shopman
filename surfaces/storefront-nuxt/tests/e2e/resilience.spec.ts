@@ -10,6 +10,17 @@ test('a home renderiza o shell mesmo com o backend vazio (degrada com dignidade)
   await expect(page.locator('#main-content')).toBeAttached()
 })
 
+test('o link de salto move o foco para o conteúdo principal', async ({ page }) => {
+  await page.goto('/')
+  const skipLink = page.getByRole('link', { name: 'Pular para o conteúdo' })
+  const mainContent = page.locator('#main-content')
+
+  await skipLink.focus()
+  await skipLink.press('Enter')
+
+  await expect(mainContent).toBeFocused()
+})
+
 test('o banner offline aparece ao perder conexão e some ao voltar', async ({ page, context }) => {
   await page.goto('/')
 

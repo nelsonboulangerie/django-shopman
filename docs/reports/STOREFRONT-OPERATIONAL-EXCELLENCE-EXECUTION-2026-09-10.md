@@ -1,6 +1,6 @@
 # Execução técnica isolada — Storefront
 
-**Implementação técnica candidata de W00–W10 concluída; aceite G2 ainda não satisfeito.** PostgreSQL 16, Redis 7 e Chromium executaram em laboratório local descartável, sem skips no gate de runtime nem no E2E. O piloto sintético autorizado está registrado abaixo. D01–D06 foram aprovadas pelo solicitante em 2026-09-11, com responsabilidade assumida e retenção definitiva pendente sob a proteção atual. J01–J16 com pessoas e leitor de tela continuam sem execução. Nenhum rollout, produção, mensagem ou transação externa foi executado. Não se atribui ganho humano a testes automatizados.
+**Implementação técnica candidata de W00–W10 concluída; aceite G2 ainda não satisfeito.** PostgreSQL 16, Redis 7 e Chromium executaram em laboratório local descartável, sem skips no gate de runtime nem no E2E. O piloto sintético e a inspeção manual de navegador/árvore de acessibilidade estão registrados abaixo. D01–D06 foram aprovadas pelo solicitante em 2026-09-11, com responsabilidade assumida e retenção definitiva pendente sob a proteção atual. J01–J16 com pessoas e leitor de tela continuam sem execução. Nenhum rollout, produção, mensagem ou transação externa foi executado. Não se atribui ganho humano a testes automatizados ou à inspeção feita pelo implementador.
 
 Commits técnicos consolidados antes do fechamento: `83bf2dbb6`, `4708354f4` e `f106a58a4`.
 
@@ -19,7 +19,7 @@ Commits técnicos consolidados antes do fechamento: `83bf2dbb6`, `4708354f4` e `
 
 | Pacote | Entrega técnica | Limite de aceite restante |
 |---|---|---|
-| W00 | Base congelada, consumidores inspecionados, reproduções E e baseline automatizado | Baseline humano J01–J16, donos nominais e protocolo de privacidade pendentes |
+| W00 | Base congelada, consumidores inspecionados, reproduções E, baseline automatizado e responsabilidades assumidas | Baseline humano J01–J16 e execução do protocolo de privacidade pendentes |
 | W01 | Header canônico e alias; divergência 409; fingerprint; BFF verifica origem, cache pessoal e Retry-After; H3 e parsing estrito; BFF+Django exercitados | SameSite/CORS/CDN da implantação dependem de ambiente autorizado |
 | W02 | Recuperação autorizada; total e revisão selados; efeito local+recibo atômicos; locks e replay concorrente em PostgreSQL; D04 aprovada | Falha física de processo fora da injeção determinística pendente |
 | W03 | Metadados e quantidade absoluta bloqueiam Session; intenção vinculada à sacola; replay projeta estado atual | Criação simultânea da primeira sacola não foi isolada como cenário próprio |
@@ -28,7 +28,7 @@ Commits técnicos consolidados antes do fechamento: `83bf2dbb6`, `4708354f4` e `
 | W06 | Set explícito, revogação antes do envio, dedupe/claim e auditoria existentes; corridas passaram em PostgreSQL; precedência de consentimento D03 aprovada | Retenção definitiva, auditoria produtiva de legado e eventual contração permanecem pendentes |
 | W07 | Metadata concorrente preservada; POST confirmado sobrevive falha de refresh; tracking existente mantido | Fluxos SSE/poll passaram; leitor de tela exige avaliação assistiva |
 | W08 | Directive/recibo recupera só conveniência faltante; falhas após escrita revertem; resposta perdida não duplica | Providers externos e todas as etapas downstream exigem reconciliação/ambiente específico |
-| W09 | Superfícies existentes preservadas; storage bloqueado, duas abas, teclado, viewport estreito e zoom 200% passaram | J01–J16, VoiceOver/TalkBack, Maps/WhatsApp e pesquisa permanecem pendentes |
+| W09 | Superfícies existentes preservadas; storage bloqueado, duas abas, teclado, viewport estreito, zoom 200% e inspeção manual da árvore de acessibilidade passaram | J01–J16 com pessoas, VoiceOver/TalkBack e Maps/WhatsApp reais permanecem pendentes |
 | W10 | Runtime PostgreSQL+Redis, browser real, build, migração mista, volume sintético, runbook e decisões D01–D06 concluídos | Jobs reais em voo, recuo operacional e medição humana impedem G2 |
 
 ## Achados, hipóteses e decisões
@@ -67,7 +67,7 @@ As propostas abaixo consolidam D01–D06 sem criar contrato, regra ou fonte de v
 | D02 · Dono/operação | Preservar adição direta quando explicitamente rotulada. Resultado parcial nomeia adicionados e faltantes; zero itens e erro técnico não são sucesso. Troca de sacola, SKU, substituto ou pontos sempre exige escolha explícita. Janela, prazo e suporte continuam vindo da configuração canônica. | Aprovada; responsabilidade assumida pelo solicitante. |
 | D03 · Privacidade/marketing | Revogação global posterior prevalece sobre inscrição específica e silencia envio/retry; falha ao consultar elegibilidade também silencia. Novo opt-in exige escolha inequívoca; histórico não é reinterpretado. Recibos vinculados e claims incertos permanecem protegidos de limpeza por idade até reconciliação e janela aprovadas; o default de sete dias continua apenas para recibos descartáveis. | Política aprovada; responsabilidade assumida. Retenção definitiva permanece pendente e a proteção atual foi mantida. |
 | D04 · Core/pagamento/estoque | Aprovar C01–C06 e o diff testado: Session/Order/IdempotencyKey/Directive e serviços de domínio continuam canônicos; não há bypass, ledger ou estado financeiro paralelo. Resultado remoto desconhecido exige consulta/reconciliação antes de retry. | Aprovada; responsabilidade assumida pelo solicitante. |
-| D05 · Produto/pesquisa | Piloto humano apenas simulado, com 8–12 participantes, fixtures sintéticas, ordem base/candidata contrabalançada e pelo menos uma observação de cada J01–J16. Incluir novo/recorrente, convidado/aparelho confiável, aparelho compartilhado, WhatsApp simulado, um percurso com VoiceOver e um com TalkBack. | Protocolo aprovado e responsabilidade assumida; participantes/dispositivos ainda não disponibilizados. |
+| D05 · Produto/pesquisa | Por orientação posterior de reduzir a amostra, usar o mínimo defensável de 3 participantes com fixtures sintéticas: um percurso com VoiceOver, um com TalkBack e um de uso geral/aparelho compartilhado. Distribuir J01–J16, incluir cliente novo e recorrente e contrabalançar base/candidata. | Recorte mínimo definido em 2026-09-11; participantes/dispositivos ainda não disponibilizados. É triagem qualitativa e não demonstra a meta populacional de ≥90%. |
 | D06 · Operação/release | Adotar as paradas do plano: qualquer duplicidade não reconciliada, valor não confirmado, PII cruzada, opt-out violado ou ação financeira bem-sucedida apresentada como falha interrompe exposição. Degradação repetida de budget, ajuda ou abandono impede expansão. Após resultado humano e nova autorização, progressão proposta: coorte pequena → 25% → 50% → 100%, mínimo de 48 h e 30 jornadas elegíveis por etapa. | Critérios aprovados e responsabilidade assumida; cada piloto real/etapa continua exigindo autorização explícita. |
 
 **Registro de decisão — 2026-09-11:** “Aprovo D01–D06 como proposto, com retenção definitiva pendente e proteção atual mantida. Assumo os papéis responsáveis.”
@@ -75,10 +75,10 @@ As propostas abaixo consolidam D01–D06 sem criar contrato, regra ou fonte de v
 ### Protocolo de observação humana preparado
 
 1. Usar somente o ambiente isolado e fixtures sintéticas. Alternar qual versão vem primeiro e não explicar a interface antes da tentativa.
-2. Distribuir J01–J16 entre 8–12 participantes, cobrindo cada jornada ao menos uma vez. Todos respondem, após estados confirmado, parcial e indeterminado: “foi pedido/pago?”, “o que faltou?” e “como continuar?”. Não forçar falha de cobrança real.
+2. Distribuir J01–J16 entre 3 participantes, cobrindo cada jornada ao menos uma vez: VoiceOver, TalkBack e uso geral/aparelho compartilhado. Todos respondem, após estados confirmado, parcial e indeterminado: “foi pedido/pago?”, “o que faltou?” e “como continuar?”. Não forçar falha de cobrança real.
 3. Em cada tentativa registrar versão, jornada, dispositivo, leitor de tela quando aplicável, conclusão, abandono, ajuda, tempo ativo e A/T/M/N/R. Anotações não contêm nome, telefone, endereço, OTP, pagamento, cookies ou chaves. Vídeo é opcional e requer consentimento específico.
 4. No VoiceOver e no TalkBack, verificar ordem do foco, nome/estado dos controles, anúncio de erro/pendência/resultado e conclusão da próxima ação sem referência visual. Teclado, zoom e storage negado já têm prova automatizada, mas continuam no roteiro humano de J16.
-5. Aprovação do piloto exige ≥90% de conclusão sem ajuda e ≥90% de respostas corretas às três perguntas, além dos budgets de cada jornada. Qualquer compreensão financeira grave, PII cruzada, opt-out violado ou duplicidade não reconciliada reprova a expansão.
+5. Com 3 pessoas, exigir 3/3 sem falha crítica para aceitar apenas a triagem qualitativa. Essa amostra não estima nem comprova a meta populacional de ≥90% do plano. Qualquer compreensão financeira grave, PII cruzada, opt-out violado ou duplicidade não reconciliada reprova a expansão; rollout continua dependente de evidência mais ampla e autorização específica.
 6. Registrar os resultados e limites da amostra neste mesmo relatório. Ausência de evento, observação ou resposta conta como dado ausente; nunca como sucesso. A amostra é qualitativa e não sustenta alegação populacional.
 
 ## Medição e observabilidade
@@ -133,6 +133,8 @@ Os totais abaixo são execuções distintas, com sobreposição; não somar como
 | Budget de mutação PostgreSQL | 24/24; p95 36,41 ms; máx. 456,54 ms | [log](storefront-operational-20260910/continuation-postgres-budget.txt) |
 | Browser mock-server | 4 passed | [log](storefront-operational-20260910/continuation-browser-mock-server.txt) |
 | Chromium real + Nuxt BFF + Django | 27 passed | [log](storefront-operational-20260910/continuation-browser-final.txt) |
+| Frontend após inspeção manual | 550 passed / 59 arquivos; typecheck/build passaram; lint 0 erros e 5 warnings preexistentes | [testes](storefront-operational-20260910/manual-final-frontend.txt), [typecheck](storefront-operational-20260910/manual-final-typecheck.txt), [lint](storefront-operational-20260910/manual-final-lint.txt), [build](storefront-operational-20260910/manual-final-build.txt) |
+| Chromium após correções de foco e recuo | Mock backend 3 passed; Nuxt BFF + Django real 28 passed | [mock](storefront-operational-20260910/manual-final-browser-mock.txt), [real](storefront-operational-20260910/manual-final-browser.txt) |
 
 Os cinco skips da suíte SQLite são testes PostgreSQL. Todos estão inscritos no **gate de runtime existente**, que passou com 334 testes e rejeita qualquer skip. O teardown reportou cinco conexões ainda abertas e não removeu imediatamente o banco temporário; após o processo encerrar, não havia sessões e o banco de teste foi removido explicitamente. Isso é uma advertência de limpeza do laboratório, não um skip oculto.
 
@@ -185,3 +187,11 @@ Foi executado o recorte sintético autorizado de W11, sem produção ou provider
 A primeira tentativa de retorno imediato foi recusada pelo rate limit do OTP, como contratado. Para representar uma visita fora da janela de abuso, somente o Redis descartável foi limpo; a identidade e os pedidos permaneceram no PostgreSQL. A repetição encontrou um cliente e dois pedidos, sem duplicar cadastro. [Rate limit observado](storefront-operational-20260910/synthetic-pilot-recurring-rate-limit.txt) e [contagem canônica](storefront-operational-20260910/synthetic-pilot-identity.txt).
 
 Este resultado mede execução técnica automatizada. Não mede cliente, compreensão, ajuda, abandono, A/T/M/N/R humanos, VoiceOver/TalkBack, WhatsApp/Maps reais ou operação sob carga. Portanto W11 humano e G3 continuam abertos; nenhuma expansão ou produção foi inferida desta autorização.
+
+## Inspeção manual autônoma — 2026-09-11
+
+O percurso manual em Chromium, com Django/Nuxt locais e árvore de acessibilidade, comprovou quatro defeitos adicionais: link de salto sem transferência de foco; perda de foco quando “Adicionar” virava controle de quantidade; Escape da busca devolvendo foco ao campo já oculto; e inclusão otimista ainda visível quando escrita e reconciliação falhavam juntas. As correções mantêm o operador no contexto: foco vai ao conteúdo principal, ao botão “Aumentar”, ao acionador da busca e, na falha, volta ao “Adicionar” após restaurar a última projeção confirmada.
+
+Também foi percorrida a jornada local menu → sacola → autenticação por OTP de teste → checkout → revisão → pedido → conta em segunda aba. A sacola atravessou o gate de autenticação, a revisão nomeou itens/total e o acompanhamento mostrou estado e ações seguintes. Nenhum provider externo foi acionado. O ensaio simultâneo de duas abas em SQLite encontrou um lock esperado desse banco; após recarga, ambas convergiram para quantidade 2. Ele não substitui o gate concorrente PostgreSQL+Redis, que permanece a prova aplicável.
+
+[Registro manual completo](storefront-operational-20260910/manual-browser-accessibility-20260911.txt). Depois das correções: frontend 550/550; typecheck e build passaram; lint teve 0 erros e os mesmos 5 warnings preexistentes; Chromium com backend vazio 3/3; Chromium + Nuxt BFF + Django 28/28. Inspeção da árvore valida nomes, papéis, estados, foco e conteúdo inerte; não equivale a sessão com VoiceOver/TalkBack nem mede compreensão humana.
