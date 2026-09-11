@@ -1,0 +1,15 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.5, pytest-9.0.2, pluggy-1.6.0
+django: version: 6.0.5, settings: config.settings_test (from env)
+rootdir: /private/tmp/shopman-storefront-execution-20260910
+configfile: pyproject.toml
+plugins: playwright-0.7.2, cov-7.1.0, locust-2.43.4, xdist-3.8.0, timeout-2.4.0, anyio-4.14.2, django-4.12.0, base-url-2.1.0
+collected 1 item
+
+shopman/shop/tests/e2e/test_storefront_e2e.py .                          [100%]
+
+============================== slowest durations ===============================
+7.16s call     shopman/shop/tests/e2e/test_storefront_e2e.py::TestLiveOrderCrossing::test_11_live_pickup_order_reaches_operator_queue[chromium]
+1.00s setup    shopman/shop/tests/e2e/test_storefront_e2e.py::TestLiveOrderCrossing::test_11_live_pickup_order_reaches_operator_queue[chromium]
+0.05s teardown shopman/shop/tests/e2e/test_storefront_e2e.py::TestLiveOrderCrossing::test_11_live_pickup_order_reaches_operator_queue[chromium]
+============================== 1 passed in 8.28s ===============================

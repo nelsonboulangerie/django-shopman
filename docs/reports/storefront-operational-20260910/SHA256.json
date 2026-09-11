@@ -39,5 +39,9 @@
   "receipts-runtime-gate.txt": "4e899eefb35e196c30336b78c05eeb51a04500db49b0e778196dc79c727a160a",
   "ruff.txt": "aac3a0503d8b95052cc85fb9f1717dc82b74aa55853a5aa9749b41e30275d472",
   "schema.txt": "59503a2bf1246a33cbc5e35bc78fdc28f7e6a393271372fe95940288bf8d07cb",
+  "synthetic-pilot-20260911.txt": "c77ed9b9059638a9ac83885a937ffe1946a74ae56cdb403c71532df42ef996a3",
+  "synthetic-pilot-identity.txt": "728e93226a1a621e30918430cac0e53ee56a2394077c51c07858237bb1af4e56",
+  "synthetic-pilot-recurring-final.txt": "ecdb110ea8e480a6cce6f2364f30131e2fb9ad4d5dcd7d1c350ad07e22f1d32d",
+  "synthetic-pilot-recurring-rate-limit.txt": "06c1ea90b8723d7b1e38eb3df0a02ab49513c7c7e6dc39e2962e3ba586291069",
   "typecheck.txt": "bf1f7de9ab6760d8d3061fb8672860131c5f018cb1cf0a76162483c81138340e"
 }

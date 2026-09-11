@@ -1,6 +1,6 @@
 # Execução técnica isolada — Storefront
 
-**Implementação técnica candidata de W00–W10 concluída; aceite G2 ainda não satisfeito.** PostgreSQL 16, Redis 7 e Chromium executaram em laboratório local descartável, sem skips no gate de runtime nem no E2E. J01–J16, leitor de tela e as decisões D01–D06 continuam humanos e não foram inferidos. Nenhum piloto, rollout, produção, mensagem ou transação externa foi executado. Não se atribui ganho humano a testes automatizados.
+**Implementação técnica candidata de W00–W10 concluída; aceite G2 ainda não satisfeito.** PostgreSQL 16, Redis 7 e Chromium executaram em laboratório local descartável, sem skips no gate de runtime nem no E2E. O piloto sintético autorizado está registrado abaixo. J01–J16 com pessoas, leitor de tela e as decisões D01–D06 continuam humanos e não foram inferidos. Nenhum rollout, produção, mensagem ou transação externa foi executado. Não se atribui ganho humano a testes automatizados.
 
 Commits técnicos consolidados antes do fechamento: `83bf2dbb6`, `4708354f4` e `f106a58a4`.
 
@@ -152,4 +152,12 @@ A execução ampliada comprovou dois defeitos adicionais antes da correção:
 | Frontend typecheck/lint | [Typecheck passou](storefront-operational-20260910/continuation-frontend-typecheck.txt); [lint 0 erros e 5 warnings preexistentes](storefront-operational-20260910/continuation-frontend-lint.txt) |
 | Build + Chromium + BFF + Django | [Build passou; E2E 27 passed](storefront-operational-20260910/continuation-browser-final.txt) |
 
-O diff técnico autorizado está concluído. Permanecem fora dele e sem autorização: piloto/rollout/produção; mensagens, cobranças ou transações externas; D01–D06; J01–J16 com pessoas; VoiceOver/TalkBack; Maps/WhatsApp reais; volume e jobs produtivos em voo; revisão/aceite dos donos propostos. Não se alega ganho humano a partir destes testes.
+O diff técnico autorizado está concluído. Permanecem fora dele: rollout/produção; mensagens, cobranças ou transações externas; D01–D06; J01–J16 com pessoas; VoiceOver/TalkBack; Maps/WhatsApp reais; volume e jobs produtivos em voo; revisão/aceite dos donos propostos. Não se alega ganho humano a partir destes testes.
+
+## Piloto sintético autorizado — 2026-09-11
+
+Foi executado o recorte sintético autorizado de W11, sem produção ou providers externos. Doze contextos Chromium independentes usaram PostgreSQL e Redis locais descartáveis: onze jornadas selecionadas passaram em 30,45 s; o retorno do mesmo cliente passou em 8,28 s. O conjunto cobriu menu, sacola, navegação imediata, gate de autenticação, estados vazio e sem acesso, tracking autorizado, storage negado, segunda aba, teclado/zoom e pedido de retirada chegando à fila do operador. [Execução de 11 contextos](storefront-operational-20260910/synthetic-pilot-20260911.txt) e [retorno recorrente](storefront-operational-20260910/synthetic-pilot-recurring-final.txt).
+
+A primeira tentativa de retorno imediato foi recusada pelo rate limit do OTP, como contratado. Para representar uma visita fora da janela de abuso, somente o Redis descartável foi limpo; a identidade e os pedidos permaneceram no PostgreSQL. A repetição encontrou um cliente e dois pedidos, sem duplicar cadastro. [Rate limit observado](storefront-operational-20260910/synthetic-pilot-recurring-rate-limit.txt) e [contagem canônica](storefront-operational-20260910/synthetic-pilot-identity.txt).
+
+Este resultado mede execução técnica automatizada. Não mede cliente, compreensão, ajuda, abandono, A/T/M/N/R humanos, VoiceOver/TalkBack, WhatsApp/Maps reais ou operação sob carga. Portanto W11 humano e G3 continuam abertos; nenhuma expansão ou produção foi inferida desta autorização.
