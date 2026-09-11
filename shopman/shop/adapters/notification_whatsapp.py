@@ -78,6 +78,7 @@ def _api_call(payload: dict, config: dict) -> dict:
     except (HTTPError, URLError):
         return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
     except Exception:
+        logger.warning("whatsapp acceptance unconfirmed; response unavailable")
         return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
 
 

@@ -182,6 +182,7 @@ def _api_call(endpoint: str, payload: dict, config: dict) -> dict:
     except (HTTPError, URLError):
         return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
     except Exception:
+        logger.warning("manychat acceptance unconfirmed; response unavailable")
         return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
 
 

@@ -1325,3 +1325,20 @@ convivência irrestrita/rollback ingênuo de workers, não bloqueia leitura. Ati
 rollback exigem parar/drenar consumidores antigos e preservar as Directives/chaves;
 verificação em ambiente autorizado continua pendente G03/G07. Sem DDL novo. O ensaio
 não mede RTO de produção nem cobre ainda browser antigo/todos os tópicos externos.
+
+### WP09 — segunda suíte ampla fixa, skips nominais e correções de contrato de teste
+
+Snapshot e5fae331e (worktree separado, nenhuma edição durante a execução): **8.709
+passed, 2 failed, 68 skipped, 3 warnings, 38 subtests; 503,89s**, SQLite/xdist2.
+Log completo com -rs em `orders-20260910/broad-e5fae331e.txt`. Falhas: fake_send_mail
+em test_notification_placeholders não devolvia o inteiro contratado; e dois
+excepts classificados como unknown não emitiam log exigido pelo gate existente.
+Fixture agora devolve 1; ambos logam aviso fixo sem conteúdo da exceção. Acrescentadas
+provas count=0 não aceito/count=1 aceito. **23 testes PostgreSQL aprovados/6,42s**
+(unknown, placeholders e higiene de exceções). A suíte ampla anterior permanece
+registrada como falha, não se transforma em verde por esta execução direcionada.
+Skips nominais: grafos complexos ausentes na smoke de Admin, dez testes de webhook
+Manychat pendentes preexistentes, um dígito fiscal de fixture, e testes que exigem
+locks/conexões PostgreSQL. O log lista módulos/linhas/motivos; ensaios PostgreSQL
+direcionados registrados anteriormente cobrem os locks alterados, não equivalem a
+executar todos os skips históricos de domínios fora do escopo.

@@ -159,3 +159,11 @@ def test_legacy_failed_notice_does_not_authorize_a_new_key(context):
     with pytest.raises(notification.NotificationResendRefused) as refusal:
         notification.resend(context, "order_ready", min_interval_seconds=0)
     assert refusal.value.code == "notification_acceptance_unknown"
+
+
+@pytest.mark.parametrize("count,accepted", [(0, False), (1, True)])
+def test_email_acceptance_requires_a_sent_message(context, monkeypatch, count, accepted):
+    from shopman.shop.adapters import notification_email
+
+    monkeypatch.setattr(notification_email, "send_mail", Mock(return_value=count))
+    assert notification_email.send("synthetic@example.invalid", "order_ready", {}) is accepted
