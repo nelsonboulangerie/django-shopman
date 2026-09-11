@@ -84,7 +84,11 @@ HOST=127.0.0.1 PORT="${NUXT_PORT}" NUXT_DJANGO_BASE_URL="${DJANGO_BASE_URL}" \
   node "${NUXT_DIR}/.output/server/index.mjs" >"${NUXT_LOG}" 2>&1 &
 NUXT_PID=$!
 
-wait_for "${DJANGO_BASE_URL}/ready/" "${DJANGO_PID}" "Servidor Django" "${DJANGO_LOG}"
+# Este harness não sobe o worker de directives: o seed deixa trabalho sintético
+# na fila e, durante o build Nuxt, ele ultrapassa de propósito o orçamento de
+# readiness. Aqui a pergunta é somente se o processo HTTP abriu para o E2E;
+# dependências/filas continuam cobertas pelos gates de readiness e runtime.
+wait_for "${DJANGO_BASE_URL}/health/live/" "${DJANGO_PID}" "Servidor Django" "${DJANGO_LOG}"
 wait_for "${STOREFRONT_BASE_URL}/" "${NUXT_PID}" "Loja Nuxt" "${NUXT_LOG}"
 
 # ── Drive the Playwright E2E: customer flows → store, operator flows → Django ──

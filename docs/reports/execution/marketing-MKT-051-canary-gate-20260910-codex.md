@@ -44,6 +44,14 @@ Playwright continuou opaco no runner macOS. A prontidão dos três gates browser
 usar o sinal emitido pelo próprio backend imediatamente depois do `bind`, eliminando a
 dependência desse probe sem omitir a prova de que o servidor abriu a porta.
 
+Os runs cancelados pelo push também tornaram visíveis dois contratos adjacentes: o
+teste antigo de aviso de estoque ainda exigia resposta exatamente `{ok: true}` depois
+de a API ganhar referência revogável e expiração; e os harnesses browser usavam
+readiness para esperar um servidor sem worker, embora o seed deixe fila sintética que
+envelhece durante os builds. As asserções passaram a conferir os handles de recuperação,
+e a espera de processo usa liveness; fila e dependências continuam bloqueantes nos gates
+de readiness/runtime, sem redução de cobertura.
+
 `SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED` e
 `SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` permanecem ausentes e `false` por default;
 o app não possui worker de entrega Marketing. `SHOPMAN_MARKETING_TEST_TARGETS_JSON`
