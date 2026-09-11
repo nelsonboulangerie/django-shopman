@@ -67,23 +67,29 @@ def on_move_for_stock_alerts(sender, instance, **kwargs) -> None:
 
 @resilient_receiver
 def on_production_finished_for_stock_alerts(sender, product_ref, date, action, work_order, **kwargs) -> None:
-    """Avisar quem pediu "me avise quando sair do forno" (F9).
+    """Criar a ocorrência da fornada e liberá-la após revisão gerencial do QC.
 
     Não-crítico: o aviso ao cliente não pode derrubar o ``finish`` da fornada
     (ver :func:`shopman.shop.handlers._resilient.resilient_receiver`).
     """
-    if action != "finished" or not product_ref:
+    if action not in {"finished", "quality_reviewed"} or not product_ref:
         return
 
     from shopman.storefront.services import stock_alerts
 
-    if not stock_alerts.has_pending(product_ref, alert_types=("production_ready",)):
+    if action == "finished" and not stock_alerts.has_pending(
+        product_ref,
+        alert_types=("production_ready",),
+    ):
         return
 
     from django.db import transaction
 
     source_ref = str(getattr(work_order, "ref", "") or getattr(work_order, "pk", "") or date or "")
-    transaction.on_commit(lambda: stock_alerts.notify_bake_ready(product_ref, source_ref=source_ref))
+    if action == "finished":
+        transaction.on_commit(lambda: stock_alerts.record_bake_pending(product_ref, source_ref=source_ref))
+    else:
+        transaction.on_commit(lambda: stock_alerts.review_bake_ready(product_ref, source_ref=source_ref))
 
 
 def on_customer_anonymized(sender, customer_ref: str = "", phone: str = "", **kwargs) -> None:

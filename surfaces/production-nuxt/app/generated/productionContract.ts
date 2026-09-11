@@ -26,7 +26,7 @@ export interface ProductionActionApprovalRequirementProjection {
 /** A server-owned action offered by an operational projection. */
 export interface ProductionActionProjection {
   ref: string;
-  kind: "plan" | "start" | "advance_step" | "finish" | "correct_qc" | "quick_finish" | "void" | "oven_arm" | "oven_conclude" | "acknowledge_alert" | "open_alert_context" | "print_labels";
+  kind: "plan" | "start" | "advance_step" | "finish" | "review_qc" | "correct_qc" | "quick_finish" | "void" | "oven_arm" | "oven_conclude" | "acknowledge_alert" | "open_alert_context" | "print_labels";
   label: string;
   priority: number;
   enabled: boolean;
@@ -544,6 +544,7 @@ export interface QCOrderCardProjection {
   can_close: boolean;
   closed: boolean;
   can_correct: boolean;
+  quality_reviewed: boolean;
   partition: QCPartitionGroupProjection[];
   correction_count: number;
   last_correction_at_display: string;
@@ -913,6 +914,17 @@ export interface ProductionFinishMutationRequest {
   partition?: ProductionPartitionGroupRequest[];
 }
 
+export interface ProductionQualityReviewMutationRequest {
+  idempotency_key: string;
+  projection_generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
+  action_ref: string;
+  action_proof: string;
+  expected_rev: number;
+}
+
 export interface ProductionQualityCorrectionMutationRequest {
   idempotency_key: string;
   projection_generated_at: string;
@@ -1036,6 +1048,10 @@ export function startProductionWorkOrder(workOrderId: number, body: ProductionSt
 
 export function finishProductionWorkOrder(workOrderId: number, body: ProductionFinishMutationRequest): Promise<ProductionWorkOrderMutationSuccess> {
   return postProductionMutation<ProductionWorkOrderMutationSuccess>(`/api/v1/backstage/production/${workOrderId}/finish/`, body);
+}
+
+export function reviewProductionQuality(workOrderId: number, body: ProductionQualityReviewMutationRequest): Promise<ProductionWorkOrderMutationSuccess> {
+  return postProductionMutation<ProductionWorkOrderMutationSuccess>(`/api/v1/backstage/production/${workOrderId}/quality-review/`, body);
 }
 
 export function correctProductionQuality(workOrderId: number, body: ProductionQualityCorrectionMutationRequest): Promise<ProductionWorkOrderMutationSuccess> {

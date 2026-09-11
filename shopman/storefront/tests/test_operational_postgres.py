@@ -1,7 +1,9 @@
 """Independent connections; SQLite must never count as evidence of row locks."""
 
 from concurrent.futures import ThreadPoolExecutor
+from decimal import Decimal
 from threading import Barrier
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -114,3 +116,50 @@ def test_concurrent_stock_moves_create_one_occurrence_and_one_delivery():
     assert sorted(results) == [0, 1]
     assert StockAlertOccurrence.objects.filter(sku="PG-STOCK-CYCLE").count() == 1
     assert StockAlertDelivery.objects.filter(occurrence__sku="PG-STOCK-CYCLE").count() == 1
+
+
+def test_concurrent_quality_review_releases_one_bake_delivery():
+    from shopman.shop.models import Channel
+    from shopman.storefront.models import StockAlertDelivery, StockAlertOccurrence
+    from shopman.storefront.services import stock_alerts
+
+    Channel.objects.get_or_create(ref="web", defaults={"name": "Web", "is_active": True})
+    stock_alerts.subscribe(
+        "PG-QC-BAKE",
+        phone="+5543999990089",
+        alert_type="production_ready",
+    )
+    stock_alerts.record_bake_pending("PG-QC-BAKE", source_ref="WO-PG-QC")
+    barrier = Barrier(2)
+
+    def run():
+        try:
+            barrier.wait(timeout=10)
+            return stock_alerts.review_bake_ready(
+                "PG-QC-BAKE",
+                source_ref="WO-PG-QC",
+            )
+        finally:
+            connections.close_all()
+
+    with (
+        patch(
+            "shopman.shop.services.quality.reviewed_saleable_quantity",
+            return_value=Decimal("5"),
+        ),
+        patch(
+            "shopman.storefront.services.sku_state.resolve",
+            return_value=SimpleNamespace(
+                can_add_to_cart=True,
+                available_qty=Decimal("5"),
+            ),
+        ),
+        patch("shopman.shop.directives.create_persistently_deduped", return_value=None),
+    ):
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = [job.result(timeout=30) for job in [pool.submit(run), pool.submit(run)]]
+
+    assert sorted(results) == [0, 1]
+    occurrence = StockAlertOccurrence.objects.get(sku="PG-QC-BAKE")
+    assert occurrence.status == StockAlertOccurrence.Status.ELIGIBLE
+    assert StockAlertDelivery.objects.filter(occurrence=occurrence).count() == 1

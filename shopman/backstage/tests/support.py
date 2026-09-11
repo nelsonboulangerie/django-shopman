@@ -143,6 +143,10 @@ def production_mutation_post(client, path: str, data=None, **kwargs):
         projection_kind = "qc"
         action_kind = "correct_qc"
         action_ref = f"correct_qc:{work_order_id}"
+    elif path.endswith("/quality-review/"):
+        projection_kind = "qc"
+        action_kind = "review_qc"
+        action_ref = f"review_qc:{work_order_id}"
     elif path.endswith("/quick-finish/"):
         projection_kind = "qc"
         action_kind = "quick_finish"

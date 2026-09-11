@@ -101,6 +101,9 @@ def handle_production_changed(sender, product_ref, date, **kwargs):
                 date,
                 fail_closed=fail_closed,
             )
+        elif action == "quality_reviewed":
+            # Audit/communication fact; stock was already realized at finish.
+            pass
         else:
             logger.warning("Unknown production_changed action: %s", action)
     except Exception:

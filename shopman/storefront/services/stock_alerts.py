@@ -320,8 +320,137 @@ def notify_back_in_stock(sku: str, *, source_ref: str = "", also_bake_waiters: b
 
 
 def notify_bake_ready(sku: str, *, source_ref: str = "") -> int:
-    """Create one bake occurrence; QC/channel availability decides eligibility."""
-    return _record_occurrences(sku, event_type="production_ready", source_ref=source_ref)
+    """Compatibility name for releasing a manager-reviewed bake occurrence."""
+    return review_bake_ready(sku, source_ref=source_ref)
+
+
+def record_bake_pending(sku: str, *, source_ref: str) -> int:
+    """Record a finished bake without authorizing communication yet."""
+    from shopman.storefront.models import StockAlertSubscription
+
+    channels = set(
+        StockAlertSubscription.objects.active().filter(
+            sku=sku,
+            alert_type="production_ready",
+            revoked_at__isnull=True,
+        )
+        .values_list("channel_ref", flat=True)
+        .distinct()
+    )
+    created = 0
+    for channel_ref in sorted(channels):
+        if _create_pending_bake_occurrence(
+            sku=sku,
+            channel_ref=channel_ref,
+            source_ref=source_ref,
+        ):
+            created += 1
+    return created
+
+
+def review_bake_ready(sku: str, *, source_ref: str) -> int:
+    """Release one bake only after canonical manager QC and channel checks."""
+    from shopman.shop.services import quality as quality_service
+    from shopman.storefront.models import StockAlertOccurrence, StockAlertSubscription
+    from shopman.storefront.services import sku_state
+
+    channels = set(
+        StockAlertSubscription.objects.active().filter(
+            sku=sku,
+            alert_type="production_ready",
+            revoked_at__isnull=True,
+        )
+        .values_list("channel_ref", flat=True)
+        .distinct()
+    )
+    channels.update(
+        StockAlertOccurrence.objects.filter(
+            sku=sku,
+            event_type="production_ready",
+            source_ref=source_ref,
+        ).values_list("channel_ref", flat=True)
+    )
+    queued = 0
+    for channel_ref in sorted(channels):
+        try:
+            reviewed_qty = quality_service.reviewed_saleable_quantity(
+                source_ref,
+                channel_ref=channel_ref,
+            )
+            state = sku_state.resolve(sku=sku, channel_ref=channel_ref)
+        except Exception:
+            logger.warning(
+                "stock_alerts: bake review evaluation failed sku=%s source=%s",
+                sku,
+                source_ref,
+                exc_info=True,
+            )
+            continue
+        if reviewed_qty is None:
+            _create_pending_bake_occurrence(
+                sku=sku,
+                channel_ref=channel_ref,
+                source_ref=source_ref,
+            )
+            continue
+        if reviewed_qty <= 0:
+            _create_blocked_occurrence(
+                sku=sku,
+                event_type="production_ready",
+                channel_ref=channel_ref,
+                source_ref=source_ref,
+                reason="quality_not_sellable_for_channel",
+            )
+            continue
+        if not state.can_add_to_cart:
+            _create_blocked_occurrence(
+                sku=sku,
+                event_type="production_ready",
+                channel_ref=channel_ref,
+                source_ref=source_ref,
+                reason="unavailable_after_quality_review",
+            )
+            continue
+        queued += _create_eligible_occurrence(
+            sku=sku,
+            event_type="production_ready",
+            channel_ref=channel_ref,
+            source_ref=source_ref,
+            available_qty=(
+                reviewed_qty
+                if state.available_qty is None
+                else min(reviewed_qty, state.available_qty)
+            ),
+        )
+    return queued
+
+
+@transaction.atomic
+def _create_pending_bake_occurrence(*, sku: str, channel_ref: str, source_ref: str) -> bool:
+    from shopman.storefront.models import StockAlertOccurrence
+
+    _lock_channel_if_configured(channel_ref)
+    occurrence, created = StockAlertOccurrence.objects.get_or_create(
+        semantic_key=_occurrence_key("production_ready", sku, channel_ref, source_ref),
+        defaults={
+            "sku": sku,
+            "event_type": "production_ready",
+            "channel_ref": channel_ref,
+            "source_ref": source_ref,
+            "status_reason": "awaiting_quality_review",
+        },
+    )
+    if not created and occurrence.status == StockAlertOccurrence.Status.PENDING:
+        updates = []
+        if occurrence.status_reason != "awaiting_quality_review":
+            occurrence.status_reason = "awaiting_quality_review"
+            updates.append("status_reason")
+        if occurrence.closed_at is not None:
+            occurrence.closed_at = None
+            updates.append("closed_at")
+        if updates:
+            occurrence.save(update_fields=[*updates, "updated_at"])
+    return created
 
 
 def _record_occurrences(
@@ -392,6 +521,7 @@ def _record_occurrences(
 def _create_eligible_occurrence(*, sku: str, event_type: str, channel_ref: str, source_ref: str, available_qty) -> int:
     from shopman.storefront.models import StockAlertDelivery, StockAlertOccurrence, StockAlertSubscription
 
+    _lock_channel_if_configured(channel_ref)
     if event_type == "stock_back":
         existing = (
             StockAlertOccurrence.objects.select_for_update()
@@ -427,12 +557,21 @@ def _create_eligible_occurrence(*, sku: str, event_type: str, channel_ref: str, 
             return 0
         raise
     if not created:
-        return 0
-    # The event is first recorded as pending; the canonical remote availability
-    # projection then authorizes this exact occurrence for delivery.
+        occurrence = StockAlertOccurrence.objects.select_for_update().get(pk=occurrence.pk)
+        if event_type != "production_ready" or occurrence.deliveries.exists():
+            return 0
+        if occurrence.status not in {
+            StockAlertOccurrence.Status.PENDING,
+            StockAlertOccurrence.Status.BLOCKED,
+        }:
+            return 0
     occurrence.status = StockAlertOccurrence.Status.ELIGIBLE
-    occurrence.status_reason = "sellable_after_event"
-    occurrence.save(update_fields=["status", "status_reason", "updated_at"])
+    occurrence.status_reason = (
+        "quality_reviewed_sellable" if event_type == "production_ready" else "sellable_after_event"
+    )
+    occurrence.available_qty = available_qty
+    occurrence.closed_at = timezone.now() if event_type == "production_ready" else None
+    occurrence.save(update_fields=["status", "status_reason", "available_qty", "closed_at", "updated_at"])
     subscriptions = StockAlertSubscription.objects.active().filter(
         sku=sku, alert_type=event_type, channel_ref=channel_ref
     )
@@ -447,17 +586,16 @@ def _create_eligible_occurrence(*, sku: str, event_type: str, channel_ref: str, 
         if delivery_created:
             _queue_delivery(delivery)
             queued += 1
-    if event_type == "production_ready":
-        occurrence.closed_at = timezone.now()
-        occurrence.save(update_fields=["closed_at", "updated_at"])
     return queued
 
 
+@transaction.atomic
 def _create_blocked_occurrence(*, sku, event_type, channel_ref, source_ref, reason) -> None:
-    from shopman.storefront.models import StockAlertOccurrence
+    from shopman.storefront.models import StockAlertDelivery, StockAlertOccurrence
 
+    _lock_channel_if_configured(channel_ref)
     semantic_key = _occurrence_key(event_type, sku, channel_ref, source_ref)
-    occurrence, created = StockAlertOccurrence.objects.get_or_create(
+    occurrence, _created = StockAlertOccurrence.objects.get_or_create(
         semantic_key=semantic_key,
         defaults={
             "sku": sku,
@@ -466,11 +604,46 @@ def _create_blocked_occurrence(*, sku, event_type, channel_ref, source_ref, reas
             "source_ref": source_ref,
         },
     )
-    if created:
-        occurrence.status = StockAlertOccurrence.Status.BLOCKED
-        occurrence.status_reason = reason
-        occurrence.closed_at = timezone.now()
-        occurrence.save(update_fields=["status", "status_reason", "closed_at", "updated_at"])
+    occurrence = StockAlertOccurrence.objects.select_for_update().get(pk=occurrence.pk)
+    accepted = occurrence.deliveries.filter(status=StockAlertDelivery.Status.ACCEPTED).count()
+    occurrence.status = StockAlertOccurrence.Status.BLOCKED
+    occurrence.status_reason = reason
+    occurrence.available_qty = None
+    occurrence.closed_at = timezone.now()
+    occurrence.save(update_fields=["status", "status_reason", "available_qty", "closed_at", "updated_at"])
+    occurrence.deliveries.filter(
+        status__in=(
+            StockAlertDelivery.Status.QUEUED,
+            StockAlertDelivery.Status.CLAIMED,
+            StockAlertDelivery.Status.RETRYABLE,
+        )
+    ).update(
+        status=StockAlertDelivery.Status.SUPPRESSED,
+        last_error_code=reason[:100],
+        updated_at=timezone.now(),
+    )
+    if accepted:
+        transaction.on_commit(
+            lambda: _alert_quality_changed_after_delivery(
+                source_ref=source_ref,
+                accepted=accepted,
+            )
+        )
+
+
+def _alert_quality_changed_after_delivery(*, source_ref: str, accepted: int) -> None:
+    from shopman.shop.services.observability import create_operator_alert
+
+    create_operator_alert(
+        type="production_quality_communication",
+        severity="warning",
+        message=(
+            f"O QC de {source_ref} deixou a fornada inelegível depois de "
+            f"{accepted} aviso(s) aceito(s). Confira a fornada e o histórico de comunicação."
+        ),
+        order_ref=source_ref,
+        dedupe_key=f"stock-alert-quality:{source_ref}",
+    )
 
 
 def _queue_delivery(delivery) -> None:

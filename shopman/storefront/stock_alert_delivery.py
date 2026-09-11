@@ -100,11 +100,15 @@ def _send_claimed(delivery_id: int) -> str:
         if delivery.status != StockAlertDelivery.Status.CLAIMED:
             return delivery.status
         sub = delivery.subscription
+        occurrence = delivery.occurrence
         lock_subscription_channel(sub.channel_ref)
         if not sub.is_active or not subscription_notification_allowed(
             customer_ref=sub.customer_ref, phone=sub.contact_phone
         ):
             return _suppress(delivery, "subscription_inactive_before_send")
+        occurrence.refresh_from_db(fields=["status"])
+        if occurrence.status != occurrence.Status.ELIGIBLE:
+            return _suppress(delivery, f"occurrence_{occurrence.status}_before_send")
         try:
             state = sku_state.resolve(sku=sub.sku, channel_ref=sub.channel_ref)
         except Exception as exc:

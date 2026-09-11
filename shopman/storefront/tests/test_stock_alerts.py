@@ -7,6 +7,7 @@ quando disponível, marca uma vez, não marca em falha de envio) e o endpoint.
 from __future__ import annotations
 
 from datetime import timedelta
+from decimal import Decimal
 from io import StringIO
 from unittest.mock import MagicMock, patch
 
@@ -169,6 +170,10 @@ def test_notify_context_includes_truthful_availability_phrase():
     stock_alerts.subscribe("SKU-1", phone=PHONE, alert_type="production_ready")
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True, available_qty=12)),
+        patch(
+            "shopman.shop.services.quality.reviewed_saleable_quantity",
+            return_value=Decimal("12"),
+        ),
         patch("shopman.shop.notifications.notify", return_value=MagicMock(success=True)) as nf,
     ):
         notified = stock_alerts.notify_bake_ready("SKU-1")
@@ -182,12 +187,12 @@ def test_notify_context_includes_truthful_availability_phrase():
 
 
 def test_notify_context_uses_neutral_phrase_when_quantity_is_unknown():
-    stock_alerts.subscribe("SKU-1", phone=PHONE, alert_type="production_ready")
+    stock_alerts.subscribe("SKU-1", phone=PHONE, alert_type="stock_back")
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)),
         patch("shopman.shop.notifications.notify", return_value=MagicMock(success=True)) as nf,
     ):
-        notified = stock_alerts.notify_bake_ready("SKU-1")
+        notified = stock_alerts.notify_back_in_stock("SKU-1")
         _deliver_queued()
 
     assert notified == 1
@@ -220,6 +225,10 @@ def test_non_sellable_bake_is_recorded_blocked_and_subscription_stays_active():
     sub = stock_alerts.subscribe("SKU-QC-BLOCK", phone=PHONE, alert_type="production_ready")
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(False)),
+        patch(
+            "shopman.shop.services.quality.reviewed_saleable_quantity",
+            return_value=Decimal("10"),
+        ),
         patch("shopman.shop.notifications.notify") as notify,
     ):
         first = stock_alerts.notify_bake_ready(sub.sku, source_ref="work-order-qc-1")
@@ -229,10 +238,85 @@ def test_non_sellable_bake_is_recorded_blocked_and_subscription_stays_active():
     notify.assert_not_called()
     occurrence = StockAlertOccurrence.objects.get()
     assert occurrence.status == "blocked"
-    assert occurrence.status_reason == "not_sellable_after_qc"
+    assert occurrence.status_reason == "unavailable_after_quality_review"
     assert occurrence.closed_at is not None
     assert not StockAlertDelivery.objects.exists()
     assert StockAlertSubscription.objects.get(pk=sub.pk).is_active
+
+
+def test_finished_bake_stays_pending_until_manager_review_then_queues_once():
+    sub = stock_alerts.subscribe("SKU-QC-PENDING", phone=PHONE, alert_type="production_ready")
+
+    assert stock_alerts.record_bake_pending(sub.sku, source_ref="work-order-qc-2") == 1
+    occurrence = StockAlertOccurrence.objects.get()
+    assert occurrence.status == "pending"
+    assert occurrence.status_reason == "awaiting_quality_review"
+    assert not StockAlertDelivery.objects.exists()
+
+    with (
+        patch(
+            "shopman.shop.services.quality.reviewed_saleable_quantity",
+            return_value=Decimal("6"),
+        ),
+        patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True, 10)),
+    ):
+        assert stock_alerts.review_bake_ready(sub.sku, source_ref="work-order-qc-2") == 1
+        assert stock_alerts.review_bake_ready(sub.sku, source_ref="work-order-qc-2") == 0
+
+    occurrence.refresh_from_db()
+    assert occurrence.status == "eligible"
+    assert occurrence.status_reason == "quality_reviewed_sellable"
+    assert occurrence.available_qty == Decimal("6")
+    assert StockAlertDelivery.objects.count() == 1
+
+
+def test_reviewed_bake_with_no_channel_eligible_quality_is_blocked():
+    sub = stock_alerts.subscribe("SKU-QC-FAIR", phone=PHONE, alert_type="production_ready")
+    stock_alerts.record_bake_pending(sub.sku, source_ref="work-order-qc-3")
+
+    with (
+        patch(
+            "shopman.shop.services.quality.reviewed_saleable_quantity",
+            return_value=Decimal("0"),
+        ),
+        patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True, 10)),
+    ):
+        assert stock_alerts.review_bake_ready(sub.sku, source_ref="work-order-qc-3") == 0
+
+    occurrence = StockAlertOccurrence.objects.get()
+    assert occurrence.status == "blocked"
+    assert occurrence.status_reason == "quality_not_sellable_for_channel"
+    assert occurrence.closed_at is not None
+    assert not StockAlertDelivery.objects.exists()
+    assert StockAlertSubscription.objects.get(pk=sub.pk).is_active
+
+
+def test_quality_change_before_provider_suppresses_queued_bake_delivery():
+    sub = stock_alerts.subscribe("SKU-QC-CHANGED", phone=PHONE, alert_type="production_ready")
+    stock_alerts.record_bake_pending(sub.sku, source_ref="work-order-qc-4")
+    with (
+        patch(
+            "shopman.shop.services.quality.reviewed_saleable_quantity",
+            return_value=Decimal("5"),
+        ),
+        patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True, 5)),
+    ):
+        assert stock_alerts.review_bake_ready(sub.sku, source_ref="work-order-qc-4") == 1
+
+    with (
+        patch(
+            "shopman.shop.services.quality.reviewed_saleable_quantity",
+            return_value=Decimal("0"),
+        ),
+        patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True, 5)),
+        patch("shopman.shop.notifications.notify") as notify,
+    ):
+        assert stock_alerts.review_bake_ready(sub.sku, source_ref="work-order-qc-4") == 0
+        _deliver_queued()
+
+    notify.assert_not_called()
+    assert StockAlertOccurrence.objects.get().status == "blocked"
+    assert StockAlertDelivery.objects.get().status == "suppressed"
 
 
 def test_notify_is_idempotent_within_one_occurrence_but_subscription_stays_active():
@@ -483,19 +567,38 @@ def test_move_receiver_never_calls_a_qc_correction_a_new_arrival():
 # ── trigger (fornada) ───────────────────────────────────────────────
 
 
-def test_bake_receiver_notifies_production_ready_subscribers():
-    """ "Me avise quando sair do forno" dispara na fornada, não na reposição."""
+def test_bake_receiver_records_pending_occurrence_until_quality_review():
+    """A fornada cria o fato pendente sem autorizar comunicação ao cliente."""
     from shopman.storefront import handlers
 
     stock_alerts.subscribe("SKU-BAKE", phone=PHONE, alert_type="production_ready")
     with (
-        patch("shopman.storefront.services.stock_alerts.notify_bake_ready") as nb,
+        patch("shopman.storefront.services.stock_alerts.record_bake_pending") as pending,
         patch("django.db.transaction.on_commit", side_effect=lambda fn: fn()),
     ):
         handlers.on_production_finished_for_stock_alerts(
             sender=None, product_ref="SKU-BAKE", date=None, action="finished", work_order=None
         )
-    nb.assert_called_once_with("SKU-BAKE", source_ref="")
+    pending.assert_called_once_with("SKU-BAKE", source_ref="")
+
+
+def test_quality_review_receiver_releases_the_same_bake_occurrence():
+    from shopman.storefront import handlers
+
+    stock_alerts.subscribe("SKU-BAKE", phone=PHONE, alert_type="production_ready")
+    work_order = MagicMock(ref="wo-reviewed")
+    with (
+        patch("shopman.storefront.services.stock_alerts.review_bake_ready") as reviewed,
+        patch("django.db.transaction.on_commit", side_effect=lambda fn: fn()),
+    ):
+        handlers.on_production_finished_for_stock_alerts(
+            sender=None,
+            product_ref="SKU-BAKE",
+            date=None,
+            action="quality_reviewed",
+            work_order=work_order,
+        )
+    reviewed.assert_called_once_with("SKU-BAKE", source_ref="wo-reviewed")
 
 
 def test_bake_receiver_ignores_other_production_actions():
@@ -503,14 +606,16 @@ def test_bake_receiver_ignores_other_production_actions():
 
     stock_alerts.subscribe("SKU-BAKE", phone=PHONE, alert_type="production_ready")
     with (
-        patch("shopman.storefront.services.stock_alerts.notify_bake_ready") as nb,
+        patch("shopman.storefront.services.stock_alerts.record_bake_pending") as pending,
+        patch("shopman.storefront.services.stock_alerts.review_bake_ready") as reviewed,
         patch("django.db.transaction.on_commit", side_effect=lambda fn: fn()),
     ):
         handlers.on_production_finished_for_stock_alerts(
             sender=None, product_ref="SKU-BAKE", date=None, action="started", work_order=None
         )
         _deliver_queued()
-    nb.assert_not_called()
+    pending.assert_not_called()
+    reviewed.assert_not_called()
 
 
 def test_stock_back_subscriber_is_not_woken_by_a_bake():
@@ -519,13 +624,13 @@ def test_stock_back_subscriber_is_not_woken_by_a_bake():
 
     stock_alerts.subscribe("SKU-BAKE", phone=PHONE)  # stock_back (default)
     with (
-        patch("shopman.storefront.services.stock_alerts.notify_bake_ready") as nb,
+        patch("shopman.storefront.services.stock_alerts.record_bake_pending") as pending,
         patch("django.db.transaction.on_commit", side_effect=lambda fn: fn()),
     ):
         handlers.on_production_finished_for_stock_alerts(
             sender=None, product_ref="SKU-BAKE", date=None, action="finished", work_order=None
         )
-    nb.assert_not_called()
+    pending.assert_not_called()
 
 
 def test_both_alert_types_coexist_for_the_same_shopper():
@@ -621,8 +726,8 @@ def test_endpoint_derives_the_oven_axis_without_the_front_asking(client):
 # ── uma fornada, UMA mensagem ────────────────────────────────────────
 
 
-def test_a_bake_does_not_send_twice_to_the_same_person():
-    """A fornada acorda os DOIS receptores; só um pode falar.
+def test_a_bake_waits_for_qc_and_does_not_send_twice_to_the_same_person():
+    """A fornada acorda os DOIS receptores; a revisão libera uma mensagem.
 
     O ``finish`` escreve o ledger (``kind=make``), então nasce um ``Move`` no
     mesmo instante em que ``production_changed`` dispara. Com o eixo certo, o
@@ -635,6 +740,10 @@ def test_a_bake_does_not_send_twice_to_the_same_person():
 
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True, 6)),
+        patch(
+            "shopman.shop.services.quality.reviewed_saleable_quantity",
+            return_value=Decimal("6"),
+        ),
         patch("shopman.shop.notifications.notify", return_value=MagicMock(success=True)) as nf,
         patch("django.db.transaction.on_commit", side_effect=lambda fn: fn()),
     ):
@@ -644,6 +753,15 @@ def test_a_bake_does_not_send_twice_to_the_same_person():
             product_ref="BF-BAKE",
             date=None,
             action="finished",
+            work_order=None,
+        )
+        _deliver_queued()
+        assert nf.call_count == 0
+        handlers.on_production_finished_for_stock_alerts(
+            sender=None,
+            product_ref="BF-BAKE",
+            date=None,
+            action="quality_reviewed",
             work_order=None,
         )
         _deliver_queued()
@@ -779,6 +897,10 @@ def test_replayed_bake_source_has_one_occurrence_and_one_delivery():
     sub = stock_alerts.subscribe("SKU-BAKE-REPLAY", phone=PHONE, alert_type="production_ready")
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True, 5)),
+        patch(
+            "shopman.shop.services.quality.reviewed_saleable_quantity",
+            return_value=Decimal("5"),
+        ),
         patch("shopman.shop.notifications.notify", return_value=NotificationResult(success=True)) as notify,
     ):
         assert stock_alerts.notify_bake_ready(sub.sku, source_ref="work-order-77") == 1

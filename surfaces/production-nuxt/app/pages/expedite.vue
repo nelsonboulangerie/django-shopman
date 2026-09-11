@@ -30,6 +30,7 @@ const {
   refresh,
   finish,
   quickFinish,
+  reviewQuality,
   correctQuality,
 } = useQcKiosk(routeDate);
 
@@ -102,6 +103,10 @@ function correctionAvailable(order: QCOrderCardProjection): boolean {
   return projectedAction(`correct_qc:${order.pk}`)?.enabled === true;
 }
 
+function reviewAvailable(order: QCOrderCardProjection): boolean {
+  return projectedAction(`review_qc:${order.pk}`)?.enabled === true;
+}
+
 function correctionPartition(order: QCOrderCardProjection): QcPartitionGroup[] {
   return order.partition;
 }
@@ -150,6 +155,18 @@ function openCorrection(order: QCOrderCardProjection) {
   if (!correctionAvailable(order)) return;
   selectedOrder.value = order;
   selectedRecipe.value = null;
+}
+
+async function confirmQuality(order: QCOrderCardProjection) {
+  if (!reviewAvailable(order)) return;
+  if (
+    !window.confirm(
+      `Confirmar a qualidade da fornada de ${order.recipe_name}? Isso libera os avisos de disponibilidade autorizados pelos clientes.`,
+    )
+  )
+    return;
+  const result = await reviewQuality(order.pk, order.rev);
+  if (result.ok) useSonner.success("Qualidade confirmada.");
 }
 
 function openOffPlan(recipe: RecipeOptionProjection) {
@@ -681,6 +698,16 @@ function onTimerKeydown(event: KeyboardEvent) {
               {{ order.output_sku }}
             </p>
             <p
+              class="truncate text-xs font-medium"
+              :class="order.quality_reviewed ? 'text-success' : 'text-warning'"
+            >
+              {{
+                order.quality_reviewed
+                  ? "Qualidade revisada"
+                  : "Aguardando revisão"
+              }}
+            </p>
+            <p
               v-if="order.correction_count"
               class="truncate text-xs text-muted-foreground"
             >
@@ -701,6 +728,18 @@ function onTimerKeydown(event: KeyboardEvent) {
                 · {{ order.loss_qty }} de perda</template
               >
             </p>
+            <UiButton
+              v-if="reviewAvailable(order)"
+              type="button"
+              size="sm"
+              :disabled="submitting"
+              :aria-busy="submitting"
+              :aria-label="`Confirmar qualidade da fornada de ${order.recipe_name}`"
+              @click="confirmQuality(order)"
+            >
+              <Icon name="lucide:badge-check" class="size-3.5" />
+              {{ submitting ? "Confirmando…" : "Confirmar qualidade" }}
+            </UiButton>
             <UiButton
               v-if="correctionAvailable(order)"
               type="button"

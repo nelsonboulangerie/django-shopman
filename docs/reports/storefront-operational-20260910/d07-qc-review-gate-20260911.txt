@@ -1,0 +1,51 @@
+D07 — gate gerencial de qualidade para aviso de fornada
+Data: 2026-09-11
+Branch: codex/storefront-operational-excellence-20260910
+
+Defeito comprovado na revalidação
+- Antes, o sinal de fechamento chamava diretamente a avaliação de disponibilidade e podia
+  tornar production_ready elegível sem um fato distinto de revisão gerencial.
+- Em PostgreSQL, a correção de QC também falhava ao bloquear Announcement junto com o lado
+  anulável de um LEFT JOIN (NotSupportedError); SQLite não reproduzia o defeito.
+
+Contrato depois da correção
+- O fechamento cria uma StockAlertOccurrence pending/awaiting_quality_review e nenhuma entrega.
+- A gestão usa a ação projetada review_qc na tela existente Produção → Expedição. A mutação exige
+  capability, revisão otimista, prova da projeção e chave idempotente; grava QUALITY_REVIEWED no
+  WorkOrderEvent imutável. QUALITY_CORRECTED também constitui revisão.
+- A política canônica do canal calcula a quantidade: excellent/standard são elegíveis no remoto;
+  fair/minimal/perda não são. Não foi criada tabela, fila ou política paralela.
+- Revisões concorrentes serializam pelo WorkOrder e pelo mutex do canal. A ocorrência e a entrega
+  conservam unicidade; retry exato depois de resposta perdida devolve o commit existente.
+- Se o QC piorar antes do adapter, queued/claimed/retryable vira suppressed. Se já houve aceite,
+  o recibo permanece e nasce alerta operacional para conciliação, sem reenvio cego.
+- A correção PostgreSQL limita select_for_update à própria linha Announcement; o relacionamento
+  opcional continua apenas para leitura.
+
+Resultados frescos
+- SQLite, Storefront completo: 1.523 passed, 6 skips exclusivos de PostgreSQL, em 49,22 s.
+- SQLite, produção/Storefront direcionado: 159 passed; bateria final do núcleo D07/QC incluída na
+  suíte completa.
+- PostgreSQL, alertas + corrida com conexões independentes + QC: 81 passed em 18,87 s. A corrida
+  de duas revisões produziu exatamente uma ocorrência elegível e uma entrega.
+- Produção Nuxt: 281 passed em 37 arquivos; typecheck e lint passaram.
+- Backstage completo: 3.718 passed, 46 skips declarados e 28 subtestes passed em
+  15 min 09 s.
+- Craftsman no harness próprio do pacote: 414 passed e 3 skips declarados em 10,92 s.
+- Núcleo final de alertas, QC e campanhas após o ajuste do handler: 145 passed em 18,56 s.
+- Produção Nuxt: build de produção passou com NUXT_SHOPMAN_ENVIRONMENT=development; somente os
+  warnings conhecidos de sourcemap do Tailwind foram emitidos.
+- Contrato gerado: export_production_schema --check passou.
+- Migração PostgreSQL: fresh migrate, recuo craftsman 0011→0010 e avanço 0010→0011 passaram.
+- makemigrations --check --dry-run: No changes detected.
+- Ruff dos arquivos alterados e git diff --check: passaram.
+
+Evidência humana relacionada
+- No percurso de aparelho compartilhado no iPhone, o cliente B viu zero dado e zero endereço do
+  cliente A; a sacola não pessoal foi preservada. Isso valida somente o recorte observado.
+
+Limites
+- Nenhum provider externo, mensagem, pedido, pagamento, rollout ou promoção de código ocorreu.
+- TalkBack, jornadas humanas restantes, retenção definitiva e execução de jobs/providers reais
+  continuam dependentes de ambiente ou decisão já registrados no relatório principal.
+- Estes resultados não medem esforço, compreensão, abandono nem ganho humano.
