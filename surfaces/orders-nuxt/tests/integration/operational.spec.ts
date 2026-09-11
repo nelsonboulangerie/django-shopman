@@ -562,3 +562,34 @@ for (const resource of ["queue", "detail", "catalog", "feeds"]) {
     await expect(freshness.locator("time")).toHaveAttribute("datetime", confirmed!);
   });
 }
+
+
+test("confirmed note stays visible when the post-commit read fails", async ({ page }) => {
+  await login(page, "orders-lab-notes");
+  await page.goto(`/${lab.notes_ref}`);
+  const note = page.getByPlaceholder("Instruções de preparo para a cozinha…");
+  await expect(note).toBeVisible();
+  const submitted = `Nota confirmada; leitura seguinte indisponível ${Date.now()}`;
+  let blockRead = false;
+  let posts = 0;
+  await page.route(`**/api/v1/backstage/orders/${lab.notes_ref}/`, async route => {
+    if (blockRead && route.request().method() === "GET") await route.abort("failed");
+    else await route.continue();
+  });
+  await page.route(`**/api/v1/backstage/orders/${lab.notes_ref}/notes/`, async route => {
+    if (route.request().method() === "POST") {
+      blockRead = true; // Also block SSE reads racing the successful POST response.
+      posts += 1;
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.fulfill({ response }); // The mutation response is delivered intact.
+    } else await route.continue();
+  });
+  await note.fill(submitted);
+  await page.getByRole("button", { name: "Salvar nota", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Ação confirmada" })).toBeVisible();
+  await expect(note).toHaveValue(submitted);
+  const canonical = await (await page.request.get(`/api/v1/backstage/orders/${lab.notes_ref}/`)).json();
+  expect(canonical.order.kitchen_note).toBe(submitted);
+  expect(posts).toBe(1);
+});

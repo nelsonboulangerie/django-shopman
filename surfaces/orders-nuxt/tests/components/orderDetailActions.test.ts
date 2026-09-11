@@ -1,7 +1,7 @@
 import { fixtureActions } from "../support/orderActions";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, ref, watch } from "vue";
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { useOrderCashDrafts } from "../../app/composables/useOrderCashDrafts";
 
 import type { CustomerProfileProjection, OperatorOrderProjection } from "../../app/types/orders";
@@ -21,6 +21,7 @@ const detalhe = ref<OperatorOrderProjection | null>(null);
 const resendPaymentLink = vi.fn();
 const requeueFiscal = vi.fn();
 const equipmentBack = vi.fn();
+const saveNotes = vi.fn();
 const readError = ref<unknown>(null);
 
 const localStates = new Map<string, ReturnType<typeof ref>>();
@@ -57,7 +58,7 @@ vi.stubGlobal("useOrderDetail", () => ({
   equipmentBack,
   requeueFiscal,
   resendPaymentLink: resendPaymentLink,
-  saveNotes: vi.fn(),
+  saveNotes,
   addComment: vi.fn(),
   courierDispatch: vi.fn(),
   courierCancel: vi.fn(),
@@ -562,4 +563,17 @@ it.each([
   await button.trigger("click");
   expect(execute).not.toHaveBeenCalled();
   w.unmount();
+});
+
+
+it("keeps a confirmed note when the following useful read fails", async () => {
+  const w = abrir(order({ can_confirm: false, kitchen_note: "Nota anterior", revisions: { kitchen_note: "old-base" } }));
+  try {
+    saveNotes.mockImplementationOnce(async () => { readError.value = new Error("synthetic read unavailable"); return true; });
+    const note = w.find('textarea[placeholder="Instruções de preparo para a cozinha…"]');
+    await note.setValue("Nota nova confirmada");
+    await w.findAll("button").find((button) => button.text() === "Salvar nota")!.trigger("click");
+    await flushPromises();
+    expect((note.element as HTMLTextAreaElement).value).toBe("Nota nova confirmada");
+  } finally { readError.value = null; w.unmount(); }
 });

@@ -85,11 +85,11 @@ async function saveKitchenNote() {
   const submitted = notes.value;
   if (await saveNotes(submitted, notesRevision.value)) {
     notesBase.value = submitted;
-    if (notes.value === submitted) {
+    if (notes.value === submitted && !error.value) {
       notes.value = order.value?.kitchen_note || "";
       notesBase.value = notes.value;
     }
-    notesRevision.value = order.value?.revisions?.kitchen_note || "";
+    if (!error.value) notesRevision.value = order.value?.revisions?.kitchen_note || "";
   }
 }
 // Session-only drafts: leaving requires an explicit discard while text is dirty.

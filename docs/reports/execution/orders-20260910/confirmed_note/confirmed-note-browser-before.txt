@@ -1,0 +1,51 @@
+
+> test:e2e
+> playwright test --config=playwright.integration.config.ts --grep confirmed note stays
+
+[WebServer] (node:28291) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:28292) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › tests/integration/operational.spec.ts:567:1 › confirmed note stays visible when the post-commit read fails (12.1s)
+
+
+  1) [chromium] › tests/integration/operational.spec.ts:567:1 › confirmed note stays visible when the post-commit read fails 
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator:  getByPlaceholder('Instruções de preparo para a cozinha…')
+    Expected: "Nota confirmada; leitura seguinte indisponível"
+    Received: "Rascunho preservado"
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toHaveValue" with timeout 10000ms
+      - waiting for getByPlaceholder('Instruções de preparo para a cozinha…')
+        24 × locator resolved to <textarea rows="3" id="order-notes" placeholder="Instruções de preparo para a cozinha…" class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"></textarea>
+           - unexpected value "Rascunho preservado"
+
+
+      589 |   await page.getByRole("button", { name: "Salvar nota", exact: true }).click();
+      590 |   await expect(page.getByRole("alert").filter({ hasText: "Ação confirmada" })).toBeVisible();
+    > 591 |   await expect(note).toHaveValue(submitted);
+          |                      ^
+      592 |   const canonical = await (await page.request.get(`/api/v1/backstage/orders/${lab.notes_ref}/`)).json();
+      593 |   expect(canonical.order.kitchen_note).toBe(submitted);
+      594 |   expect(posts).toBe(1);
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:591:22
+
+    Error Context: ../../.orders-lab/playwright-results/operational-confirmed-note-c0562--the-post-commit-read-fails-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../.orders-lab/playwright-results/operational-confirmed-note-c0562--the-post-commit-read-fails-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../.orders-lab/playwright-results/operational-confirmed-note-c0562--the-post-commit-read-fails-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › tests/integration/operational.spec.ts:567:1 › confirmed note stays visible when the post-commit read fails 

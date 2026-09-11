@@ -1460,3 +1460,19 @@ Log `orders-20260910/broad-1d84dcc5b.txt`. Inclui evidência fiscal em lote e al
 após crash de notificação. Fonte imutável; alterações seguintes são de frontend e
 artefatos de ensaio, com seus checks específicos. Não converte os skips em testes
 executados nem substitui os ensaios PostgreSQL já registrados.
+
+### WP06 — nota confirmada preservada quando a leitura pós-commit falha
+
+Antes: um teste de componente e um browser real falharam; POST200 aplicado, mas
+a projeção útil antiga substituía o texto recém-confirmado. Correção mínima:
+base local registra o valor confirmado; texto e revisão só adotam projeção nova
+quando a leitura teve sucesso. Falha continua visível e bloqueia nova escrita até
+leitura útil. Texto novo digitado durante envio também permanece protegido.
+
+Depois: **295 Vitest/3,41s**, typecheck e build aprovados; **26 Playwright integrados
+aprovados/43,2s**, seed novo, Chromium→Nitro→Django→PostgreSQL/Redis. O caso novo
+confirma texto no servidor, um POST e texto retido apesar de GETs interrompidos,
+incluindo corrida SSE. Primeira invocação Playwright falhou na preparação por cwd
+incorreto, sem executar testes; log preservado ao lado dos resultados válidos em
+`orders-20260910/confirmed_note/`. Sem DDL ou efeito real. Rollback reintroduziria
+a regressão visual; conservar código compatível e recibos, não desfazer a nota.
