@@ -1,0 +1,21 @@
+DEBUG 2026-09-11 02:51:36,914 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 02:51:36,914 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 02:51:36,915 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 02:51:36,915 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 02:51:36,934 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 02:51:36,935 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 02:51:36,936 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 02:51:36,937 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 02:51:36,941 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 02:51:36,942 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 02:51:36,942 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 02:51:36,942 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 02:51:36,942 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 02:51:36,943 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 02:51:36,943 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 02:51:36,944 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 02:51:36,944 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 02:51:36,944 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 02:51:36,947 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 02:51:36,948 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+{"mode": "current", "database": "orders_restore_lab_stock", "old_schema_reads_new_json": true, "synthetic_remote_calls": 0, "unknown_safe_to_consume": true, "all_probe_writes_rolled_back": true}

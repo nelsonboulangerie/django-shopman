@@ -1310,3 +1310,18 @@ externa nem definição unilateral de SLA G03 ou custódia real G02.
 - Snapshot imutável d5ba08477: **8.699 passed, 68 skipped, 3 warnings, 38 subtests, 486,03s**, SQLite, xdist 2. Worktree de validação limpo após execução. Evidência `orders-20260910/broad-d5ba08477.txt`. Warnings são três testes de deploy que substituem DATABASES. A execução não pediu -rs; inventário nominal dos skips ainda deve ser extraído/reexecutado. Não representa PostgreSQL nem os commits posteriores daa08a6b7 e fence de notificação.
 - Playwright padrão completo: **4 passed/17,6s**, Chromium, backend simulado 8796, Nitro 3004, build incluído. Evidência `orders-20260910/default-e2e.txt`. É complementar aos 25 cenários integrados reais já registrados; não substitui worker/PostgreSQL/SSE integral.
 - G06 apresentado novamente: 500 pedidos/10 clientes backend p95 1.599ms e tela p95 2.473ms continuam acima dos budgets. Solicitados dispositivo/rede/personas/volume de aceite; pergunta pendente não muda os limites e não bloqueia ensaios independentes.
+
+### WP09 — restore populado e consumidor anterior
+
+Ensaio reproduzível e evidências em `orders-20260910/restore_lab/README.md`. PostgreSQL
+local isolado: 140 tabelas/129 sequências preservadas byte a byte por manifesto de
+linhas e valores de sequência; 44 pedidos, 43 Directives, 157 chaves, 7 lançamentos
+de caixa, 7 intents/7 transações Payman, 2 movimentos fracionários Stockman. Primeira
+cópia tinha estoque vazio; repetida em novo destino com entradas/saídas pelo writer
+canônico. Nenhum banco de terceiros substituído, nenhum ledger apagado.
+Código anterior 5a3383c9 lê os novos campos, porém tenta reenviar unknown no fake;
+atual e5fae331e bloqueia. Probes revertidos, manifestos ainda idênticos. Isso reprova
+convivência irrestrita/rollback ingênuo de workers, não bloqueia leitura. Ativação e
+rollback exigem parar/drenar consumidores antigos e preservar as Directives/chaves;
+verificação em ambiente autorizado continua pendente G03/G07. Sem DDL novo. O ensaio
+não mede RTO de produção nem cobre ainda browser antigo/todos os tópicos externos.

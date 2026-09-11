@@ -1,0 +1,8 @@
+{
+  "source": "orders_lab",
+  "target": "orders_restore_lab_stock",
+  "dump_seconds": 0.23057183297351003,
+  "restore_seconds": 0.6717852910514921,
+  "archive_bytes": 635722,
+  "all_tables_and_sequences_equal": true
+}
