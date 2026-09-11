@@ -93,7 +93,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
       <a
         v-if="courier.driver.phone"
         :href="telHref(courier.driver.phone)"
-        class="flex items-center gap-1.5 font-medium text-primary underline-offset-2 hover:underline"
+        class="min-h-control min-w-control flex items-center gap-1.5 font-medium text-primary underline-offset-2 hover:underline"
       >
         <Icon name="lucide:phone" class="size-4" /> {{ courier.driver.phone }}
       </a>
@@ -110,7 +110,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
         :href="courier.tracking_url"
         target="_blank"
         rel="noopener"
-        class="flex items-center gap-1.5 font-medium text-primary underline-offset-2 hover:underline"
+        class="min-h-control min-w-control flex items-center gap-1.5 font-medium text-primary underline-offset-2 hover:underline"
       >
         <Icon name="lucide:map-pin" class="size-4" /> Acompanhar corrida
       </a>
@@ -126,7 +126,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
         type="button"
         :disabled="busy || !dispatchAction?.enabled"
         :title="dispatchAction?.reason || (dispatchAction?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')"
-        class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+        class="min-h-action min-w-action inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
         @click="emit('dispatch')"
       >
         <Icon name="lucide:send" class="size-4" />
@@ -137,7 +137,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
         type="button"
         :disabled="busy || !quoteAction?.enabled"
         :title="quoteAction?.reason || (quoteAction?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')"
-        class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50"
+        class="min-h-control min-w-control inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50"
         @click="emit('quote')"
       >
         <Icon name="lucide:calculator" class="size-4" /> Cotar entrega

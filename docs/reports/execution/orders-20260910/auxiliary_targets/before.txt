@@ -1,0 +1,40 @@
+[WebServer] (node:41798) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:41800) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › tests/integration/operational.spec.ts:137:1 › cancel response loss retains the reason and reads the committed receipt (3.6s)
+
+
+  1) [chromium] › tests/integration/operational.spec.ts:137:1 › cancel response loss retains the reason and reads the committed receipt 
+
+    Error: Confirmar: ação principal
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 48
+    Received:    37.984375
+
+      152 |   const confirm = page.getByRole("button", { name: "Confirmar", exact: true });
+      153 |   await confirm.click({ trial: true });
+    > 154 |   expect.soft((await confirm.boundingBox())?.height, "Confirmar: ação principal").toBeGreaterThanOrEqual(48);
+          |                                                                                   ^
+      155 |   await confirm.click();
+      156 |   await expect(page.getByRole("dialog")).toHaveCount(0);
+      157 |   const canonical = await (await page.request.get(`/api/v1/backstage/orders/${lab.cancel_ref}/`)).json();
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:154:83
+
+    Error Context: ../../.orders-lab/playwright-results/operational-cancel-respons-5b761-reads-the-committed-receipt-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../.orders-lab/playwright-results/operational-cancel-respons-5b761-reads-the-committed-receipt-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../.orders-lab/playwright-results/operational-cancel-respons-5b761-reads-the-committed-receipt-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › tests/integration/operational.spec.ts:137:1 › cancel response loss retains the reason and reads the committed receipt 

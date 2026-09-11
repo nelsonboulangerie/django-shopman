@@ -82,7 +82,7 @@ const description = computed(() =>
 
       <div v-else-if="error" role="alert" class="text-sm text-destructive">
         <p>{{ error }}</p>
-        <button type="button" class="underline" @click="emit('retry')">Consultar novamente</button>
+        <button type="button" class="min-h-control min-w-control underline" @click="emit('retry')">Consultar novamente</button>
       </div>
       <p v-else-if="isMarketplace && !reasons.length" class="text-sm">O iFood não oferece motivos de cancelamento neste momento.</p>
 
@@ -106,7 +106,7 @@ const description = computed(() =>
             :key="i"
             type="button"
             :aria-pressed="reason === preset"
-            class="rounded-full border px-3 py-1 text-xs font-medium transition hover:bg-accent"
+            class="min-h-control min-w-control rounded-full border px-3 py-1 text-xs font-medium transition hover:bg-accent"
             :class="reason === preset ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground'"
             @click="applyPreset(preset)"
           >
@@ -117,19 +117,19 @@ const description = computed(() =>
           v-model="reason"
           rows="3"
           :placeholder="mode === 'reject' ? 'Motivo da recusa…' : 'Motivo do cancelamento (opcional)…'"
-          class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+          class="min-h-control min-w-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
           aria-label="Motivo"
         />
       </template>
 
       <UiDialogFooter>
-        <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="emit('update:open', false)">
+        <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="emit('update:open', false)">
           Voltar
         </button>
         <button
           type="button"
           :disabled="busy || !canConfirm"
-          class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+          class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
           @click="submit"
         >
           {{ mode === "reject" ? "Recusar pedido" : "Confirmar" }}

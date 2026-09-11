@@ -149,7 +149,11 @@ test("cancel response loss retains the reason and reads the committed receipt", 
   await page.goto(`/${lab.cancel_ref}`);
   await page.getByRole("button", { name: "Cancelar", exact: true }).click();
   await page.getByRole("textbox", { name: "Motivo", exact: true }).fill("Motivo sintético preservado");
-  await page.getByRole("button", { name: "Confirmar", exact: true }).click();
+  const confirm = page.getByRole("button", { name: "Confirmar", exact: true });
+  await confirm.click({ trial: true });
+  expect.soft((await confirm.boundingBox())?.height, "Confirmar: ação principal").toBeGreaterThanOrEqual(48);
+  await page.getByRole("dialog").screenshot({ path: fileURLToPath(new URL("../../../../.orders-lab/integration-reason-targets.png", import.meta.url)) });
+  await confirm.click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const canonical = await (await page.request.get(`/api/v1/backstage/orders/${lab.cancel_ref}/`)).json();
   expect(canonical.order.status).toBe("cancelled");

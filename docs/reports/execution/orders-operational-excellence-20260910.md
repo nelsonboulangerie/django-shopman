@@ -1589,3 +1589,12 @@ no servidor nem adiciona confirmação. **299 Vitest/3,37s** e typecheck aprovad
 provas positivas emitem exatamente um evento, negativas não emitem. Logs
 courier_actions/. Sem DDL/efeito real. Não alegado browser de fornecedor nesta
 fatia. Rollback reabre clique recusável; preservar guardas e recibos do backend.
+
+### WP06 — alvos auxiliares
+
+Confirmar motivo falhava no piso48 antes; componentes de motivo, corrida e
+sugestão AI, além do link TV, agora usam tokens44/48. Depois:26 integrações55s,
+299 Vitest6,21s, typecheck/build aprovados; screenshot do diálogo inspecionado.
+Evidências auxiliary_targets/. Sem lógica, DDL ou efeitos reais nesta fatia.
+Rollback visual por revert. Corrigida reprodução: settings_orders_lab.py também
+é necessário entre os quatro bootstraps. C07 descarte continua em auditoria.

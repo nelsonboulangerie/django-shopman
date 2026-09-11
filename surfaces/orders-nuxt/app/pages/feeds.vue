@@ -246,7 +246,7 @@ useHead({ title: "Feeds · Gestor" });
 
             <a
               :href="outputHref(sc)" target="_blank" rel="noopener"
-              class="ml-auto inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition hover:bg-accent"
+              class="ml-auto inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition hover:bg-accent"
               :title="sc.output_path"
             >
               <Icon :name="sc.capability === 'display' ? 'lucide:external-link' : 'lucide:code-xml'" class="size-3.5" />

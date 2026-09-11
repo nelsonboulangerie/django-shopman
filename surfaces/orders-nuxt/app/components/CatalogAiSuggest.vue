@@ -54,7 +54,7 @@ onBeforeUnmount(() => { generation++; });
       <button
         type="button"
         :disabled="busy"
-        class="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:opacity-50"
+        class="min-h-control min-w-control inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:opacity-50"
         :aria-label="`Sugerir ${label} com IA`"
         @click.prevent="onSuggest"
       >
@@ -88,12 +88,12 @@ onBeforeUnmount(() => { generation++; });
       <span class="mt-2 flex items-center gap-2">
         <button
           type="button"
-          class="rounded-md bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
+          class="min-h-action min-w-action rounded-md bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
           @click.prevent="onAccept"
         >Aceitar</button>
         <button
           type="button"
-          class="rounded-md border border-border px-2.5 py-1 text-xs font-medium transition hover:bg-accent"
+          class="min-h-control min-w-control rounded-md border border-border px-2.5 py-1 text-xs font-medium transition hover:bg-accent"
           @click.prevent="suggestion = ''"
         >Descartar</button>
       </span>

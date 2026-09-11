@@ -1,6 +1,7 @@
 # Laboratório sintético de integração
 
-Copiar `manage_lab.py`, `serve_lab.py` e `seed_e2e.py` para `.orders-lab/` na raiz
+Copiar `manage_lab.py`, `serve_lab.py`, `settings_orders_lab.py` e `seed_e2e.py`
+para `.orders-lab/` na raiz
 do worktree isolado. Os scripts de crash abaixo são copiados apenas para esse ensaio.
 Os bootstraps recusam outra DATABASE_URL/REDIS_URL. Usar cluster PostgreSQL próprio,
 usuário/db `orders_lab`, bind local 55439, Redis próprio em 56389 sem persistência.
