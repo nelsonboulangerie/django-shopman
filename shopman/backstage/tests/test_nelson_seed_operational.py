@@ -735,6 +735,10 @@ def test_nelson_seed_qa_profile_builds_named_scenarios(monkeypatch):
         Customer.objects.filter(ref__startswith="QA-MKT-").values_list("ref", flat=True)
     )
     assert marketing_refs == {f"QA-MKT-{index:03d}" for index in range(1, 13)}
+    assert all(
+        customer.birthday and not audience._is_known_minor(customer.birthday)
+        for customer in Customer.objects.filter(ref__startswith="QA-MKT-")
+    )
     marketing_audience = audience.resolve({"tags": ["qa-marketing-e2e"]})
     assert marketing_audience.total == 12
     assert marketing_audience.degraded_sources == ()
