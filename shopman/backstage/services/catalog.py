@@ -538,9 +538,9 @@ def _as_flag(value, label: str) -> bool:
 
 
 def _as_str_list(value, label: str) -> list[str]:
-    if not isinstance(value, list):
-        raise CatalogError(f"{label} deve ser uma lista.")
-    return [str(item).strip() for item in value if str(item).strip()]
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise CatalogError(f"{label} deve ser uma lista de textos.")
+    return [item.strip() for item in value if item.strip()]
 
 
 def _apply_nutrition(product, raw) -> None:
@@ -556,7 +556,8 @@ def _apply_nutrition(product, raw) -> None:
     # interno e nunca vem do operador.
     accepted = {f.name: f.type for f in dataclass_fields(NutritionFacts) if f.name != "auto_filled"}
 
-    collected: dict = {}
+    collected: dict = dict(product.nutrition_facts or {})
+    changed = False
     for key in accepted:
         if key not in raw:
             continue
@@ -564,13 +565,15 @@ def _apply_nutrition(product, raw) -> None:
         if value in (None, ""):
             continue
         try:
-            collected[key] = int(value) if "int" in str(accepted[key]) else float(value)
+            parsed = int(value) if "int" in str(accepted[key]) else float(value)
+            changed = changed or collected.get(key) != parsed
+            collected[key] = parsed
         except (TypeError, ValueError) as exc:
             raise CatalogError(f"{key} deve ser um número.") from exc
 
     # Editar à mão desliga a derivação a partir da receita — senão o próximo save
     # da Recipe sobrescreveria em silêncio o que o operador acabou de digitar.
-    if collected:
+    if changed:
         collected["auto_filled"] = False
     product.nutrition_facts = collected
 
@@ -620,7 +623,7 @@ def _apply_labelling(product, data: dict) -> None:
     for field, ref in _DETAIL_ATTR_LIST_FIELDS.items():
         if field not in data:
             continue
-        novo = [str(v).strip() for v in (data.get(field) or []) if str(v).strip()]
+        novo = _as_str_list(data.get(field), field)
         if novo == (attributes.get(product, ref) or []):
             continue
         attributes.set(product, ref, novo or None, source="manual", save=False)
@@ -746,7 +749,10 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "") -> dict:
         _apply_nutrition(product, data.get("nutrition_facts"))
     # Rotulagem e blocos de metadata em sequência: cada um lê o metadata já
     # atualizado pelo anterior, então não há escrita perdida.
-    _apply_labelling(product, data)
+    try:
+        _apply_labelling(product, data)
+    except attributes.AttributeError_ as exc:
+        raise CatalogError(str(exc)) from exc
     if "social" in data:
         _apply_social(product, data.get("social"))
     if "fiscal" in data:

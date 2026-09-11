@@ -836,3 +836,11 @@ A lacuna mantida aberta no ensaio de leitura foi revalidada pelo contrato canôn
 A correção só alinha a leitura do shop (ao vivo e batch) à soma já definida pelo Payman. Não cria estado de pagamento nem nova política financeira; a política existente volta a receber o saldo correto. A regra de suficiência continua comparar o saldo com o total: 2000 capturados menos 200 refund e 300 chargeback ainda cobrem total 1500. A leitura batch conserva uma query; a leitura direta agrega também chargeback. Os guards/recuperadores que já usam o saldo canônico passam a respeitar valores já devolvidos.
 
 **Testes:** 195 PostgreSQL passaram (novos saldos, batch, webhooks de disputa, refund idempotente, política de cancelamento, serviços). Sem adaptador externo real. Ruff/diff-check passaram. **Migração/rollback:** sem DDL ou reconciliação histórica; fatos persistidos intactos, somente cálculo de leitura corrigido. Reverter read-side restaura a divergência conhecida, por isso capacidade afetada deve permanecer bloqueada se revertida. Aprovação de ações/custódia continua em G01/G02; não foi concedida nova permissão.
+
+### WP05/C06 — merge nutricional e recusas de rotulagem
+
+O painel já envia nutrientes parciais, mas `_apply_nutrition` começava com dict vazio. A testemunha confirmou perda de campos não enviados (ou erro por sumir a porção obrigatória); `{nutrition_facts: {}}` removia tabela/proveniência inteira. Seis casos de forma inválida em alérgenos/dieta também escapavam como `AttributeError_` do registro, em vez de `CatalogError`; não foram classificados como aceites válidos de dados errados.
+
+O merge agora parte do valor fresco e só marca override manual se um nutriente realmente mudou. Patch vazio mantém o dado derivado. Listas exigem lista de strings antes do registro; opções continuam validadas por `attributes`, cuja recusa é traduzida para o erro contratual. Não inventamos rótulo, nutriente, fonte ou enumeração.
+
+**Prova:** 8 falhas anteriores; **94 testes PostgreSQL passaram** após a correção, incluindo API de catálogo, gates fiscal/nutricional e preservação integral de nome quando campo posterior é inválido. Ruff/diff-check passaram. Sem DDL/reconciliação; rollback reverte parser/merge e conserva dados, mas reabre a perda conhecida. Valores reais e aceite de rotulagem continuam sujeitos à fonte e G05; ensaio exclusivamente sintético.

@@ -1,0 +1,548 @@
+FFFFFFFF                                                                 [100%]
+=================================== FAILURES ===================================
+____________ test_partial_nutrient_patch_preserves_untouched_values ____________
+
+sku = 'NUTRIENT-PARTIAL', data = {'nutrition_facts': {'sodium_mg': 25}}
+
+    @transaction.atomic
+    def update_product_detail(sku: str, data: dict, *, actor: str = "") -> dict:
+        """Merge parcial dos campos do produto (chave ausente = sem mudança).
+    
+        Valida com ``full_clean()`` (inclui as invariantes ANVISA de nutrition_facts) e
+        persiste com ``save()``, que emite ``product_updated`` quando um campo projetável
+        muda — o auto-trigger re-projeta nas plataformas alvo. Os blocos em JSONField
+        (nutricional, social, fiscal) são validados pelo dono do schema antes disso.
+        """
+        from django.core.exceptions import ValidationError
+        from shopman.offerman.models import Product
+    
+        product = Product.objects.select_for_update().filter(sku=sku).first()
+        if product is None:
+            raise CatalogError(f"Produto '{sku}' não encontrado.")
+        keywords = None
+        if "keywords" in data:
+            raw = data["keywords"]
+            if not isinstance(raw, list) or any(not isinstance(value, str) for value in raw):
+                raise CatalogError("keywords deve ser uma lista de textos.")
+            keywords = [value.strip() for value in raw if value.strip()]
+    
+        for field in _DETAIL_TEXT_FIELDS:
+            if field in data:
+                setattr(product, field, str(data.get(field) or "").strip())
+        for field in _DETAIL_INT_FIELDS:
+            if field in data:
+                value = _as_nullable_int(data.get(field), field)
+                if value is None:
+                    raise CatalogError(f"{field} é obrigatório.")
+                setattr(product, field, value)
+        for field in _DETAIL_NULLABLE_INT_FIELDS:
+            if field in data:
+                setattr(product, field, _as_nullable_int(data.get(field), field))
+        for field in _DETAIL_BOOL_FIELDS:
+            if field in data:
+                setattr(product, field, _as_flag(data.get(field), field))
+    
+        if "nutrition_facts" in data:
+            _apply_nutrition(product, data.get("nutrition_facts"))
+        # Rotulagem e blocos de metadata em sequência: cada um lê o metadata já
+        # atualizado pelo anterior, então não há escrita perdida.
+        _apply_labelling(product, data)
+        if "social" in data:
+            _apply_social(product, data.get("social"))
+        if "fiscal" in data:
+            _apply_fiscal(product, data.get("fiscal"))
+    
+        try:
+>           product.full_clean()
+
+shopman/backstage/services/catalog.py:756: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Product: NUTRIENT-PARTIAL - Synthetic product>
+exclude = {'nutrition_facts'}, validate_unique = True
+validate_constraints = True
+
+    def full_clean(self, exclude=None, validate_unique=True, validate_constraints=True):
+        """
+        Call clean_fields(), clean(), validate_unique(), and
+        validate_constraints() on the model. Raise a ValidationError for any
+        errors that occur.
+        """
+        errors = {}
+        if exclude is None:
+            exclude = set()
+        else:
+            exclude = set(exclude)
+    
+        try:
+            self.clean_fields(exclude=exclude)
+        except ValidationError as e:
+            errors = e.update_error_dict(errors)
+    
+        # Form.clean() is run even if other validation fails, so do the
+        # same with Model.clean() for consistency.
+        try:
+            self.clean()
+        except ValidationError as e:
+            errors = e.update_error_dict(errors)
+    
+        # Run unique checks, but only for fields that passed validation.
+        if validate_unique:
+            for name in errors:
+                if name != NON_FIELD_ERRORS and name not in exclude:
+                    exclude.add(name)
+            try:
+                self.validate_unique(exclude=exclude)
+            except ValidationError as e:
+                errors = e.update_error_dict(errors)
+    
+        # Run constraints checks, but only for fields that passed validation.
+        if validate_constraints:
+            for name in errors:
+                if name != NON_FIELD_ERRORS and name not in exclude:
+                    exclude.add(name)
+            try:
+                self.validate_constraints(exclude=exclude)
+            except ValidationError as e:
+                errors = e.update_error_dict(errors)
+    
+        if errors:
+>           raise ValidationError(errors)
+E           django.core.exceptions.ValidationError: {'nutrition_facts': ['Informe a porção (g) quando qualquer nutriente estiver preenchido.']}
+
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py:1712: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+    def test_partial_nutrient_patch_preserves_untouched_values():
+        product = Product.objects.create(sku="NUTRIENT-PARTIAL", name="Synthetic product", base_price_q=1000,
+            nutrition_facts={"serving_size_g": 50, "energy_kcal": 120, "proteins_g": 4, "auto_filled": True})
+>       result = catalog.update_product_detail(product.sku, {"nutrition_facts": {"sodium_mg": 25}})
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+shopman/backstage/tests/test_catalog_patch_preservation.py:14: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+sku = 'NUTRIENT-PARTIAL', data = {'nutrition_facts': {'sodium_mg': 25}}
+
+    @transaction.atomic
+    def update_product_detail(sku: str, data: dict, *, actor: str = "") -> dict:
+        """Merge parcial dos campos do produto (chave ausente = sem mudança).
+    
+        Valida com ``full_clean()`` (inclui as invariantes ANVISA de nutrition_facts) e
+        persiste com ``save()``, que emite ``product_updated`` quando um campo projetável
+        muda — o auto-trigger re-projeta nas plataformas alvo. Os blocos em JSONField
+        (nutricional, social, fiscal) são validados pelo dono do schema antes disso.
+        """
+        from django.core.exceptions import ValidationError
+        from shopman.offerman.models import Product
+    
+        product = Product.objects.select_for_update().filter(sku=sku).first()
+        if product is None:
+            raise CatalogError(f"Produto '{sku}' não encontrado.")
+        keywords = None
+        if "keywords" in data:
+            raw = data["keywords"]
+            if not isinstance(raw, list) or any(not isinstance(value, str) for value in raw):
+                raise CatalogError("keywords deve ser uma lista de textos.")
+            keywords = [value.strip() for value in raw if value.strip()]
+    
+        for field in _DETAIL_TEXT_FIELDS:
+            if field in data:
+                setattr(product, field, str(data.get(field) or "").strip())
+        for field in _DETAIL_INT_FIELDS:
+            if field in data:
+                value = _as_nullable_int(data.get(field), field)
+                if value is None:
+                    raise CatalogError(f"{field} é obrigatório.")
+                setattr(product, field, value)
+        for field in _DETAIL_NULLABLE_INT_FIELDS:
+            if field in data:
+                setattr(product, field, _as_nullable_int(data.get(field), field))
+        for field in _DETAIL_BOOL_FIELDS:
+            if field in data:
+                setattr(product, field, _as_flag(data.get(field), field))
+    
+        if "nutrition_facts" in data:
+            _apply_nutrition(product, data.get("nutrition_facts"))
+        # Rotulagem e blocos de metadata em sequência: cada um lê o metadata já
+        # atualizado pelo anterior, então não há escrita perdida.
+        _apply_labelling(product, data)
+        if "social" in data:
+            _apply_social(product, data.get("social"))
+        if "fiscal" in data:
+            _apply_fiscal(product, data.get("fiscal"))
+    
+        try:
+            product.full_clean()
+        except ValidationError as exc:
+>           raise CatalogError(_first_validation_message(exc)) from exc
+E           shopman.backstage.services.exceptions.CatalogError: nutrition_facts: Informe a porção (g) quando qualquer nutriente estiver preenchido.
+
+shopman/backstage/services/catalog.py:758: CatalogError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-10 22:49:28,517 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-10 22:49:28,806 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-10 22:49:30,253 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+_________ test_empty_nutrition_patch_does_not_remove_recipe_provenance _________
+
+    def test_empty_nutrition_patch_does_not_remove_recipe_provenance():
+        facts = {"serving_size_g": 50, "energy_kcal": 120, "auto_filled": True}
+        product = Product.objects.create(sku="NUTRIENT-EMPTY", name="Synthetic product", base_price_q=1000, nutrition_facts=facts)
+        catalog.update_product_detail(product.sku, {"nutrition_facts": {}})
+        product.refresh_from_db()
+>       assert product.nutrition_facts == facts
+E       AssertionError: assert {} == {'auto_filled...g_size_g': 50}
+E         
+E         Right contains 3 more items:
+E         {'auto_filled': True, 'energy_kcal': 120, 'serving_size_g': 50}
+E         Use -v to get more diff
+
+shopman/backstage/tests/test_catalog_patch_preservation.py:27: AssertionError
+__ test_label_list_has_strict_shape_and_no_partial_name_save[leite-allergens] __
+
+field = 'allergens', invalid = 'leite'
+
+    @pytest.mark.parametrize("field", ["allergens", "dietary_info"])
+    @pytest.mark.parametrize("invalid", ["leite", [12], {"unexpected": "shape"}])
+    def test_label_list_has_strict_shape_and_no_partial_name_save(field, invalid):
+        product = Product.objects.create(sku="STRICT-LABEL", name="Before", base_price_q=1000)
+        with pytest.raises(CatalogError):
+>           catalog.update_product_detail(product.sku, {"name": "After", field: invalid})
+
+shopman/backstage/tests/test_catalog_patch_preservation.py:35: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+shopman/backstage/services/catalog.py:749: in update_product_detail
+    _apply_labelling(product, data)
+shopman/backstage/services/catalog.py:626: in _apply_labelling
+    attributes.set(product, ref, novo or None, source="manual", save=False)
+shopman/shop/services/attributes.py:213: in set
+    typed = _coerce(d, value) if value is not None else None
+            ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+d = <AttributeDefinition: Alérgenos (alergenos)>
+raw = ['l', 'e', 'i', 't', 'e']
+
+    def _coerce(d: AttributeDefinition, raw: Any) -> Any:
+        """Converte e valida ``raw`` conforme o tipo da definição."""
+        if d.type == AttributeType.CHOICE:
+            value = str(raw)
+            if value not in d.option_values():
+                raise AttributeError_(
+                    f"'{value}' não é opção de '{d.ref}'. Use: {', '.join(d.option_values())}."
+                )
+            return value
+    
+        if d.is_list:
+            # `str` é uma sequência, e aceitá-la faria "doce" virar
+            # ["d","o","c","e"] em silêncio. Lista é lista.
+            if isinstance(raw, str) or not isinstance(raw, (list, tuple)):
+                raise AttributeError_(f"'{d.ref}' é lista: passe uma lista.")
+            allowed = d.option_values() if d.is_choice else ()
+            values: list[str] = []
+            for item in raw:
+                value = str(item).strip()
+                if not value:
+                    continue
+                if allowed and value not in allowed:
+>                   raise AttributeError_(
+                        f"'{value}' não é opção de '{d.ref}'. Use: {', '.join(allowed)}."
+                    )
+E                   shopman.shop.services.attributes.AttributeError_: 'l' não é opção de 'alergenos'. Use: glúten, trigo, centeio, cevada, aveia, crustáceos, ovos, peixes, amendoim, soja, leite, castanhas, amêndoa, avelã, castanha-de-caju, castanha-do-brasil, macadâmia, nozes, pecã, pistache, pinoli, gergelim, sulfitos, látex natural, mostarda, pimenta-do-reino.
+
+shopman/shop/services/attributes.py:348: AttributeError_
+_ test_label_list_has_strict_shape_and_no_partial_name_save[leite-dietary_info] _
+
+field = 'dietary_info', invalid = 'leite'
+
+    @pytest.mark.parametrize("field", ["allergens", "dietary_info"])
+    @pytest.mark.parametrize("invalid", ["leite", [12], {"unexpected": "shape"}])
+    def test_label_list_has_strict_shape_and_no_partial_name_save(field, invalid):
+        product = Product.objects.create(sku="STRICT-LABEL", name="Before", base_price_q=1000)
+        with pytest.raises(CatalogError):
+>           catalog.update_product_detail(product.sku, {"name": "After", field: invalid})
+
+shopman/backstage/tests/test_catalog_patch_preservation.py:35: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+shopman/backstage/services/catalog.py:749: in update_product_detail
+    _apply_labelling(product, data)
+shopman/backstage/services/catalog.py:626: in _apply_labelling
+    attributes.set(product, ref, novo or None, source="manual", save=False)
+shopman/shop/services/attributes.py:213: in set
+    typed = _coerce(d, value) if value is not None else None
+            ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+d = <AttributeDefinition: Dieta (dieta)>, raw = ['l', 'e', 'i', 't', 'e']
+
+    def _coerce(d: AttributeDefinition, raw: Any) -> Any:
+        """Converte e valida ``raw`` conforme o tipo da definição."""
+        if d.type == AttributeType.CHOICE:
+            value = str(raw)
+            if value not in d.option_values():
+                raise AttributeError_(
+                    f"'{value}' não é opção de '{d.ref}'. Use: {', '.join(d.option_values())}."
+                )
+            return value
+    
+        if d.is_list:
+            # `str` é uma sequência, e aceitá-la faria "doce" virar
+            # ["d","o","c","e"] em silêncio. Lista é lista.
+            if isinstance(raw, str) or not isinstance(raw, (list, tuple)):
+                raise AttributeError_(f"'{d.ref}' é lista: passe uma lista.")
+            allowed = d.option_values() if d.is_choice else ()
+            values: list[str] = []
+            for item in raw:
+                value = str(item).strip()
+                if not value:
+                    continue
+                if allowed and value not in allowed:
+>                   raise AttributeError_(
+                        f"'{value}' não é opção de '{d.ref}'. Use: {', '.join(allowed)}."
+                    )
+E                   shopman.shop.services.attributes.AttributeError_: 'l' não é opção de 'dieta'. Use: 100% vegetal, vegetariano, sem lactose.
+
+shopman/shop/services/attributes.py:348: AttributeError_
+_ test_label_list_has_strict_shape_and_no_partial_name_save[invalid1-allergens] _
+
+field = 'allergens', invalid = [12]
+
+    @pytest.mark.parametrize("field", ["allergens", "dietary_info"])
+    @pytest.mark.parametrize("invalid", ["leite", [12], {"unexpected": "shape"}])
+    def test_label_list_has_strict_shape_and_no_partial_name_save(field, invalid):
+        product = Product.objects.create(sku="STRICT-LABEL", name="Before", base_price_q=1000)
+        with pytest.raises(CatalogError):
+>           catalog.update_product_detail(product.sku, {"name": "After", field: invalid})
+
+shopman/backstage/tests/test_catalog_patch_preservation.py:35: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+shopman/backstage/services/catalog.py:749: in update_product_detail
+    _apply_labelling(product, data)
+shopman/backstage/services/catalog.py:626: in _apply_labelling
+    attributes.set(product, ref, novo or None, source="manual", save=False)
+shopman/shop/services/attributes.py:213: in set
+    typed = _coerce(d, value) if value is not None else None
+            ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+d = <AttributeDefinition: Alérgenos (alergenos)>, raw = ['12']
+
+    def _coerce(d: AttributeDefinition, raw: Any) -> Any:
+        """Converte e valida ``raw`` conforme o tipo da definição."""
+        if d.type == AttributeType.CHOICE:
+            value = str(raw)
+            if value not in d.option_values():
+                raise AttributeError_(
+                    f"'{value}' não é opção de '{d.ref}'. Use: {', '.join(d.option_values())}."
+                )
+            return value
+    
+        if d.is_list:
+            # `str` é uma sequência, e aceitá-la faria "doce" virar
+            # ["d","o","c","e"] em silêncio. Lista é lista.
+            if isinstance(raw, str) or not isinstance(raw, (list, tuple)):
+                raise AttributeError_(f"'{d.ref}' é lista: passe uma lista.")
+            allowed = d.option_values() if d.is_choice else ()
+            values: list[str] = []
+            for item in raw:
+                value = str(item).strip()
+                if not value:
+                    continue
+                if allowed and value not in allowed:
+>                   raise AttributeError_(
+                        f"'{value}' não é opção de '{d.ref}'. Use: {', '.join(allowed)}."
+                    )
+E                   shopman.shop.services.attributes.AttributeError_: '12' não é opção de 'alergenos'. Use: glúten, trigo, centeio, cevada, aveia, crustáceos, ovos, peixes, amendoim, soja, leite, castanhas, amêndoa, avelã, castanha-de-caju, castanha-do-brasil, macadâmia, nozes, pecã, pistache, pinoli, gergelim, sulfitos, látex natural, mostarda, pimenta-do-reino.
+
+shopman/shop/services/attributes.py:348: AttributeError_
+_ test_label_list_has_strict_shape_and_no_partial_name_save[invalid1-dietary_info] _
+
+field = 'dietary_info', invalid = [12]
+
+    @pytest.mark.parametrize("field", ["allergens", "dietary_info"])
+    @pytest.mark.parametrize("invalid", ["leite", [12], {"unexpected": "shape"}])
+    def test_label_list_has_strict_shape_and_no_partial_name_save(field, invalid):
+        product = Product.objects.create(sku="STRICT-LABEL", name="Before", base_price_q=1000)
+        with pytest.raises(CatalogError):
+>           catalog.update_product_detail(product.sku, {"name": "After", field: invalid})
+
+shopman/backstage/tests/test_catalog_patch_preservation.py:35: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+shopman/backstage/services/catalog.py:749: in update_product_detail
+    _apply_labelling(product, data)
+shopman/backstage/services/catalog.py:626: in _apply_labelling
+    attributes.set(product, ref, novo or None, source="manual", save=False)
+shopman/shop/services/attributes.py:213: in set
+    typed = _coerce(d, value) if value is not None else None
+            ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+d = <AttributeDefinition: Dieta (dieta)>, raw = ['12']
+
+    def _coerce(d: AttributeDefinition, raw: Any) -> Any:
+        """Converte e valida ``raw`` conforme o tipo da definição."""
+        if d.type == AttributeType.CHOICE:
+            value = str(raw)
+            if value not in d.option_values():
+                raise AttributeError_(
+                    f"'{value}' não é opção de '{d.ref}'. Use: {', '.join(d.option_values())}."
+                )
+            return value
+    
+        if d.is_list:
+            # `str` é uma sequência, e aceitá-la faria "doce" virar
+            # ["d","o","c","e"] em silêncio. Lista é lista.
+            if isinstance(raw, str) or not isinstance(raw, (list, tuple)):
+                raise AttributeError_(f"'{d.ref}' é lista: passe uma lista.")
+            allowed = d.option_values() if d.is_choice else ()
+            values: list[str] = []
+            for item in raw:
+                value = str(item).strip()
+                if not value:
+                    continue
+                if allowed and value not in allowed:
+>                   raise AttributeError_(
+                        f"'{value}' não é opção de '{d.ref}'. Use: {', '.join(allowed)}."
+                    )
+E                   shopman.shop.services.attributes.AttributeError_: '12' não é opção de 'dieta'. Use: 100% vegetal, vegetariano, sem lactose.
+
+shopman/shop/services/attributes.py:348: AttributeError_
+_ test_label_list_has_strict_shape_and_no_partial_name_save[invalid2-allergens] _
+
+field = 'allergens', invalid = {'unexpected': 'shape'}
+
+    @pytest.mark.parametrize("field", ["allergens", "dietary_info"])
+    @pytest.mark.parametrize("invalid", ["leite", [12], {"unexpected": "shape"}])
+    def test_label_list_has_strict_shape_and_no_partial_name_save(field, invalid):
+        product = Product.objects.create(sku="STRICT-LABEL", name="Before", base_price_q=1000)
+        with pytest.raises(CatalogError):
+>           catalog.update_product_detail(product.sku, {"name": "After", field: invalid})
+
+shopman/backstage/tests/test_catalog_patch_preservation.py:35: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+shopman/backstage/services/catalog.py:749: in update_product_detail
+    _apply_labelling(product, data)
+shopman/backstage/services/catalog.py:626: in _apply_labelling
+    attributes.set(product, ref, novo or None, source="manual", save=False)
+shopman/shop/services/attributes.py:213: in set
+    typed = _coerce(d, value) if value is not None else None
+            ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+d = <AttributeDefinition: Alérgenos (alergenos)>, raw = ['unexpected']
+
+    def _coerce(d: AttributeDefinition, raw: Any) -> Any:
+        """Converte e valida ``raw`` conforme o tipo da definição."""
+        if d.type == AttributeType.CHOICE:
+            value = str(raw)
+            if value not in d.option_values():
+                raise AttributeError_(
+                    f"'{value}' não é opção de '{d.ref}'. Use: {', '.join(d.option_values())}."
+                )
+            return value
+    
+        if d.is_list:
+            # `str` é uma sequência, e aceitá-la faria "doce" virar
+            # ["d","o","c","e"] em silêncio. Lista é lista.
+            if isinstance(raw, str) or not isinstance(raw, (list, tuple)):
+                raise AttributeError_(f"'{d.ref}' é lista: passe uma lista.")
+            allowed = d.option_values() if d.is_choice else ()
+            values: list[str] = []
+            for item in raw:
+                value = str(item).strip()
+                if not value:
+                    continue
+                if allowed and value not in allowed:
+>                   raise AttributeError_(
+                        f"'{value}' não é opção de '{d.ref}'. Use: {', '.join(allowed)}."
+                    )
+E                   shopman.shop.services.attributes.AttributeError_: 'unexpected' não é opção de 'alergenos'. Use: glúten, trigo, centeio, cevada, aveia, crustáceos, ovos, peixes, amendoim, soja, leite, castanhas, amêndoa, avelã, castanha-de-caju, castanha-do-brasil, macadâmia, nozes, pecã, pistache, pinoli, gergelim, sulfitos, látex natural, mostarda, pimenta-do-reino.
+
+shopman/shop/services/attributes.py:348: AttributeError_
+_ test_label_list_has_strict_shape_and_no_partial_name_save[invalid2-dietary_info] _
+
+field = 'dietary_info', invalid = {'unexpected': 'shape'}
+
+    @pytest.mark.parametrize("field", ["allergens", "dietary_info"])
+    @pytest.mark.parametrize("invalid", ["leite", [12], {"unexpected": "shape"}])
+    def test_label_list_has_strict_shape_and_no_partial_name_save(field, invalid):
+        product = Product.objects.create(sku="STRICT-LABEL", name="Before", base_price_q=1000)
+        with pytest.raises(CatalogError):
+>           catalog.update_product_detail(product.sku, {"name": "After", field: invalid})
+
+shopman/backstage/tests/test_catalog_patch_preservation.py:35: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+shopman/backstage/services/catalog.py:749: in update_product_detail
+    _apply_labelling(product, data)
+shopman/backstage/services/catalog.py:626: in _apply_labelling
+    attributes.set(product, ref, novo or None, source="manual", save=False)
+shopman/shop/services/attributes.py:213: in set
+    typed = _coerce(d, value) if value is not None else None
+            ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+d = <AttributeDefinition: Dieta (dieta)>, raw = ['unexpected']
+
+    def _coerce(d: AttributeDefinition, raw: Any) -> Any:
+        """Converte e valida ``raw`` conforme o tipo da definição."""
+        if d.type == AttributeType.CHOICE:
+            value = str(raw)
+            if value not in d.option_values():
+                raise AttributeError_(
+                    f"'{value}' não é opção de '{d.ref}'. Use: {', '.join(d.option_values())}."
+                )
+            return value
+    
+        if d.is_list:
+            # `str` é uma sequência, e aceitá-la faria "doce" virar
+            # ["d","o","c","e"] em silêncio. Lista é lista.
+            if isinstance(raw, str) or not isinstance(raw, (list, tuple)):
+                raise AttributeError_(f"'{d.ref}' é lista: passe uma lista.")
+            allowed = d.option_values() if d.is_choice else ()
+            values: list[str] = []
+            for item in raw:
+                value = str(item).strip()
+                if not value:
+                    continue
+                if allowed and value not in allowed:
+>                   raise AttributeError_(
+                        f"'{value}' não é opção de '{d.ref}'. Use: {', '.join(allowed)}."
+                    )
+E                   shopman.shop.services.attributes.AttributeError_: 'unexpected' não é opção de 'dieta'. Use: 100% vegetal, vegetariano, sem lactose.
+
+shopman/shop/services/attributes.py:348: AttributeError_
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-10 22:49:34,167 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_catalog_patch_preservation.py::test_partial_nutrient_patch_preserves_untouched_values
+FAILED shopman/backstage/tests/test_catalog_patch_preservation.py::test_empty_nutrition_patch_does_not_remove_recipe_provenance
+FAILED shopman/backstage/tests/test_catalog_patch_preservation.py::test_label_list_has_strict_shape_and_no_partial_name_save[leite-allergens]
+FAILED shopman/backstage/tests/test_catalog_patch_preservation.py::test_label_list_has_strict_shape_and_no_partial_name_save[leite-dietary_info]
+FAILED shopman/backstage/tests/test_catalog_patch_preservation.py::test_label_list_has_strict_shape_and_no_partial_name_save[invalid1-allergens]
+FAILED shopman/backstage/tests/test_catalog_patch_preservation.py::test_label_list_has_strict_shape_and_no_partial_name_save[invalid1-dietary_info]
+FAILED shopman/backstage/tests/test_catalog_patch_preservation.py::test_label_list_has_strict_shape_and_no_partial_name_save[invalid2-allergens]
+FAILED shopman/backstage/tests/test_catalog_patch_preservation.py::test_label_list_has_strict_shape_and_no_partial_name_save[invalid2-dietary_info]
+8 failed in 5.83s
