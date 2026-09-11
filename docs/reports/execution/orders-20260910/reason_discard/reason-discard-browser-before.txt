@@ -1,0 +1,41 @@
+[WebServer] (node:43480) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:43481) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › tests/integration/operational.spec.ts:618:1 › reason and note drafts require explicit discard across close, reload and navigation (45.2s)
+
+
+  1) [chromium] › tests/integration/operational.spec.ts:618:1 › reason and note drafts require explicit discard across close, reload and navigation 
+
+    Test timeout of 45000ms exceeded.
+
+    Error: page.waitForEvent: Test timeout of 45000ms exceeded.
+    =========================== logs ===========================
+    waiting for event "dialog"
+    ============================================================
+
+      628 |   await reason.fill("Motivo que não deve ser redigitado");
+      629 |   async function declineReload() {
+    > 630 |     const closed = page.waitForEvent("dialog");
+          |                         ^
+      631 |     await page.evaluate(() => { setTimeout(() => window.location.reload(), 0); });
+      632 |     const prompt = await closed;
+      633 |     expect(prompt.type()).toBe("beforeunload");
+        at declineReload (/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:630:25)
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:639:9
+
+    Error Context: ../../.orders-lab/playwright-results/operational-reason-and-not-5c256-close-reload-and-navigation-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../.orders-lab/playwright-results/operational-reason-and-not-5c256-close-reload-and-navigation-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../.orders-lab/playwright-results/operational-reason-and-not-5c256-close-reload-and-navigation-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › tests/integration/operational.spec.ts:618:1 › reason and note drafts require explicit discard across close, reload and navigation 

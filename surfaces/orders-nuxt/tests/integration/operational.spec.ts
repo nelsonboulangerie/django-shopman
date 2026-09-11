@@ -613,3 +613,73 @@ test("confirmed note stays visible when the post-commit read fails", async ({ pa
   expect(canonical.order.kitchen_note).toBe(submitted);
   expect(posts).toBe(1);
 });
+
+
+test("reason and note drafts require explicit discard across close, reload and navigation", async ({ page }) => {
+  await login(page, "orders-lab-cancel");
+  let commands = 0;
+  page.on("request", request => { if (request.method() === "POST" && request.url().includes(`/orders/${lab.notes_ref}/`)) commands++; });
+  await page.goto(`/${lab.notes_ref}`);
+  const before = await (await page.request.get(`/api/v1/backstage/orders/${lab.notes_ref}/`)).json();
+  const cancel = page.getByRole("button", { name: "Cancelar", exact: true });
+  await cancel.focus();
+  await page.keyboard.press("Enter");
+  const reason = page.getByRole("textbox", { name: "Motivo", exact: true });
+  await reason.fill("Motivo que não deve ser redigitado");
+  async function declineReload() {
+    const closed = page.waitForEvent("dialog");
+    await page.evaluate(() => { setTimeout(() => window.location.reload(), 0); });
+    const prompt = await closed;
+    expect(prompt.type()).toBe("beforeunload");
+    await prompt.dismiss();
+  }
+  page.once("dialog", async prompt => { expect(prompt.type()).toBe("confirm"); await prompt.dismiss(); });
+  await page.getByRole("button", { name: "Voltar", exact: true }).click();
+  await expect(reason).toHaveValue("Motivo que não deve ser redigitado");
+  await declineReload();
+  await expect(reason).toHaveValue("Motivo que não deve ser redigitado");
+  page.once("dialog", async prompt => { expect(prompt.type()).toBe("confirm"); await prompt.accept(); });
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await cancel.click();
+  await expect(reason).toHaveValue("");
+  await page.getByRole("button", { name: "Voltar", exact: true }).click();
+  const note = page.locator("textarea").first();
+  await note.fill("Nota ainda não salva");
+  page.once("dialog", async prompt => { expect(prompt.type()).toBe("confirm"); await prompt.dismiss(); });
+  await page.getByRole("link", { name: "Voltar para a fila", exact: true }).click();
+  await expect(note).toHaveValue("Nota ainda não salva");
+  await declineReload();
+  await expect(note).toHaveValue("Nota ainda não salva");
+  await note.fill(before.order.kitchen_note);
+  const after = await (await page.request.get(`/api/v1/backstage/orders/${lab.notes_ref}/`)).json();
+  expect(after.order.status).toBe(before.order.status);
+  expect(after.order.kitchen_note).toBe(before.order.kitchen_note);
+  expect(commands).toBe(0);
+});
+
+
+test("queue rejection protects its reason on close and reload", async ({ page }) => {
+  await login(page, "orders-lab-cancel");
+  await page.goto("/");
+  await page.getByRole("searchbox", { name: "Buscar por código, cliente ou item (atalho: /)", exact: true }).fill(lab.reject_ref);
+  await page.getByRole("button", { name: "Recusar", exact: true }).click();
+  const reason = page.getByRole("textbox", { name: "Motivo da recusa", exact: true });
+  await reason.fill("Recusa ainda em avaliação");
+  let confirmations = 0;
+  page.once("dialog", async prompt => { confirmations++; expect(prompt.type()).toBe("confirm"); await prompt.dismiss(); });
+  await page.getByRole("dialog").getByRole("button", { name: "Cancelar", exact: true }).click();
+  expect(confirmations).toBe(1);
+  await expect(reason).toHaveValue("Recusa ainda em avaliação");
+  const reload = page.waitForEvent("dialog");
+  await page.evaluate(() => { setTimeout(() => window.location.reload(), 0); });
+  const prompt = await reload;
+  expect(prompt.type()).toBe("beforeunload");
+  await prompt.dismiss();
+  await expect(reason).toHaveValue("Recusa ainda em avaliação");
+  page.once("dialog", async prompt => { expect(prompt.type()).toBe("confirm"); await prompt.accept(); });
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const canonical = await (await page.request.get(`/api/v1/backstage/orders/${lab.reject_ref}/`)).json();
+  expect(canonical.order.status).toBe("new");
+});

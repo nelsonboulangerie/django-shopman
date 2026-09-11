@@ -79,3 +79,7 @@ for suffix in ('edit', 'curation'):
     tester.set_password('synthetic-lab-only-20260910')
     tester.save()
     tester.user_permissions.set(user.user_permissions.all())
+
+refs['reject_ref'] = f'LAB-REJECT-{run}'
+Order.objects.create(ref=refs['reject_ref'], channel_ref='lab', status='new', total_q=500, session_key=refs['reject_ref'], snapshot={'items': [{'sku': 'LAB-PROD', 'qty': '0.500', 'name': 'Produto laboratório'}]}, data={'fulfillment_type': 'pickup', 'payment': {'method': 'cash'}, 'customer': {'name': refs['reject_ref']}})
+Path('.orders-lab/manifest.json').write_text(json.dumps(refs))

@@ -1,0 +1,80 @@
+
+> test
+> vitest run tests/components/OrderReasonDialog.test.ts
+
+
+ RUN  v4.1.6 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt
+
+ ❯ |component| tests/components/OrderReasonDialog.test.ts (14 tests | 4 failed) 43ms
+     × preserva texto quando a pessoa recusa descartar 2ms
+     × permite descartar explicitamente e informa o estado do draft 0ms
+     × fecha draft vazio sem confirmação redundante 0ms
+     × não dispensa o editor enquanto a operação está pendente 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |component| tests/components/OrderReasonDialog.test.ts > descarte explícito do motivo > preserva texto quando a pessoa recusa descartar
+Error: vi.spyOn() can only spy on a function. Received undefined.
+ ❯ tests/components/OrderReasonDialog.test.ts:153:24
+    151|   afterEach(() => vi.restoreAllMocks());
+    152|   it("preserva texto quando a pessoa recusa descartar", async () => {
+    153|     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+       |                        ^
+    154|     const w = mountDialog();
+    155|     await w.find("textarea").setValue("Contexto importante");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |component| tests/components/OrderReasonDialog.test.ts > descarte explícito do motivo > permite descartar explicitamente e informa o estado do draft
+Error: vi.spyOn() can only spy on a function. Received undefined.
+ ❯ tests/components/OrderReasonDialog.test.ts:163:24
+    161|   });
+    162|   it("permite descartar explicitamente e informa o estado do draft", a…
+    163|     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+       |                        ^
+    164|     const w = mountDialog();
+    165|     await w.find("textarea").setValue("Contexto importante");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  |component| tests/components/OrderReasonDialog.test.ts > descarte explícito do motivo > fecha draft vazio sem confirmação redundante
+Error: vi.spyOn() can only spy on a function. Received undefined.
+ ❯ tests/components/OrderReasonDialog.test.ts:177:24
+    175|   });
+    176|   it("fecha draft vazio sem confirmação redundante", async () => {
+    177|     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+       |                        ^
+    178|     const w = mountDialog();
+    179|     await confirmBtn(w, "Voltar").trigger("click");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  |component| tests/components/OrderReasonDialog.test.ts > descarte explícito do motivo > não dispensa o editor enquanto a operação está pendente
+AssertionError: expected [ [ false ] ] to be undefined
+
+- Expected:
+undefined
+
++ Received:
+[
+  [
+    false,
+  ],
+]
+
+ ❯ tests/components/OrderReasonDialog.test.ts:187:38
+    185|     const w = mountDialog({ busy: true });
+    186|     await confirmBtn(w, "Voltar").trigger("click");
+    187|     expect(w.emitted("update:open")).toBeUndefined();
+       |                                      ^
+    188|   });
+    189| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 10 passed (14)
+   Start at  04:54:12
+   Duration  572ms (transform 88ms, setup 0ms, import 161ms, tests 43ms, environment 238ms)
+

@@ -194,6 +194,20 @@ const rejectRef = ref<string | null>(null);
 const rejectReason = ref("");
 const rejectReasons = ref<CancellationReason[]>([]);
 const rejectCode = ref("");
+const rejectDirty = computed(() => rejectRef.value !== null && Boolean(rejectReason.value.trim() || rejectCode.value));
+function closeReject() {
+  if (rejectRef.value && isBusy(rejectRef.value)) return;
+  if (rejectDirty.value && !window.confirm("Descartar o motivo digitado?")) return;
+  rejectRef.value = null;
+}
+onBeforeRouteLeave(() => !rejectDirty.value || window.confirm("Há um motivo não salvo. Descartar e sair?"));
+function beforeUnload(event: BeforeUnloadEvent) {
+  if (!rejectDirty.value) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+onMounted(() => window.addEventListener("beforeunload", beforeUnload));
+onBeforeUnmount(() => window.removeEventListener("beforeunload", beforeUnload));
 const rejectReasonsLoading = ref(false);
 const rejectReasonsError = ref("");
 const isMarketplaceReject = computed(() => allCards.value.find((c) => c.ref === rejectRef.value)?.channel_ref === "ifood");
@@ -231,7 +245,7 @@ function onRejectCodeChange() {
 }
 async function confirmReject() {
   const ref_ = rejectRef.value;
-  if (!ref_ || !canConfirmReject.value) return;
+  if (!ref_ || isBusy(ref_) || !canConfirmReject.value) return;
   const ok = await reject(ref_, rejectReason.value.trim() || "Pedido recusado", rejectCode.value);
   if (ok) rejectRef.value = null;
 }
@@ -710,7 +724,7 @@ function printQueue() {
     </section>
 
     <!-- reject dialog -->
-    <UiDialog :open="rejectRef != null" @update:open="(v) => { if (!v) rejectRef = null }">
+    <UiDialog :open="rejectRef != null" @update:open="(v) => { if (!v) closeReject() }">
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
           <UiDialogTitle>Recusar pedido {{ rejectRef }}</UiDialogTitle>
@@ -745,10 +759,10 @@ function printQueue() {
           aria-label="Motivo da recusa"
         />
         <UiDialogFooter>
-          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="rejectRef = null">Cancelar</button>
+          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" :disabled="Boolean(rejectRef && isBusy(rejectRef))" @click="closeReject">Cancelar</button>
           <button
             type="button"
-            :disabled="!canConfirmReject"
+            :disabled="!canConfirmReject || Boolean(rejectRef && isBusy(rejectRef))"
             class="min-h-action min-w-action rounded-md border border-transparent bg-destructive px-3 py-2 text-sm font-semibold text-white transition hover:bg-destructive/90 disabled:opacity-50"
             @click="confirmReject"
           >

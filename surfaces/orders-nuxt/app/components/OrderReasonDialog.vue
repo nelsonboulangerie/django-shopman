@@ -21,6 +21,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   "update:open": [value: boolean];
+  "dirty-change": [value: boolean];
   retry: [];
   confirm: [payload: { reason: string; cancellationCode: string }];
 }>();
@@ -34,6 +35,13 @@ watch(
   () => props.open,
   (open) => { if (open) { reason.value = ""; code.value = ""; } },
 );
+
+const dirty = computed(() => props.open && Boolean(reason.value.trim() || code.value));
+watch(dirty, value => emit("dirty-change", value), { immediate: true });
+function requestOpen(open: boolean) {
+  if (!open && (props.busy || (dirty.value && !window.confirm("Descartar o motivo digitado?")))) return;
+  emit("update:open", open);
+}
 
 const isMarketplace = computed(() => props.marketplace);
 
@@ -71,7 +79,7 @@ const description = computed(() =>
 </script>
 
 <template>
-  <UiDialog :open="open" @update:open="(v) => emit('update:open', v)">
+  <UiDialog :open="open" @update:open="requestOpen">
     <UiDialogContent class="sm:max-w-md">
       <UiDialogHeader>
         <UiDialogTitle>{{ title }}</UiDialogTitle>
@@ -123,7 +131,7 @@ const description = computed(() =>
       </template>
 
       <UiDialogFooter>
-        <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="emit('update:open', false)">
+        <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"  :disabled="busy" @click="requestOpen(false)">
           Voltar
         </button>
         <button

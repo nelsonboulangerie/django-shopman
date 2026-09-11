@@ -1598,3 +1598,13 @@ sugestão AI, além do link TV, agora usam tokens44/48. Depois:26 integrações5
 Evidências auxiliary_targets/. Sem lógica, DDL ou efeitos reais nesta fatia.
 Rollback visual por revert. Corrigida reprodução: settings_orders_lab.py também
 é necessário entre os quatro bootstraps. C07 descarte continua em auditoria.
+
+### WP06 — descarte explícito em motivo e proteção de reload
+
+Defeito atual reproduzido no detalhe/componente e na fila: fechar podia perder
+motivo sem decisão. Proteção local conforme C07, sem armazenamento novo, com
+reload de nota/comentário/motivo protegido e busy impedindo fechamento do modal.
+303 Vitest,27 integrações do detalhe e2 após extensão à fila; logs completos,
+preparação falha e limites em reason_discard/. R=0 no escopo ensaiado; nenhum
+comando de cancelamento na nova jornada, estado canônico conservado.
+Sem migration/efeito real; rollback visual/comportamental não mexe em livros.

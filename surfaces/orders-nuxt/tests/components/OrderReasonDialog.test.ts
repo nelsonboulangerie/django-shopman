@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, defineComponent, h, mergeProps, ref, watch } from "vue";
+
 import { mount } from "@vue/test-utils";
 
 import OrderReasonDialog from "../../app/components/OrderReasonDialog.vue";
@@ -166,5 +167,48 @@ describe("motivos indisponíveis", () => {
     expect((w.find("select").element as HTMLSelectElement).value).toBe("A");
     await w.setProps({ reasons: [{ code: "B", description: "Novo" }] });
     expect(confirmBtn(w, "Recusar pedido").attributes("disabled")).toBeDefined();
+  });
+});
+
+
+describe("descarte explícito do motivo", () => {
+  beforeEach(() => { window.confirm = vi.fn(); });
+  afterEach(() => vi.restoreAllMocks());
+  it("preserva texto quando a pessoa recusa descartar", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const w = mountDialog();
+    await w.find("textarea").setValue("Contexto importante");
+    await confirmBtn(w, "Voltar").trigger("click");
+    expect(w.emitted("update:open")).toBeUndefined();
+    expect(w.find("textarea").element.value).toBe("Contexto importante");
+    expect(confirm).toHaveBeenCalledTimes(1);
+    confirm.mockRestore();
+  });
+  it("permite descartar explicitamente e informa o estado do draft", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const w = mountDialog();
+    await w.find("textarea").setValue("Contexto importante");
+    expect(w.emitted("dirty-change")?.at(-1)).toEqual([true]);
+    await confirmBtn(w, "Voltar").trigger("click");
+    expect(w.emitted("update:open")?.at(-1)).toEqual([false]);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    await w.setProps({ open: false });
+    expect(w.emitted("dirty-change")?.at(-1)).toEqual([false]);
+    await w.setProps({ open: true });
+    expect(w.find("textarea").element.value).toBe("");
+    confirm.mockRestore();
+  });
+  it("fecha draft vazio sem confirmação redundante", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const w = mountDialog();
+    await confirmBtn(w, "Voltar").trigger("click");
+    expect(w.emitted("update:open")?.at(-1)).toEqual([false]);
+    expect(confirm).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+  it("não dispensa o editor enquanto a operação está pendente", async () => {
+    const w = mountDialog({ busy: true });
+    await confirmBtn(w, "Voltar").trigger("click");
+    expect(w.emitted("update:open")).toBeUndefined();
   });
 });

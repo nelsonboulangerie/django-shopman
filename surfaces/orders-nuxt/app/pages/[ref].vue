@@ -12,6 +12,7 @@ import {
   statusTone,
   toneBadge,
 } from "~/presentation/board";
+import { onMounted, onBeforeUnmount } from "vue";
 import type { CancellationReason } from "~/types/orders";
 
 definePageMeta({ key: (route) => route.path });
@@ -92,11 +93,20 @@ async function saveKitchenNote() {
     if (!error.value) notesRevision.value = order.value?.revisions?.kitchen_note || "";
   }
 }
+const reasonDirty = ref(false);
+const hasUnsavedText = computed(() => notesDirty.value || Boolean(comment.value.trim()) || reasonDirty.value);
 // Session-only drafts: leaving requires an explicit discard while text is dirty.
 onBeforeRouteLeave(() => {
-  if (!notesDirty.value && !comment.value.trim()) return true;
+  if (!hasUnsavedText.value) return true;
   return window.confirm("Há texto não salvo neste pedido. Descartar e sair?");
 });
+function beforeUnload(event: BeforeUnloadEvent) {
+  if (!hasUnsavedText.value) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+onMounted(() => window.addEventListener("beforeunload", beforeUnload));
+onBeforeUnmount(() => window.removeEventListener("beforeunload", beforeUnload));
 // Store-configured kitchen-note tags (Admin/Unfold). One tap appends the tag to the
 // note, preserving the free text; already-present tags aren't duplicated.
 const noteTags = computed(() => order.value?.kitchen_note_tags ?? []);
@@ -589,6 +599,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
     <!-- reject / cancel: marketplace-aware reason dialog (iFood coded reasons or
          store presets + free text) -->
     <OrderReasonDialog
+      @dirty-change="reasonDirty = $event"
       :open="dialog === 'reject' || dialog === 'cancel'"
       :mode="dialog === 'cancel' ? 'cancel' : 'reject'"
       :loading="reasonsLoading"
