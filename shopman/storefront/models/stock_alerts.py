@@ -67,8 +67,8 @@ class StockAlertSubscription(models.Model):
         default="legacy_unverified",
     )
     subscribed_at = models.DateTimeField(verbose_name="pedido em", auto_now_add=True)
-    dispatch_claimed_at = models.DateTimeField(null=True, blank=True)
-    dispatch_accepted_at = models.DateTimeField(null=True, blank=True)
+    dispatch_claimed_at = models.DateTimeField(verbose_name="envio assumido em", null=True, blank=True)
+    dispatch_accepted_at = models.DateTimeField(verbose_name="envio aceito em", null=True, blank=True)
     notified_at = models.DateTimeField(verbose_name="avisado em", null=True, blank=True)
     expires_at = models.DateTimeField(verbose_name="expira em", null=True, blank=True)
     revoked_at = models.DateTimeField(verbose_name="cancelado em", null=True, blank=True)
@@ -126,19 +126,36 @@ class StockAlertOccurrence(models.Model):
 
     ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     sku = RefField(ref_type="SKU", max_length=64, db_index=True)
-    event_type = models.CharField(max_length=24, choices=StockAlertSubscription.AlertType.choices)
-    channel_ref = models.CharField(max_length=32, default="web")
-    semantic_key = models.CharField(max_length=160, unique=True)
-    source_ref = models.CharField(max_length=100, blank=True)
-    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
-    status_reason = models.CharField(max_length=100, blank=True)
-    available_qty = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
-    closed_at = models.DateTimeField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    event_type = models.CharField(
+        verbose_name="tipo de ocorrência",
+        max_length=24,
+        choices=StockAlertSubscription.AlertType.choices,
+    )
+    channel_ref = models.CharField(verbose_name="ref do canal", max_length=32, default="web")
+    semantic_key = models.CharField(verbose_name="chave semântica", max_length=160, unique=True)
+    source_ref = models.CharField(verbose_name="referência de origem", max_length=100, blank=True)
+    status = models.CharField(
+        verbose_name="situação",
+        max_length=16,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    status_reason = models.CharField(verbose_name="motivo da situação", max_length=100, blank=True)
+    available_qty = models.DecimalField(
+        verbose_name="quantidade disponível",
+        max_digits=12,
+        decimal_places=3,
+        null=True,
+        blank=True,
+    )
+    closed_at = models.DateTimeField(verbose_name="encerrada em", null=True, blank=True)
+    created_at = models.DateTimeField(verbose_name="criada em", auto_now_add=True)
+    updated_at = models.DateTimeField(verbose_name="atualizada em", auto_now=True)
 
     class Meta:
         app_label = "storefront"
+        verbose_name = "ocorrência de aviso de produto"
+        verbose_name_plural = "ocorrências de avisos de produto"
         indexes = [models.Index(fields=["sku", "event_type", "closed_at"])]
         constraints = [
             models.UniqueConstraint(
@@ -164,21 +181,38 @@ class StockAlertDelivery(models.Model):
         SUPPRESSED = "suppressed", "suprimida"
 
     ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    subscription = models.ForeignKey(StockAlertSubscription, on_delete=models.CASCADE, related_name="deliveries")
-    occurrence = models.ForeignKey(StockAlertOccurrence, on_delete=models.CASCADE, related_name="deliveries")
-    purpose = models.CharField(max_length=32, default="stock_availability")
-    delivery_channel = models.CharField(max_length=20, default="whatsapp")
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.QUEUED)
-    directive_id = models.BigIntegerField(null=True, blank=True, db_index=True)
-    claimed_at = models.DateTimeField(null=True, blank=True)
-    accepted_at = models.DateTimeField(null=True, blank=True)
-    provider_receipt_ref = models.CharField(max_length=160, blank=True)
-    last_error_code = models.CharField(max_length=100, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    subscription = models.ForeignKey(
+        StockAlertSubscription,
+        verbose_name="assinatura",
+        on_delete=models.CASCADE,
+        related_name="deliveries",
+    )
+    occurrence = models.ForeignKey(
+        StockAlertOccurrence,
+        verbose_name="ocorrência",
+        on_delete=models.CASCADE,
+        related_name="deliveries",
+    )
+    purpose = models.CharField(verbose_name="finalidade", max_length=32, default="stock_availability")
+    delivery_channel = models.CharField(verbose_name="canal de entrega", max_length=20, default="whatsapp")
+    status = models.CharField(
+        verbose_name="situação",
+        max_length=20,
+        choices=Status.choices,
+        default=Status.QUEUED,
+    )
+    directive_id = models.BigIntegerField(verbose_name="id da diretiva", null=True, blank=True, db_index=True)
+    claimed_at = models.DateTimeField(verbose_name="assumida em", null=True, blank=True)
+    accepted_at = models.DateTimeField(verbose_name="aceita em", null=True, blank=True)
+    provider_receipt_ref = models.CharField(verbose_name="referência no provedor", max_length=160, blank=True)
+    last_error_code = models.CharField(verbose_name="código do último erro", max_length=100, blank=True)
+    created_at = models.DateTimeField(verbose_name="criada em", auto_now_add=True)
+    updated_at = models.DateTimeField(verbose_name="atualizada em", auto_now=True)
 
     class Meta:
         app_label = "storefront"
+        verbose_name = "entrega de aviso de produto"
+        verbose_name_plural = "entregas de avisos de produto"
         indexes = [models.Index(fields=["status", "created_at"])]
         constraints = [
             models.UniqueConstraint(
