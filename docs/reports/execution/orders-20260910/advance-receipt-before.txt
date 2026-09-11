@@ -1,0 +1,111 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________ test_advance_receipt_survives_projection_outage ________________
+
+client = <django.test.client.Client object at 0x10e0e4230>
+operator = <User: orders-api>, order = <Order: ORD-API-1>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10d9a8590>
+
+    @pytest.mark.django_db
+    def test_advance_receipt_survives_projection_outage(client, operator, order, monkeypatch):
+        client.force_login(operator)
+        url = reverse("api-backstage-order-advance", args=[order.ref])
+        body = advance_payload(client, order.ref)
+        assert client.post(url, body, content_type="application/json").status_code == 200
+    
+        def unavailable(*args, **kwargs):
+            raise RuntimeError("projection unavailable")
+    
+        monkeypatch.setattr("shopman.backstage.api.operations.build_operator_order", unavailable)
+>       receipt = client.get(url, {"idempotency_key": body["idempotency_key"]})
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+shopman/backstage/tests/test_api_orders_surface.py:383: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../django-shopman/.venv/lib/python3.12/site-packages/django/test/client.py:1127: in get
+    response = super().get(
+../../django-shopman/.venv/lib/python3.12/site-packages/django/test/client.py:475: in get
+    return self.generic(
+../../django-shopman/.venv/lib/python3.12/site-packages/django/test/client.py:671: in generic
+    return self.request(**r)
+           ^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/test/client.py:1090: in request
+    self.check_exception(response)
+../../django-shopman/.venv/lib/python3.12/site-packages/django/test/client.py:805: in check_exception
+    raise exc_value
+../../django-shopman/.venv/lib/python3.12/site-packages/django/core/handlers/exception.py:55: in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/core/handlers/base.py:198: in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/views/decorators/csrf.py:65: in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/views/generic/base.py:106: in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py:515: in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py:475: in handle_exception
+    self.raise_uncaught_exception(exc)
+../../django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py:486: in raise_uncaught_exception
+    raise exc
+../../django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py:512: in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+shopman/backstage/api/operations.py:1634: in get
+    return Response({**result.response_body, "replayed": True, "order": projection_data(build_operator_order(order, user=request.user))}, status=result.response_code)
+                                                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (<Order: ORD-API-1>,)
+kwargs = {'user': <SimpleLazyObject: <SimpleLazyObject: <User: orders-api>>>}
+
+    def unavailable(*args, **kwargs):
+>       raise RuntimeError("projection unavailable")
+E       RuntimeError: projection unavailable
+
+shopman/backstage/tests/test_api_orders_surface.py:380: RuntimeError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-11 01:51:46,874 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-11 01:51:47,355 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-11 01:51:48,410 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+----------------------------- Captured stderr call -----------------------------
+WARNING 2026-09-11 01:51:52,512 shopman.operational operator_alert.created
+ERROR 2026-09-11 01:51:52,516 django.request Internal Server Error: /api/v1/backstage/orders/ORD-API-1/advance/
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/core/handlers/exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/core/handlers/base.py", line 198, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/views/generic/base.py", line 106, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/api/operations.py", line 1634, in get
+    return Response({**result.response_body, "replayed": True, "order": projection_data(build_operator_order(order, user=request.user))}, status=result.response_code)
+                                                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/tests/test_api_orders_surface.py", line 380, in unavailable
+    raise RuntimeError("projection unavailable")
+RuntimeError: projection unavailable
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-11 01:51:52,706 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_api_orders_surface.py::test_advance_receipt_survives_projection_outage
+1 failed, 19 deselected in 6.05s

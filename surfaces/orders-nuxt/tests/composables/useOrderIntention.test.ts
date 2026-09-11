@@ -94,3 +94,34 @@ it("verificação explícita usa somente GET com a intenção pendente", async (
   await expect(client.checkPath("curation", "/catalog/reorder/")).rejects.toThrow("Não há gravação pendente");
   expect(env.fetchMock).toHaveBeenCalledTimes(3);
 });
+
+it.each(["check", "changed", "automatic"])("recibo not_applied libera nova intenção após %s, sem reenviar automaticamente", async (mode) => {
+  const client = useOrderIntention();
+  const refusal = { status: 409, data: { outcome: "not_applied", detail: "A nota mudou; confira o texto atual." } };
+  if (mode === "automatic") {
+    env.fetchMock.mockRejectedValueOnce({ status: 502 }).mockRejectedValueOnce(refusal);
+    await expect(client.execute("ORDER", "notes", action, { notes: "Primeiro" })).rejects.toEqual(refusal);
+  } else {
+    env.fetchMock.mockRejectedValueOnce({ status: 502 }).mockResolvedValueOnce({ outcome: "unknown" });
+    await expect(client.execute("ORDER", "notes", action, { notes: "Primeiro" })).rejects.toThrow();
+    env.fetchMock.mockRejectedValueOnce(refusal);
+    await expect(mode === "check" ? client.checkPath("ORDER:notes", "/api/v1/backstage/orders/ORDER/notes/") : client.execute("ORDER", "notes", action, { notes: "Segundo" })).rejects.toEqual(refusal);
+  }
+  const previous = env.fetchMock.mock.calls[0]![1].headers["Idempotency-Key"];
+  const calls = env.fetchMock.mock.calls.length;
+  expect(env.states.get("orders-local-intentions")?.value["ORDER:notes"]).toBeUndefined();
+  env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });
+  await client.execute("ORDER", "notes", action, { notes: "Segundo" });
+  expect(env.fetchMock.mock.calls[calls]![1].headers["Idempotency-Key"]).not.toBe(previous);
+  expect(env.fetchMock.mock.calls[calls]![1].body.notes).toBe("Segundo");
+});
+
+it.each([401, 403, 404, 409, 502])("erro GET %s sem prova not_applied conserva intenção", async (status) => {
+  const client = useOrderIntention();
+  env.fetchMock.mockRejectedValueOnce({ status: 502 }).mockResolvedValueOnce({ outcome: "unknown" });
+  await expect(client.execute("ORDER", "notes", action, { notes: "Meu texto" })).rejects.toThrow();
+  const previous = env.states.get("orders-local-intentions")?.value["ORDER:notes"];
+  env.fetchMock.mockRejectedValueOnce({ status, data: { detail: "Indisponível" } });
+  await expect(client.checkPath("ORDER:notes", "/api/v1/backstage/orders/ORDER/notes/")).rejects.toBeDefined();
+  expect(env.states.get("orders-local-intentions")?.value["ORDER:notes"]).toEqual(previous);
+});

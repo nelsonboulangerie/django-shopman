@@ -11,6 +11,24 @@ export function useOrderIntention() {
     if (next) pending.value = Object.fromEntries(Object.entries(pending.value).filter(([, intent]) => intent.owner === next));
   });
 
+  async function readReceipt(resource: string, path: string, intent: Intention) {
+    try {
+      return await $fetch<Result>(path, { query: { idempotency_key: intent.key, ...(typeof intent.body.ref === "string" ? { ref: intent.body.ref } : {}) } });
+    } catch (error) {
+      const { status, data } = httpError(error);
+      const body = data as { outcome?: unknown; code?: unknown } | null;
+      const code = httpErrorCode(error) || (typeof body?.code === "string" ? body.code : "");
+      // Só o recibo de recusa definitiva libera outra intenção. Falha de leitura,
+      // permissão ou chave com outro payload continua exigindo reconciliação.
+      if ([400, 409, 422].includes(status) && body?.outcome === "not_applied"
+        && !["intention_conflict", "manager_approval_required", "manager_approval_invalid"].includes(code)
+        && session.value?.operator?.id === intent.owner && pending.value[resource]?.key === intent.key) {
+        delete pending.value[resource];
+      }
+      throw error;
+    }
+  }
+
   async function executePath(resource: string, path: string, action: (Pick<Action, "enabled" | "reason" | "payload_schema"> & Partial<Pick<Action, "method">>) | undefined, inputs: Record<string, unknown>, approval?: Record<string, string>) {
     const owner = session.value?.operator?.id;
     if (!owner) throw new Error("Identifique-se antes de continuar.");
@@ -25,7 +43,7 @@ export function useOrderIntention() {
     const current = intent;
     const samePerson = () => session.value?.operator?.id === current.owner;
     if (Object.entries(inputs).some(([key, value]) => JSON.stringify(value) !== JSON.stringify(current.body[key]))) {
-      const result = await $fetch<Result>(path, { query: { idempotency_key: current.key, ...(typeof current.body.ref === "string" ? { ref: current.body.ref } : {}) } });
+      const result = await readReceipt(resource, path, current);
       if (!samePerson()) throw new Error("A identificação mudou. Confira os dados.");
       if (result.outcome === "applied") {
         delete pending.value[resource];
@@ -56,14 +74,14 @@ export function useOrderIntention() {
         throw error;
       }
       // A resposta pode ter se perdido depois do commit. Consultar não executa efeitos.
-      const result = await $fetch<Result>(path, { query: { idempotency_key: current.key, ...(typeof current.body.ref === "string" ? { ref: current.body.ref } : {}) } });
+      const result = await readReceipt(resource, path, current);
       return finish(result);
     }
   }
   async function checkPath(resource: string, path: string) {
     const intent = pending.value[resource];
     if (!intent || intent.owner !== session.value?.operator?.id) throw new Error("Não há gravação pendente para consultar. Confira a ordem atual.");
-    const result = await $fetch<Result>(path, { query: { idempotency_key: intent.key, ...(typeof intent.body.ref === "string" ? { ref: intent.body.ref } : {}) } });
+    const result = await readReceipt(resource, path, intent);
     if (intent.owner !== session.value?.operator?.id) throw new Error("A identificação mudou. Confira os dados.");
     if (result.outcome === "applied") delete pending.value[resource];
     return result;

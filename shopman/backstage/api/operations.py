@@ -1645,9 +1645,6 @@ class OrderAdvanceView(_OrderActionBase):
     def get(self, request, ref: str):
         from shopman.shop.services.remote_mutations import RemoteMutationInProgress, lookup_local_mutation
 
-        order, err = self._get_order(ref)
-        if err:
-            return err
         key = str(request.query_params.get("idempotency_key") or "")
         if not key or len(key) > 128:
             return Response({"detail": "Informe a intenção a consultar."}, status=400)
@@ -1657,7 +1654,7 @@ class OrderAdvanceView(_OrderActionBase):
             result = None
         if result is None:
             return Response({"intention": key, "outcome": "unknown", "detail": "Ainda não há resultado confirmado para esta intenção."}, status=202)
-        return Response({**result.response_body, "replayed": True, "order": projection_data(build_operator_order(order, user=request.user))}, status=result.response_code)
+        return Response({**result.response_body, "replayed": True}, status=result.response_code)
 
     def post(self, request, ref: str):
         from shopman.shop.services.remote_mutations import (

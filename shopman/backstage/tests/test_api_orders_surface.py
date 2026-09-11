@@ -367,3 +367,22 @@ def test_context_mutations_merge_independent_fields_and_refuse_stale_note(client
     assert order.data["assignment"]["operator_id"] == operator.pk
     assert order.data["kitchen_note"] == "Sem cebola"
     assert client.post(note_url, note, content_type="application/json").json()["replayed"] is True
+
+
+@pytest.mark.django_db
+def test_advance_receipt_survives_projection_outage(client, operator, order, monkeypatch):
+    client.force_login(operator)
+    url = reverse("api-backstage-order-advance", args=[order.ref])
+    body = advance_payload(client, order.ref)
+    assert client.post(url, body, content_type="application/json").status_code == 200
+
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("projection unavailable")
+
+    monkeypatch.setattr("shopman.backstage.api.operations.build_operator_order", unavailable)
+    receipt = client.get(url, {"idempotency_key": body["idempotency_key"]})
+    assert receipt.status_code == 200
+    assert receipt.json()["outcome"] == "applied"
+    assert receipt.json()["applied"]["status"] == "preparing"
+    order.refresh_from_db()
+    assert order.status == "preparing"

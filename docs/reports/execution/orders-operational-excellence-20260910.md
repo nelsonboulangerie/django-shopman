@@ -1098,3 +1098,27 @@ Migração: nenhuma. Rollback deste pacote de ensaio: parar servidores próprios
 artefatos não entram na aplicação. Não remover livros/chaves reais nem usar o
 runner fora das portas/base sintéticas fixas. Implementação técnica/piloto/
 rollout continuam distintos: aqui há medição local, não homologação operacional.
+
+### WP02 — consulta de avanço independente e nova intenção após recusa comprovada
+
+Revalidação em 2ddf9a933: GET do recibo de avanço ainda construía a projeção; uma
+indisponibilidade da leitura escondia um commit confirmado. O hook de intenções
+conservava também a chave quando a consulta retornava o recibo not_applied em
+HTTP 409, impedindo enviar o rascunho novo após revisão. Antes: uma regressão
+PostgreSQL e três casos UI falharam; doze controles UI passaram.
+
+Implementação: GET de avanço usa apenas o recibo existente no escopo autorizado
+por pessoa/recurso, como os demais comandos. O cliente libera a intenção quando
+o GET comprova not_applied em 400/409/422, preservando o erro e exigindo novo gesto.
+Falha de GET sem prova, 401/403, intention_conflict e desafio de assinatura não
+liberam a chave. Nenhum autoenvio, texto reconstituído ou efeito adicional.
+
+Resultado: 31 PostgreSQL passaram (11,19 s), 285 testes Orders passaram, typecheck
+Orders e Ruff dos arquivos alterados passaram. Logs antes/depois em
+`orders-20260910/{advance-receipt-before,receipt-refusal-before,receipt-recovery-*}.txt`.
+J04 mantém consulta automática; nova revisão após recusa não exige redigitar.
+Sem medição de esforço em campo e sem nova política de retenção.
+
+Migração: nenhuma. Rollback: conservar o formato/chaves do recibo; cliente
+anterior pode ficar preso na recusa e backend anterior pode depender da projeção.
+Não apagar intenção para resolver unknown. G01/G03/G05/G08 permanecem pendentes.
