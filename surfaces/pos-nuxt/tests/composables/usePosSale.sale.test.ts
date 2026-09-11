@@ -594,3 +594,22 @@ describe("usePosSale — a trava da gaveta na venda SEM comanda", () => {
     h.handles.dispose();
   });
 });
+
+describe("recebimento explícito", () => {
+  it("cliente e data preenchidos não autorizam retirada implícita", async () => {
+    const actionCall = saleRouter();
+    const h = saleReadyForCheckout(actionCall);
+    h.sale.cart.fulfillmentConfirmed = false;
+    h.sale.cart.customerName = "Maria";
+    h.sale.cart.deliveryDate = "2026-09-11";
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+    expect(actionCall.mock.calls.filter((c) => String(c[0]).includes("/sale/close/"))).toHaveLength(0);
+    expect(h.sale.serverError.value).toContain("Escolha Entrega ou Retirada");
+    h.sale.cart.fulfillmentConfirmed = true;
+    await h.sale.submitSale();
+    expect(h.sale.result.value?.orderRef).toBe("PED-1");
+    expect(h.sale.cart.fulfillmentConfirmed).toBe(false);
+    h.handles.dispose();
+  });
+});

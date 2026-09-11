@@ -25,6 +25,8 @@ const props = defineProps<{
   open: boolean;
   /** O hoje da LOJA (um tablet com fuso errado agendaria para ontem). */
   today: string;
+  deliveryDate?: string;
+  fulfillmentType?: "pickup" | "delivery";
   /** A data que vale — a escolhida, ou o hoje que o servidor devolveu. */
   deliveryDateEffective: string;
   deliveryTimeSlot: string;
@@ -58,7 +60,6 @@ const isOpen = computed({
 // semana de encomenda sem virar uma parede de botões no balcão.
 const quickDates = computed(() => props.availableDates.slice(0, 5));
 
-const isToday = computed(() => !props.deliveryDateEffective || props.deliveryDateEffective === props.today);
 
 const note = computed(() => readinessNote(props.bottleneckName, props.readyAt));
 const conflict = computed(() => selectedWindowConflict(props.windows, props.deliveryTimeSlot));
@@ -92,7 +93,7 @@ function pickDate(iso: string) {
     <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg">
       <UiDialogHeader>
         <UiDialogTitle>Quando</UiDialogTitle>
-        <UiDialogDescription>Para quando o cliente quer o pedido.</UiDialogDescription>
+        <UiDialogDescription>{{ fulfillmentType === "delivery" ? "Entrega" : fulfillmentType === "pickup" ? "Retirada" : "Pedido" }}: combine o dia e o horário. Agendamento exige cliente identificado.</UiDialogDescription>
       </UiDialogHeader>
 
       <div class="grid gap-4">
@@ -109,8 +110,8 @@ function pickDate(iso: string) {
               variant="outline"
               size="sm"
               class="h-9 px-3"
-              :class="deliveryDateEffective === iso ? 'border-primary bg-primary/5 font-semibold' : ''"
-              @click="iso === today ? backToToday() : pickDate(iso)"
+              :class="deliveryDate === iso ? 'border-primary bg-primary/5 font-semibold' : ''"
+              @click="pickDate(iso)"
             >
               {{ dateLabel(iso, today) }}
             </UiButton>
@@ -183,7 +184,7 @@ function pickDate(iso: string) {
       </div>
 
       <UiDialogFooter class="gap-2 sm:justify-between">
-        <UiButton v-if="!isToday" variant="outline" @click="backToToday">Voltar para hoje</UiButton>
+        <UiButton v-if="fulfillmentType !== 'delivery'" variant="outline" @click="backToToday">Sem agendamento · levar agora</UiButton>
         <UiButton class="sm:ml-auto" @click="isOpen = false">Concluir</UiButton>
       </UiDialogFooter>
     </UiDialogContent>

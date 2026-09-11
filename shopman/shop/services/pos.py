@@ -677,7 +677,7 @@ def review_sale(
     # Agendado sem cliente é promessa sem destinatário. Aqui é aviso (a review
     # é tela); a recusa de verdade mora em `_require_customer_if_scheduled`,
     # no `close_sale` — mesmo code/field, para a UI apontar o mesmo lugar.
-    if _is_scheduled_for_future(payload) and not _payload_identifies_customer(payload):
+    if _fulfillment_requires_customer(payload) and not _payload_identifies_customer(payload):
         warnings.append({
             "code": "customer_required_for_scheduled",
             "field": "customer_phone",
@@ -909,22 +909,13 @@ def _validate_schedule(payload: dict) -> None:
         raise ValueError(error)
 
 
-def _is_scheduled_for_future(payload: dict) -> bool:
-    """A venda é para OUTRO dia? Data de HOJE não conta — estritamente futura.
-
-    Mesmo predicado do lifecycle (`_physical_work_deferred`): `>` e não `>=`,
-    para que a venda de balcão com a data de hoje continue sendo balcão.
-    """
-    from datetime import date as _date
-
-    raw = str(payload.get("delivery_date") or "").strip()
-    if not raw:
-        return False
-    try:
-        return _date.fromisoformat(raw) > timezone.localdate()
-    except ValueError:
-        # Data ilegível é problema de `_validate_schedule`, que roda antes.
-        return False
+def _fulfillment_requires_customer(payload: dict) -> bool:
+    """Data/janela explícita distingue retirada combinada de venda imediata."""
+    return (
+        _payload_fulfillment_type(payload) == "delivery"
+        or bool(str(payload.get("delivery_date") or "").strip())
+        or bool(str(payload.get("delivery_time_slot") or "").strip())
+    )
 
 
 def _payload_identifies_customer(payload: dict) -> bool:
@@ -969,19 +960,8 @@ def _payload_payment_method_set(payload: dict) -> set[str]:
 
 
 def _require_customer_if_scheduled(payload: dict) -> None:
-    """Encomenda para outro dia só com cliente identificado; recusa ANTES do commit.
-
-    O agendado é uma promessa que atravessa dias: se a fornada atrasar, se o
-    item acabar, se a casa fechar — alguém precisa AVISAR alguém. Um pedido
-    agendado 100% anônimo é uma promessa sem destinatário: ninguém para chamar
-    quando algo muda, e ninguém para cobrar quando ninguém aparece.
-
-    A venda de agora segue anônima (o cliente está na frente do operador); a
-    data de HOJE também não conta como agendamento (ver
-    `test_data_de_HOJE_nao_adia_a_venda_de_balcao`). Basta UM identificador:
-    nome, telefone ou cadastro — o balcão não vira formulário.
-    """
-    if not _is_scheduled_for_future(payload):
+    """Pedido combinado, inclusive hoje, e entrega exigem identificação."""
+    if not _fulfillment_requires_customer(payload):
         return
     if _payload_identifies_customer(payload):
         return

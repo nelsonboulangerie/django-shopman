@@ -4,7 +4,7 @@ import { toast } from "vue-sonner";
 import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { rollStyle } from "~/presentation/printGeometry";
-import { isScheduled, scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
+import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
 import { enterAdvances, paymentFailed } from "~/presentation/saleResult";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
@@ -393,7 +393,7 @@ watch(fulfillmentSheetOpen, (open, wasOpen) => {
 // não como surpresa no Validar. Mesmo desenho do irmão acima: só oferecido.
 watch(scheduleSheetOpen, (open, wasOpen) => {
   if (open || !wasOpen) return;
-  if (!isScheduled(cart.deliveryDate, scheduleToday.value)) return;
+  if (!customerRequiredForSchedule.value) return;
   if (cart.customerName.trim() || cart.customerPhone.trim()) return;
   void nextTick(() => tabHeaderRef.value?.openCustomer());
 });
@@ -428,13 +428,15 @@ const scheduleChipLabel = computed(() => scheduleLabel(
   windowLabel(deliverySlots.value, cart.deliveryTimeSlot),
   scheduleToday.value,
 ));
-const scheduleChipActive = computed(() => isScheduled(cart.deliveryDate, scheduleToday.value));
+const scheduleChipActive = computed(() => Boolean(cart.deliveryDate || cart.deliveryTimeSlot));
 // ENCOMENDA ANÔNIMA — o servidor recusa (`customer_required_for_scheduled`), e o
 // checkout trava o Validar por isso. A barra é quem tem o botão que resolve, e
 // portanto é ela que chama: o chip pulsa. A REGRA é a mesma do bloqueio do CTA
 // porque as duas chamam a mesma função — um dono só, em `presentation/schedule`.
 const customerRequiredForSchedule = computed(() => scheduledNeedsCustomer({
   deliveryDate: cart.deliveryDate,
+  deliveryTimeSlot: cart.deliveryTimeSlot,
+  fulfillmentType: cart.fulfillmentType,
   today: scheduleToday.value,
   customerName: cart.customerName,
   customerPhone: cart.customerPhone,
@@ -453,6 +455,7 @@ const scheduleConflictReason = computed(
 // O rótulo do chip: com entrega, o BAIRRO diz mais que a palavra "entrega" — é o
 // que o operador confere de relance quando o cliente muda de ideia no meio.
 const fulfillmentChipLabel = computed(() => {
+  if (!cart.fulfillmentConfirmed) return "Entrega ou retirada?";
   const base = pos.value?.fulfillment_options.find((o) => o.ref === cart.fulfillmentType)?.label
     || (cart.fulfillmentType === "delivery" ? "Entrega" : "Retirada");
   if (cart.fulfillmentType !== "delivery") return base;
@@ -869,6 +872,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         v-model:manager-pin="cart.managerPin"
         :manager-approval-error="managerApprovalError"
         v-model:fulfillment-type="cart.fulfillmentType"
+        v-model:fulfillment-confirmed="cart.fulfillmentConfirmed"
         v-model:payment-collection="cart.paymentCollection"
         v-model:customer-name="cart.customerName"
         v-model:customer-phone="cart.customerPhone"
@@ -1062,6 +1066,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
     <PosFulfillmentModal
       v-model:open="fulfillmentSheetOpen"
       v-model:fulfillment-type="cart.fulfillmentType"
+      v-model:fulfillment-confirmed="cart.fulfillmentConfirmed"
       v-model:delivery-address="cart.deliveryAddress"
       v-model:delivery-address-structured="cart.deliveryAddressStructured"
       v-model:delivery-street-number="cart.deliveryStreetNumber"
@@ -1089,6 +1094,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       v-model:delivery-date="cart.deliveryDate"
       v-model:delivery-time-slot="cart.deliveryTimeSlot"
       :today="scheduleToday"
+      :fulfillment-type="cart.fulfillmentType"
       :delivery-date-effective="deliveryDateEffective"
       :available-dates="scheduleAvailableDates"
       :windows="deliverySlots"

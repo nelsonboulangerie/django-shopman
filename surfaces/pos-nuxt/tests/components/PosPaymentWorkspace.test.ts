@@ -48,6 +48,7 @@ function props(overrides: Record<string, unknown> = {}) {
     managerPin: "",
     managers: [],
     fulfillmentType: "pickup",
+    fulfillmentConfirmed: true,
     paymentCollection: "terminal",
     paymentTenders: [],
     splitCount: 0,
@@ -704,11 +705,12 @@ describe("PosPaymentWorkspace — agendado sem cliente trava o Validar, com cami
     expect(comCliente.text()).not.toContain("Encomenda precisa de cliente.");
   });
 
-  it("para hoje continua anônimo: data de hoje não trava nada", async () => {
+  it("retirada combinada hoje exige identificação", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: scheduled({ deliveryDate: "2026-09-01" }),
     });
-    expect(cta(wrapper)!.attributes("disabled")).toBeUndefined();
+    expect(cta(wrapper)!.attributes("disabled")).toBeDefined();
+    expect(wrapper.text()).toContain("Identificar cliente");
   });
 });
 
@@ -838,7 +840,7 @@ describe("PosPaymentWorkspace — toda recusa do commit tem gêmea na tela", () 
   });
   it("CPF com taxa de entrega mantém o pagamento disponível", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
-      props: ready({ wantsCpfOnInvoice: true, invoiceTaxId: "52998224725", fulfillmentType: "delivery", deliveryFeeQ: 800 }),
+      props: ready({ customerName: "Maria", wantsCpfOnInvoice: true, invoiceTaxId: "52998224725", fulfillmentType: "delivery", deliveryFeeQ: 800 }),
     });
     expect(cta(wrapper)!.attributes("disabled")).toBeUndefined();
     expect(wrapper.text()).not.toContain("Tirar o CPF");
@@ -865,6 +867,7 @@ describe("PosPaymentWorkspace — toda recusa do commit tem gêmea na tela", () 
     // seguia verde, e a recusa subia como 422 sem campo nenhum.
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: ready({
+        customerName: "Maria",
         deliveryTimeSlot: "09:00",
         deliverySlots: [{ ref: "09:00", label: "09:00 às 09:30", enabled: false, reason: "A baguete só fica pronta 10:30." }],
       }),
@@ -1434,4 +1437,17 @@ it("na entrega oferece crédito e débito sem exigir cobrança antecipada na maq
   await validate.trigger("click");
   expect(wrapper.emitted("submit")).toHaveLength(1);
   expect(wrapper.text()).not.toContain("OK, cobrei na maquininha");
+});
+
+describe("recebimento explícito", () => {
+  it("exibe ação para escolher mesmo com cliente e data preenchidos", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, { props: props({
+      fulfillmentConfirmed: false, customerName: "Maria", deliveryDate: "2026-09-01",
+      scheduleToday: "2026-09-01", paymentTenders: [tender],
+    }) });
+    expect(w.text()).toContain("Como o cliente vai receber?");
+    expect(w.text()).toContain("Escolher entrega ou retirada");
+    await w.setProps({ fulfillmentConfirmed: true });
+    expect(w.text()).not.toContain("Como o cliente vai receber?");
+  });
 });

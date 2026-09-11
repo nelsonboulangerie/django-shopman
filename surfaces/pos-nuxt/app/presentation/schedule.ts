@@ -82,7 +82,7 @@ export function scheduleLabel(
   today: string,
 ): string {
   const agendado = Boolean(deliveryDate) && deliveryDate !== today;
-  if (!agendado) return windowLabel ? `Hoje, ${windowLabel}` : "Para hoje";
+  if (!agendado) return windowLabel ? `Hoje, ${windowLabel}` : (deliveryDate ? "Hoje · horário a combinar" : "Sem agendamento");
   const dia = dateLabel(deliveryDate, today);
   return windowLabel ? `${dia}, ${windowLabel}` : dia;
 }
@@ -145,8 +145,10 @@ export function scheduledNeedsCustomer(input: {
   customerName: string;
   customerPhone: string;
   customerRef: string;
+  deliveryTimeSlot?: string;
+  fulfillmentType?: string;
 }): boolean {
-  return isScheduled(input.deliveryDate, input.today)
+  return Boolean(input.deliveryDate || input.deliveryTimeSlot || input.fulfillmentType === "delivery")
     && !input.customerName.trim()
     && !input.customerPhone.trim()
     && !input.customerRef.trim();

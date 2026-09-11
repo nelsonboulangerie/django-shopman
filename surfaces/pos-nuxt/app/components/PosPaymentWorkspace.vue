@@ -93,6 +93,7 @@ const props = defineProps<{
   /** Quem CONTINUA operando depois da assinatura do gerente. Ver OperatorManagerAuth. */
   operatorName?: string;
   fulfillmentType: "pickup" | "delivery";
+  fulfillmentConfirmed?: boolean;
   paymentCollection: "terminal" | "on_delivery";
   paymentTenders: POSPaymentTenderDraft[];
   /** Em quantas pessoas a conta está dividida (0 = sem divisão). */
@@ -171,6 +172,7 @@ const emit = defineEmits<{
   "update:managerUsername": [string];
   "update:managerPin": [string];
   "update:fulfillmentType": ["pickup" | "delivery"];
+  "update:fulfillmentConfirmed": [boolean];
   "update:paymentCollection": ["terminal" | "on_delivery"];
   addTender: [string];
   removeTender: [number];
@@ -277,6 +279,8 @@ const nonCashExcess = computed(() => nonCashExcessQ(props.paymentTenders, props.
 // três identificadores, e o cadastro só-com-CPF (sem telefone) existe.
 const scheduledWithoutCustomer = computed(() => scheduledNeedsCustomer({
   deliveryDate: props.deliveryDate,
+  deliveryTimeSlot: props.deliveryTimeSlot,
+  fulfillmentType: props.fulfillmentType,
   today: props.scheduleToday,
   customerName: props.customerName,
   customerPhone: props.customerPhone,
@@ -699,6 +703,13 @@ const ctaBlock = computed<{ message: string; hint?: string; action?: CheckoutAct
     return {
       message: "Esta forma exige pagamento antecipado.",
       hint: "Troque a linha por dinheiro ou cartão na maquininha, ou escolha Receber no caixa.",
+    };
+  }
+  if (!props.fulfillmentConfirmed) {
+    return {
+      message: "Como o cliente vai receber?",
+      hint: "Escolher data ou cliente não define entrega ou retirada.",
+      action: { label: "Escolher entrega ou retirada", run: () => { fulfillmentSheetOpen.value = true; } },
     };
   }
   if (scheduledWithoutCustomer.value) {
@@ -1701,6 +1712,8 @@ defineExpose({
     v-model:open="fulfillmentSheetOpen"
     :fulfillment-options="fulfillmentOptions"
     :fulfillment-type="fulfillmentType"
+    :fulfillment-confirmed="fulfillmentConfirmed"
+    @update:fulfillment-confirmed="$emit('update:fulfillmentConfirmed', $event)"
     :saved-addresses="savedAddresses"
     :address-autocomplete="addressAutocomplete"
     :delivery-address="deliveryAddress"
@@ -1734,6 +1747,8 @@ defineExpose({
   <PosScheduleModal
     v-model:open="scheduleSheetOpen"
     :today="scheduleToday"
+    :delivery-date="deliveryDate"
+    :fulfillment-type="fulfillmentType"
     :delivery-date-effective="deliveryDateEffective"
     :delivery-time-slot="deliveryTimeSlot"
     :available-dates="scheduleAvailableDates"

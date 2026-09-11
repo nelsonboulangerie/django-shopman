@@ -317,6 +317,7 @@ export function usePosSale(deps: PosSaleDeps) {
     customerEmail: "",
     customerMemoryAction: "",
     fulfillmentType: "pickup" as FulfillmentType,
+    fulfillmentConfirmed: false,
     deliveryAddress: "",
     deliveryAddressStructured: {} as StructuredAddressProjection,
     deliveryStreetNumber: "",
@@ -954,6 +955,8 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.wantsCpfOnInvoice = false;
     cart.customerEmail = "";
     cart.customerMemoryAction = "";
+    cart.fulfillmentType = "pickup";
+    cart.fulfillmentConfirmed = false;
     cart.deliveryAddress = "";
     cart.deliveryAddressStructured = {};
     cart.deliveryStreetNumber = "";
@@ -1003,6 +1006,8 @@ export function usePosSale(deps: PosSaleDeps) {
 
   async function setFromTabPayload(payload: POSTabPayload, options: { preserveCheckout?: boolean } = {}) {
     tabLoading.value = true;
+    const sameTab = cart.tabRef === payload.tab_ref && cart.tabSessionKey === (payload.tab_session_key || payload.session_key);
+    const fulfillmentWasConfirmed = sameTab && cart.fulfillmentConfirmed && cart.fulfillmentType === payload.fulfillment_type;
     assignTabIdentityFromPayload(payload);
     cart.items = (payload.items || []).map((item) => ({ ...item }));
     cart.customerName = payload.customer_name || "";
@@ -1011,6 +1016,7 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.customerTaxId = payload.customer_tax_id || "";
     cart.customerEmail = payload.customer_email || "";
     cart.fulfillmentType = payload.fulfillment_type === "delivery" ? "delivery" : "pickup";
+    cart.fulfillmentConfirmed = fulfillmentWasConfirmed;
     cart.deliveryAddress = payload.delivery_address || "";
     cart.deliveryAddressStructured = payload.delivery_address_structured || {};
     cart.deliveryStreetNumber = payload.delivery_address_structured?.street_number || "";
@@ -1915,6 +1921,10 @@ export function usePosSale(deps: PosSaleDeps) {
     if (!cart.items.length) return;
     if (!checkoutMode.value) {
       await prepareCheckout();
+      return;
+    }
+    if (!cart.fulfillmentConfirmed) {
+      serverError.value = "Escolha Entrega ou Retirada antes de finalizar.";
       return;
     }
     // Spec: the commit click must not hide an implicit review. If the review is
