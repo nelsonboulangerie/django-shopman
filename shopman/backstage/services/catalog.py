@@ -188,15 +188,12 @@ def bulk_set(
     if is_sellable is not None:
         is_sellable = _as_flag(is_sellable, "is_sellable")
 
-    from shopman.offerman.models import ListingItem
+    from shopman.offerman.models import Listing, ListingItem, Product
+
+    from shopman.shop.models import Channel
 
     if not skus:
         return 0
-    if surface_ref == ALL_SURFACES:
-        return sum(
-            bulk_set(skus, ref, is_published=is_published, is_sellable=is_sellable, actor=actor)
-            for ref in _all_channel_refs()
-        )
     if _is_display_surface(surface_ref):
         # Feed: bulk só pausa/ativa (is_sellable). Sem preço/publicação.
         if is_sellable is None:
@@ -214,18 +211,39 @@ def bulk_set(
 
     from shopman.shop.services.fiscal_catalog import validate_listing_item_publication
 
+    refs = _all_channel_refs() if surface_ref == ALL_SURFACES else [surface_ref]
     with transaction.atomic():
+        # Same lock order as the exact price preview. Every selected destination
+        # validates before any update; provider sync is a separately queued effect.
+        list(Channel.objects.select_for_update().filter(ref__in=refs).order_by("pk"))
+        products = list(Product.objects.select_for_update().filter(sku__in=skus).order_by("pk"))
+        listings = list(Listing.objects.select_for_update().filter(ref__in=refs).order_by("pk"))
+        by_product = {product.pk: product for product in products}
+        by_listing = {listing.pk: listing for listing in listings}
         items = list(ListingItem.objects.select_for_update().filter(
-            listing__ref=surface_ref, product__sku__in=skus,
-        ).select_related("product", "listing").order_by("pk"))
+            listing_id__in=by_listing, product_id__in=by_product,
+        ).order_by("listing_id", "product_id", "min_qty", "pk"))
+        if len(items) > MAX_BULK_PRICE_CELLS:
+            raise CatalogError(f"Selecione no máximo {MAX_BULK_PRICE_CELLS} células somando os canais e faixas.")
         for item in items:
+            item.product = by_product[item.product_id]
+            item.listing = by_listing[item.listing_id]
             for field, value in updates.items():
                 setattr(item, field, value)
             validate_listing_item_publication(item)
         count = ListingItem.objects.filter(pk__in=[item.pk for item in items]).update(**updates)
-    if count:
-        _reconcile_if_projected(surface_ref)
-        _notify_surface(surface_ref)
+        from shopman.offerman.conf import get_projection_backend
+
+        from shopman.shop.handlers.catalog_projection import enqueue_project
+        from shopman.shop.services.catalog_sync import record_sync
+
+        destinations = sorted({(item.product.sku, item.listing.ref) for item in items})
+        for sku, ref in destinations:
+            if get_projection_backend(ref) is not None:
+                record_sync(sku, ref, status="pending")
+                enqueue_project(sku, ref, trigger="operator_publication")
+        for ref in sorted({ref for _sku, ref in destinations}):
+            transaction.on_commit(lambda ref=ref: _notify_surface(ref))
     return count
 
 

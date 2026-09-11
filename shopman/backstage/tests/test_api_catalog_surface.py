@@ -1236,3 +1236,53 @@ def test_invalid_boolean_does_not_toggle_catalog(client, operator, catalog, path
     response = client.post(path, {**body, "is_sellable": "not-a-boolean"}, content_type="application/json")
     assert response.status_code == 400
     assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").is_sellable
+
+
+def test_all_channel_publication_rolls_back_when_later_channel_refuses(catalog, monkeypatch):
+    from django.core.exceptions import ValidationError
+
+    from shopman.backstage.services import catalog as service
+    from shopman.shop.services import fiscal_catalog
+
+    ListingItem.objects.update(is_published=False)
+    original = fiscal_catalog.validate_listing_item_publication
+
+    def reject_second(item):
+        if item.listing.ref == "ifood":
+            raise ValidationError("Classificação fiscal incompleta no segundo destino")
+        return original(item)
+
+    monkeypatch.setattr(fiscal_catalog, "validate_listing_item_publication", reject_second)
+    with pytest.raises(ValidationError, match="segundo destino"):
+        service.bulk_set(["PAO"], "*", is_published=True, actor="lab")
+    assert not ListingItem.objects.filter(is_published=True).exists()
+
+
+def test_publication_enqueue_failure_rolls_back_every_channel(catalog, monkeypatch):
+    from shopman.backstage.services import catalog as service
+
+    ListingItem.objects.update(is_published=False)
+    monkeypatch.setattr("shopman.offerman.conf.get_projection_backend", lambda _ref: object())
+    calls = []
+
+    def enqueue(sku, ref, **kwargs):
+        calls.append((sku, ref))
+        if len(calls) == 2:
+            raise RuntimeError("second enqueue failed")
+
+    monkeypatch.setattr("shopman.shop.handlers.catalog_projection.enqueue_project", enqueue)
+    with pytest.raises(RuntimeError, match="second enqueue"):
+        service.bulk_set(["PAO"], "*", is_published=True, actor="lab")
+    assert not ListingItem.objects.filter(is_published=True).exists()
+
+
+def test_publication_queues_sync_without_calling_provider_under_lock(catalog, monkeypatch):
+    from shopman.backstage.services import catalog as service
+
+    ListingItem.objects.update(is_published=False)
+    monkeypatch.setattr("shopman.offerman.conf.get_projection_backend", lambda _ref: object())
+    calls = []
+    monkeypatch.setattr("shopman.shop.handlers.catalog_projection.enqueue_project", lambda sku, ref, **kw: calls.append((sku, ref)))
+    monkeypatch.setattr(service, "_reconcile_if_projected", lambda *_: pytest.fail("provider I/O in local write"))
+    assert service.bulk_set(["PAO"], "*", is_published=True, actor="lab") == 2
+    assert sorted(calls) == [("PAO", "ifood"), ("PAO", "web")]

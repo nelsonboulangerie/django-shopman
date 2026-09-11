@@ -598,3 +598,19 @@ composable/DOM isolado; não mede frescor em campo nem valida autoridade organiz
 Migração: sem persistência/DDL; estado em memória por pessoa. Rollback por revert do cliente,
 com risco explícito de voltar a representar falha como inbox vazio. WP08 ainda depende dos
 outros contratos completos; esta proteção não declara o pacote integralmente concluído.
+
+### WP05 — publicação em todos os canais sem aplicação parcial
+
+Prova nova: validação recusada no segundo destino deixava PAO publicado em web (primeiro
+canal). Agora bulk_set resolve destinos de venda, bloqueia Channel→Product→Listing→Item,
+valida todos pelos validadores fiscais existentes e grava numa transação. Falha de enqueue
+também desfaz todas as alterações. Sincronização usa CatalogSyncState/Directive existentes,
+fora da escrita local; não chama provider mantendo locks. Display mantém adaptador próprio.
+Envelope provisório de 100 células/faixas limita essa operação local; não é SLA de campo.
+
+**105 testes PostgreSQL passaram** (API catálogo + gate fiscal), incluindo recusa no segundo
+canal, falha no segundo enqueue e ausência de chamada de provider na escrita. Rodada SQLite
+anterior: 103 passed. Ruff dos arquivos alterados passou. Sem publicação externa real.
+Sem DDL/backfill; rollout precisa drenar/monitorar tarefas existentes. Rollback deve conservar
+recuperador de sync pendente, nunca reaplicar preço para recuperar projeção. Prévia/intenção
+dos demais comandos de catálogo/feed e revisão de todos os writers continuam em WP05.
