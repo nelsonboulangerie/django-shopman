@@ -275,16 +275,60 @@ def _is_non_global_literal(host: str) -> bool:
 
 def _reject(code: str, kind: str, field: str) -> None:
     logger.warning("marketing.url_rejected kind=%s code=%s field=%s", kind, code, field)
-    detail = (
-        "O link não atende à política segura de Marketing."
-        if kind == "link"
-        else "A imagem não atende à política segura de Marketing."
-    )
-    repair = (
-        "Use o destino canônico da loja."
-        if kind == "link"
-        else "Use uma imagem HTTPS de um host autorizado pelo Platform Owner."
-    )
+    if kind == "link":
+        detail = "Este link não pode ser usado na publicação."
+        repair = {
+            "marketing_link_invalid": "Use o endereço de um produto ou oferta da loja.",
+            "marketing_link_https_required": "Use o endereço HTTPS do produto ou da oferta.",
+            "marketing_link_host_not_allowed": "Use um endereço da loja oficial.",
+            "marketing_link_private_host": "Use um endereço público da loja.",
+            "marketing_link_userinfo_forbidden": (
+                "Use o endereço público da loja, sem usuário ou senha."
+            ),
+            "marketing_link_port_forbidden": (
+                "Use o endereço HTTPS padrão da loja, sem porta personalizada."
+            ),
+            "marketing_link_tracking_forbidden": (
+                "Use o endereço direto do produto ou da oferta, sem parâmetros ou trechos após #."
+            ),
+            "marketing_link_path_not_canonical": (
+                "Use o endereço direto de um produto ou oferta da loja."
+            ),
+        }.get(code, "Use o endereço direto de um produto ou oferta da loja.")
+    else:
+        detail = "Esta imagem não pode ser usada na publicação."
+        repair = {
+            "marketing_media_invalid": "Informe um endereço válido para a imagem.",
+            "marketing_media_https_required": "Use um endereço que comece com https://.",
+            "marketing_media_host_not_allowed": (
+                "Este domínio ainda não foi aprovado pela loja. Use a foto do produto "
+                "ou peça ao suporte técnico para liberar o domínio."
+            ),
+            "marketing_media_private_host": (
+                "Use uma imagem pública; endereços locais ou privados não podem ser publicados."
+            ),
+            "marketing_media_userinfo_forbidden": (
+                "Use o endereço público da imagem, sem usuário ou senha."
+            ),
+            "marketing_media_port_forbidden": (
+                "Use o endereço HTTPS padrão, sem porta personalizada."
+            ),
+            "marketing_media_fragment_forbidden": (
+                "Remova o trecho após # do endereço da imagem."
+            ),
+            "marketing_media_tracking_query": (
+                "Remova os parâmetros não aceitos do endereço da imagem."
+            ),
+            "marketing_media_path_invalid": (
+                "Use o endereço direto e público do arquivo da imagem."
+            ),
+            "marketing_media_redirect_forbidden": (
+                "Use o endereço final da imagem, sem redirecionamento para outro domínio."
+            ),
+        }.get(
+            code,
+            "Use a foto do produto ou uma imagem pública com endereço HTTPS aprovado pela loja.",
+        )
     raise MarketingContractError(
         code=code,
         detail=detail,

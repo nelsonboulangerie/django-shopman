@@ -308,6 +308,57 @@ def _direct_message_readiness(platform: str, *, now: datetime) -> PlatformReadin
             action="Configurar a credencial ManyChat deste ambiente",
         )
 
+    # The legacy campaign backend and the durable delivery worker have different
+    # provider contracts.  A healthy ManyChat credential alone cannot make the
+    # v2 outbox deliver: the worker needs a registered ``marketing_delivery``
+    # adapter for this exact lane.  Reporting ready without it leaves approved
+    # messages queued forever.
+    from shopman.shop.services.marketing_delivery_runtime import delivery_provider
+
+    durable_provider = delivery_provider(platform, require_available=False)
+    if durable_provider is None:
+        return PlatformReadiness(
+            platform=platform,
+            kind=DIRECT_MESSAGE,
+            state="blocked",
+            reason_code="whatsapp_durable_provider_missing",
+            checked_at=now,
+            facts_as_of=now,
+            source_status="fresh",
+            reason=(
+                "A integração de campanhas do WhatsApp ainda não está conectada "
+                "à fila segura de envio."
+            ),
+            action="Concluir e verificar a integração durável do WhatsApp",
+        )
+    durable_probe = getattr(durable_provider, "is_available", None)
+    try:
+        durable_available = bool(durable_probe is not None and durable_probe())
+    except Exception:
+        logger.warning("marketing.whatsapp_durable_provider_probe_failed", exc_info=True)
+        return PlatformReadiness(
+            platform=platform,
+            kind=DIRECT_MESSAGE,
+            state="unknown",
+            reason_code="whatsapp_durable_provider_probe_unavailable",
+            checked_at=now,
+            source_status="unavailable",
+            reason="Não foi possível verificar a fila segura do WhatsApp agora.",
+            action="Tentar a verificação novamente",
+        )
+    if not durable_available:
+        return PlatformReadiness(
+            platform=platform,
+            kind=DIRECT_MESSAGE,
+            state="blocked",
+            reason_code="whatsapp_durable_provider_unavailable",
+            checked_at=now,
+            facts_as_of=now,
+            source_status="fresh",
+            reason="A fila segura do WhatsApp está configurada, mas indisponível.",
+            action="Conferir a integração durável do WhatsApp",
+        )
+
     template = NotificationTemplate.objects.filter(
         event="announcement_published"
     ).only("whatsapp_flow_ns", "is_active", "version").first()

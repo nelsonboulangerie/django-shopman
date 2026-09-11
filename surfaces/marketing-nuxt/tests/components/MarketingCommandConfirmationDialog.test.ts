@@ -65,9 +65,9 @@ describe("MarketingCommandConfirmationDialog", () => {
     expect((username.element as HTMLInputElement).value).toBe("admin");
     expect(username.attributes("autocomplete")).toBe("username");
     expect(username.attributes("readonly")).toBeDefined();
-    expect(wrapper.find("#decision-credential").attributes("autocomplete")).toBe(
-      "current-password",
-    );
+    expect(
+      wrapper.find("#decision-credential").attributes("autocomplete"),
+    ).toBe("current-password");
     expect(wrapper.find("#decision-typed-confirmation").element.tagName).toBe(
       "TEXTAREA",
     );
@@ -119,7 +119,9 @@ describe("MarketingCommandConfirmationDialog", () => {
 
     expect(wrapper.text()).toContain("Confirmar este disparo?");
     expect(wrapper.text()).toContain("cria somente um anúncio para revisão");
-    expect(wrapper.text()).toContain("nada será publicado agora");
+    expect(wrapper.text()).toContain(
+      "nenhuma publicação ou mensagem será enviada agora",
+    );
     expect(wrapper.text()).toContain("Madeleine (MDL)");
     expect(wrapper.text()).toContain("Criar para revisão");
     expect(wrapper.text()).toContain("Voltar sem criar");

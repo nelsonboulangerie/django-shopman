@@ -27,6 +27,18 @@ e sem navegação por membro, contato, outbox, destino ou tentativa.
 Mensagem direta no Instagram está fora do contrato. Se for aprovada no futuro, exige
 fluxo de entrega, capability, consentimento, prontidão, limites e comprovante próprios.
 
+**Vocabulário da operação:** mensagem é direta e possui destinatário; publicação é
+pública e não possui destinatário individual. “Entregar” é o verbo neutro para uma
+ação mista. Identificadores técnicos podem permanecer em inglês, mas esses termos não
+podem ser trocados na UI.
+
+O mapeamento atual ainda permite somente um tipo de entrega por plataforma. Antes de
+adicionar Instagram DM ou mais de uma consequência da mesma plataforma, o gate
+`MKT-CAP-01` deve aprovar a identidade `{platform, delivery_kind, format}`, um catálogo
+server-owned de capacidades e schemas fechados por destino. A auditoria e a proposta
+completas estão em
+[`marketing-platform-capability-audit-20260911.md`](../reports/execution/marketing-platform-capability-audit-20260911.md).
+
 O formato público faz parte do artefato imutável (`publication_format`). A prévia,
 aprovação e chamada do provider leem o mesmo valor. No Instagram, `story` é o default
 de produto para FOMO e exige imagem pública; `feed` é secundário e precisa estar

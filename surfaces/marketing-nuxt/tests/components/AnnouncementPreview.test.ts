@@ -185,17 +185,14 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     wrapper.unmount();
   });
 
-  it("mostra erro estruturado no contexto e recupera sem navegação", async () => {
-    const fetch = vi
-      .fn()
-      .mockRejectedValueOnce({
-        data: {
-          detail: "O conteúdo usa uma variável desconhecida.",
-          field_errors: { body: ["Variável não reconhecida: precoo."] },
-          retryable: false,
-        },
-      })
-      .mockResolvedValueOnce(batch({ instagram: "Prévia corrigida" }));
+  it("orienta a correção de erro determinístico sem oferecer repetição inútil", async () => {
+    const fetch = vi.fn().mockRejectedValueOnce({
+      data: {
+        detail: "O conteúdo usa uma variável desconhecida.",
+        field_errors: { body: ["Variável não reconhecida: precoo."] },
+        retryable: false,
+      },
+    });
     vi.stubGlobal("$fetch", fetch);
     const wrapper = mountPreview();
 
@@ -205,10 +202,63 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     expect(wrapper.get("[data-testid='preview-error']").text()).toContain(
       "Variável não reconhecida: precoo.",
     );
+    expect(wrapper.text()).toContain("Revise os dados para gerar a prévia");
+    expect(wrapper.find("[data-testid='preview-error'] button").exists()).toBe(
+      false,
+    );
+    expect(fetch).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+
+  it("leva um erro de imagem ao lugar onde ele pode ser corrigido", async () => {
+    vi.stubGlobal(
+      "$fetch",
+      vi.fn().mockRejectedValue({
+        data: {
+          code: "marketing_media_host_not_allowed",
+          detail: "Esta imagem não pode ser usada na publicação.",
+          field_errors: {
+            image_url: ["Este domínio ainda não foi aprovado pela loja."],
+          },
+          retryable: false,
+        },
+      }),
+    );
+    const wrapper = mountPreview();
+
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+
+    const error = wrapper.get("[data-testid='preview-error']");
+    expect(error.text()).toContain("Corrija a imagem para gerar a prévia");
+    expect(error.text()).toContain("Corrigir imagem nos modelos");
+    expect(error.get("button").attributes("to")).toBe("/templates");
+    wrapper.unmount();
+  });
+
+  it("mantém nova tentativa somente para falha temporária", async () => {
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce({
+        data: {
+          detail: "A plataforma demorou para responder.",
+          retryable: true,
+        },
+      })
+      .mockResolvedValueOnce(batch({ instagram: "Prévia atualizada" }));
+    vi.stubGlobal("$fetch", fetch);
+    const wrapper = mountPreview();
+
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain(
+      "Não foi possível atualizar a prévia agora",
+    );
     await wrapper.get("[data-testid='preview-error'] button").trigger("click");
     await flushPromises();
 
-    expect(wrapper.text()).toContain("Prévia corrigida");
+    expect(wrapper.text()).toContain("Prévia atualizada");
     expect(fetch).toHaveBeenCalledTimes(2);
     wrapper.unmount();
   });
