@@ -700,6 +700,8 @@ def settle_delivery_cash(
     from django.db import transaction
     from shopman.cashman import services as cash_ledger
 
+    from shopman.shop.services.observability import operational_event_on_commit
+
     # Same lock order as dispatch/cash ledger: custody before the order.
     # Two receiving drawers share the order lock; stale JSON cannot settle twice.
     if cash_shift is not None:
@@ -784,7 +786,7 @@ def settle_delivery_cash(
         data["payment"] = payment
         order.data = data
         order.save(update_fields=["data", "updated_at"])
-        cash_ledger.record(
+        settled_entry = cash_ledger.record(
             "cod_settled",
             shift=cash_shift,
             operator=receiver,
@@ -815,6 +817,8 @@ def settle_delivery_cash(
         )
         if equipment_back and equipment_custody(order).pending:
             mark_equipment_returned(order, actor=actor)
+    operational_event_on_commit("operator.cash.settled", resource_ref=order.ref, shift_id=cash_shift.pk,
+        cash_entry_id=settled_entry.pk, actor_id=receiver.pk if receiver else None, payment_ref=intent.ref)
     logger.info("operator_settle_delivery_cash order=%s shift=%s amount=%s", order.ref, cash_shift.pk, amount)
     return amount
 

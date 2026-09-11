@@ -1272,3 +1272,25 @@ Migração: nenhuma. Rollback preserva todos os recibos; perde apenas essa
 correlação adicional. Não criar tabela de auditoria paralela. WP08 permanece
 parcial: efeitos externos, placar e runbooks ainda exigem complemento; WP07 e
 os gates de piloto não foram encerrados por estes testes.
+
+### WP08 — evidência de tentativa courier e custódia confirmada
+
+As máquinas de estado courier já tinham recibos duráveis started/accepted/unknown,
+mas sem evento estruturado por mudança. Agora publicam metadados após commit:
+Directive/tópico, pedido, tentativa do worker (não contagem inventada de POST),
+identificador remoto conhecido, início/registro e classificação. Unknown registra
+“aceite não comprovado”, sem copiar erro livre do fornecedor. O evento started
+é comprovadamente emitido antes do fake de rede, fora do lock.
+
+O acerto registra após commit a ligação entre request/intenção, Entry real criada
+pelo writer canônico, Shift, PaymentIntent e recebedor. Replay não produz segundo
+evento de acerto nem outro lançamento. O novo helper de on_commit reutiliza
+operational_event e captura metadados; nenhuma nova fila/tabela/regra.
+
+60 testes PostgreSQL passaram (13,30 s), cobrindo logs, rollback, courier
+concorrente/timeout/aceite, acerto e recibo. Evidência:
+`orders-20260910/observation-effects-postgresql.txt`. Tokens e detalhes privados
+sintéticos não aparecem nos eventos de tentativa. Migração: nenhuma. Rollback
+conserva recibos e livros; remove apenas metadados adicionais dos logs.
+WP08 continua parcial (notificações/fiscal/placar/runbooks), sem homologação
+externa nem definição unilateral de SLA G03 ou custódia real G02.

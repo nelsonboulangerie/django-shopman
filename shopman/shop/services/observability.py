@@ -12,6 +12,7 @@ from contextvars import ContextVar
 from datetime import timedelta
 from typing import Any
 
+from django.db import transaction
 from django.utils import timezone
 
 logger = logging.getLogger("shopman.operational")
@@ -38,6 +39,12 @@ def operational_event(event: str, *, level: int = logging.INFO, **fields: Any) -
     payload = {"event": event, **_compact(current_operational_context())}
     payload.update(_compact(fields))
     logger.log(level, event, extra=payload)
+
+
+def operational_event_on_commit(event: str, **fields) -> None:
+    """Capture metadados agora; só anuncie o fato se a transação confirmar."""
+    snapshot = {**current_operational_context(), **fields}
+    transaction.on_commit(lambda: operational_event(event, **snapshot), robust=True)
 
 
 def create_operator_alert(
@@ -289,6 +296,7 @@ __all__ = [
     "create_operator_alert",
     "operational_event",
     "operational_context",
+    "operational_event_on_commit",
     "current_operational_context",
     "record_integration_failure",
     "record_payment_reconciliation_failure",

@@ -124,3 +124,63 @@ def test_concurrent_contexts_do_not_cross_people_or_requests(caplog):
     with ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(emit, (1, 2)))
     assert {(record.request_id, record.actor_id) for record in records(caplog, "observation.test")} == {("request-1", 1), ("request-2", 2)}
+
+
+@pytest.mark.django_db(transaction=True)
+def test_cash_commit_trace_links_exact_receiving_shift_and_entry(client, actor, caplog):
+    from shopman.cashman import services as cash
+    from shopman.cashman.models import Entry, Terminal
+
+    caplog.set_level(logging.INFO, logger="shopman.operational")
+    shift = cash.open_shift(operator=actor, terminal=Terminal.objects.create(ref="OBS-DRAWER", label="Synthetic drawer"))
+    order = Order.objects.create(ref="OBS-CASH", status="dispatched", total_q=1500,
+        data={"fulfillment_type": "delivery", "payment": {"method": "cash", "collection": "on_delivery"}})
+    client.force_login(actor)
+    detail = client.get(reverse("api-backstage-order-detail", args=[order.ref])).json()["order"]
+    action = next(item for item in detail["actions"] if item["ref"] == "settle-delivery-cash")
+    url = reverse("api-backstage-order-settle-delivery-cash", args=[order.ref])
+    body = {**action["payload_schema"], "amount": "15,00"}
+    caplog.clear()
+    response = client.post(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY="cash-trace")
+    assert response.status_code == 200
+    entry = Entry.objects.get(order_ref=order.ref, kind="cod_settled")
+    trace = records(caplog, "operator.cash.settled")
+    assert len(trace) == 1
+    assert (trace[0].cash_entry_id, trace[0].shift_id, trace[0].actor_id) == (entry.pk, shift.pk, actor.pk)
+    assert trace[0].request_id == response["X-Request-ID"]
+    assert client.post(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY="cash-trace").status_code == 200
+    assert len(records(caplog, "operator.cash.settled")) == 1
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("unknown", [False, True])
+def test_courier_attempt_trace_precedes_network_and_keeps_remote_classification(actor, caplog, monkeypatch, unknown):
+    from types import SimpleNamespace
+
+    from django.db import connection
+    from shopman.orderman.exceptions import DirectiveTerminalError
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.adapters.courier_machine import CourierError
+    from shopman.shop.handlers.courier_cancel import CourierCancelHandler
+
+    caplog.set_level(logging.INFO, logger="shopman.operational")
+    order = Order.objects.create(ref="OBS-RIDE", status="ready", data={"fulfillment_type": "delivery", "courier": {"id_mch": "remote-123", "status": "A"}})
+    task = Directive.objects.create(topic="courier.cancel", payload={"order_ref": order.ref, "courier_ref": "remote-123", "actor": str(actor.pk)})
+    def cancel(*args, **kwargs):
+        assert not connection.in_atomic_block
+        assert records(caplog, "operator.effect.state")[-1].state == "started"
+        if unknown:
+            raise CourierError("SECRET PROVIDER DETAIL", transient=True)
+        return True
+    monkeypatch.setattr("shopman.shop.handlers.courier_cancel.get_adapter", lambda name: SimpleNamespace(cancel=cancel))
+    if unknown:
+        with pytest.raises(DirectiveTerminalError):
+            CourierCancelHandler().handle(message=task, ctx={})
+    else:
+        CourierCancelHandler().handle(message=task, ctx={})
+    trace = records(caplog, "operator.effect.state")
+    assert [item.state for item in trace] == ["started", "unknown" if unknown else "accepted"]
+    assert all(item.directive_id == task.pk and item.external_ref == "remote-123" for item in trace)
+    assert all(item.started_at and item.recorded_at for item in trace)
+    assert "SECRET" not in "\n".join(JsonLogFormatter().format(item) for item in trace)

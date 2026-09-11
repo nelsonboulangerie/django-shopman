@@ -12,6 +12,7 @@ from shopman.shop.adapters import get_adapter
 from shopman.shop.adapters.courier_machine import CANCELLABLE_STATUSES, CourierError
 from shopman.shop.directives import COURIER_CANCEL
 from shopman.shop.services import courier
+from shopman.shop.services.observability import operational_event_on_commit
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,11 @@ class CourierCancelHandler:
         payload["cancel_attempt"] = {**receipt, **values, "state": state, "updated_at": timezone.now().isoformat()}
         message.payload = payload
         message.save(update_fields=["payload", "updated_at"])
+        attempt = payload["cancel_attempt"]
+        operational_event_on_commit("operator.effect.state", directive_id=message.pk, effect=message.topic,
+            resource_ref=payload.get("order_ref"), worker_attempt=message.attempts, state=state,
+            external_ref=payload.get("courier_ref"), started_at=attempt.get("started_at"), recorded_at=attempt["updated_at"],
+            unknown_reason="acceptance_unconfirmed" if state == "unknown" else "")
 
     @staticmethod
     def _adopt(order, message):

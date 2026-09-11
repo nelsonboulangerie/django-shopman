@@ -16,6 +16,7 @@ from shopman.orderman.exceptions import DirectiveTerminalError
 from shopman.orderman.models import Directive, Order
 
 from shopman.shop.directives import COURIER_DISPATCH
+from shopman.shop.services.observability import operational_event_on_commit
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,10 @@ class CourierDispatchHandler:
             locked.payload = payload
             locked.save(update_fields=["payload", "updated_at"])
             message.payload = payload
+            operational_event_on_commit("operator.effect.state", directive_id=locked.pk, effect=locked.topic,
+                resource_ref=payload.get("order_ref"), worker_attempt=locked.attempts, state=state,
+                external_ref=receipt.get("courier_ref"), started_at=receipt.get("started_at"), recorded_at=receipt["updated_at"],
+                unknown_reason="acceptance_unconfirmed" if state == "unknown" else "")
 
     def _unknown(self, order, message, detail):
         self._set_attempt(message, "unknown")
