@@ -43,6 +43,11 @@ O Python explícito confirmou o runtime correto no run seguinte, mas o probe HTT
 Playwright continuou opaco no runner macOS. A prontidão dos três gates browser passou a
 usar o sinal emitido pelo próprio backend imediatamente depois do `bind`, eliminando a
 dependência desse probe sem omitir a prova de que o servidor abriu a porta.
+O run seguinte mostrou que nem o sinal pós-`bind` era alcançado: o processo permanecia
+vivo. A inspeção do caminho da biblioteca padrão isolou o único trabalho síncrono nesse
+intervalo, o reverse-DNS de `HTTPServer.server_bind()`. O servidor hermético agora faz
+bind loopback direto e preenche `server_name`/`server_port` sem DNS; nenhuma superfície
+de runtime usa esse mock.
 
 Os runs cancelados pelo push também tornaram visíveis dois contratos adjacentes: o
 teste antigo de aviso de estoque ainda exigia resposta exatamente `{ok: true}` depois

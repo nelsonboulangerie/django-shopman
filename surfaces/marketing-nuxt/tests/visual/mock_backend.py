@@ -13,6 +13,7 @@ import sys
 import time
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from socketserver import TCPServer
 from urllib.parse import parse_qs, urlparse
 
 FIXED_NOW = "2026-09-10T10:30:00-03:00"
@@ -343,6 +344,16 @@ def notification(pk: int, lifecycle: str = "unseen", *, stale: bool = False) -> 
 
 
 class QuietServer(ThreadingHTTPServer):
+    def server_bind(self) -> None:
+        # HTTPServer.server_bind() faz reverse-DNS de 127.0.0.1 antes de começar
+        # a aceitar conexões. No runner macOS esse lookup pode bloquear por mais
+        # de 30 s, embora a aplicação não use server_name. O mock é estritamente
+        # loopback; bind direto mantém os atributos esperados sem depender de DNS.
+        TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = str(host)
+        self.server_port = int(port)
+
     def handle_error(self, _request, _client_address) -> None:
         return
 
