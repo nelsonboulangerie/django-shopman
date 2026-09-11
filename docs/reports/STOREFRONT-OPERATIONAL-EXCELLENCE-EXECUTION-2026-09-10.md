@@ -1,6 +1,6 @@
 # Execução técnica isolada — Storefront
 
-**Implementação técnica candidata de W00–W10 concluída; aceite G2 ainda não satisfeito.** PostgreSQL 16, Redis 7 e Chromium executaram em laboratório local descartável, sem skips no gate de runtime nem no E2E. O piloto sintético e a inspeção manual de navegador/árvore de acessibilidade estão registrados abaixo. D01–D06 foram aprovadas pelo solicitante em 2026-09-11, com responsabilidade assumida e retenção definitiva pendente sob a proteção atual. J01–J16 com pessoas e leitor de tela continuam sem execução. Nenhum rollout, produção, mensagem ou transação externa foi executado. Não se atribui ganho humano a testes automatizados ou à inspeção feita pelo implementador.
+**Implementação técnica candidata de W00–W10 concluída; aceite G2 ainda não satisfeito.** PostgreSQL 16, Redis 7 e Chromium executaram em laboratório local descartável, sem skips no gate de runtime nem no E2E. O piloto sintético e a inspeção manual de navegador/árvore de acessibilidade estão registrados abaixo. D01–D06 foram aprovadas pelo solicitante em 2026-09-11, com responsabilidade assumida e retenção definitiva pendente sob a proteção atual. Houve uma exploração humana assistida em iPhone com VoiceOver; J01–J16 estruturadas e TalkBack continuam sem execução. Nenhum rollout, produção, mensagem ou transação externa foi executado. Não se atribui ganho humano a testes automatizados ou à exploração assistida.
 
 O histórico completo e auditável está em `origin/main..HEAD`; o fechamento técnico com as correções manuais é `a5647774f`.
 
@@ -28,7 +28,7 @@ O histórico completo e auditável está em `origin/main..HEAD`; o fechamento t�
 | W06 | Set explícito, revogação antes do envio, dedupe/claim e auditoria existentes; corridas passaram em PostgreSQL; precedência de consentimento D03 aprovada | Retenção definitiva, auditoria produtiva de legado e eventual contração permanecem pendentes |
 | W07 | Metadata concorrente preservada; POST confirmado sobrevive falha de refresh; tracking existente mantido | Fluxos SSE/poll passaram; leitor de tela exige avaliação assistiva |
 | W08 | Directive/recibo recupera só conveniência faltante; falhas após escrita revertem; resposta perdida não duplica | Providers externos e todas as etapas downstream exigem reconciliação/ambiente específico |
-| W09 | Superfícies existentes preservadas; storage bloqueado, duas abas, teclado, viewport estreito, zoom 200% e inspeção manual da árvore de acessibilidade passaram | J01–J16 com pessoas, VoiceOver/TalkBack e Maps/WhatsApp reais permanecem pendentes |
+| W09 | Superfícies existentes preservadas; storage bloqueado, duas abas, teclado, viewport estreito, zoom 200% e inspeção manual da árvore de acessibilidade passaram; exploração assistida em iPhone permitiu alguma navegação com VoiceOver | J01–J16 estruturadas, TalkBack e Maps/WhatsApp reais permanecem pendentes; a exploração não mediu conclusão nem compreensão |
 | W10 | Runtime PostgreSQL+Redis, browser real, build, migração mista, volume sintético, runbook e decisões D01–D06 concluídos | Jobs reais em voo, recuo operacional e medição humana impedem G2 |
 
 ## Achados, hipóteses e decisões
@@ -53,7 +53,7 @@ Os diagnósticos originais são assertivas de reprodução do defeito, portanto 
 - **H05:** transporte H3 verifica headers, 429, cookie host-only, no-store e origem estrangeira/irmã/null; BFF+Django passaram no Chromium. A implantação real de SameSite/CORS/CDN não foi exercitada. Responsável: plataforma.
 - **H06:** tipos inválidos/fingerprint conflitante recusados sem efeito em casos testados; não é fuzzing exaustivo de todos os payloads. Responsável: API/frontend.
 - **H07:** regressões de lifecycle, pagamento, estoque, fiscal, courier e concorrência passaram; a corrida revelou e corrigiu captura duplicada. Crash em cada provider, compras paralelas com pontos e todos os adapters não foram exauridos. Responsável: domínios.
-- **H08:** storage negado, teclado, zoom e viewport estreito passaram em Chromium. Leitor de tela e tarefa humana continuam pendentes. **H09:** a decisão foi aprovada; configuração e política pública ainda precisam ser conferidas contra o ambiente autorizado antes de exposição. Responsável: produto/operação.
+- **H08:** storage negado, teclado, zoom e viewport estreito passaram em Chromium. Em exploração humana assistida, o solicitante relatou alguma navegação com VoiceOver; não completou o gesto de quatro dedos ensinado para posicionar o cursor e encerrou a sessão. Isso não reproduz uma falha da superfície e não substitui as jornadas estruturadas nem uma pessoa usuária de tecnologia assistiva. **H09:** a decisão foi aprovada; configuração e política pública ainda precisam ser conferidas contra o ambiente autorizado antes de exposição. Responsável: produto/operação.
 
 D01–D06 foram aprovadas em 2026-09-11 pelo solicitante, que assumiu todos os papéis responsáveis. A retenção definitiva ficou expressamente pendente, mantendo-se a proteção atual: recibos vinculados já finalizados/em curso não são limpos por idade; a janela definitiva, auditoria produtiva, saneamento e eventual contração exigem decisão posterior. Essa aprovação não autoriza exposição externa.
 
@@ -178,7 +178,7 @@ A execução ampliada comprovou dois defeitos adicionais antes da correção:
 | Frontend typecheck/lint | [Typecheck passou](storefront-operational-20260910/continuation-frontend-typecheck.txt); [lint 0 erros e 5 warnings preexistentes](storefront-operational-20260910/continuation-frontend-lint.txt) |
 | Build + Chromium + BFF + Django | [Build passou; E2E 27 passed](storefront-operational-20260910/continuation-browser-final.txt) |
 
-O diff técnico autorizado está concluído. Permanecem fora dele: rollout/produção; mensagens, cobranças ou transações externas; J01–J16 com pessoas; VoiceOver/TalkBack; Maps/WhatsApp reais; volume e jobs produtivos em voo; retenção definitiva e validação do ambiente de exposição. D01–D06 e os papéis responsáveis foram aprovados em 2026-09-11. Não se alega ganho humano a partir destes testes.
+O diff técnico autorizado está concluído. Permanecem fora dele: rollout/produção; mensagens, cobranças ou transações externas; J01–J16 estruturadas; TalkBack e validação completa por pessoa usuária de leitor de tela; Maps/WhatsApp reais; volume e jobs produtivos em voo; retenção definitiva e validação do ambiente de exposição. D01–D06 e os papéis responsáveis foram aprovados em 2026-09-11. Não se alega ganho humano a partir destes testes.
 
 ## Piloto sintético autorizado — 2026-09-11
 
@@ -195,3 +195,7 @@ O percurso manual em Chromium, com Django/Nuxt locais e árvore de acessibilidad
 Também foi percorrida a jornada local menu → sacola → autenticação por OTP de teste → checkout → revisão → pedido → conta em segunda aba. A sacola atravessou o gate de autenticação, a revisão nomeou itens/total e o acompanhamento mostrou estado e ações seguintes. Nenhum provider externo foi acionado. O ensaio simultâneo de duas abas em SQLite encontrou um lock esperado desse banco; após recarga, ambas convergiram para quantidade 2. Ele não substitui o gate concorrente PostgreSQL+Redis, que permanece a prova aplicável.
 
 [Registro manual completo](storefront-operational-20260910/manual-browser-accessibility-20260911.txt). Depois das correções: frontend 550/550; typecheck e build passaram; lint teve 0 erros e os mesmos 5 warnings preexistentes; Chromium com backend vazio 3/3; Chromium + Nuxt BFF + Django 28/28. Inspeção da árvore valida nomes, papéis, estados, foco e conteúdo inerte; não equivale a sessão com VoiceOver/TalkBack nem mede compreensão humana.
+
+## Exploração assistida com VoiceOver — 2026-09-11
+
+O solicitante abriu a candidata local em um iPhone e relatou navegar “um pouco, com algum sucesso” usando VoiceOver. Não conseguiu executar o gesto de quatro dedos sugerido para mover o cursor ao primeiro item e encerrou voluntariamente a sessão. Esse gesto é um comando do leitor de tela; sua falha isolada não comprovou defeito na loja. Nenhuma barreira específica da candidata, conclusão de jornada, compreensão de estado financeiro, tempo, ajuda ou taxa foi registrada. Portanto não há mudança de código justificada por esta observação e ela não satisfaz o aceite humano de J01–J16. [Registro da observação](storefront-operational-20260910/voiceover-exploratory-20260911.txt).

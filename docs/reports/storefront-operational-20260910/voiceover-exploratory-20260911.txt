@@ -1,0 +1,22 @@
+Exploração humana assistida com VoiceOver — 2026-09-11
+
+Ambiente
+- Candidata local em http://192.168.0.13:3112/menu, acessada por iPhone na mesma rede.
+- Django/Nuxt locais, dados sintéticos e OTP de teste; nenhum provider externo, mensagem ou transação real.
+- Modelo do iPhone e versão do iOS não registrados.
+
+Observação relatada pelo solicitante
+- Navegou “um pouco, com algum sucesso” usando VoiceOver.
+- Não conseguiu executar o gesto de quatro dedos sugerido para mover o cursor ao primeiro item.
+- Considerou suficiente a exploração e encerrou a sessão.
+
+Classificação
+- Evidência positiva limitada: a superfície permitiu alguma navegação por VoiceOver em aparelho físico.
+- Nenhum defeito específico da candidata foi reproduzido.
+- A dificuldade com o gesto de quatro dedos, isoladamente, pertence à operação do VoiceOver e não demonstra uma barreira da loja.
+- Jornada, conclusão sem ajuda, compreensão, tempo ativo, A/T/M/N/R e comparação base/candidata não foram medidos.
+- O solicitante declarou não precisar de leitor de tela; esta exploração não substitui teste estruturado por pessoa usuária de tecnologia assistiva nem cobre TalkBack.
+
+Decisão técnica
+- Não alterar código sem defeito reproduzível.
+- Manter J01–J16 estruturadas e TalkBack como evidências pendentes para G2/rollout.
