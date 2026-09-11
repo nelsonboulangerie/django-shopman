@@ -207,7 +207,7 @@ def create(
     if price_tier_ref:
         try:
             price_tier = PriceTier.objects.get(ref=price_tier_ref)
-        except PriceTier.DoesNotExist:
+        except PriceTier.DoesNotExist:  # silêncio-deliberado: faixa opcional inválida vira cliente sem faixa
             pass
 
     with transaction.atomic():

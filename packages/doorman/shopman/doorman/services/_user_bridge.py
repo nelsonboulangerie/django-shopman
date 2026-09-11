@@ -37,7 +37,7 @@ def get_or_create_user_for_customer(customer: AuthCustomerInfo) -> tuple:
             customer_id=customer.uuid,
         )
         return link.user, False
-    except CustomerUser.DoesNotExist:
+    except CustomerUser.DoesNotExist:  # silêncio-deliberado: primeiro login cria o vínculo abaixo
         pass
 
     # Create User
