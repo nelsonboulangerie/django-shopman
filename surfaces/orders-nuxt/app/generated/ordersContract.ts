@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -33,6 +33,42 @@ export interface Action {
   payload_schema: Record<string, unknown>;
   idempotency: string;
   confirmation: Record<string, unknown>;
+}
+
+/** FeedCollectionRef(ref: 'str', name: 'str', exists: 'bool') */
+export interface FeedCollectionRef {
+  ref: string;
+  name: string;
+  exists: boolean;
+}
+
+/** FeedProjection(ref: 'str', name: 'str', kind: 'str', kind_label: 'str', kind_icon: 'str', capability: 'str', is_active: 'bool', output_path: 'str', collections: 'tuple[FeedCollectionRef, ...]', rotate_seconds: 'int', items_per_page: 'int', actions: 'tuple[Action, ...]' = ()) */
+export interface FeedProjection {
+  ref: string;
+  name: string;
+  kind: string;
+  kind_label: string;
+  kind_icon: string;
+  capability: string;
+  is_active: boolean;
+  output_path: string;
+  collections: FeedCollectionRef[];
+  rotate_seconds: number;
+  items_per_page: number;
+  actions: Action[];
+}
+
+/** CollectionOptionProjection(ref: 'str', name: 'str', product_count: 'int') */
+export interface CollectionOptionProjection {
+  ref: string;
+  name: string;
+  product_count: number;
+}
+
+/** FeedBoardProjection(feeds: 'tuple[FeedProjection, ...]', all_collections: 'tuple[CollectionOptionProjection, ...]') */
+export interface FeedBoardProjection {
+  feeds: FeedProjection[];
+  all_collections: CollectionOptionProjection[];
 }
 
 /** One line item as displayed on order tracking or confirmation. */

@@ -24,6 +24,12 @@ from django.core.management.base import BaseCommand
 
 from shopman.backstage.contracts import render_contract_module, run_contract_export
 from shopman.backstage.projections.catalog import CatalogPricePreview, CatalogPricePreviewCell
+from shopman.backstage.projections.feeds import (
+    CollectionOptionProjection,
+    FeedBoardProjection,
+    FeedCollectionRef,
+    FeedProjection,
+)
 from shopman.backstage.projections.order_queue import (
     AwaitingWorkOrderProjection,
     CustomerProfileProjection,
@@ -44,6 +50,10 @@ CONTRACT_DATACLASSES = (
     CatalogPricePreviewCell,
     CatalogPricePreview,
     Action,
+    FeedCollectionRef,
+    FeedProjection,
+    CollectionOptionProjection,
+    FeedBoardProjection,
     OrderItemProjection,
     TimelineEventProjection,
     AwaitingWorkOrderProjection,
@@ -66,7 +76,7 @@ def render_orders_contract_ts() -> str:
     return render_contract_module(
         source=(
             "shopman/backstage/projections/order_queue.py"
-            " + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py"
+            " + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py"
         ),
         command="export_orders_schema",
         dataclasses=CONTRACT_DATACLASSES,

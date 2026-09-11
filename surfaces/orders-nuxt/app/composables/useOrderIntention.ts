@@ -17,7 +17,7 @@ export function useOrderIntention() {
     let intent = pending.value[resource];
     if (!intent) {
       if (!action?.enabled || !action.payload_schema.base_revision) {
-        throw new Error(action?.reason || "Atualize o pedido antes de continuar.");
+        throw new Error(action?.reason || "Atualize os dados antes de continuar.");
       }
       intent = { owner, key: crypto.randomUUID(), body: JSON.parse(JSON.stringify({ ...action.payload_schema, ...inputs })) };
       pending.value[resource] = intent;
@@ -25,8 +25,8 @@ export function useOrderIntention() {
     const current = intent;
     const samePerson = () => session.value?.operator?.id === current.owner;
     if (Object.entries(inputs).some(([key, value]) => JSON.stringify(value) !== JSON.stringify(current.body[key]))) {
-      const result = await $fetch<Result>(path, { query: { idempotency_key: current.key } });
-      if (!samePerson()) throw new Error("A identificação mudou. Confira o pedido.");
+      const result = await $fetch<Result>(path, { query: { idempotency_key: current.key, ...(typeof current.body.ref === "string" ? { ref: current.body.ref } : {}) } });
+      if (!samePerson()) throw new Error("A identificação mudou. Confira os dados.");
       if (result.outcome === "applied") {
         delete pending.value[resource];
         throw new Error("A gravação anterior foi confirmada. Seu novo rascunho ainda não foi salvo.");
@@ -34,7 +34,7 @@ export function useOrderIntention() {
       throw new Error("Há uma gravação anterior sem resultado confirmado. Seu novo rascunho foi preservado.");
     }
     const finish = (result: Result) => {
-      if (!samePerson()) throw new Error("A identificação mudou. Confira o pedido antes de continuar.");
+      if (!samePerson()) throw new Error("A identificação mudou. Confira os dados antes de continuar.");
       if (result.outcome === "applied") {
         delete pending.value[resource];
         return result;
@@ -55,7 +55,7 @@ export function useOrderIntention() {
         throw error;
       }
       // A resposta pode ter se perdido depois do commit. Consultar não executa efeitos.
-      const result = await $fetch<Result>(path, { query: { idempotency_key: current.key } });
+      const result = await $fetch<Result>(path, { query: { idempotency_key: current.key, ...(typeof current.body.ref === "string" ? { ref: current.body.ref } : {}) } });
       return finish(result);
     }
   }

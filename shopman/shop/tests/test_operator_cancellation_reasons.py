@@ -37,7 +37,7 @@ def test_provider_unavailable_is_503_not_empty_or_applied(client, ifood_order, e
     client.force_login(user)
     with patch.object(ifood_callbacks, "fetch_cancellation_reasons", side_effect=ifood_callbacks.IFoodCallbackError("synthetic timeout")):
         path = f"/api/v1/backstage/orders/{ifood_order.ref}/{endpoint}/"
-        response = client.get(path) if endpoint == "cancellation-reasons" else client.post(path, {"reason": "Motivo", "cancellation_code": "CURRENT"}, content_type="application/json")
+        response = client.get(path) if endpoint == "cancellation-reasons" else client.post(path, {"reason": "Motivo", "cancellation_code": "CURRENT", "expected_actor_id": user.pk, "base_revision": operator_orders.operational_revision(ifood_order), "idempotency_key": f"provider-unavailable-{endpoint}"}, content_type="application/json")
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "cancellation_reasons_unavailable"
     ifood_order.refresh_from_db()

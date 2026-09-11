@@ -7,7 +7,11 @@ const env = installNuxtGlobals();
 vi.stubGlobal("useNuxtData", () => ({ data: { value: { operator: { id: 1 } } } }));
 
 describe("useFeedBoard", () => {
-  beforeEach(() => env.reset());
+  beforeEach(() => {
+    env.reset();
+    env.fetchData.value = { board: { feeds: ["menu-1", "m"].map((ref) => ({ ref, actions: ["active", "collections", "rotation"].map((ref) => ({ ref, enabled: true, reason: "", payload_schema: { base_revision: "fixture-base", expected_actor_id: 1 } })) })) } };
+    env.fetchMock.mockResolvedValue({ outcome: "applied" });
+  });
 
   it("deriva board da projection", () => {
     env.fetchData.value = { board: { feeds: [{ ref: "menu" }] } };
@@ -19,39 +23,50 @@ describe("useFeedBoard", () => {
     await s.setActive("menu-1", true);
     let [url, opts] = env.fetchMock.mock.calls[0]!;
     expect(String(url)).toBe("/api/v1/backstage/feeds/active/");
-    expect(opts.body).toEqual({ ref: "menu-1", is_active: true });
+    expect(opts.body).toMatchObject({ ref: "menu-1", is_active: true });
 
     await s.setCollections("menu-1", ["c1", "c2"]);
     [url, opts] = env.fetchMock.mock.calls[1]!;
     expect(String(url)).toBe("/api/v1/backstage/feeds/collections/");
-    expect(opts.body).toEqual({ ref: "menu-1", collections: ["c1", "c2"] });
+    expect(opts.body).toMatchObject({ ref: "menu-1", collections: ["c1", "c2"] });
 
     await s.setRotation("menu-1", 15, 12);
     [url, opts] = env.fetchMock.mock.calls[2]!;
     expect(String(url)).toBe("/api/v1/backstage/feeds/rotation/");
-    expect(opts.body).toEqual({ ref: "menu-1", rotate_seconds: 15, items_per_page: 12 });
+    expect(opts.body).toMatchObject({ ref: "menu-1", rotate_seconds: 15, items_per_page: 12 });
   });
 
   it("guarda de reentrância por-ref", async () => {
-    let release!: () => void;
-    env.fetchMock.mockReturnValueOnce(new Promise<void>((r) => { release = r; }));
+    let release!: (value: unknown) => void;
+    env.fetchMock.mockReturnValueOnce(new Promise<unknown>((r) => { release = r; }));
     const s = useFeedBoard();
     const first = s.setActive("m", true);
     expect(s.isBusy("m")).toBe(true);
     expect(await s.setActive("m", false)).toBe(false);
     expect(env.fetchMock).toHaveBeenCalledTimes(1);
-    release();
+    release({ outcome: "applied" });
     await first;
     expect(s.isBusy("m")).toBe(false);
   });
 
   it("falha acende errorMsg + toast e devolve false", async () => {
-    env.fetchMock.mockRejectedValueOnce({ data: { detail: "Feed bloqueado" } });
+    env.fetchMock.mockRejectedValueOnce({ status: 400, data: { detail: "Feed bloqueado" } });
     const s = useFeedBoard();
     expect(await s.setActive("m", true)).toBe(false);
     expect(s.errorMsg.value).toBe("Feed bloqueado");
     expect(env.sonner.error).toHaveBeenCalledWith("Feed bloqueado");
   });
+  it("resposta perdida consulta a mesma intenção no feed certo sem segundo POST", async () => {
+    env.fetchMock.mockRejectedValueOnce({ status: 502 }).mockResolvedValueOnce({ outcome: "applied" });
+    const s = useFeedBoard();
+    expect(await s.setActive("menu-1", false)).toBe(true);
+    expect(env.fetchMock).toHaveBeenCalledTimes(2);
+    const post = env.fetchMock.mock.calls[0]![1];
+    const read = env.fetchMock.mock.calls[1]![1];
+    expect(read.query).toEqual({ ref: "menu-1", idempotency_key: post.headers["Idempotency-Key"] });
+    expect(read.method).toBeUndefined();
+  });
+
 });
 
 it("keeps the last confirmed feed board when a later GET fails", async () => {

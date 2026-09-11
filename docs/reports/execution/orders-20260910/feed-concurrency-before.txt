@@ -1,0 +1,88 @@
+DEBUG 2026-09-10 21:52:41,938 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-10 21:52:41,939 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-10 21:52:41,940 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-10 21:52:41,941 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-10 21:52:42,136 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-10 21:52:42,141 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-10 21:52:42,148 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-10 21:52:42,153 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-10 21:52:42,165 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-10 21:52:42,167 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-10 21:52:42,167 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-10 21:52:42,172 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-10 21:52:42,172 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-10 21:52:42,177 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-10 21:52:42,180 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-10 21:52:42,181 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-10 21:52:42,181 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-10 21:52:42,182 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-10 21:52:42,189 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-10 21:52:42,191 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_rotation_and_collections_in_two_connections_preserve_each_other _____
+
+context = (<User: feed-intention>, <Channel: Lab TV>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b6f3f80>
+
+    @pytest.mark.django_db(transaction=True)
+    def test_rotation_and_collections_in_two_connections_preserve_each_other(context, monkeypatch):
+        if connection.vendor != "postgresql":
+            pytest.skip("Row locking requires independent PostgreSQL connections")
+        _user, channel = context
+        paused, resume, second_started = Event(), Event(), Event()
+        original = feeds._save_display
+    
+        def pause_first_save(channel, display):
+            if not paused.is_set():
+                paused.set()
+                assert resume.wait(10)
+            original(channel, display)
+    
+        monkeypatch.setattr(feeds, "_save_display", pause_first_save)
+    
+        def rotation():
+            try:
+                feeds.set_rotation(channel.ref, rotate_seconds=10, items_per_page=8)
+            finally:
+                connections.close_all()
+    
+        def collections():
+            try:
+                second_started.set()
+                feeds.set_collections(channel.ref, ["bread"])
+            finally:
+                connections.close_all()
+    
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(rotation)
+            try:
+                assert paused.wait(10)
+                second = pool.submit(collections)
+                assert second_started.wait(10)
+                try:
+                    second.result(timeout=1)
+                except TimeoutError:
+                    pass  # Expected when the Channel row is held by the first writer.
+            finally:
+                resume.set()
+            first.result(timeout=10)
+            second.result(timeout=10)
+        current = Channel.objects.get(pk=channel.pk).config["display"]
+        assert current["rotate_seconds"] == 10
+>       assert current["collections"] == ["bread"]
+E       AssertionError: assert [] == ['bread']
+E         
+E         Right contains one more item: 'bread'
+E         Use -v to get more diff
+
+shopman/backstage/tests/test_feed_intentions.py:112: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-10 21:52:42,524 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-10 21:52:43,197 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-10 21:52:47,716 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-10 21:52:52,486 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_feed_intentions.py::test_rotation_and_collections_in_two_connections_preserve_each_other
+1 failed in 10.17s
