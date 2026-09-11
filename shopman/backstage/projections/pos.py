@@ -465,9 +465,9 @@ _PAYMENT_COLLECTIONS = (
     POSPaymentCollectionProjection(
         ref="on_delivery",
         label="Receber na entrega",
-        description="Disponível apenas para entrega em dinheiro.",
+        description="Dinheiro ou cartão na maquininha; pagamento pendente até o acerto.",
         fulfillment_types=("delivery",),
-        payment_method_refs=("cash", "mixed"),
+        payment_method_refs=("cash", "credit", "debit", "mixed"),
     ),
 )
 

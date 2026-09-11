@@ -92,6 +92,8 @@ class EquipmentOptionProjection:
 
     ref: str
     label: str
+    enabled: bool = True
+    reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -414,6 +416,7 @@ class TwoZoneQueueProjection:
     # Aparelhos na rua (saíram com o entregador e não voltaram), para o quadro
     # responder "onde está a maquininha" sem procurar card por card.
     equipment_out: tuple[EquipmentOutProjection, ...] = ()
+    equipment_available: tuple[EquipmentOptionProjection, ...] = ()
 
 
 # ── Builders ───────────────────────────────────────────────────────────
@@ -983,6 +986,12 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
 
     waitlist_states = waitlist.states_for(all_orders)
     payment_reads = payment_svc.read_payments_for(all_orders)
+    from shopman.backstage.models import DeliveryDevice
+    from shopman.backstage.services.delivery_devices import PREFIX
+
+    devices = list(DeliveryDevice.objects.select_related("current_order"))
+    for order in all_orders:
+        order._delivery_devices = devices
     channel_configs = _channel_configs_for(all_orders)
     cash_context = _cash_settlement_context(all_orders)
     fiscal_states = _fiscal_states_for(all_orders)
@@ -990,6 +999,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     # entre requests: uma edição de copy aparece na próxima projeção.
     status_labels = {status: order_status_label(status) for status in {order.status for order in all_orders}}
     methods = {(order.data.get("payment") or {}).get("method", "") for order in all_orders}
+    methods.update(t.get("method", "") for order in all_orders for t in (order.data or {}).get("payment", {}).get("tenders", []))
     method_labels = {method: payment_method_label(method) for method in methods}
     new_orders = [o for o in all_orders if o.status == "new"]
     deadlines = _confirmation_deadlines([o.ref for o in new_orders])
@@ -1030,7 +1040,9 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     )
 
     return TwoZoneQueueProjection(
-        equipment_out=_equipment_out(user=user),
+        equipment_out=_equipment_out(user=user, devices=devices),
+        equipment_available=tuple(EquipmentOptionProjection(ref=PREFIX + str(device.ref), label=device.label)
+                                  for device in devices if device.active and device.current_order_id is None),
         intake=intake,
         preparing_count=preparing_count,
         prep=prep,
@@ -1274,14 +1286,24 @@ def _equipment_label(ref: str) -> str:
 def _equipment_fields(order: Order, *, channel_config=None) -> dict:
     if not _is_delivery(order):
         return {}
-    options = tuple(
-        EquipmentOptionProjection(ref=ref, label=_equipment_label(ref))
-        for ref in operator_orders.equipment_options(order.channel_ref or "", channel_config=channel_config)
-    )
+    from shopman.backstage.models import DeliveryDevice
+    from shopman.backstage.services.delivery_devices import PREFIX
+
+    allowed = operator_orders.equipment_options(order.channel_ref or "", channel_config=channel_config)
+    devices = getattr(order, "_delivery_devices", None)
+    if devices is None:
+        devices = list(DeliveryDevice.objects.select_related("current_order")) if "card_machine" in allowed else []
+    options = tuple(EquipmentOptionProjection(ref=ref, label=_equipment_label(ref)) for ref in allowed if ref != "card_machine")
+    if "card_machine" in allowed:
+        options += tuple(EquipmentOptionProjection(
+            ref=PREFIX + str(device.ref), label=device.label,
+            enabled=device.active and device.current_order_id is None,
+            reason=(f"Em trânsito no pedido {device.current_order.ref}" if device.current_order_id else "Inativa" if not device.active else ""),
+        ) for device in devices)
     custody = operator_orders.equipment_custody(order)
     label = ""
     if custody.equipment:
-        names = ", ".join(_equipment_label(ref) for ref in custody.equipment)
+        names = (order.data or {}).get("dispatch", {}).get("device_label") or ", ".join(_equipment_label(ref) for ref in custody.equipment)
         label = f"Entregador levou {names.lower()}" if custody.pending else f"{names} voltou"
     return {
         "equipment_options": options,
@@ -1291,20 +1313,24 @@ def _equipment_fields(order: Order, *, channel_config=None) -> dict:
     }
 
 
-def _equipment_out(*, user=None) -> tuple[EquipmentOutProjection, ...]:
+def _equipment_out(*, user=None, devices=None) -> tuple[EquipmentOutProjection, ...]:
+    from shopman.backstage.models import DeliveryDevice
+
+    if devices is None:
+        devices = list(DeliveryDevice.objects.select_related("current_order"))
+    # Physical identity comes only from the exclusive relation. Old generic
+    # custody remains returnable, without assigning an invented reader to it.
+    entries = [(str(device.ref), device.current_order, device.label) for device in devices if device.current_order_id]
+    entries += [(ref, order, _equipment_label(ref)) for ref, order in operator_orders.equipment_out()
+                if not (order.data or {}).get("dispatch", {}).get("device_ref")]
     rows = []
-    for ref, order in operator_orders.equipment_out():
+    for ref, order, label in entries:
         customer = order.data.get("customer", {}) if isinstance(order.data, dict) else {}
-        rows.append(
-            EquipmentOutProjection(
-                ref=ref,
-                label=_equipment_label(ref),
-                order_ref=order.ref,
-                customer_name=str(customer.get("name") or ""),
-                out_at=operator_orders.equipment_custody(order).out_at,
-                actions=tuple(action for action in operator_orders.operational_actions(order, user=user) if action.ref == "equipment-back"),
-            )
-        )
+        rows.append(EquipmentOutProjection(
+            ref=ref, label=label, order_ref=order.ref, customer_name=str(customer.get("name") or ""),
+            out_at=operator_orders.equipment_custody(order).out_at,
+            actions=tuple(action for action in operator_orders.operational_actions(order, user=user) if action.ref == "equipment-back"),
+        ))
     return tuple(rows)
 
 
@@ -1317,7 +1343,7 @@ def _courier_change_fields(order: Order, by_order: dict[str, tuple[int, int | No
     if not _is_delivery(order):
         return {}
     payment = order.data.get("payment") or {}
-    if payment.get("method") != "cash" or payment.get("collection") != "on_delivery":
+    if payment.get("method") not in {"cash", "mixed"} or payment.get("collection") != "on_delivery":
         return {}
     if by_order is None:
         change = operator_orders.courier_change(order)
@@ -1498,9 +1524,14 @@ def _payment_method_label(method: str, payment_data: dict, *, labels: dict | Non
         # _has_no_payment_info: card mudo se confunde com pedido pago.
         return "Pagamento não informado"
     label = labels[method] if labels is not None else payment_method_label(method)
+    if method == "mixed" and payment_data.get("tenders"):
+        label = " + ".join(
+            f"{labels[t.get('method', '')] if labels is not None and t.get('method', '') in labels else payment_method_label(t.get('method', ''))} R$ {format_money(int(t.get('amount_q') or 0))}"
+            for t in payment_data["tenders"]
+        )
     if payment_data.get("collection") == "on_delivery":
         if payment_data.get("cod_settled_at"):
-            return f"{label} entregue no caixa"
+            return f"{label} — acerto confirmado"
         return f"{label} na entrega"
     return label
 
@@ -1540,7 +1571,7 @@ def _cash_settlement_actions(order, user, context):
 def _can_settle_delivery_cash(order: Order, payment_data: dict) -> bool:
     return (
         _is_delivery(order)
-        and payment_data.get("method") == "cash"
+        and payment_data.get("method") in {"cash", "credit", "debit", "mixed"}
         and payment_data.get("collection") == "on_delivery"
         and not payment_data.get("cod_settled_at")
         and order.status in {Order.Status.DISPATCHED, Order.Status.DELIVERED, Order.Status.COMPLETED}

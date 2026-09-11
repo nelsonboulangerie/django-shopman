@@ -154,7 +154,11 @@ def test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao(client, oper
     """Custódia do aparelho, não de dinheiro: mora no pedido (``data.dispatch``),
     o canal diz o que pode sair, o quadro diz onde está, e o acerto (ou o botão)
     marca a volta."""
+    from shopman.backstage.models import DeliveryDevice
     from shopman.shop.models import Channel
+
+    device = DeliveryDevice.objects.create(label="Maquininha", identification="LAB-01")
+    device_ref = f"card_machine:{device.ref}"
 
     Channel.objects.create(
         ref="web", name="Loja", is_active=True,
@@ -166,7 +170,7 @@ def test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao(client, oper
     _delivery_cash_order("DLV-M2")
 
     card = _card(client, "DLV-M1")
-    assert [o["ref"] for o in card["equipment_options"]] == ["card_machine"]
+    assert [o["ref"] for o in card["equipment_options"]] == [device_ref]
     assert (card["equipment_out"], card["equipment_back_pending"]) == ([], False)
 
     # Aparelho que o canal não prevê: recusado.
@@ -179,7 +183,7 @@ def test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao(client, oper
 
     response = client.post(
         reverse("api-backstage-order-advance", args=["DLV-M1"]),
-        advance_payload(client, "DLV-M1", **{"change_out": "20,00", "equipment": ["card_machine"]}), content_type="application/json",
+        advance_payload(client, "DLV-M1", **{"change_out": "20,00", "equipment": [device_ref]}), content_type="application/json",
     )
     assert response.status_code == 200
     card = _card(client, "DLV-M1")
@@ -187,7 +191,7 @@ def test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao(client, oper
         ["card_machine"], True, "Entregador levou maquininha",
     )
     board = client.get(reverse("api-backstage-orders")).json()["queue"]
-    assert [(e["ref"], e["order_ref"]) for e in board["equipment_out"]] == [("card_machine", "DLV-M1")]
+    assert [(e["ref"], e["order_ref"]) for e in board["equipment_out"]] == [(str(device.ref), "DLV-M1")]
     order = Order.objects.get(ref="DLV-M1")
     assert order.data["dispatch"]["equipment"] == ["card_machine"]
     assert order.data["dispatch"]["equipment_out_by"] == "marina"
@@ -204,7 +208,7 @@ def test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao(client, oper
 
     # Pedido em cartão (sem acerto em dinheiro): o botão "voltou" fecha a custódia.
     response = client.post(
-        reverse("api-backstage-order-advance", args=["DLV-M2"]), advance_payload(client, "DLV-M2", **{"equipment": ["card_machine"]}), content_type="application/json",
+        reverse("api-backstage-order-advance", args=["DLV-M2"]), advance_payload(client, "DLV-M2", **{"equipment": [device_ref]}), content_type="application/json",
     )
     assert response.status_code == 200
     response = _equipment_return(client, "DLV-M2")

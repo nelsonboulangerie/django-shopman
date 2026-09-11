@@ -40,7 +40,7 @@ UPFRONT_DIGITAL_PAYMENT_METHODS = frozenset({"pix", "card", "link"})
 
 # Dinheiro que a casa recebe no mundo físico — no terminal (já recebido na venda)
 # ou na porta (COD). Não passa por captura de intent antes da entrega.
-ON_DELIVERY_PAYMENT_METHODS = frozenset({"cash", "mixed"})
+ON_DELIVERY_PAYMENT_METHODS = frozenset({"cash", "credit", "debit", "mixed"})
 
 
 def collects_on_delivery(order) -> bool:

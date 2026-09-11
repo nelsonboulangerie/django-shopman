@@ -174,7 +174,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             payment_collections["terminal"]["payment_method_refs"],
             ["cash", "pix", "credit", "debit", "link", "mixed"],
         )
-        self.assertEqual(payment_collections["on_delivery"]["payment_method_refs"], ["cash", "mixed"])
+        self.assertEqual(payment_collections["on_delivery"]["payment_method_refs"], ["cash", "credit", "debit", "mixed"])
         action_refs = {action["ref"] for action in payload["pos"]["actions"]}
         self.assertIn("review_sale", action_refs)
         self.assertIn("close_sale", action_refs)

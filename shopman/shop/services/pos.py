@@ -715,7 +715,10 @@ def review_sale(
         })
     # "Troco para" menor que o total não paga a entrega: avisa na revisão (não
     # bloqueia — o combinado da porta pode mudar; quem manda é o operador).
-    change_for_q = _int_q(payload.get("change_for_q"))
+    cash_tendered_q = sum(
+        int(t.get("amount_q") or 0) for t in (payload.get("payment_tenders") or []) if t.get("method") == "cash"
+    )
+    change_for_q = cash_tendered_q or _int_q(payload.get("tendered_q")) or _int_q(payload.get("change_for_q"))
     if payment_collection == "on_delivery" and 0 < change_for_q < total_q:
         warnings.append({
             "code": "change_for_below_total",
@@ -1838,7 +1841,10 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
     # "Troco para quanto?" do dinheiro NA ENTREGA — a chave canônica que o
     # despacho já lê (operator_orders.change_out_suggested_q → courier_out no
     # livro do caixa) e o card do gestor exibe. O intent só a mantém no COD.
-    change_for_q = _int_q(payload.get("change_for_q"))
+    cash_tendered_q = sum(
+        int(t.get("amount_q") or 0) for t in (payload.get("payment_tenders") or []) if t.get("method") == "cash"
+    )
+    change_for_q = cash_tendered_q or _int_q(payload.get("tendered_q")) or _int_q(payload.get("change_for_q"))
     if payment_collection == "on_delivery" and change_for_q > 0:
         ops.append({"op": "set_data", "path": "payment.change_for_q", "value": change_for_q})
     if tenders:
@@ -2587,13 +2593,20 @@ def _payload_tenders(
             collection = str(tender.get("collection") or payment_collection).strip().lower()
             if collection not in {"terminal", "on_delivery"}:
                 collection = payment_collection
-            if collection == "on_delivery" and method != "cash":
+            if collection == "on_delivery" and method not in {"cash", "credit", "debit"}:
                 raise PosIntentError(
                     code="invalid_on_delivery_tender_payment",
-                    message="Pagamento na entrega só é permitido em dinheiro.",
+                    message="Na entrega, use dinheiro ou cartão na maquininha.",
                     field=f"payment_tenders.{len(tenders)}.collection",
                     focus="payment",
-                    recovery="Altere a linha para dinheiro ou receba esse valor no caixa.",
+                    recovery="PIX Efí e pagamentos online exigem confirmação automática antes da entrega.",
+                )
+            if collection != payment_collection:
+                raise PosIntentError(
+                    code="payment_collection_mismatch",
+                    message="Todas as formas devem usar o mesmo momento de recebimento.",
+                    field="payment_tenders", focus="payment",
+                    recovery="Revise Receber no caixa ou Receber na entrega.",
                 )
             entry = {
                 "method": method,
@@ -2726,6 +2739,8 @@ def _reconcile_order_payment_to_total(order: Order) -> Order:
     cash_handed_q = _cash_received_q(tenders) if tenders else 0
     if tenders:
         _reconcile_tenders_to_total(tenders, final_total_q)
+        if payment.get("collection") == "on_delivery":
+            tenders = [t for t in tenders if _int_q(t.get("amount_q")) > 0]
         payment["tenders"] = tenders
         cash_received_q = _cash_received_q(tenders)
         if cash_received_q > 0:
@@ -2739,6 +2754,14 @@ def _reconcile_order_payment_to_total(order: Order) -> Order:
     # acerto — nunca `tendered − total`, que daria zero e apagaria o troco do
     # registro. Em dinheiro puro as duas contas coincidem, porque ali a parcela
     # em dinheiro É o total.
+    if payment.get("collection") == "on_delivery":
+        cash_due = sum(_int_q(t.get("amount_q")) for t in tenders if t.get("method") == "cash")
+        payment["change_q"] = max(0, _int_q(payment.get("change_for_q")) - cash_due)
+        data["payment"] = payment
+        order.data = data
+        order.save(update_fields=["data", "updated_at"])
+        return order
+
     cash_settled_q = _cash_received_q(tenders) if tenders else final_total_q
     tendered_q = max(_int_q(payment.get("tendered_q")), cash_handed_q)
     if tendered_q > cash_settled_q:

@@ -64,6 +64,7 @@ class AdvanceBlock(StrEnum):
     NONE = ""
     NO_NEXT_STEP = "no_next_step"
     PAYMENT_NOT_CAPTURED = "payment_not_captured"
+    DEVICE_UNAVAILABLE = "device_unavailable"
     # Encomenda para data futura: não dá pra iniciar o preparo antes do dia
     # (o pedido de sábado não vai pra cozinha na terça). Some sozinho na data.
     PREORDER_NOT_DUE = "preorder_not_due"
@@ -76,6 +77,7 @@ class AdvanceBlock(StrEnum):
 
 
 _ADVANCE_BLOCK_MESSAGES: dict[AdvanceBlock, str] = {
+    AdvanceBlock.DEVICE_UNAVAILABLE: "Nenhuma maquininha está disponível. Aguarde a devolução para despachar esta entrega.",
     AdvanceBlock.NO_NEXT_STEP: "Pedido não possui próxima etapa",
     # A frase serve os três degraus que o gate cobre (preparo, despacho e
     # entrega no balcão), então não fala de "preparo": o mesmo bloqueio aparece
@@ -251,6 +253,16 @@ def advance_block(order: Order, *, waitlist_state: str | None = None, payment_re
         order, current_status=order.status, target_status=next_status, payment_reads=payment_reads
     ):
         return AdvanceBlock.PAYMENT_NOT_CAPTURED
+    if next_status == Order.Status.DISPATCHED:
+        from shopman.backstage.models import DeliveryDevice
+        from shopman.backstage.services.delivery_devices import needs_card_machine
+
+        if needs_card_machine(order):
+            devices = getattr(order, "_delivery_devices", None)
+            available = (any(device.active and device.current_order_id is None for device in devices)
+                         if devices is not None else DeliveryDevice.objects.filter(active=True, current_order__isnull=True).exists())
+            if not available:
+                return AdvanceBlock.DEVICE_UNAVAILABLE
     if order.status == Order.Status.ACCEPTED and _preorder_not_due(order):
         return AdvanceBlock.PREORDER_NOT_DUE
     if order.status == Order.Status.ACCEPTED and _waiting_for_the_batch(order, state=waitlist_state):
@@ -317,11 +329,15 @@ def advance_order(
         if change_out > 0 and (cash_shift is None or not getattr(cash_shift, "is_open", False)):
             raise ValueError("Abra um turno de caixa para o entregador levar troco da gaveta.")
         taken = _clean_equipment(order, equipment)
+        from shopman.backstage.services import delivery_devices
+
+        device = delivery_devices.allocate(order, taken, allowed=equipment_options(order.channel_ref or ""))
+        if device:
+            taken = [ref for ref in taken if not ref.startswith(delivery_devices.PREFIX)] + ["card_machine"]
     else:
         taken = []
 
     with transaction.atomic():
-        _sync_delivery_fulfillment(order, next_status)
         if taken:
             # Custódia do aparelho (maquininha): o despacho registra o que saiu;
             # "onde está agora" é derivado (saiu e ainda não voltou). Não é
@@ -330,11 +346,13 @@ def advance_order(
             data["dispatch"] = {
                 **dict(data.get("dispatch") or {}),
                 "equipment": taken,
+                **({"device_ref": str(device.ref), "device_label": device.label} if device else {}),
                 "equipment_out_at": timezone_now_iso(),
                 "equipment_out_by": actor,
             }
             order.data = data
             order.save(update_fields=["data", "updated_at"])
+        _sync_delivery_fulfillment(order, next_status)
         order.transition_status(next_status, actor=actor)
         if change_out > 0:
             from shopman.cashman import services as cash_ledger
@@ -399,10 +417,14 @@ def equipment_options(channel_ref: str, *, channel_config=None) -> list[str]:
 
 def _clean_equipment(order: Order, equipment) -> list[str]:
     wanted = [str(ref).strip() for ref in (equipment or []) if str(ref).strip()]
+    from shopman.backstage.services.delivery_devices import PREFIX, needs_card_machine
+
+    if needs_card_machine(order) and not any(ref.startswith(PREFIX) for ref in wanted):
+        raise ValueError("Selecione a maquininha disponível no despacho do Gestor; se não houver, aguarde a devolução.")
     if not wanted:
         return []
     allowed = equipment_options(order.channel_ref or "")
-    unknown = [ref for ref in wanted if ref not in allowed]
+    unknown = [ref for ref in wanted if ref not in allowed and not (ref.startswith(PREFIX) and "card_machine" in allowed)]
     if unknown:
         raise ValueError(f"Aparelho não previsto para este canal: {', '.join(unknown)}.")
     return list(dict.fromkeys(wanted))
@@ -446,6 +468,9 @@ def mark_equipment_returned(order: Order, *, actor: str, expected_revision: str 
         raise ValueError("Este pedido não levou aparelho.")
     if custody.back_at:
         raise ValueError("O aparelho deste pedido já voltou.")
+    from shopman.backstage.services.delivery_devices import release
+
+    release(order)
     data = dict(order.data or {})
     data["dispatch"] = {
         **dict(data.get("dispatch") or {}),
@@ -488,11 +513,14 @@ def change_out_suggested_q(order: Order) -> int:
     payment = (order.data or {}).get("payment") or {}
     if get_fulfillment_type(order) != "delivery":
         return 0
-    if payment.get("method") != "cash" or payment.get("collection") != "on_delivery":
+    if payment.get("method") not in {"cash", "mixed"} or payment.get("collection") != "on_delivery":
         return 0
     if payment.get("cod_settled_at"):
         return 0
-    return max(0, _change_for_q(order) - int(order.total_q or 0))
+    cash_due = sum(int(t.get("amount_q") or 0) for t in payment.get("tenders") or [] if t.get("method") == "cash")
+    if not payment.get("tenders"):
+        cash_due = int(order.total_q or 0)
+    return max(0, _change_for_q(order) - cash_due)
 
 
 def courier_change_by_order(order_refs) -> dict[str, tuple[int, int | None]]:
@@ -721,10 +749,10 @@ def settle_delivery_cash(
 
     data = dict(order.data or {})
     payment = dict(data.get("payment") or {})
-    if payment.get("collection") != "on_delivery" or payment.get("method") != "cash":
-        raise ValueError("Pedido não está marcado como dinheiro na entrega.")
+    if payment.get("collection") != "on_delivery" or payment.get("method") not in {"cash", "credit", "debit", "mixed"}:
+        raise ValueError("Pedido não está marcado para recebimento na entrega.")
     if payment.get("cod_settled_at"):
-        raise ValueError("Dinheiro da entrega já foi acertado.")
+        raise ValueError("Pagamento da entrega já foi acertado.")
 
     amount = int(amount_q if amount_q is not None else order.total_q or 0)
     if amount <= 0:
@@ -747,54 +775,59 @@ def settle_delivery_cash(
 
     receiver = _user_for_actor(actor) or cash_shift.operator
 
-    with transaction.atomic():
-        intent = PaymentService.settle(
-            order.ref,
-            amount,
-            "cash",
-            currency="BRL",
-            idempotency_key=f"order-payment:{order.ref}:cash:{amount}:on_delivery",
-            gateway_data={"collection": "on_delivery", "terminal_ref": cash_shift.terminal.ref},
-        )
-        tenders = list(payment.get("tenders") or [])
-        updated = False
-        for tender in tenders:
-            if tender.get("method") == "cash" and tender.get("collection") == "on_delivery":
-                tender["collection"] = "terminal"
-                tender["status"] = "received"
-                tender["terminal_ref"] = cash_shift.terminal.ref
-                tender["received_at"] = timezone_now_iso()
-                tender["intent_ref"] = intent.ref
-                updated = True
-                break
-        if not updated:
-            tenders.append({
-                "method": "cash",
-                "amount_q": amount,
-                "collection": "terminal",
-                "status": "received",
-                "terminal_ref": cash_shift.terminal.ref,
-                "received_at": timezone_now_iso(),
-                "intent_ref": intent.ref,
-            })
+    tenders = [dict(t) for t in payment.get("tenders") or []]
+    if not tenders:
+        tenders = [{"method": payment.get("method"), "amount_q": amount, "collection": "on_delivery", "status": "pending"}]
+    if any(
+        t.get("method") not in {"cash", "credit", "debit"}
+        or t.get("collection") != "on_delivery"
+        or t.get("status") == "received"
+        or int(t.get("amount_q") or 0) <= 0
+        for t in tenders
+    ) or sum(int(t.get("amount_q") or 0) for t in tenders) != amount:
+        raise ValueError("Revise as formas pendentes: elas devem cobrir exatamente o total do pedido.")
 
+    with transaction.atomic():
+        settled_entry = None
+        cash_amount = 0
+        cash_intent_ref = ""
+        for index, tender in enumerate(tenders):
+            method = tender["method"]
+            part = int(tender["amount_q"])
+            # Preserve the legacy cash key for existing single-method orders.
+            key = f"order-payment:{order.ref}:{method}:{part}:on_delivery"
+            if len(tenders) > 1:
+                key += f":{index}"
+            intent = PaymentService.settle(
+                order.ref, part, method, currency="BRL", idempotency_key=key,
+                gateway_data={"collection": "on_delivery", "terminal_ref": cash_shift.terminal.ref},
+            )
+            tender.update({
+                "collection": "terminal", "status": "received",
+                "terminal_ref": cash_shift.terminal.ref,
+                "received_at": timezone_now_iso(), "intent_ref": intent.ref,
+            })
+            if method == "cash":
+                cash_amount += part
+                cash_intent_ref = intent.ref
         payment["tenders"] = tenders
-        payment["cash_received_q"] = amount
-        payment["intent_ref"] = intent.ref
+        payment["cash_received_q"] = cash_amount
+        if len(tenders) == 1:
+            payment["intent_ref"] = intent.ref
+        else:
+            payment.pop("intent_ref", None)
         payment["cod_settled_at"] = timezone_now_iso()
         payment["cod_settled_by"] = actor
         data["payment"] = payment
         order.data = data
         order.save(update_fields=["data", "updated_at"])
-        settled_entry = cash_ledger.record(
-            "cod_settled",
-            shift=cash_shift,
-            operator=receiver,
-            amount_q=amount,
-            order_ref=order.ref,
-            payment_ref=intent.ref,
-            payload={"settled_by": actor},
-        )
+        # Physical card confirmation belongs in Payman; it adds nothing to the drawer.
+        if cash_amount:
+            settled_entry = cash_ledger.record(
+                "cod_settled", shift=cash_shift, operator=receiver,
+                amount_q=cash_amount, order_ref=order.ref,
+                payment_ref=cash_intent_ref, payload={"settled_by": actor},
+            )
         if change_back is not None:
             from shopman.cashman.models import Entry
 
@@ -813,12 +846,12 @@ def settle_delivery_cash(
         order.emit_event(
             event_type="payment_collected",
             actor=actor,
-            payload={"method": "cash", "amount_q": amount, "terminal_ref": cash_shift.terminal.ref},
+            payload={"method": payment.get("method"), "amount_q": amount, "terminal_ref": cash_shift.terminal.ref},
         )
         if equipment_back and equipment_custody(order).pending:
             mark_equipment_returned(order, actor=actor)
     operational_event_on_commit("operator.cash.settled", resource_ref=order.ref, shift_id=cash_shift.pk,
-        cash_entry_id=settled_entry.pk, actor_id=receiver.pk if receiver else None, payment_ref=intent.ref)
+        cash_entry_id=settled_entry.pk if settled_entry else None, actor_id=receiver.pk if receiver else None, payment_ref=intent.ref)
     logger.info("operator_settle_delivery_cash order=%s shift=%s amount=%s", order.ref, cash_shift.pk, amount)
     return amount
 
