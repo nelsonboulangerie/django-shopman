@@ -149,5 +149,6 @@ def test_notification_exception_is_redacted_from_result_and_log(monkeypatch, cap
     )
 
     assert result.error == "notification_adapter_error"
+    assert result.outcome_unknown is True
     assert recipient not in caplog.text
     assert "vendor leaked" not in caplog.text

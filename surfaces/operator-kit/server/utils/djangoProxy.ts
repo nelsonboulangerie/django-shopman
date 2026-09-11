@@ -116,7 +116,6 @@ export function mutationHeaders(read: (name: string) => string | undefined): Rec
     if (value) headers[name] = value;
   }
   return headers;
-
 }
 
 export function csrfTokenFromCookieHeader(cookie: string | undefined): string {
@@ -310,7 +309,6 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
     const value = response.headers.get(name);
     if (value) setResponseHeader(event, name, value);
   }
-
 
   // O upstream pode variar também por idioma/encoding; preservamos essa informação,
   // mas nunca aceitamos que uma resposta de operador se torne pública/cacheável.

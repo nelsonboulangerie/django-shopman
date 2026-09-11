@@ -16,8 +16,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
-
-import re
 import time
 import uuid
 from typing import Any
@@ -32,9 +30,8 @@ from rest_framework.views import APIView
 
 from shopman.backstage.api.permissions import HasMarketingCapability
 from shopman.shop.services.marketing_observability import emit_metric
-from shopman.shop.telemetry_redaction import redact_text, strip_url_query
-
 from shopman.shop.services.observability import operational_context, operational_event
+from shopman.shop.telemetry_redaction import redact_text, strip_url_query
 
 logger = logging.getLogger("shopman.backstage.client")
 

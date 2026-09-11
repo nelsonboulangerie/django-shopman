@@ -75,7 +75,7 @@ def notify(
         return result
     except Exception:
         logger.warning("Notification acceptance unknown: event=%s backend=%s", event, backend)
-        return NotificationResult(success=False, error="acceptance_unconfirmed", outcome_unknown=True)
+        return NotificationResult(success=False, error="notification_adapter_error", outcome_unknown=True)
 
 
 
