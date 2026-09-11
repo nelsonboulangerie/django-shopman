@@ -689,6 +689,18 @@ Valores de `event`: `"stock.alert.triggered"`, `"system"`.
 Write-back em `Order.data["courier"]` (ver detalhamento). `dedupe_key` =
 `courier.dispatch:{order_ref}:{tentativa}`.
 
+#### `courier.cancel`
+
+Usa a fila Directive existente. Payload: `order_ref`, `channel_ref`, `actor`,
+`courier_ref` (corrida observada), `reason_id` (inteiro ou null). Dedupe vivo:
+`courier.cancel:{order_ref}:{courier_ref}`. Enfileirar não confirma cancelamento.
+`cancel_attempt` registra `state` (`started`, `unknown`, `accepted`, `not_applied`),
+`updated_at`, e, no início, `started_at`. O handler grava started antes da rede,
+accepted antes da adoção local. Replay accepted só reaplica o fato à mesma corrida;
+started/unknown nunca repete o POST. Worker antigo sem handler deve ficar suspenso
+para esse tópico; rollback preserva tarefa/recibo e bloqueia novos cancelamentos
+até um recuperador compatível. Consulta externa/homologação de unknown depende G03.
+
 #### `courier.sync`
 
 | Chave | Tipo | Escrito por | Lido por |

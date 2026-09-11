@@ -65,3 +65,34 @@ def test_dispatch_rejects_changed_destination(client, context):
     response = client.post(reverse("api-backstage-order-courier-dispatch", args=[order.ref]), body, content_type="application/json", HTTP_IDEMPOTENCY_KEY="old-destination")
     assert response.status_code == 409
     assert not Directive.objects.filter(topic=COURIER_DISPATCH).exists()
+
+
+def test_cancel_queue_receipt_and_observed_ride(client, context):
+    user, order = context
+    from shopman.shop.services.courier import dispatch_revision
+
+    order.data["courier"] = {"id_mch": "RIDE-CANCEL", "status": "A"}
+    order.save(update_fields=["data"])
+    body = {"expected_actor_id": user.pk, "base_revision": dispatch_revision(order)}
+    url = reverse("api-backstage-order-courier-cancel", args=[order.ref])
+    response = client.post(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY="cancel-once")
+    assert response.status_code == 200, response.content
+    assert response.json()["status"] == "queued"
+    action = next(a for a in response.json()["order"]["actions"] if a["ref"] == "courier-cancel")
+    assert not action["enabled"]
+    assert not response.json()["order"]["courier"]["can_cancel"]
+    assert client.get(url, {"idempotency_key": "cancel-once"}).json()["outcome"] == "applied"
+    replay = client.post(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY="cancel-once")
+    assert replay.json()["directive_id"] == response.json()["directive_id"]
+    order.data["courier"]["id_mch"] = "OTHER-RIDE"
+    order.save(update_fields=["data"])
+    stale = client.post(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY="cancel-another")
+    assert stale.status_code == 409
+
+
+@pytest.mark.parametrize("reason", [True, 1.5, "1", 0, -1])
+def test_cancel_does_not_coerce_reason(client, context, reason):
+    _, order = context
+    response = client.post(reverse("api-backstage-order-courier-cancel", args=[order.ref]),
+        {"reason_id": reason}, content_type="application/json")
+    assert response.status_code == 400

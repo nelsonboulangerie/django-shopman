@@ -1,0 +1,38 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_cancel_queues_without_network_or_false_success ______________
+
+context = (<Order: CANCEL-RIDE-LAB>, <Mock id='4519965088'>)
+
+    def test_cancel_queues_without_network_or_false_success(context):
+        order, adapter = context
+        task = courier.cancel_ride(order, actor="synthetic-operator")
+>       adapter.cancel.assert_not_called()
+
+shopman/shop/tests/test_courier_cancel_recovery.py:29:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <Mock name='mock.cancel' id='4519563088'>
+
+    def assert_not_called(self):
+        """assert that the mock was never called.
+        """
+        if self.call_count != 0:
+            msg = ("Expected '%s' to not have been called. Called %s times.%s"
+                   % (self._mock_name or 'mock',
+                      self.call_count,
+                      self._calls_repr()))
+>           raise AssertionError(msg)
+E           AssertionError: Expected 'cancel' to not have been called. Called 1 times.
+E           Calls: [call('RIDE-LAB', reason_id=None)].
+
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/unittest/mock.py:908: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-11 00:53:02,705 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-11 00:53:02,957 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-11 00:53:04,046 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-11 00:53:07,645 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_courier_cancel_recovery.py::test_cancel_queues_without_network_or_false_success
+1 failed in 5.12s

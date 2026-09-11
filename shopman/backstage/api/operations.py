@@ -2466,26 +2466,25 @@ class OrderCourierDispatchView(_OrderActionBase):
     post=extend_schema(
         tags=["backstage"],
         summary="Cancel the active external courier ride",
-        responses={200: OpenApiResponse(description="Courier ride cancelled.")},
+        responses={200: OpenApiResponse(description="Courier cancellation queued; remote outcome pending.")},
     ),
 )
 class OrderCourierCancelView(_OrderActionBase):
+    intention_operation = "courier-cancel"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
         reason_id = request.data.get("reason_id")
-        try:
-            orders_service.courier_cancel(
-                order,
-                actor=_actor(request),
-                reason_id=int(reason_id) if reason_id is not None else None,
-            )
-        except (TypeError, ValueError):
-            return Response({"detail": "reason_id inválido."}, status=400)
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Falha ao cancelar a corrida."}, status=400)
-        return Response({"ok": True, "ref": ref})
+        if reason_id is not None and (type(reason_id) is not int or reason_id <= 0):
+            return Response({"detail": "reason_id deve ser inteiro positivo."}, status=400)
+
+        def enqueue(base):
+            task = orders_service.courier_cancel(order, actor=_actor(request), reason_id=reason_id, expected_revision=base)
+            return {"directive_id": task.pk, "status": task.status}
+
+        return self._context_response(request, order, self.intention_operation, {"reason_id": reason_id}, enqueue)
 
 
 @extend_schema_view(

@@ -290,26 +290,53 @@ def redispatch(order, *, actor: str, expected_revision: str | None = None) -> Di
     return directive
 
 
-def cancel_ride(order, *, actor: str, reason_id: int | None = None) -> None:
-    """Cancela a corrida ativa na Machine (ação do operador no gestor)."""
-    adapter = get_adapter("courier")
-    if adapter is None:
+def latest_cancellation(order, *, pending_only=False):
+    """The existing Directive owns queued and unresolved cancellation attempts."""
+    from django.db.models import Q
+
+    from shopman.shop.directives import COURIER_CANCEL
+
+    ride = get_block(order).get("id_mch")
+    if not ride:
+        return None
+    tasks = Directive.objects.filter(topic=COURIER_CANCEL, payload__order_ref=order.ref, payload__courier_ref=ride)
+    if pending_only:
+        tasks = tasks.filter(Q(status__in=(Directive.Status.QUEUED, Directive.Status.RUNNING)) |
+            Q(payload__cancel_attempt__state__in=("started", "unknown", "accepted")))
+    return tasks.order_by("-pk").first()
+
+
+@transaction.atomic
+def cancel_ride(order, *, actor: str, reason_id: int | None = None, expected_revision: str | None = None) -> Directive:
+    """Record a request for the observed ride; the worker owns remote I/O."""
+    from shopman.shop.directives import COURIER_CANCEL, create_deduped
+    from shopman.shop.services.operator_orders import OrderStateConflict
+
+    order = Order.objects.select_for_update().get(pk=order.pk)
+    if expected_revision is not None and dispatch_revision(order) != expected_revision:
+        raise OrderStateConflict("O pedido ou a corrida mudou. Confira antes de solicitar cancelamento.")
+    if get_adapter("courier") is None:
         raise ValueError("Nenhum adapter de courier configurado.")
     block = get_block(order)
     if not has_active_ride(order):
         raise ValueError("Não há corrida ativa para cancelar.")
     if block.get("status") not in CANCELLABLE_STATUSES:
-        raise ValueError(
-            "A corrida já está com o entregador em rota — combine o retorno "
-            "por telefone com a central."
-        )
-
-    try:
-        adapter.cancel(block["id_mch"], reason_id=reason_id)
-    except CourierError as exc:
-        raise ValueError(f"A central recusou o cancelamento: {exc}") from exc
-
-    apply_status(order, "C", source=f"operator:{actor}")
+        raise ValueError("A corrida já está com o entregador em rota — combine o retorno por telefone com a central.")
+    existing = latest_cancellation(order, pending_only=True)
+    if existing is not None:
+        state = (existing.payload or {}).get("cancel_attempt", {}).get("state")
+        if state in {"started", "unknown", "accepted"}:
+            raise OrderStateConflict("Cancelamento já iniciado. Confira o resultado na central antes de outra solicitação.")
+        return existing
+    task = create_deduped(COURIER_CANCEL,
+        payload={"order_ref": order.ref, "channel_ref": order.channel_ref or "", "actor": actor,
+            "courier_ref": block["id_mch"], "reason_id": reason_id},
+        dedupe_key=f"courier.cancel:{order.ref}:{block['id_mch']}")
+    if task is None:
+        raise OrderStateConflict("Já existe uma solicitação de cancelamento para esta corrida. Atualize o pedido.")
+    order.emit_event(event_type="courier_cancel_requested", actor=actor, payload={"directive_id": task.pk, "id_mch": block["id_mch"]})
+    _emit_sse(order, {"kind": "cancel_queued"})
+    return task
 
 
 def _archive_current_ride(block: dict) -> None:

@@ -47,6 +47,7 @@ ALL_HANDLERS = [
     "shopman.shop.handlers.delivery_auto_complete.DeliveryAutoCompleteHandler",
     # Courier (logística externa — no-op sem adapter "courier" resolvido)
     "shopman.shop.handlers.courier_dispatch.CourierDispatchHandler",
+    "shopman.shop.handlers.courier_cancel.CourierCancelHandler",
     "shopman.shop.handlers.courier_sync.CourierSyncHandler",
     # Notification
     "shopman.shop.handlers.notification.NotificationSendHandler",
@@ -258,9 +259,11 @@ def _register_courier_handlers() -> None:
     # "courier" resolve (request_dispatch checa), e os handlers revalidam. O
     # adapter pode vir de Shop.integrations (DB), invisível no boot — gate por
     # settings deixaria directives órfãos com handler_not_found.
+    from shopman.shop.handlers.courier_cancel import CourierCancelHandler
     from shopman.shop.handlers.courier_dispatch import CourierDispatchHandler
     from shopman.shop.handlers.courier_sync import CourierSyncHandler
     registry.register_directive_handler(CourierDispatchHandler())
+    registry.register_directive_handler(CourierCancelHandler())
     registry.register_directive_handler(CourierSyncHandler())
 
 

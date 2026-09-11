@@ -4,9 +4,10 @@
 // and the ride actions (quote / dispatch / cancel). Status text comes from the
 // server projection; steps/tones are derived from the raw letter.
 import { courierFailed, courierSteps, courierTone, courierToneBadge } from "~/presentation/courier";
+import type { Action } from "~/generated/ordersContract";
 import type { CourierBlock } from "~/types/orders";
 
-const props = defineProps<{ courier: CourierBlock; busy: boolean }>();
+const props = defineProps<{ courier: CourierBlock; busy: boolean; cancelAction?: Action }>();
 const emit = defineEmits<{ quote: []; dispatch: []; cancel: [] }>();
 
 const steps = computed(() => courierSteps(props.courier.status));
@@ -16,6 +17,7 @@ const hasRide = computed(() => Boolean(props.courier.status));
 
 // Cancelar corrida é irreversível para a solicitação em curso → confirm de 1 toque.
 const confirmingCancel = ref(false);
+watch(() => JSON.stringify(props.cancelAction?.payload_schema), () => { confirmingCancel.value = false; });
 function requestCancel() {
   if (!confirmingCancel.value) {
     confirmingCancel.value = true;
@@ -141,8 +143,8 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
       <button
         v-if="courier.can_cancel"
         type="button"
-        :disabled="busy"
-        class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition disabled:opacity-50"
+        :disabled="busy || !cancelAction?.enabled"
+        class="inline-flex min-h-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition disabled:opacity-50"
         :class="confirmingCancel
           ? 'border-destructive/60 bg-destructive/10 text-destructive dark:text-orange-300'
           : 'border-destructive/40 text-destructive hover:bg-destructive/10 dark:text-orange-300'"
@@ -150,7 +152,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
         @click="requestCancel"
       >
         <Icon name="lucide:ban" class="size-4" />
-        {{ confirmingCancel ? "Confirmar cancelamento?" : "Cancelar corrida" }}
+        {{ confirmingCancel ? "Confirmar solicitação?" : "Solicitar cancelamento" }}
       </button>
     </div>
   </section>

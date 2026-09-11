@@ -321,7 +321,10 @@ def test_redispatch_blocked_with_active_ride(shop):
 def test_cancel_ride_before_pickup(shop):
     order = _dispatched_order(shop)
     courier.apply_status(order, "A", source="poll")
-    courier.cancel_ride(order, actor="maria")
+    task = courier.cancel_ride(order, actor="maria")
+    from shopman.shop.handlers.courier_cancel import CourierCancelHandler
+
+    CourierCancelHandler().handle(message=task, ctx={})
     order.refresh_from_db()
     assert not courier.has_active_ride(order)
     # cancelamento pelo operador não gera alerta (ele mesmo agiu)

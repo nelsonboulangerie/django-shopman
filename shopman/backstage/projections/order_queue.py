@@ -548,6 +548,12 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
                 "" if courier_block["can_dispatch"] else "Confira o estado do pedido e da corrida antes de despachar."),
             method="POST", idempotency="required",
             payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+        extra_actions.append(Action(ref="courier-cancel", kind="mutation", label="Solicitar cancelamento da corrida",
+            enabled=authorized and courier_block["can_cancel"],
+            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+                "" if courier_block["can_cancel"] else "Confira o estado da corrida e de solicitações anteriores."),
+            method="POST", idempotency="required", confirmation={"required": True},
+            payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
     if fiscal_status == "failed":
         from shopman.backstage.services.orders import fiscal_revision
 
@@ -669,13 +675,24 @@ def _courier_block(order: Order) -> dict | None:
         if active and block.get("id_mch"):
             position = cache.get(f"courier:pos:{block['id_mch']}")
 
-        from shopman.shop.services.courier import unresolved_dispatch
+        from shopman.shop.services.courier import latest_cancellation, unresolved_dispatch
 
         unresolved = unresolved_dispatch(order)
+        cancellation = latest_cancellation(order) if active else None
+        cancellation_pending = False
         error = block.get("error") if isinstance(block.get("error"), dict) else None
 
         if unresolved is not None:
             error = {"message": "Despacho sem resultado confirmado. Confira a solicitação na central antes de abrir outra corrida.", "at": unresolved.updated_at.isoformat()}
+        if cancellation is not None:
+            cancel_state = (cancellation.payload or {}).get("cancel_attempt", {}).get("state")
+            cancellation_pending = cancellation.status in {"queued", "running"} or cancel_state in {"started", "unknown", "accepted"}
+            error = {"message": ("Cancelamento sem resultado confirmado. Confira esta corrida na central antes de reenviar."
+                if cancel_state in {"started", "unknown"} else "Solicitação de cancelamento registrada; aguardando confirmação da corrida."),
+                "at": cancellation.updated_at.isoformat()}
+            if not cancellation_pending:
+                error = {"message": cancellation.last_error or "Solicitação não aplicada. Confira o estado atual antes de tentar novamente.",
+                    "at": cancellation.updated_at.isoformat()}
         return {
             "provider": str(block.get("provider") or ("machine" if adapter_on else "")),
             "status": ride_status,
@@ -698,7 +715,7 @@ def _courier_block(order: Order) -> dict | None:
             "error": error,
             "can_quote": adapter_on and not active and order.status not in ("cancelled", "completed"),
             "can_dispatch": adapter_on and not active and order_can_ride and unresolved is None,
-            "can_cancel": active and ride_status in CANCELLABLE_STATUSES,
+            "can_cancel": adapter_on and active and ride_status in CANCELLABLE_STATUSES and not cancellation_pending,
         }
     except Exception:
         logger.debug("orders.courier_block_failed order=%s", order.ref, exc_info=True)

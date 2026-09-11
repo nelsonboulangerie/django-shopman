@@ -295,12 +295,14 @@ def courier_dispatch(order, *, actor: str, expected_revision=None):
         raise OrderError(str(exc) or "Não foi possível despachar a corrida.") from exc
 
 
-def courier_cancel(order, *, actor: str, reason_id=None):
+def courier_cancel(order, *, actor: str, reason_id=None, expected_revision=None):
     """Cancela a corrida ativa na central de entregas."""
     from shopman.shop.services import courier
 
     try:
-        return courier.cancel_ride(order, actor=actor, reason_id=reason_id)
+        return courier.cancel_ride(order, actor=actor, reason_id=reason_id, expected_revision=expected_revision)
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
     except ValueError as exc:
         raise OrderError(str(exc) or "Não foi possível cancelar a corrida.") from exc
 

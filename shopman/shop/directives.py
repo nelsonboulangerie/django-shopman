@@ -39,6 +39,7 @@ DELIVERY_AUTO_COMPLETE = "delivery.auto_complete"
 # Despacho da corrida ao marcar "pronto" (retry/idempotência via Directive) e
 # heartbeat de polling do status (fallback do webhook, auto-reagendável).
 COURIER_DISPATCH = "courier.dispatch"
+COURIER_CANCEL = "courier.cancel"
 COURIER_SYNC = "courier.sync"
 
 # Confirmation
