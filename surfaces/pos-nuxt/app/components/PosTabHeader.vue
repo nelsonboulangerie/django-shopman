@@ -170,7 +170,7 @@ function runClear() {
       type="button"
       class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
       :class="customerRequired
-        ? 'border-warning bg-warning/10 font-medium text-amber-700 motion-safe:animate-pulse dark:text-amber-400'
+        ? 'border-warning bg-warning/10 font-medium text-warning motion-safe:animate-pulse'
         : 'border-border'"
       aria-haspopup="dialog"
       :title="customerRequired ? 'Encomenda precisa de cliente — é o contato se algo mudar até a data' : undefined"
@@ -179,7 +179,7 @@ function runClear() {
       <Icon
         :name="customerRequired ? 'lucide:user-round-plus' : 'lucide:user-round'"
         class="size-4 shrink-0"
-        :class="customerRequired ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'"
+        :class="customerRequired ? 'text-warning' : 'text-muted-foreground'"
       />
       <span v-if="customerName" class="min-w-0 max-w-40 truncate font-medium">{{ customerName }}</span>
       <span v-else class="min-w-0 truncate" :class="customerRequired ? '' : 'text-muted-foreground'">Identificar cliente</span>

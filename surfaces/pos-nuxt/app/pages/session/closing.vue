@@ -154,7 +154,7 @@ async function confirmSubmit() {
           class="grid gap-2 rounded-md border border-warning/40 bg-warning/10 p-4"
         >
           <div class="flex items-center gap-2">
-            <Icon name="lucide:triangle-alert" class="size-4 text-amber-700 dark:text-amber-400" />
+            <Icon name="lucide:triangle-alert" class="size-4 text-warning" />
             <h2 class="text-base font-semibold">Produção em aberto</h2>
           </div>
           <p class="text-sm text-muted-foreground">
@@ -177,7 +177,7 @@ async function confirmSubmit() {
         <section v-if="closing.already_closed && closing.has_pending_production" class="grid gap-2 rounded-md border bg-card p-4">
           <div class="flex items-center gap-2">
             <h2 class="text-base font-semibold">Produção pendente</h2>
-            <span class="inline-flex items-center rounded-md border border-warning/50 bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+            <span class="inline-flex items-center rounded-md border border-warning/50 bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-warning">
               {{ closing.pending_production.length }}
             </span>
           </div>

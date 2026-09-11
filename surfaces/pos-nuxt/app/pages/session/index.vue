@@ -729,7 +729,7 @@ async function confirmClose() {
                       denom.shape === 'note' ? 'h-12 rounded-md px-4' : 'size-12 rounded-full',
                       denom.shape === 'note'
                         ? 'border-success/40 bg-success/10 text-success'
-                        : 'border-warning/40 bg-warning/10 text-amber-700 dark:text-amber-400',
+                        : 'border-warning/40 bg-warning/10 text-warning',
                       // Marcado é um ANEL, não um tom mais escuro: sob a luz do
                       // balcão dois tons da mesma cor viram um só, e o operador
                       // não saberia dizer o que pediu.

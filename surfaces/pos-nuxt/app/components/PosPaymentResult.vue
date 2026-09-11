@@ -25,7 +25,7 @@ const emit = defineEmits<{ resendLink: [] }>();
 
 const TONE_CLASS: Record<PaymentProofView["tone"], string> = {
   info: "border-info/30 bg-info/10 text-info",
-  warning: "border-warning/30 bg-warning/10 text-amber-800 dark:text-amber-300",
+  warning: "border-warning/30 bg-warning/10 text-warning",
   success: "border-success/30 bg-success/10 text-success",
   danger: "border-destructive/40 bg-destructive/5 text-destructive",
   neutral: "border bg-muted/40",
@@ -87,7 +87,7 @@ async function copyLink() {
           <Icon name="lucide:loader-circle" class="size-3 animate-spin" /> Aguardando confirmação do PIX…
         </p>
         <!-- Desistiu (expirado/cancelado): acusa honestamente, sem prometer o que não cumpre. -->
-        <p v-else-if="proof.isPix && proof.hasProof && status === 'expired'" class="mt-0.5 flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-400">
+        <p v-else-if="proof.isPix && proof.hasProof && status === 'expired'" class="mt-0.5 flex items-center gap-1 text-xs font-medium text-warning">
           <Icon name="lucide:clock-alert" class="size-3.5" /> Não confirmamos o PIX automaticamente. Confira no gestor ou gere um novo pagamento.
         </p>
       </div>

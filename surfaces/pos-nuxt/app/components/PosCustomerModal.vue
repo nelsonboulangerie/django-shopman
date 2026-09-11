@@ -325,7 +325,7 @@ const newCustomerNote = computed(() => {
             <!-- Alertas do balcão: só existem quando há dado (a tela não cresce à toa).
                  Restrição alimentar é SEGURANÇA — sempre visível, cor funcional. -->
             <div v-if="customerLookup?.dietary_restrictions || customerLookup?.is_birthday_today || customerLookup?.is_birthday_month" class="flex flex-wrap items-center gap-2">
-              <span v-if="customerLookup?.dietary_restrictions" class="inline-flex items-center gap-1 rounded-full border border-warning/50 bg-warning/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+              <span v-if="customerLookup?.dietary_restrictions" class="inline-flex items-center gap-1 rounded-full border border-warning/50 bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">
                 <Icon name="lucide:triangle-alert" class="size-3.5" /> {{ customerLookup.dietary_restrictions }}
               </span>
               <span v-if="customerLookup?.is_birthday_today" class="inline-flex items-center gap-1 rounded-full border border-primary/50 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
@@ -391,7 +391,7 @@ const newCustomerNote = computed(() => {
             role="alertdialog"
             aria-live="assertive"
           >
-            <p class="flex items-center gap-2 text-sm font-semibold text-amber-700 dark:text-amber-400">
+            <p class="flex items-center gap-2 text-sm font-semibold text-warning">
               <Icon name="lucide:triangle-alert" class="size-4 shrink-0" />
               {{ decisionCopy.title }}
             </p>

@@ -135,3 +135,18 @@ Dívidas conhecidas entram numa **allowlist** explícita que **só encolhe** —
 - **storefront-nuxt** — superfície de cliente, branded, sistema próprio (Instrument
   Sans + Fraunces, marrom quente, tokens semânticos `--shop-*`). Intencionalmente
   divergente; não consome o `operator-kit`.
+
+## Escolhas de campos consolidadas em 11/09/2026
+
+A aprovação transversal do dono mantém campos comuns em `h-11` (44px),
+`bg-background` e `focus-visible:ring-[3px] focus-visible:ring-ring/50` com
+`border-ring`. Os seis primitivos UiInput de operador e UiNativeSelect já
+seguem essa receita desde o PR #599; controles especializados declarados
+(steppers, teclas, leitura à distância e impressão) preservam sua anatomia.
+
+O aviso claro foi consolidado em `--warning: #965411`, proposta aprovada na
+comparação do PDV; o dark mantém `#e09a4a`. A fonte é operator-theme.css para
+todos os apps operadores. Textos de aviso usam `text-warning`, sem uma paleta
+âmbar paralela. Os guardrails medem contraste de texto, superfície suave e
+fundo sólido. Estes valores de tema quente prevalecem sobre a tabela histórica
+neutra da seção 2.

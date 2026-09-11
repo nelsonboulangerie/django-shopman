@@ -34,3 +34,15 @@ Medição sRGB: warning claro atual `#c2701c` tem 3,48:1 sobre `#fcf6f1` e 3,73:
 - Correções acidentais de geometria/tipografia aplicadas; exceções propositais preservadas e comentadas. Cores e padrões globais aguardam escolhas do dono.
 - Validação: 869 testes pos-nuxt; 170 testes shopman/shop/tests/test_pos_*.py, um arquivo por invocação, PostgreSQL/Redis isolados; typecheck e Ruff passaram. Sessão local conferida visualmente nos dois temas. Nenhuma chamada real à SEFAZ ou hardware.
 - Mudanças desta etapa ainda não publicadas.
+
+## Escolhas posteriores do dono
+
+Aprovados: campos de 44px, fundo `bg-background` com maior contraste, halo forte de 3px e proposta recomendada para warning (`#965411` claro; dark preservado). A aprovação é transversal aos apps e não precisa ser solicitada novamente. A implementação compartilhada deve ser conciliada com a frente de Produção; o texto de decisões pendentes acima descreve a triagem original. A revisão de pagamento na entrega está documentada em `PDV-PAGAMENTO-ENTREGA-2026-09-11.md`.
+
+## Fechamento visual — 11/09/2026
+
+Escolhas implementadas: o PR #599 já entregou 44px, bg-background e foco de
+3px/50% nos primitivos dos seis apps operadores e no UiNativeSelect compartilhado.
+Conferidos nesta branch, sem duplicar componentes. Avisos do PDV agora usam o
+token canônico; warning claro consolidado em #965411 conforme a proposta aceita,
+dark #e09a4a preservado. A pendência visual mencionada acima está encerrada.

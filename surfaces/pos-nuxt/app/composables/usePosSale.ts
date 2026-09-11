@@ -622,6 +622,10 @@ export function usePosSale(deps: PosSaleDeps) {
   });
 
   function addTender(method: string) {
+    if (cart.paymentCollection === "on_delivery" && !["cash", "credit", "debit"].includes(method)) {
+      toast.info("Na entrega, use dinheiro ou cartão na maquininha. PIX Efí exige confirmação automática.");
+      return;
+    }
     const amountQ = Math.max(0, splitNextShareQ.value);
     if (amountQ <= 0) {
       // Tocar num método com o total já coberto era silêncio absoluto — o
@@ -1193,7 +1197,7 @@ export function usePosSale(deps: PosSaleDeps) {
       paymentTenders: resolvedPayment.paymentTenders,
       tenderedQ: resolvedPayment.tenderedQ,
       changeForQ: cart.fulfillmentType === "delivery" && cart.paymentCollection === "on_delivery"
-        ? moneyInputToQ(cart.changeForInput)
+        ? cart.paymentTenders.filter((t) => t.method === "cash").reduce((sum, t) => sum + t.amount_q, 0)
         : 0,
       receiptChannels: cart.receiptChannels,
       receiptEmail: cart.receiptEmail || cart.customerEmail,

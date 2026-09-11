@@ -153,7 +153,7 @@ describe("PosPaymentWorkspace — seções semânticas da coluna de trabalho", (
     expect(comFiscal.find(".order-2").text()).not.toContain("CPF na nota?");
   });
 
-  it("o troco-para da entrega mora na forma de pagamento e avisa quando não cobre o total", async () => {
+  it("a entrega usa o mesmo teclado sem campo paralelo de troco", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: props({
         fulfillmentType: "delivery",
@@ -166,8 +166,8 @@ describe("PosPaymentWorkspace — seções semânticas da coluna de trabalho", (
     const receiving = wrapper.find('section[aria-label="Forma de pagamento"]');
     // Rótulo diz o MOMENTO: "troco" sozinho confundia com o troco do numpad,
     // que é dinheiro na mão agora — este é o pagamento na porta, depois.
-    expect(receiving.text()).toContain("Com quanto vai pagar na porta?");
-    expect(receiving.text()).toContain("Menor que o total");
+    expect(receiving.text()).not.toContain("Com quanto vai pagar na porta?");
+    expect(receiving.find('[aria-label="Teclado de valor"]').exists()).toBe(true);
     // Na retirada o campo não existe.
     const pickup = await mountSuspended(PosPaymentWorkspace, { props: props() });
     expect(pickup.text()).not.toContain("Com quanto vai pagar na porta?");
@@ -470,7 +470,8 @@ describe("PosPaymentWorkspace — a coluna de contexto", () => {
     const ajustes = wrapper.find('section[aria-label="Ajustes da conta"]');
     expect(ajustes.exists()).toBe(true);
     expect(ajustes.text()).toContain("Dividir conta");
-    expect(ajustes.text()).not.toContain("Desconto");
+    expect(ajustes.findAll("button")).toHaveLength(2);
+    expect(ajustes.find('[aria-label="Desconto na venda"]').attributes("disabled")).toBeDefined();
   });
 
   it("o botão diz SOZINHO se o ajuste está ligado, e de quanto", async () => {
@@ -744,13 +745,13 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
       }),
     });
     expect(avisos(wrapper).text()).toContain("Pedir papel já pede a nota — imprime sozinha assim que autorizar.");
-    expect(avisos(wrapper).text()).toContain("O entregador sai com o troco separado.");
+    expect(avisos(wrapper).text()).toContain("Dinheiro pendente. O troco calculado será separado no despacho.");
     // e não voltaram a aparecer dentro da coluna do instrumento
     expect(wrapper.find(".order-2").text()).not.toContain("Imprime sozinha");
     expect(wrapper.find(".order-2").text()).not.toContain("troco separado");
   });
 
-  it("o combinado menor que o total continua colado no campo que o produz", async () => {
+  it("o campo legado não interfere mais no pagamento informado pelo teclado", async () => {
     // Isto NÃO é consequência de finalizar: é o que só aquele campo sabe dizer.
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: covered({
@@ -760,7 +761,7 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
         paymentTotalQ: 1000,
       }),
     });
-    expect(wrapper.find('section[aria-label="Forma de pagamento"]').text()).toContain("Menor que o total");
+    expect(wrapper.find('section[aria-label="Forma de pagamento"]').text()).not.toContain("Menor que o total");
     expect(avisos(wrapper).text()).not.toContain("Menor que o total");
   });
 
@@ -1412,4 +1413,25 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
     const fiscal = w.find('section[aria-label="Nota fiscal"]');
     expect(fiscal.text()).toContain("Salvar este CPF no cadastro de Ana?");
   });
+});
+
+it("na entrega oferece crédito e débito sem exigir cobrança antecipada na maquininha", async () => {
+  const wrapper = await mountSuspended(PosPaymentWorkspace, {
+    props: props({
+      fulfillmentType: "delivery", paymentCollection: "on_delivery",
+      paymentMethods: [{ ref: "credit", label: "Crédito" }, { ref: "debit", label: "Débito" }],
+      paymentTenders: [{ method: "credit", amount_q: 1000, collection: "on_delivery" }],
+      paymentCovered: true, paymentRemainingQ: 0,
+      customerPhone: "+5543999990001", deliveryAddress: "Rua de teste, 1",
+    }),
+  });
+  for (const label of ["Crédito", "Débito"]) {
+    const button = wrapper.find('section[aria-label="Forma de pagamento"]').findAll("button").find((b) => b.text().includes(label))!;
+    expect(button.attributes("disabled")).toBeUndefined();
+  }
+  const validate = wrapper.findAll("button").find((b) => b.text().includes("Validar"))!;
+  expect(validate.attributes("disabled")).toBeUndefined();
+  await validate.trigger("click");
+  expect(wrapper.emitted("submit")).toHaveLength(1);
+  expect(wrapper.text()).not.toContain("OK, cobrei na maquininha");
 });

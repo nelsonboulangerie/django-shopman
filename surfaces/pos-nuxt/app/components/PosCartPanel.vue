@@ -158,7 +158,7 @@ function badgeTone(tone: KitchenBadgeView["tone"]): string {
   // Divergência não é erro da cozinha nem cancelamento: é uma conta que não
   // fecha, e pede o âmbar de "olhe para isto", não o vermelho de "deu errado".
   if (tone === "warning")
-    return "bg-warning/10 text-amber-800 dark:text-amber-300";
+    return "bg-warning/10 text-warning";
   return "bg-muted text-muted-foreground";
 }
 
