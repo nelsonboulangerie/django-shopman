@@ -488,6 +488,11 @@ def _active_kds_count(kds_instance_id) -> int:
         return 0
 
 
+def emit_delivery_device_update() -> None:
+    """Inventory configuration changed; authorized readers reload their projection."""
+    _emit_backstage("orders", "backstage-orders-update", {"kind": "delivery_device"})
+
+
 def _emit_backstage(kind: str, event_type: str, payload: dict, *, scope: str | None = None) -> None:
     payload = dict(payload)
     transaction.on_commit(lambda: _publish_backstage(kind, event_type, payload, scope))
