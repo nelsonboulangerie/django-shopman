@@ -810,3 +810,13 @@ Nuxt/Nitro reconstruído para Django local 8014; Daphne reiniciado após conferi
 3. GET 503 com nota dirty: textarea visível/conteúdo preservado, explicação persistente, tentativa de salvar faz **zero POST** enquanto stale.
 
 Screenshot de nota inspecionado visualmente: ref/valor/quantidade fracionária/nota/histórico aparecem no recurso correto, sem corte do editor. Ainda não constitui ensaio com leitor de tela ou hardware do operador. O tempo total inclui inicialização (a primeira jornada levou 21,4 s); não é p95 de interação nem comprova budget em campo. Livros reais, provedores e rollout não foram exercitados. Seed/testes/log reproduzíveis estão em `orders-20260910/integration/` e no teste Playwright versionado.
+
+### WP03/WP04 — H03 reclassificada por mais três testemunhas
+
+**Antes:** PostgreSQL reproduziu três violações: self-cancel após leitura permitida ainda cancelava quando captura já havia chegado; instância anterior ao preparo ainda cancelava; timeout auto_cancel lia NEW, operador confirmava com sucesso em outra conexão, e o timeout depois cancelava ACCEPTED. `h03-confirmation-before.txt`: 3 falhas, nenhuma inferida apenas de código.
+
+**Implementação:** self-cancel trava Order→Payman, relê e aplica a MESMA `payment.can_cancel`; devolve bool ao facade e a API responde 409 quando a decisão concorrente vencer. Permissões, acesso ao pedido e política de captura/estado permanecem existentes. O timeout compara NEW dentro do commit da transição; auto-confirmação revalida pagamento/confirmabilidade sob Order→Payman. A chamada remota de cancelamento do pagamento permanece fora desse helper local. Auto_cancel continua política configurada, sem nova autoridade.
+
+**Testes:** 50 PostgreSQL passaram (barreiras, cancelamento fresco, conformance, customer orders); 8 adicionais/overlap passaram (barreiras/API + IDOR), incluindo captura entre leitura da API e comando, respondendo 409 sem cancelar. No teste com duas conexões, qualquer decisão pode vencer o lock, mas nunca se reporta aceite do operador seguido de cancelamento por timeout obsoleto; exatamente um evento de transição. Ruff e diff-check passaram.
+
+**Migração/rollback:** sem DDL. Compatibilidade do facade passa de retorno ignorado a bool explícito; chamada HTTP antiga continua protegida pelo guarda sob lock. Reverter API/facade/domínio juntos, sem apagar eventos, Directives ou recibos. Nenhum cancelamento real executado. Esta prova não encerra todos os interleavings H03 nem constitui piloto.

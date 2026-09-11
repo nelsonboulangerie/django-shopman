@@ -290,7 +290,7 @@ class OrderCancelView(APIView):
         )
 
         def execute_cancel() -> tuple[dict, int]:
-            if not order_service.can_cancel(order):
+            if not order_service.can_cancel(order) or not order_service.cancel(order):
                 return (
                     {
                         "detail": (
@@ -303,7 +303,6 @@ class OrderCancelView(APIView):
                     status.HTTP_409_CONFLICT,
                 )
 
-            order_service.cancel(order)
             data = _tracking_payload(order)
             serializer = OrderTrackingSerializer(data)
             return dict(serializer.data), status.HTTP_200_OK
