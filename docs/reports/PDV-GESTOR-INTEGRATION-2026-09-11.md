@@ -36,14 +36,19 @@ separado dos testes e cookie próprio para não conflitar com o preview anterior
 A primeira tentativa compartilhou o nome de cookie entre dois bancos locais e
 perdeu a sessão; corrigido no fixture, sem alterar autenticação do produto.
 
-## Gate comunicado pelo Gestor
+## Publicação técnica e aceite de capacidade
 
-A tarefa responsável confirmou que a publicação integrada permanece pendente.
-Os contratos continuam em47e9c657a e a validação funcional passou, mas o ensaio
-com500 pedidos e10 aparelhos não atingiu os budgets: p95backend1058ms no ensaio
-por etapas, para limite500ms; navegador1695–1857ms nas rodadas concluídas,
-para limite1500ms. O host compartilhado tem swap elevado, mas isso não prova
-que a causa seja exclusivamente ambiental nem autoriza relaxar os limites.
-G06/G07 e piloto aplicável não estão liberados. Nenhuma publicação foi feita.
-Não exigir nova decisão visual do dono: o que falta é a evidência/correção de
-capacidade sob responsabilidade da frente Gestor e sua liberação coordenada.
+Revisão coordenada em 11/09: o plano do Gestor §4.3 G06 condiciona o início
+do piloto; §10 item4 permite deploy técnico antes da ativação do piloto.
+A publicação técnica está autorizada pelo dono e segue PR, CI obrigatório,
+migração aditiva e smoke sem efeitos reais. Integração com main6ad5bb40f
+realizada sem conflitos. Nenhuma configuração de infraestrutura foi alterada.
+
+Os ensaios de capacidade NÃO passaram: no runner estável, p95 com10 clientes
+foi2500ms com1 leitor e1322/1622ms com5 leitores, acima de500ms;
+navegador2229/2573/3044ms, acima de1500ms. Isso permanece como limite
+conhecido e pendência do aceite de capacidade/piloto, não aprovação implícita.
+A proposta de laboratório pago foi retirada. Não há recurso adicional a criar.
+
+A publicação só será registrada como concluída após CI, merge, deploy e
+verificação do ambiente; este registro ainda é de preparação da release.
