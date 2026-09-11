@@ -53,7 +53,7 @@ Os diagnósticos originais são assertivas de reprodução do defeito, portanto 
 - **H05:** transporte H3 verifica headers, 429, cookie host-only, no-store e origem estrangeira/irmã/null; BFF+Django passaram no Chromium. A implantação real de SameSite/CORS/CDN não foi exercitada. Responsável: plataforma.
 - **H06:** tipos inválidos/fingerprint conflitante recusados sem efeito em casos testados; não é fuzzing exaustivo de todos os payloads. Responsável: API/frontend.
 - **H07:** regressões de lifecycle, pagamento, estoque, fiscal, courier e concorrência passaram; a corrida revelou e corrigiu captura duplicada. Crash em cada provider, compras paralelas com pontos e todos os adapters não foram exauridos. Responsável: domínios.
-- **H08:** storage negado, teclado, zoom e viewport estreito passaram em Chromium. Em exploração humana assistida, o solicitante relatou alguma navegação com VoiceOver; não completou o gesto de quatro dedos ensinado para posicionar o cursor e encerrou a sessão. Isso não reproduz uma falha da superfície e não substitui as jornadas estruturadas nem uma pessoa usuária de tecnologia assistiva. **H09:** a decisão foi aprovada; configuração e política pública ainda precisam ser conferidas contra o ambiente autorizado antes de exposição. Responsável: produto/operação.
+- **H08:** storage negado, teclado, zoom e viewport estreito passaram em Chromium. Em exploração humana assistida, o solicitante relatou alguma navegação com VoiceOver; não completou o gesto de quatro dedos ensinado para posicionar o cursor e encerrou a sessão. Isso não reproduz uma falha da superfície e não substitui as jornadas estruturadas nem uma pessoa usuária de tecnologia assistiva. **H09:** a leitura de metadados do App Platform comprovou divergência entre o runbook e o estado vivo: `alpha.nelsonboulangerie.com.br` não resolve nem consta no app, enquanto `menu.nelsonboulangerie.com.br` é o domínio primário do app ativo chamado `shopman-alpha`. A intenção dessa mudança não foi inferida; conteúdo e configuração de produção não foram inspecionados. Responsável: produto/operação.
 
 D01–D06 foram aprovadas em 2026-09-11 pelo solicitante, que assumiu todos os papéis responsáveis. A retenção definitiva ficou expressamente pendente, mantendo-se a proteção atual: recibos vinculados já finalizados/em curso não são limpos por idade; a janela definitiva, auditoria produtiva, saneamento e eventual contração exigem decisão posterior. Essa aprovação não autoriza exposição externa.
 
@@ -110,7 +110,7 @@ No diretório `surfaces/storefront-nuxt`, executar sequencialmente `npm test -- 
 
 Os bloqueios ambientais iniciais permanecem anexados como histórico e não contam como prova. A continuação usou serviços locais descartáveis autorizados e resolveu os skips relevantes no gate PostgreSQL+Redis.
 
-Para fechar G2: completar acessibilidade assistiva e medições emparelhadas J01–J16 e conferir política/configuração no ambiente autorizado. O recuo de código com tentativa sintética em voo passou; D01–D06, responsabilidades e limiares estão aprovados. Piloto humano, rollout e qualquer ação externa permanecem sujeitos a autorização explícita.
+Para fechar G2: completar acessibilidade assistiva e medições emparelhadas J01–J16 e resolver a divergência documentada entre domínio alpha e domínio primário vivo antes da conferência de política/configuração. O recuo de código com tentativa sintética em voo passou; D01–D06, responsabilidades e limiares estão aprovados. Piloto humano, rollout e qualquer ação externa permanecem sujeitos a autorização explícita.
 
 ## Resultados executados
 
@@ -131,6 +131,7 @@ Os totais abaixo são execuções distintas, com sobreposição; não somar como
 | PostgreSQL 16 + Redis 7, gate de runtime | 334 passed, 0 skipped; 4 warnings | [log](storefront-operational-20260910/continuation-postgres-redis-runtime.txt) |
 | Migração mista PostgreSQL, 1.000 recibos | 1 passed | [log](storefront-operational-20260910/continuation-postgres-migration.txt) |
 | Recuo de código com tentativa vinculada em voo | SQLite 1 passed; PostgreSQL 1 passed | [SQLite](storefront-operational-20260910/rollback-in-flight-sqlite-20260911.txt), [PostgreSQL](storefront-operational-20260910/rollback-in-flight-postgres-20260911.txt) |
+| Metadados públicos/operacionais do alpha | App ativo; domínio alpha ausente do DNS e do app; `menu.*` primário | [registro sanitizado](storefront-operational-20260910/alpha-read-only-metadata-20260911.txt) |
 | Budget de mutação PostgreSQL | 24/24; p95 36,41 ms; máx. 456,54 ms | [log](storefront-operational-20260910/continuation-postgres-budget.txt) |
 | Browser mock-server | 4 passed | [log](storefront-operational-20260910/continuation-browser-mock-server.txt) |
 | Chromium real + Nuxt BFF + Django | 27 passed | [log](storefront-operational-20260910/continuation-browser-final.txt) |
@@ -200,3 +201,7 @@ Também foi percorrida a jornada local menu → sacola → autenticação por OT
 ## Exploração assistida com VoiceOver — 2026-09-11
 
 O solicitante abriu a candidata local em um iPhone e relatou navegar “um pouco, com algum sucesso” usando VoiceOver. Não conseguiu executar o gesto de quatro dedos sugerido para mover o cursor ao primeiro item e encerrou voluntariamente a sessão. Esse gesto é um comando do leitor de tela; sua falha isolada não comprovou defeito na loja. Nenhuma barreira específica da candidata, conclusão de jornada, compreensão de estado financeiro, tempo, ajuda ou taxa foi registrada. Portanto não há mudança de código justificada por esta observação e ela não satisfaz o aceite humano de J01–J16. [Registro da observação](storefront-operational-20260910/voiceover-exploratory-20260911.txt).
+
+## Conferência externa somente leitura — 2026-09-11
+
+Uma consulta de metadados, sem deploy ou mutação, encontrou o app `shopman-alpha` ativo no App Platform. O runbook aponta `alpha.nelsonboulangerie.com.br` como endereço de testes e reserva `menu.nelsonboulangerie.com.br` para produção; no estado vivo, o domínio alpha não resolve nem aparece no app e `menu.*` está como primário. Isso é divergência comprovada de configuração/documentação. Pode representar decisão operacional posterior de terceiros; não foi classificada como erro de rollout sem confirmação. Nenhuma página de `menu.*`, variável, segredo, banco, mensagem ou transação foi acessada. [Registro sanitizado](storefront-operational-20260910/alpha-read-only-metadata-20260911.txt).
