@@ -19,12 +19,16 @@ from shopman.shop.services.remote_mutations import run_idempotent_mutation
 
 
 @pytest.fixture(autouse=True)
-def capture_operational_logger(caplog):
+def capture_operational_logger(caplog, monkeypatch):
     # O logger shopman deliberadamente não propaga ao root do pytest.
     target = logging.getLogger("shopman.operational")
+    # Capture uma vez mesmo quando o ambiente de CI propaga até o root.
+    monkeypatch.setattr(target, "propagate", False)
     target.addHandler(caplog.handler)
-    yield
-    target.removeHandler(caplog.handler)
+    try:
+        yield
+    finally:
+        target.removeHandler(caplog.handler)
 
 
 @pytest.fixture
