@@ -484,7 +484,7 @@ useHead({ title: "Catálogo · Gestor" });
     <section class="flex min-h-0 flex-1 flex-col gap-4 p-4">
       <p v-if="errorMsg" role="alert" class="text-sm text-destructive">{{ errorMsg }}</p>
       <p v-if="error" role="alert" class="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-        Não foi possível atualizar o catálogo. {{ matrix ? "Exibindo a última leitura disponível." : "" }} <button class="underline" @click="refresh()">Tentar de novo</button>
+        Não foi possível atualizar o catálogo. {{ matrix ? "Exibindo a última leitura disponível." : "" }} <button class="min-h-control min-w-control underline" @click="refresh()">Tentar de novo</button>
       </p>
 
       <div v-if="orderDraft" role="status" class="space-y-2 rounded border p-3 text-sm">
@@ -546,7 +546,7 @@ useHead({ title: "Catálogo · Gestor" });
                  `border-r` fecha a coluna fixa: no scroll horizontal é essa linha que
                  diz onde o painel parado termina e a matriz que corre começa. -->
             <th class="sticky sm:left-0 top-0 z-30 w-full min-w-[260px] border-b border-r border-border bg-card px-4 py-3 text-left">
-              <label class="flex items-center gap-3">
+              <label class="min-h-control flex items-center gap-3">
                 <input type="checkbox" :checked="allSelected" class="size-4 rounded border-border accent-foreground" @change="toggleSelectAll" />
                 <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Produto</span>
               </label>
@@ -620,7 +620,7 @@ useHead({ title: "Catálogo · Gestor" });
                 >
                   <Icon name="lucide:grip-vertical" class="pointer-events-none size-4" />
                 </span>
-                <label class="flex min-w-0 flex-1 items-center gap-3">
+                <label class="min-h-control flex min-w-0 flex-1 items-center gap-3">
                   <input type="checkbox" :checked="isSelected(row.sku)" class="size-4 shrink-0 rounded border-border accent-foreground" @change="toggleSelect(row.sku)" />
                   <!-- thumbnail: esmaece + P&B quando "fora"; clique amplia a foto -->
                   <img
@@ -651,7 +651,7 @@ useHead({ title: "Catálogo · Gestor" });
                       <button
                         v-if="rowSyncErrors(row)"
                         type="button"
-                        class="inline-flex shrink-0 items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-xs font-medium text-destructive transition hover:bg-destructive/20 disabled:opacity-50"
+                        class="min-h-control min-w-control inline-flex shrink-0 items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-xs font-medium text-destructive transition hover:bg-destructive/20 disabled:opacity-50"
                         :disabled="isBusy(productKey(row.sku)) || !row.resync_action?.enabled"
                         :title="`Erro de sync em ${rowSyncErrors(row)} plataforma(s) — reenviar tudo`"
                         @click.stop="resyncRow(row)"
@@ -797,7 +797,7 @@ useHead({ title: "Catálogo · Gestor" });
                     <p class="mb-2 text-xs font-medium text-muted-foreground">Preço · {{ surfaceName(cell.surface_ref) }}</p>
                     <input
                       v-model="priceInput" type="text" inputmode="decimal" autofocus
-                      class="h-9 w-full rounded-md border bg-background px-2.5 text-sm tabular-nums outline-none focus:ring-1 focus:ring-ring"
+                      class="min-h-control h-9 w-full rounded-md border bg-background px-2.5 text-sm tabular-nums outline-none focus:ring-1 focus:ring-ring"
                       @keyup.enter="commitPrice(row, cell)" @keyup.esc="closePrice()"
                     />
                     <p class="mt-1 text-xs text-muted-foreground">Base do produto: {{ row.base_price_display }}</p>
@@ -848,7 +848,7 @@ useHead({ title: "Catálogo · Gestor" });
         <Icon name="lucide:package-search" class="mb-2 size-8 text-muted-foreground/40" />
         <p v-if="Object.keys(filters).length || query.trim()" class="text-sm text-muted-foreground">
           Nenhum produto com esses filtros.
-          <button v-if="Object.keys(filters).length" class="underline" @click="filters = {}">Limpar filtros</button>
+          <button v-if="Object.keys(filters).length" class="min-h-control min-w-control underline" @click="filters = {}">Limpar filtros</button>
         </p>
         <p v-else class="text-sm text-muted-foreground">Nenhum produto {{ activeCollection ? `na coleção ${activeCollection.name}` : "no catálogo" }}.</p>
       </div>
@@ -897,7 +897,7 @@ useHead({ title: "Catálogo · Gestor" });
             <div class="mb-2 inline-flex w-full rounded-md border p-0.5 text-xs">
               <button
                 v-for="o in priceOps" :key="o.k" type="button"
-                class="flex-1 rounded px-2 py-1 font-medium transition"
+                class="min-h-control min-w-control flex-1 rounded px-2 py-1 font-medium transition"
                 :class="priceOp === o.k ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'"
                 @click="priceOp = o.k"
               >{{ o.l }}</button>
@@ -907,7 +907,7 @@ useHead({ title: "Catálogo · Gestor" });
               <input
                 v-model="priceInputBulk" type="text" inputmode="decimal" autofocus
                 :placeholder="priceOp === 'set' ? '15,00' : priceOp === 'pct' ? '+10 ou -20' : '+1,00 ou -0,50'"
-                class="h-9 w-full rounded-md border bg-background px-2.5 text-sm tabular-nums outline-none focus:ring-1 focus:ring-ring"
+                class="min-h-control h-9 w-full rounded-md border bg-background px-2.5 text-sm tabular-nums outline-none focus:ring-1 focus:ring-ring"
                 @keyup.enter="applyBulkPrice"
               />
             </div>
@@ -935,7 +935,7 @@ useHead({ title: "Catálogo · Gestor" });
         <button :disabled="bulkBusy" class="inline-flex min-h-control items-center rounded-md px-3 text-sm font-medium text-background/80 transition hover:bg-background/10 hover:text-background disabled:opacity-50" @click="bulk({ is_published: false })">Ocultar</button>
         <button :disabled="bulkBusy" class="inline-flex min-h-control items-center rounded-md px-3 text-sm font-medium text-background/80 transition hover:bg-background/10 hover:text-background disabled:opacity-50" @click="bulk({ is_published: true })">Exibir</button>
         </template>
-        <button class="grid size-9 place-items-center rounded-md text-background/70 transition hover:bg-background/10 hover:text-background" title="Limpar seleção" @click="clearSelection"><Icon name="lucide:x" class="size-4" /></button>
+        <button class="min-h-control min-w-control grid size-9 place-items-center rounded-md text-background/70 transition hover:bg-background/10 hover:text-background" title="Limpar seleção" @click="clearSelection"><Icon name="lucide:x" class="size-4" /></button>
       </div>
     </Transition>
 

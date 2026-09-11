@@ -1566,3 +1566,15 @@ Baseline atual500p952324ms; Nuxt LazyOrderCard/hydrate-on-visible p953186ms,
 20 amostras cada. Fluxo funcional passou, budget não. Candidata integralmente
 retirada, patch/logs/raw em lazy_hydration/. Não trocaram-se budgets, dados ou
 coorte para aprovação. Sem mudança de domínio/migration/efeito real.
+
+### WP06 — controles nativos da fila, catálogo e feeds
+
+Antes browser: switch36×20, Coleções32px e Aplicar abaixo48. Piso de44/48 via
+tokens compartilhados em botões/campos/labels destas páginas; switch de Feeds
+usa área44 com track36×20 interno, como catálogo. Nenhum gate, valor ou
+confirmação suprimido. Depois **26 integrações/49,6s**, **295 Vitest/6,45s**,
+build/typecheck; geometria e preservação de seleção após resposta perdida
+aprovadas. Medição de Aplicar aguarda actionability sem clicar (trial), para
+não confundir a animação de abertura com dimensão estável. Screenshot inspecionado.
+Sem DDL/efeito real; rollback só visual. Componentes auxiliares e links ainda
+são auditados separadamente; não é declaração de todo C07/AT concluído.

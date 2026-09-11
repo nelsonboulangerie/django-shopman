@@ -225,13 +225,22 @@ test("feed selection survives response loss and consults the same scoped receipt
   });
   await page.goto("/feeds");
   const feed = page.locator("article").filter({ hasText: lab.feed_name });
+  for (const control of [feed.getByRole("switch"), feed.getByRole("button", { name: "Coleções", exact: true })]) {
+    const box = await control.boundingBox();
+    expect.soft(box?.width).toBeGreaterThanOrEqual(44);
+    expect.soft(box?.height).toBeGreaterThanOrEqual(44);
+  }
   await feed.getByRole("button", { name: "Coleções", exact: true }).click();
+  await page.getByRole("button", { name: "Aplicar", exact: true }).click({ trial: true });
+  const applyBox = await page.getByRole("button", { name: "Aplicar", exact: true }).boundingBox();
+  expect.soft(applyBox?.height, "Aplicar: ação principal").toBeGreaterThanOrEqual(48);
   await page.getByLabel(new RegExp(lab.collection_name)).check();
   await page.getByRole("button", { name: "Aplicar", exact: true }).click();
   await expect(page.getByText("Coleções exibidas", { exact: true })).toHaveCount(0);
   await expect(feed.getByText(lab.collection_name, { exact: true })).toBeVisible();
   expect(posts).toBe(1);
   expect(lookups).toBe(1);
+  await feed.screenshot({ path: fileURLToPath(new URL("../../../../.orders-lab/integration-feed-targets.png", import.meta.url)) });
   const state = await (await page.request.get("/api/v1/backstage/feeds/")).json();
   expect(state.board.feeds.find((item: { ref: string }) => item.ref === lab.feed_ref).collections.map((item: { ref: string }) => item.ref)).toEqual([lab.collection_ref]);
 });

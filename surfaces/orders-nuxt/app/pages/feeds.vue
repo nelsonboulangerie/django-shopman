@@ -140,14 +140,15 @@ useHead({ title: "Feeds · Gestor" });
             </div>
             <button
               type="button" role="switch" :aria-checked="sc.is_active"
-              class="relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-40"
-              :class="sc.is_active ? 'bg-success' : 'bg-muted-foreground/30'"
+              class="inline-flex size-control shrink-0 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
               :disabled="isBusy(sc.ref) || !actionFor(sc, 'active')?.enabled"
               :aria-label="sc.is_active ? 'Pausar feed' : 'Ativar feed'"
               :title="sc.is_active ? 'Ativo — clique para pausar' : 'Pausado — clique para ativar'"
               @click="toggleActive(sc)"
             >
-              <span class="inline-block size-4 rounded-full bg-white shadow-sm transition-transform" :class="sc.is_active ? 'translate-x-4' : 'translate-x-0.5'"></span>
+              <span class="inline-flex h-5 w-9 items-center rounded-full transition-colors" :class="sc.is_active ? 'bg-success' : 'bg-muted-foreground/30'">
+                <span class="inline-block size-4 rounded-full bg-white shadow-sm transition-transform" :class="sc.is_active ? 'translate-x-4' : 'translate-x-0.5'"></span>
+              </span>
             </button>
           </div>
 
@@ -168,7 +169,7 @@ useHead({ title: "Feeds · Gestor" });
           <div class="mt-auto flex items-center gap-1.5 border-t border-border pt-3">
             <UiPopover :open="editRef === sc.ref" @update:open="(v) => { if (!v) editRef = null; else openEdit(sc); }">
               <UiPopoverTrigger as-child>
-                <button type="button" :disabled="!actionFor(sc, 'collections')?.enabled" :title="actionFor(sc, 'collections')?.reason" class="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition hover:bg-accent">
+                <button type="button" :disabled="!actionFor(sc, 'collections')?.enabled" :title="actionFor(sc, 'collections')?.reason" class="min-h-control min-w-control inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition hover:bg-accent">
                   <Icon name="lucide:layers" class="size-3.5" /> Coleções
                 </button>
               </UiPopoverTrigger>
@@ -182,7 +183,7 @@ useHead({ title: "Feeds · Gestor" });
                 <div class="max-h-60 overflow-auto">
                   <label
                     v-for="opt in allCollections" :key="opt.ref"
-                    class="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1.5 text-sm transition hover:bg-accent"
+                    class="flex min-h-control cursor-pointer items-center gap-2 rounded px-1.5 py-1.5 text-sm transition hover:bg-accent"
                   >
                     <input type="checkbox" :checked="draft.has(opt.ref)" class="size-4 rounded border-border accent-foreground" @change="toggleDraft(opt.ref)" />
                     <span class="flex-1 truncate">{{ opt.name }}</span>
@@ -190,8 +191,8 @@ useHead({ title: "Feeds · Gestor" });
                   </label>
                 </div>
                 <div class="mt-2 flex justify-end gap-1.5 border-t border-border pt-2">
-                  <button type="button" class="rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="delete collectionDrafts[sc.ref]; editRef = null">Descartar</button>
-                  <button type="button" :disabled="isBusy(sc.ref) || collectionConflict(sc) || !actionFor(sc, 'collections')?.enabled" class="rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyEdit(sc)">Aplicar</button>
+                  <button type="button" class="min-h-control min-w-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="delete collectionDrafts[sc.ref]; editRef = null">Descartar</button>
+                  <button type="button" :disabled="isBusy(sc.ref) || collectionConflict(sc) || !actionFor(sc, 'collections')?.enabled" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyEdit(sc)">Aplicar</button>
                 </div>
               </UiPopoverContent>
             </UiPopover>
@@ -202,7 +203,7 @@ useHead({ title: "Feeds · Gestor" });
             >
               <UiPopoverTrigger as-child>
                 <button
-                  type="button" :disabled="!actionFor(sc, 'rotation')?.enabled" class="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition hover:bg-accent"
+                  type="button" :disabled="!actionFor(sc, 'rotation')?.enabled" class="min-h-control min-w-control inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition hover:bg-accent"
                   :title="actionFor(sc, 'rotation')?.reason || (sc.rotate_seconds > 0 ? `Rotação de páginas: a cada ${sc.rotate_seconds} s, ${sc.items_per_page} itens por tela` : 'Rotação de páginas desligada')"
                 >
                   <Icon name="lucide:timer" class="size-3.5" />
@@ -217,28 +218,28 @@ useHead({ title: "Feeds · Gestor" });
                   <button type="button" class="min-h-11 underline" @click="resolveRotation(sc, false)">Usar valor atual</button>
                 </div>
                 <div class="grid gap-2">
-                  <label class="flex items-center justify-between gap-2 text-sm">
+                  <label class="min-h-control flex items-center justify-between gap-2 text-sm">
                     <span>Trocar a cada</span>
                     <span class="inline-flex items-center gap-1">
                       <input
                         v-model.number="draftSeconds" type="number" min="0" step="1" inputmode="numeric"
-                        class="h-8 w-16 rounded-md border border-border bg-background px-2 text-right text-sm tabular-nums"
+                        class="min-h-control h-8 w-16 rounded-md border border-border bg-background px-2 text-right text-sm tabular-nums"
                       />
                       <span class="text-xs text-muted-foreground">s</span>
                     </span>
                   </label>
-                  <label class="flex items-center justify-between gap-2 text-sm">
+                  <label class="min-h-control flex items-center justify-between gap-2 text-sm">
                     <span>Itens por tela</span>
                     <input
                       v-model.number="draftItems" type="number" min="0" step="1" inputmode="numeric"
-                      class="h-8 w-16 rounded-md border border-border bg-background px-2 text-right text-sm tabular-nums"
+                      class="min-h-control h-8 w-16 rounded-md border border-border bg-background px-2 text-right text-sm tabular-nums"
                     />
                   </label>
                 </div>
                 <p class="mt-2 text-xs text-muted-foreground/70">Zere os dois para mostrar tudo numa tela só, sem rotação.</p>
                 <div class="mt-2 flex justify-end gap-1.5 border-t border-border pt-2">
-                  <button type="button" class="rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="delete rotationDrafts[sc.ref]; rotationRef = null">Descartar</button>
-                  <button type="button" :disabled="isBusy(sc.ref) || rotationConflict(sc) || !actionFor(sc, 'rotation')?.enabled" class="rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyRotation(sc)">Aplicar</button>
+                  <button type="button" class="min-h-control min-w-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="delete rotationDrafts[sc.ref]; rotationRef = null">Descartar</button>
+                  <button type="button" :disabled="isBusy(sc.ref) || rotationConflict(sc) || !actionFor(sc, 'rotation')?.enabled" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyRotation(sc)">Aplicar</button>
                 </div>
               </UiPopoverContent>
             </UiPopover>

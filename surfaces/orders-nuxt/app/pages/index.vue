@@ -491,7 +491,7 @@ function printQueue() {
         <button
           v-if="confirmableSel.length"
           type="button"
-          class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
+          class="min-h-action min-w-action inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
           @click="bulkConfirm"
         >
           <Icon name="lucide:check" class="size-3.5" /> Aceitar {{ confirmableSel.length }}
@@ -499,12 +499,12 @@ function printQueue() {
         <button
           v-if="advanceableSel.length"
           type="button"
-          class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition hover:bg-accent"
+          class="min-h-control min-w-control inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition hover:bg-accent"
           @click="bulkAdvance"
         >
           <Icon name="lucide:arrow-right" class="size-3.5" /> Avançar {{ advanceableSel.length }}
         </button>
-        <button type="button" class="rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-accent" @click="clearSelection">
+        <button type="button" class="min-h-control min-w-control rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-accent" @click="clearSelection">
           Limpar
         </button>
       </div>
@@ -525,7 +525,7 @@ function printQueue() {
         <!-- no results across all zones for the active filters -->
         <p v-if="hasFilter && !visibleCount" class="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
           Nenhum pedido para os filtros atuais.
-          <button type="button" class="ml-1 font-medium text-primary hover:underline" @click="query = ''; channel = 'all'; fulfillment = 'all'">Limpar filtros</button>
+          <button type="button" class="min-h-control min-w-control ml-1 font-medium text-primary hover:underline" @click="query = ''; channel = 'all'; fulfillment = 'all'">Limpar filtros</button>
         </p>
 
         <!-- board view (clean, default) -->
@@ -667,7 +667,7 @@ function printQueue() {
                   <div class="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive dark:text-orange-300" role="alert">
                     <Icon name="lucide:alert-triangle" class="mt-px size-3.5 shrink-0" />
                     <span class="min-w-0 flex-1">{{ actionError(row.card.ref) }}</span>
-                    <button type="button" class="shrink-0 rounded p-0.5 transition hover:bg-destructive/20" aria-label="Dispensar aviso" @click="clearActionError(row.card.ref)">
+                    <button type="button" class="min-h-control min-w-control shrink-0 rounded p-0.5 transition hover:bg-destructive/20" aria-label="Dispensar aviso" @click="clearActionError(row.card.ref)">
                       <Icon name="lucide:x" class="size-3.5" />
                     </button>
                   </div>
@@ -721,7 +721,7 @@ function printQueue() {
         <p v-if="rejectReasonsLoading" class="text-sm text-muted-foreground">Carregando motivos do iFood…</p>
         <div v-else-if="rejectReasonsError" role="alert" class="text-sm text-destructive">
           <p>{{ rejectReasonsError }}</p>
-          <button type="button" class="underline" @click="loadRejectReasons">Consultar novamente</button>
+          <button type="button" class="min-h-control min-w-control underline" @click="loadRejectReasons">Consultar novamente</button>
         </div>
         <p v-else-if="isMarketplaceReject && !rejectReasons.length" class="text-sm">O iFood não oferece motivos de cancelamento neste momento.</p>
         <!-- Marketplace (iFood): coded reason picker from the provider's live list -->
@@ -741,15 +741,15 @@ function printQueue() {
           v-model="rejectReason"
           rows="3"
           placeholder="Motivo da recusa…"
-          class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+          class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
           aria-label="Motivo da recusa"
         />
         <UiDialogFooter>
-          <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="rejectRef = null">Cancelar</button>
+          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="rejectRef = null">Cancelar</button>
           <button
             type="button"
             :disabled="!canConfirmReject"
-            class="rounded-md border border-transparent bg-destructive px-3 py-2 text-sm font-semibold text-white transition hover:bg-destructive/90 disabled:opacity-50"
+            class="min-h-action min-w-action rounded-md border border-transparent bg-destructive px-3 py-2 text-sm font-semibold text-white transition hover:bg-destructive/90 disabled:opacity-50"
             @click="confirmReject"
           >
             Recusar pedido
@@ -771,14 +771,14 @@ function printQueue() {
             <template v-else>O que sai com o entregador ({{ dispatchRef }}).</template>
           </UiDialogDescription>
         </UiDialogHeader>
-        <label v-if="dispatchAsksChangeNow" class="flex items-center gap-2 text-sm">
+        <label v-if="dispatchAsksChangeNow" class="min-h-control flex items-center gap-2 text-sm">
           <span class="text-muted-foreground">R$</span>
           <input
             v-model="dispatchAmount"
             type="text"
             inputmode="decimal"
             placeholder="Ex.: 20,00"
-            class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+            class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
             aria-label="Troco que o entregador leva"
           />
         </label>
@@ -787,16 +787,16 @@ function printQueue() {
           <label
             v-for="opt in dispatchCard.equipment_options"
             :key="opt.ref"
-            class="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+            class="min-h-control flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
           >
             <input type="checkbox" :checked="dispatchEquipment.includes(opt.ref)" @change="toggleDispatchEquipment(opt.ref)" />
             <span>Levou a {{ opt.label.toLowerCase() }}</span>
           </label>
         </div>
         <UiDialogFooter>
-          <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dispatchRef = null">Cancelar</button>
-          <button v-if="dispatchAsksChangeNow" type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="confirmDispatch('0')">Saiu sem troco</button>
-          <button type="button" class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90" @click="confirmDispatch(dispatchAmount)">
+          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dispatchRef = null">Cancelar</button>
+          <button v-if="dispatchAsksChangeNow" type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="confirmDispatch('0')">Saiu sem troco</button>
+          <button type="button" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90" @click="confirmDispatch(dispatchAmount)">
             {{ dispatchAsksChangeNow ? "Levou o troco" : "Saiu para entrega" }}
           </button>
         </UiDialogFooter>
@@ -811,35 +811,35 @@ function printQueue() {
           <UiDialogDescription>Valor recebido na entrega ({{ settleRef }}). Em branco usa o total de {{ settleCard?.total_display }}. {{ settleCustody }}</UiDialogDescription>
         </UiDialogHeader>
         <p v-if="settleChanged" role="alert" class="text-sm text-destructive">O pedido ou turno mudou. Confira o contexto atual: {{ settleAction?.confirmation.description }}
-          <button type="button" class="underline" @click="reviewSettleCustody">Conferir e manter os valores digitados</button>
+          <button type="button" class="min-h-control min-w-control underline" @click="reviewSettleCustody">Conferir e manter os valores digitados</button>
         </p>
         <input
           v-model="settleAmount"
           type="text"
           inputmode="decimal"
           placeholder="Ex.: 15,00"
-          class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+          class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
           aria-label="Valor recebido"
         />
         <!-- o entregador levou troco da gaveta: quanto voltou (zero vale) -->
-        <label v-if="settleAsksChangeBack" class="flex flex-col gap-1 text-sm" data-change-back>
+        <label v-if="settleAsksChangeBack" class="min-h-control flex flex-col gap-1 text-sm" data-change-back>
           <span class="text-muted-foreground">{{ settleCard?.change_label }}. Quanto voltou?</span>
           <input
             v-model="settleChangeBack"
             type="text"
             inputmode="decimal"
             placeholder="0,00"
-            class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+            class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
             aria-label="Troco que voltou"
           />
         </label>
-        <label v-if="settleAsksEquipment" class="flex items-center gap-2 text-sm" data-equipment-back>
+        <label v-if="settleAsksEquipment" class="min-h-control flex items-center gap-2 text-sm" data-equipment-back>
           <input v-model="settleEquipmentBack" type="checkbox" />
           <span>{{ settleCard?.equipment_label }}. Voltou junto</span>
         </label>
         <UiDialogFooter>
-          <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="settleRef = null">Cancelar</button>
-          <button type="button" class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" :disabled="settleChanged || !settleAction?.enabled || (settleRef ? isBusy(settleRef) : false)" @click="confirmSettle">
+          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="settleRef = null">Cancelar</button>
+          <button type="button" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" :disabled="settleChanged || !settleAction?.enabled || (settleRef ? isBusy(settleRef) : false)" @click="confirmSettle">
             Confirmar acerto
           </button>
         </UiDialogFooter>
