@@ -1380,3 +1380,31 @@ repetir, responsabilidade por papel, correlacionar resultado/HTTP, custódia fí
 unknown e consumidores antigos; removida recomendação de lote genérico para
 “destravar”. Sem nova fila/regra/alerta pessoal. WP08 ainda parcial para placar
 completo/owners/SLA e ensaio de retomada por outra pessoa; G01/G03 permanecem.
+
+### WP09 — suíte ampla fixa f0cbb2752 verde
+
+**8.713 passed, 68 skipped, 3 warnings, 38 subtests, 524,21s**, SQLite/xdist2/-rs,
+worktree imutável limpo após execução. Log `orders-20260910/broad-f0cbb2752.txt`.
+As duas falhas da rodada e5fae331e foram corrigidas; esta é nova execução completa,
+não soma de testes direcionados. Ainda não inclui o incremento fiscal abaixo;
+UI ddd8f981a tem seus próprios checks/browser registrados, posteriores ao snapshot.
+
+### WP01/WP04 — a evidência fiscal sobrevive à mudança de configuração
+
+Revalidação: 4 testes falharam no HEAD084f2b9eb. Com backend removido, Directive
+failed/queued/running/done aparecia como “Fiscal não solicitado”. A configuração
+atual governa emissões novas, não apaga a tentativa existente. Projection agora
+prioriza prova fiscal autorizada/cancelada e estado da Directive antes da expectativa
+para nova emissão; done sem chave autorizada continua pendente, sem sucesso falso.
+Estados obtidos em lote por leitura da fila (também na fila legada), uma consulta
+canônica para os 20 pedidos do ensaio; não há cache entre requests/fonte paralela.
+
+**36 PostgreSQL/6,04s**, depois **109 PostgreSQL +13 subtests/6,44s** (fila, metadata,
+trabalho de leitura, fiscal/requeue/resolver/handlers). Prova de 20 cards com falha
+visível e exatamente uma consulta fiscal. Logs em `orders-20260910/fiscal_evidence/`.
+Ruff/diff check aprovados. Sem DDL/reconciliação/emissão real. Rollback de código
+volta a ocultar a evidência quando backend ausente; manter leitura atual durante
+recuperação. Regra madura de requeue foi lida e preservada: backend é responsabilidade
+do handler; o incremento não inventa elegibilidade fiscal nem resolve G03.
+Validação após desempate determinístico created_at/pk: 5 casos fiscais aprovados
+em 4,48s. Ruff do checkout inteiro aprovado em `.orders-lab/ruff-current.txt`.

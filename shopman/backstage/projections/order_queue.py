@@ -447,7 +447,8 @@ def build_order_queue(
     payment_reads = payment_svc.read_payments_for(filtered)
     channel_configs = _channel_configs_for(filtered)
     cash_context = _cash_settlement_context(filtered)
-    cards = tuple(_build_card(o, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), courier_change=courier_change, waitlist_states=waitlist_states, payment_reads=payment_reads) for o in filtered)
+    fiscal_states = _fiscal_states_for(filtered)
+    cards = tuple(_build_card(o, fiscal_states=fiscal_states, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), courier_change=courier_change, waitlist_states=waitlist_states, payment_reads=payment_reads) for o in filtered)
 
     return OrderQueueProjection(
         orders=cards,
@@ -977,6 +978,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     payment_reads = payment_svc.read_payments_for(all_orders)
     channel_configs = _channel_configs_for(all_orders)
     cash_context = _cash_settlement_context(all_orders)
+    fiscal_states = _fiscal_states_for(all_orders)
     # Rótulos canônicos resolvidos uma vez por chave nesta leitura, sem cache
     # entre requests: uma edição de copy aparece na próxima projeção.
     status_labels = {status: order_status_label(status) for status in {order.status for order in all_orders}}
@@ -993,12 +995,12 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     # mantém o prazo de confirmação (auto-confirm) e o botão de aceitar; o
     # despertador (preorder.activate) devolve o pedido ao fluxo na data (WP-D).
     intake = tuple(
-        _build_card(o, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
+        _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
         for o in new_orders
         if not _is_future_preorder(o)
     )
     prep_orders = [o for o in all_orders if o.status in ("accepted", "preparing")]
-    prep = tuple(_build_card(o, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in prep_orders if not _is_future_preorder(o))
+    prep = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in prep_orders if not _is_future_preorder(o))
     # Só estados pré-fulfillment viram "Agendados"; ready/dispatched/delivered
     # seguem nas colunas de expedição mesmo que a data combinada seja futura.
     future_preorders = [
@@ -1006,16 +1008,16 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         if o.status in ("new", "accepted", "preparing") and _is_future_preorder(o)
     ]
     preorders = tuple(
-        _build_card(o, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
+        _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
         for o in sorted(future_preorders, key=lambda o: (get_commitment_date(o), o.created_at))
     )
     preparing_count = len(prep)
 
     ready_orders = [o for o in all_orders if o.status == "ready"]
-    expedition_pickup = tuple(_build_card(o, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user) for o in ready_orders if not _is_delivery(o))
-    expedition_delivery = tuple(_build_card(o, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in ready_orders if _is_delivery(o))
+    expedition_pickup = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user) for o in ready_orders if not _is_delivery(o))
+    expedition_delivery = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in ready_orders if _is_delivery(o))
     expedition_delivery_transit = tuple(
-        _build_card(o, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change)
+        _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change)
         for o in all_orders
         if o.status in ("dispatched", "delivered")
     )
@@ -1139,6 +1141,7 @@ def _build_card(
     cash_context=None,
     status_labels=None,
     method_labels=None,
+    fiscal_states=None,
 ) -> OrderCardProjection:
     now = timezone.now()
     elapsed = (now - order.created_at).total_seconds()
@@ -1177,7 +1180,9 @@ def _build_card(
     method = payment_data.get("method", "")
     payment_status = (payment_svc.get_payment_status(order, payment_reads=payment_reads) or "")
     payment_method_label = _payment_method_label(method, payment_data, labels=method_labels)
-    fiscal_status, fiscal_status_label, _fiscal_links = _fiscal_status(order)
+    fiscal_status, fiscal_status_label, _fiscal_links = _fiscal_status(
+        order, directive_status=fiscal_states.get(order.ref, "") if fiscal_states is not None else None,
+    )
     commitment = get_commitment_date(order)
     is_preorder = commitment is not None and commitment > timezone.localdate()
     waitlist_state, waitlist_deadline_iso, waitlist_label = _waitlist_badge(order, states=waitlist_states)
@@ -1586,7 +1591,7 @@ def _format_time_of_day(dt) -> str:
     return f"em {local:%d/%m} às {hour}"
 
 
-def _fiscal_status(order: Order) -> tuple[str, str, tuple[dict[str, str], ...]]:
+def _fiscal_status(order: Order, *, directive_status: str | None = None) -> tuple[str, str, tuple[dict[str, str], ...]]:
     data = order.data or {}
     if data.get("nfce_cancelled"):
         status = "cancelled"
@@ -1594,20 +1599,19 @@ def _fiscal_status(order: Order) -> tuple[str, str, tuple[dict[str, str], ...]]:
     elif data.get("nfce_access_key"):
         status = "authorized"
         label = "NFC-e autorizada"
-    elif not _fiscal_emission_expected(order):
-        # A mesma regra que decide emitir decide o rótulo. Perguntar só ao
-        # toggle escondia como "não solicitado" a falha da nota de cartão/pix
-        # e a do fiado — casos em que o resolver emite sem o operador marcar.
-        status = "not_requested"
-        label = "Fiscal não solicitado"
     else:
-        directive_status = _latest_fiscal_directive_status(order.ref)
+        if directive_status is None:
+            directive_status = _latest_fiscal_directive_status(order.ref)
+        # Configuration governs new emission; it cannot erase an existing attempt.
         if directive_status == "failed":
             status = "failed"
             label = "NFC-e com falha"
-        elif directive_status in {"queued", "running"}:
+        elif directive_status in {"queued", "running", "done"}:
             status = "pending"
             label = "NFC-e pendente"
+        elif not _fiscal_emission_expected(order):
+            status = "not_requested"
+            label = "Fiscal não solicitado"
         elif order.status != Order.Status.COMPLETED:
             status = "waiting_completion"
             label = "Fiscal na conclusão"
@@ -1633,6 +1637,24 @@ def _fiscal_emission_expected(order: Order) -> bool:
         return bool(((order.data or {}).get("fiscal") or {}).get("issue_document"))
 
 
+def _fiscal_states_for(orders) -> dict[str, str]:
+    """Latest canonical Directive evidence in one query for this read only."""
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.directives import FISCAL_EMIT_NFCE
+
+    refs = [order.ref for order in orders]
+    if not refs:
+        return {}
+    result = {}
+    rows = Directive.objects.filter(
+        topic=FISCAL_EMIT_NFCE, payload__order_ref__in=refs,
+    ).order_by("-created_at", "-pk").values_list("payload__order_ref", "status")
+    for ref, status in rows:
+        result.setdefault(ref, status)
+    return result
+
+
 def _latest_fiscal_directive_status(order_ref: str) -> str:
     try:
         from shopman.orderman.models import Directive
@@ -1643,7 +1665,7 @@ def _latest_fiscal_directive_status(order_ref: str) -> str:
         return ""
     directive = (
         Directive.objects.filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order_ref)
-        .order_by("-created_at")
+        .order_by("-created_at", "-pk")
         .first()
     )
     return directive.status if directive else ""
