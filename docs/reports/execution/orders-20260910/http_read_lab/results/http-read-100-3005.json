@@ -1,0 +1,1186 @@
+{
+  "n": 100,
+  "platform": "macOS-15.4.1-arm64-arm-64bit",
+  "logical_cpus": 8,
+  "memory_bytes": 8589934592,
+  "transport": "HTTP to one Daphne process, localhost PostgreSQL/Redis, no renderer",
+  "via_bff": true,
+  "observations": {
+    "queue_1": {
+      "first_request": {
+        "http_ms": 72.05566600896418,
+        "backend_ms": null,
+        "process_cpu_window_ms": null,
+        "queries": null,
+        "hold_queries": null,
+        "rss_bytes": null,
+        "bytes": 331486
+      },
+      "samples": [
+        {
+          "http_ms": 61.32887495914474,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 60.03508303547278,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 61.45762500818819,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 65.32441702438518,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 59.4524999614805,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 62.708458048291504,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 59.7965830238536,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 59.149292006623,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 136.18654099991545,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 61.52137502795085,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 60.90604100609198,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 59.55816700588912,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 59.814542008098215,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 58.422959002200514,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 59.17700001737103,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 60.71254098787904,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 61.72341702040285,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 63.20962501922622,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 58.68062499212101,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 60.63479097792879,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        }
+      ],
+      "http_p50_ms": 60.67366598290391,
+      "http_p95_ms": 65.32441702438518,
+      "backend_p95_ms": null
+    },
+    "queue_2": {
+      "first_request": {
+        "http_ms": 72.05566600896418,
+        "backend_ms": null,
+        "process_cpu_window_ms": null,
+        "queries": null,
+        "hold_queries": null,
+        "rss_bytes": null,
+        "bytes": 331486
+      },
+      "samples": [
+        {
+          "http_ms": 102.9497500276193,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 100.262375024613,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 192.02120800036937,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 192.20895797479898,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 100.51104199374095,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 101.6226249630563,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 106.58774996409193,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 99.93424999993294,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 100.35816702293232,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 100.49774998333305,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 100.37483304040506,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 100.3894999739714,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 102.73879201849923,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 97.18287503346801,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 165.38074996788055,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 160.5389579781331,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 102.0699159707874,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 102.34995797509328,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 99.77454098407179,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 99.30812497623265,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        }
+      ],
+      "http_p50_ms": 101.06683347839862,
+      "http_p95_ms": 192.02120800036937,
+      "backend_p95_ms": null
+    },
+    "queue_10": {
+      "first_request": {
+        "http_ms": 72.05566600896418,
+        "backend_ms": null,
+        "process_cpu_window_ms": null,
+        "queries": null,
+        "hold_queries": null,
+        "rss_bytes": null,
+        "bytes": 331486
+      },
+      "samples": [
+        {
+          "http_ms": 467.1700829640031,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 420.0952909886837,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 588.5655419551767,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 547.9032089933753,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 595.2412919723429,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 535.2036249823868,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 601.0889579774812,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 597.92849997757,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 602.6904170284979,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 612.1476669795811,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331486
+        },
+        {
+          "http_ms": 523.873874975834,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331586
+        },
+        {
+          "http_ms": 432.83683399204165,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331586
+        },
+        {
+          "http_ms": 405.50912503385916,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331586
+        },
+        {
+          "http_ms": 391.65462501114234,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331586
+        },
+        {
+          "http_ms": 540.9105000435375,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331586
+        },
+        {
+          "http_ms": 547.6466250256635,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331586
+        },
+        {
+          "http_ms": 542.9127500392497,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331586
+        },
+        {
+          "http_ms": 548.1177080073394,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331586
+        },
+        {
+          "http_ms": 533.347041986417,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331586
+        },
+        {
+          "http_ms": 534.1468330007046,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 331586
+        }
+      ],
+      "http_p50_ms": 541.9116250413936,
+      "http_p95_ms": 602.6904170284979,
+      "backend_p95_ms": null
+    },
+    "detail_1": {
+      "first_request": {
+        "http_ms": 23.199290968477726,
+        "backend_ms": null,
+        "process_cpu_window_ms": null,
+        "queries": null,
+        "hold_queries": null,
+        "rss_bytes": null,
+        "bytes": 4912
+      },
+      "samples": [
+        {
+          "http_ms": 20.028250000905246,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 19.699416996445507,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 19.363167055416852,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 19.603291992098093,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 18.149042036384344,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 19.258250016719103,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 19.793500017840415,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 19.738667004276067,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 19.224249990656972,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 19.302250002510846,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 19.19858402106911,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 20.132957957684994,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 19.608375034295022,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 19.76766699226573,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 19.131874956656247,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 19.03304102597758,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 19.485166005324572,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 19.881749991327524,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 19.252291007433087,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 19.419249962083995,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        }
+      ],
+      "http_p50_ms": 19.452207983704284,
+      "http_p95_ms": 20.028250000905246,
+      "backend_p95_ms": null
+    },
+    "detail_2": {
+      "first_request": {
+        "http_ms": 23.199290968477726,
+        "backend_ms": null,
+        "process_cpu_window_ms": null,
+        "queries": null,
+        "hold_queries": null,
+        "rss_bytes": null,
+        "bytes": 4912
+      },
+      "samples": [
+        {
+          "http_ms": 24.163583002518862,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 24.52708297641948,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 25.550958001986146,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 25.465959042776376,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 23.699166951701045,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 23.76066701253876,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 24.448333017062396,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 24.450416036415845,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 22.983958013355732,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 23.027083021588624,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 24.5995830046013,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 24.5634579914622,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 23.339209030382335,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 23.212000029161572,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 25.30758298235014,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 24.499000050127506,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 23.680166981648654,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 22.964958974625915,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 24.32708302512765,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 23.851500009186566,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        }
+      ],
+      "http_p50_ms": 24.245333013823256,
+      "http_p95_ms": 25.465959042776376,
+      "backend_p95_ms": null
+    },
+    "detail_10": {
+      "first_request": {
+        "http_ms": 23.199290968477726,
+        "backend_ms": null,
+        "process_cpu_window_ms": null,
+        "queries": null,
+        "hold_queries": null,
+        "rss_bytes": null,
+        "bytes": 4912
+      },
+      "samples": [
+        {
+          "http_ms": 89.59954098099843,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 86.26358304172754,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 94.10420898348093,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 93.79304200410843,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 91.10279200831428,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 96.78441699361429,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 97.25320897996426,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 93.35745801217854,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 84.50320898555219,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 94.84795900061727,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 87.47470797970891,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 91.65274997940287,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 95.86845902958885,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 93.51854101987556,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 87.44454098632559,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 89.56754201790318,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 86.48129197536036,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 83.91154097625986,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 88.55099999345839,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        },
+        {
+          "http_ms": 84.48312501423061,
+          "backend_ms": null,
+          "process_cpu_window_ms": null,
+          "queries": null,
+          "hold_queries": null,
+          "rss_bytes": null,
+          "bytes": 4912
+        }
+      ],
+      "http_p50_ms": 90.35116649465635,
+      "http_p95_ms": 96.78441699361429,
+      "backend_p95_ms": null
+    }
+  }
+}

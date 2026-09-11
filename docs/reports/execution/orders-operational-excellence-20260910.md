@@ -1062,3 +1062,39 @@ A interface conserva somente metadata de leitura bem-sucedida junto do recurso. 
 Validação: **124 PostgreSQL em 27,32 s**, **277 Vitest**, typecheck/Ruff/build. Inclui geração pelo relógio do servidor, falha sem avanço da marca, troca de recurso, convivência com envelope antigo e relógio local ±5 minutos. Quatro jornadas Chromium/Nitro/Daphne passaram em **7,6 s**, mantendo horário na falha em cada página. Primeira tentativa de navegador: 1 passou/3 falharam; seletor da fila omitia o atalho do nome acessível, e duas leituras válidas on-open ainda estavam em voo quando o teste capturou horário. Corrigida preparação para aguardar falha visível e verificar que a próxima falha conserva a última marca útil. Logs iniciais preservados, sem alteração de código produtivo para atender ao erro da fixture.
 
 Migração: nenhuma; metadata aditiva, leitores antigos ignoram, novo leitor tolera ausência. Rollback retira indicação sem mudar Actions/recibos. A idade é da geração da leitura, não prova de consistência transacional de todo o snapshot nem de efeito remoto. G06 ainda requer aparelhos/rede e budgets homologados; não constitui piloto.
+
+### WP07 — HTTP, BFF e renderização ricos em 8a016ae2e
+
+Ensaio sequencial completo em PostgreSQL/Redis exclusivos, Daphne/Nitro locais,
+Chromium desktop: 1/10/100/500 pedidos, três itens fracionários, seis eventos,
+pagamento capturado e Hold planejado por pedido. HTTP direto e BFF: fila e
+pedido, 20 amostras por concorrência 1/2/10, mais primeira requisição. Navegador:
+20 páginas por carga (80 ao todo), quatro execuções Playwright aprovadas.
+Login excluído desta cronometragem técnica; não pode ser excluído de E integral.
+
+Evidências reproduzíveis: `orders-20260910/http_read_lab/README.md` e
+`results/summary.md`, com distribuições JSON completas, hardware, CPU/RSS,
+payload e queries. Cabeçalhos de laboratório incluem autenticação/serialização;
+BFF não os repassa. CPU de janela concorrente não é CPU exclusiva por request.
+Primeira requisição não implica banco/processo/OS totalmente frio.
+
+**Budget não atingido:** 500 pedidos/10 clientes: backend fila p95 3180,3 ms
+(meta 500 ms); renderização/filtragem autenticada p95 2473 ms (meta 1500 ms).
+Fila 500 com um/dois clientes: backend p95 434,5/478,0 ms. Navegador 1/10/100:
+p95 509/318/715 ms. Sem alteração silenciosa de meta e sem conclusão WP07/T.
+A funcionalidade dos 80 percursos passou; desempenho da carga maior exige
+investigação/otimização e reensaio. G06 continua pendente, não autoriza relaxar
+R=0/P0 ou anunciar ganho em campo.
+
+Falhas de preparação registradas no README: runtimes ausentes (Daphne maduro
+adotado), requisitos Doorman em DEBUG=False, seletor textbox incorreto,
+conexões esgotadas ao herdar age=60 sem pool (guia existente prescreve age=0),
+e duas limpezas recusadas pela proteção/imutabilidade do livro Payman. A fixture
+final **conserva transações**, não contorna o domínio. Após as cargas, consulta
+agregada pg_stat_activity não encontrou conexões residuais nos bancos orders.
+Nenhum processo de terceiro, banco real, segredo ou chamada externa utilizado.
+
+Migração: nenhuma. Rollback deste pacote de ensaio: parar servidores próprios;
+artefatos não entram na aplicação. Não remover livros/chaves reais nem usar o
+runner fora das portas/base sintéticas fixas. Implementação técnica/piloto/
+rollout continuam distintos: aqui há medição local, não homologação operacional.
