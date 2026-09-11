@@ -6,9 +6,11 @@ Nenhum operador, ambiente real, canal, fornecedor ou janela está autorizado aqu
 
 ## Condições de entrada
 
-WP09 deve apresentar aceite técnico antes de WP10. No laboratório atual, os
-budgets de 500 pedidos/10 clientes e tela utilizável ainda falham; observabilidade
-e demais coberturas permanecem em fechamento. Esses resultados impedem declarar T.
+WP09 deve apresentar aceite técnico antes de WP10. Na rodada922fb522c, os budgets
+locais passaram com cinco leitores (backend p95451,290 ms em10 clientes; tela500
+p951329 ms). Quatro leitores falham; topologia/rede reais não homologadas. Evidências
+em performance_completion/README.md. Retomada pós-reload aguarda G05/G08, e demais
+limites da matriz CURRENT-STATUS permanecem abertos; não se declara T.
 Operações deve identificar 3–5 participantes representativos, ou toda a equipe se
 menor, com papéis aprovados por G01. Não registrar seus dados pessoais nesta pasta.
 
@@ -89,3 +91,11 @@ Anexar CSV preenchido, distribuições, falhas, limites, reconciliação e assin
 Não colocar nota de cliente, endereço, telefone, token ou cartão na coleta. Referências
 de recursos ficam em trilha controlada, não em labels de métricas. Retenção depende
 de G08. Esta preparação não tem migration; rollback documental não apaga evidência.
+
+## Decisão de retenção apresentada — pendente
+
+Proposta G05/G08: rascunhos e chaves na aba atual, retomados somente pela mesma
+pessoa autenticada; limpar ao salvar, descartar ou fechar; sem PIN/senha e sem
+compartilhamento entre aparelhos. Alternativa: memória e confirmação antes de
+sair, mantendo retomada após reload pendente. Sem resposta registrada, a persistência
+não foi implementada. Essa decisão não autoriza piloto ou efeitos reais.

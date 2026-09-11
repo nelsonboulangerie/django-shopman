@@ -1,0 +1,1231 @@
+{
+  "platform": "macOS-15.4.1-arm64-arm-64bit",
+  "logical_cpus": 8,
+  "memory_bytes": 8589934592,
+  "first_request_each_process": [
+    {
+      "port": 8016,
+      "http_ms": 832.5036250171252,
+      "backend_ms": 812.416,
+      "queries": 15,
+      "hold_queries": 1,
+      "process_rss_bytes": 187138048,
+      "bytes": 1658409
+    },
+    {
+      "port": 8017,
+      "http_ms": 744.635124981869,
+      "backend_ms": 733.478,
+      "queries": 15,
+      "hold_queries": 1,
+      "process_rss_bytes": 192069632,
+      "bytes": 1658409
+    },
+    {
+      "port": 8018,
+      "http_ms": 951.2922909925692,
+      "backend_ms": 931.712,
+      "queries": 15,
+      "hold_queries": 1,
+      "process_rss_bytes": 179847168,
+      "bytes": 1658409
+    },
+    {
+      "port": 8019,
+      "http_ms": 883.757458999753,
+      "backend_ms": 863.252,
+      "queries": 15,
+      "hold_queries": 1,
+      "process_rss_bytes": 187875328,
+      "bytes": 1658409
+    },
+    {
+      "port": 8020,
+      "http_ms": 746.2590000359342,
+      "backend_ms": 729.99,
+      "queries": 15,
+      "hold_queries": 1,
+      "process_rss_bytes": 193642496,
+      "bytes": 1658409
+    }
+  ],
+  "results": [
+    {
+      "processes": 4,
+      "clients": 1,
+      "samples": [
+        {
+          "port": 8016,
+          "http_ms": 139.7725410060957,
+          "backend_ms": 124.024,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 94109696,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 121.9981659669429,
+          "backend_ms": 114.577,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 94552064,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 124.79620898375288,
+          "backend_ms": 114.507,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 93274112,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 108.34487498505041,
+          "backend_ms": 103.245,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 125730816,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 101.60541697405279,
+          "backend_ms": 97.661,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 101515264,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 100.74983298545703,
+          "backend_ms": 96.952,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 107200512,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 99.47329200804234,
+          "backend_ms": 94.408,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 104792064,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 101.72791697550565,
+          "backend_ms": 97.441,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 128008192,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 102.04174998216331,
+          "backend_ms": 98.126,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 108363776,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 100.90916702756658,
+          "backend_ms": 96.839,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 109461504,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 100.2620420185849,
+          "backend_ms": 96.042,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 108707840,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 100.31316697131842,
+          "backend_ms": 96.235,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 115130368,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 176.5917909797281,
+          "backend_ms": 172.123,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 188612608,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 195.80654200399294,
+          "backend_ms": 191.432,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 191348736,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 183.96433303132653,
+          "backend_ms": 179.848,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 189480960,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 182.92733404086903,
+          "backend_ms": 178.563,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 189284352,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 129.5502909924835,
+          "backend_ms": 115.611,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 180600832,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 125.60412503080443,
+          "backend_ms": 120.332,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 182173696,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 109.00579101871699,
+          "backend_ms": 102.372,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 186335232,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 103.24200004106387,
+          "backend_ms": 97.913,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 186482688,
+          "bytes": 1658409
+        }
+      ],
+      "http_ms": {
+        "p50": 108.34487498505041,
+        "p95": 183.96433303132653,
+        "max": 195.80654200399294
+      },
+      "backend_ms": {
+        "p50": 102.372,
+        "p95": 179.848,
+        "max": 191.432
+      }
+    },
+    {
+      "processes": 4,
+      "clients": 2,
+      "samples": [
+        {
+          "port": 8016,
+          "http_ms": 110.76958401827142,
+          "backend_ms": 103.118,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 181944320,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 119.61916700238362,
+          "backend_ms": 103.61,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 189349888,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 119.22300001606345,
+          "backend_ms": 103.12,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 185040896,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 118.28004196286201,
+          "backend_ms": 103.174,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 186499072,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 137.98266695812345,
+          "backend_ms": 107.965,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 109297664,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 110.4057909687981,
+          "backend_ms": 105.281,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 187334656,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 154.73424998344854,
+          "backend_ms": 136.449,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 141918208,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 140.39654098451138,
+          "backend_ms": 133.344,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 186892288,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 256.6536249942146,
+          "backend_ms": 243.834,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 187809792,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 254.38387505710125,
+          "backend_ms": 239.976,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 183992320,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 242.55087500205263,
+          "backend_ms": 235.071,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 184500224,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 246.39320897404104,
+          "backend_ms": 234.015,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 186875904,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 115.41854200186208,
+          "backend_ms": 110.206,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 184500224,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 111.39037500834092,
+          "backend_ms": 105.727,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 184549376,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 116.10408400883898,
+          "backend_ms": 110.889,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 189726720,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 115.83583400351927,
+          "backend_ms": 110.546,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 193445888,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 123.56241699308157,
+          "backend_ms": 118.668,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 111017984,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 123.27412498416379,
+          "backend_ms": 116.445,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 126517248,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 117.6697090268135,
+          "backend_ms": 112.003,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 185843712,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 117.55941598676145,
+          "backend_ms": 110.898,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 186335232,
+          "bytes": 1658409
+        }
+      ],
+      "http_ms": {
+        "p50": 119.22300001606345,
+        "p95": 254.38387505710125,
+        "max": 256.6536249942146
+      },
+      "backend_ms": {
+        "p50": 110.889,
+        "p95": 239.976,
+        "max": 243.834
+      }
+    },
+    {
+      "processes": 4,
+      "clients": 10,
+      "samples": [
+        {
+          "port": 8016,
+          "http_ms": 568.9374579815194,
+          "backend_ms": 509.85,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 191397888,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 548.3682919875719,
+          "backend_ms": 478.563,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 187252736,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 420.9530840162188,
+          "backend_ms": 395.663,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 189202432,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 447.9398330440745,
+          "backend_ms": 413.543,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 187678720,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 587.1479159686714,
+          "backend_ms": 523.627,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 191496192,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 621.3371670455672,
+          "backend_ms": 576.28,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 201244672,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 408.3706249948591,
+          "backend_ms": 397.982,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 192135168,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 438.0047919694334,
+          "backend_ms": 422.586,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 194674688,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 604.6264170436189,
+          "backend_ms": 551.098,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 202440704,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 657.0916670025326,
+          "backend_ms": 565.553,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 195428352,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 216.3222079980187,
+          "backend_ms": 148.218,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 194019328,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 215.17112501896918,
+          "backend_ms": 149.507,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 200900608,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 306.3746250118129,
+          "backend_ms": 202.627,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 196608000,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 352.8285420034081,
+          "backend_ms": 225.254,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 193052672,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 176.9855419988744,
+          "backend_ms": 158.609,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 194740224,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 218.59379101078957,
+          "backend_ms": 182.798,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 190529536,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 480.2700420259498,
+          "backend_ms": 472.923,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 194740224,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 446.5288339997642,
+          "backend_ms": 430.088,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 189087744,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 455.9374999953434,
+          "backend_ms": 383.683,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 190431232,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 365.89025001740083,
+          "backend_ms": 277.138,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 100646912,
+          "bytes": 1658409
+        }
+      ],
+      "http_ms": {
+        "p50": 438.0047919694334,
+        "p95": 621.3371670455672,
+        "max": 657.0916670025326
+      },
+      "backend_ms": {
+        "p50": 397.982,
+        "p95": 565.553,
+        "max": 576.28
+      }
+    },
+    {
+      "processes": 5,
+      "clients": 1,
+      "samples": [
+        {
+          "port": 8016,
+          "http_ms": 102.3312920005992,
+          "backend_ms": 97.177,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 200032256,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 120.60429097618908,
+          "backend_ms": 112.834,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 188071936,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 106.6736250068061,
+          "backend_ms": 101.977,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 189218816,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 211.44683298189193,
+          "backend_ms": 206.662,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 189202432,
+          "bytes": 1658409
+        },
+        {
+          "port": 8020,
+          "http_ms": 160.31591698992997,
+          "backend_ms": 152.322,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 94732288,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 109.73270901013166,
+          "backend_ms": 105.151,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 104087552,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 110.805457981769,
+          "backend_ms": 105.759,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 100614144,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 122.7868749992922,
+          "backend_ms": 112.951,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 99319808,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 115.05783401662484,
+          "backend_ms": 107.748,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 182468608,
+          "bytes": 1658409
+        },
+        {
+          "port": 8020,
+          "http_ms": 108.23591699590907,
+          "backend_ms": 103.982,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 102105088,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 113.78529202193022,
+          "backend_ms": 108.658,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 100696064,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 109.89825002616271,
+          "backend_ms": 104.128,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 101892096,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 107.0151660242118,
+          "backend_ms": 102.532,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 99483648,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 106.1373749980703,
+          "backend_ms": 101.395,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 168034304,
+          "bytes": 1658409
+        },
+        {
+          "port": 8020,
+          "http_ms": 101.9567500334233,
+          "backend_ms": 96.865,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 109821952,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 201.5837500221096,
+          "backend_ms": 195.971,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 186810368,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 178.42112499056384,
+          "backend_ms": 174.2,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 185319424,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 198.9112920127809,
+          "backend_ms": 192.894,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 185335808,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 225.37695802748203,
+          "backend_ms": 219.437,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 183320576,
+          "bytes": 1658409
+        },
+        {
+          "port": 8020,
+          "http_ms": 207.5820830068551,
+          "backend_ms": 201.803,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 188579840,
+          "bytes": 1658409
+        }
+      ],
+      "http_ms": {
+        "p50": 113.78529202193022,
+        "p95": 211.44683298189193,
+        "max": 225.37695802748203
+      },
+      "backend_ms": {
+        "p50": 107.748,
+        "p95": 206.662,
+        "max": 219.437
+      }
+    },
+    {
+      "processes": 5,
+      "clients": 2,
+      "samples": [
+        {
+          "port": 8016,
+          "http_ms": 160.2298750076443,
+          "backend_ms": 134.264,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 95617024,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 150.6830840371549,
+          "backend_ms": 134.441,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 177307648,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 111.15650000283495,
+          "backend_ms": 104.559,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 183877632,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 112.74945799959823,
+          "backend_ms": 101.864,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 182714368,
+          "bytes": 1658409
+        },
+        {
+          "port": 8020,
+          "http_ms": 113.07858303189278,
+          "backend_ms": 107.243,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 186728448,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 112.21054202178493,
+          "backend_ms": 104.492,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 105562112,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 105.91429198393598,
+          "backend_ms": 101.526,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 108150784,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 105.80870899138972,
+          "backend_ms": 100.528,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 140476416,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 109.65995903825387,
+          "backend_ms": 105.215,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 190660608,
+          "bytes": 1658409
+        },
+        {
+          "port": 8020,
+          "http_ms": 109.85499998787418,
+          "backend_ms": 102.341,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 193216512,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 124.16166596813127,
+          "backend_ms": 119.11,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 107085824,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 125.7973329629749,
+          "backend_ms": 121.034,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 107249664,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 155.91099997982383,
+          "backend_ms": 141.459,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 100909056,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 131.84808404184878,
+          "backend_ms": 124.056,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 100106240,
+          "bytes": 1658409
+        },
+        {
+          "port": 8020,
+          "http_ms": 133.91466700704768,
+          "backend_ms": 127.41,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 103088128,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 213.2757919607684,
+          "backend_ms": 205.106,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 184287232,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 211.05454198550433,
+          "backend_ms": 206.004,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 185384960,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 203.09591700788587,
+          "backend_ms": 197.037,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 185843712,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 208.90745898941532,
+          "backend_ms": 201.765,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 184369152,
+          "bytes": 1658409
+        },
+        {
+          "port": 8020,
+          "http_ms": 193.31212504766881,
+          "backend_ms": 188.191,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 185352192,
+          "bytes": 1658409
+        }
+      ],
+      "http_ms": {
+        "p50": 125.7973329629749,
+        "p95": 211.05454198550433,
+        "max": 213.2757919607684
+      },
+      "backend_ms": {
+        "p50": 121.034,
+        "p95": 205.106,
+        "max": 206.004
+      }
+    },
+    {
+      "processes": 5,
+      "clients": 10,
+      "samples": [
+        {
+          "port": 8016,
+          "http_ms": 374.45004197070375,
+          "backend_ms": 292.029,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 167854080,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 312.9054159508087,
+          "backend_ms": 213.321,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 184877056,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 342.0794999692589,
+          "backend_ms": 280.538,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 190382080,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 400.4861250286922,
+          "backend_ms": 293.934,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 194199552,
+          "bytes": 1658409
+        },
+        {
+          "port": 8020,
+          "http_ms": 271.3957499945536,
+          "backend_ms": 259.558,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 185270272,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 388.4472920326516,
+          "backend_ms": 291.877,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 173260800,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 415.2532499865629,
+          "backend_ms": 296.664,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 192102400,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 325.69512497866526,
+          "backend_ms": 279.388,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 190611456,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 356.60162498243153,
+          "backend_ms": 282.72,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 186105856,
+          "bytes": 1658409
+        },
+        {
+          "port": 8020,
+          "http_ms": 288.78537501441315,
+          "backend_ms": 259.568,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 189775872,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 370.8740830188617,
+          "backend_ms": 322.534,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 187138048,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 307.5338340131566,
+          "backend_ms": 281.46,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 188383232,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 299.97754201758653,
+          "backend_ms": 279.194,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 189267968,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 306.208084046375,
+          "backend_ms": 273.113,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 190857216,
+          "bytes": 1658409
+        },
+        {
+          "port": 8020,
+          "http_ms": 332.2837090236135,
+          "backend_ms": 306.111,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 188284928,
+          "bytes": 1658409
+        },
+        {
+          "port": 8016,
+          "http_ms": 334.3508749967441,
+          "backend_ms": 295.943,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 193626112,
+          "bytes": 1658409
+        },
+        {
+          "port": 8017,
+          "http_ms": 314.04600001405925,
+          "backend_ms": 233.133,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 192102400,
+          "bytes": 1658409
+        },
+        {
+          "port": 8018,
+          "http_ms": 339.4024159642868,
+          "backend_ms": 266.134,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 195985408,
+          "bytes": 1658409
+        },
+        {
+          "port": 8019,
+          "http_ms": 328.5647500306368,
+          "backend_ms": 321.507,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 195723264,
+          "bytes": 1658409
+        },
+        {
+          "port": 8020,
+          "http_ms": 338.7616669642739,
+          "backend_ms": 333.635,
+          "queries": 14,
+          "hold_queries": 1,
+          "process_rss_bytes": 193462272,
+          "bytes": 1658409
+        }
+      ],
+      "http_ms": {
+        "p50": 332.2837090236135,
+        "p95": 400.4861250286922,
+        "max": 415.2532499865629
+      },
+      "backend_ms": {
+        "p50": 281.46,
+        "p95": 322.534,
+        "max": 333.635
+      }
+    }
+  ],
+  "scope": "Explicit Daphne reader process counts; client-side round robin, no BFF/load balancer, localhost, same rich 500 fixture. Not production topology or pilot approval."
+}

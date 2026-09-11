@@ -6,6 +6,22 @@ fotografias históricas. Esta consolidação cobre o código até **062a7b5ec**,
 **8318b9b03**, ícones CSS **062a7b5ec**, alvos de interação, Actions de corrida
 e inventário **84e609641**. Não declara T, P ou R concluídos.
 
+## Resultado mais recente — fonte922fb522c
+
+**Esta atualização prevalece sobre as rodadas históricas abaixo.** Evidências completas,
+falhas preservadas, testes e rollback em [performance_completion/README.md](performance_completion/README.md).
+Commits429e0a2b2 e922fb522c reduziram trabalho repetido de projeção e hidratação.
+500 pedidos: browser p951329 ms; backend p95451,290 ms em10 clientes com **cinco
+processos**,60 amostras. Quatro ainda falham565,553 ms. Topologia real e rede não
+homologadas; nenhum budget foi alterado. Backend amplo atual9446 pass/77 skips;
+runtime PostgreSQL341 pass sem skips;29 jornadas integradas passaram.
+Restore atual162 tabelas/151 sequências iguais inicialmente; após probes apenas
+sequência de alerta10→11, linhas intactas. Worker antigo permanece inseguro.
+
+G05/G08: decisão de retenção por aba apresentada, ainda sem resposta. Persistência
+pós-reload suspensa; confirmação de descarte e contexto em memória mantidos.
+T continua aberto pelos aceites listados; P preparado, R não executado.
+
 ## Atualização do brief / rebase — 11/09
 
 Os 96 commits foram reaplicados sobre main **0acb727ff** (incluindo PRs599/601).
@@ -25,7 +41,7 @@ A triagem do novo brief está em `../../ORDERS-CONTROLS-TRIAGE-2026-09-11.md`.
 Altura44/fundo/foco já aprovados por Pablo no PR599, sem novo gate. Opacidades
 continuam pendentes. A/B/C ainda não implementados: o brief exige fechar a branch
 operacional antes dos três PRs separados. Não há aprovação implícita desse fechamento.
-**Budgets anteriores permanecem reprovados e não foram remedidos após rebase.**
+Esta afirmação de reprovação pertence à rodada do brief; foi superada pela medição acima.
 
 As novas migrações do main foram aplicadas somente em `orders_lab` sintético;
 Pedidos não introduziu DDL próprio. O rollback para a antiga base
@@ -43,7 +59,7 @@ upstream. Não houve produção nem efeitos reais. T/P/R mantêm os estados abai
 | WP04 | Fases duráveis, retorno com um dono, courier e avisos started/unknown/accepted, crash entre processos e alerta | Consulta/retry de fornecedor homologados G03; não repetir unknown por idade |
 | WP05 | Patch/lote integral, prévia exata, recibos, ordem canônica por drag/teclado, feed sem preço próprio, sync separado | Publicação sensível/tiers reais e evidência fiscal/nutricional G05; volume de campo H08 |
 | WP06 | Draft por pessoa/recurso, merge/conflito, SKU atrasado, sessão e navegação, nota confirmada com GET falho, alvos compartilhados | 29 jornadas integradas e alvos frequentes44/48; AT físico e compreensão humana sem ensaio; persistência pós-reload G05/G08 |
-| WP07 | Hold/Payman/fiscal em lote, leitura útil/erro, relógio, coalescimento, HTTP rico e SSE real medidos | **500 pedidos/10 clientes e tela de 500 ainda excedem budgets**; rede/aparelho G06 e cobertura completa de carga/fallback |
+| WP07 | Hold/Payman/fiscal em lote, leitura útil/erro, relógio, coalescimento, HTTP rico e SSE real medidos | Budgets passam no laboratório com cinco processos; quatro falham. Rede/aparelho/topologia G06 e cobertura completa de carga/fallback |
 | WP08 | Eventos correlacionados, estados de efeitos, alertas existentes, runbook e placar readonly canônico | Contagem limitada por endpoint/trace; coleta supervisionada draft/stale preparada, sem medidas humanas; nem todo efeito sem Directive é coberto pelo sweeper |
 | WP09 | Suíte ampla fixa, PostgreSQL, browser integrado, restore populado com livros/chaves, incompatibilidade antiga comprovada | Depende dos aceites técnicos abertos WP00–08; gates de liberação ainda não assinados |
 | WP10 | Protocolo e folha de observação preparados | Piloto **não iniciado**: WP09 e G01–G08 aplicáveis, cinco turnos e pessoas reais |
@@ -65,7 +81,7 @@ listada não equivale a exclusão aprovada. Nenhum gate foi resolvido por silên
 | D09/D13/D17/H06 | Draft/SKU/pessoa protegidos; resultado confirmado sobrevive à falha de leitura | 29 integrações; `confirmed_note/`, `reason_discard/`, `close_targets/` |
 | D10/D11 | Action e motivo controlam ativação; API reavalia permissão e fato sob lock | Testes de personas/Actions, `recovery_actions/` e `courier_actions/` |
 | D14/D15/D16 | Erro não vira vazio; motivo externo tipado; hora do servidor e leitura útil | Integrações de outage/SSE e testes de clock/reasons |
-| D20/H04 | Batch elimina Hold por card; otimização medida sem mudar JSON rico; gargalos grandes persistem | `http_read_lab/`, `read_work/`, `command_budget/`, `sse_budget/` |
+| D20/H04 | Batch elimina Hold por card; otimização medida sem mudar JSON rico; budgets revalidados em cinco processos; quatro falham | `http_read_lab/`, `read_work/`, `command_budget/`, `sse_budget/` |
 | H02/H03 | Corridas reproduzidas/protegidas por locks e barreiras, livros conferidos | `h03-final-matrix.txt`, testes de custódia/Payman/cancelamento |
 | H07/H09 | Política/audiência preservadas, inbox conserva última leitura | Não houve extensão de ação pessoal; decisão G01 permanece |
 | H08 | Nenhuma inferência sobre volume/dados históricos reais | Inventário autorizado ainda necessário; fixtures não o substituem |
@@ -94,7 +110,7 @@ todo aparelho/retensão possível. Não há número legítimo para redução hum
 ou p50/p95 de T. Login, segunda assinatura e confirmação física não foram removidos
 e constam separados e no total da folha preparada para o piloto.
 
-## Testes e desempenho relevantes
+## Testes e desempenho históricos (rodada atual acima)
 
 - Backend amplo, fonte fixa1d84dcc5b: **8.718 passed,68 skipped,3 warnings,
   38 subtests,493,08s**, SQLite/xdist2. Skips nominais no log; não equivalem a testes
@@ -156,8 +172,8 @@ mudança do backend nesta fatia: o limite500ms/10 clientes continua reprovado.
 G06 precisa identificar aparelho/rede/topologia/personas representativos para
 o ensaio de aceitação. O laboratório declarado é Apple M2/8GiB, loopback e
 processos próprios; não é host exclusivo nem ambiente homologado. Escolher
-outro ambiente exige nova medição; aprovar ambiente não transforma1951ms em
-1500ms nem898,565ms em500ms. Não se propõe relaxar budget silenciosamente.
+outro ambiente exige nova medição; a rodada atual passa1329ms/451,290ms nas condições declaradas, mas não comprova
+a capacidade de outro ambiente. Não se propõe relaxar budget silenciosamente.
 
 G01–G05 definem owners, custódia, consulta externa, urgência e publicação sensível;
 G07 autoriza ambiente/coorte/janela; G08 decide retenção/remoção. A decisão concreta,

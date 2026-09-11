@@ -1,0 +1,22 @@
+DEBUG 2026-09-11 06:13:40,364 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 06:13:40,364 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 06:13:40,364 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 06:13:40,365 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 06:13:40,406 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 06:13:40,410 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 06:13:40,411 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 06:13:40,423 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 06:13:40,436 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 06:13:40,442 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 06:13:40,442 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 06:13:40,446 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 06:13:40,446 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 06:13:40,447 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 06:13:40,448 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 06:13:40,448 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 06:13:40,448 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 06:13:40,449 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 06:13:40,466 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 06:13:40,467 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+WARNING 2026-09-11 06:13:40,512 shopman.shop.handlers.notification notification_escalated order=LAB-RESTORE-UNCERTAIN template=order_ready
+{"mode": "current", "database": "orders_restore_lab_922fb", "old_schema_reads_new_json": true, "synthetic_remote_calls": 0, "unknown_safe_to_consume": true, "all_probe_writes_rolled_back": true}

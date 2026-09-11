@@ -1,0 +1,2 @@
+[OK] alpha-smoke.yml: 'smoke' espera <= 900s, teto 1500s (folga 600s)
+[OK] workflow_budgets

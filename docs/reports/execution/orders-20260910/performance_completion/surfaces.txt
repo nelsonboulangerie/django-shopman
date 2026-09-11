@@ -1,0 +1,8 @@
+bi 0
+hub 0
+kds 0
+marketing 0
+pos 0
+production 0
+purchase 0
+storefront 0

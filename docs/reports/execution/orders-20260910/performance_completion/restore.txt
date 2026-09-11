@@ -1,0 +1,8 @@
+{
+  "source": "orders_lab",
+  "target": "orders_restore_lab_922fb",
+  "dump_seconds": 0.2906419589999132,
+  "restore_seconds": 1.0160649169702083,
+  "archive_bytes": 940303,
+  "all_tables_and_sequences_equal": true
+}

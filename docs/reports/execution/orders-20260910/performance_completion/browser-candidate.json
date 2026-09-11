@@ -1,0 +1,176 @@
+{
+  "n": 500,
+  "samples": [
+    {
+      "sample": 0,
+      "usable_ms": 3035,
+      "ttfb_ms": 1224,
+      "dom_content_ms": 1383,
+      "transfer_bytes": 27592,
+      "encoded_bytes": 27292
+    },
+    {
+      "sample": 1,
+      "usable_ms": 1132,
+      "ttfb_ms": 36.700000047683716,
+      "dom_content_ms": 81.59999996423721,
+      "transfer_bytes": 27590,
+      "encoded_bytes": 27290
+    },
+    {
+      "sample": 2,
+      "usable_ms": 1138,
+      "ttfb_ms": 47.5,
+      "dom_content_ms": 91.69999998807907,
+      "transfer_bytes": 27591,
+      "encoded_bytes": 27291
+    },
+    {
+      "sample": 3,
+      "usable_ms": 1123,
+      "ttfb_ms": 40.39999997615814,
+      "dom_content_ms": 56.39999997615814,
+      "transfer_bytes": 27590,
+      "encoded_bytes": 27290
+    },
+    {
+      "sample": 4,
+      "usable_ms": 1288,
+      "ttfb_ms": 34.19999998807907,
+      "dom_content_ms": 75.80000001192093,
+      "transfer_bytes": 27588,
+      "encoded_bytes": 27288
+    },
+    {
+      "sample": 5,
+      "usable_ms": 1329,
+      "ttfb_ms": 110.90000003576279,
+      "dom_content_ms": 152.89999997615814,
+      "transfer_bytes": 27591,
+      "encoded_bytes": 27291
+    },
+    {
+      "sample": 6,
+      "usable_ms": 1281,
+      "ttfb_ms": 154,
+      "dom_content_ms": 169.0999999642372,
+      "transfer_bytes": 27591,
+      "encoded_bytes": 27291
+    },
+    {
+      "sample": 7,
+      "usable_ms": 1303,
+      "ttfb_ms": 37.69999998807907,
+      "dom_content_ms": 52.59999996423721,
+      "transfer_bytes": 27588,
+      "encoded_bytes": 27288
+    },
+    {
+      "sample": 8,
+      "usable_ms": 1246,
+      "ttfb_ms": 46.89999997615814,
+      "dom_content_ms": 61.39999997615814,
+      "transfer_bytes": 27588,
+      "encoded_bytes": 27288
+    },
+    {
+      "sample": 9,
+      "usable_ms": 1279,
+      "ttfb_ms": 169.19999998807907,
+      "dom_content_ms": 209,
+      "transfer_bytes": 27590,
+      "encoded_bytes": 27290
+    },
+    {
+      "sample": 10,
+      "usable_ms": 1272,
+      "ttfb_ms": 34.19999998807907,
+      "dom_content_ms": 49.5,
+      "transfer_bytes": 27588,
+      "encoded_bytes": 27288
+    },
+    {
+      "sample": 11,
+      "usable_ms": 1146,
+      "ttfb_ms": 34.90000003576279,
+      "dom_content_ms": 53.69999998807907,
+      "transfer_bytes": 27591,
+      "encoded_bytes": 27291
+    },
+    {
+      "sample": 12,
+      "usable_ms": 1285,
+      "ttfb_ms": 132.5,
+      "dom_content_ms": 174.5,
+      "transfer_bytes": 27590,
+      "encoded_bytes": 27290
+    },
+    {
+      "sample": 13,
+      "usable_ms": 1126,
+      "ttfb_ms": 37.40000003576279,
+      "dom_content_ms": 52.700000047683716,
+      "transfer_bytes": 27590,
+      "encoded_bytes": 27290
+    },
+    {
+      "sample": 14,
+      "usable_ms": 1166,
+      "ttfb_ms": 64.09999996423721,
+      "dom_content_ms": 82.10000002384186,
+      "transfer_bytes": 27588,
+      "encoded_bytes": 27288
+    },
+    {
+      "sample": 15,
+      "usable_ms": 1197,
+      "ttfb_ms": 99.59999996423721,
+      "dom_content_ms": 142.29999995231628,
+      "transfer_bytes": 27594,
+      "encoded_bytes": 27294
+    },
+    {
+      "sample": 16,
+      "usable_ms": 1228,
+      "ttfb_ms": 142.80000001192093,
+      "dom_content_ms": 182,
+      "transfer_bytes": 27591,
+      "encoded_bytes": 27291
+    },
+    {
+      "sample": 17,
+      "usable_ms": 1157,
+      "ttfb_ms": 37.5,
+      "dom_content_ms": 79.5,
+      "transfer_bytes": 27591,
+      "encoded_bytes": 27291
+    },
+    {
+      "sample": 18,
+      "usable_ms": 1165,
+      "ttfb_ms": 61.39999997615814,
+      "dom_content_ms": 104.09999996423721,
+      "transfer_bytes": 27588,
+      "encoded_bytes": 27288
+    },
+    {
+      "sample": 19,
+      "usable_ms": 1266,
+      "ttfb_ms": 111.40000003576279,
+      "dom_content_ms": 149.19999998807907,
+      "transfer_bytes": 27584,
+      "encoded_bytes": 27284
+    }
+  ],
+  "first_page": {
+    "sample": 0,
+    "usable_ms": 3035,
+    "ttfb_ms": 1224,
+    "dom_content_ms": 1383,
+    "transfer_bytes": 27592,
+    "encoded_bytes": 27292
+  },
+  "p50_ms": 1237,
+  "p95_ms": 1329,
+  "scope": "Chromium desktop, localhost Nitro/Daphne/PostgreSQL/Redis; logged-in session; navigate + hydrate + type filter + observe one row; first sample cold context, later warm cache; login excluded and no field claim"
+}

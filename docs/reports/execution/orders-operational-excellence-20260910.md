@@ -1639,3 +1639,18 @@ Rail compartilha token44 após testemunha40;29 integrações1,2min,303 Vitest
 Orders,228 kit,typecheck/build e screenshot final inspecionado. Provas e
 limites em icon_render/. Sem DDL/efeito real; rollback do renderizador conserva
 alvos e livros. Esta melhora não comprova ganho humano nem libera T/P/R.
+
+### WP06/WP07/WP09 — rodada pós-rebase922fb522c
+
+429e0a2b2 reduz trabalho de projeção sem alterar JSON/Actions;922fb522c carrega
+fila após hidratação da sessão. Antes: browser500 p951845 ms; depois1329 ms.
+Backend500/10clientes p95451,290 ms em cinco processos/60 amostras; quatro falham.
+9446 pass/77 skips no backend amplo fixo;341 runtime PostgreSQL sem skips;75
+contratos PostgreSQL;29 integrações finais e demais superfícies/cores documentados.
+Restore inicial162 tabelas/151 sequências iguais; probes preservam todas as linhas,
+mas consomem um ID de alerta (10→11); modo explícito registra a diferença. Código
+antigo continua inseguro para unknown. Sem DDL próprio/efeitos reais. Rollback
+independente das otimizações mantém writers/recibos seguros. Dados brutos, rodadas
+negativas, escopo de esforço e limitações: orders-20260910/performance_completion/.
+Retenção por aba G05/G08 apresentada e sem resposta; T aberto, P preparado, R
+não executado. O fechamento desta rodada não é fechamento da fase normativa.
