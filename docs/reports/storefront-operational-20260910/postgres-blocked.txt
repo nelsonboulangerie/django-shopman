@@ -1,0 +1,20 @@
+The files belonging to this database system will be owned by user "pablovalentini".
+This user must also own the server process.
+
+The database cluster will be initialized with locale "C.UTF-8".
+The default database encoding has accordingly been set to "UTF8".
+The default text search configuration will be set to "english".
+
+Data page checksums are disabled.
+
+creating directory /private/tmp/storefront-execution-pgdata ... ok
+creating subdirectories ... ok
+selecting dynamic shared memory implementation ... sysv
+selecting default max_connections ... 20
+selecting default shared_buffers ... 400kB
+selecting default time zone ... America/Sao_Paulo
+creating configuration files ... ok
+running bootstrap script ... 2026-09-10 22:57:36.916 -03 [74555] FATAL:  could not create shared memory segment: Operation not permitted
+2026-09-10 22:57:36.916 -03 [74555] DETAIL:  Failed system call was shmget(key=361150735, size=56, 03600).
+child process exited with exit code 1
+initdb: removing data directory "/private/tmp/storefront-execution-pgdata"
