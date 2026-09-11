@@ -9,6 +9,9 @@
 **Efeito externo nesta execução:** nenhum; sem push, PR, deploy, configuração viva,
 mensagem ou publicação
 
+**Atualização do gate:** push e PR foram autorizados pelo proprietário em 2026-09-11;
+publicação continua dependendo do preflight exato
+
 ## Resultado
 
 O produto passou a distinguir a consequência real de cada canal:
@@ -81,6 +84,22 @@ Os contratos externos foram revalidados em 2026-09-11 nas referências de
 [publicação do Instagram mantidas pela Meta](https://www.postman.com/meta/instagram/documentation/6yqw8pt/instagram-api),
 [criação de Local Post](https://developers.google.com/my-business/reference/rest/v4/accounts.locations.localPosts/create)
 e [consulta de Local Post](https://developers.google.com/my-business/reference/rest/v4/accounts.locations.localPosts/get).
+
+### Arte preparada para o primeiro Story
+
+O proprietário forneceu `IMG_2588.JPG`. A cópia de canário ficou em
+`surfaces/marketing-nuxt/public/canary/hibisco-20260911.jpg` e será servida, depois do
+deploy, em `https://mkt.boulangerie.com.br/canary/hibisco-20260911.jpg`.
+
+- JPEG, RGB, 2268×4032: proporção exata 9:16;
+- transformação lossless: pixels idênticos ao original e perfil Display P3 preservado;
+- EXIF removido porque o original continha coordenadas GPS, aparelho e data;
+- SHA-256 sanitizado: `85018a1e379bc702fcb0a0756abfce74eef4af059101fdb8849f4e278efa3655`.
+
+A conta oficial informada é `@nelsonboulangerie`. Para não expor o ensaio aos clientes,
+a preferência operacional é `@pabvalentini`, mas ela só pode ser usada se for uma conta
+Instagram profissional elegível e ligada ao app/token Meta. A escolha permanece no gate
+humano anterior ao preflight; nenhuma conta foi alterada nesta preparação.
 
 ## Evidências locais
 
