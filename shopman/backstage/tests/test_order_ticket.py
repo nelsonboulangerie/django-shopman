@@ -10,7 +10,7 @@ os dois vocabulários da janela combinada, e o carimbo de segunda via.
 from __future__ import annotations
 
 import base64
-from datetime import timedelta
+from datetime import date, timedelta
 
 import pytest
 from django.contrib.auth.models import Permission, User
@@ -311,9 +311,9 @@ def test_intervalo_invertido_e_TROCADO_e_nao_recusado(shop):
 
 
 def test_data_ilegivel_cai_no_padrao_em_vez_de_estourar(shop):
-    hoje = timezone.localdate()
+    hoje = date(2026, 9, 4)
 
-    date_from, date_to = tickets.parse_period("ontem", "2026-09-10")
+    date_from, date_to = tickets.parse_period("ontem", "2026-09-10", today=hoje)
 
     assert date_from == hoje
     assert date_to.isoformat() == "2026-09-10"
