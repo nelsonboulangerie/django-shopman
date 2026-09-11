@@ -13,9 +13,14 @@ from shopman.shop.services.marketing_delivery_worker import (
 )
 from shopman.shop.tests.test_marketing_delivery_ledger import _graph
 
-pytestmark = [pytest.mark.django_db, pytest.mark.requires_postgres]
+pytestmark = pytest.mark.django_db
+requires_postgres = pytest.mark.skipif(
+    connection.vendor != "postgresql",
+    reason="requires PostgreSQL row-lock semantics",
+)
 
 
+@requires_postgres
 def test_public_target_claim_does_not_lock_nullable_member_join():
     """A public publication has no member, so PostgreSQL sees an OUTER JOIN.
 

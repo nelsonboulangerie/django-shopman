@@ -25,10 +25,17 @@ do hibisco e o texto editorial “Lá vem a primavera...”, sem mensagens/DMs.
 - consulta posterior read-only: `instagram_publication_confirmed` às 12:19;
 - consumers gerais de outbox e entrega permaneceram desligados.
 
-Stories de imagem não aceita `caption` no endpoint da Meta. Portanto “Lá vem a
-primavera...” permanece no artefato e no comprovante editorial, mas não é sobreposto
-automaticamente à imagem publicada. Exibir o texto dentro do Story exige que ele faça
-parte da arte final antes da publicação.
+O adapter não enviou `caption` para o endpoint de Stories da Meta. O texto visível
+“Lá vem a primavera...” foi incorporado pelo Codex, antes da publicação, à arte derivada
+`hibisco-primavera-20260911.jpg`; não estava na fotografia original fornecida pelo
+proprietário e não foi sobreposto pela Meta. O payload externo conteve somente a URL
+dessa imagem derivada e `media_type=STORIES`.
+
+A fotografia sanitizada original `hibisco-20260911.jpg` permaneceu intacta. A derivada
+1080×1920 foi criada às 09:10 (America/Sao_Paulo) por edição de imagem, adicionada no
+commit `7f89983af` e escolhida como mídia do anúncio 25. O registro anterior que dizia
+que a frase não apareceu na imagem estava incorreto; confundia a ausência de um campo
+nativo de legenda no payload com o conteúdo já rasterizado na mídia selecionada.
 
 ### Falhas encontradas antes da fronteira externa
 
@@ -118,6 +125,35 @@ Os contratos externos foram revalidados em 2026-09-11 nas referências de
 [publicação do Instagram mantidas pela Meta](https://www.postman.com/meta/instagram/documentation/6yqw8pt/instagram-api),
 [criação de Local Post](https://developers.google.com/my-business/reference/rest/v4/accounts.locations.localPosts/create)
 e [consulta de Local Post](https://developers.google.com/my-business/reference/rest/v4/accounts.locations.localPosts/get).
+
+## Capacidade real de Stories na API pública da Meta
+
+A referência `IG User /media`, atualizada pela Meta em 12/08/2026, distingue a
+publicação automática do compartilhamento móvel para o compositor do Instagram.
+
+| Recurso | Publicação automática (`/media`) | Observação operacional |
+|---|---|---|
+| Imagem ou vídeo | sim | imagem JPEG; vídeo MOV/MP4; 9:16 recomendado |
+| Menção de usuário | sim, via `user_tags` | nome público e posição `x/y` opcional; não é figurinha |
+| Texto desenhado, fonte, cor e posição | não há campo nativo documentado | precisa ser incorporado à mídia e aprovado visualmente |
+| Legenda como no Feed | não há contrato de exibição em Story | não deve ser prometida como texto visível |
+| Link clicável | não | a Meta cita explicitamente figurinha de link como incompatível |
+| Enquete e localização | não | citadas explicitamente como figurinhas incompatíveis |
+| Pergunta, quiz, contagem regressiva, emoji e `Add Yours` | não | a API não publica figurinhas |
+| Música da biblioteca do Instagram | não | vídeo pode conter áudio próprio/licenciado já embutido |
+| Filtro, efeito ou AR | não | filtros não são compatíveis; efeito deve ser pré-renderizado |
+| Fundo sólido/gradiente como camada | não | na API automática, a própria mídia ocupa o canvas |
+
+O fluxo móvel **Compartilhar no Stories**, atualizado pela Meta em 30/06/2026, é
+outro contrato: um app Android/iOS entrega ao compositor uma mídia de fundo, uma
+imagem de figurinha e/ou duas cores de fundo. O Instagram então abre o compositor e
+o usuário ainda edita e publica. Esse handoff não é uma publicação servidor-a-servidor,
+não oferece na documentação atual um parâmetro de link e não elimina o gate humano;
+ele pode, porém, tornar fácil adicionar manualmente link, música ou figurinha nativa.
+
+Fontes oficiais:
+[referência de criação de mídia](https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user/media/)
+e [compartilhamento móvel para Stories](https://developers.facebook.com/docs/instagram-platform/sharing-to-stories/).
 
 ### Arte preparada para o primeiro Story
 
