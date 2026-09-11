@@ -1,0 +1,53 @@
+PUBLICAÇÃO TÉCNICA DE PRÉ-GO-LIVE — 2026-09-11
+
+Autorização do solicitante: publicar assim que tecnicamente seguro.
+Escopo aplicado: app público shopman-nelson, ainda com perfil staging/pre-go-live.
+Nenhum pagamento, pedido, OTP, alerta ou mensagem real foi criado nesta promoção.
+
+GitHub
+- PR: https://github.com/nelsonboulangerie/django-shopman/pull/612
+- merge: cc135f47c5bcabe62ff43eab1e9bb819f191f92c (assinatura verificada)
+- merge queue: 26/26 checks verdes no head e nova passagem verde da árvore de merge
+- Deploy Images: https://github.com/nelsonboulangerie/django-shopman/actions/runs/34649910167 (success)
+- Pre-go-live Smoke: https://github.com/nelsonboulangerie/django-shopman/actions/runs/34650232882 (success)
+
+DigitalOcean
+- app: shopman-nelson
+- app id: 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f
+- deployment final: 0f6dda3d-6bef-43c3-a458-945d9fc1d52f
+- estado: ACTIVE em 2026-09-11T21:39:47Z
+- progresso: 47/47 etapas; todos os serviços, workers e release em SUCCESS
+- web: sha256:799d24d3079b165a48b155101c175adf75d6a37206ef4dd80be880e40c69baf3
+- storefront: sha256:f57a910ab2fbf4aff8ab52bc1076f4eeef586d3825da1e64ca3be475677efdd6
+- production: sha256:5af561431c9fcc1444ce212d8522e9f3cfcd30493b43fb024938d98d7b0f4435
+- purchase: sha256:28b1da630b81a5c659e72d2423eba5dc64096690a1bc76056146954bcfc880a3
+
+Release/migrações
+- backstage.0062: OK
+- craftsman.0011: OK
+- orderman.0005 e 0006: OK
+- storefront.0004, 0005, 0006 e 0007: OK
+- setup_groups: OK
+- bootstrap_whatsapp_channel: já em ordem; nenhuma chamada de provider
+
+Pós-deploy
+- /health/: 200
+- /ready/: 200; database, cache, migrations e queue = ok
+- /, /menu/, /sacola, /finalizar, /gerenciar-aviso, /terms e /privacy: 200
+- cardápio: 44 SKUs; 28 vendáveis
+- POST vazio de smoke no checkout: 400 de validação, confirmando a rota sem criar pedido
+- SSR: 200; 117425 bytes; marca Nelson presente
+
+Rollback por tags imutáveis anteriores
+- web-1de5f3496a2b4fe4f3c8f1862f316301cc70540e
+- storefront-587392a49280fadf6740ede27a8dfe67a5c34676
+- production-c14cdb64781b82a7ed70453a8fc75aaf9e426465
+- purchase-587392a49280fadf6740ede27a8dfe67a5c34676
+- deployment anterior: 7d067d2b-6286-481b-bfae-e1b05f05e994
+
+Configuração
+O preflight encontrou sete envs de Marketing presentes só no spec vivo. Nenhum
+apps update foi executado, portanto nada foi apagado. Este follow-up declara as
+mesmas chaves/valores no spec versionado, preservando o segredo HMAC sem valor.
+Produção comercial, providers reais, piloto humano e política definitiva de
+retenção continuam decisões/gates separados.

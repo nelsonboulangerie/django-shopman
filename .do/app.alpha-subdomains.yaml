@@ -343,6 +343,36 @@ envs:
   scope: RUN_TIME
   value: '8932087'
   type: GENERAL
+# Espelho do estado vivo medido em 11/09/2026. Os consumers globais seguem
+# desligados; o canário unitário e o adapter do Instagram foram habilitados em
+# janela própria. O segredo HMAC permanece somente no App Platform.
+- key: SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: SHOPMAN_MARKETING_MEDIA_HOSTS
+  scope: RUN_TIME
+  value: mkt.boulangerie.com.br
+  type: GENERAL
+- key: SHOPMAN_MARKETING_TARGET_HMAC_KEY
+  scope: RUN_TIME
+  type: SECRET
+- key: SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION
+  scope: RUN_TIME
+  value: '1'
+  type: GENERAL
 - key: DOORMAN_ACCESS_LINK_API_KEY
   scope: RUN_TIME
   type: SECRET
