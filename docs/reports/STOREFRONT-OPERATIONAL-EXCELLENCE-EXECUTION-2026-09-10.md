@@ -1,6 +1,6 @@
 # Execução técnica isolada — Storefront
 
-**Implementação técnica candidata de W00–W10 concluída; aceite G2 ainda não satisfeito.** PostgreSQL 16, Redis 7 e Chromium executaram em laboratório local descartável, sem skips no gate de runtime nem no E2E. O piloto sintético autorizado está registrado abaixo. J01–J16 com pessoas, leitor de tela e as decisões D01–D06 continuam humanos e não foram inferidos. Nenhum rollout, produção, mensagem ou transação externa foi executado. Não se atribui ganho humano a testes automatizados.
+**Implementação técnica candidata de W00–W10 concluída; aceite G2 ainda não satisfeito.** PostgreSQL 16, Redis 7 e Chromium executaram em laboratório local descartável, sem skips no gate de runtime nem no E2E. O piloto sintético autorizado está registrado abaixo. D01–D06 foram aprovadas pelo solicitante em 2026-09-11, com responsabilidade assumida e retenção definitiva pendente sob a proteção atual. J01–J16 com pessoas e leitor de tela continuam sem execução. Nenhum rollout, produção, mensagem ou transação externa foi executado. Não se atribui ganho humano a testes automatizados.
 
 Commits técnicos consolidados antes do fechamento: `83bf2dbb6`, `4708354f4` e `f106a58a4`.
 
@@ -21,15 +21,15 @@ Commits técnicos consolidados antes do fechamento: `83bf2dbb6`, `4708354f4` e `
 |---|---|---|
 | W00 | Base congelada, consumidores inspecionados, reproduções E e baseline automatizado | Baseline humano J01–J16, donos nominais e protocolo de privacidade pendentes |
 | W01 | Header canônico e alias; divergência 409; fingerprint; BFF verifica origem, cache pessoal e Retry-After; H3 e parsing estrito; BFF+Django exercitados | SameSite/CORS/CDN da implantação dependem de ambiente autorizado |
-| W02 | Recuperação autorizada; total e revisão selados; efeito local+recibo atômicos; locks e replay concorrente em PostgreSQL | D04 e falha física de processo fora da injeção determinística pendentes |
+| W02 | Recuperação autorizada; total e revisão selados; efeito local+recibo atômicos; locks e replay concorrente em PostgreSQL; D04 aprovada | Falha física de processo fora da injeção determinística pendente |
 | W03 | Metadados e quantidade absoluta bloqueiam Session; intenção vinculada à sacola; replay projeta estado atual | Criação simultânea da primeira sacola não foi isolada como cenário próprio |
 | W04 | Draft v2, contexto opaco, limpeza entre pessoas, chave persistida, recuperação e etiqueta existentes | Duas abas e storage negado passaram em Chromium; esforço humano continua não medido |
 | W05 | Parcial/zero/erro separados, faltantes nomeados e replay recuperável | Fluxos reais passaram; compreensão da mensagem exige avaliação humana |
-| W06 | Set explícito, revogação antes do envio, dedupe/claim e auditoria existentes; corridas passaram em PostgreSQL | D03, anonimização completa e saneamento/constraint de legado pendentes |
+| W06 | Set explícito, revogação antes do envio, dedupe/claim e auditoria existentes; corridas passaram em PostgreSQL; precedência de consentimento D03 aprovada | Retenção definitiva, auditoria produtiva de legado e eventual contração permanecem pendentes |
 | W07 | Metadata concorrente preservada; POST confirmado sobrevive falha de refresh; tracking existente mantido | Fluxos SSE/poll passaram; leitor de tela exige avaliação assistiva |
 | W08 | Directive/recibo recupera só conveniência faltante; falhas após escrita revertem; resposta perdida não duplica | Providers externos e todas as etapas downstream exigem reconciliação/ambiente específico |
 | W09 | Superfícies existentes preservadas; storage bloqueado, duas abas, teclado, viewport estreito e zoom 200% passaram | J01–J16, VoiceOver/TalkBack, Maps/WhatsApp e pesquisa permanecem pendentes |
-| W10 | Runtime PostgreSQL+Redis, browser real, build, migração mista, volume sintético e runbook executados | Jobs reais em voo, recuo operacional, donos e aceite humano impedem G2 |
+| W10 | Runtime PostgreSQL+Redis, browser real, build, migração mista, volume sintético, runbook e decisões D01–D06 concluídos | Jobs reais em voo, recuo operacional e medição humana impedem G2 |
 
 ## Achados, hipóteses e decisões
 
@@ -49,28 +49,28 @@ Os diagnósticos originais são assertivas de reprodução do defeito, portanto 
 - **H01:** riscos de read/merge corrigidos; duas conexões PostgreSQL preservaram campos independentes e a matriz de estoque não excedeu o disponível. Responsável proposto: composição/estoque.
 - **H02:** falha entre efeito local e recibo reproduzida e revertida em transação. `local_atomic` é opt-in; não se aplica promessa de exactly-once a efeitos externos. Consumidores antigos mantêm seus protocolos. Responsável: Core/integrações.
 - **H03:** metadata concorrente passou em PostgreSQL; fronteira POST/refresh e acompanhamento passaram no browser. Responsável: pedidos/frontend.
-- **H04:** claim incerto não é aceite nem entrega. Concorrência/dedupe passaram em PostgreSQL; anonimização e legado ainda exigem decisão D03. Responsável: marketing/integrações.
+- **H04:** claim incerto não é aceite nem entrega. Concorrência/dedupe passaram em PostgreSQL; a política D03 foi aprovada. Retenção definitiva, anonimização/contração e legado produtivo continuam dependentes de auditoria específica. Responsável: marketing/integrações.
 - **H05:** transporte H3 verifica headers, 429, cookie host-only, no-store e origem estrangeira/irmã/null; BFF+Django passaram no Chromium. A implantação real de SameSite/CORS/CDN não foi exercitada. Responsável: plataforma.
 - **H06:** tipos inválidos/fingerprint conflitante recusados sem efeito em casos testados; não é fuzzing exaustivo de todos os payloads. Responsável: API/frontend.
 - **H07:** regressões de lifecycle, pagamento, estoque, fiscal, courier e concorrência passaram; a corrida revelou e corrigiu captura duplicada. Crash em cada provider, compras paralelas com pontos e todos os adapters não foram exauridos. Responsável: domínios.
-- **H08:** storage negado, teclado, zoom e viewport estreito passaram em Chromium. Leitor de tela e tarefa humana continuam pendentes. **H09:** configuração e política pública continuam decisões humanas. Responsável: produto/operação.
+- **H08:** storage negado, teclado, zoom e viewport estreito passaram em Chromium. Leitor de tela e tarefa humana continuam pendentes. **H09:** a decisão foi aprovada; configuração e política pública ainda precisam ser conferidas contra o ambiente autorizado antes de exposição. Responsável: produto/operação.
 
-D01–D06 continuam sem aprovação humana. Donos acima são papéis propostos, não pessoas designadas. Preservar opt-out canônico não inventa política de consentimento. A retenção provisória protege recibos com fingerprint já finalizados/em curso contra limpeza por idade; a janela definitiva, saneamento, unicidade de legado e contração dependem D03. Copy/budgets/coortes/plantão dependem das decisões do plano.
+D01–D06 foram aprovadas em 2026-09-11 pelo solicitante, que assumiu todos os papéis responsáveis. A retenção definitiva ficou expressamente pendente, mantendo-se a proteção atual: recibos vinculados já finalizados/em curso não são limpos por idade; a janela definitiva, auditoria produtiva, saneamento e eventual contração exigem decisão posterior. Essa aprovação não autoriza exposição externa.
 
 ### Pacote de decisão pronto para aprovação
 
 As propostas abaixo consolidam D01–D06 sem criar contrato, regra ou fonte de verdade adicional. A aprovação deve ser registrada nesta seção; autorização de decisão não autoriza produção, rollout, mensagens, cobranças ou transações reais.
 
-| Decisão | Recomendação concreta | Dado humano ainda necessário |
+| Decisão | Recomendação concreta | Estado em 2026-09-11 |
 |---|---|---|
-| D01 · Produto/operação | Adotar os budgets do §6 do plano: feedback local p95 ≤100 ms; estado pendente acessível ≤300 ms; mutação local p95 ≤1,5 s; reconciliação consultável ≤5 s depois de backend/recibo disponível; fallback de tracking ≤30 s. Ao detectar dependência remota indisponível, em até 2 s manter a mesma tentativa e usar a copy canônica já implementada: “A confirmação ainda está em consulta. Mantenha esta tentativa.” | Quem responde por produto/operação e seu aceite. |
-| D02 · Dono/operação | Preservar adição direta quando explicitamente rotulada. Resultado parcial nomeia adicionados e faltantes; zero itens e erro técnico não são sucesso. Troca de sacola, SKU, substituto ou pontos sempre exige escolha explícita. Janela, prazo e suporte continuam vindo da configuração canônica. | Quem responde pela operação e seu aceite das regras comerciais. |
-| D03 · Privacidade/marketing | Revogação global posterior prevalece sobre inscrição específica e silencia envio/retry; falha ao consultar elegibilidade também silencia. Novo opt-in exige escolha inequívoca; histórico não é reinterpretado. Recibos vinculados e claims incertos permanecem protegidos de limpeza por idade até reconciliação e janela aprovadas; o default de sete dias continua apenas para recibos descartáveis. | Prazo definitivo de retenção e responsáveis por privacidade/marketing. A política pública deve ser conferida com esse prazo antes de exposição. |
-| D04 · Core/pagamento/estoque | Aprovar C01–C06 e o diff testado: Session/Order/IdempotencyKey/Directive e serviços de domínio continuam canônicos; não há bypass, ledger ou estado financeiro paralelo. Resultado remoto desconhecido exige consulta/reconciliação antes de retry. | Aceite dos responsáveis por Core, pagamento e estoque. |
-| D05 · Produto/pesquisa | Piloto humano apenas simulado, com 8–12 participantes, fixtures sintéticas, ordem base/candidata contrabalançada e pelo menos uma observação de cada J01–J16. Incluir novo/recorrente, convidado/aparelho confiável, aparelho compartilhado, WhatsApp simulado, um percurso com VoiceOver e um com TalkBack. | Responsável pela pesquisa, participantes e dispositivos; consentimento específico caso se grave vídeo. |
-| D06 · Operação/release | Adotar as paradas do plano: qualquer duplicidade não reconciliada, valor não confirmado, PII cruzada, opt-out violado ou ação financeira bem-sucedida apresentada como falha interrompe exposição. Degradação repetida de budget, ajuda ou abandono impede expansão. Após resultado humano e nova autorização, progressão proposta: coorte pequena → 25% → 50% → 100%, mínimo de 48 h e 30 jornadas elegíveis por etapa. | Responsáveis nominais por plantão, release e reconciliação; cada piloto real/etapa continua exigindo autorização explícita. |
+| D01 · Produto/operação | Adotar os budgets do §6 do plano: feedback local p95 ≤100 ms; estado pendente acessível ≤300 ms; mutação local p95 ≤1,5 s; reconciliação consultável ≤5 s depois de backend/recibo disponível; fallback de tracking ≤30 s. Ao detectar dependência remota indisponível, em até 2 s manter a mesma tentativa e usar a copy canônica já implementada: “A confirmação ainda está em consulta. Mantenha esta tentativa.” | Aprovada; responsabilidade assumida pelo solicitante. |
+| D02 · Dono/operação | Preservar adição direta quando explicitamente rotulada. Resultado parcial nomeia adicionados e faltantes; zero itens e erro técnico não são sucesso. Troca de sacola, SKU, substituto ou pontos sempre exige escolha explícita. Janela, prazo e suporte continuam vindo da configuração canônica. | Aprovada; responsabilidade assumida pelo solicitante. |
+| D03 · Privacidade/marketing | Revogação global posterior prevalece sobre inscrição específica e silencia envio/retry; falha ao consultar elegibilidade também silencia. Novo opt-in exige escolha inequívoca; histórico não é reinterpretado. Recibos vinculados e claims incertos permanecem protegidos de limpeza por idade até reconciliação e janela aprovadas; o default de sete dias continua apenas para recibos descartáveis. | Política aprovada; responsabilidade assumida. Retenção definitiva permanece pendente e a proteção atual foi mantida. |
+| D04 · Core/pagamento/estoque | Aprovar C01–C06 e o diff testado: Session/Order/IdempotencyKey/Directive e serviços de domínio continuam canônicos; não há bypass, ledger ou estado financeiro paralelo. Resultado remoto desconhecido exige consulta/reconciliação antes de retry. | Aprovada; responsabilidade assumida pelo solicitante. |
+| D05 · Produto/pesquisa | Piloto humano apenas simulado, com 8–12 participantes, fixtures sintéticas, ordem base/candidata contrabalançada e pelo menos uma observação de cada J01–J16. Incluir novo/recorrente, convidado/aparelho confiável, aparelho compartilhado, WhatsApp simulado, um percurso com VoiceOver e um com TalkBack. | Protocolo aprovado e responsabilidade assumida; participantes/dispositivos ainda não disponibilizados. |
+| D06 · Operação/release | Adotar as paradas do plano: qualquer duplicidade não reconciliada, valor não confirmado, PII cruzada, opt-out violado ou ação financeira bem-sucedida apresentada como falha interrompe exposição. Degradação repetida de budget, ajuda ou abandono impede expansão. Após resultado humano e nova autorização, progressão proposta: coorte pequena → 25% → 50% → 100%, mínimo de 48 h e 30 jornadas elegíveis por etapa. | Critérios aprovados e responsabilidade assumida; cada piloto real/etapa continua exigindo autorização explícita. |
 
-**Registro de decisão:** pendente. Forma mínima de aceite: `Aprovo D01–D06 como proposto; retenção = ___ dias; responsáveis: produto/operação = ___, privacidade/marketing = ___, Core/pagamento/estoque = ___, pesquisa = ___, plantão/release/reconciliação = ___.` Uma mesma pessoa pode ocupar mais de um papel. Se quem responde não tiver autoridade sobre algum domínio, registrar somente os papéis autorizados e manter os demais pendentes.
+**Registro de decisão — 2026-09-11:** “Aprovo D01–D06 como proposto, com retenção definitiva pendente e proteção atual mantida. Assumo os papéis responsáveis.”
 
 ### Protocolo de observação humana preparado
 
@@ -95,7 +95,7 @@ A recuperação de conveniência usa estados/tentativas/erro dos Directive exist
 4. Executar auditoria de subscriptions em banco sintético antes de discutir constraint. Não apagar duplicatas nem claims incertos. O teste reverso de schema é apenas fixture isolada, **não receita de downgrade operacional**.
 5. Em recuo autorizado: conter novas entradas pelos controles existentes, manter leitura/recuperação e correções de integridade; pausar novos jobs afetados nos controles existentes; conferir cada Directive/Order em voo. Não apagar recibos, restaurar snapshot sobre transações novas, ressuscitar draft ou reativar opt-out. Não executar estorno/reemissão como rollback técnico.
 6. Provider com resultado desconhecido: consultar mecanismo canônico/recibo, reconciliar com responsável antes de nova tentativa. Não marcar entregue por timeout nem transferir ao cliente a redigitação do pedido.
-7. Versões de modelo mistas, 1.000 recibos, locks e migração aditiva passaram em PostgreSQL. Jobs reais em voo, volume produtivo e recuo operacional dependem de ambiente e responsáveis autorizados; G2 permanece fechado. Migração/desmigração em produção não autorizada.
+7. Versões de modelo mistas, 1.000 recibos, locks e migração aditiva passaram em PostgreSQL. Jobs reais em voo, volume produtivo e recuo operacional dependem de ambiente autorizado; G2 permanece fechado. Migração/desmigração em produção não autorizada.
 
 ## Reproduzir e fechar pendências
 
@@ -110,7 +110,7 @@ No diretório `surfaces/storefront-nuxt`, executar sequencialmente `npm test -- 
 
 Os bloqueios ambientais iniciais permanecem anexados como histórico e não contam como prova. A continuação usou serviços locais descartáveis autorizados e resolveu os skips relevantes no gate PostgreSQL+Redis.
 
-Para fechar G2: completar acessibilidade assistiva e medições emparelhadas J01–J16; obter decisões D01–D06, revisão Core/consentimento, donos/limiares e ensaio de recuo com jobs em voo. Piloto, rollout e qualquer ação externa permanecem sujeitos a autorização explícita.
+Para fechar G2: completar acessibilidade assistiva e medições emparelhadas J01–J16, conferir política/configuração no ambiente autorizado e ensaiar recuo com jobs em voo. D01–D06, responsabilidades e limiares estão aprovados. Piloto humano, rollout e qualquer ação externa permanecem sujeitos a autorização explícita.
 
 ## Resultados executados
 
@@ -176,7 +176,7 @@ A execução ampliada comprovou dois defeitos adicionais antes da correção:
 | Frontend typecheck/lint | [Typecheck passou](storefront-operational-20260910/continuation-frontend-typecheck.txt); [lint 0 erros e 5 warnings preexistentes](storefront-operational-20260910/continuation-frontend-lint.txt) |
 | Build + Chromium + BFF + Django | [Build passou; E2E 27 passed](storefront-operational-20260910/continuation-browser-final.txt) |
 
-O diff técnico autorizado está concluído. Permanecem fora dele: rollout/produção; mensagens, cobranças ou transações externas; D01–D06; J01–J16 com pessoas; VoiceOver/TalkBack; Maps/WhatsApp reais; volume e jobs produtivos em voo; revisão/aceite dos donos propostos. Não se alega ganho humano a partir destes testes.
+O diff técnico autorizado está concluído. Permanecem fora dele: rollout/produção; mensagens, cobranças ou transações externas; J01–J16 com pessoas; VoiceOver/TalkBack; Maps/WhatsApp reais; volume e jobs produtivos em voo; retenção definitiva e validação do ambiente de exposição. D01–D06 e os papéis responsáveis foram aprovados em 2026-09-11. Não se alega ganho humano a partir destes testes.
 
 ## Piloto sintético autorizado — 2026-09-11
 
