@@ -8,7 +8,7 @@ the HTTP layer.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from enum import StrEnum
 
 from django.db import transaction
@@ -1046,17 +1046,18 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
     authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
     permission_reason = "Identifique uma pessoa com permissão para gerenciar pedidos."
     actions = []
+    actor_id = getattr(user, "pk", None)
     if order.status == Order.Status.NEW:
         reason = confirmation_block_reason(order, payment_reads=payment_reads, channel_config=channel_config) if authorized else permission_reason
         actions.append(Action(
             ref="confirm", kind="mutation", label="Aceitar", priority="primary",
             enabled=not reason, reason=reason, method="POST", idempotency="required",
-            payload_schema={"base_revision": operational_revision(order)},
+            payload_schema={"expected_actor_id": actor_id, "base_revision": operational_revision(order)},
         ))
         actions.append(Action(
             ref="reject", kind="mutation", label="Recusar", priority="danger",
             enabled=authorized, reason="" if authorized else permission_reason,
-            method="POST", idempotency="required", payload_schema={"base_revision": operational_revision(order)},
+            method="POST", idempotency="required", payload_schema={"expected_actor_id": actor_id, "base_revision": operational_revision(order)},
             confirmation={"required": True},
         ))
     elif next_status_for(order):
@@ -1070,7 +1071,7 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
         actions.append(Action(
             ref="advance", kind="mutation", label=labels[target], priority="primary",
             enabled=not reason, reason=reason, method="POST", idempotency="required",
-            payload_schema={"target_status": target, "base_revision": operational_revision(order)},
+            payload_schema={"expected_actor_id": actor_id, "target_status": target, "base_revision": operational_revision(order)},
         ))
     for ref, label, field in (
         ("notes", "Salvar nota", "kitchen_note"),
@@ -1080,7 +1081,7 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
         actions.append(Action(
             ref=ref, kind="mutation", label=label, enabled=authorized,
             reason="" if authorized else permission_reason, method="POST", idempotency="required",
-            payload_schema={"base_revision": operational_revision(order, field=field)},
+            payload_schema={"expected_actor_id": actor_id, "base_revision": operational_revision(order, field=field)},
         ))
     custody = equipment_custody(order)
     if custody.equipment:
@@ -1089,6 +1090,6 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
             enabled=authorized and custody.pending,
             reason=(permission_reason if not authorized else "O aparelho deste pedido já voltou." if not custody.pending else ""),
             method="POST", idempotency="required",
-            payload_schema={"base_revision": operational_revision(order, field="equipment")},
+            payload_schema={"expected_actor_id": actor_id, "base_revision": operational_revision(order, field="equipment")},
         ))
-    return tuple(replace(action, payload_schema={**action.payload_schema, "expected_actor_id": getattr(user, "pk", None)}) for action in actions)
+    return tuple(actions)

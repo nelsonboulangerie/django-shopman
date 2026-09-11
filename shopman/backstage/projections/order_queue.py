@@ -10,11 +10,12 @@ Never imports from ``shopman.backstage.views.*``.
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from django.utils import timezone
-from shopman.orderman.models import Order
+from shopman.orderman.models import Order, OrderItem
 from shopman.utils.monetary import format_money
 from shopman.utils.phone import normalize_phone
 
@@ -968,9 +969,15 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     """Build the operator queue grouped by the next physical action."""
     all_orders = list(
         Order.objects.filter(status__in=ACTIVE_STATUSES)
-        .prefetch_related("items")
         .order_by("created_at")
     )
+
+    # The queue only reads quantity/name/SKU; no full item models or metadata needed.
+    items_by_order = defaultdict(list)
+    for item in OrderItem.objects.filter(order_id__in=[order.pk for order in all_orders]).values_list("order_id", "qty", "name", "sku", named=True):
+        items_by_order[item.order_id].append(item)
+    for order in all_orders:
+        order._queue_items = items_by_order[order.pk]
 
     from shopman.shop.services import waitlist
 
@@ -1148,14 +1155,15 @@ def _build_card(
 
     timer_class = _timer_class(order.status, elapsed)
 
-    items_qs = list(order.items.all()[:4])
+    queue_items = getattr(order, "_queue_items", None)
+    items_qs = queue_items[:4] if queue_items is not None else list(order.items.all()[:4])
     items_summary = ", ".join(
         f"{format(it.qty.normalize(), "f")}x {it.name or it.sku}" for it in items_qs[:3]
     )
     if len(items_qs) > 3:
         items_summary += "..."
 
-    items_count = order.items.count()
+    items_count = len(queue_items) if queue_items is not None else order.items.count()
 
     is_delivery = _is_delivery(order)
     fulfillment_icon = "local_shipping" if is_delivery else "storefront"
@@ -1188,11 +1196,19 @@ def _build_card(
     waitlist_state, waitlist_deadline_iso, waitlist_label = _waitlist_badge(order, states=waitlist_states)
     recipient = order.data.get("recipient") if isinstance(order.data.get("recipient"), dict) else {}
 
+    actions = operator_orders.operational_actions(order, user=user, waitlist_state=batch_state, payment_reads=payment_reads, channel_config=channel_config)
+    # Reuse only this read's canonical action revisions; commands still recompute under lock.
+    revision_actions = {"advance": {"advance", "confirm", "reject"}, "kitchen_note": {"notes"}, "assignment": {"assign", "unassign"}}
+    revisions = {}
+    for field, refs in revision_actions.items():
+        revision = next((action.payload_schema["base_revision"] for action in actions if action.ref in refs), None)
+        revisions[field] = revision if revision is not None else operator_orders.operational_revision(order, field=field)
+
     return OrderCardProjection(
         ref=order.ref,
         status=order.status,
-        actions=(*operator_orders.operational_actions(order, user=user, waitlist_state=batch_state, payment_reads=payment_reads, channel_config=channel_config), *_cash_settlement_actions(order, user, cash_context)),
-        revisions={field: operator_orders.operational_revision(order, field=field) for field in ("advance", "kitchen_note", "assignment")},
+        actions=(*actions, *_cash_settlement_actions(order, user, cash_context)),
+        revisions=revisions,
         status_label=status_labels[order.status] if status_labels is not None else order_status_label(order.status),
         status_color=status_color(order.status),
         channel_ref=order.channel_ref or "",
