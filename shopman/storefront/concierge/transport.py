@@ -57,7 +57,7 @@ def set_handoff(subscriber_id: str, on: bool) -> bool:
     try:
         return bool(notification_manychat.set_custom_field(str(subscriber_id), field, "1" if on else ""))
     except Exception:
-        logger.exception("concierge.transport.set_handoff falhou subscriber=%s", subscriber_id)
+        logger.warning("concierge.transport.handoff_unconfirmed")
         return False
 
 

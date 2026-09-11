@@ -28,6 +28,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import unicodedata
 from dataclasses import asdict, dataclass, field
 from datetime import date as date_type
@@ -1325,30 +1326,51 @@ for _name in ("browse_menu", "view_cart", "last_order", "order_status", "list_pi
     globals()[_name] = _guard(globals()[_name])
 
 
+def _display_text(value) -> str:
+    """Dado exibido não cria linhas factuais nem links fora de campos de Action.
+
+    Não interpreta frases nem preços: normaliza controles/espaçamento e neutraliza
+    URLs em texto livre. Links autorizados usam campos estruturados intactos.
+    """
+    text = str(value or "")
+    text = re.sub(r"(?i)\b(?:[a-z][a-z0-9+.-]*://|www\.)\S+", "[link omitido]", text)
+    text = "".join(" " if unicodedata.category(char).startswith("C") else char for char in text)
+    return " ".join(text.split())
+
+
+def _display_name(value) -> str:
+    """Nome de catálogo explicitamente citado, distinto da prosa factual."""
+    text = _display_text(value).replace("“", "'").replace("”", "'")
+    return f"“{text}”"
+
+
 def render_result(name: str, result: dict) -> str:
     """Somente fatos do servidor; texto livre do modelo nunca entra na resposta."""
     if not result.get("ok"):
-        return str(result.get("message") or "Não consegui concluir. Suas escolhas estão preservadas.")
-    if result.get("message") and (name in {"notify_when_available", "handoff_to_human"} or not result.get("lines") and not result.get("orders")):
-        return str(result["message"])
+        return _display_text(result.get("message") or "Não consegui concluir. Suas escolhas estão preservadas.")
+    if result.get("message") and (
+        name in {"notify_when_available", "handoff_to_human"}
+        or not any(result.get(key) for key in ("lines", "orders", "items", "collections", "payment", "url", "pickup_slots", "delivery_slots"))
+    ):
+        return _display_text(result["message"])
     if name == "browse_menu":
         if result.get("overview"):
-            rows = [f"{c['label']}: {c['available_count']} disponíveis. " + "; ".join(f"{i['name']} — {i['price']}" for i in c['examples']) for c in result.get("collections", [])]
+            rows = [f"{_display_name(c['label'])}: {c['available_count']} disponíveis. " + "; ".join(f"{_display_name(i['name'])} — {i['price']}" for i in c['examples']) for c in result.get("collections", [])]
         else:
-            rows = [f"{i['name']} — {i['price']}. {i['availability_label']}" for i in result.get("items", [])]
+            rows = [f"{_display_name(i['name'])} — {i['price']}. {_display_text(i['availability_label'])}" for i in result.get("items", [])]
         return "\n".join(rows) or "Não encontrei produtos para essa busca."
     if name in {"view_cart", "set_item", "set_fulfillment", "review_order"}:
-        rows = [f"{i['qty']} × {i['name']} — {i['line_total']}" for i in result.get("lines", [])]
+        rows = [f"{i['qty']} × {_display_name(i['name'])} — {i['line_total']}" for i in result.get("lines", [])]
         if not rows:
             return "Sua sacola está vazia. Escolha um produto para começar."
         rows.append(f"Total: {result.get('total', '')}")
         fulfillment = result.get("fulfillment") or {}
         if fulfillment.get("type"):
-            rows.append(f"{'Retirada' if fulfillment['type'] == 'pickup' else 'Entrega'}: {fulfillment.get('date', '')} {fulfillment.get('slot_label', '')}")
+            rows.append(f"{'Retirada' if fulfillment['type'] == 'pickup' else 'Entrega'}: {fulfillment.get('date', '')} {_display_text(fulfillment.get('slot_label', ''))}")
         if fulfillment.get("address"):
-            rows.append(fulfillment['address'])
+            rows.append(_display_text(fulfillment['address']))
         if result.get("order_notes"):
-            rows.append(f"Observação: {result['order_notes']}")
+            rows.append(f"Observação: {_display_text(result['order_notes'])}")
         if result.get("delivery_fee"):
             rows.append(f"Entrega: {result['delivery_fee']}")
         if name == "review_order":
@@ -1384,11 +1406,11 @@ def render_result(name: str, result: dict) -> str:
     if name == "send_web_link":
         return f"Continue no site: {result['url']}"
     if name == "last_order":
-        return "\n".join(f"{i['qty']} × {i['name']}" for i in result.get("items", [])) or "Sem pedido anterior."
+        return "\n".join(f"{i['qty']} × {_display_name(i['name'])}" for i in result.get("items", [])) or "Sem pedido anterior."
     if name == "list_pickup_slots":
         slots = result.get("pickup_slots", result.get("delivery_slots", []))
-        return "\n".join(str(i['label']) for i in slots if i.get("available", True)) or "Nenhum horário disponível nessa data."
-    return str(result.get("message") or "Suas escolhas foram preservadas. Podemos continuar.")
+        return "\n".join(_display_text(i['label']) for i in slots if i.get("available", True)) or "Nenhum horário disponível nessa data."
+    return _display_text(result.get("message") or "Suas escolhas foram preservadas. Podemos continuar.")
 
 
 # ── Registro ──────────────────────────────────────────────────────────

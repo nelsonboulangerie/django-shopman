@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 
+from django.db import transaction
+from shopman.orderman.exceptions import SessionError
 from shopman.orderman.models import Session
 
 from shopman.shop.services import availability, lot_pricing
@@ -89,6 +91,18 @@ def get_or_create_session(
     return session, session.session_key
 
 
+def _lock_cart_session(*, session_key: str, channel_ref: str) -> Session:
+    """O lock da Session precede reserva e escrita; a sessão selada não ganha holds."""
+    try:
+        session = Session.objects.select_for_update().get(session_key=session_key, channel_ref=channel_ref)
+    except Session.DoesNotExist as exc:
+        raise SessionError(code="not_found", message="Sacola não encontrada.") from exc
+    if session.state != "open":
+        raise SessionError(code=f"already_{session.state}", message="Esta sacola foi encerrada; consulte o resultado antes de continuar.")
+    return session
+
+
+@transaction.atomic
 def add_item(
     *,
     session_key: str | None,
@@ -106,6 +120,7 @@ def add_item(
         origin_channel=origin_channel,
     )
 
+    session = _lock_cart_session(session_key=resolved_key, channel_ref=channel_ref)
     existing = next((item for item in session.items if item.get("sku") == sku), None)
     hold_id = _reserve_or_raise(
         sku=sku,
@@ -145,6 +160,7 @@ def add_item(
     )
 
 
+@transaction.atomic
 def update_qty(
     *,
     session_key: str,
@@ -153,7 +169,8 @@ def update_qty(
     qty: int,
     sku: str | None = None,
 ) -> Session:
-    """Reconcile holds and update a cart line quantity."""
+    """Reconcile holds and update a cart line quantity in one local commit."""
+    _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
     line_sku = sku
     if line_sku is None:
         line = get_line(session_key=session_key, channel_ref=channel_ref, line_id=line_id)
@@ -184,6 +201,7 @@ def update_qty(
     )
 
 
+@transaction.atomic
 def remove_item(
     *,
     session_key: str,
@@ -191,7 +209,8 @@ def remove_item(
     line_id: str,
     sku: str | None = None,
 ) -> Session:
-    """Reconcile holds and remove a cart line."""
+    """Reconcile holds and remove a cart line in one local commit."""
+    _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
     line_sku = sku
     if line_sku is None:
         line = get_line(session_key=session_key, channel_ref=channel_ref, line_id=line_id)

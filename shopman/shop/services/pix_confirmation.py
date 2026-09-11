@@ -294,14 +294,6 @@ def _confirm_pix_on_dead_charge(order, db_intent, *, txid, e2e_id, reported_q) -
         e2e_id=e2e_id,
         amount_q=int(reported_q),
     )
-    if already_booked:
-        logger.info(
-            "pix_confirmation: Pix em cobrança encerrada já registrado order=%s intent=%s",
-            order.ref,
-            booked_ref,
-        )
-        return
-
     if booked_ref is None:
         _alert(
             order.ref,
@@ -315,6 +307,11 @@ def _confirm_pix_on_dead_charge(order, db_intent, *, txid, e2e_id, reported_q) -
         )
         return
 
+    # Cancellation can commit while capture discovers the charge is dead.
+    # Re-read the canonical order after booking; the initial callback snapshot
+    # must not decide whether money belongs to a live or cancelled order.
+    # Keep provider refund I/O outside any Order row lock.
+    order.refresh_from_db()
     if order.status == Order.Status.CANCELLED:
         logger.warning(
             "pix_confirmation: Pix após cancelamento order=%s valor_q=%s intent=%s",
@@ -322,12 +319,29 @@ def _confirm_pix_on_dead_charge(order, db_intent, *, txid, e2e_id, reported_q) -
             reported_q,
             booked_ref,
         )
-        from shopman.shop.lifecycle import dispatch
+        from shopman.payman import PaymentService
+
+        from shopman.shop.lifecycle import dispatch, phase_complete
+
+        # A completed settlement replay is not another operator incident.
+        # A booked but unsettled receipt must still reach the canonical refund.
+        if already_booked and phase_complete(order, "on_paid"):
+            captured_q = PaymentService.captured_total(booked_ref)
+            if PaymentService.refunded_total(booked_ref) >= captured_q:
+                return
 
         # Ramo canônico, o mesmo que o webhook do Stripe usa: estorna e alerta
         # ``payment_after_cancel``. Um dono só para "pagamento chegou depois do
         # cancelamento".
         dispatch(order, "on_paid")
+        return
+
+    if already_booked:
+        logger.info(
+            "pix_confirmation: Pix em cobrança encerrada já registrado order=%s intent=%s",
+            order.ref,
+            booked_ref,
+        )
         return
 
     # Pedido vivo com cobrança morta: cliente pagou o QR velho, ou pagou duas

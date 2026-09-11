@@ -45,13 +45,22 @@ def _observed(stage):
             from shopman.shop.services.observability import operational_event
             started = perf_counter()
             outcome = "error"
+            result = None
             try:
                 result = function(*args, **kwargs)
                 outcome = (getattr(result, "reason", "") or getattr(result, "transport_state", "")
                            or getattr(result, "fallback", "") or "completed")
                 return result
             finally:
+                conversation_id = getattr(result, "conversation_id", None)
+                if conversation_id is None and args:
+                    conversation_id = getattr(args[0], "pk", args[0] if isinstance(args[0], int) else None)
+                message_id = getattr(result, "message_id", None)
+                if stage == "output" and len(args) > 1:
+                    message_id = args[1].pk
                 operational_event("concierge.stage", stage=stage, contract_version=2,
+                                  conversation_id=conversation_id, message_id=message_id,
+                                  turn_fence=getattr(args[0], "turn_fence", None) if args else None,
                                   outcome=outcome, duration_ms=round((perf_counter()-started)*1000, 3))
         return execute
     return decorate
@@ -154,10 +163,10 @@ def receive_inbound(
         return IntakeResult(None, None, False, "empty")
     reason = disabled_reason()
     if reason:
-        logger.warning("concierge.disabled reason=%s subscriber=%s", reason, subscriber_id)
+        logger.warning("concierge.disabled reason=%s", reason)
         return IntakeResult(None, None, False, "disabled")
     if not is_allowed(subscriber_id, profile or {}):
-        logger.info("concierge.not_allowed subscriber=%s", subscriber_id)
+        logger.info("concierge.not_allowed")
         return IntakeResult(None, None, False, "not_allowed")
 
     if not isinstance(external_id, str) or not external_id.strip():
@@ -232,7 +241,7 @@ def identify(conversation: Conversation, profile: dict | None = None) -> Convers
     try:
         info = transport.identity_for(conversation, profile)
     except Exception:
-        logger.warning("concierge.identify failed subscriber=%s", conversation.subscriber_id, exc_info=True)
+        logger.warning("concierge.identify failed conversation=%s", conversation.pk)
         info = None
     if info is None:
         return conversation
@@ -367,7 +376,7 @@ def run_turn(conversation_id: int, *, client=None) -> TurnResult:
             except TurnRevoked:
                 raise
             except Exception:
-                logger.exception("concierge.turn_failed conversation=%s", conversation.pk)
+                logger.error("concierge.turn_failed conversation=%s", conversation.pk)
                 Conversation.objects.filter(pk=conversation.pk).update(consecutive_failures=F("consecutive_failures") + 1)
                 _alert(conversation, "concierge_unavailable", "Resposta automática indisponível; contexto preservado.")
                 outcome = agent_module.AgentOutcome(reply_text=copy_message("CONCIERGE_UNAVAILABLE"))
