@@ -108,6 +108,14 @@ function applyNoteTag(tag: string) {
 // (fetched live per order); other channels get the store presets + free text.
 const dialog = ref<"" | "reject" | "cancel" | "settle" | "dispatch">("");
 const amount = ref("");
+const settleAction = computed(() => order.value?.actions.find((action) => action.ref === "settle-delivery-cash"));
+const settleRevision = ref("");
+const settleCustody = ref("");
+const settleChanged = computed(() => settleRevision.value !== String(settleAction.value?.payload_schema.base_revision || ""));
+function reviewSettleCustody() {
+  settleRevision.value = String(settleAction.value?.payload_schema.base_revision || "");
+  settleCustody.value = String(settleAction.value?.confirmation.description || "");
+}
 // troco da entrega: o que voltou (acerto) e o que o entregador leva (despacho)
 const changeBack = ref("");
 const changeOut = ref("");
@@ -152,6 +160,7 @@ const presets = computed(() => order.value?.cancellation_presets ?? []);
 
 async function openDialog(kind: "reject" | "cancel" | "settle" | "dispatch") {
   dialog.value = kind;
+  if (kind === "settle") reviewSettleCustody();
   amount.value = "";
   changeBack.value = order.value?.change_back_pending ? moneyInput(changeBackSuggestionQ(order.value)) : "";
   changeOut.value = moneyInput(order.value?.change_out_suggested_q ?? 0);
@@ -193,7 +202,7 @@ async function signWithBadge(badge: string) {
 
 async function submitSettle() {
   const back = asksChangeBack.value ? changeBack.value.trim() || "0" : undefined;
-  const ok = await settleCash(amount.value.trim(), back, asksEquipmentBack.value && settleEquipmentBack.value);
+  const ok = await settleCash(amount.value.trim(), back, asksEquipmentBack.value && settleEquipmentBack.value, settleRevision.value);
   if (ok) dialog.value = "";
 }
 
@@ -379,7 +388,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         <button v-else-if="projectedAction('advance')" type="button" disabled :title="projectedAction('advance')?.reason" class="inline-flex cursor-not-allowed items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold text-muted-foreground opacity-60" data-action="advance-blocked">
           <Icon name="lucide:clock" class="size-4" /> {{ projectedAction('advance')?.reason }}
         </button>
-        <button v-if="order.can_settle_delivery_cash" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="openDialog('settle')">
+        <button v-if="order.can_settle_delivery_cash" type="button" :disabled="busy || !settleAction?.enabled" :title="settleAction?.reason" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="openDialog('settle')">
           <Icon name="lucide:banknote" class="size-4" /> Acerto dinheiro
         </button>
         <button v-if="order.equipment_back_pending && !order.can_settle_delivery_cash" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="equipmentBack">
@@ -596,6 +605,10 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           <UiDialogTitle>Acerto de dinheiro</UiDialogTitle>
           <UiDialogDescription>Valor recebido na entrega. Em branco usa o total.</UiDialogDescription>
         </UiDialogHeader>
+        <p class="text-sm text-muted-foreground">{{ settleCustody }}</p>
+        <p v-if="settleChanged" role="alert" class="text-sm text-destructive">O pedido ou turno mudou. Confira o contexto atual: {{ settleAction?.confirmation.description }}
+          <button type="button" class="underline" @click="reviewSettleCustody">Conferir e manter os valores digitados</button>
+        </p>
         <input
           v-model="amount"
           type="text"
@@ -623,7 +636,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dialog = ''">Voltar</button>
           <button
             type="button"
-            :disabled="busy"
+            :disabled="busy || settleChanged || !settleAction?.enabled"
             class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             @click="submitSettle"
           >

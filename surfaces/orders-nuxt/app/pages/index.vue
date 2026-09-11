@@ -203,6 +203,14 @@ async function confirmReject() {
 // the drawer, how much of it came back — zero included; the server requires it).
 const settleRef = ref<string | null>(null);
 const settleAmount = ref("");
+const settleRevision = ref("");
+const settleCustody = ref("");
+const settleAction = computed(() => settleCard.value?.actions.find((action) => action.ref === "settle-delivery-cash"));
+const settleChanged = computed(() => settleRevision.value !== String(settleAction.value?.payload_schema.base_revision || ""));
+function reviewSettleCustody() {
+  settleRevision.value = String(settleAction.value?.payload_schema.base_revision || "");
+  settleCustody.value = String(settleAction.value?.confirmation.description || "");
+}
 const settleChangeBack = ref("");
 const settleCard = computed(() => allCards.value.find((c) => c.ref === settleRef.value) ?? null);
 const settleAsksChangeBack = computed(() => Boolean(settleCard.value?.change_back_pending));
@@ -210,6 +218,7 @@ const settleEquipmentBack = ref(true);
 const settleAsksEquipment = computed(() => Boolean(settleCard.value?.equipment_back_pending));
 function openSettle(ref_: string) {
   settleRef.value = ref_;
+  reviewSettleCustody();
   settleAmount.value = "";
   const card = allCards.value.find((c) => c.ref === ref_);
   settleChangeBack.value = card?.change_back_pending ? moneyInput(changeBackSuggestionQ(card)) : "";
@@ -219,7 +228,7 @@ async function confirmSettle() {
   const ref_ = settleRef.value;
   if (!ref_) return;
   const changeBack = settleAsksChangeBack.value ? settleChangeBack.value.trim() || "0" : undefined;
-  const ok = await settleCash(ref_, settleAmount.value.trim(), changeBack, settleAsksEquipment.value && settleEquipmentBack.value);
+  const ok = await settleCash(ref_, settleAmount.value.trim(), changeBack, settleAsksEquipment.value && settleEquipmentBack.value, settleRevision.value);
   if (ok) settleRef.value = null;
 }
 
@@ -754,8 +763,11 @@ function printQueue() {
       <UiDialogContent class="sm:max-w-sm">
         <UiDialogHeader>
           <UiDialogTitle>Acerto de dinheiro</UiDialogTitle>
-          <UiDialogDescription>Valor recebido na entrega ({{ settleRef }}). Em branco usa o total do pedido.</UiDialogDescription>
+          <UiDialogDescription>Valor recebido na entrega ({{ settleRef }}). Em branco usa o total de {{ settleCard?.total_display }}. {{ settleCustody }}</UiDialogDescription>
         </UiDialogHeader>
+        <p v-if="settleChanged" role="alert" class="text-sm text-destructive">O pedido ou turno mudou. Confira o contexto atual: {{ settleAction?.confirmation.description }}
+          <button type="button" class="underline" @click="reviewSettleCustody">Conferir e manter os valores digitados</button>
+        </p>
         <input
           v-model="settleAmount"
           type="text"
@@ -782,7 +794,7 @@ function printQueue() {
         </label>
         <UiDialogFooter>
           <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="settleRef = null">Cancelar</button>
-          <button type="button" class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90" @click="confirmSettle">
+          <button type="button" class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" :disabled="settleChanged || !settleAction?.enabled || (settleRef ? isBusy(settleRef) : false)" @click="confirmSettle">
             Confirmar acerto
           </button>
         </UiDialogFooter>

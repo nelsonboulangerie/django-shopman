@@ -482,3 +482,24 @@ describe("nota da cozinha — atualização concorrente", () => {
     w.unmount();
   });
 });
+
+
+describe("acerto — turno observado no diálogo", () => {
+  it("preserva o valor e pede conferência quando o turno muda", async () => {
+    const action = (base: string) => ({ ...fixtureActions({ can_confirm: true })[0]!, ref: "settle-delivery-cash",
+      payload_schema: { base_revision: base, expected_actor_id: 1 }, confirmation: { description: `Caixa sintético ${base}` } });
+    const w = abrir(order({ can_confirm: false, can_settle_delivery_cash: true, actions: [action("turno-1")] }));
+    await w.findAll("button").find((button) => button.text().includes("Acerto dinheiro"))!.trigger("click");
+    await w.get('[aria-label="Valor recebido"]').setValue("15,00");
+    detalhe.value = order({ can_confirm: false, can_settle_delivery_cash: true, actions: [action("turno-2")] });
+    await w.vm.$nextTick();
+    expect(w.text()).toContain("O pedido ou turno mudou");
+    expect((w.get('[aria-label="Valor recebido"]').element as HTMLInputElement).value).toBe("15,00");
+    const confirm = w.findAll("button").find((button) => button.text() === "Confirmar")!;
+    expect(confirm.attributes("disabled")).toBeDefined();
+    await w.findAll("button").find((button) => button.text() === "Conferir e manter os valores digitados")!.trigger("click");
+    expect(confirm.attributes("disabled")).toBeUndefined();
+    expect((w.get('[aria-label="Valor recebido"]').element as HTMLInputElement).value).toBe("15,00");
+    w.unmount();
+  });
+});

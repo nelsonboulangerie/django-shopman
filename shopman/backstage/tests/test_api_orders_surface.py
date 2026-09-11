@@ -17,7 +17,7 @@ from shopman.orderman.models import Directive, Order, OrderItem
 
 from shopman.backstage.tests._order_intent import advance_payload, context_payload
 from shopman.shop.models import Shop
-from shopman.shop.services.operator_orders import operational_revision
+from shopman.shop.services.operator_orders import cash_settlement_revision, operational_revision
 
 
 def _manage_orders_perm() -> Permission:
@@ -262,7 +262,8 @@ def test_settle_delivery_cash_rejects_without_open_shift(client, operator):
     client.force_login(operator)
     response = client.post(
         reverse("api-backstage-order-settle-delivery-cash", args=[order.ref]),
-        {"amount": "15,00"},
+        {"amount": "15,00", "base_revision": cash_settlement_revision(order, None), "expected_actor_id": operator.pk, "idempotency_key": "no-open-shift"},
+        content_type="application/json",
     )
     assert response.status_code == 400
     assert "detail" in response.json()

@@ -256,7 +256,7 @@ export function useOrdersBoard() {
     clearActionError(ref_); // a fresh attempt clears the previous reason
     busy.value = new Set(busy.value).add(ref_);
     try {
-      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "comment"].includes(action)) {
+      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "comment", "settle-delivery-cash"].includes(action)) {
         const card = [...zones.value.flatMap((zone) => zone.cards), ...(queue.value?.preorders ?? [])].find((item) => item.ref === ref_);
         const equipment = queue.value?.equipment_out?.find((item) => item.order_ref === ref_);
         await intentions.execute(ref_, action, (card?.actions ?? equipment?.actions)?.find((item) => item.ref === action), body ?? {});
@@ -306,11 +306,12 @@ export function useOrdersBoard() {
     act(ref_, "reject", { reason, cancellation_code });
   // ``change_back``: o troco que voltou com o entregador (reais, zero vale);
   // obrigatório no servidor quando saiu troco no despacho.
-  const settleCash = (ref_: string, amount: string, changeBack?: string, equipmentBack?: boolean) =>
+  const settleCash = (ref_: string, amount: string, changeBack?: string, equipmentBack?: boolean, baseRevision?: string) =>
     act(ref_, "settle-delivery-cash", {
       amount,
       ...(changeBack === undefined ? {} : { change_back: changeBack }),
       ...(equipmentBack ? { equipment_back: true } : {}),
+      ...(baseRevision ? { base_revision: baseRevision } : {}),
     });
 
   // Valid cancellation reasons for a ref: for iFood, the live per-order list

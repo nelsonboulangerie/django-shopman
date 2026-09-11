@@ -533,3 +533,11 @@ describe("joinFacts", () => {
     expect(joinFacts("   ", "R$ 42,00")).toBe("R$ 42,00");
   });
 });
+
+it("acerto no card exige Action autorizada e preserva o motivo de bloqueio", () => {
+  const blocked = { ...fixtureActions({ can_confirm: true })[0]!, ref: "settle-delivery-cash", enabled: false, reason: "Confira o caixa." };
+  expect(cardAffordances(card({ can_settle_delivery_cash: true, actions: [blocked] })).find((item) => item.ref === "settle_cash"))
+    .toMatchObject({ disabled: true, reason: "Confira o caixa." });
+  expect(cardAffordances(card({ can_settle_delivery_cash: true, actions: [] })).find((item) => item.ref === "settle_cash")?.disabled).toBe(true);
+  expect(cardAffordances(card({ can_settle_delivery_cash: true, actions: [{ ...blocked, enabled: true, reason: "" }] })).find((item) => item.ref === "settle_cash")?.disabled).toBe(false);
+});

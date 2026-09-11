@@ -649,6 +649,17 @@ def cancel_order(
         return cancel(locked, reason=reason, actor=actor, extra_data=extra_data or None)
 
 
+def cash_settlement_revision(order: Order, cash_shift) -> str:
+    """The observed custody and order, without unrelated notes/assignment."""
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    data = order.data or {}
+    return mutation_fingerprint({"version": 1, "order": order.ref, "status": order.status,
+        "total_q": order.total_q, "payment": data.get("payment"), "dispatch": data.get("dispatch"),
+        "fulfillment_type": data.get("fulfillment_type"),
+        "shift": [cash_shift.pk, cash_shift.terminal_id, cash_shift.is_open] if cash_shift else None})
+
+
 @transaction.atomic
 def settle_delivery_cash(
     order: Order,
@@ -658,6 +669,7 @@ def settle_delivery_cash(
     amount_q: int | None = None,
     change_back_q: int | None = None,
     equipment_back: bool = False,
+    expected_revision: str | None = None,
 ) -> int:
     """O dinheiro da entrega chega ao balcão: acerto no turno de quem RECEBEU.
 
@@ -691,6 +703,9 @@ def settle_delivery_cash(
         cash_shift = type(cash_shift).objects.select_for_update().get(pk=cash_shift.pk)
     Order.objects.select_for_update().get(pk=order.pk)
     order.refresh_from_db()
+
+    if expected_revision is not None and cash_settlement_revision(order, cash_shift) != expected_revision:
+        raise OrderStateConflict("O pedido ou turno de recebimento mudou. Confira o acerto antes de registrar.")
 
     if get_fulfillment_type(order) != "delivery":
         raise ValueError("Acerto de entrega só se aplica a pedidos delivery.")

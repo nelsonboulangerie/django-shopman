@@ -235,7 +235,9 @@ export function cardAffordances(card: OrderCardProjection): Affordance[] {
     reason: a.reason,
   }));
   if (card.can_settle_delivery_cash) {
-    out.push({ ref: "settle_cash", label: "Acerto dinheiro", icon: "lucide:banknote", priority: "secondary", needsInput: true });
+    const settle = projected.find((action) => action.ref === "settle-delivery-cash");
+    out.push({ ref: "settle_cash", label: "Acerto dinheiro", icon: "lucide:banknote", priority: "secondary", needsInput: true,
+      disabled: !settle?.enabled, reason: settle?.reason || (!settle ? "Atualize o pedido para conferir o caixa." : "") });
   }
   // A maquininha saiu e não voltou; sem acerto em dinheiro para marcar, o card
   // oferece o gesto sozinho (pedido em cartão, ou acerto já feito sem ela).

@@ -446,7 +446,8 @@ def build_order_queue(
     waitlist_states = waitlist.states_for(filtered)
     payment_reads = payment_svc.read_payments_for(filtered)
     channel_configs = _channel_configs_for(filtered)
-    cards = tuple(_build_card(o, channel_config=channel_configs.get(o.channel_ref), courier_change=courier_change, waitlist_states=waitlist_states, payment_reads=payment_reads) for o in filtered)
+    cash_context = _cash_settlement_context(filtered)
+    cards = tuple(_build_card(o, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), courier_change=courier_change, waitlist_states=waitlist_states, payment_reads=payment_reads) for o in filtered)
 
     return OrderQueueProjection(
         orders=cards,
@@ -536,7 +537,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         payload_schema={"base_revision": operator_orders.operational_revision(order), "expected_actor_id": getattr(user, "pk", None)},
         confirmation={"required": True, "manager_approval": cancel_capability["cancel_requires_approval"]},
     )
-    extra_actions = [cancel_action]
+    extra_actions = [cancel_action, *_cash_settlement_actions(order, user, None)]
     if fiscal_status == "failed":
         from shopman.backstage.services.orders import fiscal_revision
 
@@ -942,6 +943,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     waitlist_states = waitlist.states_for(all_orders)
     payment_reads = payment_svc.read_payments_for(all_orders)
     channel_configs = _channel_configs_for(all_orders)
+    cash_context = _cash_settlement_context(all_orders)
     new_orders = [o for o in all_orders if o.status == "new"]
     deadlines = _confirmation_deadlines([o.ref for o in new_orders])
     # Uma consulta ao livro para todos os cards: o troco que saiu e voltou.
@@ -953,12 +955,12 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     # mantém o prazo de confirmação (auto-confirm) e o botão de aceitar; o
     # despertador (preorder.activate) devolve o pedido ao fluxo na data (WP-D).
     intake = tuple(
-        _build_card(o, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
+        _build_card(o, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
         for o in new_orders
         if not _is_future_preorder(o)
     )
     prep_orders = [o for o in all_orders if o.status in ("accepted", "preparing")]
-    prep = tuple(_build_card(o, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in prep_orders if not _is_future_preorder(o))
+    prep = tuple(_build_card(o, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in prep_orders if not _is_future_preorder(o))
     # Só estados pré-fulfillment viram "Agendados"; ready/dispatched/delivered
     # seguem nas colunas de expedição mesmo que a data combinada seja futura.
     future_preorders = [
@@ -966,16 +968,16 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         if o.status in ("new", "accepted", "preparing") and _is_future_preorder(o)
     ]
     preorders = tuple(
-        _build_card(o, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
+        _build_card(o, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
         for o in sorted(future_preorders, key=lambda o: (get_commitment_date(o), o.created_at))
     )
     preparing_count = len(prep)
 
     ready_orders = [o for o in all_orders if o.status == "ready"]
-    expedition_pickup = tuple(_build_card(o, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user) for o in ready_orders if not _is_delivery(o))
-    expedition_delivery = tuple(_build_card(o, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in ready_orders if _is_delivery(o))
+    expedition_pickup = tuple(_build_card(o, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user) for o in ready_orders if not _is_delivery(o))
+    expedition_delivery = tuple(_build_card(o, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in ready_orders if _is_delivery(o))
     expedition_delivery_transit = tuple(
-        _build_card(o, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change)
+        _build_card(o, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change)
         for o in all_orders
         if o.status in ("dispatched", "delivered")
     )
@@ -1096,6 +1098,7 @@ def _build_card(
     user=None,
     payment_reads=None,
     channel_config=None,
+    cash_context=None,
 ) -> OrderCardProjection:
     now = timezone.now()
     elapsed = (now - order.created_at).total_seconds()
@@ -1143,7 +1146,7 @@ def _build_card(
     return OrderCardProjection(
         ref=order.ref,
         status=order.status,
-        actions=operator_orders.operational_actions(order, user=user, waitlist_state=batch_state, payment_reads=payment_reads, channel_config=channel_config),
+        actions=(*operator_orders.operational_actions(order, user=user, waitlist_state=batch_state, payment_reads=payment_reads, channel_config=channel_config), *_cash_settlement_actions(order, user, cash_context)),
         revisions={field: operator_orders.operational_revision(order, field=field) for field in ("advance", "kitchen_note", "assignment")},
         status_label=order_status_label(order.status),
         status_color=status_color(order.status),
@@ -1439,6 +1442,38 @@ def _payment_method_label(method: str, payment_data: dict) -> str:
             return f"{label} entregue no caixa"
         return f"{label} na entrega"
     return label
+
+
+def _cash_settlement_context(orders):
+    """One canonical custody lookup per projection; GET must not create a drawer."""
+    if not any(_can_settle_delivery_cash(order, (order.data or {}).get("payment") or {}) for order in orders):
+        return None, ""
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.services import pos as pos_service
+    from shopman.backstage.services.exceptions import POSError
+
+    if not Terminal.objects.filter(is_active=True).exists():
+        return None, "Abra um turno de caixa para registrar o acerto."
+    try:
+        shift = pos_service.current_shift(strict=True)
+    except POSError as exc:
+        return None, str(exc)
+    return shift, "" if shift else "Abra um turno de caixa para registrar o acerto."
+
+
+def _cash_settlement_actions(order, user, context):
+    if not _can_settle_delivery_cash(order, (order.data or {}).get("payment") or {}):
+        return ()
+    shift, reason = context if context is not None else _cash_settlement_context([order])
+    authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
+    if not authorized:
+        reason = "Identifique uma pessoa com permissão para gerenciar pedidos."
+    return (Action(ref="settle-delivery-cash", kind="mutation", label="Registrar dinheiro recebido",
+        enabled=authorized and not reason, reason=reason, method="POST", idempotency="required",
+        payload_schema={"base_revision": operator_orders.cash_settlement_revision(order, shift),
+            "expected_actor_id": getattr(user, "pk", None), "cash_shift_id": shift.pk if shift else None},
+        confirmation={"required": True, "description": f"Recebimento no caixa {shift.terminal.label}, turno {shift.pk}." if shift else reason}),)
 
 
 def _can_settle_delivery_cash(order: Order, payment_data: dict) -> bool:

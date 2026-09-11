@@ -48,7 +48,7 @@ export function useOrderDetail(orderRef: string) {
     busy.value = true;
     mutationError.value = "";
     try {
-      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "comment", "requeue-fiscal", "resend-payment-link"].includes(action)) {
+      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "comment", "settle-delivery-cash", "requeue-fiscal", "resend-payment-link"].includes(action)) {
         await intentions.execute(orderRef, action, order.value?.actions?.find((item) => item.ref === action), body ?? {}, approval);
       } else {
         await $fetch(`/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/${action}/`, {
@@ -107,11 +107,12 @@ export function useOrderDetail(orderRef: string) {
   // relays a valid reason to the provider; empty string for other channels.
   const reject = (reason: string, cancellation_code = "") => act("reject", { reason, cancellation_code });
   const cancel = (reason: string, cancellation_code = "") => act("cancel", { reason, cancellation_code });
-  const settleCash = (amount: string, changeBack?: string, equipmentBack?: boolean) =>
+  const settleCash = (amount: string, changeBack?: string, equipmentBack?: boolean, baseRevision?: string) =>
     act("settle-delivery-cash", {
       amount,
       ...(changeBack === undefined ? {} : { change_back: changeBack }),
       ...(equipmentBack ? { equipment_back: true } : {}),
+      ...(baseRevision ? { base_revision: baseRevision } : {}),
     });
   const requeueFiscal = () => act("requeue-fiscal");
 

@@ -1889,24 +1889,27 @@ class OrderCancellationReasonsView(_OrderActionBase):
     ),
 )
 class OrderSettleDeliveryCashView(_OrderActionBase):
+    intention_operation = "settle-delivery-cash"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        try:
-            change_back = (request.data or {}).get("change_back")
-            equipment_back = str((request.data or {}).get("equipment_back", "")).lower() in {"1", "true", "on", "yes"}
-            amount_q = orders_service.settle_delivery_cash(
-                order,
-                operator=request.user,
-                amount_raw=str(request.data.get("amount", "")),
-                actor=_actor(request),
-                change_back_raw=None if change_back is None else str(change_back),
-                equipment_back=equipment_back,
-            )
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Falha no acerto de dinheiro."}, status=400)
-        return Response({"ok": True, "ref": ref, "amount_q": amount_q})
+        change_back = request.data.get("change_back")
+        equipment_back = request.data.get("equipment_back", False)
+        if not isinstance(equipment_back, bool):
+            return Response({"detail": "Informe a devolução do aparelho como verdadeiro ou falso."}, status=400)
+        amount = str(request.data.get("amount", ""))
+        change = None if change_back is None else str(change_back)
+
+        def execute(base):
+            amount_q = orders_service.settle_delivery_cash(order, operator=request.user,
+                amount_raw=amount, actor=_actor(request), change_back_raw=change,
+                equipment_back=equipment_back, expected_revision=base)
+            return {"amount_q": amount_q}
+
+        return self._context_response(request, order, "settle-delivery-cash",
+            {"amount": amount, "change_back": change, "equipment_back": equipment_back}, execute)
 
 
 @extend_schema_view(

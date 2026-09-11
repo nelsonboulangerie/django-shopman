@@ -135,7 +135,7 @@ def cancellation_reasons(order) -> list[dict]:
 
 
 def settle_delivery_cash(
-    order, *, operator, amount_raw: str = "", actor: str, change_back_raw: str | None = None, equipment_back: bool = False
+    order, *, operator, amount_raw: str = "", actor: str, change_back_raw: str | None = None, equipment_back: bool = False, expected_revision=None
 ):
     """Acerto do dinheiro de entrega: entra no turno ABERTO (``cashman``) de quem recebeu.
 
@@ -146,17 +146,19 @@ def settle_delivery_cash(
     from shopman.cashman.exceptions import CashError
 
     from shopman.backstage.services import pos as pos_service
-    from shopman.backstage.services.exceptions import POSError
+    from shopman.backstage.services.exceptions import POSError, POSTerminalAmbiguous
     from shopman.backstage.services.pos import parse_money_to_q
 
-    shift = pos_service.current_shift()
     # Mesma razão do `advance_order`: sem este try, um typo no campo de acerto
     # respondia 500 em vez do 400 com a mensagem do pacote.
     try:
+        shift = pos_service.current_shift(strict=True)
         amount_q = parse_money_to_q(amount_raw) if str(amount_raw or "").strip() else None
         change_back_q = None
         if change_back_raw is not None and str(change_back_raw).strip() != "":
             change_back_q = parse_money_to_q(str(change_back_raw))
+    except POSTerminalAmbiguous as exc:
+        raise OrderConflict(str(exc)) from exc
     except POSError as exc:
         raise OrderError(str(exc) or "Valor inválido.") from exc
     try:
@@ -167,7 +169,10 @@ def settle_delivery_cash(
             amount_q=amount_q,
             change_back_q=change_back_q,
             equipment_back=equipment_back,
+            **({"expected_revision": expected_revision} if expected_revision is not None else {}),
         )
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
     except CashError as exc:
         # Dois acertos do mesmo pedido no mesmo turno (duplo toque no gestor) são
         # recusados pela constraint do livro; a tela merece o 400 com a mensagem
