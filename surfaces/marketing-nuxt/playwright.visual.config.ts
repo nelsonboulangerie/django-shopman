@@ -26,7 +26,8 @@ export default defineConfig({
   webServer: [
     {
       command: `python3 tests/visual/mock_backend.py ${backendPort}`,
-      url: `http://127.0.0.1:${backendPort}/admin/login/`,
+      name: "backend hermético",
+      wait: { stdout: new RegExp(`marketing visual mock listening on ${backendPort}`) },
       reuseExistingServer: false,
       timeout: 30_000,
     },

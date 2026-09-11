@@ -36,9 +36,13 @@ imports e comprehensions foram normalizados, e a app PostgreSQL foi registrada t
 no runtime integrado quanto no settings isolado do Guestman. `ruff check .`, os dois
 system checks e `makemigrations --check --dry-run` passaram localmente antes do push.
 O mesmo run expôs que a cadeia E2E dependia implicitamente do Python do runner macOS:
-o backend hermético usa sintaxe 3.10+ e morria antes de abrir a porta, aparecendo apenas
-como timeout do Playwright. A workflow passou a fixar Python 3.12, versão do projeto; o
-fluxo E2E gerenciado passou localmente com esse runtime.
+o backend hermético usa sintaxe 3.10+, mas o job não contratava uma versão e reportava
+apenas um timeout opaco do Playwright. A workflow passou a fixar Python 3.12, versão do
+projeto; o fluxo E2E gerenciado passou localmente com esse runtime.
+O Python explícito confirmou o runtime correto no run seguinte, mas o probe HTTP do
+Playwright continuou opaco no runner macOS. A prontidão dos três gates browser passou a
+usar o sinal emitido pelo próprio backend imediatamente depois do `bind`, eliminando a
+dependência desse probe sem omitir a prova de que o servidor abriu a porta.
 
 `SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED` e
 `SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` permanecem ausentes e `false` por default;
