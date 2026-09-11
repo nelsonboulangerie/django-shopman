@@ -1,0 +1,19 @@
+{
+  "results": [
+    {
+      "mode": "contained",
+      "user": "synthetic-admin",
+      "return_action": false,
+      "unknown_label": true,
+      "save_control": false
+    },
+    {
+      "mode": "contained",
+      "user": "synthetic-viewer",
+      "return_action": false,
+      "unknown_label": true,
+      "save_control": false
+    }
+  ],
+  "console_errors": []
+}

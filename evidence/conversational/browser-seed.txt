@@ -1,0 +1,23 @@
+DEBUG 2026-09-11 17:49:33,173 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 17:49:33,173 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 17:49:33,173 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 17:49:33,173 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 17:49:33,190 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 17:49:33,191 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 17:49:33,191 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 17:49:33,192 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 17:49:33,196 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 17:49:33,197 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 17:49:33,197 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 17:49:33,198 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 17:49:33,198 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 17:49:33,198 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 17:49:33,199 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 17:49:33,199 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 17:49:33,199 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 17:49:33,200 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 17:49:33,204 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 17:49:33,205 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+DEBUG 2026-09-11 17:49:33,285 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-11 17:49:34,322 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+BROWSER_CONVERSATION 1
