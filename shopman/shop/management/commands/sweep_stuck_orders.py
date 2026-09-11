@@ -1,8 +1,9 @@
 """Re-despacha fases de lifecycle perdidas por crash pós-commit.
 
 O lifecycle registra conclusão por fase; fases operacionais tardias têm Directive
-atômica com a transição. Este sweeper cobre marcadores incompletos, inclusive
-pedidos anteriores a esse contrato e fases cujo processamento foi interrompido.
+atômica com a transição e recuperação pelo worker de Directives. Este sweeper
+cobre apenas as fases síncronas anteriores; não infere trabalho tardio devido
+em pedidos históricos pela ausência de marcadores.
 Não deduz conclusão só do status nem transforma resultado externo desconhecido
 em autorização para repetir o envio.
 
@@ -88,14 +89,9 @@ class Command(BaseCommand):
             phase="on_cancelled",
         )
 
-        # Late operational phases previously had no durable recovery at all.
-        from shopman.shop.lifecycle import QUEUED_PHASES
-
-        for phase in sorted(QUEUED_PHASES):
-            self._sweep_phase(
-                Order.objects.filter(status=phase.removeprefix("on_"), updated_at__lt=cutoff),
-                phase=phase,
-            )
+        # Late phases are recorded atomically with their transition as Directives.
+        # Their worker owns recovery. Missing markers on historical orders are
+        # not evidence of pending work and must never authorize retroactive effects.
 
         if self._recovered:
             self.stdout.write(

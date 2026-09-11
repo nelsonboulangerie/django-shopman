@@ -1654,3 +1654,26 @@ independente das otimizações mantém writers/recibos seguros. Dados brutos, ro
 negativas, escopo de esforço e limitações: orders-20260910/performance_completion/.
 Retenção por aba G05/G08 apresentada e sem resposta; T aberto, P preparado, R
 não executado. O fechamento desta rodada não é fechamento da fase normativa.
+
+
+## 11/09 — incidente de compatibilidade histórica após PR605
+
+A tarefa PDV informou readiness reprovada por queue_lag e milhares de directives
+loyalty/fiscal criadas após deploy. Análise do código confirmou que a varredura
+QUEUED_PHASES inferia trabalho devido para históricos pelo status sem marcador.
+Essa inferência era incorreta; teste anterior a reproduzia em vez de proteger
+compatibilidade. Removida somente essa varredura. Transições novas continuam
+gravando Directive atomicamente e o worker mantém recuperação/retry existentes.
+Seis fases históricas agora verificadas sem dispatch/enqueue, inclusive dry-run.
+
+Validação local: 33 passed, 1 skipped (concorrência exige PostgreSQL), 11,03s, nos
+arquivos test_lifecycle_queued_recovery, test_sweep_stuck_orders e
+test_lifecycle_phase_durability; Ruff e diff-check passaram. Primeira preparação
+falhou antes da coleta: venv compartilhado resolveu stockman do checkout original.
+Reexecução usou PYTHONPATH explícito dos packages deste worktree, settings_test,
+SQLite e adapters inertes. Não declara corrida PostgreSQL executada nesta rodada.
+
+Sem migração ou mutação real nesta tarefa. Patch impede geração futura pelo
+sweeper, mas NÃO cancela directives já criadas nem prova ausência de efeitos.
+Contenção e apuração da fila/filhas são coordenadas exclusivamente pela tarefa PDV.
+Rollback não deve restaurar a varredura histórica; preservar inventário0061.
