@@ -2087,10 +2087,14 @@ class TestKDSService:
 
 class TestCheckoutService:
 
+    @patch("shopman.shop.services.checkout.Session")
     @patch("shopman.shop.services.checkout.Channel")
     @patch("shopman.shop.services.checkout.ChannelConfig")
     @patch("shopman.shop.services.checkout.sessions")
-    def test_process_applies_data_and_commits(self, mock_sessions, mock_cfg, mock_channel):
+    @pytest.mark.django_db
+    def test_process_applies_data_and_commits(
+        self, mock_sessions, mock_cfg, mock_channel, mock_session_model
+    ):
         from shopman.orderman.services.commit import CommitResult
 
         from shopman.shop.config import ChannelConfig
@@ -2109,10 +2113,14 @@ class TestCheckoutService:
         mock_sessions.commit_session.assert_called_once()
         assert result.order_ref == "ORD-001"
 
+    @patch("shopman.shop.services.checkout.Session")
     @patch("shopman.shop.services.checkout.Channel")
     @patch("shopman.shop.services.checkout.ChannelConfig")
     @patch("shopman.shop.services.checkout.sessions")
-    def test_process_skips_modify_with_no_data(self, mock_sessions, mock_cfg, mock_channel):
+    @pytest.mark.django_db
+    def test_process_skips_modify_with_no_data(
+        self, mock_sessions, mock_cfg, mock_channel, mock_session_model
+    ):
         from shopman.orderman.services.commit import CommitResult
 
         from shopman.shop.config import ChannelConfig

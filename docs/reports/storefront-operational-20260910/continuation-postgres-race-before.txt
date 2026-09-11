@@ -1,0 +1,79 @@
+..............F.                                                         [100%]
+=================================== FAILURES ===================================
+_______ ConcurrentPaymentCaptureTests.test_concurrent_capture_idempotent _______
+
+self = <storefront.tests.test_concurrent_checkout.ConcurrentPaymentCaptureTests testMethod=test_concurrent_capture_idempotent>
+
+    def test_concurrent_capture_idempotent(self) -> None:
+        """Two concurrent captures on the same order → payment captured exactly once."""
+        from unittest.mock import MagicMock, patch
+    
+        from shopman.orderman.models import Order
+    
+        from shopman.shop.adapters.payment_types import PaymentResult
+        from shopman.shop.services import payment as payment_service
+    
+        order = Order.objects.create(
+            ref="RACE-ORD-001",
+            channel_ref=self.channel.ref,
+            status="accepted",
+            total_q=1000,
+            handle_type="phone",
+            handle_ref="+5543999001122",
+            data={"payment": {"method": "pix", "intent_ref": "pi_race_001"}},
+        )
+    
+        capture_count = {"n": 0}
+        lock = threading.Lock()
+    
+        def mock_capture(intent_ref, **kwargs):
+            with lock:
+                capture_count["n"] += 1
+            return PaymentResult(success=True, transaction_id="txn_race_001")
+    
+        mock_adapter = MagicMock()
+        mock_adapter.capture.side_effect = mock_capture
+    
+        def do_capture():
+            from django.db import connections
+            try:
+                current = Order.objects.get(pk=order.pk)
+                start.wait(timeout=10)
+                return payment_service.capture(current)
+            finally:
+                connections.close_all()
+    
+        start = threading.Barrier(2)
+        # Patch once around the whole race. ``unittest.mock.patch`` mutates a
+        # process-global attribute and is not safe to enter independently from
+        # overlapping threads: whichever context exits last can restore the
+        # other thread's MagicMock instead of the original function, polluting
+        # every payment test that follows in the runtime process.
+        with (
+            patch(
+                "shopman.shop.services.payment._payman_intent_captured",
+                return_value=False,
+            ),
+            patch(
+                "shopman.shop.services.payment.get_adapter",
+                return_value=mock_adapter,
+            ),
+        ):
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(do_capture) for _ in range(2)]
+                for future in futures:
+                    future.result(timeout=20)
+    
+        order.refresh_from_db()
+        # transaction_id written to order.data on successful capture
+        self.assertEqual(order.data["payment"]["transaction_id"], "txn_race_001")
+        # Status is NOT written to order.data — Payman is the canonical source
+        self.assertNotIn("status", order.data["payment"])
+>       self.assertEqual(capture_count["n"], 1)
+E       AssertionError: 2 != 1
+
+shopman/storefront/tests/test_concurrent_checkout.py:330: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-11 05:17:46,025 shopman.shop.services.payment payment.capture: captured pi_race_001 for order RACE-ORD-001
+INFO 2026-09-11 05:17:46,025 shopman.shop.services.payment payment.capture: captured pi_race_001 for order RACE-ORD-001
+1 failed, 15 passed in 9.20s

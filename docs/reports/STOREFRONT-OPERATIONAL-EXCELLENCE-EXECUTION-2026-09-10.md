@@ -1,8 +1,8 @@
 # Execução técnica isolada — Storefront
 
-**Candidata implementada; DoD técnico/G2 ainda não satisfeito.** PostgreSQL com conexões independentes e Chromium não iniciaram sob as restrições do ambiente. J01–J16 e acessibilidade assistiva não foram medidos. Nenhum piloto, rollout, produção, mensagem ou transação externa foi executado. Não se atribui ganho humano a testes automatizados.
+**Implementação técnica candidata de W00–W10 concluída; aceite G2 ainda não satisfeito.** PostgreSQL 16, Redis 7 e Chromium executaram em laboratório local descartável, sem skips no gate de runtime nem no E2E. J01–J16, leitor de tela e as decisões D01–D06 continuam humanos e não foram inferidos. Nenhum piloto, rollout, produção, mensagem ou transação externa foi executado. Não se atribui ganho humano a testes automatizados.
 
-Commit técnico: `83bf2dbb6f96f3dd9091ca356bfa240175c67c26`.
+Commits técnicos consolidados antes do fechamento: `83bf2dbb6`, `4708354f4` e `f106a58a4`.
 
 ## Proveniência e preservação
 
@@ -20,16 +20,16 @@ Commit técnico: `83bf2dbb6f96f3dd9091ca356bfa240175c67c26`.
 | Pacote | Entrega técnica | Limite de aceite restante |
 |---|---|---|
 | W00 | Base congelada, consumidores inspecionados, reproduções E e baseline automatizado | Baseline humano J01–J16, donos nominais e protocolo de privacidade pendentes |
-| W01 | Header canônico e alias; divergência 409; fingerprint; BFF verifica Origin original, cache pessoal e Retry-After; transporte H3 funcional e parsing estrito | Browser real+BFF+Django e borda não executados |
-| W02 | Recuperação autorizada do recibo antes de exigir sacola aberta; total e revisão no caminho de selagem; efeito local+recibo atômicos | Locks PostgreSQL, morte real de processo e revisão D04 pendentes |
-| W03 | Metadados e quantidade absoluta bloqueiam Session; recompra/oferta vinculam intenção à sacola; replay projeta sacola atual; replace mantém contexto | Matriz multiconexão completa e criação simultânea da primeira sacola não demonstradas |
-| W04 | Draft v2 estrito, contexto opaco de identidade/sacola, limpeza na troca de pessoa; chave da tentativa persistida; consulta de recuperação; etiqueta via checkout existente | Duas abas/browser real; storage negado, foco e budgets humanos não medidos |
-| W05 | Parcial/zero visíveis nas páginas existentes; nomes presentes/faltantes; resposta perdida conserva chave; replay de oferta já confirmada sobrevive expiração | Componentes testados; E2E visual e compreensão não demonstrados |
-| W06 | Set explícito serializado, replay retorna preferência atual; aviso consulta revogação canônica; dedupe sob lock de canal; claim/aceite distintos; auditoria somente leitura | D03, concorrência PG, anonimização completa e reconciliação de legado pendentes; nenhuma limpeza/constraint destrutiva |
-| W07 | Avaliação lê metadata atual sob lock; sucesso POST preservado se refresh falha; acompanhamento expõe pendência de conveniência | Matriz browser SSE/poll/teclado e acessibilidade não executada |
-| W08 | Conveniência usa Directive/recibo por efeito; recuperação não refaz checkout; endereço/defaults respeitam contexto; claim remoto incerto gera alerta e não reenvia por idade | Falha após cada etapa de todos os consumidores downstream não coberta; reconciliação externa exige responsável |
-| W09 | Mantidas superfícies e componentes existentes; confirmação e próxima leitura acessíveis no fluxo; protocolo de medição preservado no plano | J01–J16, VoiceOver/TalkBack, zoom, Maps/WhatsApp e pesquisa permanecem pendentes |
-| W10 | Testes, build, ensaio aditivo de migração, auditoria de inscrições e runbook nesta entrega | PostgreSQL, browser, volume representativo, versões mistas/jobs em voo e rollback completo impedem fechar DoD |
+| W01 | Header canônico e alias; divergência 409; fingerprint; BFF verifica origem, cache pessoal e Retry-After; H3 e parsing estrito; BFF+Django exercitados | SameSite/CORS/CDN da implantação dependem de ambiente autorizado |
+| W02 | Recuperação autorizada; total e revisão selados; efeito local+recibo atômicos; locks e replay concorrente em PostgreSQL | D04 e falha física de processo fora da injeção determinística pendentes |
+| W03 | Metadados e quantidade absoluta bloqueiam Session; intenção vinculada à sacola; replay projeta estado atual | Criação simultânea da primeira sacola não foi isolada como cenário próprio |
+| W04 | Draft v2, contexto opaco, limpeza entre pessoas, chave persistida, recuperação e etiqueta existentes | Duas abas e storage negado passaram em Chromium; esforço humano continua não medido |
+| W05 | Parcial/zero/erro separados, faltantes nomeados e replay recuperável | Fluxos reais passaram; compreensão da mensagem exige avaliação humana |
+| W06 | Set explícito, revogação antes do envio, dedupe/claim e auditoria existentes; corridas passaram em PostgreSQL | D03, anonimização completa e saneamento/constraint de legado pendentes |
+| W07 | Metadata concorrente preservada; POST confirmado sobrevive falha de refresh; tracking existente mantido | Fluxos SSE/poll passaram; leitor de tela exige avaliação assistiva |
+| W08 | Directive/recibo recupera só conveniência faltante; falhas após escrita revertem; resposta perdida não duplica | Providers externos e todas as etapas downstream exigem reconciliação/ambiente específico |
+| W09 | Superfícies existentes preservadas; storage bloqueado, duas abas, teclado, viewport estreito e zoom 200% passaram | J01–J16, VoiceOver/TalkBack, Maps/WhatsApp e pesquisa permanecem pendentes |
+| W10 | Runtime PostgreSQL+Redis, browser real, build, migração mista, volume sintético e runbook executados | Jobs reais em voo, recuo operacional, donos e aceite humano impedem G2 |
 
 ## Achados, hipóteses e decisões
 
@@ -46,20 +46,20 @@ Commit técnico: `83bf2dbb6f96f3dd9091ca356bfa240175c67c26`.
 
 Os diagnósticos originais são assertivas de reprodução do defeito, portanto “passaram” na baseline. Os testes da candidata invertem os oráculos. E04 tem prova de componente, não browser. SQLite e injeção determinística não demonstram exclusão multiconexão.
 
-- **H01:** riscos de read/merge corrigidos nos caminhos existentes; provas PG escritas mas não executadas. Responsável proposto: composição/estoque.
+- **H01:** riscos de read/merge corrigidos; duas conexões PostgreSQL preservaram campos independentes e a matriz de estoque não excedeu o disponível. Responsável proposto: composição/estoque.
 - **H02:** falha entre efeito local e recibo reproduzida e revertida em transação. `local_atomic` é opt-in; não se aplica promessa de exactly-once a efeitos externos. Consumidores antigos mantêm seus protocolos. Responsável: Core/integrações.
-- **H03:** metadata concorrente e fronteira POST/refresh tratadas; browser pendente. Responsável: pedidos/frontend.
-- **H04:** claim incerto não é aceite nem entrega. Retry simulado não chama adapter novamente; concorrência, anonimização e legado ainda exigem prova/decisão. Responsável: marketing/integrações.
-- **H05:** transporte H3 verifica headers, 429, cookie host-only, no-store e origem estrangeira/irmã/null antes do upstream. Não demonstra explorabilidade da implantação ou comportamento real de SameSite/CORS/CDN. Responsável: plataforma.
+- **H03:** metadata concorrente passou em PostgreSQL; fronteira POST/refresh e acompanhamento passaram no browser. Responsável: pedidos/frontend.
+- **H04:** claim incerto não é aceite nem entrega. Concorrência/dedupe passaram em PostgreSQL; anonimização e legado ainda exigem decisão D03. Responsável: marketing/integrações.
+- **H05:** transporte H3 verifica headers, 429, cookie host-only, no-store e origem estrangeira/irmã/null; BFF+Django passaram no Chromium. A implantação real de SameSite/CORS/CDN não foi exercitada. Responsável: plataforma.
 - **H06:** tipos inválidos/fingerprint conflitante recusados sem efeito em casos testados; não é fuzzing exaustivo de todos os payloads. Responsável: API/frontend.
-- **H07:** regressões existentes de lifecycle, pagamento, estoque, fiscal e courier executadas. Matriz de crash após cada estágio, compras paralelas com pontos e todos os providers não encerrada. Responsável: domínios.
-- **H08/H09:** avaliação assistiva, esforço, compreensão, configuração e política pública continuam hipóteses/decisões humanas. Responsável: produto/operação.
+- **H07:** regressões de lifecycle, pagamento, estoque, fiscal, courier e concorrência passaram; a corrida revelou e corrigiu captura duplicada. Crash em cada provider, compras paralelas com pontos e todos os adapters não foram exauridos. Responsável: domínios.
+- **H08:** storage negado, teclado, zoom e viewport estreito passaram em Chromium. Leitor de tela e tarefa humana continuam pendentes. **H09:** configuração e política pública continuam decisões humanas. Responsável: produto/operação.
 
 D01–D06 continuam sem aprovação humana. Donos acima são papéis propostos, não pessoas designadas. Preservar opt-out canônico não inventa política de consentimento. A retenção provisória protege recibos com fingerprint já finalizados/em curso contra limpeza por idade; a janela definitiva, saneamento, unicidade de legado e contração dependem D03. Copy/budgets/coortes/plantão dependem das decisões do plano.
 
 ## Medição e observabilidade
 
-O ensaio sintético de 24 alterações de quantidade por Django test client/SQLite teve 24 sucessos em ambas as bases. P95: baseline 44,66 ms; candidata 28,98 ms. O ambiente teve cargas diferentes: esses números **não são comparação causal**, não medem feedback visual de 100 ms nem experiência humana. Apenas cada amostra ficou abaixo de 1.500 ms. A/T/M/N/R, conclusão sem ajuda e compreensão financeira: **não medidos**, nunca zero presumido.
+O ensaio sintético de 24 alterações de quantidade por Django test client teve 24 sucessos em SQLite e em PostgreSQL. Na candidata PostgreSQL, p95 foi 36,41 ms e máximo 456,54 ms. As execuções não têm carga controlada e **não são comparação causal**; não medem feedback visual de 100 ms nem experiência humana. Cada amostra ficou abaixo de 1.500 ms. A/T/M/N/R, conclusão sem ajuda e compreensão financeira: **não medidos**, nunca zero presumido.
 
 A recuperação de conveniência usa estados/tentativas/erro dos Directive existentes e OperatorAlert `checkout_convenience_pending`. Aviso com aceite desconhecido usa alerta existente; não se repete automaticamente pela idade. O comando `audit_storefront_subscriptions` retorna contagens, não PII e não faz mutações. Não foi criada instrumentação de sessão/PII ou analytics paralelo. Taxas de recuperação, conflitos, parciais apresentados e consentimento bloqueado ainda precisam integração aos painéis canônicos e dono de operação antes de G2; logs isolados não demonstram essas taxas.
 
@@ -71,7 +71,7 @@ A recuperação de conveniência usa estados/tentativas/erro dos Directive exist
 4. Executar auditoria de subscriptions em banco sintético antes de discutir constraint. Não apagar duplicatas nem claims incertos. O teste reverso de schema é apenas fixture isolada, **não receita de downgrade operacional**.
 5. Em recuo autorizado: conter novas entradas pelos controles existentes, manter leitura/recuperação e correções de integridade; pausar novos jobs afetados nos controles existentes; conferir cada Directive/Order em voo. Não apagar recibos, restaurar snapshot sobre transações novas, ressuscitar draft ou reativar opt-out. Não executar estorno/reemissão como rollback técnico.
 6. Provider com resultado desconhecido: consultar mecanismo canônico/recibo, reconciliar com responsável antes de nova tentativa. Não marcar entregue por timeout nem transferir ao cliente a redigitação do pedido.
-7. Antes de release: ensaiar versões mistas, jobs em voo, volume/locks e recuo em PostgreSQL. Este ensaio completo não foi realizado; G2 permanece fechado. Migração/desmigração em produção não autorizada.
+7. Versões de modelo mistas, 1.000 recibos, locks e migração aditiva passaram em PostgreSQL. Jobs reais em voo, volume produtivo e recuo operacional dependem de ambiente e responsáveis autorizados; G2 permanece fechado. Migração/desmigração em produção não autorizada.
 
 ## Reproduzir e fechar pendências
 
@@ -82,11 +82,11 @@ python scripts/run_storefront_operational_tests.py shopman/storefront shopman/sh
 python scripts/run_storefront_operational_tests.py --postgres-url postgresql://USER@127.0.0.1:PORT/DISPOSABLE_DB shopman/storefront/tests/test_operational_postgres.py shopman/storefront/tests/test_concurrent_checkout.py
 ```
 
-No diretório `surfaces/storefront-nuxt`, executar sequencialmente `npm test -- --run --maxWorkers=2`, `npm run typecheck`, `npm run lint`, `npm run build`; depois browser em ambiente com IPC permitido. Não executar build e testes Nuxt simultaneamente, pois compartilham artefatos gerados. No `packages/orderman`, usar pytest com `orderman_test_settings`/pyproject próprio. Configurar todos os packages locais antes de executar outros consumidores.
+No diretório `surfaces/storefront-nuxt`, executar sequencialmente `npm test -- --run --maxWorkers=2`, `npm run typecheck`, `npm run lint`, `npm run build`; depois `scripts/run_storefront_e2e.sh`. Não executar build e testes Nuxt simultaneamente, pois compartilham artefatos gerados. No `packages/orderman`, usar pytest com `orderman_test_settings`/pyproject próprio. Configurar todos os packages locais antes de executar outros consumidores.
 
-Os bloqueios ambientais estão nos logs anexos: PostgreSQL falhou em `shmget` mesmo com mmap; Chromium recebeu `MachPortRendezvousServer ... Permission denied (1100)` antes de abrir página. Não se contornou a sandbox. Os testes PG marcados skip não contam como prova de concorrência.
+Os bloqueios ambientais iniciais permanecem anexados como histórico e não contam como prova. A continuação usou serviços locais descartáveis autorizados e resolveu os skips relevantes no gate PostgreSQL+Redis.
 
-Para fechar DoD: disponibilizar laboratório PostgreSQL/browser autorizado; completar matriz §8.2, acessibilidade e medições emparelhadas; obter revisão Core/consentimento, donos/limiares e ensaio de recuo; registrar pass/fail/skip sem omissões. Piloto, rollout e qualquer ação externa permanecem sujeitos a autorização explícita.
+Para fechar G2: completar acessibilidade assistiva e medições emparelhadas J01–J16; obter decisões D01–D06, revisão Core/consentimento, donos/limiares e ensaio de recuo com jobs em voo. Piloto, rollout e qualquer ação externa permanecem sujeitos a autorização explícita.
 
 ## Resultados executados
 
@@ -104,10 +104,13 @@ Os totais abaixo são execuções distintas, com sobreposição; não somar como
 | Oferta expirada/replay e seleção PG | 14 passed, 4 skipped | [log](storefront-operational-20260910/offer-and-pg-skips.txt) |
 | Recibo vencido indeterminado, helper e gate de runtime | 33 passed | [log](storefront-operational-20260910/receipts-runtime-gate.txt) |
 | Typecheck / lint / build / schema | Exit 0; lint com 5 warnings existentes de ordem de atributos em WhatsappVerifyPanel; schema sem drift | [typecheck](storefront-operational-20260910/typecheck.txt), [lint](storefront-operational-20260910/lint.txt), [build](storefront-operational-20260910/build.txt), [schema](storefront-operational-20260910/schema.txt) |
-| PostgreSQL real | Bloqueado antes do banco estar disponível | [log](storefront-operational-20260910/postgres-blocked.txt) |
-| Browser real | Bloqueado antes de abrir páginas | [log](storefront-operational-20260910/browser-blocked.txt) |
+| PostgreSQL 16 + Redis 7, gate de runtime | 334 passed, 0 skipped; 4 warnings | [log](storefront-operational-20260910/continuation-postgres-redis-runtime.txt) |
+| Migração mista PostgreSQL, 1.000 recibos | 1 passed | [log](storefront-operational-20260910/continuation-postgres-migration.txt) |
+| Budget de mutação PostgreSQL | 24/24; p95 36,41 ms; máx. 456,54 ms | [log](storefront-operational-20260910/continuation-postgres-budget.txt) |
+| Browser mock-server | 4 passed | [log](storefront-operational-20260910/continuation-browser-mock-server.txt) |
+| Chromium real + Nuxt BFF + Django | 27 passed | [log](storefront-operational-20260910/continuation-browser-final.txt) |
 
-Os cinco skips da suíte Storefront são quatro testes multiconexão (duas provas novas, disputa de estoque e captura concorrente) e uma corrida de rate-limit. O consumidor de caixa também exige PG. Permanecem relevantes e bloqueiam W10. Os novos testes PG estão inscritos no **gate de runtime existente**, sem criar outro gate que transforme skips em aceite.
+Os cinco skips da suíte SQLite são testes PostgreSQL. Todos estão inscritos no **gate de runtime existente**, que passou com 334 testes e rejeita qualquer skip. O teardown reportou cinco conexões ainda abertas e não removeu imediatamente o banco temporário; após o processo encerrar, não havia sessões e o banco de teste foi removido explicitamente. Isso é uma advertência de limpeza do laboratório, não um skip oculto.
 
 Uma tentativa frontend concorrente com build/typecheck teve timeouts de hooks/testes: [registro](storefront-operational-20260910/frontend-timeout-attempt.txt). A repetição isolada passou sem alterar timeouts ou enfraquecer oráculos. O guardrail textual de oferta foi limitado especificamente ao tipo de `skipped`, pois a nova lista de nomes adicionados é legitimamente string; os novos testes montam a página e verificam resultado/navegação.
 
@@ -123,7 +126,7 @@ A revisão da candidata encontrou e corrigiu duas falhas adicionais, comprovadas
 
 As regressões novas executam efeitos locais reais de nome do cliente, endereço/etiqueta e defaults; injetam falha após a escrita, verificam rollback, recuperam e simulam perda de resposta repetindo o mesmo efeito. Também verificam que preferência explícita posterior prevalece e que falha do endereço adia defaults, recuperando somente os efeitos faltantes.
 
-O ensaio de schema passou com 1.000 recibos sintéticos, INSERT pelo modelo histórico após expansão e UPDATE pelo modelo histórico sobre recibo novo, preservando fingerprint e resposta. Isso prova um recuo de código compatível mantendo schema expandido em SQLite; não prova locks, interrupção DDL PostgreSQL, volume produtivo nem rollout de processos mistos. Os gates restantes do plano continuam abertos.
+O ensaio de schema passou com 1.000 recibos sintéticos, INSERT pelo modelo histórico após expansão e UPDATE pelo modelo histórico sobre recibo novo, preservando fingerprint e resposta em SQLite e PostgreSQL. Isso prova recuo de código compatível mantendo schema expandido; não prova interrupção DDL sob volume produtivo nem rollout real de processos mistos.
 
 | Verificação da continuação | Resultado |
 |---|---|
@@ -133,4 +136,20 @@ O ensaio de schema passou com 1.000 recibos sintéticos, INSERT pelo modelo hist
 | Recuperação e migração/versões mistas, seleção final | [7 passed](storefront-operational-20260910/continuation-mixed-after.txt) |
 | Drift de migrações | [Sem mudanças faltantes](storefront-operational-20260910/continuation-schema.txt) |
 
-Não houve mudança frontend nesta continuação; a evidência frontend anterior permanece identificada pela revisão em que foi executada. Não houve nova tentativa de contornar os bloqueios de IPC da sandbox. PostgreSQL/browser reais, matriz completa de falhas downstream, acessibilidade, J01–J16, observabilidade agregada e decisões/donos humanos ainda impedem declarar W00–W10 concluídos. Nenhuma autorização de produção, piloto ou comunicação externa foi inferida de “Pode prosseguir”.
+### Fechamento técnico autônomo
+
+A execução ampliada comprovou dois defeitos adicionais antes da correção:
+
+1. **Captura concorrente:** dois workers passavam juntos pela consulta Payman e chamavam o adapter duas vezes. A prova anterior contou duas capturas. O serviço agora serializa a consulta final e a chamada pelo lock da `Order` canônica; duas conexões convergem para uma chamada e um `transaction_id`. Isso não transforma aceite remoto seguido de crash em exactly-once: esse caso continua exigindo consulta/reconciliação do provider. [Antes](storefront-operational-20260910/continuation-postgres-race-before.txt) e [depois](storefront-operational-20260910/continuation-postgres-payment-after.txt).
+2. **Navegação/storage:** uma navegação logo após “Adicionar” podia abortar a primeira requisição e perder o cookie da sacola; Web Storage bloqueado derrubava o módulo de tema antes da aplicação. A navegação Nuxt agora aguarda a fila canônica do carrinho, e o módulo de tema usa seu backend de cookie suportado. O E2E comprova navegação imediata, storage negado e retomada em segunda aba. [Falha anterior](storefront-operational-20260910/continuation-browser-before.txt) e [27 cenários finais](storefront-operational-20260910/continuation-browser-final.txt).
+
+| Gate final | Resultado |
+|---|---|
+| Storefront, serviços, recuperação e fronteiras em SQLite | [1.644 passed, 5 skips exclusivamente PostgreSQL](storefront-operational-20260910/continuation-backend-final.txt) |
+| Gate PostgreSQL+Redis, incluindo concorrência/estoque/pagamento/webhook/caixa | [334 passed, 0 skipped](storefront-operational-20260910/continuation-postgres-redis-runtime.txt) |
+| Orderman isolado | [291 passed](storefront-operational-20260910/continuation-core-final.txt) |
+| Frontend unitário | [548 passed / 59 arquivos](storefront-operational-20260910/continuation-frontend-final.txt) |
+| Frontend typecheck/lint | [Typecheck passou](storefront-operational-20260910/continuation-frontend-typecheck.txt); [lint 0 erros e 5 warnings preexistentes](storefront-operational-20260910/continuation-frontend-lint.txt) |
+| Build + Chromium + BFF + Django | [Build passou; E2E 27 passed](storefront-operational-20260910/continuation-browser-final.txt) |
+
+O diff técnico autorizado está concluído. Permanecem fora dele e sem autorização: piloto/rollout/produção; mensagens, cobranças ou transações externas; D01–D06; J01–J16 com pessoas; VoiceOver/TalkBack; Maps/WhatsApp reais; volume e jobs produtivos em voo; revisão/aceite dos donos propostos. Não se alega ganho humano a partir destes testes.

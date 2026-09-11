@@ -4,6 +4,7 @@ import time
 
 import pytest
 from django.core.cache import cache
+from django.db import connection
 
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
@@ -29,7 +30,10 @@ def test_local_mutation_budget(client):
                 "p95_ms": round(p95, 2),
                 "max_ms": round(max(times), 2),
                 "budget_ms": 1500,
-                "scope": "Django test client + SQLite; no browser/network/humans",
+                "scope": (
+                    f"Django test client + {connection.vendor}; "
+                    "no browser/network/humans"
+                ),
             }
         )
     )

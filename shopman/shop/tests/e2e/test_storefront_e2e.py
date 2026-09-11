@@ -68,6 +68,7 @@ def _product_link(page, store_base_url):
     """First product card off the live menu: (sku, nome visível no card)."""
     page.goto(f"{store_base_url}{storefront_links.path_menu()}", wait_until="networkidle")
     card = page.locator("a[href*='/produto/']").first
+    expect(card).to_be_visible(timeout=15_000)
     href = card.get_attribute("href")
     if not href:
         return None, ""
@@ -121,9 +122,12 @@ class TestCustomerStore:
         )
         product_name = page.locator("h1").first.inner_text().strip()
         assert product_name, "PDP should name the product"
-        page.get_by_role("button", name=ADD_TO_CART).first.click()
-        # Optimistic cart state settles, then the cart page reflects the item.
-        page.wait_for_timeout(600)
+        with page.expect_response(
+            lambda response: "/api/v1/cart/skus/" in response.url
+            and response.request.method == "PUT"
+        ) as mutation:
+            page.get_by_role("button", name=ADD_TO_CART).first.click()
+        assert mutation.value.status == 200
         cart = page.goto(f"{store_base_url}{storefront_links.path_cart()}", wait_until="networkidle")
         assert cart.status == 200, f"sacola respondeu {cart.status}"
         expect(page.get_by_text(product_name, exact=False).first).to_be_visible()
@@ -139,6 +143,17 @@ class TestCustomerStore:
         # um motivo (WP-SUGESTÃO). `data-cart-line-item` é o que a intenção
         # sempre quis dizer.
         assert page.locator("main [data-cart-line-item]").count() > 0
+
+    def test_03a_immediate_cart_navigation_waits_for_the_mutation(self, page, store_base_url):
+        """The optimistic click becomes durable before client-side routing."""
+        sku = _seeded_sku(page, store_base_url)
+        assert sku
+        page.goto(f"{store_base_url}{storefront_links.path_product(sku)}", wait_until="networkidle")
+        product_name = page.locator("h1").first.inner_text().strip()
+        page.get_by_role("button", name=ADD_TO_CART).first.click()
+        page.get_by_role("link", name="Ver sacola").click()
+        page.wait_for_url(re.compile(r"/sacola$"), timeout=15_000)
+        expect(page.get_by_text(product_name, exact=False).first).to_be_visible()
 
     def test_04_checkout_surfaces_auth_gate(self, page, store_base_url):
         """Anonymous checkout surfaces the login guardrail (expected, not a bug).
@@ -235,6 +250,59 @@ class TestCustomerEdgeCases:
         assert re.search(r"PIX|pagamento|pagar|expir", body, re.IGNORECASE), (
             "Granted tracking page should render the PIX payment state inline"
         )
+
+    def test_08a_storage_denied_keeps_cart_journey_usable(self, page, store_base_url):
+        """Browser storage is optional; the server session remains canonical."""
+        page.add_init_script(
+            """
+            for (const name of ['localStorage', 'sessionStorage']) {
+              Object.defineProperty(window, name, {
+                configurable: true,
+                get () { throw new DOMException('blocked by browser policy', 'SecurityError') }
+              })
+            }
+            """
+        )
+        sku = _seeded_sku(page, store_base_url)
+        assert sku
+        page.goto(f"{store_base_url}{storefront_links.path_product(sku)}", wait_until="networkidle")
+        product_name = page.locator("h1").first.inner_text().strip()
+        with page.expect_response(lambda response: "/api/v1/cart/skus/" in response.url):
+            page.get_by_role("button", name=ADD_TO_CART).first.click()
+        page.goto(f"{store_base_url}{storefront_links.path_cart()}", wait_until="networkidle")
+        expect(page.get_by_text(product_name, exact=False).first).to_be_visible()
+
+    def test_08b_second_tab_reads_same_server_cart(self, page, store_base_url):
+        """A second tab resumes the authorized cart without copying fields."""
+        sku = _seeded_sku(page, store_base_url)
+        assert sku
+        page.goto(f"{store_base_url}{storefront_links.path_product(sku)}", wait_until="networkidle")
+        product_name = page.locator("h1").first.inner_text().strip()
+        with page.expect_response(lambda response: "/api/v1/cart/skus/" in response.url):
+            page.get_by_role("button", name=ADD_TO_CART).first.click()
+        second = page.context.new_page()
+        try:
+            second.goto(f"{store_base_url}{storefront_links.path_cart()}", wait_until="networkidle")
+            expect(second.get_by_text(product_name, exact=False).first).to_be_visible()
+        finally:
+            second.close()
+
+    def test_08c_keyboard_focus_survives_narrow_zoomed_view(self, page, store_base_url):
+        """The menu keeps a visible next action under a constrained viewport."""
+        page.set_viewport_size({"width": 320, "height": 640})
+        page.goto(f"{store_base_url}{storefront_links.path_menu()}", wait_until="networkidle")
+        page.evaluate("document.documentElement.style.zoom = '200%'")
+        for _ in range(20):
+            page.keyboard.press("Tab")
+            focused = page.locator(":focus")
+            if focused.count() and focused.evaluate(
+                "el => ['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName)"
+            ):
+                box = focused.bounding_box()
+                assert box is not None
+                assert box["x"] < 320 and box["x"] + box["width"] > 0
+                return
+        raise AssertionError("Nenhuma próxima ação recebeu foco por teclado")
 
 
 # ---------------------------------------------------------------------------
