@@ -1,0 +1,36 @@
+.................................................F..........             [100%]
+=================================== FAILURES ===================================
+_________ test_notification_exception_is_redacted_from_result_and_log __________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10d6497c0>
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10d5f2ed0>
+
+    def test_notification_exception_is_redacted_from_result_and_log(monkeypatch, caplog):
+        recipient = "+5543999998765"
+    
+        class Explodes:
+            @staticmethod
+            def send(**kwargs):
+                raise RuntimeError(f"vendor leaked {recipient}")
+    
+        monkeypatch.setattr(notifications, "_adapters", {"manychat": Explodes()})
+    
+        result = notifications.notify(
+            event="order_accepted",
+            recipient=recipient,
+            context={},
+            backend="manychat",
+        )
+    
+>       assert result.error == "notification_adapter_error"
+E       AssertionError: assert 'acceptance_unconfirmed' == 'notification_adapter_error'
+E         
+E         - notification_adapter_error
+E         + acceptance_unconfirmed
+
+shopman/shop/tests/test_manychat_marketing_safety.py:151: AssertionError
+----------------------------- Captured stderr call -----------------------------
+WARNING 2026-09-11 05:38:17,536 shopman.shop.notifications Notification acceptance unknown: event=order_accepted backend=manychat
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_manychat_marketing_safety.py::test_notification_exception_is_redacted_from_result_and_log
+1 failed, 59 passed in 13.22s

@@ -6,6 +6,32 @@ fotografias históricas. Esta consolidação cobre o código até **062a7b5ec**,
 **8318b9b03**, ícones CSS **062a7b5ec**, alvos de interação, Actions de corrida
 e inventário **84e609641**. Não declara T, P ou R concluídos.
 
+## Atualização do brief / rebase — 11/09
+
+Os 96 commits foram reaplicados sobre main **0acb727ff** (incluindo PRs599/601).
+Backup anterior: `codex/orders-pre-brief-20260911` em **daf58b9c2**. Rebase
+**aa412f87c**; compatibilidade final **8669dce40**. A referência062a7b5ec acima
+continua identificando a rodada histórica, não a fonte pós-rebase.
+
+Rodada atual: **303 testes Orders**, **255 kit**, **58 +85 execuções PostgreSQL**,
+**29 jornadas integradas**, typecheck/build e Ruff dos arquivos Python resolvidos.
+Há sobreposição entre as famílias PostgreSQL; não são143 testes únicos.
+Logs positivos, falha de seleção de arquivo e regressão corrigida estão em
+`brief_rebase/README.md`. A suíte ampla histórica não foi reexecutada neste SHA.
+O servidor das jornadas foi carregado antes do ajuste8669 (código estável do erro
++imports); essa diferença foi coberta pela rodada PostgreSQL, não por nova jornada.
+
+A triagem do novo brief está em `../../ORDERS-CONTROLS-TRIAGE-2026-09-11.md`.
+Altura44/fundo/foco já aprovados por Pablo no PR599, sem novo gate. Opacidades
+continuam pendentes. A/B/C ainda não implementados: o brief exige fechar a branch
+operacional antes dos três PRs separados. Não há aprovação implícita desse fechamento.
+**Budgets anteriores permanecem reprovados e não foram remedidos após rebase.**
+
+As novas migrações do main foram aplicadas somente em `orders_lab` sintético;
+Pedidos não introduziu DDL próprio. O rollback para a antiga base
+não pode ser tratado como downgrade de banco: o baseline agora inclui os schemas
+upstream. Não houve produção nem efeitos reais. T/P/R mantêm os estados abaixo.
+
 ## Pacotes e critérios restantes
 
 | Pacote | Implementação/evidência disponível | Aceite ainda aberto |
