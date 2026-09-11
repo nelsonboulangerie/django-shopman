@@ -625,6 +625,11 @@ test("reason and note drafts require explicit discard across close, reload and n
   await cancel.focus();
   await page.keyboard.press("Enter");
   const reason = page.getByRole("textbox", { name: "Motivo", exact: true });
+  const close = page.locator('[data-slot="dialog-close"]');
+  await close.click({ trial: true });
+  const closeBox = await close.boundingBox();
+  expect(closeBox?.width).toBeGreaterThanOrEqual(44);
+  expect(closeBox?.height).toBeGreaterThanOrEqual(44);
   await reason.fill("Motivo que não deve ser redigitado");
   async function declineReload() {
     const closed = page.waitForEvent("dialog");

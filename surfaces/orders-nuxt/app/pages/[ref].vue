@@ -326,7 +326,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             :href="order.customer_whatsapp_url"
             target="_blank"
             rel="noopener"
-            class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
+            class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
             data-contact-whatsapp
           >
             <Icon name="lucide:message-circle" class="size-4" /> WhatsApp
@@ -334,7 +334,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           <a
             v-if="order.customer_phone_uri"
             :href="order.customer_phone_uri"
-            class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
+            class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
             data-contact-phone
           >
             <Icon name="lucide:phone" class="size-4" /> Ligar
@@ -342,7 +342,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           <a
             v-if="order.customer_email"
             :href="`mailto:${order.customer_email}`"
-            class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
+            class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
             data-contact-email
           >
             <Icon name="lucide:mail" class="size-4" /> E-mail
@@ -352,7 +352,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             :href="customerAdminUrl"
             target="_blank"
             rel="noopener"
-            class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             data-contact-cadastro
           >
             <Icon name="lucide:id-card" class="size-4" /> Abrir cadastro

@@ -567,7 +567,7 @@ useHead({ title: "Catálogo · Gestor" });
                   <a
                     v-if="s.output_path"
                     :href="`${djangoBase}${s.output_path}`" target="_blank" rel="noopener"
-                    class="ml-auto shrink-0 text-muted-foreground/50 transition hover:text-foreground"
+                    class="ml-auto grid min-h-control min-w-control shrink-0 place-items-center text-muted-foreground/50 transition hover:text-foreground"
                     :title="`Abrir ${s.name}`" @click.stop
                   ><Icon name="lucide:external-link" class="size-3" /></a>
                 </span>

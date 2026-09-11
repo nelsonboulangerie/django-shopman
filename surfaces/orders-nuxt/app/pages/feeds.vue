@@ -100,7 +100,7 @@ useHead({ title: "Feeds · Gestor" });
         <!-- criar/configurar a fundo (novo canal de exibição, opções) é no Admin -->
         <a
           :href="`${adminBase}/admin/shop/channel/`" target="_blank" rel="noopener"
-          class="inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
           title="Criar / configurar feeds no Admin"
         >
           <Icon name="lucide:settings" class="size-4" />

@@ -1618,3 +1618,13 @@ Sumarizador de eventos passa a contar endpoint/status e correlação com labels
 limitados;3 testes passaram. Reprocessa eventos sintéticos ddd8f981a, sem nova
 rodada ou ganho de campo alegado. CSV do piloto distingue contadores observados
 de campos vazios; não instala coleta silenciosa de texto. Sem migration.
+
+### WP06 — fechamento de modal e links operacionais
+
+Antes: X do diálogo16×16 no browser. Agora usa token44, nome Fechar e cabeçalho
+com espaço reservado; links de contato/Admin/saída recebem o mesmo piso.
+28 integrações58,9s,303 Vitest6,98s, typecheck/build passaram. Screenshot
+inspecionado: título/descrição não cobertos, mensagem íntegra. close_targets/.
+Uma tentativa de preparar a asserção usou cwd errado; não é reprodução do
+defeito. Log before válido contém Received16, Expected44. Sem DDL/efeito real,
+rollback visual apenas. Leitor de tela físico/compreensão continuam sem ensaio.
