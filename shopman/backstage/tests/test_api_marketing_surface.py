@@ -1488,7 +1488,9 @@ class TestManualFire:
         assert confirmation["resource_ref"] == f"campaign:{rule.pk}"
         assert confirmation["base_version"] == rule.version
         assert confirmation["audience_count"] == 1
-        assert confirmation["typed_phrase"] == "PUBLICAR 1"
+        # Duas plataformas públicas = duas consequências, ainda que a audiência
+        # de contatos tenha uma única pessoa elegível.
+        assert confirmation["typed_phrase"] == "PUBLICAR 2"
         assert Announcement.objects.filter(rule=rule).count() == 0
         assert MarketingCommandReceipt.objects.count() == 0
 

@@ -108,7 +108,8 @@ def test_immediate_api_command_returns_exact_server_challenge_before_any_write(c
     challenge = response.json()["confirmation"]
     assert challenge["mode"] == "typed"
     assert challenge["step_up"] == "password"
-    assert challenge["typed_phrase"] == "PUBLICAR 0"
+    assert challenge["audience_count"] == 0
+    assert challenge["typed_phrase"] == "PUBLICAR 1"
     assert challenge["resource_ref"] == f"announcement:{announcement.pk}"
     assert challenge["platforms"] == ["instagram"]
     assert MarketingCommandReceipt.objects.count() == 0

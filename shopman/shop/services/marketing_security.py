@@ -197,7 +197,10 @@ def authorization_context(
 
 def requirement_for(context: AuthorizationContext, *, now: datetime | None = None) -> AuthorizationRequirement:
     clock = _aware_now(now)
-    count = context.audience_count
+    # Uma consequência pública tem um destino por plataforma mesmo quando não
+    # existe audiência de mensagens diretas. O número digitado deve descrever o
+    # efeito real; "PUBLICAR 0" para um Story é uma confirmação enganosa.
+    count = _external_target_count(context)
     if count > MAX_BLAST:
         raise MarketingAuthorizationError(
             code="marketing_blast_limit_exceeded",
@@ -863,7 +866,7 @@ def _reserve_external_quota(actor, *, context: AuthorizationContext, now: dateti
         ACTION_UNFREEZE,
     }:
         return
-    target_count = max(context.audience_count, len(context.platforms), 1)
+    target_count = _external_target_count(context)
     since = now - timedelta(days=1)
     used = sum(
         MarketingQuotaUsage.objects.filter(occurred_at__gte=since).values_list(
@@ -892,6 +895,10 @@ def _reserve_external_quota(actor, *, context: AuthorizationContext, now: dateti
         occurred_at=now,
         retention_until=now + SECURITY_RETENTION,
     )
+
+
+def _external_target_count(context: AuthorizationContext) -> int:
+    return max(context.audience_count, len(context.platforms), 1)
 
 
 def _require_second_actor(
