@@ -4,9 +4,18 @@ export function useUserNotifications(onPush: () => void) {
   const config = useRuntimeConfig();
   const realtime = ref<"connecting" | "live" | "polling">("polling");
   let source: EventSource | null = null;
+  let mounted = false;
+  const { data: session } = useNuxtData<{ operator?: { id: number } }>("operator-session");
+  const owner = () => session.value?.operator?.id;
+  watch(owner, () => {
+    source?.close();
+    source = null;
+    realtime.value = "polling";
+    if (mounted) connect();
+  }, { flush: "sync" });
 
   function connect() {
-    if (source) return;
+    if (source || owner() == null) return;
     const url = ssePath("/sse/notifications", config.app.baseURL);
     try {
       realtime.value = "connecting";
@@ -27,13 +36,18 @@ export function useUserNotifications(onPush: () => void) {
   };
 
   onMounted(() => {
+    mounted = true;
     connect();
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("online", onVisible);
   });
   onBeforeUnmount(() => {
-    if (source) source.close();
-    source = null;
+    mounted = false;
+    if (source) {
+      source.close();
+      source = null;
+    }
+
     document.removeEventListener("visibilitychange", onVisible);
     window.removeEventListener("online", onVisible);
   });

@@ -16,7 +16,7 @@ import {
   signInSummary,
 } from "../presentation/notifications";
 
-const { items, unread, markRead, signIns, loadSignIns } = useNotifications();
+const { items, unread, markRead, signIns, loadSignIns, error, signInError, refresh } = useNotifications();
 
 const open = ref(false);
 // Duas vistas no MESMO painel: a caixa e o log de acessos. O log não tem página
@@ -60,8 +60,12 @@ async function showSignIns() {
       class="absolute right-0 z-50 mt-2 w-80 rounded-xl border bg-card p-2 shadow-lg"
     >
       <template v-if="view === 'inbox'">
+        <div v-if="error" role="status" class="px-2 py-2 text-sm text-muted-foreground">
+          <p>{{ error }}</p>
+          <button type="button" class="underline" @click="refresh">Atualizar avisos</button>
+        </div>
         <p
-          v-if="!items.length"
+          v-if="!items.length && !error"
           class="px-2 py-6 text-center text-sm text-muted-foreground"
         >
           Nada por aqui.
@@ -133,7 +137,11 @@ async function showSignIns() {
           <Icon name="lucide:arrow-left" class="size-4" /> Avisos
         </button>
 
-        <p v-if="!signIns.length" class="px-2 py-6 text-center text-sm text-muted-foreground">
+        <div v-if="signInError" role="status" class="px-2 py-2 text-sm text-muted-foreground">
+          <p>{{ signInError }}</p>
+          <button type="button" class="underline" @click="loadSignIns">Atualizar acessos</button>
+        </div>
+        <p v-if="!signIns.length && !signInError" class="px-2 py-6 text-center text-sm text-muted-foreground">
           Nenhum acesso registrado.
         </p>
 

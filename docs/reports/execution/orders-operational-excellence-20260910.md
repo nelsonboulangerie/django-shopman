@@ -580,3 +580,21 @@ callers confiáveis. Rollback é revert local, mas reabre as janelas demonstrada
 piloto com leitores antigos contornando o guard. Guard não equivale ao contrato completo de
 intenção dos demais comandos. WP03 segue em execução: timeout de confirmação versus ação
 do operador e demais fronteiras da matriz ainda precisam das provas próprias.
+
+### WP06/WP08 — última leitura e identidade na caixa pessoal existente
+
+Prova anterior: GET bem-sucedido seguido de 503 apagava lista/contador; teste falhou.
+Agora falha conserva última leitura com indicação de desatualização e botão Atualizar;
+falha de mark-read não finge sucesso. 401 pede reidentificação; 403 informa permissão.
+Troca de pessoa limpa contexto e invalida resposta atrasada; sem pessoa identificada não
+consulta inbox/acessos nem abre SSE. SSE reconecta na mudança de identidade. Sem mudança
+no escopo de ack, destinatários, cadência de 60s ou nova superfície (G01/G04 preservados).
+
+O coalescedor já existente foi movido para operator-kit e reexportado pelo Gestor: não há
+segunda implementação. Cem triggers durante leitura produzem no máximo uma ativa e uma
+pendente. **228 testes do kit passaram**, incluindo perda de resposta de leitura, 503,
+identidade A→B, re-gate 401, recusa 403 e rajada. Typecheck Orders passou. O ensaio é de
+composable/DOM isolado; não mede frescor em campo nem valida autoridade organizacional.
+Migração: sem persistência/DDL; estado em memória por pessoa. Rollback por revert do cliente,
+com risco explícito de voltar a representar falha como inbox vazio. WP08 ainda depende dos
+outros contratos completos; esta proteção não declara o pacote integralmente concluído.
