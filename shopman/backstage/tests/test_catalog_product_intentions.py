@@ -67,3 +67,25 @@ def test_product_receipt_storage_failure_rolls_back_product(client, operator, ca
         client.patch(URL, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
     catalog["pao"].refresh_from_db()
     assert catalog["pao"].name == "Pão"
+
+
+def test_product_receipt_remains_readable_when_projection_fails(client, operator, catalog, monkeypatch):
+    from shopman.backstage.api.catalog import CatalogProductDetailView
+
+    client.force_login(operator)
+    body = {**client.get(URL).json()["action"]["payload_schema"], "patch": {"name": "Committed before read outage"}}
+    key = str(uuid4())
+
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("synthetic product projection outage")
+
+    monkeypatch.setattr(CatalogProductDetailView, "_read", unavailable)
+    client.raise_request_exception = False
+    response = client.patch(URL, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+    assert response.status_code == 500
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].name == "Committed before read outage"
+    receipt = client.get(URL, {"idempotency_key": key})
+    assert receipt.status_code == 200
+    assert receipt.json()["outcome"] == "applied"
+    assert IdempotencyKey.objects.filter(key=key, status="done").count() == 1

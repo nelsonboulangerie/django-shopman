@@ -11,7 +11,7 @@ Running 2 tests using 1 worker
   ✘  2 [chromium] › tests/integration/operational.spec.ts:408:1 › delayed collection response cannot replace the selected resource (45.4s)
 
 
-  1) [chromium] › tests/integration/operational.spec.ts:389:1 › back navigation keeps a product draft after declining discard 
+  1) [chromium] › tests/integration/operational.spec.ts:389:1 › back navigation keeps a product draft after declining discard
 
     Error: expect(received).toContain(expected) // indexOf
 
@@ -37,7 +37,7 @@ Running 2 tests using 1 worker
 
     ────────────────────────────────────────────────────────────────────────────────────────────────
 
-  2) [chromium] › tests/integration/operational.spec.ts:408:1 › delayed collection response cannot replace the selected resource 
+  2) [chromium] › tests/integration/operational.spec.ts:408:1 › delayed collection response cannot replace the selected resource
 
     Test timeout of 45000ms exceeded.
 
@@ -66,5 +66,5 @@ Running 2 tests using 1 worker
     ────────────────────────────────────────────────────────────────────────────────────────────────
 
   2 failed
-    [chromium] › tests/integration/operational.spec.ts:389:1 › back navigation keeps a product draft after declining discard 
-    [chromium] › tests/integration/operational.spec.ts:408:1 › delayed collection response cannot replace the selected resource 
+    [chromium] › tests/integration/operational.spec.ts:389:1 › back navigation keeps a product draft after declining discard
+    [chromium] › tests/integration/operational.spec.ts:408:1 › delayed collection response cannot replace the selected resource

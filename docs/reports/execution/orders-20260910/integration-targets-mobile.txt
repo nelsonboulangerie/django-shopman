@@ -8,7 +8,7 @@ Running 1 test using 1 worker
   ✘  1 [chromium] › tests/integration/operational.spec.ts:312:1 › keyboard curation and frequent targets retain exact order without pointer input (12.3s)
 
 
-  1) [chromium] › tests/integration/operational.spec.ts:312:1 › keyboard curation and frequent targets retain exact order without pointer input 
+  1) [chromium] › tests/integration/operational.spec.ts:312:1 › keyboard curation and frequent targets retain exact order without pointer input
 
     Error: expect(locator).toBeInViewport() failed
 
@@ -44,4 +44,4 @@ Running 1 test using 1 worker
     ────────────────────────────────────────────────────────────────────────────────────────────────
 
   1 failed
-    [chromium] › tests/integration/operational.spec.ts:312:1 › keyboard curation and frequent targets retain exact order without pointer input 
+    [chromium] › tests/integration/operational.spec.ts:312:1 › keyboard curation and frequent targets retain exact order without pointer input

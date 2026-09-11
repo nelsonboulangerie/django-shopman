@@ -138,14 +138,15 @@ class CatalogProductDetailView(_CatalogBase):
         from shopman.shop.services.remote_mutations import RemoteMutationInProgress, lookup_local_mutation
 
         try:
-            current = self._read(request, sku)
             key = request.query_params.get("idempotency_key")
             if not key:
-                return Response(current)
+                return Response(self._read(request, sku))
+            # A receipt is a committed fact, independent of a later projection
+            # outage or product removal. This GET must never re-run that read.
             receipt = lookup_local_mutation(scope=self._scope(request, sku), key=key)
             if receipt is None:
-                return Response({"outcome": "unknown", **current}, status=202)
-            return Response({**receipt.response_body, **current}, status=receipt.response_code)
+                return Response({"outcome": "unknown"}, status=202)
+            return Response(receipt.response_body, status=receipt.response_code)
         except RemoteMutationInProgress:
             return Response({"outcome": "in_progress"}, status=202)
         except (CatalogError, ValidationError) as exc:

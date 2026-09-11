@@ -9,7 +9,7 @@ Running 2 tests using 1 worker
   ✘  2 [chromium] › tests/integration/operational.spec.ts:408:1 › delayed collection response cannot replace the selected resource (45.3s)
 
 
-  1) [chromium] › tests/integration/operational.spec.ts:408:1 › delayed collection response cannot replace the selected resource 
+  1) [chromium] › tests/integration/operational.spec.ts:408:1 › delayed collection response cannot replace the selected resource
 
     Test timeout of 45000ms exceeded.
 
@@ -38,5 +38,5 @@ Running 2 tests using 1 worker
     ────────────────────────────────────────────────────────────────────────────────────────────────
 
   1 failed
-    [chromium] › tests/integration/operational.spec.ts:408:1 › delayed collection response cannot replace the selected resource 
+    [chromium] › tests/integration/operational.spec.ts:408:1 › delayed collection response cannot replace the selected resource
   1 passed (50.1s)
