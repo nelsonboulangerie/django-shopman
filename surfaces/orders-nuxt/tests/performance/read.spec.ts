@@ -18,7 +18,8 @@ test("rendered queue becomes usable and filtering remains local", async ({ brows
       await expect(page.getByRole("link", { name: `Abrir pedido HTTP-LAB-${n}-0`, exact: true })).toBeVisible();
       const search = page.getByRole("searchbox", { name: "Buscar por código, cliente ou item (atalho: /)", exact: true });
       await search.fill(`HTTP-LAB-${n}-0`);
-      await expect(page.locator('a[aria-label^="Abrir pedido HTTP-LAB-"]')).toHaveCount(1);
+      // Inventory links keep their delivery context when the queue is filtered.
+      await expect(page.locator('article a[aria-label^="Abrir pedido HTTP-LAB-"], tbody a[aria-label^="Abrir pedido HTTP-LAB-"]')).toHaveCount(1);
       const usableMs = Date.now() - start;
       const navigation = await page.evaluate(() => {
         const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming;

@@ -131,10 +131,20 @@ def test_lost_response_replays_same_allocation_receipt(inventory, client, django
 
 
 @pytest.mark.django_db(transaction=True)
-def test_concurrent_orders_have_exactly_one_winner(inventory):
+def test_concurrent_orders_have_exactly_one_winner(inventory, monkeypatch):
     if connection.vendor != "postgresql":
         pytest.skip("Real PostgreSQL row locks required")
     orders = [order("RACE-A"), order("RACE-B")]
+    from shopman.backstage.services import delivery_devices
+
+    available_read = delivery_devices.has_available
+    both_saw_available = Barrier(2)
+    def observe_before_competing(pending):
+        available = available_read(pending)
+        assert available
+        both_saw_available.wait(timeout=10)
+        return available
+    monkeypatch.setattr(delivery_devices, "has_available", observe_before_competing)
     barrier = Barrier(2)
     def attempt(pk):
         try:
