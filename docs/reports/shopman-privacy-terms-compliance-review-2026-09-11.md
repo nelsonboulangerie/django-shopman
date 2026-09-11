@@ -27,6 +27,11 @@ exclusão, consentimentos, audiências e entregas de Marketing, concierge com IA
 pagamentos, fiscal, autenticação, observabilidade, infraestrutura declarada e o
 OAuth do Google Business Profile.
 
+A revisão está empilhada sobre o contrato operacional do Storefront no
+[PR #612](https://github.com/nelsonboulangerie/django-shopman/pull/612), que
+mantém “Avise-me” ativo até pausa/cancelamento e oferece gestão da assinatura.
+Isso evita duplicar ou contradizer a decisão já implementada em outra worktree.
+
 A régua legal foi limitada à LGPD, direitos do titular e segurança; Código de
 Defesa do Consumidor e comércio eletrônico; regras da ANPD para incidentes,
 agentes de pequeno porte e transferência internacional; e políticas de uso de
@@ -117,9 +122,9 @@ Arquivos centrais: `shopman/shop/adapters/marketing_delivery_google.py`,
 
 ### Evidência de verificação
 
-- suíte integral Python: **4.347 testes aprovados**, 31 pulados pelos próprios
-  marcadores, 26 desmarcados e 10 subtestes aprovados;
-- frontend: **57 arquivos e 536 testes aprovados**;
+- suíte integral Python: **4.357 testes aprovados**, 31 pulados pelos próprios
+  marcadores, 31 desmarcados e 10 subtestes aprovados;
+- frontend: **61 arquivos e 557 testes aprovados**;
 - Ruff: sem achados; typecheck: aprovado; build Nuxt de produção: aprovado;
 - ESLint: zero erros e cinco avisos preexistentes de ordem de atributos em um
   componente não alterado (`WhatsappVerifyPanel.vue`);
