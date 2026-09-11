@@ -100,6 +100,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # O backend hermético dos fluxos E2E usa sintaxe Python 3.10+ e o runner
+      # macOS não oferece uma versão contratada por default. Sem o setup, o
+      # processo pode morrer antes de abrir a porta e o Playwright só relata um
+      # timeout opaco de 30 s. O runtime do projeto já é Python 3.12.
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
       - name: Set up Node
         uses: actions/setup-node@v7
         with:
