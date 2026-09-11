@@ -41,7 +41,7 @@ async function showSignIns() {
   <div class="relative">
     <button
       type="button"
-      class="relative inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
+      class="relative inline-flex size-control items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
       :aria-label="unread ? `Avisos (${unread} não lidos)` : 'Avisos'"
       @click="toggle"
     >

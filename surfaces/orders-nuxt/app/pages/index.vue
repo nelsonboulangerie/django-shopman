@@ -408,7 +408,7 @@ function printQueue() {
              mesmo toque pede a permissão de notificação do browser. -->
         <button
           type="button"
-          class="relative grid size-9 place-items-center rounded-md border transition hover:bg-accent hover:text-foreground"
+          class="relative grid size-control place-items-center rounded-md border transition hover:bg-accent hover:text-foreground"
           :class="soundOn && soundBlocked ? 'border-warning/50 text-amber-600 dark:text-amber-400' : 'text-muted-foreground'"
           :aria-label="soundOn && soundBlocked ? 'Som bloqueado — toque para ativar' : soundOn ? 'Som de pedido novo ativo' : 'Som de pedido novo desativado'"
           :title="soundOn && soundBlocked ? 'Som bloqueado — toque para ativar' : 'Som de pedido novo'"
@@ -425,7 +425,7 @@ function printQueue() {
         <div class="relative">
           <button
             type="button"
-            class="inline-flex h-9 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            class="inline-flex h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
             aria-haspopup="menu"
             :aria-expanded="sortOpen"
             title="Ordenar (atalho: s)"
@@ -442,7 +442,7 @@ function printQueue() {
               type="button"
               role="menuitemradio"
               :aria-checked="sort === opt.key"
-              class="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs transition hover:bg-accent"
+              class="flex min-h-control w-full items-center justify-between px-3 py-1.5 text-left text-xs transition hover:bg-accent"
               @click="pickSort(opt.key)"
             >
               {{ opt.label }}
@@ -455,10 +455,10 @@ function printQueue() {
         <UiIconButton icon="lucide:printer" label="Imprimir fila" @click="printQueue" />
 
         <!-- view-mode -->
-        <div class="inline-flex h-9 items-center rounded-md border p-0.5">
+        <div class="inline-flex items-center rounded-md border p-0.5">
           <button
             type="button"
-            class="grid size-8 place-items-center rounded transition"
+            class="grid size-control place-items-center rounded transition"
             :class="viewMode === 'board' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'"
             aria-label="Ver em colunas"
             title="Colunas (atalho: v)"
@@ -468,7 +468,7 @@ function printQueue() {
           </button>
           <button
             type="button"
-            class="grid size-8 place-items-center rounded transition"
+            class="grid size-control place-items-center rounded transition"
             :class="viewMode === 'table' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'"
             aria-label="Ver em tabela"
             title="Tabela (atalho: v)"
@@ -567,13 +567,14 @@ function printQueue() {
                 <th class="w-9 px-3 py-2">
                   <button
                     type="button"
-                    class="grid size-4 place-items-center rounded border transition"
-                    :class="allVisibleSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 hover:border-primary'"
+                    class="grid size-control place-items-center rounded transition hover:bg-accent"
                     :aria-label="allVisibleSelected ? 'Desmarcar todos' : 'Selecionar todos'"
                     :aria-pressed="allVisibleSelected"
                     @click="toggleSelectAll"
                   >
-                    <Icon v-if="allVisibleSelected" name="lucide:check" class="size-3" />
+                    <span class="grid size-4 place-items-center rounded border" :class="allVisibleSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 hover:border-primary'">
+                      <Icon v-if="allVisibleSelected" name="lucide:check" class="size-3" />
+                    </span>
                   </button>
                 </th>
                 <th class="px-3 py-2">Código</th>
@@ -592,17 +593,18 @@ function printQueue() {
                 <td class="px-3 py-2">
                   <button
                     type="button"
-                    class="grid size-4 place-items-center rounded border transition"
-                    :class="isSelected(row.card.ref) ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 hover:border-primary'"
+                    class="grid size-control place-items-center rounded transition hover:bg-accent"
                     :aria-label="isSelected(row.card.ref) ? 'Desmarcar pedido' : 'Selecionar pedido'"
                     :aria-pressed="isSelected(row.card.ref)"
                     @click="toggleSelect(row.card.ref)"
                   >
-                    <Icon v-if="isSelected(row.card.ref)" name="lucide:check" class="size-3" />
+                    <span class="grid size-4 place-items-center rounded border" :class="isSelected(row.card.ref) ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 hover:border-primary'">
+                      <Icon v-if="isSelected(row.card.ref)" name="lucide:check" class="size-3" />
+                    </span>
                   </button>
                 </td>
                 <td class="px-3 py-2">
-                  <NuxtLink :to="`/${row.card.ref}`" class="font-bold tabular-nums hover:underline" :aria-label="`Abrir pedido ${row.card.ref}`">
+                  <NuxtLink :to="`/${row.card.ref}`" class="inline-flex min-h-control min-w-control items-center font-bold tabular-nums hover:underline" :aria-label="`Abrir pedido ${row.card.ref}`">
                     {{ splitRef(row.card.ref).code }}
                   </NuxtLink>
                 </td>

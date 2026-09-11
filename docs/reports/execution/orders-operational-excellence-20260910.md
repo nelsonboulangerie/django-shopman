@@ -1342,3 +1342,26 @@ Manychat pendentes preexistentes, um dígito fiscal de fixture, e testes que exi
 locks/conexões PostgreSQL. O log lista módulos/linhas/motivos; ensaios PostgreSQL
 direcionados registrados anteriormente cobrem os locks alterados, não equivalem a
 executar todos os skips históricos de domínios fora do escopo.
+
+### WP06 — áreas de interação medidas, sem mudar gestos/permissões
+
+Antes: Chromium mediu seleção card/tabela 16×16, busca/ordenação 36px de altura,
+limpar 24×24, alternadores 32×32 e opção de ordenação ~28px. Dois cenários
+falharam com essas dimensões em desktop/touch. Preparação anterior falhou por
+caminho relativo a cwd errado (arquivo não criado) e seletor não único (2 pedidos);
+logs preservados separadamente, não tratados como diagnóstico de dimensões.
+
+Implementação usa os tokens compartilhados control=44/action=48: busca/limpar,
+seleção/selecionar todos, menu de ordenação, troca de visão, navegação do pedido,
+atribuição, som e sinos. Indicador de seleção permanece 16px dentro do alvo 44px;
+inspeção das imagens levou a esse ajuste visual. Aviso dispensável também recebe
+alvo 44px. Nenhuma confirmação, permissão, efeito ou ordem de execução mudou.
+NotificationBell do operator-kit usa o mesmo token já adotado no kit.
+
+Validação final: Playwright padrão **6 passed/21,2s**, incluindo geometria em
+1440×1000 e 768×1024 com hasTouch, ação principal ≥48px, toggles/menu/seleção ≥44;
+**292 testes Gestor/5,60s**, typecheck aprovado, **228 kit/3,72s**. Screenshots
+inspecionados em `orders-20260910/targets/`. Sem DDL; rollback reverte componentes
+mantendo dados/chaves. Limites: viewport touch simulado não é aparelho físico;
+a auditoria cobre os alvos nomeados, não todos os estados de todas as páginas;
+não é prova com leitor de tela. Critérios restantes WP06 continuam abertos.

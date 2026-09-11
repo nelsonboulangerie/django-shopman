@@ -1,0 +1,52 @@
+
+> test:e2e
+> playwright test targets.spec.ts
+
+[WebServer] (node:20700) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 
+[WebServer]  ERROR  (node:20702) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use node --trace-warnings ... to show where the warning was created)
+[WebServer] 
+[WebServer] 
+[WebServer]  WARN  [PLUGIN_TIMINGS] Your build spent 96% of 3.2s inside plugin hooks (3.1s).
+[WebServer] Not measurable — 8 hooks whose calls overlap, so elapsed time covers work other calls were doing. Profile with node --cpu-prof:
+[WebServer]   - nuxt:imports-transform transform (954 calls)
+[WebServer]   - nuxt:ssr-styles:client resolveId (100 calls)
+[WebServer]   - vite:vue transform (120 calls)
+[WebServer]   … and 5 more
+[WebServer] See https://rolldown.rs/reference/InputOptions.checks#plugintimings for more details.
+[WebServer] 
+[WebServer] 
+[WebServer] 
+[WebServer]  WARN  [plugin @tailwindcss/vite:generate:build] [SOURCEMAP_BROKEN] Sourcemap is likely to be incorrect: a plugin (@tailwindcss/vite:generate:build) was used to transform files, but didn't generate a sourcemap for the transformation. Consult the plugin documentation for help: https://rolldown.rs/guide/troubleshooting#warning-sourcemap-is-likely-to-be-incorrect
+[WebServer] 
+[WebServer] 
+[WebServer] 
+[WebServer]  WARN  [plugin @tailwindcss/vite:generate:build] [SOURCEMAP_BROKEN] Sourcemap is likely to be incorrect: a plugin (@tailwindcss/vite:generate:build) was used to transform files, but didn't generate a sourcemap for the transformation. Consult the plugin documentation for help: https://rolldown.rs/guide/troubleshooting#warning-sourcemap-is-likely-to-be-incorrect
+[WebServer]  (x2)
+[WebServer] 
+[WebServer] 
+[WebServer]  WARN  [plugin @tailwindcss/vite:generate:build] [SOURCEMAP_BROKEN] Sourcemap is likely to be incorrect: a plugin (@tailwindcss/vite:generate:build) was used to transform files, but didn't generate a sourcemap for the transformation. Consult the plugin documentation for help: https://rolldown.rs/guide/troubleshooting#warning-sourcemap-is-likely-to-be-incorrect
+[WebServer]  (x3)
+[WebServer] 
+[WebServer] 
+[WebServer]  WARN  [plugin @tailwindcss/vite:generate:build] [SOURCEMAP_BROKEN] Sourcemap is likely to be incorrect: a plugin (@tailwindcss/vite:generate:build) was used to transform files, but didn't generate a sourcemap for the transformation. Consult the plugin documentation for help: https://rolldown.rs/guide/troubleshooting#warning-sourcemap-is-likely-to-be-incorrect
+[WebServer]  (x4)
+[WebServer] 
+[WebServer] 
+[WebServer]  WARN  [PLUGIN_TIMINGS] Your build spent 95% of 3.7s inside plugin hooks (3.5s).
+[WebServer] Not measurable — 6 hooks whose calls overlap, so elapsed time covers work other calls were doing. Profile with node --cpu-prof:
+[WebServer]   - nuxt:ssr-styles:ssr resolveId (104 calls)
+[WebServer]   - nuxt:imports-transform transform (252 calls)
+[WebServer]   - vite:vue transform (124 calls)
+[WebServer]   … and 3 more
+[WebServer] See https://rolldown.rs/reference/InputOptions.checks#plugintimings for more details.
+[WebServer] 
+[WebServer] 
+[WebServer] (node:21566) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+Error: No tests found.
+Make sure that arguments are regular expressions matching test files.
+You may need to escape symbols like "$" or "*" and quote the arguments.
+
