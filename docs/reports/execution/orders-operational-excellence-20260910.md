@@ -860,3 +860,10 @@ Esforço demonstrado localmente: resposta perdida de PATCH usa GET automático (
 ### WP06/WP07 — primeira leitura indisponível e retomada do SSE
 
 Base `d7d0e8432`: teste de ciclo de vida reproduziu 0 conexões SSE após GET inicial 503 seguido de recuperação (1 falha/21 sucessos). O watcher `once` se encerrava na primeira transição, mesmo não estando pronto. Agora encerra somente após pending=false/error ausente, ou desmontagem. Polling canônico permanece. O primeiro ensaio após correção revelou ausência do auto-import ssePath no harness; injetada a implementação real, sem mudança de runtime para acomodar o teste. Resultado: 257 testes Orders passaram. Feeds já mantinha leitura e editor durante GET503: teste novo protege comportamento existente, sem reimplementar. Sem migração de dados; rollback de código desta fatia. Ainda não comprova o budget p95 de retomada em dispositivo de piloto.
+
+
+### WP05/C06 — entrada numérica sem truncamento ou valores não finitos
+
+Base `a4361379e`. Teste anterior: 8 falhas/9 sucessos. Preço inteiro aceitava True e truncava 12.5; infinity levantava OverflowError não traduzido. Nutrição aceitava booleanos, truncava porção fracionária e valores não finitos escapavam da recusa tipada. NaN em inteiro já era recusado e virou regressão. O parser de inteiro do facade agora segue o dialeto estrito já existente da entrada (int/string inteira; bool/float não são inteiros); nutrição usa a dataclass canônica para escolher inteiro/decimal e exige número finito. Não muda regra nutricional, origem dos fatos ou aprovação de rótulo.
+
+Validação: 106 testes PostgreSQL API/catálogo/preservação passaram. A primeira execução pós-edição falhou na coleta por import com indentação incorreta; corrigido antes da rodada válida e Ruff. As recusas mantêm nome, preço e dados nutricionais/proveniência anteriores. Sem migração; rollback de código, sem transformação de valores comerciais. G05 de rotulagem continua pendente; nenhum dado real editado.

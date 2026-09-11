@@ -17,6 +17,7 @@ Superfície = Channel; célula = ListingItem da listing de mesmo ref.
 from __future__ import annotations
 
 from dataclasses import asdict
+from math import isfinite
 
 from django.db import transaction
 
@@ -536,6 +537,8 @@ def get_product_detail(sku: str) -> dict:
 def _as_nullable_int(value, label: str) -> int | None:
     if value is None or value == "":
         return None
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        raise CatalogError(f"{label} deve ser um número inteiro.")
     try:
         return int(value)
     except (TypeError, ValueError) as exc:
@@ -601,10 +604,14 @@ def _apply_nutrition(product, raw) -> None:
         if value in (None, ""):
             continue
         try:
-            parsed = int(value) if "int" in str(accepted[key]) else float(value)
+            if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+                raise CatalogError(f"{key} deve ser um número.")
+            parsed = _as_nullable_int(value, key) if "int" in str(accepted[key]) else float(value)
+            if parsed is None or not isfinite(parsed):
+                raise CatalogError(f"{key} deve ser um número finito.")
             changed = changed or collected.get(key) != parsed
             collected[key] = parsed
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, OverflowError) as exc:
             raise CatalogError(f"{key} deve ser um número.") from exc
 
     # Editar à mão desliga a derivação a partir da receita — senão o próximo save
