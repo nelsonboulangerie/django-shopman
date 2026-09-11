@@ -3,7 +3,9 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
-from shopman.orderman.models import Order, OrderItem, Session, Directive
+
+from shopman.orderman.models import Directive, Order, OrderItem, Session
+
 from shopman.backstage.models import KDSInstance, KDSTicket
 
 ref = 'LAB-PHASE-' + uuid4().hex[:8]

@@ -1,7 +1,9 @@
-from django.contrib.auth.models import User, Permission
-from shopman.shop.models import Shop, Channel
-from shopman.offerman.models import Product, Listing, ListingItem
+from django.contrib.auth.models import Permission, User
+from shopman.offerman.models import Listing, ListingItem, Product
 from shopman.orderman.models import Order, OrderItem
+
+from shopman.shop.models import Channel, Shop
+
 Shop.objects.get_or_create(name='Orders synthetic lab')
 user, _ = User.objects.get_or_create(username='orders-lab', defaults={'is_staff':True,'first_name':'Operador laboratório'})
 user.set_password('synthetic-lab-only-20260910')
@@ -11,9 +13,10 @@ Channel.objects.update_or_create(ref='lab', defaults={'name':'Laboratório','is_
 product, _ = Product.objects.get_or_create(sku='LAB-PROD', defaults={'name':'Produto laboratório','unit':'un','base_price_q':1000,'is_published':True,'is_sellable':True})
 listing, _ = Listing.objects.get_or_create(ref='lab',defaults={'name':'Laboratório','is_active':True})
 ListingItem.objects.get_or_create(product=product,listing=listing,defaults={'price_q':1000})
-from uuid import uuid4
 import json
 from pathlib import Path
+from uuid import uuid4
+
 run = uuid4().hex[:8]
 refs = {'advance_ref': f'LAB-ADVANCE-{run}', 'notes_ref': f'LAB-NOTES-{run}'}
 Path('.orders-lab/manifest.json').write_text(json.dumps(refs))

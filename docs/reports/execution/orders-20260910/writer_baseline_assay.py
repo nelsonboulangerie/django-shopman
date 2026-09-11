@@ -1,12 +1,15 @@
 """Diagnostic assertions reproduce defects, not acceptance of product behavior."""
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
+
 import pytest
 from django.db import close_old_connections, connection
 from shopman.orderman.models import Order
-from shopman.shop.models import Shop
-from shopman.shop.services import operator_orders, courier, payment, waitlist
+
 from shopman.shop import lifecycle
+from shopman.shop.models import Shop
+from shopman.shop.services import courier, operator_orders, payment, waitlist
+
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("writer", ["courier", "gateway_throttle", "waitlist"])

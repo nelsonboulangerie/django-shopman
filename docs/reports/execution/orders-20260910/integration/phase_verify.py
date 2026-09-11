@@ -1,8 +1,11 @@
 import json
-from pathlib import Path
 from decimal import Decimal
+from pathlib import Path
+
 from shopman.orderman.models import Directive, Order
+
 from shopman.backstage.models import KDSTicket
+
 manifest = json.loads(Path('.orders-lab/phase-manifest.json').read_text())
 order = Order.objects.get(ref=manifest['ref'])
 task = Directive.objects.get(pk=manifest['task'])

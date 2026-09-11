@@ -64,7 +64,7 @@ def _emit_sse(order, payload: dict) -> None:
 
         emit_courier_update(order, payload)
     except Exception:
-        logger.debug("courier.sse_emit_failed order=%s", order.ref, exc_info=True)
+        logger.warning("courier.sse_emit_failed order=%s", order.ref, exc_info=True)
 
 
 def has_active_ride(order) -> bool:

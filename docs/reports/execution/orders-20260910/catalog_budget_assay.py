@@ -1,12 +1,16 @@
 """Synthetic local-write baseline; adapters replaced, never remote sync."""
-import json, statistics, time
+import json
+import statistics
+import time
 from unittest.mock import patch
+
 import pytest
-from django.db import connection, transaction, reset_queries
+from django.db import connection, reset_queries, transaction
 from django.test.utils import CaptureQueriesContext
-from shopman.offerman.models import Product, Listing, ListingItem
-from shopman.shop.models import Shop, Channel
+from shopman.offerman.models import Listing, ListingItem, Product
+
 from shopman.backstage.services import catalog
+from shopman.shop.models import Channel, Shop
 
 pytestmark = pytest.mark.django_db
 
@@ -29,6 +33,6 @@ def test_local_cell_budget():
                         assert catalog.bulk_price(skus,"lab",op="pct",value=10)==n
                         transaction.set_rollback(True)
                 times.append((time.perf_counter()-start)*1000)
-        results.append(dict(cells=n,p50_ms=statistics.median(times),p95_ms=sorted(times)[18],queries=len(queries)))
+        results.append({"cells": n,"p50_ms": statistics.median(times),"p95_ms": sorted(times)[18],"queries": len(queries)})
     assert ListingItem.objects.filter(price_q=1000).count()==1000
-    print(json.dumps(dict(database=connection.vendor,samples=20,rollback_each_sample=True,sync="mock",measurements=results)))
+    print(json.dumps({"database": connection.vendor,"samples": 20,"rollback_each_sample": True,"sync": "mock","measurements": results}))

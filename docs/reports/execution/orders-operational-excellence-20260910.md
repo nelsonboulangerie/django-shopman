@@ -614,3 +614,29 @@ anterior: 103 passed. Ruff dos arquivos alterados passou. Sem publicação exter
 Sem DDL/backfill; rollout precisa drenar/monitorar tarefas existentes. Rollback deve conservar
 recuperador de sync pendente, nunca reaplicar preço para recuperar projeção. Prévia/intenção
 dos demais comandos de catálogo/feed e revisão de todos os writers continuam em WP05.
+
+### WP09 — preparação dos gates, ainda sem conclusão da fase
+
+Cores canônicos: executar pytest no diretório/configuração de CADA pacote, importando
+somente pacotes do worktree. Todos os 12 passaram; log por pacote consolidado anexo. A
+primeira execução indiscriminada de `pytest packages` com settings da aplicação produziu
+231 failed/2418 passed/18 skipped: URLs 404 e configuração de orquestrador incompatível.
+Essa rodada inválida não é diagnóstico de regressão nem gate aprovado. Nenhum core foi
+modificado para acomodar o runner. Skips das suítes canônicas permanecem registrados.
+
+Ruff completo inicialmente apontou 35 erros, sobretudo imports/estilo dos scripts de ensaio
+adicionados. Corrigidos sem alterar resultados/algoritmos (lambda agora vincula body no
+loop). Ruff completo passou. Gate silent-swallow encontrou três sites nos arquivos tocados:
+escopo SSE, emissão SSE de courier e ImportError no cancelamento KDS. SSE agora registra
+warning; ausência do serviço KDS propaga falha para recuperação, não conclui silenciosamente.
+Gate passou; reteste lifecycle/courier/eventstream: **118 passed, 1 skipped** (concorrência PG).
+
+Migrations gate: três checks passaram (nenhuma migration faltante, banco SQLite vazio e
+migrate --check). Dois skips explícitos: tag go-live-v1 ausente; nenhum snapshot baseline
+real autorizado/declarado. PostgreSQL sintético também foi migrado nos ensaios anteriores.
+Workflow budgets passou. Constraints cobriu os 100 pacotes de imagem; versões disponíveis
+mais recentes foram informadas, sem atualização dos pins. Sem build/deploy de produção.
+
+Orders Nuxt após inbox/coalescedor: **240 testes passaram**, typecheck passou; operator-kit
+**228 passaram**. Não somar suites sobrepostas como cenários independentes. Suíte ampla
+shop/backstage/storefront ainda em execução e com falhas a triar; WP09 NÃO concluído.

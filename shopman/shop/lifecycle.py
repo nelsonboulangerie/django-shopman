@@ -554,11 +554,9 @@ def _on_completed(order, config: ChannelConfig) -> None:
 
 def _on_cancelled(order, config: ChannelConfig) -> None:
     """Order cancelled: cancel KDS tickets, release stock, settle payment, cancel fiscal + notify."""
-    try:
-        from shopman.shop.services import kds
-        kds.cancel_tickets(order)
-    except ImportError:
-        pass
+    from shopman.shop.services import kds
+
+    kds.cancel_tickets(order)
     stock.release(order)
     # Canais com fulfill no ato (PDV) já baixaram o estoque quando o cancel
     # chega — release é no-op em hold FULFILLED. Devolver ao ledger, senão o

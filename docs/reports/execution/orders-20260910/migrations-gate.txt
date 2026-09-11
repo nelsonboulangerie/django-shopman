@@ -1,0 +1,8 @@
+check-migrations: passed
+counts: passed=3 failed=0 skipped=2
+- [OK] migrations.committed: No model changes without migrations.
+- [OK] migrations.clean_build: Full migration graph applied on an empty database.
+- [OK] migrations.graph_consistent: migrate --check is clean after a full build.
+- [SKIP] migrations.expand_contract: pré-go-live: política ADR-015 inativa (tag go-live-v1 ausente).
+- [SKIP] migrations.baseline_replay: No baseline snapshot declared yet (pre go-live).
+  details={"expected": "Set SHOPMAN_MIGRATIONS_BASELINE=/path/to/snapshot once a production baseline exists."}

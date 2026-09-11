@@ -501,7 +501,7 @@ def _scope_for_order(order) -> str:
         if channel and channel.shop_id:
             return f"shop-{channel.shop_id}"
     except Exception:
-        logger.debug("backstage_sse.order_scope_failed order=%s", getattr(order, "ref", ""), exc_info=True)
+        logger.warning("backstage_sse.order_scope_failed order=%s", getattr(order, "ref", ""), exc_info=True)
     return _default_backstage_scope()
 
 
