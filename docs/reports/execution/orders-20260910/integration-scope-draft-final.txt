@@ -1,0 +1,42 @@
+[WebServer] (node:95919) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 2 tests using 1 worker
+
+(node:95946) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › tests/integration/operational.spec.ts:389:1 › back navigation keeps a product draft after declining discard (3.2s)
+  ✘  2 [chromium] › tests/integration/operational.spec.ts:408:1 › delayed collection response cannot replace the selected resource (45.3s)
+
+
+  1) [chromium] › tests/integration/operational.spec.ts:408:1 › delayed collection response cannot replace the selected resource 
+
+    Test timeout of 45000ms exceeded.
+
+    Error: page.waitForResponse: Test timeout of 45000ms exceeded.
+    =========================== logs ===========================
+    waiting for response "**/api/v1/backstage/catalog/?collection=lab-curat…"
+    ============================================================
+
+      420 |   await page.getByRole("button", { name: "Todas", exact: true }).click();
+      421 |   await expect(page.locator('tr[data-dragkey="LAB-PROD-B"]')).toBeVisible();
+    > 422 |   const finished = page.waitForResponse(`**/api/v1/backstage/catalog/?collection=${lab.curation_ref}`);
+          |                         ^
+      423 |   release();
+      424 |   await finished;
+      425 |   await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:422:25
+
+    Error Context: ../../.orders-lab/playwright-results/operational-delayed-collec-19ced-place-the-selected-resource-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../.orders-lab/playwright-results/operational-delayed-collec-19ced-place-the-selected-resource-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../.orders-lab/playwright-results/operational-delayed-collec-19ced-place-the-selected-resource-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › tests/integration/operational.spec.ts:408:1 › delayed collection response cannot replace the selected resource 
+  1 passed (50.1s)

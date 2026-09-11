@@ -38,6 +38,7 @@ const emit = defineEmits<{
   "update:open": [value: boolean];
   save: [patch: ProductDetailPatch];
   "review-conflict": [keepDraft: boolean];
+  "dirty-change": [dirty: boolean];
 }>();
 
 const TABS = [
@@ -319,6 +320,7 @@ function buildPatch(): ProductDetailPatch {
 }
 
 const patchSize = computed(() => Object.keys(buildPatch()).length);
+watch(() => props.open && patchSize.value > 0, dirty => emit("dirty-change", dirty), { immediate: true, flush: "sync" });
 const formInvalid = computed(() => priceInvalid.value || ncmInvalid.value || cestInvalid.value);
 const canSave = computed(() => !props.busy && !props.loading && !props.conflict && !formInvalid.value && patchSize.value > 0);
 

@@ -243,3 +243,26 @@ it("pausa global perdida consulta o mesmo recibo de produto", async () => {
   expect(env.fetchMock.mock.calls[1]![1]).toEqual({ query: { idempotency_key: post.headers["Idempotency-Key"], ref: "PAO" } });
   expect(env.fetchMock).toHaveBeenCalledTimes(2);
 });
+
+it("resposta de outra coleção não aparece nem autoriza escrita no recorte atual", async () => {
+  const { ref } = await import("vue");
+  env.reset();
+  const originalUseFetch = (globalThis as any).useFetch;
+  const selection = ref("a");
+  const a = { rows: [{ sku: "A" }], surfaces: [], collections: [] };
+  const b = { rows: [{ sku: "B" }], surfaces: [], collections: [] };
+  const data = ref<any>({ collection_ref: "a", matrix: a });
+  vi.stubGlobal("useFetch", () => ({ data, error: ref(null), pending: ref(false), refresh: env.refresh }));
+  try {
+    const m = useCatalogMatrix(selection);
+    expect(m.matrix.value).toEqual(a);
+    selection.value = "b";
+    expect(m.matrix.value).toBeNull();
+    expect(await m.setProduct("A", { is_sellable: false })).toBe(false);
+    expect(env.fetchMock).not.toHaveBeenCalled();
+    data.value = { collection_ref: "b", matrix: b };
+    expect(m.matrix.value).toEqual(b);
+    data.value = { collection_ref: "a", matrix: a }; // late prior scope
+    expect(m.matrix.value).toEqual(b);
+  } finally { vi.stubGlobal("useFetch", originalUseFetch); }
+});

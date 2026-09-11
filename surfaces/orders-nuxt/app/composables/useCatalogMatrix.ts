@@ -45,8 +45,9 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   // Reactive collection filter → server-side row scoping (smart-aware via
   // product_queryset). Changing the ref refetches the matrix.
   const collection = collectionRef ?? ref("");
+  const resourceKey = useOperatorResourceKey("catalog-matrix");
   const { data, pending, error, refresh: fetchMatrix } = useFetch<CatalogMatrixResponse>(path, {
-    key: useOperatorResourceKey("catalog-matrix"),
+    key: computed(() => `${resourceKey}:${collection.value}`),
     server: true,
     query: { collection },
     dedupe: "defer",
@@ -54,12 +55,13 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   });
 
   const refresh = coalesceRefresh(() => fetchMatrix());
-  const lastConfirmed = shallowRef<CatalogMatrixProjection | null>(data.value?.matrix ?? null);
+  const matchesScope = (value: CatalogMatrixResponse | null | undefined) => (value?.collection_ref ?? "") === collection.value;
+  const lastConfirmed = shallowRef<CatalogMatrixProjection | null>(matchesScope(data.value) ? data.value?.matrix ?? null : null);
   watch(collection, () => { lastConfirmed.value = null; }, { flush: "sync" });
   watch([data, error], ([value, failure]) => {
-    if (value?.matrix && !failure) lastConfirmed.value = value.matrix;
+    if (value?.matrix && !failure && matchesScope(value)) lastConfirmed.value = value.matrix;
   }, { flush: "sync" });
-  const matrix = computed<CatalogMatrixProjection | null>(() => data.value?.matrix ?? (error.value ? lastConfirmed.value : null));
+  const matrix = computed<CatalogMatrixProjection | null>(() => matchesScope(data.value) ? data.value?.matrix ?? lastConfirmed.value : lastConfirmed.value);
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
@@ -82,7 +84,7 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   const errorMsg = ref("");
   const clearError = () => (errorMsg.value = "");
   function canWrite() {
-    if (!error.value) return true;
+    if (!error.value && matchesScope(data.value)) return true;
     errorMsg.value = "A leitura do catálogo está desatualizada. Atualize antes de aplicar; seu rascunho foi mantido.";
     return false;
   }

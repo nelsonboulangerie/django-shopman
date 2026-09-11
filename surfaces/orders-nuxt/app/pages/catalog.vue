@@ -27,7 +27,9 @@ const {
 } = useCatalogMatrix(collectionRef);
 
 const surfaces = computed(() => matrix.value?.surfaces ?? []);
-const collections = computed(() => matrix.value?.collections ?? []);
+// Collection navigation remains available while only the row resource changes.
+const collections = shallowRef<CollectionProjection[]>(matrix.value?.collections ?? []);
+watch(() => matrix.value?.collections, value => { if (value) collections.value = value; }, { flush: "sync" });
 // Superfícies = canais (transacionam) + feeds (só empurram dados). Índice p/ a
 // célula saber o papel da coluna e onde começa a banda de feeds. No backend o model
 // do feed chama-se ``Feed`` — daí os nomes internos aqui.
@@ -92,7 +94,11 @@ function reorderView<T extends { ref?: string; sku?: string }>(
 
 const orderDraft = ref<{ operation: "reorder-collections" | "reorder-items"; ref: string; ordered: string[]; action?: Action } | null>(null);
 const orderSaving = ref(false);
-onBeforeRouteLeave(() => !orderDraft.value || window.confirm("Há uma ordenação sem confirmação. Sair e descartar o rascunho não desfaz gravações já aplicadas. Deseja sair?"));
+onBeforeRouteLeave(() => {
+  if (orderSaving.value || bulkBusy.value || (detailSku.value && isBusy(detailKey(detailSku.value)))
+    || (editing.value && isBusy(cellKey(editing.value.sku, editing.value.surface)))) return false;
+  return !hasUnsavedDraft.value || window.confirm("Há alterações sem confirmação no catálogo. Sair e descartar os rascunhos não desfaz gravações já aplicadas. Deseja sair?");
+});
 let observedCollectionAction: Action | undefined;
 let observedItemAction: Action | undefined;
 let observedCollectionRef = "";
@@ -336,6 +342,24 @@ const detailSku = ref<string | null>(null);
 const detail = ref<ProductDetailProjection | null>(null);
 const detailLoading = ref(false);
 const detailTab = ref("geral");
+const detailDirty = ref(false);
+const hasUnsavedDraft = computed(() => !!orderDraft.value || detailDirty.value
+  || !!(editing.value && priceInput.value !== editing.value.original)
+  || !!(priceOpen.value && priceInputBulk.value.trim()));
+function beforeUnload(event: BeforeUnloadEvent) {
+  if (!hasUnsavedDraft.value) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+onMounted(() => window.addEventListener("beforeunload", beforeUnload));
+onBeforeUnmount(() => window.removeEventListener("beforeunload", beforeUnload));
+function selectCollection(next: string) {
+  if (next === collectionRef.value) return;
+  if (editing.value && !closePrice()) return;
+  if (priceOpen.value && priceInputBulk.value.trim() && !window.confirm("Há uma edição de preço em lote não confirmada. Descartar e trocar de coleção?")) return;
+  priceOpen.value = false;
+  collectionRef.value = next;
+}
 let detailRequest = 0;
 async function openDetail(row: CatalogRowProjection, tab = "geral") {
   const request = ++detailRequest;
@@ -355,6 +379,7 @@ function closeDetail() {
   detailRequest++;
   detailSku.value = null;
   detail.value = null;
+  detailDirty.value = false;
 }
 async function saveDetail(patch: ProductDetailPatch) {
   if (!detailSku.value) return;
@@ -397,7 +422,7 @@ useHead({ title: "Catálogo · Gestor" });
       <ColumnPicker v-if="surfaces.length" v-model="hiddenColumns" :columns="columnOptions" />
       <!-- coleções: arraste os chips para reordenar as seções da vitrine (Collection.sort_order) -->
       <TransitionGroup v-if="collections.length" name="chip" tag="div" class="flex flex-wrap items-center gap-1.5">
-        <UiFilterChip key="__all" :active="collectionRef === ''" @click="collectionRef = ''">Todas</UiFilterChip>
+        <UiFilterChip key="__all" :active="collectionRef === ''" @click="selectCollection('')">Todas</UiFilterChip>
         <UiFilterChip
           v-for="c in orderedCollections"
           :key="c.ref"
@@ -406,7 +431,7 @@ useHead({ title: "Catálogo · Gestor" });
           :class="collDragKey === c.ref ? 'opacity-50 shadow-md' : ''"
           :active="collectionRef === c.ref"
           :count="c.product_count"
-          @click="collectionRef = c.ref"
+          @click="selectCollection(c.ref)"
           @pointerdown="collPointerDown(c.ref, $event)"
           @keydown="collKeyDown(c.ref, $event)"
           aria-keyshortcuts="ArrowUp ArrowDown"
@@ -881,6 +906,7 @@ useHead({ title: "Catálogo · Gestor" });
       :conflict="detailSku ? productConflict(detailSku) : null"
       :error="errorMsg"
       @review-conflict="reviewProductConflict"
+      @dirty-change="detailDirty = $event"
       @update:open="(v) => { if (!v) closeDetail(); }"
       @save="saveDetail"
     />

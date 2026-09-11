@@ -1,0 +1,68 @@
+
+> test
+> vitest run
+
+
+ RUN  v4.1.6 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt
+
+ ❯ |component| tests/components/CatalogProductPanel.test.ts (3 tests | 1 failed) 82ms
+   × informa rascunho à página para proteger navegação e descarte 15ms
+ ❯ |unit| tests/composables/useCatalogMatrix.test.ts (22 tests | 1 failed) 19ms
+   × resposta de outra coleção não aparece nem autoriza escrita no recorte atual 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |component| tests/components/CatalogProductPanel.test.ts > informa rascunho à página para proteger navegação e descarte
+AssertionError: expected undefined to deeply equal [ true ]
+
+- Expected:
+[
+  true,
+]
+
++ Received:
+undefined
+
+ ❯ tests/components/CatalogProductPanel.test.ts:58:45
+     56|   const w = panel();
+     57|   await w.find('input[type="text"]').setValue("Rascunho para retomar");
+     58|   expect(w.emitted("dirty-change")?.at(-1)).toEqual([true]);
+       |                                             ^
+     59|   await w.setProps({ open: false });
+     60|   expect(w.emitted("dirty-change")?.at(-1)).toEqual([false]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |unit| tests/composables/useCatalogMatrix.test.ts > resposta de outra coleção não aparece nem autoriza escrita no recorte atual
+AssertionError: expected { rows: [ { sku: 'A' } ], …(2) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "collections": [],
+  "rows": [
+    {
+      "sku": "A",
+    },
+  ],
+  "surfaces": [],
+}
+
+ ❯ tests/composables/useCatalogMatrix.test.ts:260:28
+    258|     expect(m.matrix.value).toEqual(a);
+    259|     selection.value = "b";
+    260|     expect(m.matrix.value).toBeNull();
+       |                            ^
+    261|     expect(await m.setProduct("A", { is_sellable: false })).toBe(false…
+    262|     expect(env.fetchMock).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed | 18 passed (20)
+      Tests  2 failed | 265 passed (267)
+   Start at  00:05:51
+   Duration  2.72s (transform 2.65s, setup 0ms, import 5.51s, tests 2.06s, environment 4.08s)
+

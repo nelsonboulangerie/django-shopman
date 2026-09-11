@@ -385,3 +385,43 @@ test("global pause lost response adopts product receipt without another toggle",
   const detail = await (await page.request.get(`/api/v1/backstage/catalog/product/${lab.edit_sku}/`)).json();
   expect(detail.product.is_sellable).toBe(false);
 });
+
+test("back navigation keeps a product draft after declining discard", async ({ page }) => {
+  await login(page, "orders-lab-edit");
+  await page.getByRole("link", { name: "Catálogo", exact: true }).click();
+  await page.locator(`tr[data-dragkey="${lab.edit_sku}"]`).getByRole("button", { name: /^Ações de/ }).click();
+  await page.getByRole("button", { name: "Editar detalhes", exact: true }).click();
+  const name = page.getByRole("textbox", { name: "Nome", exact: true });
+  await name.fill("Rascunho antes de voltar");
+  const confirmation = page.waitForEvent("dialog");
+  await page.evaluate(() => history.back());
+  const dialog = await confirmation;
+  expect(dialog.message()).toContain("Há alterações sem confirmação");
+  await dialog.dismiss();
+  await expect(page).toHaveURL(/\/catalog$/);
+  await expect(name).toHaveValue("Rascunho antes de voltar");
+  await page.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await page.getByRole("button", { name: "Descartar e fechar", exact: true }).click();
+  expect((await (await page.request.get(`/api/v1/backstage/catalog/product/${lab.edit_sku}/`)).json()).product.name).not.toBe("Rascunho antes de voltar");
+});
+
+test("delayed collection response cannot replace the selected resource", async ({ page }) => {
+  await login(page, "orders-lab-curation");
+  await page.goto("/catalog");
+  let release!: () => void; let ready!: () => void; let delivered!: () => void;
+  const deliveredResponse = new Promise<void>(resolve => { delivered = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const received = new Promise<void>(resolve => { ready = resolve; });
+  await page.route(`**/api/v1/backstage/catalog/?collection=${lab.curation_ref}`, async route => {
+    const response = await route.fetch(); ready(); await held; await route.fulfill({ response }); delivered();
+  });
+  await page.getByRole("button", { name: new RegExp(lab.curation_name) }).click();
+  await received;
+  // Browser back to the full collection selector remains available during loading.
+  await page.getByRole("button", { name: "Todas", exact: true }).click();
+  await expect(page.locator('tr[data-dragkey="LAB-PROD-B"]')).toBeVisible();
+  release();
+  await deliveredResponse;
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page.locator('tr[data-dragkey="LAB-PROD-B"]')).toBeVisible();
+});

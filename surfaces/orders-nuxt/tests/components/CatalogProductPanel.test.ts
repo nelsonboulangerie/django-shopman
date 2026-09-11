@@ -51,3 +51,11 @@ describe("rascunho do produto", () => {
     expect(w.emitted("save")).toBeUndefined();
   });
 });
+
+it("informa rascunho à página para proteger navegação e descarte", async () => {
+  const w = panel();
+  await w.find('input[type="text"]').setValue("Rascunho para retomar");
+  expect(w.emitted("dirty-change")?.at(-1)).toEqual([true]);
+  await w.setProps({ open: false });
+  expect(w.emitted("dirty-change")?.at(-1)).toEqual([false]);
+});

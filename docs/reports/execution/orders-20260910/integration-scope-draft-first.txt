@@ -1,0 +1,70 @@
+[WebServer] (node:95540) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 2 tests using 1 worker
+
+(node:95541) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › tests/integration/operational.spec.ts:389:1 › back navigation keeps a product draft after declining discard (7.7s)
+(node:95583) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [chromium] › tests/integration/operational.spec.ts:408:1 › delayed collection response cannot replace the selected resource (45.4s)
+
+
+  1) [chromium] › tests/integration/operational.spec.ts:389:1 › back navigation keeps a product draft after declining discard 
+
+    Error: expect(received).toContain(expected) // indexOf
+
+    Expected substring: "Há alterações sem confirmação"
+    Received string:    ""
+
+      397 |   await page.evaluate(() => history.back());
+      398 |   const dialog = await confirmation;
+    > 399 |   expect(dialog.message()).toContain("Há alterações sem confirmação");
+          |                            ^
+      400 |   await dialog.dismiss();
+      401 |   await expect(page).toHaveURL(/\/catalog$/);
+      402 |   await expect(name).toHaveValue("Rascunho antes de voltar");
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:399:28
+
+    Error Context: ../../.orders-lab/playwright-results/operational-back-navigatio-ffb6e-aft-after-declining-discard-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../.orders-lab/playwright-results/operational-back-navigatio-ffb6e-aft-after-declining-discard-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../.orders-lab/playwright-results/operational-back-navigatio-ffb6e-aft-after-declining-discard-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › tests/integration/operational.spec.ts:408:1 › delayed collection response cannot replace the selected resource 
+
+    Test timeout of 45000ms exceeded.
+
+    Error: locator.click: Test timeout of 45000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: 'Todas', exact: true })
+
+
+      418 |   await received;
+      419 |   // Browser back to the full collection selector remains available during loading.
+    > 420 |   await page.getByRole("button", { name: "Todas", exact: true }).click();
+          |                                                                  ^
+      421 |   await expect(page.locator('tr[data-dragkey="LAB-SECOND"]')).toBeVisible();
+      422 |   release();
+      423 |   await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:420:66
+
+    Error Context: ../../.orders-lab/playwright-results/operational-delayed-collec-19ced-place-the-selected-resource-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../.orders-lab/playwright-results/operational-delayed-collec-19ced-place-the-selected-resource-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../.orders-lab/playwright-results/operational-delayed-collec-19ced-place-the-selected-resource-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    [chromium] › tests/integration/operational.spec.ts:389:1 › back navigation keeps a product draft after declining discard 
+    [chromium] › tests/integration/operational.spec.ts:408:1 › delayed collection response cannot replace the selected resource 
