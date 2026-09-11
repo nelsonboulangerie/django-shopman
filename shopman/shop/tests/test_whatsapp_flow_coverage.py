@@ -12,6 +12,7 @@ piloto até a isolação dos campos persistentes ser provada em sandbox.
 from __future__ import annotations
 
 import pytest
+from django.test import override_settings
 
 from shopman.shop.checks import check_whatsapp_flow_coverage
 
@@ -56,7 +57,8 @@ def test_the_warning_names_the_campaigns_so_the_fix_is_obvious(db):
     assert "Marketing → Plataformas" in warning.hint
 
 
-def test_a_configured_flow_still_blocks_deploy_without_isolation_evidence(db):
+@override_settings(SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED=True)
+def test_an_armed_configured_flow_still_blocks_deploy_without_isolation_evidence(db):
     from shopman.shop.models import NotificationTemplate
 
     _campaign("Fornada", platforms=["whatsapp"])
@@ -67,6 +69,18 @@ def test_a_configured_flow_still_blocks_deploy_without_isolation_evidence(db):
     (error,) = check_whatsapp_flow_coverage(None)
     assert error.id == "SHOPMAN_E020"
     assert type(error).__name__ == "Error"
+
+
+@override_settings(SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED=False)
+def test_a_disabled_delivery_lane_does_not_block_unrelated_deploys(db):
+    from shopman.shop.models import NotificationTemplate
+
+    _campaign("Fornada", platforms=["whatsapp"])
+    NotificationTemplate.objects.create(
+        event=EVENT, subject="", body="oi", whatsapp_flow_ns="content20260101120000_1"
+    )
+
+    assert check_whatsapp_flow_coverage(None) == []
 
 
 def test_an_inactive_flow_does_not_count_as_approved(db):

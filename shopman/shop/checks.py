@@ -906,7 +906,9 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
 
     A ausência de flow remains a setup warning because runtime approval is already
     blocked.  A configured flow whose persistent custom-field isolation has not
-    passed G-H03 is a deploy error: credentials must never turn an unproven path on.
+    passed G-H03 is a deploy error only when the delivery consumer is armed:
+    credentials must never turn an unproven path on, while a disabled external lane
+    must not prevent unrelated components from being deployed.
     """
     warnings = []
 
@@ -935,7 +937,7 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
         .exclude(whatsapp_flow_ns="")
         .exists()
     )
-    if has_flow:
+    if has_flow and settings.SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED:
         from shopman.shop.services import manychat_marketing_safety
 
         safety = manychat_marketing_safety.safety_state()
@@ -948,6 +950,9 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
                     id="SHOPMAN_E020",
                 )
             )
+        return warnings
+
+    if has_flow:
         return warnings
 
     names = ", ".join(sorted(campaign.name for campaign in targets_whatsapp)[:5])
