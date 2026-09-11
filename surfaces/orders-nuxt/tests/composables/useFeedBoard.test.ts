@@ -53,3 +53,22 @@ describe("useFeedBoard", () => {
     expect(env.sonner.error).toHaveBeenCalledWith("Feed bloqueado");
   });
 });
+
+it("keeps the last confirmed feed board when a later GET fails", async () => {
+  const { ref, nextTick } = await import("vue");
+  const data = ref<any>({ board: { feeds: [{ ref: "tv" }], all_collections: [] } });
+  const error = ref<any>(null);
+  const prior = globalThis.useFetch;
+  vi.stubGlobal("useFetch", () => ({ data, error, pending: ref(false), refresh: env.refresh }));
+  try {
+    const feed = useFeedBoard();
+    expect(feed.board.value?.feeds[0]?.ref).toBe("tv");
+    error.value = { statusCode: 503 };
+    data.value = null;
+    await nextTick();
+    expect(feed.board.value?.feeds[0]?.ref).toBe("tv");
+    expect(feed.error.value).toBeTruthy();
+  } finally {
+    vi.stubGlobal("useFetch", prior);
+  }
+});

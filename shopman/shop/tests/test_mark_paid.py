@@ -43,7 +43,7 @@ class OperatorMarkPaidShortcutTests(TestCase):
         )
 
         for path in files:
-            with self.subTest(path=path):
+            with self.subTest(path=str(path)):
                 text = path.read_text(encoding="utf-8")
                 self.assertNotIn("mark-paid", text)
                 self.assertNotIn("mark_paid", text)

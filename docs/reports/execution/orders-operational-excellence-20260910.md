@@ -682,3 +682,20 @@ de posição de forno e ordem de chaves JSON em teste. Atribuição definitiva a
 base 5a3383c9 extraída por git archive em diretório de laboratório, sem alterar checkout de
 terceiros; repetição dos 14 módulos problemáticos em andamento. Não são descartados como
 “preexistentes” sem essa prova, nem a rodada ampla é marcada verde.
+
+### WP05/WP06 — leitura confirmada do feed
+
+Teste novo confirmou que o GET de refresh com 503 apagava board, embora o banner prometesse
+“última leitura disponível”. O composable agora conserva somente a última resposta válida
+na instância de página pertencente à pessoa; erro continua visível e não vira convite de
+criar feed. Sem cache persistente, sem mudança de origem Channel/config.display.
+Resultado técnico: suíte Orders com **241 testes passou**. Migração inexistente; revert
+retorna à perda de contexto. Intenção/revisão das mutações de feed ainda precisa fechar J10.
+
+### WP09 — atribuição final das falhas de suíte (21:26)
+
+PostgreSQL amplo: 8.494 passed, 61 failed, 16 errors, 35 skipped, 26 deselected. A reprodução dos 14 módulos na base imutável `5a3383c9` confirmou exatamente 45 failed + 16 errors iguais; 263 passed. Falhas preexistentes: locks com outer join em marketing, DISTINCT no merge Guestman, fixture Oven excedendo varchar e ordem de chaves JSONB. As 16 falhas exclusivas da implementação foram corrigidas em `6a8daa373` e revalidadas (121 passed, 2 skips); isto não transforma a execução ampla original em verde.
+
+SQLite amplo no HEAD `6a8daa373`: 8.551 passed, 8 failed, 56 skipped, 28 subtests, 585,14 s. A triagem dos cinco módulos passou integralmente: **178 passed, 10 subtests**. Cinco testes de cancelamento usavam objetos simulados sem banco, incompatíveis com a leitura sob lock; agora verificam persistência real e ator/motivo. Dois subtestes falhavam na serialização xdist de Path/Enum; somente os parâmetros de diagnóstico viraram strings. A cópia auditada local confundia o scanner do gate: foi movida para `/Users/pablovalentini/Dev/Claude/.codex-worktrees/orders-audit-base-5a3383c9`, fora da árvore de código, sem relaxar o gate. Logs originais preservados no laboratório. Migração: nenhuma. Rollback: revert dos ajustes de teste; não remover locks do cancelamento.
+
+Feed: a versão final do watcher foi reexecutada, **241 testes Orders aprovados** (`feed-final-unit.txt`).

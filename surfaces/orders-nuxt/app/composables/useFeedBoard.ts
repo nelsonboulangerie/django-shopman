@@ -8,7 +8,13 @@ export function useFeedBoard() {
     key: useOperatorResourceKey("feed-board"),
     server: true,
   });
-  const board = computed<FeedBoardProjection | null>(() => data.value?.board ?? null);
+  const lastConfirmed = shallowRef<FeedBoardProjection | null>(data.value?.board ?? null);
+  watch([data, error], ([value, failure]) => {
+    if (value?.board && !failure) lastConfirmed.value = value.board;
+  }, { flush: "sync" });
+  // Session ownership is provided by the page instance/resource cache key.
+  // A transient failure is not a successful empty board.
+  const board = computed<FeedBoardProjection | null>(() => data.value?.board ?? lastConfirmed.value);
 
   const busy = ref<Set<string>>(new Set());
   const isBusy = (ref_: string) => busy.value.has(ref_);
