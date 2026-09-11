@@ -460,7 +460,8 @@ test.describe("disparo manual seguro", () => {
     await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
     await page.waitForTimeout(450);
     await page.getByRole("button", { name: "Disparar agora" }).click();
-    await expect(page.getByRole("alert")).toContainText("limite temporário");
+    await expect(page.getByRole("alert")).toContainText("em cerca de 20 minutos");
+    await expect(page.getByRole("alert")).toContainText("Nada foi criado");
     await expectStableScreenshot(page, "fire-campaign__throttled", V768, "light", { fullPage: false });
   });
 
