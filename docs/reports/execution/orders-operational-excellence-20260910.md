@@ -1737,3 +1737,25 @@ Sem migração ou mutação real nesta tarefa. Patch impede geração futura pel
 sweeper, mas NÃO cancela directives já criadas nem prova ausência de efeitos.
 Contenção e apuração da fila/filhas são coordenadas exclusivamente pela tarefa PDV.
 Rollback não deve restaurar a varredura histórica; preservar inventário0061.
+
+
+### Incidente PR605 — atualização recebida da tarefa PDV em 11/09
+
+Evidência operacional transmitida pela tarefa coordenadora PDV, ainda não
+reconsultada independentemente nesta tarefa: total8986 directives queued retidas
+(5427loyalty/3559fiscal), status failed com motivo auditado, payload/receipts
+preservados; nenhum requeue. Maintenance-worker réplica única/PID1 pausado sem
+filhos, StateT aproximadamente13:03Z. Readiness200 estável após contenção; isso
+não encerra incidente nem comprova ausência de efeitos.
+
+Apuração comunicada:490loyaltydone e321fiscaldone. Foram identificadas19
+LoyaltyTransaction IDs353–371, total3290 pontos, entre12:52:50 e12:59:13Z;44
+pedidos entre loyaltydone tinham customer_ref. Ambiente fiscal homologacao; um
+marcador nfce_email_sent_at posterior ao incidente não comprova entrega de e-mail.
+Nenhum estorno/alteração desses efeitos autorizado ou executado por esta tarefa.
+Relatório detalhado mantido pela coordenadora em .artifacts/PDV-RELEASE-605-INCIDENT.md.
+
+Patch72be7942b integrado pela coordenadora no PR609, fonteb7c5c0bdd;34 testes
+PostgreSQL locais passaram segundo PDV, CI ainda em andamento. Fechamento exige
+fonte corrigida na manutenção, ausência de novos enfileiramentos retroativos e
+apuração dos efeitos. T/P/R globais continuam sem declaração de conclusão.
