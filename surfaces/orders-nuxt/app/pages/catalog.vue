@@ -269,12 +269,27 @@ function toggleCell(row: CatalogRowProjection, cell: SurfaceCellProjection) {
   if (!cell.in_listing) return;
   setCell(row.sku, cell.surface_ref, { is_sellable: !cell.is_sellable });
 }
-const editing = ref<{ sku: string; surface: string } | null>(null);
+const editing = ref<{ sku: string; surface: string; action?: Action; original: string } | null>(null);
 const priceInput = ref("");
 function startEdit(row: CatalogRowProjection, cell: SurfaceCellProjection) {
   if (!cell.in_listing) return;
-  editing.value = { sku: row.sku, surface: cell.surface_ref };
+  if (editing.value && !closePrice()) return;
   priceInput.value = ((cell.price_q ?? 0) / 100).toFixed(2).replace(".", ",");
+  editing.value = { sku: row.sku, surface: cell.surface_ref, action: cell.action ?? undefined, original: priceInput.value };
+}
+function priceConflict(cell: SurfaceCellProjection) {
+  const before = editing.value?.action?.payload_schema.base_revisions as Record<string, string> | undefined;
+  const current = cell.action?.payload_schema.base_revisions as Record<string, string> | undefined;
+  return !!before && before.price_q !== current?.price_q;
+}
+function closePrice() {
+  if (editing.value && isBusy(cellKey(editing.value.sku, editing.value.surface))) return false;
+  if (editing.value && priceInput.value !== editing.value.original && !window.confirm("Há um preço não salvo. Descartar a edição?")) return false;
+  editing.value = null;
+  return true;
+}
+function keepPrice(cell: SurfaceCellProjection) {
+  if (editing.value && cell.action) editing.value.action = cell.action;
 }
 const isEditing = (sku: string, surface: string) => editing.value?.sku === sku && editing.value?.surface === surface;
 function parseBrl(text: string): number | null {
@@ -283,11 +298,12 @@ function parseBrl(text: string): number | null {
   return Number.isFinite(value) && value >= 0 ? Math.round(value * 100) : null;
 }
 async function commitPrice(row: CatalogRowProjection, cell: SurfaceCellProjection) {
+  if (priceConflict(cell)) return;
   const price_q = parseBrl(priceInput.value);
   if (price_q === null) return;
   if (price_q === cell.price_q) { editing.value = null; return; }
   const originalEditor = editing.value;
-  const ok = await setCell(row.sku, cell.surface_ref, { price_q });
+  const ok = await setCell(row.sku, cell.surface_ref, { price_q }, editing.value?.action);
   if (ok && editing.value === originalEditor) editing.value = null;
 }
 
@@ -660,7 +676,7 @@ useHead({ title: "Catálogo · Gestor" });
                   type="button" role="switch" :aria-checked="cell.is_sellable"
                   class="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors disabled:opacity-40"
                   :class="cell.is_sellable && !rowStatuses[row.sku]?.off ? 'bg-success' : 'bg-muted-foreground/30'"
-                  :disabled="isBusy(cellKey(row.sku, cell.surface_ref))"
+                  :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !cell.action?.enabled"
                   :aria-label="cell.is_sellable ? `${cellView(row, cell).label} — pausar neste ${surfaceWord(cell)}` : `Ativar neste ${surfaceWord(cell)}`"
                   :title="cell.is_sellable ? `${cellView(row, cell).label} — pausar neste ${surfaceWord(cell)}` : `Pausado — ativar neste ${surfaceWord(cell)}`"
                   @click="toggleCell(row, cell)"
@@ -675,12 +691,12 @@ useHead({ title: "Catálogo · Gestor" });
 
                 <!-- ÁREA 2 — preço, ao lado do toggle: base = ícone $ apagado; ALTERADO =
                      seta ↑/↓ colorida + valor. title = valor; clique = popover. -->
-                <UiPopover :open="isEditing(row.sku, cell.surface_ref)" @update:open="(v) => { if (!v) editing = null }">
+                <UiPopover :open="isEditing(row.sku, cell.surface_ref)" @update:open="(v) => { if (!v) closePrice() }">
                   <UiPopoverAnchor as-child>
                     <button
                       type="button"
                       class="flex items-center rounded px-0.5 py-0.5 leading-none transition hover:bg-muted disabled:opacity-40"
-                      :disabled="isBusy(cellKey(row.sku, cell.surface_ref))"
+                      :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !cell.action?.enabled"
                       :title="priceTitle(row, cell)"
                       :aria-label="`Preço em ${surfaceName(cell.surface_ref)}: ${cell.price_display} — editar`"
                       @click="startEdit(row, cell)"
@@ -703,12 +719,16 @@ useHead({ title: "Catálogo · Gestor" });
                     <input
                       v-model="priceInput" type="text" inputmode="decimal" autofocus
                       class="h-9 w-full rounded-md border bg-background px-2.5 text-sm tabular-nums outline-none focus:ring-1 focus:ring-ring"
-                      @keyup.enter="commitPrice(row, cell)" @keyup.esc="editing = null"
+                      @keyup.enter="commitPrice(row, cell)" @keyup.esc="closePrice()"
                     />
                     <p class="mt-1 text-xs text-muted-foreground">Base do produto: {{ row.base_price_display }}</p>
+                    <div v-if="priceConflict(cell)" role="alert" class="mt-2 space-y-2 text-xs">
+                      <p>O preço mudou para {{ cell.price_display }}. Seu valor digitado foi mantido.</p>
+                      <button type="button" class="min-h-12 rounded border px-2" @click="keepPrice(cell)">Conferir e manter meu preço</button>
+                    </div>
             <div class="mt-2.5 flex justify-end gap-1.5">
-                      <button type="button" class="rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="editing = null">Cancelar</button>
-                      <button type="button" class="rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90" @click="commitPrice(row, cell)">Salvar</button>
+                      <button type="button" class="rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="closePrice()">Cancelar</button>
+                      <button type="button" :disabled="priceConflict(cell) || isBusy(cellKey(row.sku, cell.surface_ref))" class="min-h-12 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="commitPrice(row, cell)">Salvar</button>
                     </div>
                   </UiPopoverContent>
                 </UiPopover>

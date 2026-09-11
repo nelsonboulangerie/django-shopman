@@ -1,0 +1,68 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________ test_price_and_pause_do_not_overwrite_each_other _______________
+
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Pão>}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12045a240>
+
+    def test_price_and_pause_do_not_overwrite_each_other(catalog, monkeypatch):
+        if connection.vendor != "postgresql":
+            pytest.skip("Requires PostgreSQL locks and independent connections")
+        price_loaded, pause_attempted = Event(), Event()
+        original = ListingItem.save
+    
+        def controlled_save(self, *args, **kwargs):
+            if self.price_q == 777:
+                price_loaded.set()
+                pause_attempted.wait(1)
+            elif not self.is_sellable:
+                pause_attempted.set()
+            return original(self, *args, **kwargs)
+    
+        monkeypatch.setattr(ListingItem, "save", controlled_save)
+    
+        def price():
+            try:
+                service.set_cell("PAO", "web", price_q=777)
+            finally:
+                connections.close_all()
+    
+        def pause():
+            try:
+                assert price_loaded.wait(5)
+                service.set_cell("PAO", "web", is_sellable=False)
+            finally:
+                connections.close_all()
+    
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            jobs = [pool.submit(price), pool.submit(pause)]
+            for job in jobs:
+                job.result(timeout=10)
+        item = ListingItem.objects.get(product__sku="PAO", listing__ref="web")
+>       assert item.price_q == 777
+E       assert 600 == 777
+E        +  where 600 = <ListingItem: PAO @ web>.price_q
+
+shopman/backstage/tests/test_catalog_cell_concurrency.py:50: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-10 23:31:18,228 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-10 23:31:18,732 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-10 23:31:22,333 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+----------------------------- Captured stderr call -----------------------------
+DEBUG 2026-09-10 23:31:30,184 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-10 23:31:30,203 shopman.stockman.adapters.sku_validation Loaded SKU validator: shopman.shop.adapters.sku_validator.ComposedSkuValidator
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-10 23:31:31,040 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_catalog_cell_concurrency.py::test_price_and_pause_do_not_overwrite_each_other
+1 failed in 13.57s

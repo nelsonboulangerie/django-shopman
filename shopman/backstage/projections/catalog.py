@@ -15,6 +15,8 @@ from dataclasses import dataclass
 
 from shopman.utils.monetary import format_money
 
+from shopman.shop.projections.types import Action
+
 
 def product_detail_action(sku: str, detail: dict, user):
     from shopman.backstage.services.catalog import product_field_revisions
@@ -27,6 +29,21 @@ def product_detail_action(sku: str, detail: dict, user):
         reason="" if allowed else "Identifique uma pessoa com permissão para editar o catálogo.",
         method="PATCH", idempotency="required", payload_schema={"expected_actor_id": getattr(user, "pk", None),
             "base_revision": mutation_fingerprint({"sku": sku, "revisions": revisions}), "base_revisions": revisions})
+
+
+def cell_action(sku: str, surface_ref: str, user, *, item=None, display=None, available=True):
+    from shopman.backstage.services.catalog import cell_field_revisions
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    revisions = cell_field_revisions(sku, surface_ref, item=item, display=display)
+    allowed = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_catalog"))
+    reason = "" if allowed and available else "O produto não pertence a esta superfície." if not available else "Sem permissão para editar o catálogo."
+    return Action(ref="edit-cell", kind="mutation", label="Alterar célula", enabled=allowed and available,
+        reason=reason, method="POST", idempotency="required", payload_schema={
+            "base_revision": mutation_fingerprint({"sku": sku, "surface": surface_ref, "revisions": revisions}),
+            "base_revisions": revisions, "expected_actor_id": getattr(user, "pk", None), "sku": sku, "surface_ref": surface_ref,
+            "ref": mutation_fingerprint({"sku": sku, "surface": surface_ref}),
+        })
 
 
 def curation_actions(collection_ref: str, user):
@@ -124,6 +141,7 @@ class SurfaceCellProjection:
     sync_status: str = ""  # synced | pending | error | retracted | skipped | "" (nunca)
     sync_error: str = ""  # última mensagem de erro (quando status=error)
     synced_at: str = ""  # ISO do último push OK (synced/retracted)
+    action: Action | None = None
 
 
 @dataclass(frozen=True)
@@ -393,6 +411,7 @@ def _build_display_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]
         index[ch.ref] = {
             "members": members,
             "paused": {str(s) for s in (display.get("paused_skus") or [])},
+            "channel": ch,
         }
         is_target = get_projection_backend(ch.ref) is not None
         short = str((ch.config or {}).get("short_name", "")).strip()
@@ -414,7 +433,7 @@ def _build_display_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]
     return surfaces, index
 
 
-def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
+def build_catalog_matrix(collection_ref: str = "", *, user=None) -> CatalogMatrixProjection:
     """Monta a matriz produto × superfície com o eixo coleção.
 
     ``collection_ref`` (opcional) filtra as linhas aos produtos daquela coleção,
@@ -487,6 +506,7 @@ def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
                         ),
                         price_q=None,
                         price_display="",
+                        action=cell_action(product.sku, surface.ref, user, display=sc["channel"], available=in_feed),
                         sync_status=sync_status,
                         sync_error=sync_error,
                         synced_at=synced_at,
@@ -523,6 +543,7 @@ def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
                     available=available,
                     price_q=item.price_q,
                     price_display=_money(item.price_q),
+                    action=cell_action(product.sku, surface.ref, user, item=item),
                     sync_status=sync_status,
                     sync_error=sync_error,
                     synced_at=synced_at,

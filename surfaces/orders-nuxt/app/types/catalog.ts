@@ -42,6 +42,7 @@ export interface SurfaceProjection {
 }
 
 export interface SurfaceCellProjection {
+  action?: Action | null;
   surface_ref: string;
   in_listing: boolean;
   is_published: boolean;

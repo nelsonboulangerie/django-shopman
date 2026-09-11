@@ -6,8 +6,13 @@ import { useCatalogMatrix } from "../../app/composables/useCatalogMatrix";
 const env = installNuxtGlobals();
 vi.stubGlobal("useNuxtData", () => ({ data: { value: { operator: { id: 1 } } } }));
 
+const cellAction = { ref: "edit-cell", enabled: true, reason: "", method: "POST", payload_schema: { base_revision: "base", base_revisions: { price_q: "price", is_sellable: "sellable" }, expected_actor_id: 1, ref: "cell-ref" } } as any;
 describe("useCatalogMatrix — leitura + célula", () => {
-  beforeEach(() => env.reset());
+  beforeEach(() => {
+    env.reset();
+    env.fetchData.value = { matrix: { rows: [{ sku: "PAO", cells: [{ surface_ref: "web", action: cellAction }] }] } };
+    env.fetchMock.mockResolvedValue({ outcome: "applied" });
+  });
 
   it("deriva matrix da projection", () => {
     env.fetchData.value = { matrix: { products: [], surfaces: [] } };
@@ -19,7 +24,8 @@ describe("useCatalogMatrix — leitura + célula", () => {
     expect(await m.setCell("PAO", "web", { is_sellable: false })).toBe(true);
     const [url, opts] = env.fetchMock.mock.calls[0]!;
     expect(String(url)).toBe("/api/v1/backstage/catalog/cell/");
-    expect(opts.body).toEqual({ sku: "PAO", surface_ref: "web", is_sellable: false });
+    expect(opts.body).toEqual({ ...cellAction.payload_schema, sku: "PAO", surface_ref: "web", is_sellable: false });
+    expect(opts.headers["Idempotency-Key"]).toBeTruthy();
     expect(env.refresh).toHaveBeenCalledTimes(1);
     expect(m.cellKey("PAO", "web")).toBe("PAO@web");
   });
@@ -45,7 +51,7 @@ describe("useCatalogMatrix — leitura + célula", () => {
   });
 
   it("falha na célula acende errorMsg + toast + false", async () => {
-    env.fetchMock.mockRejectedValueOnce({ data: { detail: "Sem preço na superfície" } });
+    env.fetchMock.mockRejectedValueOnce({ status: 400, data: { detail: "Sem preço na superfície" } });
     const m = useCatalogMatrix();
     expect(await m.setCell("PAO", "web", { is_published: true })).toBe(false);
     expect(m.errorMsg.value).toBe("Sem preço na superfície");
@@ -210,5 +216,17 @@ it("ordenação usa a base capturada e consulta recibo da resposta perdida", asy
   expect(await m.reorderItems("c1", ["B", "A"], action)).toBe(true);
   expect(env.fetchMock.mock.calls[0]![1].body).toEqual({ ref: "c1", base_revision: "seen", expected_actor_id: 1, ordered_skus: ["B", "A"] });
   expect(env.fetchMock.mock.calls[1]![1].query.ref).toBe("c1");
+  expect(env.fetchMock).toHaveBeenCalledTimes(2);
+});
+
+it("célula com resposta perdida consulta recibo no recurso exato e conserva a base do editor", async () => {
+  env.reset();
+  env.fetchData.value = { matrix: { rows: [{ sku: "PAO", cells: [{ surface_ref: "web", action: { ...cellAction, payload_schema: { ...cellAction.payload_schema, base_revision: "later" } } }] }] } };
+  env.fetchMock.mockRejectedValueOnce({ status: 502 }).mockResolvedValueOnce({ outcome: "applied" });
+  const m = useCatalogMatrix();
+  expect(await m.setCell("PAO", "web", { price_q: 777 }, cellAction)).toBe(true);
+  const post = env.fetchMock.mock.calls[0]![1];
+  expect(post.body.base_revision).toBe("base");
+  expect(env.fetchMock.mock.calls[1]![1]).toEqual({ query: { idempotency_key: post.headers["Idempotency-Key"], ref: "cell-ref" } });
   expect(env.fetchMock).toHaveBeenCalledTimes(2);
 });

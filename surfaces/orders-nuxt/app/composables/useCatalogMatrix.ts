@@ -92,21 +92,23 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     if (error.value) errorMsg.value = "Alteração confirmada. A leitura atualizada falhou; atualize antes de continuar.";
   }
 
-  async function setCell(sku: string, surface: string, patch: CellPatch): Promise<boolean> {
+  async function setCell(sku: string, surface: string, patch: CellPatch, observed?: Action): Promise<boolean> {
     const key = cellKey(sku, surface);
     if (busy.value.has(key) || !canWrite()) return false;
     clearError();
     busy.value = new Set(busy.value).add(key);
     try {
-      await $fetch("/api/v1/backstage/catalog/cell/", {
-        method: "POST",
-        body: { sku, surface_ref: surface, ...patch },
-      });
+      const action = observed ?? matrix.value?.rows.find(row => row.sku === sku)?.cells.find(cell => cell.surface_ref === surface)?.action;
+      await intentions.executePath(`catalog:cell:${sku}:${surface}`, "/api/v1/backstage/catalog/cell/", action ?? undefined,
+        { sku, surface_ref: surface, ...patch });
       await refreshAfterCommit();
       return true;
     } catch (error) {
-      errorMsg.value = httpErrorMessage(error, "Falha ao atualizar. Tente de novo.");
+      errorMsg.value = httpErrorMessage(error, error instanceof Error ? error.message : "Falha ao atualizar. Tente de novo.");
       useSonner.error(errorMsg.value);
+      if (httpError(error).status === 409) {
+        try { await refresh(); } catch { errorMsg.value += " A leitura atualizada também falhou."; }
+      }
       return false;
     } finally {
       const next = new Set(busy.value);

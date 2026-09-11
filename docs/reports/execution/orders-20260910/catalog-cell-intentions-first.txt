@@ -1,0 +1,51 @@
+...................................................F.................... [ 80%]
+..................                                                       [100%]
+=================================== FAILURES ===================================
+_____________________ test_matrix_contract_keys_are_pinned _____________________
+
+client = <django.test.client.Client object at 0x121e3b110>
+operator = <User: catalog-api>
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Pão>}
+
+    def test_matrix_contract_keys_are_pinned(client, operator, catalog):
+        """Contrato de superfície: as chaves da matriz batem com o mirror TS (types/catalog.ts).
+    
+        Guardrail — adicionar/remover um campo da projection é mudança consciente: quebra
+        aqui e força atualizar o tipo TS em lockstep. (Arc H acrescentou sync por célula +
+        PIM na linha.)
+        """
+        client.force_login(operator)
+        matrix = client.get(MATRIX_URL).json()["matrix"]
+    
+        assert set(matrix) == {"surfaces", "rows", "collections"}
+    
+        surface = matrix["surfaces"][0]
+        assert set(surface) == {
+            "ref", "name", "short_name", "is_projection_target", "sync_status", "kind",
+            "transactional", "icon", "is_active", "output_path", "sync_key",
+        }
+    
+        row = matrix["rows"][0]
+        assert set(row) == {
+            "sku", "name", "image_url", "primary_collection", "primary_collection_name",
+            "is_published", "is_sellable", "base_price_q", "base_price_display", "edit_url",
+            "stock_tracked", "stock_qty", "sold_out", "low_stock", "replenish_qty",
+            "keywords", "cells", "social", "pim_complete",
+            "hidden_by_inactive_collection",
+        }
+    
+        cell = row["cells"][0]
+>       assert set(cell) == {
+            "surface_ref", "in_listing", "is_published", "is_sellable", "available",
+            "price_q", "price_display", "sync_status", "sync_error", "synced_at",
+        }
+E       AssertionError: assert {'action', 'a...display', ...} == {'available',...price_q', ...}
+E         
+E         Extra items in the left set:
+E         'action'
+E         Use -v to get more diff
+
+shopman/backstage/tests/test_api_catalog_surface.py:818: AssertionError
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_api_catalog_surface.py::test_matrix_contract_keys_are_pinned
+1 failed, 89 passed in 124.16s (0:02:04)

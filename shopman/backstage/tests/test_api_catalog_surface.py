@@ -150,11 +150,7 @@ def test_matrix_filtered_by_smart_collection(client, operator, catalog):
 
 def test_cell_pause(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
-        CELL_URL,
-        data={"sku": "PAO", "surface_ref": "web", "is_sellable": False},
-        content_type="application/json",
-    )
+    resp = _post_cell(client, operator, {"sku": "PAO", "surface_ref": "web", "is_sellable": False})
     assert resp.status_code == 200
     assert resp.json()["is_sellable"] is False
     item = ListingItem.objects.get(listing__ref="web", product__sku="PAO")
@@ -163,32 +159,20 @@ def test_cell_pause(client, operator, catalog):
 
 def test_cell_price(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
-        CELL_URL,
-        data={"sku": "PAO", "surface_ref": "web", "price_q": 720},
-        content_type="application/json",
-    )
+    resp = _post_cell(client, operator, {"sku": "PAO", "surface_ref": "web", "price_q": 720})
     assert resp.status_code == 200
     assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").price_q == 720
 
 
 def test_cell_unknown_returns_400(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
-        CELL_URL,
-        data={"sku": "BOLO", "surface_ref": "ifood", "is_sellable": False},
-        content_type="application/json",
-    )
+    resp = _post_cell(client, operator, {"sku": "BOLO", "surface_ref": "ifood", "is_sellable": False})
     assert resp.status_code == 400  # BOLO não está na superfície ifood
 
 
 def test_cell_negative_price_rejected(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
-        CELL_URL,
-        data={"sku": "PAO", "surface_ref": "web", "price_q": -1},
-        content_type="application/json",
-    )
+    resp = _post_cell(client, operator, {"sku": "PAO", "surface_ref": "web", "price_q": -1})
     assert resp.status_code == 400
 
 
@@ -219,8 +203,13 @@ def test_preco_ausente_continua_significando_nao_mexa(client, operator, catalog)
 
 
 def _post_cell(client, operator, payload):
+    from uuid import uuid4
+
     client.force_login(operator)
-    return client.post(CELL_URL, data=payload, content_type="application/json")
+    matrix = client.get(MATRIX_URL).json()["matrix"]
+    cell = next((cell for row in matrix["rows"] if row["sku"] == payload["sku"] for cell in row["cells"] if cell["surface_ref"] == payload["surface_ref"]), {})
+    action = cell.get("action") or {"payload_schema": {"base_revision": "unavailable", "base_revisions": {}, "expected_actor_id": operator.pk}}
+    return client.post(CELL_URL, data={**action["payload_schema"], **payload}, content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
 
 
 # ── write: produto ("globalzinho") ─────────────────────────────────────────────
@@ -578,11 +567,7 @@ def test_feed_cell_membership_and_no_price(client, operator, catalog_with_displa
 def test_feed_cell_pause_routes_to_feed(client, operator, catalog_with_display):
     """Pausar a célula grava em config.display.paused_skus (sem tocar listings)."""
     client.force_login(operator)
-    resp = client.post(
-        CELL_URL,
-        data={"sku": "BOLO", "surface_ref": "tv-salao", "is_sellable": False},
-        content_type="application/json",
-    )
+    resp = _post_cell(client, operator, {"sku": "BOLO", "surface_ref": "tv-salao", "is_sellable": False})
     assert resp.status_code == 200
     assert resp.json()["is_sellable"] is False
     assert _paused_skus("tv-salao") == {"BOLO"}
@@ -595,11 +580,7 @@ def test_feed_cell_pause_routes_to_feed(client, operator, catalog_with_display):
     assert bolo_tv["available"] is False
 
     # ativar remove da lista
-    resp = client.post(
-        CELL_URL,
-        data={"sku": "BOLO", "surface_ref": "tv-salao", "is_sellable": True},
-        content_type="application/json",
-    )
+    resp = _post_cell(client, operator, {"sku": "BOLO", "surface_ref": "tv-salao", "is_sellable": True})
     assert resp.status_code == 200
     assert _paused_skus("tv-salao") == set()
 
@@ -607,11 +588,7 @@ def test_feed_cell_pause_routes_to_feed(client, operator, catalog_with_display):
 def test_feed_cell_price_rejected(client, operator, catalog_with_display):
     """Feed não aceita preço/publicação — só pausar/ativar."""
     client.force_login(operator)
-    resp = client.post(
-        CELL_URL,
-        data={"sku": "BOLO", "surface_ref": "tv-salao", "price_q": 100},
-        content_type="application/json",
-    )
+    resp = _post_cell(client, operator, {"sku": "BOLO", "surface_ref": "tv-salao", "price_q": 100})
     assert resp.status_code == 400
 
 
@@ -840,7 +817,7 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
     cell = row["cells"][0]
     assert set(cell) == {
         "surface_ref", "in_listing", "is_published", "is_sellable", "available",
-        "price_q", "price_display", "sync_status", "sync_error", "synced_at",
+        "price_q", "price_display", "sync_status", "sync_error", "synced_at", "action",
     }
 
     assert set(row["social"]) == {
@@ -1200,7 +1177,7 @@ def test_bulk_fiscal_refusal_matches_cell_and_leaves_all_items_unchanged(client,
         (CELL_URL, {"sku": "PAO", "surface_ref": "web", "is_published": True}),
         (BULK_URL, {"skus": ["PAO", "BOLO"], "surface_ref": "web", "is_published": True}),
     ]:
-        response = client.post(path, body, content_type="application/json")
+        response = _post_cell(client, operator, body) if path == CELL_URL else client.post(path, body, content_type="application/json")
         assert response.status_code == 400
         assert "fiscal" in response.json()["detail"].lower()
         assert not ListingItem.objects.filter(listing__ref="web", is_published=True).exists()
@@ -1212,7 +1189,7 @@ def test_bulk_fiscal_refusal_matches_cell_and_leaves_all_items_unchanged(client,
 ])
 def test_invalid_boolean_does_not_toggle_catalog(client, operator, catalog, path, body):
     client.force_login(operator)
-    response = client.post(path, {**body, "is_sellable": "not-a-boolean"}, content_type="application/json")
+    response = _post_cell(client, operator, {**body, "is_sellable": "not-a-boolean"}) if path == CELL_URL else client.post(path, {**body, "is_sellable": "not-a-boolean"}, content_type="application/json")
     assert response.status_code == 400
     assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").is_sellable
 
@@ -1334,3 +1311,10 @@ def _reorder(client, url, payload):
     action = next(action for action in actions if action["ref"] == operation)
     return client.post(url, {**action["payload_schema"], **payload},
         content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
+
+
+def test_cell_action_cannot_pause_a_product_outside_display_membership(client, operator, catalog_with_display):
+    client.force_login(operator)
+    response = _post_cell(client, operator, {"sku": "PAO", "surface_ref": "tv-salao", "is_sellable": False})
+    assert response.status_code == 409
+    assert "PAO" not in _paused_skus("tv-salao")

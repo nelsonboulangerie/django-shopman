@@ -82,6 +82,37 @@ def _is_display_surface(surface_ref: str) -> bool:
     ).exists()
 
 
+def cell_field_revisions(sku: str, surface_ref: str, *, item=None, display=None) -> dict[str, str]:
+    """A cell's relevant canonical target and independent field values."""
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    if display is not None:
+        config = (display.config or {}).get("display") or {}
+        context = {"display_id": display.pk, "collections": config.get("collections") or []}
+        values = {"is_sellable": sku not in (config.get("paused_skus") or [])}
+    elif item is not None:
+        context = {"item_id": item.pk, "product_id": item.product_id, "listing_id": item.listing_id, "tier": str(item.min_qty)}
+        values = {field: getattr(item, field) for field in ("is_published", "is_sellable", "price_q")}
+    else:
+        return {}
+    return {field: mutation_fingerprint({"version": 1, "sku": sku, "surface": surface_ref, "target": context, "field": field, "value": value})
+        for field, value in values.items()}
+
+
+def _check_cell_revisions(patch: dict, current: dict, expected: dict | None, values: dict):
+    from shopman.backstage.services.exceptions import CatalogConflict
+
+    if expected is None:
+        return
+    changed = [field for field in patch if expected.get(field) != current.get(field)]
+    if changed:
+        error = CatalogConflict("A célula mudou nos campos editados. Confira os valores atuais; sua edição foi mantida.")
+        error.current = values
+        error.fields = changed
+        raise error
+
+
+@transaction.atomic
 def set_cell(
     sku: str,
     surface_ref: str,
@@ -90,49 +121,58 @@ def set_cell(
     is_sellable: bool | None = None,
     price_q: int | None = None,
     actor: str = "",
+    expected_revisions: dict | None = None,
 ):
-    """Edita uma célula (produto × superfície). save() dispara o auto-trigger.
+    """Merge one cell under Channel → Product → Listing → ListingItem locks."""
+    from shopman.offerman.models import Collection, Listing, ListingItem, Product
 
-    Superfície de FEED (menuboard/plataforma) só aceita pausar/ativar: ``is_sellable``
-    vira a pausa local do item (não há preço nem publicação — feed não transaciona).
-    """
+    from shopman.shop.models import Channel
+
+    patch = {}
     if is_published is not None:
-        is_published = _as_flag(is_published, "is_published")
+        patch["is_published"] = _as_flag(is_published, "is_published")
     if is_sellable is not None:
-        is_sellable = _as_flag(is_sellable, "is_sellable")
-
-    if _is_display_surface(surface_ref):
+        patch["is_sellable"] = _as_flag(is_sellable, "is_sellable")
+    if price_q is not None:
+        patch["price_q"] = _as_nullable_int(price_q, "price_q")
+        if patch["price_q"] is None or patch["price_q"] < 0:
+            raise CatalogError("Preço não pode ser negativo.")
+    if not patch:
+        raise CatalogError("Informe o campo que deseja alterar na célula.")
+    channel = Channel.objects.select_for_update().filter(ref=surface_ref).first()
+    groups = []
+    if channel is not None and channel.commerce_policy == Channel.CommercePolicy.DISPLAY and expected_revisions is not None:
+        refs = ((channel.config or {}).get("display") or {}).get("collections") or []
+        groups = list(Collection.objects.select_for_update().filter(ref__in=refs).order_by("pk"))
+    product = Product.objects.select_for_update().filter(sku=sku).first()
+    if channel is None or product is None:
+        raise CatalogError("O produto ou a superfície não foi encontrado.")
+    if channel.commerce_policy == Channel.CommercePolicy.DISPLAY:
         from types import SimpleNamespace
 
         from shopman.backstage.services import feeds as display_service
 
-        if is_sellable is None:
+        if set(patch) != {"is_sellable"}:
             raise CatalogError("Feed aceita apenas pausar/ativar (is_sellable).")
-        display_service.set_item_paused(surface_ref, sku, paused=not is_sellable)
-        # Duck-type com o que a API lê: feed está sempre "publicado", sem preço.
-        return SimpleNamespace(is_published=True, is_sellable=bool(is_sellable), price_q=None)
+        if expected_revisions is not None and not any(group.product_queryset().filter(pk=product.pk).exists() for group in groups):
+            from shopman.backstage.services.exceptions import CatalogConflict
 
-    from shopman.offerman.models import ListingItem
-
-    item = (
-        ListingItem.objects.filter(listing__ref=surface_ref, product__sku=sku)
-        .select_related("product", "listing")
-        .order_by("min_qty")
-        .first()
-    )
+            raise CatalogConflict("O produto não pertence mais ao recorte desta superfície. Atualize o catálogo.")
+        _check_cell_revisions(patch, cell_field_revisions(sku, surface_ref, display=channel), expected_revisions,
+            {"is_sellable": sku not in (((channel.config or {}).get("display") or {}).get("paused_skus") or [])})
+        display_service.set_item_paused(surface_ref, sku, paused=not patch["is_sellable"])
+        return SimpleNamespace(is_published=True, is_sellable=patch["is_sellable"], price_q=None)
+    listing = Listing.objects.select_for_update().filter(ref=surface_ref).first()
+    item = ListingItem.objects.select_for_update().filter(listing=listing, product=product).order_by("min_qty", "pk").first()
     if item is None:
         raise CatalogError(f"Produto '{sku}' não está na superfície '{surface_ref}'.")
-
-    if price_q is not None:
-        if price_q < 0:
-            raise CatalogError("Preço não pode ser negativo.")
-        item.price_q = price_q
-    if is_published is not None:
-        item.is_published = is_published
-    if is_sellable is not None:
-        item.is_sellable = is_sellable
-
-    item.save()
+    item.product, item.listing = product, listing
+    _check_cell_revisions(patch, cell_field_revisions(sku, surface_ref, item=item), expected_revisions,
+        {field: getattr(item, field) for field in ("price_q", "is_published", "is_sellable")})
+    for field, value in patch.items():
+        setattr(item, field, value)
+    # Preserve the canonical save/history/signals, limiting the write to the patch.
+    item.save(update_fields=list(patch))
     return item
 
 
