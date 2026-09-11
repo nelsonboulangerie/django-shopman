@@ -57,6 +57,13 @@ def test_crash_after_remote_acceptance_fences_worker_replay(context, monkeypatch
     with pytest.raises(DirectiveTerminalError):
         NotificationSendHandler().handle(message=task, ctx={})
     assert accepted == ["accepted remotely"]
+    with pytest.raises(DirectiveTerminalError):
+        NotificationSendHandler().handle(message=task, ctx={})
+    from shopman.backstage.models import OperatorAlert
+    alerts = OperatorAlert.objects.filter(type="notification_failed", order_ref=context.ref)
+    assert alerts.count() == 1
+    assert "não confirmado" in alerts.get().message
+    assert "5 tentativas" not in alerts.get().message
 
 
 def test_explicit_rejection_keeps_the_existing_fallback_chain(context, monkeypatch):

@@ -1429,3 +1429,15 @@ Order accepted/timeline e hashes de 9 tabelas de negócio permaneceram iguais.
 Artefatos e reprodução em `orders-20260910/legacy_browser/README.md`; build e probe
 aprovados, screenshot inspecionado. Sem efeitos externos; não implica coexistência
 segura de worker antigo nem prova todos os endpoints do cliente anterior.
+
+### WP04/H01 — crash real e alerta na retomada
+
+Ensaio adicional em banco novo isolado: processo Python termina via os._exit(17)
+após aceite persistido/fsync no fake remoto, com transação fechada; outro processo
+usa reaper e dispatcher canônicos. Um aceite, zero reenvio, Directive failed com
+receipt started conservado. V1 comprovou o fence; prova adicional falhou porque
+crash/replay não gerava o alerta já usado no retorno unknown. Corrigido após liberar
+claim: evento unknown + alerta existente, mesma audiência/dedupe/ack. V2 comprova
+um alerta honesto; **157 PostgreSQL/6,42s**, Ruff aprovado. Artefatos e limites em
+`orders-20260910/notification_unknown/PROCESS-CRASH.md`. Sem DDL produtivo. G03
+continua exigindo consulta homologada antes de qualquer repetição externa real.

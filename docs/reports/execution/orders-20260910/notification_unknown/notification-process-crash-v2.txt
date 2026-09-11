@@ -1,0 +1,67 @@
+{"level":"DEBUG","logger":"shopman.shop.notifications","message":"Notification backend registered: email","timestamp":"2026-09-11T06:30:18.006966Z"}
+{"level":"DEBUG","logger":"shopman.shop.notifications","message":"Notification backend registered: manychat","timestamp":"2026-09-11T06:30:18.008179Z"}
+{"level":"DEBUG","logger":"shopman.shop.notifications","message":"Notification backend registered: console","timestamp":"2026-09-11T06:30:18.008392Z"}
+{"level":"DEBUG","logger":"shopman.shop.notifications","message":"Notification backend registered: sms","timestamp":"2026-09-11T06:30:18.008916Z"}
+{"level":"INFO","logger":"shopman.shop.handlers","message":"shopman.handlers: connected holds_materialized receiver.","timestamp":"2026-09-11T06:30:18.027188Z"}
+{"level":"INFO","logger":"shopman.shop.handlers","message":"shopman.handlers: connected production alert receivers.","timestamp":"2026-09-11T06:30:18.028005Z"}
+{"level":"INFO","logger":"shopman.shop.handlers.production_order_sync","message":"shopman.handlers: connected production/order sync receivers.","timestamp":"2026-09-11T06:30:18.028410Z"}
+{"level":"INFO","logger":"shopman.shop.handlers._sse_emitters","message":"shopman.handlers: SSE emitters connected.","timestamp":"2026-09-11T06:30:18.029130Z"}
+{"level":"INFO","logger":"shopman.shop.handlers","message":"shopman.handlers: connected offerman catalog projection signals.","timestamp":"2026-09-11T06:30:18.033454Z"}
+{"level":"INFO","logger":"shopman.shop.handlers","message":"shopman.handlers: connected campaign receivers.","timestamp":"2026-09-11T06:30:18.033909Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: handlers registered.","timestamp":"2026-09-11T06:30:18.033936Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: rules engine wired.","timestamp":"2026-09-11T06:30:18.034600Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: lifecycle signal connected.","timestamp":"2026-09-11T06:30:18.034656Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: production lifecycle signal connected.","timestamp":"2026-09-11T06:30:18.035087Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: recipe derivation signal connected.","timestamp":"2026-09-11T06:30:18.035615Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: loyalty resolvers registered.","timestamp":"2026-09-11T06:30:18.035788Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: stock alert resolvers registered.","timestamp":"2026-09-11T06:30:18.035810Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: SKU namespace guard connected.","timestamp":"2026-09-11T06:30:18.035946Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: backup resources registered.","timestamp":"2026-09-11T06:30:18.038636Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: unhandled exception alert connected.","timestamp":"2026-09-11T06:30:18.039222Z"}
+{"level":"DEBUG","logger":"shopman.shop.rules.engine","message":"rules.engine: rules table not ready yet; bootstrap deferred.","timestamp":"2026-09-11T06:30:18.099453Z"}
+{"level":"INFO","logger":"shopman.backstage.migrations.cashman_backfill","message":"cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}","timestamp":"2026-09-11T06:30:19.179467Z"}
+{"level":"DEBUG","logger":"shopman.shop.notifications","message":"Notification backend registered: email","timestamp":"2026-09-11T06:30:23.335978Z"}
+{"level":"DEBUG","logger":"shopman.shop.notifications","message":"Notification backend registered: manychat","timestamp":"2026-09-11T06:30:23.336427Z"}
+{"level":"DEBUG","logger":"shopman.shop.notifications","message":"Notification backend registered: console","timestamp":"2026-09-11T06:30:23.336668Z"}
+{"level":"DEBUG","logger":"shopman.shop.notifications","message":"Notification backend registered: sms","timestamp":"2026-09-11T06:30:23.337053Z"}
+{"level":"INFO","logger":"shopman.shop.handlers","message":"shopman.handlers: connected holds_materialized receiver.","timestamp":"2026-09-11T06:30:23.351611Z"}
+{"level":"INFO","logger":"shopman.shop.handlers","message":"shopman.handlers: connected production alert receivers.","timestamp":"2026-09-11T06:30:23.352239Z"}
+{"level":"INFO","logger":"shopman.shop.handlers.production_order_sync","message":"shopman.handlers: connected production/order sync receivers.","timestamp":"2026-09-11T06:30:23.352578Z"}
+{"level":"INFO","logger":"shopman.shop.handlers._sse_emitters","message":"shopman.handlers: SSE emitters connected.","timestamp":"2026-09-11T06:30:23.353163Z"}
+{"level":"INFO","logger":"shopman.shop.handlers","message":"shopman.handlers: connected offerman catalog projection signals.","timestamp":"2026-09-11T06:30:23.357161Z"}
+{"level":"INFO","logger":"shopman.shop.handlers","message":"shopman.handlers: connected campaign receivers.","timestamp":"2026-09-11T06:30:23.357518Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: handlers registered.","timestamp":"2026-09-11T06:30:23.357543Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: rules engine wired.","timestamp":"2026-09-11T06:30:23.358169Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: lifecycle signal connected.","timestamp":"2026-09-11T06:30:23.358208Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: production lifecycle signal connected.","timestamp":"2026-09-11T06:30:23.358718Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: recipe derivation signal connected.","timestamp":"2026-09-11T06:30:23.359160Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: loyalty resolvers registered.","timestamp":"2026-09-11T06:30:23.359274Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: stock alert resolvers registered.","timestamp":"2026-09-11T06:30:23.359293Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: SKU namespace guard connected.","timestamp":"2026-09-11T06:30:23.359416Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: backup resources registered.","timestamp":"2026-09-11T06:30:23.362650Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: unhandled exception alert connected.","timestamp":"2026-09-11T06:30:23.363229Z"}
+{"directive_id":1,"effect_state":"started","event":"operator.effect.state","level":"INFO","logger":"shopman.operational","message":"operator.effect.state","recorded_at":"2026-09-11T06:30:23.381489+00:00","resource_ref":"LAB-NOTICE-PROCESS","timestamp":"2026-09-11T06:30:23.382017Z","topic":"notification.send","worker_attempt":1}
+{"level":"DEBUG","logger":"shopman.shop.notifications","message":"Notification backend registered: email","timestamp":"2026-09-11T06:30:24.064371Z"}
+{"level":"DEBUG","logger":"shopman.shop.notifications","message":"Notification backend registered: manychat","timestamp":"2026-09-11T06:30:24.064633Z"}
+{"level":"DEBUG","logger":"shopman.shop.notifications","message":"Notification backend registered: console","timestamp":"2026-09-11T06:30:24.064798Z"}
+{"level":"DEBUG","logger":"shopman.shop.notifications","message":"Notification backend registered: sms","timestamp":"2026-09-11T06:30:24.065062Z"}
+{"level":"INFO","logger":"shopman.shop.handlers","message":"shopman.handlers: connected holds_materialized receiver.","timestamp":"2026-09-11T06:30:24.075632Z"}
+{"level":"INFO","logger":"shopman.shop.handlers","message":"shopman.handlers: connected production alert receivers.","timestamp":"2026-09-11T06:30:24.075949Z"}
+{"level":"INFO","logger":"shopman.shop.handlers.production_order_sync","message":"shopman.handlers: connected production/order sync receivers.","timestamp":"2026-09-11T06:30:24.076207Z"}
+{"level":"INFO","logger":"shopman.shop.handlers._sse_emitters","message":"shopman.handlers: SSE emitters connected.","timestamp":"2026-09-11T06:30:24.076717Z"}
+{"level":"INFO","logger":"shopman.shop.handlers","message":"shopman.handlers: connected offerman catalog projection signals.","timestamp":"2026-09-11T06:30:24.080628Z"}
+{"level":"INFO","logger":"shopman.shop.handlers","message":"shopman.handlers: connected campaign receivers.","timestamp":"2026-09-11T06:30:24.080923Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: handlers registered.","timestamp":"2026-09-11T06:30:24.080961Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: rules engine wired.","timestamp":"2026-09-11T06:30:24.081467Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: lifecycle signal connected.","timestamp":"2026-09-11T06:30:24.081541Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: production lifecycle signal connected.","timestamp":"2026-09-11T06:30:24.081928Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: recipe derivation signal connected.","timestamp":"2026-09-11T06:30:24.082167Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: loyalty resolvers registered.","timestamp":"2026-09-11T06:30:24.082265Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: stock alert resolvers registered.","timestamp":"2026-09-11T06:30:24.082286Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: SKU namespace guard connected.","timestamp":"2026-09-11T06:30:24.082393Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: backup resources registered.","timestamp":"2026-09-11T06:30:24.084952Z"}
+{"level":"INFO","logger":"shopman.shop.apps","message":"ShopmanConfig: unhandled exception alert connected.","timestamp":"2026-09-11T06:30:24.085358Z"}
+{"directive_id":1,"effect_state":"unknown","event":"operator.effect.state","level":"INFO","logger":"shopman.operational","message":"operator.effect.state","recorded_at":"2026-09-11T06:30:23.381489+00:00","resource_ref":"LAB-NOTICE-PROCESS","timestamp":"2026-09-11T06:30:24.100239Z","topic":"notification.send","unknown_reason":"acceptance_unconfirmed","worker_attempt":2}
+{"level":"WARNING","logger":"shopman.shop.handlers.notification","message":"notification_escalated order=LAB-NOTICE-PROCESS template=order_ready","timestamp":"2026-09-11T06:30:24.128608Z"}
+{"level":"ERROR","logger":"shopman.orderman.dispatch","message":"Directive notification.send #1 terminal failure (attempt 2): [terminal] notification acceptance unconfirmed; automatic resend blocked","timestamp":"2026-09-11T06:30:24.128664Z"}
+Actual os._exit(17), fresh-process reaper and worker replay completed; one synthetic acceptance.

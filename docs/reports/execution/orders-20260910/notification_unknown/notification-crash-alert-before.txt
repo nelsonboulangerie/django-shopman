@@ -1,0 +1,45 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________ test_crash_after_remote_acceptance_fences_worker_replay ____________
+
+context = <Order: NOTICE-UNKNOWN>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ad4ccb0>
+
+    @pytest.mark.django_db(transaction=True)
+    def test_crash_after_remote_acceptance_fences_worker_replay(context, monkeypatch):
+        accepted = []
+        def crash(*args):
+            accepted.append("accepted remotely")
+            raise SystemExit(17)
+        monkeypatch.setattr(notification, "deliver_order_notification", crash)
+        task = Directive.objects.create(topic=notification.TOPIC, attempts=1, payload={"order_ref": context.ref, "template": "order_ready"})
+        with pytest.raises(SystemExit) as exit_:
+            NotificationSendHandler().handle(message=task, ctx={})
+        assert exit_.value.code == 17
+        task.refresh_from_db()
+        assert task.payload["notification_delivery"]["status"] == "started"
+        from shopman.orderman.exceptions import DirectiveTerminalError
+        with pytest.raises(DirectiveTerminalError):
+            NotificationSendHandler().handle(message=task, ctx={})
+        assert accepted == ["accepted remotely"]
+        with pytest.raises(DirectiveTerminalError):
+            NotificationSendHandler().handle(message=task, ctx={})
+        from shopman.backstage.models import OperatorAlert
+        alerts = OperatorAlert.objects.filter(type="notification_failed", order_ref=context.ref)
+>       assert alerts.count() == 1
+E       assert 0 == 1
+E        +  where 0 = count()
+E        +    where count = <QuerySet []>.count
+
+shopman/shop/tests/test_notification_unknown_recovery.py:64: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-11 03:28:46,992 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-11 03:28:47,256 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-11 03:28:48,273 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-11 03:28:51,757 shopman.operational operator.effect.state
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-11 03:28:52,291 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_notification_unknown_recovery.py::test_crash_after_remote_acceptance_fences_worker_replay
+1 failed in 5.97s

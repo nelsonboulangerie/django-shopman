@@ -93,6 +93,7 @@ class NotificationSendHandler:
             raise DirectiveTerminalError(f"Order not found: {order_ref}") from exc
 
         # A fresh lock serializes worker redelivery, but never covers transport I/O.
+        blocked = False
         with transaction.atomic():
             order = Order.objects.select_for_update().get(pk=order.pk)
             fresh = Directive.objects.select_for_update().get(pk=message.pk)
@@ -103,29 +104,36 @@ class NotificationSendHandler:
             if previous.get("status") in {"started", "unknown"} or (
                 fresh.attempts > 1 and previous.get("outcome") != "not_applied"
             ):
-                raise DirectiveTerminalError("notification acceptance unconfirmed; automatic resend blocked")
-            # Guarda: pular reminders de pagamento se já pago
-            if template == "payment.reminder":
-                payment_status = payment_svc.get_payment_status(order) or ""
-                if payment_status in ("paid", "captured", "succeeded") or order.status not in ("new", "created"):
-                    self._record_skip(fresh, "payment_not_pending")
-                    return
+                blocked = True
+            else:
+                # Guarda: pular reminders de pagamento se já pago
+                if template == "payment.reminder":
+                    payment_status = payment_svc.get_payment_status(order) or ""
+                    if payment_status in ("paid", "captured", "succeeded") or order.status not in ("new", "created"):
+                        self._record_skip(fresh, "payment_not_pending")
+                        return
 
-            # Enqueue eligibility can expire while the worker is unavailable. Reuse
-            # the same canonical link guard; do not send an obsolete charge notice.
-            if template == notification_svc.PAYMENT_LINK_TEMPLATE:
-                refusal = notification_svc.payment_link_resend_refusal(order, check_delivery=False)
-                if refusal is not None:
-                    self._record_skip(fresh, refusal.code)
-                    return
+                # Enqueue eligibility can expire while the worker is unavailable. Reuse
+                # the same canonical link guard; do not send an obsolete charge notice.
+                if template == notification_svc.PAYMENT_LINK_TEMPLATE:
+                    refusal = notification_svc.payment_link_resend_refusal(order, check_delivery=False)
+                    if refusal is not None:
+                        self._record_skip(fresh, refusal.code)
+                        return
 
-            payload["notification_delivery"] = {
-                "status": "started", "recorded_at": timezone.now().isoformat(),
-            }
-            fresh.payload = payload
-            fresh.save(update_fields=["payload", "updated_at"])
-            self._observe(fresh)
+                payload["notification_delivery"] = {
+                    "status": "started", "recorded_at": timezone.now().isoformat(),
+                }
+                fresh.payload = payload
+                fresh.save(update_fields=["payload", "updated_at"])
+                self._observe(fresh)
         message.payload = payload
+        if blocked:
+            # Alert outside the claim transaction; it must survive a
+            # terminal outcome and uses the existing audience/dedupe/ack policy.
+            self._observe(message, state_override="unknown")
+            self._escalate(order_ref, template, None, unknown=True)
+            raise DirectiveTerminalError("notification acceptance unconfirmed; automatic resend blocked")
 
         success, last_error = notification_svc.deliver_order_notification(order, template, payload)
         # ``deliver_order_notification`` registra aceite, skip legítimo ou a
@@ -157,14 +165,15 @@ class NotificationSendHandler:
         raise DirectiveTransientError(last_error or "all backends failed")
 
     @staticmethod
-    def _observe(message: Directive) -> None:
+    def _observe(message: Directive, *, state_override: str | None = None) -> None:
         delivery = (message.payload or {}).get("notification_delivery") or {}
+        effect_state = state_override or delivery.get("status")
         operational_event_on_commit(
             "operator.effect.state", directive_id=message.pk, topic=message.topic,
             resource_ref=(message.payload or {}).get("order_ref"),
-            worker_attempt=message.attempts, effect_state=delivery.get("status"),
+            worker_attempt=message.attempts, effect_state=effect_state,
             external_id=delivery.get("message_id"), recorded_at=delivery.get("recorded_at"),
-            unknown_reason="acceptance_unconfirmed" if delivery.get("status") == "unknown" else None,
+            unknown_reason="acceptance_unconfirmed" if effect_state == "unknown" else None,
         )
 
     def _escalate(self, order_ref: str, template: str, last_error: str | None, *, unknown: bool = False) -> None:
