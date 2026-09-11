@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from shopman.backstage.models import OperatorAlert
 from shopman.shop.services.marketing_observability import (
+    _ALERT_POLICY,
     METRIC_SPECS,
     emit_metric,
     observe_projection,
@@ -35,6 +36,13 @@ FORBIDDEN_LABELS = {
     "recipient",
     "url",
 }
+
+
+def test_marketing_alert_policy_uses_only_registered_operator_alert_types():
+    registered = {slug for slug, _label in OperatorAlert.TYPE_CHOICES}
+    configured = {model_type for model_type, _severity, _runbook in _ALERT_POLICY.values()}
+
+    assert configured <= registered
 
 
 def test_metric_registry_contains_section_17_contract_without_forbidden_labels():

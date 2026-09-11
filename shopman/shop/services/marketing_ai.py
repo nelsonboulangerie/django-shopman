@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import time
 import unicodedata
@@ -28,6 +29,7 @@ from shopman.shop.models import (
 )
 
 POLICY_VERSION = "marketing-ai-v2.1"
+logger = logging.getLogger(__name__)
 RECORD_RETENTION = timedelta(days=365 * 5)
 MAX_BODY_CHARS = 600
 MAX_HASHTAGS = 10
@@ -320,6 +322,10 @@ def suggest(
             timeout=float(getattr(settings, "SHOPMAN_MARKETING_AI_TIMEOUT_SECONDS", 12)),
         )
     except Exception as exc:
+        logger.warning(
+            "marketing.ai_provider_failed exception_class=%s",
+            type(exc).__name__,
+        )
         _record_attempt(
             announcement=announcement,
             actor=actor,

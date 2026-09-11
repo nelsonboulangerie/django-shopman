@@ -312,7 +312,7 @@ def test_the_personal_access_link_is_never_written_into_the_profile(calls, with_
     """
     mc.send(
         "+5543984049009",
-        "stock_arrived",
+        "order_accepted",
         {
             "action_url": "https://loja.example.com/a?t=segredo-de-login",
             "action_url_public": "/p/cro",
@@ -331,7 +331,7 @@ def test_a_caller_that_forgets_the_common_link_still_does_not_leak(calls, with_f
     """
     mc.send(
         "+5543984049009",
-        "stock_arrived",
+        "order_accepted",
         {"action_url": "https://loja.example.com/a?t=segredo-de-login"},
     )
 

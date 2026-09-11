@@ -49,6 +49,23 @@ intervalo, o reverse-DNS de `HTTPServer.server_bind()`. O servidor hermético ag
 bind loopback direto e preenche `server_name`/`server_port` sem DNS; nenhuma superfície
 de runtime usa esse mock.
 
+O último bloqueio localizou contratos antigos fora dos shards Marketing: `test-shop`
+encontrou seis divergências em template, arquitetura, idempotência e relato de falhas;
+`Backstage rest` encontrou seis rótulos de modelos de auditoria ainda em inglês, um
+`bool(...)` opaco e uma inferência de tipo de alerta opaca. As correções preservam o
+fail-closed: o teste legado ManyChat passou a usar um evento transacional, sem permitir
+Marketing no adapter antigo; dependências entre domínios agora atravessam adapters;
+ações de leitura declaram explicitamente que não exigem idempotência; exceções degradadas
+emitem `WARNING` seguro; e os rótulos pt-BR receberam a migration aditiva `0047`.
+O scanner genérico de alertas ganhou um adapter explícito e um teste especializado prova
+que todos os tipos configurados existem no registro canônico, sem reduzir cobertura.
+
+Após essas correções, `test-shop` passou com 4.194 testes, 19 skips e zero falhas; os
+98 testes focados nos bloqueios do Backstage passaram; o gate canônico Admin/Unfold
+passou com 262 testes; `ruff check .`, `git diff --check` e o gate de migrations passaram.
+O grafo completo foi aplicado do zero em banco descartável e terminou sem migrations
+pendentes. A publicação continua bloqueada até o novo run integral do CI ficar verde.
+
 Os runs cancelados pelo push também tornaram visíveis dois contratos adjacentes: o
 teste antigo de aviso de estoque ainda exigia resposta exatamente `{ok: true}` depois
 de a API ganhar referência revogável e expiração; e os harnesses browser usavam

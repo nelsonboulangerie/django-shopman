@@ -7,6 +7,7 @@ catalog or permission to mutate configuration.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
@@ -15,6 +16,7 @@ from django.utils import timezone
 
 PUBLICATION = "publication"
 DIRECT_MESSAGE = "direct_message"
+logger = logging.getLogger(__name__)
 
 PLATFORM_KIND: dict[str, str] = {
     "instagram": PUBLICATION,
@@ -102,6 +104,11 @@ def _local_simulation_readiness(
         if probe is None or not bool(probe()):
             return None
     except Exception:
+        logger.warning(
+            "marketing.local_simulation_probe_failed platform=%s",
+            platform,
+            exc_info=True,
+        )
         return None
     return PlatformReadiness(
         platform=platform,
@@ -151,6 +158,11 @@ def _publication_readiness(platform: str, *, now: datetime) -> PlatformReadiness
     try:
         available = bool(probe())
     except Exception:  # provider adapters are an availability boundary
+        logger.warning(
+            "marketing.publication_probe_failed platform=%s",
+            platform,
+            exc_info=True,
+        )
         return PlatformReadiness(
             platform=platform,
             kind=PUBLICATION,
@@ -193,6 +205,11 @@ def _direct_message_readiness(platform: str, *, now: datetime) -> PlatformReadin
     try:
         backend = _whatsapp_backend()
     except Exception:  # adapter probes must degrade the page, never break it
+        logger.warning(
+            "marketing.direct_message_probe_failed platform=%s",
+            platform,
+            exc_info=True,
+        )
         return PlatformReadiness(
             platform=platform,
             kind=DIRECT_MESSAGE,

@@ -47,7 +47,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        from shopman.backstage.models import OperatorAlert
+        from shopman.shop.adapters import alert as alert_adapter
         from shopman.shop.models import (
             DeliveryAttempt,
             DeliveryReconciliation,
@@ -91,10 +91,7 @@ class Command(BaseCommand):
             state=MarketingOutbox.State.PENDING,
             available_at__lte=cutoff,
         ).count()
-        open_alerts = OperatorAlert.objects.filter(
-            type__in=MARKETING_ALERT_TYPES,
-            acknowledged=False,
-        )
+        open_alerts = alert_adapter.open_counts(MARKETING_ALERT_TYPES)
         report = {
             "schema": "shopman.marketing.diagnostic.v1",
             "mode": "read_only",
@@ -120,7 +117,7 @@ class Command(BaseCommand):
             "targets": {"by_state": _counts(targets, "state")},
             "attempts": {"by_outcome": _counts(attempts, "outcome_kind")},
             "reconciliation": {"by_state": _counts(reconciliations, "state")},
-            "open_alerts": _counts(open_alerts, "type"),
+            "open_alerts": open_alerts,
         }
         report["result"] = _result(report)
         report["next"] = _next_actions(report)

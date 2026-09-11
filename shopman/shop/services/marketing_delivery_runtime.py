@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from shopman.shop.models import MarketingOutbox
@@ -12,6 +13,7 @@ from shopman.shop.services.marketing_delivery_worker import (
 )
 
 SUPPORTED_PLATFORMS = ("instagram", "facebook", "google_business", "whatsapp")
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +52,11 @@ def is_hermetic_simulation(platform: str) -> bool:
     try:
         return bool(probe is not None and probe())
     except Exception:
+        logger.warning(
+            "marketing.delivery_provider_probe_failed platform=%s",
+            platform,
+            exc_info=True,
+        )
         return False
 
 

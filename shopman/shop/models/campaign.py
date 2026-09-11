@@ -379,7 +379,7 @@ class Announcement(models.Model):
     # Compare-and-set token for every operator command.  It starts at one so a
     # missing/zero value can never be mistaken for a valid version at the API
     # boundary.  Mutations advance it while holding a row lock.
-    version = models.PositiveIntegerField(default=1, editable=False)
+    version = models.PositiveIntegerField("versão", default=1, editable=False)
 
     rule = models.ForeignKey(
         Campaign,
@@ -432,12 +432,21 @@ class Announcement(models.Model):
     )
     platform_results = models.JSONField("resultado por plataforma", default=dict, blank=True)
     delivery_state = models.CharField(
+        "situação da entrega",
         max_length=32,
         choices=AnnouncementDeliveryState.choices,
         default=AnnouncementDeliveryState.NOT_STARTED,
     )
-    delivery_state_updated_at = models.DateTimeField(null=True, blank=True)
-    delivery_settled_at = models.DateTimeField(null=True, blank=True)
+    delivery_state_updated_at = models.DateTimeField(
+        "situação da entrega atualizada em",
+        null=True,
+        blank=True,
+    )
+    delivery_settled_at = models.DateTimeField(
+        "entrega concluída em",
+        null=True,
+        blank=True,
+    )
     trigger_context = models.JSONField("contexto do evento", default=dict, blank=True)
     approved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -475,7 +484,7 @@ class Announcement(models.Model):
     )
     published_at = models.DateTimeField("publicado em", null=True, blank=True)
     expires_at = models.DateTimeField("expira em", null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField("criado em", auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -553,17 +562,18 @@ class AudienceSnapshot(models.Model):
         related_name="audience_snapshots",
         null=True,
         blank=True,
+        verbose_name="anúncio",
     )
-    version = models.PositiveIntegerField(default=1)
-    summary = models.JSONField(default=dict)
-    rule_summary = models.JSONField(default=dict)
-    rule_hash = models.CharField(max_length=64)
-    cohort_hash = models.CharField(max_length=64)
-    policy_version = models.CharField(max_length=64)
-    calculated_at = models.DateTimeField()
-    expires_at = models.DateTimeField()
-    sealed_at = models.DateTimeField(auto_now_add=True)
-    retention_until = models.DateTimeField()
+    version = models.PositiveIntegerField("versão", default=1)
+    summary = models.JSONField("resumo", default=dict)
+    rule_summary = models.JSONField("resumo da regra", default=dict)
+    rule_hash = models.CharField("hash da regra", max_length=64)
+    cohort_hash = models.CharField("hash do público", max_length=64)
+    policy_version = models.CharField("versão da política", max_length=64)
+    calculated_at = models.DateTimeField("calculado em")
+    expires_at = models.DateTimeField("expira em")
+    sealed_at = models.DateTimeField("selado em", auto_now_add=True)
+    retention_until = models.DateTimeField("reter até")
 
     class Meta:
         ordering = ["-sealed_at"]
@@ -701,8 +711,9 @@ class MarketingCommandReceipt(models.Model):
         UNKNOWN = "unknown", "resultado desconhecido"
 
     ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    kind = models.CharField(max_length=24, choices=Kind.choices)
+    kind = models.CharField("tipo", max_length=24, choices=Kind.choices)
     state = models.CharField(
+        "situação",
         max_length=16,
         choices=State.choices,
         default=State.ACCEPTED,
@@ -713,25 +724,27 @@ class MarketingCommandReceipt(models.Model):
         related_name="command_receipts",
         null=True,
         blank=True,
+        verbose_name="anúncio",
     )
-    resource_ref = models.CharField(max_length=120)
+    resource_ref = models.CharField("referência do recurso", max_length=120)
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name="marketing_command_receipts",
         null=True,
         blank=True,
+        verbose_name="responsável",
     )
-    actor_ref = models.CharField(max_length=128, blank=True, db_index=True)
-    idempotency_key_hash = models.CharField(max_length=64)
-    payload_hash = models.CharField(max_length=64)
-    base_version = models.PositiveIntegerField()
-    resulting_version = models.PositiveIntegerField(null=True, blank=True)
-    outcome = models.JSONField(default=dict, blank=True)
-    request_id = models.CharField(max_length=100, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    completed_at = models.DateTimeField(null=True, blank=True)
-    retention_until = models.DateTimeField()
+    actor_ref = models.CharField("referência do responsável", max_length=128, blank=True, db_index=True)
+    idempotency_key_hash = models.CharField("hash da chave de idempotência", max_length=64)
+    payload_hash = models.CharField("hash dos dados", max_length=64)
+    base_version = models.PositiveIntegerField("versão de origem")
+    resulting_version = models.PositiveIntegerField("versão resultante", null=True, blank=True)
+    outcome = models.JSONField("resultado", default=dict, blank=True)
+    request_id = models.CharField("referência da requisição", max_length=100, blank=True)
+    created_at = models.DateTimeField("criado em", auto_now_add=True)
+    completed_at = models.DateTimeField("concluído em", null=True, blank=True)
+    retention_until = models.DateTimeField("reter até")
 
     class Meta:
         ordering = ["-created_at"]
@@ -818,16 +831,18 @@ class MarketingAuditEvent(models.Model):
         RECONCILIATION_REQUESTED = "reconcile_requested", "reconciliação solicitada"
 
     ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    event_type = models.CharField(max_length=24, choices=EventType.choices)
+    event_type = models.CharField("tipo de evento", max_length=24, choices=EventType.choices)
     command = models.OneToOneField(
         MarketingCommandReceipt,
         on_delete=models.PROTECT,
         related_name="audit_event",
+        verbose_name="comando",
     )
     announcement = models.ForeignKey(
         Announcement,
         on_delete=models.PROTECT,
         related_name="marketing_audit_events",
+        verbose_name="anúncio",
     )
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -835,14 +850,16 @@ class MarketingAuditEvent(models.Model):
         related_name="marketing_audit_events",
         null=True,
         blank=True,
+        verbose_name="responsável",
     )
-    actor_ref = models.CharField(max_length=128, blank=True, db_index=True)
+    actor_ref = models.CharField("referência do responsável", max_length=128, blank=True, db_index=True)
     snapshot = models.ForeignKey(
         AudienceSnapshot,
         on_delete=models.PROTECT,
         related_name="audit_events",
         null=True,
         blank=True,
+        verbose_name="público selado",
     )
     artifact = models.ForeignKey(
         MarketingContentArtifact,
@@ -850,16 +867,17 @@ class MarketingAuditEvent(models.Model):
         related_name="audit_events",
         null=True,
         blank=True,
+        verbose_name="artefato",
     )
-    base_version = models.PositiveIntegerField()
-    resulting_version = models.PositiveIntegerField()
-    reason_code = models.CharField(max_length=64, blank=True)
-    decision_reason = models.CharField(max_length=200, blank=True)
-    facts = models.JSONField(default=dict, blank=True)
-    request_id = models.CharField(max_length=100, blank=True)
-    occurred_at = models.DateTimeField()
-    created_at = models.DateTimeField(auto_now_add=True)
-    retention_until = models.DateTimeField()
+    base_version = models.PositiveIntegerField("versão de origem")
+    resulting_version = models.PositiveIntegerField("versão resultante")
+    reason_code = models.CharField("código do motivo", max_length=64, blank=True)
+    decision_reason = models.CharField("motivo da decisão", max_length=200, blank=True)
+    facts = models.JSONField("fatos", default=dict, blank=True)
+    request_id = models.CharField("referência da requisição", max_length=100, blank=True)
+    occurred_at = models.DateTimeField("ocorrido em")
+    created_at = models.DateTimeField("criado em", auto_now_add=True)
+    retention_until = models.DateTimeField("reter até")
 
     objects = models.Manager.from_queryset(_AppendOnlyMarketingQuerySet)()
 
@@ -999,29 +1017,31 @@ class MarketingPlatformAuditEvent(models.Model):
         FLOW_CLEARED = "flow_cleared", "flow removido"
 
     ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    event_type = models.CharField(max_length=24, choices=EventType.choices)
+    event_type = models.CharField("tipo de evento", max_length=24, choices=EventType.choices)
     command = models.OneToOneField(
         MarketingCommandReceipt,
         on_delete=models.PROTECT,
         related_name="platform_audit_event",
+        verbose_name="comando",
     )
-    platform = models.CharField(max_length=32)
+    platform = models.CharField("plataforma", max_length=32)
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name="marketing_platform_audit_events",
+        verbose_name="responsável",
     )
-    actor_ref = models.CharField(max_length=128, db_index=True)
-    base_version = models.PositiveIntegerField()
-    resulting_version = models.PositiveIntegerField()
-    previous_flow_ref = models.CharField(max_length=120, blank=True)
-    resulting_flow_ref = models.CharField(max_length=120, blank=True)
-    catalog_hash = models.CharField(max_length=64)
-    catalog_as_of = models.DateTimeField()
-    request_id = models.CharField(max_length=100, blank=True)
-    occurred_at = models.DateTimeField()
-    created_at = models.DateTimeField(auto_now_add=True)
-    retention_until = models.DateTimeField()
+    actor_ref = models.CharField("referência do responsável", max_length=128, db_index=True)
+    base_version = models.PositiveIntegerField("versão de origem")
+    resulting_version = models.PositiveIntegerField("versão resultante")
+    previous_flow_ref = models.CharField("flow anterior", max_length=120, blank=True)
+    resulting_flow_ref = models.CharField("flow resultante", max_length=120, blank=True)
+    catalog_hash = models.CharField("hash do catálogo", max_length=64)
+    catalog_as_of = models.DateTimeField("catálogo verificado em")
+    request_id = models.CharField("referência da requisição", max_length=100, blank=True)
+    occurred_at = models.DateTimeField("ocorrido em")
+    created_at = models.DateTimeField("criado em", auto_now_add=True)
+    retention_until = models.DateTimeField("reter até")
 
     objects = models.Manager.from_queryset(_AppendOnlyMarketingQuerySet)()
 
@@ -1250,6 +1270,7 @@ class MarketingSecurityEvent(models.Model):
         related_name="marketing_security_events",
         null=True,
         blank=True,
+        verbose_name="responsável",
     )
     second_actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -1257,6 +1278,7 @@ class MarketingSecurityEvent(models.Model):
         related_name="marketing_second_security_events",
         null=True,
         blank=True,
+        verbose_name="segundo responsável",
     )
     confirmation = models.ForeignKey(
         MarketingConfirmation,
@@ -1264,14 +1286,15 @@ class MarketingSecurityEvent(models.Model):
         related_name="security_events",
         null=True,
         blank=True,
+        verbose_name="confirmação",
     )
-    event_type = models.CharField(max_length=32)
-    action = models.CharField(max_length=32, blank=True)
-    resource_ref = models.CharField(max_length=120, blank=True)
-    reason_code = models.CharField(max_length=64, blank=True)
-    facts = models.JSONField(default=dict, blank=True)
-    occurred_at = models.DateTimeField()
-    retention_until = models.DateTimeField()
+    event_type = models.CharField("tipo de evento", max_length=32)
+    action = models.CharField("ação", max_length=32, blank=True)
+    resource_ref = models.CharField("referência do recurso", max_length=120, blank=True)
+    reason_code = models.CharField("código do motivo", max_length=64, blank=True)
+    facts = models.JSONField("fatos", default=dict, blank=True)
+    occurred_at = models.DateTimeField("ocorrido em")
+    retention_until = models.DateTimeField("reter até")
 
     objects = models.Manager.from_queryset(_AppendOnlyMarketingQuerySet)()
 

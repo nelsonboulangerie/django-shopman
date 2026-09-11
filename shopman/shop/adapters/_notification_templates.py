@@ -90,9 +90,10 @@ def derive_context(context: dict | None) -> dict:
     # Alertas operacionais precisam ser reconhecidos sem decorar SKU. Quando o
     # catálogo está disponível, a composição entrega `product_name`; chamadas
     # diretas ao adapter ainda degradam honestamente para o SKU.
+    explicit_product_label = str(ctx.get("product_label") or "").strip()
     sku = str(ctx.get("sku") or "").strip()
     product_name = str(ctx.get("product_name") or "").strip()
-    ctx["product_label"] = (
+    ctx["product_label"] = explicit_product_label or (
         f"{product_name} ({sku})" if product_name and sku else product_name or sku
     )
 

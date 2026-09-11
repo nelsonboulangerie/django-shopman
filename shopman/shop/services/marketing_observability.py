@@ -233,9 +233,9 @@ def observe_projection(projection: str, build):
     if failure is not None:
         raise failure
     seconds = time.perf_counter() - started_at
-    from shopman.backstage.api.projections import projection_data
+    from shopman.shop.adapters import surface_projection
 
-    payload = projection_data(result)
+    payload = surface_projection.data(result)
     encoded = json.dumps(
         payload,
         ensure_ascii=False,

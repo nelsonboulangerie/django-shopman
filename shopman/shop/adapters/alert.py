@@ -74,6 +74,21 @@ def exists(
     return qs.exists()
 
 
+def open_counts(types) -> dict[str, int]:
+    """Count unacknowledged alerts by type without exposing a surface model."""
+    from django.db.models import Count
+
+    from shopman.backstage.models import OperatorAlert
+
+    rows = (
+        OperatorAlert.objects.filter(type__in=tuple(types), acknowledged=False)
+        .values("type")
+        .annotate(total=Count("pk"))
+        .order_by("type")
+    )
+    return {str(row["type"]): int(row["total"]) for row in rows}
+
+
 def resolve(type: str, *, order_ref: str, actor: str) -> int:
     """Resolve active alert causes through the canonical audited service."""
     from shopman.backstage.services.alerts import resolve_alerts

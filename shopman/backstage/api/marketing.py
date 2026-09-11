@@ -1924,7 +1924,13 @@ def _is_approval_command(request) -> bool:
     """A v2-shaped attempt must never downgrade to the legacy approval path."""
 
     data = request.data if isinstance(request.data, dict) else {}
-    return bool(request.headers.get("Idempotency-Key") or "base_version" in data or "publish_mode" in data)
+    return any(
+        (
+            request.headers.get("Idempotency-Key"),
+            "base_version" in data,
+            "publish_mode" in data,
+        )
+    )
 
 
 def _command_version(payload) -> tuple[int, Response | None]:

@@ -194,6 +194,11 @@ class Command(BaseCommand):
                 )
                 outcomes["deferred"] += 1
             except Exception:
+                logger.exception(
+                    "marketing.delivery_target_cycle_failed platform=%s target=%s",
+                    target.platform,
+                    str(target.ref),
+                )
                 release_target_claim(
                     target.ref,
                     worker_id=worker_id,
@@ -201,11 +206,6 @@ class Command(BaseCommand):
                     now=clock,
                 )
                 outcomes["worker_error"] += 1
-                logger.exception(
-                    "marketing.delivery_target_cycle_failed platform=%s target=%s",
-                    target.platform,
-                    str(target.ref),
-                )
 
         reconciliation_claimed = 0
         reconciliation_outcomes: Counter[str] = Counter()
