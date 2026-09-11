@@ -254,7 +254,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         <p class="text-xs text-muted-foreground">{{ code.prefix }}</p>
         <h1 class="truncate text-3xl font-bold leading-tight tabular-nums">{{ code.code }}</h1>
       </div>
-      <button type="button" class="ml-auto grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent" aria-label="Atualizar" @click="refresh()">
+      <button type="button" class="min-h-control min-w-control ml-auto grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent" aria-label="Atualizar" @click="refresh()">
         <Icon name="lucide:refresh-cw" class="size-4" />
       </button>
     </header>
@@ -516,7 +516,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             v-for="(tag, i) in noteTags"
             :key="i"
             type="button"
-            class="inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            class="min-h-control min-w-control inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
             @click="applyNoteTag(tag)"
           >
             <Icon name="lucide:plus" class="size-3" />{{ tag }}
@@ -527,22 +527,22 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           v-model="notes"
           rows="3"
           placeholder="Instruções de preparo para a cozinha…"
-          class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+          class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
         />
         <p class="text-xs text-muted-foreground">Aparece no ticket da cozinha (KDS).</p>
         <div v-if="notesConflict" role="alert" class="rounded-md border p-3 text-sm">
           <p>A nota mudou enquanto você escrevia. Seu texto está preservado acima.</p>
           <p class="my-2 whitespace-pre-wrap">No servidor: {{ order.kitchen_note || "(vazia)" }}</p>
           <div class="flex gap-2">
-            <button type="button" class="rounded border px-2 py-1" @click="acceptLatestNotesBase">Manter meu texto</button>
-            <button type="button" class="rounded border px-2 py-1" @click="useLatestNotes">Usar texto do servidor</button>
+            <button type="button" class="min-h-control min-w-control rounded border px-2 py-1" @click="acceptLatestNotesBase">Manter meu texto</button>
+            <button type="button" class="min-h-control min-w-control rounded border px-2 py-1" @click="useLatestNotes">Usar texto do servidor</button>
           </div>
         </div>
         <p v-if="mutationError" role="alert" class="text-sm text-destructive">{{ mutationError }}</p>
         <button
           type="button"
           :disabled="busy || !notesDirty || notesConflict"
-          class="self-end rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
+          class="min-h-action min-w-action self-end rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
           @click="saveKitchenNote"
         >
           Salvar nota
@@ -568,7 +568,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             v-model="comment"
             rows="1"
             placeholder="Comentar no histórico…"
-            class="min-h-9 flex-1 resize-y rounded-md border bg-background p-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+            class="min-h-control flex-1 resize-y rounded-md border bg-background p-2 text-sm outline-none focus:ring-1 focus:ring-ring"
             aria-label="Comentar no histórico"
             @keydown.enter.meta.prevent="submitComment"
           />
@@ -609,14 +609,14 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         </UiDialogHeader>
         <p class="text-sm text-muted-foreground">{{ settleCustody }}</p>
         <p v-if="settleChanged" role="alert" class="text-sm text-destructive">O pedido ou turno mudou. Confira o contexto atual: {{ settleAction?.confirmation.description }}
-          <button type="button" class="underline" @click="reviewSettleCustody">Conferir e manter os valores digitados</button>
+          <button type="button" class="min-h-control min-w-control underline" @click="reviewSettleCustody">Conferir e manter os valores digitados</button>
         </p>
         <input
           v-model="amount"
           type="text"
           inputmode="decimal"
           placeholder="Ex.: 15,00"
-          class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+          class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
           aria-label="Valor recebido"
         />
         <label v-if="asksChangeBack" class="flex flex-col gap-1 text-sm" data-change-back>
@@ -626,20 +626,20 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             type="text"
             inputmode="decimal"
             placeholder="0,00"
-            class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+            class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
             aria-label="Troco que voltou"
           />
         </label>
-        <label v-if="asksEquipmentBack" class="flex items-center gap-2 text-sm" data-equipment-back>
+        <label v-if="asksEquipmentBack" class="flex min-h-control items-center gap-2 text-sm" data-equipment-back>
           <input v-model="settleEquipmentBack" type="checkbox" />
           <span>{{ order?.equipment_label }}. Voltou junto</span>
         </label>
         <UiDialogFooter>
-          <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dialog = ''">Voltar</button>
+          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dialog = ''">Voltar</button>
           <button
             type="button"
             :disabled="busy || settleChanged || !settleAction?.enabled"
-            class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+            class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             @click="submitSettle"
           >
             Confirmar
@@ -659,7 +659,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           </UiDialogDescription>
         </UiDialogHeader>
         <div v-if="order?.equipment_options.length" class="flex flex-col gap-1.5" data-dispatch-equipment>
-          <label v-for="opt in order.equipment_options" :key="opt.ref" class="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+          <label v-for="opt in order.equipment_options" :key="opt.ref" class="flex min-h-control items-center gap-2 rounded-md border px-3 py-2 text-sm">
             <input type="checkbox" :checked="dispatchEquipment.includes(opt.ref)" @change="toggleDispatchEquipment(opt.ref)" />
             <span>Levou a {{ opt.label.toLowerCase() }}</span>
           </label>
@@ -671,17 +671,17 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             type="text"
             inputmode="decimal"
             placeholder="Ex.: 20,00"
-            class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+            class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
             aria-label="Troco que o entregador leva"
           />
         </label>
         <UiDialogFooter>
-          <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dialog = ''">Voltar</button>
-          <button v-if="dispatchAsksChange" type="button" :disabled="busy" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent disabled:opacity-50" @click="submitDispatch('0')">Saiu sem troco</button>
+          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dialog = ''">Voltar</button>
+          <button v-if="dispatchAsksChange" type="button" :disabled="busy" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent disabled:opacity-50" @click="submitDispatch('0')">Saiu sem troco</button>
           <button
             type="button"
             :disabled="busy"
-            class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+            class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             @click="submitDispatch(changeOut)"
           >
             {{ dispatchAsksChange ? "Levou o troco" : "Saiu para entrega" }}

@@ -49,6 +49,11 @@ test("SSE during notes draft preserves text and offers explicit same-field resol
   expect(response.status()).toBe(200);
   await expect(page.getByText("No servidor: Outra estação")).toBeVisible();
   await expect(editor).toHaveValue("Rascunho preservado");
+  for (const name of ["Salvar nota", "Manter meu texto", "Usar texto do servidor"]) {
+    const box = await page.getByRole("button", { name, exact: true }).boundingBox();
+    expect.soft(box?.width, `${name}: largura`).toBeGreaterThanOrEqual(44);
+    expect.soft(box?.height, `${name}: altura`).toBeGreaterThanOrEqual(44);
+  }
   await expect(page.getByRole("button", { name: "Salvar nota", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Manter meu texto", exact: true }).click();
   await page.getByRole("button", { name: "Salvar nota", exact: true }).click();

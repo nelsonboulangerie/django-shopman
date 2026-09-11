@@ -1,0 +1,72 @@
+[WebServer] (node:29672) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:29673) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › tests/integration/operational.spec.ts:38:1 › SSE during notes draft preserves text and offers explicit same-field resolution (2.3s)
+
+
+  1) [chromium] › tests/integration/operational.spec.ts:38:1 › SSE during notes draft preserves text and offers explicit same-field resolution 
+
+    Error: Salvar nota: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    37.984375
+
+      53 |     const box = await page.getByRole("button", { name, exact: true }).boundingBox();
+      54 |     expect.soft(box?.width, `${name}: largura`).toBeGreaterThanOrEqual(44);
+    > 55 |     expect.soft(box?.height, `${name}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                 ^
+      56 |   }
+      57 |   await expect(page.getByRole("button", { name: "Salvar nota", exact: true })).toBeDisabled();
+      58 |   await page.getByRole("button", { name: "Manter meu texto", exact: true }).click();
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:55:49
+
+    Error: Manter meu texto: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    29.984375
+
+      53 |     const box = await page.getByRole("button", { name, exact: true }).boundingBox();
+      54 |     expect.soft(box?.width, `${name}: largura`).toBeGreaterThanOrEqual(44);
+    > 55 |     expect.soft(box?.height, `${name}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                 ^
+      56 |   }
+      57 |   await expect(page.getByRole("button", { name: "Salvar nota", exact: true })).toBeDisabled();
+      58 |   await page.getByRole("button", { name: "Manter meu texto", exact: true }).click();
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:55:49
+
+    Error: Usar texto do servidor: altura
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 44
+    Received:    29.984375
+
+      53 |     const box = await page.getByRole("button", { name, exact: true }).boundingBox();
+      54 |     expect.soft(box?.width, `${name}: largura`).toBeGreaterThanOrEqual(44);
+    > 55 |     expect.soft(box?.height, `${name}: altura`).toBeGreaterThanOrEqual(44);
+         |                                                 ^
+      56 |   }
+      57 |   await expect(page.getByRole("button", { name: "Salvar nota", exact: true })).toBeDisabled();
+      58 |   await page.getByRole("button", { name: "Manter meu texto", exact: true }).click();
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:55:49
+
+    Error Context: ../../.orders-lab/playwright-results/operational-SSE-during-not-ad40d-licit-same-field-resolution-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../.orders-lab/playwright-results/operational-SSE-during-not-ad40d-licit-same-field-resolution-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../.orders-lab/playwright-results/operational-SSE-during-not-ad40d-licit-same-field-resolution-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › tests/integration/operational.spec.ts:38:1 › SSE during notes draft preserves text and offers explicit same-field resolution 

@@ -1476,3 +1476,14 @@ incluindo corrida SSE. Primeira invocação Playwright falhou na preparação po
 incorreto, sem executar testes; log preservado ao lado dos resultados válidos em
 `orders-20260910/confirmed_note/`. Sem DDL ou efeito real. Rollback reintroduziria
 a regressão visual; conservar código compatível e recibos, não desfazer a nota.
+
+### WP06 — alvos do detalhe
+
+Browser antes: Salvar nota 37,98px, resolver conflito 29,98px de altura, abaixo
+de44. Tokens existentes aplicados a botões nativos do detalhe, entradas e labels
+físicos; ações principais48, controles44. Depois geometria e jornada nota/SSE
+aprovadas, screenshot inspecionado; build/typecheck aprovados. Suíte integrada:
+25pass/1fail (1,5min), falha independente no catálogo: coluna fixa encobre preço
+com múltiplos canais. Falha preservada em detail_targets; investigação subsequente,
+sem clique forçado ou declarar suíte verde. Sem DDL/autoridade nova; rollback só
+visual, conservar drafts e recibos. Leitor de tela físico não ensaiado.
