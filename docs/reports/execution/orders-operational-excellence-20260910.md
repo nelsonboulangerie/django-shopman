@@ -1051,3 +1051,14 @@ Checkout somente de validação django-shopman-orders-validation-3504dec71, bran
 Única falha: test_data_ilegivel_cai_no_padrao_em_vez_de_estourar calculava hoje pelo relógio, mas fixava date_to em 2026-09-10. Em 11/09, o writer canônico troca intervalo invertido, portanto date_from passa a 10/09. Teste e serviço estavam idênticos à base 5a3383c9 (git diff vazio); defeito da fixture com passagem do dia, não regressão de produção. O próprio parse_period já oferece parâmetro today: a fixture agora usa data controlada 07/09 por essa costura existente. Algoritmo não mudou.
 
 Revalidação do módulo inteiro: **38 PostgreSQL em 8,39 s e 38 SQLite em 7,62 s**. Skips/warnings da ampla permanecem no log; não equivalem a ensaios feitos. Migração/rollback: nenhuma mudança produtiva, somente teste determinístico. Suite ampla verde em versão final ainda depende de nova rodada fixa após as demais mudanças.
+
+
+### WP07 — hora da leitura útil separada da conexão
+
+Antes: as quatro leituras principais não expunham geração/versão do envelope (4 provas falharam). Fila, detalhe, catálogo e feeds agora retornam generated_at pelo servidor e contract_version=1; a Action continua sendo a precondição autoritativa. Campos seguem a nomenclatura já usada pelas projeções de produção, sem transplantar suas provas/permissões. Nenhum TTL novo de comando ou estado paralelo.
+
+A interface conserva somente metadata de leitura bem-sucedida junto do recurso. Falha mantém horário anterior; troca de recorte limpa a marca; servidor sem metadata mostra horário indisponível. Componente comum às quatro páginas exibe última leitura útil/idade e falha separadas da conexão SSE. Usa o timer monotônico já existente; não anuncia cada segundo ao leitor de tela, não decide elegibilidade e não altera som.
+
+Validação: **124 PostgreSQL em 27,32 s**, **277 Vitest**, typecheck/Ruff/build. Inclui geração pelo relógio do servidor, falha sem avanço da marca, troca de recurso, convivência com envelope antigo e relógio local ±5 minutos. Quatro jornadas Chromium/Nitro/Daphne passaram em **7,6 s**, mantendo horário na falha em cada página. Primeira tentativa de navegador: 1 passou/3 falharam; seletor da fila omitia o atalho do nome acessível, e duas leituras válidas on-open ainda estavam em voo quando o teste capturou horário. Corrigida preparação para aguardar falha visível e verificar que a próxima falha conserva a última marca útil. Logs iniciais preservados, sem alteração de código produtivo para atender ao erro da fixture.
+
+Migração: nenhuma; metadata aditiva, leitores antigos ignoram, novo leitor tolera ausência. Rollback retira indicação sem mudar Actions/recibos. A idade é da geração da leitura, não prova de consistência transacional de todo o snapshot nem de efeito remoto. G06 ainda requer aparelhos/rede e budgets homologados; não constitui piloto.

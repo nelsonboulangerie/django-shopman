@@ -1,0 +1,122 @@
+[WebServer] (node:9692) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 4 tests using 1 worker
+
+(node:9703) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › tests/integration/operational.spec.ts:519:3 › last useful read remains visible during queue read failure (45.3s)
+(node:9765) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [chromium] › tests/integration/operational.spec.ts:519:3 › last useful read remains visible during detail read failure (11.8s)
+(node:9804) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  3 [chromium] › tests/integration/operational.spec.ts:519:3 › last useful read remains visible during catalog read failure (11.8s)
+(node:9845) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  4 [chromium] › tests/integration/operational.spec.ts:519:3 › last useful read remains visible during feeds read failure (1.1s)
+
+
+  1) [chromium] › tests/integration/operational.spec.ts:519:3 › last useful read remains visible during queue read failure
+
+    Test timeout of 45000ms exceeded.
+
+    Error: locator.click: Test timeout of 45000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: 'Atualizar', exact: true })
+
+
+      527 |     await page.route(`**${endpoint}`, route => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Synthetic read outage" }) }));
+      528 |     const confirmed = await freshness.locator("time").getAttribute("datetime");
+    > 529 |     await page.getByRole("button", { name: "Atualizar", exact: true }).click();
+          |                                                                        ^
+      530 |     await expect(freshness).toContainText("atualização falhou");
+      531 |     await expect(freshness.locator("time")).toHaveAttribute("datetime", confirmed!);
+      532 |   });
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:529:72
+
+    Error Context: ../../.orders-lab/playwright-results/operational-last-useful-re-ed6ec-e-during-queue-read-failure-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../.orders-lab/playwright-results/operational-last-useful-re-ed6ec-e-during-queue-read-failure-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../.orders-lab/playwright-results/operational-last-useful-re-ed6ec-e-during-queue-read-failure-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › tests/integration/operational.spec.ts:519:3 › last useful read remains visible during detail read failure
+
+    Error: expect(locator).toHaveAttribute(expected) failed
+
+    Locator:  locator('[data-read-freshness]').locator('time')
+    Expected: "2026-09-11T04:25:56.755330+00:00"
+    Received: "2026-09-11T04:25:56.864870+00:00"
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toHaveAttribute" with timeout 10000ms
+      - waiting for locator('[data-read-freshness]').locator('time')
+        24 × locator resolved to <time datetime="2026-09-11T04:25:56.864870+00:00">01:25:56</time>
+           - unexpected value "2026-09-11T04:25:56.864870+00:00"
+
+
+      529 |     await page.getByRole("button", { name: "Atualizar", exact: true }).click();
+      530 |     await expect(freshness).toContainText("atualização falhou");
+    > 531 |     await expect(freshness.locator("time")).toHaveAttribute("datetime", confirmed!);
+          |                                             ^
+      532 |   });
+      533 | }
+      534 |
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:531:45
+
+    Error Context: ../../.orders-lab/playwright-results/operational-last-useful-re-84b55--during-detail-read-failure-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../.orders-lab/playwright-results/operational-last-useful-re-84b55--during-detail-read-failure-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../.orders-lab/playwright-results/operational-last-useful-re-84b55--during-detail-read-failure-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) [chromium] › tests/integration/operational.spec.ts:519:3 › last useful read remains visible during catalog read failure
+
+    Error: expect(locator).toHaveAttribute(expected) failed
+
+    Locator:  locator('[data-read-freshness]').locator('time')
+    Expected: "2026-09-11T04:26:09.026519+00:00"
+    Received: "2026-09-11T04:26:09.251777+00:00"
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toHaveAttribute" with timeout 10000ms
+      - waiting for locator('[data-read-freshness]').locator('time')
+        24 × locator resolved to <time datetime="2026-09-11T04:26:09.251777+00:00">01:26:09</time>
+           - unexpected value "2026-09-11T04:26:09.251777+00:00"
+
+
+      529 |     await page.getByRole("button", { name: "Atualizar", exact: true }).click();
+      530 |     await expect(freshness).toContainText("atualização falhou");
+    > 531 |     await expect(freshness.locator("time")).toHaveAttribute("datetime", confirmed!);
+          |                                             ^
+      532 |   });
+      533 | }
+      534 |
+        at /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt/tests/integration/operational.spec.ts:531:45
+
+    Error Context: ../../.orders-lab/playwright-results/operational-last-useful-re-bd71a-during-catalog-read-failure-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../.orders-lab/playwright-results/operational-last-useful-re-bd71a-during-catalog-read-failure-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../.orders-lab/playwright-results/operational-last-useful-re-bd71a-during-catalog-read-failure-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3 failed
+    [chromium] › tests/integration/operational.spec.ts:519:3 › last useful read remains visible during queue read failure
+    [chromium] › tests/integration/operational.spec.ts:519:3 › last useful read remains visible during detail read failure
+    [chromium] › tests/integration/operational.spec.ts:519:3 › last useful read remains visible during catalog read failure
+  1 passed (1.2m)

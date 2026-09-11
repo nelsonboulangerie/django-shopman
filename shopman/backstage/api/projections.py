@@ -115,3 +115,8 @@ def projection_data(
     if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
         return [projection_data(item) for item in value]
     return value
+
+
+def read_data(**payload: Any) -> dict:
+    """Metadata of a useful read, separate from command preconditions and SSE."""
+    return {**payload, "generated_at": timezone.now().isoformat(), "contract_version": 1}

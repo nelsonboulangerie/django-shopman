@@ -514,3 +514,26 @@ test("feed SSE updates active state without replacing the open collection draft"
   await expect(page.getByText("Coleções exibidas", { exact: true })).toBeVisible();
   await testInfo.attach("synthetic-feed-sse-latency", { body: JSON.stringify({ command_to_visible_ms: Date.now() - start, field_pilot: false }), contentType: "application/json" });
 });
+
+for (const resource of ["queue", "detail", "catalog", "feeds"]) {
+  test(`last useful read remains visible during ${resource} read failure`, async ({ page }) => {
+    await login(page, "orders-lab-read");
+    const destination = { queue: "/", detail: `/${lab.notes_ref}`, catalog: "/catalog", feeds: "/feeds" }[resource]!;
+    const endpoint = { queue: "/api/v1/backstage/orders/", detail: `/api/v1/backstage/orders/${lab.notes_ref}/`, catalog: "/api/v1/backstage/catalog/", feeds: "/api/v1/backstage/feeds/" }[resource]!;
+    await page.goto(destination);
+    const freshness = page.locator("[data-read-freshness]");
+    await expect(freshness.getByText(/Última leitura útil:/)).toBeVisible();
+    await page.route(`**${endpoint}?*`, route => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Synthetic read outage" }) }));
+    await page.route(`**${endpoint}`, route => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Synthetic read outage" }) }));
+    const refresh = page.getByRole("button", { name: /^Atualizar/ });
+    await refresh.click();
+    await expect(freshness).toContainText("atualização falhou");
+    // A successful on-open read may already have been in flight at interception.
+    // Once failure is visible, another failed read cannot advance the useful clock.
+    const confirmed = await freshness.locator("time").getAttribute("datetime");
+    const failure = page.waitForResponse(response => response.url().includes(endpoint) && response.status() === 503);
+    await refresh.click();
+    await failure;
+    await expect(freshness.locator("time")).toHaveAttribute("datetime", confirmed!);
+  });
+}

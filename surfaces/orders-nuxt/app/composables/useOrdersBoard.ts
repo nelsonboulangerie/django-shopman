@@ -1,3 +1,4 @@
+import { useReadMetadata } from "./useReadMetadata";
 import { useOperatorResourceKey } from "./useOperatorResourceKey";
 import { coalesceRefresh } from "../utils/coalesceRefresh";
 import { useOrderIntention } from "./useOrderIntention";
@@ -89,6 +90,7 @@ export function useOrdersBoard() {
 
   watch(error, (value) => { if (value) flagIfStationLocked(value); }, { immediate: true });
 
+  const readMetadata = useReadMetadata(data, error);
   const lastConfirmed = shallowRef<TwoZoneQueueProjection | null>(data.value?.queue ?? null);
   watch([data, error], ([value, failure]) => {
     if (value?.queue && !failure) lastConfirmed.value = value.queue;
@@ -372,5 +374,5 @@ export function useOrdersBoard() {
   const confirmMany = (refs: string[]) => actMany(refs, "confirm");
   const advanceMany = (refs: string[]) => actMany(refs, "advance");
 
-  return { queue, zones, totalCount, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, equipmentOut, assign, unassign, confirmMany, advanceMany, soundOn, soundBlocked, toggleSound };
+  return { readMetadata, queue, zones, totalCount, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, equipmentOut, assign, unassign, confirmMany, advanceMany, soundOn, soundBlocked, toggleSound };
 }

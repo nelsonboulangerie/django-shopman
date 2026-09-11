@@ -15,7 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shopman.backstage.api.permissions import HasBackstagePermission
-from shopman.backstage.api.projections import projection_data
+from shopman.backstage.api.projections import projection_data, read_data
 from shopman.backstage.parsing import as_int
 from shopman.backstage.services import catalog as catalog_service
 from shopman.backstage.services.exceptions import (
@@ -49,8 +49,8 @@ class CatalogMatrixView(_CatalogBase):
 
         collection_ref = (request.query_params.get("collection") or "").strip()
         matrix = build_catalog_matrix(collection_ref, user=request.user)
-        return Response({"matrix": projection_data(matrix), "collection_ref": collection_ref,
-            "actions": [projection_data(action) for action in curation_actions(collection_ref, request.user)]})
+        return Response(read_data(matrix=projection_data(matrix), collection_ref=collection_ref,
+            actions=[projection_data(action) for action in curation_actions(collection_ref, request.user)]))
 
 
 class CatalogCellView(_CatalogBase):

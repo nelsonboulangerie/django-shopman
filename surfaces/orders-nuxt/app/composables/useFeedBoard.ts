@@ -1,3 +1,4 @@
+import { useReadMetadata } from "./useReadMetadata";
 import { useBackstageEvents } from "./useBackstageEvents";
 import { coalesceRefresh } from "../utils/coalesceRefresh";
 import { useOrderIntention } from "./useOrderIntention";
@@ -15,6 +16,7 @@ export function useFeedBoard() {
   });
   const refresh = coalesceRefresh(() => fetchBoard());
   const { realtime } = useBackstageEvents("catalog", refresh);
+  const readMetadata = useReadMetadata(data, error);
   const lastConfirmed = shallowRef<FeedBoardProjection | null>(data.value?.board ?? null);
   watch([data, error], ([value, failure]) => {
     if (value?.board && !failure) lastConfirmed.value = value.board;
@@ -70,5 +72,5 @@ export function useFeedBoard() {
       "/api/v1/backstage/feeds/rotation/",
     );
 
-  return { realtime, board, pending, error, refresh, isBusy, errorMsg, setActive, setCollections, setRotation };
+  return { readMetadata, realtime, board, pending, error, refresh, isBusy, errorMsg, setActive, setCollections, setRotation };
 }

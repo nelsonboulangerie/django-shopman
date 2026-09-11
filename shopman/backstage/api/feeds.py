@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shopman.backstage.api.permissions import HasBackstagePermission
-from shopman.backstage.api.projections import projection_data
+from shopman.backstage.api.projections import projection_data, read_data
 from shopman.backstage.services import feeds as feed_service
 from shopman.backstage.services.exceptions import CatalogError
 
@@ -79,7 +79,7 @@ class FeedBoardView(_FeedBase):
     def get(self, request):
         from shopman.backstage.projections.feeds import build_feed_board
 
-        return Response({"board": projection_data(build_feed_board(user=request.user))})
+        return Response(read_data(board=projection_data(build_feed_board(user=request.user))))
 
 
 class FeedActiveView(_FeedBase):

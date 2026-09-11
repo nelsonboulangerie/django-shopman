@@ -1,3 +1,4 @@
+import { useReadMetadata } from "./useReadMetadata";
 import { useBackstageEvents } from "./useBackstageEvents";
 import { coalesceRefresh } from "../utils/coalesceRefresh";
 import { useOperatorResourceKey } from "./useOperatorResourceKey";
@@ -57,6 +58,7 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
 
   const refresh = coalesceRefresh(() => fetchMatrix());
   const matchesScope = (value: CatalogMatrixResponse | null | undefined) => (value?.collection_ref ?? "") === collection.value;
+  const readMetadata = useReadMetadata(computed(() => matchesScope(data.value) ? data.value : null), error, collection);
   const lastConfirmed = shallowRef<CatalogMatrixProjection | null>(matchesScope(data.value) ? data.value?.matrix ?? null : null);
   watch(collection, () => { lastConfirmed.value = null; }, { flush: "sync" });
   watch([data, error], ([value, failure]) => {
@@ -395,7 +397,7 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   const reorderCollections = (ordered: string[], action?: Action) => reorder("reorder-collections", "", ordered, action);
   const reorderItems = (ref_: string, ordered: string[], action?: Action) => reorder("reorder-items", ref_, ordered, action);
 
-  return {
+  return { readMetadata,
     realtime,
     matrix, pending, error, refresh, isBusy, cellKey, productKey, socialKey, detailKey, errorMsg, clearError,
     setCell, setProduct, bulkSet, previewBulkSet, bulkPrice, previewBulkPrice, resync, saveSocial, fetchProductDetail, saveProductDetail,

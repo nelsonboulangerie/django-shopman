@@ -18,7 +18,7 @@ definePageMeta({ key: (route) => route.path });
 const route = useRoute();
 const orderRef = computed(() => String(route.params.ref || ""));
 
-const { order, pending, error, refresh, busy, mutationError, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge } =
+const { readMetadata, order, pending, error, refresh, busy, mutationError, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge } =
   useOrderDetail(orderRef.value);
 
 // Realtime: SSE push (filtrado a este pedido) + poll de 30s + wake-on-visibility.
@@ -255,6 +255,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         <Icon name="lucide:refresh-cw" class="size-4" />
       </button>
     </header>
+    <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />
 
     <p v-if="pending && !order" class="text-sm text-muted-foreground">Carregando…</p>
     <!-- `!stationLocked`: com a estação travada a leitura volta 403 e este aviso

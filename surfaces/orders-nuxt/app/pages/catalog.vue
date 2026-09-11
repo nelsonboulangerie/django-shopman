@@ -21,7 +21,7 @@ import type {
 
 const collectionRef = ref("");
 const {
-  matrix, pending, error, refresh, isBusy, cellKey, productKey, detailKey, setCell, setProduct, bulkSet, previewBulkSet, bulkPrice, previewBulkPrice,
+  readMetadata, realtime, matrix, pending, error, refresh, isBusy, cellKey, productKey, detailKey, setCell, setProduct, bulkSet, previewBulkSet, bulkPrice, previewBulkPrice,
   resync, fetchProductDetail, saveProductDetail, productConflict, acknowledgeProductConflict, errorMsg, reorderCollections, reorderItems, curationAction, verifyOrder, bulkBusy,
   aiAssist, aiAssistKey,
 } = useCatalogMatrix(collectionRef);
@@ -479,6 +479,7 @@ useHead({ title: "Catálogo · Gestor" });
         <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
       </template>
     </UiToolbar>
+    <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" :realtime="realtime" />
 
     <section class="flex min-h-0 flex-1 flex-col gap-4 p-4">
       <p v-if="errorMsg" role="alert" class="text-sm text-destructive">{{ errorMsg }}</p>

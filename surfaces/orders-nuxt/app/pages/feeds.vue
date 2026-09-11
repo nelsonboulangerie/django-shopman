@@ -7,7 +7,7 @@
 // (reordenável no Catálogo).
 import type { CollectionOptionProjection, FeedProjection } from "~/types/feeds";
 
-const { board, pending, error, errorMsg, refresh, isBusy, setActive, setCollections, setRotation } = useFeedBoard();
+const { readMetadata, realtime, board, pending, error, errorMsg, refresh, isBusy, setActive, setCollections, setRotation } = useFeedBoard();
 const feeds = computed<FeedProjection[]>(() => board.value?.feeds ?? []);
 const allCollections = computed<CollectionOptionProjection[]>(() => board.value?.all_collections ?? []);
 const loading = computed(() => pending.value && !board.value);
@@ -110,6 +110,7 @@ useHead({ title: "Feeds · Gestor" });
         <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
       </template>
     </UiToolbar>
+    <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" :realtime="realtime" />
 
     <section class="min-h-0 flex-1 overflow-auto p-4">
       <p v-if="errorMsg" role="alert" class="mb-3 text-sm text-destructive">{{ errorMsg }}</p>

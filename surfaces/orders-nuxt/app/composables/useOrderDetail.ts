@@ -1,3 +1,4 @@
+import { useReadMetadata } from "./useReadMetadata";
 import { coalesceRefresh } from "../utils/coalesceRefresh";
 import { useOperatorResourceKey } from "./useOperatorResourceKey";
 import { useOrderIntention } from "./useOrderIntention";
@@ -26,6 +27,7 @@ export function useOrderDetail(orderRef: string) {
 
   watch(error, (value) => { if (value) flagIfStationLocked(value); }, { immediate: true });
 
+  const readMetadata = useReadMetadata(data, error);
   const lastConfirmed = shallowRef<OperatorOrderProjection | null>(data.value?.order ?? null);
   watch([data, error], ([value, failure]) => {
     if (value?.order && !failure) lastConfirmed.value = value.order;
@@ -181,5 +183,5 @@ export function useOrderDetail(orderRef: string) {
     return ok;
   }
 
-  return { order, pending, error, refresh, busy, mutationError, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge };
+  return { readMetadata, order, pending, error, refresh, busy, mutationError, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge };
 }

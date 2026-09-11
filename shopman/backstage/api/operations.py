@@ -155,7 +155,7 @@ from .permissions import (
     IsTrustedStation,
     deny_production_capability,
 )
-from .projections import projection_data
+from .projections import projection_data, read_data
 
 logger = logging.getLogger(__name__)
 
@@ -1527,7 +1527,7 @@ class OrderDetailView(APIView):
         # chamada por card viraria enxurrada no provedor.
         _reconcile_payment_if_due(order)
         proj = build_operator_order(order, user=request.user)
-        return Response({"order": projection_data(proj)})
+        return Response(read_data(order=projection_data(proj)))
 
 
 @extend_schema_view(
@@ -1543,7 +1543,7 @@ class OrderQueueView(APIView):
 
     def get(self, request):
         queue = build_two_zone_queue(user=request.user)
-        return Response({"queue": projection_data(queue)})
+        return Response(read_data(queue=projection_data(queue)))
 
 
 # ── Order action endpoints ────────────────────────────────────────────

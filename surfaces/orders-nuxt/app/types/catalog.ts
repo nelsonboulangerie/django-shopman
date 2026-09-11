@@ -1,3 +1,4 @@
+import type { ReadMetadata } from "./readMetadata";
 import type { Action } from "~/generated/ordersContract";
 // TS mirror of the Django catalog matrix projection
 // (shopman/backstage/projections/catalog.py), serialised by backstage/api/projections.py.
@@ -96,7 +97,7 @@ export interface CatalogMatrixProjection {
   collections: CollectionProjection[];
 }
 
-export interface CatalogMatrixResponse {
+export interface CatalogMatrixResponse extends ReadMetadata {
   matrix: CatalogMatrixProjection;
   collection_ref?: string;
   actions?: Action[];
