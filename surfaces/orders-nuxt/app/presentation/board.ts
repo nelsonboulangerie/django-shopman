@@ -236,12 +236,12 @@ export function cardAffordances(card: OrderCardProjection): Affordance[] {
   }));
   if (card.can_settle_delivery_cash) {
     const settle = projected.find((action) => action.ref === "settle-delivery-cash");
-    out.push({ ref: "settle_cash", label: "Acerto dinheiro", icon: "lucide:banknote", priority: "secondary", needsInput: true,
+    out.push({ ref: "settle_cash", label: "Acertar entrega", icon: "lucide:banknote", priority: "secondary", needsInput: true,
       disabled: !settle?.enabled, reason: settle?.reason || (!settle ? "Atualize o pedido para conferir o caixa." : "") });
   }
   // A maquininha saiu e não voltou; sem acerto em dinheiro para marcar, o card
   // oferece o gesto sozinho (pedido em cartão, ou acerto já feito sem ela).
-  if (card.equipment_back_pending && !card.can_settle_delivery_cash) {
+  if (card.equipment_back_pending) {
     out.push({ ref: "equipment_back", label: "Maquininha voltou", icon: "lucide:smartphone-nfc", priority: "secondary", needsInput: false });
   }
   const reject = projected.find((a) => a.ref === "reject");

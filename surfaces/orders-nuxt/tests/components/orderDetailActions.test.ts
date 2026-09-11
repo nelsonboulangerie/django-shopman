@@ -503,7 +503,7 @@ describe("acerto — turno observado no diálogo", () => {
     const action = (base: string) => ({ ...fixtureActions({ can_confirm: true })[0]!, ref: "settle-delivery-cash",
       payload_schema: { base_revision: base, expected_actor_id: 1 }, confirmation: { description: `Caixa sintético ${base}` } });
     const w = abrir(order({ can_confirm: false, can_settle_delivery_cash: true, actions: [action("turno-1")] }));
-    await w.findAll("button").find((button) => button.text().includes("Acerto dinheiro"))!.trigger("click");
+    await w.findAll("button").find((button) => button.text().includes("Acertar entrega"))!.trigger("click");
     await w.get('[aria-label="Valor recebido"]').setValue("15,00");
     detalhe.value = order({ can_confirm: false, can_settle_delivery_cash: true, actions: [action("turno-2")] });
     await w.vm.$nextTick();
@@ -536,7 +536,7 @@ it("fechar e reabrir o acerto conserva valor e pede revisar a custódia que mudo
   const action = (base: string) => ({ ...fixtureActions({ can_confirm: true })[0]!, ref: "settle-delivery-cash",
     label: "Acertar dinheiro", payload_schema: { base_revision: base }, confirmation: { required: true, description: base } });
   const w = abrir(order({ can_confirm: false, can_settle_delivery_cash: true, actions: [action("turno-1")] }));
-  const open = () => w.findAll("button").find(button => button.text().includes("Acerto dinheiro"))!;
+  const open = () => w.findAll("button").find(button => button.text().includes("Acertar entrega"))!;
   await open().trigger("click");
   await w.find('[aria-label="Valor recebido"]').setValue("15,00");
   await w.findAll("button").find(button => button.text() === "Voltar")!.trigger("click");

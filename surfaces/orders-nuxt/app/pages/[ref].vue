@@ -120,7 +120,7 @@ function applyNoteTag(tag: string) {
 const dialog = ref<"" | "reject" | "cancel" | "settle" | "dispatch">("");
 const cashDrafts = useOrderCashDrafts();
 const settlementDraft = computed(() => cashDrafts.settlements.value[orderRef.value] ?? ({
-  amount: "", changeBack: order.value?.change_back_pending ? moneyInput(changeBackSuggestionQ(order.value)) : "", equipmentBack: true,
+  amount: "", changeBack: order.value?.change_back_pending ? moneyInput(changeBackSuggestionQ(order.value)) : "", equipmentBack: false,
   revision: String(settleAction.value?.payload_schema.base_revision || ""), custody: String(settleAction.value?.confirmation.description || ""),
 }));
 const dispatchDraft = computed(() => cashDrafts.dispatches.value[orderRef.value] ?? ({ amount: moneyInput(order.value?.change_out_suggested_q ?? 0), equipment: [] as string[] }));
@@ -152,7 +152,7 @@ const asksEquipmentBack = computed(() => Boolean(order.value?.equipment_back_pen
 function toggleDispatchEquipment(ref_: string) {
   dispatchEquipment.value = dispatchEquipment.value.includes(ref_)
     ? dispatchEquipment.value.filter((r) => r !== ref_)
-    : [...dispatchEquipment.value, ref_];
+    : [...dispatchEquipment.value.filter(r => !ref_.startsWith("card_machine:") || !r.startsWith("card_machine:")), ref_];
 }
 const reasons = ref<CancellationReason[]>([]);
 const reasonsLoading = ref(false);
@@ -400,9 +400,9 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           <Icon name="lucide:clock" class="size-4" /> {{ projectedAction('advance')?.reason }}
         </button>
         <button v-if="order.can_settle_delivery_cash" type="button" :disabled="busy || !settleAction?.enabled" :title="settleAction?.reason" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="openDialog('settle')">
-          <Icon name="lucide:banknote" class="size-4" /> Acerto dinheiro
+          <Icon name="lucide:banknote" class="size-4" /> Acertar entrega
         </button>
-        <button v-if="order.equipment_back_pending && !order.can_settle_delivery_cash" type="button" :disabled="busy || !projectedAction('equipment-back')?.enabled" :title="projectedAction('equipment-back')?.reason || (projectedAction('equipment-back')?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="equipmentBack">
+        <button v-if="order.equipment_back_pending" type="button" :disabled="busy || !projectedAction('equipment-back')?.enabled" :title="projectedAction('equipment-back')?.reason || (projectedAction('equipment-back')?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="equipmentBack">
           <Icon name="lucide:smartphone-nfc" class="size-4" /> Maquininha voltou
         </button>
         <button v-if="order.fiscal_status === 'failed'" type="button" :disabled="busy || !projectedAction('requeue-fiscal')?.enabled" :title="projectedAction('requeue-fiscal')?.reason || (projectedAction('requeue-fiscal')?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="requeueFiscal">
@@ -617,8 +617,8 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
     <UiDialog :open="dialog === 'settle'" @update:open="(v) => { if (!v) dialog = '' }">
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
-          <UiDialogTitle>Acerto de dinheiro</UiDialogTitle>
-          <UiDialogDescription>Valor recebido na entrega. Em branco usa o total.</UiDialogDescription>
+          <UiDialogTitle>Acerto da entrega</UiDialogTitle>
+          <UiDialogDescription>Confirme após conferir o dinheiro e os comprovantes da maquininha.</UiDialogDescription>
         </UiDialogHeader>
         <p class="text-sm text-muted-foreground">{{ settleCustody }}</p>
         <p v-if="settleChanged" role="alert" class="text-sm text-destructive">O pedido ou turno mudou. Confira o contexto atual: {{ settleAction?.confirmation.description }}
@@ -673,8 +673,8 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         </UiDialogHeader>
         <div v-if="order?.equipment_options.length" class="flex flex-col gap-1.5" data-dispatch-equipment>
           <label v-for="opt in order.equipment_options" :key="opt.ref" class="flex min-h-control items-center gap-2 rounded-md border px-3 py-2 text-sm">
-            <input type="checkbox" :checked="dispatchEquipment.includes(opt.ref)" @change="toggleDispatchEquipment(opt.ref)" />
-            <span>Levou a {{ opt.label.toLowerCase() }}</span>
+            <input type="checkbox" :disabled="opt.enabled === false" :checked="dispatchEquipment.includes(opt.ref)" @change="toggleDispatchEquipment(opt.ref)" />
+            <span>{{ opt.label }}<span v-if="opt.reason"> · {{ opt.reason }}</span></span>
           </label>
         </div>
         <label v-if="dispatchAsksChange" class="flex items-center gap-2 text-sm">

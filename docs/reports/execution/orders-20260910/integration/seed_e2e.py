@@ -83,3 +83,17 @@ for suffix in ('edit', 'curation'):
 refs['reject_ref'] = f'LAB-REJECT-{run}'
 Order.objects.create(ref=refs['reject_ref'], channel_ref='lab', status='new', total_q=500, session_key=refs['reject_ref'], snapshot={'items': [{'sku': 'LAB-PROD', 'qty': '0.500', 'name': 'Produto laboratório'}]}, data={'fulfillment_type': 'pickup', 'payment': {'method': 'cash'}, 'customer': {'name': refs['reject_ref']}})
 Path('.orders-lab/manifest.json').write_text(json.dumps(refs))
+
+# Individually identified synthetic readers. Never import inventory from real data.
+from shopman.backstage.models import DeliveryDevice
+
+machine, _ = DeliveryDevice.objects.get_or_create(identification='ORDERS-LAB-MACHINE', defaults={'label': 'Maquininha azul laboratório'})
+assert machine.current_order_id is None, 'Return the previous synthetic device before a new lab run'
+Channel.objects.update_or_create(ref='device-lab', defaults={'name': 'Entrega laboratório', 'config': {'payment': {'timing': 'external'}, 'fulfillment': {'timing': 'external', 'equipment': ['card_machine']}}})
+refs['device_order_ref'] = f'LAB-DEVICE-{run}'
+refs['device_ref'] = str(machine.ref)
+Order.objects.create(ref=refs['device_order_ref'], channel_ref='device-lab', status='ready', total_q=1000, data={'fulfillment_type': 'delivery', 'payment': {'method': 'credit', 'collection': 'on_delivery'}, 'customer': {'name': 'Entrega laboratório'}})
+Path('.orders-lab/manifest.json').write_text(json.dumps(refs))
+admin_user, _ = User.objects.get_or_create(username='orders-lab-admin', defaults={'is_staff': True, 'is_superuser': True})
+admin_user.set_password('synthetic-lab-only-20260910')
+admin_user.save()

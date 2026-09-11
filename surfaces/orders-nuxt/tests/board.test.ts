@@ -330,11 +330,11 @@ describe("troco da entrega", () => {
     const rows = [card({ ref: "A", can_advance: true, next_status: "dispatched", equipment_options: opt })];
     expect(bulkableRefs(rows, new Set(["A"]), "advance")).toEqual(["A"]);
   });
-  it("oferece 'Maquininha voltou' quando saiu e não há acerto em dinheiro para marcar", () => {
+  it("oferece 'Maquininha voltou' independentemente do acerto pendente", () => {
     const refs = cardAffordances(card({ can_advance: false, equipment_back_pending: true })).map((a) => a.ref);
     expect(refs).toContain("equipment_back");
     const withSettle = cardAffordances(card({ can_advance: false, equipment_back_pending: true, can_settle_delivery_cash: true })).map((a) => a.ref);
-    expect(withSettle).not.toContain("equipment_back");
+    expect(withSettle).toContain("equipment_back");
   });
   it("despacho que pede troco fica fora do lote de avançar", () => {
     const rows = [

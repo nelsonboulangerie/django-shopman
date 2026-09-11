@@ -168,16 +168,16 @@ test("cash draft survives close, queue navigation and a declined reload without 
   let commands = 0;
   page.on("request", request => { if (request.method() === "POST" && request.url().includes("settle-delivery-cash")) commands++; });
   await page.goto(`/${lab.cash_ref}`);
-  await page.getByRole("button", { name: "Acerto dinheiro", exact: true }).click();
+  await page.getByRole("button", { name: "Acertar entrega", exact: true }).click();
   const amount = page.getByRole("textbox", { name: "Valor recebido", exact: true });
   await amount.fill("14,50");
   await page.getByRole("button", { name: "Voltar", exact: true }).click();
-  await page.getByRole("button", { name: "Acerto dinheiro", exact: true }).click();
+  await page.getByRole("button", { name: "Acertar entrega", exact: true }).click();
   await expect(amount).toHaveValue("14,50");
   await page.getByRole("button", { name: "Voltar", exact: true }).click();
   await page.getByRole("link", { name: "Voltar para a fila", exact: true }).click();
   await page.getByRole("searchbox", { name: "Buscar por código, cliente ou item (atalho: /)", exact: true }).fill(lab.cash_ref);
-  await page.getByRole("button", { name: "Acerto dinheiro", exact: true }).click();
+  await page.getByRole("button", { name: "Acertar entrega", exact: true }).click();
   await expect(amount).toHaveValue("14,50");
   const exit = page.waitForEvent("dialog");
   await page.evaluate(() => { setTimeout(() => window.location.reload(), 0); });
@@ -201,12 +201,12 @@ test("cash settlement response loss resolves one receipt in the observed drawer"
     } else { lookups += 1; await route.continue(); }
   });
   await page.goto(`/${lab.cash_ref}`);
-  await page.getByRole("button", { name: "Acerto dinheiro", exact: true }).click();
+  await page.getByRole("button", { name: "Acertar entrega", exact: true }).click();
   await expect(page.getByText(new RegExp(`turno ${lab.cash_shift_id}`))).toBeVisible();
   await page.getByRole("textbox", { name: "Valor recebido", exact: true }).fill("15,00");
   await page.getByRole("button", { name: "Confirmar", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Acerto dinheiro", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Acertar entrega", exact: true })).toHaveCount(0);
   expect(posts).toBe(1);
   expect(lookups).toBe(1);
 });
@@ -713,4 +713,48 @@ test("bundled icons preserve utility size and mutually exclusive rail states", a
   await link.focus();
   await expect(glyph).toBeHidden();
   await expect(arrow).toBeVisible();
+});
+
+test("identified machine dispatch recovers a lost response and return does not collect payment", async ({ page }) => {
+  await login(page);
+  let commands = 0;
+  await page.route(`**/api/v1/backstage/orders/${lab.device_order_ref}/advance/**`, async route => {
+    if (route.request().method() === "POST") {
+      commands += 1;
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await page.goto(`/${lab.device_order_ref}`);
+  await page.getByRole("button", { name: "Marcar saída para entrega", exact: true }).click();
+  await page.getByLabel("Maquininha azul laboratório", { exact: true }).check();
+  await page.screenshot({ path: fileURLToPath(new URL("../../../../.orders-lab/device-dispatch.png", import.meta.url)), fullPage: true });
+  await page.getByRole("button", { name: "Saiu para entrega", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Maquininha voltou", exact: true })).toBeVisible();
+  expect(commands).toBe(1);
+  await page.getByRole("button", { name: "Acertar entrega", exact: true }).click();
+  await expect(page.locator('[data-equipment-back] input')).not.toBeChecked();
+  await page.getByRole("button", { name: "Voltar", exact: true }).click();
+  await page.getByRole("button", { name: "Maquininha voltou", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Maquininha voltou", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Acertar entrega", exact: true })).toBeVisible();
+  const body = await (await page.request.get(`/api/v1/backstage/orders/${lab.device_order_ref}/`)).json();
+  expect(body.order.can_settle_delivery_cash).toBe(true);
+  await page.goto("/");
+  await expect(page.locator('[data-equipment-available]')).toContainText("Maquininha azul laboratório");
+});
+
+test("device inventory uses the native Admin form", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.goto("http://127.0.0.1:8014/admin/login/?next=/admin/backstage/deliverydevice/");
+  await page.locator('[name="username"]').fill("orders-lab-admin");
+  await page.locator('[name="password"]').fill("synthetic-lab-only-20260910");
+  await page.locator('[type="submit"]').click();
+  await page.getByRole("link", { name: "Maquininha azul laboratório", exact: true }).click();
+  await expect(page.locator('[name="identification"]')).toHaveValue("ORDERS-LAB-MACHINE");
+  await expect(page.locator('[name="active"]')).toBeChecked();
+  await page.screenshot({ path: fileURLToPath(new URL("../../../../.orders-lab/device-admin.png", import.meta.url)), fullPage: true });
+  expect(errors).toEqual([]);
 });

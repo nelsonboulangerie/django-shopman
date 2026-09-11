@@ -101,6 +101,7 @@ export function useOrdersBoard() {
   // Encomendas confirmadas para datas futuras, agrupadas pela data combinada.
   const preorders = computed<PreorderGroup[]>(() => (queue.value ? preorderGroups(queue.value) : []));
   // Aparelhos na rua (maquininha): o quadro responde "onde está" sem abrir card.
+  const equipmentAvailable = computed(() => queue.value?.equipment_available ?? []);
   const equipmentOut = computed(() => queue.value?.equipment_out ?? []);
 
   // Realtime + polling (client only). `realtime` diz honestamente ao operador se o board
@@ -374,5 +375,5 @@ export function useOrdersBoard() {
   const confirmMany = (refs: string[]) => actMany(refs, "confirm");
   const advanceMany = (refs: string[]) => actMany(refs, "advance");
 
-  return { readMetadata, queue, zones, totalCount, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, equipmentOut, assign, unassign, confirmMany, advanceMany, soundOn, soundBlocked, toggleSound };
+  return { readMetadata, queue, zones, totalCount, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, equipmentOut, equipmentAvailable, assign, unassign, confirmMany, advanceMany, soundOn, soundBlocked, toggleSound };
 }

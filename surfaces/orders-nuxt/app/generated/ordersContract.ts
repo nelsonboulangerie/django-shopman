@@ -129,6 +129,8 @@ export interface AwaitingWorkOrderProjection {
 export interface EquipmentOptionProjection {
   ref: string;
   label: string;
+  enabled: boolean;
+  reason: string;
 }
 
 /** Onde está o aparelho agora: saiu com o entregador deste pedido e não voltou. */
@@ -311,4 +313,5 @@ export interface TwoZoneQueueProjection {
   preorders: OrderCardProjection[];
   preorders_count: number;
   equipment_out: EquipmentOutProjection[];
+  equipment_available: EquipmentOptionProjection[];
 }

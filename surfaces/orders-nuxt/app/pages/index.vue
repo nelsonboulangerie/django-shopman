@@ -32,7 +32,7 @@ import {
 import type { OrderCardProjection } from "~/types/orders";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
 
-const { readMetadata, queue, zones, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, assign, unassign, confirmMany, advanceMany, equipmentOut, soundOn, soundBlocked, toggleSound } = useOrdersBoard();
+const { readMetadata, queue, zones, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, assign, unassign, confirmMany, advanceMany, equipmentOut, equipmentAvailable, soundOn, soundBlocked, toggleSound } = useOrdersBoard();
 
 // Sinal honesto de tempo-real vs poll (indicador de degradação do SSE).
 const realtimeView = computed(() => realtimeIndicator(realtime.value));
@@ -257,7 +257,7 @@ const cashDrafts = useOrderCashDrafts();
 const settleCard = computed(() => allCards.value.find((c) => c.ref === settleRef.value) ?? null);
 const settleAction = computed(() => settleCard.value?.actions.find((action) => action.ref === "settle-delivery-cash"));
 const settlementDraft = computed(() => {
-  const initial = { amount: "", changeBack: settleCard.value?.change_back_pending ? moneyInput(changeBackSuggestionQ(settleCard.value)) : "", equipmentBack: true,
+  const initial = { amount: "", changeBack: settleCard.value?.change_back_pending ? moneyInput(changeBackSuggestionQ(settleCard.value)) : "", equipmentBack: false,
     revision: String(settleAction.value?.payload_schema.base_revision || ""), custody: String(settleAction.value?.confirmation.description || "") };
   return (settleRef.value ? cashDrafts.settlements.value[settleRef.value] : null) ?? initial;
 });
@@ -305,7 +305,7 @@ function openDispatch(card: OrderCardProjection) {
 function toggleDispatchEquipment(ref_: string) {
   dispatchEquipment.value = dispatchEquipment.value.includes(ref_)
     ? dispatchEquipment.value.filter((r) => r !== ref_)
-    : [...dispatchEquipment.value, ref_];
+    : [...dispatchEquipment.value.filter(r => !ref_.startsWith("card_machine:") || !r.startsWith("card_machine:")), ref_];
 }
 async function confirmDispatch(amount: string | null) {
   const ref_ = dispatchRef.value;
@@ -364,6 +364,10 @@ function printQueue() {
         aria-label="Buscar por código, cliente ou item (atalho: /)"
         @update:model-value="(v) => (query = v)"
       />
+      <p class="text-sm" data-equipment-available>
+        Maquininhas disponíveis: {{ equipmentAvailable.length }}<template v-if="equipmentAvailable.length"> · {{ equipmentAvailable.map(item => item.label).join(', ') }}</template>
+        · Em trânsito: {{ equipmentOut.length }}
+      </p>
       <!-- onde está a maquininha: saiu com o entregador e não voltou -->
       <div v-if="equipmentOut.length" class="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm" data-equipment-out>
         <Icon name="lucide:smartphone-nfc" class="size-4 text-muted-foreground" />
@@ -803,8 +807,8 @@ function printQueue() {
             :key="opt.ref"
             class="min-h-control flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
           >
-            <input type="checkbox" :checked="dispatchEquipment.includes(opt.ref)" @change="toggleDispatchEquipment(opt.ref)" />
-            <span>Levou a {{ opt.label.toLowerCase() }}</span>
+            <input type="checkbox" :disabled="opt.enabled === false" :checked="dispatchEquipment.includes(opt.ref)" @change="toggleDispatchEquipment(opt.ref)" />
+            <span>{{ opt.label }}<span v-if="opt.reason"> · {{ opt.reason }}</span></span>
           </label>
         </div>
         <UiDialogFooter>
@@ -821,7 +825,7 @@ function printQueue() {
     <UiDialog :open="settleRef != null" @update:open="(v) => { if (!v) settleRef = null }">
       <UiDialogContent class="sm:max-w-sm">
         <UiDialogHeader>
-          <UiDialogTitle>Acerto de dinheiro</UiDialogTitle>
+          <UiDialogTitle>Acerto da entrega</UiDialogTitle>
           <UiDialogDescription>Valor recebido na entrega ({{ settleRef }}). Em branco usa o total de {{ settleCard?.total_display }}. {{ settleCustody }}</UiDialogDescription>
         </UiDialogHeader>
         <p v-if="settleChanged" role="alert" class="text-sm text-destructive">O pedido ou turno mudou. Confira o contexto atual: {{ settleAction?.confirmation.description }}
