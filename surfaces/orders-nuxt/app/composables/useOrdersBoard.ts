@@ -256,7 +256,7 @@ export function useOrdersBoard() {
     clearActionError(ref_); // a fresh attempt clears the previous reason
     busy.value = new Set(busy.value).add(ref_);
     try {
-      if (["confirm", "advance", "notes", "assign", "unassign"].includes(action)) {
+      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign"].includes(action)) {
         const card = [...zones.value.flatMap((zone) => zone.cards), ...(queue.value?.preorders ?? [])].find((item) => item.ref === ref_);
         await intentions.execute(ref_, action, card?.actions?.find((item) => item.ref === action), body ?? {});
       } else {

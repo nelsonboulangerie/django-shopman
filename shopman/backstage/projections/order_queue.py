@@ -525,10 +525,20 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
     bloqueio = operator_orders.advance_block(order)
     next_status = operator_orders.next_status_for(order) if not bloqueio else ""
 
+    cancel_capability = _cancel_capability(order, user)
+    authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
+    cancel_action = Action(
+        ref="cancel", kind="mutation", label="Cancelar pedido", priority="danger",
+        enabled=authorized and cancel_capability["can_cancel"],
+        reason=cancel_capability["cancel_block_label"] if authorized else "Identifique uma pessoa com permissão para gerenciar pedidos.",
+        method="POST", idempotency="required",
+        payload_schema={"base_revision": operator_orders.operational_revision(order), "expected_actor_id": getattr(user, "pk", None)},
+        confirmation={"required": True, "manager_approval": cancel_capability["cancel_requires_approval"]},
+    )
     return OperatorOrderProjection(
         ref=order.ref,
         status=order.status,
-        actions=operator_orders.operational_actions(order, user=user),
+        actions=(*operator_orders.operational_actions(order, user=user), cancel_action),
         revisions={field: operator_orders.operational_revision(order, field=field) for field in ("advance", "kitchen_note", "assignment")},
         status_label=order_status_label(order.status),
         status_color=status_color(order.status),
@@ -551,7 +561,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         payment_status_label=payment_status_label(payment_status),
         can_confirm=not operator_orders.confirmation_block_reason(order),
         can_advance=bool(next_status),
-        **_cancel_capability(order, user),
+        **cancel_capability,
         next_action_label=_next_label(order),
         advance_block_label=advance_block_label(bloqueio),
         advance_block_reason=operator_orders.advance_block_message(bloqueio),

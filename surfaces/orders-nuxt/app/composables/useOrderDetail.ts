@@ -48,8 +48,8 @@ export function useOrderDetail(orderRef: string) {
     busy.value = true;
     mutationError.value = "";
     try {
-      if (["confirm", "advance", "notes", "assign", "unassign"].includes(action)) {
-        await intentions.execute(orderRef, action, order.value?.actions?.find((item) => item.ref === action), body ?? {});
+      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign"].includes(action)) {
+        await intentions.execute(orderRef, action, order.value?.actions?.find((item) => item.ref === action), body ?? {}, approval);
       } else {
         await $fetch(`/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/${action}/`, {
           method: "POST", body: { ...(body ?? {}), ...(approval ? { manager_approval: approval } : {}) },

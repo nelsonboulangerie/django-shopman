@@ -26,7 +26,10 @@ def test_confirmation_uses_domain_availability_and_actor_on_both_surfaces(allowe
     user = actor(allowed)
     card = build_order_card(order, user=user)
     detail = build_operator_order(order, user=user)
-    assert card.actions == detail.actions
+    assert card.actions == tuple(action for action in detail.actions if action.ref != "cancel")
+    cancel = next(action for action in detail.actions if action.ref == "cancel")
+    assert cancel.enabled is allowed
+    assert cancel.confirmation["required"] is True
     confirm, reject = [action for action in card.actions if action.ref in {"confirm", "reject"}]
     assert confirm.enabled is (allowed and approved)
     assert bool(confirm.reason) is not confirm.enabled

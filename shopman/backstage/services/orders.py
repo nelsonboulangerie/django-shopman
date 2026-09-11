@@ -22,7 +22,7 @@ def confirm_order(order, *, actor: str, expected_revision: str | None = None):
         raise OrderError(str(exc) or "Não foi possível aceitar o pedido.") from exc
 
 
-def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellation_code: str = ""):
+def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellation_code: str = "", expected_revision=None, prepared_identity=None):
     if not reason.strip():
         raise OrderError("Motivo obrigatório")
     try:
@@ -32,6 +32,8 @@ def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellati
             actor=actor,
             rejected_by=rejected_by,
             cancellation_code=cancellation_code,
+            **({"expected_revision": expected_revision} if expected_revision is not None else {}),
+            **({"prepared_identity": prepared_identity} if prepared_identity is not None else {}),
         )
     except OrderStateConflict as exc:
         raise OrderConflict(str(exc)) from exc
@@ -92,7 +94,7 @@ class OrderChangeOutRequired(OrderError):
         self.suggested_q = int(suggested_q)
 
 
-def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "", customer_note: str = "", expected_authority_revision: str | None = None):
+def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "", customer_note: str = "", expected_authority_revision: str | None = None, expected_revision=None, prepared_identity=None):
     """Cancela o pedido, ou levanta ``OrderConflict`` se o estado não permitir.
 
     ``cancellation.cancel`` devolve ``False`` sem levantar quando a máquina de
@@ -108,6 +110,8 @@ def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "",
             actor=actor,
             cancellation_code=cancellation_code,
             customer_note=customer_note,
+            **({"expected_revision": expected_revision} if expected_revision is not None else {}),
+            **({"prepared_identity": prepared_identity} if prepared_identity is not None else {}),
             **({"expected_authority_revision": expected_authority_revision} if expected_authority_revision is not None else {}),
         )
     except OrderStateConflict as exc:
@@ -118,6 +122,11 @@ def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "",
         order.refresh_from_db(fields=["status"])
         raise OrderConflict(f"Pedido em {order.get_status_display()} não pode ser cancelado.")
     return cancelled
+
+
+def prepare_cancellation(order, code):
+    """Resolve the provider reason before the local mutation transaction."""
+    return operator_orders._validate_operator_cancellation_code(order, code)
 
 
 def cancellation_reasons(order) -> list[dict]:

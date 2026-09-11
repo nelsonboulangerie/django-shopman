@@ -182,6 +182,8 @@ def reject_order(
     actor: str,
     rejected_by: str,
     cancellation_code: str = "",
+    expected_revision: str | None = None,
+    prepared_identity: tuple[str, str] | None = None,
 ) -> None:
     """Reject an order and queue the customer notification directive.
 
@@ -193,9 +195,11 @@ def reject_order(
     uma recusa atrasada cancelaria um pedido que o aceite automático acabou de
     aceitar.
     """
-    reason_identity = _validate_operator_cancellation_code(order, cancellation_code)
+    reason_identity = prepared_identity if prepared_identity is not None else _validate_operator_cancellation_code(order, cancellation_code)
     with transaction.atomic():
         locked = Order.objects.select_for_update().get(pk=order.pk)
+        if expected_revision is not None and operational_revision(locked) != expected_revision:
+            raise OrderStateConflict("O pedido mudou. Confira os dados antes de recusar.")
         if _cancellation_identity(locked) != reason_identity:
             raise OrderStateConflict("A referência do pedido mudou. Consulte os motivos novamente.")
         if locked.status != Order.Status.NEW:
@@ -595,6 +599,8 @@ def cancel_order(
     cancellation_code: str = "",
     customer_note: str = "",
     expected_authority_revision: str | None = None,
+    expected_revision: str | None = None,
+    prepared_identity: tuple[str, str] | None = None,
 ) -> bool:
     """Cancel an order through the canonical cancellation service.
 
@@ -610,7 +616,7 @@ def cancel_order(
     Returns:
         True se cancelou; False quando a máquina de estados recusou a transição.
     """
-    reason_identity = _validate_operator_cancellation_code(order, cancellation_code)
+    reason_identity = prepared_identity if prepared_identity is not None else _validate_operator_cancellation_code(order, cancellation_code)
     extra_data: dict[str, str] = {}
     if cancellation_code:
         extra_data["ifood_cancellation_code"] = cancellation_code
@@ -621,6 +627,8 @@ def cancel_order(
     # estava. ``reject_order``, a ação irmã, sempre conferiu; esta não.
     with transaction.atomic():
         locked = Order.objects.select_for_update().get(pk=order.pk)
+        if expected_revision is not None and operational_revision(locked) != expected_revision:
+            raise OrderStateConflict("O pedido mudou. Confira os dados antes de cancelar.")
         if expected_authority_revision is not None:
             from shopman.payman.models import PaymentIntent
 
@@ -1010,7 +1018,7 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
         actions.append(Action(
             ref="reject", kind="mutation", label="Recusar", priority="danger",
             enabled=authorized, reason="" if authorized else permission_reason,
-            method="POST", idempotency="required", payload_schema={"reason": "string"},
+            method="POST", idempotency="required", payload_schema={"base_revision": operational_revision(order)},
             confirmation={"required": True},
         ))
     elif next_status_for(order):

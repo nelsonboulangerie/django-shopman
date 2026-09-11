@@ -212,7 +212,7 @@ def test_reject_conflicts_when_order_was_auto_confirmed(client, operator, order)
     client.force_login(operator)
     response = client.post(
         reverse("api-backstage-order-reject", args=[order.ref]),
-        data={"reason": "Sem estoque"},
+        data={"reason": "Sem estoque", "expected_actor_id": operator.pk, "base_revision": operational_revision(order), "idempotency_key": "reject-auto-confirmed"},
         content_type="application/json",
     )
     assert response.status_code == 409
@@ -277,7 +277,7 @@ def test_cancel_endpoint_delivers_operator_reason_to_customer(
     with django_capture_on_commit_callbacks(execute=True):
         response = client.post(
             reverse("api-backstage-order-cancel", args=[order.ref]),
-            data={"reason": "Item indisponível no momento"},
+            data={"reason": "Item indisponível no momento", "expected_actor_id": operator.pk, "base_revision": operational_revision(order), "idempotency_key": "cancel-note"},
             content_type="application/json",
         )
     assert response.status_code == 200
@@ -302,7 +302,7 @@ def test_cancel_endpoint_without_reason_stays_generic(
     client.force_login(operator)
 
     with django_capture_on_commit_callbacks(execute=True):
-        response = client.post(reverse("api-backstage-order-cancel", args=[order.ref]))
+        response = client.post(reverse("api-backstage-order-cancel", args=[order.ref]), data={"expected_actor_id": operator.pk, "base_revision": operational_revision(order), "idempotency_key": "cancel-generic"}, content_type="application/json")
     assert response.status_code == 200
 
     order.refresh_from_db()

@@ -9,7 +9,12 @@ const env = installNuxtGlobals();
 vi.stubGlobal("useNuxtData", () => ({ data: ref({ operator: { id: 1 } }) }));
 
 describe("useOrderDetail", () => {
-  beforeEach(() => env.reset());
+  beforeEach(() => {
+    env.reset();
+    const actions = fixtureActions({ can_confirm: true });
+    env.fetchData.value = { order: { actions: [...actions, { ...actions[1]!, ref: "cancel" }] } };
+    env.fetchMock.mockResolvedValue({ outcome: "applied" });
+  });
 
   it("deriva order da projection; null quando vazio", () => {
     env.fetchData.value = { order: { ref: "WEB-1", status: "accepted" } };
@@ -30,17 +35,17 @@ describe("useOrderDetail", () => {
   it("reject/cancel enviam reason + cancellation_code (vazio p/ canal não-marketplace)", async () => {
     const d = useOrderDetail("WEB-2");
     await d.reject("sem estoque");
-    expect(env.fetchMock.mock.calls[0]![1].body).toEqual({ reason: "sem estoque", cancellation_code: "" });
+    expect(env.fetchMock.mock.calls[0]![1].body).toMatchObject({ reason: "sem estoque", cancellation_code: "" });
     await d.cancel("cliente desistiu");
-    expect(env.fetchMock.mock.calls[1]![1].body).toEqual({ reason: "cliente desistiu", cancellation_code: "" });
+    expect(env.fetchMock.mock.calls[1]![1].body).toMatchObject({ reason: "cliente desistiu", cancellation_code: "" });
   });
 
   it("reject/cancel de iFood repassam o código exigido pelo marketplace", async () => {
     const d = useOrderDetail("IFOOD-2");
     await d.reject("Item em falta", "IN_STORE_OUT_OF_STOCK");
-    expect(env.fetchMock.mock.calls[0]![1].body).toEqual({ reason: "Item em falta", cancellation_code: "IN_STORE_OUT_OF_STOCK" });
+    expect(env.fetchMock.mock.calls[0]![1].body).toMatchObject({ reason: "Item em falta", cancellation_code: "IN_STORE_OUT_OF_STOCK" });
     await d.cancel("Loja fechada", "STORE_CLOSED");
-    expect(env.fetchMock.mock.calls[1]![1].body).toEqual({ reason: "Loja fechada", cancellation_code: "STORE_CLOSED" });
+    expect(env.fetchMock.mock.calls[1]![1].body).toMatchObject({ reason: "Loja fechada", cancellation_code: "STORE_CLOSED" });
   });
 
   it("fetchCancellationReasons devolve a lista do pedido, propaga indisponibilidade", async () => {
@@ -97,6 +102,7 @@ describe("useOrderDetail", () => {
     // não tinha ONDE assinar — o pedido pago não cancelava pelo Gestor, e
     // nenhuma outra superfície cancela pedido da loja.
     env.fetchMock.mockRejectedValueOnce({
+      status: 422,
       data: { detail: "Cancelar pedido pago exige autorização.", error: { code: "manager_approval_required" } },
     });
     const d = useOrderDetail("WEB-PAGO");
@@ -109,6 +115,7 @@ describe("useOrderDetail", () => {
 
   it("assinar reenvia o MESMO ato com a autorização, sem refazer o gesto", async () => {
     env.fetchMock.mockRejectedValueOnce({
+      status: 422,
       data: { detail: "precisa de gerente", error: { code: "manager_approval_required" } },
     });
     const d = useOrderDetail("WEB-PAGO2");
@@ -120,6 +127,7 @@ describe("useOrderDetail", () => {
     const body = env.fetchMock.mock.calls[1]![1].body;
     expect(body.reason).toBe("cliente desistiu");
     expect(body.manager_approval).toEqual({ username: "joyce", pin: "1234" });
+    expect(env.fetchMock.mock.calls[1]![1].headers["Idempotency-Key"]).toBe(env.fetchMock.mock.calls[0]![1].headers["Idempotency-Key"]);
     expect(d.managerChallenge.value).toBeNull();
   });
 

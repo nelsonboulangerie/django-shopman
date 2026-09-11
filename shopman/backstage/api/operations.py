@@ -1555,11 +1555,12 @@ class _OrderActionBase(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "shop.manage_orders"
 
-    def _context_response(self, request, order, operation, inputs, execute):
+    def _context_response(self, request, order, operation, inputs, execute, *, prepare=None):
         from shopman.shop.services.operator_orders import OrderStateConflict
         from shopman.shop.services.remote_mutations import (
             RemoteMutationConflict,
             RemoteMutationInProgress,
+            lookup_local_mutation,
             mutation_fingerprint,
             run_idempotent_mutation,
         )
@@ -1583,7 +1584,15 @@ class _OrderActionBase(APIView):
             return {"ok": True, "ref": order.ref, "outcome": "applied", "intention": key, **extra}, 200
 
         try:
-            result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=apply)
+            result = lookup_local_mutation(scope=scope, key=key, fingerprint=fingerprint)
+            if result is None:
+                # Provider reads and approval checks precede the local transaction.
+                # A committed replay never repeats this preparation.
+                if prepare is not None:
+                    refusal = prepare()
+                    if refusal is not None:
+                        return refusal
+                result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=apply)
         except RemoteMutationConflict as exc:
             return Response({"detail": str(exc), "code": "intention_conflict"}, status=409)
         except RemoteMutationInProgress:
@@ -1744,29 +1753,32 @@ class OrderConfirmView(_OrderActionBase):
     ),
 )
 class OrderRejectView(_OrderActionBase):
+    intention_operation = "reject"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        reason = (request.data.get("reason") or "").strip() if hasattr(request, "data") else ""
+        reason = str(request.data.get("reason") or "").strip()
         if not reason:
             return Response({"detail": "Motivo da recusa é obrigatório."}, status=400)
-        cancellation_code = (request.data.get("cancellation_code") or "").strip()
-        try:
-            orders_service.reject_order(
-                order,
-                reason=reason,
-                actor=_actor(request),
-                rejected_by="operator",
-                cancellation_code=cancellation_code,
-            )
-        except operator_orders.CancellationReasonsUnavailable as exc:
-            return Response({"detail": str(exc), "error": {"code": "cancellation_reasons_unavailable"}}, status=503)
-        except OrderConflict as exc:
-            return Response({"detail": str(exc)}, status=409)
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Falha ao recusar."}, status=400)
-        return Response({"ok": True, "ref": ref})
+        code = str(request.data.get("cancellation_code") or "").strip()
+        prepared = {}
+
+        def prepare():
+            try:
+                prepared["identity"] = orders_service.prepare_cancellation(order, code)
+            except operator_orders.CancellationReasonsUnavailable as exc:
+                return Response({"detail": str(exc), "error": {"code": "cancellation_reasons_unavailable"}}, status=503)
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=400)
+
+        def execute(base):
+            orders_service.reject_order(order, reason=reason, actor=_actor(request),
+                rejected_by="operator", cancellation_code=code, expected_revision=base,
+                prepared_identity=prepared["identity"])
+
+        return self._context_response(request, order, "reject", {"reason": reason, "cancellation_code": code}, execute, prepare=prepare)
 
 
 @extend_schema_view(
@@ -1791,61 +1803,61 @@ class OrderCancelView(_OrderActionBase):
     caminho de operador em vez de só naquele endpoint.
     """
 
+    intention_operation = "cancel"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-
-        authority_revision = cancellation_service.authority_revision(order)
-        policy = cancellation_service.operator_cancel_policy(order)
-        if not policy.allowed:
-            return Response({"detail": policy.reason}, status=409)
-
-        if cancellation_service.is_advanced_cancel(order) and not request.user.has_perm(
-            cancellation_service.ADVANCED_CANCEL_PERMISSION
-        ):
-            return Response(
-                {
-                    "detail": f"Cancelar pedido em {order.get_status_display()} é do gerente.",
-                    "error": {"code": "cancel_requires_manager"},
-                },
-                status=403,
-            )
-
-        if policy.requires_approval:
-            try:
-                # O validador levanta com código próprio (`manager_approval_required`
-                # x `manager_approval_invalid`) e devolve o User que assinou — a
-                # tela distingue "falta gerente" de "PIN errado" sem ler a frase.
-                pos_tabs_service.validate_manager_override(
-                    request.data.get("manager_approval"),
-                    operator_username=_username(request),
-                    action="cancel_paid_order",
-                )
-            except PosIntentError as exc:
-                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
-
-        # The operator's typed/preset text (may be blank). It rides through as the
-        # customer-facing note; the audit reason falls back to a generic label.
-        operator_reason = (request.data.get("reason") or "").strip()
+        operator_reason = str(request.data.get("reason") or "").strip()
         reason = operator_reason or "Cancelado pelo operador"
-        cancellation_code = (request.data.get("cancellation_code") or "").strip()
-        try:
-            orders_service.cancel_order(
-                order,
-                reason=reason,
-                actor=_actor(request),
-                cancellation_code=cancellation_code,
-                customer_note=operator_reason,
-                expected_authority_revision=authority_revision,
-            )
-        except operator_orders.CancellationReasonsUnavailable as exc:
-            return Response({"detail": str(exc), "error": {"code": "cancellation_reasons_unavailable"}}, status=503)
-        except OrderConflict as exc:
-            return Response({"detail": str(exc)}, status=409)
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Falha ao cancelar."}, status=400)
-        return Response({"ok": True, "ref": ref})
+        code = str(request.data.get("cancellation_code") or "").strip()
+        prepared = {}
+
+        def prepare():
+            prepared["authority"] = cancellation_service.authority_revision(order)
+            policy = cancellation_service.operator_cancel_policy(order)
+            if not policy.allowed:
+                return Response({"detail": policy.reason}, status=409)
+
+            if cancellation_service.is_advanced_cancel(order) and not request.user.has_perm(
+                cancellation_service.ADVANCED_CANCEL_PERMISSION
+            ):
+                return Response(
+                    {
+                        "detail": f"Cancelar pedido em {order.get_status_display()} é do gerente.",
+                        "error": {"code": "cancel_requires_manager"},
+                    },
+                    status=403,
+                )
+
+            if policy.requires_approval:
+                try:
+                    # O validador levanta com código próprio (`manager_approval_required`
+                    # x `manager_approval_invalid`) e devolve o User que assinou — a
+                    # tela distingue "falta gerente" de "PIN errado" sem ler a frase.
+                    pos_tabs_service.validate_manager_override(
+                        request.data.get("manager_approval"),
+                        operator_username=_username(request),
+                        action="cancel_paid_order",
+                    )
+                except PosIntentError as exc:
+                    return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+
+            try:
+                prepared["identity"] = orders_service.prepare_cancellation(order, code)
+            except operator_orders.CancellationReasonsUnavailable as exc:
+                return Response({"detail": str(exc), "error": {"code": "cancellation_reasons_unavailable"}}, status=503)
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=400)
+
+        def execute(base):
+            orders_service.cancel_order(order, reason=reason, actor=_actor(request),
+                cancellation_code=code, customer_note=operator_reason, expected_revision=base,
+                expected_authority_revision=prepared["authority"], prepared_identity=prepared["identity"])
+
+        # Credentials are validated transiently; they are never fingerprinted or retained.
+        return self._context_response(request, order, "cancel", {"reason": operator_reason, "cancellation_code": code}, execute, prepare=prepare)
 
 
 @extend_schema_view(

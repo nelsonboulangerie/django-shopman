@@ -81,11 +81,13 @@ describe("useOrdersBoard — ações (act)", () => {
   });
 
   it("reject envia reason + cancellation_code", async () => {
+    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "IFOOD-9", actions: fixtureActions({ can_confirm: true }) }] } };
+    env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });
     const board = useOrdersBoard();
     await board.reject("IFOOD-9", "Sem estoque", "CODE_2");
     const [path, opts] = env.fetchMock.mock.calls[0]!;
     expect(String(path)).toBe("/api/v1/backstage/orders/IFOOD-9/reject/");
-    expect(opts.body).toEqual({ reason: "Sem estoque", cancellation_code: "CODE_2" });
+    expect(opts.body).toMatchObject({ reason: "Sem estoque", cancellation_code: "CODE_2" });
   });
 
   it("falha na ação acende erro inline por-ref + toast, devolve false e reconcilia via refresh", async () => {
@@ -106,6 +108,7 @@ describe("useOrdersBoard — ações (act)", () => {
       status: 409,
       data: { detail: "Pedido não está mais aguardando confirmação (status atual: confirmado)." },
     });
+    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-5", actions: fixtureActions({ can_confirm: true }) }] } };
     const board = useOrdersBoard();
     const ok = await board.reject("WEB-5", "Sem estoque");
     expect(ok).toBe(false);

@@ -147,7 +147,7 @@ def _local_result(idem: IdempotencyKey, fingerprint: str | None = None) -> Remot
     return RemoteMutationResult(envelope["result"], idem.response_code or 200, replayed=True)
 
 
-def lookup_local_mutation(*, scope: str, key: str) -> RemoteMutationResult | None:
+def lookup_local_mutation(*, scope: str, key: str, fingerprint: str | None = None) -> RemoteMutationResult | None:
     """Consulta pura; caller autoriza a pessoa e constrói seu escopo antes de chamar.
 
     Nenhum resgate de gateway, criação de chave ou reset por expiração nesta leitura.
@@ -159,7 +159,7 @@ def lookup_local_mutation(*, scope: str, key: str) -> RemoteMutationResult | Non
         return None
     if idem.status != "done":
         raise RemoteMutationInProgress("Mutation has no committed result")
-    return _local_result(idem)
+    return _local_result(idem, fingerprint)
 
 
 def _run_local_mutation(*, scope: str, key: str, fingerprint: str, execute) -> RemoteMutationResult:

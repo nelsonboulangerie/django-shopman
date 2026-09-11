@@ -61,4 +61,15 @@ describe("avanço — uma intenção, um resultado", () => {
     await client.execute("ORDER", "advance", action, {});
     expect(env.fetchMock.mock.calls[1]![1].headers["Idempotency-Key"]).not.toBe(env.fetchMock.mock.calls[0]![1].headers["Idempotency-Key"]);
   });
+  it("assinatura é transitória e o desafio 422 conserva a mesma intenção", async () => {
+    const client = useOrderIntention();
+    env.fetchMock.mockRejectedValueOnce({ status: 422, data: { error: { code: "manager_approval_required" } } });
+    await expect(client.execute("ORDER", "cancel", action, { reason: "Motivo" })).rejects.toBeDefined();
+    const key = env.fetchMock.mock.calls[0]![1].headers["Idempotency-Key"];
+    env.fetchMock.mockRejectedValueOnce({ status: 502 }).mockResolvedValueOnce({ outcome: "unknown" });
+    await expect(client.execute("ORDER", "cancel", action, { reason: "Motivo" }, { pin: "SYNTHETIC-PIN" })).rejects.toThrow();
+    expect(env.fetchMock.mock.calls[1]![1].headers["Idempotency-Key"]).toBe(key);
+    expect(JSON.stringify(env.states.get("orders-local-intentions")?.value)).not.toContain("SYNTHETIC-PIN");
+  });
+
 });

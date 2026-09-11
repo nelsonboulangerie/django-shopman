@@ -11,7 +11,7 @@ export function useOrderIntention() {
     if (next) pending.value = Object.fromEntries(Object.entries(pending.value).filter(([, intent]) => intent.owner === next));
   });
 
-  async function executePath(resource: string, path: string, action: Pick<Action, "enabled" | "reason" | "payload_schema"> | undefined, inputs: Record<string, unknown>) {
+  async function executePath(resource: string, path: string, action: Pick<Action, "enabled" | "reason" | "payload_schema"> | undefined, inputs: Record<string, unknown>, approval?: Record<string, string>) {
     const owner = session.value?.operator?.id;
     if (!owner) throw new Error("Identifique-se antes de continuar.");
     let intent = pending.value[resource];
@@ -43,14 +43,15 @@ export function useOrderIntention() {
     };
     try {
       const result = await $fetch<Result>(path, {
-        method: "POST", headers: { "Idempotency-Key": current.key }, body: current.body,
+        method: "POST", headers: { "Idempotency-Key": current.key }, body: { ...current.body, ...(approval ? { manager_approval: approval } : {}) },
       });
       return finish(result);
     } catch (error) {
       if (!samePerson()) throw error;
       const status = httpError(error).status;
       if (status && status >= 400 && status < 500) {
-        if (status !== 401 && status !== 403 && httpErrorCode(error) !== "intention_conflict") delete pending.value[resource];
+        const code = httpErrorCode(error);
+        if (status !== 401 && status !== 403 && !["intention_conflict", "manager_approval_required", "manager_approval_invalid"].includes(code)) delete pending.value[resource];
         throw error;
       }
       // A resposta pode ter se perdido depois do commit. Consultar não executa efeitos.
@@ -58,8 +59,8 @@ export function useOrderIntention() {
       return finish(result);
     }
   }
-  async function execute(ref_: string, operation: string, action: Action | undefined, inputs: Record<string, unknown>) {
-    await executePath(`${ref_}:${operation}`, `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/${encodeURIComponent(operation)}/`, action, inputs);
+  async function execute(ref_: string, operation: string, action: Action | undefined, inputs: Record<string, unknown>, approval?: Record<string, string>) {
+    await executePath(`${ref_}:${operation}`, `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/${encodeURIComponent(operation)}/`, action, inputs, approval);
     return true;
   }
   return { execute, executePath };
