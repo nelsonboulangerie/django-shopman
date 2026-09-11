@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { navigateTo } from '#app'
-import type { CheckoutMutationResponse, CheckoutResponse } from '~/types/shopman'
+import type { CartProjection, CartResponse, CheckoutMutationResponse, CheckoutResponse } from '~/types/shopman'
 import type { AddressSelection, AddressLabelKey } from '~/presentation/address'
 import { reviewWaitlist } from '~/presentation/cart'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
@@ -145,6 +145,7 @@ const pickupSwapOffer = ref(false)
 const identityConfirmOffer = ref(false)
 const { confirm: confirmByWhatsApp, starting: confirming } = useWhatsAppConfirm()
 const quotingZone = ref(false)
+const draftSyncing = ref(false)
 const changePhoneOpen = ref(false)
 const addressLabelOpen = ref(false)
 const savedAddressIdForLabel = ref<number | null>(null)
@@ -234,7 +235,29 @@ const { data, pending, error, refresh } = await useFetch<CheckoutResponse>(apiPa
   query: checkoutQuery
 })
 
-const checkout = computed(() => data.value?.checkout || null)
+// Uma leitura iniciada antes de uma mutação do rascunho pode terminar depois
+// dela. Os demais campos da projection (datas/slots/copy) continuam úteis, mas
+// a revisão da sacola nunca pode andar para trás: ela é a trava otimista usada
+// no commit. Sem esta barreira, a resposta atrasada fazia o servidor recusar
+// corretamente o pedido e obrigava o cliente a confirmar tudo outra vez.
+const freshestCheckout = shallowRef<CheckoutResponse['checkout'] | null>(data.value?.checkout || null)
+function cartRevision (value: CartProjection | null | undefined): number {
+  return typeof value?.revision === 'number' ? value.revision : -1
+}
+watch(() => data.value?.checkout, (incoming) => {
+  if (!incoming) return
+  const current = freshestCheckout.value
+  freshestCheckout.value = current && cartRevision(incoming.cart) < cartRevision(current.cart)
+    ? { ...incoming, cart: current.cart }
+    : incoming
+}, { immediate: true })
+function acceptCartProjection (incoming: CartProjection) {
+  const current = freshestCheckout.value
+  if (!current || cartRevision(incoming) < cartRevision(current.cart)) return
+  freshestCheckout.value = { ...current, cart: incoming }
+}
+
+const checkout = computed(() => freshestCheckout.value)
 const cart = computed(() => checkout.value?.cart)
 
 // Cupom: aplica/remove via cart state (servidor) e re-busca o checkout p/ refletir
@@ -577,33 +600,56 @@ watch(addressSelection, selection => {
 // TAXA já entre no total (e a cobertura de zona seja conhecida) antes do
 // commit — fonte única (Core), sem matemática no cliente. A DeliveryZoneRule
 // segue como gate autoritativo no commit.
-async function applyDeliveryDraft () {
+let draftSyncTail: Promise<void> = Promise.resolve()
+let draftSyncCount = 0
+let deliverySyncCount = 0
+
+function applyDeliveryDraft (): Promise<void> {
   const isDelivery = state.fulfillment_type === 'delivery'
-  const structured = state.delivery_address_structured || {}
-  if (isDelivery && !structured.route) return
-  quotingZone.value = isDelivery
-  try {
-    await $fetch(apiPath('/api/v1/checkout/draft/'), {
-      method: 'PATCH',
-      headers: await csrfHeaders(),
-      credentials: 'include',
-      body: {
-        fulfillment_type: state.fulfillment_type,
-        delivery_address_structured: isDelivery ? structured : {}
+  const fulfillmentType = state.fulfillment_type
+  const structured = { ...(state.delivery_address_structured || {}) }
+  if (isDelivery && !structured.route) return draftSyncTail
+
+  draftSyncCount += 1
+  if (isDelivery) deliverySyncCount += 1
+  draftSyncing.value = true
+  quotingZone.value = deliverySyncCount > 0
+
+  const run = async () => {
+    try {
+      const response = await $fetch<CartResponse>(apiPath('/api/v1/checkout/draft/'), {
+        method: 'PATCH',
+        headers: await csrfHeaders(),
+        credentials: 'include',
+        body: {
+          fulfillment_type: fulfillmentType,
+          delivery_address_structured: isDelivery ? structured : {}
+        }
+      })
+      // O PATCH devolve a revisão que acabou de gravar. Aceitá-la antes do
+      // refresh fecha a janela em que um GET anterior poderia reintroduzir a
+      // revisão velha; o refresh atualiza o restante da projection.
+      acceptCartProjection(response.cart)
+      await refresh()
+      if (isDelivery) {
+        const covered = !cart.value?.delivery_zone_error && cart.value?.delivery_fee_q !== null
+        pickupSwapOffer.value = covered ? false : availableFulfillment.value.includes('pickup')
+        if (covered) serverError.value = ''
       }
-    })
-    await refresh()
-    if (isDelivery) {
-      const covered = !cart.value?.delivery_zone_error && cart.value?.delivery_fee_q !== null
-      pickupSwapOffer.value = covered ? false : availableFulfillment.value.includes('pickup')
-      if (covered) serverError.value = ''
+    } catch {
+      // Falha no rascunho não bloqueia — o commit ainda valida a zona.
+      if (isDelivery) pickupSwapOffer.value = false
+    } finally {
+      draftSyncCount -= 1
+      if (isDelivery) deliverySyncCount -= 1
+      draftSyncing.value = draftSyncCount > 0
+      quotingZone.value = deliverySyncCount > 0
     }
-  } catch {
-    // Falha no rascunho não bloqueia — o commit ainda valida a zona.
-    if (isDelivery) pickupSwapOffer.value = false
-  } finally {
-    quotingZone.value = false
   }
+
+  const operation = draftSyncTail.then(run, run)
+  draftSyncTail = operation.catch(() => {})
+  return operation
 }
 
 watch(chosenDate, value => {
@@ -795,16 +841,20 @@ function revealFirstError () {
   })
 }
 
-function continueFromFulfillment () {
+async function continueFromFulfillment () {
   if (!validateFulfillmentStep()) { revealFirstError(); return }
   // Retirada zera a taxa de entrega no total; entrega recalcula ao confirmar
   // o endereço (applyDeliveryDraft no passo seguinte).
-  if (state.fulfillment_type === 'pickup') void applyDeliveryDraft()
+  if (state.fulfillment_type === 'pickup') await applyDeliveryDraft()
   activeStep.value = state.fulfillment_type === 'delivery' ? 'address' : 'when'
 }
 
-function continueFromAddress () {
+async function continueFromAddress () {
   if (!validateAddressStep()) { revealFirstError(); return }
+  // O picker grava o endereço e emite `confirmed` na mesma interação. Esperar
+  // a fila garante que taxa, cobertura e revisão usadas adiante são as que o
+  // servidor acabou de aceitar.
+  await draftSyncTail
   activeStep.value = 'when'
   // Endereço NOVO (não-salvo) em entrega: pergunta a etiqueta na hora. A escolha é
   // guardada e aplicada quando o pedido fecha (o endereço só ganha ID na confirmação).
@@ -1276,7 +1326,7 @@ useSeoMeta({
               </UiAlert>
               <template #footer>
                 <div class="mt-4">
-                  <UiButton class="w-full" size="lg" icon="lucide:arrow-right" icon-placement="right" :disabled="deliveryBelowMinimum" @click="continueFromFulfillment">
+                  <UiButton class="w-full" size="lg" icon="lucide:arrow-right" icon-placement="right" :loading="draftSyncing" :disabled="deliveryBelowMinimum || draftSyncing" @click="continueFromFulfillment">
                     Continuar
                   </UiButton>
                 </div>
@@ -1335,7 +1385,7 @@ useSeoMeta({
               </div>
               <template v-if="addressSelection && !pickupSwapOffer" #footer>
                 <div class="mt-4">
-                  <UiButton class="w-full" size="lg" icon="lucide:arrow-right" icon-placement="right" @click="continueFromAddress">
+                  <UiButton class="w-full" size="lg" icon="lucide:arrow-right" icon-placement="right" :loading="draftSyncing" :disabled="draftSyncing" @click="continueFromAddress">
                     Continuar
                   </UiButton>
                 </div>
