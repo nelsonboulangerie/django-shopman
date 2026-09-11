@@ -41,18 +41,17 @@ def test_post_commit_callback_loss_leaves_phase_for_worker():
 
 
 @pytest.mark.parametrize("phase", sorted(lifecycle.QUEUED_PHASES))
-def test_each_late_phase_has_recovery_and_dry_run(phase):
-    order = Order.objects.create(ref=f"RECOVER-{phase}", status=phase.removeprefix("on_"), data={"returns": [{"type": "total"}]} if phase == "on_returned" else {})
+def test_historical_late_phase_without_marker_never_authorizes_recovery(phase):
+    order = Order.objects.create(ref=f"HISTORICAL-{phase}", status=phase.removeprefix("on_"), data={"returns": [{"type": "total"}]} if phase == "on_returned" else {})
     Order.objects.filter(pk=order.pk).update(updated_at=timezone.now() - timedelta(minutes=30))
-    call_command("sweep_stuck_orders", dry_run=True)
-    assert not Directive.objects.filter(topic=ORDER_LIFECYCLE_PHASE).exists()
-    call_command("sweep_stuck_orders")
-    task = Directive.objects.get(topic=ORDER_LIFECYCLE_PHASE)
-    assert task.payload["phase"] == phase
-    with patch.dict(lifecycle._PHASE_HANDLERS, {phase: lambda *_: None}):
-        _process_directive(task)
+    with patch.object(lifecycle, "dispatch") as dispatch, patch.object(lifecycle, "enqueue_phase") as enqueue:
+        call_command("sweep_stuck_orders", dry_run=True)
+        call_command("sweep_stuck_orders")
+    dispatch.assert_not_called()
+    enqueue.assert_not_called()
+    assert not Directive.objects.exists()
     order.refresh_from_db()
-    assert lifecycle.phase_complete(order, phase)
+    assert not lifecycle.phase_complete(order, phase)
 
 
 def test_marker_failure_is_retryable_and_does_not_repeat_original_notice():
