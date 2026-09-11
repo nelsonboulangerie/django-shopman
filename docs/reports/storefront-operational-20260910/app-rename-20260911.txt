@@ -1,0 +1,32 @@
+Rename controlado do App Platform — 2026-09-11
+
+app_id=40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f
+before_name=shopman-alpha
+after_name=shopman-nelson
+before_active_deployment=20f67ba8-7134-4126-b3ba-099d898566d7
+after_active_deployment=0b7731c2-8caa-4683-bac0-3259a58ac910
+after_phase=ACTIVE
+in_progress=none
+live_url=https://menu.nelsonboulangerie.com.br
+diff=name_only
+proposed_cost_usd=84
+post_spec_matches_validated_candidate=true
+before_spec_sha256=30c600f84b7dfa05593af10bbd678ccb622b20121a12fb4a395d1d2b65cd53a6
+after_spec_sha256=ed93ec6fb2031a8a90f6c1601e6746e56fc3302351d3f035b96cc19904f1dd93
+
+Verificação externa após deployment
+200 /
+200 /menu
+200 /privacy
+200 /terms
+200 API /health/
+200 API /ready/
+200 API /api/v1/storefront/home/
+
+Componentes preservados
+web, storefront-nuxt, pos-nuxt, kds-nuxt, orders-nuxt, production-nuxt, hub-nuxt, marketing-nuxt, bi-nuxt, purchase-nuxt
+
+Decisão
+- App renomeado para eliminar o rótulo alpha já aposentado.
+- Serviço web mantido: é Django/Daphne e seu nome convencional participa de ingress, automação, imagem e operação.
+- Nenhuma configuração produtiva, mensagem, cobrança ou transação foi alterada.

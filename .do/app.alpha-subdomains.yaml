@@ -1,4 +1,4 @@
-name: shopman-alpha
+name: shopman-nelson
 region: nyc
 alerts:
 - rule: DEPLOYMENT_FAILED

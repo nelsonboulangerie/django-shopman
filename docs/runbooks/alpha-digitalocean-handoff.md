@@ -2,12 +2,11 @@
 
 > **Estado confirmado em 11/09/2026:** `menu.nelsonboulangerie.com.br` e o
 > dominio definitivo da loja. `alpha.*` e `staging.*` foram aposentados e nao
-> devem ser recriados. O app vivo ainda se chama `shopman-alpha` e continua com
+> devem ser recriados. O app vivo se chama `shopman-nelson` e continua com
 > perfil de pre-go-live (`SHOPMAN_ENVIRONMENT=staging`, Pix mock e OTP/captura
-> de teste expostos). A proposta de nome `shopman-nelson` foi validada sem
-> alteracao de custo ou componentes, mas nao aplicada: qualquer atualizacao do
-> spec inicia novo deployment. Fazer o rename somente em janela controlada,
-> junto de verificacao de saude e recuo pelo deployment anterior.
+> de teste expostos). O rename foi aplicado em janela autorizada, preservando
+> App ID, custo, domínios, componentes e o spec vivo; health, readiness, loja,
+> páginas legais e API responderam 200 depois do deployment.
 
 > O componente `web` e o backend Django/Daphne que atende API, Admin e
 > backstage. O Storefront ja e o componente `storefront-nuxt`; esses nomes nao
@@ -21,7 +20,7 @@ separado e explicitamente autorizado.
 ## Decisao obrigatoria
 
 - Nao manter `staging.*` e `alpha.*` como ambientes separados.
-- Reaproveitar o App Platform atual, ainda nomeado `shopman-alpha`.
+- Reaproveitar o App Platform atual, nomeado `shopman-nelson`.
 - Manter o perfil de pre-go-live ate autorizacao especifica de producao.
 - Usar `menu.nelsonboulangerie.com.br` como URL definitiva da loja.
 - Nao recriar `alpha.*` ou `staging.*`.
@@ -52,7 +51,7 @@ app/banco/cache apenas por nomenclatura.
 
 Estado aplicado:
 
-- App Platform: `shopman-alpha`.
+- App Platform: `shopman-nelson`.
 - App ID preservado: `40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f`.
 - Projeto DigitalOcean: `Shopman Alpha`.
 - Contexto `doctl` com token nesta maquina: `shopman-alpha-deploy`.
@@ -76,14 +75,14 @@ stateful; criar novos recursos so por cosmetica aumenta custo financeiro e
 risco. `staging` no nome do banco/cache significa "nao-producao", nao URL
 publica.
 
-### Rename pendente para shopman-nelson
+### Rename aplicado para shopman-nelson
 
-A proposta gerada a partir do spec vivo muda somente `name`, preserva o App ID,
-componentes, domínios, recursos e valores encrypted. `shopman-nelson` esta
-disponivel e o custo proposto permaneceu USD 84. Ela nao foi aplicada porque
-uma atualizacao do spec dispara deployment mesmo quando o diff e apenas o nome.
-Aplicar somente em janela autorizada, acompanhar health/rotas e manter o
-deployment anterior como recuo.
+A proposta gerada a partir do spec vivo mudou somente `name`, preservando App
+ID, componentes, domínios, recursos e valores encrypted. O custo proposto
+permaneceu USD 84. O deployment `0b7731c2-8caa-4683-bac0-3259a58ac910`
+terminou `ACTIVE`; health, readiness e rotas públicas responderam 200. O spec
+pós-deploy corresponde byte a byte à candidata validada. O deployment anterior
+`20f67ba8-7134-4126-b3ba-099d898566d7` permanece identificado para recuo.
 
 ## Dominio da loja
 
@@ -117,7 +116,7 @@ nova.
 App vivo:
 
 ```text
-app name: shopman-alpha
+app name: shopman-nelson
 app id: 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f
 spec versionado: .do/app.alpha-subdomains.yaml
 ```
@@ -253,7 +252,7 @@ Isso e bloqueio de go-live/pre-producao real, nao regressao do handoff.
 
 ## Proibido
 
-- Criar um segundo App Platform `shopman-alpha`.
+- Criar um segundo App Platform apenas por nomenclatura.
 - Criar banco/cache novos so para trocar nome `staging` por `alpha`.
 - Recriar `alpha.nelsonboulangerie.com.br` ou `staging.nelsonboulangerie.com.br`.
 - Usar banco alpha em producao.

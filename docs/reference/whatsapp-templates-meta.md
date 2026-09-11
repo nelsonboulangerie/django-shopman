@@ -17,11 +17,10 @@ Três templates têm botão de URL e os três apontavam para lugar nenhum. O que
 ao medir contra o código, e o que ficou decidido:
 
 **1. A base da loja é `https://menu.nelsonboulangerie.com.br`.** É o valor de
-`SHOPMAN_STOREFRONT_BASE_URL` no spec **vivo** do `shopman-alpha`. O doc escrevia o apex.
+`SHOPMAN_STOREFRONT_BASE_URL` no spec **vivo** do `shopman-nelson`. O doc escrevia o apex.
 
-> ⚠️ `.do/app.alpha-subdomains.yaml` ainda diz `https://alpha.nelsonboulangerie.com.br`,
-> morto desde o corte de domínios de 01/09. Quem aplicar aquele spec quebra todo link de
-> cliente **e** o prefixo de um template já aprovado — que é um ciclo de re-submissão.
+> `.do/app.alpha-subdomains.yaml` acompanha o domínio definitivo
+> `https://menu.nelsonboulangerie.com.br`; `alpha.*` continua aposentado.
 
 **2. `/pedido/{ref}/pagar` não existe.** O único caminho é `/pedido/{ref}`
 (`storefront_links.path_order_tracking`). Acompanhar e pagar são a MESMA tela: o Pix e o

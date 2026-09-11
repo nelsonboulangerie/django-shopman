@@ -1,5 +1,7 @@
 {
   "alpha-read-only-metadata-20260911.txt": "1bff4672bec745d2a61c53fd9b554400670f02653aa0c7d9eb96c2681ae40c12",
+  "app-rename-20260911.txt": "c2a5d240b93a07344202db0573f77dc3cc32d5810cc8a6d34cb74ff648b68655",
+  "app-rename-tests-20260911.txt": "f04611f097ea36e0df3aca4e147f87e8c3cba45a7d7bbb3b1f7715d88e14a082",
   "backend.txt": "07cfcb110b34080c8b934a78cb1b3be7a8dbf2c55f0ccea7bce5e7663e40d86b",
   "baseline-backend.txt": "2f744a4614d35a1b68d57ae56a7c4684b2e32627774969a1fcf57dd3ab3971e9",
   "baseline-frontend.txt": "f76c5e00d4317a95161d237d96ca852a6aef3a7c35cb69123b267b96ca4c7e1f",
