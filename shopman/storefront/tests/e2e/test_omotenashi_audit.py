@@ -187,6 +187,12 @@ def test_06c_soldout_409_remembers_who_already_asked(client):
     assert body["is_notifiable"] is True
     assert body["is_notify_subscribed"] is True
 
+    # Reload/navigation rebuilds the projection, then the component recovers the
+    # same purpose-scoped management link from this session without another POST.
+    recovered = client.get(f"/api/v1/availability/{SKU}/notify/")
+    assert recovered.status_code == 200
+    assert recovered.json()["management_url"] == resp.json()["management_url"]
+
 
 def test_07_checkout_rejected_date_is_actionable(client):
     """✅ A checkout for a date we cannot serve returns a field-routed, pt-BR error."""

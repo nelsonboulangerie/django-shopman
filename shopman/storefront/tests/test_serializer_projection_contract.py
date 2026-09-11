@@ -87,6 +87,7 @@ NON_MIRROR = {
     "CheckoutResponseSerializer",
     "AvailabilityResponseSerializer",
     "StockAlertSubscribeResponseSerializer",
+    "StockAlertSessionStateSerializer",
     "StockAlertSubscriptionControlResponseSerializer",
     "StockAlertManagementStateSerializer",
     "ReverseGeocodeResponseSerializer",

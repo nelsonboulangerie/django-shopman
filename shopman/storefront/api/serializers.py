@@ -141,6 +141,11 @@ class StockAlertSubscribeResponseSerializer(serializers.Serializer):
     management_url = serializers.URLField()
 
 
+class StockAlertSessionStateSerializer(serializers.Serializer):
+    active = serializers.BooleanField()
+    management_url = serializers.URLField()
+
+
 class StockAlertSubscriptionRefSerializer(serializers.Serializer):
     subscription_ref = serializers.UUIDField()
 

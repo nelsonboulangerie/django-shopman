@@ -84,6 +84,24 @@ function onAnonymousSubmit () {
   }
   subscribe(normalized)
 }
+
+async function recoverManagementLink () {
+  if (!props.subscribed || isAuthenticated.value || managementUrl.value) return
+  try {
+    const result = await $fetch<{ active: boolean, management_url: string }>(apiPath(`/api/v1/availability/${encodeURIComponent(props.sku)}/notify/`), {
+      method: 'GET',
+      credentials: 'include'
+    })
+    managementUrl.value = String(result?.management_url || '')
+  } catch {
+    // A projeção continua sendo a fonte do estado visual. A ausência de uma
+    // sessão recuperável não transforma falha de rede em nova assinatura.
+  }
+}
+
+onMounted(recoverManagementLink)
+
+const managementHref = computed(() => managementUrl.value || (isAuthenticated.value ? '/conta/preferencias#avisos-produtos' : ''))
 </script>
 
 <template>
@@ -114,8 +132,8 @@ function onAnonymousSubmit () {
       Aviso ativo
     </UiButton>
     <UiButton
-      v-if="managementUrl"
-      :to="managementUrl"
+      v-if="managementHref"
+      :to="managementHref"
       variant="ghost"
       size="sm"
       icon="lucide:settings-2"

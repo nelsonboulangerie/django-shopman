@@ -420,6 +420,56 @@ def test_endpoint_retry_after_lost_response_returns_same_subscription_and_capabi
     assert StockAlertSubscription.objects.filter(sku=product.sku).count() == 1
 
 
+def test_anonymous_reload_recovers_exact_session_management_link(client):
+    product = _publish(sku="SKU-MANAGE-SESSION")
+    path = f"/api/v1/availability/{product.sku}/notify/"
+    created = client.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.201").json()
+
+    recovered = client.get(path)
+
+    assert recovered.status_code == 200
+    assert recovered["Cache-Control"] == "private, no-store, max-age=0"
+    assert recovered["Referrer-Policy"] == "no-referrer"
+    assert recovered.json()["active"] is True
+    assert recovered.json()["management_url"] == created["management_url"]
+    body = recovered.content.decode()
+    assert PHONE not in body
+    assert created["subscription_ref"] not in body
+
+
+def test_session_management_link_cannot_be_recovered_by_ref_or_wrong_owner(client):
+    from django.test import Client
+
+    product = _publish(sku="SKU-MANAGE-SESSION-IDOR")
+    created = client.post(
+        f"/api/v1/availability/{product.sku}/notify/",
+        {"phone": PHONE},
+        REMOTE_ADDR="203.0.113.202",
+    ).json()
+    other_device = Client()
+    session = other_device.session
+    session["stock_alert_subscriptions"] = [
+        {
+            "ref": created["subscription_ref"],
+            "sku": product.sku,
+            "alert_type": StockAlertSubscription.AlertType.STOCK_BACK,
+            "contact_phone": "+5543999999999",
+        }
+    ]
+    session.save()
+
+    recovered = other_device.get(f"/api/v1/availability/{product.sku}/notify/")
+
+    assert recovered.status_code == 404
+    assert recovered["Cache-Control"] == "private, no-store, max-age=0"
+    assert created["management_url"] not in recovered.content.decode()
+
+    session = other_device.session
+    session["stock_alert_subscriptions"][0]["ref"] = "not-a-uuid"
+    session.save()
+    assert other_device.get(f"/api/v1/availability/{product.sku}/notify/").status_code == 404
+
+
 def test_endpoint_repairs_legacy_mobile_and_persists_pending_session_marker(client):
     p = _publish(sku="SKU-LEGACY-PHONE")
     resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {"phone": "(43) 9840-4900"})

@@ -147,7 +147,7 @@ useSeoMeta({ title: 'Preferências' })
           </UiFieldGroup>
         </UiFieldSet>
 
-        <UiFieldSet v-if="summary?.stock_alert_subscriptions?.length" class="rounded-lg border bg-card p-4 lg:col-span-2">
+        <UiFieldSet v-if="summary?.stock_alert_subscriptions?.length" id="avisos-produtos" class="scroll-mt-24 rounded-lg border bg-card p-4 lg:col-span-2">
           <UiFieldLegend>Avisos de produtos</UiFieldLegend>
           <UiFieldDescription class="mb-2">
             Cada aviso vale para este produto e continua nas próximas ocorrências até você pausar ou cancelar.

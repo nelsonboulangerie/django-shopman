@@ -316,6 +316,12 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
 #: mensagem nunca deve exibir. Lista explícita porque empurrar contexto inteiro para o
 #: perfil do cliente no ManyChat seria vazar estado interno para uma ferramenta de
 #: marketing.
+#:
+#: ``management_note`` é a exceção consciente: o flow configurado só resolve variáveis
+#: de campos personalizados, então a nota que contém a capacidade de uma única
+#: assinatura fica armazenada no perfil do ManyChat. A capacidade não identifica o
+#: contato nem abre a conta, mas continua sendo segredo operacional; ADR-029 e o
+#: runbook registram a limitação e os controles exigidos no provedor.
 _FIELD_DENYLIST = frozenset({
     "session_key", "sku", "subscriber_id", "recipient", "phone",
     "customer_ref", "customer_uuid", "hold_ids", "management_url",

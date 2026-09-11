@@ -20,6 +20,7 @@ from shopman.storefront.api.serializers import (
     AvailabilityResponseSerializer,
     StockAlertManagementActionSerializer,
     StockAlertManagementStateSerializer,
+    StockAlertSessionStateSerializer,
     StockAlertSubscribeRequestSerializer,
     StockAlertSubscribeResponseSerializer,
     StockAlertSubscriptionControlRequestSerializer,
@@ -106,6 +107,44 @@ class StockAlertSubscribeView(APIView):
 
     authentication_classes = [SessionAuthentication]
     permission_classes = [AllowAny]
+
+    @extend_schema(
+        tags=["availability"],
+        summary="Recover the current session's product alert management link",
+        responses={200: StockAlertSessionStateSerializer},
+    )
+    def get(self, request, sku):
+        """Recover only an exact alert already owned by this browser session.
+
+        The subscription ref comes from the server-side session and is still
+        checked against SKU and contact before a capability is minted.  A ref
+        supplied by the caller never authorizes access.
+        """
+        from shopman.storefront.services import stock_alerts
+
+        session = getattr(request, "session", None)
+        markers = session.get("stock_alert_subscriptions", []) if session is not None else []
+        markers = list(markers) if isinstance(markers, (list, tuple)) else []
+        for marker in reversed(markers):
+            if not isinstance(marker, dict) or str(marker.get("sku") or "") != sku:
+                continue
+            sub = stock_alerts.subscription_for_owner(
+                marker.get("ref"),
+                sku=sku,
+                phone=str(marker.get("contact_phone") or ""),
+            )
+            if sub is not None:
+                return _no_store_response(
+                    {
+                        "active": sub.paused_at is None,
+                        "management_url": stock_alerts.management_url(sub),
+                    },
+                    status_code=status.HTTP_200_OK,
+                )
+        return _no_store_response(
+            {"detail": "Aviso não encontrado nesta sessão."},
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
 
     @extend_schema(
         tags=["availability"],

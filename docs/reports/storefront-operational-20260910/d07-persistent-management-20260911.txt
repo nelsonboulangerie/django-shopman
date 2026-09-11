@@ -28,13 +28,21 @@ Depois
   telefone, customer_ref, ref da assinatura nem a capacidade.
 - Repetir o cadastro após perder a resposta devolve a mesma assinatura e a mesma
   capacidade, sem duplicar a autorização.
+- Após reload, a sessão anônima recupera o link somente pela referência guardada no
+  servidor e ainda exige correspondência de SKU e contato; uma referência arbitrária
+  ou marcador de outro contato retorna 404. Cliente logado recebe atalho explícito para
+  Conta → Preferências → Avisos de produtos.
+- Em flows configurados, o ManyChat lê variáveis apenas de campos personalizados. Assim,
+  management_note — incluindo a capacidade limitada a uma assinatura — fica armazenado
+  no provedor. Não há caminho transitório equivalente no adapter para flow aprovado fora
+  da janela do WhatsApp; o risco e a futura limpeza estão no ADR e no runbook.
 
 Provas frescas
 - Backend direcionado: 95 passed.
-- Storefront completo em SQLite: 1.533 passed, 9 skips declarados de PostgreSQL.
+- Storefront completo em SQLite após revisão: 1.535 passed, 9 skips declarados de PostgreSQL.
 - PostgreSQL concorrente: 6 passed, incluindo pausa/cancelamento contra o worker.
 - Migração PostgreSQL com 1.000 recibos, recuo/avanço: 1 passed.
-- Nuxt completo final: 556 passed em 61 arquivos; typecheck, lint e build passaram.
+- Nuxt completo após revisão: 557 passed em 61 arquivos; typecheck, lint e build passaram.
   A inspeção real detectou o 404 que o teste de transporte isolado não alcançava; após
   incluir a rota na allowlist, 13 testes direcionados e a suíte completa passaram.
 - Navegador local, viewport 390×844, Nuxt BFF + Django + PostgreSQL: abriu ativo,
@@ -44,6 +52,8 @@ Provas frescas
   erros e cinco warnings preexistentes em WhatsappVerifyPanel.vue.
 - O schema OpenAPI inclui cadastro, controle por sessão e gestão por capacidade; a
   geração não reporta erro nos endpoints de disponibilidade.
+- Fechamento pós-revisão: 123 testes backend direcionados e 6 testes do componente
+  StockNotifyButton passaram, incluindo reload anônimo e affordance do cliente logado.
 
 Limites
 - Não houve deploy, rollout, provider externo, mensagem, cobrança, pedido ou transação real.

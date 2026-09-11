@@ -53,6 +53,26 @@ describe('StockNotifyButton', () => {
     })
     expect(wrapper.text()).toContain('Aviso ativo')
     expect(wrapper.get('button').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('Gerenciar este aviso')
+    expect(wrapper.get('a').attributes('href')).toBe('/conta/preferencias#avisos-produtos')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('anonymous reload recovers the exact session management link', async () => {
+    await setAuthenticated(false)
+    fetchMock.mockResolvedValue({ active: true, management_url: '/gerenciar-aviso#recovered-capability' })
+    const wrapper = await mountSuspended(StockNotifyButton, {
+      props: { sku: 'PAO', name: 'Pão', subscribed: true }
+    })
+
+    await new Promise(r => setTimeout(r, 0))
+    await nextTick()
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('/availability/PAO/notify/')
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'GET', credentials: 'include' })
+    expect(wrapper.text()).toContain('Gerenciar este aviso')
+    expect(wrapper.get('a').attributes('href')).toBe('/gerenciar-aviso#recovered-capability')
   })
 
   it('authenticated one-click subscribe hits the notify endpoint and confirms', async () => {

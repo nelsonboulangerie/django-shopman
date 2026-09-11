@@ -324,6 +324,30 @@ def management_url(sub) -> str:
     return storefront_links.stock_alert_management_url(management_capability(sub))
 
 
+def subscription_for_owner(subscription_ref, *, sku: str, customer=None, phone: str = ""):
+    """Resolve one verified, non-revoked alert after the canonical ownership check.
+
+    Used to recover a management capability from trusted session state.  The
+    opaque ref is only a selector; it is never sufficient authorization.
+    """
+    from shopman.storefront.models import StockAlertSubscription
+
+    try:
+        subscription_uuid = uuid.UUID(str(subscription_ref))
+        sub = StockAlertSubscription.objects.filter(
+            ref=subscription_uuid,
+            sku=sku,
+            purpose="stock_availability",
+            proof_status="verified",
+            revoked_at__isnull=True,
+        ).first()
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if sub is None or not _owned_by(sub, customer=customer, phone=phone):
+        return None
+    return sub
+
+
 def subscription_for_management(capability: str, *, for_update: bool = False):
     """Resolve one active verified subscription without logging the bearer token."""
     from shopman.storefront.models import StockAlertSubscription

@@ -35,7 +35,10 @@ não oferecia pausa da autorização específica.
 - Cada aviso oferece controle no aparelho atual e por uma capacidade opaca, restrita à finalidade
   e revogável, enviada no fragmento de um link “Gerenciar este aviso”. A página remove o fragmento
   imediatamente, `GET` apenas consulta e `PATCH`/`DELETE` pausam, retomam ou cancelam. Cancelamento
-  é irreversível; retomada vale apenas para ocorrências futuras.
+  é irreversível; retomada vale apenas para ocorrências futuras. No aparelho que cadastrou um
+  aviso anônimo, a sessão permite recuperar o link após reload somente quando referência, SKU e
+  contato conferem com a mesma assinatura. Cliente autenticado recebe acesso explícito à seção
+  de avisos em Preferências.
 - Uma correção de QC antes do adapter suprime recibos ainda enfileirados ou reclamados. Se o
   provedor já aceitou a entrega, o fato não é apagado e um alerta operacional exige conciliação.
 - O contato pode ser usado apenas para a finalidade e ocorrência autorizadas. Quando outra fonte
@@ -51,3 +54,12 @@ o runbook orienta a ação sem oferecer reenvio cego. A tela de Expedição iden
 aguardam revisão e oferece a ação gerencial na mesma projeção e permissão usadas pela correção.
 Retenção de recibos e dados históricos continua sendo uma decisão separada: sua janela permanece
 pendente e os recibos protegidos atuais não são apagados por idade.
+
+O flow atual do ManyChat não recebe variáveis de forma transitória: ele lê campos personalizados.
+Por isso `management_note`, que contém a capacidade, fica armazenado no perfil do assinante no
+provedor e pode permanecer ali até ser sobrescrito ou removido conforme a política do ManyChat.
+A capacidade autoriza somente uma assinatura, não revela telefone nem abre a conta, e deixa de
+resolver após cancelamento. Ainda assim, deve ser tratada como segredo. Não há no adapter atual um
+caminho transitório equivalente para flows; usar `sendContent` evitaria o campo, mas não substitui
+com segurança um flow/template aprovado fora da janela do WhatsApp. A retenção e a limpeza desse
+campo no provedor fazem parte da decisão de retenção ainda pendente.

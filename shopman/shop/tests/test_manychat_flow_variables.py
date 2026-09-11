@@ -94,7 +94,7 @@ def test_internal_state_never_becomes_a_customer_field(calls, with_flow):
     assert "product_name" in fields
 
 
-def test_stock_management_capability_only_leaves_as_customer_facing_note(calls, with_flow):
+def test_stock_management_capability_is_persisted_only_in_purpose_scoped_note(calls, with_flow):
     capability = "https://shop.example/gerenciar-aviso#opaque-capability"
     mc.send(
         "+5543984049009",
