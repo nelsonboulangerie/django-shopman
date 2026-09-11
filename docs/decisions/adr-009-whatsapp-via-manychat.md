@@ -1,7 +1,7 @@
 # ADR-009 — WhatsApp via ManyChat: vendor lock-in consciente
 
 **Data**: 2026-04-18
-**Atualizado**: 2026-09-09
+**Atualizado**: 2026-09-11
 **Status**: Accepted
 
 ---
@@ -52,8 +52,11 @@ Até essa prova:
 - resposta ambígua após possível write é `unknown` e não sofre retry automático;
 - o adapter bloqueia antes de resolver subscriber, gravar custom fields ou fazer
   qualquer chamada do caminho Marketing;
-- readiness, aprovação e deploy check expõem o mesmo reason code reparável:
-  `manychat_custom_fields_unverified`.
+- readiness e aprovação expõem o mesmo reason code reparável:
+  `manychat_custom_fields_unverified`; o deploy check o promove a erro quando o
+  delivery consumer está armado. Com o consumer desligado, nenhum efeito externo
+  é possível e deploys não relacionados continuam permitidos, sem mudar o estado
+  `blocked_unverified` nem liberar o adapter.
 
 ## Motivação
 
