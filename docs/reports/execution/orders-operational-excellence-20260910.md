@@ -1498,3 +1498,25 @@ Depois: Produto260px e hit no próprio preço; screenshot inspecionado. Caso SSE
 anteriormente falho passou/4,8s; **26 integrações/47,3s**, **295 Vitest/7,13s**,
 build/typecheck aprovados. Artefatos catalog_width. Sem DDL/efeito externo; rollback
 visual reabre sobreposição com muitos destinos. Não é medição de rede/coorte G06.
+
+### WP03/WP04 — revalidação PostgreSQL da matriz sensível
+
+48 casos aprovados/15,85s: H03 confirmação/cancelamento/timeout com barreiras;
+lock pagamento→transição; custódia dupla/turno fechado/rollback do livro; fases
+duráveis; retorno único de estoque; retry de estorno parcial; cash físico e
+esgotamento de estorno. Módulos exatos no comando registrado neste incremento:
+test_h03_confirmation_barriers, test_h03_payment_guard_lock,
+test_cancellation_fresh_state, test_cod_custody_concurrency,
+test_lifecycle_phase_durability, test_return_phase_single_owner,
+test_refund_idempotency, test_payment_without_gateway, test_refund_failure_alert
+e Payman test_concurrency. Log h03-final-matrix.txt; sem skips. Preserva testes
+maduros, sem nova regra/DDL. Não é homologação de fornecedor ou custódia real.
+
+### WP07/WP08 — SSE e placar canônico
+
+20 atualizações via cadeia real SSE; limite superior POST→visível+2frames p95
+108,03ms,20 eventos, sem polling como substituto da prova. Amostras e limites em
+sse_budget/README.md. Placar readonly reutiliza conciliação madura, aponta caixa
+e Payman12000 centavos/diferença0, warning de fechamento ausente e pendências
+canônicas sem mascará-las. canonical_scoreboard/README.md discrimina o que ainda
+não mede. Nenhuma integração real, reparação, nova fonte de verdade ou migration.
