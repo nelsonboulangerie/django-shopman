@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 from django.utils import timezone
@@ -173,7 +174,13 @@ def test_planned_past_eta_today_is_delayed(recipe):
         status=WorkOrder.Status.PLANNED,
         target_date=target,
     )
-    row = build_production_forecast(target).rows[0]
+    localtime = timezone.localtime
+    now = _at(target, 1)
+    with patch(
+        "shopman.backstage.projections.production.timezone.localtime",
+        side_effect=lambda value=None: now if value is None else localtime(value),
+    ):
+        row = build_production_forecast(target).rows[0]
     assert row.status == "delayed"
     assert row.status_label == "Atrasado"
 
