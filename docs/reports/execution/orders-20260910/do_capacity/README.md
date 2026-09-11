@@ -94,7 +94,10 @@ locais1405/1213ms são ensaios diferentes sujeitos ao host, **não melhora imple
 Observador permanece apenas diagnóstico; seletor acessível e orçamento originais
 continuam. Essas rodadas não substituem as reprovações CI, não calibram a rede real.
 
-A proposta de próxima medição na própria plataforma está em CLOUD-ASSAY-GATE.md.
-É autorização de gasto/ambiente temporário ainda pendente, não liberação de
-produção nem recomendação de aumento permanente de instâncias. Nenhum recurso
-novo na DO foi criado; a aplicação não mudou desde47e9c657a neste conjunto de ensaios.
+A proposta de novo laboratório pago foi retirada em 11/09 por orientação de Pablo;
+CLOUD-ASSAY-GATE.md fica somente como histórico. Nenhum recurso novo foi criado.
+A publicação técnica no ambiente existente é coordenada pela tarefa PDV e depende
+da integração, migração/compatibilidade e CI da fonte final. G06 é gate do início
+do piloto; §10 item 4 distingue deploy técnico de ativação. Os resultados negativos
+acima permanecem válidos para o cenário ensaiado, sem constituir bloqueio universal
+de publicação. Nenhuma mudança de budget ou comprovação de ganho em campo.

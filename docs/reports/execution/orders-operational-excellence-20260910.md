@@ -1694,3 +1694,23 @@ Proposta de laboratório DO novo, sem dados reais, até24h/US$5, foi apresentada
 envolver cobrança adicional fora da autorização. Resposta pendente; silêncio não
 cria recursos. Não há mudança permanente de servidor proposta como aprovada.
 T/P/R não concluídos por esta rodada; rollback da instrumentação não toca livros.
+
+
+## 11/09 — correção de escopo após orientação do proprietário
+
+Pablo rejeitou a necessidade de novo ambiente e pediu os testes relevantes no
+ambiente já existente. Retirada a proposta de laboratório DO até24h/US$5; nenhum
+recurso foi criado. Resultados de carga preservados, sem novos ensaios extremos.
+G06 bloqueia início do piloto, não todo deploy; §10 item4 permite deploy técnico
+antes de ativação. Corrigida a interpretação anterior que bloqueava publicação
+integrada indiscriminadamente. Autorização de release transmitida pela tarefa PDV
+permanece no escopo informado, sem autorizar pedidos sintéticos ou efeitos reais.
+
+Revisão read-only: origin/main6ad5bb40f acrescenta PR603/604 à base0acb727ff, sem
+alterações em backstage/orderman migrations. 0061 cria inventário sem backfill e
+recusa reversão com registros; rollback deve preservar custódia e impedir despacho
+incompatível. PDV informou fonte2bcdee0bb/base47e9c657a,871 testes frontend,195
+backend,20 guardrails e typecheck já passados; ainda sem PR/CI remoto da integração.
+Encaminhada execução da release à tarefa PDV: merge da fonte atual, revisão final,
+CI obrigatório, pipeline existente e smoke sem efeitos reais. Não repetida suíte
+funcional sem mudança. T/P/R globais e aceite em campo não declarados concluídos.

@@ -1,6 +1,6 @@
-# Decisão concreta: laboratório temporário na DigitalOcean
+# Proposta retirada: laboratório temporário na DigitalOcean
 
-Estado: proposta pronta para decisão de custo; NÃO autorizado nem provisionado.
+Estado em 11/09/2026: proposta RETIRADA após orientação explícita de Pablo para usar o ambiente existente. Nenhum recurso criado, custo autorizado ou decisão pendente. O conteúdo abaixo é histórico e não constitui instrução de execução.
 A autorização de publicar a integração transmitida pela tarefa PDV não inclui
 novos recursos pagos. A publicação existente segue condicionada à validação.
 
@@ -63,7 +63,7 @@ Falha de preparação, timeout, OOM, falha de cleanup ou ensaio incompleto são 
 explícitos; nenhum deles é passe/skips. Os recursos existentes não são rollback do
 laboratório e não serão tocados. Piloto e rollout mantêm seus próprios gates.
 
-## Decisão solicitada
+## Solicitação histórica — cancelada
 
 Autorizar ou recusar exclusivamente esse laboratório temporário de até24h/US$5.
 Silêncio não autoriza criação, gasto ou deployment de laboratório. O restante da

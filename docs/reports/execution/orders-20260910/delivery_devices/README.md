@@ -160,7 +160,10 @@ com fonte anterior serve apenas ao diagnóstico, sem equivalência de payload de
 inventário e sem alterar o gate. Repetições adicionais no mesmo host sem uma mudança
 controlada não constituem plano de aprovação.
 
-**Decisão concreta de gate:** capacidade integrada não pronta para publicação/piloto.
+**Correção de escopo em 11/09:** capacidade de500 pedidos/10 clientes não aprovada.
+Isso não impede automaticamente publicação técnica: G06 rege início do piloto e
+§10 item4 permite deploy técnico antes de ativação. A tarefa PDV coordena a release
+autorizada, sujeita à integração, migração/compatibilidade e CI da fonte final.
 Manter testes sintéticos e integração técnica; homologar ambiente/recursos/rede/coorte
 em G06/G07 e repetir estes limites antes de liberar500 pedidos/10 clientes. Não
 propomos aumentar o limite para tornar a rodada verde. O trabalho de capacidade

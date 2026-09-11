@@ -15,12 +15,17 @@ Preparação e jornadas passaram; vereditos de budget falharam. Sem liberação 
 capacidade nem indicação comprovada de aumento permanente. Não atribuir tudo ao
 swap do Mac. Três fontes/artefatos/perfis estão em [do_capacity/README.md](do_capacity/README.md).
 
-Pablo aceitou memória para rascunhos; nenhuma persistência nova. Autorização de
-publicação PDV foi transmitida e permanece condicionada às validações; ela não
-inclui novos recursos pagos. Proposta específica de laboratório DO até24h/US$5
-em [CLOUD-ASSAY-GATE.md](do_capacity/CLOUD-ASSAY-GATE.md), aguardando resposta.
-Nada criado/alterado na DO nesta etapa. T segue aberto, piloto não iniciado,
-publicação integrada não liberada por estes ensaios.
+Pablo aceitou rascunhos em memória com proteção de saída. A proposta de novo
+laboratório pago foi retirada por orientação explícita dele; não há decisão de
+infraestrutura pendente nem recurso novo criado. PC da loja, rede existente e
+DigitalOcean são o contexto informado, sem necessidade de rediscutir hospedagem.
+
+Correção de escopo: G06 condiciona o início do piloto; §10 item 4 permite deploy
+técnico antes da ativação de capacidades. As reprovações acima permanecem como
+limite do ensaio de capacidade, sem bloquear automaticamente toda publicação.
+A tarefa PDV coordena a publicação técnica já autorizada: integrar main atual,
+revisar migração/compatibilidade, obter CI da fonte final e verificar rollout/smoke
+sem efeitos reais. Isso não declara T, P ou R globalmente concluídos.
 
 ## Atualização vigente — extensão de maquininhas individuais47e9c657a
 
