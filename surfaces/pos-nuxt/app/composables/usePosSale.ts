@@ -772,9 +772,13 @@ export function usePosSale(deps: PosSaleDeps) {
     if (!projection) return;
     if (!cart.paymentMethod) cart.paymentMethod = projection.payment_methods[0]?.ref || "cash";
     const defaultFulfillment = projection.terminal_default_fulfillment_type === "delivery" ? "delivery" : "pickup";
-    if (!cart.fulfillmentType) cart.fulfillmentType = defaultFulfillment;
+    if (!cart.fulfillmentType) {
+      cart.fulfillmentType = defaultFulfillment;
+      cart.fulfillmentConfirmed = false;
+    }
     if (!projection.fulfillment_options.some((option) => option.ref === cart.fulfillmentType)) {
       cart.fulfillmentType = projection.fulfillment_options[0]?.ref || "pickup";
+      cart.fulfillmentConfirmed = false;
     }
   }, { immediate: true });
 

@@ -715,7 +715,7 @@ const ctaBlock = computed<{ message: string; hint?: string; action?: CheckoutAct
   if (scheduledWithoutCustomer.value) {
     return {
       message: "Encomenda precisa de cliente.",
-      hint: "É o contato se algo mudar até a data.",
+      hint: "Identifique quem vai receber a entrega ou retirar o pedido combinado.",
       action: { label: "Identificar cliente", run: () => { customerSheetOpen.value = true; } },
     };
   }
@@ -1748,7 +1748,7 @@ defineExpose({
     v-model:open="scheduleSheetOpen"
     :today="scheduleToday"
     :delivery-date="deliveryDate"
-    :fulfillment-type="fulfillmentType"
+    :fulfillment-type="fulfillmentConfirmed ? fulfillmentType : undefined"
     :delivery-date-effective="deliveryDateEffective"
     :delivery-time-slot="deliveryTimeSlot"
     :available-dates="scheduleAvailableDates"
