@@ -239,49 +239,54 @@ async function confirmReject() {
 // settle-cash dialog (needs an amount; and, when the courier took change from
 // the drawer, how much of it came back — zero included; the server requires it).
 const settleRef = ref<string | null>(null);
-const settleAmount = ref("");
-const settleRevision = ref("");
-const settleCustody = ref("");
+const cashDrafts = useOrderCashDrafts();
+const settleCard = computed(() => allCards.value.find((c) => c.ref === settleRef.value) ?? null);
 const settleAction = computed(() => settleCard.value?.actions.find((action) => action.ref === "settle-delivery-cash"));
+const settlementDraft = computed(() => {
+  const initial = { amount: "", changeBack: settleCard.value?.change_back_pending ? moneyInput(changeBackSuggestionQ(settleCard.value)) : "", equipmentBack: true,
+    revision: String(settleAction.value?.payload_schema.base_revision || ""), custody: String(settleAction.value?.confirmation.description || "") };
+  return (settleRef.value ? cashDrafts.settlements.value[settleRef.value] : null) ?? initial;
+});
+const settleAmount = computed({ get: () => settlementDraft.value.amount, set: (v: string) => { settlementDraft.value.amount = v; } });
+const settleChangeBack = computed({ get: () => settlementDraft.value.changeBack, set: (v: string) => { settlementDraft.value.changeBack = v; } });
+const settleEquipmentBack = computed({ get: () => settlementDraft.value.equipmentBack, set: (v: boolean) => { settlementDraft.value.equipmentBack = v; } });
+const settleRevision = computed(() => settlementDraft.value.revision);
+const settleCustody = computed(() => settlementDraft.value.custody);
 const settleChanged = computed(() => settleRevision.value !== String(settleAction.value?.payload_schema.base_revision || ""));
 function reviewSettleCustody() {
-  settleRevision.value = String(settleAction.value?.payload_schema.base_revision || "");
-  settleCustody.value = String(settleAction.value?.confirmation.description || "");
+  settlementDraft.value.revision = String(settleAction.value?.payload_schema.base_revision || "");
+  settlementDraft.value.custody = String(settleAction.value?.confirmation.description || "");
 }
-const settleChangeBack = ref("");
-const settleCard = computed(() => allCards.value.find((c) => c.ref === settleRef.value) ?? null);
 const settleAsksChangeBack = computed(() => Boolean(settleCard.value?.change_back_pending));
-const settleEquipmentBack = ref(true);
 const settleAsksEquipment = computed(() => Boolean(settleCard.value?.equipment_back_pending));
 function openSettle(ref_: string) {
   settleRef.value = ref_;
-  reviewSettleCustody();
-  settleAmount.value = "";
-  const card = allCards.value.find((c) => c.ref === ref_);
-  settleChangeBack.value = card?.change_back_pending ? moneyInput(changeBackSuggestionQ(card)) : "";
-  settleEquipmentBack.value = true;
+  cashDrafts.settlement(ref_, settlementDraft.value);
 }
 async function confirmSettle() {
   const ref_ = settleRef.value;
   if (!ref_) return;
   const changeBack = settleAsksChangeBack.value ? settleChangeBack.value.trim() || "0" : undefined;
   const ok = await settleCash(ref_, settleAmount.value.trim(), changeBack, settleAsksEquipment.value && settleEquipmentBack.value, settleRevision.value);
-  if (ok) settleRef.value = null;
+  if (ok) { cashDrafts.clear("settlement", ref_); settleRef.value = null; }
 }
 
 // dispatch dialog: the store collected "troco para quanto?" at checkout; leaving
 // for delivery is when that becomes cash out of the drawer (courier_out). The
 // operator confirms the amount the courier actually takes (or "sem troco").
 const dispatchRef = ref<string | null>(null);
-const dispatchAmount = ref("");
+const dispatchDraft = computed(() => {
+  const initial = { amount: moneyInput(dispatchCard.value?.change_out_suggested_q ?? 0), equipment: [] as string[] };
+  return (dispatchRef.value ? cashDrafts.dispatches.value[dispatchRef.value] : null) ?? initial;
+});
+const dispatchAmount = computed({ get: () => dispatchDraft.value.amount, set: (v: string) => { dispatchDraft.value.amount = v; } });
 // Aparelhos marcados para sair com o entregador (refs do canal, ex. card_machine).
-const dispatchEquipment = ref<string[]>([]);
+const dispatchEquipment = computed({ get: () => dispatchDraft.value.equipment, set: (v: string[]) => { dispatchDraft.value.equipment = v; } });
 const dispatchCard = computed(() => allCards.value.find((c) => c.ref === dispatchRef.value) ?? null);
 const dispatchAsksChangeNow = computed(() => Boolean(dispatchCard.value && dispatchAsksChange(dispatchCard.value)));
 function openDispatch(card: OrderCardProjection) {
   dispatchRef.value = card.ref;
-  dispatchAmount.value = moneyInput(card.change_out_suggested_q);
-  dispatchEquipment.value = [];
+  cashDrafts.dispatch(card.ref, dispatchDraft.value);
 }
 function toggleDispatchEquipment(ref_: string) {
   dispatchEquipment.value = dispatchEquipment.value.includes(ref_)
@@ -294,7 +299,7 @@ async function confirmDispatch(amount: string | null) {
   // Sem troco a perguntar, o valor não vai (o servidor só exige quando sugere).
   const changeOut = dispatchAsksChangeNow.value ? (amount ?? "").trim() || "0" : undefined;
   const ok = await advance(ref_, changeOut, dispatchEquipment.value);
-  if (ok) dispatchRef.value = null;
+  if (ok) { cashDrafts.clear("dispatch", ref_); dispatchRef.value = null; }
 }
 
 function onAction(ref_: string, action: AffordanceRef) {

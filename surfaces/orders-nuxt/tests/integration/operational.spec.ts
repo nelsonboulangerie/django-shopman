@@ -153,6 +153,31 @@ test("cancel response loss retains the reason and reads the committed receipt", 
 });
 
 
+test("cash draft survives close, queue navigation and a declined reload without settlement", async ({ page }) => {
+  await login(page, "orders-lab-cash");
+  let commands = 0;
+  page.on("request", request => { if (request.method() === "POST" && request.url().includes("settle-delivery-cash")) commands++; });
+  await page.goto(`/${lab.cash_ref}`);
+  await page.getByRole("button", { name: "Acerto dinheiro", exact: true }).click();
+  const amount = page.getByRole("textbox", { name: "Valor recebido", exact: true });
+  await amount.fill("14,50");
+  await page.getByRole("button", { name: "Voltar", exact: true }).click();
+  await page.getByRole("button", { name: "Acerto dinheiro", exact: true }).click();
+  await expect(amount).toHaveValue("14,50");
+  await page.getByRole("button", { name: "Voltar", exact: true }).click();
+  await page.getByRole("link", { name: "Voltar para a fila", exact: true }).click();
+  await page.getByRole("searchbox", { name: "Buscar por código, cliente ou item (atalho: /)", exact: true }).fill(lab.cash_ref);
+  await page.getByRole("button", { name: "Acerto dinheiro", exact: true }).click();
+  await expect(amount).toHaveValue("14,50");
+  const exit = page.waitForEvent("dialog");
+  await page.evaluate(() => { setTimeout(() => window.location.reload(), 0); });
+  const confirmation = await exit;
+  expect(confirmation.type()).toBe("beforeunload");
+  await confirmation.dismiss();
+  await expect(amount).toHaveValue("14,50");
+  expect(commands).toBe(0);
+});
+
 test("cash settlement response loss resolves one receipt in the observed drawer", async ({ page }) => {
   await login(page, "orders-lab-cash");
   let posts = 0;

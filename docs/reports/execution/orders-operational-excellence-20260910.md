@@ -1156,3 +1156,36 @@ aprova todos os cenários C07. Diálogos/rascunhos ainda têm trabalho independe
 Migração: nenhuma no banco. Rollback UI exige manter estado/chaves em voo e
 versão compatível; voltar ao código antigo perde este contexto na navegação.
 Nenhuma ampliação de permissão, confirmação eliminada ou efeito externo.
+
+### WP06/WP03 — valores físicos preservados ao interromper acerto/saída
+
+Revalidação em eeeaddb6c: openSettle/openDispatch e openDialog zeravam os valores
+em cada abertura. Fechar e reabrir exigia redigitação; reabrir também atualizava a
+base da custódia sem comparação. Agora acerto/saída compartilham draft da sessão
+por pessoa/pedido entre fila e detalhe. Inicializam só ao abrir pela primeira vez;
+SSE e reabertura não sobrescrevem valor, equipamentos ou custódia observada.
+Confirmação conhecida limpa o draft correspondente. Nova pessoa descarta todos.
+
+A confirmação física e a comparação de turno continuam obrigatórias. O guard de
+reload/saída da sessão pede confirmação nativa quando há draft efetivamente
+alterado ou intenção pendente; abrir sem editar/restaurar o valor inicial não
+cria confirmação redundante. Isso protege saída, não promete persistência após
+reload aceito. Sem localStorage, credencial, cartão ou nova fonte financeira.
+
+292 testes Orders passaram, incluindo fechar/reabrir com turno mudado, campos
+independentes por pedido, troca/expiração de pessoa e distinção dirty/vazio.
+Typecheck e build passaram. Primeira UI: 290 passaram, um teste usou rótulo
+inexistente (“Acertar dinheiro” vs “Acerto dinheiro”); fixture corrigida.
+
+**25 jornadas completas browser→Nitro→Django→PostgreSQL→SSE passaram (45,5 s)**
+com seed fresco e adaptadores isolados. Incluem os 24 cenários anteriores e o
+novo acerto: digitar 14,50, fechar/reabrir, navegar à fila, abrir no card, recusar
+reload; valor preservado e zero POST de acerto. A jornada seguinte confirma
+acerto sintético com resposta perdida e consulta um único recibo. Não há worker
+externo nesta suíte nem dinheiro físico, ganho em campo ou homologação.
+
+Evidências `orders-20260910/cash-drafts-*.txt`. O README do laboratório explicita
+DATABASE_CONN_MAX_AGE=0 para seu PostgreSQL direto, conforme guia existente.
+Migração: nenhuma. Rollback: preservar intenção e backend seguro; UI antiga
+perde os drafts ao fechar. G02 decide custódia real; G05/G08 continuam pendentes
+para persistência/retenção. Preparação técnica não autoriza piloto nem rollout.

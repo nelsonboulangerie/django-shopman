@@ -1,7 +1,8 @@
 import { fixtureActions } from "../support/orderActions";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, ref, watch } from "vue";
 import { mount } from "@vue/test-utils";
+import { useOrderCashDrafts } from "../../app/composables/useOrderCashDrafts";
 
 import type { CustomerProfileProjection, OperatorOrderProjection } from "../../app/types/orders";
 
@@ -20,6 +21,14 @@ const detalhe = ref<OperatorOrderProjection | null>(null);
 const resendPaymentLink = vi.fn();
 const readError = ref<unknown>(null);
 
+const localStates = new Map<string, ReturnType<typeof ref>>();
+beforeEach(() => localStates.clear());
+vi.stubGlobal("useState", (key: string, initial: () => unknown) => {
+  if (!localStates.has(key)) localStates.set(key, ref(initial()));
+  return localStates.get(key);
+});
+vi.stubGlobal("useNuxtData", () => ({ data: ref({ operator: { id: 1 } }) }));
+vi.stubGlobal("useOrderCashDrafts", useOrderCashDrafts);
 vi.stubGlobal("definePageMeta", vi.fn());
 vi.stubGlobal("onBeforeRouteLeave", vi.fn());
 vi.stubGlobal("computed", computed);
@@ -518,4 +527,18 @@ it("falha de leitura mantém o pedido e o textarea montados junto da explicaçã
     expect(w.get("[data-order-error]").text()).toContain("Mantivemos a última leitura");
     expect(w.text()).toContain("Ana");
   } finally { readError.value = null; w.unmount(); }
+});
+
+it("fechar e reabrir o acerto conserva valor e pede revisar a custódia que mudou", async () => {
+  const action = (base: string) => ({ ...fixtureActions({ can_confirm: true })[0]!, ref: "settle-delivery-cash",
+    label: "Acertar dinheiro", payload_schema: { base_revision: base }, confirmation: { required: true, description: base } });
+  const w = abrir(order({ can_confirm: false, can_settle_delivery_cash: true, actions: [action("turno-1")] }));
+  const open = () => w.findAll("button").find(button => button.text().includes("Acerto dinheiro"))!;
+  await open().trigger("click");
+  await w.find('[aria-label="Valor recebido"]').setValue("15,00");
+  await w.findAll("button").find(button => button.text() === "Voltar")!.trigger("click");
+  detalhe.value = order({ can_confirm: false, can_settle_delivery_cash: true, actions: [action("turno-2")] });
+  await open().trigger("click");
+  expect((w.find('[aria-label="Valor recebido"]').element as HTMLInputElement).value).toBe("15,00");
+  expect(w.text()).toContain("O pedido ou turno mudou");
 });

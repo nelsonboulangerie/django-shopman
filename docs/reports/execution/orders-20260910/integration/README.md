@@ -6,7 +6,7 @@ usuário/db `orders_lab`, bind local 55439, Redis próprio em 56389 sem persist�
 Não reutilizar banco, Redis ou credenciais de aplicação real. Não iniciar com `.env` de produção.
 
 Ambiente dos scripts: DATABASE_URL=postgres://orders_lab@127.0.0.1:55439/orders_lab,
-REDIS_URL=redis://127.0.0.1:56389/0, PYTHONDONTWRITEBYTECODE=1. Rodar da raiz:
+REDIS_URL=redis://127.0.0.1:56389/0, DATABASE_CONN_MAX_AGE=0, PYTHONDONTWRITEBYTECODE=1. Rodar da raiz:
 `python .orders-lab/manage_lab.py migrate --noinput`, depois
 `python .orders-lab/manage_lab.py shell < .orders-lab/seed_e2e.py` e
 `python .orders-lab/serve_lab.py`. Dependências do projeto e Daphne são necessárias.

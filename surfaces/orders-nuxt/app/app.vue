@@ -5,6 +5,15 @@
 // lock overlay (Opção C): when the gate is ON and nobody unlocked, a PIN/badge is
 // required. Gated OFF → never shows.
 const OPERATOR_PERM = "shop.manage_orders";
+const { hasDirty: cashDraftDirty } = useOrderCashDrafts();
+const { hasPending: intentionPending } = useOrderIntention();
+function protectSessionExit(event: BeforeUnloadEvent) {
+  if (!cashDraftDirty.value && !intentionPending.value) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+onMounted(() => window.addEventListener("beforeunload", protectSessionExit));
+onBeforeUnmount(() => window.removeEventListener("beforeunload", protectSessionExit));
 const { canIdentify, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
 
 // Keep drafts through a lock/re-identification by the same person. A different

@@ -108,18 +108,24 @@ function applyNoteTag(tag: string) {
 // marketplace-aware: for an iFood order it shows the provider's required coded reasons
 // (fetched live per order); other channels get the store presets + free text.
 const dialog = ref<"" | "reject" | "cancel" | "settle" | "dispatch">("");
-const amount = ref("");
+const cashDrafts = useOrderCashDrafts();
+const settlementDraft = computed(() => cashDrafts.settlements.value[orderRef.value] ?? ({
+  amount: "", changeBack: order.value?.change_back_pending ? moneyInput(changeBackSuggestionQ(order.value)) : "", equipmentBack: true,
+  revision: String(settleAction.value?.payload_schema.base_revision || ""), custody: String(settleAction.value?.confirmation.description || ""),
+}));
+const dispatchDraft = computed(() => cashDrafts.dispatches.value[orderRef.value] ?? ({ amount: moneyInput(order.value?.change_out_suggested_q ?? 0), equipment: [] as string[] }));
+const amount = computed({ get: () => settlementDraft.value.amount, set: (v: string) => { settlementDraft.value.amount = v; } });
 const settleAction = computed(() => order.value?.actions.find((action) => action.ref === "settle-delivery-cash"));
-const settleRevision = ref("");
-const settleCustody = ref("");
+const settleRevision = computed(() => settlementDraft.value.revision);
+const settleCustody = computed(() => settlementDraft.value.custody);
 const settleChanged = computed(() => settleRevision.value !== String(settleAction.value?.payload_schema.base_revision || ""));
 function reviewSettleCustody() {
-  settleRevision.value = String(settleAction.value?.payload_schema.base_revision || "");
-  settleCustody.value = String(settleAction.value?.confirmation.description || "");
+  settlementDraft.value.revision = String(settleAction.value?.payload_schema.base_revision || "");
+  settlementDraft.value.custody = String(settleAction.value?.confirmation.description || "");
 }
 // troco da entrega: o que voltou (acerto) e o que o entregador leva (despacho)
-const changeBack = ref("");
-const changeOut = ref("");
+const changeBack = computed({ get: () => settlementDraft.value.changeBack, set: (v: string) => { settlementDraft.value.changeBack = v; } });
+const changeOut = computed({ get: () => dispatchDraft.value.amount, set: (v: string) => { dispatchDraft.value.amount = v; } });
 const asksChangeBack = computed(() => Boolean(order.value?.change_back_pending));
 // Pronto + delivery + a loja sugere troco: o despacho pergunta antes de avançar
 // (o servidor recusa com 409 se ninguém disser quanto saiu).
@@ -130,8 +136,8 @@ const dispatchAsksChange = computed(
 const dispatchAsks = computed(
   () => dispatchAsksChange.value || (order.value?.status === "ready" && (order.value?.equipment_options.length ?? 0) > 0),
 );
-const dispatchEquipment = ref<string[]>([]);
-const settleEquipmentBack = ref(true);
+const dispatchEquipment = computed({ get: () => dispatchDraft.value.equipment, set: (v: string[]) => { dispatchDraft.value.equipment = v; } });
+const settleEquipmentBack = computed({ get: () => settlementDraft.value.equipmentBack, set: (v: boolean) => { settlementDraft.value.equipmentBack = v; } });
 const asksEquipmentBack = computed(() => Boolean(order.value?.equipment_back_pending));
 function toggleDispatchEquipment(ref_: string) {
   dispatchEquipment.value = dispatchEquipment.value.includes(ref_)
@@ -160,13 +166,9 @@ async function loadReasons() {
 const presets = computed(() => order.value?.cancellation_presets ?? []);
 
 async function openDialog(kind: "reject" | "cancel" | "settle" | "dispatch") {
+  if (kind === "settle") cashDrafts.settlement(orderRef.value, settlementDraft.value);
+  if (kind === "dispatch") cashDrafts.dispatch(orderRef.value, dispatchDraft.value);
   dialog.value = kind;
-  if (kind === "settle") reviewSettleCustody();
-  amount.value = "";
-  changeBack.value = order.value?.change_back_pending ? moneyInput(changeBackSuggestionQ(order.value)) : "";
-  changeOut.value = moneyInput(order.value?.change_out_suggested_q ?? 0);
-  dispatchEquipment.value = [];
-  settleEquipmentBack.value = true;
   if (kind === "reject" || kind === "cancel") {
     // Pull the order's valid cancellation reasons — a coded list for iFood, [] else.
     reasons.value = [];
@@ -204,7 +206,7 @@ async function signWithBadge(badge: string) {
 async function submitSettle() {
   const back = asksChangeBack.value ? changeBack.value.trim() || "0" : undefined;
   const ok = await settleCash(amount.value.trim(), back, asksEquipmentBack.value && settleEquipmentBack.value, settleRevision.value);
-  if (ok) dialog.value = "";
+  if (ok) { cashDrafts.clear("settlement", orderRef.value); dialog.value = ""; }
 }
 
 function onAdvance() {
@@ -215,7 +217,7 @@ function onAdvance() {
 async function submitDispatch(value: string | null) {
   const changeOut = dispatchAsksChange.value ? (value ?? "").trim() || "0" : undefined;
   const ok = await advance(changeOut, dispatchEquipment.value);
-  if (ok) dialog.value = "";
+  if (ok) { cashDrafts.clear("dispatch", orderRef.value); dialog.value = ""; }
 }
 
 // Quem é este cliente (WP-360). O servidor manda os fatos já em português e só

@@ -90,5 +90,5 @@ export function useOrderIntention() {
     await executePath(`${ref_}:${operation}`, `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/${encodeURIComponent(operation)}/`, action, inputs, approval);
     return true;
   }
-  return { execute, executePath, checkPath };
+  return { execute, executePath, checkPath, hasPending: computed(() => Object.keys(pending.value).length > 0) };
 }
