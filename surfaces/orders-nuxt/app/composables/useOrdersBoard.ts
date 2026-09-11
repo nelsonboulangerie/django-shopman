@@ -76,11 +76,11 @@ export function useOrdersBoard() {
   // o `locked` do kit nunca sabia o que o servidor acabou de dizer.
   const { flagIfStationLocked } = useStationLock();
 
-  // useFetch (not useAsyncData) so the SSR payload transfers reliably (POS gotcha).
+  // Fetch the canonical queue after session hydration, avoiding duplicate rendering of the full board.
   const { data, pending, error, refresh: fetchQueue } = useFetch<OrderQueueResponse>(path, {
     key: useOperatorResourceKey("orders-queue"),
     dedupe: "defer",
-    server: true,
+    server: false,
     // Sessão expirou no meio do turno → o poll passa a 401/403. Reabre o gate de
     // operador (re-fetch da sessão) em vez de deixar "reconectando…" para sempre.
     onResponseError: operatorSessionOnError,
