@@ -69,14 +69,21 @@ def test_inactive_and_missing_do_not_block_unrelated_cash(inventory):
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("entry", ["order", "kds", "fulfillment"])
+@pytest.mark.parametrize("entry", ["order", "kds", "fulfillment", "courier"])
 def test_alternative_dispatch_cannot_bypass_allocation(inventory, entry):
     pending = order("BYPASS")
     with pytest.raises(ValueError, match="maquininha"):
         if entry == "order":
             pending.transition_status("dispatched")
         elif entry == "kds":
+            assert "Gestor" in kds.expedition_block_reason(pending, action="dispatch")
             kds.expedition_action(pending, action="dispatch", actor="lab")
+        elif entry == "courier":
+            from shopman.shop.services import courier
+
+            pending.data["courier"] = {"id_mch": "synthetic-ride", "status": "E"}
+            pending.save(update_fields=("data",))
+            courier.recover_local_status(pending, ride_id="synthetic-ride")
         else:
             fulfillment = Fulfillment.objects.create(order=pending, status="in_progress")
             fulfillment.status = "dispatched"

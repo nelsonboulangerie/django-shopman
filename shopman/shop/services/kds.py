@@ -608,6 +608,11 @@ def expedition_block_reason(order, *, action: str) -> str:
         return operator_orders.advance_block_message(
             operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED
         )
+    if action == "dispatch":
+        from shopman.backstage.services.delivery_devices import needs_card_machine
+
+        if needs_card_machine(order):
+            return "Abra este pedido no Gestor e confirme a maquininha no despacho."
     return ""
 
 
