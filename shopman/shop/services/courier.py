@@ -248,8 +248,26 @@ def request_dispatch(order, *, actor: str) -> Directive | None:
     return directive
 
 
-def redispatch(order, *, actor: str) -> Directive:
+def dispatch_revision(order) -> str:
+    """Observed destination, ride and order facts for the local dispatch command."""
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    return mutation_fingerprint({"version": 1, "order": order.ref, "status": order.status,
+        "channel": order.channel_ref, "total_q": order.total_q, "snapshot": order.snapshot,
+        "data": {key: (order.data or {}).get(key) for key in (
+            "fulfillment_type", "delivery_method", "delivery_address_structured",
+            "delivery_address", "recipient", "customer", "customer_phone", "payment", "courier",
+        )}})
+
+
+@transaction.atomic
+def redispatch(order, *, actor: str, expected_revision: str | None = None) -> Directive:
     """Re-despacho manual pelo operador após corrida N/C ou erro terminal."""
+    from shopman.shop.services.operator_orders import OrderStateConflict
+
+    order = Order.objects.select_for_update().get(pk=order.pk)
+    if expected_revision is not None and dispatch_revision(order) != expected_revision:
+        raise OrderStateConflict("O pedido ou a corrida mudou. Confira o contexto antes de despachar.")
     ensure_dispatch_resolved(order)
     if get_adapter("courier") is None:
         raise ValueError("Nenhum adapter de courier configurado.")

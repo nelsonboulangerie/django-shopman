@@ -1,0 +1,37 @@
+
+> test
+> vitest run
+
+
+ RUN  v4.1.6 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt
+
+ ❯ |unit| tests/composables/useOrderDetail.test.ts (16 tests | 1 failed) 18ms
+     × despacho com resposta perdida consulta recibo e informa somente fila 10ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| tests/composables/useOrderDetail.test.ts > useOrderDetail > despacho com resposta perdida consulta recibo e informa somente fila
+AssertionError: expected undefined to be 'GET' // Object.is equality
+
+- Expected:
+"GET"
+
++ Received:
+undefined
+
+ ❯ tests/composables/useOrderDetail.test.ts:30:52
+     28|     expect(options.body.base_revision).toBe(action.payload_schema.base…
+     29|     expect(options.headers["Idempotency-Key"]).toBeTruthy();
+     30|     expect(env.fetchMock.mock.calls[1]![1].method).toBe("GET");
+       |                                                    ^
+     31|     expect(env.sonner.success).toHaveBeenCalledWith("Solicitação de en…
+     32|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 19 passed (20)
+      Tests  1 failed | 270 passed (271)
+   Start at  00:51:00
+   Duration  3.07s (transform 2.81s, setup 0ms, import 6.74s, tests 2.17s, environment 4.98s)
+

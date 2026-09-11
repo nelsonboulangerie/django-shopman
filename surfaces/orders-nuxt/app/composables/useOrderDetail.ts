@@ -61,7 +61,7 @@ export function useOrderDetail(orderRef: string) {
     busy.value = true;
     mutationError.value = "";
     try {
-      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "comment", "settle-delivery-cash", "requeue-fiscal", "resend-payment-link"].includes(action)) {
+      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "comment", "settle-delivery-cash", "requeue-fiscal", "resend-payment-link", "courier-dispatch"].includes(action)) {
         await intentions.execute(orderRef, action, order.value?.actions?.find((item) => item.ref === action), body ?? {}, approval);
       } else {
         await $fetch(`/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/${action}/`, {
@@ -165,7 +165,7 @@ export function useOrderDetail(orderRef: string) {
   // ride, and "just quote" (stores the estimate; refresh shows it in the panel).
   async function courierDispatch(): Promise<boolean> {
     const ok = await act("courier-dispatch");
-    if (ok) useSonner.success("Corrida solicitada.");
+    if (ok) useSonner.success("Solicitação de entregador enfileirada.");
     return ok;
   }
 

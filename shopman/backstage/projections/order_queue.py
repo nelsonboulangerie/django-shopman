@@ -538,6 +538,16 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         confirmation={"required": True, "manager_approval": cancel_capability["cancel_requires_approval"]},
     )
     extra_actions = [cancel_action, *_cash_settlement_actions(order, user, None)]
+    courier_block = _courier_block(order)
+    if courier_block:
+        from shopman.shop.services.courier import dispatch_revision
+
+        extra_actions.append(Action(ref="courier-dispatch", kind="mutation", label="Solicitar entregador",
+            enabled=authorized and courier_block["can_dispatch"],
+            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+                "" if courier_block["can_dispatch"] else "Confira o estado do pedido e da corrida antes de despachar."),
+            method="POST", idempotency="required",
+            payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
     if fiscal_status == "failed":
         from shopman.backstage.services.orders import fiscal_revision
 
@@ -595,7 +605,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         cancellation_presets=_cancellation_presets(),
         kitchen_note_tags=_kitchen_note_tags(),
         customer_profile=_customer_profile(order),
-        courier=_courier_block(order),
+        courier=courier_block,
         **_courier_change_fields(order),
         **_equipment_fields(order),
         **_payment_link_fields(order, method),

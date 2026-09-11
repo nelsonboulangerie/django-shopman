@@ -1609,9 +1609,6 @@ class _OrderActionBase(APIView):
             mutation_fingerprint,
         )
 
-        order, err = self._get_order(ref)
-        if err:
-            return err
         operation = getattr(self, "intention_operation", "")
         key = str(request.query_params.get("idempotency_key") or "")
         if not operation or not key or len(key) > 128:
@@ -1623,7 +1620,7 @@ class _OrderActionBase(APIView):
             result = None
         if result is None:
             return Response({"outcome": "unknown", "intention": key}, status=202)
-        return Response({**result.response_body, "replayed": True, "order": projection_data(build_operator_order(order, user=request.user))}, status=result.response_code)
+        return Response({**result.response_body, "replayed": True}, status=result.response_code)
 
     def _get_order(self, ref: str):
         order = orders_service.find_order(ref)
@@ -2451,15 +2448,18 @@ class POSResendPaymentLinkView(APIView):
     ),
 )
 class OrderCourierDispatchView(_OrderActionBase):
+    intention_operation = "courier-dispatch"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        try:
-            orders_service.courier_dispatch(order, actor=_actor(request))
-        except OrderError as exc:
-            return Response({"detail": str(exc) or "Falha ao despachar."}, status=400)
-        return Response({"ok": True, "ref": ref})
+
+        def enqueue(base):
+            task = orders_service.courier_dispatch(order, actor=_actor(request), expected_revision=base)
+            return {"directive_id": task.pk, "status": task.status}
+
+        return self._context_response(request, order, self.intention_operation, {}, enqueue)
 
 
 @extend_schema_view(

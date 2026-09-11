@@ -283,12 +283,14 @@ def recent_history(*, limit: int = 20):
     return operator_orders.recent_history(limit=limit)
 
 
-def courier_dispatch(order, *, actor: str):
+def courier_dispatch(order, *, actor: str, expected_revision=None):
     """Despacha (ou re-despacha) a corrida de entrega externa."""
     from shopman.shop.services import courier
 
     try:
-        return courier.redispatch(order, actor=actor)
+        return courier.redispatch(order, actor=actor, expected_revision=expected_revision)
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
     except ValueError as exc:
         raise OrderError(str(exc) or "Não foi possível despachar a corrida.") from exc
 

@@ -16,6 +16,21 @@ describe("useOrderDetail", () => {
     env.fetchMock.mockResolvedValue({ outcome: "applied" });
   });
 
+  it("despacho com resposta perdida consulta recibo e informa somente fila", async () => {
+    const action = { ...fixtureActions({ can_confirm: true })[0]!, ref: "courier-dispatch" };
+    env.fetchData.value = { order: { ref: "COURIER-LOST", actions: [action] } };
+    env.fetchMock.mockRejectedValueOnce(new Error("response lost"));
+    env.fetchMock.mockResolvedValueOnce({ outcome: "applied", status: "queued", directive_id: 7 });
+    expect(await useOrderDetail("COURIER-LOST").courierDispatch()).toBe(true);
+    expect(env.fetchMock).toHaveBeenCalledTimes(2);
+    const [url, options] = env.fetchMock.mock.calls[0]!;
+    expect(String(url)).toContain("COURIER-LOST/courier-dispatch/");
+    expect(options.body.base_revision).toBe(action.payload_schema.base_revision);
+    expect(options.headers["Idempotency-Key"]).toBeTruthy();
+    expect((env.fetchMock.mock.calls[1]![1].method ?? "GET")).toBe("GET");
+    expect(env.sonner.success).toHaveBeenCalledWith("Solicitação de entregador enfileirada.");
+  });
+
   it("deriva order da projection; null quando vazio", () => {
     env.fetchData.value = { order: { ref: "WEB-1", status: "accepted" } };
     expect(useOrderDetail("WEB-1").order.value).toEqual({ ref: "WEB-1", status: "accepted" });

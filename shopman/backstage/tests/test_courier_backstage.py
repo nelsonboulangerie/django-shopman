@@ -146,7 +146,11 @@ def test_detail_active_ride_shows_driver_and_labels(client, operator, shop):
 def test_courier_dispatch_action_queues_directive(client, operator, shop):
     order = _delivery_order()
     client.force_login(operator)
-    resp = client.post(reverse("api-backstage-order-courier-dispatch", args=[order.ref]))
+    from shopman.shop.services.courier import dispatch_revision
+
+    resp = client.post(reverse("api-backstage-order-courier-dispatch", args=[order.ref]),
+        {"expected_actor_id": operator.pk, "base_revision": dispatch_revision(order)},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY="dispatch-test")
     assert resp.status_code == 200
     assert Directive.objects.filter(topic=COURIER_DISPATCH, payload__order_ref=order.ref).exists()
 
@@ -155,7 +159,11 @@ def test_courier_dispatch_action_queues_directive(client, operator, shop):
 def test_courier_dispatch_blocked_for_wrong_status(client, operator, shop):
     order = _delivery_order(status=Order.Status.PREPARING)
     client.force_login(operator)
-    resp = client.post(reverse("api-backstage-order-courier-dispatch", args=[order.ref]))
+    from shopman.shop.services.courier import dispatch_revision
+
+    resp = client.post(reverse("api-backstage-order-courier-dispatch", args=[order.ref]),
+        {"expected_actor_id": operator.pk, "base_revision": dispatch_revision(order)},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY="dispatch-test")
     assert resp.status_code == 400
     assert "pronto" in resp.json()["detail"]
 
