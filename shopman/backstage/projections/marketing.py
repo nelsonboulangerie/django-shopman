@@ -84,6 +84,7 @@ class AnnouncementProjection:
     hashtags: tuple[str, ...]
     link: str
     platforms: tuple[str, ...]
+    platform_content: dict
     audience: dict
     audience_total: int
     platform_results: tuple[PlatformResultProjection, ...]
@@ -483,6 +484,7 @@ def build_announcement(announcement: Announcement, *, now=None) -> AnnouncementP
         hashtags=tuple(content.get("hashtags") or ()),
         link=marketing_url_policy.safe_browser_customer_link(content.get("link")),
         platforms=tuple(announcement.platforms or ()),
+        platform_content=dict(announcement.platform_content or {}),
         audience=dict(audience),
         audience_total=int(audience.get("total") or 0),
         platform_results=_platform_results(announcement),

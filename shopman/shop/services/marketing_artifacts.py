@@ -19,6 +19,18 @@ from shopman.shop.services.marketing_contracts import (
 SCHEMA_VERSION = 3
 RESOLVED_ARTIFACT_SCHEMA_VERSION = 2
 SUPPORTED_PLATFORMS = frozenset({"facebook", "google_business", "instagram", "whatsapp"})
+PUBLICATION_FORMATS: dict[str, frozenset[str]] = {
+    "instagram": frozenset({"story", "feed"}),
+    "facebook": frozenset({"feed"}),
+    "google_business": frozenset({"standard"}),
+}
+DEFAULT_PUBLICATION_FORMATS = {
+    # Product decision (2026-09-11): urgent/FOMO content belongs in Stories.
+    # Feed remains an explicit choice and is never a fallback.
+    "instagram": "story",
+    "facebook": "feed",
+    "google_business": "standard",
+}
 _HASH = re.compile(r"^[a-f0-9]{64}$")
 _FIELD = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _FLOW_REF = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
@@ -154,13 +166,19 @@ def resolve_dispatch_artifact(
                 code="invalid_flow_catalog_hash",
                 detail="O hash do catálogo de fluxos é inválido.",
             )
+    provider_fields = _provider_fields(variant, platform=normalized_platform)
+    _validate_publication_contract(
+        platform=normalized_platform,
+        provider_fields=dict(provider_fields),
+        image_url=image_url,
+    )
     return ResolvedDispatchArtifact(
         platform=normalized_platform,
         body=body,
         hashtags=hashtags,
         link=link,
         image_url=image_url,
-        provider_fields=_provider_fields(variant, platform=normalized_platform),
+        provider_fields=provider_fields,
         content_version=content_version,
         facts_as_of=normalized_facts_as_of,
         facts_hash=normalized_facts_hash,
@@ -168,6 +186,68 @@ def resolve_dispatch_artifact(
         flow_version=flow_version if has_flow_binding else 0,
         flow_catalog_hash=normalized_catalog_hash,
     )
+
+
+def normalize_platform_content(
+    *,
+    platforms: Sequence[str],
+    platform_content: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Seal an explicit publication format into mutable preview/approval input.
+
+    This is called before approval. Old immutable artifacts are never upgraded
+    on read: if they do not name a format, a live adapter refuses them instead
+    of guessing a new consequence.
+    """
+
+    variants = _mapping(platform_content, field="platform_content")
+    normalized: dict[str, dict[str, Any]] = {}
+    for raw_platform, raw_variant in variants.items():
+        platform = str(raw_platform)
+        normalized[platform] = _mapping(
+            raw_variant,
+            field=f"platform_content.{platform}",
+        )
+
+    for platform in platforms:
+        if platform not in PUBLICATION_FORMATS:
+            continue
+        variant = normalized.setdefault(platform, {})
+        legacy = str(variant.get("post_type") or "").strip().lower()
+        explicit = str(variant.get("publication_format") or "").strip().lower()
+        legacy_format = {
+            "stories": "story",
+            "story": "story",
+            "feed": "feed",
+            "standard": "standard",
+        }.get(legacy, "")
+        if legacy and not legacy_format:
+            raise MarketingContractError(
+                code="publication_format_invalid",
+                detail="O formato antigo não corresponde a uma publicação suportada.",
+                field_errors={
+                    f"platform_content.{platform}.post_type": (
+                        "Escolha um formato disponível.",
+                    )
+                },
+            )
+        if explicit and legacy_format and explicit != legacy_format:
+            raise MarketingContractError(
+                code="publication_format_conflict",
+                detail="A variante contém dois formatos de publicação diferentes.",
+                field_errors={
+                    f"platform_content.{platform}.publication_format": (
+                        "Escolha um único formato.",
+                    )
+                },
+            )
+        variant["publication_format"] = (
+            explicit or legacy_format or DEFAULT_PUBLICATION_FORMATS[platform]
+        )
+        # ``post_type`` was an unimplemented draft field. Once interpreted, it
+        # must not survive beside the canonical field and create ambiguity.
+        variant.pop("post_type", None)
+    return normalized
 
 
 def resolve_all_dispatch_artifacts(
@@ -422,6 +502,42 @@ def _provider_fields(
             _assert_resolved(value, field=f"platform_content.{platform}.{key}")
         fields.append((key, value))
     return tuple(sorted(fields))
+
+
+def _validate_publication_contract(
+    *,
+    platform: str,
+    provider_fields: Mapping[str, Any],
+    image_url: str,
+) -> None:
+    """Validate explicit formats while keeping old sealed artifacts readable."""
+
+    allowed = PUBLICATION_FORMATS.get(platform)
+    if allowed is None:
+        return
+    raw_format = provider_fields.get("publication_format")
+    if raw_format in (None, ""):
+        # Compatibility only. Live adapters fail closed on this absence; new
+        # preview/approval input always passes through normalize_platform_content.
+        return
+    publication_format = str(raw_format).strip().lower()
+    field = f"platform_content.{platform}.publication_format"
+    if publication_format not in allowed:
+        raise MarketingContractError(
+            code="publication_format_invalid",
+            detail="O formato de publicação não é aceito por esta plataforma.",
+            field_errors={field: ("Escolha um formato disponível.",)},
+        )
+    if platform == "instagram" and not image_url:
+        raise MarketingContractError(
+            code="instagram_media_required",
+            detail="O Instagram precisa de uma imagem pública para publicar.",
+            field_errors={
+                "content.image_url": (
+                    "Escolha uma imagem para o Story ou Feed do Instagram.",
+                )
+            },
+        )
 
 
 def _assert_resolved(value: str, *, field: str) -> None:

@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -73,6 +74,7 @@ def claim_due(
     now: datetime | None = None,
     limit: int = DEFAULT_BATCH_SIZE,
     lease_seconds: int = DEFAULT_LEASE_SECONDS,
+    outbox_refs: Iterable[str] | None = None,
 ) -> tuple[MarketingOutbox, ...]:
     """Claim committed, due rows in a short transaction.
 
@@ -97,6 +99,11 @@ def claim_due(
             state=MarketingOutbox.State.PENDING,
             available_at__lte=clock,
         ).order_by("available_at", "pk")
+        if outbox_refs is not None:
+            exact_refs = tuple(dict.fromkeys(str(value) for value in outbox_refs))
+            if not exact_refs:
+                return ()
+            query = query.filter(ref__in=exact_refs)
         query = _select_for_update(query)
         rows = list(query[:safe_limit])
         if not rows:
@@ -217,6 +224,7 @@ def process_due(
     now: datetime | None = None,
     limit: int = DEFAULT_BATCH_SIZE,
     lease_seconds: int = DEFAULT_LEASE_SECONDS,
+    outbox_refs: Iterable[str] | None = None,
 ) -> ProcessReport:
     """Claim a bounded batch and isolate every row's hand-off failure."""
 
@@ -226,6 +234,7 @@ def process_due(
         now=clock,
         limit=limit,
         lease_seconds=lease_seconds,
+        outbox_refs=outbox_refs,
     )
     dispatched = requeued = failed = 0
     oldest_due_age = max(

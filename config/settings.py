@@ -117,12 +117,28 @@ SHOPMAN_MARKETING_SIMULATION_ENABLED = _env_bool(
     "SHOPMAN_MARKETING_SIMULATION_ENABLED",
     False,
 )
+# One-shot public publication canaries are deliberately independent from the
+# batch consumers.  The management command still requires an exact outbox ref,
+# its platform switch and an explicit consequence phrase before provider I/O.
+SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED",
+    False,
+)
 # Local rehearsal affordances remain inert unless the final delivery adapter is
 # itself a hermetic simulator. Production must never gain either capability by
 # setting one flag in isolation.
 SHOPMAN_MARKETING_SIMULATION_IGNORE_QUIET_HOURS = False
 SHOPMAN_MARKETING_SIMULATION_FLOWS: tuple[tuple[str, str], ...] = ()
 SHOPMAN_MARKETING_DELIVERY_ADAPTERS: dict[str, str | None] = {}
+SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED", False
+)
+SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED", False
+)
+SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED", False
+)
 SHOPMAN_MARKETING_TARGET_HMAC_KEY = os.environ.get(
     "SHOPMAN_MARKETING_TARGET_HMAC_KEY",
     "",
@@ -618,7 +634,37 @@ SHOPMAN_MARKETING_META = {
     "page_access_token": os.environ.get("META_PAGE_ACCESS_TOKEN", "").strip(),
     "api_version": SHOPMAN_META["api_version"],
     "api_base": SHOPMAN_META["api_base"],
+    "timeout": _env_int("META_MARKETING_TIMEOUT", 30),
 }
+
+# Public Google Business Profile posts. The OAuth token needs the
+# business.manage scope; all three values plus the independent switch are
+# required before the adapter reports ready.
+SHOPMAN_MARKETING_GOOGLE = {
+    "access_token": os.environ.get("GOOGLE_BUSINESS_ACCESS_TOKEN", "").strip(),
+    "account_id": os.environ.get("GOOGLE_BUSINESS_ACCOUNT_ID", "").strip(),
+    "location_id": os.environ.get("GOOGLE_BUSINESS_LOCATION_ID", "").strip(),
+    "api_base": os.environ.get(
+        "GOOGLE_BUSINESS_API_BASE", "https://mybusiness.googleapis.com"
+    ).strip(),
+    "api_version": os.environ.get("GOOGLE_BUSINESS_API_VERSION", "v4").strip(),
+    "timeout": _env_int("GOOGLE_BUSINESS_TIMEOUT", 30),
+}
+
+# Register only explicitly enabled publication lanes. Independent consumer
+# switches above still gate whether queued work can reach these adapters.
+if SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED:
+    SHOPMAN_MARKETING_DELIVERY_ADAPTERS["instagram"] = (
+        "shopman.shop.adapters.marketing_delivery_instagram"
+    )
+if SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED:
+    SHOPMAN_MARKETING_DELIVERY_ADAPTERS["facebook"] = (
+        "shopman.shop.adapters.marketing_delivery_facebook"
+    )
+if SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED:
+    SHOPMAN_MARKETING_DELIVERY_ADAPTERS["google_business"] = (
+        "shopman.shop.adapters.marketing_delivery_google"
+    )
 
 # ── Machine (courier — despacho de entregadores) ───────────────────
 # API da central de entregas (TaOn roda sobre a Machine/Gaudium). O adapter só

@@ -1066,6 +1066,12 @@ def preview_platforms(
         variables=variables,
         platforms=normalized_platforms,
     )
+    from shopman.shop.services.marketing_artifacts import normalize_platform_content
+
+    rendered_variants = normalize_platform_content(
+        platforms=normalized_platforms,
+        platform_content=rendered_variants,
+    )
     flow_binding = (
         verified_whatsapp_flow_binding()
         if "whatsapp" in normalized_platforms
@@ -1151,10 +1157,16 @@ def _platform_content(
 
     variables = content.get("variables")
     variables = variables if isinstance(variables, dict) else {}
-    return _render_platform_variants(
+    rendered = _render_platform_variants(
         template.platform_variants or {},
         variables=variables,
         platforms=platforms,
+    )
+    from shopman.shop.services.marketing_artifacts import normalize_platform_content
+
+    return normalize_platform_content(
+        platforms=tuple(platforms or rendered),
+        platform_content=rendered,
     )
 
 
@@ -1406,7 +1418,17 @@ def _image_url(template, context: dict) -> str:
     if source == "none":
         return ""
     if source == "custom":
-        return str((template.platform_variants or {}).get("image_url") or "")
+        variants = template.platform_variants or {}
+        # Compatibility for the old, undocumented top-level shape plus the
+        # platform-scoped shape written by the operator UI.
+        legacy = variants.get("image_url") if isinstance(variants, dict) else ""
+        if legacy:
+            return str(legacy)
+        for platform in ("instagram", "facebook", "google_business", "whatsapp"):
+            variant = variants.get(platform, {}) if isinstance(variants, dict) else {}
+            if isinstance(variant, dict) and variant.get("image_url"):
+                return str(variant["image_url"])
+        return ""
     product = _product(context.get("sku", ""))
     return str(getattr(product, "image_url", "") or "")
 

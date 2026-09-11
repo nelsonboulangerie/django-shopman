@@ -26,11 +26,20 @@ from shopman.shop.services import delivery_readiness as dr
 pytestmark = pytest.mark.django_db
 
 
+@pytest.fixture(autouse=True)
+def enabled_delivery_pipeline(settings):
+    settings.SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED = True
+    settings.SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED = True
+
+
 @pytest.fixture
 def no_transport(monkeypatch):
     """Sem transporte de mensagem direta e sem adapter de publicação."""
     monkeypatch.setattr("shopman.shop.handlers.campaign._whatsapp_backend", lambda: None)
-    monkeypatch.setattr("shopman.shop.handlers.campaign._posting_adapter", lambda p: None)
+    monkeypatch.setattr(
+        "shopman.shop.services.marketing_delivery_runtime.delivery_provider",
+        lambda platform, require_available=False: None,
+    )
 
 
 @pytest.fixture
@@ -85,6 +94,44 @@ def test_each_platform_is_classified_by_how_it_delivers(no_transport):
     assert states["whatsapp"].kind == dr.DIRECT_MESSAGE
 
 
+def test_disabled_delivery_worker_blocks_before_provider_probe(
+    settings, monkeypatch
+):
+    settings.SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED = False
+    provider = type("A", (), {"is_available": staticmethod(lambda: True)})()
+    monkeypatch.setattr(
+        "shopman.shop.services.marketing_delivery_runtime.delivery_provider",
+        lambda platform, require_available=False: provider,
+    )
+
+    (state,) = dr.readiness_for(["instagram"])
+
+    assert state.state == "blocked"
+    assert state.reason_code == "delivery_worker_disabled"
+    assert "pausado" in state.reason
+
+
+def test_exact_publication_canary_is_ready_without_unlocking_whatsapp(
+    settings, monkeypatch
+):
+    settings.SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED = False
+    settings.SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED = False
+    settings.SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED = True
+    provider = type("A", (), {"is_available": staticmethod(lambda: True)})()
+    monkeypatch.setattr(
+        "shopman.shop.services.marketing_delivery_runtime.delivery_provider",
+        lambda platform, require_available=False: provider,
+    )
+
+    states = _by_platform(dr.readiness_for(["instagram", "whatsapp"]))
+
+    assert states["instagram"].state == "ready"
+    assert states["instagram"].reason_code == "publication_canary_ready"
+    assert "consequência pública exata" in states["instagram"].limitation
+    assert states["whatsapp"].state == "blocked"
+    assert states["whatsapp"].reason_code == "delivery_handoff_disabled"
+
+
 def test_the_store_tv_is_no_longer_a_platform(no_transport):
     """⚠️ A TV saiu, e por isso é tratada como desconhecida — não como pronta.
 
@@ -113,7 +160,10 @@ def test_publication_does_not_inherit_whatsapp_rules(with_transport, monkeypatch
     sentido nenhum, e é exatamente o erro que esta função corrige.
     """
     adapter = type("A", (), {"is_available": staticmethod(lambda *a, **k: True)})()
-    monkeypatch.setattr("shopman.shop.handlers.campaign._posting_adapter", lambda p: adapter)
+    monkeypatch.setattr(
+        "shopman.shop.services.marketing_delivery_runtime.delivery_provider",
+        lambda platform, require_available=False: adapter,
+    )
 
     (state,) = dr.readiness_for(["instagram"])
     assert state.ready is True
@@ -122,7 +172,10 @@ def test_publication_does_not_inherit_whatsapp_rules(with_transport, monkeypatch
 
 def test_publication_with_an_adapter_but_no_credential_is_blocked(monkeypatch):
     adapter = type("A", (), {"is_available": staticmethod(lambda *a, **k: False)})()
-    monkeypatch.setattr("shopman.shop.handlers.campaign._posting_adapter", lambda p: adapter)
+    monkeypatch.setattr(
+        "shopman.shop.services.marketing_delivery_runtime.delivery_provider",
+        lambda platform, require_available=False: adapter,
+    )
 
     (state,) = dr.readiness_for(["instagram"])
     assert state.ready is False
@@ -306,7 +359,10 @@ def test_the_board_separates_blocking_from_limiting(with_transport):
     from shopman.backstage.projections import marketing as mp
     from shopman.shop.models import AnnouncementTemplate, Campaign, Trigger
 
-    with_transport.setattr("shopman.shop.handlers.campaign._posting_adapter", lambda p: None)
+    with_transport.setattr(
+        "shopman.shop.services.marketing_delivery_runtime.delivery_provider",
+        lambda platform, require_available=False: None,
+    )
     template = AnnouncementTemplate.objects.create(name="T", body="oi")
     Campaign.objects.create(
         name="Tudo", trigger=Trigger.MANUAL, template=template,

@@ -26,6 +26,7 @@ não chama provider e não exibe PII. O gate sintético inteiro é um comando:
 - [Conteúdo, oferta, mídia ou link incorreto](marketing-bad-content-or-link.md)
 - [Cancelamento, duplicidade e reconciliação](marketing-cancel-and-reconcile.md)
 - [Rollback e rollout interrompido](marketing-rollout-rollback.md)
+- [Canário unitário de publicação pública](../operations/marketing-publication-canary.md)
 
 Execução automatizada não fecha sozinha o gate: antes do piloto, um operador que
 não implementou deve percorrer as oito decisões e assinar a evidência do MKT-044.
