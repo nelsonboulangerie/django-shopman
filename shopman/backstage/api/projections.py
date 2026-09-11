@@ -18,6 +18,7 @@ from shopman.backstage.api.production_freshness import (
     signed_action_proof,
     signed_source_revision,
 )
+from shopman.shop.middleware import API_VERSION
 
 _PRODUCTION_META_FIELDS = {
     "generated_at",
@@ -52,6 +53,8 @@ def projection_data(
     freshness_context: tuple[str, str, str] | None = None,
 ) -> Any:
     """Convert projection dataclasses into JSON-safe primitives."""
+    if type(value) in (str, int, float, bool, type(None)):
+        return value
     if is_dataclass(value):
         data = {field.name: projection_data(getattr(value, field.name)) for field in fields(value)}
         if _PRODUCTION_META_FIELDS <= data.keys():
@@ -119,4 +122,4 @@ def projection_data(
 
 def read_data(**payload: Any) -> dict:
     """Metadata of a useful read, separate from command preconditions and SSE."""
-    return {**payload, "generated_at": timezone.now().isoformat(), "contract_version": 1}
+    return {**payload, "generated_at": timezone.now().isoformat(), "contract_version": int(API_VERSION)}

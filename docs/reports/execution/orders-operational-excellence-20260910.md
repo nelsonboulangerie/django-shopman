@@ -1189,3 +1189,32 @@ DATABASE_CONN_MAX_AGE=0 para seu PostgreSQL direto, conforme guia existente.
 Migração: nenhuma. Rollback: preservar intenção e backend seguro; UI antiga
 perde os drafts ao fechar. G02 decide custódia real; G05/G08 continuam pendentes
 para persistência/retenção. Preparação técnica não autoriza piloto nem rollout.
+
+### WP07 — custo por leitura reduzido, sem mudar contrato ou esconder o budget
+
+Perfil aquecido em 4b265ca86 mostrou 1.000 resoluções do catálogo de textos e
+63.413 visitas do serializador na fila rica de 500 pedidos. O JSON primitivo
+passava por testes de dataclass/Enum/Mapping/Sequence desnecessários. Teste
+anterior: rótulo repetido 20 vezes falhou no budget de uma resolução por chave;
+um controle de Enum/Decimal/data passou.
+
+Mudança mínima: fast path apenas para **tipos exatos** JSON primitivos (subclasses
+como StrEnum/IntEnum continuam convertidas), e rótulos resolvidos uma vez por
+chave dentro de cada projeção. Não há cache entre requests, nova regra de copy
+ou campo omitido. A versão de leitura reutiliza API_VERSION já existente.
+
+Comparação com relógio fixado: JSON completo antes/depois idêntico byte a byte
+(1.798.532 bytes com espaçamento de json.dumps do ensaio). Perfil diagnóstico:
+2.234.534→934.753 chamadas, serialização 214→56 ms; perfis não são p95 e foram
+usados para localizar custo. 137 testes PostgreSQL + 13 subtests passaram,
+incluindo produção/freshness para proteger o serializador compartilhado; Ruff
+passou. Reprodutor e evidências em `orders-20260910/read_work/`.
+
+Reensaio HTTP de 500 pedidos, 20 amostras por endpoint/concorrência: fila backend
+p95 229,7/377,4/1599,1 ms (1/2/10 clientes). Antes: 434,5/478,0/3180,3 ms.
+BFF p95 266,1/433,5/1903,5 ms. A melhora local **não satisfaz 500 ms com dez
+clientes** nem substitui reensaio de renderização/dispositivo/rede piloto.
+WP07/T não encerrados; G06 permanece pendente. Não se aumentou a meta.
+
+Migração: nenhuma. Rollback retorna apenas resolução/serialização anterior,
+sem tocar livros/recibos. Nenhum dado, ação, permissão ou confirmação retirado.

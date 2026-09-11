@@ -1,0 +1,29 @@
+F.                                                                       [100%]
+=================================== FAILURES ===================================
+___ test_queue_resolves_each_label_once_per_read_without_retaining_old_copy ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x129818320>
+
+    @pytest.mark.django_db
+    def test_queue_resolves_each_label_once_per_read_without_retaining_old_copy(monkeypatch):
+        Order.objects.bulk_create([Order(ref=f"LABEL-{i}", status="accepted", data={"payment": {"method": "cash"}}) for i in range(20)])
+        status = Mock(return_value="Nome configurado")
+        method = Mock(return_value="Meio configurado")
+        monkeypatch.setattr(order_queue, "order_status_label", status)
+        monkeypatch.setattr(order_queue, "payment_method_label", method)
+        first = order_queue.build_two_zone_queue()
+        assert len(first.prep) == 20
+        assert {card.status_label for card in first.prep} == {"Nome configurado"}
+        assert {card.payment_method_label for card in first.prep} == {"Meio configurado"}
+>       assert status.call_count == 1
+E       AssertionError: assert 20 == 1
+E        +  where 20 = <Mock id='4995730368'>.call_count
+
+shopman/backstage/tests/test_order_queue_read_work.py:26: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-11 02:10:31,761 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-11 02:10:32,141 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-11 02:10:33,342 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_order_queue_read_work.py::test_queue_resolves_each_label_once_per_read_without_retaining_old_copy
+1 failed, 1 passed in 5.81s

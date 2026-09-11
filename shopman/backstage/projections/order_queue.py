@@ -977,6 +977,11 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     payment_reads = payment_svc.read_payments_for(all_orders)
     channel_configs = _channel_configs_for(all_orders)
     cash_context = _cash_settlement_context(all_orders)
+    # Rótulos canônicos resolvidos uma vez por chave nesta leitura, sem cache
+    # entre requests: uma edição de copy aparece na próxima projeção.
+    status_labels = {status: order_status_label(status) for status in {order.status for order in all_orders}}
+    methods = {(order.data.get("payment") or {}).get("method", "") for order in all_orders}
+    method_labels = {method: payment_method_label(method) for method in methods}
     new_orders = [o for o in all_orders if o.status == "new"]
     deadlines = _confirmation_deadlines([o.ref for o in new_orders])
     # Uma consulta ao livro para todos os cards: o troco que saiu e voltou.
@@ -988,12 +993,12 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     # mantém o prazo de confirmação (auto-confirm) e o botão de aceitar; o
     # despertador (preorder.activate) devolve o pedido ao fluxo na data (WP-D).
     intake = tuple(
-        _build_card(o, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
+        _build_card(o, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
         for o in new_orders
         if not _is_future_preorder(o)
     )
     prep_orders = [o for o in all_orders if o.status in ("accepted", "preparing")]
-    prep = tuple(_build_card(o, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in prep_orders if not _is_future_preorder(o))
+    prep = tuple(_build_card(o, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in prep_orders if not _is_future_preorder(o))
     # Só estados pré-fulfillment viram "Agendados"; ready/dispatched/delivered
     # seguem nas colunas de expedição mesmo que a data combinada seja futura.
     future_preorders = [
@@ -1001,16 +1006,16 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         if o.status in ("new", "accepted", "preparing") and _is_future_preorder(o)
     ]
     preorders = tuple(
-        _build_card(o, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
+        _build_card(o, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, deadline=deadlines.get(o.ref))
         for o in sorted(future_preorders, key=lambda o: (get_commitment_date(o), o.created_at))
     )
     preparing_count = len(prep)
 
     ready_orders = [o for o in all_orders if o.status == "ready"]
-    expedition_pickup = tuple(_build_card(o, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user) for o in ready_orders if not _is_delivery(o))
-    expedition_delivery = tuple(_build_card(o, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in ready_orders if _is_delivery(o))
+    expedition_pickup = tuple(_build_card(o, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user) for o in ready_orders if not _is_delivery(o))
+    expedition_delivery = tuple(_build_card(o, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change) for o in ready_orders if _is_delivery(o))
     expedition_delivery_transit = tuple(
-        _build_card(o, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change)
+        _build_card(o, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user, courier_change=courier_change)
         for o in all_orders
         if o.status in ("dispatched", "delivered")
     )
@@ -1132,6 +1137,8 @@ def _build_card(
     payment_reads=None,
     channel_config=None,
     cash_context=None,
+    status_labels=None,
+    method_labels=None,
 ) -> OrderCardProjection:
     now = timezone.now()
     elapsed = (now - order.created_at).total_seconds()
@@ -1169,7 +1176,7 @@ def _build_card(
     payment_data = order.data.get("payment", {})
     method = payment_data.get("method", "")
     payment_status = (payment_svc.get_payment_status(order, payment_reads=payment_reads) or "")
-    payment_method_label = _payment_method_label(method, payment_data)
+    payment_method_label = _payment_method_label(method, payment_data, labels=method_labels)
     fiscal_status, fiscal_status_label, _fiscal_links = _fiscal_status(order)
     commitment = get_commitment_date(order)
     is_preorder = commitment is not None and commitment > timezone.localdate()
@@ -1181,7 +1188,7 @@ def _build_card(
         status=order.status,
         actions=(*operator_orders.operational_actions(order, user=user, waitlist_state=batch_state, payment_reads=payment_reads, channel_config=channel_config), *_cash_settlement_actions(order, user, cash_context)),
         revisions={field: operator_orders.operational_revision(order, field=field) for field in ("advance", "kitchen_note", "assignment")},
-        status_label=order_status_label(order.status),
+        status_label=status_labels[order.status] if status_labels is not None else order_status_label(order.status),
         status_color=status_color(order.status),
         channel_ref=order.channel_ref or "",
         channel_icon=CHANNEL_ICONS.get(order.channel_ref or "", _DEFAULT_CHANNEL_ICON),
@@ -1464,12 +1471,12 @@ def _payment_status(order: Order) -> str:
     return payment_svc.get_payment_status(order) or ""
 
 
-def _payment_method_label(method: str, payment_data: dict) -> str:
+def _payment_method_label(method: str, payment_data: dict, *, labels: dict | None = None) -> str:
     if _has_no_payment_info(payment_data):
         # Pill explícito em vez de rótulo vazio (que sumiria o pill). Ver
         # _has_no_payment_info: card mudo se confunde com pedido pago.
         return "Pagamento não informado"
-    label = payment_method_label(method)
+    label = labels[method] if labels is not None else payment_method_label(method)
     if payment_data.get("collection") == "on_delivery":
         if payment_data.get("cod_settled_at"):
             return f"{label} entregue no caixa"
