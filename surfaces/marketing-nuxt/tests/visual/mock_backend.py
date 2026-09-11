@@ -19,6 +19,14 @@ from urllib.parse import parse_qs, urlparse
 FIXED_NOW = "2026-09-10T10:30:00-03:00"
 FIXED_UTC = "2026-09-10T13:30:00+00:00"
 REQUEST_REF = "visual-mkt046-request"
+VISUAL_STORY_IMAGE = (
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' "
+    "viewBox='0 0 900 1600'%3E%3Cdefs%3E%3ClinearGradient id='g' x2='0' y2='1'"
+    "%3E%3Cstop stop-color='%23c78f58'/%3E%3Cstop offset='1' stop-color='%235b301d'/%3E"
+    "%3C/linearGradient%3E%3C/defs%3E%3Crect width='900' height='1600' fill='url(%23g)'/"
+    "%3E%3Ccircle cx='450' cy='700' r='260' fill='%23f4d7a3'/%3E%3Cpath d='M250 760"
+    "c120-300 280-300 400 0-90 150-310 150-400 0Z' fill='%239a582d'/%3E%3C/svg%3E"
+)
 
 
 def action(
@@ -95,7 +103,10 @@ def template(pk: int = 1, *, dependency: bool = False) -> dict:
             "Reserve pelo site e retire ainda hoje. 🥖✨"
         ),
         "platform_variants": {
-            "instagram": {"body": "Fornada pronta: {{ product_name }} 🥖"},
+            "instagram": {
+                "body": "Fornada pronta: {{ product_name }} 🥖",
+                "publication_format": "story",
+            },
             "whatsapp": {"body": "{{ product_name }} saiu do forno."},
         },
         "variables": ["product_name"],
@@ -124,6 +135,13 @@ def legacy_announcement(pk: int = 41, *, status: str = "pending_review") -> dict
         "status_label": labels.get(status, status),
         "body": "Pães de fermentação natural saíram do forno. Reserve para retirar hoje.",
         "image_url": "",
+        "platform_content": {
+            "instagram": {
+                "publication_format": "story",
+                "image_url": VISUAL_STORY_IMAGE,
+            },
+            "whatsapp": {},
+        },
         "hashtags": ["padaria", "fermentacaonatural"],
         "link": "/produtos/pao-artesanal/",
         "platforms": ["instagram", "whatsapp"],
@@ -677,22 +695,41 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/v1/backstage/marketing/preview/":
             platforms = [str(value) for value in body.get("platforms", [])]
             source_body = str(body.get("body") or "")
+            platform_content = body.get("platform_content", {})
+            if not isinstance(platform_content, dict):
+                platform_content = {}
             previews = {}
             for platform in platforms:
                 rendered = source_body.replace("{{ product_name }}", "Pão artesanal")
+                variant = platform_content.get(platform, {})
+                if not isinstance(variant, dict):
+                    variant = {}
+                publication_format = str(variant.get("publication_format") or "")
                 previews[platform] = {
                     "artifact": {
                         "platform": platform,
                         "body": rendered,
                         "hashtags": ["padaria", "fornada"],
                         "link": "/produtos/pao-artesanal/",
-                        "image_url": "",
-                        "provider_fields": {},
+                        "image_url": str(
+                            variant.get("image_url")
+                            or (
+                                VISUAL_STORY_IMAGE
+                                if platform == "instagram"
+                                and publication_format == "story"
+                                else ""
+                            )
+                        ),
+                        "provider_fields": (
+                            {"publication_format": publication_format}
+                            if publication_format
+                            else {}
+                        ),
                         "content_version": 1,
                         "facts_as_of": FIXED_NOW,
                         "facts_hash": "facts-visual-mkt046",
                     },
-                    "artifact_hash": f"artifact-{platform}-visual-mkt046",
+                    "artifact_hash": ("c" if platform == "instagram" else "d") * 64,
                 }
             self._send(200, {
                 "sku": "PAO-VISUAL-001",

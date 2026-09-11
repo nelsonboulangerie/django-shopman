@@ -42,7 +42,7 @@ def actor():
 def announcement():
     return Announcement.objects.create(
         status=AnnouncementStatus.PENDING_REVIEW,
-        content={"body": "Fornada pronta"},
+        content={"body": "Fornada pronta", "image_url": "/media/fornada.jpg"},
         platforms=["instagram", "facebook"],
     )
 
@@ -59,7 +59,7 @@ def _approve(actor, announcement, *, scheduled_at=None):
         base_version=1,
         publish_mode=PUBLISH_SCHEDULED if scheduled_at else PUBLISH_NOW,
         publish_at=scheduled_at,
-        content={"body": "Fornada pronta"},
+        content={"body": "Fornada pronta", "image_url": "/media/fornada.jpg"},
         platform_content={},
         platforms=["instagram", "facebook"],
     )
@@ -77,6 +77,22 @@ def test_claim_is_bounded_leased_and_not_visible_to_second_worker(actor, announc
     assert first[0].attempts == second[0].attempts == 1
     assert first[0].lease_until == second[0].lease_until == now + timedelta(seconds=60)
     assert {first[0].pk, second[0].pk} == {row.pk for row in approved.outbox}
+
+
+def test_claim_can_be_scoped_to_one_exact_outbox(actor, announcement):
+    approved = _approve(actor, announcement)
+    selected = approved.outbox[1]
+
+    claimed = claim_due(
+        worker_id="worker:exact",
+        limit=100,
+        outbox_refs=(str(selected.ref),),
+    )
+
+    assert [row.ref for row in claimed] == [selected.ref]
+    assert MarketingOutbox.objects.exclude(ref=selected.ref).get().state == (
+        MarketingOutbox.State.PENDING
+    )
 
 
 def test_stale_lease_is_observably_requeued_and_reclaimable(actor, announcement):

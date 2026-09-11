@@ -58,7 +58,7 @@ def _actor(username: str, *codenames: str):
 def _announcement():
     return Announcement.objects.create(
         status=AnnouncementStatus.PENDING_REVIEW,
-        content={"body": "Fornada pronta"},
+        content={"body": "Fornada pronta", "image_url": "/media/fornada.jpg"},
         platforms=["instagram"],
     )
 

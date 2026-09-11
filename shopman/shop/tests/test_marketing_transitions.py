@@ -50,7 +50,7 @@ def actor():
 def announcement():
     return Announcement.objects.create(
         status=AnnouncementStatus.PENDING_REVIEW,
-        content={"body": "Fornada pronta"},
+        content={"body": "Fornada pronta", "image_url": "/media/fornada.jpg"},
         platforms=["instagram", "google_business"],
     )
 
@@ -68,7 +68,7 @@ def _approve(actor, announcement, *, scheduled=False):
         base_version=1,
         publish_mode=PUBLISH_SCHEDULED if scheduled else PUBLISH_NOW,
         publish_at=publish_at,
-        content={"body": "Fornada pronta"},
+        content={"body": "Fornada pronta", "image_url": "/media/fornada.jpg"},
         platform_content={},
         platforms=["instagram", "google_business"],
     )

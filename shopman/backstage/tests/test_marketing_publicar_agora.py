@@ -52,7 +52,12 @@ def anuncio(db):
         rule=campanha,
         template=modelo,
         status=AnnouncementStatus.PENDING_REVIEW,
-        content={"body": "Saiu pão", "hashtags": [], "link": "/produto/pao"},
+        content={
+            "body": "Saiu pão",
+            "hashtags": [],
+            "image_url": "/media/pao.jpg",
+            "link": "/produto/pao",
+        },
         platforms=["instagram"],
         audience={"favorites": 3, "alerts": 0, "total": 3},
         trigger_context={"sku": "PAO"},

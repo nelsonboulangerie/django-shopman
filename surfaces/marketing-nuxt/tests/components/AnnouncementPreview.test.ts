@@ -1,6 +1,14 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import AnnouncementPreview from "~/components/AnnouncementPreview.vue";
 
 beforeAll(() => {
@@ -93,11 +101,14 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     }> = [];
     vi.stubGlobal(
       "$fetch",
-      vi.fn((_url, options: { signal: AbortSignal }) =>
-        new Promise((resolve) => calls.push({
-          resolve: resolve as (value: ReturnType<typeof batch>) => void,
-          signal: options.signal,
-        })),
+      vi.fn(
+        (_url, options: { signal: AbortSignal }) =>
+          new Promise((resolve) =>
+            calls.push({
+              resolve: resolve as (value: ReturnType<typeof batch>) => void,
+              signal: options.signal,
+            }),
+          ),
       ),
     );
     const wrapper = mountPreview();
@@ -121,10 +132,12 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
   });
 
   it("envia todas as variantes uma vez e alterna o artefato exato por plataforma", async () => {
-    const fetch = vi.fn().mockResolvedValue(batch({
-      instagram: "Texto exclusivo do Instagram",
-      whatsapp: "Texto exclusivo do WhatsApp",
-    }));
+    const fetch = vi.fn().mockResolvedValue(
+      batch({
+        instagram: "Texto exclusivo do Instagram",
+        whatsapp: "Texto exclusivo do WhatsApp",
+      }),
+    );
     vi.stubGlobal("$fetch", fetch);
     const platformContent = {
       instagram: { body: "Texto exclusivo do Instagram" },
@@ -173,7 +186,8 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
   });
 
   it("mostra erro estruturado no contexto e recupera sem navegação", async () => {
-    const fetch = vi.fn()
+    const fetch = vi
+      .fn()
       .mockRejectedValueOnce({
         data: {
           detail: "O conteúdo usa uma variável desconhecida.",
@@ -200,7 +214,10 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
   });
 
   it("rotula explicitamente a amostra, o as-of e a versão verificável", async () => {
-    vi.stubGlobal("$fetch", vi.fn().mockResolvedValue(batch({ instagram: "Prévia final" })));
+    vi.stubGlobal(
+      "$fetch",
+      vi.fn().mockResolvedValue(batch({ instagram: "Prévia final" })),
+    );
     const wrapper = mountPreview();
 
     await vi.advanceTimersByTimeAsync(400);
@@ -209,6 +226,27 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     expect(wrapper.text()).toContain("Exemplo com Croissant");
     expect(wrapper.text()).toContain("Dados conferidos às");
     expect(wrapper.text()).toContain("Versão bbbbbbbb");
+    wrapper.unmount();
+  });
+
+  it("mostra Story em 9:16 e não promete sobrepor o texto na imagem", async () => {
+    const response = batch({ instagram: "Texto guardado no comprovante" });
+    response.previews.instagram!.artifact.image_url =
+      "https://cdn.example.test/story.jpg";
+    response.previews.instagram!.artifact.provider_fields = {
+      publication_format: "story",
+    };
+    vi.stubGlobal("$fetch", vi.fn().mockResolvedValue(response));
+    const wrapper = mountPreview();
+
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Story do Instagram");
+    expect(wrapper.text()).toContain("imagem vertical acima");
+    expect(wrapper.text()).toContain("não é inserido automaticamente");
+    expect(wrapper.find(".aspect-\\[9\\/16\\]").exists()).toBe(true);
+    expect(wrapper.text()).not.toContain("Texto guardado no comprovante");
     wrapper.unmount();
   });
 });

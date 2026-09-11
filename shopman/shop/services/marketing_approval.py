@@ -99,6 +99,10 @@ def approve_command(
     safe_content = _json_copy(content, field="content")
     safe_platform_content = _json_copy(platform_content, field="platform_content")
     safe_platforms = _platforms(platforms)
+    safe_platform_content = marketing_artifacts.normalize_platform_content(
+        platforms=safe_platforms,
+        platform_content=safe_platform_content,
+    )
     normalized_timezone = _publish_timezone(publish_timezone)
     effective_timezone = normalized_timezone or marketing_time.configured_timezone_name()
     _validate_content(safe_content, safe_platform_content, safe_platforms)

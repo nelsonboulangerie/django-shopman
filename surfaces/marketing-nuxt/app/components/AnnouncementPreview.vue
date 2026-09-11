@@ -205,6 +205,13 @@ const platformLabel = computed(
   () => props.platformLabels[activePlatform.value] || activePlatform.value,
 );
 const isWhatsapp = computed(() => activePlatform.value === "whatsapp");
+const publicationFormat = computed(() =>
+  String(artifact.value?.provider_fields.publication_format || ""),
+);
+const isInstagramStory = computed(
+  () =>
+    activePlatform.value === "instagram" && publicationFormat.value === "story",
+);
 const linkIsInBody = computed(
   () =>
     !!artifact.value?.link && artifact.value.body.includes(artifact.value.link),
@@ -290,12 +297,7 @@ const shortHash = computed(
       <p v-if="problem.fieldDetail" class="mt-1 text-xs text-muted-foreground">
         {{ problem.fieldDetail }}
       </p>
-      <UiButton
-        type="button"
-        variant="outline"
-        class="mt-2"
-        @click="retry"
-      >
+      <UiButton type="button" variant="outline" class="mt-2" @click="retry">
         <Icon name="lucide:refresh-cw" class="size-4" />
         {{ problem.retryable ? "Tentar novamente" : "Revalidar prévia" }}
       </UiButton>
@@ -382,9 +384,40 @@ const shortHash = computed(
         </p>
       </div>
 
+      <div v-else-if="isInstagramStory" class="mt-3" role="tabpanel">
+        <p class="mb-1 text-xs font-medium text-muted-foreground">
+          Story do Instagram
+        </p>
+        <div
+          class="aspect-[9/16] w-full max-w-[14rem] overflow-hidden rounded-xl border border-border bg-background"
+        >
+          <img
+            :src="artifact.image_url"
+            :alt="preview.product_name"
+            class="size-full object-cover"
+          />
+        </div>
+        <div
+          class="mt-2 rounded-md bg-background px-3 py-2 text-xs text-muted-foreground"
+        >
+          <p class="font-medium text-foreground">O que será publicado</p>
+          <p>A imagem vertical acima, como Story público e efêmero.</p>
+          <p class="mt-1">
+            O texto do rascunho fica no comprovante desta decisão; ele não é
+            inserido automaticamente sobre a imagem.
+          </p>
+        </div>
+      </div>
+
       <div v-else class="mt-3" role="tabpanel">
         <p class="mb-1 text-xs font-medium text-muted-foreground">
-          {{ platformLabel }}
+          {{ platformLabel
+          }}<template v-if="publicationFormat">
+            ·
+            {{
+              publicationFormat === "feed" ? "Feed" : "Atualização padrão"
+            }}</template
+          >
         </p>
         <div
           class="max-w-[18rem] overflow-hidden rounded-lg border border-border bg-background"
