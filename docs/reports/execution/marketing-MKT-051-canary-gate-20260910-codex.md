@@ -9,8 +9,8 @@
 
 - app: `shopman-alpha` (`40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f`);
 - superfícies: `web` e `marketing-nuxt`; nenhum outro componente será publicado;
-- código aprovado: `6375642bf4242ef7ee5f05ad6dc9a2bae59ec5e4`, acrescido apenas
-  deste registro de gate antes do build;
+- código funcional aprovado: `6375642bf4242ef7ee5f05ad6dc9a2bae59ec5e4`, acrescido apenas
+  dos registros do gate e das correções exigidas pela própria CI antes do build;
 - janela: 2026-09-10, 21:20–22:30, `America/Sao_Paulo`;
 - ação: push da branch isolada, PR, CI bloqueante e `Deploy Images` manual na mesma
   branch com `components=web,marketing-nuxt`;
@@ -29,6 +29,12 @@ O primeiro run do PR #597 foi bloqueado pelo gate de “meia-correção”: duas
 registravam exceções somente em `DEBUG`, uma ao consultar o flow ManyChat e outra ao
 derivar o tipo de alerta de estoque. Ambas passaram a emitir `WARNING` seguro, sem PII;
 o checker dirigido e 69 testes de ManyChat/campanha/alerta passaram antes do novo push.
+
+O segundo run encontrou seis violações mecânicas do `ruff` e revelou no gate CSP que
+`CustomerInsight` declarava um `GinIndex` sem instalar `django.contrib.postgres`. Os
+imports e comprehensions foram normalizados, e a app PostgreSQL foi registrada tanto
+no runtime integrado quanto no settings isolado do Guestman. `ruff check .`, os dois
+system checks e `makemigrations --check --dry-run` passaram localmente antes do push.
 
 `SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED` e
 `SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` permanecem ausentes e `false` por default;

@@ -178,7 +178,7 @@ def v2_announcement(
         delivery_counts = counts(planned=13, confirmed=10, unknown=3)
     elif delivery == "cancelled":
         delivery_counts = counts(planned=13, confirmed=0, cancelled=13)
-    platform_counts = counts(**{key: 0 for key in counts()})
+    platform_counts = counts(**dict.fromkeys(counts(), 0))
     platform_counts["planned"] = 1
     platform_counts["confirmed"] = 1 if delivery == "succeeded" else 0
     if delivery == "completed_with_failures":

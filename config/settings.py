@@ -207,6 +207,9 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # CustomerInsight declares a PostgreSQL GinIndex. Django requires this app
+    # to be installed so its backend-specific index checks are registered.
+    "django.contrib.postgres",
     # Third-party
     "csp",
     "taggit",

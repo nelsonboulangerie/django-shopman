@@ -17,10 +17,10 @@ SESSION_COOKIE_NAME = "marketing_demo_sessionid"
 SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED = True
 SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED = True
 SHOPMAN_MARKETING_SIMULATION_ENABLED = True
-SHOPMAN_MARKETING_DELIVERY_ADAPTERS = {
-    platform: "shopman.shop.adapters.marketing_delivery_console"
-    for platform in ("instagram", "facebook", "google_business", "whatsapp")
-}
+SHOPMAN_MARKETING_DELIVERY_ADAPTERS = dict.fromkeys(
+    ("instagram", "facebook", "google_business", "whatsapp"),
+    "shopman.shop.adapters.marketing_delivery_console",
+)
 SHOPMAN_MARKETING_SIMULATION_IGNORE_QUIET_HOURS = True
 SHOPMAN_MARKETING_SIMULATION_FLOWS = (
     ("local_marketing_e2e", "Fluxo local — sem envio externo"),
