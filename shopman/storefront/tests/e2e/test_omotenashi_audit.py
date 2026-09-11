@@ -484,6 +484,55 @@ def test_15_checkout_prefills_known_customer_data(client):
     assert ck["preselected_address_id"] is not None
 
 
+def test_15b_address_survives_checkout_logout_and_same_customer_login(client):
+    """O endereço confirmado pertence à pessoa e reaparece após trocar a sessão."""
+    from shopman.shop.models import DeliveryZone, Shop
+
+    _seed(stock_qty=10)
+    DeliveryZone.objects.create(
+        shop=Shop.objects.first(),
+        name="Centro",
+        zone_type=DeliveryZone.ZONE_TYPE_CEP_PREFIX,
+        match_value="860",
+        fee_q=600,
+    )
+    customer = J.make_customer(first_name="Cliente", last_name="A", phone="+5543999990075")
+    J.authenticate(client, customer)
+    status, _ = J.set_cart_qty(client, SKU, 1)
+    assert status == 200
+
+    address = {
+        "formatted_address": "Rua Teste A, 95 - Centro, Londrina - PR",
+        "route": "Rua Teste A",
+        "street_number": "95",
+        "neighborhood": "Centro",
+        "city": "Londrina",
+        "state_code": "PR",
+        "postal_code": "86010-000",
+    }
+    status, body = J.checkout(
+        client,
+        name="Cliente A",
+        phone=customer.phone,
+        fulfillment_type="delivery",
+        delivery_address=address["formatted_address"],
+        delivery_address_structured=address,
+        delivery_date=J.tomorrow_iso(),
+    )
+    assert status == 201, body
+    assert customer.addresses.filter(formatted_address=address["formatted_address"]).exists()
+
+    logged_out = client.post("/api/v1/auth/logout/")
+    assert logged_out.status_code == 200
+    J.authenticate(client, customer)
+
+    response = client.get("/api/v1/account/addresses/?include=copy")
+    assert response.status_code == 200, response.content
+    rows = response.json()["addresses"]
+    assert [row["id"] for row in rows] == [customer.addresses.get().id]
+    assert rows[0]["formatted_address"] == address["formatted_address"]
+
+
 def test_16_reorder_readds_previous_order_in_one_call(client):
     """✅ Reorder re-adds a past order's items in one action and skips unavailable ones gracefully."""
     _seed(stock_qty=50)
