@@ -263,6 +263,36 @@ function pickGrade(grade: QCGradeProjection) {
   fresh.value = true;
 }
 
+// Segundo toque/clique rápido no mesmo grau toma toda a capacidade que
+// resta para ele. Usamos ativações consecutivas, e não apenas `dblclick`, para
+// o mesmo gesto funcionar com mouse, toque e Enter/Espaço no botão focado.
+const DOUBLE_ACTIVATION_MS = 600;
+let lastGradeActivation: { ref: string; at: number } | null = null;
+
+function takeAvailableBalance(grade: QCGradeProjection) {
+  if (anchor.anchor === null || grade.ref === defaultRef.value) return;
+  const usedElsewhere = orderedGrades.value
+    .filter(
+      (item) =>
+        item.ref !== defaultRef.value && item.ref !== grade.ref,
+    )
+    .reduce(
+      (sum, item) => sum + explicitGradeQuantity(item.ref),
+      lossQuantity.value,
+    );
+  setTargetQuantity(Math.max(0, anchor.anchor - usedElsewhere));
+}
+
+function activateGrade(grade: QCGradeProjection) {
+  const now = Date.now();
+  const repeated =
+    lastGradeActivation?.ref === grade.ref &&
+    now - lastGradeActivation.at <= DOUBLE_ACTIVATION_MS;
+  lastGradeActivation = repeated ? null : { ref: grade.ref, at: now };
+  pickGrade(grade);
+  if (repeated) takeAvailableBalance(grade);
+}
+
 function pickLoss() {
   activeTarget.value = { kind: "loss" };
   fresh.value = true;
@@ -558,9 +588,11 @@ const fieldCard =
     </div>
 
     <p class="flex h-9 shrink-0 items-center text-sm text-muted-foreground">
-      <template v-if="activeTarget">Digitando em: {{ activeLabel }}</template>
+      <template v-if="activeTarget"
+        >Digitando em: {{ activeLabel }} · Dois toques usam o saldo</template
+      >
       <template v-else>
-        Escolha um grau ou Perda; Normal recebe o saldo.
+        Escolha um grau ou Perda; dois toques usam o saldo disponível.
       </template>
     </p>
 
@@ -603,7 +635,7 @@ const fieldCard =
               class="absolute inset-0 z-0 w-full text-left transition hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50"
               :aria-label="`${grade.label}: ${gradeQuantity(grade.ref)} unidades${grade.ref === defaultRef && anchor.anchor !== null ? ', saldo' : ''}`"
               :aria-pressed="gradeQuantity(grade.ref) > 0"
-              @click="pickGrade(grade)"
+              @click="activateGrade(grade)"
             >
               <span
                 class="absolute inset-x-0 top-0 flex h-14 items-center justify-between gap-2 pl-4 pr-3"

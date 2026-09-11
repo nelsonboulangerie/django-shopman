@@ -20,6 +20,10 @@ const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
 useHead({ title: "Produção" });
 
+async function goToHome() {
+  await navigateTo("/");
+}
+
 async function goToBoard() {
   await navigateTo("/board");
 }
@@ -56,8 +60,15 @@ async function goToRecipes() {
           <!-- O que não é etapa do fluxo sai das abas e mora aqui: o Letreiro
                (kiosk de TV, tela cheia), as Receitas (o inventário da casa, só
                com o acesso de leitura — a sonda pergunta ao backend) e os
-               Relatórios (persona gestor, só com a perm fina). -->
+               Relatórios (persona gestor, só com a perm fina). Painel é o
+               retorno explícito ao fluxo, inclusive a partir desses módulos. -->
           <template #nav>
+            <RailItem
+              icon="house"
+              label="Painel"
+              :active="route.path === '/'"
+              @activate="goToHome"
+            />
             <RailItem
               icon="tower-control"
               label="Letreiro"

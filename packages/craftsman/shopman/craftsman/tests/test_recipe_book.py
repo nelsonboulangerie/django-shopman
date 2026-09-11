@@ -433,6 +433,8 @@ class TestBootstrap:
         assert recipe_book.bootstrap_entry_from_recipe(croissant).kind == "viennoiserie"
         cream = _sheet("creme-confeiteiro", "Creme de Confeiteiro", "CREME-CONF", "2", [("LEITE", "1.5"), ("ACUCAR", "0.5")])
         assert recipe_book.bootstrap_entry_from_recipe(cream).kind == "cream"
+        cookie = _sheet("biscoito-manteiga", "Biscoito de Manteiga", "BISCOITO-MANTEIGA", "1", [("FARINHA-T55", "0.6"), ("MANTEIGA-FR", "0.4")])
+        assert recipe_book.bootstrap_entry_from_recipe(cookie).kind == "cookie"
 
     def test_a_piece_keeps_the_sheet_it_declares_instead_of_a_made_up_formula(self, seeded_sheets):
         """A baguete é 280 g de Massa Tradição, e é só isso que a fórmula dela diz.
