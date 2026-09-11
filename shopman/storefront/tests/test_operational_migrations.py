@@ -18,9 +18,19 @@ def test_additive_migrations_preserve_legacy_unknown_receipts_and_subscriptions(
         old = LegacyReceipt.objects.create(
             scope="legacy-test", key="legacy-key", status="done", response_body={"ok": True}
         )
+        LegacyReceipt.objects.bulk_create(
+            [
+                LegacyReceipt(scope="synthetic-volume", key=f"receipt-{i}", status="in_progress" if i % 2 else "done")
+                for i in range(1000)
+            ]
+        )
         sub = LegacySub.objects.create(sku="LEGACY-MIGRATION", contact_phone="+5543999990008")
         executor = MigrationExecutor(connection)
         executor.migrate(latest)
+        # An old worker may still write after schema expansion. Exercise the
+        # historical ORM, which cannot include the new columns in INSERT.
+        mixed = LegacyReceipt.objects.create(scope="mixed-worker", key="legacy-write", status="in_progress")
+        LegacySub.objects.create(sku="MIXED-WORKER", contact_phone="+5543999990007")
         # Repeating a completed expansion is safe; it must not synthesize proof.
         MigrationExecutor(connection).migrate(latest)
         from shopman.orderman.models import IdempotencyKey
@@ -29,6 +39,22 @@ def test_additive_migrations_preserve_legacy_unknown_receipts_and_subscriptions(
 
         receipt = IdempotencyKey.objects.get(pk=old.pk)
         current = StockAlertSubscription.objects.get(pk=sub.pk)
+        assert IdempotencyKey.objects.get(pk=mixed.pk).request_fingerprint == ""
+        assert IdempotencyKey.objects.filter(scope="synthetic-volume", request_fingerprint="").count() == 1000
+        # Compatible code rollback keeps the expanded schema and protected data.
+        bound = IdempotencyKey.objects.create(
+            scope="new-worker",
+            key="bound",
+            request_fingerprint="a" * 64,
+            status="done",
+            response_body={"order_ref": "synthetic"},
+        )
+        legacy_view = LegacyReceipt.objects.get(pk=bound.pk)
+        legacy_view.response_code = 201
+        legacy_view.save(update_fields=["response_code"])
+        bound.refresh_from_db()
+        assert bound.request_fingerprint == "a" * 64
+        assert bound.response_body == {"order_ref": "synthetic"}
         assert receipt.request_fingerprint == ""
         assert receipt.response_body == {"ok": True}
         assert current.dispatch_claimed_at is None

@@ -1,0 +1,123 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_additive_migrations_preserve_legacy_unknown_receipts_and_subscriptions __
+
+self = <django.db.backends.utils.CursorWrapper object at 0x124a15e80>
+sql = 'INSERT INTO "orderman_idempotencykey" ("scope", "key", "status", "response_code", "response_body", "expires_at", "created_at") VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING "orderman_idempotencykey"."id"'
+params = ('mixed-worker', 'legacy-write', 'in_progress', None, None, None, ...)
+ignored_wrapper_args = (False, {'connection': <DatabaseWrapper vendor='sqlite' alias='default'>, 'cursor': <django.db.backends.utils.CursorWrapper object at 0x124a15e80>})
+
+    def _execute(self, sql, params, *ignored_wrapper_args):
+        # Raise a warning during app initialization (stored_app_configs is only
+        # ever set during testing).
+        if not apps.ready and not apps.stored_app_configs:
+            warnings.warn(self.APPS_NOT_READY_WARNING_MSG, category=RuntimeWarning)
+        self.db.validate_no_broken_transaction()
+        with self.db.wrap_database_errors:
+            if params is None:
+                # params default might be backend specific.
+                return self.cursor.execute(sql)
+            else:
+>               return self.cursor.execute(sql, params)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:105: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <django.db.backends.sqlite3.base.SQLiteCursorWrapper object at 0x123484ef0>
+query = 'INSERT INTO "orderman_idempotencykey" ("scope", "key", "status", "response_code", "response_body", "expires_at", "created_at") VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING "orderman_idempotencykey"."id"'
+params = ('mixed-worker', 'legacy-write', 'in_progress', None, None, None, ...)
+
+    def execute(self, query, params=None):
+        if params is None:
+            return super().execute(query)
+        # Extract names if params is a mapping, i.e. "pyformat" style is used.
+        param_names = list(params) if isinstance(params, Mapping) else None
+        query = self.convert_query(query, param_names=param_names)
+>       return super().execute(query, params)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.IntegrityError: NOT NULL constraint failed: orderman_idempotencykey.request_fingerprint
+
+/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/sqlite3/base.py:359: IntegrityError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.mark.django_db(transaction=True)
+    def test_additive_migrations_preserve_legacy_unknown_receipts_and_subscriptions():
+        executor = MigrationExecutor(connection)
+        latest = executor.loader.graph.leaf_nodes()
+        previous = [("orderman", "0004_alter_sessionitem_sku"), ("storefront", "0002_rotulos_em_portugues")]
+        executor.migrate(previous)
+        try:
+            apps = executor.loader.project_state(previous).apps
+            LegacyReceipt = apps.get_model("orderman", "IdempotencyKey")
+            LegacySub = apps.get_model("storefront", "StockAlertSubscription")
+            old = LegacyReceipt.objects.create(
+                scope="legacy-test", key="legacy-key", status="done", response_body={"ok": True}
+            )
+            sub = LegacySub.objects.create(sku="LEGACY-MIGRATION", contact_phone="+5543999990008")
+            executor = MigrationExecutor(connection)
+            executor.migrate(latest)
+            # An old worker may still write after schema expansion. Exercise the
+            # historical ORM, which cannot include the new columns in INSERT.
+>           mixed = LegacyReceipt.objects.create(scope="mixed-worker", key="legacy-write", status="in_progress")
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+shopman/storefront/tests/test_operational_migrations.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/manager.py:87: in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:669: in create
+    obj.save(force_insert=True, using=self.db)
+/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py:874: in save
+    self.save_base(
+/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py:966: in save_base
+    updated = self._save_table(
+/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py:1169: in _save_table
+    results = self._do_insert(
+/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py:1220: in _do_insert
+    return manager._insert(
+/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/manager.py:87: in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:1918: in _insert
+    return query.get_compiler(using=using).execute_sql(returning_fields)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py:1925: in execute_sql
+    cursor.execute(sql, params)
+/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:79: in execute
+    return self._execute_with_wrappers(
+/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:92: in _execute_with_wrappers
+    return executor(sql, params, many, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:100: in _execute
+    with self.db.wrap_database_errors:
+/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/utils.py:94: in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:105: in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <django.db.backends.sqlite3.base.SQLiteCursorWrapper object at 0x123484ef0>
+query = 'INSERT INTO "orderman_idempotencykey" ("scope", "key", "status", "response_code", "response_body", "expires_at", "created_at") VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING "orderman_idempotencykey"."id"'
+params = ('mixed-worker', 'legacy-write', 'in_progress', None, None, None, ...)
+
+    def execute(self, query, params=None):
+        if params is None:
+            return super().execute(query)
+        # Extract names if params is a mapping, i.e. "pyformat" style is used.
+        param_names = list(params) if isinstance(params, Mapping) else None
+        query = self.convert_query(query, param_names=param_names)
+>       return super().execute(query, params)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       django.db.utils.IntegrityError: NOT NULL constraint failed: orderman_idempotencykey.request_fingerprint
+
+/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/sqlite3/base.py:359: IntegrityError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-11 04:31:25,646 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-11 04:31:26,618 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+=========================== short test summary info ============================
+FAILED shopman/storefront/tests/test_operational_migrations.py::test_additive_migrations_preserve_legacy_unknown_receipts_and_subscriptions
+1 failed in 5.88s

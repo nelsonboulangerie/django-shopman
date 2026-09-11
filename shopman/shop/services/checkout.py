@@ -370,6 +370,14 @@ def save_defaults(intent, *, order_ref: str, enabled: bool) -> None:
     if intent.fulfillment_type == "delivery":
         if intent.saved_address_id:
             defaults_data["delivery_address_id"] = intent.saved_address_id
+        elif intent.delivery_address:
+            from shopman.guestman.services import address as address_service
+            from shopman.orderman.exceptions import DirectiveTransientError
+
+            saved = next((a for a in address_service.addresses(customer_obj.ref) if a.formatted_address == intent.delivery_address), None)
+            if saved is None:
+                raise DirectiveTransientError("Address persistence pending; dependent defaults deferred")
+            defaults_data["delivery_address_id"] = str(saved.pk)
         if intent.delivery_time_slot:
             defaults_data["delivery_time_slot"] = intent.delivery_time_slot
     if intent.notes:

@@ -65,7 +65,7 @@ A recuperação de conveniência usa estados/tentativas/erro dos Directive exist
 
 ## Migração, compatibilidade e recuo
 
-1. Aplicar expansões `orderman.0005_idempotency_request_fingerprint` e `storefront.0003_stock_alert_dispatch_claim` no ambiente isolado antes do frontend. O ensaio usa MigrationExecutor, dados legados sintéticos e repetição da expansão: fingerprint legado vazio; claim/aceite legados nulos. Não infere entrega histórica.
+1. Aplicar expansões `orderman.0005_idempotency_request_fingerprint`, `orderman.0006_idempotency_fingerprint_database_default` e `storefront.0003_stock_alert_dispatch_claim` no ambiente isolado antes do frontend. O ensaio usa MigrationExecutor, dados legados sintéticos e repetição da expansão: fingerprint legado vazio; claim/aceite legados nulos. Não infere entrega histórica.
 2. Backend aceita `Idempotency-Key`, `X-Idempotency-Key` e body; valores divergentes são recusados. Checkout sem `expected_revision` recusa explicitamente: atualizar/recarregar frontend antes de confirmar, sem liberar a escrita insegura antiga. Campos de resposta são aditivos.
 3. Draft v2 descarta PII legada sem atribuí-la a novo usuário. Consulta/recuperação preserva sessão e pedido do servidor. Nenhum backfill de opt-in ou envio retroativo.
 4. Executar auditoria de subscriptions em banco sintético antes de discutir constraint. Não apagar duplicatas nem claims incertos. O teste reverso de schema é apenas fixture isolada, **não receita de downgrade operacional**.
@@ -112,3 +112,25 @@ Os cinco skips da suíte Storefront são quatro testes multiconexão (duas prova
 Uma tentativa frontend concorrente com build/typecheck teve timeouts de hooks/testes: [registro](storefront-operational-20260910/frontend-timeout-attempt.txt). A repetição isolada passou sem alterar timeouts ou enfraquecer oráculos. O guardrail textual de oferta foi limitado especificamente ao tipo de `skipped`, pois a nova lista de nomes adicionados é legitimamente string; os novos testes montam a página e verificam resultado/navegação.
 
 A suíte ampla antecede a última proteção de recibo indeterminado vencido e a extensão de replay de oferta expirada; esses deltas recebem regressões direcionadas anexas. Não se afirma execução integral de todas as combinações do plano.
+
+
+## Continuação autorizada — 2026-09-11
+
+A revisão da candidata encontrou e corrigiu duas falhas adicionais, comprovadas antes da alteração:
+
+1. **Conveniência incompleta:** endereço novo era persistido, mas seu identificador não entrava nos defaults. A composição agora resolve o endereço pelo cadastro canônico do próprio cliente e salva o identificador. Se o endereço ainda não foi salvo, o Directive de defaults permanece recuperável; não conclui silenciosamente a promessa. [Reprodução anterior](storefront-operational-20260910/continuation-convenience-before.txt).
+2. **Expansão incompatível com worker antigo:** o default apenas no ORM deixava um INSERT da versão antiga falhar com NOT NULL no fingerprint. A migração incremental `orderman.0006` define default vazio também no banco, inclusive para laboratórios que aplicaram 0005. Não inventa fingerprint legado. [Reprodução anterior](storefront-operational-20260910/continuation-mixed-before.txt).
+
+As regressões novas executam efeitos locais reais de nome do cliente, endereço/etiqueta e defaults; injetam falha após a escrita, verificam rollback, recuperam e simulam perda de resposta repetindo o mesmo efeito. Também verificam que preferência explícita posterior prevalece e que falha do endereço adia defaults, recuperando somente os efeitos faltantes.
+
+O ensaio de schema passou com 1.000 recibos sintéticos, INSERT pelo modelo histórico após expansão e UPDATE pelo modelo histórico sobre recibo novo, preservando fingerprint e resposta. Isso prova um recuo de código compatível mantendo schema expandido em SQLite; não prova locks, interrupção DDL PostgreSQL, volume produtivo nem rollout de processos mistos. Os gates restantes do plano continuam abertos.
+
+| Verificação da continuação | Resultado |
+|---|---|
+| Storefront, conveniência, recibos e fronteiras | [1.529 passed, 5 skipped PG](storefront-operational-20260910/continuation-backend.txt) |
+| Core Orderman | [291 passed](storefront-operational-20260910/continuation-core.txt) |
+| Fidelidade, directives, fiscal e fases duráveis | [64 passed, 1 skipped PG](storefront-operational-20260910/continuation-downstream.txt) |
+| Recuperação e migração/versões mistas, seleção final | [7 passed](storefront-operational-20260910/continuation-mixed-after.txt) |
+| Drift de migrações | [Sem mudanças faltantes](storefront-operational-20260910/continuation-schema.txt) |
+
+Não houve mudança frontend nesta continuação; a evidência frontend anterior permanece identificada pela revisão em que foi executada. Não houve nova tentativa de contornar os bloqueios de IPC da sandbox. PostgreSQL/browser reais, matriz completa de falhas downstream, acessibilidade, J01–J16, observabilidade agregada e decisões/donos humanos ainda impedem declarar W00–W10 concluídos. Nenhuma autorização de produção, piloto ou comunicação externa foi inferida de “Pode prosseguir”.
