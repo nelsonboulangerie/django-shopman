@@ -57,7 +57,9 @@ def _age(directive: Directive, seconds: int) -> None:
 
 def _settled(directive: Directive, status: str = "done") -> None:
     directive.status = status
-    directive.save(update_fields=["status", "updated_at"])
+    if status == "failed":
+        directive.payload["notification_delivery"] = {"status": "failed", "outcome": "not_applied"}
+    directive.save(update_fields=["status", "payload", "updated_at"])
 
 
 @pytest.fixture

@@ -74,15 +74,12 @@ def _api_call(payload: dict, config: dict) -> dict:
             messages = body.get("messages") or []
             if messages:
                 return {"success": True, "message_id": messages[0].get("id", "")}
-            return {"success": False, "error": f"unexpected response: {str(body)[:200]}"}
-    except HTTPError as e:
-        error_body = e.read().decode("utf-8") if e.fp else ""
-        return {"success": False, "error": f"HTTP {e.code}: {error_body[:300]}"}
-    except URLError as e:
-        return {"success": False, "error": f"URL error: {e.reason}"}
-    except Exception as e:  # pragma: no cover - defensive
-        logger.warning("whatsapp._api_call: unexpected error: %s", e, exc_info=True)
-        return {"success": False, "error": str(e)}
+            return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
+    except (HTTPError, URLError):
+        return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
+    except Exception:
+        return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
+
 
 
 def send(recipient: str, template: str, context: dict | None = None, **config) -> bool:
@@ -115,6 +112,8 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         payload = _text_payload(to, _build_message(template, ctx))
 
     result = _api_call(payload, cfg)
+    if result.get("outcome_unknown"):
+        raise RuntimeError("acceptance_unconfirmed")
     if not result["success"]:
         logger.warning("WhatsApp Cloud API send failed: %s", result.get("error"))
     return result["success"]

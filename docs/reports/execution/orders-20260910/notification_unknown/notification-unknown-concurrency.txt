@@ -1,0 +1,39 @@
+......F                                                                  [100%]
+=================================== FAILURES ===================================
+_____ test_http_transport_uncertainty_survives_adapter_boundary[manychat] ______
+
+adapter_name = 'manychat'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b1ee450>
+
+    @pytest.mark.parametrize("adapter_name", ["whatsapp", "manychat"])
+    def test_http_transport_uncertainty_survives_adapter_boundary(adapter_name, monkeypatch):
+        from importlib import import_module
+        from urllib.error import URLError
+    
+        adapter = import_module(f"shopman.shop.adapters.notification_{adapter_name}")
+        monkeypatch.setattr(adapter, "urlopen", Mock(side_effect=URLError("SECRET synthetic accepted then lost")))
+        if adapter_name == "whatsapp":
+            result = adapter._api_call({}, {"PHONE_NUMBER_ID": "synthetic", "ACCESS_TOKEN": "synthetic"})
+        else:
+>           result = adapter._api_call("/sending/sendContent", {}, {"API_TOKEN": "synthetic"})
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+shopman/shop/tests/test_notification_unknown_recovery.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+endpoint = '/sending/sendContent', payload = {}
+config = {'API_TOKEN': 'synthetic'}
+
+    def _api_call(endpoint: str, payload: dict, config: dict) -> dict:
+        """Make authenticated request to ManyChat API."""
+        base_url = config.get("base_url", "https://api.manychat.com/fb")
+>       api_token = config["api_token"]
+                    ^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'api_token'
+
+shopman/shop/adapters/notification_manychat.py:160: KeyError
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-11 02:42:25,689 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_notification_unknown_recovery.py::test_http_transport_uncertainty_survives_adapter_boundary[manychat]
+1 failed, 6 passed in 5.21s

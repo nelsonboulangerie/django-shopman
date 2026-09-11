@@ -71,16 +71,12 @@ def notify(
             # próprio adapter devolve um identificador.
             logger.info("Notification accepted: event=%s backend=%s", event, backend or "default")
         else:
-            logger.warning("Notification failed: event=%s backend=%s", event, backend or "default")
+            logger.warning("Notification not accepted: event=%s backend=%s unknown=%s", event, backend, result.outcome_unknown)
         return result
-    except Exception as exc:
-        logger.warning(
-            "Notification error: event=%s backend=%s exception_class=%s",
-            event,
-            backend or "default",
-            type(exc).__name__,
-        )
-        return NotificationResult(success=False, error="notification_adapter_error")
+    except Exception:
+        logger.warning("Notification acceptance unknown: event=%s backend=%s", event, backend)
+        return NotificationResult(success=False, error="acceptance_unconfirmed", outcome_unknown=True)
+
 
 
 def _normalize_result(raw_result: Any, *, backend: str) -> NotificationResult:
@@ -100,6 +96,7 @@ def _normalize_result(raw_result: Any, *, backend: str) -> NotificationResult:
         return NotificationResult(
             success=False,
             error=error or f"Adapter {backend} returned an unsuccessful result",
+            outcome_unknown=raw_result.get("outcome_unknown") is True,
         )
     return NotificationResult(
         success=False,

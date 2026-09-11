@@ -621,6 +621,17 @@ Write-back: `intent_ref` (string)
 | `tracking` | `dict` | FulfillmentUpdateHandler | Template (não handler) |
 | `context` | `dict` | CommitService (preorder reminder) | Template (não handler) |
 
+`notification_delivery` é a evidência na própria Directive: `status` (`started`,
+`unknown`, `accepted`, `skipped`, `failed`), `recorded_at` ISO, e opcionais
+`backend`, `recipient_fingerprint` (SHA-256 truncado, sem contato), `message_id`
+(somente ID real devolvido pelo adaptador), `reason`, `error`. `started` é
+persistido antes de chamar o transporte, fora da transação. `started`/`unknown`
+não autorizam fallback nem replay externo; um aceite posterior é monotônico.
+`failed` novo contém `outcome: not_applied`; falha histórica sem essa prova não
+se torna segura por idade. Worker antigo não entende o fence: rollout requer
+drenagem/parada dos consumidores antigos e rollback não pode reativá-los sobre
+essas Directives sem reconciliação autorizada (G03/G07).
+
 Templates de notificação: `"order_confirmed"`, `"order_cancelled"`, `"order_cancelled_by_customer"`,
 `"order_rejected"`, `"order_processing"`, `"order_ready"`, `"order_dispatched"`, `"order_delivered"`,
 `"payment_confirmed"`, `"payment_link_sent"`, `"payment_expired"`, `"payment.reminder"`,

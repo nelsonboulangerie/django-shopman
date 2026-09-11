@@ -1548,6 +1548,8 @@ def payment_link_notice(order: Order) -> str:
     if directive is None:
         return ""
     delivery = (directive.payload or {}).get("notification_delivery") or {}
+    if delivery.get("status") in {"started", "unknown"}:
+        return "Aceite do envio não confirmado. Confira o envio com o responsável antes de reenviar."
     if delivery.get("status") == "accepted":
         recorded = parse_datetime(str(delivery.get("recorded_at") or ""))
         when = _format_time_of_day(recorded) if recorded and timezone.is_aware(recorded) else ""

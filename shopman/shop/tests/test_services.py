@@ -1227,7 +1227,10 @@ class TestNotificationSendHandler:
         with (
             patch(
                 "shopman.shop.handlers.notification.notification_svc.deliver_order_notification",
-                return_value=(False, "no active notification recipient available"),
+                side_effect=lambda order, template, payload: (
+                    payload.update(notification_delivery={"status": "failed", "outcome": "not_applied"}) or False,
+                    "no active notification recipient available",
+                ),
             ) as mock_deliver,
             patch.object(NotificationSendHandler, "_escalate") as mock_escalate,
         ):
@@ -1394,13 +1397,17 @@ class TestNotificationSendHandler:
         directive = Directive.objects.create(
             topic="notification.send",
             dedupe_key="notification.send:ORD-001:order_cancelled",
-            payload={"order_ref": "ORD-001", "template": "order_cancelled"},
+            payload={"order_ref": "ORD-001", "template": "order_cancelled",
+                     "notification_delivery": {"status": "failed", "outcome": "not_applied"}},
             attempts=5,
         )
         with (
             patch(
                 "shopman.shop.handlers.notification.notification_svc.deliver_order_notification",
-                return_value=(False, "gateway timeout"),
+                side_effect=lambda order, template, payload: (
+                    payload.update(notification_delivery={"status": "failed", "outcome": "not_applied"}) or False,
+                    "explicit rejection",
+                ),
             ) as mock_deliver,
             patch.object(NotificationSendHandler, "_escalate") as mock_escalate,
         ):

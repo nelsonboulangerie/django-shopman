@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
 from shopman.orderman.models import Directive
@@ -20,6 +21,7 @@ from shopman.orderman.models import Directive
 from shopman.shop.directives import NOTIFICATION_SEND
 from shopman.shop.notifications import notify
 from shopman.shop.services import notification as notification_svc
+from shopman.shop.services.observability import operational_event_on_commit
 
 logger = logging.getLogger(__name__)
 
@@ -84,44 +86,67 @@ class NotificationSendHandler:
         if not order_ref:
             raise DirectiveTerminalError("missing order_ref")
 
-        # Se a prova de aceite já foi persistida e o worker caiu antes de marcar
-        # a Directive como done, o replay conclui sem novo envio. Continua
-        # existindo a janela inevitável entre o aceite externo e este save; sem
-        # chave idempotente aceita pelo provider não há como fechá-la localmente.
-        previous_delivery = payload.get("notification_delivery") or {}
-        if previous_delivery.get("status") in {"accepted", "skipped"}:
-            return
 
         try:
             order = Order.objects.get(ref=order_ref)
         except Order.DoesNotExist as exc:
             raise DirectiveTerminalError(f"Order not found: {order_ref}") from exc
 
-        # Guarda: pular reminders de pagamento se já pago
-        if template == "payment.reminder":
-            payment_status = payment_svc.get_payment_status(order) or ""
-            if payment_status in ("paid", "captured", "succeeded") or order.status not in ("new", "created"):
-                self._record_skip(message, "payment_not_pending")
+        # A fresh lock serializes worker redelivery, but never covers transport I/O.
+        with transaction.atomic():
+            order = Order.objects.select_for_update().get(pk=order.pk)
+            fresh = Directive.objects.select_for_update().get(pk=message.pk)
+            payload = dict(fresh.payload or {})
+            previous = payload.get("notification_delivery") or {}
+            if previous.get("status") in {"accepted", "skipped"}:
                 return
+            if previous.get("status") in {"started", "unknown"} or (
+                fresh.attempts > 1 and previous.get("outcome") != "not_applied"
+            ):
+                raise DirectiveTerminalError("notification acceptance unconfirmed; automatic resend blocked")
+            # Guarda: pular reminders de pagamento se já pago
+            if template == "payment.reminder":
+                payment_status = payment_svc.get_payment_status(order) or ""
+                if payment_status in ("paid", "captured", "succeeded") or order.status not in ("new", "created"):
+                    self._record_skip(fresh, "payment_not_pending")
+                    return
 
-        # Enqueue eligibility can expire while the worker is unavailable. Reuse
-        # the same canonical link guard; do not send an obsolete charge notice.
-        if template == notification_svc.PAYMENT_LINK_TEMPLATE:
-            refusal = notification_svc.payment_link_resend_refusal(order)
-            if refusal is not None:
-                self._record_skip(message, refusal.code)
-                return
+            # Enqueue eligibility can expire while the worker is unavailable. Reuse
+            # the same canonical link guard; do not send an obsolete charge notice.
+            if template == notification_svc.PAYMENT_LINK_TEMPLATE:
+                refusal = notification_svc.payment_link_resend_refusal(order, check_delivery=False)
+                if refusal is not None:
+                    self._record_skip(fresh, refusal.code)
+                    return
+
+            payload["notification_delivery"] = {
+                "status": "started", "recorded_at": timezone.now().isoformat(),
+            }
+            fresh.payload = payload
+            fresh.save(update_fields=["payload", "updated_at"])
+            self._observe(fresh)
+        message.payload = payload
 
         success, last_error = notification_svc.deliver_order_notification(order, template, payload)
         # ``deliver_order_notification`` registra aceite, skip legítimo ou a
         # última falha no dicionário recebido. Persistir antes de retornar/lançar
         # torna o resultado observável no mesmo fato que já governa retries.
         if payload.get("notification_delivery"):
-            message.payload = payload
-            message.save(update_fields=["payload", "updated_at"])
+            with transaction.atomic():
+                fresh = Directive.objects.select_for_update().get(pk=message.pk)
+                current = dict(fresh.payload or {})
+                if (current.get("notification_delivery") or {}).get("status") != "accepted":
+                    current["notification_delivery"] = payload["notification_delivery"]
+                    fresh.payload = current
+                    fresh.save(update_fields=["payload", "updated_at"])
+                    self._observe(fresh)
+                message.payload = fresh.payload
 
         if success:
             return
+        if (payload.get("notification_delivery") or {}).get("status") in {"started", "unknown"}:
+            self._escalate(order_ref, template, None, unknown=True)
+            raise DirectiveTerminalError("notification acceptance unconfirmed; automatic resend blocked")
 
         # Todos os backends falharam — escalate if exhausted, then raise
         exhausted = message.attempts >= 5
@@ -131,7 +156,18 @@ class NotificationSendHandler:
 
         raise DirectiveTransientError(last_error or "all backends failed")
 
-    def _escalate(self, order_ref: str, template: str, last_error: str | None) -> None:
+    @staticmethod
+    def _observe(message: Directive) -> None:
+        delivery = (message.payload or {}).get("notification_delivery") or {}
+        operational_event_on_commit(
+            "operator.effect.state", directive_id=message.pk, topic=message.topic,
+            resource_ref=(message.payload or {}).get("order_ref"),
+            worker_attempt=message.attempts, effect_state=delivery.get("status"),
+            external_id=delivery.get("message_id"), recorded_at=delivery.get("recorded_at"),
+            unknown_reason="acceptance_unconfirmed" if delivery.get("status") == "unknown" else None,
+        )
+
+    def _escalate(self, order_ref: str, template: str, last_error: str | None, *, unknown: bool = False) -> None:
         """Cria OperatorAlert quando entrega de notificação é exaurida."""
         try:
             from shopman.shop.adapters import alert as alert_adapter
@@ -149,7 +185,9 @@ class NotificationSendHandler:
                 "notification_failed",
                 "error",
                 (
-                    f"Notificação '{template}' falhou após 5 tentativas "
+                    (f"Aceite da notificação '{template}' não confirmado; confira o envio antes de reenviar. "
+                     if unknown else f"Notificação '{template}' falhou após 5 tentativas ")
+                    +
                     f"para pedido {order_ref}. Último erro: {last_error or 'desconhecido'}"
                 ),
                 order_ref=order_ref or "",

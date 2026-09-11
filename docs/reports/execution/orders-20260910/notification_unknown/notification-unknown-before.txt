@@ -1,0 +1,69 @@
+F.F                                                                      [100%]
+=================================== FAILURES ===================================
+_____ test_remote_acceptance_then_lost_response_does_not_send_via_fallback _____
+
+context = <Order: NOTICE-UNKNOWN>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1205900e0>
+
+    def test_remote_acceptance_then_lost_response_does_not_send_via_fallback(context, monkeypatch):
+        accepted = []
+        def first(**kwargs):
+            accepted.append("first")
+            raise TimeoutError("synthetic response lost after acceptance")
+        def second(**kwargs):
+            accepted.append("second")
+            return True
+        backends = {"first": SimpleNamespace(send=first), "second": SimpleNamespace(send=second)}
+        monkeypatch.setattr("shopman.shop.notifications.get_backend", lambda name: backends[name])
+        payload = {"order_ref": context.ref}
+        success, error = notification.deliver_order_notification(context, "order_ready", payload)
+>       assert accepted == ["first"]
+E       AssertionError: assert ['first', 'second'] == ['first']
+E         
+E         Left contains one more item: 'second'
+E         Use -v to get more diff
+
+shopman/shop/tests/test_notification_unknown_recovery.py:38: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-11 02:33:19,620 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-11 02:33:19,889 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-11 02:33:20,989 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+----------------------------- Captured stderr call -----------------------------
+ERROR 2026-09-11 02:33:24,779 shopman.shop.notifications Notification error: order_ready_pickup
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/notifications.py", line 66, in notify
+    raw_result = adapter.send(recipient=recipient, template=event, context=context)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/shop/tests/test_notification_unknown_recovery.py", line 30, in first
+    raise TimeoutError("synthetic response lost after acceptance")
+TimeoutError: synthetic response lost after acceptance
+INFO 2026-09-11 02:33:24,779 shopman.shop.services.notification notification backend first failed for order NOTICE-UNKNOWN, trying next in chain
+INFO 2026-09-11 02:33:24,779 shopman.shop.notifications Notification accepted: event=order_ready_pickup backend=second
+___________ test_crash_after_remote_acceptance_fences_worker_replay ____________
+
+context = <Order: NOTICE-UNKNOWN>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x120e53a70>
+
+    @pytest.mark.django_db(transaction=True)
+    def test_crash_after_remote_acceptance_fences_worker_replay(context, monkeypatch):
+        accepted = []
+        def crash(*args):
+            accepted.append("accepted remotely")
+            raise SystemExit(17)
+        monkeypatch.setattr(notification, "deliver_order_notification", crash)
+        task = Directive.objects.create(topic=notification.TOPIC, attempts=1, payload={"order_ref": context.ref, "template": "order_ready"})
+        with pytest.raises(SystemExit) as exit_:
+            NotificationSendHandler().handle(message=task, ctx={})
+        assert exit_.value.code == 17
+        task.refresh_from_db()
+>       assert task.payload["notification_delivery"]["status"] == "started"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'notification_delivery'
+
+shopman/shop/tests/test_notification_unknown_recovery.py:55: KeyError
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-11 02:33:25,167 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_notification_unknown_recovery.py::test_remote_acceptance_then_lost_response_does_not_send_via_fallback
+FAILED shopman/shop/tests/test_notification_unknown_recovery.py::test_crash_after_remote_acceptance_fences_worker_replay
+2 failed, 1 passed in 5.74s
