@@ -24,6 +24,8 @@ const props = defineProps<{
 
 const label = computed(() => props.name ? `Ativar avisos recorrentes quando ${props.name} voltar` : 'Ativar avisos recorrentes quando voltar')
 const subscribedLabel = computed(() => props.name ? `Aviso recorrente ativo para ${props.name}` : 'Aviso recorrente ativo')
+const requestReceivedLabel = 'Pedido recebido. Entre com este WhatsApp para conferir ou reativar seus avisos.'
+const requestReceivedHref = '/entrar?next=%2Fconta%2Fpreferencias%23avisos-produtos'
 
 const apiPath = useShopmanApiPath()
 const csrfHeaders = useShopmanCsrfHeaders()
@@ -150,16 +152,22 @@ const managementHref = computed(() => managementUrl.value || (isAuthenticated.va
   <!-- Repetição anônima em outra sessão recebe confirmação neutra: telefone +
        SKU não concedem nem revelam a capacidade de uma assinatura existente. -->
   <template v-else-if="requestReceived">
-    <UiButton
-      :size="compact ? 'sm' : 'lg'"
-      variant="outline"
-      icon="lucide:check"
-      disabled
-      :class="[compact ? '' : 'w-full', 'disabled:opacity-100']"
-      aria-label="Pedido de aviso recebido"
-    >
-      Pedido recebido
-    </UiButton>
+    <div :class="['w-full', compact || pill ? '' : 'shop-stack-block']" role="status">
+      <p v-if="!compact && !pill" class="shop-meta text-muted-foreground">
+        Pedido recebido. Entre com este WhatsApp para conferir se o aviso está ativo ou reativá-lo.
+      </p>
+      <UiButton
+        :to="requestReceivedHref"
+        :size="compact || pill ? 'sm' : 'lg'"
+        variant="outline"
+        icon="lucide:log-in"
+        class="w-full"
+        :aria-label="requestReceivedLabel"
+        :title="requestReceivedLabel"
+      >
+        {{ compact || pill ? 'Conferir aviso' : 'Entrar para conferir' }}
+      </UiButton>
+    </div>
   </template>
 
   <!-- Logado: um clique assina com o telefone da conta. -->

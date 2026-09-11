@@ -41,7 +41,8 @@ não oferecia pausa da autorização específica.
   somente a transação que criou a assinatura vincula o marcador à sessão. Repetir SKU e telefone
   em outra sessão não concede a capacidade, não retoma uma assinatura pausada e não revela se ela
   já existia. Cliente autenticado usa o telefone da identidade canônica e recebe acesso explícito
-  à seção de avisos em Preferências.
+  à seção de avisos em Preferências. Na confirmação genérica, a próxima ação é entrar com o mesmo
+  WhatsApp para conferir ou reativar na conta; a copy não afirma que um aviso pausado está ativo.
 - Uma correção de QC antes do adapter suprime recibos ainda enfileirados ou reclamados. Se o
   provedor já aceitou a entrega, o fato não é apagado e um alerta operacional exige conciliação.
 - O contato pode ser usado apenas para a finalidade e ocorrência autorizadas. Quando outra fonte

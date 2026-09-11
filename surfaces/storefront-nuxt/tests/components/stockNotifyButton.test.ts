@@ -122,7 +122,15 @@ describe('StockNotifyButton', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(fetchMock.mock.calls[0]?.[1]?.body).toEqual({ phone: '+5543998404900' })
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'GET', credentials: 'include' })
-    expect(wrapper.text()).toContain('Pedido recebido')
+    expect(wrapper.text()).toContain('Pedido recebido. Entre com este WhatsApp para conferir se o aviso está ativo ou reativá-lo.')
+    expect(wrapper.text()).toContain('Entrar para conferir')
+    expect(wrapper.get('a').attributes('href')).toBe('/entrar?next=%2Fconta%2Fpreferencias%23avisos-produtos')
+    expect(wrapper.get('a').attributes('aria-label')).toContain('Entre com este WhatsApp')
+
+    await wrapper.setProps({ compact: true })
+    await nextTick()
+    expect(wrapper.text()).toContain('Conferir aviso')
+    expect(wrapper.get('a').attributes('href')).toBe('/entrar?next=%2Fconta%2Fpreferencias%23avisos-produtos')
   })
 
   it('anonymous first subscribe recovers the capability bound to its session', async () => {

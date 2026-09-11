@@ -20,7 +20,8 @@ Correção
 - Para cliente autenticado, o telefone do corpo é ignorado; vale o contato da identidade
   canônica. O acesso pela conta continua disponível.
 - A interface tenta o GET após o POST. Quando a sessão possui o aviso, mostra “Aviso ativo” e
-  gestão. Sem ownership, mostra a confirmação honesta “Pedido recebido”, sem link de gestão.
+  gestão. Sem ownership, mostra “Pedido recebido” e oferece entrar com aquele WhatsApp para
+  conferir ou reativar na preferência canônica da conta, sem revelar o estado existente.
 
 Validação inicial
 - Reprodução antes: 1 failed, confirmando a entrega indevida da capacidade.
