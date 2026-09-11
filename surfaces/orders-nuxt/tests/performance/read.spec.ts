@@ -15,6 +15,21 @@ test("rendered queue becomes usable and filtering remains local", async ({ brows
       const page = await context.newPage();
       const metrics = await context.newCDPSession(page);
       await metrics.send("Performance.enable");
+      await page.addInitScript(({ n }) => {
+        const observe = new MutationObserver(() => {
+          const link = document.querySelector(`a[aria-label="Abrir pedido HTTP-LAB-${n}-0"]`);
+          if (!link) return;
+          requestAnimationFrame(() => {
+            const box = link.getBoundingClientRect();
+            const state = window as Window & { __labQueueVisibleAt?: number };
+            if (!state.__labQueueVisibleAt && box.width > 0 && box.height > 0 && box.top < innerHeight) {
+              state.__labQueueVisibleAt = Date.now();
+              observe.disconnect();
+            }
+          });
+        });
+        observe.observe(document, { childList: true, subtree: true });
+      }, { n });
       const start = Date.now();
       await page.goto("/", { waitUntil: "domcontentloaded" });
       const pageReadyMs = Date.now() - start;
@@ -31,9 +46,10 @@ test("rendered queue becomes usable and filtering remains local", async ({ brows
         return { ttfb_ms: nav.responseStart - nav.requestStart, dom_content_ms: nav.domContentLoadedEventEnd - nav.startTime,
           transfer_bytes: nav.transferSize, encoded_bytes: nav.encodedBodySize };
       });
+      const observedVisibleAt = await page.evaluate(() => (window as Window & { __labQueueVisibleAt?: number }).__labQueueVisibleAt);
       const measured = await metrics.send("Performance.getMetrics");
       const work = Object.fromEntries(measured.metrics.filter(({ name }) => ["ScriptDuration", "LayoutDuration", "RecalcStyleDuration", "TaskDuration"].includes(name)).map(({ name, value }) => [name, value]));
-      samples.push({ sample, page_ready_ms: pageReadyMs, queue_visible_ms: queueVisibleMs, filled_ms: filledMs, usable_ms: usableMs, ...navigation, work });
+      samples.push({ sample, observed_visible_ms: observedVisibleAt ? observedVisibleAt - start : null, page_ready_ms: pageReadyMs, queue_visible_ms: queueVisibleMs, filled_ms: filledMs, usable_ms: usableMs, ...navigation, work });
       await page.close();
     }
   } finally { await context.close(); }

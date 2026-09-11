@@ -1676,3 +1676,21 @@ Correção do diário anterior: C07 permite contexto em memória e saída proteg
 persistência pós-reload é opcional e não constitui bloqueio obrigatório de T.
 G02/G06/G07 reais permanecem aplicáveis; M04/T não concluídos, P não iniciado,
 R não autorizado. A tarefa PDV recebeu o contrato e a reprovação de capacidade.
+
+
+### WP07/WP09/G06 — fonte ativa DO conferida, ensaios remotos isolados
+
+f25cb67cd prepara CI com tetos do spec ativo1CPU/1GB e Gestor512MB. Rodada34592473140
+passa preparação/3 jornadas, reprova500/1500ms (2500/2229ms no cenário10clientes).
+21fb17460 testa5leitores, com teto individual1CPU/1GB, runner4CPU:1322/2573ms,
+reprovado. d768d12a0 acrescenta perfil:1622/3044ms, reprovado. Amostras/cold/picos,
+fontes, limites e logs em do_capacity/. Nenhuma biblioteca/regra da aplicação
+substituída por hipótese; selector CSS experimental não reduziu mediana materialmente
+e foi desfeito. Observador de visibilidade é diagnóstico, não nova regra de aceite.
+
+Autorização de publicação PDV transmitida não libera orçamento nem capacidade.
+Pablo confirmou PC da loja/rede local/DigitalOcean e aceitou rascunhos em memória.
+Proposta de laboratório DO novo, sem dados reais, até24h/US$5, foi apresentada por
+envolver cobrança adicional fora da autorização. Resposta pendente; silêncio não
+cria recursos. Não há mudança permanente de servidor proposta como aprovada.
+T/P/R não concluídos por esta rodada; rollback da instrumentação não toca livros.

@@ -6,6 +6,22 @@ fotografias históricas. Esta consolidação cobre o código até **062a7b5ec**,
 **8318b9b03**, ícones CSS **062a7b5ec**, alvos de interação, Actions de corrida
 e inventário **84e609641**. Não declara T, P ou R concluídos.
 
+## Capacidade: verificação da DigitalOcean e CI — 11/09
+
+Spec ativo consultado read-only: backend1CPU/1GB, Gestor512MB, PG16/Valkey8.
+CI isolado na topologia de1leitor reprovou p95backend2500ms/10clientes e browser2229ms.
+Cinco leitores também reprovaram1322/1622ms e browser2573/3044ms no runner4CPU.
+Preparação e jornadas passaram; vereditos de budget falharam. Sem liberação de
+capacidade nem indicação comprovada de aumento permanente. Não atribuir tudo ao
+swap do Mac. Três fontes/artefatos/perfis estão em [do_capacity/README.md](do_capacity/README.md).
+
+Pablo aceitou memória para rascunhos; nenhuma persistência nova. Autorização de
+publicação PDV foi transmitida e permanece condicionada às validações; ela não
+inclui novos recursos pagos. Proposta específica de laboratório DO até24h/US$5
+em [CLOUD-ASSAY-GATE.md](do_capacity/CLOUD-ASSAY-GATE.md), aguardando resposta.
+Nada criado/alterado na DO nesta etapa. T segue aberto, piloto não iniciado,
+publicação integrada não liberada por estes ensaios.
+
 ## Atualização vigente — extensão de maquininhas individuais47e9c657a
 
 Esta atualização prevalece sobre budgets históricos abaixo. Cadastro nativo,

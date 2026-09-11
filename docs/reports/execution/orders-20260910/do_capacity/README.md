@@ -77,3 +77,24 @@ sustenta recomendar a compra. **Não propor nem aplicar aumento pago com esta pr
 CDP após cronômetro: medianas layout221ms, recálculo de estilo187ms, script52ms,
 tarefas totais2019ms. Próxima instrumentação separa navegação, fila visível, filtro
 preenchido e resultado, além de perfil Python; não troca ações nem reduz fixture.
+
+
+## Rodada34593994278 — fonted768d12a0, diagnóstico
+
+Backend cinco leitores p95377,074 /412,862 /1621,715ms. Browser3044ms. Preparação,
+3 jornadas e perfil passaram; veredito reprovou. Medianas por etapa: documento255,5ms,
+fila detectada2333ms, busca preenchida2927ms, resultado2938ms. Perfil Python sob
+instrumentação: build_two_zone_queue363ms, dos quais cards203ms; conversão JSON54ms,
+render JSON16ms. Não há evidência de que apenas trocar encoder resolva o budget.
+
+Contraprova local com MutationObserver+rAF: fila já visível764,5ms, detectada pelo
+teste1024,5ms, jornada1152ms (medianas). Experimento com seletores CSS manteve
+mediana1148ms; não demonstrou ganho material da jornada e foi desfeito. Os p95
+locais1405/1213ms são ensaios diferentes sujeitos ao host, **não melhora implementada**.
+Observador permanece apenas diagnóstico; seletor acessível e orçamento originais
+continuam. Essas rodadas não substituem as reprovações CI, não calibram a rede real.
+
+A proposta de próxima medição na própria plataforma está em CLOUD-ASSAY-GATE.md.
+É autorização de gasto/ambiente temporário ainda pendente, não liberação de
+produção nem recomendação de aumento permanente de instâncias. Nenhum recurso
+novo na DO foi criado; a aplicação não mudou desde47e9c657a neste conjunto de ensaios.
