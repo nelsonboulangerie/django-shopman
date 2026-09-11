@@ -8,10 +8,11 @@
 const DRAG_ATTR = "data-dragkey";
 const THRESHOLD = 5;
 
-export function useDragReorder(getKeys: () => string[], commit: (orderedKeys: string[]) => void) {
+export function useDragReorder(getKeys: () => string[], commit: (orderedKeys: string[]) => void, start?: () => void) {
   const dragKey = ref<string | null>(null);
   const overKey = ref<string | null>(null);
 
+  let observedKeys: string[] = [];
   let pendingKey: string | null = null;
   let startX = 0;
   let startY = 0;
@@ -43,7 +44,7 @@ export function useDragReorder(getKeys: () => string[], commit: (orderedKeys: st
     detach();
     reset();
     if (from === null || !to || from === to) return; // clique puro ou sem alvo → nada
-    const keys = [...getKeys()];
+    const keys = [...observedKeys];
     const fromIdx = keys.indexOf(from);
     const toIdx = keys.indexOf(to);
     if (fromIdx < 0 || toIdx < 0) return;
@@ -75,6 +76,8 @@ export function useDragReorder(getKeys: () => string[], commit: (orderedKeys: st
 
   function onPointerDown(key: string, e: PointerEvent) {
     if (e.pointerType === "mouse" && e.button !== 0) return; // só botão esquerdo do mouse
+    observedKeys = [...getKeys()];
+    start?.();
     pendingKey = key;
     startX = e.clientX;
     startY = e.clientY;

@@ -45,11 +45,12 @@ class _CatalogBase(APIView):
 )
 class CatalogMatrixView(_CatalogBase):
     def get(self, request):
-        from shopman.backstage.projections.catalog import build_catalog_matrix
+        from shopman.backstage.projections.catalog import build_catalog_matrix, curation_actions
 
         collection_ref = (request.query_params.get("collection") or "").strip()
         matrix = build_catalog_matrix(collection_ref)
-        return Response({"matrix": projection_data(matrix)})
+        return Response({"matrix": projection_data(matrix), "collection_ref": collection_ref,
+            "actions": [projection_data(action) for action in curation_actions(collection_ref, request.user)]})
 
 
 class CatalogCellView(_CatalogBase):
@@ -332,36 +333,84 @@ class CatalogBulkPriceView(_CatalogBase):
             return Response({"outcome": "unknown", "detail": "Alteração em processamento; consulte esta intenção."}, status=202)
 
 
-class CatalogReorderCollectionsView(_CatalogBase):
-    """Ordena as coleções (seções da vitrine) na sequência recebida."""
+class _CatalogReorderView(_CatalogBase):
+    operation = ""
+    field = ""
 
-    def post(self, request):
-        ordered = request.data.get("ordered_refs")
-        if not isinstance(ordered, list) or not ordered:
-            return Response({"detail": "ordered_refs (lista) é obrigatório."}, status=400)
-        count = catalog_service.reorder_collections(
-            [str(r).strip() for r in ordered], actor=_actor(request)
-        )
-        return Response({"ok": True, "count": count})
+    def _scope(self, request, ref):
+        from shopman.shop.services.remote_mutations import mutation_fingerprint
 
+        return mutation_fingerprint({"actor": request.user.pk, "operation": self.operation, "ref": ref})
 
-class CatalogReorderItemsView(_CatalogBase):
-    """Ordena os produtos dentro de uma coleção manual."""
+    def get(self, request):
+        from shopman.shop.services.remote_mutations import RemoteMutationInProgress, lookup_local_mutation
 
-    def post(self, request):
-        collection_ref = (request.data.get("collection_ref") or "").strip()
-        ordered = request.data.get("ordered_skus")
-        if not collection_ref:
-            return Response({"detail": "collection_ref é obrigatório."}, status=400)
-        if not isinstance(ordered, list) or not ordered:
-            return Response({"detail": "ordered_skus (lista) é obrigatório."}, status=400)
+        key = request.query_params.get("idempotency_key")
+        ref = request.query_params.get("ref", "")
+        if not key:
+            return Response({"detail": "Informe a intenção para consultar."}, status=400)
         try:
-            count = catalog_service.reorder_collection_items(
-                collection_ref, [str(s).strip() for s in ordered], actor=_actor(request)
-            )
-        except (CatalogError, ValidationError) as exc:
-            return Response({"detail": str(exc)}, status=400)
-        return Response({"ok": True, "count": count})
+            result = lookup_local_mutation(scope=self._scope(request, ref), key=key)
+            if result is None:
+                return Response({"outcome": "unknown"}, status=202)
+            return Response(result.response_body, status=result.response_code)
+        except RemoteMutationInProgress:
+            return Response({"outcome": "in_progress"}, status=202)
+
+    def post(self, request):
+        from shopman.backstage.services.exceptions import CatalogConflict
+        from shopman.shop.services.remote_mutations import (
+            RemoteMutationConflict,
+            RemoteMutationInProgress,
+            mutation_fingerprint,
+            run_idempotent_mutation,
+        )
+
+        data = request.data
+        key = request.headers.get("Idempotency-Key")
+        ref = data.get("ref", "")
+        ordered = data.get(self.field)
+        base = data.get("base_revision")
+        if not isinstance(key, str) or not key or len(key) > 128 or not isinstance(base, str) or not base:
+            return Response({"detail": "Atualize o catálogo: a ordenação exige intenção e revisão."}, status=400)
+        if not isinstance(ref, str) or not isinstance(ordered, list) or not ordered or any(not isinstance(value, str) for value in ordered):
+            return Response({"detail": "Informe a coleção e a lista completa de referências."}, status=400)
+        if (self.operation == "reorder-items" and not ref) or (self.operation == "reorder-collections" and ref):
+            return Response({"detail": "O recurso não corresponde à ordenação."}, status=400)
+        if data.get("expected_actor_id") != request.user.pk:
+            return Response({"detail": "A identificação mudou. Confira a ordem."}, status=409)
+        scope = self._scope(request, ref)
+
+        def execute():
+            try:
+                if self.operation == "reorder-items":
+                    count = catalog_service.reorder_collection_items(ref, ordered, actor=_actor(request), expected_revision=base)
+                else:
+                    count = catalog_service.reorder_collections(ordered, actor=_actor(request), expected_revision=base)
+            except CatalogConflict as exc:
+                return {"outcome": "not_applied", "detail": str(exc)}, 409
+            except (CatalogError, ValidationError) as exc:
+                return {"outcome": "not_applied", "detail": str(exc)}, 400
+            return {"ok": True, "outcome": "applied", "count": count}, 200
+
+        try:
+            result = run_idempotent_mutation(scope=scope, key=key,
+                fingerprint=mutation_fingerprint({"scope": scope, "base": base, "ordered": ordered}), execute=execute)
+            return Response(result.response_body, status=result.response_code)
+        except RemoteMutationConflict:
+            return Response({"detail": "Esta intenção já representa outra ordem.", "code": "intention_conflict"}, status=409)
+        except RemoteMutationInProgress:
+            return Response({"outcome": "in_progress"}, status=202)
+
+
+class CatalogReorderCollectionsView(_CatalogReorderView):
+    operation = "reorder-collections"
+    field = "ordered_refs"
+
+
+class CatalogReorderItemsView(_CatalogReorderView):
+    operation = "reorder-items"
+    field = "ordered_skus"
 
 
 class CatalogSyncStatusView(_CatalogBase):

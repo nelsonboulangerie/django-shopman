@@ -7,7 +7,7 @@
 import { cellPrice, cellSyncView, cellView, filterRows, rowStatus, surfaceDisplayIcon, syncBadge, syncErrorCount } from "~/presentation/catalog";
 import { catalogDimensions, filterByDimensions } from "~/presentation/catalogFilters";
 import { keepVisible, reconcile } from "../../../operator-kit/app/presentation/columnPicker";
-import type { CatalogPricePreview } from "~/generated/ordersContract";
+import type { Action, CatalogPricePreview } from "~/generated/ordersContract";
 import type { HiddenColumns } from "../../../operator-kit/app/types/columns";
 import type { ActiveFilters } from "../../../operator-kit/app/types/filters";
 import type {
@@ -22,7 +22,7 @@ import type {
 const collectionRef = ref("");
 const {
   matrix, pending, error, refresh, isBusy, cellKey, productKey, detailKey, setCell, setProduct, bulkSet, bulkPrice, previewBulkPrice,
-  resync, fetchProductDetail, saveProductDetail, productConflict, acknowledgeProductConflict, errorMsg, reorderCollections, reorderItems, bulkBusy,
+  resync, fetchProductDetail, saveProductDetail, productConflict, acknowledgeProductConflict, errorMsg, reorderCollections, reorderItems, curationAction, verifyOrder, bulkBusy,
   aiAssist, aiAssistKey,
 } = useCatalogMatrix(collectionRef);
 
@@ -90,6 +90,40 @@ function reorderView<T extends { ref?: string; sku?: string }>(
   return out.length === server.length ? out : server;
 }
 
+const orderDraft = ref<{ operation: "reorder-collections" | "reorder-items"; ref: string; ordered: string[]; action?: Action } | null>(null);
+const orderSaving = ref(false);
+onBeforeRouteLeave(() => !orderDraft.value || window.confirm("Há uma ordenação sem confirmação. Sair e descartar o rascunho não desfaz gravações já aplicadas. Deseja sair?"));
+let observedCollectionAction: Action | undefined;
+let observedItemAction: Action | undefined;
+let observedCollectionRef = "";
+async function saveOrderDraft(useCurrent = false, checkOnly = false) {
+  const draft = orderDraft.value;
+  if (!draft || orderSaving.value) return;
+  const action = useCurrent ? curationAction(draft.operation, draft.ref) : draft.action;
+  if (useCurrent && !action) return;
+  orderSaving.value = true;
+  try {
+    const ok = checkOnly ? await verifyOrder(draft.operation, draft.ref) : draft.operation === "reorder-items"
+      ? await reorderItems(draft.ref, draft.ordered, action)
+      : await reorderCollections(draft.ordered, action);
+    if (ok && orderDraft.value === draft) orderDraft.value = null;
+  } finally {
+    orderSaving.value = false;
+    collectionOverride.value = null;
+    rowOverride.value = null;
+  }
+}
+const currentOrder = computed(() => orderDraft.value?.operation === "reorder-items"
+  ? (orderDraft.value.ref === collectionRef.value ? (matrix.value?.rows ?? []).map(row => row.sku) : [])
+  : collections.value.map(group => group.ref));
+const canReviewOrder = computed(() => !!orderDraft.value && !!curationAction(orderDraft.value.operation, orderDraft.value.ref)
+  && currentOrder.value.length === orderDraft.value.ordered.length
+  && currentOrder.value.every(key => orderDraft.value!.ordered.includes(key)));
+function orderLabel(key: string) {
+  return orderDraft.value?.operation === "reorder-items"
+    ? matrix.value?.rows.find(row => row.sku === key)?.name || key
+    : collections.value.find(group => group.ref === key)?.name || key;
+}
 const collectionOverride = ref<string[] | null>(null);
 const orderedCollections = computed(
   () => reorderView<CollectionProjection>(collections.value, collectionOverride.value, (c) => c.ref),
@@ -99,9 +133,12 @@ const {
 } = useDragReorder(
   () => orderedCollections.value.map((c) => c.ref),
   (order) => {
+    if (orderDraft.value) return;
     collectionOverride.value = order;
-    reorderCollections(order).finally(() => { collectionOverride.value = null; });
+    orderDraft.value = { operation: "reorder-collections", ref: "", ordered: order, action: observedCollectionAction };
+    saveOrderDraft();
   },
+  () => { observedCollectionAction = curationAction("reorder-collections"); },
 );
 
 // ── reordenar produtos (handle na linha) — só numa coleção MANUAL, sem busca ────
@@ -123,9 +160,12 @@ const {
 } = useDragReorder(
   () => displayRows.value.map((r) => r.sku),
   (order) => {
+    if (orderDraft.value) return;
     rowOverride.value = order;
-    reorderItems(collectionRef.value, order).finally(() => { rowOverride.value = null; });
+    orderDraft.value = { operation: "reorder-items", ref: observedCollectionRef, ordered: order, action: observedItemAction };
+    saveOrderDraft();
   },
+  () => { observedCollectionRef = collectionRef.value; observedItemAction = curationAction("reorder-items", observedCollectionRef); },
 );
 
 // ── selection + floating bulk bar (acts on the active recorte) ─────────────────
@@ -379,6 +419,17 @@ useHead({ title: "Catálogo · Gestor" });
       <p v-if="error" role="alert" class="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
         Não foi possível atualizar o catálogo. {{ matrix ? "Exibindo a última leitura disponível." : "" }} <button class="underline" @click="refresh()">Tentar de novo</button>
       </p>
+
+      <div v-if="orderDraft" role="status" class="space-y-2 rounded border p-3 text-sm">
+        <p>{{ orderSaving ? "Confirmando a ordenação…" : "A ordenação ainda precisa de conferência. Seu arraste foi preservado." }}</p>
+        <p>Seu arraste: {{ orderDraft.ordered.map(orderLabel).join(" → ") }}</p>
+        <p v-if="!orderSaving">Ordem atual: {{ currentOrder.map(orderLabel).join(" → ") || "Abra a coleção deste arraste para conferir." }}</p>
+        <div v-if="!orderSaving" class="flex flex-wrap gap-2">
+          <button type="button" class="min-h-12 rounded border px-3" @click="saveOrderDraft(false, true)">Verificar esta gravação</button>
+          <button v-if="canReviewOrder" type="button" class="min-h-12 rounded border px-3" @click="saveOrderDraft(true)">Aplicar meu arraste à ordem atual</button>
+          <button type="button" class="min-h-12 rounded border px-3" @click="orderDraft = null">Descartar o rascunho de ordem</button>
+        </div>
+      </div>
 
       <!-- matrix -->
       <div v-if="loading" class="overflow-hidden rounded-xl border border-border bg-card">

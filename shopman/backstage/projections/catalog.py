@@ -29,6 +29,29 @@ def product_detail_action(sku: str, detail: dict, user):
             "base_revision": mutation_fingerprint({"sku": sku, "revisions": revisions}), "base_revisions": revisions})
 
 
+def curation_actions(collection_ref: str, user):
+    from shopman.backstage.services.catalog import curation_revision
+    from shopman.backstage.services.exceptions import CatalogError
+    from shopman.shop.projections.types import Action
+
+    allowed = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_catalog"))
+    actions = []
+    scopes = [("reorder-collections", "", "Ordenar coleções")]
+    if collection_ref:
+        scopes.append(("reorder-items", collection_ref, "Ordenar produtos"))
+    for operation, ref, label in scopes:
+        try:
+            revision = curation_revision(ref)
+            reason = "" if allowed else "Sem permissão para editar o catálogo."
+        except CatalogError as exc:
+            revision, reason = "", str(exc)
+        actions.append(Action(ref=operation, kind="mutation", label=label, enabled=allowed and not reason,
+            reason=reason, method="POST", idempotency="required", payload_schema={
+                "base_revision": revision, "expected_actor_id": getattr(user, "pk", None), "ref": ref,
+            }))
+    return tuple(actions)
+
+
 @dataclass(frozen=True)
 class CatalogPricePreviewCell:
     id: int

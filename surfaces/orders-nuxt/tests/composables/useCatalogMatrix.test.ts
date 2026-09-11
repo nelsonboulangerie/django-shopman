@@ -90,7 +90,8 @@ describe("useCatalogMatrix — lote + reordenação", () => {
   });
 
   it("reorderItems reverte (refresh) e tosta em falha", async () => {
-    env.fetchMock.mockRejectedValueOnce({ data: { detail: "Ordem inválida" } });
+    env.fetchData.value = { actions: [{ ref: "reorder-items", enabled: true, payload_schema: { ref: "c1", base_revision: "base" } }] };
+    env.fetchMock.mockRejectedValueOnce({ status: 400, data: { detail: "Ordem inválida" } });
     const m = useCatalogMatrix();
     expect(await m.reorderItems("c1", ["A", "B"])).toBe(false);
     expect(env.refresh).toHaveBeenCalledTimes(1); // revert do otimista
@@ -198,4 +199,16 @@ it("catálogo indisponível mantém última leitura e recusa nova escrita", asyn
     expect(env.fetchMock).not.toHaveBeenCalled();
     expect(m.errorMsg.value).toContain("seu rascunho foi mantido");
   } finally { vi.stubGlobal("useFetch", originalUseFetch); }
+});
+
+it("ordenação usa a base capturada e consulta recibo da resposta perdida", async () => {
+  env.reset();
+  const action = { ref: "reorder-items", enabled: true, reason: "", method: "POST", payload_schema: { ref: "c1", base_revision: "seen", expected_actor_id: 1 } } as any;
+  env.fetchData.value = { actions: [{ ...action, payload_schema: { ...action.payload_schema, base_revision: "later" } }] };
+  env.fetchMock.mockRejectedValueOnce({ status: 502 }).mockResolvedValueOnce({ outcome: "applied" });
+  const m = useCatalogMatrix();
+  expect(await m.reorderItems("c1", ["B", "A"], action)).toBe(true);
+  expect(env.fetchMock.mock.calls[0]![1].body).toEqual({ ref: "c1", base_revision: "seen", expected_actor_id: 1, ordered_skus: ["B", "A"] });
+  expect(env.fetchMock.mock.calls[1]![1].query.ref).toBe("c1");
+  expect(env.fetchMock).toHaveBeenCalledTimes(2);
 });

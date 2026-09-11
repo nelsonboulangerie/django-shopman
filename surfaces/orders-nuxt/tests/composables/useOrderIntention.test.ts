@@ -82,3 +82,15 @@ it("PATCH perdido recupera o recibo sem executar outra edição", async () => {
   expect(env.fetchMock.mock.calls[1]![1].method).toBeUndefined();
   expect(env.fetchMock).toHaveBeenCalledTimes(2);
 });
+
+it("verificação explícita usa somente GET com a intenção pendente", async () => {
+  env.fetchMock.mockRejectedValueOnce({ status: 502 }).mockResolvedValueOnce({ outcome: "unknown" });
+  const client = useOrderIntention();
+  await expect(client.executePath("curation", "/catalog/reorder/", action, { ref: "manual" })).rejects.toThrow();
+  const key = env.fetchMock.mock.calls[0]![1].headers["Idempotency-Key"];
+  env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });
+  expect(await client.checkPath("curation", "/catalog/reorder/")).toEqual({ outcome: "applied" });
+  expect(env.fetchMock.mock.calls[2]![1]).toEqual({ query: { idempotency_key: key, ref: "manual" } });
+  await expect(client.checkPath("curation", "/catalog/reorder/")).rejects.toThrow("Não há gravação pendente");
+  expect(env.fetchMock).toHaveBeenCalledTimes(3);
+});

@@ -60,9 +60,17 @@ export function useOrderIntention() {
       return finish(result);
     }
   }
+  async function checkPath(resource: string, path: string) {
+    const intent = pending.value[resource];
+    if (!intent || intent.owner !== session.value?.operator?.id) throw new Error("Não há gravação pendente para consultar. Confira a ordem atual.");
+    const result = await $fetch<Result>(path, { query: { idempotency_key: intent.key, ...(typeof intent.body.ref === "string" ? { ref: intent.body.ref } : {}) } });
+    if (intent.owner !== session.value?.operator?.id) throw new Error("A identificação mudou. Confira os dados.");
+    if (result.outcome === "applied") delete pending.value[resource];
+    return result;
+  }
   async function execute(ref_: string, operation: string, action: Action | undefined, inputs: Record<string, unknown>, approval?: Record<string, string>) {
     await executePath(`${ref_}:${operation}`, `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/${encodeURIComponent(operation)}/`, action, inputs, approval);
     return true;
   }
-  return { execute, executePath };
+  return { execute, executePath, checkPath };
 }

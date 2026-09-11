@@ -95,6 +95,8 @@ export interface CatalogMatrixProjection {
 
 export interface CatalogMatrixResponse {
   matrix: CatalogMatrixProjection;
+  collection_ref?: string;
+  actions?: Action[];
 }
 
 // Tabela nutricional (ANVISA) — espelha a dataclass `offerman.nutrition.NutritionFacts`.

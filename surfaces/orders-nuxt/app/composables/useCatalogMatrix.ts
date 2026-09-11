@@ -355,45 +355,46 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     }
   }
 
-  // ── reordenação (curadoria) ────────────────────────────────────────────────
-  async function reorderCollections(orderedRefs: string[]): Promise<boolean> {
-    if (!canWrite()) return false;
-    clearError();
-    try {
-      await $fetch("/api/v1/backstage/catalog/reorder-collections/", {
-        method: "POST",
-        body: { ordered_refs: orderedRefs },
-      });
-      await refreshAfterCommit();
-      return true;
-    } catch (error) {
-      errorMsg.value = httpErrorMessage(error, "Falha ao reordenar.");
-      useSonner.error(errorMsg.value);
-      try { await refresh(); } catch { errorMsg.value += " A leitura atualizada também falhou."; } // reverte o otimista
-      return false;
-    }
+  // The action captured at pointer-down represents the order the person saw.
+  function curationAction(operation: string, ref_ = "") {
+    return data.value?.actions?.find(action => action.ref === operation && action.payload_schema.ref === ref_);
   }
-  async function reorderItems(collectionRef_: string, orderedSkus: string[]): Promise<boolean> {
-    if (!canWrite()) return false;
+  async function reorder(operation: string, ref_: string, ordered: string[], observed?: Action): Promise<boolean> {
+    const key = `curation:${operation}:${ref_}`;
+    if (!canWrite() || busy.value.has(key)) return false;
     clearError();
+    busy.value = new Set(busy.value).add(key);
     try {
-      await $fetch("/api/v1/backstage/catalog/reorder-items/", {
-        method: "POST",
-        body: { collection_ref: collectionRef_, ordered_skus: orderedSkus },
-      });
+      await intentions.executePath(key, `/api/v1/backstage/catalog/${operation}/`, observed ?? curationAction(operation, ref_),
+        { ref: ref_, [operation === "reorder-items" ? "ordered_skus" : "ordered_refs"]: ordered });
       await refreshAfterCommit();
       return true;
     } catch (error) {
-      errorMsg.value = httpErrorMessage(error, "Falha ao reordenar.");
+      errorMsg.value = httpErrorMessage(error, error instanceof Error ? error.message : "Falha ao reordenar.");
       useSonner.error(errorMsg.value);
       try { await refresh(); } catch { errorMsg.value += " A leitura atualizada também falhou."; }
       return false;
+    } finally {
+      const next = new Set(busy.value); next.delete(key); busy.value = next;
     }
   }
+  async function verifyOrder(operation: string, ref_: string): Promise<boolean> {
+    try {
+      const result = await intentions.checkPath(`curation:${operation}:${ref_}`, `/api/v1/backstage/catalog/${operation}/`);
+      if (result.outcome !== "applied") { errorMsg.value = "Resultado ainda desconhecido. O arraste foi mantido; consulte novamente."; return false; }
+      await refreshAfterCommit();
+      return true;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(error, error instanceof Error ? error.message : "Falha ao consultar a ordenação.");
+      return false;
+    }
+  }
+  const reorderCollections = (ordered: string[], action?: Action) => reorder("reorder-collections", "", ordered, action);
+  const reorderItems = (ref_: string, ordered: string[], action?: Action) => reorder("reorder-items", ref_, ordered, action);
 
   return {
     matrix, pending, error, refresh, isBusy, cellKey, productKey, socialKey, detailKey, errorMsg, clearError,
     setCell, setProduct, bulkSet, bulkPrice, previewBulkPrice, resync, saveSocial, fetchProductDetail, saveProductDetail,
-    reorderCollections, reorderItems, bulkBusy, aiAssist, aiAssistKey, productConflict, acknowledgeProductConflict,
+    reorderCollections, reorderItems, curationAction, verifyOrder, bulkBusy, aiAssist, aiAssistKey, productConflict, acknowledgeProductConflict,
   };
 }

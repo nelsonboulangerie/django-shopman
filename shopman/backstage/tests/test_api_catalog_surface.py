@@ -475,11 +475,7 @@ def test_reorder_collections(client, operator, catalog):
     Collection.objects.create(ref="paes", name="Pães", is_active=True, sort_order=0)
     Collection.objects.filter(ref="doces").update(sort_order=9)
     client.force_login(operator)
-    resp = client.post(
-        REORDER_COLLECTIONS_URL,
-        data={"ordered_refs": ["doces", "paes"]},
-        content_type="application/json",
-    )
+    resp = _reorder(client, REORDER_COLLECTIONS_URL, {"ordered_refs": ["doces", "paes"]})
     assert resp.status_code == 200
     assert Collection.objects.get(ref="doces").sort_order == 0
     assert Collection.objects.get(ref="paes").sort_order == 1
@@ -492,11 +488,7 @@ def test_reorder_items_manual(client, operator, catalog):
     )
     CollectionItem.objects.filter(collection=coll, product__sku="BOLO").update(sort_order=9)
     client.force_login(operator)
-    resp = client.post(
-        REORDER_ITEMS_URL,
-        data={"collection_ref": "doces", "ordered_skus": ["BOLO", "PAO"]},
-        content_type="application/json",
-    )
+    resp = _reorder(client, REORDER_ITEMS_URL, {"ref": "doces", "ordered_skus": ["BOLO", "PAO"]})
     assert resp.status_code == 200
     assert CollectionItem.objects.get(collection=coll, product__sku="BOLO").sort_order == 0
     assert CollectionItem.objects.get(collection=coll, product__sku="PAO").sort_order == 1
@@ -1332,3 +1324,13 @@ def test_product_intention_requires_current_actor_and_revision(client, operator,
     assert client.patch(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4())).status_code == 409
     catalog["pao"].refresh_from_db()
     assert catalog["pao"].name == "Pão"
+
+
+def _reorder(client, url, payload):
+    from uuid import uuid4
+
+    operation = "reorder-items" if payload.get("ref") else "reorder-collections"
+    actions = client.get(MATRIX_URL, {"collection": payload.get("ref", "")}).json()["actions"]
+    action = next(action for action in actions if action["ref"] == operation)
+    return client.post(url, {**action["payload_schema"], **payload},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))

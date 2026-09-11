@@ -975,54 +975,84 @@ def ai_assist_field(sku: str, field: str, current_value: str = "") -> str:
 # (produtos dentro da coleção). Storefront, menuboard e feeds usam essa ordem.
 
 
-def reorder_collections(ordered_refs: list[str], *, actor: str = "") -> int:
-    """Grava a ordem das coleções (Collection.sort_order) na sequência recebida."""
+def _curation_snapshot(collection_ref: str = "", *, lock: bool = False):
+    """Read the canonical ordering and membership; locking callers are atomic."""
+    from shopman.offerman.models import Collection, CollectionItem
+
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    groups = Collection.objects.all()
+    if lock:
+        groups = groups.select_for_update()
+    if collection_ref:
+        group = groups.filter(ref=collection_ref).first()
+        if group is None:
+            raise CatalogError("A coleção não foi encontrada.")
+        if group.is_smart:
+            raise CatalogError("Coleção por regra não tem ordem manual.")
+        items = CollectionItem.objects.filter(collection=group).select_related("product").order_by("pk")
+        if lock:
+            items = items.select_for_update(of=("self",))
+        records = list(items)
+        rows = [(item.pk, item.product.sku, item.sort_order) for item in records]
+        context = {"ref": group.ref, "active": group.is_active, "rule": group.rule}
+    else:
+        records = list(groups.filter(is_active=True).order_by("pk"))
+        rows = [(group.pk, group.ref, group.sort_order) for group in records]
+        context = {"scope": "active-collections"}
+    revision = mutation_fingerprint({"version": 1, "context": context, "rows": rows})
+    return revision, records, [row[1] for row in rows]
+
+
+def curation_revision(collection_ref: str = "") -> str:
+    return _curation_snapshot(collection_ref)[0]
+
+
+def _validate_curated_order(ordered, members, observed, expected):
+    from shopman.backstage.services.exceptions import CatalogConflict
+
+    if not isinstance(ordered, list) or any(not isinstance(value, str) for value in ordered):
+        raise CatalogError("A ordem deve ser uma lista de referências.")
+    if expected is not None and expected != observed:
+        raise CatalogConflict("A ordem mudou durante a edição. Confira a ordem atual antes de aplicar seu arraste.")
+    if len(ordered) != len(set(ordered)) or set(ordered) != set(members):
+        raise CatalogError("A lista mudou ou está incompleta. Atualize e reordene o conjunto completo.")
+
+
+@transaction.atomic
+def reorder_collections(ordered_refs: list[str], *, actor: str = "", expected_revision: str | None = None) -> int:
+    """Reorder exactly the observed active collections; preserve inactive groups."""
     from shopman.offerman.models import Collection
 
-    if not ordered_refs:
-        return 0
-    colls = {c.ref: c for c in Collection.objects.filter(ref__in=ordered_refs)}
+    revision, records, members = _curation_snapshot(lock=True)
+    _validate_curated_order(ordered_refs, members, revision, expected_revision)
+    positions = {ref: index for index, ref in enumerate(ordered_refs)}
     changed = []
-    for index, ref in enumerate(ordered_refs):
-        coll = colls.get(ref)
-        if coll is not None and coll.sort_order != index:
-            coll.sort_order = index
-            changed.append(coll)
+    for group in records:
+        if group.sort_order != positions[group.ref]:
+            group.sort_order = positions[group.ref]
+            changed.append(group)
     if changed:
         Collection.objects.bulk_update(changed, ["sort_order"])
     return len(changed)
 
 
-def reorder_collection_items(collection_ref: str, ordered_skus: list[str], *, actor: str = "") -> int:
-    """Grava a ordem dos produtos dentro de uma coleção MANUAL (CollectionItem.sort_order).
+@transaction.atomic
+def reorder_collection_items(collection_ref: str, ordered_skus: list[str], *, actor: str = "", expected_revision: str | None = None) -> int:
+    """Reorder exact manual membership under the collection and item locks."""
+    from shopman.offerman.models import CollectionItem
 
-    Coleção por regra (smart) não tem ordem manual — a pertinência é por condição.
-    """
-    from shopman.offerman.models import Collection, CollectionItem
-
-    coll = Collection.objects.filter(ref=collection_ref).first()
-    if coll is None:
-        raise CatalogError(f"Coleção '{collection_ref}' não encontrada.")
-    if coll.is_smart:
-        raise CatalogError("Coleção por regra não tem ordem manual.")
-    if not ordered_skus:
-        return 0
-
-    items = {
-        ci.product.sku: ci
-        for ci in CollectionItem.objects.filter(collection=coll).select_related("product")
-    }
+    revision, records, members = _curation_snapshot(collection_ref, lock=True)
+    _validate_curated_order(ordered_skus, members, revision, expected_revision)
+    positions = {sku: index for index, sku in enumerate(ordered_skus)}
     changed = []
-    for index, sku in enumerate(ordered_skus):
-        ci = items.get(sku)
-        if ci is not None and ci.sort_order != index:
-            ci.sort_order = index
-            changed.append(ci)
+    for item in records:
+        if item.sort_order != positions[item.product.sku]:
+            item.sort_order = positions[item.product.sku]
+            changed.append(item)
     if changed:
         CollectionItem.objects.bulk_update(changed, ["sort_order"])
     return len(changed)
-
-
 
 
 # 100 destination cells is the measured provisional lab envelope, not a field SLA.
