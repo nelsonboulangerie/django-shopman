@@ -92,10 +92,34 @@ Não colocar nota de cliente, endereço, telefone, token ou cartão na coleta. R
 de recursos ficam em trilha controlada, não em labels de métricas. Retenção depende
 de G08. Esta preparação não tem migration; rollback documental não apaga evidência.
 
-## Decisão de retenção apresentada — pendente
+## Retenção pós-reload — opcional, sem nova persistência
 
 Proposta G05/G08: rascunhos e chaves na aba atual, retomados somente pela mesma
 pessoa autenticada; limpar ao salvar, descartar ou fechar; sem PIN/senha e sem
-compartilhamento entre aparelhos. Alternativa: memória e confirmação antes de
-sair, mantendo retomada após reload pendente. Sem resposta registrada, a persistência
-não foi implementada. Essa decisão não autoriza piloto ou efeitos reais.
+compartilhamento entre aparelhos. O escopo atual conserva contexto em memória e confirmação antes de sair. C07
+permite essa solução; persistir após reload não é requisito obrigatório nem bloqueio
+autônomo da fase técnica. A pergunta de Pablo sobre necessidade não constitui
+aprovação de armazenamento adicional. Nada foi persistido; SSE continua trazendo
+fatos confirmados, sem substituir a edição local. Isso não autoriza piloto ou efeitos reais.
+
+
+## Extensão: inventário físico de maquininhas
+
+Antes de qualquer piloto, G02 exige responsável e conferência física de cada
+aparelho, identificação única e situação de custódia. Registros legados sem
+identificação ficam separados: não presumir que correspondem a um aparelho novo
+livre. Conferência/reconciliação real requer autorização específica; a migration0061
+não efetua essa reconciliação nem cria inventário de produção. G06 precisa homologar
+rede, estações, número de leitores de backend e demanda simultânea. G07 define
+coorte, suporte e janela da capacidade, com os resultados em delivery_devices/.
+
+Sequência técnica preparada: migration0061 aditiva → backend com exclusividade
+→ UI compatível que envia card_machine:<UUID>. PDV informa necessidade e não reserva.
+Cadastro nativo Admin oferece nome, identificação e ativo; custódia só muda pelo
+despacho/devolução. Antes de ativar cadastro físico, resolver disponibilidade real
+inclusive custódias legadas; não tornar aparelho ativo por conveniência do teste.
+
+Rollback da UI conserva backend seguro e inventário. Suspender novos despachos
+dependentes antes de reverter capacidade; permitir devolução, consulta e recibos.
+Não voltar ao writer antigo que aceita referência genérica nem apagar0061 populada.
+A reversão vazia foi ensaiada e a reversão populada foi corretamente recusada.

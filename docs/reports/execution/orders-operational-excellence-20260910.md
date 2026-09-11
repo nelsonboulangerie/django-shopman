@@ -1654,3 +1654,25 @@ independente das otimizações mantém writers/recibos seguros. Dados brutos, ro
 negativas, escopo de esforço e limitações: orders-20260910/performance_completion/.
 Retenção por aba G05/G08 apresentada e sem resposta; T aberto, P preparado, R
 não executado. O fechamento desta rodada não é fechamento da fase normativa.
+
+
+### WP01/02/03/06/07/09 — extensão autorizada de maquininhas,11/09
+
+M00–M03 implementados atéc1063c850; corrida reforçada47e9c657a. Cadastro Admin
+nativo0061, alocação transacional exclusiva somente no despacho, barreiras KDS/
+fulfillment/courier, devolução independente, integração seletiva PDV preservando
+locks e recibos.90 testes PostgreSQL, corrida1,31 browser,303 Orders,264 Admin,
+typecheck/build; suíte ampla fixa6f0f38145 teve23 falhas/9452 passes/79 skips, e os23
+nós passaram após correções. Não é suíte ampla verde no HEAD novo.
+
+M04 aceite aberto:500 pedidos+10 aparelhos, p95backend10 clientes954/2036/1058ms,
+browser1857/1695/1620ms; budgets500/1500ms reprovados e mantidos. Carga e swap altos
+são contexto, não causa provada. Fontes, scripts, logs negativos e amostras brutas em
+orders-20260910/delivery_devices/. Migração vazia ida/volta passou; reversão populada
+foi recusada preservando tabela e migration. Rollback conserva inventário e writer
+seguro; nenhuma produção, reconciliação real ou efeito externo foi executado.
+
+Correção do diário anterior: C07 permite contexto em memória e saída protegida;
+persistência pós-reload é opcional e não constitui bloqueio obrigatório de T.
+G02/G06/G07 reais permanecem aplicáveis; M04/T não concluídos, P não iniciado,
+R não autorizado. A tarefa PDV recebeu o contrato e a reprovação de capacidade.

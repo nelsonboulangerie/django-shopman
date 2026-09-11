@@ -37,7 +37,10 @@ legado, não identidade física; não inventar vínculos históricos por migraç
    budgets afetados. Registrar logs negativos e limites, migration/rollback.
 
 M00→M01→M02→M03→M04, integrados a WP01/02/03/06/07/09 do plano principal.
-Estado inicial: M00 em andamento; demais não iniciados. Nenhuma conclusão alegada.
+Estado em11/09: M00–M03 implementados; M04 com provas funcionais/concorrência/
+migração executadas e aceite de capacidade aberto (budgets reprovados). Commits,
+negativos e limites em `../reports/execution/orders-20260910/delivery_devices/README.md`.
+Não declara fase técnica global, piloto ou rollout concluídos.
 
 ## Integração e rollback
 

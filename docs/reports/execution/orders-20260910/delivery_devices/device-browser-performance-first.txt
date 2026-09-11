@@ -1,0 +1,10 @@
+
+Running 3 tests using 1 worker
+
+(node:86409) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › tests/performance/context.spec.ts:6:3 › queue context survives detail and link return (5.4s)
+  ✓  2 [chromium] › tests/performance/context.spec.ts:6:3 › queue context survives detail and history return (4.5s)
+  ✓  3 [chromium] › tests/performance/read.spec.ts:9:1 › rendered queue becomes usable and filtering remains local (33.8s)
+
+  3 passed (44.9s)
