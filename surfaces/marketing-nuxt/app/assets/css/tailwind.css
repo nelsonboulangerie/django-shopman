@@ -202,8 +202,8 @@
      forte=text-foreground · médio=text-muted-foreground · borda=border-border
      superfície=bg-background/bg-card · superfície-2=bg-muted/bg-secondary
 
-   ALTURAS DE CONTROLE (ladder confortável — alvo interativo nunca menor que 44px)
-     sm  h-9  (36px)  aparência compacta dentro de área clicável mínima de 44px
+   ALTURAS DE CONTROLE (ladder confortável — 3 degraus, alvo de toque ≥44 no md+)
+     sm  h-9  (36px)  chip / botão inline / pílula de filtro
      md  h-11 (44px)  campo, botão padrão, linha de tender, tile de método
      lg  h-14 (56px)  CTA primário, tecla de numpad, tile de produto/ação
      Os componentes ui-thing mapeiam para o ladder (UiButton sm=h-9 / default=h-11
