@@ -48,6 +48,8 @@ export interface Announcement {
   hashtags: string[];
   link: string;
   platforms: string[];
+  /** Snapshot editorial exato usado pela prévia e pela aprovação. */
+  platform_content: Record<string, Record<string, unknown>>;
   audience: Record<string, number>;
   audience_total: number;
   platform_results: PlatformResult[];

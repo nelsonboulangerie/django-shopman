@@ -119,6 +119,7 @@ def test_approval_records_whether_ai_copy_was_edited(actor):
         base_price_q=1200,
         is_published=True,
         is_sellable=True,
+        image_url="https://example.test/croissant.jpg",
     )
     template = AnnouncementTemplate.objects.create(
         name="Fornada IA",
@@ -221,7 +222,13 @@ def test_artifact_hash_matches_exact_canonical_approved_bytes(actor, announcemen
         "image_url": "https://example.test/pao.jpg",
         "link": "https://example.test/produto/pao-de-queijo",
     }
-    variants = {"instagram": {"body": "Pão de queijo às 17h ✨"}}
+    variants = {
+        "instagram": {
+            "body": "Pão de queijo às 17h ✨",
+            "publication_format": "story",
+        },
+        "google_business": {"publication_format": "standard"},
+    }
 
     decision_time = timezone.now()
     result = _approve(
@@ -355,7 +362,11 @@ def test_social_publish_now_is_not_blocked_by_direct_message_quiet_hours(
 
 
 def test_input_mutation_after_approval_cannot_change_sealed_artifact(actor, announcement):
-    content = {"body": "Original", "hashtags": ["original"]}
+    content = {
+        "body": "Original",
+        "hashtags": ["original"],
+        "image_url": "/media/original.jpg",
+    }
     result = _approve(actor=actor, announcement=announcement, content=content)
 
     content["body"] = "Alterado fora"
@@ -365,6 +376,7 @@ def test_input_mutation_after_approval_cannot_change_sealed_artifact(actor, anno
     assert result.artifact.payload["content"] == {
         "body": "Original",
         "hashtags": ["original"],
+        "image_url": "/media/original.jpg",
     }
 
 

@@ -368,6 +368,26 @@ com tres ramos de despacho vira o registro da costura `posting` que **ja existe*
 (`shopman/shop/adapters/__init__.py:26-36`), de modo que `get_adapter("posting", method=...)`
 (`handlers/broadcast.py:280`) pare de devolver `None`. Sem taxonomia nova.
 
+#### Emenda de produto — 2026-09-11: Story e o formato primario do Instagram
+
+O proprietario esclareceu a intencao que faltava ao contrato: para fornada, estoque
+curto e oportunidade do momento, a publicacao com maior aderencia e **Story**, por ser
+efemera e urgente. Logo, Instagram nao pode ser modelado como um generico "post".
+
+O artefato aprovado passa a carregar `publication_format`. Para Instagram, `story` e o
+default de todo conteudo novo e `feed` so entra por escolha explicita do operador. Nao
+existe fallback silencioso entre eles: falha ao publicar Story nao autoriza publicar no
+Feed. Story exige imagem publica pronta para a consequencia; a previa deve representar
+o quadro vertical e deixar claro que o corpo textual do rascunho nao e composto sobre
+a imagem pela API. Feed continua secundario e permanente. DM do Instagram permanece
+fora do escopo, como ja decidido no contrato da superficie.
+
+Facebook continua publicacao na pagina e Google Business Profile, atualizacao publica
+do estabelecimento. Os tres atravessam o mesmo outbox/ledger duravel, mas possuem
+adapters e flags independentes. A verificacao de prontidao consulta exatamente esse
+registro duravel; o seam legado `posting` nao pode afirmar prontidao de um worker que
+nao o usa.
+
 ### 11. Copy com IA e adapter, e a voz da marca sai do codigo
 
 `use_ai_generation` e `ai_prompt` (`models/broadcast.py:74-78`) ganham leitor ou saem. Ganham.

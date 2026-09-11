@@ -12,7 +12,7 @@
     "link": "https://shop.example/produto/croissant",
     "platform": "google_business",
     "provider_fields": {
-      "post_type": "OFFER"
+      "publication_format": "standard"
     }
   },
   "instagram": {
@@ -28,7 +28,7 @@
     "link": "https://shop.example/produto/croissant",
     "platform": "instagram",
     "provider_fields": {
-      "post_type": "FEED"
+      "publication_format": "feed"
     }
   },
   "whatsapp": {

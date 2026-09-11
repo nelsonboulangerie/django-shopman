@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pytest
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import override_settings
 from shopman.orderman.models import Directive
 
@@ -53,6 +54,12 @@ SIMULATION_AFFORDANCES = {
     "SHOPMAN_MARKETING_SIMULATION_FLOWS": (
         ("local_marketing_e2e", "Fluxo local — sem envio externo"),
     ),
+}
+CANARY_SETTINGS = {
+    **SIMULATOR_SETTINGS,
+    "SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED": False,
+    "SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED": False,
+    "SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED": True,
 }
 
 
@@ -192,7 +199,7 @@ def test_approval_reaches_confirmed_ledger_receipt_through_the_real_runtime():
     )
     announcement = Announcement.objects.create(
         status=AnnouncementStatus.PENDING_REVIEW,
-        content={"body": "Fornada pronta"},
+        content={"body": "Fornada pronta", "image_url": "/media/fornada.jpg"},
         platforms=["instagram"],
     )
     approved = approve_command(
@@ -201,7 +208,7 @@ def test_approval_reaches_confirmed_ledger_receipt_through_the_real_runtime():
         idempotency_key="local-simulation-e2e-approval",
         base_version=1,
         publish_mode=PUBLISH_NOW,
-        content={"body": "Fornada pronta"},
+        content={"body": "Fornada pronta", "image_url": "/media/fornada.jpg"},
         platform_content={},
         platforms=["instagram"],
     )
@@ -234,6 +241,148 @@ def test_approval_reaches_confirmed_ledger_receipt_through_the_real_runtime():
 
 
 @pytest.mark.django_db(transaction=True)
+@override_settings(**CANARY_SETTINGS)
+def test_publication_canary_executes_only_the_exact_outbox_and_replays_safely():
+    actor = get_user_model().objects.create_user(username="canary-operator")
+    selected = Announcement.objects.create(
+        status=AnnouncementStatus.PENDING_REVIEW,
+        content={"body": "Story canário", "image_url": "/media/story.jpg"},
+        platforms=["instagram"],
+    )
+    untouched = Announcement.objects.create(
+        status=AnnouncementStatus.PENDING_REVIEW,
+        content={"body": "Não publicar", "image_url": "/media/other.jpg"},
+        platforms=["instagram"],
+    )
+    selected_approval = approve_command(
+        selected.pk,
+        actor=actor,
+        idempotency_key="canary-selected-approval",
+        base_version=1,
+        publish_mode=PUBLISH_NOW,
+        content=selected.content,
+        platform_content={},
+        platforms=["instagram"],
+    )
+    untouched_approval = approve_command(
+        untouched.pk,
+        actor=actor,
+        idempotency_key="canary-untouched-approval",
+        base_version=1,
+        publish_mode=PUBLISH_NOW,
+        content=untouched.content,
+        platform_content={},
+        platforms=["instagram"],
+    )
+    outbox = MarketingOutbox.objects.get(command=selected_approval.receipt)
+    untouched_outbox = MarketingOutbox.objects.get(command=untouched_approval.receipt)
+    confirmation = f"PUBLICAR instagram {outbox.ref}"
+
+    with patch.object(
+        marketing_delivery_console,
+        "send",
+        wraps=marketing_delivery_console.send,
+    ) as send:
+        for _replay in range(2):
+            call_command(
+                "run_marketing_publication_canary",
+                outbox_ref=str(outbox.ref),
+                platform="instagram",
+                execute=True,
+                confirm=confirmation,
+                stdout=StringIO(),
+            )
+
+    outbox.refresh_from_db()
+    untouched_outbox.refresh_from_db()
+    target = DeliveryTarget.objects.get(outbox=outbox)
+    assert send.call_count == 1
+    assert outbox.state == MarketingOutbox.State.DISPATCHED
+    assert target.state == DeliveryTarget.State.CONFIRMED
+    assert untouched_outbox.state == MarketingOutbox.State.PENDING
+    assert not DeliveryTarget.objects.filter(outbox=untouched_outbox).exists()
+
+
+@pytest.mark.django_db(transaction=True)
+@override_settings(**CANARY_SETTINGS)
+def test_publication_canary_preflight_resolves_the_announcement_url_number():
+    actor = get_user_model().objects.create_user(username="canary-preflight-operator")
+    announcement = Announcement.objects.create(
+        status=AnnouncementStatus.PENDING_REVIEW,
+        content={"body": "Story canário", "image_url": "/media/story.jpg"},
+        platforms=["instagram"],
+    )
+    approved = approve_command(
+        announcement.pk,
+        actor=actor,
+        idempotency_key="canary-preflight-approval",
+        base_version=1,
+        publish_mode=PUBLISH_NOW,
+        content=announcement.content,
+        platform_content={},
+        platforms=["instagram"],
+    )
+    outbox = MarketingOutbox.objects.get(command=approved.receipt)
+    output = StringIO()
+
+    call_command(
+        "run_marketing_publication_canary",
+        announcement_id=announcement.pk,
+        platform="instagram",
+        stdout=output,
+    )
+
+    assert str(outbox.ref) in output.getvalue()
+    assert "Nada foi publicado" in output.getvalue()
+    assert "Comando exato:" in output.getvalue()
+    assert "formato      : Stories" in output.getvalue()
+    assert "estado fila  : pendente" in output.getvalue()
+    outbox.refresh_from_db()
+    assert outbox.state == MarketingOutbox.State.PENDING
+
+
+@pytest.mark.django_db(transaction=True)
+@override_settings(
+    **{
+        **CANARY_SETTINGS,
+        "SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED": True,
+    }
+)
+def test_publication_canary_refuses_to_run_beside_global_consumer():
+    actor = get_user_model().objects.create_user(username="canary-blocked-operator")
+    announcement = Announcement.objects.create(
+        status=AnnouncementStatus.PENDING_REVIEW,
+        content={"body": "Story canário", "image_url": "/media/story.jpg"},
+        platforms=["instagram"],
+    )
+    approved = approve_command(
+        announcement.pk,
+        actor=actor,
+        idempotency_key="canary-blocked-approval",
+        base_version=1,
+        publish_mode=PUBLISH_NOW,
+        content=announcement.content,
+        platform_content={},
+        platforms=["instagram"],
+    )
+    outbox = MarketingOutbox.objects.get(command=approved.receipt)
+
+    with pytest.raises(CommandError, match="consumer global de entrega"):
+        call_command(
+            "run_marketing_publication_canary",
+            outbox_ref=str(outbox.ref),
+            platform="instagram",
+            execute=True,
+            confirm=f"PUBLICAR instagram {outbox.ref}",
+            stdout=StringIO(),
+        )
+
+    outbox.refresh_from_db()
+    assert outbox.state == MarketingOutbox.State.PENDING
+    assert not DeliveryTarget.objects.filter(outbox=outbox).exists()
+
+
+@pytest.mark.django_db(transaction=True)
 @override_settings(**SIMULATOR_SETTINGS)
 def test_unknown_reaches_lookup_only_reconciliation_through_local_runtime():
     actor = get_user_model().objects.create_user(
@@ -242,7 +391,7 @@ def test_unknown_reaches_lookup_only_reconciliation_through_local_runtime():
     )
     announcement = Announcement.objects.create(
         status=AnnouncementStatus.PENDING_REVIEW,
-        content={"body": "Fornada pronta"},
+        content={"body": "Fornada pronta", "image_url": "/media/fornada.jpg"},
         platforms=["instagram"],
     )
     approve_command(
@@ -251,7 +400,7 @@ def test_unknown_reaches_lookup_only_reconciliation_through_local_runtime():
         idempotency_key="local-reconciliation-approval",
         base_version=1,
         publish_mode=PUBLISH_NOW,
-        content={"body": "Fornada pronta"},
+        content={"body": "Fornada pronta", "image_url": "/media/fornada.jpg"},
         platform_content={},
         platforms=["instagram"],
     )

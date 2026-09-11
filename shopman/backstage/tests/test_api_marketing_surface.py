@@ -83,6 +83,7 @@ def _post(rule, template, *, status=AnnouncementStatus.PENDING_REVIEW, **kwargs)
         "content": {
             "body": "Croissant saiu do forno",
             "hashtags": ["padaria"],
+            "image_url": "/media/croissant.jpg",
             "link": "/produto/cro",
         },
         "platforms": ["instagram", "google_business"],
@@ -175,6 +176,7 @@ class TestBoard:
         assert card["body"] == "Croissant saiu do forno"
         assert card["audience_total"] == 15
         assert card["rule_name"] == "Fornada de pães"
+        assert card["platform_content"] == {}
         assert card["sku"] == "CRO-001"
         assert datetime.fromisoformat(card["scheduled_for"]) == suggested
         assert [r["platform"] for r in card["platform_results"]] == [
@@ -1104,6 +1106,7 @@ class TestOptions:
             base_price_q=850,
             is_published=True,
             is_sellable=True,
+            image_url="/media/croissant.jpg",
         )
         NotificationTemplate.objects.create(
             event="announcement_published",
@@ -1132,7 +1135,10 @@ class TestOptions:
                 "body": "Base {{product_name}}",
                 "platforms": ["instagram", "whatsapp"],
                 "platform_content": {
-                    "instagram": {"body": "Instagram {{price}}"},
+                    "instagram": {
+                        "body": "Instagram {{price}}",
+                        "image_url": "/media/croissant.jpg",
+                    },
                     "whatsapp": {"body": "WhatsApp {{product_name}}"},
                 },
             },

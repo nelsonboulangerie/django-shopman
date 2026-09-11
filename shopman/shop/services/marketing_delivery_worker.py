@@ -239,6 +239,7 @@ def claim_due_targets(
     limit: int = DEFAULT_CLAIM_LIMIT,
     lease_seconds: int = DEFAULT_TARGET_LEASE_SECONDS,
     platforms: Iterable[str] | None = None,
+    outbox_refs: Iterable[str] | None = None,
 ) -> TargetClaimReport:
     """Lease eligible targets after one batched consent/expiry recheck."""
 
@@ -265,6 +266,11 @@ def claim_due_targets(
         ).filter(Q(lease_owner="") | Q(lease_until__lte=clock))
         if platform_filter is not None:
             query = query.filter(platform__in=platform_filter)
+        if outbox_refs is not None:
+            exact_refs = tuple(dict.fromkeys(str(value) for value in outbox_refs))
+            if not exact_refs:
+                return TargetClaimReport((), 0, 0, 0, 0, 0, 0)
+            query = query.filter(outbox__ref__in=exact_refs)
         query = query.select_related(
             "announcement",
             "artifact",

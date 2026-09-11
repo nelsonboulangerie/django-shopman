@@ -39,7 +39,10 @@ async function openScenario(
     reducedMotion: "reduce",
   });
   await page.goto(path, { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("main")).toBeVisible();
+  // Dev assets can compile on first request while another worktree is using the
+  // local CPU. The visual assertion remains exact; only bootstrap gets room to
+  // finish instead of turning machine contention into a false UI regression.
+  await expect(page.getByRole("main")).toBeVisible({ timeout: 30_000 });
   await page.waitForFunction(() =>
     document.querySelector("#__nuxt")?.hasAttribute("data-v-app"),
   );
