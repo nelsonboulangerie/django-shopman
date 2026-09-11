@@ -3410,7 +3410,8 @@ def resolve_or_create_customer(
     """Get-or-create a POS customer JUST-IN-TIME — when the operator defines them
     on the counter, not deferred to order commit. Resolves by phone/CPF/email or
     creates a fresh record, and returns the customer dict (ref/name/phone/tax_id/
-    email/tier). Idempotent (same identifiers → same customer). Reuses the exact
+    email/tier). Repeated updates use the selected ref. A named registration
+    matching an existing identifier requires explicit selection. Reuses the exact
     commit-time logic so the just-in-time customer is identical to the final one.
 
     ⚠️ ``ref`` é o cliente JÁ ASSOCIADO à comanda, e ele não é decoração: sem
@@ -3534,6 +3535,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             phone=phone,
             tax_id=resolve_tax_id,
             email=resolve_email,
+            require_selection=bool(name and not raw_ref),
         )
         created = customer is None
         # A correção vale para o cadastro que o REF apontou — e para mais
@@ -3715,7 +3717,7 @@ def _guard_receipt_tax_id_overwrite(
     )
 
 
-def _resolve_pos_customer(Customer, *, ref: str, phone: str, tax_id: str, email: str):
+def _resolve_pos_customer(Customer, *, ref: str, phone: str, tax_id: str, email: str, require_selection: bool = False):
     candidates: dict[int, object] = {}
     evidence: dict[int, set[str]] = {}
 
@@ -3744,6 +3746,10 @@ def _resolve_pos_customer(Customer, *, ref: str, phone: str, tax_id: str, email:
     if not candidates:
         return None
     if len(candidates) == 1:
+        if require_selection:
+            # Novo cadastro com nome não autoriza reutilizar ou preencher o
+            # cadastro encontrado. O operador deve selecioná-lo explicitamente.
+            raise _pos_customer_conflict(candidates, evidence)
         return next(iter(candidates.values()))
 
     detail = ", ".join(
@@ -3784,8 +3790,8 @@ def _pos_customer_conflict(candidates: dict, evidence: dict) -> PosCustomerConfl
         "Os dados do cliente apontam para cadastros diferentes. "
         "Revise telefone, CPF/CNPJ ou e-mail antes de fechar."
     )
-    if len(intruding) == 1:
-        source = next(iter(intruding))
+    if len(intruding) == 1 or (len(candidates) == 1 and intruding):
+        source = next(source for source in ("phone", "email", "document", "cpf") if source in intruding)
         field, message = _CONFLICT_FIELDS.get(source, ("", message))
 
     rows = [

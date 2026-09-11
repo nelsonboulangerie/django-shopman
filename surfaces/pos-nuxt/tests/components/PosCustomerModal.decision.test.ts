@@ -317,3 +317,21 @@ describe("PosCustomerModal — a recusa tem motivo E caminho", () => {
     expect(wrapper.emitted("update:open")?.at(-1)).toEqual([false]);
   });
 });
+
+describe("cadastro novo com telefone existente", () => {
+  it("mantém a decisão aberta e só seleciona após conferir o dono", async () => {
+    const wrapper = await mount({
+      customerName: "Outra Pessoa",
+      customerDecision: { ...CONFLICT, kind: "existing_customer", current: null },
+    });
+    expect(document.body.textContent).toContain("Nenhum cadastro foi alterado");
+    expect(buttonByText("Concluir")?.disabled).toBe(true);
+    expect(buttonByText("unificar")).toBeUndefined();
+    buttonByText("Usar cadastro de Bruno Souza")!.click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
+    expect(document.body.textContent).toContain("O cliente atendido é Bruno Souza?");
+    buttonByText("Sim, tenho certeza")!.click();
+    expect(wrapper.emitted("decisionConfirm")).toHaveLength(1);
+  });
+});

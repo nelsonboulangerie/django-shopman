@@ -989,15 +989,50 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(customer["name"], "Cliente JIT")
         self.assertEqual(Customer.objects.count(), before + 1)
         ref = customer["ref"]
-        # Resolving the same identifiers again returns the same customer (no dup).
+        # Explicitly selecting the returned ref is safe and does not duplicate.
         again = self.client.post(
             "/api/v1/backstage/pos/customer/resolve/",
-            {"customer_name": "Cliente JIT", "customer_phone": "43966665555"},
+            {"customer_ref": ref, "customer_name": "Cliente JIT", "customer_phone": "43966665555"},
             content_type="application/json",
         )
         self.assertEqual(again.status_code, 200)
         self.assertEqual(again.json()["customer"]["ref"], ref)
         self.assertEqual(Customer.objects.count(), before + 1)
+
+    def test_api_customer_resolve_requires_selection_before_reusing_phone(self) -> None:
+        existing = Customer.objects.create(
+            ref=Customer.generate_ref(), first_name="Cliente", last_name="0022", phone="+5543999990022",
+        )
+        response = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {"customer_name": "Outra Pessoa", "customer_phone": "43999990022", "customer_email": "new@example.com"},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 422)
+        error = response.json()["error"]
+        self.assertEqual(error["field"], "customer_phone")
+        self.assertEqual(error["candidates"][0]["ref"], existing.ref)
+        self.assertFalse(error["candidates"][0]["is_current"])
+        existing.refresh_from_db()
+        self.assertEqual(existing.name, "Cliente 0022")
+        self.assertEqual(existing.email, "")
+
+    def test_api_customer_resolve_reports_concurrent_unique_conflict(self) -> None:
+        from unittest.mock import patch
+
+        from django.db import IntegrityError
+
+        with patch(
+            "shopman.backstage.api.operations.pos_tabs_service.resolve_or_create_customer",
+            side_effect=IntegrityError("concurrent contact creation"),
+        ):
+            response = self.client.post(
+                "/api/v1/backstage/pos/customer/resolve/",
+                {"customer_name": "Outra Pessoa", "customer_phone": "43999990022"},
+                content_type="application/json",
+            )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["error"]["code"], "customer_conflict")
 
     def test_api_customer_resolve_empty_returns_null(self) -> None:
         response = self.client.post(

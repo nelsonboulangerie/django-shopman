@@ -4371,6 +4371,8 @@ class POSCustomerResolveView(APIView):
                 {"detail": str(exc) or "Cadastro conflitante.", "error": {"code": "customer_conflict"}},
                 status=422,
             )
+        except IntegrityError as exc:
+            return _pos_customer_integrity_response(exc, action="customer_resolve")
         if not customer:
             return Response({"customer": None})
         # A resposta carrega SEMPRE a projeção do cliente resolvido, chaveada

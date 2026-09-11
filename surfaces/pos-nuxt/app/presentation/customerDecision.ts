@@ -42,6 +42,7 @@ export interface CustomerDecisionParty {
 // são a MESMA pessoa. Nem atender o outro, nem manter quem está — unificar.
 
 export type CustomerDecisionKind =
+  | "existing_customer"
   | "contact_conflict"
   | "contact_change"
   | "inactive_owner"
@@ -250,6 +251,23 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
     ? `Manter ${firstName(currentName) || currentName}`
     : `Descartar este ${label}`;
 
+  if (decision.kind === "existing_customer") {
+    const ownerName = other?.name?.trim() || "o cliente encontrado";
+    return {
+      title: `Este ${label} já está cadastrado`,
+      body: `${decision.typed} pertence ao cadastro de ${ownerName}. `
+        + "Nenhum cadastro foi alterado. Confira com o cliente antes de usar este cadastro, ou corrija o dado para cadastrar outra pessoa.",
+      confirmLabel: `Usar cadastro de ${ownerName}`,
+      confirmIcon: "lucide:user-round-check",
+      cancelLabel: `Corrigir ${label}`,
+      cancelIcon: "lucide:pencil-line",
+      merge: null,
+      release: null,
+      requiresConfirmation: true,
+      confirmPrompt: `O cliente atendido é ${ownerName}? Os dados digitados serão substituídos pelos deste cadastro.`,
+    };
+  }
+
   if (decision.kind === "contact_conflict") {
     const ownerName = other?.name?.trim() || "outro cliente";
     const ownerFirst = firstName(ownerName) || ownerName;
@@ -430,6 +448,18 @@ export function conflictDecision(input: {
       field,
       typed: (input.typed || candidateValue(other, field) || "").trim(),
       current: current ? party(current, field) : null,
+      other: party(other, field),
+      candidates,
+      fromReceipt,
+    };
+  }
+
+  if (field && !current && other && intruders.length === 1) {
+    return {
+      kind: "existing_customer",
+      field,
+      typed: (input.typed || candidateValue(other, field) || "").trim(),
+      current: null,
       other: party(other, field),
       candidates,
       fromReceipt,

@@ -222,7 +222,7 @@ function onSelect(result: POSCustomerSearchResult) {
 }
 function onConclude() {
   // Uma pergunta aberta na tela não se responde fechando a tela.
-  if (props.customerDecision) return;
+  if (props.customerDecision || props.lookupBusy) return;
   emit("resolveCustomer");
   emit("update:open", false);
 }
@@ -593,7 +593,7 @@ const newCustomerNote = computed(() => {
           <!-- 3 · create / edit form -->
           <div class="grid gap-3">
             <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {{ hasCustomer ? "Editar cadastro" : "Novo cadastro" }}
+              {{ customerLookup?.ref ? "Editar cadastro" : "Novo cadastro" }}
             </p>
             <div class="grid gap-3 sm:grid-cols-2">
               <label class="grid gap-1.5 text-sm">
@@ -666,7 +666,7 @@ const newCustomerNote = computed(() => {
       </div>
 
       <UiDialogFooter>
-        <UiButton class="h-14 w-full" :disabled="Boolean(customerDecision)" @click="onConclude">
+        <UiButton class="h-14 w-full" :disabled="Boolean(customerDecision) || lookupBusy" @click="onConclude">
           Concluir
         </UiButton>
       </UiDialogFooter>

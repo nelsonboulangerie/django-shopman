@@ -266,3 +266,36 @@ def test_a_correcao_troca_o_email_do_cadastro(_pdv):
 
     a.refresh_from_db()
     assert a.email == "novo@example.com"
+
+
+@pytest.mark.parametrize("same_name", [False, True])
+def test_new_named_customer_requires_selection_of_existing_phone(_pdv, same_name):
+    existing = _customer("Cliente", "0022", "+5543999990022")
+    before_metadata = existing.metadata.copy()
+    with pytest.raises(PosCustomerConflict) as conflict:
+        resolve_or_create_customer(
+            name=existing.name if same_name else "Outra Pessoa",
+            phone="(43) 99999-0022",
+            email="new@example.com",
+            operator_username="op",
+        )
+    assert conflict.value.field == "customer_phone"
+    assert conflict.value.candidates[0]["ref"] == existing.ref
+    assert conflict.value.candidates[0]["is_current"] is False
+    existing.refresh_from_db()
+    assert existing.name == "Cliente 0022"
+    assert existing.email == ""
+    assert existing.metadata == before_metadata
+    assert not ContactPoint.objects.filter(value_normalized="new@example.com").exists()
+    assert Customer.objects.count() == 1
+
+
+def test_sale_cannot_bypass_duplicate_customer_confirmation(_pdv):
+    existing = _customer("Ana", "Prado", "+5543999990011")
+    with pytest.raises(PosCustomerConflict):
+        _persist_customer_from_payload(
+            {"customer_name": "Outra Pessoa", "customer_phone": "43999990011"},
+            operator_username="op",
+        )
+    assert Customer.objects.count() == 1
+    assert resolve_or_create_customer(ref=existing.ref, operator_username="op")["ref"] == existing.ref
