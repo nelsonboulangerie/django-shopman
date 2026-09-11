@@ -12,7 +12,9 @@ import psutil
 import requests
 
 ROOT = Path(__file__).resolve().parents[5]
-assert ROOT.name == "django-shopman-orders-execution-20260910"
+assert ROOT.name == "django-shopman-orders-execution-20260910" or (
+    os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("ORDERS_ISOLATED_CAPACITY") == "1"
+)
 cookies = json.loads((ROOT / ".orders-lab/http-lab-auth.json").read_text())["cookies"]
 
 

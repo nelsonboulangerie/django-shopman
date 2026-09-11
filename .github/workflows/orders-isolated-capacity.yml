@@ -1,0 +1,104 @@
+name: Orders isolated capacity
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [codex/orders-operational-excellence-20260910]
+    paths:
+      - .github/workflows/orders-isolated-capacity.yml
+      - docs/reports/execution/orders-20260910/do_capacity/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orders-isolated-capacity-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  DJANGO_SECRET_KEY: isolated-capacity-synthetic-only
+  DATABASE_URL: postgres://orders_lab:orders_lab@127.0.0.1:55439/orders_perf_lab
+  REDIS_URL: redis://127.0.0.1:56389/2
+  ORDERS_ISOLATED_CAPACITY: "1"
+  ORDERS_PERF_SAMPLES: "60"
+  ORDERS_PERF_LAB: "1"
+  ORDERS_PERF_N: "500"
+
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: orders_lab
+          POSTGRES_PASSWORD: orders_lab
+          POSTGRES_DB: orders_perf_lab
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["55439:5432"]
+        options: >-
+          --health-cmd "pg_isready -U orders_lab -d orders_perf_lab"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+      redis:
+        image: valkey/valkey:8
+        ports: ["56389:6379"]
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Install existing project environment
+        run: |
+          python -m venv .venv
+          make install
+          .venv/bin/pip install psutil==7.2.2
+          npm ci --prefix surfaces/operator-kit
+          npm ci --prefix surfaces/orders-nuxt
+          cd surfaces/orders-nuxt
+          npx playwright install --with-deps chromium
+          npm run build
+      - name: Fresh synthetic database only
+        run: |
+          mkdir -p .orders-lab
+          .venv/bin/python docs/reports/execution/orders-20260910/http_read_lab/run_http_lab.py migrate
+          .venv/bin/python docs/reports/execution/orders-20260910/http_read_lab/run_http_lab.py seed 500
+          .venv/bin/python docs/reports/execution/orders-20260910/delivery_devices/device_perf_seed.py
+      - name: Backend one CPU one GiB, no outbound network
+        run: |
+          sudo systemd-run --unit=orders-capacity-backend --uid="$(id -un)" --working-directory="$PWD" --property=CPUQuota=100% --property=MemoryMax=1G --property=IPAddressDeny=any --property=IPAddressAllow=localhost --setenv=DJANGO_SECRET_KEY=isolated-capacity-synthetic-only "$PWD/.venv/bin/python" "$PWD/docs/reports/execution/orders-20260910/process_read_lab/serve.py" 8016
+          .venv/bin/python docs/reports/execution/orders-20260910/do_capacity/wait_reader.py 8016
+          .venv/bin/python docs/reports/execution/orders-20260910/do_capacity/measure.py 1
+          sudo systemctl show orders-capacity-backend --property=CPUQuotaPerSecUSec,MemoryMax,MemoryPeak,CPUUsageNSec > .orders-lab/ci-backend-resources.txt
+      - name: Browser through bounded Nitro and the same backend
+        run: |
+          sudo systemd-run --unit=orders-capacity-nitro --uid="$(id -un)" --working-directory="$PWD/surfaces/orders-nuxt" --property=CPUQuota=100% --property=MemoryMax=512M --property=IPAddressDeny=any --property=IPAddressAllow=localhost --setenv=NUXT_DJANGO_BASE_URL=http://127.0.0.1:8016 --setenv=NUXT_PUBLIC_DJANGO_BASE_URL=http://127.0.0.1:8016 --setenv=NUXT_APP_BASE_URL=/ --setenv=HOST=127.0.0.1 --setenv=PORT=3005 "$(command -v node)" "$PWD/surfaces/orders-nuxt/.output/server/index.mjs"
+          .venv/bin/python docs/reports/execution/orders-20260910/do_capacity/wait_reader.py 3005
+          cd surfaces/orders-nuxt
+          npx playwright test -c playwright.performance.config.ts
+      - name: Enforce original budgets after saving every sample
+        run: .venv/bin/python docs/reports/execution/orders-20260910/do_capacity/accept.py
+      - name: Stop only this job's application processes
+        if: always()
+        run: |
+          sudo journalctl -u orders-capacity-backend -u orders-capacity-nitro --no-pager > .orders-lab/ci-service-log.txt
+          sudo systemctl stop orders-capacity-backend orders-capacity-nitro || true
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: orders-capacity-${{ github.sha }}
+          retention-days: 7
+          path: |
+            .orders-lab/process-read-result.json
+            .orders-lab/browser-read-500.json
+            .orders-lab/ci-backend-resources.txt
+            .orders-lab/ci-service-log.txt
+            .orders-lab/capacity-verdict.json
