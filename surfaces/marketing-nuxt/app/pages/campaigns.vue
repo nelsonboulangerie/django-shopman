@@ -19,6 +19,7 @@ import {
   clearBrowserMarketingDraft,
   useMarketingDraftOwner,
 } from "~/composables/useMarketingDraft";
+import { marketingThrottleMessage } from "~/utils/marketingRetry";
 
 const {
   rules,
@@ -252,7 +253,8 @@ function closeFire() {
 }
 
 async function recordFireFailure(error: unknown) {
-  const status = httpError(error).status;
+  const failure = httpError(error);
+  const status = failure.status;
   if (status === 409) {
     await refresh();
     const current = rules.value.find((rule) => rule.pk === firing.value?.pk);
@@ -261,11 +263,21 @@ async function recordFireFailure(error: unknown) {
       "A campanha mudou em outra sessão. Recarregamos os dados; aguarde a nova contagem, confira e tente novamente.";
     return;
   }
+  if (status === 429) {
+    const payload =
+      failure.data && typeof failure.data === "object"
+        ? (failure.data as Record<string, unknown>)
+        : null;
+    const retryAfter = Number(payload?.retry_after_seconds);
+    fireError.value =
+      Number.isFinite(retryAfter) && retryAfter > 0
+        ? marketingThrottleMessage(retryAfter, shopTimezone.value)
+        : "Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente. Nada foi criado.";
+    return;
+  }
   fireError.value = httpErrorMessage(
     error,
-    status === 429
-      ? "O limite temporário de disparos foi atingido. Aguarde o prazo indicado e tente novamente; nada foi criado."
-      : "Não foi possível preparar o disparo. Nada foi criado.",
+    "Não foi possível preparar o disparo. Nada foi criado.",
   );
 }
 

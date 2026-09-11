@@ -31,7 +31,7 @@ const COUNT_LABELS: ReadonlyArray<
   ["failed_retryable", "falha que pode ser tentada novamente", "danger"],
   ["failed_final", "falha final", "danger"],
   ["unknown", "resultado incerto", "attention"],
-  ["suppressed", "suprimido pela política", "quiet"],
+  ["suppressed", "não enviado por uma regra de proteção", "quiet"],
   ["cancelled", "cancelado antes do envio", "quiet"],
   ["expired", "expirado antes do envio", "quiet"],
 ];
@@ -156,7 +156,8 @@ function pluralizeCountLabel(label: string): string {
       "falhas que podem ser tentadas novamente",
     "falha final": "falhas finais",
     "resultado incerto": "resultados incertos",
-    "suprimido pela política": "suprimidos pela política",
+    "não enviado por uma regra de proteção":
+      "não enviados por uma regra de proteção",
     "cancelado antes do envio": "cancelados antes do envio",
     "expirado antes do envio": "expirados antes do envio",
   };

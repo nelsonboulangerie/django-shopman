@@ -759,7 +759,8 @@ class Handler(BaseHTTPRequestHandler):
             if scenario == "fire-throttled":
                 self._send(429, {
                     "code": "throttled",
-                    "detail": "O limite temporário foi atingido. Aguarde 20 minutos; nada foi criado.",
+                    "detail": "Muitas tentativas em pouco tempo. Aguarde antes de tentar novamente.",
+                    "retry_after_seconds": 1200,
                 }, headers={"Retry-After": "1200"})
                 return
             if not body.get("confirmation_token"):
@@ -829,7 +830,7 @@ class Handler(BaseHTTPRequestHandler):
                     "step_up": "none",
                     "dual_control": False,
                     "typed_phrase": "",
-                    "consequence": "Publicar agora para 12 pessoas elegíveis.",
+                    "consequence": "Entregar agora para 12 pessoas elegíveis.",
                     "resource_ref": "announcement:41",
                     "base_version": 3,
                     "audience_count": 12,

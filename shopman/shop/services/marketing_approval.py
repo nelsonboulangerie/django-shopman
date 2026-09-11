@@ -42,6 +42,12 @@ APPROVAL_RECORD_RETENTION = timedelta(days=365 * 5)
 MIN_GENERAL_COHORT = 10
 MAX_ARTIFACT_BYTES = 64 * 1024
 _PLATFORMS = frozenset({"instagram", "facebook", "google_business", "whatsapp"})
+_PLATFORM_LABELS = {
+    "instagram": "Instagram",
+    "facebook": "Facebook",
+    "google_business": "Google Meu Negócio",
+    "whatsapp": "WhatsApp",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -678,11 +684,20 @@ def _validate_content(
         )
     unknown_variants = sorted(set(platform_content) - set(platforms))
     if unknown_variants:
+        labels = ", ".join(_PLATFORM_LABELS.get(platform, platform) for platform in unknown_variants)
+        singular = len(unknown_variants) == 1
         raise MarketingContractError(
             code="orphan_platform_content",
-            detail="Existe conteúdo para uma plataforma que não foi escolhida.",
+            detail=(
+                f"Há conteúdo salvo para {labels}, mas "
+                f"{'essa plataforma não está selecionada' if singular else 'essas plataformas não estão selecionadas'} "
+                "em ‘Entregar por’."
+            ),
             field_errors={
-                "platform_content": (f"Remova as variantes de: {', '.join(unknown_variants)}.",),
+                "platform_content": (
+                    f"Selecione {labels} em ‘Entregar por’ ou remova "
+                    f"{'a versão específica dessa plataforma' if singular else 'as versões específicas dessas plataformas'}.",
+                ),
             },
         )
     if not all(isinstance(value, Mapping) for value in platform_content.values()):

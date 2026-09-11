@@ -398,6 +398,27 @@ def test_untrusted_media_is_rejected_before_artifact_and_outbox(actor, announcem
     assert MarketingOutbox.objects.count() == 0
 
 
+def test_orphan_platform_content_names_the_problem_and_both_repairs(actor, announcement):
+    with pytest.raises(MarketingContractError) as caught:
+        _approve(
+            actor=actor,
+            announcement=announcement,
+            key="idem-approval-orphan-platform",
+            platforms=["instagram"],
+            platform_content={"whatsapp": {"body": "Versão direta"}},
+        )
+
+    assert caught.value.code == "orphan_platform_content"
+    assert caught.value.detail == (
+        "Há conteúdo salvo para WhatsApp, mas essa plataforma não está selecionada em ‘Entregar por’."
+    )
+    assert caught.value.field_errors["platform_content"] == (
+        "Selecione WhatsApp em ‘Entregar por’ ou remova a versão específica dessa plataforma.",
+    )
+    assert MarketingContentArtifact.objects.count() == 0
+    assert MarketingOutbox.objects.count() == 0
+
+
 def test_same_key_replays_same_artifact_snapshot_audit_and_outbox(actor, announcement):
     first = _approve(actor=actor, announcement=announcement)
     second = _approve(actor=actor, announcement=announcement)

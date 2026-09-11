@@ -963,8 +963,8 @@ REST_FRAMEWORK = {
         "marketing_audience_shop": "120/minute",
         "marketing_dangerous_user": "10/minute",
         "marketing_dangerous_shop": "30/minute",
-        "marketing_fire_user": "3/hour",
-        "marketing_fire_shop": "10/day",
+        "marketing_fire_user": "10/hour",
+        "marketing_fire_shop": "30/day",
         "marketing_ai": os.environ.get("SHOPMAN_MARKETING_AI_THROTTLE_RATE", "10/hour"),
     },
     # ⚠️ Sem isto, `BaseThrottle.get_ident` lê o PRIMEIRO valor do

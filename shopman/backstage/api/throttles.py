@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+
+from django.core.cache import cache
 from rest_framework.throttling import SimpleRateThrottle, UserRateThrottle
 
 
@@ -41,11 +44,40 @@ class MarketingAudienceShopThrottle(_MarketingThrottleAuditMixin, SimpleRateThro
         return self.cache_format % {"scope": self.scope, "ident": "default"}
 
 
-class MarketingFireUserThrottle(_MarketingThrottleAuditMixin, UserRateThrottle):
+class _MarketingLogicalFireThrottle(SimpleRateThrottle):
+    """Charge one fire intent, not every round-trip of its confirmation gate."""
+
+    def allow_request(self, request, view):
+        if self.rate is None:
+            return True
+        throttle_key = self.get_cache_key(request, view)
+        if throttle_key is None:
+            return True
+        idempotency_key = str(request.headers.get("Idempotency-Key") or "").strip()
+        if not idempotency_key:
+            return super().allow_request(request, view)
+        operation_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()
+        operation_key = f"{throttle_key}:operation:{operation_hash}"
+        if cache.get(operation_key):
+            return True
+        allowed = super().allow_request(request, view)
+        if allowed:
+            cache.set(operation_key, True, timeout=self.duration)
+        return allowed
+
+
+class MarketingFireUserThrottle(
+    _MarketingThrottleAuditMixin,
+    _MarketingLogicalFireThrottle,
+    UserRateThrottle,
+):
     scope = "marketing_fire_user"
 
 
-class MarketingFireShopThrottle(_MarketingThrottleAuditMixin, SimpleRateThrottle):
+class MarketingFireShopThrottle(
+    _MarketingThrottleAuditMixin,
+    _MarketingLogicalFireThrottle,
+):
     scope = "marketing_fire_shop"
 
     def get_cache_key(self, request, view):

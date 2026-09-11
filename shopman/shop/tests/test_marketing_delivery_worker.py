@@ -54,6 +54,30 @@ class CountingAcceptedProvider:
         )
 
 
+def test_row_lock_targets_only_the_base_table_when_backend_supports_of(monkeypatch):
+    class QueryProbe:
+        kwargs = None
+
+        def select_for_update(self, **kwargs):
+            self.kwargs = kwargs
+            return self
+
+    query = QueryProbe()
+    monkeypatch.setattr(
+        worker_service.connection.features,
+        "has_select_for_update_of",
+        True,
+    )
+    monkeypatch.setattr(
+        worker_service.connection.features,
+        "has_select_for_update_skip_locked",
+        True,
+    )
+
+    assert worker_service._select_for_update(query) is query
+    assert query.kwargs == {"of": ("self",), "skip_locked": True}
+
+
 def _fanout_whatsapp(*, suffix: str, count: int, opted_in: bool = False):
     outbox, members = _graph(
         platform="whatsapp",

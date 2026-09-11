@@ -222,10 +222,10 @@ test.describe("cartão de anúncio", () => {
     await expectStableScreenshot(page, "announcement-card__long-edit", V320);
   });
 
-  test("publicar agora abre confirmação factual", async ({ page }) => {
+  test("entregar agora abre confirmação factual", async ({ page }) => {
     await openScenario(page, "board-pending", "/", V390);
     await waitForFaithfulPreview(page);
-    await page.getByRole("button", { name: "Publicar agora" }).click();
+    await page.getByRole("button", { name: "Entregar agora" }).click();
     await expect(page.getByRole("dialog")).toContainText("12");
     await expectStableScreenshot(page, "announcement-card__confirm-now", V390, "light", { fullPage: false });
   });
@@ -460,7 +460,8 @@ test.describe("disparo manual seguro", () => {
     await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
     await page.waitForTimeout(450);
     await page.getByRole("button", { name: "Disparar agora" }).click();
-    await expect(page.getByRole("alert")).toContainText("limite temporário");
+    await expect(page.getByRole("alert")).toContainText("em cerca de 20 minutos");
+    await expect(page.getByRole("alert")).toContainText("Nada foi criado");
     await expectStableScreenshot(page, "fire-campaign__throttled", V768, "light", { fullPage: false });
   });
 
@@ -608,7 +609,7 @@ test.describe("modos transversais", () => {
         p { margin-bottom: 2em !important; }
       `,
     });
-    await expect(page.getByRole("button", { name: "Publicar agora" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Entregar agora" })).toBeVisible();
     await expectStableScreenshot(page, "panel__text-spacing", V1024);
   });
 });

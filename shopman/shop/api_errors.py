@@ -37,6 +37,8 @@ Referência completa do dialeto: ``docs/reference/errors.md``.
 
 from __future__ import annotations
 
+import math
+
 from rest_framework import exceptions
 from rest_framework.settings import api_settings
 from rest_framework.views import exception_handler as drf_exception_handler
@@ -47,10 +49,11 @@ FALLBACK_DETAIL = "Não conseguimos processar os dados enviados. Confira e tente
 def exception_handler(exc, context):
     """DRF ``EXCEPTION_HANDLER``: converte ValidationError para o dialeto da casa.
 
-    Demais exceções DRF (``Throttled``, ``NotFound``…) já saem do handler default
-    como ``{"detail": ...}`` e passam intactas. ``PermissionDenied`` nomeado e
-    ``NotAuthenticated`` ganham o superset ``error.code`` (ver
-    ``_attach_permission_code``). O status HTTP nunca muda aqui.
+    ``Throttled`` ganha recuperação estruturada e uma mensagem humana neutra;
+    ``NotFound`` e as demais exceções DRF já saem do handler default como
+    ``{"detail": ...}``. ``PermissionDenied`` nomeado e ``NotAuthenticated``
+    ganham o superset ``error.code`` (ver ``_attach_permission_code``). O status
+    HTTP nunca muda aqui.
     """
     from shopman.shop.services.remote_mutations import RemoteMutationConflict
     if isinstance(exc, RemoteMutationConflict):
@@ -61,6 +64,12 @@ def exception_handler(exc, context):
         return None
     if isinstance(exc, exceptions.ValidationError):
         response.data = validation_error_payload(exc.detail)
+    elif isinstance(exc, exceptions.Throttled):
+        retry_after_seconds = max(1, math.ceil(float(exc.wait or 1)))
+        response.data = {
+            "detail": "Muitas tentativas em pouco tempo. Aguarde antes de tentar novamente.",
+            "retry_after_seconds": retry_after_seconds,
+        }
     elif isinstance(exc, (exceptions.PermissionDenied, exceptions.NotAuthenticated)):
         _attach_permission_code(response, exc)
     return response

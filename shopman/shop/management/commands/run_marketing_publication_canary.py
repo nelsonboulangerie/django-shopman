@@ -46,7 +46,7 @@ OUTCOME_LABELS = {
 
 class Command(BaseCommand):
     help = (
-        "Inspeciona ou executa uma única publicação pública aprovada, "
+        "Inspeciona ou executa uma única postagem pública aprovada, "
         "sem drenar filas históricas."
     )
 
@@ -148,7 +148,7 @@ class Command(BaseCommand):
             "  formato      : "
             f"{PUBLICATION_FORMAT_LABELS.get(publication_format, publication_format)}"
         )
-        self.stdout.write("  alcance      : 1 publicação pública")
+        self.stdout.write("  alcance      : 1 postagem pública")
         self.stdout.write(
             f"  estado fila  : {_state_label(OUTBOX_STATE_LABELS, outbox.state)}"
         )
