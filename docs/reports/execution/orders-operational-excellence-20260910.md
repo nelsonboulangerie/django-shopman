@@ -792,3 +792,11 @@ O handler agora reutiliza `payment_link_resend_refusal` imediatamente antes da e
 - **Esforço:** caminho normal conserva abertura/conferência/confirmação (J06); troca de turno acrescenta uma conferência explícita, R=0. O total conhecido aparece na confirmação; vazio usa o total canônico, nunca valor inventado. O ensaio não atesta dinheiro físico.
 - **Migração/rollback:** sem DDL ou reconciliação real. Recibos no escopo vigente; reverter API/UI juntos, conservar livros/chaves, nunca reexecutar uma intenção já aplicada. A proteção do ledger e Shift→Order é independente do cliente.
 - **G02 pendente:** decidir estação→terminal e entrega física entre responsáveis antes de habilitar a coorte com múltiplas gavetas. Nesta fatia essa capacidade fica bloqueada pelo resolver existente, em vez de assumir autorização. Nenhuma nova permissão financeira foi concedida.
+
+### WP06/WP07 — leitura preservada e rajadas no detalhe/feeds
+
+A revalidação encontrou o detalhe removendo todo o conteúdo quando `error` ficava preenchido, mesmo com pedido ainda disponível; a fila tinha a mesma exclusão visual. Agora mantêm leitura confirmada na falha, exibem explicação separada e recusam nova mutação até obter leitura válida. O textarea permanece o mesmo elemento DOM, sem reconstruir o draft. Estado continua limitado à instância/cache de pessoa; nenhuma persistência após reload foi introduzida.
+
+Detalhe e feeds reutilizam `operator-kit.coalesceRefresh` (uma ativa, uma posterior), com dedupe de transporte e recuperação da identificação. SSE do pedido refaz leitura ao reconectar; feeds têm poll de 30 s e atualização ao acordar/reconectar. Não se confunde SSE conectado com leitura recente. Um recibo já aplicado permanece sucesso mesmo se apenas a leitura posterior falhar; a mensagem distingue os dois fatos e não sugere repetir o comando.
+
+**Testes:** 252 Orders passaram, incluindo 503 com leitura preservada/zero POST, dez disparos reduzidos a duas leituras, textarea preservado no componente e sucesso confirmado com GET posterior falhando. Typecheck passou. **Limites:** poll de 30 s é configuração, não medição de p95; ainda são necessários ensaios integrados atuais. Sem DDL/migração; rollback reverte composables/templates e não altera recibos. G05/G08 continuam pendentes para pós-reload.

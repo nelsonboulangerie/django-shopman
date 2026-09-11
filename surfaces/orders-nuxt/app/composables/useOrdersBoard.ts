@@ -89,7 +89,11 @@ export function useOrdersBoard() {
 
   watch(error, (value) => { if (value) flagIfStationLocked(value); }, { immediate: true });
 
-  const queue = computed<TwoZoneQueueProjection | null>(() => data.value?.queue ?? null);
+  const lastConfirmed = shallowRef<TwoZoneQueueProjection | null>(data.value?.queue ?? null);
+  watch([data, error], ([value, failure]) => {
+    if (value?.queue && !failure) lastConfirmed.value = value.queue;
+  }, { flush: "sync" });
+  const queue = computed<TwoZoneQueueProjection | null>(() => data.value?.queue ?? (error.value ? lastConfirmed.value : null));
   const zones = computed<ZoneView[]>(() => (queue.value ? zonesView(queue.value) : []));
   const totalCount = computed(() => queue.value?.total_count ?? 0);
   // Encomendas confirmadas para datas futuras, agrupadas pela data combinada.
@@ -188,7 +192,7 @@ export function useOrdersBoard() {
         if (created !== null) announceNewOrder(created);
       };
       ["message", "backstage-orders-update"].forEach((name) => source!.addEventListener(name, onPush));
-      source.onopen = () => { realtime.value = "live"; };
+      source.onopen = () => { realtime.value = "live"; refresh(); };
       // Erro/desconexão → cai pro poll; o EventSource auto-reconecta e o onopen volta a "live".
       source.onerror = () => { realtime.value = "polling"; };
     } catch {
@@ -253,6 +257,10 @@ export function useOrdersBoard() {
 
   async function act(ref_: string, action: string, body?: Record<string, unknown>): Promise<boolean> {
     if (busy.value.has(ref_)) return false;
+    if (error.value) {
+      setActionError(ref_, "A leitura está desatualizada. Atualize o quadro antes de confirmar.");
+      return false;
+    }
     clearActionError(ref_); // a fresh attempt clears the previous reason
     busy.value = new Set(busy.value).add(ref_);
     try {
@@ -265,7 +273,9 @@ export function useOrdersBoard() {
           method: "POST", body: body ?? {},
         });
       }
-      await refresh();
+      try { await refresh(); }
+      catch { setActionError(ref_, "Ação confirmada. A leitura atualizada falhou; atualize antes da próxima ação."); }
+      if (error.value) setActionError(ref_, "Ação confirmada. A leitura atualizada falhou; atualize antes da próxima ação.");
       return true;
     } catch (error) {
       // 409 = o pedido mudou de estado antes da ação chegar (ex.: a confirmação

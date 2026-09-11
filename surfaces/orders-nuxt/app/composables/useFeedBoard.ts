@@ -1,3 +1,4 @@
+import { coalesceRefresh } from "../utils/coalesceRefresh";
 import { useOrderIntention } from "./useOrderIntention";
 import { useOperatorResourceKey } from "./useOperatorResourceKey";
 // Feeds (menuboard/Google/Meta) — lê o board + liga/pausa + escolhe coleções.
@@ -5,9 +6,24 @@ import type { FeedBoardProjection, FeedBoardResponse } from "~/types/feeds";
 
 export function useFeedBoard() {
   const path = "/api/v1/backstage/feeds/";
-  const { data, pending, error, refresh } = useFetch<FeedBoardResponse>(path, {
+  const { data, pending, error, refresh: fetchBoard } = useFetch<FeedBoardResponse>(path, {
     key: useOperatorResourceKey("feed-board"),
     server: true,
+    dedupe: "defer",
+    onResponseError: operatorSessionOnError,
+  });
+  const refresh = coalesceRefresh(() => fetchBoard());
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
+  onMounted(() => {
+    pollTimer = setInterval(() => refresh(), 30_000);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", onVisible);
+  });
+  onBeforeUnmount(() => {
+    if (pollTimer) clearInterval(pollTimer);
+    document.removeEventListener("visibilitychange", onVisible);
+    window.removeEventListener("online", onVisible);
   });
   const lastConfirmed = shallowRef<FeedBoardProjection | null>(data.value?.board ?? null);
   watch([data, error], ([value, failure]) => {
@@ -24,13 +40,19 @@ export function useFeedBoard() {
 
   async function run(ref_: string, body: Record<string, unknown>, url: string): Promise<boolean> {
     if (busy.value.has(ref_)) return false;
+    if (error.value) {
+      errorMsg.value = "A leitura está desatualizada. Atualize antes de aplicar; seu rascunho foi mantido.";
+      return false;
+    }
     errorMsg.value = "";
     busy.value = new Set(busy.value).add(ref_);
     try {
       const operation = url.split("/").filter(Boolean).at(-1)!;
       const action = board.value?.feeds.find((feed) => feed.ref === ref_)?.actions.find((item) => item.ref === operation);
       await intentions.executePath(`feed:${ref_}:${operation}`, url, action, body);
-      await refresh();
+      try { await refresh(); }
+      catch { errorMsg.value = "Alteração confirmada. A leitura atualizada falhou; atualize antes da próxima edição."; }
+      if (error.value) errorMsg.value = "Alteração confirmada. A leitura atualizada falhou; atualize antes da próxima edição.";
       return true;
     } catch (error) {
       errorMsg.value = httpErrorMessage(error, error instanceof Error ? error.message : "Falha ao atualizar o feed.");

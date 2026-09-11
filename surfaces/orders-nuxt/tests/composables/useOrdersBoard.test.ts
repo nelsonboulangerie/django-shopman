@@ -249,3 +249,21 @@ describe("GESTOR_ALERT — o som escolhido pelo dono", () => {
     expect(inarmonicas.length).toBeGreaterThan(0);
   });
 });
+
+it("mantém a última fila após falha sem autorizar escrita desatualizada", async () => {
+  const { ref } = await import("vue");
+  const data = ref<any>({ queue: { intake: [], prep: [], expedition_pickup: [], expedition_delivery: [], expedition_delivery_transit: [], preorders: [], equipment_out: [] } });
+  const error = ref<any>(null);
+  const prior = globalThis.useFetch;
+  vi.stubGlobal("useFetch", () => ({ data, error, pending: ref(false), refresh: env.refresh }));
+  try {
+    env.fetchMock.mockClear();
+    const board = useOrdersBoard();
+    error.value = { statusCode: 503 };
+    data.value = null;
+    expect(board.queue.value).not.toBeNull();
+    expect(await board.confirm("READ-1")).toBe(false);
+    expect(env.fetchMock).not.toHaveBeenCalled();
+    expect(board.actionError("READ-1")).toContain("desatualizada");
+  } finally { vi.stubGlobal("useFetch", prior); }
+});

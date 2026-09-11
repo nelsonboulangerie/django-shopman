@@ -143,3 +143,43 @@ describe("useOrderDetail", () => {
     expect(env.sonner.success).toHaveBeenCalledWith("Comentário adicionado.");
   });
 });
+
+it("mantém a leitura após 503 e impede nova escrita até atualizar", async () => {
+  const data = ref<any>({ order: { ref: "READ-1", actions: fixtureActions({ can_confirm: true }) } });
+  const error = ref<any>(null);
+  const prior = globalThis.useFetch;
+  vi.stubGlobal("useFetch", () => ({ data, error, pending: ref(false), refresh: env.refresh }));
+  try {
+    env.fetchMock.mockClear();
+    const detail = useOrderDetail("READ-1");
+    error.value = { statusCode: 503 };
+    data.value = null;
+    expect(detail.order.value?.ref).toBe("READ-1");
+    expect(await detail.confirm()).toBe(false);
+    expect(env.fetchMock).not.toHaveBeenCalled();
+    expect(detail.mutationError.value).toContain("rascunho foi mantido");
+  } finally { vi.stubGlobal("useFetch", prior); }
+});
+
+it("coalesce dez atualizações do detalhe em uma ativa e uma posterior", async () => {
+  env.reset();
+  let release!: () => void;
+  env.refresh.mockReturnValueOnce(new Promise<void>((resolve) => { release = resolve; })).mockResolvedValue(undefined);
+  const detail = useOrderDetail("BURST-DETAIL");
+  const reads = Array.from({ length: 10 }, () => detail.refresh());
+  expect(env.refresh).toHaveBeenCalledTimes(1);
+  release();
+  await Promise.all(reads);
+  expect(env.refresh).toHaveBeenCalledTimes(2);
+});
+
+it("um recibo aplicado continua sucesso quando só a releitura falha", async () => {
+  env.reset();
+  env.fetchData.value = { order: { actions: fixtureActions({ can_confirm: true }) } };
+  env.fetchMock.mockResolvedValue({ outcome: "applied" });
+  env.refresh.mockRejectedValue(new Error("synthetic GET failure"));
+  const detail = useOrderDetail("APPLIED-READ-FAIL");
+  expect(await detail.confirm()).toBe(true);
+  expect(detail.mutationError.value).toContain("Ação confirmada");
+  expect(env.fetchMock).toHaveBeenCalledTimes(1);
+});

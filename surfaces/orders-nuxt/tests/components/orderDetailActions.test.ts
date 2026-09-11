@@ -18,6 +18,7 @@ import type { CustomerProfileProjection, OperatorOrderProjection } from "../../a
 
 const detalhe = ref<OperatorOrderProjection | null>(null);
 const resendPaymentLink = vi.fn();
+const readError = ref<unknown>(null);
 
 vi.stubGlobal("definePageMeta", vi.fn());
 vi.stubGlobal("onBeforeRouteLeave", vi.fn());
@@ -32,7 +33,7 @@ vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
 vi.stubGlobal("useOrderDetail", () => ({
   order: computed(() => detalhe.value),
   pending: ref(false),
-  error: ref(null),
+  error: readError,
   refresh: vi.fn(),
   busy: ref(false),
   confirm: vi.fn(),
@@ -502,4 +503,18 @@ describe("acerto — turno observado no diálogo", () => {
     expect((w.get('[aria-label="Valor recebido"]').element as HTMLInputElement).value).toBe("15,00");
     w.unmount();
   });
+});
+
+it("falha de leitura mantém o pedido e o textarea montados junto da explicação", async () => {
+  const w = abrir(order({ kitchen_note: "Base", revisions: { kitchen_note: "v1" } }));
+  try {
+    await w.get("#order-notes").setValue("Texto ainda não salvo");
+    const field = w.get("#order-notes").element;
+    readError.value = { statusCode: 503 };
+    await w.vm.$nextTick();
+    expect(w.get("#order-notes").element).toBe(field);
+    expect((field as HTMLTextAreaElement).value).toBe("Texto ainda não salvo");
+    expect(w.get("[data-order-error]").text()).toContain("Mantivemos a última leitura");
+    expect(w.text()).toContain("Ana");
+  } finally { readError.value = null; w.unmount(); }
 });

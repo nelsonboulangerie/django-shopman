@@ -32,7 +32,7 @@ import {
 import type { OrderCardProjection } from "~/types/orders";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
 
-const { zones, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, assign, unassign, confirmMany, advanceMany, equipmentOut, soundOn, soundBlocked, toggleSound } = useOrdersBoard();
+const { queue, zones, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, assign, unassign, confirmMany, advanceMany, equipmentOut, soundOn, soundBlocked, toggleSound } = useOrdersBoard();
 
 // Sinal honesto de tempo-real vs poll (indicador de degradação do SSE).
 const realtimeView = computed(() => realtimeIndicator(realtime.value));
@@ -475,10 +475,10 @@ function printQueue() {
            turno e a cada auto-lock. Quem fala nesse estado é a identificação
            que sobe por cima (app.vue), e ela não é uma falha. -->
       <p v-else-if="error && !stationLocked" class="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive dark:text-orange-400" data-queue-error>
-        Falha ao carregar a fila. Reconectando…
+        Falha ao atualizar a fila. Mantivemos a última leitura; atualize antes de confirmar ações.
       </p>
 
-      <template v-else>
+      <template v-if="queue">
         <!-- no results across all zones for the active filters -->
         <p v-if="hasFilter && !visibleCount" class="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
           Nenhum pedido para os filtros atuais.

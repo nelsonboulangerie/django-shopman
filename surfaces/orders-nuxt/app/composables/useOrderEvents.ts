@@ -23,7 +23,7 @@ export function useOrderEvents(orderRef: string, onPush: () => void, opts?: { po
         }
       };
       ["message", "backstage-orders-update"].forEach((name) => source!.addEventListener(name, onEvent));
-      source.onopen = () => { realtime.value = "live"; };
+      source.onopen = () => { realtime.value = "live"; onPush(); };
       source.onerror = () => { realtime.value = "polling"; };
     } catch {
       source = null;

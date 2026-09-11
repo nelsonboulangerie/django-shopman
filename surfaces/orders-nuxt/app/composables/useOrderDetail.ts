@@ -1,3 +1,4 @@
+import { coalesceRefresh } from "../utils/coalesceRefresh";
 import { useOperatorResourceKey } from "./useOperatorResourceKey";
 import { useOrderIntention } from "./useOrderIntention";
 // Order detail read-side. Reads the expanded operator projection (items, timeline,
@@ -14,14 +15,22 @@ export function useOrderDetail(orderRef: string) {
   // calar o aviso de erro (mesmo gesto do `usePosTerminal`).
   const { flagIfStationLocked } = useStationLock();
 
-  const { data, pending, error, refresh } = useFetch<OrderDetailResponse>(path, {
+  const { data, pending, error, refresh: fetchOrder } = useFetch<OrderDetailResponse>(path, {
     key: useOperatorResourceKey(`order-detail-${orderRef}`),
     server: true,
+    dedupe: "defer",
+    onResponseError: operatorSessionOnError,
   });
+
+  const refresh = coalesceRefresh(() => fetchOrder());
 
   watch(error, (value) => { if (value) flagIfStationLocked(value); }, { immediate: true });
 
-  const order = computed<OperatorOrderProjection | null>(() => data.value?.order ?? null);
+  const lastConfirmed = shallowRef<OperatorOrderProjection | null>(data.value?.order ?? null);
+  watch([data, error], ([value, failure]) => {
+    if (value?.order && !failure) lastConfirmed.value = value.order;
+  }, { flush: "sync" });
+  const order = computed<OperatorOrderProjection | null>(() => data.value?.order ?? (error.value ? lastConfirmed.value : null));
 
   const busy = ref(false);
   const mutationError = ref("");
@@ -45,6 +54,10 @@ export function useOrderDetail(orderRef: string) {
     approval?: Record<string, string>,
   ): Promise<boolean> {
     if (busy.value) return false;
+    if (error.value) {
+      mutationError.value = "A leitura está desatualizada. Atualize o pedido antes de confirmar; seu rascunho foi mantido.";
+      return false;
+    }
     busy.value = true;
     mutationError.value = "";
     try {
@@ -57,7 +70,9 @@ export function useOrderDetail(orderRef: string) {
       }
       managerChallenge.value = null;
       lastAttempt = null;
-      await refresh();
+      try { await refresh(); }
+      catch { mutationError.value = "Ação confirmada. A leitura atualizada falhou; atualize antes da próxima ação."; }
+      if (error.value) mutationError.value = "Ação confirmada. A leitura atualizada falhou; atualize antes da próxima ação.";
       return true;
     } catch (error) {
       const code = httpErrorCode(error);

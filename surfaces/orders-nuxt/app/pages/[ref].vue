@@ -261,13 +261,10 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
          dizia "Pedido não encontrado", que é falso e assusta. Nesse estado quem
          fala é a identificação, que sobe por cima. -->
     <p v-else-if="(error || !order) && !stationLocked" class="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive dark:text-orange-400" data-order-error>
-      Pedido não encontrado ou falha ao carregar.
+      {{ order ? "Falha ao atualizar. Mantivemos a última leitura e seu rascunho; atualize antes de confirmar ações." : "Pedido não encontrado ou falha ao carregar." }}
     </p>
 
-    <!-- `v-else-if="order"` e não `v-else`: com a estação travada suprimimos o
-         aviso de erro, e sem este guard o bloco abaixo passaria a renderizar
-         sem pedido nenhum e estouraria em `order.status`. -->
-    <template v-else-if="order">
+    <template v-if="order">
       <!-- summary -->
       <section class="flex flex-col gap-3 rounded-lg border bg-card p-4">
         <div class="flex flex-wrap items-center gap-2">
