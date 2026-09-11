@@ -3,7 +3,7 @@
 // (SSE + 30s poll) via useOrdersBoard; renders Entrada / Preparo / Saída columns of
 // OrderCards; the gestures POST through the django proxy (CSRF handled there) and
 // reconcile. Desktop-first (3 columns), responsive (stacks on tablet/phone).
-import type { AffordanceRef, FulfillmentFilter, SortKey, ViewMode, ZoneView } from "~/presentation/board";
+import type { AffordanceRef, SortKey, ZoneView } from "~/presentation/board";
 import {
   bulkableRefs,
   cardAffordances,
@@ -42,12 +42,50 @@ const realtimeView = computed(() => realtimeIndicator(realtime.value));
 const { denied: stationLocked } = useStationLock();
 
 // ── triage: search + channel filter + sort + view-mode (Arc 1) ──────────────
-// query/channel are transient; sort/view persist per operator (cookie, SSR-safe).
-const query = ref("");
-const channel = ref("all");
-const fulfillment = ref<FulfillmentFilter>("all");
-const sort = useCookie<SortKey>("gestor-sort", { default: () => "arrival", sameSite: "lax" });
-const viewMode = useCookie<ViewMode>("gestor-view", { default: () => "board", sameSite: "lax" });
+definePageMeta({ key: (route) => route.path });
+const route = useRoute();
+const router = useRouter();
+const context = useOrdersContext();
+const { query, channel, fulfillment, sort, viewMode, selected } = context;
+// O recorte vive na URL; seleção/posição/foco ficam só na sessão e pessoa atual.
+context.readLocation(route.query);
+watch(() => route.query, (params) => { if (route.path === "/") context.readLocation(params); });
+watch(context.location, (location) => {
+  if (route.path === "/" && JSON.stringify(route.query) !== JSON.stringify(location.query)) void router.replace(location);
+}, { deep: true });
+const queueViewport = ref<HTMLElement | null>(null);
+function rememberPosition(event: Event) {
+  context.state.value.scrollTop = (event.currentTarget as HTMLElement).scrollTop;
+}
+function rememberFocus(event: MouseEvent) {
+  const link = (event.target as HTMLElement).closest('a[aria-label^="Abrir pedido "]');
+  if (link) {
+    context.state.value.focusLabel = link.getAttribute("aria-label") || "";
+    context.state.value.windowY = window.scrollY;
+  }
+}
+async function restorePosition() {
+  if (!queue.value) return;
+  await nextTick();
+  const viewport = queueViewport.value;
+  if (!viewport) return;
+  viewport.scrollTop = context.state.value.scrollTop;
+  window.scrollTo({ top: context.state.value.windowY, behavior: "instant" });
+  const label = context.state.value.focusLabel;
+  if (label) {
+    const link = [...viewport.querySelectorAll<HTMLAnchorElement>("a[aria-label]")].find(item => item.getAttribute("aria-label") === label);
+    link?.focus({ preventScroll: true });
+    context.state.value.focusLabel = "";
+  }
+}
+let restoreFrame = 0;
+function scheduleRestore() {
+  cancelAnimationFrame(restoreFrame);
+  restoreFrame = requestAnimationFrame(() => { restoreFrame = requestAnimationFrame(() => { void restorePosition(); }); });
+}
+onMounted(scheduleRestore);
+onBeforeUnmount(() => cancelAnimationFrame(restoreFrame));
+watch(() => Boolean(queue.value), (available) => { if (available) scheduleRestore(); });
 
 const allCards = computed<OrderCardProjection[]>(() => zones.value.flatMap((z) => z.cards));
 const channels = computed(() => channelOptions(allCards.value));
@@ -78,7 +116,6 @@ const triagedPreorders = computed(() =>
 const preordersCount = computed(() => triagedPreorders.value.reduce((n, g) => n + g.cards.length, 0));
 
 // ── bulk selection (Arc 4) ──────────────────────────────────────────────────
-const selected = ref<Set<string>>(new Set());
 const isSelected = (ref_: string) => selected.value.has(ref_);
 function toggleSelect(ref_: string) {
   const next = new Set(selected.value);
@@ -468,7 +505,7 @@ function printQueue() {
       </div>
     </div>
 
-    <section class="min-h-0 flex-1 overflow-auto p-3 md:p-4">
+    <section ref="queueViewport" class="min-h-0 flex-1 overflow-auto p-3 md:p-4" @scroll.passive="rememberPosition" @click.capture="rememberFocus">
       <p v-if="pending && !zones.length" class="text-sm text-muted-foreground">Carregando…</p>
       <!-- `!stationLocked`: antes do PIN toda leitura volta 403 `station_locked`
            e este parágrafo dizia "Falha ao carregar a fila. Reconectando…" —

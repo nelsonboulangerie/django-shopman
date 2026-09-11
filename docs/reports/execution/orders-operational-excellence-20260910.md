@@ -1122,3 +1122,37 @@ Sem medição de esforço em campo e sem nova política de retenção.
 Migração: nenhuma. Rollback: conservar o formato/chaves do recibo; cliente
 anterior pode ficar preso na recusa e backend anterior pode depender da projeção.
 Não apagar intenção para resolver unknown. G01/G03/G05/G08 permanecem pendentes.
+
+### WP06 — retorno à fila com contexto por pessoa
+
+Antes em f30d61d6d: query/channel/fulfillment/seleção eram refs da página;
+sort/view eram cookies compartilhados pelo navegador, apesar do comentário
+“por operador”; voltar do detalhe apontava apenas para `/`. Código revalidado,
+não inferência de que o shell já preservava tudo. O shell maduro continua
+preservando a página na reidentificação da mesma pessoa.
+
+Implementação: recorte validado na URL, seleção/posição/foco em useState da sessão
+atual e vinculados à pessoa. Voltar explícito usa a URL do recorte; histórico do
+browser também retoma. Pessoa diferente descarta contexto e rejeita a URL com
+identificação anterior. Não se implementou persistência de draft após reload,
+TTL ou retenção sem G05/G08. Tokens/cookies de autenticação não entram no estado.
+Os cookies antigos de modo/ordenação deixam de ser usados; não se migra uma
+preferência compartilhada como se tivesse dono conhecido.
+
+Teste real: 500 pedidos, filtrar, trocar para tabela, selecionar uma linha longe
+do topo, abrir detalhe, voltar por link e pelo histórico. Ambos passaram
+(14,1 s), com busca/modo/seleção/foco e scroll restaurados. A primeira tentativa
+falhou por medir a seção interna: o shell efetivamente rola a janela. Correção
+passou a preservar essa posição também; nenhum budget reescrito para ocultar.
+
+288 testes Orders passaram; typecheck e build passaram. A primeira suíte UI
+teve 31 falhas de preparação do mock de auto-import do novo composable; fixture
+atualizada, lógica real testada separadamente para mesma/diferente pessoa e URL
+inválida. Evidências `orders-20260910/board-context-*.txt`; jornada browser
+reproduzível em `tests/performance/context.spec.ts` com a fixture HTTP 500.
+J12/volta ao contexto: R=0 no caminho ensaiado; teste local não mede T humano nem
+aprova todos os cenários C07. Diálogos/rascunhos ainda têm trabalho independente.
+
+Migração: nenhuma no banco. Rollback UI exige manter estado/chaves em voo e
+versão compatível; voltar ao código antigo perde este contexto na navegação.
+Nenhuma ampliação de permissão, confirmação eliminada ou efeito externo.

@@ -1,0 +1,409 @@
+
+> test
+> vitest run
+
+
+ RUN  v4.1.6 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — só oferece o que o servidor aceita > preserva a quantidade fracionária projetada sem arredondar
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — só oferece o que o servidor aceita > pedido novo: oferece Aceitar e Recusar, nunca Avançar
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — só oferece o que o servidor aceita > pedido já aceito: o botão primário é o próximo passo, com o rótulo do servidor
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — só oferece o que o servidor aceita > avanço bloqueado: o lugar continua ocupado dizendo o motivo, sem aceitar clique
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — só oferece o que o servidor aceita > entrega: o endereço aparece na tela de quem despacha
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — só oferece o que o servidor aceita > retirada: nenhuma linha de endereço
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — observação do cliente (dona diferente da nota da cozinha) > observação do cliente aparece em bloco próprio, sem invadir o editor da cozinha
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — observação do cliente (dona diferente da nota da cozinha) > sem observação do cliente, o bloco não existe
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — presente > com destinatário: 'Presente para <nome>' + telefone quando houver
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — presente > presente de retirada sem destinatário: 'Embalar para presente', sem nome pendurado
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — presente > gift_hide_values vira instrução visível: 'Não mostrar valores'
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — presente > sem hide_values o selo não aparece
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — link de pagamento > pedido de link cobrável: oferece Reenviar e mostra a prova de envio
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — link de pagamento > o servidor negou (pago, vencido, outra forma): nem botão, nem linha vazia
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — link de pagamento > a prova de envio aparece mesmo quando reenviar não dá mais (pedido pago)
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — quem é este cliente > sem cliente identificado (venda anônima): o bloco não existe
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — quem é este cliente > cliente novo: diz 'Primeira compra', sem inventar ticket nem favorito
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — quem é este cliente > cliente de casa: recorrência, recência, ticket e favorito numa leitura só
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — quem é este cliente > fato que falta some da linha, sem deixar separador órfão
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — quem é este cliente > segmento que merece atenção ganha selo; 'regular' não ganha nenhum
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — quem é este cliente > restrição alimentar e nota do cadastro aparecem; aniversário só no dia muda o tom
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — quem é este cliente > aniversário fora do dia é só cadastro, com a data
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — quem é este cliente > cadastro sem nada além da recorrência: só a linha que tem fato
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — falar com o cliente > com telefone: oferece WhatsApp e ligação apontando para o número certo
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — falar com o cliente > com e-mail: oferece mailto
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — falar com o cliente > com cadastro: leva ao CRUD do cliente no Admin
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — falar com o cliente > sem nenhum caminho até a pessoa, o bloco não existe
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > detalhe do pedido — falar com o cliente > telefone anônimo (o nome JÁ é o número) não é repetido ao lado de si mesmo
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > nota da cozinha — atualização concorrente > SSE preserva texto digitado e exige comparação antes de sobrescrever
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > acerto — turno observado no diálogo > preserva o valor e pede conferência quando o turno muda
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | tests/components/orderDetailActions.test.ts > falha de leitura mantém o pedido e o textarea montados junto da explicação
+[Vue warn]: Failed to resolve component: ReadFreshness
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+[Vue warn]: Failed to resolve component: OperatorManagerAuth
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <[ref] ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+ ❯ |component| tests/components/orderDetailActions.test.ts (31 tests | 31 failed) 173ms
+     × preserva a quantidade fracionária projetada sem arredondar 34ms
+     × pedido novo: oferece Aceitar e Recusar, nunca Avançar 2ms
+     × pedido já aceito: o botão primário é o próximo passo, com o rótulo do servidor 2ms
+     × avanço bloqueado: o lugar continua ocupado dizendo o motivo, sem aceitar clique 5ms
+     × entrega: o endereço aparece na tela de quem despacha 4ms
+     × retirada: nenhuma linha de endereço 3ms
+     × observação do cliente aparece em bloco próprio, sem invadir o editor da cozinha 4ms
+     × sem observação do cliente, o bloco não existe 4ms
+     × com destinatário: 'Presente para <nome>' + telefone quando houver 3ms
+     × presente de retirada sem destinatário: 'Embalar para presente', sem nome pendurado 1ms
+     × gift_hide_values vira instrução visível: 'Não mostrar valores' 1ms
+     × sem hide_values o selo não aparece 1ms
+     × pedido de link cobrável: oferece Reenviar e mostra a prova de envio 2ms
+     × o servidor negou (pago, vencido, outra forma): nem botão, nem linha vazia 7ms
+     × a prova de envio aparece mesmo quando reenviar não dá mais (pedido pago) 4ms
+     × sem cliente identificado (venda anônima): o bloco não existe 1ms
+     × cliente novo: diz 'Primeira compra', sem inventar ticket nem favorito 2ms
+     × cliente de casa: recorrência, recência, ticket e favorito numa leitura só 2ms
+     × fato que falta some da linha, sem deixar separador órfão 3ms
+     × segmento que merece atenção ganha selo; 'regular' não ganha nenhum 2ms
+     × restrição alimentar e nota do cadastro aparecem; aniversário só no dia muda o tom 4ms
+     × aniversário fora do dia é só cadastro, com a data 3ms
+     × cadastro sem nada além da recorrência: só a linha que tem fato 41ms
+     × com telefone: oferece WhatsApp e ligação apontando para o número certo 17ms
+     × com e-mail: oferece mailto 3ms
+     × com cadastro: leva ao CRUD do cliente no Admin 2ms
+     × sem nenhum caminho até a pessoa, o bloco não existe 2ms
+     × telefone anônimo (o nome JÁ é o número) não é repetido ao lado de si mesmo 8ms
+     × SSE preserva texto digitado e exige comparação antes de sobrescrever 1ms
+     × preserva o valor e pede conferência quando o turno muda 1ms
+   × falha de leitura mantém o pedido e o textarea montados junto da explicação 1ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 31 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — só oferece o que o servidor aceita > preserva a quantidade fracionária projetada sem arredondar
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — só oferece o que o servidor aceita > pedido novo: oferece Aceitar e Recusar, nunca Avançar
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — só oferece o que o servidor aceita > pedido já aceito: o botão primário é o próximo passo, com o rótulo do servidor
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — só oferece o que o servidor aceita > avanço bloqueado: o lugar continua ocupado dizendo o motivo, sem aceitar clique
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — só oferece o que o servidor aceita > entrega: o endereço aparece na tela de quem despacha
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — só oferece o que o servidor aceita > retirada: nenhuma linha de endereço
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — observação do cliente (dona diferente da nota da cozinha) > observação do cliente aparece em bloco próprio, sem invadir o editor da cozinha
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — observação do cliente (dona diferente da nota da cozinha) > sem observação do cliente, o bloco não existe
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — presente > com destinatário: 'Presente para <nome>' + telefone quando houver
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — presente > presente de retirada sem destinatário: 'Embalar para presente', sem nome pendurado
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — presente > gift_hide_values vira instrução visível: 'Não mostrar valores'
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — presente > sem hide_values o selo não aparece
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — link de pagamento > pedido de link cobrável: oferece Reenviar e mostra a prova de envio
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — link de pagamento > o servidor negou (pago, vencido, outra forma): nem botão, nem linha vazia
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — link de pagamento > a prova de envio aparece mesmo quando reenviar não dá mais (pedido pago)
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — quem é este cliente > sem cliente identificado (venda anônima): o bloco não existe
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — quem é este cliente > cliente novo: diz 'Primeira compra', sem inventar ticket nem favorito
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — quem é este cliente > cliente de casa: recorrência, recência, ticket e favorito numa leitura só
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — quem é este cliente > fato que falta some da linha, sem deixar separador órfão
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — quem é este cliente > segmento que merece atenção ganha selo; 'regular' não ganha nenhum
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — quem é este cliente > restrição alimentar e nota do cadastro aparecem; aniversário só no dia muda o tom
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — quem é este cliente > aniversário fora do dia é só cadastro, com a data
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — quem é este cliente > cadastro sem nada além da recorrência: só a linha que tem fato
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — falar com o cliente > com telefone: oferece WhatsApp e ligação apontando para o número certo
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — falar com o cliente > com e-mail: oferece mailto
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — falar com o cliente > com cadastro: leva ao CRUD do cliente no Admin
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — falar com o cliente > sem nenhum caminho até a pessoa, o bloco não existe
+ FAIL  |component| tests/components/orderDetailActions.test.ts > detalhe do pedido — falar com o cliente > telefone anônimo (o nome JÁ é o número) não é repetido ao lado de si mesmo
+ FAIL  |component| tests/components/orderDetailActions.test.ts > nota da cozinha — atualização concorrente > SSE preserva texto digitado e exige comparação antes de sobrescrever
+ FAIL  |component| tests/components/orderDetailActions.test.ts > acerto — turno observado no diálogo > preserva o valor e pede conferência quando o turno muda
+ FAIL  |component| tests/components/orderDetailActions.test.ts > falha de leitura mantém o pedido e o textarea montados junto da explicação
+ReferenceError: useOrdersContext is not defined
+ ❯ setup app/pages/[ref].vue:19:37
+     17| definePageMeta({ key: (route) => route.path });
+     18| const route = useRoute();
+     19| const { location: queueLocation } = useOrdersContext();
+       |                                     ^
+     20| const orderRef = computed(() => String(route.params.ref || ""));
+     21|
+ ❯ callWithErrorHandling node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:200:19
+ ❯ setupStatefulComponent node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:8198:25
+ ❯ setupComponent node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:8160:36
+ ❯ mountComponent node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:6055:7
+ ❯ processComponent node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:6021:9
+ ❯ patch node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:5526:11
+ ❯ ReactiveEffect.componentUpdateFn [as fn] node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:6169:11
+ ❯ ReactiveEffect.run node_modules/@vue/reactivity/dist/reactivity.cjs.js:268:19
+ ❯ setupRenderEffect node_modules/@vue/runtime-core/dist/runtime-core.cjs.js:6297:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/31]⎯
+
+
+ Test Files  1 failed | 24 passed (25)
+      Tests  31 failed | 257 passed (288)
+   Start at  01:55:57
+   Duration  3.31s (transform 3.14s, setup 0ms, import 8.94s, tests 1.46s, environment 5.84s)
+

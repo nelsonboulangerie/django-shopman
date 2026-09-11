@@ -28,6 +28,7 @@ vi.stubGlobal("watch", watch);
 vi.stubGlobal("useRoute", () => ({ params: { ref: "WEB-1" } }));
 vi.stubGlobal("useRuntimeConfig", () => ({ public: { adminBaseUrl: "https://api.exemplo" } }));
 vi.stubGlobal("useOrderEvents", () => {});
+vi.stubGlobal("useOrdersContext", () => ({ location: ref({ path: "/", query: {} }) }));
 vi.stubGlobal("useStationLock", () => ({ denied: ref(false) }));
 vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
 vi.stubGlobal("useOrderDetail", () => ({
