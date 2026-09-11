@@ -203,10 +203,17 @@ export function useOrdersBoard() {
 
   // SSE conecta só depois do primeiro fetch do board (sessão/canal prontos):
   // conectar antes disparava um 400 no /sse/orders a cada load.
+  let stopWaitingForRead: (() => void) | undefined;
   function connectWhenReady() {
     if (source) return;
     if (!pending.value && !error.value) { connectSse(); return; }
-    watch([pending, error], ([p, e]) => { if (!p && !e) connectSse(); }, { once: true });
+    stopWaitingForRead?.();
+    stopWaitingForRead = watch([pending, error], ([p, e]) => {
+      if (p || e) return;
+      stopWaitingForRead?.();
+      stopWaitingForRead = undefined;
+      connectSse();
+    });
   }
 
   const onVisible = () => {
@@ -223,6 +230,7 @@ export function useOrdersBoard() {
     window.addEventListener("online", onVisible);
   });
   onBeforeUnmount(() => {
+    stopWaitingForRead?.();
     if (pollTimer) clearInterval(pollTimer);
     if (source) { source.close(); source = null; }
     stopTitleAlert();

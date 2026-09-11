@@ -267,3 +267,46 @@ it("mantém a última fila após falha sem autorizar escrita desatualizada", asy
     expect(board.actionError("READ-1")).toContain("desatualizada");
   } finally { vi.stubGlobal("useFetch", prior); }
 });
+
+it("SSE aguarda recuperação do primeiro GET mesmo após transições com erro", async () => {
+  const { nextTick } = await import("vue");
+  env.reset();
+  vi.useFakeTimers();
+  const pending = ref(true);
+  const failure = ref<unknown>(null);
+  const data = ref({ queue: emptyZone() });
+  let mounted!: () => void;
+  let unmount!: () => void;
+  vi.stubGlobal("onMounted", (callback: () => void) => { mounted = callback; });
+  vi.stubGlobal("onBeforeUnmount", (callback: () => void) => { unmount = callback; });
+  vi.stubGlobal("useFetch", () => ({ data, pending, error: failure, refresh: env.refresh }));
+  const listeners = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
+  vi.stubGlobal("document", { ...listeners, title: "Pedidos", visibilityState: "visible" });
+  vi.stubGlobal("window", listeners);
+  const close = vi.fn();
+  const source = vi.fn(function () { return { addEventListener: vi.fn(), close }; });
+  vi.stubGlobal("EventSource", source);
+  vi.stubGlobal("ssePath", (await import("../../../operator-kit/app/utils/ssePath")).ssePath);
+  try {
+    useOrdersBoard();
+    mounted();
+    failure.value = { status: 503 };
+    pending.value = false;
+    await nextTick();
+    expect(source).not.toHaveBeenCalled();
+    pending.value = true;
+    await nextTick();
+    pending.value = false;
+    failure.value = null;
+    await nextTick();
+    expect(source).toHaveBeenCalledTimes(1);
+    pending.value = true;
+    await nextTick();
+    pending.value = false;
+    await nextTick();
+    expect(source).toHaveBeenCalledTimes(1);
+  } finally {
+    unmount?.();
+    vi.useRealTimers();
+  }
+});

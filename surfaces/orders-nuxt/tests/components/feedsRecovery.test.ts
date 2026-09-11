@@ -59,3 +59,16 @@ it("same-field refresh preserves the draft and requires an explicit resolution",
   await apply.trigger("click");
   expect(setCollections).toHaveBeenCalledWith("tv", ["bread"], "changed");
 });
+
+it("GET indisponível conserva o editor e a seleção da última leitura", async () => {
+  board.value = { feeds: [{ ref: "tv", name: "TV", collections: [], actions: [{ ref: "collections", enabled: true, payload_schema: { base_revision: "initial" } }], capability: "feed", kind: "google", is_active: true }], all_collections: [{ ref: "bread", name: "Pães", product_count: 1 }] };
+  const wrapper = render();
+  await wrapper.get("[data-open-editor]").trigger("click");
+  await wrapper.get("input[type=checkbox]").setValue(true);
+  error.value = { status: 503 };
+  await flushPromises();
+  expect(wrapper.text()).toContain("Exibindo a última leitura disponível");
+  expect((wrapper.get("input[type=checkbox]").element as HTMLInputElement).checked).toBe(true);
+  expect(wrapper.get("[data-open]").attributes("data-open")).toBe("true");
+  expect(setCollections).not.toHaveBeenCalled();
+});

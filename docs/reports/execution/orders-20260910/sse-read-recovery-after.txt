@@ -1,0 +1,13 @@
+
+> test
+> vitest run
+
+
+ RUN  v4.1.6 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt
+
+
+ Test Files  19 passed (19)
+      Tests  257 passed (257)
+   Start at  23:08:20
+   Duration  2.62s (transform 2.41s, setup 0ms, import 5.54s, tests 1.86s, environment 3.93s)
+
