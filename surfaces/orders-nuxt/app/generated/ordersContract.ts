@@ -141,6 +141,7 @@ export interface EquipmentOutProjection {
   customer_name: string;
   out_at: string;
   actions: Action[];
+  identified: boolean;
 }
 
 /** Quem é este cliente, para o operador decidir como tratá-lo. */

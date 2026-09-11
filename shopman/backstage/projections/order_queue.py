@@ -106,6 +106,7 @@ class EquipmentOutProjection:
     customer_name: str
     out_at: str
     actions: tuple[Action, ...] = ()
+    identified: bool = False
 
 
 @dataclass(frozen=True)
@@ -1320,14 +1321,14 @@ def _equipment_out(*, user=None, devices=None) -> tuple[EquipmentOutProjection, 
         devices = list(DeliveryDevice.objects.select_related("current_order"))
     # Physical identity comes only from the exclusive relation. Old generic
     # custody remains returnable, without assigning an invented reader to it.
-    entries = [(str(device.ref), device.current_order, device.label) for device in devices if device.current_order_id]
-    entries += [(ref, order, _equipment_label(ref)) for ref, order in operator_orders.equipment_out()
+    entries = [(str(device.ref), device.current_order, device.label, True) for device in devices if device.current_order_id]
+    entries += [(ref, order, f"{_equipment_label(ref)} (registro antigo sem identificação)", False) for ref, order in operator_orders.equipment_out()
                 if not (order.data or {}).get("dispatch", {}).get("device_ref")]
     rows = []
-    for ref, order, label in entries:
+    for ref, order, label, identified in entries:
         customer = order.data.get("customer", {}) if isinstance(order.data, dict) else {}
         rows.append(EquipmentOutProjection(
-            ref=ref, label=label, order_ref=order.ref, customer_name=str(customer.get("name") or ""),
+            ref=ref, label=label, identified=identified, order_ref=order.ref, customer_name=str(customer.get("name") or ""),
             out_at=operator_orders.equipment_custody(order).out_at,
             actions=tuple(action for action in operator_orders.operational_actions(order, user=user) if action.ref == "equipment-back"),
         ))

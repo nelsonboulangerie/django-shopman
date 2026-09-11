@@ -366,7 +366,8 @@ function printQueue() {
       />
       <p class="text-sm" data-equipment-available>
         Maquininhas disponíveis: {{ equipmentAvailable.length }}<template v-if="equipmentAvailable.length"> · {{ equipmentAvailable.map(item => item.label).join(', ') }}</template>
-        · Em trânsito: {{ equipmentOut.length }}
+        · Em trânsito: {{ equipmentOut.filter(item => item.identified).length }}
+        <template v-if="equipmentOut.some(item => !item.identified)"> · Registros antigos sem aparelho identificado: {{ equipmentOut.filter(item => !item.identified).length }}</template>
       </p>
       <!-- onde está a maquininha: saiu com o entregador e não voltou -->
       <div v-if="equipmentOut.length" class="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm" data-equipment-out>

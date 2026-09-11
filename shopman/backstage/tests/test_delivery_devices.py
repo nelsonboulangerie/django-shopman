@@ -199,3 +199,16 @@ def test_admin_stale_form_cannot_release_allocated_device(inventory):
     assert not inventory.active
     operator_orders.mark_equipment_returned(pending, actor="lab")
     assert not build_two_zone_queue().equipment_available
+
+
+@pytest.mark.django_db
+def test_reverse_migration_refuses_populated_inventory(inventory):
+    import importlib
+    from types import SimpleNamespace
+
+    from django.apps import apps
+
+    migration = importlib.import_module("shopman.backstage.migrations.0061_delivery_device")
+    with pytest.raises(RuntimeError, match="Preserve"):
+        migration.refuse_populated_inventory_removal(apps, SimpleNamespace(connection=connection))
+    assert DeliveryDevice.objects.filter(pk=inventory.pk).exists()
