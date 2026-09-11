@@ -69,20 +69,20 @@ useHead({ title: "Modelos · Marketing" });
 <template>
   <main class="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
     <div class="mb-4 flex items-center gap-3">
-      <h1 class="text-xl font-semibold">Modelos</h1>
-      <button
+      <h1 class="text-lg font-semibold">Modelos</h1>
+      <UiButton
         type="button"
-        class="ml-auto inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground transition"
+        class="ml-auto"
         @click="openNew"
       >
         <Icon name="lucide:plus" class="size-4" />
         Novo modelo
-      </button>
+      </UiButton>
     </div>
 
     <div
       v-if="error && !templates.length"
-      class="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-5"
+      class="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-5"
       role="alert"
     >
       <div class="flex items-start gap-3">
@@ -96,14 +96,15 @@ useHead({ title: "Modelos · Marketing" });
             A lista está indisponível agora; isso não significa que ela esteja
             vazia. Seus modelos não foram alterados.
           </p>
-          <button
+          <UiButton
             type="button"
-            class="mt-3 min-h-11 rounded-md border border-border bg-background px-4 text-sm font-semibold hover:bg-muted"
+            variant="outline"
+            class="mt-3"
             :disabled="loading"
             @click="load()"
           >
             {{ loading ? "Carregando…" : "Tentar novamente" }}
-          </button>
+          </UiButton>
         </div>
       </div>
     </div>
@@ -112,14 +113,14 @@ useHead({ title: "Modelos · Marketing" });
       <div
         v-for="n in 3"
         :key="n"
-        class="h-16 animate-pulse rounded-xl bg-muted"
+        class="h-16 animate-pulse rounded-md bg-muted"
       ></div>
     </div>
 
     <!-- Vazio é o estado que mais importa aqui: era exatamente ele que travava tudo. -->
     <div
       v-else-if="!templates.length"
-      class="rounded-xl border border-border bg-card px-4 py-8 text-center"
+      class="rounded-md border border-border bg-card px-4 py-8 text-center"
     >
       <Icon
         name="lucide:file-text"
@@ -130,25 +131,26 @@ useHead({ title: "Modelos · Marketing" });
         O modelo é o texto que sai para o cliente. Sem pelo menos um, não há
         como criar campanha.
       </p>
-      <button
+      <UiButton
         type="button"
-        class="mt-4 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"
+        class="mt-4"
         @click="openNew"
       >
         <Icon name="lucide:plus" class="size-4" />
         Criar o primeiro
-      </button>
+      </UiButton>
     </div>
 
     <ul
       v-else
-      class="divide-y divide-border rounded-xl border border-border bg-card"
+      class="divide-y divide-border rounded-md border border-border bg-card"
     >
       <li
         v-for="template in templates"
         :key="template.pk"
         class="flex items-start gap-3 px-4 py-3"
       >
+        <!-- A linha inteira abre a edição; o alvo amplo reduz precisão e navegação do operador. -->
         <button
           type="button"
           class="min-w-0 flex-1 text-left"
@@ -178,14 +180,11 @@ useHead({ title: "Modelos · Marketing" });
           >
             Inativo
           </span>
-          <button
-            type="button"
-            :aria-label="`Apagar o modelo ${template.name}`"
-            class="rounded-md border border-border p-1.5 text-muted-foreground transition hover:bg-muted"
+          <UiIconButton
+            icon="lucide:trash-2"
+            :label="`Apagar o modelo ${template.name}`"
             @click="removing = template"
-          >
-            <Icon name="lucide:trash-2" class="size-4" />
-          </button>
+          />
           <Icon
             name="lucide:chevron-right"
             class="size-4 text-muted-foreground"
@@ -269,13 +268,13 @@ useHead({ title: "Modelos · Marketing" });
           </li>
         </ul>
         <UiDialogFooter>
-          <button
+          <UiButton
             type="button"
-            class="rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-muted"
+            variant="outline"
             @click="removing = null"
           >
             Manter
-          </button>
+          </UiButton>
           <NuxtLink
             v-if="removing?.used_by_campaigns?.length"
             to="/campaigns"
@@ -284,14 +283,14 @@ useHead({ title: "Modelos · Marketing" });
           >
             Ver campanhas
           </NuxtLink>
-          <button
+          <UiButton
             v-else
             type="button"
-            class="rounded-md bg-destructive px-3 py-2 text-sm font-semibold text-destructive-foreground transition hover:bg-destructive/90"
+            variant="destructive"
             @click="confirmRemove"
           >
             Apagar
-          </button>
+          </UiButton>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>

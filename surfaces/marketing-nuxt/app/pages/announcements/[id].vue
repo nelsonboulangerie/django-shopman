@@ -232,7 +232,7 @@ useHead({ title: "Anúncio · Marketing" });
   <main class="mx-auto w-full max-w-2xl flex-1 px-4 py-6">
     <section
       v-if="pendingReauthentication"
-      class="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/5 p-4"
+      class="mb-4 rounded-md border border-warning/40 bg-warning/5 p-4"
       role="status"
     >
       <p class="font-semibold">Sua sessão voltou. A decisão não foi enviada.</p>
@@ -241,22 +241,21 @@ useHead({ title: "Anúncio · Marketing" });
         conferência do servidor.
       </p>
       <div class="mt-3 flex flex-wrap gap-2">
-        <button
+        <UiButton
           type="button"
-          class="min-h-11 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
           :disabled="confirmingDecision"
           @click="resumeServerDecision"
         >
           {{ confirmingDecision ? "Retomando…" : "Retomar e reconfirmar" }}
-        </button>
-        <button
+        </UiButton>
+        <UiButton
           type="button"
-          class="min-h-11 rounded-md border border-border px-4 text-sm font-medium hover:bg-muted"
+          variant="outline"
           :disabled="confirmingDecision"
           @click="cancelServerDecision"
         >
           Agora não
-        </button>
+        </UiButton>
       </div>
       <p
         v-if="decisionError"
@@ -277,13 +276,13 @@ useHead({ title: "Anúncio · Marketing" });
 
     <div
       v-if="pending && !announcement"
-      class="h-64 animate-pulse rounded-xl bg-muted"
+      class="h-64 animate-pulse rounded-md bg-muted"
       aria-busy="true"
     ></div>
 
     <div
       v-else-if="error || !announcement"
-      class="rounded-xl border border-dashed border-border bg-card/50 px-6 py-10 text-center"
+      class="rounded-md border border-dashed border-border bg-card/50 px-6 py-10 text-center"
     >
       <Icon
         name="lucide:search-x"
@@ -291,15 +290,16 @@ useHead({ title: "Anúncio · Marketing" });
       />
       <p class="mt-2 font-semibold">{{ loadFailure.title }}</p>
       <p class="mt-1 text-sm text-muted-foreground">{{ loadFailure.detail }}</p>
-      <button
+      <UiButton
         v-if="loadFailure.canRetry"
         type="button"
-        class="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border px-3 text-sm font-medium transition hover:bg-muted"
+        variant="outline"
+        class="mt-3"
         @click="refreshAll"
       >
         <Icon name="lucide:refresh-cw" class="size-4" />
         Tentar novamente
-      </button>
+      </UiButton>
       <NuxtLink
         v-else
         to="/"
@@ -351,7 +351,7 @@ useHead({ title: "Anúncio · Marketing" });
 
       <article
         v-else-if="announcement.status === 'rejected'"
-        class="rounded-xl border border-border bg-card p-4"
+        class="rounded-md border border-border bg-card p-4"
       >
         <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Texto recusado
@@ -382,7 +382,7 @@ useHead({ title: "Anúncio · Marketing" });
           resultPending &&
           !resultAnnouncement
         "
-        class="mt-4 h-48 animate-pulse rounded-xl bg-muted"
+        class="mt-4 h-48 animate-pulse rounded-md bg-muted"
         aria-busy="true"
       ></div>
       <div
@@ -390,7 +390,7 @@ useHead({ title: "Anúncio · Marketing" });
           announcement.status !== 'pending_review' &&
           (resultError || !resultAnnouncement)
         "
-        class="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 text-sm"
+        class="mt-4 rounded-md border border-warning/40 bg-warning/5 p-4 text-sm"
         role="alert"
       >
         <p class="font-semibold">
@@ -400,13 +400,14 @@ useHead({ title: "Anúncio · Marketing" });
           Não vamos inferir sucesso enquanto o registro de entrega não
           responder. O comprovante preservado continua abaixo quando existir.
         </p>
-        <button
+        <UiButton
           type="button"
-          class="mt-2 min-h-11 font-semibold underline"
+          variant="link"
+          class="mt-2"
           @click="refreshResult()"
         >
           Tentar carregar o resultado
-        </button>
+        </UiButton>
       </div>
       <AnnouncementResultPanel
         v-else-if="
@@ -438,36 +439,35 @@ useHead({ title: "Anúncio · Marketing" });
           </UiDialogDescription>
         </UiDialogHeader>
         <div>
-          <label for="reject-reason" class="mb-1 block text-sm font-medium">
+          <label for="reject-reason" class="mb-1 block text-xs font-medium text-muted-foreground">
             Motivo (opcional)
           </label>
-          <input
+          <UiInput
             id="reject-reason"
             v-model="rejectReason"
             type="text"
-            maxlength="200"
+            :maxlength="200"
             placeholder="Foto ruim, texto errado, produto acabou…"
-            class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
         <UiDialogFooter>
-          <button
+          <UiButton
             type="button"
-            class="rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-muted"
+            variant="outline"
             @click="confirmingReject = false"
           >
             Manter na fila
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             type="button"
-            class="rounded-md bg-destructive px-3 py-2 text-sm font-semibold text-destructive-foreground transition hover:bg-destructive/90"
+            variant="destructive"
             @click="
               confirmingReject = false;
               decide('reject', { reason: rejectReason.trim() });
             "
           >
             Recusar
-          </button>
+          </UiButton>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>

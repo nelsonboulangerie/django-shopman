@@ -227,7 +227,7 @@ const expiryClass = computed(
   () =>
     ({
       urgent: "bg-destructive/10 text-destructive",
-      warning: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+      warning: "bg-warning/10 text-warning",
       calm: "bg-muted text-muted-foreground",
       none: "",
     })[expiryTone(exactExpiryMinutes.value)],
@@ -325,7 +325,7 @@ function askToReject() {
 </script>
 
 <template>
-  <article class="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+  <article class="overflow-hidden rounded-md border border-border bg-card shadow-sm">
     <!-- Cabeçalho: de onde veio e quanto tempo ainda vale -->
     <header class="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
       <Icon name="lucide:zap" class="size-4 text-muted-foreground" />
@@ -377,14 +377,15 @@ function askToReject() {
         <!-- Texto editável: o template escreveu o rascunho, o gestor dá o tom -->
         <div>
           <div class="mb-1 flex items-center justify-between gap-2">
-            <label :for="`body-${announcement.pk}`" class="block text-xs font-semibold text-muted-foreground">
+            <label :for="`body-${announcement.pk}`" class="block text-xs font-medium text-muted-foreground">
               Texto do anúncio
             </label>
-            <button
+            <UiButton
               v-if="aiAssistAvailable && announcement.ai_suggestion_enabled"
               type="button"
               :disabled="rewriting || busy"
-              class="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs font-medium transition hover:bg-muted disabled:opacity-40"
+              variant="outline"
+              size="xs"
               @click="rewrite"
             >
               <Icon
@@ -393,16 +394,16 @@ function askToReject() {
                 :class="rewriting ? 'animate-spin' : ''"
               />
               {{ rewriting ? "Preparando…" : "Sugerir texto" }}
-            </button>
+            </UiButton>
           </div>
-          <textarea
+          <UiTextarea
             :id="`body-${announcement.pk}`"
             v-model="body"
             name="announcement_body"
-            rows="4"
+            :rows="4"
             autocomplete="off"
-            class="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-          ></textarea>
+            class="resize-y"
+          />
           <p v-if="!body.trim()" class="mt-1 text-xs text-destructive" role="alert">
             O anúncio precisa de um texto.
           </p>
@@ -454,60 +455,61 @@ function askToReject() {
                 </li>
               </ul>
             </div>
-            <ul v-if="suggestion.warnings.length" class="space-y-1 text-xs text-amber-700 dark:text-amber-400">
+            <ul v-if="suggestion.warnings.length" class="space-y-1 text-xs text-warning">
               <li v-for="warning in suggestion.warnings" :key="warning">
                 {{ warningLabels[warning] ?? "Confira esta sugestão antes de usar." }}
               </li>
             </ul>
             <div class="flex flex-wrap gap-2">
-              <button
+              <UiButton
                 v-if="!suggestionUsed"
                 type="button"
-                class="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+                size="xs"
                 data-testid="use-ai-suggestion"
                 @click="useSuggestion"
               >
                 Usar no rascunho
-              </button>
-              <button
+              </UiButton>
+              <UiButton
                 v-else
                 type="button"
-                class="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium"
+                variant="outline"
+                size="xs"
                 data-testid="undo-ai-suggestion"
                 @click="undoSuggestion"
               >
                 Desfazer uso
-              </button>
-              <button
+              </UiButton>
+              <UiButton
                 type="button"
-                class="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium"
+                variant="outline"
+                size="xs"
                 @click="discardSuggestion"
               >
                 Descartar
-              </button>
+              </UiButton>
             </div>
           </section>
         </div>
 
         <!-- Hashtags: guardadas limpas, lidas com "#" -->
         <div>
-          <label :for="`tags-${announcement.pk}`" class="mb-1 block text-xs font-semibold text-muted-foreground">
+          <label :for="`tags-${announcement.pk}`" class="mb-1 block text-xs font-medium text-muted-foreground">
             Hashtags
           </label>
-          <input
+          <UiInput
             :id="`tags-${announcement.pk}`"
             v-model="hashtagsText"
             name="announcement_hashtags"
             type="text"
             autocomplete="off"
             placeholder="#padaria #fornada"
-            class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
-          >
+          />
         </div>
 
         <!-- Plataformas: pré-marcadas pela regra, o gestor tira ou põe -->
         <fieldset>
-          <legend class="mb-1 text-xs font-semibold text-muted-foreground">Publicar em</legend>
+          <legend class="mb-1 text-xs font-medium text-muted-foreground">Publicar em</legend>
           <div class="flex flex-wrap gap-1.5">
             <label
               v-for="option in platformOptions"
@@ -517,9 +519,7 @@ function askToReject() {
                 ? 'border-primary bg-primary/10 text-foreground'
                 : 'border-border text-muted-foreground hover:bg-muted'"
             >
-              <!-- O input é sr-only (a pílula é a affordance visual), então o nome
-                   acessível precisa vir explícito — sem ele o leitor de tela anuncia
-                   só "caixa de seleção". -->
+              <!-- Checkbox nativo sr-only preserva a semântica enquanto a pílula amplia o alvo visual. -->
               <input
                 type="checkbox"
                 class="sr-only"
@@ -567,37 +567,37 @@ function askToReject() {
         </p>
       </div>
 
-      <button
+      <UiButton
         type="button"
         data-testid="schedule-recommended"
-        class="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
         :aria-expanded="scheduling"
         @click="toggleScheduling"
       >
         <Icon name="lucide:clock" class="size-4" />
         {{ scheduling ? "Fechar agendamento" : "Agendar (recomendado)" }}
-      </button>
+      </UiButton>
 
-      <button
+      <UiButton
         type="button"
         data-testid="publish-now"
         :disabled="!canPublishNow"
-        class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-muted disabled:opacity-50"
+        variant="outline"
         @click="publishNow"
       >
         <Icon :name="busy ? 'line-md:loading-loop' : 'lucide:send'" class="size-4" />
         Publicar agora
-      </button>
+      </UiButton>
 
-      <button
+      <UiButton
         type="button"
         :disabled="busy"
-        class="ml-auto inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+        variant="outline"
+        class="ml-auto text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
         @click="askToReject"
       >
         <Icon name="lucide:trash-2" class="size-4" />
         Recusar
-      </button>
+      </UiButton>
 
       <p
         v-if="hasDirectMessage && quietHoursSuspendedForLocalSimulation"
@@ -608,7 +608,7 @@ function askToReject() {
       </p>
       <p
         v-else-if="nowFallsInQuietHours"
-        class="w-full text-xs font-medium text-amber-700 dark:text-amber-400"
+        class="w-full text-xs font-medium text-warning"
         role="status"
       >
         WhatsApp em silêncio das 20:00 às 08:00 ({{ timezoneName }}). Agende o próximo horário permitido.
@@ -620,25 +620,23 @@ function askToReject() {
       <!-- Agendamento: aparece só quando pedido, para não pesar o caminho comum -->
       <div v-if="scheduling" class="w-full space-y-2 pt-2">
         <div class="flex flex-wrap items-center gap-2">
-          <label :for="`when-${announcement.pk}`" class="text-sm text-muted-foreground">Publicar em</label>
-          <input
+          <label :for="`when-${announcement.pk}`" class="text-xs font-medium text-muted-foreground">Publicar em</label>
+          <UiInput
             :id="`when-${announcement.pk}`"
             v-model="publishAt"
             type="datetime-local"
             :aria-describedby="`when-help-${announcement.pk}`"
-            class="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
-            @input="publishFold = ''"
-          >
+            @update:model-value="publishFold = ''"
+          />
           <span class="text-xs font-semibold text-muted-foreground">{{ timezoneName }}</span>
-          <button
+          <UiButton
             type="button"
             :disabled="!canSchedule"
-            class="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             @click="schedule"
           >
             <Icon name="lucide:calendar-check" class="size-4" />
             Confirmar agendamento
-          </button>
+          </UiButton>
         </div>
         <p
           v-if="scheduleResolution.problem && scheduleResolution.problem !== 'ambiguous'"
@@ -647,22 +645,24 @@ function askToReject() {
           role="alert"
         >
           {{ scheduleResolution.detail }}
-          <button
+          <UiButton
             v-if="scheduleResolution.nextAllowedLocal"
             type="button"
-            class="ml-1 font-semibold underline"
+            variant="link"
+            class="ml-1"
             @click="useNextAllowedTime"
           >
             Usar 08:00
-          </button>
+          </UiButton>
         </p>
         <fieldset
           v-if="scheduleResolution.problem === 'ambiguous'"
-          class="rounded-md border border-amber-500/40 bg-amber-500/5 p-2"
+          class="rounded-md border border-warning/40 bg-warning/5 p-2"
         >
           <legend class="px-1 text-xs font-semibold">Horário repetido pela mudança do relógio</legend>
           <p class="text-xs text-muted-foreground">{{ scheduleResolution.detail }}</p>
           <div class="mt-1 flex flex-wrap gap-3 text-xs">
+            <!-- Rádios nativos distinguem as duas ocorrências do mesmo horário ambíguo. -->
             <label
               v-for="(candidate, index) in scheduleResolution.candidates"
               :key="candidate.instant"

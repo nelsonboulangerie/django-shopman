@@ -85,7 +85,7 @@ useHead({ title: `${presentation.value.title} · Marketing` });
 <template>
   <main class="grid min-h-screen place-items-center bg-background p-4 text-foreground">
     <section
-      class="w-full max-w-md rounded-xl border border-border bg-card p-6 text-center shadow-sm"
+      class="w-full max-w-md rounded-md border border-border bg-card p-6 text-center shadow-sm"
       aria-labelledby="marketing-error-title"
     >
       <div class="mx-auto grid size-12 place-items-center rounded-full bg-muted">
@@ -94,7 +94,7 @@ useHead({ title: `${presentation.value.title} · Marketing` });
       <p class="mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Erro {{ status }}
       </p>
-      <h1 id="marketing-error-title" class="mt-1 text-xl font-bold">
+      <h1 id="marketing-error-title" class="mt-1 text-lg font-semibold">
         {{ presentation.title }}
       </h1>
       <p class="mt-2 text-sm text-muted-foreground">
@@ -115,14 +115,13 @@ useHead({ title: `${presentation.value.title} · Marketing` });
         >
           Voltar ao painel
         </NuxtLink>
-        <button
+        <UiButton
           v-if="presentation.retry"
           type="button"
-          class="min-h-11 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
           @click="clearError({ redirect: $route.fullPath })"
         >
           Tentar novamente
-        </button>
+        </UiButton>
       </div>
     </section>
   </main>

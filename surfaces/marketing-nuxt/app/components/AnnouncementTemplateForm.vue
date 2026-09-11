@@ -147,30 +147,28 @@ function submit() {
       @discard="draft.discard()"
     />
     <div>
-      <label for="tpl-name" class="mb-1 block text-sm font-medium"
+      <label for="tpl-name" class="mb-1 block text-xs font-medium text-muted-foreground"
         >Nome do modelo</label
       >
-      <input
+      <UiInput
         id="tpl-name"
         v-model="name"
         type="text"
         placeholder="Saiu do forno"
-        class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
       />
     </div>
 
     <div>
-      <label for="tpl-body" class="mb-1 block text-sm font-medium">Texto</label>
-      <textarea
+      <label for="tpl-body" class="mb-1 block text-xs font-medium text-muted-foreground">Texto</label>
+      <UiTextarea
         id="tpl-body"
         v-model="body"
-        rows="4"
+        :rows="4"
         placeholder="O pão acabou de sair do forno!"
-        class="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-      ></textarea>
+        class="resize-y"
+      />
 
-      <!-- Vocabulário vindo do backend: clicar insere. Digitar {{nome_errado}} renderiza
-           vazio na cara do cliente, e um botão evita o erro de digitação. -->
+      <!-- Chips nativos inserem apenas variáveis do backend e evitam redigitação inválida. -->
       <p class="mt-2 text-xs text-muted-foreground">Variáveis disponíveis</p>
       <div class="mt-1 flex flex-wrap gap-1">
         <button
@@ -192,7 +190,7 @@ function submit() {
     </div>
 
     <div>
-      <label for="tpl-image" class="mb-1 block text-sm font-medium"
+      <label for="tpl-image" class="mb-1 block text-xs font-medium text-muted-foreground"
         >Imagem</label
       >
       <UiNativeSelect
@@ -215,7 +213,8 @@ function submit() {
       v-if="aiAvailable"
       class="rounded-lg border border-border bg-card p-4"
     >
-      <legend class="px-1 text-sm font-medium">Sugestão de texto</legend>
+      <legend class="px-1 text-xs font-medium text-muted-foreground">Sugestão de texto</legend>
+      <!-- Checkboxes permanecem nativos porque não há primitivo compartilhado de seleção binária. -->
       <label class="flex items-start gap-2 text-sm">
         <input
           v-model="useAi"
@@ -231,16 +230,16 @@ function submit() {
         </span>
       </label>
       <div v-if="useAi" class="mt-3">
-        <label for="tpl-ai" class="mb-1 block text-xs font-medium"
+        <label for="tpl-ai" class="mb-1 block text-xs font-medium text-muted-foreground"
           >Orientação de estilo</label
         >
-        <textarea
+        <UiTextarea
           id="tpl-ai"
           v-model="aiPrompt"
-          rows="2"
+          :rows="2"
           placeholder="Fale do cheiro e do miolo. Uma frase."
-          class="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-        ></textarea>
+          class="resize-y"
+        />
         <p class="mt-1 text-xs text-muted-foreground">
           Não inclua preço, validade, estoque, link ou dados pessoais: esses
           fatos continuam sob controle do sistema.
@@ -248,6 +247,7 @@ function submit() {
       </div>
     </fieldset>
 
+    <!-- Checkbox permanece nativo porque não há primitivo compartilhado de seleção binária. -->
     <label class="flex items-center gap-2 text-sm">
       <input
         v-model="isActive"
@@ -258,20 +258,12 @@ function submit() {
     </label>
 
     <div class="flex items-center justify-end gap-2">
-      <button
-        type="button"
-        class="rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-muted"
-        @click="emit('cancel')"
-      >
+      <UiButton type="button" variant="outline" @click="emit('cancel')">
         Cancelar
-      </button>
-      <button
-        type="submit"
-        :disabled="!canSubmit"
-        class="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition disabled:opacity-40"
-      >
+      </UiButton>
+      <UiButton type="submit" :disabled="!canSubmit">
         {{ template ? "Salvar" : "Criar modelo" }}
-      </button>
+      </UiButton>
     </div>
   </form>
 </template>

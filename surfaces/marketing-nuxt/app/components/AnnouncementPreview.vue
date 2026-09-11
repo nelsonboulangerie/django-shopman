@@ -290,14 +290,15 @@ const shortHash = computed(
       <p v-if="problem.fieldDetail" class="mt-1 text-xs text-muted-foreground">
         {{ problem.fieldDetail }}
       </p>
-      <button
+      <UiButton
         type="button"
-        class="mt-2 inline-flex min-h-11 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium"
+        variant="outline"
+        class="mt-2"
         @click="retry"
       >
         <Icon name="lucide:refresh-cw" class="size-4" />
         {{ problem.retryable ? "Tentar novamente" : "Revalidar prévia" }}
-      </button>
+      </UiButton>
     </div>
 
     <template v-else-if="preview && artifact">
@@ -318,6 +319,7 @@ const shortHash = computed(
         role="tablist"
         aria-label="Plataforma da prévia"
       >
+        <!-- Abas permanecem nativas para preservar role=tab, aria-selected e navegação semântica. -->
         <button
           v-for="(_, platform) in preview.previews"
           :key="platform"
@@ -413,7 +415,7 @@ const shortHash = computed(
 
       <p
         v-if="emptyFields.length"
-        class="mt-3 flex items-start gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-400"
+        class="mt-3 flex items-start gap-1.5 rounded-md bg-warning/10 px-2 py-1.5 text-xs text-warning"
       >
         <Icon name="lucide:triangle-alert" class="mt-0.5 size-3.5 shrink-0" />
         <span>
@@ -431,13 +433,13 @@ const shortHash = computed(
 
     <div
       v-else-if="preview"
-      class="mt-2 rounded-md bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400"
+      class="mt-2 rounded-md bg-warning/10 p-3 text-xs text-warning"
       role="alert"
     >
       A resposta não trouxe a plataforma escolhida.
-      <button type="button" class="ml-1 min-h-11 underline" @click="retry">
+      <UiButton type="button" variant="link" class="ml-1" @click="retry">
         Revalidar
-      </button>
+      </UiButton>
     </div>
   </aside>
 </template>

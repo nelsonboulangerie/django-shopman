@@ -157,10 +157,8 @@ async function replaceListQuery(
 }
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
-function changeSearch(event: Event) {
-  const target = event.target;
-  if (!(target instanceof HTMLInputElement)) return;
-  search.value = target.value;
+function changeSearch(value: string) {
+  search.value = value;
   if (searchTimer) clearTimeout(searchTimer);
   searchTimer = setTimeout(
     () => void replaceListQuery({ q: search.value.trim() || undefined, page: 1 }),
@@ -346,7 +344,7 @@ useHead({ title: "Campanhas · Marketing" });
 <template>
   <main class="mx-auto w-full max-w-4xl flex-1 px-4 py-6">
     <div class="mb-5 flex flex-wrap items-center gap-3">
-      <h1 class="w-full text-xl font-bold sm:w-auto">Campanhas</h1>
+      <h1 class="w-full text-lg font-semibold sm:w-auto">Campanhas</h1>
       <!-- A biblioteca de modelos é vista SECUNDÁRIA daqui, não seção irmã: o gestor pensa
            "o que a padaria diz quando X acontece", e separar o texto da intenção o obrigava
            a montar isso em duas telas. -->
@@ -357,14 +355,13 @@ useHead({ title: "Campanhas · Marketing" });
         <Icon name="lucide:file-text" class="size-3.5" />
         Modelos
       </NuxtLink>
-      <button
+      <UiButton
         type="button"
-        class="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
         @click="openNew"
       >
         <Icon name="lucide:plus" class="size-4" />
         Nova campanha
-      </button>
+      </UiButton>
     </div>
 
     <div
@@ -375,13 +372,14 @@ useHead({ title: "Campanhas · Marketing" });
       <p class="font-semibold text-destructive">
         Não conseguimos carregar as campanhas.
       </p>
-      <button
+      <UiButton
         type="button"
-        class="mt-1 underline underline-offset-2"
+        variant="link"
+        class="mt-1"
         @click="refresh()"
       >
         Tentar de novo
-      </button>
+      </UiButton>
     </div>
 
     <div
@@ -392,13 +390,13 @@ useHead({ title: "Campanhas · Marketing" });
       <div
         v-for="n in 3"
         :key="n"
-        class="h-20 animate-pulse rounded-xl bg-muted"
+        class="h-20 animate-pulse rounded-md bg-muted"
       ></div>
     </div>
 
     <div
       v-else-if="rules.length === 0"
-      class="rounded-xl border border-dashed border-border bg-card/50 px-6 py-10 text-center"
+      class="rounded-md border border-dashed border-border bg-card/50 px-6 py-10 text-center"
     >
       <Icon
         name="lucide:sliders-horizontal"
@@ -409,46 +407,45 @@ useHead({ title: "Campanhas · Marketing" });
         Uma campanha liga um evento da padaria a um anúncio. Comece pela
         fornada.
       </p>
-      <button
+      <UiButton
         type="button"
-        class="mt-3 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
+        class="mt-3"
         @click="openNew"
       >
         <Icon name="lucide:plus" class="size-4" />
         Criar a primeira
-      </button>
+      </UiButton>
     </div>
 
     <template v-else>
       <section
-        class="mb-4 rounded-xl border border-border bg-card p-3"
+        class="mb-4 rounded-md border border-border bg-card p-3"
         aria-labelledby="campaign-filters-title"
       >
         <div class="flex flex-wrap items-center justify-between gap-2">
           <h2 id="campaign-filters-title" class="text-sm font-semibold">
             Encontrar uma campanha
           </h2>
-          <button
+          <UiButton
             v-if="hasListFilters"
             type="button"
-            class="min-h-11 text-sm font-semibold underline underline-offset-2"
+            variant="link"
             @click="clearListFilters"
           >
             Limpar filtros
-          </button>
+          </UiButton>
         </div>
         <div class="mt-2 grid gap-2 sm:grid-cols-3">
-          <label class="grid gap-1 text-sm font-medium">
+          <label class="grid gap-1 text-xs font-medium text-muted-foreground">
             Buscar
-            <input
+            <UiInput
               type="search"
-              :value="search"
+              :model-value="search"
               placeholder="Nome, gatilho ou modelo"
-              class="min-h-11 w-full rounded-md border border-border bg-background px-3 text-sm"
-              @input="changeSearch"
+              @update:model-value="changeSearch"
             />
           </label>
-          <label class="grid gap-1 text-sm font-medium">
+          <label class="grid gap-1 text-xs font-medium text-muted-foreground">
             Situação
             <UiNativeSelect
               :value="stateFilter"
@@ -459,7 +456,7 @@ useHead({ title: "Campanhas · Marketing" });
               <option value="inactive">Desligadas</option>
             </UiNativeSelect>
           </label>
-          <label class="grid gap-1 text-sm font-medium">
+          <label class="grid gap-1 text-xs font-medium text-muted-foreground">
             Plataforma
             <UiNativeSelect
               :value="platformFilter"
@@ -480,25 +477,26 @@ useHead({ title: "Campanhas · Marketing" });
 
       <div
         v-if="error"
-        class="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/5 px-4 py-3 text-sm"
+        class="mb-3 rounded-lg border border-warning/40 bg-warning/5 px-4 py-3 text-sm"
         role="status"
       >
         <p class="font-semibold">Mostrando a última lista carregada.</p>
         <p class="mt-1 text-muted-foreground">
           Não foi possível atualizar agora. Nenhuma campanha foi alterada.
         </p>
-        <button
+        <UiButton
           type="button"
-          class="mt-2 min-h-11 font-semibold underline underline-offset-2"
+          variant="link"
+          class="mt-2"
           @click="refresh()"
         >
           Tentar atualizar
-        </button>
+        </UiButton>
       </div>
 
       <div
         v-if="filteredRules.length === 0"
-        class="rounded-xl border border-dashed border-border bg-card/50 px-6 py-8 text-center"
+        class="rounded-md border border-dashed border-border bg-card/50 px-6 py-8 text-center"
       >
         <Icon
           name="lucide:search-x"
@@ -508,25 +506,26 @@ useHead({ title: "Campanhas · Marketing" });
         <p class="mt-1 text-sm text-muted-foreground">
           Limpe ou ajuste os filtros para ampliar a busca.
         </p>
-        <button
+        <UiButton
           type="button"
-          class="mt-3 min-h-11 font-semibold underline underline-offset-2"
+          variant="link"
+          class="mt-3"
           @click="clearListFilters"
         >
           Limpar filtros
-        </button>
+        </UiButton>
       </div>
 
       <ul
         v-else
-        class="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card"
+        class="divide-y divide-border overflow-hidden rounded-md border border-border bg-card"
       >
       <li
         v-for="rule in pageRules"
         :key="rule.pk"
         class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-4 py-3 sm:flex sm:gap-3"
       >
-        <!-- Liga/desliga: o gesto mais comum, a um toque -->
+        <!-- Liga/desliga permanece nativo porque expõe role=switch e estado aria-checked. -->
         <button
           type="button"
           role="switch"
@@ -547,6 +546,7 @@ useHead({ title: "Campanhas · Marketing" });
           </span>
         </button>
 
+        <!-- A linha inteira abre a edição; o alvo amplo reduz precisão e navegação do operador. -->
         <button
           type="button"
           class="col-start-2 min-w-0 text-left sm:flex-1"
@@ -607,14 +607,14 @@ useHead({ title: "Campanhas · Marketing" });
         >
           <span
             v-if="!rule.requires_approval"
-            class="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400"
+            class="rounded-full bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning"
             title="Publica sem passar por revisão"
           >
             Automática
           </span>
           <!-- Disparar não espera o evento: fica ao lado da campanha, mas só ativo
                quando ela está ligada — disparar campanha desligada é engano. -->
-          <button
+          <UiButton
             type="button"
             :disabled="!fireAction(rule)?.enabled"
             :aria-label="
@@ -625,12 +625,13 @@ useHead({ title: "Campanhas · Marketing" });
             :title="
               fireAction(rule)?.enabled ? '' : fireUnavailableReason(rule)
             "
-            class="inline-flex min-h-11 items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-semibold transition hover:bg-muted disabled:opacity-40 sm:min-h-0"
+            variant="outline"
+            size="xs"
             @click="openFire(rule)"
           >
             <Icon name="lucide:send" class="size-3.5" />
             {{ fireAction(rule)?.enabled ? "Disparar" : "Indisponível" }}
-          </button>
+          </UiButton>
           <Icon
             name="lucide:chevron-right"
             class="size-4 text-muted-foreground"
@@ -641,29 +642,34 @@ useHead({ title: "Campanhas · Marketing" });
 
       <nav
         v-if="totalPages > 1"
-        class="mt-4 flex items-center justify-between gap-3"
+        class="mt-4 grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-between sm:gap-3"
         aria-label="Páginas de campanhas"
       >
-        <button
+        <UiButton
           type="button"
-          class="min-h-11 rounded-md border border-border px-4 text-sm font-semibold disabled:opacity-40"
+          variant="outline"
+          class="w-full sm:w-auto"
           :disabled="currentPage <= 1"
           @click="replaceListQuery({ page: currentPage - 1 })"
         >
           Anterior
-        </button>
-        <p class="text-sm text-muted-foreground" role="status">
+        </UiButton>
+        <p
+          class="col-span-2 row-start-1 text-center text-sm text-muted-foreground sm:col-auto sm:row-auto"
+          role="status"
+        >
           Página {{ Math.min(currentPage, totalPages) }} de {{ totalPages }} ·
           {{ filteredRules.length }} campanhas
         </p>
-        <button
+        <UiButton
           type="button"
-          class="min-h-11 rounded-md border border-border px-4 text-sm font-semibold disabled:opacity-40"
+          variant="outline"
+          class="w-full sm:w-auto"
           :disabled="currentPage >= totalPages"
           @click="replaceListQuery({ page: currentPage + 1 })"
         >
           Próxima
-        </button>
+        </UiButton>
       </nav>
     </template>
 
