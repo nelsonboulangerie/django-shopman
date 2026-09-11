@@ -648,7 +648,7 @@ describe("PosPaymentWorkspace — agendado sem cliente trava o Validar, com cami
     expect(avisos(wrapper).text()).toContain("Encomenda precisa de cliente.");
     // O porquê continua na tela — é o que o operador DIZ ao cliente —, mas em
     // segunda linha: a frase que trava o botão precisa ser lida de longe.
-    expect(avisos(wrapper).text()).toContain("É o contato se algo mudar até a data.");
+    expect(avisos(wrapper).text()).toContain("Identifique quem vai receber a entrega ou retirar o pedido combinado.");
     expect(linhasDeAviso(wrapper)[0]).toContain("Encomenda precisa de cliente.");
   });
 

@@ -18,6 +18,7 @@ Base: `origin/main` em `7faf0259a`. Integração isolada em `codex/pos-critical-
 
 - Backend: **178 testes passaram**, cobrindo agendamento, identidade de cliente, bootstrap, contrato de superfície PDV, pedido de troco, filipeta e SSE.
 - Frontend: **410 testes unitários passaram** e **145 testes de componente/composable passaram** (checkout, cadastro, fechamento, identidade e refresh de recebimento).
+- Suíte ampliada de services POS: **188 passaram, 1 skip** (inclui testes já contabilizados acima). A suíte completa de componentes local sofreu timeout de inicialização e foi interrompida; o CI executou os 876 testes, encontrando uma asserção de texto antigo, corrigida nesta branch.
 - Typecheck Nuxt, Ruff nos módulos alterados e `git diff --check` aprovados.
 - `makemigrations --check --dry-run`: sem drift; sem colisão nova para `0063`. Há prefixos históricos repetidos (`0036` e `0058`); o grafo atual foi aceito pelo Django.
 - A revisão independente achou e motivou a correção da troca automática de recebimento. A revisão de cadastro não encontrou seleção silenciosa por digitação/blur.
