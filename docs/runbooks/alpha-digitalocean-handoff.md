@@ -1,22 +1,33 @@
-# Alpha DigitalOcean - handoff operacional
+# DigitalOcean - handoff operacional do app unico
 
-Objetivo: registrar o estado aplicado do alpha tecnico na DigitalOcean e as
-regras para nao aumentar custo recorrente nem perder segredos. O alpha deve
-ficar pronto para testadores; na producao final entram outro dominio, segredos
-reais e adapters reais.
+> **Estado confirmado em 11/09/2026:** `menu.nelsonboulangerie.com.br` e o
+> dominio definitivo da loja. `alpha.*` e `staging.*` foram aposentados e nao
+> devem ser recriados. O app vivo ainda se chama `shopman-alpha` e continua com
+> perfil de pre-go-live (`SHOPMAN_ENVIRONMENT=staging`, Pix mock e OTP/captura
+> de teste expostos). A proposta de nome `shopman-nelson` foi validada sem
+> alteracao de custo ou componentes, mas nao aplicada: qualquer atualizacao do
+> spec inicia novo deployment. Fazer o rename somente em janela controlada,
+> junto de verificacao de saude e recuo pelo deployment anterior.
+
+> O componente `web` e o backend Django/Daphne que atende API, Admin e
+> backstage. O Storefront ja e o componente `storefront-nuxt`; esses nomes nao
+> sao intercambiaveis.
+
+Objetivo: registrar o estado aplicado do unico app na DigitalOcean e as regras
+para nao aumentar custo recorrente nem perder segredos. O dominio ja e o
+definitivo; a ativacao de adapters e segredos reais continua sendo um gate
+separado e explicitamente autorizado.
 
 ## Decisao obrigatoria
 
 - Nao manter `staging.*` e `alpha.*` como ambientes separados.
-- Reaproveitar o App Platform atual, ja renomeado para `shopman-alpha`.
-- Manter `SHOPMAN_ENVIRONMENT=staging` no alpha.
-- Usar `alpha.nelsonboulangerie.com.br` como unica URL divulgada aos testadores.
-- Reservar `menu.nelsonboulangerie.com.br` para producao final.
-- Nao apontar `menu.*` para o Shopman enquanto o cardapio antigo ainda estiver em uso.
-- Nao transformar o banco alpha em banco de producao.
+- Reaproveitar o App Platform atual, ainda nomeado `shopman-alpha`.
+- Manter o perfil de pre-go-live ate autorizacao especifica de producao.
+- Usar `menu.nelsonboulangerie.com.br` como URL definitiva da loja.
+- Nao recriar `alpha.*` ou `staging.*`.
+- Nao reclassificar o banco existente sem gate de producao e plano de recuo.
 - Manter API, Admin e apps de operador nos dominios tecnicos/operacionais existentes.
 - Nao recriar Postgres/Valkey so para trocar nomes internos `staging` por `alpha`.
-- `staging.*` continua como ALIAS de rollback; nao divulgar.
 
 ## Custo esperado
 
@@ -33,10 +44,11 @@ O spec atual roda aproximadamente:
 - Valkey gerenciado: 1 cluster 1 GiB.
 
 Estimativa em 22/08/2026: cerca de USD 87/mes, fora trafego extra, storage,
-logs e IP dedicado. Criar staging e alpha separados dobra quase tudo. Nao criar
-outro app/banco/cache.
+logs e IP dedicado. A proposta lida em 11/09/2026 indicou USD 84 sem mudar
+componentes. Criar outro ambiente duplica quase tudo; nao criar outro
+app/banco/cache apenas por nomenclatura.
 
-## Renomeacao staging -> alpha
+## Historico de renomeacao staging -> alpha
 
 Estado aplicado:
 
@@ -64,12 +76,21 @@ stateful; criar novos recursos so por cosmetica aumenta custo financeiro e
 risco. `staging` no nome do banco/cache significa "nao-producao", nao URL
 publica.
 
-## Dominios do alpha
+### Rename pendente para shopman-nelson
 
-Configurar somente a loja publica de teste em `alpha.nelsonboulangerie.com.br`:
+A proposta gerada a partir do spec vivo muda somente `name`, preserva o App ID,
+componentes, domínios, recursos e valores encrypted. `shopman-nelson` esta
+disponivel e o custo proposto permaneceu USD 84. Ela nao foi aplicada porque
+uma atualizacao do spec dispara deployment mesmo quando o diff e apenas o nome.
+Aplicar somente em janela autorizada, acompanhar health/rotas e manter o
+deployment anterior como recuo.
+
+## Dominio da loja
+
+Configurar a loja em seu dominio definitivo:
 
 ```text
-alpha.nelsonboulangerie.com.br -> storefront-nuxt
+menu.nelsonboulangerie.com.br -> storefront-nuxt
 ```
 
 Manter API, Admin e backstage nos dominios operacionais existentes:
@@ -138,20 +159,20 @@ vivo: esse comando valida como app novo e rejeita os `EV[...]` encrypted que
 precisam ser preservados no app existente. `apps propose --app` valida contra o
 app alvo e mostra custo/diff antes de qualquer update.
 
-## Estado atual de variaveis do alpha
+## Estado atual de variaveis do app
 
 ```env
 DJANGO_DEBUG=false
 SHOPMAN_ENVIRONMENT=staging
-SHOPMAN_PREPROD_URL=https://alpha.nelsonboulangerie.com.br
+SHOPMAN_PREPROD_URL=https://menu.nelsonboulangerie.com.br
 
 DJANGO_ALLOWED_HOSTS=api.boulangerie.com.br,admin.boulangerie.com.br
-CSRF_TRUSTED_ORIGINS=https://alpha.nelsonboulangerie.com.br,https://api.boulangerie.com.br,https://admin.boulangerie.com.br,https://gestor.boulangerie.com.br,https://kds.boulangerie.com.br,https://pdv.boulangerie.com.br,https://prod.boulangerie.com.br,https://mkt.boulangerie.com.br,https://central.boulangerie.com.br,https://bi.boulangerie.com.br
+CSRF_TRUSTED_ORIGINS=https://menu.nelsonboulangerie.com.br,https://api.boulangerie.com.br,https://admin.boulangerie.com.br,https://gestor.boulangerie.com.br,https://kds.boulangerie.com.br,https://pdv.boulangerie.com.br,https://prod.boulangerie.com.br,https://mkt.boulangerie.com.br,https://central.boulangerie.com.br,https://bi.boulangerie.com.br
 
-SHOPMAN_STOREFRONT_BASE_URL=https://alpha.nelsonboulangerie.com.br
-SHOPMAN_DOMAIN=https://alpha.nelsonboulangerie.com.br
-AUTH_DEFAULT_DOMAIN=alpha.nelsonboulangerie.com.br
-WHATSAPP_STOREFRONT_URL=https://alpha.nelsonboulangerie.com.br
+SHOPMAN_STOREFRONT_BASE_URL=https://menu.nelsonboulangerie.com.br
+SHOPMAN_DOMAIN=https://menu.nelsonboulangerie.com.br
+AUTH_DEFAULT_DOMAIN=menu.nelsonboulangerie.com.br
+WHATSAPP_STOREFRONT_URL=https://menu.nelsonboulangerie.com.br
 
 SHOPMAN_OPERATOR_API_HOST=api.boulangerie.com.br
 SHOPMAN_OPERATOR_COOKIE_DOMAIN=.boulangerie.com.br
@@ -162,12 +183,12 @@ SHOPMAN_POS_BASE_URL=https://pdv.boulangerie.com.br
 SHOPMAN_PRODUCTION_BASE_URL=https://prod.boulangerie.com.br
 
 SHOPMAN_PIX_ADAPTER=shopman.shop.adapters.payment_mock
-SHOPMAN_CARD_ADAPTER=shopman.shop.adapters.payment_mock
+SHOPMAN_CARD_ADAPTER=shopman.shop.adapters.payment_stripe
 SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true
 SHOPMAN_EXPOSE_MOCK_CAPTURE=true
-SHOPMAN_MOCK_PIX_AUTO_CONFIRM=true
+SHOPMAN_MOCK_PIX_AUTO_CONFIRM=false
 SHOPMAN_EXPOSE_DEBUG_OTP=true
-SHOPMAN_STAGING_AUTOPILOT=true
+SHOPMAN_STAGING_AUTOPILOT=false
 ```
 
 Segredos continuam como `SECRET`/encrypted no painel, nunca em YAML versionado.
@@ -177,10 +198,10 @@ Segredos continuam como `SECRET`/encrypted no painel, nunca em YAML versionado.
 Google:
 
 - Verificar `nelsonboulangerie.com.br` como dominio autorizado.
-- Criar OAuth client separado: `Shopman Alpha`.
-- Cadastrar origem exata `https://alpha.nelsonboulangerie.com.br`.
-- Cadastrar callback exato usado pelo app em `https://alpha.nelsonboulangerie.com.br/...`.
-- Nao reutilizar secret do alpha em producao.
+- Usar um OAuth client identificado para o app Shopman/Nelson.
+- Cadastrar origem exata `https://menu.nelsonboulangerie.com.br`.
+- Cadastrar callback exato usado pelo app em `https://menu.nelsonboulangerie.com.br/...`.
+- Trocar credenciais de teste somente no gate autorizado de producao.
 
 Fiscal:
 
@@ -200,8 +221,8 @@ iFood:
 
 Pagamentos:
 
-- Pix/cartao podem ficar mock no alpha por limite de sandbox Pix.
-- O botao de simular pagamento pode ficar exposto somente no alpha.
+- Pix pode ficar mock durante o pre-go-live por limite de sandbox Pix.
+- O botao de simular pagamento pode ficar exposto somente durante o pre-go-live.
 - Producao deve falhar se `SHOPMAN_EXPOSE_MOCK_CAPTURE=true`.
 
 ## Criterio de aceite
@@ -209,12 +230,12 @@ Pagamentos:
 Antes de liberar testadores:
 
 ```bash
-make alpha-readiness preprod_url=https://alpha.nelsonboulangerie.com.br
+make alpha-readiness preprod_url=https://menu.nelsonboulangerie.com.br
 make smoke-gateways
 make omotenashi-qa strict=1
 ```
 
-Aceitar apenas warnings documentados de alpha: pagamento mock, botao de
+Aceitar apenas warnings documentados de pre-go-live: pagamento mock, botao de
 simulacao, OTP debug e autopilot. Focus NFe ausente e merchant iFood invalido
 sao pendencias externas do Pablo.
 
@@ -223,18 +244,18 @@ Antes de producao:
 ```bash
 make production-readiness \
   manual_qa=docs/reports/manual-qa.md \
-  preprod_url=https://alpha.nelsonboulangerie.com.br
+  preprod_url=https://menu.nelsonboulangerie.com.br
 ```
 
 Esse comando ainda e insatisfazivel com um unico app porque os hosts de operador
-rodam no mesmo App Platform do alpha, com mock, OTP debug e autopilot ligados.
+rodam no mesmo App Platform, com mock e OTP debug ligados.
 Isso e bloqueio de go-live/pre-producao real, nao regressao do handoff.
 
 ## Proibido
 
 - Criar um segundo App Platform `shopman-alpha`.
 - Criar banco/cache novos so para trocar nome `staging` por `alpha`.
-- Apontar `menu.nelsonboulangerie.com.br` antes do go-live.
+- Recriar `alpha.nelsonboulangerie.com.br` ou `staging.nelsonboulangerie.com.br`.
 - Usar banco alpha em producao.
 - Usar secrets de alpha em producao.
 - Divulgar URLs de backstage para testadores finais.
