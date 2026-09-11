@@ -79,16 +79,26 @@ def test_nested_errors_flatten_to_dotted_paths():
 
 
 def test_status_and_shape_preserved_for_other_drf_exceptions():
-    # NotAuthenticated/Throttled/NotFound já saem {"detail": ...} do handler
-    # default — o dialeto exige apenas que detail exista, e ele existe.
+    # NotAuthenticated/NotFound já saem {"detail": ...} do handler default — o
+    # dialeto exige apenas que detail exista, e ele existe.
     for exc, status in (
         (exceptions.NotAuthenticated(), 401),
         (exceptions.NotFound(), 404),
-        (exceptions.Throttled(wait=10), 429),
     ):
         response = exception_handler(exc, context={})
         assert response.status_code == status
         assert "detail" in response.data
+
+
+def test_throttle_exposes_human_detail_and_machine_readable_wait():
+    response = exception_handler(exceptions.Throttled(wait=2385.2), context={})
+
+    assert response.status_code == 429
+    assert response.data == {
+        "detail": "Muitas tentativas em pouco tempo. Aguarde antes de tentar novamente.",
+        "retry_after_seconds": 2386,
+    }
+    assert response.headers["Retry-After"] == "2386"
 
 
 def test_sessao_caida_carrega_codigo_de_erro():

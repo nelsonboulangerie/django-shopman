@@ -664,6 +664,17 @@ def _worker_id(value: str) -> str:
 
 
 def _select_for_update(query):
+    # ``claim_due_targets`` hydrates ``member__customer`` in the same query so the
+    # consent recheck stays bounded. ``member`` is nullable for public publications,
+    # therefore PostgreSQL renders that path as an OUTER JOIN and refuses a broad
+    # ``FOR UPDATE`` (it cannot lock the nullable side). We only mutate
+    # ``DeliveryTarget`` here, so lock precisely the base rows when the backend
+    # supports ``FOR UPDATE OF``.
+    if connection.features.has_select_for_update_of:
+        return query.select_for_update(
+            of=("self",),
+            skip_locked=connection.features.has_select_for_update_skip_locked,
+        )
     if connection.features.has_select_for_update_skip_locked:
         return query.select_for_update(skip_locked=True)
     return query.select_for_update()
