@@ -132,6 +132,7 @@ class OperatorAlert(models.Model):
         ("directive_worker_stale", "Processador de tarefas de fundo parado"),
         ("lifecycle_phase_stuck", "Fase do pedido travada"),
         ("low_rating", "Avaliação baixa recebida"),
+        ("cash_change_requested", "Troco solicitado no PDV"),
         ("cash_shift_open_at_closing", "Caixa aberto no fechamento do dia"),
         # A venda foi criada e cobrada, mas o turno fechou entre o commit do
         # pedido e a linha do livro, e o livro-caixa é append-only num turno
