@@ -104,7 +104,7 @@ describe('StockNotifyButton', () => {
   it('anonymous submit uses the shop default DDD and repairs legacy mobile input', async () => {
     await setAuthenticated(false)
     await setDefaultDdd('43')
-    fetchMock.mockResolvedValue({})
+    fetchMock.mockResolvedValueOnce({ ok: true }).mockRejectedValueOnce(new Error('not owned'))
     const wrapper = await mountSuspended(StockNotifyButton, {
       props: { sku: 'PAO', name: 'Pão', subscribed: false }
     })
@@ -119,8 +119,34 @@ describe('StockNotifyButton', () => {
     await new DOMWrapper(form!).trigger('submit')
     await new Promise(r => setTimeout(r, 0))
 
-    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(fetchMock.mock.calls[0]?.[1]?.body).toEqual({ phone: '+5543998404900' })
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'GET', credentials: 'include' })
+    expect(wrapper.text()).toContain('Pedido recebido')
+  })
+
+  it('anonymous first subscribe recovers the capability bound to its session', async () => {
+    await setAuthenticated(false)
+    await setDefaultDdd('43')
+    fetchMock
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ active: true, management_url: '/gerenciar-aviso#owned-capability' })
+    const wrapper = await mountSuspended(StockNotifyButton, {
+      props: { sku: 'PAO', name: 'Pão', subscribed: false }
+    })
+
+    await wrapper.get('button').trigger('click')
+    await nextTick()
+    const input = document.body.querySelector<HTMLInputElement>('input[aria-label="Telefone para aviso"]')
+    const form = document.body.querySelector<HTMLFormElement>('form')
+    await new DOMWrapper(input!).setValue('(43) 99840-4900')
+    await new DOMWrapper(form!).trigger('submit')
+    await new Promise(r => setTimeout(r, 0))
+    await nextTick()
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('Aviso ativo')
+    expect(wrapper.get('a').attributes('href')).toBe('/gerenciar-aviso#owned-capability')
   })
 
   // O reparo do normalizador (DDD da loja + nono dígito) tem que ficar VISÍVEL

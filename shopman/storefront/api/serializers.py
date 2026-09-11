@@ -135,10 +135,10 @@ class StockAlertSubscribeRequestSerializer(serializers.Serializer):
 
 class StockAlertSubscribeResponseSerializer(serializers.Serializer):
     ok = serializers.BooleanField()
-    subscription_ref = serializers.UUIDField()
-    active = serializers.BooleanField()
-    expires_at = serializers.DateTimeField(allow_null=True)
-    management_url = serializers.URLField()
+    subscription_ref = serializers.UUIDField(required=False)
+    active = serializers.BooleanField(required=False)
+    expires_at = serializers.DateTimeField(allow_null=True, required=False)
+    management_url = serializers.URLField(required=False)
 
 
 class StockAlertSessionStateSerializer(serializers.Serializer):

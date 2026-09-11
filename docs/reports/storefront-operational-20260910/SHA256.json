@@ -34,6 +34,8 @@
   "continuation-postgres-redis-runtime.txt": "c5a81b7718a9e2a4e5b9671b5e90ae94762361507ba7e4ff55ddf85f304ed2bd",
   "continuation-schema.txt": "263e70c14089795f695baf3957fc124af7612c7c648ac5268e62cd02d44936b7",
   "core.txt": "f185bd84f88ee651a971e1708d4a8fb42bff6b325c1292517fb364f8cef93dd6",
+  "d07-cross-session-ownership-review-20260911.txt": "2dc457a45bbd1d8e27dfd661d2cd42c8dfc988287f8c3446df722bdd38869814",
+  "d07-cross-session-takeover-before.txt": "defb2b6a05cfb0f64b83ea7623deb97e73da461d71ad68af33e8937358d8e09d",
   "d07-final-validation-20260911.txt": "db123bfd4c5e53af9e50555995cb16252b1b93915782b7e7e61e053c70748e84",
   "d07-persistent-management-20260911.txt": "ef930fcb4f4c672b2d90864d6fbcc949c5f5f837414b3cc646229ac08a20384a",
   "d07-qc-review-gate-20260911.txt": "ae2ed254a0c7a97e6486af2ebdd744d4dca6e55eb80d588e583d3777fc89223e",

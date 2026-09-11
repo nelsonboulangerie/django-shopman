@@ -191,7 +191,7 @@ def test_06c_soldout_409_remembers_who_already_asked(client):
     # same purpose-scoped management link from this session without another POST.
     recovered = client.get(f"/api/v1/availability/{SKU}/notify/")
     assert recovered.status_code == 200
-    assert recovered.json()["management_url"] == resp.json()["management_url"]
+    assert recovered.json()["management_url"].startswith("/gerenciar-aviso#")
 
 
 def test_07_checkout_rejected_date_is_actionable(client):
@@ -410,7 +410,7 @@ def test_12b_profile_update_error_does_not_leak_exception(client):
 
 
 def test_13_mutation_success_shape_is_consistent(client):
-    """✅ Mutations acknowledge success and return handles needed for recovery."""
+    """✅ Mutations acknowledge success; owned recovery returns its opaque handle."""
     _seed(stock_qty=5)
     # Stock-alert subscribe.
     resp = client.post(
@@ -420,9 +420,10 @@ def test_13_mutation_success_shape_is_consistent(client):
     )
     assert resp.status_code == 200
     subscription = resp.json()
-    assert subscription["ok"] is True
-    assert subscription["subscription_ref"]
-    assert subscription["expires_at"] is None
+    assert subscription == {"ok": True}
+    recovered = client.get(f"/api/v1/availability/{SKU}/notify/")
+    assert recovered.status_code == 200
+    assert recovered.json()["management_url"].startswith("/gerenciar-aviso#")
     # Cart mutation also acknowledges with ok:true (plus its projection).
     status, add = J.set_cart_qty(client, SKU, 1)
     assert status == 200
@@ -583,9 +584,10 @@ def test_18_unavailable_product_exposes_notify_affordance(client):
     )
     assert resp.status_code == 200
     subscription = resp.json()
-    assert subscription["ok"] is True
-    assert subscription["subscription_ref"]
-    assert subscription["expires_at"] is None
+    assert subscription == {"ok": True}
+    recovered = client.get(f"/api/v1/availability/{SKU}/notify/")
+    assert recovered.status_code == 200
+    assert recovered.json()["management_url"].startswith("/gerenciar-aviso#")
     from shopman.storefront.services import stock_alerts
 
     # The subscription was persisted (phone is normalised on the way in).

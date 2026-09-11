@@ -1,0 +1,35 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_anonymous_repeat_from_other_session_cannot_take_over_existing_subscription _
+
+client = <django.test.client.Client object at 0x10dd2c5f0>
+
+    def test_anonymous_repeat_from_other_session_cannot_take_over_existing_subscription(client):
+        from django.test import Client
+    
+        product = _publish(sku="SKU-SUBSCRIBE-CROSS-SESSION")
+        path = f"/api/v1/availability/{product.sku}/notify/"
+        created = client.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.210").json()
+        other_session = Client()
+    
+        repeated = other_session.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.211")
+    
+        assert repeated.status_code == 200
+>       assert repeated.json() == {"ok": True}
+E       AssertionError: assert {'active': Tr...k': True, ...} == {'ok': True}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Left contains 4 more items:
+E         {'active': True,
+E          'expires_at': None,
+E          'management_url': '/gerenciar-aviso#kvmOquE7TcWOYpZMXH9On0l0u3KOFJu6i0mxLgBg5QVz9TFuNcFF_eZfCEnFR129',
+E          'subscription_ref': '92f98eaa-e13b-4dc5-8e62-964c5c7f4e9f'}
+E         Use -v to get more diff
+
+shopman/storefront/tests/test_stock_alerts.py:434: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-11 17:24:19,375 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-11 17:24:20,344 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+=========================== short test summary info ============================
+FAILED shopman/storefront/tests/test_stock_alerts.py::test_anonymous_repeat_from_other_session_cannot_take_over_existing_subscription
+1 failed in 12.32s

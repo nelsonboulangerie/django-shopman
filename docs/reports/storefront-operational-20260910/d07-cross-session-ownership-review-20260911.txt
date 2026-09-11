@@ -1,0 +1,42 @@
+D07 — revisão de ownership entre sessões — 2026-09-11
+
+Defeito comprovado
+- Uma sessão A criava o aviso anônimo. Uma sessão B podia repetir o mesmo SKU e telefone.
+- O POST deduplicava a assinatura, mas vinculava a referência existente à sessão B e devolvia
+  a mesma capacidade. A sessão B podia então pausar ou cancelar o aviso da sessão A.
+- `proof_status=verified` registra a apresentação do disclosure; não prova posse do telefone.
+- Reprodução anterior: `d07-cross-session-takeover-before.txt` falhou ao exigir resposta
+  genérica e ausência de marcador na segunda sessão.
+
+Correção
+- A primitiva canônica de cadastro agora informa, sob a mesma transação e lock, se criou a
+  assinatura. Em corrida, somente o vencedor recebe `created=true`.
+- POST anônimo é não enumerável e responde apenas `{ok: true}`. Somente a sessão que criou a
+  linha ou já possuía seu marcador exato pode recuperar a capacidade por GET.
+- Repetir SKU + telefone em outra sessão não grava marcador, não revela ref/capacidade, não
+  retoma assinatura pausada e não autoriza PATCH/DELETE.
+- Resposta perdida continua recuperável na sessão original: o retry permanece idempotente,
+  mantém uma linha e o GET devolve a capacidade vinculada à sessão.
+- Para cliente autenticado, o telefone do corpo é ignorado; vale o contato da identidade
+  canônica. O acesso pela conta continua disponível.
+- A interface tenta o GET após o POST. Quando a sessão possui o aviso, mostra “Aviso ativo” e
+  gestão. Sem ownership, mostra a confirmação honesta “Pedido recebido”, sem link de gestão.
+
+Validação inicial
+- Reprodução antes: 1 failed, confirmando a entrega indevida da capacidade.
+- Arquivo completo de alertas depois: 75 passed.
+- Componente e apresentação do Storefront: 15 passed em 2 arquivos.
+- Storefront completo: 1.539 passed, 10 skips; o skip adicional é o novo caso de
+  concorrência declarado para PostgreSQL.
+- Nuxt completo: 558 passed em 61 arquivos; typecheck, lint e build passaram.
+- Ruff e git diff --check passaram.
+- Casos explícitos cobrem takeover ativo, tentativa de retomar aviso pausado, resposta perdida,
+  reload, marcador adulterado, cancelamento fora da sessão e telefone canônico autenticado.
+- O caso de corrida usa duas conexões PostgreSQL e exige um único `created=true`; seu resultado
+  faz parte do gate PostgreSQL final.
+
+Limite humano/produto
+- Sem verificação do telefone, uma pessoa ainda pode criar um primeiro opt-in para número alheio.
+  A correção fecha a escalada para gestão de uma assinatura preexistente. Confirmação de posse
+  por OTP ou canal equivalente é uma decisão de produto/privacidade pendente.
+- Nenhum provider, mensagem, deploy ou transação real foi acionado nesta correção.
