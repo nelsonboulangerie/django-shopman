@@ -62,3 +62,7 @@ Correções reveladas pela primeira execução do PR
 - Prova da corrida antes: falha local na 3ª de 20 repetições, igual à CI.
 - Prova depois: 50/50 repetições focadas; 93/93 testes purchase-nuxt; typecheck,
   lint e build de produção passaram.
+- O gate `ruff check .` também inclui `baseline_reproductions.py`, preservado no
+  dossiê. O script recebeu somente formatação automática e remoção de um import
+  sem uso; os sete cenários e suas asserções permaneceram iguais. O gate completo
+  passou e o hash do artefato foi renovado.
