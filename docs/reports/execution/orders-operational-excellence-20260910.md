@@ -1042,3 +1042,12 @@ Validação: **58 PostgreSQL em 9,39 s**, **273 Vitest**, typecheck/Ruff/build. 
 Medição de uma amostra por jornada: comando→conteúdo visível **150 ms catálogo, 94 ms feed**, sem clique de atualizar/R=0; dados em catalog-sse-latency.json. Havia suíte ampla concorrente no host. Essas duas amostras não constituem p95, hardware de operador homologado ou ganho de campo. Não confundir tempo total da suíte com tempo ativo humano.
 
 Migração: nenhuma; novo endpoint SSE apenas de leitura, cliente tolera queda e continua polling. Rollback do consumidor volta ao polling; servidor conserva APIs/fontes/recibos e pode manter canal aditivo. Redis multiprocesso foi exercitado localmente; G06 para budgets/dispositivos e G07 para ambiente real continuam pendentes. Escritores fora das famílias/rotas inventariadas ainda exigem sua prova própria; SSE não é recibo de comando nem prova de publicação externa.
+
+
+### Validação ampla imutável em 3504dec71 e fixture de calendário
+
+Checkout somente de validação django-shopman-orders-validation-3504dec71, branch codex/orders-validation-3504dec71; mesmo runner, SQLite isolado, pytest -n 2 shopman: **8.676 passaram, 1 falhou, 68 skipped, 3 warnings, 38 subtests em 523,02 s**. Essa rodada continua registrada como falha; não inclui o commit posterior de SSE d7af378b9.
+
+Única falha: test_data_ilegivel_cai_no_padrao_em_vez_de_estourar calculava hoje pelo relógio, mas fixava date_to em 2026-09-10. Em 11/09, o writer canônico troca intervalo invertido, portanto date_from passa a 10/09. Teste e serviço estavam idênticos à base 5a3383c9 (git diff vazio); defeito da fixture com passagem do dia, não regressão de produção. O próprio parse_period já oferece parâmetro today: a fixture agora usa data controlada 07/09 por essa costura existente. Algoritmo não mudou.
+
+Revalidação do módulo inteiro: **38 PostgreSQL em 8,39 s e 38 SQLite em 7,62 s**. Skips/warnings da ampla permanecem no log; não equivalem a ensaios feitos. Migração/rollback: nenhuma mudança produtiva, somente teste determinístico. Suite ampla verde em versão final ainda depende de nova rodada fixa após as demais mudanças.
