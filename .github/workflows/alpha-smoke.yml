@@ -193,7 +193,7 @@ jobs:
         if: github.event_name == 'workflow_run'
         env:
           DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-          DO_APP_NAME: shopman-alpha
+          DO_APP_NAME: ${{ vars.DO_APP_NAME }}
         run: |
           python3 scripts/wait_for_do_deployment.py \
             --manifest manifesto/published.json
@@ -206,7 +206,7 @@ jobs:
         if: inputs.probe_deploy_wait
         env:
           DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-          DO_APP_NAME: shopman-alpha
+          DO_APP_NAME: ${{ vars.DO_APP_NAME }}
         run: python3 scripts/wait_for_do_deployment.py --probe
 
       - name: API pronta (/ready/)
