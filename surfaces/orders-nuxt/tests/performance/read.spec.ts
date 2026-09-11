@@ -17,9 +17,12 @@ test("rendered queue becomes usable and filtering remains local", async ({ brows
       await metrics.send("Performance.enable");
       const start = Date.now();
       await page.goto("/", { waitUntil: "domcontentloaded" });
+      const pageReadyMs = Date.now() - start;
       await expect(page.getByRole("link", { name: `Abrir pedido HTTP-LAB-${n}-0`, exact: true })).toBeVisible();
+      const queueVisibleMs = Date.now() - start;
       const search = page.getByRole("searchbox", { name: "Buscar por código, cliente ou item (atalho: /)", exact: true });
       await search.fill(`HTTP-LAB-${n}-0`);
+      const filledMs = Date.now() - start;
       // Inventory links keep their delivery context when the queue is filtered.
       await expect(page.locator('article a[aria-label^="Abrir pedido HTTP-LAB-"], tbody a[aria-label^="Abrir pedido HTTP-LAB-"]')).toHaveCount(1);
       const usableMs = Date.now() - start;
@@ -30,7 +33,7 @@ test("rendered queue becomes usable and filtering remains local", async ({ brows
       });
       const measured = await metrics.send("Performance.getMetrics");
       const work = Object.fromEntries(measured.metrics.filter(({ name }) => ["ScriptDuration", "LayoutDuration", "RecalcStyleDuration", "TaskDuration"].includes(name)).map(({ name, value }) => [name, value]));
-      samples.push({ sample, usable_ms: usableMs, ...navigation, work });
+      samples.push({ sample, page_ready_ms: pageReadyMs, queue_visible_ms: queueVisibleMs, filled_ms: filledMs, usable_ms: usableMs, ...navigation, work });
       await page.close();
     }
   } finally { await context.close(); }

@@ -87,6 +87,8 @@ jobs:
           .venv/bin/python docs/reports/execution/orders-20260910/do_capacity/wait_reader.py 3005
           cd surfaces/orders-nuxt
           npx playwright test -c playwright.performance.config.ts
+      - name: Read-only CPU profile of the same synthetic queue
+        run: .venv/bin/python docs/reports/execution/orders-20260910/do_capacity/profile_read.py > .orders-lab/ci-read-profile.txt 2>&1
       - name: Enforce original budgets after saving every sample
         run: .venv/bin/python docs/reports/execution/orders-20260910/do_capacity/accept.py
       - name: Stop only this job's application processes
@@ -105,3 +107,4 @@ jobs:
             .orders-lab/ci-backend-resources.txt
             .orders-lab/ci-service-log.txt
             .orders-lab/capacity-verdict.json
+            .orders-lab/ci-read-profile.txt

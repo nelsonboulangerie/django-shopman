@@ -66,3 +66,14 @@ cinco seriam US$60/mês para o componente web, diferença nominalUS$48/mês, ant
 impostos/câmbio/extras. **Não é recomendação aprovada nem compra**: uma mudança paga
 só será proposta após evidência de benefício e revisão do spec. O serviço Gestor
 atual512MB custaUS$5/mês nessa consulta e não foi alterado.
+
+
+## Rodada34593270527 — fonte21fb17460, hipótese de cinco leitores
+
+Todos os passos de preparação e3 jornadas browser passaram. Backend p95:
+316,020 /342,824 /1322,247ms; browser2573ms. Budget reprovado. Cinco leitores
+no runner4CPU não equivalem a cinco instâncias dedicadas, mas o resultado tampouco
+sustenta recomendar a compra. **Não propor nem aplicar aumento pago com esta prova.**
+CDP após cronômetro: medianas layout221ms, recálculo de estilo187ms, script52ms,
+tarefas totais2019ms. Próxima instrumentação separa navegação, fila visível, filtro
+preenchido e resultado, além de perfil Python; não troca ações nem reduz fixture.
