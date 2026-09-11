@@ -361,7 +361,7 @@ function currentValue(path: string): string {
 }
 
 const fieldClass =
-  "h-9 w-full rounded-md border border-border bg-background px-2.5 text-sm outline-none focus:ring-1 focus:ring-ring";
+  "min-h-control w-full rounded-md border border-border bg-background px-2.5 text-sm outline-none focus:ring-1 focus:ring-ring";
 const areaClass =
   "w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm outline-none focus:ring-1 focus:ring-ring";
 const labelClass = "mb-1 block text-xs font-medium text-muted-foreground";
@@ -405,7 +405,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
           v-for="t in TABS"
           :key="t.id"
           type="button"
-          class="shrink-0 rounded-t-md px-3 py-2 text-sm font-medium transition"
+          class="min-h-control shrink-0 rounded-t-md px-3 py-2 text-sm font-medium transition"
           :class="tab === t.id
             ? 'border-b-2 border-primary text-foreground'
             : 'border-b-2 border-transparent text-muted-foreground hover:text-foreground'"
@@ -755,13 +755,13 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
         <span v-if="patchSize" class="mr-auto text-xs text-muted-foreground">{{ patchSize }} campo(s) alterado(s)</span>
         <button
           type="button"
-          class="rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-accent"
+          class="min-h-control rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-accent"
           @click="requestClose(false)"
         >Cancelar</button>
         <button
           type="button"
           :disabled="!canSave"
-          class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+          class="inline-flex min-h-action items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
           @click="onSave"
         >
           <Icon v-if="busy" name="line-md:loading-loop" class="size-4" />

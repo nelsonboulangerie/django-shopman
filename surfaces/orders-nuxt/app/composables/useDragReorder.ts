@@ -97,10 +97,24 @@ export function useDragReorder(getKeys: () => string[], commit: (orderedKeys: st
     captureEl.addEventListener("pointercancel", onCancel);
   }
 
+  function onKeyDown(key: string, event: KeyboardEvent) {
+    if (!["ArrowUp", "ArrowDown"].includes(event.key) || event.ctrlKey || event.metaKey || event.altKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const keys = [...getKeys()];
+    const from = keys.indexOf(key);
+    const to = from + (event.key === "ArrowUp" ? -1 : 1);
+    if (from < 0 || to < 0 || to >= keys.length) return;
+    start?.();
+    keys.splice(from, 1);
+    keys.splice(to, 0, key);
+    commit(keys);
+  }
+
   function reset() {
     dragKey.value = null;
     overKey.value = null;
   }
 
-  return { dragKey, overKey, onPointerDown, reset };
+  return { dragKey, overKey, onPointerDown, onKeyDown, reset };
 }

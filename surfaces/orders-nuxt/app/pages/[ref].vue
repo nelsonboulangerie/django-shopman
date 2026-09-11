@@ -376,41 +376,41 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
            que decide é o servidor, e quando ele bloqueia o lugar do botão
            continua ocupado dizendo o motivo, em vez de sumir. -->
       <section class="flex flex-wrap gap-2">
-        <button v-if="projectedAction('confirm')" type="button" :disabled="busy || !projectedAction('confirm')?.enabled" :title="projectedAction('confirm')?.reason" class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="confirm" @click="confirm">
+        <button v-if="projectedAction('confirm')" type="button" :disabled="busy || !projectedAction('confirm')?.enabled" :title="projectedAction('confirm')?.reason" class="inline-flex min-h-action min-w-action items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="confirm" @click="confirm">
           <Icon name="lucide:check" class="size-4" /> Aceitar
         </button>
-        <button v-else-if="projectedAction('advance')?.enabled" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="advance" @click="onAdvance">
+        <button v-else-if="projectedAction('advance')?.enabled" type="button" :disabled="busy" class="inline-flex min-h-action min-w-action items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" data-action="advance" @click="onAdvance">
           <Icon name="lucide:arrow-right" class="size-4" /> {{ order.next_action_label }}
         </button>
-        <button v-else-if="projectedAction('advance')" type="button" disabled :title="projectedAction('advance')?.reason" class="inline-flex cursor-not-allowed items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold text-muted-foreground opacity-60" data-action="advance-blocked">
+        <button v-else-if="projectedAction('advance')" type="button" disabled :title="projectedAction('advance')?.reason" class="inline-flex min-h-control min-w-control cursor-not-allowed items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold text-muted-foreground opacity-60" data-action="advance-blocked">
           <Icon name="lucide:clock" class="size-4" /> {{ projectedAction('advance')?.reason }}
         </button>
-        <button v-if="order.can_settle_delivery_cash" type="button" :disabled="busy || !settleAction?.enabled" :title="settleAction?.reason" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="openDialog('settle')">
+        <button v-if="order.can_settle_delivery_cash" type="button" :disabled="busy || !settleAction?.enabled" :title="settleAction?.reason" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="openDialog('settle')">
           <Icon name="lucide:banknote" class="size-4" /> Acerto dinheiro
         </button>
-        <button v-if="order.equipment_back_pending && !order.can_settle_delivery_cash" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="equipmentBack">
+        <button v-if="order.equipment_back_pending && !order.can_settle_delivery_cash" type="button" :disabled="busy" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="equipmentBack">
           <Icon name="lucide:smartphone-nfc" class="size-4" /> Maquininha voltou
         </button>
-        <button v-if="order.fiscal_status === 'failed'" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="requeueFiscal">
+        <button v-if="order.fiscal_status === 'failed'" type="button" :disabled="busy" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="requeueFiscal">
           <Icon name="lucide:file-text" class="size-4" /> Reprocessar fiscal
         </button>
         <!-- Só para o pedido de LINK ainda cobrável (forma link com URL, vivo,
              não pago, não vencido) — o servidor decide, a tela obedece. A
              cadência (cedo demais, envio em andamento) é recusa da hora do
              clique, com o motivo no toast. -->
-        <button v-if="order.can_resend_payment_link" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" data-action="resend-payment-link" @click="resendPaymentLink">
+        <button v-if="order.can_resend_payment_link" type="button" :disabled="busy" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" data-action="resend-payment-link" @click="resendPaymentLink">
           <Icon name="lucide:send" class="size-4" /> Reenviar link de pagamento
         </button>
         <!-- Recusar é a resposta ao pedido que ACABOU de chegar; depois de
              aceito o gesto certo é Cancelar. -->
-        <button v-if="projectedAction('reject')" type="button" :disabled="busy || !projectedAction('reject')?.enabled" class="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3.5 py-2 text-sm font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50 dark:text-orange-300" data-action="reject" @click="openDialog('reject')">
+        <button v-if="projectedAction('reject')" type="button" :disabled="busy || !projectedAction('reject')?.enabled" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border border-destructive/40 px-3.5 py-2 text-sm font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50 dark:text-orange-300" data-action="reject" @click="openDialog('reject')">
           <Icon name="lucide:x" class="size-4" /> Recusar
         </button>
         <!-- `can_cancel` já é régua + política + permissão, resolvidas no
              servidor. O botão ficava sempre visível e o servidor respondia
              "ok" sem cancelar; agora, quando não dá, a tela diz por quê em vez
              de oferecer um gesto que não acontece. -->
-        <button v-if="order.can_cancel" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent disabled:opacity-50" data-action="cancel" @click="openDialog('cancel')">
+        <button v-if="order.can_cancel" type="button" :disabled="busy" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent disabled:opacity-50" data-action="cancel" @click="openDialog('cancel')">
           <Icon name="lucide:ban" class="size-4" />
           {{ order.cancel_requires_approval ? "Cancelar (gerente)" : "Cancelar" }}
         </button>
@@ -570,7 +570,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           <button
             type="button"
             :disabled="!comment.trim() || busy"
-            class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-transparent bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+            class="inline-flex min-h-action shrink-0 items-center gap-1.5 rounded-md border border-transparent bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             @click="submitComment"
           >
             <Icon name="lucide:message-square-plus" class="size-4" /> Comentar

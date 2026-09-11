@@ -308,3 +308,80 @@ test("curation drag lost response adopts receipt and canonical exact order", asy
   const matrix = await (await page.request.get(`/api/v1/backstage/catalog/?collection=${lab.curation_ref}`)).json();
   expect(matrix.matrix.rows.map((row: { sku: string }) => row.sku)).toEqual([...initial].reverse());
 });
+
+test("keyboard curation and frequent targets retain exact order without pointer input", async ({ page }) => {
+  await login(page, "orders-lab-curation");
+  await page.goto("/catalog");
+  await page.getByRole("button", { name: new RegExp(lab.curation_name) }).click();
+  const rows = page.locator("tr[data-dragkey]");
+  await expect(rows).toHaveCount(2);
+  const initial = await rows.evaluateAll(elements => elements.map(element => element.getAttribute("data-dragkey")));
+  const handle = rows.first().getByRole("button", { name: "Arrastar para reordenar", exact: true });
+  const box = await handle.boundingBox();
+  expect(box!.width).toBeGreaterThanOrEqual(44); expect(box!.height).toBeGreaterThanOrEqual(44);
+  await handle.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect.poll(async () => (await (await page.request.get(`/api/v1/backstage/catalog/?collection=${lab.curation_ref}`)).json()).matrix.rows.map((row: { sku: string }) => row.sku)).toEqual([...initial].reverse());
+  for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    for (const control of [rows.first().getByRole("switch").first(), rows.first().getByRole("button", { name: /^Preço em/ }).first(), rows.first().getByRole("button", { name: /^Ações de/ })]) {
+      const bounds = await control.boundingBox();
+      expect(bounds!.width).toBeGreaterThanOrEqual(44); expect(bounds!.height).toBeGreaterThanOrEqual(44);
+    }
+    if (viewport.width === 390) {
+      const toggle = rows.first().getByRole("switch").first();
+      await toggle.scrollIntoViewIfNeeded();
+      await expect(toggle).toBeInViewport();
+      await toggle.click({ trial: true });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    }
+    await page.screenshot({ path: fileURLToPath(new URL(`../../../../.orders-lab/integration-targets-${viewport.width}.png`, import.meta.url)), fullPage: true });
+  }
+  await page.goto(`/${lab.advance_ref}`);
+  const primary = await page.getByRole("button", { name: "Marcar pronto", exact: true }).boundingBox();
+  expect(primary!.width).toBeGreaterThanOrEqual(48); expect(primary!.height).toBeGreaterThanOrEqual(48);
+});
+
+test("cell lost response keeps one price intent and one canonical write", async ({ page }) => {
+  await login(page, "orders-lab-price");
+  await page.goto("/catalog");
+  let posts = 0; let receipts = 0;
+  await page.route("**/api/v1/backstage/catalog/cell/**", async route => {
+    if (route.request().method() === "POST") {
+      posts += 1;
+      const response = await route.fetch(); expect(response.status()).toBe(200);
+      await route.abort("failed");
+    } else { receipts += 1; await route.continue(); }
+  });
+  await page.locator(`tr[data-dragkey="${lab.edit_sku}"]`).getByRole("button", { name: /^Preço em/ }).first().click();
+  await page.locator('input[inputmode="decimal"]').fill("14,23");
+  await page.getByRole("button", { name: "Salvar", exact: true }).click();
+  await expect.poll(() => receipts).toBe(1);
+  await expect(page.getByRole("button", { name: "Salvar", exact: true })).toHaveCount(0);
+  expect(posts).toBe(1);
+  const matrix = await (await page.request.get("/api/v1/backstage/catalog/")).json();
+  expect(matrix.matrix.rows.find((row: { sku: string }) => row.sku === lab.edit_sku).cells.find((cell: { surface_ref: string }) => cell.surface_ref === "lab").price_q).toBe(1423);
+});
+
+test("global pause lost response adopts product receipt without another toggle", async ({ page }) => {
+  await login(page, "orders-lab-product");
+  await page.goto("/catalog");
+  let posts = 0; let receipts = 0;
+  await page.route("**/api/v1/backstage/catalog/product/?*", async route => {
+    if (route.request().method() === "POST") {
+      posts += 1;
+      const response = await route.fetch(); expect(response.status()).toBe(200);
+      await route.abort("failed");
+    } else { receipts += 1; await route.continue(); }
+  });
+  // The POST has no query; GET receipt carries ref and key.
+  await page.route("**/api/v1/backstage/catalog/product/", async route => {
+    posts += 1; const response = await route.fetch(); expect(response.status()).toBe(200); await route.abort("failed");
+  });
+  const row = page.locator(`tr[data-dragkey="${lab.edit_sku}"]`);
+  await row.getByRole("button", { name: /^Ações de/ }).click();
+  await page.getByRole("button", { name: "Pausar em todos os canais", exact: true }).click();
+  await expect.poll(() => receipts).toBe(1); expect(posts).toBe(1);
+  const detail = await (await page.request.get(`/api/v1/backstage/catalog/product/${lab.edit_sku}/`)).json();
+  expect(detail.product.is_sellable).toBe(false);
+});

@@ -18,6 +18,9 @@
    ============================================================================ */
 
 @theme {
+  /* Alvos operacionais: frequentes 44 px, ação primária 48 px. */
+  --spacing-control: 2.75rem;
+  --spacing-action: 3rem;
   /* Corpo/UI = Instrument Sans, a família canônica do design system (mesma da
      vitrine). O app hospedeiro incorpora os webfonts licenciados e declara os
      pesos 400–700 no próprio CSS; o kit nunca busca fontes em runtime. */

@@ -12,7 +12,7 @@ defineProps<{
 <template>
   <button
     type="button"
-    class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+    class="inline-flex min-h-control shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
     :class="active ? 'border-transparent bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'"
   >
     <slot name="icon" />

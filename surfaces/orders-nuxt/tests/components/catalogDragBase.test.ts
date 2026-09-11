@@ -24,3 +24,17 @@ it("arraste conserva o conjunto visto no início apesar de uma leitura posterior
     expect(document.body.style.userSelect).toBe("");
   } finally { point.mockRestore(); first.remove(); second.remove(); }
 });
+
+it("teclado e arraste produzem a mesma ordem, sem sair dos limites", () => {
+  const commit = vi.fn();
+  const start = vi.fn();
+  const drag = useDragReorder(() => ["A", "B", "C"], commit, start);
+  const down = new KeyboardEvent("keydown", { key: "ArrowDown", cancelable: true });
+  drag.onKeyDown("A", down);
+  expect(down.defaultPrevented).toBe(true);
+  expect(commit).toHaveBeenCalledWith(["B", "A", "C"]);
+  expect(start).toHaveBeenCalledTimes(1);
+  drag.onKeyDown("A", new KeyboardEvent("keydown", { key: "ArrowUp" }));
+  drag.onKeyDown("C", new KeyboardEvent("keydown", { key: "ArrowDown" }));
+  expect(commit).toHaveBeenCalledTimes(1);
+});

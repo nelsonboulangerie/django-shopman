@@ -129,7 +129,7 @@ const orderedCollections = computed(
   () => reorderView<CollectionProjection>(collections.value, collectionOverride.value, (c) => c.ref),
 );
 const {
-  dragKey: collDragKey, onPointerDown: collPointerDown,
+  dragKey: collDragKey, onPointerDown: collPointerDown, onKeyDown: collKeyDown,
 } = useDragReorder(
   () => orderedCollections.value.map((c) => c.ref),
   (order) => {
@@ -156,7 +156,7 @@ const orderedRows = computed(
 );
 const displayRows = computed(() => (canReorderRows.value ? orderedRows.value : rows.value));
 const {
-  dragKey: rowDragKey, overKey: rowOverKey, onPointerDown: rowPointerDown,
+  dragKey: rowDragKey, overKey: rowOverKey, onPointerDown: rowPointerDown, onKeyDown: rowKeyDown,
 } = useDragReorder(
   () => displayRows.value.map((r) => r.sku),
   (order) => {
@@ -408,6 +408,9 @@ useHead({ title: "Catálogo · Gestor" });
           :count="c.product_count"
           @click="collectionRef = c.ref"
           @pointerdown="collPointerDown(c.ref, $event)"
+          @keydown="collKeyDown(c.ref, $event)"
+          aria-keyshortcuts="ArrowUp ArrowDown"
+          :title="`${c.name} — reordenar com as setas para cima ou para baixo`"
         >
           <template v-if="c.is_smart" #icon>
             <Icon name="lucide:sparkles" class="size-3.5 opacity-70" title="Coleção por regra" />
@@ -458,7 +461,7 @@ useHead({ title: "Catálogo · Gestor" });
       </div>
     </div>
 
-    <div v-else-if="rows.length" class="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card shadow-xs">
+    <div v-else-if="rows.length" role="region" aria-label="Produtos e canais — role horizontalmente para ver os canais" tabindex="0" class="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card shadow-xs">
       <!-- `table-fixed`: sem ele o conteúdo do cabeçalho (nome longo do canal, rótulo
            do feed) estica a coluna e a matriz fica desalinhada. Fixo, toda superfície
            tem a MESMA largura e o nome trunca com o title inteiro. O `min-w` faz a
@@ -470,7 +473,7 @@ useHead({ title: "Catálogo · Gestor" });
                  as colunas de superfície ficam no seu tamanho fixo (uniformes).
                  `border-r` fecha a coluna fixa: no scroll horizontal é essa linha que
                  diz onde o painel parado termina e a matriz que corre começa. -->
-            <th class="sticky left-0 top-0 z-30 w-full min-w-[260px] border-b border-r border-border bg-card px-4 py-3 text-left">
+            <th class="sticky sm:left-0 top-0 z-30 w-full min-w-[260px] border-b border-r border-border bg-card px-4 py-3 text-left">
               <label class="flex items-center gap-3">
                 <input type="checkbox" :checked="allSelected" class="size-4 rounded border-border accent-foreground" @change="toggleSelectAll" />
                 <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Produto</span>
@@ -526,7 +529,7 @@ useHead({ title: "Catálogo · Gestor" });
                  aparecer através dela. Um único utilitário de fundo por estado — dois na
                  mesma célula competem na folha de estilo, não na ordem do atributo. -->
             <td
-              class="sticky left-0 z-10 border-b border-r border-border px-4 py-2.5"
+              class="sm:sticky sm:left-0 z-10 border-b border-r border-border px-4 py-2.5"
               :class="isSelected(row.sku) ? 'bg-muted' : 'bg-card group-hover:bg-muted'"
             >
               <div class="flex items-center gap-3">
@@ -534,10 +537,13 @@ useHead({ title: "Catálogo · Gestor" });
                 <span
                   v-if="canReorderRows"
                   role="button" tabindex="0"
-                  class="-ml-1 grid size-6 shrink-0 cursor-grab touch-none select-none place-items-center rounded text-muted-foreground/50 transition hover:text-foreground active:cursor-grabbing"
+                  class="-ml-1 grid size-control shrink-0 cursor-grab touch-none select-none place-items-center rounded text-muted-foreground/50 transition hover:text-foreground active:cursor-grabbing"
                   aria-label="Arrastar para reordenar"
-                  title="Arrastar para reordenar nesta coleção"
+                  aria-keyshortcuts="ArrowUp ArrowDown"
+                  aria-description="Use as setas para cima ou para baixo para mover este produto."
+                  title="Arrastar ou usar as setas para reordenar nesta coleção"
                   @pointerdown="rowPointerDown(row.sku, $event)"
+                  @keydown="rowKeyDown(row.sku, $event)"
                   @click.stop
                 >
                   <Icon name="lucide:grip-vertical" class="pointer-events-none size-4" />
@@ -596,7 +602,7 @@ useHead({ title: "Catálogo · Gestor" });
                   <UiPopoverTrigger as-child>
                     <button
                       type="button"
-                      class="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                      class="grid size-control shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
                       :class="menuOpen === row.sku ? 'bg-accent text-foreground' : ''"
                       :aria-label="`Ações de ${row.name}`"
                     >
@@ -606,14 +612,14 @@ useHead({ title: "Catálogo · Gestor" });
                   <UiPopoverContent align="end" :side-offset="4" class="w-56 p-1">
                     <button
                       type="button"
-                      class="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent"
+                      class="flex min-h-control w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent"
                       @click="openDetail(row)"
                     >
                       <Icon name="lucide:pencil" class="size-4 text-muted-foreground" /> Editar detalhes
                     </button>
                     <button
                       type="button" :disabled="isBusy(productKey(row.sku)) || !row.product_action?.enabled"
-                      class="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50"
+                      class="flex min-h-control w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50"
                       @click="toggleProduct(row)"
                     >
                       <Icon :name="row.is_sellable ? 'lucide:pause' : 'lucide:play'" class="size-4 text-muted-foreground" />
@@ -621,7 +627,7 @@ useHead({ title: "Catálogo · Gestor" });
                     </button>
                     <button
                       type="button" :disabled="isBusy(productKey(row.sku)) || !row.product_action?.enabled"
-                      class="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50"
+                      class="flex min-h-control w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50"
                       @click="toggleProductPublish(row)"
                     >
                       <Icon :name="row.is_published ? 'lucide:eye-off' : 'lucide:eye'" class="size-4 text-muted-foreground" />
@@ -632,7 +638,7 @@ useHead({ title: "Catálogo · Gestor" });
                     <div class="my-1 h-px bg-border"></div>
                     <button
                       type="button"
-                      class="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent"
+                      class="flex min-h-control w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent"
                       @click="openDetail(row, 'social')"
                     >
                       <Icon name="lucide:sparkles" class="size-4 text-muted-foreground" />
@@ -644,7 +650,7 @@ useHead({ title: "Catálogo · Gestor" });
                     </button>
                     <button
                       type="button" :disabled="isBusy(productKey(row.sku))"
-                      class="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50"
+                      class="flex min-h-control w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50"
                       @click="resyncRow(row)"
                     >
                       <Icon name="lucide:refresh-cw" class="size-4 text-muted-foreground" />
@@ -667,21 +673,22 @@ useHead({ title: "Catálogo · Gestor" });
             >
               <div
                 v-if="cell.in_listing"
-                class="flex h-10 items-center justify-center gap-1"
+                class="flex min-h-control items-center justify-center gap-1"
               >
                 <!-- ÁREA 1 — toggle: verde=ligado&disponível · cinza=pausado (posição off) OU
                      linha "fora" (esgotado/etc.: mantém a POSIÇÃO ligada, mas dessatura p/ cinza).
                      Vale para canal (vende) E feed (só exibe) — a mesma pausa por item. -->
                 <button
                   type="button" role="switch" :aria-checked="cell.is_sellable"
-                  class="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors disabled:opacity-40"
-                  :class="cell.is_sellable && !rowStatuses[row.sku]?.off ? 'bg-success' : 'bg-muted-foreground/30'"
+                  class="inline-flex size-control shrink-0 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
                   :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !cell.action?.enabled"
                   :aria-label="cell.is_sellable ? `${cellView(row, cell).label} — pausar neste ${surfaceWord(cell)}` : `Ativar neste ${surfaceWord(cell)}`"
                   :title="cell.is_sellable ? `${cellView(row, cell).label} — pausar neste ${surfaceWord(cell)}` : `Pausado — ativar neste ${surfaceWord(cell)}`"
                   @click="toggleCell(row, cell)"
                 >
-                  <span class="inline-block size-3 rounded-full bg-white shadow-sm transition-transform" :class="cell.is_sellable ? 'translate-x-3.5' : 'translate-x-0.5'"></span>
+                  <span class="inline-flex h-4 w-7 items-center rounded-full transition-colors" :class="cell.is_sellable && !rowStatuses[row.sku]?.off ? 'bg-success' : 'bg-muted-foreground/30'">
+                    <span class="inline-block size-3 rounded-full bg-white shadow-sm transition-transform" :class="cell.is_sellable ? 'translate-x-3.5' : 'translate-x-0.5'"></span>
+                  </span>
                 </button>
 
                 <!-- Feed não vende: sem divisória nem preço — só a pausa por item. -->
@@ -695,7 +702,7 @@ useHead({ title: "Catálogo · Gestor" });
                   <UiPopoverAnchor as-child>
                     <button
                       type="button"
-                      class="flex items-center rounded px-0.5 py-0.5 leading-none transition hover:bg-muted disabled:opacity-40"
+                      class="flex min-h-control min-w-control items-center justify-center rounded px-0.5 py-0.5 leading-none transition hover:bg-muted disabled:opacity-40"
                       :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !cell.action?.enabled"
                       :title="priceTitle(row, cell)"
                       :aria-label="`Preço em ${surfaceName(cell.surface_ref)}: ${cell.price_display} — editar`"
@@ -727,7 +734,7 @@ useHead({ title: "Catálogo · Gestor" });
                       <button type="button" class="min-h-12 rounded border px-2" @click="keepPrice(cell)">Conferir e manter meu preço</button>
                     </div>
             <div class="mt-2.5 flex justify-end gap-1.5">
-                      <button type="button" class="rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="closePrice()">Cancelar</button>
+                      <button type="button" class="min-h-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="closePrice()">Cancelar</button>
                       <button type="button" :disabled="priceConflict(cell) || isBusy(cellKey(row.sku, cell.surface_ref))" class="min-h-12 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="commitPrice(row, cell)">Salvar</button>
                     </div>
                   </UiPopoverContent>
@@ -742,7 +749,7 @@ useHead({ title: "Catálogo · Gestor" });
                   <button
                     v-if="cellSync(cell).actionable"
                     type="button"
-                    class="grid size-4 shrink-0 place-items-center rounded-full text-xs leading-none transition hover:scale-125 disabled:opacity-40"
+                    class="grid size-control shrink-0 place-items-center rounded-full text-xs leading-none transition hover:scale-125 disabled:opacity-40"
                     :class="cellSync(cell).toneClass"
                     :disabled="isBusy(cellKey(row.sku, cell.surface_ref))"
                     :title="`${cellSync(cell).label}${cell.sync_error ? ' · ' + cell.sync_error : ''} — reenviar agora`"
@@ -801,15 +808,15 @@ useHead({ title: "Catálogo · Gestor" });
           </UiNativeSelect>
         </div>
         <div class="h-5 w-px bg-background/20"></div>
-        <button :disabled="bulkBusy" class="inline-flex h-9 items-center gap-1.5 rounded-md border border-background/25 px-3 text-sm font-medium transition hover:bg-background/10 disabled:opacity-50" @click="bulk({ is_sellable: false })"><Icon name="lucide:pause" class="size-3.5" /> Pausar</button>
-        <button :disabled="bulkBusy" class="inline-flex h-9 items-center gap-1.5 rounded-md border border-background/25 px-3 text-sm font-medium transition hover:bg-background/10 disabled:opacity-50" @click="bulk({ is_sellable: true })"><Icon name="lucide:play" class="size-3.5" /> Ativar</button>
+        <button :disabled="bulkBusy" class="inline-flex min-h-control items-center gap-1.5 rounded-md border border-background/25 px-3 text-sm font-medium transition hover:bg-background/10 disabled:opacity-50" @click="bulk({ is_sellable: false })"><Icon name="lucide:pause" class="size-3.5" /> Pausar</button>
+        <button :disabled="bulkBusy" class="inline-flex min-h-control items-center gap-1.5 rounded-md border border-background/25 px-3 text-sm font-medium transition hover:bg-background/10 disabled:opacity-50" @click="bulk({ is_sellable: true })"><Icon name="lucide:play" class="size-3.5" /> Ativar</button>
 
         <!-- Preço e publicação só para canais (transacionam). Feed só pausa/reativa. -->
         <template v-if="!bulkSurfaceIsFeed">
         <!-- reprecificação em lote: popover ancorado (superfície normal, legível sobre a barra invertida) -->
         <UiPopover :open="priceOpen" @update:open="(v) => (priceOpen = v)">
           <UiPopoverTrigger as-child>
-            <button :disabled="bulkBusy" class="inline-flex h-9 items-center gap-1.5 rounded-md border border-background/25 px-3 text-sm font-medium transition hover:bg-background/10 disabled:opacity-50">
+            <button :disabled="bulkBusy" class="inline-flex min-h-control items-center gap-1.5 rounded-md border border-background/25 px-3 text-sm font-medium transition hover:bg-background/10 disabled:opacity-50">
               <Icon name="lucide:tag" class="size-3.5" /> Preço…
             </button>
           </UiPopoverTrigger>
@@ -847,14 +854,14 @@ useHead({ title: "Catálogo · Gestor" });
               </ul>
             </div>
             <div class="mt-2.5 flex justify-end gap-1.5">
-              <button type="button" class="rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="priceOpen = false">Cancelar</button>
-              <button type="button" :disabled="!priceValid || bulkBusy" class="rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyBulkPrice">{{ pricePreview ? "Confirmar alterações" : "Revisar alterações" }}</button>
+              <button type="button" class="min-h-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="priceOpen = false">Cancelar</button>
+              <button type="button" :disabled="!priceValid || bulkBusy" class="min-h-action rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyBulkPrice">{{ pricePreview ? "Confirmar alterações" : "Revisar alterações" }}</button>
             </div>
           </UiPopoverContent>
         </UiPopover>
 
-        <button :disabled="bulkBusy" class="inline-flex h-9 items-center rounded-md px-3 text-sm font-medium text-background/80 transition hover:bg-background/10 hover:text-background disabled:opacity-50" @click="bulk({ is_published: false })">Ocultar</button>
-        <button :disabled="bulkBusy" class="inline-flex h-9 items-center rounded-md px-3 text-sm font-medium text-background/80 transition hover:bg-background/10 hover:text-background disabled:opacity-50" @click="bulk({ is_published: true })">Exibir</button>
+        <button :disabled="bulkBusy" class="inline-flex min-h-control items-center rounded-md px-3 text-sm font-medium text-background/80 transition hover:bg-background/10 hover:text-background disabled:opacity-50" @click="bulk({ is_published: false })">Ocultar</button>
+        <button :disabled="bulkBusy" class="inline-flex min-h-control items-center rounded-md px-3 text-sm font-medium text-background/80 transition hover:bg-background/10 hover:text-background disabled:opacity-50" @click="bulk({ is_published: true })">Exibir</button>
         </template>
         <button class="grid size-9 place-items-center rounded-md text-background/70 transition hover:bg-background/10 hover:text-background" title="Limpar seleção" @click="clearSelection"><Icon name="lucide:x" class="size-4" /></button>
       </div>

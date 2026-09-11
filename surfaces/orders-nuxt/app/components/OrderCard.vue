@@ -263,7 +263,7 @@ function buttonClass(priority: string): string {
         :disabled="busy || aff.disabled"
         :title="aff.reason || undefined"
         class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-semibold transition disabled:opacity-60"
-        :class="[aff.disabled ? 'cursor-default border-dashed text-muted-foreground' : 'active:scale-[0.98] ' + buttonClass(aff.priority)]"
+        :class="[aff.priority === 'primary' ? 'min-h-action min-w-action' : 'min-h-control min-w-control', aff.disabled ? 'cursor-default border-dashed text-muted-foreground' : 'active:scale-[0.98] ' + buttonClass(aff.priority)]"
         @click="!aff.disabled && emit('action', aff.ref)"
       >
         <Icon :name="aff.icon" class="size-3.5" />
