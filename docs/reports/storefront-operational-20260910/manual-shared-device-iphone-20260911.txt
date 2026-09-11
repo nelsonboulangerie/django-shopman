@@ -1,0 +1,24 @@
+TESTE HUMANO ASSISTIDO — USO GERAL / APARELHO COMPARTILHADO — 2026-09-11
+
+Ambiente
+- Candidata local isolada em iPhone físico, com Django settings_test, Nuxt e SQLite descartável.
+- Identidades, estoque e endereço eram sintéticos. OTP foi exibido somente pelo backend de desenvolvimento.
+- Nenhum pedido foi confirmado pela pessoa B; nenhum pagamento, mensagem, mapa, provider ou transação real foi acionado.
+
+Percurso observado
+1. Pessoa A entrou, informou nome uma vez, escolheu entrega, informou endereço e instrução de portaria e gravou o endereço.
+2. Pessoa A saiu pela ação de logout; a interface confirmou a saída.
+3. Pessoa B entrou com outra identidade sintética no mesmo iPhone. A sacola foi preservada entre pessoas, conforme o contrato de contexto não pessoal.
+4. Um hold de Croissant expirou durante a observação. Após reposição sintética, a sacola continuou bloqueada enquanto o cardápio já mostrava o item disponível.
+5. O defeito de disponibilidade foi corrigido na candidata e a mesma sacola voltou a permitir checkout sem recriação dos itens.
+6. No checkout da pessoa B, o solicitante observou: nenhum dado da pessoa A e nenhum endereço cadastrado.
+
+Resultado e limites
+- J06, recorte candidata/aparelho compartilhado: PII anterior observada = 0; contexto legítimo da sacola preservado.
+- O percurso teve orientação passo a passo. Não demonstra conclusão sem ajuda, tempo economizado, compreensão populacional nem comparação contrabalançada com a base.
+- VoiceOver não fez parte deste percurso. TalkBack e o restante de J01–J16 permanecem sem execução humana estruturada.
+
+Incidente encontrado no percurso
+- Antes: a sacola consultava disponibilidade no fim do horizonte de dois dias; Croissant, com validade de zero dias, tinha estoque fresco hoje, mas a linha calculava available_qty=0 depois do hold expirar.
+- A consulta canônica usada pelo cardápio separava estoque pronto hoje da primeira fornada futura e retornava 184 unidades prometíveis no laboratório.
+- Depois: sacola e decisão genérica usam a seleção canônica hoje/próxima fornada. A mesma sessão calculou Croissant qty=3, is_available=true, available_qty=184, has_unavailable=false e can_checkout=true.

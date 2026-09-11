@@ -1,6 +1,6 @@
 # Execução técnica isolada — Storefront
 
-**Implementação técnica candidata de W00–W10 concluída; aceite G2 ainda não satisfeito.** PostgreSQL 16, Redis 7 e Chromium executaram em laboratório local descartável, sem skips no gate de runtime nem no E2E. O piloto sintético e a inspeção manual de navegador/árvore de acessibilidade estão registrados abaixo. D01–D06 foram aprovadas pelo solicitante em 2026-09-11, com responsabilidade assumida e retenção definitiva pendente sob a proteção atual. Houve uma exploração humana assistida em iPhone com VoiceOver; o próximo recorte humano prioriza uso geral/aparelho compartilhado. TalkBack foi adiado pelo solicitante. Somente o deployment de rename expressamente autorizado foi executado; não houve rollout de código, promoção de configuração, mensagem ou transação externa. Não se atribui ganho humano a testes automatizados ou à exploração assistida.
+**Implementação técnica candidata de W00–W10 concluída; aceite G2 ainda não satisfeito.** PostgreSQL 16, Redis 7 e Chromium executaram em laboratório local descartável, sem skips no gate de runtime nem no E2E. O piloto sintético e a inspeção manual de navegador/árvore de acessibilidade estão registrados abaixo. D01–D06 foram aprovadas pelo solicitante em 2026-09-11, com responsabilidade assumida e retenção definitiva pendente sob a proteção atual. Houve uma exploração humana assistida em iPhone com VoiceOver e um percurso humano assistido de uso geral/aparelho compartilhado; neste último, a sacola permaneceu e nenhum dado pessoal da pessoa anterior reapareceu. TalkBack foi adiado pelo solicitante. Somente o deployment de rename expressamente autorizado foi executado; não houve rollout de código, promoção de configuração, mensagem ou transação externa. Não se atribui ganho humano a testes automatizados ou às observações assistidas.
 
 O histórico completo e auditável está em `origin/main..HEAD` da branch candidata.
 
@@ -19,16 +19,16 @@ O histórico completo e auditável está em `origin/main..HEAD` da branch candid
 
 | Pacote | Entrega técnica | Limite de aceite restante |
 |---|---|---|
-| W00 | Base congelada, consumidores inspecionados, reproduções E, baseline automatizado e responsabilidades assumidas | Baseline humano J01–J16 e execução do protocolo de privacidade pendentes |
+| W00 | Base congelada, consumidores inspecionados, reproduções E, baseline automatizado e responsabilidades assumidas | Baseline humano J01–J16 permanece pendente; J06 foi observado somente na candidata |
 | W01 | Header canônico e alias; divergência 409; fingerprint; BFF verifica origem, cache pessoal e Retry-After; H3 e parsing estrito; BFF+Django exercitados | SameSite/CORS/CDN da implantação dependem de ambiente autorizado |
 | W02 | Recuperação autorizada; total e revisão selados; efeito local+recibo atômicos; locks e replay concorrente em PostgreSQL; D04 aprovada | Falha física de processo fora da injeção determinística pendente |
 | W03 | Metadados e quantidade absoluta bloqueiam Session; intenção vinculada à sacola; replay projeta estado atual | Criação simultânea da primeira sacola não foi isolada como cenário próprio |
-| W04 | Draft v2, contexto opaco, limpeza entre pessoas, chave persistida, recuperação e etiqueta existentes | Duas abas e storage negado passaram em Chromium; esforço humano continua não medido |
+| W04 | Draft v2, contexto opaco, limpeza entre pessoas, chave persistida, recuperação e etiqueta existentes; iPhone compartilhado preservou a sacola e não expôs nome/endereço anteriores | Duas abas e storage negado passaram em Chromium; esforço humano e comparação com a base continuam não medidos |
 | W05 | Parcial/zero/erro separados, faltantes nomeados e replay recuperável | Fluxos reais passaram; compreensão da mensagem exige avaliação humana |
 | W06 | Set explícito, revogação antes do envio, dedupe/claim e auditoria existentes; corridas passaram em PostgreSQL; precedência de consentimento D03 aprovada | Retenção definitiva, auditoria produtiva de legado e eventual contração permanecem pendentes |
 | W07 | Metadata concorrente preservada; POST confirmado sobrevive falha de refresh; tracking existente mantido | Fluxos SSE/poll passaram; leitor de tela exige avaliação assistiva |
 | W08 | Directive/recibo recupera só conveniência faltante; falhas após escrita revertem; resposta perdida não duplica | Providers externos e todas as etapas downstream exigem reconciliação/ambiente específico |
-| W09 | Superfícies existentes preservadas; storage bloqueado, duas abas, teclado, viewport estreito, zoom 200% e inspeção manual da árvore de acessibilidade passaram; exploração assistida em iPhone permitiu alguma navegação com VoiceOver | J01–J16 estruturadas, TalkBack e Maps/WhatsApp reais permanecem pendentes; a exploração não mediu conclusão nem compreensão |
+| W09 | Superfícies existentes preservadas; storage bloqueado, duas abas, teclado, viewport estreito, zoom 200% e inspeção manual da árvore de acessibilidade passaram; exploração assistida em iPhone permitiu alguma navegação com VoiceOver; J06 passou na candidata em iPhone compartilhado | Demais J01–J16 estruturadas, baseline contrabalançada, TalkBack e Maps/WhatsApp reais permanecem pendentes; as observações não mediram conclusão sem ajuda nem compreensão |
 | W10 | Runtime PostgreSQL+Redis, browser real, build, migração mista, recuo de código com tentativa em voo, volume sintético, runbook e decisões D01–D06 concluídos | Jobs e recuo no ambiente real dependem de autorização; medição humana ainda impede G2 |
 
 ## Achados, hipóteses e decisões
@@ -44,6 +44,7 @@ O histórico completo e auditável está em `origin/main..HEAD` da branch candid
 | E07 | Revogação global não impedia dispatcher de estoque | Mock do dispatcher recebe zero chamadas após revogação canônica |
 | E08 | Conveniência falhava só em log | 201 preserva confirmação e expõe pendência; Directive recupera apenas efeito faltante e replay não duplica |
 | E09 · pós-plano | O HTML vivo de `menu.*` não enviava CSP, HSTS, `nosniff`, proteção de frame, política de referência ou de permissões | Middleware Nitro aplica a política à resposta inteira; HTTP local omite HSTS e HTTPS o inclui; unitário, build e browser passaram com Google Maps/Stripe permitidos |
+| E10 · teste humano | Após expirar o hold, a sacola perguntava disponibilidade no fim do horizonte; Croissant fresco de validade zero aparecia disponível no cardápio e bloqueado na sacola | Sacola e decisão sem data escolhem hoje ou a primeira fornada elegível pela fonte canônica; a sessão original voltou a checkout e a regressão passou |
 
 Os diagnósticos originais são assertivas de reprodução do defeito, portanto “passaram” na baseline. Os testes da candidata invertem os oráculos. E04 tem prova de componente, não browser. SQLite e injeção determinística não demonstram exclusão multiconexão.
 
@@ -54,7 +55,7 @@ Os diagnósticos originais são assertivas de reprodução do defeito, portanto 
 - **H05:** transporte H3 verifica headers, 429, cookie host-only, no-store e origem estrangeira/irmã/null; BFF+Django passaram no Chromium. A implantação real de SameSite/CORS/CDN não foi exercitada. Responsável: plataforma.
 - **H06:** tipos inválidos/fingerprint conflitante recusados sem efeito em casos testados; não é fuzzing exaustivo de todos os payloads. Responsável: API/frontend.
 - **H07:** regressões de lifecycle, pagamento, estoque, fiscal, courier e concorrência passaram; a corrida revelou e corrigiu captura duplicada. Crash em cada provider, compras paralelas com pontos e todos os adapters não foram exauridos. Responsável: domínios.
-- **H08:** storage negado, teclado, zoom e viewport estreito passaram em Chromium. Em exploração humana assistida, o solicitante relatou alguma navegação com VoiceOver; não completou o gesto de quatro dedos ensinado para posicionar o cursor e encerrou a sessão. Isso não reproduz uma falha da superfície e não substitui as jornadas estruturadas nem uma pessoa usuária de tecnologia assistiva.
+- **H08:** storage negado, teclado, zoom e viewport estreito passaram em Chromium. Em exploração humana assistida, o solicitante relatou alguma navegação com VoiceOver; não completou o gesto de quatro dedos ensinado para posicionar o cursor e encerrou a sessão. Em uso geral no mesmo iPhone, uma pessoa sintética saiu e outra entrou: a sacola persistiu, enquanto nome, endereço e instrução anteriores não reapareceram. O percurso teve orientação e não substitui as jornadas estruturadas nem uma pessoa usuária de tecnologia assistiva.
 - **H09:** a leitura de metadados do App Platform comprovou que `menu.nelsonboulangerie.com.br` é o domínio primário e definitivo, conforme confirmado pelo solicitante. O app único foi renomeado para `shopman-nelson` e ainda usa perfil de pre-go-live: ambiente `staging`, Pix mock, OTP debug e captura mock expostos. O componente `web` é comprovadamente o backend Django/Daphne; `storefront-nuxt` já é outro componente e a decisão foi manter `web`. Responsável: produto/operação.
 
 D01–D06 foram aprovadas em 2026-09-11 pelo solicitante, que assumiu todos os papéis responsáveis. A retenção definitiva ficou expressamente pendente, mantendo-se a proteção atual: recibos vinculados já finalizados/em curso não são limpos por idade; a janela definitiva, auditoria produtiva, saneamento e eventual contração exigem decisão posterior. Essa aprovação não autoriza exposição externa.
@@ -73,6 +74,8 @@ As propostas abaixo consolidam D01–D06 sem criar contrato, regra ou fonte de v
 | D06 · Operação/release | Adotar as paradas do plano: qualquer duplicidade não reconciliada, valor não confirmado, PII cruzada, opt-out violado ou ação financeira bem-sucedida apresentada como falha interrompe exposição. Degradação repetida de budget, ajuda ou abandono impede expansão. Após resultado humano e nova autorização, progressão proposta: coorte pequena → 25% → 50% → 100%, mínimo de 48 h e 30 jornadas elegíveis por etapa. | Critérios aprovados e responsabilidade assumida; cada piloto real/etapa continua exigindo autorização explícita. |
 
 **Registro de decisão — 2026-09-11:** “Aprovo D01–D06 como proposto, com retenção definitiva pendente e proteção atual mantida. Assumo os papéis responsáveis.”
+
+O horizonte de dois dias da fila remota é uma política anterior a este plano. O histórico registra sua introdução no commit `818802183` e sua ativação explícita no seed/migração pelo commit `d40b9388b`, ambos sob autoria de Pablo Valentini; o primeiro registra coautoria do Claude Opus 5. A fila é útil apenas para reservar capacidade de fornada já planejada dentro da janela. Não há medição que justifique especificamente dois dias, portanto sua duração permanece decisão operacional pendente; a candidata preserva o valor existente e corrige somente o uso técnico incorreto do horizonte.
 
 ### Protocolo de observação humana preparado
 
@@ -112,7 +115,7 @@ No diretório `surfaces/storefront-nuxt`, executar sequencialmente `npm test -- 
 
 Os bloqueios ambientais iniciais permanecem anexados como histórico e não contam como prova. A continuação usou serviços locais descartáveis autorizados e resolveu os skips relevantes no gate PostgreSQL+Redis.
 
-Para fechar G2: registrar o percurso humano de uso geral/aparelho compartilhado priorizado pelo solicitante e, quando houver Android, a passagem TalkBack adiada. O domínio definitivo foi confirmado e o runbook corrigido. Ainda falta decidir e executar em janela autorizada a promoção do perfil vivo de pre-go-live; o recuo de código com tentativa sintética em voo passou. Piloto real, rollout, configuração produtiva e qualquer ação externa permanecem sujeitos a autorização explícita.
+Para fechar G2: executar a baseline contrabalançada e as jornadas humanas estruturadas ainda ausentes; quando houver Android, realizar a passagem TalkBack adiada. O recorte J06 na candidata passou no iPhone compartilhado. O domínio definitivo foi confirmado e o runbook corrigido. Ainda falta decidir e executar em janela autorizada a promoção do perfil vivo de pre-go-live; o recuo de código com tentativa sintética em voo passou. Piloto real, rollout, configuração produtiva e qualquer ação externa permanecem sujeitos a autorização explícita.
 
 ## Resultados executados
 
@@ -141,6 +144,7 @@ Os totais abaixo são execuções distintas, com sobreposição; não somar como
 | Chromium após correções de foco e recuo | Mock backend 3 passed; Nuxt BFF + Django real 28 passed | [mock](storefront-operational-20260910/manual-final-browser-mock.txt), [real](storefront-operational-20260910/manual-final-browser.txt) |
 | Cabeçalhos de segurança do Storefront | Frontend 552/552; typecheck/build passaram; lint 0 erros e 5 warnings preexistentes; browser mock 3/3; BFF + Django 28/28 | [testes](storefront-operational-20260910/security-headers-frontend-20260911.txt), [typecheck](storefront-operational-20260910/security-headers-typecheck-20260911.txt), [lint](storefront-operational-20260910/security-headers-lint-20260911.txt), [build](storefront-operational-20260910/security-headers-build-20260911.txt), [mock](storefront-operational-20260910/security-headers-browser-mock-20260911.txt), [real](storefront-operational-20260910/security-headers-browser-20260911.txt) |
 | Referências operacionais após rename | 38 passed; workflow, specs, hosts e espera por deployment | [log](storefront-operational-20260910/app-rename-tests-20260911.txt) |
+| Hold vencido + perecível fresco com fila habilitada | Direcionada: 84 passed, 1 skip; Storefront/lifecycle/lead time: 1.551 passed, 6 skips declarados; sessão humana recuperada sem reconstruir sacola | [regressão](storefront-operational-20260910/waitlist-cart-recovery-20260911.txt), [iPhone compartilhado](storefront-operational-20260910/manual-shared-device-iphone-20260911.txt) |
 
 Os cinco skips da suíte SQLite são testes PostgreSQL. Todos estão inscritos no **gate de runtime existente**, que passou com 334 testes e rejeita qualquer skip. O teardown reportou cinco conexões ainda abertas e não removeu imediatamente o banco temporário; após o processo encerrar, não havia sessões e o banco de teste foi removido explicitamente. Isso é uma advertência de limpeza do laboratório, não um skip oculto.
 
@@ -205,6 +209,14 @@ Também foi percorrida a jornada local menu → sacola → autenticação por OT
 ## Exploração assistida com VoiceOver — 2026-09-11
 
 O solicitante abriu a candidata local em um iPhone e relatou navegar “um pouco, com algum sucesso” usando VoiceOver. Não conseguiu executar o gesto de quatro dedos sugerido para mover o cursor ao primeiro item e encerrou voluntariamente a sessão. Esse gesto é um comando do leitor de tela; sua falha isolada não comprovou defeito na loja. Nenhuma barreira específica da candidata, conclusão de jornada, compreensão de estado financeiro, tempo, ajuda ou taxa foi registrada. Portanto não há mudança de código justificada por esta observação e ela não satisfaz o aceite humano de J01–J16. [Registro da observação](storefront-operational-20260910/voiceover-exploratory-20260911.txt).
+
+## Uso geral em iPhone compartilhado — 2026-09-11
+
+O solicitante percorreu, com orientação, a troca entre duas identidades sintéticas no mesmo iPhone. A pessoa A informou nome, endereço e instrução de entrega, gravou o endereço e saiu. A pessoa B entrou com outra identidade; a sacola continuou disponível, mas o checkout não mostrou nome, endereço nem instrução da pessoa A. Esse recorte satisfaz J06 na candidata: PII anterior observada igual a zero, com preservação do contexto não pessoal.
+
+Durante o percurso, o hold de três Croissants expirou. O cardápio reconhecia a reposição fresca, mas a sacola continuava bloqueada. A causa comprovada era uma consulta direta ao fim do horizonte de dois dias: para um produto com validade zero, o estoque de hoje era descartado. A sacola passou a usar a mesma consulta canônica do cardápio, e decisões sem data passaram a escolher hoje quando há pronta-entrega ou a primeira fornada elegível quando não há. A sessão original voltou a mostrar `available_qty=184` e checkout habilitado. As suítes direcionadas passaram com 84 testes e um skip declarado; a suíte ampla de Storefront, lifecycle da fila e lead time passou com 1.551 testes e seis skips declarados do laboratório SQLite. [Registro humano](storefront-operational-20260910/manual-shared-device-iphone-20260911.txt) e [regressão](storefront-operational-20260910/waitlist-cart-recovery-20260911.txt).
+
+O percurso não foi contrabalançado com a base, recebeu ajuda e não mediu tempo ou compreensão financeira. Ele não sustenta alegação de ganho humano nem fecha G2, TalkBack ou as demais J01–J16.
 
 ## Conferência externa somente leitura — 2026-09-11
 

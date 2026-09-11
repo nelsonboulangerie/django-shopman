@@ -44,6 +44,7 @@
   "manual-final-frontend.txt": "510a7898efaa81fbb8fe40d5cd11c501894a7d225656715955e66e0c5354c7a2",
   "manual-final-lint.txt": "21380a5a06664f442be4095f242fb175ea8b46b9a44fa515511ab1c9e8826a75",
   "manual-final-typecheck.txt": "1ed7a46b21575de6c9961e5533c388b5eb2f4e03a4e552599198426f9e594d1d",
+  "manual-shared-device-iphone-20260911.txt": "33e2191e3708fc18009b118b2bd903570bb16b36c7ad5f46cffcf59caf77973b",
   "offer-and-pg-skips.txt": "6bb2be4d8b3e21ad5cae31f1bde4378ccc5ab7540bd7dc83277f48765447875b",
   "postgres-blocked.txt": "3dda3345c902c6b43411b432a0162b02eb5fbc139fdb18f467bf48408c5b1452",
   "production-read-only-validation-20260911.txt": "49c85a74c31f2666e279e6e0f57efd5fe80065260fc3bcd56a59641b88c1841e",
@@ -63,5 +64,6 @@
   "synthetic-pilot-recurring-final.txt": "ecdb110ea8e480a6cce6f2364f30131e2fb9ad4d5dcd7d1c350ad07e22f1d32d",
   "synthetic-pilot-recurring-rate-limit.txt": "06c1ea90b8723d7b1e38eb3df0a02ab49513c7c7e6dc39e2962e3ba586291069",
   "typecheck.txt": "bf1f7de9ab6760d8d3061fb8672860131c5f018cb1cf0a76162483c81138340e",
-  "voiceover-exploratory-20260911.txt": "2bc7f6b75b6439d16bd76c3b764dc24e6ded08520f7490cd4af57b035de4f028"
+  "voiceover-exploratory-20260911.txt": "2bc7f6b75b6439d16bd76c3b764dc24e6ded08520f7490cd4af57b035de4f028",
+  "waitlist-cart-recovery-20260911.txt": "1ccc4c0a20fcf0089f15964b071957b0095fc77a162a3b03f55b59ac451a0e5e"
 }
