@@ -24,3 +24,14 @@ A migration aditiva backstage0061 cria DeliveryDevice. O Gestor projeta as refer
 ## Publicação e ordem
 
 Este documento fecha a integração técnica do PDV; não declara publicados os commits nem substitui os gates de rollout do Gestor. Na liberação coordenada, preservar a ordem migration → backend com alocação exclusiva → UI compatível. Não publicar isoladamente a antiga implementação genérica de operator_orders do PDV. Não reverter migration populada nem apagar alocações em trânsito. A avaliação global de carga e o relatório final do Gestor permanecem sob a tarefa responsável.
+
+## Preview validado
+
+Checkout integrado conferido no navegador em claro e escuro, com cartão pendente
+e os quatro botões no mesmo grupo. Campo medido: 44px, fundo rgb(252,246,241),
+shadow de foco 3px a 50% após a transição. Imagens em
+`.artifacts/checkout-integrado-claro.png` e `checkout-integrado-escuro.png`.
+Preview em http://127.0.0.1:43026/; backend sintético64929, banco de demonstração
+separado dos testes e cookie próprio para não conflitar com o preview anterior.
+A primeira tentativa compartilhou o nome de cookie entre dois bancos locais e
+perdeu a sessão; corrigido no fixture, sem alterar autenticação do produto.
