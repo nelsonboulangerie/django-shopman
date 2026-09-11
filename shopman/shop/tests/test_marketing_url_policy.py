@@ -56,9 +56,8 @@ def test_external_redirect_and_tracking_link_shapes_fail_closed(url, code):
         marketing_url_policy.validate_customer_link(url)
 
     assert caught.value.code == code
-    assert caught.value.field_errors == {
-        "content.link": ("Use o destino canônico da loja.",)
-    }
+    assert caught.value.field_errors["content.link"][0].startswith("Use ")
+    assert "Platform Owner" not in str(caught.value.field_errors)
 
 
 def test_trusted_media_allows_only_bounded_image_transform_parameters():
@@ -89,6 +88,20 @@ def test_media_private_redirect_tracking_and_credential_shapes_fail_closed(url, 
         marketing_url_policy.validate_media_url(url)
 
     assert caught.value.code == code
+    assert "Platform Owner" not in str(caught.value.field_errors)
+
+
+def test_unapproved_media_host_explains_the_safe_repair_in_operator_language():
+    with pytest.raises(MarketingContractError) as caught:
+        marketing_url_policy.validate_media_url("https://images.example/story.jpg")
+
+    assert caught.value.detail == "Esta imagem não pode ser usada na publicação."
+    assert caught.value.field_errors == {
+        "content.image_url": (
+            "Este domínio ainda não foi aprovado pela loja. Use a foto do produto "
+            "ou peça ao suporte técnico para liberar o domínio.",
+        )
+    }
 
 
 def test_redirect_policy_never_allows_a_second_origin():

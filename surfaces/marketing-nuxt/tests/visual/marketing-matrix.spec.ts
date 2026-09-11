@@ -222,10 +222,10 @@ test.describe("cartão de anúncio", () => {
     await expectStableScreenshot(page, "announcement-card__long-edit", V320);
   });
 
-  test("publicar agora abre confirmação factual", async ({ page }) => {
+  test("entregar agora abre confirmação factual", async ({ page }) => {
     await openScenario(page, "board-pending", "/", V390);
     await waitForFaithfulPreview(page);
-    await page.getByRole("button", { name: "Publicar agora" }).click();
+    await page.getByRole("button", { name: "Entregar agora" }).click();
     await expect(page.getByRole("dialog")).toContainText("12");
     await expectStableScreenshot(page, "announcement-card__confirm-now", V390, "light", { fullPage: false });
   });
@@ -609,7 +609,7 @@ test.describe("modos transversais", () => {
         p { margin-bottom: 2em !important; }
       `,
     });
-    await expect(page.getByRole("button", { name: "Publicar agora" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Entregar agora" })).toBeVisible();
     await expectStableScreenshot(page, "panel__text-spacing", V1024);
   });
 });

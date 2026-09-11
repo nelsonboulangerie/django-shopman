@@ -266,7 +266,7 @@ def test_confirmation_is_one_use_short_lived_and_bound_to_exact_context():
         artifact_hash="a" * 64,
         audience_hash="b" * 64,
         audience_count=49,
-        platforms=("instagram",),
+        platforms=("whatsapp",),
         consequence="publishes_now_to_eligible_audience",
     )
     challenge = _open_confirmation(
@@ -375,6 +375,41 @@ def test_500_targets_requires_totp_and_distinct_second_authorized_actor():
 
     assert confirmed.second_actor_id == approver.pk
     assert MarketingQuotaUsage.objects.get().target_count == 500
+
+
+def test_mixed_campaign_adds_direct_messages_and_public_publications_to_gate():
+    context = authorization_context(
+        action="approve",
+        resource_ref="announcement:mixed-500",
+        base_version=1,
+        audience_count=498,
+        platforms=("whatsapp", "instagram", "facebook"),
+        scheduled_for=timezone.now() + timedelta(hours=1),
+        consequence="schedules_publish_to_eligible_audience",
+    )
+
+    requirement = requirement_for(context)
+
+    assert requirement.typed_phrase == "PUBLICAR 500"
+    assert requirement.step_up_level == "totp"
+    assert requirement.dual_control is True
+
+
+def test_publication_only_gate_counts_platforms_not_unused_audience_members():
+    context = authorization_context(
+        action="approve",
+        resource_ref="announcement:public-only",
+        base_version=1,
+        audience_count=498,
+        platforms=("instagram", "facebook"),
+        consequence="publishes_now_to_eligible_audience",
+    )
+
+    requirement = requirement_for(context)
+
+    assert requirement.typed_phrase == "PUBLICAR 2"
+    assert requirement.step_up_level == "password"
+    assert requirement.dual_control is False
 
 
 def test_second_actor_password_change_invalidates_open_dual_control():

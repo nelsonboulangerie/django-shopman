@@ -830,7 +830,7 @@ class Handler(BaseHTTPRequestHandler):
                     "step_up": "none",
                     "dual_control": False,
                     "typed_phrase": "",
-                    "consequence": "Publicar agora para 12 pessoas elegíveis.",
+                    "consequence": "Entregar agora para 12 pessoas elegíveis.",
                     "resource_ref": "announcement:41",
                     "base_version": 3,
                     "audience_count": 12,

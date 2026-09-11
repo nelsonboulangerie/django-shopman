@@ -45,6 +45,11 @@ def no_transport(monkeypatch):
 @pytest.fixture
 def with_transport(monkeypatch):
     monkeypatch.setattr("shopman.shop.handlers.campaign._whatsapp_backend", lambda: "manychat")
+    provider = type("A", (), {"is_available": staticmethod(lambda: True)})()
+    monkeypatch.setattr(
+        "shopman.shop.services.marketing_delivery_runtime.delivery_provider",
+        lambda platform, require_available=False: provider if platform == "whatsapp" else None,
+    )
     return monkeypatch
 
 
@@ -186,6 +191,22 @@ def test_direct_message_without_transport_is_blocked(no_transport):
     (state,) = dr.readiness_for(["whatsapp"])
     assert state.ready is False
     assert "transporte" in state.reason
+
+
+def test_direct_message_without_durable_provider_is_blocked(monkeypatch):
+    monkeypatch.setattr(
+        "shopman.shop.handlers.campaign._whatsapp_backend", lambda: "manychat"
+    )
+    monkeypatch.setattr(
+        "shopman.shop.services.marketing_delivery_runtime.delivery_provider",
+        lambda platform, require_available=False: None,
+    )
+
+    (state,) = dr.readiness_for(["whatsapp"])
+
+    assert state.state == "blocked"
+    assert state.reason_code == "whatsapp_durable_provider_missing"
+    assert "fila segura" in state.reason
 
 
 def test_direct_message_transport_probe_failure_is_unknown(monkeypatch):
@@ -359,9 +380,14 @@ def test_the_board_separates_blocking_from_limiting(with_transport):
     from shopman.backstage.projections import marketing as mp
     from shopman.shop.models import AnnouncementTemplate, Campaign, Trigger
 
+    whatsapp_provider = type(
+        "A", (), {"is_available": staticmethod(lambda: True)}
+    )()
     with_transport.setattr(
         "shopman.shop.services.marketing_delivery_runtime.delivery_provider",
-        lambda platform, require_available=False: None,
+        lambda platform, require_available=False: (
+            whatsapp_provider if platform == "whatsapp" else None
+        ),
     )
     template = AnnouncementTemplate.objects.create(name="T", body="oi")
     Campaign.objects.create(

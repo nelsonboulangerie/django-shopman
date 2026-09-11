@@ -69,9 +69,12 @@ type PreviewBatch = {
 };
 
 type PreviewProblem = {
+  code: string;
+  title: string;
   detail: string;
   fieldDetail: string;
   retryable: boolean;
+  repairHref: string;
 };
 
 const preview = ref<PreviewBatch | null>(null);
@@ -180,6 +183,10 @@ function previewProblem(error: unknown): PreviewProblem {
     response?: { _data?: Record<string, unknown> };
   };
   const data = failure?.data || failure?.response?._data || {};
+  const code = typeof data.code === "string" ? data.code : "";
+  const isMediaProblem =
+    code.startsWith("marketing_media_") || code === "instagram_media_required";
+  const retryable = data.retryable === true;
   const rawFields = data.field_errors;
   let fieldDetail = "";
   if (rawFields && typeof rawFields === "object") {
@@ -188,12 +195,19 @@ function previewProblem(error: unknown): PreviewProblem {
     else if (first) fieldDetail = String(first);
   }
   return {
+    code,
+    title: isMediaProblem
+      ? "Corrija a imagem para gerar a prévia"
+      : retryable
+        ? "Não foi possível atualizar a prévia agora"
+        : "Revise os dados para gerar a prévia",
     detail:
       typeof data.detail === "string"
         ? data.detail
         : "Não foi possível atualizar a prévia agora.",
     fieldDetail,
-    retryable: data.retryable === true,
+    retryable,
+    repairHref: isMediaProblem ? "/templates" : "",
   };
 }
 
@@ -292,14 +306,29 @@ const shortHash = computed(
       class="mt-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm"
       role="alert"
     >
-      <p class="font-medium">A prévia não foi atualizada</p>
+      <p class="font-medium">{{ problem.title }}</p>
       <p class="mt-1 text-xs text-muted-foreground">{{ problem.detail }}</p>
       <p v-if="problem.fieldDetail" class="mt-1 text-xs text-muted-foreground">
         {{ problem.fieldDetail }}
       </p>
-      <UiButton type="button" variant="outline" class="mt-2" @click="retry">
+      <UiButton
+        v-if="problem.retryable"
+        type="button"
+        variant="outline"
+        class="mt-2"
+        @click="retry"
+      >
         <Icon name="lucide:refresh-cw" class="size-4" />
-        {{ problem.retryable ? "Tentar novamente" : "Revalidar prévia" }}
+        Tentar novamente
+      </UiButton>
+      <UiButton
+        v-else-if="problem.repairHref"
+        :to="problem.repairHref"
+        variant="outline"
+        class="mt-2"
+      >
+        <Icon name="lucide:image" class="size-4" />
+        Corrigir imagem nos modelos
       </UiButton>
     </div>
 
@@ -454,8 +483,8 @@ const shortHash = computed(
         <span>
           Sem valor nesta amostra:
           <span class="font-mono">{{ emptyFields.join(", ") }}</span
-          >. Campos por destinatário serão resolvidos apenas no boundary
-          protegido.
+          >. Campos por destinatário serão resolvidos apenas na etapa protegida
+          de envio.
         </span>
       </p>
 
