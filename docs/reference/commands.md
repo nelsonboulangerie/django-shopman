@@ -21,6 +21,7 @@
 | [`cleanup_idempotency_keys`](#cleanup_idempotency_keys) | orderman | Manutenção | Remove chaves de idempotência antigas |
 | [`customers_cleanup`](#customers_cleanup) | guestman | Manutenção | Remove eventos processados antigos |
 | [`auth_cleanup`](#auth_cleanup) | doorman | Manutenção | Remove tokens/códigos expirados |
+| [`purge_consent_ip`](#purge_consent_ip) | guestman | Privacidade | Remove IP bruto vencido das provas de consentimento, preservando a evidência mínima |
 | [`recalculate_customer_insights`](#recalculate_customer_insights) | shop | Manutenção | Recalcula os insights vencidos por recência — percebe quem PAROU de comprar (1x/dia, madrugada) |
 | [`reconcile_payments`](#reconcile_payments) | shop | Operação | Reconcilia pedidos cujo webhook de pagamento pode ter sido perdido |
 | [`diagnose_remote_order`](#diagnose_remote_order) | shop | Operação | Diagnostica pedido remoto preso lendo fontes canônicas |
@@ -430,6 +431,30 @@ python manage.py auth_cleanup --days 30
 ```
 
 **Recomendação:** Executar via cron diariamente.
+
+---
+
+### purge_consent_ip
+
+**App:** `shopman.guestman` (app label: `guestman`)
+**Arquivo:** `packages/guestman/shopman/guestman/management/commands/purge_consent_ip.py`
+
+Aplica minimização por prazo à prova de consentimento: apaga apenas o IP bruto
+auxiliar vencido. Finalidade, versão do texto apresentado, hashes, decisão,
+origem e instante continuam preservados para demonstrar e respeitar a escolha.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--days` | `SHOPMAN_CONSENT_IP_RETENTION_DAYS` (`90`) | Retenção do IP bruto; sempre limitada pelo comando ao intervalo de 1–90 dias |
+
+```bash
+python manage.py purge_consent_ip
+python manage.py purge_consent_ip --days 30
+```
+
+O `maintenance_worker` executa o comando em seu ciclo. A operação é idempotente:
+depois da primeira limpeza, ciclos seguintes atualizam zero linhas até outro IP
+completar o prazo.
 
 ---
 

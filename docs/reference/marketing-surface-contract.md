@@ -156,10 +156,12 @@ desliga consentimento, permissão, CSRF, redaction, unicidade ou revalidação p
 
 Instagram/Facebook usam `META_PAGE_ACCESS_TOKEN`; Instagram também exige
 `META_IG_USER_ID`, conta Instagram Business ligada à página, e Facebook,
-`META_PAGE_ID`. Google exige token OAuth com escopo
-`business.manage`, `GOOGLE_BUSINESS_ACCOUNT_ID` e `GOOGLE_BUSINESS_LOCATION_ID`.
-O token Google configurado nesta etapa é estático: serve ao canário, mas ativação
-contínua exige decidir e validar seu ciclo de renovação. Credencial presente não liga
+`META_PAGE_ID`. Google exige OAuth com escopo `business.manage`,
+`GOOGLE_BUSINESS_OAUTH_CLIENT_ID`, `GOOGLE_BUSINESS_OAUTH_CLIENT_SECRET`,
+`GOOGLE_BUSINESS_OAUTH_REFRESH_TOKEN`, `GOOGLE_BUSINESS_ACCOUNT_ID` e
+`GOOGLE_BUSINESS_LOCATION_ID`. O adapter renova e mantém em memória o access token de
+curta duração; `GOOGLE_BUSINESS_ACCESS_TOKEN` permanece apenas como fallback para um
+canário temporário, nunca como configuração operacional contínua. Credencial presente não liga
 publicação: a flag da plataforma e os consumidores duráveis — ou o canário unitário
 explicitamente armado — permanecem gates independentes. Em `DEBUG`, adapter externo
 também exige o opt-in geral de saída externa.

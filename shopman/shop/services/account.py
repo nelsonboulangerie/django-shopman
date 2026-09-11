@@ -9,6 +9,8 @@ from __future__ import annotations
 import hashlib
 import logging
 
+from django.core.exceptions import ObjectDoesNotExist
+
 logger = logging.getLogger(__name__)
 
 # Domain registry of consent channels this shop tracks. Display copy (labels,
@@ -580,6 +582,35 @@ def _customer_orders(customer_ref: str, phone: str):
     return Order.objects.filter(query)
 
 
+def _customer_conversations(customer_ref: str, phone: str):
+    """Conversas identificadas pelo mesmo titular, sem depender do cadastro ativo."""
+    from django.db.models import Q
+
+    from shopman.shop.models import Conversation
+
+    query = Q()
+    if customer_ref:
+        query |= Q(customer_ref=customer_ref)
+    if phone:
+        query |= Q(phone=phone)
+    return Conversation.objects.filter(query) if query.children else Conversation.objects.none()
+
+
+def _order_personal_data(order) -> dict:
+    """Prefer current order PII, falling back to the immutable checkout snapshot."""
+
+    current = order.data or {}
+    snapshot = ((order.snapshot or {}).get("data") or {})
+    result = {}
+    for key in _PII_DATA_KEYS:
+        value = current.get(key)
+        if value in (None, "", {}, []):
+            value = snapshot.get(key)
+        if value not in (None, "", {}, []):
+            result[key] = value
+    return result
+
+
 def _scrub_pii(payload) -> tuple[dict, bool]:
     """Devolve (cópia sem as chaves de PII, houve mudança)."""
     if not isinstance(payload, dict):
@@ -667,7 +698,11 @@ def export_customer_data(customer) -> dict:
             "document": customer.document,
             "metadata": customer.metadata,
             "birthday": str(customer.birthday) if customer.birthday else None,
+            "customer_type": customer.customer_type,
+            "notes": customer.notes,
+            "tags": list(customer.tags.names()),
             "created_at": customer.created_at.isoformat(),
+            "updated_at": customer.updated_at.isoformat(),
         },
         "addresses": [
             {
@@ -685,14 +720,55 @@ def export_customer_data(customer) -> dict:
         ],
     }
 
-    orders = _customer_orders(customer.ref, customer.phone or "").order_by("-created_at")[:200]
+    data["contact_points"] = [
+        {
+            "type": contact.type,
+            "value": contact.value_normalized,
+            "is_primary": contact.is_primary,
+            "is_verified": contact.is_verified,
+            "verification_method": contact.verification_method,
+            "verified_at": contact.verified_at,
+            "created_at": contact.created_at,
+        }
+        for contact in customer.contact_points.all()
+    ]
+    data["identifiers"] = [
+        {
+            "type": identifier.identifier_type,
+            "value": identifier.identifier_value,
+            "is_primary": identifier.is_primary,
+            "verified_at": identifier.verified_at,
+            "source": identifier.source_system,
+            "created_at": identifier.created_at,
+        }
+        for identifier in customer.identifiers.all()
+    ]
+    data["external_identities"] = [
+        {
+            "provider": identity.provider,
+            "provider_uid": identity.provider_uid,
+            "provider_data": identity.provider_meta,
+            "is_active": identity.is_active,
+            "created_at": identity.created_at,
+        }
+        for identity in customer.external_identities.all()
+    ]
+
+    # Direito de acesso não pode depender de um teto silencioso. Em contas com
+    # mais de 200 pedidos, o JSON antigo dizia "exportação" mas entregava só uma
+    # amostra. A resposta é protegida por step-up e deve ser integral.
+    orders = _customer_orders(customer.ref, customer.phone or "").order_by("-created_at")
     data["orders"] = [
         {
             "ref": order.ref,
             "status": order.status,
+            "channel": order.channel_ref,
+            "currency": order.currency,
             "total_q": (order.snapshot or {}).get("pricing", {}).get("total_q", order.total_q),
             "created_at": order.created_at.isoformat(),
+            "updated_at": order.updated_at.isoformat(),
             "items": list((order.snapshot or {}).get("items", [])),
+            "personal_data": _order_personal_data(order),
         }
         for order in orders
     ]
@@ -703,6 +779,11 @@ def export_customer_data(customer) -> dict:
             "key": pref.key,
             "value": pref.value,
             "preference_type": pref.preference_type,
+            "confidence": pref.confidence,
+            "source": pref.source,
+            "notes": pref.notes,
+            "created_at": pref.created_at,
+            "updated_at": pref.updated_at,
         }
         for pref in preferences(customer.ref)
     ]
@@ -712,11 +793,100 @@ def export_customer_data(customer) -> dict:
     data["consents"] = [
         {
             "channel": consent.channel,
+            "purpose": consent.purpose,
             "status": consent.status,
+            "legal_basis": consent.legal_basis,
+            "source": consent.source,
+            "policy_version": consent.policy_version,
+            "proof_status": consent.proof_status,
             "consented_at": consent.consented_at,
             "revoked_at": consent.revoked_at,
         }
         for consent in ConsentService.get_consents(customer.ref)
+    ]
+
+    from shopman.guestman.contrib.consent.models import CommunicationConsentEvent
+
+    data["consent_history"] = [
+        {
+            "channel": event.channel,
+            "purpose": event.purpose,
+            "event": event.event_type,
+            "resulting_status": event.resulting_status,
+            "legal_basis": event.legal_basis,
+            "source": event.source,
+            "disclosure_text": event.disclosure_text,
+            "disclosure_version": event.disclosure_version,
+            "proof_status": event.proof_status,
+            "occurred_at": event.occurred_at,
+        }
+        for event in CommunicationConsentEvent.objects.filter(customer=customer).order_by("occurred_at", "pk")
+    ]
+
+    data["timeline"] = [
+        {
+            "type": event.event_type,
+            "title": event.title,
+            "description": event.description,
+            "channel": event.channel,
+            "reference": event.reference,
+            "metadata": event.metadata,
+            "created_at": event.created_at,
+        }
+        for event in customer.timeline_events.all()
+    ]
+
+    try:
+        insight = customer.insight
+    except ObjectDoesNotExist:
+        insight = None
+    if insight is not None:
+        data["customer_insight"] = {
+            "total_orders": insight.total_orders,
+            "total_spent_q": insight.total_spent_q,
+            "average_ticket_q": insight.average_ticket_q,
+            "first_order_at": insight.first_order_at,
+            "last_order_at": insight.last_order_at,
+            "preferred_weekday": insight.preferred_weekday,
+            "preferred_hour": insight.preferred_hour,
+            "favorite_products": insight.favorite_products,
+            "preferred_channel": insight.preferred_channel,
+            "channels_used": insight.channels_used,
+            "rfm_segment": insight.rfm_segment,
+            "churn_risk": insight.churn_risk,
+            "predicted_ltv_q": insight.predicted_ltv_q,
+            "calculated_at": insight.calculated_at,
+        }
+
+    data["conversations"] = [
+        {
+            "provider_subscriber_id": conversation.subscriber_id,
+            "channel": conversation.channel_ref,
+            "state": conversation.state,
+            "created_at": conversation.created_at,
+            "updated_at": conversation.updated_at,
+            # Só a transcrição visível. Blocos internos podem conter tokens de
+            # sacola e chamadas de ferramenta que não são dados do titular.
+            "messages": [
+                {
+                    "direction": "received" if message.role == "user" else "sent",
+                    "text": message.text,
+                    "created_at": message.created_at,
+                }
+                for message in conversation.messages.exclude(text="")
+            ],
+        }
+        for conversation in _customer_conversations(customer.ref, customer.phone or "").prefetch_related("messages")
+    ]
+
+    data["marketing_audiences"] = [
+        {
+            "audience": str(member.snapshot.ref),
+            "announcement": member.snapshot.announcement_id,
+            "reasons": member.reasons,
+            "created_at": member.created_at,
+        }
+        for member in customer.marketing_audience_memberships.select_related("snapshot")
     ]
 
     try:
@@ -730,12 +900,14 @@ def export_customer_data(customer) -> dict:
                 "lifetime_points": account.lifetime_points,
                 "stamps_current": account.stamps_current,
             }
-            txns = LoyaltyService.get_transactions(customer.ref, limit=100)
+            txns = account.transactions.all()
             data["loyalty"]["transactions"] = [
                 {
                     "type": txn.transaction_type,
                     "points": txn.points,
+                    "balance_after": txn.balance_after,
                     "description": txn.description,
+                    "reference": txn.reference,
                     "created_at": txn.created_at.isoformat(),
                 }
                 for txn in txns
@@ -744,6 +916,56 @@ def export_customer_data(customer) -> dict:
         logger.warning("data_export_loyalty_failed", exc_info=True)
 
     return data
+
+
+def export_auth_data(customer_uuid) -> dict:
+    """Export authentication data through the orchestrator's kernel boundary."""
+
+    from shopman.doorman import SubjectType, TrustedDevice
+    from shopman.doorman.models import CustomerUser, Passkey
+
+    try:
+        auth_link = CustomerUser.objects.get(customer_id=customer_uuid)
+    except CustomerUser.DoesNotExist:
+        auth_profile = None
+    else:
+        auth_profile = {
+            "created_at": auth_link.created_at,
+            "metadata": auth_link.metadata,
+        }
+
+    return {
+        "authentication_profile": auth_profile,
+        "trusted_devices": [
+            {
+                "label": device.label,
+                "user_agent": device.user_agent,
+                "ip_address": device.ip_address,
+                "created_at": device.created_at,
+                "last_used_at": device.last_used_at,
+                "expires_at": device.expires_at,
+                "is_active": device.is_active,
+            }
+            for device in TrustedDevice.objects.filter(
+                subject_type=SubjectType.CUSTOMER,
+                subject_id=str(customer_uuid),
+            ).order_by("-created_at")
+        ],
+        "passkeys": [
+            {
+                "credential_id": passkey.credential_id,
+                "public_key": passkey.public_key,
+                "label": passkey.label,
+                "transports": passkey.transports,
+                "sign_count": passkey.sign_count,
+                "created_at": passkey.created_at,
+                "last_used_at": passkey.last_used_at,
+            }
+            for passkey in Passkey.objects.filter(customer_id=customer_uuid).order_by(
+                "-created_at"
+            )
+        ],
+    }
 
 
 def _nada_a_apagar(exc: BaseException) -> bool:
@@ -878,6 +1100,30 @@ def anonymize_customer(customer) -> tuple[str, str]:
     except Exception:
         falhas.append("apagar o perfil de RFM")
         logger.warning("anonymize: insight delete falhou customer=%s", original_ref, exc_info=True)
+
+    # Perfis, histórico de atendimento e segmentação não têm obrigação fiscal e
+    # não podem sobreviver ligados ao cadastro pseudonimizado. Cada etapa é
+    # independente para a rotina continuar apagando o máximo possível.
+    for label, delete in (
+        ("apagar preferências", lambda: customer.preferences.all().delete()),
+        ("apagar timeline", lambda: customer.timeline_events.all().delete()),
+        ("apagar fidelidade", lambda: customer.loyalty_account.delete()),
+        ("apagar etiquetas", lambda: customer.tags.clear()),
+        (
+            "apagar conversas",
+            lambda: _customer_conversations(original_ref, original_phone).delete(),
+        ),
+        (
+            "desvincular públicos de marketing",
+            lambda: customer.marketing_audience_memberships.all().delete(),
+        ),
+    ):
+        try:
+            delete()
+        except Exception as exc:
+            if not _nada_a_apagar(exc):
+                falhas.append(label)
+            logger.warning("anonymize: %s falhou customer=%s", label, original_ref, exc_info=True)
 
     # As superfícies guardam dado do cliente que o shop não pode importar
     # (`storefront` importa `shop`, nunca o contrário — ADR-001). O anúncio é um

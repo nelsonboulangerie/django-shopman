@@ -80,6 +80,21 @@ def test_customer_phone_is_late_bound_without_changing_snapshot_membership() -> 
     assert snapshot.members.count() == 1
 
 
+def test_known_minor_is_subtracted_if_birthday_changes_after_snapshot() -> None:
+    customer = _customer("CLI-SNAP-MINOR", "+5543999002098", opted_in=True)
+    rules = {"customer_refs": [customer.ref]}
+    snapshot = audience_snapshot.create_snapshot(audience.resolve(rules), rules=rules)
+    today = timezone.localdate()
+    Customer.objects.filter(pk=customer.pk).update(
+        birthday=today.replace(year=today.year - 17)
+    )
+
+    materialized = audience_snapshot.materialize_active_recipients(snapshot)
+
+    assert materialized.recipients == ()
+    assert materialized.excluded_by_reason == {"known_minor": 1}
+
+
 def test_anonymous_subscription_is_late_bound_and_revocable() -> None:
     sub = stock_alerts.subscribe("SKU-SNAPSHOT", phone="+5543999002006")
     rules = {"alerts": True}

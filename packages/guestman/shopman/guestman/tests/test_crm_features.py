@@ -9,11 +9,13 @@ Tests for Micro CRM features:
 - InsightService enhancements (LTV, segmentation)
 """
 
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
 from django.db import IntegrityError, transaction
-from shopman.guestman.contrib.consent.models import CommunicationConsent
+from django.utils import timezone
+from shopman.guestman.contrib.consent.models import CommunicationConsent, CommunicationConsentEvent
 from shopman.guestman.contrib.consent.service import ConsentService
 from shopman.guestman.contrib.insights.service import InsightService
 from shopman.guestman.contrib.loyalty.models import LoyaltyAccount, LoyaltyTransaction
@@ -394,6 +396,36 @@ class TestConsentService:
             ip_address="192.168.1.1",
         )
         assert consent.ip_address == "192.168.1.1"
+
+    def test_expired_consent_ip_is_redacted_but_evidence_is_preserved(self, customer):
+        old = timezone.now() - timedelta(days=91)
+        recent = timezone.now() - timedelta(days=89)
+        ConsentService.grant_consent(
+            "CRM-001",
+            "email",
+            ip_address="192.0.2.10",
+            occurred_at=old,
+        )
+        ConsentService.grant_consent(
+            "CRM-001",
+            "whatsapp",
+            ip_address="192.0.2.11",
+            occurred_at=recent,
+        )
+        CommunicationConsent.objects.filter(channel="email").update(updated_at=old)
+        CommunicationConsent.objects.filter(channel="whatsapp").update(updated_at=recent)
+
+        counts = ConsentService.redact_expired_ip(days=999)
+
+        assert counts == {"current": 1, "events": 1}
+        assert CommunicationConsent.objects.get(channel="email").ip_address is None
+        assert CommunicationConsent.objects.get(channel="whatsapp").ip_address == "192.0.2.11"
+        old_event = CommunicationConsentEvent.objects.get(channel="email")
+        recent_event = CommunicationConsentEvent.objects.get(channel="whatsapp")
+        assert old_event.ip_address is None
+        assert old_event.disclosure_hash
+        assert old_event.evidence_hash
+        assert recent_event.ip_address == "192.0.2.11"
 
 
 # ═══════════════════════════════════════════════════════════════════

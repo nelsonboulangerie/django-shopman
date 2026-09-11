@@ -276,16 +276,20 @@ def purge_pii(customer) -> None:
     Pré-condição: o chamador já limpou phone/email do Customer e salvou, para que
     o _sync_contact_points do save() não recrie um ContactPoint a partir deles.
     """
+    failures: list[str] = []
+
     # ContactPoints — fonte de verdade de telefone/e-mail.
     try:
         customer.contact_points.all().delete()
     except Exception:
+        failures.append("contact_points")
         logger.warning("purge_pii: contact_points delete falhou customer=%s", customer.ref, exc_info=True)
 
     # Identifiers (contrib) — subscriber Manychat/Instagram.
     try:
         customer.identifiers.all().delete()
     except Exception:
+        failures.append("identifiers")
         logger.warning("purge_pii: identifiers delete falhou customer=%s", customer.ref, exc_info=True)
 
     # ExternalIdentity (core) — mapeamento provider→customer legado.
@@ -294,8 +298,13 @@ def purge_pii(customer) -> None:
 
         ExternalIdentity.objects.filter(customer=customer).delete()
     except Exception:
+        failures.append("external_identities")
         logger.warning("purge_pii: external_identity delete falhou customer=%s", customer.ref, exc_info=True)
 
     customer.document = ""
     customer.metadata = {}
     customer.save(update_fields=["document", "metadata", "updated_at"])
+    if failures:
+        # O chamador precisa saber que a exclusão ficou incompleta. Silenciar aqui
+        # fazia a API declarar sucesso mesmo deixando identificadores no banco.
+        raise RuntimeError("PII não removido de: " + ", ".join(failures))

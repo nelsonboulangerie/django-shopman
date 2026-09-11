@@ -42,6 +42,14 @@ Use refs técnicas, janela temporal, plataforma, contagem/bucket, tipo de dado e
 do freeze. DPO define notificações legais e destinatários; nenhuma hipótese é anunciada
 como fato antes da reconstrução do histórico.
 
+Quando o incidente puder causar risco ou dano relevante, o controlador deve comunicar
+a ANPD e os titulares em até **três dias úteis**, ressalvado prazo específico mais curto.
+Se as informações ainda estiverem incompletas, faça comunicação preliminar e complemente
+depois; falta de certeza não autoriza esperar em silêncio. Registre a decisão de comunicar
+ou não, o responsável, os fatos conhecidos e os horários.
+
+Referência oficial: [Comunicação de Incidente de Segurança — ANPD](https://www.gov.br/anpd/pt-br/canais_atendimento/agente-de-tratamento/comunicado-de-incidente-de-seguranca-cis).
+
 ## Recuperação idempotente
 
 Reconstrua current state pelo ledger append-only, aplique subtract-only ao snapshot e
@@ -52,6 +60,8 @@ duplo controle Security e receipt de reconciliação; replay não amplia audiên
 
 Exija escopo fechado, timeline, causa, prova do consent state no instante do claim,
 targets terminais, scan PII zero, decisão DPO e autorização independente de unfreeze.
+O registro do incidente, das avaliações e das comunicações deve ser preservado por pelo
+menos **cinco anos**, conforme a Resolução CD/ANPD nº 15/2024.
 
 ## Drill local
 

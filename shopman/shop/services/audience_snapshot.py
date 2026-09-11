@@ -168,6 +168,12 @@ def materialize_active_recipients(
         if customer is not None and not customer.is_active:
             exclude("customer_inactive")
             continue
+        if customer is not None:
+            from shopman.shop.services.audience import _is_known_minor
+
+            if _is_known_minor(customer.birthday):
+                exclude("known_minor")
+                continue
         customer_ref = customer.ref if customer is not None else ""
         status = statuses.get(customer_ref, "")
         if status == "opted_out":
