@@ -1,16 +1,50 @@
 # Marketing — formatos públicos e canário unitário
 
-**Estado:** implementação técnica concluída localmente; efeito externo bloqueado
+**Estado:** primeiro canário público executado e confirmado pela Meta
 
 **Branch:** `codex/marketing-stories-social-publishing-20260911`
 
 **Worktree:** `django-shopman-marketing-stories-social-20260911`
 
-**Efeito externo nesta execução:** nenhum; sem push, PR, deploy, configuração viva,
-mensagem ou publicação
+**Efeito externo nesta execução:** uma publicação pública no Stories da conta
+`@nelsonboulangerie`; nenhuma mensagem direta, DM ou entrega para clientes
 
-**Atualização do gate:** push e PR foram autorizados pelo proprietário em 2026-09-11;
-publicação continua dependendo do preflight exato
+**Atualização do gate:** push e PR foram autorizados pelo proprietário em 2026-09-11.
+O proprietário autorizou explicitamente o Story do anúncio 25, com a foto sanitizada
+do hibisco e o texto editorial “Lá vem a primavera...”, sem mensagens/DMs.
+
+## Resultado do primeiro canário público
+
+- conta verificada por consulta read-only à Meta: `nelsonboulangerie`;
+- anúncio: `25`, versão aprovada `2`;
+- consequência exata: `c70ff9f7-038b-4981-acdc-510d50e39449`;
+- formato: Instagram Stories;
+- alcance: uma publicação pública e zero destinatários diretos;
+- tentativa aceita às 12:17 (America/Sao_Paulo);
+- comprovante sanitizado: `ig:17930588622397363`;
+- consulta posterior read-only: `instagram_publication_confirmed` às 12:19;
+- consumers gerais de outbox e entrega permaneceram desligados.
+
+Stories de imagem não aceita `caption` no endpoint da Meta. Portanto “Lá vem a
+primavera...” permanece no artefato e no comprovante editorial, mas não é sobreposto
+automaticamente à imagem publicada. Exibir o texto dentro do Story exige que ele faça
+parte da arte final antes da publicação.
+
+### Falhas encontradas antes da fronteira externa
+
+1. O primeiro staging do destino falhou fechado com
+   `target_hmac_key_unavailable`. A configuração viva não possuía
+   `SHOPMAN_MARKETING_TARGET_HMAC_KEY`; uma chave exclusiva de 64 caracteres foi criada
+   como segredo de runtime, versão 1. Antes da recuperação foram conferidos zero
+   destinos e zero tentativas externas.
+2. O primeiro claim do destino expôs uma incompatibilidade PostgreSQL:
+   `FOR UPDATE` abrangia o `OUTER JOIN` opcional de `member__customer`. A consulta foi
+   validada no destino exato com `FOR UPDATE OF self`, sem efeito externo. A correção
+   permanente trava apenas `DeliveryTarget` e ganhou um teste dedicado no gate real de
+   PostgreSQL.
+
+A diretiva 20874 foi recuperada apenas depois de validar estado, erro, outbox exata e
+ausência de destino/tentativa. A execução subsequente alcançou uma única vez a Meta.
 
 ## Resultado
 
