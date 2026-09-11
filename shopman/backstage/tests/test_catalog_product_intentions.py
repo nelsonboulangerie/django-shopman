@@ -89,3 +89,36 @@ def test_product_receipt_remains_readable_when_projection_fails(client, operator
     assert receipt.status_code == 200
     assert receipt.json()["outcome"] == "applied"
     assert IdempotencyKey.objects.filter(key=key, status="done").count() == 1
+
+
+@pytest.mark.parametrize("field", ["nutrition_facts", "allergens"])
+def test_source_change_conflicts_even_when_observed_value_is_equal(client, operator, catalog, field):
+    from shopman.offerman.models import Product
+
+    from shopman.shop.services import attributes
+
+    product = catalog["pao"]
+    if field == "nutrition_facts":
+        facts = {"serving_size_g": 50, "energy_kcal": 120, "auto_filled": True}
+        Product.objects.filter(pk=product.pk).update(nutrition_facts=facts)
+        patch = {"nutrition_facts": {"sodium_mg": 25}}
+    else:
+        attributes.set(product, "alergenos", ["leite"], source="recipe")
+        attributes.set(product, "dieta", ["100% vegetal"], source="recipe")
+        patch = {"allergens": ["glúten"]}
+    client.force_login(operator)
+    before = client.get(URL).json()
+    if field == "nutrition_facts":
+        Product.objects.filter(pk=product.pk).update(nutrition_facts={**facts, "auto_filled": False})
+    else:
+        product.refresh_from_db()
+        attributes.set(product, "alergenos", ["leite"], source="manual")
+        assert client.get(URL).json()["product"]["dietary_from_recipe"] is True  # the other label still derives
+    response = client.patch(URL, {**before["action"]["payload_schema"], "patch": patch},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
+    assert response.status_code == 409
+    product.refresh_from_db()
+    if field == "nutrition_facts":
+        assert product.nutrition_facts == {**facts, "auto_filled": False}
+    else:
+        assert attributes.get(product, "alergenos") == ["leite"]

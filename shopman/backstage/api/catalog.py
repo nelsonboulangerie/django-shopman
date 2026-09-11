@@ -504,5 +504,3 @@ class CatalogResyncView(_CatalogBase):
             return Response({"detail": "Esta intenção já representa outro reenvio.", "code": "intention_conflict"}, status=409)
         except RemoteMutationInProgress:
             return Response({"outcome": "in_progress"}, status=202)
-
-

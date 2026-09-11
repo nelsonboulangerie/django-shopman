@@ -502,6 +502,10 @@ def _detail_payload(product) -> dict:
         # somente-leitura: o painel avisa que o dado veio da FICHA e que editar
         # à mão congela a derivação (ver ``dietary_from_recipe``). Vem da
         # proveniência do valor, não mais de um sentinela à parte.
+        "field_sources": {
+            **{field: attributes.source(product, ref) or "" for field, ref in {**_DETAIL_ATTR_LIST_FIELDS, **_DETAIL_ATTR_TEXT_FIELDS}.items()},
+            "nutrition_facts": "recipe" if (product.nutrition_facts or {}).get("auto_filled", False) else "manual",
+        },
         "dietary_from_recipe": _from_recipe(product),
         "nutrition_auto_filled": bool((product.nutrition_facts or {}).get("auto_filled", False)),
         "fiscal_profiles": _fiscal_profile_choices(),
@@ -513,10 +517,18 @@ def product_field_revisions(detail: dict) -> dict[str, str]:
     """Tokens for editable leaf fields, derived from the canonical read payload."""
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles"}
+    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "field_sources"}
     values = _patch_leaves({key: value for key, value in detail.items() if key not in readonly})
-    return {path: mutation_fingerprint({"version": 1, "sku": detail["sku"], "field": path, "value": value})
-        for path, value in values.items() if path not in {"nutrition_facts.auto_filled", "social.has_data"}}
+    revisions = {}
+    for path, value in values.items():
+        if path in {"nutrition_facts.auto_filled", "social.has_data"}:
+            continue
+        state = {"version": 1, "sku": detail["sku"], "field": path, "value": value}
+        root = path.split(".", 1)[0]
+        if root in {"nutrition_facts", *_DETAIL_ATTR_LIST_FIELDS, *_DETAIL_ATTR_TEXT_FIELDS}:
+            state["source"] = (detail.get("field_sources") or {}).get(root, "")
+        revisions[path] = mutation_fingerprint(state)
+    return revisions
 
 
 def _patch_leaves(data: dict, prefix: str = "") -> dict:

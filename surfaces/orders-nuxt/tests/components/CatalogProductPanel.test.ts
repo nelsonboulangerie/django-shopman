@@ -59,3 +59,12 @@ it("informa rascunho à página para proteger navegação e descarte", async () 
   await w.setProps({ open: false });
   expect(w.emitted("dirty-change")?.at(-1)).toEqual([false]);
 });
+
+it("mostra mudança de origem mesmo quando o valor não mudou", async () => {
+  const w = panel();
+  await w.setProps({ detail: { ...detail, allergens: ["leite"], field_sources: { allergens: "recipe" } } });
+  await w.setProps({ conflict: { product: { ...detail, allergens: ["leite"], field_sources: { allergens: "manual" } }, conflicting_fields: ["allergens"] } });
+  expect(w.text()).toContain("Origem: ficha técnica → edição manual.");
+  expect(w.findAll("button").find(button => button.text() === "Salvar")!.attributes("disabled")).toBeDefined();
+  expect(w.emitted("save")).toBeUndefined();
+});

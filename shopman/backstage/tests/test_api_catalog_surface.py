@@ -876,7 +876,7 @@ def test_product_detail_get_shape(client, operator, catalog):
         "allows_next_day_sale", "made_to_order", "ready_from",
         "nutrition_facts", "social", "fiscal",
         # somente-leitura: sentinels de derivação + escolhas de perfil fiscal
-        "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles",
+        "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "field_sources",
     }
     assert product["sku"] == "BOLO"
     assert product["base_price_q"] == 4500

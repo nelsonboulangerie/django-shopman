@@ -351,6 +351,15 @@ const conflictLabels: Record<string, string> = {
   "fiscal.cest": "CEST", "fiscal.unit": "Unidade fiscal",
   ...Object.fromEntries([...SERVING_FIELDS, ...MACRO_FIELDS, ...MICRO_FIELDS].map(f => [`nutrition_facts.${f.key}`, f.label])),
 };
+function sourceChange(field: string): string {
+  const root = field.split(".")[0]!;
+  const before = props.detail?.field_sources?.[root];
+  const after = props.conflict?.product.field_sources?.[root];
+  if (before === after) return "";
+  const label = (value?: string) => value === "recipe" ? "ficha técnica" : value === "manual" ? "edição manual" : value || "não informada";
+  return `Origem: ${label(before)} → ${label(after)}.`;
+}
+
 function currentValue(path: string): string {
   let value: unknown = props.conflict?.product;
   for (const part of path.split(".")) {
@@ -386,9 +395,10 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
       </div>
 
       <div v-if="conflict" role="alert" class="space-y-2 border-b border-border bg-muted p-4 text-sm">
-        <p>Seu rascunho foi preservado. Confira os campos alterados por outra pessoa:</p>
+        <p>Seu rascunho foi preservado. Confira os campos que mudaram desde sua leitura:</p>
         <ul><li v-for="field in conflict.conflicting_fields" :key="field">
           {{ conflictLabels[field] || "Campo editado" }} — atual: {{ currentValue(field) }}
+          <span v-if="sourceChange(field)" class="block text-xs">{{ sourceChange(field) }}</span>
         </li></ul>
         <button type="button" class="min-h-12 rounded border px-3" @click="emit('review-conflict', true)">Manter meu rascunho</button>
         <button type="button" class="min-h-12 rounded border px-3" @click="emit('review-conflict', false)">Descartar minhas alterações e usar valores atuais</button>
