@@ -1,6 +1,7 @@
 # Laboratório sintético de integração
 
-Copiar estes quatro scripts para `.orders-lab/` na raiz do worktree isolado.
+Copiar `manage_lab.py`, `serve_lab.py` e `seed_e2e.py` para `.orders-lab/` na raiz
+do worktree isolado. Os scripts de crash abaixo são copiados apenas para esse ensaio.
 Os bootstraps recusam outra DATABASE_URL/REDIS_URL. Usar cluster PostgreSQL próprio,
 usuário/db `orders_lab`, bind local 55439, Redis próprio em 56389 sem persistência.
 Não reutilizar banco, Redis ou credenciais de aplicação real. Não iniciar com `.env` de produção.
@@ -22,7 +23,13 @@ Manifesto, screenshots, traces e logs ficam em `.orders-lab`.
 Os ensaios usam HTTP real via Nitro, Django, PostgreSQL e Redis/SSE. A interrupção
 controlada descarta a resposta HTTP depois do commit. Não há worker separado nem
 provedores externos neste ensaio. Não demonstra homologação, restart de worker,
-resultado financeiro/fiscal, equipamentos físicos ou esforço em campo.
+movimentação financeira/fiscal real, equipamentos físicos ou esforço em campo.
+A suíte atual contém26 cenários e verifica também acerto no livro sintético,
+recibos por produto/célula/lote/feed, teclado, SSE e última leitura útil. Resultado
+mais recente em `../catalog_width/catalog-overlap-final-integration.txt`.
+Crashes de aceitação externa e restore de livros são ensaios separados em
+`../notification_unknown/PROCESS-CRASH.md` e `../restore_lab/`; não atribuir suas
+provas à suíte HTTP nem chamar fakes externos de homologação do fornecedor.
 
 ## Recuperação em outro processo
 

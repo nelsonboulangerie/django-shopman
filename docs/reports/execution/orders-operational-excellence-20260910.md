@@ -1559,3 +1559,10 @@ pacote exigido no Makefile, sem adaptar regras. Logs e limites final_gates/.
 CURRENT-STATUS consolida pacotes, D/H, esforço, migrations/rollback e gates.
 T permanece em andamento; budgets grandes e outros aceites explicitados não
 foram encerrados por estes testes. Sem efeito real ou migration neste incremento.
+
+### WP07 — candidata de hidratação rejeitada por regressão medida
+
+Baseline atual500p952324ms; Nuxt LazyOrderCard/hydrate-on-visible p953186ms,
+20 amostras cada. Fluxo funcional passou, budget não. Candidata integralmente
+retirada, patch/logs/raw em lazy_hydration/. Não trocaram-se budgets, dados ou
+coorte para aprovação. Sem mudança de domínio/migration/efeito real.
