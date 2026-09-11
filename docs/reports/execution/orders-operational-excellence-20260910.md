@@ -1441,3 +1441,22 @@ claim: evento unknown + alerta existente, mesma audiência/dedupe/ack. V2 compro
 um alerta honesto; **157 PostgreSQL/6,42s**, Ruff aprovado. Artefatos e limites em
 `orders-20260910/notification_unknown/PROCESS-CRASH.md`. Sem DDL produtivo. G03
 continua exigindo consulta homologada antes de qualquer repetição externa real.
+
+### WP07 — distribuição de comando e recuperação com browser/DB reais
+
+Duas rodadas de40 notas sintéticas (20 normais/20 respostas cortadas pós-commit),
+40 intenções/40 eventos por rodada,20 consultas com a mesma chave,zero reenvio e
+R=0/zero ativação extra na recuperação automatizada. Rodada com frames: feedback
+após2 frames p95 **32,3ms**; resultado+refresh normal **112,6ms**, recuperação
+**110,6ms**, ambos n20. DOM sozinho p95 1,1ms é registrado separadamente, não pintura.
+Hardware, acesso/login, amostras brutas, carga concorrente e limites em
+`orders-20260910/command_budget/README.md`. Não é antes/depois humano nem prova
+500pedidos/10clientes; G06 e meta≥30% em campo continuam pendentes.
+
+### WP09 — suíte ampla fixa 1d84dcc5b verde
+
+**8.718 passed,68 skipped,3 warnings,38 subtests,493,08s**, SQLite/xdist2/-rs.
+Log `orders-20260910/broad-1d84dcc5b.txt`. Inclui evidência fiscal em lote e alerta
+após crash de notificação. Fonte imutável; alterações seguintes são de frontend e
+artefatos de ensaio, com seus checks específicos. Não converte os skips em testes
+executados nem substitui os ensaios PostgreSQL já registrados.
