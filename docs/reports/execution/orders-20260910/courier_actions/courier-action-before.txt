@@ -1,0 +1,32 @@
+
+> test
+> vitest run tests/components/courierConfirmation.test.ts
+
+
+ RUN  v4.1.6 /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/surfaces/orders-nuxt
+
+ ❯ |component| tests/components/courierConfirmation.test.ts (3 tests | 2 failed) 22ms
+   × não emite quote quando a Action da pessoa está bloqueada 4ms
+   × não emite dispatch quando a Action da pessoa está bloqueada 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |component| tests/components/courierConfirmation.test.ts > não emite quote quando a Action da pessoa está bloqueada
+ FAIL  |component| tests/components/courierConfirmation.test.ts > não emite dispatch quando a Action da pessoa está bloqueada
+AssertionError: expected undefined to be defined
+ ❯ tests/components/courierConfirmation.test.ts:42:43
+     40|   try {
+     41|     const button = wrapper.findAll('button').find(button => button.tex…
+     42|     expect(button.attributes('disabled')).toBeDefined();
+       |                                           ^
+     43|     expect(button.attributes('title')).toBe(action.reason);
+     44|     await button.trigger('click');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  04:40:47
+   Duration  749ms (transform 265ms, setup 0ms, import 330ms, tests 22ms, environment 274ms)
+

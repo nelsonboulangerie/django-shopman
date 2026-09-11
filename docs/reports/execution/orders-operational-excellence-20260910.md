@@ -1578,3 +1578,14 @@ aprovadas. Medição de Aplicar aguarda actionability sem clicar (trial), para
 não confundir a animação de abertura com dimensão estável. Screenshot inspecionado.
 Sem DDL/efeito real; rollback só visual. Componentes auxiliares e links ainda
 são auditados separadamente; não é declaração de todo C07/AT concluído.
+
+### WP01 — cotação/despacho obedecem à Action da pessoa
+
+Antes:2 testes falharam,1 preservou confirmação de cancelamento. Disponibilidade
+da corrida era usada sozinha nos botões de cotar/despachar; a Action já continha
+enabled por pessoa. Painel recebe as duas Actions projetadas, usa enabled/reason
+e recusa metadado ausente com orientação de atualizar. Não muda domínio/permissão
+no servidor nem adiciona confirmação. **299 Vitest/3,37s** e typecheck aprovado;
+provas positivas emitem exatamente um evento, negativas não emitem. Logs
+courier_actions/. Sem DDL/efeito real. Não alegado browser de fornecedor nesta
+fatia. Rollback reabre clique recusável; preservar guardas e recibos do backend.

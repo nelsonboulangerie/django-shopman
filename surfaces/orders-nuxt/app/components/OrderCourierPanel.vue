@@ -7,7 +7,7 @@ import { courierFailed, courierSteps, courierTone, courierToneBadge } from "~/pr
 import type { Action } from "~/generated/ordersContract";
 import type { CourierBlock } from "~/types/orders";
 
-const props = defineProps<{ courier: CourierBlock; busy: boolean; cancelAction?: Action }>();
+const props = defineProps<{ courier: CourierBlock; busy: boolean; cancelAction?: Action; quoteAction?: Action; dispatchAction?: Action }>();
 const emit = defineEmits<{ quote: []; dispatch: []; cancel: [] }>();
 
 const steps = computed(() => courierSteps(props.courier.status));
@@ -124,7 +124,8 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
       <button
         v-if="courier.can_dispatch"
         type="button"
-        :disabled="busy"
+        :disabled="busy || !dispatchAction?.enabled"
+        :title="dispatchAction?.reason || (dispatchAction?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')"
         class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
         @click="emit('dispatch')"
       >
@@ -134,7 +135,8 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
       <button
         v-if="courier.can_quote"
         type="button"
-        :disabled="busy"
+        :disabled="busy || !quoteAction?.enabled"
+        :title="quoteAction?.reason || (quoteAction?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')"
         class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50"
         @click="emit('quote')"
       >

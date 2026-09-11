@@ -468,6 +468,8 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         v-if="order.courier"
         :courier="order.courier"
         :cancel-action="order.actions.find(action => action.ref === 'courier-cancel')"
+        :quote-action="order.actions.find(action => action.ref === 'courier-quote')"
+        :dispatch-action="order.actions.find(action => action.ref === 'courier-dispatch')"
         :busy="busy"
         @quote="courierQuote"
         @dispatch="courierDispatch"
