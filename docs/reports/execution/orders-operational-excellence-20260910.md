@@ -1365,3 +1365,18 @@ inspecionados em `orders-20260910/targets/`. Sem DDL; rollback reverte component
 mantendo dados/chaves. Limites: viewport touch simulado não é aparelho físico;
 a auditoria cobre os alvos nomeados, não todos os estados de todas as páginas;
 não é prova com leitor de tela. Critérios restantes WP06 continuam abertos.
+
+### WP08/WP09 — jornadas integrais observadas e runbook no recurso existente
+
+25 cenários Chromium→Nitro→Django→PostgreSQL/SSE aprovados com código ddd8f981a,
+seed novo e JSON logs habilitado; build aprovado. Evidências/sumarizador em
+`orders-20260910/observed_journeys/README.md`: 17 aplicações, 1 não aplicada,
+9 consultas a receipts, 1 acerto. Efeito externo failed continua pendente; não se
+conta como sucesso. Fila canônica e métricas de produto ausentes são unmeasured,
+não zero. Duas provas do sumarizador e Ruff aprovados. Tempos de view/intervalo
+server-side descritos com limites; não provam o ganho de esforço em campo.
+Atualizado runbook `docs/runbooks/pedido-remoto-preso.md`: consultar antes de
+repetir, responsabilidade por papel, correlacionar resultado/HTTP, custódia física,
+unknown e consumidores antigos; removida recomendação de lote genérico para
+“destravar”. Sem nova fila/regra/alerta pessoal. WP08 ainda parcial para placar
+completo/owners/SLA e ensaio de retomada por outra pessoa; G01/G03 permanecem.
