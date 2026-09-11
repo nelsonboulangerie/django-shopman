@@ -180,7 +180,7 @@ async function confirmArchive() {
     <RecipeHeader :title="entry?.name || 'Receita'" :subtitle="subtitle" back="/recipes" :pending="pending" @refresh="refresh()" />
 
     <section v-if="forbidden" class="grid flex-1 place-items-center p-6 text-center">
-      <div class="grid max-w-md gap-2 rounded-lg border border-dashed p-10">
+      <div class="grid max-w-md gap-2 rounded-md border border-dashed p-10">
         <Icon name="lucide:lock" class="mx-auto size-8 text-muted-foreground" />
         <p class="text-base font-semibold">Área da produção</p>
         <p class="text-sm text-muted-foreground">Esta receita pede uma permissão que este operador não tem.</p>
@@ -189,7 +189,7 @@ async function confirmArchive() {
     </section>
 
     <section v-else-if="notFound" class="grid flex-1 place-items-center p-6 text-center">
-      <div class="grid max-w-md gap-2 rounded-lg border border-dashed p-10">
+      <div class="grid max-w-md gap-2 rounded-md border border-dashed p-10">
         <Icon name="lucide:book-x" class="mx-auto size-8 text-muted-foreground" />
         <p class="text-base font-semibold">Receita não encontrada</p>
         <p class="text-sm text-muted-foreground">Não existe receita com a ref <span class="font-mono">{{ entryRef }}</span>.</p>
@@ -202,17 +202,19 @@ async function confirmArchive() {
 
       <div
         v-else-if="error && !entry"
-        class="grid place-items-center gap-2 rounded-lg border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
+        class="grid place-items-center gap-2 rounded-md border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
       >
         <Icon name="lucide:cloud-off" class="size-8 text-destructive/70" />
         <p class="text-base font-medium text-foreground">Não foi possível carregar a receita.</p>
-        <button
+        <UiButton
           type="button"
-          class="mt-1 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition hover:bg-accent"
+          class="mt-1"
+          variant="outline"
+          size="sm"
           @click="refresh()"
         >
           <Icon name="lucide:refresh-cw" class="size-4" /> Tentar de novo
-        </button>
+        </UiButton>
       </div>
 
       <template v-else-if="entry">
@@ -220,14 +222,14 @@ async function confirmArchive() {
           v-if="stale"
           role="status"
           aria-live="polite"
-          class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-amber-700 dark:text-amber-300"
+          class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
         >
           <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
           <span>Sem atualizar. Mostrando a última leitura.</span>
         </div>
 
         <!-- ── Cabeçalho da receita: tipo, SKU, ficha, arquivada ─────────── -->
-        <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-card p-3 text-sm">
+        <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border bg-card p-3 text-sm">
           <UiBadge variant="outline" class="px-1.5 py-0 text-xs">{{ entry.kind_label }}</UiBadge>
           <UiBadge v-if="entry.is_archived" variant="outline" class="px-1.5 py-0 text-xs">Arquivada</UiBadge>
 
@@ -238,40 +240,43 @@ async function confirmArchive() {
                 {{ entry.output_name || entry.output_sku }}
                 <span class="ml-1 font-mono text-xs text-muted-foreground">{{ entry.output_sku }}</span>
               </span>
-              <span v-else class="text-amber-700 dark:text-amber-300">Sem SKU</span>
-              <button
+              <span v-else class="text-warning">Sem SKU</span>
+              <UiButton
                 v-if="canEdit && !entry.is_archived"
                 type="button"
-                class="ml-1 text-xs text-primary underline-offset-2 hover:underline"
+                class="ml-1 h-auto p-0 text-xs"
+                variant="link"
+                size="xs"
                 @click="startSku"
               >
                 {{ entry.output_sku ? "Trocar" : "Associar SKU" }}
-              </button>
+              </UiButton>
             </template>
             <form v-else class="flex flex-wrap items-center gap-1.5" @submit.prevent="saveSku">
-              <input
+              <UiInput
                 v-model="skuInput"
                 type="text"
                 autofocus
                 placeholder="SKU do produto"
-                class="h-9 w-40 rounded-md border bg-background px-2 font-mono text-sm uppercase text-foreground"
+                class="w-40 font-mono uppercase"
                 :aria-invalid="skuError ? 'true' : undefined"
                 aria-label="SKU do produto"
               />
-              <button
+              <UiButton
                 type="submit"
-                class="h-9 rounded-md border border-transparent bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+                size="sm"
                 :disabled="busy"
               >
                 Salvar
-              </button>
-              <button
+              </UiButton>
+              <UiButton
                 type="button"
-                class="h-9 rounded-md border px-3 text-sm font-medium transition hover:bg-accent"
+                variant="outline"
+                size="sm"
                 @click="skuEditing = false"
               >
                 Cancelar
-              </button>
+              </UiButton>
               <span v-if="skuError" class="basis-full text-xs text-destructive">{{ skuError }}</span>
             </form>
           </div>
@@ -281,23 +286,25 @@ async function confirmArchive() {
           </span>
 
           <div class="ml-auto flex flex-wrap items-center gap-1.5">
-            <button
+            <UiButton
               v-if="canEdit"
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition hover:bg-accent"
+              variant="outline"
+              size="sm"
               @click="openDetails"
             >
               <Icon name="lucide:pencil" class="size-4" /> Dados
-            </button>
-            <button
+            </UiButton>
+            <UiButton
               v-if="canEdit"
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition hover:bg-accent"
+              variant="outline"
+              size="sm"
               @click="archiveOpen = true"
             >
               <Icon :name="entry.is_archived ? 'lucide:archive-restore' : 'lucide:archive'" class="size-4" />
               {{ entry.is_archived ? "Restaurar" : "Arquivar" }}
-            </button>
+            </UiButton>
           </div>
         </div>
 
@@ -308,14 +315,14 @@ async function confirmArchive() {
           <div class="min-w-0">
             <div
               v-if="!selected"
-              class="grid place-items-center gap-2 rounded-lg border border-dashed py-16 text-center text-muted-foreground"
+              class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center text-muted-foreground"
             >
               <Icon name="lucide:scale" class="size-8" />
               <p class="text-base font-medium">Esta receita ainda não tem versão.</p>
             </div>
             <template v-else>
               <div class="mb-3 flex flex-wrap items-center gap-2">
-                <h2 class="text-base font-bold">Versão {{ selected.number }}</h2>
+                <h2 class="text-lg font-semibold">Versão {{ selected.number }}</h2>
                 <UiBadge :variant="statusBadgeVariant(selected.status)" class="px-1.5 py-0 text-xs">{{ selected.status_label }}</UiBadge>
                 <UiBadge v-if="isCurrent" variant="outline" class="px-1.5 py-0 text-xs">Atual</UiBadge>
                 <span v-if="selected.label" class="text-sm text-muted-foreground">{{ selected.label }}</span>
@@ -324,51 +331,56 @@ async function confirmArchive() {
                 </span>
 
                 <div v-if="canEdit && !entry.is_archived" class="ml-auto flex flex-wrap items-center gap-1.5">
-                  <button
+                  <UiButton
                     v-if="selected.status === 'draft'"
                     type="button"
-                    class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition hover:bg-accent"
+                    variant="outline"
+                    size="sm"
                     @click="editDraft"
                   >
                     <Icon name="lucide:pencil-line" class="size-4" /> Editar rascunho
-                  </button>
-                  <button
+                  </UiButton>
+                  <UiButton
                     v-if="selected.status === 'draft'"
                     type="button"
-                    class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
+                    size="sm"
                     @click="openPublish"
                   >
                     <Icon name="lucide:check" class="size-4" /> Publicar
-                  </button>
-                  <button
+                  </UiButton>
+                  <UiButton
                     type="button"
-                    class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition hover:bg-accent disabled:opacity-50"
+                    variant="outline"
+                    size="sm"
                     :disabled="busy"
                     @click="newVersion"
                   >
                     <Icon name="lucide:copy-plus" class="size-4" /> Nova versão
-                  </button>
-                  <button
+                  </UiButton>
+                  <UiButton
                     type="button"
-                    class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition hover:bg-accent"
+                    variant="outline"
+                    size="sm"
                     @click="compareWith"
                   >
                     <Icon name="lucide:git-compare" class="size-4" /> Comparar com…
-                  </button>
+                  </UiButton>
                 </div>
-                <button
+                <UiButton
                   v-else
                   type="button"
-                  class="ml-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition hover:bg-accent"
+                  class="ml-auto"
+                  variant="outline"
+                  size="sm"
                   @click="compareWith"
                 >
                   <Icon name="lucide:git-compare" class="size-4" /> Comparar com…
-                </button>
+                </UiButton>
               </div>
 
               <FormulaLens :lens="selected.lens" />
 
-              <div v-if="selected.steps.length" class="mt-4 rounded-lg border bg-card p-4">
+              <div v-if="selected.steps.length" class="mt-4 rounded-md border bg-card p-4">
                 <p class="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">Passos</p>
                 <ol class="list-decimal space-y-1 pl-5 text-sm">
                   <li v-for="(step, index) in selected.steps" :key="index">{{ step }}</li>
@@ -383,9 +395,10 @@ async function confirmArchive() {
             <p class="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Versões</p>
             <ol v-if="versions.length" class="grid gap-1.5">
               <li v-for="version in versions" :key="version.id">
+                <!-- Tile selecionável leva metadados em três linhas; não é um UiButton de ação. -->
                 <button
                   type="button"
-                  class="grid w-full gap-0.5 rounded-lg border p-2.5 text-left text-sm transition"
+                  class="grid w-full gap-0.5 rounded-md border p-2.5 text-left text-sm transition"
                   :class="
                     selected?.number === version.number
                       ? 'border-primary/50 bg-primary/5'
@@ -409,7 +422,7 @@ async function confirmArchive() {
                 </button>
               </li>
             </ol>
-            <p v-else class="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">Nenhuma versão ainda.</p>
+            <p v-else class="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">Nenhuma versão ainda.</p>
           </aside>
         </div>
       </template>
@@ -432,9 +445,9 @@ async function confirmArchive() {
           </UiDialogDescription>
         </UiDialogHeader>
 
-        <div v-if="publishBlocked" class="grid gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-          <p v-if="!entry?.output_sku" class="text-amber-700 dark:text-amber-300">Associe um SKU antes de publicar.</p>
-          <p v-if="unmatched.length" class="text-amber-700 dark:text-amber-300">
+        <div v-if="publishBlocked" class="grid gap-1 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+          <p v-if="!entry?.output_sku" class="text-warning">Associe um SKU antes de publicar.</p>
+          <p v-if="unmatched.length" class="text-warning">
             {{ unmatched.length === 1 ? "1 ingrediente ainda sem insumo" : `${unmatched.length} ingredientes ainda sem insumo` }}:
             {{ unmatched.map((item) => item.name).join(", ") }}. Case todos no editor.
           </p>
@@ -467,17 +480,16 @@ async function confirmArchive() {
         </template>
 
         <UiDialogFooter>
-          <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="publishOpen = false">
+          <UiButton type="button" variant="outline" @click="publishOpen = false">
             Cancelar
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             type="button"
-            class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             :disabled="publishBlocked || busy"
             @click="confirmPublish"
           >
             Publicar
-          </button>
+          </UiButton>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>
@@ -492,13 +504,13 @@ async function confirmArchive() {
         <div class="grid gap-3">
           <label class="grid gap-1 text-xs font-medium text-muted-foreground">
             Nome
-            <input v-model="detailsName" type="text" class="h-9 rounded-md border bg-background px-2 text-sm text-foreground" />
+            <UiInput v-model="detailsName" type="text" />
           </label>
           <label class="grid gap-1 text-xs font-medium text-muted-foreground">
             Tipo
-            <select v-model="detailsKind" class="h-9 rounded-md border bg-background px-2 text-sm text-foreground">
+            <UiNativeSelect v-model="detailsKind">
               <option v-for="option in KIND_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
-            </select>
+            </UiNativeSelect>
           </label>
           <label class="grid gap-1 text-xs font-medium text-muted-foreground">
             Notas
@@ -507,17 +519,16 @@ async function confirmArchive() {
           <p v-if="detailsError" class="text-sm text-destructive">{{ detailsError }}</p>
         </div>
         <UiDialogFooter>
-          <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="detailsOpen = false">
+          <UiButton type="button" variant="outline" @click="detailsOpen = false">
             Cancelar
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             type="button"
-            class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             :disabled="busy"
             @click="saveDetails"
           >
             Salvar
-          </button>
+          </UiButton>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>
@@ -536,12 +547,12 @@ async function confirmArchive() {
           </UiDialogDescription>
         </UiDialogHeader>
         <UiDialogFooter>
-          <button type="button" class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="archiveOpen = false">
+          <UiButton type="button" variant="outline" @click="archiveOpen = false">
             Cancelar
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             type="button"
-            class="rounded-md border border-transparent px-3 py-2 text-sm font-semibold transition disabled:opacity-50"
+            class="border-transparent"
             :class="
               entry?.is_archived
                 ? 'bg-primary text-primary-foreground hover:bg-primary/90'
@@ -551,7 +562,7 @@ async function confirmArchive() {
             @click="confirmArchive"
           >
             {{ entry?.is_archived ? "Restaurar" : "Arquivar" }}
-          </button>
+          </UiButton>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>

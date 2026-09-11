@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { computed, ref, watch } from "vue";
+import { computed, defineComponent, h, mergeProps, ref, watch } from "vue";
 import { mount } from "@vue/test-utils";
 
 import OrderReasonDialog from "../../app/components/OrderReasonDialog.vue";
@@ -13,6 +13,28 @@ vi.stubGlobal("watch", watch);
 // UiDialog e partes viram passthrough de slot — o miolo (seletor/textarea/botões) é o
 // que interessa testar; o shell modal é território de e2e.
 const passthrough = { template: "<div><slot /></div>" };
+const nativeSelect = defineComponent({
+  inheritAttrs: false,
+  props: { modelValue: { default: undefined } },
+  emits: ["update:modelValue", "change"],
+  setup(props, { attrs, emit, slots }) {
+    return () =>
+      h(
+        "select",
+        mergeProps(attrs, {
+          value: props.modelValue,
+          onChange: (event: Event) => {
+            emit(
+              "update:modelValue",
+              (event.target as HTMLSelectElement).value,
+            );
+            emit("change", event);
+          },
+        }),
+        slots.default?.(),
+      );
+  },
+});
 const stubs = {
   UiDialog: passthrough,
   UiDialogContent: passthrough,
@@ -20,6 +42,7 @@ const stubs = {
   UiDialogTitle: passthrough,
   UiDialogDescription: passthrough,
   UiDialogFooter: passthrough,
+  UiNativeSelect: nativeSelect,
 };
 
 function mountDialog(props: Partial<{

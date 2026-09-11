@@ -15,8 +15,8 @@ const router = useRouter();
 
 function sevChip(sev: AlertProjection["severity"]): string {
   if (sev === "critical" || sev === "error")
-    return "border-destructive/40 bg-destructive/10 text-destructive dark:text-orange-300";
-  return "border-warning/40 bg-warning/10 text-amber-700 dark:text-amber-300";
+    return "border-destructive/40 bg-destructive/10 text-destructive";
+  return "border-warning/40 bg-warning/10 text-warning";
 }
 
 function contextAction(
@@ -49,9 +49,11 @@ function follow(alert: AlertProjection) {
 
 <template>
   <div class="relative">
-    <button
+    <UiButton
       type="button"
-      class="relative grid size-11 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
+      class="relative"
+      variant="outline"
+      size="icon"
       :aria-label="`Alertas (${activeCount})`"
       title="Alertas"
       @click="open = !open"
@@ -59,29 +61,34 @@ function follow(alert: AlertProjection) {
       <Icon name="lucide:bell" class="size-4" />
       <span
         v-if="activeCount"
-        class="absolute -right-1 -top-1 grid min-w-4 place-items-center rounded-full px-1 text-xs font-bold tabular-nums text-white"
-        :class="criticalCount ? 'bg-destructive' : 'bg-warning'"
+        class="absolute -right-1 -top-1 grid min-w-4 place-items-center rounded-full px-1 text-xs font-bold tabular-nums"
+        :class="
+          criticalCount
+            ? 'bg-destructive text-destructive-foreground'
+            : 'bg-warning text-warning-foreground'
+        "
         >{{ activeCount }}</span
       >
-    </button>
+    </UiButton>
 
     <!-- backdrop to close on outside click -->
     <div v-if="open" class="fixed inset-0 z-40" @click="open = false" />
 
     <div
       v-if="open"
-      class="absolute right-0 z-50 mt-2 flex max-h-[70vh] w-80 flex-col overflow-hidden rounded-lg border bg-card shadow-lg"
+      class="absolute right-0 z-50 mt-2 flex max-h-[70vh] w-80 flex-col overflow-hidden rounded-md border bg-card shadow-lg"
     >
       <div class="flex items-center justify-between border-b px-4 py-2.5">
         <h2 class="text-sm font-bold">Alertas</h2>
-        <button
+        <UiButton
           type="button"
-          class="grid size-11 place-items-center rounded-md text-muted-foreground transition hover:text-foreground"
+          variant="ghost"
+          size="icon"
           aria-label="Fechar"
           @click="open = false"
         >
           <Icon name="lucide:x" class="size-4" />
-        </button>
+        </UiButton>
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto p-2">
         <div
@@ -126,17 +133,19 @@ function follow(alert: AlertProjection) {
                 }}<template v-if="a.order_ref"> · {{ a.order_ref }}</template>
               </p>
             </component>
-            <button
+            <UiButton
               v-if="ackAction(a)"
               type="button"
-              class="grid size-11 shrink-0 place-items-center rounded-md border bg-background text-muted-foreground transition hover:text-foreground disabled:opacity-50"
+              class="shrink-0"
+              variant="outline"
+              size="icon"
               aria-label="Marcar alerta como visto"
               title="Visto"
               :disabled="isPending(a.pk)"
               @click="ack(a)"
             >
               <Icon name="lucide:check" class="size-3.5" />
-            </button>
+            </UiButton>
             <div
               v-else
               class="grid size-11 shrink-0 place-items-center rounded-md border bg-background text-muted-foreground"

@@ -135,6 +135,7 @@ const STATUS_CHARS = 10; // CONFIRMADO
         </span>
         <span aria-hidden="true">·</span>
         <div class="flex items-center gap-2.5" role="group" aria-label="Data">
+          <!-- Teclas pertencem ao painel Solari de kiosk e usam sua escala visual própria. -->
           <button
             type="button"
             class="board-datekey"
@@ -178,6 +179,7 @@ const STATUS_CHARS = 10; // CONFIRMADO
           </button>
         </div>
         <div class="ml-auto flex items-center gap-2.5">
+          <!-- Controles de som/tela cheia são teclas do kiosk, não botões do shell operador. -->
           <button
             type="button"
             class="board-key"
@@ -291,6 +293,7 @@ const STATUS_CHARS = 10; // CONFIRMADO
           role="group"
           aria-label="Páginas do painel"
         >
+          <!-- Pontos de paginação são navegação espacial do letreiro, deliberadamente não UiButton. -->
           <button
             v-for="p in pages.pageCount.value"
             :key="p"

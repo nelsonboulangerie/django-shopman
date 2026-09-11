@@ -1,7 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { computed, nextTick, onMounted, ref } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import OperatorLogin from "~/components/OperatorLogin.vue";
+import OperatorLogin from "../../../operator-kit/app/components/OperatorLogin.vue";
 
 const fetcher = vi.fn();
 const refreshNuxtData = vi.fn();
@@ -25,7 +25,7 @@ beforeEach(() => {
 
 function mountLogin(expired = false) {
   return mount(OperatorLogin, {
-    props: { expired },
+    props: { expired, reloadOnSuccess: false },
     attachTo: document.body,
     global: { stubs: { Icon: true } },
   });

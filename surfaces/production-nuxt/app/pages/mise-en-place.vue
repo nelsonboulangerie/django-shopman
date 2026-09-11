@@ -167,10 +167,11 @@ function refreshAll() {
     <section class="min-h-0 flex-1 overflow-auto p-3 md:p-4 print:hidden">
       <div class="mb-3 flex flex-wrap items-center gap-3">
         <div
-          class="flex items-center gap-1 rounded-lg border bg-background p-0.5"
+          class="flex items-center gap-1 rounded-md border bg-background p-0.5"
           role="group"
           aria-label="Data da preparação"
         >
+          <!-- Data em segmento compacto: uma escolha exclusiva dentro do mesmo controle. -->
           <button
             v-for="chip in dateChips"
             :key="chip.iso"
@@ -189,10 +190,11 @@ function refreshAll() {
         </div>
 
         <div
-          class="flex items-center gap-1 rounded-lg border bg-background p-0.5"
+          class="flex items-center gap-1 rounded-md border bg-background p-0.5"
           role="group"
           aria-label="Modo de visualização"
         >
+          <!-- Modo em segmento compacto: alterna duas visões da mesma preparação. -->
           <button
             type="button"
             class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
@@ -236,26 +238,25 @@ function refreshAll() {
             <input
               v-model="expand"
               type="checkbox"
-              class="size-4 rounded border"
+              class="size-4 rounded border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             />
             Explodir até matéria-prima
           </label>
           <template v-if="mode === 'preparos' && visibleTickets.length">
-            <button
+            <UiButton
               type="button"
-              class="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               @click="openLabelsPreview('pesagem')"
             >
               <Icon name="lucide:printer" class="size-4" /> Etiquetas de pesagem
-            </button>
-            <button
+            </UiButton>
+            <UiButton
               type="button"
-              class="inline-flex min-h-11 items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              variant="outline"
               title="Identificação interna: nome, data prevista e validade configurada"
               @click="openLabelsPreview('preparo')"
             >
               <Icon name="lucide:tag" class="size-4" /> Identificação interna
-            </button>
+            </UiButton>
           </template>
         </div>
       </div>
@@ -270,24 +271,26 @@ function refreshAll() {
         </p>
         <div
           v-else-if="error && !lines.length"
-          class="grid place-items-center gap-2 rounded-lg border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
+          class="grid place-items-center gap-2 rounded-md border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
         >
           <Icon name="lucide:cloud-off" class="size-8 text-destructive/70" />
           <p class="text-base font-medium text-foreground">
             Não foi possível carregar a lista.
           </p>
-          <button
+          <UiButton
             type="button"
-            class="mt-1 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition hover:bg-accent"
+            class="mt-1"
+            variant="outline"
+            size="sm"
             @click="refresh()"
           >
             <Icon name="lucide:refresh-cw" class="size-4" /> Tentar de novo
-          </button>
+          </UiButton>
         </div>
 
         <div
           v-else-if="!lines.length"
-          class="grid place-items-center gap-2 rounded-lg border border-dashed py-16 text-center text-muted-foreground"
+          class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center text-muted-foreground"
         >
           <Icon name="lucide:scale" class="size-8" />
           <p class="text-base font-medium">Nada para separar nesta data.</p>
@@ -303,7 +306,7 @@ function refreshAll() {
             v-if="staleIngredients"
             role="status"
             aria-live="polite"
-            class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-amber-700 dark:text-amber-300"
+            class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
           >
             <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
             <span>Sem atualizar — mostrando a última lista carregada.</span>
@@ -318,7 +321,7 @@ function refreshAll() {
             <Icon name="lucide:scale" class="mt-0.5 size-4 shrink-0" />
             <span>{{ projection.yield_margin_note }}</span>
           </p>
-          <div class="overflow-hidden rounded-lg border">
+          <div class="overflow-hidden rounded-md border">
             <table class="w-full text-sm">
               <thead
                 class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground"
@@ -353,7 +356,7 @@ function refreshAll() {
                     <td class="px-3 py-2">
                       <input
                         type="checkbox"
-                        class="size-5 rounded border"
+                        class="size-5 rounded border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                         :checked="isChecked(line.sku)"
                         :aria-label="`Marcar ${line.name} como separado`"
                         @change="toggleChecked(line.sku)"
@@ -412,7 +415,7 @@ function refreshAll() {
                       <span
                         :class="
                           line.is_short
-                            ? 'font-semibold text-destructive dark:text-orange-400'
+                            ? 'font-semibold text-destructive'
                             : 'text-muted-foreground'
                         "
                       >
@@ -424,12 +427,13 @@ function refreshAll() {
                       </span>
                       <p
                         v-if="line.is_short"
-                        class="text-xs font-medium text-destructive dark:text-orange-400"
+                        class="text-xs font-medium text-destructive"
                       >
                         Falta
                       </p>
                     </td>
                     <td class="px-3 py-2 text-right">
+                      <!-- Disclosure de 32px vive dentro da célula e não compete com ações primárias. -->
                       <button
                         v-if="line.breakdown.length"
                         type="button"
@@ -506,24 +510,26 @@ function refreshAll() {
         </p>
         <div
           v-else-if="weighing.error.value && !weighing.tickets.value.length"
-          class="grid place-items-center gap-2 rounded-lg border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
+          class="grid place-items-center gap-2 rounded-md border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
         >
           <Icon name="lucide:cloud-off" class="size-8 text-destructive/70" />
           <p class="text-base font-medium text-foreground">
             Não foi possível carregar os preparos.
           </p>
-          <button
+          <UiButton
             type="button"
-            class="mt-1 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition hover:bg-accent"
+            class="mt-1"
+            variant="outline"
+            size="sm"
             @click="weighing.refresh()"
           >
             <Icon name="lucide:refresh-cw" class="size-4" /> Tentar de novo
-          </button>
+          </UiButton>
         </div>
 
         <div
           v-else-if="!weighing.tickets.value.length"
-          class="grid place-items-center gap-2 rounded-lg border border-dashed py-16 text-center text-muted-foreground"
+          class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center text-muted-foreground"
         >
           <Icon name="lucide:scale" class="size-8" />
           <p class="text-base font-medium">
@@ -541,7 +547,7 @@ function refreshAll() {
             v-if="staleWeighing"
             role="status"
             aria-live="polite"
-            class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-amber-700 dark:text-amber-300"
+            class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
           >
             <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
             <span
@@ -559,7 +565,7 @@ function refreshAll() {
             <article
               v-for="ticket in visibleTickets"
               :key="ticketIdentity(ticket)"
-              class="flex flex-col gap-2.5 rounded-lg border bg-card p-3 shadow-sm"
+              class="flex flex-col gap-2.5 rounded-md border bg-card p-3 shadow-sm"
             >
               <header class="flex items-start justify-between gap-2">
                 <div class="flex min-w-0 items-start gap-2">
@@ -591,15 +597,17 @@ function refreshAll() {
                     </p>
                   </div>
                 </div>
-                <button
+                <UiButton
                   type="button"
-                  class="grid size-11 shrink-0 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                  class="shrink-0"
+                  variant="outline"
+                  size="icon"
                   :aria-label="`Abrir etiquetas de pesagem de ${ticket.name}`"
                   :title="`Conferir etiquetas de ${ticket.name}`"
                   @click="openLabelsPreview('pesagem', ticketIdentity(ticket))"
                 >
                   <Icon name="lucide:printer" class="size-4" />
-                </button>
+                </UiButton>
               </header>
               <ul class="flex flex-col divide-y text-sm">
                 <li

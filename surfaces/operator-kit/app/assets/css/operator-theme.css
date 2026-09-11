@@ -55,7 +55,7 @@
   --destructive-foreground: #ffffff;
   --success: #3e7d44; /* verde-folha — confirmação/despacho/dinheiro */
   --success-foreground: #ffffff;
-  --warning: #c2701c; /* âmbar queimado — atenção/atrasando */
+  --warning: #9b5413; /* âmbar queimado — AA como texto inclusive sobre warning/10 */
   --warning-foreground: #ffffff;
   --info: #3f6e8c; /* azul-poeira — informação neutra */
   --info-foreground: #ffffff;
@@ -136,12 +136,11 @@
 /* ============================================================================
    <select> NATIVO — chevron próprio com respiro (pedido Pablo 2026-09-10)
 
-   Os apps de operador usam ~46 `<select>` nativos com classe ad hoc
-   (`h-9 rounded-md border bg-background px-2 text-sm`). Sem `appearance: none`
-   o navegador desenha a seta dele, colada na borda direita, e cada plataforma
-   desenha uma seta diferente. O `@tailwindcss/forms` roda em `strategy: "class"`
-   em todos os apps, então NADA estiliza o select nativo hoje — esta é a única
-   regra, num lugar só, sem tocar call site.
+   `UiNativeSelect` centraliza altura, fundo, borda e foco, mas preserva um
+   `<select>` real como raiz. Esta regra global continua sendo a única responsável
+   pelo chevron: sem `appearance: none`, cada navegador desenharia uma seta
+   diferente e colada na borda direita. O `@tailwindcss/forms` roda em
+   `strategy: "class"` em todos os apps, portanto não interfere aqui.
 
    Chevron: SVG inline em `background-image` (o `chevron-down` do Lucide, o mesmo
    do UiSelect do storefront — os apps de operador não têm UiSelect), 1rem, a
@@ -159,8 +158,8 @@
    passaria por baixo do chevron. Quem precisar de exceção usa `!pr-…`; quem
    não quiser o chevron (ex.: select em barra invertida) usa `bg-none`.
 
-   Fora do escopo, de propósito: `background-color`, borda, altura e raio
-   continuam do call site (`bg-background`/`bg-transparent`, `border`, `h-9`…).
+   Fora do escopo desta regra, de propósito: `background-color`, borda, altura e
+   raio pertencem ao `UiNativeSelect` (ou a uma exceção contextual do call site).
    `[multiple]`/`[size]` ficam de fora (listbox, sem seta). `option`/`optgroup`
    não são tocados: no dark o popup segue `color-scheme: dark` do app.
    ============================================================================ */

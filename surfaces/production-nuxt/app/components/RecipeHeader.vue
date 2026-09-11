@@ -46,14 +46,15 @@ const query = defineModel<string>("query", { default: "" });
           name="lucide:search"
           class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
         />
-        <input
+        <UiInput
           v-model="query"
           type="search"
           inputmode="search"
           placeholder="Buscar…"
-          class="h-9 w-32 rounded-md border bg-background pl-8 pr-7 text-sm outline-none transition focus:w-44 focus:ring-1 focus:ring-ring sm:w-40"
+          class="w-32 pl-8 pr-7 focus:w-44 sm:w-40"
           :aria-label="searchLabel || 'Buscar por nome, ref ou SKU'"
         />
+        <!-- Limpar ocupa o espaço reservado dentro do campo; é affordance do input, não botão de toolbar. -->
         <button
           v-if="query"
           type="button"
@@ -65,16 +66,17 @@ const query = defineModel<string>("query", { default: "" });
         </button>
       </div>
       <AlertsBell />
-      <button
+      <UiButton
         v-if="!hideRefresh"
         type="button"
-        class="grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
+        variant="outline"
+        size="icon-sm"
         aria-label="Atualizar"
         title="Atualizar"
         @click="emit('refresh')"
       >
         <Icon name="lucide:refresh-cw" class="size-4" :class="pending ? 'animate-spin' : ''" />
-      </button>
+      </UiButton>
     </div>
   </header>
 </template>

@@ -141,15 +141,14 @@ function submit() {
 
       <label v-else class="grid gap-1 text-sm">
         <span class="font-medium text-muted-foreground">Comanda de destino</span>
-        <select
+        <UiNativeSelect
           v-model="targetSessionKey"
-          class="h-9 rounded-md border bg-transparent px-3 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
           <option v-if="!targetOptions.length" value="" disabled>Nenhuma outra comanda aberta</option>
           <option v-for="option in targetOptions" :key="option.sessionKey" :value="option.sessionKey">
             {{ option.label }}
           </option>
-        </select>
+        </UiNativeSelect>
       </label>
 
       <UiDialogFooter>

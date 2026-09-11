@@ -4,6 +4,7 @@ import { mount } from "@vue/test-utils";
 
 import MiseEnPlacePage from "../../app/pages/mise-en-place.vue";
 import type { WeighingTicketProjection } from "../../app/types/production";
+import { UiButtonStub } from "../support/nativeUiStubs";
 
 const tickets = ref<WeighingTicketProjection[]>([]);
 const printSpy = vi.fn();
@@ -93,6 +94,7 @@ const stubs = {
   Icon: true,
   NuxtLink: { template: "<a><slot /></a>" },
   UiBadge: { template: "<span><slot /></span>" },
+  UiButton: UiButtonStub,
   WeighingLabels: {
     props: ["printMode", "labels", "tickets"],
     template: `

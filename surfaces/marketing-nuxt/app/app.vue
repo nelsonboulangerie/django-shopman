@@ -126,10 +126,12 @@ watch(sessionState, async (next, previous) => {
 
       <OperatorLogin
         v-else-if="sessionState === 'expired' || !canIdentify"
+        role="main"
         :expired="sessionState === 'expired'"
+        :reload-on-success="false"
       />
       <OperatorLock v-else :perm="OPERATOR_PERM" />
-      <UiSonner />
+      <OperatorSonner />
     </div>
   </NuxtPage>
 </template>

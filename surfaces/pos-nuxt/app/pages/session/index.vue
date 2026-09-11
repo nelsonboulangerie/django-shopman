@@ -599,13 +599,13 @@ async function confirmClose() {
                       </label>
                       <label class="grid gap-1.5 text-sm">
                         <span class="font-medium text-muted-foreground">Como</span>
-                        <select v-model="settleMethod" class="h-10 rounded-md border bg-background px-3 text-sm" aria-label="Método do acerto">
+                        <UiNativeSelect v-model="settleMethod" aria-label="Método do acerto">
                           <option value="cash">Dinheiro</option>
                           <option value="pix">Pix</option>
                           <option value="credit">Crédito</option>
                           <option value="debit">Débito</option>
                           <option value="external">Outro</option>
-                        </select>
+                        </UiNativeSelect>
                       </label>
                       <div class="flex gap-2">
                         <UiButton size="sm" variant="outline" :disabled="busy" @click="settleCustomerRef = null">Cancelar</UiButton>

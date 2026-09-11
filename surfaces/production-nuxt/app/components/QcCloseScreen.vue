@@ -502,7 +502,7 @@ onMounted(() => window.addEventListener("keydown", onKeydown));
 onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 
 const fieldCard =
-  "flex h-24 flex-col justify-between rounded-lg border bg-card p-3 text-left transition";
+  "flex h-24 flex-col justify-between rounded-md border bg-card p-3 text-left transition";
 </script>
 
 <template>
@@ -511,14 +511,14 @@ const fieldCard =
     data-production-shortcut-scope="exclusive"
   >
     <header class="flex h-14 shrink-0 items-center justify-between gap-3">
-      <button
+      <UiButton
         type="button"
-        class="flex items-center gap-1 rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
+        variant="outline"
         @click="requestBack"
       >
         <Icon name="lucide:chevron-left" class="size-4" />
         Voltar
-      </button>
+      </UiButton>
       <div class="min-w-0 text-center">
         <p class="truncate text-base font-semibold">{{ title }}</p>
         <p class="truncate text-xs text-muted-foreground">
@@ -596,10 +596,11 @@ const fieldCard =
               class="pointer-events-none absolute inset-y-0 left-0 z-30 w-1.5"
               :class="gradeBandClass(grade, grades)"
             />
+            <!-- O cartão divide quantidade e motivo em dois alvos grandes; não cabe na anatomia do UiButton. -->
             <button
               type="button"
               :data-grade-ref="grade.ref"
-              class="absolute inset-0 z-0 w-full text-left transition hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              class="absolute inset-0 z-0 w-full text-left transition hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50"
               :aria-label="`${grade.label}: ${gradeQuantity(grade.ref)} unidades${grade.ref === defaultRef && anchor.anchor !== null ? ', saldo' : ''}`"
               :aria-pressed="gradeQuantity(grade.ref) > 0"
               @click="pickGrade(grade)"
@@ -630,7 +631,7 @@ const fieldCard =
             <button
               v-if="mode === 'correct' && gradeNeedsReason(grade)"
               type="button"
-              class="relative z-20 mb-2 ml-3 mr-2 mt-14 flex h-11 w-[calc(100%-1.25rem)] items-center justify-between gap-2 rounded-md border bg-background px-3 text-left text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+              class="relative z-20 mb-2 ml-3 mr-2 mt-14 flex h-11 w-[calc(100%-1.25rem)] items-center justify-between gap-2 rounded-md border bg-background px-3 text-left text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-offset-1"
               :aria-label="`Editar motivo de ${grade.label}: ${
                 defectLabel(gradeDefectRefs[grade.ref] ?? '') || 'não informado'
               }`"
@@ -658,9 +659,10 @@ const fieldCard =
             'bg-destructive/10': activeTarget?.kind === 'loss',
           }"
         >
+          <!-- Perda replica a geometria dos graus para não trocar o gesto do operador. -->
           <button
             type="button"
-            class="absolute inset-0 z-0 w-full text-left transition hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-destructive"
+            class="absolute inset-0 z-0 w-full text-left transition hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-destructive/50"
             :aria-label="`Perda: ${lossQuantity} unidades`"
             @click="pickLoss"
           >
@@ -690,7 +692,7 @@ const fieldCard =
           <button
             v-if="mode === 'correct' && lossQuantity > 0"
             type="button"
-            class="relative z-20 mx-2 mb-2 mt-14 flex h-11 w-[calc(100%-1rem)] items-center justify-between gap-2 rounded-md border bg-background px-3 text-left text-xs font-medium text-muted-foreground transition hover:bg-destructive/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive focus-visible:ring-offset-1"
+            class="relative z-20 mx-2 mb-2 mt-14 flex h-11 w-[calc(100%-1rem)] items-center justify-between gap-2 rounded-md border bg-background px-3 text-left text-xs font-medium text-muted-foreground transition hover:bg-destructive/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-destructive/50 focus-visible:ring-offset-1"
             :aria-label="`Editar motivo da perda: ${
               defectLabel(lossDefectRef) || 'não informado'
             }`"
@@ -705,9 +707,10 @@ const fieldCard =
       </div>
     </div>
 
-    <button
+    <UiButton
       type="button"
-      class="mt-4 h-14 shrink-0 rounded-lg bg-primary text-lg font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
+      class="mt-4 shrink-0 text-lg"
+      size="lg"
       :disabled="
         submitting || submitLatched || (mode === 'correct' && !isDirty)
       "
@@ -724,7 +727,7 @@ const fieldCard =
             ? "Salvar correção"
             : "Confirmar"
       }}
-    </button>
+    </UiButton>
 
     <UiSheet
       :open="sheetQuestion !== null"
@@ -747,35 +750,39 @@ const fieldCard =
               <span class="font-medium">
                 Por que a contagem ficou acima da fornada iniciada?
               </span>
-              <textarea
+              <UiTextarea
                 v-model="overshootReason"
-                rows="3"
-                maxlength="500"
+                :rows="3"
+                :maxlength="500"
                 required
-                class="rounded-md border bg-background px-3 py-2"
+                class="bg-background"
                 aria-label="Motivo da quantidade acima da fornada produzida"
                 placeholder="Ex.: contagem conferida e unidades menores que o padrão"
               />
             </label>
             <div class="grid grid-cols-2 gap-2">
-              <button
+              <UiButton
                 type="button"
-                class="rounded-md border px-3 py-4 text-base font-medium transition hover:bg-accent active:translate-y-px"
+                class="h-auto min-h-14 whitespace-normal text-base"
+                variant="outline"
+                size="lg"
                 @click="fixOvershoot"
               >
                 Corrigir
-              </button>
-              <button
+              </UiButton>
+              <UiButton
                 type="button"
-                class="rounded-md border border-transparent bg-primary px-3 py-4 text-base font-semibold text-primary-foreground transition hover:bg-primary/90 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
+                class="h-auto min-h-14 whitespace-normal text-base"
+                size="lg"
                 :disabled="!overshootReason.trim()"
                 @click="confirmOvershoot"
               >
                 Confirmar {{ total }} unidades
-              </button>
+              </UiButton>
             </div>
           </div>
           <div v-else class="grid grid-cols-2 gap-2 px-4 pb-6 sm:grid-cols-3">
+            <!-- Motivos são tiles de escolha com título e explicação, não botões textuais genéricos. -->
             <button
               v-for="defect in activeDefects"
               :key="defect.ref"

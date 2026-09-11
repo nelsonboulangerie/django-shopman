@@ -567,10 +567,10 @@ function submit() {
         <label for="rule-trigger" class="mb-1 block text-sm font-medium"
           >Quando acontecer</label
         >
-        <select
+        <UiNativeSelect
           id="rule-trigger"
           v-model="trigger"
-          class="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+          class="w-full"
         >
           <option
             v-for="choice in triggers"
@@ -579,17 +579,17 @@ function submit() {
           >
             {{ choice.label }}
           </option>
-        </select>
+        </UiNativeSelect>
       </div>
 
       <div>
         <label for="rule-template" class="mb-1 block text-sm font-medium"
           >Usar o modelo</label
         >
-        <select
+        <UiNativeSelect
           id="rule-template"
           v-model="templateId"
-          class="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+          class="w-full"
         >
           <option
             v-for="template in templates"
@@ -598,7 +598,7 @@ function submit() {
           >
             {{ template.name }}
           </option>
-        </select>
+        </UiNativeSelect>
         <p
           v-if="templates.length === 0"
           class="mt-1 text-xs text-muted-foreground"
@@ -632,16 +632,16 @@ function submit() {
       <label for="rule-offer" class="mb-1 block text-sm font-medium"
         >Anunciar a oferta</label
       >
-      <select
+      <UiNativeSelect
         id="rule-offer"
         v-model="promotionRef"
-        class="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+        class="w-full"
       >
         <option value="">Nenhuma — só contar a novidade</option>
         <option v-for="offer in offers" :key="offer.value" :value="offer.value">
           {{ offer.label }}
         </option>
-      </select>
+      </UiNativeSelect>
       <p class="mt-1 text-xs text-muted-foreground">
         Com oferta, quem toca no link já recebe a sacola montada.
       </p>
@@ -934,14 +934,14 @@ function submit() {
           >
             Quando houver vários critérios
           </label>
-          <select
+          <UiNativeSelect
             id="rule-audience-match"
             v-model="audienceMatch"
-            class="h-8 rounded-md border border-border bg-background px-2 text-sm"
+            class="w-auto"
           >
             <option value="any">Atender a qualquer um</option>
             <option value="all">Atender a todos</option>
-          </select>
+          </UiNativeSelect>
         </div>
 
         <fieldset v-if="tags?.length">

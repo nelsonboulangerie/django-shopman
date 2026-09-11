@@ -77,8 +77,6 @@ const strikeByWeekday = computed(() =>
   Object.fromEntries((report.value?.beverage.by_weekday ?? []).map((c) => [c.weekday, c])),
 );
 
-const selectClass =
-  "h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground";
 const thClass = "whitespace-nowrap pb-2 pl-2 text-right text-xs font-medium text-muted-foreground";
 const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-foreground";
 </script>
@@ -96,25 +94,23 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
       </div>
       <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
         Dia da semana
-        <select
+        <UiNativeSelect
           :value="filters.weekday"
-          :class="selectClass"
           @change="apply({ weekday: ($event.target as HTMLSelectElement).value })"
         >
           <option value="">Todos</option>
           <option v-for="(label, index) in WEEKDAY_LABELS" :key="label" :value="String(index)">{{ label }}</option>
-        </select>
+        </UiNativeSelect>
       </label>
       <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
         Faixa de hora
-        <select
+        <UiNativeSelect
           :value="filters.hour_band"
-          :class="selectClass"
           @change="apply({ hour_band: ($event.target as HTMLSelectElement).value })"
         >
           <option value="">Todas</option>
           <option v-for="band in bandOptions" :key="band.key" :value="band.key">{{ band.title }}</option>
-        </select>
+        </UiNativeSelect>
       </label>
     </section>
 
@@ -274,9 +270,9 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
           </div>
           <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
             Leitura
-            <select v-model="matrixReading" :class="selectClass">
+            <UiNativeSelect v-model="matrixReading">
               <option v-for="reading in report.readings" :key="reading.key" :value="reading.key">{{ reading.label }}</option>
-            </select>
+            </UiNativeSelect>
           </label>
         </div>
         <div class="overflow-x-auto">

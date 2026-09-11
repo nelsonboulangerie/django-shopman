@@ -77,16 +77,16 @@ const description = computed(() =>
       <p v-if="loading" class="text-sm text-muted-foreground">Carregando motivos do iFood…</p>
 
       <!-- Marketplace (iFood): coded reason picker from the provider's live list -->
-      <select
+      <UiNativeSelect
         v-else-if="isMarketplace"
         v-model="code"
-        class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+        class="w-full"
         aria-label="Motivo exigido pelo iFood"
         @change="onCodeChange"
       >
         <option value="" disabled>Selecione o motivo…</option>
         <option v-for="r in reasons" :key="r.code" :value="r.code">{{ r.description }}</option>
-      </select>
+      </UiNativeSelect>
 
       <!-- Other channels: one-tap presets (Admin/Unfold) + free text -->
       <template v-else>

@@ -16,7 +16,7 @@
 // operador entra aqui, e `app.vue` escolhe este shell ANTES de qualquer fetch.
 // Sem <OfflineBanner>: o display não depende da rede (o canal é local ao
 // navegador), e "tentando reconectar" na parede seria um aviso ao cliente sobre
-// nada. Sem <UiSonner>: toast é feedback de gesto, e aqui ninguém gesticula.
+// nada. Sem <OperatorSonner>: toast é feedback de gesto, e aqui ninguém gesticula.
 </script>
 
 <template>

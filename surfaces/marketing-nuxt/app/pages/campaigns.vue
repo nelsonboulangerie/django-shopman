@@ -450,21 +450,19 @@ useHead({ title: "Campanhas · Marketing" });
           </label>
           <label class="grid gap-1 text-sm font-medium">
             Situação
-            <select
+            <UiNativeSelect
               :value="stateFilter"
-              class="min-h-11 rounded-md border-border bg-background text-sm"
               @change="changeState"
             >
               <option value="">Todas</option>
               <option value="active">Ligadas</option>
               <option value="inactive">Desligadas</option>
-            </select>
+            </UiNativeSelect>
           </label>
           <label class="grid gap-1 text-sm font-medium">
             Plataforma
-            <select
+            <UiNativeSelect
               :value="platformFilter"
-              class="min-h-11 rounded-md border-border bg-background text-sm"
               @change="changePlatform"
             >
               <option value="">Todas</option>
@@ -475,7 +473,7 @@ useHead({ title: "Campanhas · Marketing" });
               >
                 {{ platform.label }}
               </option>
-            </select>
+            </UiNativeSelect>
           </label>
         </div>
       </section>

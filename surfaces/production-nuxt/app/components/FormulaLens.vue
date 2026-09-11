@@ -43,7 +43,7 @@ function rangeLabel(metric: { low_display: string; high_display: string; max_dis
 
     <div
       v-else-if="!lens"
-      class="grid place-items-center gap-1 rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground"
+      class="grid place-items-center gap-1 rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground"
     >
       <Icon name="lucide:scale" class="size-6" />
       <p>Sem prévia ainda. Adicione ingredientes para a lente calcular.</p>
@@ -84,7 +84,7 @@ function rangeLabel(metric: { low_display: string; high_display: string; max_dis
       </ul>
 
       <!-- Tabela g / % -->
-      <div class="overflow-hidden rounded-lg border">
+      <div class="overflow-hidden rounded-md border">
         <table class="w-full text-sm">
           <thead class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
@@ -107,7 +107,7 @@ function rangeLabel(metric: { low_display: string; high_display: string; max_dis
                 <p class="font-medium" :class="item.is_anchor ? 'text-primary' : ''">{{ item.name || item.sku }}</p>
                 <p class="text-xs text-muted-foreground">
                   <span v-if="item.sku" class="font-mono">{{ item.sku }}</span>
-                  <span v-else class="text-amber-700 dark:text-amber-300">Sem insumo casado</span>
+                  <span v-else class="text-warning">Sem insumo casado</span>
                 </p>
               </td>
               <td class="hidden px-3 py-2 text-muted-foreground sm:table-cell">{{ item.role_label }}</td>
@@ -132,8 +132,8 @@ function rangeLabel(metric: { low_display: string; high_display: string; max_dis
         <div
           v-for="metric in lens.metrics"
           :key="metric.code"
-          class="rounded-lg border p-3"
-          :class="metric.tone === 'warning' ? 'border-amber-500/40 bg-amber-500/5' : 'bg-card'"
+          class="rounded-md border p-3"
+          :class="metric.tone === 'warning' ? 'border-warning/40 bg-warning/10' : 'bg-card'"
         >
           <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">{{ metric.label }}</p>
           <p class="mt-1 text-xl font-bold tabular-nums" :class="toneClass(metric.tone)">
@@ -141,14 +141,14 @@ function rangeLabel(metric: { low_display: string; high_display: string; max_dis
           </p>
           <p v-if="rangeLabel(metric)" class="text-xs text-muted-foreground">
             Referência {{ rangeLabel(metric) }}
-            <span v-if="metric.tone === 'warning'" class="ml-1 text-amber-700 dark:text-amber-300">fora da faixa</span>
+            <span v-if="metric.tone === 'warning'" class="ml-1 text-warning">fora da faixa</span>
           </p>
           <p v-if="metric.note" class="mt-0.5 text-xs text-muted-foreground">{{ metric.note }}</p>
         </div>
       </div>
 
       <!-- Partes -->
-      <div v-if="showParts" class="overflow-hidden rounded-lg border">
+      <div v-if="showParts" class="overflow-hidden rounded-md border">
         <p class="border-b bg-muted/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Partes
         </p>
@@ -165,7 +165,7 @@ function rangeLabel(metric: { low_display: string; high_display: string; max_dis
             </span>
             <span v-if="part.quantity_display" class="tabular-nums text-muted-foreground">{{ part.quantity_display }}</span>
             <span v-if="part.cap_pct_display" class="tabular-nums text-muted-foreground">teto {{ part.cap_pct_display }}</span>
-            <span v-if="part.sku && !part.has_formula" class="text-xs text-amber-700 dark:text-amber-300">
+            <span v-if="part.sku && !part.has_formula" class="text-xs text-warning">
               sem fórmula publicada
             </span>
           </li>
@@ -173,7 +173,7 @@ function rangeLabel(metric: { low_display: string; high_display: string; max_dis
       </div>
 
       <!-- Mistura final (calculada, nunca digitada) -->
-      <div v-if="showFinalMix" class="overflow-hidden rounded-lg border">
+      <div v-if="showFinalMix" class="overflow-hidden rounded-md border">
         <p class="border-b bg-muted/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Mistura final
         </p>
@@ -189,7 +189,7 @@ function rangeLabel(metric: { low_display: string; high_display: string; max_dis
       </div>
 
       <!-- BOM: o que a ficha de execução recebe -->
-      <div v-if="showBom" class="overflow-hidden rounded-lg border">
+      <div v-if="showBom" class="overflow-hidden rounded-md border">
         <p class="border-b bg-muted/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Ficha técnica (BOM)
         </p>

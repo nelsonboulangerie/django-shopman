@@ -555,10 +555,11 @@ const headerCount = computed(() => {
     <section class="min-h-0 flex-1 overflow-auto p-3 md:p-4">
       <div class="mb-3 flex flex-wrap items-center gap-3">
         <div
-          class="flex items-center gap-1 rounded-lg border bg-background p-0.5"
+          class="flex items-center gap-1 rounded-md border bg-background p-0.5"
           role="group"
           aria-label="Data"
         >
+          <!-- Seletor segmentado de data; mantém três escolhas no mesmo gesto compacto. -->
           <button
             type="button"
             class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
@@ -610,10 +611,10 @@ const headerCount = computed(() => {
         <span class="text-sm text-muted-foreground">{{
           fullDateLabel(selectedDate)
         }}</span>
-        <select
+        <UiNativeSelect
           v-if="baseOptions.length"
           v-model="baseFilter"
-          class="ml-auto h-9 rounded-md border bg-background px-2 text-sm text-muted-foreground outline-none focus:ring-1 focus:ring-ring"
+          class="ml-auto w-auto"
           aria-label="Filtrar por ficha-base"
         >
           <option value="">Todas as bases</option>
@@ -624,7 +625,7 @@ const headerCount = computed(() => {
           >
             {{ base.name }} ({{ base.count }})
           </option>
-        </select>
+        </UiNativeSelect>
       </div>
 
       <p v-if="display === 'loading'" class="text-sm text-muted-foreground">
@@ -634,20 +635,22 @@ const headerCount = computed(() => {
       <!-- Erro só toma a tela quando NÃO há dado nenhum a mostrar (acolhedor, não tela branca). -->
       <div
         v-else-if="display === 'error'"
-        class="grid place-items-center gap-2 rounded-lg border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
+        class="grid place-items-center gap-2 rounded-md border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
       >
         <Icon name="lucide:cloud-off" class="size-8 text-destructive/70" />
         <p class="text-base font-medium text-foreground">
           Não foi possível carregar o quadro.
         </p>
         <p class="text-sm">Estamos tentando reconectar sozinhos.</p>
-        <button
+        <UiButton
           type="button"
-          class="mt-1 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition hover:bg-accent"
+          class="mt-1"
+          variant="outline"
+          size="sm"
           @click="refresh()"
         >
           <Icon name="lucide:refresh-cw" class="size-4" /> Tentar de novo
-        </button>
+        </UiButton>
       </div>
 
       <template v-else>
@@ -656,7 +659,7 @@ const headerCount = computed(() => {
           v-if="stale"
           role="status"
           aria-live="polite"
-          class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-amber-700 dark:text-amber-300"
+          class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
         >
           <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
           <span>Sem atualizar — mostrando o último quadro carregado.</span>
@@ -664,7 +667,7 @@ const headerCount = computed(() => {
 
         <div
           v-if="!stageRows.length"
-          class="grid place-items-center gap-2 rounded-lg border border-dashed py-16 text-center text-muted-foreground"
+          class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center text-muted-foreground"
         >
           <Icon name="lucide:layout-grid" class="size-8" />
           <p class="text-base font-medium">{{ emptyCopy.text }}</p>
@@ -677,7 +680,7 @@ const headerCount = computed(() => {
           </NuxtLink>
         </div>
 
-        <div v-else class="overflow-hidden rounded-lg border">
+        <div v-else class="overflow-hidden rounded-md border">
           <table class="w-full text-sm">
             <thead
               class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground"
@@ -710,6 +713,7 @@ const headerCount = computed(() => {
                     class="flex items-center gap-1.5 text-xs text-muted-foreground"
                   >
                     <span class="truncate">{{ row.output_sku }}</span>
+                    <!-- Chip abre os pedidos comprometidos sem transformar a célula inteira em ação. -->
                     <button
                       v-if="rowCommittedUnits(row) > 0"
                       type="button"
@@ -725,6 +729,7 @@ const headerCount = computed(() => {
 
                 <!-- Coluna de LEITURA -->
                 <td v-if="lens.read.visible" class="px-3 py-1.5 text-right">
+                  <!-- Células numéricas são alvos de grade, com geometria própria de tabela. -->
                   <button
                     v-if="stage === 'plan' && row.suggestion"
                     type="button"
@@ -756,6 +761,7 @@ const headerCount = computed(() => {
 
                 <!-- Coluna de AÇÃO (verbo no cabeçalho; valor atual + gesto) -->
                 <td v-if="lens.action.visible" class="px-3 py-1.5 text-right">
+                  <!-- A célula acionável preserva alinhamento e alvo de toque do quadro produtivo. -->
                   <button
                     v-if="actionEnabled(row)"
                     type="button"
@@ -853,6 +859,7 @@ const headerCount = computed(() => {
           <p class="text-sm text-muted-foreground">
             Selecione a fornada exata que deseja ajustar.
           </p>
+          <!-- Tile de fornada carrega referência e quantidade; é seleção de registro, não CTA. -->
           <button
             v-for="workOrder in planRow.planned_orders"
             :key="workOrder.pk"
@@ -888,6 +895,7 @@ const headerCount = computed(() => {
           v-if="!planRow?.planned_orders.length || selectedPlannedOrder"
           class="flex items-center gap-2"
         >
+          <!-- Stepper de 48px cerca o número central para operação rápida no tablet. -->
           <button
             type="button"
             class="grid size-12 shrink-0 place-items-center rounded-md border text-xl font-bold transition hover:bg-accent"
@@ -902,7 +910,7 @@ const headerCount = computed(() => {
             v-model="planQty"
             type="text"
             inputmode="decimal"
-            class="h-12 w-full rounded-md border bg-background text-center text-3xl font-bold tabular-nums outline-none focus:ring-1 focus:ring-ring"
+            class="h-12 w-full rounded-md border bg-background text-center text-3xl font-bold tabular-nums outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
             :readonly="planSource === 'suggested'"
             aria-label="Quantidade planejada"
             @keydown.enter.prevent="confirmPlan()"
@@ -918,14 +926,14 @@ const headerCount = computed(() => {
           </button>
         </div>
         <UiDialogFooter>
-          <button
+          <UiButton
             type="button"
-            class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
+            variant="outline"
             @click="planRow = null"
           >
             Cancelar
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             type="button"
             :disabled="
               !planQty.trim() ||
@@ -934,7 +942,6 @@ const headerCount = computed(() => {
               planSubmitting ||
               (!!planRow?.planned_orders.length && !selectedPlannedOrder)
             "
-            class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             aria-keyshortcuts="Enter"
             @click="confirmPlan()"
           >
@@ -945,7 +952,7 @@ const headerCount = computed(() => {
                   ? "Confirmar novo lote"
                   : "Confirmar"
             }}
-          </button>
+          </UiButton>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>
@@ -984,6 +991,7 @@ const headerCount = computed(() => {
           <p class="text-sm text-muted-foreground">
             Selecione a fornada exata que deseja confirmar como produzida.
           </p>
+          <!-- Tile de fornada carrega referência e quantidade; é seleção de registro, não CTA. -->
           <button
             v-for="workOrder in startRow.planned_orders"
             :key="workOrder.pk"
@@ -1002,6 +1010,7 @@ const headerCount = computed(() => {
           {{ selectedStartOrder.rev }}
         </p>
         <div v-if="selectedStartOrder" class="flex items-center gap-2">
+          <!-- Stepper de 48px cerca o número central para operação rápida no tablet. -->
           <button
             type="button"
             class="grid size-12 shrink-0 place-items-center rounded-md border text-xl font-bold transition hover:bg-accent"
@@ -1015,7 +1024,7 @@ const headerCount = computed(() => {
             v-model="startQty"
             type="text"
             inputmode="decimal"
-            class="h-12 w-full rounded-md border bg-background text-center text-3xl font-bold tabular-nums outline-none focus:ring-1 focus:ring-ring"
+            class="h-12 w-full rounded-md border bg-background text-center text-3xl font-bold tabular-nums outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
             aria-label="Quantidade produzida"
             @keydown.enter.prevent="confirmStart()"
           />
@@ -1029,24 +1038,23 @@ const headerCount = computed(() => {
           </button>
         </div>
         <UiDialogFooter>
-          <button
+          <UiButton
             type="button"
-            class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
+            variant="outline"
             @click="startRow = null"
           >
             Cancelar
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             type="button"
             :disabled="
               startSubmitting || !startQty.trim() || !selectedStartOrder
             "
-            class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             aria-keyshortcuts="Enter"
             @click="confirmStart()"
           >
             {{ startSubmitting ? "Confirmando…" : "Confirmar" }}
-          </button>
+          </UiButton>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>
@@ -1087,6 +1095,7 @@ const headerCount = computed(() => {
           "
           class="grid gap-2"
         >
+          <!-- Tile de fornada carrega referência e quantidade; é seleção de registro, não CTA. -->
           <button
             v-for="workOrder in startedRow.started_orders"
             :key="workOrder.pk"
@@ -1126,21 +1135,22 @@ const headerCount = computed(() => {
               {{ elapsedLabel(startedCard.elapsed_seconds) }}
             </span>
           </div>
-          <button
+          <UiButton
             v-if="startedCard.next_step_name"
             type="button"
-            class="inline-flex items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
+            variant="outline"
             @click="advanceStep()"
           >
             <Icon name="lucide:arrow-right" class="size-4" /> Avançar para
             {{ startedCard.next_step_name }}
-          </button>
+          </UiButton>
         </div>
 
-        <button
+        <UiButton
           v-if="startedRow && startedRow.planned_orders.length"
           type="button"
-          class="inline-flex items-center justify-center gap-1.5 rounded-md border border-dashed px-3 py-2 text-sm font-medium transition hover:bg-accent"
+          class="border-dashed"
+          variant="outline"
           @click="startNextBatch()"
         >
           <Icon name="lucide:plus" class="size-4" /> Confirmar próximo lote
@@ -1150,46 +1160,47 @@ const headerCount = computed(() => {
           <template v-else>
             ({{ startedRow.planned_orders.length }} fornadas)
           </template>
-        </button>
+        </UiButton>
 
         <div v-if="voidConfirming" class="flex flex-col gap-2">
           <p
-            class="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-2.5 text-sm text-amber-700 dark:text-amber-300"
+            class="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-2.5 text-sm text-warning"
           >
             <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0" />
             <span
               >A ordem sai do processo e o vínculo com pedidos é desfeito.</span
             >
           </p>
-          <textarea
+          <UiTextarea
             v-model="voidReason"
-            rows="2"
+            :rows="2"
             placeholder="Motivo do estorno…"
-            class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
             aria-label="Motivo do estorno"
           />
         </div>
 
         <UiDialogFooter class="gap-2">
-          <button
+          <UiButton
             v-if="selectedStartedOrder && !voidConfirming"
             type="button"
-            class="mr-auto rounded-md border px-3 py-2 text-sm font-medium text-destructive transition hover:bg-destructive/10 dark:text-orange-300"
+            class="mr-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+            variant="outline"
             @click="voidConfirming = true"
           >
             Estornar…
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             v-else-if="selectedStartedOrder"
             type="button"
-            class="mr-auto rounded-md border border-transparent bg-destructive px-3 py-2 text-sm font-semibold text-white transition hover:bg-destructive/90"
+            class="mr-auto"
+            variant="destructive"
             @click="confirmVoid()"
           >
             Confirmar estorno
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             type="button"
-            class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
+            variant="outline"
             @click="
               startedRow = null;
               selectedStartedPk = null;
@@ -1197,13 +1208,13 @@ const headerCount = computed(() => {
             "
           >
             Fechar
-          </button>
-          <NuxtLink
+          </UiButton>
+          <UiButton
             to="/expedite"
-            class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
+            variant="outline"
           >
             Expedição →
-          </NuxtLink>
+          </UiButton>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>
@@ -1251,13 +1262,13 @@ const headerCount = computed(() => {
           </li>
         </ul>
         <UiDialogFooter>
-          <button
+          <UiButton
             type="button"
-            class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
+            variant="outline"
             @click="commitmentsRow = null"
           >
             Fechar
-          </button>
+          </UiButton>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>
@@ -1300,21 +1311,21 @@ const headerCount = computed(() => {
           margem padrão.
         </p>
         <UiDialogFooter>
-          <button
+          <UiButton
             v-if="stage === 'plan' && access?.can_edit_suggested"
             type="button"
-            class="mr-auto rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
+            class="mr-auto"
             @click="planFromExplanation()"
           >
             Planejar esta sugestão
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             type="button"
-            class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
+            variant="outline"
             @click="explaining = null"
           >
             Fechar
-          </button>
+          </UiButton>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>

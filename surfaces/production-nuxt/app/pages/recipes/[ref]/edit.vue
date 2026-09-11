@@ -273,8 +273,6 @@ async function startDraft() {
   if (result.ok && result.version) await navigateTo(`/recipes/${entryRef}/edit?v=${result.version.number}`, { replace: true });
 }
 
-const inputClass = "h-9 w-full rounded-md border bg-background px-2 text-sm text-foreground outline-none transition focus:ring-1 focus:ring-ring";
-const selectClass = "h-9 rounded-md border bg-background px-2 text-sm text-foreground";
 </script>
 
 <template>
@@ -287,31 +285,32 @@ const selectClass = "h-9 rounded-md border bg-background px-2 text-sm text-foreg
     >
       <template #actions>
         <template v-if="draft && canEdit">
-          <button
+          <UiButton
             type="button"
-            class="inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-sm font-medium transition hover:bg-accent disabled:opacity-50"
+            variant="outline"
+            size="sm"
             :disabled="busy"
             @click="save"
           >
             <Icon name="lucide:save" class="size-4" />
             <span class="hidden sm:inline">Salvar rascunho</span>
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             type="button"
-            class="inline-flex h-9 items-center gap-1.5 rounded-md border border-transparent bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+            size="sm"
             :disabled="busy || unmatchedCount > 0 || !entry?.output_sku"
             :title="!entry?.output_sku ? 'Associe um SKU na receita antes de publicar' : unmatchedCount ? 'Case todos os ingredientes antes de publicar' : ''"
             @click="saveAndPublish"
           >
             <Icon name="lucide:check" class="size-4" />
             <span class="hidden sm:inline">Salvar e publicar</span>
-          </button>
+          </UiButton>
         </template>
       </template>
     </RecipeHeader>
 
     <section v-if="forbidden || (!pending && entry && !canEdit)" class="grid flex-1 place-items-center p-6 text-center">
-      <div class="grid max-w-md gap-2 rounded-lg border border-dashed p-10">
+      <div class="grid max-w-md gap-2 rounded-md border border-dashed p-10">
         <Icon name="lucide:lock" class="mx-auto size-8 text-muted-foreground" />
         <p class="text-base font-semibold">Só leitura</p>
         <p class="text-sm text-muted-foreground">Editar receitas pede a permissão de gestão da produção.</p>
@@ -320,7 +319,7 @@ const selectClass = "h-9 rounded-md border bg-background px-2 text-sm text-foreg
     </section>
 
     <section v-else-if="notFound" class="grid flex-1 place-items-center p-6 text-center">
-      <div class="grid max-w-md gap-2 rounded-lg border border-dashed p-10">
+      <div class="grid max-w-md gap-2 rounded-md border border-dashed p-10">
         <Icon name="lucide:book-x" class="mx-auto size-8 text-muted-foreground" />
         <p class="text-base font-semibold">Receita não encontrada</p>
         <NuxtLink to="/recipes" class="mt-1 text-sm text-primary underline-offset-2 hover:underline">Voltar ao inventário</NuxtLink>
@@ -332,37 +331,40 @@ const selectClass = "h-9 rounded-md border bg-background px-2 text-sm text-foreg
 
       <div
         v-else-if="error && !entry"
-        class="grid place-items-center gap-2 rounded-lg border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
+        class="grid place-items-center gap-2 rounded-md border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
       >
         <Icon name="lucide:cloud-off" class="size-8 text-destructive/70" />
         <p class="text-base font-medium text-foreground">Não foi possível carregar a receita.</p>
-        <button
+        <UiButton
           type="button"
-          class="mt-1 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition hover:bg-accent"
+          class="mt-1"
+          variant="outline"
+          size="sm"
           @click="refresh()"
         >
           <Icon name="lucide:refresh-cw" class="size-4" /> Tentar de novo
-        </button>
+        </UiButton>
       </div>
 
       <div
         v-else-if="entry && !draft"
-        class="grid place-items-center gap-2 rounded-lg border border-dashed py-16 text-center text-muted-foreground"
+        class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center text-muted-foreground"
       >
         <Icon name="lucide:pencil-line" class="size-8" />
         <p class="text-base font-medium text-foreground">
           {{ requestedNotDraft ? "Essa versão já foi publicada e não se edita." : "Sem rascunho para editar." }}
         </p>
         <p class="text-sm">Uma nova versão copia a mais recente em rascunho; a publicada continua intacta.</p>
-        <button
+        <UiButton
           v-if="!entry.is_archived"
           type="button"
-          class="mt-1 inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+          class="mt-1"
+          size="sm"
           :disabled="busy"
           @click="startDraft"
         >
           <Icon name="lucide:copy-plus" class="size-4" /> Nova versão
-        </button>
+        </UiButton>
       </div>
 
       <div v-else-if="entry && draft" class="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(20rem,2fr)]">
@@ -371,54 +373,56 @@ const selectClass = "h-9 rounded-md border bg-background px-2 text-sm text-foreg
           <p v-if="saveError" class="rounded-md border border-destructive/30 px-3 py-2 text-sm text-destructive">{{ saveError }}</p>
 
           <!-- Rendimento, âncora, o que mudou -->
-          <div class="grid gap-3 rounded-lg border bg-card p-3 sm:grid-cols-[auto_auto_1fr]">
+          <div class="grid gap-3 rounded-md border bg-card p-3 sm:grid-cols-[auto_auto_1fr]">
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Rendimento
               <span class="flex items-center gap-1">
-                <input v-model="yieldQuantity" type="text" inputmode="decimal" class="h-9 w-20 rounded-md border bg-background px-2 text-sm text-foreground" />
-                <select v-model="yieldUnit" :class="selectClass">
+                <UiInput v-model="yieldQuantity" type="text" inputmode="decimal" class="w-20" />
+                <UiNativeSelect v-model="yieldUnit" class="w-auto">
                   <option v-for="unit in YIELD_UNIT_OPTIONS" :key="unit" :value="unit">{{ unit }}</option>
-                </select>
+                </UiNativeSelect>
               </span>
             </label>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Âncora (100%)
               <span class="flex items-center gap-1">
-                <select :value="formula.anchor.kind" :class="selectClass" @change="onAnchorKind">
+                <UiNativeSelect :value="formula.anchor.kind" class="w-auto" @change="onAnchorKind">
                   <option v-for="option in ANCHOR_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
-                </select>
-                <select
+                </UiNativeSelect>
+                <UiNativeSelect
                   v-if="formula.anchor.kind === 'ingredient'"
                   :value="formula.anchor.sku ?? ''"
-                  :class="selectClass"
+                  class="w-auto"
                   aria-label="Ingrediente-âncora"
                   @change="onAnchorSku"
                 >
                   <option value="">Escolha…</option>
                   <option v-for="item in anchorCandidates" :key="item.sku" :value="item.sku">{{ item.name || item.sku }}</option>
-                </select>
+                </UiNativeSelect>
               </span>
             </label>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               O que mudou (rótulo curto)
-              <input v-model="label" type="text" placeholder="Ex.: hidratação 72 → 75" :class="inputClass" />
+              <UiInput v-model="label" type="text" placeholder="Ex.: hidratação 72 → 75" />
             </label>
           </div>
 
           <!-- Ingredientes -->
-          <div class="rounded-lg border">
+          <div class="rounded-md border">
             <div class="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2">
               <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ingredientes (receita base)</p>
               <span class="text-xs tabular-nums text-muted-foreground">
                 âncora {{ gramsLabel(localAnchorTotal) }} · massa {{ gramsLabel(localTotal) }}
               </span>
-              <button
+              <UiButton
                 type="button"
-                class="ml-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition hover:bg-accent"
+                class="ml-auto"
+                variant="outline"
+                size="sm"
                 @click="add"
               >
                 <Icon name="lucide:plus" class="size-4" /> Ingrediente
-              </button>
+              </UiButton>
             </div>
             <p v-if="!formula.items.length" class="px-3 py-6 text-center text-sm text-muted-foreground">
               Nenhum ingrediente ainda. Toda a farinha entra aqui, inclusive a do levain e da autólise.
@@ -432,7 +436,7 @@ const selectClass = "h-9 rounded-md border bg-background px-2 text-sm text-foreg
               >
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Nome
-                  <input :value="item.name" type="text" placeholder="Ex.: Farinha T65" :class="inputClass" @input="onItemName(index, $event)" />
+                  <UiInput :model-value="item.name" type="text" placeholder="Ex.: Farinha T65" @input="onItemName(index, $event)" />
                 </label>
                 <div class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Insumo
@@ -445,30 +449,31 @@ const selectClass = "h-9 rounded-md border bg-background px-2 text-sm text-foreg
                 </div>
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Qtd
-                  <input
-                    :value="item.quantity || ''"
+                  <UiInput
+                    :model-value="item.quantity || ''"
                     type="text"
                     inputmode="decimal"
-                    class="h-9 w-24 rounded-md border bg-background px-2 text-right text-sm tabular-nums text-foreground"
+                    class="w-24 text-right tabular-nums"
                     @input="onItemQuantity(index, $event)"
                   />
                 </label>
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Un
-                  <select :value="item.unit" :class="selectClass" @change="onItemUnit(index, $event)">
+                  <UiNativeSelect :value="item.unit" class="w-auto" @change="onItemUnit(index, $event)">
                     <option v-for="unit in UNIT_OPTIONS" :key="unit" :value="unit">{{ unit }}</option>
-                  </select>
+                  </UiNativeSelect>
                 </label>
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Papel
-                  <select :value="item.role" :class="selectClass" @change="onItemRole(index, $event)">
+                  <UiNativeSelect :value="item.role" class="w-auto" @change="onItemRole(index, $event)">
                     <option v-for="role in ROLE_OPTIONS" :key="role.value" :value="role.value">{{ role.label }}</option>
-                  </select>
+                  </UiNativeSelect>
                 </label>
                 <div class="flex items-end gap-1">
                   <span class="mb-2 w-12 text-right text-sm tabular-nums text-muted-foreground" :title="'Percentual sobre a âncora (prévia local)'">
                     {{ pctOf(item, localAnchorTotal) ? `${pctOf(item, localAnchorTotal)}%` : "" }}
                   </span>
+                  <!-- Ícones de 36px formam a microbarra de ordenação da linha; não são CTAs UiButton. -->
                   <button type="button" class="grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent disabled:opacity-40" aria-label="Subir" :disabled="index === 0" @click="move(index, -1)">
                     <Icon name="lucide:chevron-up" class="size-4" />
                   </button>
@@ -481,11 +486,11 @@ const selectClass = "h-9 rounded-md border bg-background px-2 text-sm text-foreg
                 </div>
                 <label v-if="item.unit === 'un'" class="grid gap-1 text-xs font-medium text-muted-foreground sm:col-span-6">
                   Gramas por unidade (sem isso a contagem fica fora da conta)
-                  <input
-                    :value="item.grams_per_unit ?? ''"
+                  <UiInput
+                    :model-value="item.grams_per_unit ?? ''"
                     type="text"
                     inputmode="decimal"
-                    class="h-9 w-28 rounded-md border bg-background px-2 text-sm text-foreground"
+                    class="w-28"
                     @input="onItemGramsPerUnit(index, $event)"
                   />
                 </label>
@@ -494,32 +499,34 @@ const selectClass = "h-9 rounded-md border bg-background px-2 text-sm text-foreg
           </div>
 
           <!-- Partes -->
-          <div class="rounded-lg border">
+          <div class="rounded-md border">
             <div class="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2">
               <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Partes</p>
               <span class="text-xs text-muted-foreground">quanto da base passa por levain, autólise, embebido ou massa velha</span>
-              <button
+              <UiButton
                 type="button"
-                class="ml-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition hover:bg-accent"
+                class="ml-auto"
+                variant="outline"
+                size="sm"
                 @click="addNewPart"
               >
                 <Icon name="lucide:plus" class="size-4" /> Parte
-              </button>
+              </UiButton>
             </div>
             <p v-if="!formula.parts.length" class="px-3 py-4 text-center text-sm text-muted-foreground">Sem partes: tudo vai direto na mistura.</p>
             <ol v-else class="divide-y">
               <li v-for="(part, index) in formula.parts" :key="index" class="grid gap-2 p-3 sm:grid-cols-[auto_minmax(0,1.4fr)_auto_auto_auto]">
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Tipo
-                  <select :value="part.kind" :class="selectClass" @change="onPartKind(index, $event)">
+                  <UiNativeSelect :value="part.kind" class="w-auto" @change="onPartKind(index, $event)">
                     <option v-for="option in PART_KIND_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
-                  </select>
+                  </UiNativeSelect>
                 </label>
                 <template v-if="part.kind === 'old_dough'">
                   <p class="self-end pb-2 text-sm text-muted-foreground sm:col-span-2">A própria base da véspera; declara só o teto.</p>
                   <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                     Teto (%)
-                    <input :value="part.cap_pct ?? ''" type="text" inputmode="decimal" class="h-9 w-20 rounded-md border bg-background px-2 text-right text-sm text-foreground" @input="onPartNumber(index, 'cap_pct', $event)" />
+                    <UiInput :model-value="part.cap_pct ?? ''" type="text" inputmode="decimal" class="w-20 text-right" @input="onPartNumber(index, 'cap_pct', $event)" />
                   </label>
                 </template>
                 <template v-else>
@@ -535,20 +542,21 @@ const selectClass = "h-9 rounded-md border bg-background px-2 text-sm text-foreg
                   </div>
                   <label v-if="anchorIsFlour" class="grid gap-1 text-xs font-medium text-muted-foreground">
                     Farinha (%)
-                    <input :value="part.flour_pct ?? ''" type="text" inputmode="decimal" class="h-9 w-20 rounded-md border bg-background px-2 text-right text-sm text-foreground" @input="onPartNumber(index, 'flour_pct', $event)" />
+                    <UiInput :model-value="part.flour_pct ?? ''" type="text" inputmode="decimal" class="w-20 text-right" @input="onPartNumber(index, 'flour_pct', $event)" />
                   </label>
                   <label v-else class="grid gap-1 text-xs font-medium text-muted-foreground">
                     Quantidade
                     <span class="flex items-center gap-1">
-                      <input :value="part.quantity ?? ''" type="text" inputmode="decimal" class="h-9 w-20 rounded-md border bg-background px-2 text-right text-sm text-foreground" @input="onPartNumber(index, 'quantity', $event)" />
-                      <select :value="part.unit ?? 'g'" :class="selectClass" @change="onPartUnit(index, $event)">
+                      <UiInput :model-value="part.quantity ?? ''" type="text" inputmode="decimal" class="w-20 text-right" @input="onPartNumber(index, 'quantity', $event)" />
+                      <UiNativeSelect :value="part.unit ?? 'g'" class="w-auto" @change="onPartUnit(index, $event)">
                         <option v-for="unit in UNIT_OPTIONS" :key="unit" :value="unit">{{ unit }}</option>
-                      </select>
+                      </UiNativeSelect>
                     </span>
                   </label>
                   <span v-if="anchorIsFlour" class="hidden sm:block" />
                 </template>
                 <div class="flex items-end">
+                  <!-- Remoção compacta pertence à linha editável; mantém o alinhamento da grade. -->
                   <button type="button" class="grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive" aria-label="Remover parte" @click="dropPart(index)">
                     <Icon name="lucide:trash-2" class="size-4" />
                   </button>
@@ -558,7 +566,7 @@ const selectClass = "h-9 rounded-md border bg-background px-2 text-sm text-foreg
           </div>
 
           <!-- Passos e notas -->
-          <div class="grid gap-3 rounded-lg border bg-card p-3">
+          <div class="grid gap-3 rounded-md border bg-card p-3">
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Passos (um por linha)
               <UiTextarea v-model="stepsText" :rows="6" placeholder="Autólise 40 min&#10;Sova até o ponto de véu&#10;…" />
@@ -575,15 +583,17 @@ const selectClass = "h-9 rounded-md border bg-background px-2 text-sm text-foreg
           <div class="flex flex-wrap items-center gap-2">
             <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Prévia da lente</p>
             <Icon v-if="lensPending" name="lucide:loader-circle" class="size-4 animate-spin text-muted-foreground" />
-            <button
+            <UiButton
               type="button"
-              class="ml-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition hover:bg-accent disabled:opacity-50"
+              class="ml-auto"
+              variant="outline"
+              size="sm"
               :disabled="standardizing || !formula.items.length"
               @click="standardizeToHouse"
             >
               <Icon name="lucide:scale" class="size-4" />
               {{ standardizing ? "Padronizando…" : `Padronizar para ${HOUSE_BASIS_G} g ${anchorNoun}` }}
-            </button>
+            </UiButton>
           </div>
 
           <div v-if="before" class="grid gap-1 rounded-md border bg-muted/40 px-3 py-2 text-sm">
@@ -593,12 +603,13 @@ const selectClass = "h-9 rounded-md border bg-background px-2 text-sm text-foreg
               <br />
               Depois: âncora {{ gramsLabel(localAnchorTotal) }} · massa {{ gramsLabel(localTotal) }}
             </p>
-            <button type="button" class="justify-self-start text-sm text-primary underline-offset-2 hover:underline" @click="undoStandardize">Desfazer</button>
+            <UiButton type="button" variant="link" size="sm" class="justify-self-start p-0" @click="undoStandardize">Desfazer</UiButton>
           </div>
 
           <FormulaLens :lens="lens" :pending="lensPending" :error="lensError" compact />
 
-          <div v-if="origin.length" class="rounded-lg border">
+          <div v-if="origin.length" class="rounded-md border">
+            <!-- Cabeçalho de disclosure ocupa a linha inteira; é o acionador estrutural do painel. -->
             <button
               type="button"
               class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"

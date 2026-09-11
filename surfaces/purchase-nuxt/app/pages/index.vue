@@ -997,10 +997,10 @@ onBeforeUnmount(stopInvoiceScanner);
             <div class="space-y-3">
               <label data-receipt-anchor="supplier" class="block scroll-mt-4 p-0.5 text-sm font-medium transition-shadow" :class="anchorRing('supplier')">
                 Fornecedor
-                <select :value="receiptSupplierRef" class="mt-1 h-10 w-full rounded-md border border-border bg-background px-3 text-sm" @change="onReceiptSupplierChange">
+                <UiNativeSelect :value="receiptSupplierRef" class="mt-1 w-full" @change="onReceiptSupplierChange">
                   <option value="">Definir fornecedor</option>
                   <option v-for="supplier in suppliers" :key="supplier.ref" :value="supplier.ref">{{ supplier.displayName }}</option>
-                </select>
+                </UiNativeSelect>
               </label>
               <div class="rounded-md border border-border bg-background p-3 text-sm">
                 <p class="text-xs font-medium text-muted-foreground">Documento</p>
@@ -1412,9 +1412,9 @@ onBeforeUnmount(stopInvoiceScanner);
             </div>
             <div class="flex flex-wrap items-end gap-2">
               <label class="block text-sm font-medium">Fornecedor
-                <select
+                <UiNativeSelect
                   v-model="batchSupplierRef"
-                  class="mt-1 h-10 w-56 rounded-md border border-border bg-background px-3 text-sm"
+                  class="mt-1 w-56"
                 >
                   <option value="">Escolher…</option>
                   <!-- Fornecedor inativo não pode receber custo preferencial; o
@@ -1426,7 +1426,7 @@ onBeforeUnmount(stopInvoiceScanner);
                   >
                     {{ supplier.displayName }}
                   </option>
-                </select>
+                </UiNativeSelect>
               </label>
               <input
                 v-model="batchQuery"
@@ -1469,8 +1469,8 @@ onBeforeUnmount(stopInvoiceScanner);
                     </p>
                   </td>
                   <td class="px-3 py-2">
-                    <select
-                      class="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                    <UiNativeSelect
+                      class="w-full"
                       :value="batchConversionIds[row.sku] ?? ''"
                       @change="setBatchConversion(row.sku, ($event.target as HTMLSelectElement).value)"
                     >
@@ -1482,7 +1482,7 @@ onBeforeUnmount(stopInvoiceScanner);
                       >
                         {{ conversion.label }}
                       </option>
-                    </select>
+                    </UiNativeSelect>
                   </td>
                   <td class="px-3 py-2">
                     <input
@@ -1530,20 +1530,20 @@ onBeforeUnmount(stopInvoiceScanner);
           <h1 class="text-lg font-semibold">Lançar custo</h1>
           <div class="mt-3 space-y-3">
             <label class="block text-sm font-medium">Insumo
-              <select v-model="noteMaterialSku" class="mt-1 h-10 w-full rounded-md border border-border bg-background px-3 text-sm">
+              <UiNativeSelect v-model="noteMaterialSku" class="mt-1 w-full">
                 <option v-for="material in materials" :key="material.sku" :value="material.sku">{{ material.name }}</option>
-              </select>
+              </UiNativeSelect>
             </label>
             <label class="block text-sm font-medium">Fornecedor
-              <select v-model="noteSupplierRef" class="mt-1 h-10 w-full rounded-md border border-border bg-background px-3 text-sm">
+              <UiNativeSelect v-model="noteSupplierRef" class="mt-1 w-full">
                 <option v-for="supplier in suppliers" :key="supplier.ref" :value="supplier.ref">{{ supplier.displayName }}</option>
-              </select>
+              </UiNativeSelect>
             </label>
             <label class="block text-sm font-medium">Unidade de compra
-              <select v-model="noteConversionId" class="mt-1 h-10 w-full rounded-md border border-border bg-background px-3 text-sm">
+              <UiNativeSelect v-model="noteConversionId" class="mt-1 w-full">
                 <option value="">Unidade-base</option>
                 <option v-for="conversion in availableNoteConversions" :key="conversion.id" :value="conversion.id">{{ conversion.label }}</option>
-              </select>
+              </UiNativeSelect>
             </label>
             <label class="block text-sm font-medium">Valor da unidade de compra
               <input v-model="noteCostInput" inputmode="decimal" class="mt-1 h-10 w-full rounded-md border border-border bg-background px-3 text-sm" placeholder="180,00" />

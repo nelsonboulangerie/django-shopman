@@ -68,14 +68,13 @@ const { ready, compare, rows, metrics, pending, error, refresh } = useRecipeComp
 
     <section class="min-h-0 flex-1 overflow-auto p-3 md:p-4">
       <div class="mb-4 grid gap-3 sm:grid-cols-2">
-        <div v-for="side in (['a', 'b'] as const)" :key="side" class="grid gap-2 rounded-lg border bg-card p-3">
+        <div v-for="side in (['a', 'b'] as const)" :key="side" class="grid gap-2 rounded-md border bg-card p-3">
           <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">{{ side === "a" ? "Lado A" : "Lado B" }}</p>
           <div class="flex flex-wrap items-end gap-2">
             <label class="grid min-w-0 flex-1 gap-1 text-xs font-medium text-muted-foreground">
               Receita
-              <select
+              <UiNativeSelect
                 :value="(side === 'a' ? sideA : sideB)?.ref ?? ''"
-                class="h-9 w-full rounded-md border bg-background px-2 text-sm text-foreground"
                 :disabled="bookPending && !entries.length"
                 @change="onEntryChange(side, $event)"
               >
@@ -83,17 +82,17 @@ const { ready, compare, rows, metrics, pending, error, refresh } = useRecipeComp
                 <option v-for="entry in entries" :key="entry.ref" :value="entry.ref">
                   {{ entry.name }}{{ entry.output_sku ? ` · ${entry.output_sku}` : "" }}
                 </option>
-              </select>
+              </UiNativeSelect>
             </label>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Versão
-              <input
+              <UiInput
                 type="number"
                 min="1"
                 :max="versionCount((side === 'a' ? sideA : sideB)?.ref ?? '') || undefined"
-                :value="(side === 'a' ? sideA : sideB)?.number ?? ''"
+                :model-value="(side === 'a' ? sideA : sideB)?.number ?? ''"
                 :disabled="!(side === 'a' ? sideA : sideB)"
-                class="h-9 w-20 rounded-md border bg-background px-2 text-sm tabular-nums text-foreground"
+                class="w-20 tabular-nums"
                 @change="onNumberChange(side, $event)"
               />
             </label>
@@ -103,7 +102,7 @@ const { ready, compare, rows, metrics, pending, error, refresh } = useRecipeComp
 
       <div
         v-if="!ready"
-        class="grid place-items-center gap-2 rounded-lg border border-dashed py-16 text-center text-muted-foreground"
+        class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center text-muted-foreground"
       >
         <Icon name="lucide:git-compare" class="size-8" />
         <p class="text-base font-medium">Escolha as duas versões para comparar.</p>
@@ -114,18 +113,20 @@ const { ready, compare, rows, metrics, pending, error, refresh } = useRecipeComp
 
       <div
         v-else-if="error && !compare"
-        class="grid place-items-center gap-2 rounded-lg border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
+        class="grid place-items-center gap-2 rounded-md border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
       >
         <Icon name="lucide:cloud-off" class="size-8 text-destructive/70" />
         <p class="text-base font-medium text-foreground">Não foi possível comparar.</p>
         <p class="text-sm">Confira se as duas versões existem.</p>
-        <button
+        <UiButton
           type="button"
-          class="mt-1 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition hover:bg-accent"
+          class="mt-1"
+          variant="outline"
+          size="sm"
           @click="refresh()"
         >
           <Icon name="lucide:refresh-cw" class="size-4" /> Tentar de novo
-        </button>
+        </UiButton>
       </div>
 
       <template v-else-if="compare">
@@ -134,7 +135,7 @@ const { ready, compare, rows, metrics, pending, error, refresh } = useRecipeComp
           <span><span class="text-muted-foreground">B</span> <b>{{ compare.b_title }}</b></span>
         </div>
 
-        <div class="overflow-x-auto rounded-lg border">
+        <div class="overflow-x-auto rounded-md border">
           <table class="w-full min-w-[36rem] text-sm">
             <thead class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
@@ -165,7 +166,7 @@ const { ready, compare, rows, metrics, pending, error, refresh } = useRecipeComp
           </table>
         </div>
 
-        <div v-if="metrics.length" class="mt-4 max-w-2xl overflow-hidden rounded-lg border">
+        <div v-if="metrics.length" class="mt-4 max-w-2xl overflow-hidden rounded-md border">
           <p class="border-b bg-muted/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Métricas</p>
           <table class="w-full text-sm">
             <tbody class="divide-y">

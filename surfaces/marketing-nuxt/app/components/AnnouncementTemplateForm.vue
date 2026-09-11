@@ -195,10 +195,10 @@ function submit() {
       <label for="tpl-image" class="mb-1 block text-sm font-medium"
         >Imagem</label
       >
-      <select
+      <UiNativeSelect
         id="tpl-image"
         v-model="imageSource"
-        class="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+        class="w-full"
       >
         <option
           v-for="source in IMAGE_SOURCES"
@@ -207,7 +207,7 @@ function submit() {
         >
           {{ source.label }}
         </option>
-      </select>
+      </UiNativeSelect>
     </div>
 
     <!-- Two server-side gates plus the credential decide availability. -->

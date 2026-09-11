@@ -451,9 +451,9 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
 
             <label class="block">
               <span :class="labelClass">Política de disponibilidade</span>
-              <select v-model="draft.availability_policy" :class="fieldClass">
+              <UiNativeSelect v-model="draft.availability_policy" class="w-full">
                 <option v-for="p in POLICIES" :key="p.value" :value="p.value">{{ p.label }}</option>
-              </select>
+              </UiNativeSelect>
             </label>
 
             <label class="block">
@@ -596,9 +596,9 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
               </label>
               <label class="block">
                 <span :class="labelClass">Condição</span>
-                <select v-model="draft.social.condition" :class="fieldClass">
+                <UiNativeSelect v-model="draft.social.condition" class="w-full">
                   <option v-for="c in CONDITIONS" :key="c.value" :value="c.value">{{ c.label }}</option>
-                </select>
+                </UiNativeSelect>
               </label>
             </div>
 
@@ -656,9 +656,9 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
 
             <label class="block">
               <span :class="labelClass">Perfil fiscal</span>
-              <select v-model="draft.fiscal.profile" :class="fieldClass">
+              <UiNativeSelect v-model="draft.fiscal.profile" class="w-full">
                 <option v-for="p in fiscalProfiles" :key="p.key" :value="p.key">{{ p.name }}</option>
-              </select>
+              </UiNativeSelect>
             </label>
 
             <div class="grid grid-cols-2 gap-3">

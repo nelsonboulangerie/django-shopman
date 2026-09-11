@@ -426,7 +426,7 @@ function close() {
           </div>
 
           <div
-            class="max-h-[46vh] overflow-auto rounded-lg border bg-muted/30 p-3"
+            class="max-h-[46vh] overflow-auto rounded-md border bg-muted/30 p-3"
           >
             <div
               class="label-roll-preview mx-auto flex max-w-full flex-col gap-2 bg-white p-[4mm] text-black shadow-sm"
@@ -507,7 +507,7 @@ function close() {
           class="flex min-w-0 flex-col gap-3"
           aria-label="Envio da impressão"
         >
-          <div class="rounded-lg border p-3" data-testid="print-destination">
+          <div class="rounded-md border p-3" data-testid="print-destination">
             <div class="flex items-start gap-2">
               <Icon name="lucide:printer" class="mt-0.5 size-5 shrink-0" />
               <div class="min-w-0">
@@ -525,7 +525,7 @@ function close() {
             v-if="printing.job.value || printing.operation.value === 'create'"
             role="status"
             aria-live="polite"
-            class="rounded-lg border p-3"
+            class="rounded-md border p-3"
             data-testid="print-job-status"
           >
             <div class="flex items-start gap-2">
@@ -558,7 +558,7 @@ function close() {
             v-if="printing.pollingMessage.value"
             role="status"
             aria-live="polite"
-            class="text-sm text-amber-700"
+            class="text-sm text-warning"
           >
             {{ printing.pollingMessage.value }}
           </p>
@@ -575,7 +575,7 @@ function close() {
           <div
             v-if="printing.errorMessage.value"
             role="alert"
-            class="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+            class="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
             data-testid="print-error"
           >
             <p>{{ printing.errorMessage.value }}</p>
@@ -603,7 +603,7 @@ function close() {
           <p
             v-if="!printing.job.value && preflightBlockReason"
             role="alert"
-            class="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-800 dark:text-amber-200"
+            class="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning"
           >
             {{ preflightBlockReason }}
           </p>
@@ -621,7 +621,7 @@ function close() {
 
           <div
             v-if="showConfirm"
-            class="rounded-lg border border-primary/30 bg-primary/5 p-3"
+            class="rounded-md border border-primary/30 bg-primary/5 p-3"
           >
             <p class="mb-3 text-sm font-semibold">{{ confirmationQuestion }}</p>
             <div class="grid gap-2">

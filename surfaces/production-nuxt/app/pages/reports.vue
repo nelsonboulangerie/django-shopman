@@ -99,7 +99,7 @@ function refreshAll() {
       v-if="forbidden"
       class="grid flex-1 place-items-center p-6 text-center"
     >
-      <div class="grid max-w-md gap-2 rounded-lg border border-dashed p-10">
+      <div class="grid max-w-md gap-2 rounded-md border border-dashed p-10">
         <Icon name="lucide:lock" class="mx-auto size-8 text-muted-foreground" />
         <p class="text-base font-semibold">Área do gestor</p>
         <p class="text-sm text-muted-foreground">
@@ -117,12 +117,13 @@ function refreshAll() {
     <section v-else class="min-h-0 flex-1 overflow-auto p-3 md:p-4">
       <!-- ── Gestão do dia ─────────────────────────────────────────────── -->
       <div class="mb-3 flex flex-wrap items-center gap-3">
-        <h2 class="text-base font-bold">Gestão do dia</h2>
+        <h2 class="text-lg font-semibold">Gestão do dia</h2>
         <div
-          class="flex items-center gap-1 rounded-lg border bg-background p-0.5"
+          class="flex items-center gap-1 rounded-md border bg-background p-0.5"
           role="group"
           aria-label="Data da gestão"
         >
+          <!-- Segmento compacto de período; a seleção é o próprio controle, não um UiButton solto. -->
           <button
             v-for="chip in dateChips"
             :key="chip.iso"
@@ -145,7 +146,7 @@ function refreshAll() {
       </div>
 
       <div class="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div class="rounded-lg border bg-card p-3">
+        <div class="rounded-md border bg-card p-3">
           <p
             class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
           >
@@ -158,7 +159,7 @@ function refreshAll() {
             {{ management?.finished_orders ?? 0 }} OPs concluídas
           </p>
         </div>
-        <div class="rounded-lg border bg-card p-3">
+        <div class="rounded-md border bg-card p-3">
           <p
             class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
           >
@@ -178,7 +179,7 @@ function refreshAll() {
             }}
           </p>
         </div>
-        <div class="rounded-lg border bg-card p-3">
+        <div class="rounded-md border bg-card p-3">
           <p
             class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
           >
@@ -191,7 +192,7 @@ function refreshAll() {
             {{ management?.planned_orders ?? 0 }} OPs planejadas
           </p>
         </div>
-        <div class="rounded-lg border bg-card p-3">
+        <div class="rounded-md border bg-card p-3">
           <p
             class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
           >
@@ -209,10 +210,10 @@ function refreshAll() {
 
       <div
         v-if="lateOrders.length"
-        class="mb-4 overflow-hidden rounded-lg border"
+        class="mb-4 overflow-hidden rounded-md border"
       >
         <p
-          class="flex items-center gap-2 border-b bg-warning/10 px-3 py-2 text-sm font-semibold text-amber-700 dark:text-amber-300"
+          class="flex items-center gap-2 border-b bg-warning/10 px-3 py-2 text-sm font-semibold text-warning"
         >
           <Icon name="lucide:timer" class="size-4" /> Atrasos em andamento
         </p>
@@ -240,7 +241,7 @@ function refreshAll() {
                 </p>
               </td>
               <td
-                class="px-3 py-2 text-right tabular-nums font-semibold text-amber-700 dark:text-amber-300"
+                class="px-3 py-2 text-right tabular-nums font-semibold text-warning"
               >
                 {{ item.elapsed_minutes }}
               </td>
@@ -255,12 +256,13 @@ function refreshAll() {
 
       <!-- ── Relatórios por período ────────────────────────────────────── -->
       <div class="mb-3 flex flex-wrap items-center gap-3">
-        <h2 class="text-base font-bold">Relatórios</h2>
+        <h2 class="text-lg font-semibold">Relatórios</h2>
         <div
-          class="flex items-center gap-1 rounded-lg border bg-background p-0.5"
+          class="flex items-center gap-1 rounded-md border bg-background p-0.5"
           role="group"
           aria-label="Tipo de relatório"
         >
+          <!-- Segmento compacto de relatório; preserva a leitura de abas mutuamente exclusivas. -->
           <button
             v-for="entry in REPORT_KINDS"
             :key="entry.kind"
@@ -287,29 +289,29 @@ function refreshAll() {
       </div>
 
       <div
-        class="mb-3 flex flex-wrap items-end gap-3 rounded-lg border bg-card p-3"
+        class="mb-3 flex flex-wrap items-end gap-3 rounded-md border bg-card p-3"
       >
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">
           De
-          <input
+          <UiInput
             v-model="dateFrom"
             type="date"
-            class="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
+            class="w-auto"
           />
         </label>
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">
           Até
-          <input
+          <UiInput
             v-model="dateTo"
             type="date"
-            class="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
+            class="w-auto"
           />
         </label>
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">
           Ficha técnica
-          <select
+          <UiNativeSelect
             v-model="recipeRef"
-            class="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
+            class="w-auto"
           >
             <option value="">Todas</option>
             <option
@@ -319,13 +321,13 @@ function refreshAll() {
             >
               {{ recipe.name }}
             </option>
-          </select>
+          </UiNativeSelect>
         </label>
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">
           Posto
-          <select
+          <UiNativeSelect
             v-model="positionRef"
-            class="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
+            class="w-auto"
           >
             <option value="">Todos</option>
             <option
@@ -335,15 +337,15 @@ function refreshAll() {
             >
               {{ position.name }}
             </option>
-          </select>
+          </UiNativeSelect>
         </label>
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">
           Operador
-          <input
+          <UiInput
             v-model="operatorRef"
             type="text"
             placeholder="Nome ou usuário"
-            class="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
+            class="w-auto"
           />
         </label>
       </div>
@@ -352,7 +354,7 @@ function refreshAll() {
         v-if="stale"
         role="status"
         aria-live="polite"
-        class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-amber-700 dark:text-amber-300"
+        class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
       >
         <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
         <span>Sem atualizar — mostrando o último relatório carregado.</span>
@@ -363,23 +365,25 @@ function refreshAll() {
       </p>
       <div
         v-else-if="error && !reports"
-        class="grid place-items-center gap-2 rounded-lg border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
+        class="grid place-items-center gap-2 rounded-md border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
       >
         <Icon name="lucide:cloud-off" class="size-8 text-destructive/70" />
         <p class="text-base font-medium text-foreground">
           Não foi possível carregar os relatórios.
         </p>
-        <button
+        <UiButton
           type="button"
-          class="mt-1 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition hover:bg-accent"
+          class="mt-1"
+          variant="outline"
+          size="sm"
           @click="refresh()"
         >
           <Icon name="lucide:refresh-cw" class="size-4" /> Tentar de novo
-        </button>
+        </UiButton>
       </div>
       <div
         v-else-if="!hasRows"
-        class="grid place-items-center gap-2 rounded-lg border border-dashed py-16 text-center text-muted-foreground"
+        class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center text-muted-foreground"
       >
         <Icon name="lucide:table-2" class="size-8" />
         <p class="text-base font-medium">Nada produzido nesse período.</p>
@@ -389,7 +393,7 @@ function refreshAll() {
       <!-- Histórico por OP -->
       <div
         v-else-if="kind === 'history'"
-        class="overflow-x-auto rounded-lg border"
+        class="overflow-x-auto rounded-md border"
       >
         <table class="w-full min-w-[64rem] text-sm">
           <thead
@@ -446,7 +450,7 @@ function refreshAll() {
       <!-- Produtividade por operador -->
       <div
         v-else-if="kind === 'operator_productivity'"
-        class="overflow-x-auto rounded-lg border"
+        class="overflow-x-auto rounded-md border"
       >
         <table class="w-full text-sm">
           <thead
@@ -491,7 +495,7 @@ function refreshAll() {
       <!-- Qualidade: a partição do QC por receita × grau × defeito -->
       <div
         v-else-if="kind === 'quality'"
-        class="overflow-x-auto rounded-lg border"
+        class="overflow-x-auto rounded-md border"
       >
         <table class="w-full text-sm">
           <thead
@@ -524,7 +528,7 @@ function refreshAll() {
       </div>
 
       <!-- Desperdício por ficha -->
-      <div v-else class="overflow-x-auto rounded-lg border">
+      <div v-else class="overflow-x-auto rounded-md border">
         <table class="w-full text-sm">
           <thead
             class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground"
@@ -562,7 +566,7 @@ function refreshAll() {
       <!-- ── Mapa código-cego ↔ preparo (visão de gestor) ──────────────── -->
       <div class="mt-6">
         <div class="mb-2 flex flex-wrap items-center gap-2">
-          <h2 class="text-base font-bold">Mapa código-cego</h2>
+          <h2 class="text-lg font-semibold">Mapa código-cego</h2>
           <UiBadge variant="outline" class="px-1.5 py-0 text-xs"
             >Visão de gestor</UiBadge
           >
@@ -574,11 +578,11 @@ function refreshAll() {
         </p>
         <div
           v-if="!blindMap.rows.value.length"
-          class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
+          class="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground"
         >
           Nenhum preparo aberto nesta data — sem códigos para correlacionar.
         </div>
-        <div v-else class="max-w-2xl overflow-hidden rounded-lg border">
+        <div v-else class="max-w-2xl overflow-hidden rounded-md border">
           <table class="w-full text-sm">
             <thead
               class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground"

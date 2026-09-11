@@ -27,6 +27,29 @@ function tokenValue(css: string, token: string): string | null {
   return match ? match[1].trim() : null;
 }
 
+function rgb(hex: string): [number, number, number] {
+  const match = hex.match(/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i);
+  if (!match) throw new Error(`Cor hexadecimal inválida no tema: ${hex}`);
+  return [Number.parseInt(match[1], 16), Number.parseInt(match[2], 16), Number.parseInt(match[3], 16)];
+}
+
+function luminance(color: [number, number, number]): number {
+  const [red, green, blue] = color.map((channel) => {
+    const value = channel / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return red * 0.2126 + green * 0.7152 + blue * 0.0722;
+}
+
+function contrast(foreground: [number, number, number], background: [number, number, number]): number {
+  const [lighter, darker] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function blend(foreground: [number, number, number], background: [number, number, number], opacity: number): [number, number, number] {
+  return foreground.map((channel, index) => channel * opacity + background[index] * (1 - opacity)) as [number, number, number];
+}
+
 describe("design-system: tema operador centralizado (operator-theme.css) herdado por todos", () => {
   // O tema quente do operador vive num ÚNICO arquivo no kit (operator-theme.css),
   // importado por cada app via @import. A paridade de tokens deixa de ser "mesmo
@@ -44,6 +67,20 @@ describe("design-system: tema operador centralizado (operator-theme.css) herdado
         `${token} ausente no operator-theme.css central`,
       ).not.toBeNull();
     }
+  });
+
+  it.each([
+    ["claro", operatorTheme],
+    ["escuro", operatorTheme.slice(operatorTheme.indexOf(".dark {"))],
+  ])("o warning do tema %s passa AA como texto suave e como fundo sólido", (_, theme) => {
+    const warning = rgb(tokenValue(theme, "--warning")!);
+    const warningForeground = rgb(tokenValue(theme, "--warning-foreground")!);
+    const backgrounds = [rgb(tokenValue(theme, "--background")!), rgb(tokenValue(theme, "--card")!)];
+
+    for (const background of backgrounds) {
+      expect(contrast(warning, blend(warning, background, 0.1))).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(contrast(warningForeground, warning)).toBeGreaterThanOrEqual(4.5);
   });
 
   for (const app of OPERATOR_APPS) {

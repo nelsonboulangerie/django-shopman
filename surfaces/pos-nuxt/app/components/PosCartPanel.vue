@@ -1092,11 +1092,11 @@ defineExpose({ focusItem, onDigit, onBackspace });
               : `${numpadBuffer || "0"}%`
           }}</strong>
         </p>
-        <select
+        <UiNativeSelect
           v-model="discountReason"
           aria-label="Motivo do desconto"
           :disabled="mutationBusy"
-          class="h-11 w-full rounded-md border bg-card px-2 text-xs"
+          class="w-full text-xs"
           @change="commitDiscount"
         >
           <option
@@ -1106,7 +1106,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
           >
             {{ reason.label }}
           </option>
-        </select>
+        </UiNativeSelect>
       </div>
     </section>
     <div class="grid shrink-0 gap-2 border-t px-3 py-2">

@@ -32,6 +32,6 @@ useHead({ title: "B.I." });
     </div>
     <OperatorLogin v-if="!canIdentify" />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
-    <UiSonner />
+    <OperatorSonner />
   </div>
 </template>
