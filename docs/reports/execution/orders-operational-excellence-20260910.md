@@ -1520,3 +1520,14 @@ sse_budget/README.md. Placar readonly reutiliza conciliação madura, aponta cai
 e Payman12000 centavos/diferença0, warning de fechamento ausente e pendências
 canônicas sem mascará-las. canonical_scoreboard/README.md discrimina o que ainda
 não mede. Nenhuma integração real, reparação, nova fonte de verdade ou migration.
+
+### WP04/WP09 — gate de erro silencioso no fallback Manychat
+
+Varredura de106 fontes alteradas encontrou lookup de flow em except/debug.
+Injeção de falha confirma ausência de warning; primeira preparação do teste teve
+import de patch ausente (log separado), corrigido antes da prova válida. Consulta
+continua retornando None para o fallback maduro, agora com warning fixo sem
+conteúdo da exceção/template. **74 PostgreSQL/7,19s**, Ruff e gate completo de106
+fontes aprovados. Logs manychat_flow. Sem DDL/efeito real; rollback reduz diagnóstico,
+não apaga recibo nem autoriza repetir envio unknown. A suíte ampla1d84 precede
+este ajuste pontual de logging, validado aqui com família e gate específicos.

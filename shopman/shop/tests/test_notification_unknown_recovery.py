@@ -1,6 +1,6 @@
 """Unknown remote delivery is not permission to send through another backend."""
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 from shopman.orderman.models import Directive, Order
@@ -174,3 +174,14 @@ def test_email_acceptance_requires_a_sent_message(context, monkeypatch, count, a
 
     monkeypatch.setattr(notification_email, "send_mail", Mock(return_value=count))
     assert notification_email.send("synthetic@example.invalid", "order_ready", {}) is accepted
+
+
+def test_manychat_flow_lookup_failure_is_observable_without_exception_payload():
+    from shopman.shop.adapters import notification_manychat
+    from shopman.shop.models import NotificationTemplate
+
+    with patch.object(NotificationTemplate.objects, "filter", side_effect=RuntimeError("synthetic-private-payload")), patch.object(notification_manychat.logger, "warning") as warning:
+        assert notification_manychat._load_db_flow_ns("order_ready") is None
+    warning.assert_called_once()
+    assert "synthetic-private-payload" not in str(warning.call_args)
+    assert "flow lookup failed" in str(warning.call_args)
