@@ -7,7 +7,7 @@ O histórico completo e auditável está em `origin/main..HEAD`; o fechamento t�
 ## Proveniência e preservação
 
 - Plano integral: [fonte congelada](../plans/STOREFRONT-OPERATIONAL-EXCELLENCE-PLAN-2026-09-10.md).
-- `origin/main` revalidado: `88314ff0474ba35c6dc69f58bbc2700b545454a4`, consulta em 2026-09-11 01:04 UTC. Não havia diferença nas cadeias relevantes desde a base `3b8042a94` do plano.
+- Base congelada e implementada: `88314ff0474ba35c6dc69f58bbc2700b545454a4`, consultada originalmente em 2026-09-11 01:04 UTC. Nova consulta após `fetch --prune`, em 2026-09-11 11:52 UTC: `origin/main` apontava para `822aea24ac8f9976db9fe091be647c02835a9948`, ancestral da base congelada por 15 commits. Não apareceu commit novo para integrar; a candidata preserva os 15 commits posteriores já contidos em `88314ff04` e não foi rebaixada ao ponteiro remoto recuado.
 - Worktree candidata: `/private/tmp/shopman-storefront-execution-20260910`, branch `codex/storefront-operational-excellence-20260910`.
 - Repositório independente sem hardlinks: `/private/tmp/shopman-storefront-execution-repo-20260910`; baseline: `/private/tmp/shopman-storefront-baseline-88314ff0`.
 - Checkout original em `b589e22c5`, branch `codex/shopman-backstage-marketing-hardening`, preservado, inclusive arquivos não rastreados de terceiros. Não foi feito reset, stash, push ou alteração nesse checkout.
