@@ -60,6 +60,20 @@ const vipFirst = ref(false);
 const match = ref<AudienceMatch>("any");
 const productSku = ref("");
 
+const PUBLIC_PLATFORMS = new Set(["instagram", "facebook", "google_business"]);
+const campaignPlatforms = computed(() =>
+  (props.rule?.platforms ?? [])
+    .map((platform) => String(platform || "").trim())
+    .filter(Boolean),
+);
+/** Publicar num mural/Story cria um destino por plataforma, não por contato. */
+const publicOnly = computed(
+  () =>
+    campaignPlatforms.value.length > 0 &&
+    campaignPlatforms.value.every((platform) => PUBLIC_PLATFORMS.has(platform)),
+);
+const publicPublicationCount = computed(() => campaignPlatforms.value.length);
+
 const { count, pending: counting, failed: countFailed, measure, clear } = useAudienceCount();
 
 /** Por que a fila de "me avise" está vazia — a mesma frase do card do anúncio.
@@ -134,6 +148,7 @@ const chosen = computed<ChosenAudience>(() => {
 
 const savedAudienceNeedsProduct = computed(
   () =>
+    !publicOnly.value &&
     useSaved.value &&
     Boolean(
       props.rule?.audience_rules?.favorites ||
@@ -149,7 +164,7 @@ const chosenProductLabel = computed(
       ?.label ?? "",
 );
 
-/** Sem público escolhido, disparar alcançaria ninguém — melhor barrar o botão. */
+/** Sem público escolhido, um canal direto alcançaria ninguém — melhor barrar o botão. */
 const nothingChosen = computed(
   () =>
     !useSaved.value &&
@@ -170,17 +185,18 @@ const rulesChosen = computed(
     (birthday.value ? 1 : 0),
 );
 
-const cannotSubmit = computed(
-  () =>
-    Boolean(props.busy) ||
-    (needsProduct.value && !productSku.value) ||
+const cannotSubmit = computed(() => {
+  if (Boolean(props.busy) || (needsProduct.value && !productSku.value)) return true;
+  if (publicOnly.value) return false;
+  return (
     nothingChosen.value ||
     counting.value ||
     countFailed.value ||
     !count.value ||
     count.value.empty_selection ||
-    count.value.total === 0,
-);
+    count.value.total === 0
+  );
+});
 
 const resultAudienceCount = computed(() => {
   const value = props.result?.receipt.outcome.audience_count;
@@ -197,8 +213,12 @@ function measureAgain() {
 // O número acompanha a escolha. "O público da campanha" mede as regras salvas, porque a
 // pergunta "quantos isto alcança?" é a mesma nos dois modos.
 watch(
-  [chosen, useSaved, productSku, () => props.rule?.pk],
+  [chosen, useSaved, productSku, () => props.rule?.pk, publicOnly],
   () => {
+    if (publicOnly.value) {
+      clear();
+      return;
+    }
     const rules = useSaved.value
       ? ((props.rule?.audience_rules ?? {}) as ChosenAudience)
       : chosen.value;
@@ -228,7 +248,12 @@ watch(
           <h2 id="fire-result-title" class="font-semibold">
             Anúncio criado para revisão
           </h2>
-          <p class="mt-1 text-sm text-muted-foreground">
+          <p v-if="publicOnly" class="mt-1 text-sm text-muted-foreground">
+            {{ formatCount(publicPublicationCount) }}
+            {{ publicPublicationCount === 1 ? "publicação pública preparada" : "publicações públicas preparadas" }}.
+            Nada foi publicado ainda.
+          </p>
+          <p v-else class="mt-1 text-sm text-muted-foreground">
             {{ formatCount(resultAudienceCount) }}
             {{ resultAudienceCount === 1 ? "pessoa elegível" : "pessoas elegíveis" }}.
             Nenhuma publicação ou mensagem foi enviada.
@@ -313,7 +338,26 @@ watch(
       </p>
     </div>
 
-    <fieldset class="space-y-2">
+    <div
+      v-if="publicOnly"
+      class="rounded-lg border border-primary/30 bg-primary/5 p-3"
+    >
+      <div class="flex items-start gap-3">
+        <Icon name="lucide:megaphone" class="mt-0.5 size-5 shrink-0 text-primary" />
+        <div>
+          <p class="text-sm font-semibold">
+            {{ formatCount(publicPublicationCount) }}
+            {{ publicPublicationCount === 1 ? "publicação pública" : "publicações públicas" }}
+          </p>
+          <p class="mt-1 text-xs text-muted-foreground">
+            Este anúncio será preparado uma vez por plataforma para revisão. Não há seleção
+            de contatos e nenhuma mensagem direta será enviada.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <fieldset v-else class="space-y-2">
       <legend class="text-xs font-medium text-muted-foreground">Para quem</legend>
 
       <!-- Rádios nativos tornam explícita a escolha exclusiva entre público salvo e escolha avulsa. -->
@@ -338,7 +382,7 @@ watch(
       </label>
     </fieldset>
 
-    <div v-if="!useSaved" class="space-y-4 rounded-lg bg-muted/40 p-3">
+    <div v-if="!publicOnly && !useSaved" class="space-y-4 rounded-lg bg-muted/40 p-3">
       <!-- Etiquetas primeiro: é o único público que o operador monta sozinho. RFM e
            churn são calculados, faixa é comercial, aniversário é cadastral. -->
       <fieldset v-if="tags.length">
@@ -469,7 +513,7 @@ watch(
     <!-- O número, enquanto se escolhe. Sem ele, o tamanho do público só se conhecia
          depois do envio — e "somar alarga" era invisível. -->
     <div
-      v-if="count || counting || countFailed"
+      v-if="!publicOnly && (count || counting || countFailed)"
       class="rounded-lg border border-border p-3"
       aria-live="polite"
     >
@@ -535,7 +579,7 @@ watch(
       </p>
     </div>
 
-    <p class="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+    <p v-if="!publicOnly" class="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
       Quem não deu consentimento para receber no WhatsApp fica de fora, mesmo se estiver
       no público escolhido.
     </p>
@@ -559,10 +603,12 @@ watch(
         <Icon name="lucide:send" class="size-4" />
         {{
           busy
-            ? "Disparando…"
-            : countFailed
-              ? "Aguardando contagem"
-              : "Disparar agora"
+            ? (publicOnly ? "Preparando…" : "Disparando…")
+            : publicOnly
+              ? "Preparar para revisão"
+              : countFailed
+                ? "Aguardando contagem"
+                : "Disparar agora"
         }}
       </UiButton>
     </div>

@@ -210,6 +210,7 @@ def fire_campaign_command(
                     current_version=rule.version,
                 )
             else:
+                public_only = _public_only_platforms(rule.platforms)
                 selected_rules = public_rules or dict(rule.audience_rules or {})
                 resolution = audience_service.resolve(selected_rules, now=now)
                 receipt = MarketingCommandReceipt.objects.create(**common)
@@ -227,7 +228,7 @@ def fire_campaign_command(
                         ]
                     )
                     deferred = MarketingFireUnavailable(receipt_ref=str(receipt.ref))
-                elif resolution.total <= 0:
+                elif resolution.total <= 0 and not public_only:
                     receipt.state = MarketingCommandReceipt.State.REJECTED
                     receipt.resulting_version = rule.version
                     receipt.outcome = {"code": "no_eligible_audience"}
@@ -354,6 +355,17 @@ def fire_campaign_command(
     if execution is None:
         raise RuntimeError("O comando de disparo terminou sem resultado.")
     return execution
+
+
+def _public_only_platforms(platforms) -> bool:
+    normalized = tuple(
+        str(platform or "").strip()
+        for platform in (platforms or ())
+        if str(platform or "").strip()
+    )
+    return bool(normalized) and all(
+        platform in campaign_service.POSTING_PLATFORMS for platform in normalized
+    )
 
 
 def _replay_or_raise(

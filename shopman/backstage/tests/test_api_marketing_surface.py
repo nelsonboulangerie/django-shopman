@@ -1622,8 +1622,9 @@ class TestManualFire:
     def test_zero_and_degraded_audience_fail_closed(self, client, gestor, rule, monkeypatch):
         from shopman.shop.services.audience import AudienceResult
 
+        rule.platforms = ["whatsapp"]
         rule.audience_rules = {"price_tiers": ["nobody"]}
-        rule.save(update_fields=["audience_rules"])
+        rule.save(update_fields=["platforms", "audience_rules"])
         client.force_login(gestor)
 
         zero = client.post(
@@ -1661,6 +1662,39 @@ class TestManualFire:
         assert degraded.json()["retryable"] is True
         assert degraded.json()["receipt_ref"]
         assert Announcement.objects.filter(rule=rule).count() == 0
+
+    def test_public_only_campaign_creates_review_with_no_contact_audience(
+        self, client, gestor, rule, template
+    ):
+        template.body = "Um pequeno respiro bonito no seu dia."
+        template.save(update_fields=["body"])
+        rule.platforms = ["instagram"]
+        # Mesmo uma regra salva de contatos não define o destino de um Story público.
+        rule.audience_rules = {"price_tiers": ["nobody"]}
+        rule.save(update_fields=["platforms", "audience_rules"])
+        client.force_login(gestor)
+
+        response = _confirmed_post(
+            client,
+            _fire_url(rule),
+            {"base_version": rule.version},
+            key="fire-public-without-contact-audience-0001",
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["receipt"]["outcome"]["audience_count"] == 0
+        announcement = Announcement.objects.get(rule=rule)
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
+        assert announcement.platforms == ["instagram"]
+        assert "audience_rules" not in announcement.trigger_context
+        snapshot = AudienceSnapshot.objects.get(
+            announcement=announcement,
+            version=announcement.version,
+        )
+        assert snapshot.summary["eligible_count"] == 0
+        assert snapshot.members.count() == 0
+        assert MarketingOutbox.objects.count() == 0
 
     def test_inactive_and_private_audience_are_rejected_safely(
         self, client, gestor, rule
