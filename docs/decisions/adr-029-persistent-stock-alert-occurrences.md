@@ -14,9 +14,11 @@ não oferecia pausa da autorização específica.
 
 ## Decisão
 
-- A assinatura permanece ativa por SKU, tipo de evento, canal da loja, finalidade e contato até
-  pausa, cancelamento ou expiração. A proteção atual de 30 dias permanece enquanto a retenção
-  definitiva estiver pendente.
+- A assinatura persiste entre ocorrências por SKU, tipo de evento, canal da loja, finalidade e
+  contato enquanto estiver ativa. A implementação atual ainda a expira em 30 dias: esse prazo é
+  uma proteção provisória mantida por decisão do solicitante, não a semântica definitiva de
+  duração da assinatura. Renovação, prazo final ou vigência até pausa/cancelamento permanecem uma
+  decisão explícita de produto e privacidade.
 - `stock_back` nasce uma vez por ciclo indisponível→disponível. Movimentos e retries enquanto o
   ciclo segue disponível reutilizam a ocorrência aberta. Nova indisponibilidade fecha o ciclo.
 - `production_ready` usa a identidade estável da ordem/fornada. O fechamento cria a ocorrência
@@ -44,3 +46,5 @@ sem controlar atividade. `StockAlertOccurrence` registra o evento e seu motivo; 
 registra fila, claim, aceite, falha recuperável, supressão ou incerteza. O Admin é somente leitura e
 o runbook orienta a ação sem oferecer reenvio cego. A tela de Expedição identifica fornadas que
 aguardam revisão e oferece a ação gerencial na mesma projeção e permissão usadas pela correção.
+Até a decisão de retenção, “persistente” significa que um aceite não consome a autorização e que
+ela pode atender várias ocorrências dentro da vigência atual; não significa duração indefinida.
