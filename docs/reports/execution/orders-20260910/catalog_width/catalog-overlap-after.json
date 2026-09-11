@@ -1,0 +1,36 @@
+{
+  "button": {
+    "x": 392.9375,
+    "y": 452.96875,
+    "width": 48.109375,
+    "height": 44,
+    "top": 452.96875,
+    "right": 441.046875,
+    "bottom": 496.96875,
+    "left": 392.9375
+  },
+  "fixed": {
+    "x": 73,
+    "y": 442.96875,
+    "width": 260,
+    "height": 65,
+    "top": 442.96875,
+    "right": 333,
+    "bottom": 507.96875,
+    "left": 73
+  },
+  "region": {
+    "x": 72,
+    "y": -128.015625,
+    "width": 1192,
+    "height": 831.984375,
+    "top": -128.015625,
+    "right": 1264,
+    "bottom": 703.96875,
+    "left": 72
+  },
+  "scroll": 0,
+  "scrollWidth": 1628,
+  "columns": 13,
+  "hit": "<span class=\"text-xs font-semibold tabular-nums text-muted-foreground line-through\">14,23</span>"
+}

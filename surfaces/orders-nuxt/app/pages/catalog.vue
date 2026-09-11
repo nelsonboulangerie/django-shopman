@@ -532,8 +532,13 @@ useHead({ title: "Catálogo · Gestor" });
       <!-- `table-fixed`: sem ele o conteúdo do cabeçalho (nome longo do canal, rótulo
            do feed) estica a coluna e a matriz fica desalinhada. Fixo, toda superfície
            tem a MESMA largura e o nome trunca com o title inteiro. O `min-w` faz a
-           tabela rolar em tela estreita em vez de espremer a coluna do produto. -->
-      <table class="w-full min-w-[1024px] table-fixed border-separate border-spacing-0 text-sm">
+           tabela rolar em tela estreita em vez de espremer a coluna do produto.
+           Reservar também 260px + todas as superfícies: min-width em th não
+           impede table-fixed de reduzir Produto a zero quando há muitos canais. -->
+      <table
+        class="w-full min-w-[1024px] table-fixed border-separate border-spacing-0 text-sm"
+        :style="{ minWidth: `${Math.max(1024, 260 + visibleSurfaces.length * 114)}px` }"
+      >
         <thead>
           <tr>
             <!-- Produto: `w-full` faz esta coluna absorver toda a folga da tabela, então

@@ -502,6 +502,8 @@ test("catalog SSE through Redis and BFF updates the row while preserving a price
   await page.goto("/catalog");
   expect((await stream).status()).toBe(200);
   const row = page.locator(`tr[data-dragkey="${lab.edit_sku}"]`);
+  await expect(row).toBeVisible();
+  expect((await row.locator("td").first().boundingBox())?.width, "Produto conserva área com múltiplos canais").toBeGreaterThanOrEqual(260);
   await row.getByRole("button", { name: /^Preço em/ }).first().click();
   const draft = page.locator('input[inputmode="decimal"]');
   await draft.fill("18,76");

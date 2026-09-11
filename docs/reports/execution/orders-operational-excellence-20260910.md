@@ -1487,3 +1487,14 @@ aprovadas, screenshot inspecionado; build/typecheck aprovados. Suíte integrada:
 com múltiplos canais. Falha preservada em detail_targets; investigação subsequente,
 sem clique forçado ou declarar suíte verde. Sem DDL/autoridade nova; rollback só
 visual, conservar drafts e recibos. Leitor de tela físico não ensaiado.
+
+### WP05/WP07 — matriz com múltiplos destinos mantém produto e preço acessíveis
+
+Antes: 12 canais/feeds + Produto em viewport1280×720; table-fixed reduzia Produto
+a0px e o conteúdo sticky interceptava o botão de preço. Geometria/elementFromPoint
+confirmam causa, não apenas timeout. Correção mínima reserva min-width260+114 por
+destino visível, preservando colunas uniformes, scroll, seleção e fonte de preço.
+Depois: Produto260px e hit no próprio preço; screenshot inspecionado. Caso SSE
+anteriormente falho passou/4,8s; **26 integrações/47,3s**, **295 Vitest/7,13s**,
+build/typecheck aprovados. Artefatos catalog_width. Sem DDL/efeito externo; rollback
+visual reabre sobreposição com muitos destinos. Não é medição de rede/coorte G06.
