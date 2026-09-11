@@ -51,3 +51,14 @@ Limites
   continuam fora desta execução.
 - Servidores manuais encerrados; bancos PostgreSQL descartáveis removidos e Redis
   DB 14 esvaziado após a validação.
+
+Correções reveladas pela primeira execução do PR
+- O Gate da meia-correção encontrou três `except: pass` e um `logger.debug` em
+  dois arquivos de produção tocados pela candidata. As quatro degradações foram
+  mantidas e ganharam o marcador canônico com a razão explícita; o gate passou.
+- O job purchase-nuxt expôs uma corrida já presente na main: a espera pelo campo
+  da gaveta podia consumir todos os callbacks de frame antes de um timer montar o
+  Teleport. A espera agora cede um ciclo de tarefas antes do frame.
+- Prova da corrida antes: falha local na 3ª de 20 repetições, igual à CI.
+- Prova depois: 50/50 repetições focadas; 93/93 testes purchase-nuxt; typecheck,
+  lint e build de produção passaram.

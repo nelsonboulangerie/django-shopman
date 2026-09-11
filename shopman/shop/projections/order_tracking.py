@@ -1298,7 +1298,7 @@ def _payment_confirmed_timestamp(order) -> str | None:
             from shopman.payman import PaymentService
 
             intent = PaymentService.get(intent_ref)
-        except Exception:
+        except Exception:  # silêncio-deliberado: projeção conserva o evento canônico como fallback
             logger.debug(
                 "order_tracking_payment_capture_timestamp_failed order=%s intent=%s",
                 order.ref,

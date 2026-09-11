@@ -343,7 +343,7 @@ class CommitService:
             try:
                 delivery_dt = date_type.fromisoformat(delivery_date_str)
                 order_data["is_preorder"] = delivery_dt > timezone.localdate()
-            except (ValueError, TypeError):
+            except (ValueError, TypeError):  # silêncio-deliberado: data inválida não pode marcar pré-venda
                 pass
 
         # Create Order + OrderItems. Ref aleatório → savepoint + retry na corrida de índice.
@@ -433,7 +433,7 @@ class CommitService:
         try:
             from shopman.orderman.contrib.refs.services import on_session_committed
             on_session_committed(session.pk, order.pk)
-        except ImportError:
+        except ImportError:  # silêncio-deliberado: integração contrib é opcional
             pass
 
         # Preorder reminder: D-1 notification if delivery_date is future
@@ -473,7 +473,7 @@ class CommitService:
                         },
                     },
                 )
-            except (ValueError, TypeError):
+            except (ValueError, TypeError):  # silêncio-deliberado: data inválida não agenda lembrete
                 pass
 
         return CommitResult(
