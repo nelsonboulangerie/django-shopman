@@ -33,15 +33,21 @@ async function toggleFood (pref: { key: string, is_active: boolean }) {
   }
 }
 
+const notificationKeys = useState<Record<string, string>>('notification-intentions', () => ({}))
+
 async function toggleNotification (pref: { key: string, enabled: boolean }) {
+  if (preferencePending.value[pref.key]) return
+  const intent = `${pref.key}:${!pref.enabled}`
+  notificationKeys.value[intent] ||= newRemoteMutationKey('notification')
   preferencePending.value = { ...preferencePending.value, [pref.key]: true }
   try {
     await $fetch(apiPath('/api/v1/account/preferences/notifications/'), {
       method: 'POST',
-      headers: await csrfHeaders(),
+      headers: { ...(await csrfHeaders()), 'Idempotency-Key': notificationKeys.value[intent] },
       credentials: 'include',
       body: { channel: pref.key, enabled: !pref.enabled }
     })
+    notificationKeys.value = omitKey(notificationKeys.value, intent)
     await refreshSummary()
   } catch {
     await refreshSummary()

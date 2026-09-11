@@ -1518,7 +1518,7 @@ describe('surface claims stay inside what the projection actually says', () => {
 
     expect(offer).toContain('v-for="item in skipped"')
     expect(offer).toContain('<StockNotifyButton')
-    expect(offer).not.toContain('ref<string[]>([])')
+    expect(offer).not.toMatch(/const skipped\s*=\s*ref<string\[\]>/)
   })
 
   it('keeps the progress timeline readable by assistive tech', () => {

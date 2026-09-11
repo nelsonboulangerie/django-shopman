@@ -8,7 +8,13 @@ class SetSkuQtySerializer(serializers.Serializer):
     qty = serializers.IntegerField(min_value=0, max_value=99)
 
 
+class CheckoutAddressLabelSerializer(serializers.Serializer):
+    key = serializers.ChoiceField(choices=["home", "work", "other"])
+    custom = serializers.CharField(required=False, default="", allow_blank=True, max_length=120)
+
+
 class CheckoutSerializer(serializers.Serializer):
+    address_label = CheckoutAddressLabelSerializer(required=False)
     idempotency_key = serializers.CharField(required=False, default="", allow_blank=True, max_length=120)
     name = serializers.CharField(max_length=120)
     phone = serializers.CharField(max_length=32)
@@ -44,6 +50,7 @@ class CheckoutSerializer(serializers.Serializer):
     # certo. Superfícies com operador presente (PDV) commitam por outro caminho
     # (`shop/services/pos.py`) e não passam por aqui.
     expected_total_q = serializers.IntegerField(required=True, min_value=0)
+    expected_revision = serializers.IntegerField(required=True, min_value=0)
     # Omotenashi: lembrar endereço/escolhas é o default; o cliente desmarca o toggle
     # "Salvar para a próxima vez" → save_as_default=false. (O endereço novo salva sempre.)
     save_as_default = serializers.BooleanField(required=False, default=True)
@@ -60,6 +67,7 @@ class CheckoutResponseSerializer(serializers.Serializer):
     order_ref = serializers.CharField()
     status = serializers.CharField()
     next_url = serializers.CharField(required=False)
+    convenience_pending = serializers.ListField(child=serializers.CharField(), required=False)
 
 
 class DetailSerializer(serializers.Serializer):
@@ -281,6 +289,7 @@ class OrderTrackingCopySerializer(serializers.Serializer):
 
 
 class OrderTrackingSerializer(serializers.Serializer):
+    convenience_pending = serializers.ListField(child=serializers.CharField(), required=False)
     ref = serializers.CharField()
     status = serializers.CharField()
     status_label = serializers.CharField()

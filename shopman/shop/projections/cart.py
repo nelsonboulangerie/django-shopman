@@ -179,7 +179,8 @@ class CartProjection:
     upsell: UpsellSuggestionProjection | None
 
     can_checkout: bool
-    checkout_block_reason: str  # "" | "empty" | "unavailable" | "below_minimum"
+    revision: int = 0
+    checkout_block_reason: str = ""  # "" | "empty" | "unavailable" | "below_minimum"
 
 
 def _empty_cart(session_key: str = "") -> CartProjection:
@@ -315,6 +316,7 @@ def build_cart(
 
     return CartProjection(
         session_key=session_key,
+        revision=session.rev,
         lines=lines,
         count=count,
         is_empty=False,

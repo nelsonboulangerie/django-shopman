@@ -222,6 +222,8 @@ export interface CartItemProjection {
 }
 
 export interface CartProjection {
+  revision?: number
+  draft_context?: string
   items: CartItemProjection[]
   items_count: number
   is_empty: boolean
@@ -714,6 +716,7 @@ export interface CheckoutResponse {
 }
 
 export interface CheckoutMutationResponse {
+  convenience_pending?: string[]
   order_ref: string
   status: string
   next_url?: string
@@ -851,6 +854,7 @@ export interface TrackingCopyProjection {
 }
 
 export interface TrackingResponse {
+  convenience_pending?: string[]
   ref: string
   status: string
   status_label: string

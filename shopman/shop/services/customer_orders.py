@@ -278,6 +278,23 @@ def _named_snapshot_items(items: list[dict]) -> list[dict]:
     return rows
 
 
+def lock_customer_order(order_ref: str):
+    from shopman.orderman.models import Order
+    return Order.objects.select_for_update().get(ref=order_ref)
+
+
+def save_customer_rating(order, *, rating: int, comment: str) -> None:
+    from django.db import transaction
+    from shopman.orderman.models import Order
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        data = dict(locked.data or {})
+        data["customer_rating"] = {"rating": rating, "comment": comment[:500], "submitted_at": timezone.now().isoformat(), "source": "storefront_nuxt"}
+        locked.data = data
+        locked.save(update_fields=["data"])
+        order.data = data
+
+
 def get_payment_status(order) -> str | None:
     """Return the canonical payment status for an order."""
     return payment_service.get_payment_status(order)
@@ -586,7 +603,7 @@ def add_reorder_items(
             skipped.append(product.name or item.sku)
         except Exception:
             logger.warning("reorder_add_item_failed order=%s sku=%s", order.ref, item.sku, exc_info=True)
-            skipped.append(product.name or item.sku)
+            raise
 
     return skipped
 

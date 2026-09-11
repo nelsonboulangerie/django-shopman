@@ -235,8 +235,8 @@ class ConcurrentOversellTests(TransactionTestCase):
 
         # At most 3 orders (limited by stock)
         order_count = Order.objects.filter(channel_ref=self.channel.ref).count()
-        self.assertLessEqual(order_count, 3)
-        self.assertLessEqual(len(successes), 3)
+        self.assertEqual(order_count, 3)
+        self.assertEqual(len(successes), 3)
 
         # The rest must have failed
         total = len(successes) + len(failures)
@@ -293,9 +293,15 @@ class ConcurrentPaymentCaptureTests(TransactionTestCase):
         mock_adapter.capture.side_effect = mock_capture
 
         def do_capture():
-            payment_service.capture(order)
+            from django.db import connections
+            try:
+                current = Order.objects.get(pk=order.pk)
+                start.wait(timeout=10)
+                return payment_service.capture(current)
+            finally:
+                connections.close_all()
 
-        threads = [threading.Thread(target=do_capture) for _ in range(2)]
+        start = threading.Barrier(2)
         # Patch once around the whole race. ``unittest.mock.patch`` mutates a
         # process-global attribute and is not safe to enter independently from
         # overlapping threads: whichever context exits last can restore the
@@ -311,14 +317,14 @@ class ConcurrentPaymentCaptureTests(TransactionTestCase):
                 return_value=mock_adapter,
             ),
         ):
-            for t in threads:
-                t.start()
-            for t in threads:
-                t.join()
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(do_capture) for _ in range(2)]
+                for future in futures:
+                    future.result(timeout=20)
 
         order.refresh_from_db()
         # transaction_id written to order.data on successful capture
         self.assertEqual(order.data["payment"]["transaction_id"], "txn_race_001")
         # Status is NOT written to order.data — Payman is the canonical source
         self.assertNotIn("status", order.data["payment"])
-        self.assertGreaterEqual(capture_count["n"], 1)
+        self.assertEqual(capture_count["n"], 1)

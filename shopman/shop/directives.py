@@ -28,6 +28,8 @@ NOTIFICATION_SEND = "notification.send"
 NOTIFICATION_ORIGINAL_RECEIPT_SCOPE = "notification:original"
 NOTIFICATION_RESEND_RECEIPT_SCOPE = "notification:resend"
 
+CHECKOUT_CONVENIENCE = "checkout.convenience"
+
 # Fulfillment
 FULFILLMENT_CREATE = "fulfillment.create"
 FULFILLMENT_UPDATE = "fulfillment.update"

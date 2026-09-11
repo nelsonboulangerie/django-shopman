@@ -67,6 +67,8 @@ class StockAlertSubscription(models.Model):
         default="legacy_unverified",
     )
     subscribed_at = models.DateTimeField(verbose_name="pedido em", auto_now_add=True)
+    dispatch_claimed_at = models.DateTimeField(null=True, blank=True)
+    dispatch_accepted_at = models.DateTimeField(null=True, blank=True)
     notified_at = models.DateTimeField(verbose_name="avisado em", null=True, blank=True)
     expires_at = models.DateTimeField(verbose_name="expira em", null=True, blank=True)
     revoked_at = models.DateTimeField(verbose_name="cancelado em", null=True, blank=True)

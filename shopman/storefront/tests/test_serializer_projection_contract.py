@@ -75,6 +75,7 @@ NON_MIRROR = {
     # Corpos de request (entrada, não projection).
     "SetSkuQtySerializer",
     "CheckoutSerializer",
+    "CheckoutAddressLabelSerializer",
     "ReverseGeocodeRequestSerializer",
     # Envelope de erro canônico ({detail, ...}).
     "DetailSerializer",

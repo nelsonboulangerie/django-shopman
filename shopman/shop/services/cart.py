@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 
+from django.db import transaction
 from shopman.orderman.models import Session
 
 from shopman.shop.services import availability, lot_pricing
@@ -42,6 +43,10 @@ class CartUnavailableError(Exception):
         self.error_code = error_code
         self.is_planned = is_planned
         self.planned_target_date = planned_target_date
+
+
+def lock_cart_session(*, session_key: str, channel_ref: str):
+    return Session.objects.select_for_update().filter(session_key=session_key, channel_ref=channel_ref).first()
 
 
 def get_open_session(*, session_key: str, channel_ref: str) -> Session | None:
@@ -89,6 +94,7 @@ def get_or_create_session(
     return session, session.session_key
 
 
+@transaction.atomic
 def add_item(
     *,
     session_key: str | None,
@@ -106,6 +112,7 @@ def add_item(
         origin_channel=origin_channel,
     )
 
+    session = Session.objects.select_for_update().get(pk=session.pk)
     existing = next((item for item in session.items if item.get("sku") == sku), None)
     hold_id = _reserve_or_raise(
         sku=sku,
@@ -145,6 +152,7 @@ def add_item(
     )
 
 
+@transaction.atomic
 def update_qty(
     *,
     session_key: str,
@@ -154,6 +162,7 @@ def update_qty(
     sku: str | None = None,
 ) -> Session:
     """Reconcile holds and update a cart line quantity."""
+    Session.objects.select_for_update().get(session_key=session_key, channel_ref=channel_ref, state="open")
     line_sku = sku
     if line_sku is None:
         line = get_line(session_key=session_key, channel_ref=channel_ref, line_id=line_id)
@@ -184,6 +193,7 @@ def update_qty(
     )
 
 
+@transaction.atomic
 def remove_item(
     *,
     session_key: str,
@@ -192,6 +202,7 @@ def remove_item(
     sku: str | None = None,
 ) -> Session:
     """Reconcile holds and remove a cart line."""
+    Session.objects.select_for_update().get(session_key=session_key, channel_ref=channel_ref, state="open")
     line_sku = sku
     if line_sku is None:
         line = get_line(session_key=session_key, channel_ref=channel_ref, line_id=line_id)
@@ -356,6 +367,7 @@ def validate_and_apply_coupon(
     return session, promotion.name
 
 
+@transaction.atomic
 def apply_coupon_code(
     *,
     session_key: str,
@@ -371,7 +383,7 @@ def apply_coupon_code(
     and RFM segment from the session, and does so on every later reprice too.
     Open (non-segmented) coupons pass ``None``.
     """
-    session = get_open_session(session_key=session_key, channel_ref=channel_ref)
+    session = Session.objects.select_for_update().filter(session_key=session_key, channel_ref=channel_ref, state="open").first()
     if session is None:
         return None
 
@@ -395,9 +407,10 @@ def apply_coupon_code(
     )
 
 
+@transaction.atomic
 def remove_coupon_code(*, session_key: str, channel_ref: str) -> Session | None:
     """Remove coupon code and re-run session modifiers."""
-    session = get_open_session(session_key=session_key, channel_ref=channel_ref)
+    session = Session.objects.select_for_update().filter(session_key=session_key, channel_ref=channel_ref, state="open").first()
     if session is None:
         return None
 
@@ -419,6 +432,7 @@ def remove_coupon_code(*, session_key: str, channel_ref: str) -> Session | None:
     return session
 
 
+@transaction.atomic
 def set_delivery_draft(
     *,
     session_key: str,
@@ -436,7 +450,7 @@ def set_delivery_draft(
     the (possibly new) address; on pickup the delivery keys are dropped so the
     fee disappears from the total.
     """
-    session = get_open_session(session_key=session_key, channel_ref=channel_ref)
+    session = Session.objects.select_for_update().filter(session_key=session_key, channel_ref=channel_ref, state="open").first()
     if session is None:
         return None
 
@@ -460,6 +474,7 @@ def set_delivery_draft(
     )
 
 
+@transaction.atomic
 def set_loyalty_redeem(
     *,
     session_key: str,
@@ -474,7 +489,7 @@ def set_loyalty_redeem(
     ``loyalty_redeem`` pricing key). Toggling here keeps them in sync instead of
     a UI-only flag that diverges from the discount actually applied.
     """
-    session = get_open_session(session_key=session_key, channel_ref=channel_ref)
+    session = Session.objects.select_for_update().filter(session_key=session_key, channel_ref=channel_ref, state="open").first()
     if session is None:
         return None
 

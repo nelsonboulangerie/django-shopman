@@ -57,6 +57,7 @@ def _last_slot() -> str:
 
 
 def _post(client, payload: dict):
+    payload = {**payload, "expected_revision": client.get("/api/v1/storefront/cart/").json()["cart"]["revision"]}
     return client.post(
         "/api/v1/checkout/",
         data=json.dumps(payload),

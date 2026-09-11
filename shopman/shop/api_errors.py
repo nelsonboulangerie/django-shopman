@@ -52,6 +52,10 @@ def exception_handler(exc, context):
     ``NotAuthenticated`` ganham o superset ``error.code`` (ver
     ``_attach_permission_code``). O status HTTP nunca muda aqui.
     """
+    from shopman.shop.services.remote_mutations import RemoteMutationConflict
+    if isinstance(exc, RemoteMutationConflict):
+        from rest_framework.response import Response
+        return Response({"detail": str(exc), "error_code": "idempotency_conflict"}, status=409)
     response = drf_exception_handler(exc, context)
     if response is None:
         return None

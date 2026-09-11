@@ -123,6 +123,14 @@ export function useShopSession () {
   }
 
   function reset () {
+    if (import.meta.client) {
+      try {
+        localStorage.removeItem('shopman-checkout-draft')
+        for (const key of Object.keys(sessionStorage)) {
+          if (key.startsWith('shopman-intention:')) sessionStorage.removeItem(key)
+        }
+      } catch { /* storage unavailable */ }
+    }
     state.value = emptyState()
   }
 

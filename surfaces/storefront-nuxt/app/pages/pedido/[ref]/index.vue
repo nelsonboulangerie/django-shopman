@@ -235,6 +235,17 @@ function actionSuccessMessage (action: Action): string {
   return 'Tudo certo, atualizamos seu pedido.'
 }
 
+async function refreshAfterConfirmedAction () {
+  const confirmed = data.value
+  try {
+    await refresh()
+    if (!error.value) return
+  } catch { /* confirmed action remains authoritative */ }
+  data.value = confirmed
+  error.value = undefined
+  if (import.meta.client) useSonner.info('Ação confirmada. A atualização do acompanhamento está pendente.')
+}
+
 async function postAction (action: Action, body: Record<string, unknown> = {}) {
   actionPending.value = { ...actionPending.value, [action.ref]: true }
   try {
@@ -242,14 +253,14 @@ async function postAction (action: Action, body: Record<string, unknown> = {}) {
     if (action.idempotency === 'required' || action.idempotency === 'recommended') {
       headers['x-idempotency-key'] = newRemoteMutationKey(action.ref)
     }
-    await $fetch(apiPath(action.href), {
+    data.value = await $fetch<TrackingResponse>(apiPath(action.href), {
       method: remoteMethod(action.method),
       headers,
       credentials: 'include',
       body
     })
-    await refresh()
     if (import.meta.client) useSonner.success(actionSuccessMessage(action))
+    await refreshAfterConfirmedAction()
   } catch (e) {
     if (import.meta.client) useSonner.error(errorDetail(e, 'Não foi possível concluir. Tente de novo ou fale conosco.'))
   } finally {
@@ -271,7 +282,7 @@ async function submitRating () {
     if (action.idempotency === 'required' || action.idempotency === 'recommended') {
       headers['x-idempotency-key'] = newRemoteMutationKey(action.ref)
     }
-    await $fetch(apiPath(action.href), {
+    data.value = await $fetch<TrackingResponse>(apiPath(action.href), {
       method: remoteMethod(action.method),
       headers,
       credentials: 'include',
@@ -279,7 +290,7 @@ async function submitRating () {
     })
     ratingSubmitted.value = true
     if (import.meta.client && ratingThanks.value.celebrate) dispararConfetti()
-    await refresh()
+    await refreshAfterConfirmedAction()
   } catch (e) {
     if (import.meta.client) useSonner.error(errorDetail(e, tracking.value?.copy.rating_failed_message || 'Não foi possível concluir. Tente de novo ou fale conosco.'))
   } finally {
@@ -478,6 +489,9 @@ useSeoMeta({
         </UiAlert>
 
         <template v-else-if="tracking">
+          <UiAlert v-if="tracking.convenience_pending?.length" role="status" variant="warning" icon="lucide:info">
+            Pedido confirmado. Estamos tentando salvar suas escolhas para a próxima vez. Você não precisa repetir o pedido.
+          </UiAlert>
           <UiAlert
             variant="default"
             :class="statusPanelClass"

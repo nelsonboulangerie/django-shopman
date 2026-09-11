@@ -164,6 +164,7 @@ def test_choosing_a_saved_address_delivers_to_the_saved_address(
     )
     payload["expected_total_q"] = displayed_total_q(client, payload)
 
+    payload["expected_revision"] = client.get("/api/v1/storefront/cart/").json()["cart"]["revision"]
     response = client.post(
         "/api/v1/checkout/", data=json.dumps(payload), content_type="application/json",
     )
@@ -188,6 +189,7 @@ def test_points_on_a_new_address_ask_for_confirmation(cart_session_delivery, per
         use_loyalty=True,
         expected_total_q=3200,
     )
+    payload["expected_revision"] = client.get("/api/v1/storefront/cart/").json()["cart"]["revision"]
     response = client.post(
         "/api/v1/checkout/", data=json.dumps(payload), content_type="application/json",
     )
@@ -209,6 +211,7 @@ def test_points_on_a_saved_address_are_never_blocked(cart_session_delivery, pers
         person, saved_address_id=person.addresses.get().id, use_loyalty=True,
     )
     payload["expected_total_q"] = displayed_total_q(client, payload)
+    payload["expected_revision"] = client.get("/api/v1/storefront/cart/").json()["cart"]["revision"]
     response = client.post(
         "/api/v1/checkout/", data=json.dumps(payload), content_type="application/json",
     )
@@ -238,6 +241,7 @@ def test_points_at_the_counter_are_never_blocked(cart_session_delivery, person):
         "delivery_time_slot": slots[0]["ref"],
     }
     payload["expected_total_q"] = displayed_total_q(client, payload)
+    payload["expected_revision"] = client.get("/api/v1/storefront/cart/").json()["cart"]["revision"]
     response = client.post(
         "/api/v1/checkout/", data=json.dumps(payload), content_type="application/json",
     )
@@ -267,6 +271,7 @@ def test_a_known_device_spends_points_on_a_new_address(cart_session_delivery, pe
         use_loyalty=True,
     )
     payload["expected_total_q"] = displayed_total_q(client, payload)
+    payload["expected_revision"] = client.get("/api/v1/storefront/cart/").json()["cart"]["revision"]
     response = client.post(
         "/api/v1/checkout/", data=json.dumps(payload), content_type="application/json",
     )
@@ -444,6 +449,7 @@ def test_a_saved_address_with_coordinates_does_not_break_the_checkout(
     payload = _delivery_payload(person, saved_address_id=saved.id)
     payload["expected_total_q"] = displayed_total_q(client, payload)
 
+    payload["expected_revision"] = client.get("/api/v1/storefront/cart/").json()["cart"]["revision"]
     response = client.post(
         "/api/v1/checkout/", data=json.dumps(payload), content_type="application/json",
     )

@@ -88,11 +88,7 @@ def subscribed_skus(*, customer=None, phone: str = "") -> set[str]:
         cond |= Q(customer_ref=customer_ref)
     if contact:
         cond |= Q(contact_phone=contact)
-    return set(
-        StockAlertSubscription.objects.active()
-        .filter(cond)
-        .values_list("sku", flat=True)
-    )
+    return set(StockAlertSubscription.objects.active().filter(cond).values_list("sku", flat=True))
 
 
 def has_pending_for(*, sku: str, customer=None, phone: str = "", alert_type: str = "") -> bool:
@@ -117,6 +113,7 @@ def has_pending_for(*, sku: str, customer=None, phone: str = "", alert_type: str
     return qs.filter(cond).exists()
 
 
+@transaction.atomic
 def subscribe(
     sku: str,
     *,
@@ -153,6 +150,9 @@ def subscribe(
 
     now = timezone.now()
     channel_ref = channel_ref or "web"
+    from shopman.shop.services.notification import lock_subscription_channel
+
+    lock_subscription_channel(channel_ref)
     target_key = _target_key(customer_ref=customer_ref, phone=contact)
     selector = {
         "sku": sku,
@@ -170,9 +170,7 @@ def subscribe(
         old.revoked_at = now
         old.revoke_reason = "expired"
         old.revocation_evidence_hash = _revocation_hash(old.ref, now, "expired")
-        old.save(
-            update_fields=["revoked_at", "revoke_reason", "revocation_evidence_hash"]
-        )
+        old.save(update_fields=["revoked_at", "revoke_reason", "revocation_evidence_hash"])
 
     existing = StockAlertSubscription.objects.active(now=now).filter(**selector).first()
     if existing:
@@ -184,12 +182,8 @@ def subscribe(
     if legacy:
         legacy.revoked_at = now
         legacy.revoke_reason = "reconfirmed_with_evidence"
-        legacy.revocation_evidence_hash = _revocation_hash(
-            legacy.ref, now, legacy.revoke_reason
-        )
-        legacy.save(
-            update_fields=["revoked_at", "revoke_reason", "revocation_evidence_hash"]
-        )
+        legacy.revocation_evidence_hash = _revocation_hash(legacy.ref, now, legacy.revoke_reason)
+        legacy.save(update_fields=["revoked_at", "revoke_reason", "revocation_evidence_hash"])
 
     subscription_ref = uuid.uuid4()
     disclosure_hash = hashlib.sha256(disclosure_text.encode()).hexdigest()
@@ -241,9 +235,7 @@ def revoke(
 
     from shopman.storefront.models import StockAlertSubscription
 
-    subscriptions = StockAlertSubscription.objects.select_for_update().filter(
-        ref=subscription_ref
-    )
+    subscriptions = StockAlertSubscription.objects.select_for_update().filter(ref=subscription_ref)
     if sku:
         subscriptions = subscriptions.filter(sku=sku)
     sub = subscriptions.first()
@@ -251,9 +243,7 @@ def revoke(
         return False
     customer_ref = (getattr(customer, "ref", "") or "").strip()
     contact = normalize_phone(phone or getattr(customer, "phone", "") or "")
-    owned = (customer_ref and sub.customer_ref == customer_ref) or (
-        contact and sub.contact_phone == contact
-    )
+    owned = (customer_ref and sub.customer_ref == customer_ref) or (contact and sub.contact_phone == contact)
     if not owned:
         return False
     if sub.revoked_at is not None:
@@ -264,9 +254,7 @@ def revoke(
     now = timezone.now()
     sub.revoked_at = now
     sub.revoke_reason = (reason or "customer_request")[:100]
-    sub.revocation_evidence_hash = _revocation_hash(
-        sub.ref, now, sub.revoke_reason
-    )
+    sub.revocation_evidence_hash = _revocation_hash(sub.ref, now, sub.revoke_reason)
     sub.save(update_fields=["revoked_at", "revoke_reason", "revocation_evidence_hash"])
     return True
 
@@ -362,6 +350,7 @@ def _notify(sku: str, *, alert_types: list[str], event: str) -> int:
             continue  # still unavailable for this channel — keep pending
         if _deliver_group_if_still_active(
             [sub.pk for sub in subs],
+            channel_ref=channel_ref,
             product_name=product_name,
             event=event,
             available_qty=state.available_qty,
@@ -370,49 +359,96 @@ def _notify(sku: str, *, alert_types: list[str], event: str) -> int:
     if notified:
         logger.info(
             "stock_alerts: notified %s subscriber(s) for sku=%s event=%s",
-            notified, sku, event,
+            notified,
+            sku,
+            event,
         )
     return notified
 
 
-@transaction.atomic
 def _deliver_group_if_still_active(
     subscription_pks: list[int],
     *,
+    channel_ref: str,
     product_name: str,
     event: str,
     available_qty: int | None,
 ) -> bool:
-    """Lock, recheck revocation/expiry/global opt-out, then deliver once.
+    """Persist a claim, recheck consent under the channel lock, then deliver once.
 
-    This intentionally holds the row lock across the legacy adapter call. WP-03
-    replaces that temporary boundary with a persisted DeliveryAttempt, without
-    weakening this revoke-before-send guarantee in the meantime.
+    The first short transaction makes a lost provider response indeterminate
+    instead of retryable. The second keeps the channel lock through the final
+    consent check and adapter call, so a concurrent opt-out either wins before
+    send or waits until the already-started send has a durable outcome.
     """
 
+    from shopman.shop.services.notification import (
+        lock_subscription_channel,
+        subscription_notification_allowed,
+    )
+    from shopman.shop.services.observability import create_operator_alert
     from shopman.storefront.models import StockAlertSubscription
 
-    subscriptions = list(
-        StockAlertSubscription.objects.select_for_update()
-        .active()
-        .filter(pk__in=subscription_pks)
-        .order_by("pk")
-    )
-    if not subscriptions or any(_globally_opted_out(sub) for sub in subscriptions):
-        return False
-    sub = subscriptions[0]
-    if not _deliver(
-        sub,
-        product_name=product_name,
-        event=event,
-        available_qty=available_qty,
-    ):
-        return False
-    stamped = timezone.now()
-    for item in subscriptions:
-        item.notified_at = stamped
-        item.save(update_fields=["notified_at"])
-    return True
+    with transaction.atomic():
+        lock_subscription_channel(channel_ref)
+        subscriptions = list(
+            StockAlertSubscription.objects.select_for_update().active().filter(pk__in=subscription_pks).order_by("pk")
+        )
+        if not subscriptions or any(sub.dispatch_claimed_at for sub in subscriptions):
+            return False
+        if not all(
+            subscription_notification_allowed(
+                customer_ref=sub.customer_ref,
+                phone=sub.contact_phone,
+            )
+            for sub in subscriptions
+        ):
+            return False
+        claimed_at = timezone.now()
+        StockAlertSubscription.objects.filter(pk__in=[sub.pk for sub in subscriptions]).update(
+            dispatch_claimed_at=claimed_at
+        )
+
+    with transaction.atomic():
+        lock_subscription_channel(channel_ref)
+        subscriptions = list(
+            StockAlertSubscription.objects.select_for_update()
+            .active()
+            .filter(
+                pk__in=subscription_pks,
+                dispatch_claimed_at__isnull=False,
+                dispatch_accepted_at__isnull=True,
+            )
+            .order_by("pk")
+        )
+        if not subscriptions:
+            return False
+        if not all(
+            subscription_notification_allowed(
+                customer_ref=sub.customer_ref,
+                phone=sub.contact_phone,
+            )
+            for sub in subscriptions
+        ):
+            return False
+        if not _deliver(
+            subscriptions[0],
+            product_name=product_name,
+            event=event,
+            available_qty=available_qty,
+        ):
+            create_operator_alert(
+                type="stock_alert_dispatch_unknown",
+                severity="warning",
+                message=("Aceite do aviso sem confirmação. Consulte o provedor antes de repetir."),
+                dedupe_key=f"stock-alert:{subscriptions[0].pk}",
+            )
+            return False
+        stamped = timezone.now()
+        StockAlertSubscription.objects.filter(pk__in=[sub.pk for sub in subscriptions]).update(
+            notified_at=stamped, dispatch_accepted_at=stamped
+        )
+        return True
 
 
 def _globally_opted_out(sub) -> bool:
@@ -466,7 +502,11 @@ def _first_name(sub) -> str:
 
 
 def _deliver(
-    sub, *, product_name: str, event: str = "stock_arrived", available_qty: int | None = None,
+    sub,
+    *,
+    product_name: str,
+    event: str = "stock_arrived",
+    available_qty: int | None = None,
 ) -> bool:
     """Send the subscription's notification via the channel's backend. True on success."""
     from shopman.shop.config import ChannelConfig
@@ -482,7 +522,9 @@ def _deliver(
         return False
 
     try:
-        backend = (ChannelConfig.for_channel(sub.channel_ref or STOREFRONT_CHANNEL_REF).notifications.backend) or "manychat"
+        backend = (
+            ChannelConfig.for_channel(sub.channel_ref or STOREFRONT_CHANNEL_REF).notifications.backend
+        ) or "manychat"
     except Exception:
         logger.debug("stock_alerts: backend resolve failed, default manychat", exc_info=True)
         backend = "manychat"
@@ -562,13 +604,9 @@ def _subscription_evidence_hash(
         separators=(",", ":"),
         sort_keys=True,
     )
-    return hmac.new(
-        settings.SECRET_KEY.encode(), evidence.encode(), hashlib.sha256
-    ).hexdigest()
+    return hmac.new(settings.SECRET_KEY.encode(), evidence.encode(), hashlib.sha256).hexdigest()
 
 
 def _revocation_hash(subscription_ref, occurred_at, reason: str) -> str:
     value = f"{subscription_ref}:{occurred_at.isoformat()}:{reason}"
-    return hmac.new(
-        settings.SECRET_KEY.encode(), value.encode(), hashlib.sha256
-    ).hexdigest()
+    return hmac.new(settings.SECRET_KEY.encode(), value.encode(), hashlib.sha256).hexdigest()

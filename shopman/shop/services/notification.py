@@ -916,6 +916,25 @@ def _revoked_notification_channels(
         return frozenset(channels)
 
 
+def lock_subscription_channel(channel_ref: str) -> None:
+    """Serialize subscription creation/claims; caller owns the short transaction."""
+    from shopman.shop.models import Channel
+    Channel.objects.select_for_update().get(ref=channel_ref)
+
+
+def subscription_notification_allowed(*, customer_ref: str, phone: str) -> bool:
+    """Reuse revocation policy; missing/failed identity resolution is fail-closed."""
+    try:
+        if not customer_ref:
+            from shopman.guestman.services import customer as customers
+            owner = customers.get_by_phone(phone)
+            customer_ref = owner.ref if owner else ""
+        return not _revoked_notification_channels(customer_ref, ("whatsapp",))
+    except Exception:
+        logger.warning("notification.subscription_eligibility_failed", exc_info=True)
+        return False
+
+
 def _dev_console_allowed(backend_chain: list[str]) -> bool:
     return bool(getattr(settings, "DEBUG", False) and "console" in backend_chain)
 

@@ -7,7 +7,6 @@ from __future__ import annotations
 import logging
 
 from django.http import Http404
-from django.utils import timezone
 from django_eventstream.views import events as eventstream_view
 from django_ratelimit.core import is_ratelimited
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
@@ -549,6 +548,9 @@ class OrderRateView(APIView):
         )
 
         def execute_rate() -> tuple[dict, int]:
+            nonlocal order
+            from shopman.shop.services.customer_orders import lock_customer_order
+            order = lock_customer_order(order.ref)
             current_projection = build_order_tracking(order)
             can_rate = any(action.ref == "rate_order" and action.enabled for action in current_projection.actions)
             if not can_rate:
@@ -560,15 +562,8 @@ class OrderRateView(APIView):
                     status.HTTP_409_CONFLICT,
                 )
 
-            data = order.data.copy() if isinstance(order.data, dict) else {}
-            data["customer_rating"] = {
-                "rating": rating,
-                "comment": comment[:500],
-                "submitted_at": timezone.now().isoformat(),
-                "source": "storefront_nuxt",
-            }
-            order.data = data
-            order.save(update_fields=["data"])
+            from shopman.shop.services.customer_orders import save_customer_rating
+            save_customer_rating(order, rating=rating, comment=comment)
             # Nota baixa (≤2) vira alerta do operador: o gestor age enquanto o
             # cliente ainda lembra, e a nota deixa de morrer no JSONField. Não pode
             # derrubar a resposta da avaliação — best-effort, debounced no helper.
@@ -582,6 +577,7 @@ class OrderRateView(APIView):
         try:
             result = remote_mutations.run_idempotent_mutation(
                 scope=f"order-rate:{ref}",
+                payload={"rating": rating, "comment": comment[:500]}, local_atomic=True,
                 key=key,
                 execute=execute_rate,
                 cache_response=lambda _body, code: code < 400,

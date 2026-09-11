@@ -301,6 +301,7 @@ class OrderTrackingProjection:
     mock_payment_enabled: bool
     # Cancelamento pelo estabelecimento: motivo + estorno visíveis ao cliente
     # (Pix/cartão) — a página não depende da notificação.
+    convenience_pending: tuple[str, ...] = ()
     cancellation_note: str = ""
     refund_status_label: str | None = None
 
@@ -348,6 +349,7 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         payment_confirmed=data.payment_confirmed,
     )
     return OrderTrackingProjection(
+        convenience_pending=data.convenience_pending,
         order_ref=data.order_ref,
         status=data.status,
         status_label=_status_label(data.display_status_key, data.status, copy),

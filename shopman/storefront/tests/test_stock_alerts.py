@@ -21,6 +21,12 @@ from shopman.storefront.services import stock_alerts
 
 pytestmark = pytest.mark.django_db
 
+@pytest.fixture(autouse=True)
+def configured_channel():
+    from shopman.shop.models import Channel
+    Channel.objects.get_or_create(ref="web", defaults={"name": "Web", "is_active": True})
+
+
 PHONE = "+5543999990001"
 
 

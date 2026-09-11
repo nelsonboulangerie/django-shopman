@@ -21,6 +21,8 @@ class IdempotencyKey(models.Model):
         default="in_progress",
     )
 
+    request_fingerprint = models.CharField(max_length=64, blank=True, default="")
+
     response_code = models.IntegerField(_("código de resposta"), null=True, blank=True)
     response_body = models.JSONField(_("corpo da resposta"), null=True, blank=True)
 

@@ -32,6 +32,7 @@ export interface CheckoutSubmitPayload extends CheckoutFormState {
   use_loyalty: boolean
   // Total (centavos) exibido ao cliente no momento do confirmar — o servidor
   // rejeita o commit se a repricing final divergir (cobrança surpresa, nunca).
+  expected_revision?: number
   expected_total_q: number | null
 }
 
@@ -43,9 +44,11 @@ export function buildCheckoutPayload (
   state: CheckoutFormState,
   idempotencyKey: string,
   useLoyalty: boolean,
-  expectedTotalQ: number | null = null
+  expectedTotalQ: number | null = null,
+  expectedRevision?: number
 ): CheckoutSubmitPayload {
   return {
+    ...(expectedRevision !== undefined ? { expected_revision: expectedRevision } : {}),
     idempotency_key: idempotencyKey,
     name: state.name.trim(),
     phone: state.phone.trim(),

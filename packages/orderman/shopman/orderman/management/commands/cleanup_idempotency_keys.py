@@ -12,6 +12,7 @@ Recomendação: Agendar via cron para executar diariamente.
 from datetime import timedelta
 
 from django.core.management.base import BaseCommand
+from django.db.models import Q
 from django.utils import timezone
 from shopman.orderman.models import IdempotencyKey
 
@@ -21,8 +22,16 @@ PERSISTENT_SCOPES = frozenset(
         "production:quick-finish-attempt",
         "notification:original",
         "notification:resend",
+        "checkout:convenience",
+        "checkout:convenience:queued",
     }
 )
+
+
+# New bound intentions may still be recovered by a browser/worker. Age alone
+# cannot authorize repeating their effects. A retention policy must reconcile
+# these receipts before contracting them; definite refusals remain cleanable.
+PERSISTENT_RECEIPTS = Q(scope__in=PERSISTENT_SCOPES) | (~Q(request_fingerprint="") & Q(status__in=["done", "in_progress"]))
 
 
 class Command(BaseCommand):
@@ -55,14 +64,14 @@ class Command(BaseCommand):
         now = timezone.now()
 
         # 1. Keys com expires_at definido e expirado
-        expired_qs = IdempotencyKey.objects.filter(expires_at__lt=now).exclude(scope__in=PERSISTENT_SCOPES)
+        expired_qs = IdempotencyKey.objects.filter(expires_at__lt=now).exclude(PERSISTENT_RECEIPTS)
         expired_count = expired_qs.count()
 
         # 2. Keys antigas (criadas há mais de N dias)
         old_qs = IdempotencyKey.objects.filter(
             created_at__lt=cutoff,
             status__in=["done", "failed"],
-        ).exclude(scope__in=PERSISTENT_SCOPES)
+        ).exclude(PERSISTENT_RECEIPTS)
         old_count = old_qs.count()
 
         # 3. Keys "in_progress" antigas (possíveis órfãs de processos interrompidos)
@@ -73,7 +82,7 @@ class Command(BaseCommand):
             orphan_qs = IdempotencyKey.objects.filter(
                 created_at__lt=orphan_cutoff,
                 status="in_progress",
-            ).exclude(scope__in=PERSISTENT_SCOPES)
+            ).exclude(PERSISTENT_RECEIPTS)
             orphan_count = orphan_qs.count()
 
         total = expired_count + old_count + orphan_count

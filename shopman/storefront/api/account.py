@@ -865,19 +865,47 @@ class NotificationPreferenceToggleView(APIView):
         customer = get_authenticated_customer(request)
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        from shopman.shop.services import remote_mutations, sessions
+        key = remote_mutations.idempotency_key_from_request(request, fallback=sessions.new_idempotency_key())
+        def execute():
+            response = self._post(request)
+            return dict(response.data), response.status_code
+        try:
+            result = remote_mutations.run_idempotent_mutation(
+                scope=remote_mutations.mutation_scope("web", "notification-preference", customer.ref), key=key,
+                payload=request.data, execute=execute, local_atomic=True,
+                cache_response=lambda body, code: code == 200,
+            )
+        except remote_mutations.RemoteMutationInProgress:
+            return Response({"detail": "A preferência ainda está sendo salva.", "error_code": "mutation_in_progress"}, status=409)
+        if result.response_code != 200:
+            return Response(result.response_body, status=result.response_code)
+        # A receipt is historical; show the current preference after a later opt-out.
+        prefs = present_notification_prefs(account_service.enabled_notification_channels(customer.ref))
+        return Response({"notification_preferences": [{"key": p.key, "label": p.label, "description": p.description, "enabled": p.enabled} for p in prefs]})
+
+    def _post(self, request):
+        customer = get_authenticated_customer(request)
+        if not customer:
+            return Response({"detail": "Entre na sua conta para continuar."}, status=401)
         channel = str((request.data if hasattr(request, "data") else {}).get("channel") or "").strip()
         valid_channels = {key for key, _label, _description in NOTIFICATION_CHANNELS}
         if channel not in valid_channels:
             return Response({"detail": "Canal inválido."}, status=400)
 
+        enabled = request.data.get("enabled")
+        if "enabled" in request.data and type(enabled) is not bool:
+            return Response({"detail": "Informe ligado ou desligado.", "field": "enabled"}, status=400)
+        service = account_service.set_notification_consent if "enabled" in request.data else account_service.toggle_notification_consent
         prefs = present_notification_prefs(
-            account_service.toggle_notification_consent(
+            service(
                 customer.ref,
                 channel,
                 # IP para o registro de consentimento (LGPD) resolvido pelo
                 # helper canônico: rightmost do X-Forwarded-For respeitando
                 # TRUSTED_PROXY_DEPTH — o leftmost é forjável pelo cliente.
                 ip_address=auth_service.client_ip(request),
+                **({"enabled": enabled} if "enabled" in request.data else {}),
             )
         )
         return Response({
