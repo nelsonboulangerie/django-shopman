@@ -72,8 +72,8 @@ describe("MarketingCommandConfirmationDialog", () => {
       "TEXTAREA",
     );
     expect(wrapper.text()).toContain("Público geral da plataforma");
-    expect(wrapper.text()).toContain("uma publicação pública por plataforma");
-    expect(wrapper.text()).toContain("não envia DM por pessoa");
+    expect(wrapper.text()).toContain("uma postagem pública por plataforma");
+    expect(wrapper.text()).toContain("não envia mensagem direta por pessoa");
   });
 
   it("explica que confirmar o disparo cria revisão sem publicar", () => {
@@ -127,7 +127,7 @@ describe("MarketingCommandConfirmationDialog", () => {
     expect(wrapper.text()).toContain("Voltar sem criar");
     expect(wrapper.text()).toContain("Pessoas para mensagem direta");
     expect(wrapper.text()).toContain("12 pessoas");
-    expect(wrapper.text()).toContain("uma publicação pública por plataforma");
+    expect(wrapper.text()).toContain("uma postagem pública por plataforma");
     expect(wrapper.text()).toContain("WhatsApp:");
     expect(wrapper.text()).toContain("consentimento revalidado");
   });

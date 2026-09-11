@@ -10,12 +10,7 @@
 import { platformIcon } from "~/presentation/campaign";
 import { receiptStateLabel } from "~/presentation/marketingResult";
 
-const {
-  platforms,
-  loading,
-  error,
-  load: loadPlatforms,
-} = usePlatforms();
+const { platforms, loading, error, load: loadPlatforms } = usePlatforms();
 const waTemplate = useWhatsAppTemplate();
 
 // ⚠️ O detalhe abre em painel, não fica aberto na página. Com o WhatsApp expandido o tempo
@@ -98,7 +93,7 @@ function summaryFor(platform: Platform): string {
 function kindLabel(kind: string): string {
   return kind === "direct_message"
     ? "Uma mensagem por pessoa, com consentimento."
-    : "Uma publicação pública na plataforma; não envia mensagem direta.";
+    : "Uma postagem pública na plataforma; não envia mensagem direta.";
 }
 
 /** Bloqueio, limitação e saúde não podem parecer iguais. */
@@ -189,7 +184,11 @@ useHead({ title: "Plataformas · Marketing" });
       </div>
     </div>
 
-    <div v-else-if="loading && !platforms.length" class="space-y-2" aria-busy="true">
+    <div
+      v-else-if="loading && !platforms.length"
+      class="space-y-2"
+      aria-busy="true"
+    >
       <div
         v-for="n in 4"
         :key="n"
@@ -481,10 +480,7 @@ useHead({ title: "Plataformas · Marketing" });
                   >
                     Aparelho verificado
                   </label>
-                  <UiNativeSelect
-                    id="test-target"
-                    v-model="testTargetRef"
-                  >
+                  <UiNativeSelect id="test-target" v-model="testTargetRef">
                     <option value="" disabled>Escolha o aparelho</option>
                     <option
                       v-for="target in waTemplate.testTargets.value"
@@ -496,7 +492,9 @@ useHead({ title: "Plataformas · Marketing" });
                   </UiNativeSelect>
                 </div>
                 <div>
-                  <label for="test-sku" class="mb-1 block text-xs font-medium text-muted-foreground"
+                  <label
+                    for="test-sku"
+                    class="mb-1 block text-xs font-medium text-muted-foreground"
                     >SKU (opcional)</label
                   >
                   <UiInput

@@ -248,7 +248,7 @@ def _publication_readiness(platform: str, *, now: datetime) -> PlatformReadiness
         facts_as_of=now,
         source_status="fresh",
         reason=(
-            "A integração está pronta para uma publicação canário isolada."
+            "A integração está pronta para uma postagem canário isolada."
             if canary_only
             else ""
         ),

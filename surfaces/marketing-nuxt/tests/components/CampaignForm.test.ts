@@ -127,7 +127,7 @@ describe("CampaignForm — natureza de cada saída", () => {
     const text = form(makeRule()).text();
 
     expect(text).toContain("Entregar por");
-    expect(text).toContain("uma publicação pública por plataforma");
+    expect(text).toContain("uma postagem pública por plataforma");
     expect(text).toContain("WhatsApp envia uma mensagem por pessoa elegível");
     expect(text).toContain(
       "Mensagens diretas do Instagram ainda não fazem parte deste app",

@@ -5,7 +5,7 @@
 - **Mensagem** é uma entrega direta para uma pessoa identificada, ainda que faça
   parte de um envio em massa. Exige identidade, elegibilidade, consentimento e
   revalidação por destinatário.
-- **Publicação** é conteúdo público numa conta, página ou estabelecimento, sem
+- **Publicação** é uma postagem pública numa conta, página ou estabelecimento, sem
   destinatário individual.
 - `message`, `publication`, `delivery_kind` e identificadores dos provedores podem
   permanecer em inglês no código. A interface do operador é pt-BR.
@@ -17,8 +17,8 @@
 | Destino | Consequência atual | Formatos/campos implementados | Fora do contrato atual |
 |---|---|---|---|
 | WhatsApp | uma mensagem por pessoa elegível | audiência selada, consentimento e inscrição revalidados, horário de silêncio, ondas e ledger | provider durável compatível ainda ausente; mídia/interações dependentes de flow não comprovadas |
-| Instagram | uma publicação pública | Story de imagem por padrão; Feed de imagem com legenda por escolha explícita | DM, vídeo, Reel, carrossel, CTA/link clicável em Story, stickers, música, localização, menções e insights |
-| Facebook | uma publicação pública na página | texto/link ou foto com legenda no Feed | Story, Reel, vídeo, carrossel, Messenger, CTA em foto e insights |
+| Instagram | uma postagem pública | Story de imagem por padrão; Feed de imagem com legenda por escolha explícita | DM, vídeo, Reel, carrossel, CTA/link clicável em Story, stickers, música, localização, menções e insights |
+| Facebook | uma postagem pública na página | texto/link ou foto com legenda no Feed | Story, Reel, vídeo, carrossel, Messenger, CTA em foto e insights |
 | Google Meu Negócio | uma atualização pública | `STANDARD`, pt-BR, foto opcional e CTA `ORDER` com URL do produto/oferta | `EVENT`, `OFFER`, escolha de CTA, cupom/termos/período, insights e canário real |
 
 O CTA `ORDER` do Google já é dinâmico: o artefato resolve o link canônico do SKU
@@ -70,9 +70,9 @@ trabalho, a ordem de integração é #612 antes de #614. `expires_at` e `notifie
 devem permanecer apenas como compatibilidade explicitamente depreciada; retenção e
 exclusão do telefone continuam submetidas ao contrato de privacidade.
 
-## Gate humano proposto — MKT-CAP-01
+## Gate humano confirmado — MKT-CAP-01
 
-Antes de adicionar Instagram DM, novos formatos ou opções avançadas, aprovar:
+Confirmado pelo responsável pelo produto em 2026-09-11:
 
 1. identidade canônica do destino como
    `{platform, delivery_kind, format}`;
@@ -83,6 +83,11 @@ Antes de adicionar Instagram DM, novos formatos ou opções avançadas, aprovar:
 5. nenhuma plataforma ou consequência nova ligada por essa migração;
 6. implementação em pacotes separados, começando pelo provider durável do
    WhatsApp, depois composers/preflights e, por fim, insights para Marketing e BI.
+
+Regra de transição também confirmada: cada plataforma permanece resumida a uma única
+modalidade de entrega. Para Instagram, o artefato escolhe um formato público por vez.
+A migração do contrato não habilita DM, formato simultâneo nem qualquer consequência
+externa nova; essas ampliações exigem decisão posterior.
 
 Até a decisão, a UI deve declarar apenas o básico realmente implementado e nunca
 usar a existência de credencial como prova de que uma capacidade está disponível.

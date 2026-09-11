@@ -32,12 +32,22 @@ function fakeCount(over: Partial<AudienceCount> = {}): AudienceCount {
 // o descarte de resposta velha, e um stub aqui deixaria justamente essa parte sem teste.
 beforeAll(() => {
   Object.assign(globalThis, {
-    computed, flagMarketingSessionError: () => false, ref, watch, onBeforeUnmount, useAudienceCount,
-    $fetch: vi.fn(async (_url: string, opts: { body?: Record<string, unknown> }) => {
-      lastCountedRules = (opts?.body?.audience_rules ?? null) as Record<string, unknown> | null;
-      lastCountedSku = String(opts?.body?.sku ?? "");
-      return counted;
-    }),
+    computed,
+    flagMarketingSessionError: () => false,
+    ref,
+    watch,
+    onBeforeUnmount,
+    useAudienceCount,
+    $fetch: vi.fn(
+      async (_url: string, opts: { body?: Record<string, unknown> }) => {
+        lastCountedRules = (opts?.body?.audience_rules ?? null) as Record<
+          string,
+          unknown
+        > | null;
+        lastCountedSku = String(opts?.body?.sku ?? "");
+        return counted;
+      },
+    ),
   });
 });
 
@@ -49,7 +59,9 @@ beforeEach(() => {
 });
 
 /** Passa o debounce da contagem e deixa o Vue redesenhar. */
-async function settleCount(wrapper: { vm: { $nextTick: () => Promise<void> } }) {
+async function settleCount(wrapper: {
+  vm: { $nextTick: () => Promise<void> };
+}) {
   await vi.advanceTimersByTimeAsync(400);
   await wrapper.vm.$nextTick();
 }
@@ -217,12 +229,18 @@ describe("FireCampaignPanel — conteúdo sob revisão", () => {
     await settleCount(wrapper);
 
     expect(wrapper.text()).toContain("Produto desta ocorrência");
-    expect(wrapper.find('button[type="submit"]').attributes("disabled")).toBeDefined();
+    expect(
+      wrapper.find('button[type="submit"]').attributes("disabled"),
+    ).toBeDefined();
 
     await wrapper.get("#fire-product").setValue("MDL");
-    expect(wrapper.find('button[type="submit"]').attributes("disabled")).toBeDefined();
+    expect(
+      wrapper.find('button[type="submit"]').attributes("disabled"),
+    ).toBeDefined();
     await settleCount(wrapper);
-    expect(wrapper.find('button[type="submit"]').attributes("disabled")).toBeUndefined();
+    expect(
+      wrapper.find('button[type="submit"]').attributes("disabled"),
+    ).toBeUndefined();
     await wrapper.find("form").trigger("submit");
 
     expect(lastCountedSku).toBe("MDL");
@@ -259,7 +277,9 @@ describe("FireCampaignPanel — conteúdo sob revisão", () => {
     });
 
     expect(wrapper.text()).toContain("Anúncio criado para revisão");
-    expect(wrapper.text()).toContain("Nenhuma publicação ou mensagem foi enviada");
+    expect(wrapper.text()).toContain(
+      "Nenhuma publicação ou mensagem foi enviada",
+    );
     expect(wrapper.text()).toContain("fire-receipt-local");
     expect(wrapper.find("nuxt-link-stub").attributes("to")).toBe(
       "/announcements/77#review",
@@ -268,16 +288,18 @@ describe("FireCampaignPanel — conteúdo sob revisão", () => {
   });
 });
 
-describe("FireCampaignPanel — publicação pública", () => {
+describe("FireCampaignPanel — postagem pública", () => {
   it("prepara um Story sem pedir ou contar destinatários diretos", async () => {
     counted = fakeCount({ total: 0, empty_selection: true });
-    const wrapper = panel(makeRule({
-      platforms: ["instagram"],
-      audience_rules: {},
-    }));
+    const wrapper = panel(
+      makeRule({
+        platforms: ["instagram"],
+        audience_rules: {},
+      }),
+    );
     await wrapper.vm.$nextTick();
 
-    expect(wrapper.text()).toContain("1 publicação pública");
+    expect(wrapper.text()).toContain("1 postagem pública");
     expect(wrapper.text()).toContain("Não há seleção de contatos");
     expect(wrapper.text()).not.toContain("Para quem");
     expect(wrapper.text()).not.toContain("pessoas recebem");
@@ -298,10 +320,11 @@ describe("FireCampaignPanel — publicação pública", () => {
     await settleCount(wrapper);
 
     expect(wrapper.text()).toContain("Ninguém se encaixa neste público hoje");
-    expect(wrapper.find('button[type="submit"]').attributes("disabled")).toBeDefined();
+    expect(
+      wrapper.find('button[type="submit"]').attributes("disabled"),
+    ).toBeDefined();
   });
 });
-
 
 // ── O número, antes de enviar ────────────────────────────────────────
 //
@@ -338,21 +361,30 @@ describe("FireCampaignPanel — quantas pessoas isto alcança", () => {
   });
 
   it("bloqueia o disparo quando não consegue validar o público", async () => {
-    const failing = vi.fn(async () => { throw new Error("offline"); });
+    const failing = vi.fn(async () => {
+      throw new Error("offline");
+    });
     Object.assign(globalThis, { $fetch: failing });
     const wrapper = panel();
     await settleCount(wrapper);
 
     expect(wrapper.text()).toContain("Não foi possível conferir o público");
     expect(wrapper.text()).toContain("O disparo está bloqueado");
-    expect(wrapper.find('button[type="submit"]').attributes("disabled")).toBeDefined();
+    expect(
+      wrapper.find('button[type="submit"]').attributes("disabled"),
+    ).toBeDefined();
     expect(wrapper.text()).toContain("Contar novamente");
 
     Object.assign(globalThis, {
-      $fetch: vi.fn(async (_url: string, opts: { body?: Record<string, unknown> }) => {
-        lastCountedRules = (opts?.body?.audience_rules ?? null) as Record<string, unknown> | null;
-        return counted;
-      }),
+      $fetch: vi.fn(
+        async (_url: string, opts: { body?: Record<string, unknown> }) => {
+          lastCountedRules = (opts?.body?.audience_rules ?? null) as Record<
+            string,
+            unknown
+          > | null;
+          return counted;
+        },
+      ),
     });
   });
 });
@@ -387,7 +419,9 @@ describe("FireCampaignPanel — somar ou cruzar as regras", () => {
     const wrapper = await twoRulesChosen();
     await wrapper.find("form").trigger("submit");
 
-    const [payload] = wrapper.emitted("submit")!.at(-1) as [{ audience: AudienceCount }];
+    const [payload] = wrapper.emitted("submit")!.at(-1) as [
+      { audience: AudienceCount },
+    ];
     expect(payload.audience).not.toHaveProperty("match");
   });
 
@@ -398,7 +432,13 @@ describe("FireCampaignPanel — somar ou cruzar as regras", () => {
     await wrapper.find("form").trigger("submit");
 
     const [payload] = wrapper.emitted("submit")!.at(-1) as [
-      { audience: { match?: string; groups?: string[]; rfm_segments?: string[] } },
+      {
+        audience: {
+          match?: string;
+          groups?: string[];
+          rfm_segments?: string[];
+        };
+      },
     ];
     expect(payload.audience.match).toBe("all");
     expect(payload.audience.price_tiers).toEqual(["atacado"]);
@@ -418,7 +458,6 @@ describe("FireCampaignPanel — somar ou cruzar as regras", () => {
     ]);
   });
 });
-
 
 // ── Etiquetas: o público que o operador monta sozinho ────────────────
 
@@ -442,7 +481,9 @@ describe("FireCampaignPanel — etiquetas", () => {
     await chips.find((c) => c.text() === "corredores (3)")!.trigger("click");
     await wrapper.find("form").trigger("submit");
 
-    const [payload] = wrapper.emitted("submit")!.at(-1) as [{ audience: { tags?: string[] } }];
+    const [payload] = wrapper.emitted("submit")!.at(-1) as [
+      { audience: { tags?: string[] } },
+    ];
     expect(payload.audience.tags).toEqual(["corredores"]);
   });
 
@@ -456,10 +497,14 @@ describe("FireCampaignPanel — etiquetas", () => {
     const chips = wrapper.findAll("button[aria-pressed]");
     await chips.find((c) => c.text() === "corredores (3)")!.trigger("click");
 
-    expect(wrapper.find('button[type="submit"]').attributes("disabled")).toBeDefined();
+    expect(
+      wrapper.find('button[type="submit"]').attributes("disabled"),
+    ).toBeDefined();
     await settleCount(wrapper);
 
-    expect(wrapper.find('button[type="submit"]').attributes("disabled")).toBeUndefined();
+    expect(
+      wrapper.find('button[type="submit"]').attributes("disabled"),
+    ).toBeUndefined();
   });
 
   it("etiqueta conta como regra na hora de somar ou cruzar", async () => {

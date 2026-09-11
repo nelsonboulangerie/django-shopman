@@ -870,9 +870,9 @@ function submit() {
         </label>
       </div>
       <p class="mt-1.5 text-xs text-muted-foreground">
-        Instagram, Facebook e Google criam uma publicação pública por
-        plataforma. WhatsApp envia uma mensagem por pessoa elegível. Mensagens
-        diretas do Instagram ainda não fazem parte deste app.
+        Instagram, Facebook e Google criam uma postagem pública por plataforma.
+        WhatsApp envia uma mensagem por pessoa elegível. Mensagens diretas do
+        Instagram ainda não fazem parte deste app.
       </p>
     </fieldset>
 

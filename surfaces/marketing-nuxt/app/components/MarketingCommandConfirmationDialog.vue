@@ -167,7 +167,8 @@ function submit() {
                 publicPlatforms.map(platformResultLabel).join(", ")
               }}:</strong
             >
-            uma publicação pública por plataforma; não envia DM por pessoa.
+            uma postagem pública por plataforma; não envia mensagem direta por
+            pessoa.
           </li>
           <li v-if="includesDirectMessages">
             <strong>WhatsApp:</strong>
