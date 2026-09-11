@@ -41,13 +41,12 @@ async function run() {
         </p>
         <div v-if="page.configured" class="flex flex-wrap items-center gap-2">
           <label class="text-sm text-muted-foreground" for="scenario-focus">Foco</label>
-          <select
+          <UiNativeSelect
             id="scenario-focus"
             v-model="focus"
-            class="h-9 rounded-md border border-border bg-background px-2 text-sm"
           >
             <option v-for="item in page.focuses" :key="item.key" :value="item.key">{{ item.label }}</option>
-          </select>
+          </UiNativeSelect>
           <button
             type="button"
             class="h-9 rounded-md bg-foreground px-3 text-sm font-medium text-background disabled:opacity-50"

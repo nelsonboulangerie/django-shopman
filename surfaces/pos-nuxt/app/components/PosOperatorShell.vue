@@ -21,7 +21,7 @@ onReconnect(() => refresh());
 // Re-gate global de sessão (kit): um 401 no meio do turno (sessão expirada do
 // lado do Django) sobe a tela de senha em vez de o operador bater numa sessão
 // morta.
-const { expired: sessionExpired, reset: resetSession } = useOperatorSession();
+const { expired: sessionExpired } = useOperatorSession();
 
 // Identidade do operador (PIN/crachá) pelo LOCK COMPARTILHADO do kit — o MESMO
 // `useOperatorLock` + `<OperatorLock>` dos outros 4 apps de operador.
@@ -64,20 +64,6 @@ usePosAutoLock({
 // a tela de senha: senão a loja pediria credencial de gestor toda manhã.
 const needsLogin = computed(() => !canIdentify.value || sessionExpired.value);
 
-// Login com SENHA no próprio caixa (sem bounce pro Django admin): é o caminho de
-// quem provisiona a estação e o do dispositivo pessoal. Uma tela, um submit.
-const loginUser = ref("");
-const loginPass = ref("");
-const loginPending = ref(false);
-const loginError = ref("");
-// Foco no "Usuário" assim que a tela de senha aparece (na carga ou quando a
-// sessão expira no meio do turno): a primeira ação é sempre digitar ali.
-const loginUserRef = ref<HTMLInputElement | null>(null);
-watch(needsLogin, async (needs) => {
-  if (!needs || !import.meta.client) return;
-  await nextTick();
-  loginUserRef.value?.focus();
-}, { immediate: true });
 // Recarrega depois de virar estação: toda leitura muda de mundo (a antessala
 // passa a existir, o terminal passa a ser este), e reconciliar peça por peça é
 // mais caminho para dar errado do que um reload numa tela que acontece uma vez.
@@ -85,22 +71,6 @@ function reloadIntoStation() {
   if (import.meta.client) window.location.reload();
 }
 
-async function submitLogin() {
-  if (loginPending.value) return;
-  loginError.value = "";
-  loginPending.value = true;
-  try {
-    await $fetch("/api/v1/backstage/operator/login/", {
-      method: "POST",
-      body: { username: loginUser.value.trim(), password: loginPass.value },
-    });
-    resetSession(); // sessão re-estabelecida antes do reload
-    if (import.meta.client) window.location.reload();
-  } catch (error) {
-    loginError.value = httpErrorMessage(error, "Não foi possível entrar. Confira usuário e senha.");
-    loginPending.value = false;
-  }
-}
 </script>
 
 <template>
@@ -115,47 +85,19 @@ async function submitLogin() {
       :perm="OPERATOR_PERM"
     />
 
-    <div v-if="needsLogin" class="grid min-h-dvh place-items-center p-4">
-      <form class="grid w-full max-w-sm gap-4 text-center" @submit.prevent="submitLogin">
-        <div class="mx-auto grid size-14 place-items-center rounded-full border bg-muted">
-          <Icon name="lucide:lock-keyhole" class="size-7 text-muted-foreground" />
-        </div>
-        <div class="grid gap-1.5">
-          <h2 class="text-lg font-semibold">{{ sessionExpired ? "Sua sessão expirou" : "Entre para operar o caixa" }}</h2>
-          <p class="text-sm text-muted-foreground">
-            {{ sessionExpired ? "Entre de novo para continuar de onde parou." : "Acesse com sua conta autorizada a operar o caixa." }}
-          </p>
-        </div>
-        <div class="grid gap-2.5 text-left">
-          <input
-            ref="loginUserRef"
-            v-model="loginUser"
-            type="text"
-            autocomplete="username"
-            autocapitalize="none"
-            autocorrect="off"
-            placeholder="Usuário"
-            aria-label="Usuário"
-            :disabled="loginPending"
-            class="h-12 w-full rounded-md border bg-background px-3 text-base outline-none focus:ring-1 focus:ring-ring disabled:opacity-60"
-          >
-          <input
-            v-model="loginPass"
-            type="password"
-            autocomplete="current-password"
-            placeholder="Senha"
-            aria-label="Senha"
-            :disabled="loginPending"
-            class="h-12 w-full rounded-md border bg-background px-3 text-base outline-none focus:ring-1 focus:ring-ring disabled:opacity-60"
-          >
-          <p v-if="loginError" class="text-sm text-destructive" role="alert">{{ loginError }}</p>
-        </div>
-        <UiButton type="submit" size="lg" :disabled="loginPending || !loginUser.trim() || !loginPass">
-          <Icon :name="loginPending ? 'line-md:loading-loop' : 'lucide:log-in'" class="size-5" />
-          {{ loginPending ? "Entrando…" : "Entrar" }}
-        </UiButton>
-      </form>
-    </div>
+    <!-- 48px nos campos é deliberado no caixa: digitação rápida em tela de toque. -->
+    <OperatorLogin
+      v-if="needsLogin"
+      mode="page"
+      large-fields
+      icon="lucide:lock-keyhole"
+      :title="sessionExpired ? 'Sua sessão expirou' : 'Entre para operar o caixa'"
+      :description="
+        sessionExpired
+          ? 'Entre de novo para continuar de onde parou.'
+          : 'Acesse com sua conta autorizada a operar o caixa.'
+      "
+    />
 
     <OperatorStationSetup
       v-else-if="needsStationSetup"
@@ -165,6 +107,6 @@ async function submitLogin() {
 
     <NuxtPage v-else />
 
-    <UiSonner />
+    <OperatorSonner />
   </div>
 </template>

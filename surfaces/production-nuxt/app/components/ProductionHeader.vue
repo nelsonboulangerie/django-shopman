@@ -22,7 +22,7 @@ const emit = defineEmits<{ refresh: [] }>();
 const query = defineModel<string>("query", { default: "" });
 
 const route = useRoute();
-const searchInput = ref<HTMLInputElement | null>(null);
+const searchInput = ref<{ inputRef: HTMLInputElement | null } | null>(null);
 const shortcutsHelpOpen = ref(false);
 
 const SHORTCUT_ROUTES = {
@@ -42,7 +42,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
 
   event.preventDefault();
   if (shortcut === "focus-search") {
-    searchInput.value?.focus();
+    searchInput.value?.inputRef?.focus();
     return;
   }
   if (shortcut === "refresh") {
@@ -111,7 +111,7 @@ function isActive(to: string): boolean {
     </div>
 
     <nav
-      class="flex items-center gap-1 rounded-lg border bg-background p-0.5"
+      class="flex items-center gap-1 rounded-md border bg-background p-0.5"
       aria-label="Telas de produção"
     >
       <NuxtLink
@@ -179,16 +179,17 @@ function isActive(to: string): boolean {
           name="lucide:search"
           class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
         />
-        <input
+        <UiInput
           ref="searchInput"
           v-model="query"
           type="search"
           inputmode="search"
           placeholder="Buscar…"
-          class="h-9 w-32 rounded-md border bg-background pl-8 pr-8 text-sm outline-none transition focus:w-44 focus:ring-1 focus:ring-ring sm:w-40"
+          class="w-32 pl-8 pr-8 focus:w-44 sm:w-40"
           aria-label="Buscar por código, SKU ou receita"
           aria-keyshortcuts="/"
         />
+        <!-- Limpar ocupa o espaço reservado dentro do campo; é affordance do input, não botão de toolbar. -->
         <button
           v-if="query"
           type="button"
@@ -205,9 +206,10 @@ function isActive(to: string): boolean {
           >/</OperatorKbd>
       </div>
       <AlertsBell />
-      <button
+      <UiButton
         type="button"
-        class="grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
+        variant="outline"
+        size="icon-sm"
         aria-label="Atualizar"
         aria-keyshortcuts="R"
         title="Atualizar · R"
@@ -218,10 +220,11 @@ function isActive(to: string): boolean {
           class="size-4"
           :class="pending ? 'animate-spin' : ''"
         />
-      </button>
-      <button
+      </UiButton>
+      <UiButton
         type="button"
-        class="inline-flex h-9 items-center gap-1.5 rounded-md border px-2 text-sm font-semibold text-muted-foreground transition hover:bg-accent hover:text-foreground"
+        variant="outline"
+        size="sm"
         aria-label="Ver atalhos do teclado"
         aria-keyshortcuts="?"
         title="Atalhos do teclado · ?"
@@ -232,7 +235,7 @@ function isActive(to: string): boolean {
         <OperatorKbd
           aria-hidden="true"
           >?</OperatorKbd>
-      </button>
+      </UiButton>
     </div>
   </header>
 

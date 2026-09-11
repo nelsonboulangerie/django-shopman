@@ -123,9 +123,9 @@ const rankingRows = computed(() => {
     <section class="flex flex-wrap items-end gap-3 rounded-md border border-border bg-card p-3">
       <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
         Cenário
-        <select
+        <UiNativeSelect
           :value="selectedScenario"
-          class="h-9 min-w-44 rounded-md border border-border bg-background px-2 text-sm text-foreground"
+          class="min-w-44"
           @change="onScenarioChange(($event.target as HTMLSelectElement).value)"
         >
           <option value="">—</option>
@@ -139,43 +139,40 @@ const rankingRows = computed(() => {
               {{ example.name }}
             </option>
           </optgroup>
-        </select>
+        </UiNativeSelect>
       </label>
       <div class="h-9 w-px self-end bg-border"></div>
       <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
         Métrica
-        <select
+        <UiNativeSelect
           :value="config.metric"
-          class="h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground"
           @change="applyFree({ metric: ($event.target as HTMLSelectElement).value })"
         >
           <option v-for="m in report?.metrics ?? []" :key="m.key" :value="m.key">{{ m.label }}</option>
-        </select>
+        </UiNativeSelect>
       </label>
       <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
         Dimensão
-        <select
+        <UiNativeSelect
           :value="config.by"
-          class="h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground"
           @change="applyFree({ by: ($event.target as HTMLSelectElement).value })"
         >
           <option v-for="d in currentSpec?.dimensions ?? []" :key="d" :value="d">
             {{ EXPLORE_DIMENSION_LABELS[d] ?? d }}
           </option>
-        </select>
+        </UiNativeSelect>
       </label>
       <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
         Cruzamento
-        <select
+        <UiNativeSelect
           :value="config.by2"
-          class="h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground"
           @change="applyFree({ by2: ($event.target as HTMLSelectElement).value })"
         >
           <option value="">—</option>
           <option v-for="d in by2Options" :key="d" :value="d">
             {{ EXPLORE_DIMENSION_LABELS[d] ?? d }}
           </option>
-        </select>
+        </UiNativeSelect>
       </label>
 
       <div class="relative ml-auto self-end">

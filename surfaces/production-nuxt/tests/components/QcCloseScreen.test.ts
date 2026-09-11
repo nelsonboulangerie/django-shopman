@@ -14,6 +14,7 @@ import type {
   QCDefectProjection,
   QCGradeProjection,
 } from "../../app/types/production";
+import { UiButtonStub, UiTextareaStub } from "../support/nativeUiStubs";
 
 const GRADES: QCGradeProjection[] = [
   {
@@ -93,6 +94,8 @@ const stubs = {
     template: "<section><h2>{{ title }}</h2><slot name='content' /></section>",
   },
   UiBadge: passthrough,
+  UiButton: UiButtonStub,
+  UiTextarea: UiTextareaStub,
 };
 
 function installGlobals() {

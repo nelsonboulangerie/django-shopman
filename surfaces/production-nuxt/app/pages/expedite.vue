@@ -452,10 +452,11 @@ function onTimerKeydown(event: KeyboardEvent) {
       <div class="flex items-center justify-between gap-3">
         <!-- Data: mesmo padrão de chips das outras telas do backstage. -->
         <div
-          class="flex items-center gap-1 rounded-lg border bg-background p-0.5"
+          class="flex items-center gap-1 rounded-md border bg-background p-0.5"
           role="group"
           aria-label="Data das fornadas"
         >
+          <!-- Data em segmento compacto: duas escolhas e o calendário ocupam um único controle. -->
           <button
             type="button"
             class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
@@ -496,18 +497,21 @@ function onTimerKeydown(event: KeyboardEvent) {
           @update:open="(v: boolean) => (menuOpen = v)"
         >
           <UiPopoverTrigger as-child>
-            <button
+            <UiButton
               type="button"
-              class="grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              variant="outline"
+              size="icon-sm"
               aria-label="Mais ações"
             >
               <Icon name="lucide:ellipsis-vertical" class="size-4" />
-            </button>
+            </UiButton>
           </UiPopoverTrigger>
           <UiPopoverContent align="end" :side-offset="6" class="w-52 p-1.5">
-            <button
+            <UiButton
               type="button"
-              class="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm transition hover:bg-accent"
+              class="w-full justify-start"
+              variant="ghost"
+              size="sm"
               @click="
                 menuOpen = false;
                 recipePickerOpen = true;
@@ -515,7 +519,7 @@ function onTimerKeydown(event: KeyboardEvent) {
             >
               <Icon name="lucide:plus" class="size-4 text-muted-foreground" />
               Fornada avulsa
-            </button>
+            </UiButton>
           </UiPopoverContent>
         </UiPopover>
       </div>
@@ -524,7 +528,7 @@ function onTimerKeydown(event: KeyboardEvent) {
         v-if="stale"
         role="status"
         aria-live="polite"
-        class="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-amber-700 dark:text-amber-300"
+        class="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
       >
         <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
         <span>Sem atualizar. Mostrando o último painel carregado.</span>
@@ -532,10 +536,11 @@ function onTimerKeydown(event: KeyboardEvent) {
 
       <!-- Fornada esquecida não depende de memória: o painel avisa e o toque
            vai direto ao dia pendente mais recente. -->
+      <!-- Aviso inteiro é acionável para levar ao dia pendente; não é um CTA isolado. -->
       <button
         v-if="kiosk && kiosk.previous_open_count > 0"
         type="button"
-        class="flex items-center gap-2 rounded-lg border border-warning/50 bg-warning/10 px-4 py-3 text-left text-sm text-amber-700 transition hover:bg-warning/20 dark:text-amber-300"
+        class="flex items-center gap-2 rounded-md border border-warning/50 bg-warning/10 px-4 py-3 text-left text-sm text-warning transition hover:bg-warning/20"
         @click="selectedDate = kiosk.previous_open_date"
       >
         <Icon name="lucide:history" class="size-4 shrink-0" />
@@ -570,7 +575,7 @@ function onTimerKeydown(event: KeyboardEvent) {
         <div
           v-for="order in openOrders"
           :key="order.pk"
-          class="flex items-stretch justify-between gap-3 rounded-lg border bg-card p-4 text-left transition"
+          class="flex items-stretch justify-between gap-3 rounded-md border bg-card p-4 text-left transition"
           :class="[
             ovenFactAvailable(order) ? 'cursor-pointer hover:bg-accent' : '',
             ovenMode(order) === 'ringing'
@@ -582,7 +587,7 @@ function onTimerKeydown(event: KeyboardEvent) {
         >
           <component
             :is="ovenFactAvailable(order) ? 'button' : 'div'"
-            class="min-w-0 flex-1 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            class="min-w-0 flex-1 rounded-md text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             v-bind="
               ovenFactAvailable(order)
                 ? {
@@ -619,7 +624,7 @@ function onTimerKeydown(event: KeyboardEvent) {
               class="mt-2 flex items-center gap-2 text-lg font-semibold tabular-nums"
               :class="
                 ovenMode(order) === 'ringing'
-                  ? 'text-destructive dark:text-orange-300'
+                  ? 'text-destructive'
                   : ovenMode(order) === 'idle'
                     ? 'text-muted-foreground'
                     : 'text-foreground'
@@ -637,9 +642,10 @@ function onTimerKeydown(event: KeyboardEvent) {
             </p>
           </component>
           <!-- Hover invertido: contraste garantido mesmo com o card em accent. -->
+          <!-- Tile de 80px mostra quantidade e encerra a fornada com mão ocupada. -->
           <button
             type="button"
-            class="group flex h-20 w-24 shrink-0 flex-col items-center justify-center gap-1 self-center rounded-xl border bg-background transition hover:border-primary hover:bg-primary hover:text-primary-foreground active:translate-y-px"
+            class="group flex h-20 w-24 shrink-0 flex-col items-center justify-center gap-1 self-center rounded-md border bg-background transition hover:border-primary hover:bg-primary hover:text-primary-foreground active:translate-y-px"
             :class="{
               'cursor-not-allowed opacity-50 hover:border-border hover:bg-background hover:text-foreground':
                 !finishAvailable(order) || ovenFacts.isPending(order.pk),
@@ -665,7 +671,7 @@ function onTimerKeydown(event: KeyboardEvent) {
         <div
           v-for="order in closedOrders"
           :key="order.pk"
-          class="flex items-center justify-between gap-3 rounded-lg border bg-card p-4"
+          class="flex items-center justify-between gap-3 rounded-md border bg-card p-4"
         >
           <div class="min-w-0 opacity-60">
             <p class="truncate text-base font-semibold">
@@ -695,16 +701,17 @@ function onTimerKeydown(event: KeyboardEvent) {
                 · {{ order.loss_qty }} de perda</template
               >
             </p>
-            <button
+            <UiButton
               v-if="correctionAvailable(order)"
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              variant="outline"
+              size="sm"
               :aria-label="`Corrigir qualidade da fornada de ${order.recipe_name}`"
               @click="openCorrection(order)"
             >
               <Icon name="lucide:shield-check" class="size-3.5" />
               Corrigir qualidade
-            </button>
+            </UiButton>
           </div>
         </div>
       </div>
@@ -718,6 +725,7 @@ function onTimerKeydown(event: KeyboardEvent) {
       <UiSheetContent side="bottom" title="Fornada avulsa">
         <template #content>
           <div class="grid grid-cols-2 gap-2 px-4 pb-6 sm:grid-cols-3">
+            <!-- Receitas são tiles de escolha para criar a fornada avulsa, não CTAs repetidos. -->
             <button
               v-for="recipe in kiosk?.recipes ?? []"
               :key="recipe.pk"
@@ -785,7 +793,7 @@ function onTimerKeydown(event: KeyboardEvent) {
              intervenções do timer são estender e marcar Visto. -->
         <div
           v-if="dialogMode === 'running'"
-          class="flex h-20 w-full items-center justify-center gap-3 rounded-lg border bg-background transition hover:bg-accent active:translate-y-px"
+          class="flex h-20 w-full items-center justify-center gap-3 rounded-md border bg-background transition hover:bg-accent active:translate-y-px"
           role="timer"
           aria-label="Tempo restante"
         >
@@ -796,7 +804,7 @@ function onTimerKeydown(event: KeyboardEvent) {
         </div>
         <div
           v-else
-          class="grid h-20 place-items-center rounded-lg border text-center"
+          class="grid h-20 place-items-center rounded-md border text-center"
           :class="
             dialogMode === 'ringing'
               ? 'border-destructive/50 bg-destructive/10'
@@ -805,7 +813,7 @@ function onTimerKeydown(event: KeyboardEvent) {
         >
           <p
             v-if="dialogMode === 'ringing'"
-            class="animate-pulse text-3xl font-bold text-destructive motion-reduce:animate-none dark:text-orange-300"
+            class="animate-pulse text-3xl font-bold text-destructive motion-reduce:animate-none"
           >
             Tempo esgotado
           </p>
@@ -828,6 +836,7 @@ function onTimerKeydown(event: KeyboardEvent) {
           role="group"
           aria-label="Minutos do timer"
         >
+          <!-- Teclado de forno mantém a matriz e o feedback tátil; é intencionalmente customizado. -->
           <template
             v-for="row in [
               [1, 2, 3],
@@ -897,6 +906,7 @@ function onTimerKeydown(event: KeyboardEvent) {
           class="grid gap-1.5"
           :class="dialogMode === 'ringing' ? 'grid-cols-4' : 'grid-cols-3'"
         >
+          <!-- Extensões do timer repetem a geometria do teclado acima. -->
           <button
             v-for="extra in [1, 5, 10]"
             :key="`add-${extra}`"

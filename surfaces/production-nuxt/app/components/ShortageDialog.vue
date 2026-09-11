@@ -47,7 +47,7 @@ function confirmOverride() {
     <UiDialogContent class="sm:max-w-md">
       <UiDialogHeader>
         <UiDialogTitle class="flex items-center gap-2">
-          <Icon name="lucide:triangle-alert" class="size-5 text-amber-600" />
+          <Icon name="lucide:triangle-alert" class="size-5 text-warning" />
           {{
             isMaterial
               ? "Insumos insuficientes"
@@ -82,7 +82,7 @@ function confirmOverride() {
             <span class="tabular-nums text-muted-foreground">
               precisa <b class="text-foreground">{{ item.needed }}</b> · tem
               {{ item.available }} ·
-              <span class="text-destructive dark:text-orange-400"
+              <span class="text-destructive"
                 >faltam {{ item.shortage }}</span
               >
             </span>
@@ -104,35 +104,34 @@ function confirmOverride() {
 
       <label v-if="forcePossibility" class="grid gap-1.5 text-sm">
         <span class="font-medium">Motivo da autorização</span>
-        <textarea
+        <UiTextarea
           v-model="overrideReason"
-          maxlength="500"
-          rows="3"
+          :maxlength="500"
+          :rows="3"
           required
-          class="rounded-md border bg-background px-3 py-2"
+          class="bg-background"
           aria-label="Motivo da autorização para falta de insumos"
           placeholder="Descreva quem autorizou e por quê"
         />
       </label>
 
       <UiDialogFooter>
-        <button
+        <UiButton
           type="button"
-          class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
+          variant="outline"
           @click="emit('update:open', false)"
         >
           {{ isMaterial ? "Cancelar" : "Entendi" }}
-        </button>
-        <button
+        </UiButton>
+        <UiButton
           v-if="forcePossibility"
           type="button"
-          class="rounded-md border border-transparent bg-warning px-3 py-2 text-sm font-semibold text-warning-foreground transition hover:bg-warning/90"
+          class="border-transparent bg-warning text-warning-foreground hover:bg-warning/90"
           :disabled="!canConfirm"
-          :class="{ 'cursor-not-allowed opacity-50': !canConfirm }"
           @click="confirmOverride"
         >
           {{ forcePossibility.label }}
-        </button>
+        </UiButton>
       </UiDialogFooter>
     </UiDialogContent>
   </UiDialog>

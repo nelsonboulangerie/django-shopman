@@ -4,6 +4,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAudienceCount } from "~/composables/useAudienceCount";
 import FireCampaignPanel from "~/components/FireCampaignPanel.vue";
 import type { AudienceCount, Campaign } from "~/types/campaign";
+import { UiNativeSelectStub } from "../support/nativeUiStubs";
 
 /** O que a contagem do servidor devolveu por último — o teste inspeciona e controla. */
 let counted: AudienceCount;
@@ -88,7 +89,10 @@ function makeRule(over: Partial<Campaign> = {}): Campaign {
 function panel(rule: Campaign | null = makeRule()) {
   return mount(FireCampaignPanel, {
     props: { rule, priceTiers: TIERS, tags: TAGS, rfmSegments: SEGMENTS },
-    global: { stubs: { Icon: true } },
+    global: {
+      components: { UiNativeSelect: UiNativeSelectStub },
+      stubs: { Icon: true },
+    },
     globalProperties: {},
   });
 }
@@ -203,7 +207,12 @@ describe("FireCampaignPanel — conteúdo sob revisão", () => {
         products: PRODUCTS,
         productRequired: true,
       },
-      global: { stubs: { Icon: true } },
+      global: {
+        stubs: {
+          Icon: true,
+          UiNativeSelect: UiNativeSelectStub,
+        },
+      },
     });
     await settleCount(wrapper);
 

@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { mount, type VueWrapper } from "@vue/test-utils";
 
 import ProductionHeader from "../../app/components/ProductionHeader.vue";
+import { UiButtonStub, UiInputStub } from "../support/nativeUiStubs";
 
 const navigateSpy = vi.fn();
 let wrapper: VueWrapper | null = null;
@@ -11,6 +12,9 @@ const stubs = {
   RailToggle: true,
   AlertsBell: true,
   Icon: true,
+  OperatorKbd: true,
+  UiButton: UiButtonStub,
+  UiInput: UiInputStub,
   NuxtLink: {
     props: ["to"],
     template: '<a :href="to"><slot /></a>',

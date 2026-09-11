@@ -7,6 +7,11 @@ import type {
   ProductionMatrixRowProjection,
   WorkOrderCardProjection,
 } from "../../app/types/production";
+import {
+  UiButtonStub,
+  UiNativeSelectStub,
+  UiTextareaStub,
+} from "../support/nativeUiStubs";
 
 // ProductionStageGrid é dirigido por composables (useProductionBoard/useProductionKds).
 // Sem runtime Nuxt: reatividade Vue real como globais + os composables stubados com refs
@@ -151,6 +156,9 @@ const stubs = {
   UiDialogDescription: passthrough,
   UiDialogFooter: passthrough,
   UiBadge: passthrough,
+  UiButton: UiButtonStub,
+  UiNativeSelect: UiNativeSelectStub,
+  UiTextarea: UiTextareaStub,
 };
 
 function mountGrid(stage: "plan" | "produce" = "produce") {

@@ -61,6 +61,6 @@ async function goToStations() {
       v-else-if="(locked || mustChange) && !isCustomerBoard"
       :perm="OPERATOR_PERM"
     />
-    <UiSonner />
+    <OperatorSonner />
   </div>
 </template>

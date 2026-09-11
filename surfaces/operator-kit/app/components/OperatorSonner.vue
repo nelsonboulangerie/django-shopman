@@ -1,3 +1,8 @@
+<script setup lang="ts">
+const colorMode = useColorMode();
+const sonnerTheme = computed(() => colorMode.value === "dark" ? "dark" : "light");
+</script>
+
 <template>
   <Toaster
     class="toaster group"
@@ -32,22 +37,3 @@
     }"
   />
 </template>
-
-<script setup lang="ts">
-/**
- * O aviso da tela de Compras — em cima, e com cor.
- *
- * Duas correções contra o mesmo sintoma ("o aviso? não vi"):
- *
- * 1. **`top-center`, não o rodapé.** O padrão do Sonner é o canto inferior, e
- *    no celular esta tela tem barra de navegação fixa em `bottom-0`: o aviso
- *    nascia embaixo dela, fora do olhar de quem acabou de apertar um botão que
- *    também estava no fim de uma página longa.
- * 2. **`rich-colors`.** As classes forçavam `bg-background`/`text-foreground`
- *    em TODO toast, então erro e sucesso saíam com a mesma cara cinza. Os
- *    tokens do tema operador entram como fundo sólido (verde-folha/tijolo com
- *    a `foreground` do par), e a cor volta a significar o que aconteceu.
- */
-const colorMode = useColorMode();
-const sonnerTheme = computed(() => colorMode.value === "dark" ? "dark" : "light");
-</script>

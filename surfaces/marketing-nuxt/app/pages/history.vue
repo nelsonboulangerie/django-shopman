@@ -156,8 +156,7 @@ useHead({ title: "Histórico · Marketing" });
           class="grid gap-1.5 text-sm font-medium"
         >
           {{ filter.label }}
-          <select
-            class="min-h-11 w-full rounded-md border-border bg-background text-sm"
+          <UiNativeSelect
             :value="filters[filter.name] || ''"
             @change="changeFilter(filter.name, $event)"
           >
@@ -168,7 +167,7 @@ useHead({ title: "Histórico · Marketing" });
             >
               {{ option[1] }}
             </option>
-          </select>
+          </UiNativeSelect>
         </label>
       </div>
     </section>

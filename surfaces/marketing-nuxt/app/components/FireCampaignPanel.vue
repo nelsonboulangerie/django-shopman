@@ -291,10 +291,9 @@ watch(
       <label for="fire-product" class="mb-1 block text-sm font-medium">
         Produto desta ocorrência
       </label>
-      <select
+      <UiNativeSelect
         id="fire-product"
         v-model="productSku"
-        class="h-11 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
         required
       >
         <option value="">Escolha o produto</option>
@@ -305,7 +304,7 @@ watch(
         >
           {{ product.label }}
         </option>
-      </select>
+      </UiNativeSelect>
       <p v-if="(products ?? []).length" class="mt-1 text-xs text-muted-foreground">
         Preenche nome, preço, disponibilidade e link com dados atuais do catálogo.
       </p>

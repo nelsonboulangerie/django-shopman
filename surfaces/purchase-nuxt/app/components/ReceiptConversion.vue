@@ -142,14 +142,14 @@ function submitDeclare() {
         <!-- `value=""` e nao `:value="null"`: quem le a selecao aqui e o DOM, e
              o DOM so guarda string. Um `null` ligado viraria a string "null" e
              a linha voltaria com uma conversao inexistente. -->
-        <select
+        <UiNativeSelect
           :value="preview.line.conversionId ?? ''"
-          class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground"
+          class="mt-1 w-full"
           @change="emit('select', ($event.target as HTMLSelectElement).value || null)"
         >
           <option value="">Direto em {{ preview.material.unit }}</option>
           <option v-for="conversion in conversions" :key="conversion.id" :value="conversion.id">{{ conversion.label }}</option>
-        </select>
+        </UiNativeSelect>
       </label>
       <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
         <button type="button" class="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-xs font-medium hover:bg-accent" @click="openDeclare">
@@ -183,10 +183,10 @@ function submitDeclare() {
       </label>
       <label class="block text-xs font-medium text-muted-foreground">
         Esse número é
-        <select v-model="kind" class="mt-1 h-11 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground">
+        <UiNativeSelect v-model="kind" class="mt-1 w-full">
           <option value="conventional">Exato — é assim que vem embalado</option>
           <option value="approximate">Aproximado — é uma estimativa</option>
-        </select>
+        </UiNativeSelect>
       </label>
       <div class="flex flex-col gap-2 pt-1 sm:flex-row sm:items-center">
         <button

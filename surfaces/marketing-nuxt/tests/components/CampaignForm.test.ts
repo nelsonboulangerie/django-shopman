@@ -5,6 +5,7 @@ import CampaignForm from "~/components/CampaignForm.vue";
 import DraftRecoveryNotice from "~/components/DraftRecoveryNotice.vue";
 import type { Campaign } from "~/types/campaign";
 import { installMemoryLocalStorage } from "../support/localStorage";
+import { UiNativeSelectStub } from "../support/nativeUiStubs";
 
 // Sem runtime Nuxt: os auto-imports viram globais e o Icon vira stub.
 beforeAll(() => {
@@ -48,7 +49,7 @@ function form(rule: Campaign | null = null, draftOwner = "") {
       draftOwner,
     },
     global: {
-      components: { DraftRecoveryNotice },
+      components: { DraftRecoveryNotice, UiNativeSelect: UiNativeSelectStub },
       stubs: { Icon: true },
     },
   });
@@ -101,7 +102,7 @@ describe("CampaignForm — a oferta anunciada", () => {
         rule: null, triggers: TRIGGERS, platformOptions: PLATFORMS,
         templates: TEMPLATES as never, offers: [], platformLabels: {},
       },
-      global: { stubs: { Icon: true } },
+      global: { stubs: { Icon: true, UiNativeSelect: UiNativeSelectStub } },
     });
     expect(wrapper.find("#rule-offer").exists()).toBe(false);
   });

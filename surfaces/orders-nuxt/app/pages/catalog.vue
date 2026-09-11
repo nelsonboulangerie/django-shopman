@@ -689,7 +689,8 @@ useHead({ title: "Catálogo · Gestor" });
         </span>
         <div class="flex items-center gap-1 rounded-lg bg-background/10 px-2 py-1 text-sm">
           <span class="text-xs opacity-70">em</span>
-          <select v-model="bulkSurface" class="bg-transparent bg-none text-sm font-medium text-background outline-none [&>option]:text-foreground [&>optgroup]:text-foreground">
+          <!-- Exceção intencional: a barra é invertida e não usa o chevron global. -->
+          <UiNativeSelect v-model="bulkSurface" class="border-transparent bg-transparent bg-none font-medium text-background shadow-none [&>option]:text-foreground [&>optgroup]:text-foreground">
             <option value="*">Todos os canais</option>
             <optgroup v-if="channelSurfaces.length" label="Canais">
               <option v-for="s in channelSurfaces" :key="s.ref" :value="s.ref">{{ s.name }}</option>
@@ -697,7 +698,7 @@ useHead({ title: "Catálogo · Gestor" });
             <optgroup v-if="feedSurfaces.length" label="Feeds">
               <option v-for="s in feedSurfaces" :key="s.ref" :value="s.ref">{{ s.name }}</option>
             </optgroup>
-          </select>
+          </UiNativeSelect>
         </div>
         <div class="h-5 w-px bg-background/20"></div>
         <button :disabled="bulkBusy" class="inline-flex h-9 items-center gap-1.5 rounded-md border border-background/25 px-3 text-sm font-medium transition hover:bg-background/10 disabled:opacity-50" @click="bulk({ is_sellable: false })"><Icon name="lucide:pause" class="size-3.5" /> Pausar</button>

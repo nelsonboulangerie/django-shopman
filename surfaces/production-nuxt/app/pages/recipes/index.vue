@@ -56,7 +56,7 @@ function clearFilters() {
 
     <!-- Sem a permissão de leitura: explica com calma, sem beco. -->
     <section v-if="forbidden" class="grid flex-1 place-items-center p-6 text-center">
-      <div class="grid max-w-md gap-2 rounded-lg border border-dashed p-10">
+      <div class="grid max-w-md gap-2 rounded-md border border-dashed p-10">
         <Icon name="lucide:lock" class="mx-auto size-8 text-muted-foreground" />
         <p class="text-base font-semibold">Área da produção</p>
         <p class="text-sm text-muted-foreground">
@@ -73,10 +73,11 @@ function clearFilters() {
       <div class="mb-3 flex flex-wrap items-center gap-3">
         <div
           v-if="kinds.length"
-          class="flex flex-wrap items-center gap-1 rounded-lg border bg-background p-0.5"
+          class="flex flex-wrap items-center gap-1 rounded-md border bg-background p-0.5"
           role="group"
           aria-label="Tipo de receita"
         >
+          <!-- Filtro segmentado e compacto; o estado ativo pertence ao conjunto, não a botões independentes. -->
           <button
             type="button"
             class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
@@ -107,15 +108,15 @@ function clearFilters() {
 
         <div class="ml-auto flex flex-wrap items-center gap-3">
           <label class="inline-flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-            <input v-model="onlyWithoutSku" type="checkbox" class="size-4 rounded border" />
+            <input v-model="onlyWithoutSku" type="checkbox" class="size-4 rounded border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" />
             Sem SKU
           </label>
           <label class="inline-flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-            <input v-model="onlyWithDraft" type="checkbox" class="size-4 rounded border" />
+            <input v-model="onlyWithDraft" type="checkbox" class="size-4 rounded border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" />
             Com rascunho
           </label>
           <label class="inline-flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-            <input v-model="archived" type="checkbox" class="size-4 rounded border" />
+            <input v-model="archived" type="checkbox" class="size-4 rounded border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" />
             Arquivadas
           </label>
         </div>
@@ -125,7 +126,7 @@ function clearFilters() {
         v-if="stale"
         role="status"
         aria-live="polite"
-        class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-amber-700 dark:text-amber-300"
+        class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
       >
         <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
         <span>Sem atualizar. Mostrando a última lista carregada.</span>
@@ -135,22 +136,24 @@ function clearFilters() {
 
       <div
         v-else-if="error && !entries.length"
-        class="grid place-items-center gap-2 rounded-lg border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
+        class="grid place-items-center gap-2 rounded-md border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
       >
         <Icon name="lucide:cloud-off" class="size-8 text-destructive/70" />
         <p class="text-base font-medium text-foreground">Não foi possível carregar as receitas.</p>
-        <button
+        <UiButton
           type="button"
-          class="mt-1 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition hover:bg-accent"
+          class="mt-1"
+          variant="outline"
+          size="sm"
           @click="refresh()"
         >
           <Icon name="lucide:refresh-cw" class="size-4" /> Tentar de novo
-        </button>
+        </UiButton>
       </div>
 
       <div
         v-else-if="!entries.length && !hasFilters"
-        class="grid place-items-center gap-2 rounded-lg border border-dashed py-16 text-center text-muted-foreground"
+        class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center text-muted-foreground"
       >
         <Icon name="lucide:book-open" class="size-8" />
         <p class="text-base font-medium">Nenhuma receita ainda.</p>
@@ -162,13 +165,13 @@ function clearFilters() {
 
       <div
         v-else-if="!visible.length"
-        class="grid place-items-center gap-2 rounded-lg border border-dashed py-16 text-center text-muted-foreground"
+        class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center text-muted-foreground"
       >
         <Icon name="lucide:search" class="size-8" />
         <p class="text-base font-medium">Nenhuma receita com esses filtros.</p>
-        <button type="button" class="text-sm text-primary underline-offset-2 hover:underline" @click="clearFilters">
+        <UiButton type="button" variant="link" size="sm" class="p-0" @click="clearFilters">
           Limpar filtros
-        </button>
+        </UiButton>
       </div>
 
       <div v-else class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
@@ -176,7 +179,7 @@ function clearFilters() {
           v-for="entry in visible"
           :key="entry.ref"
           :to="`/recipes/${entry.ref}`"
-          class="grid gap-2 rounded-lg border bg-card p-3 transition hover:border-primary/40 hover:bg-accent/30"
+          class="grid gap-2 rounded-md border bg-card p-3 transition hover:border-primary/40 hover:bg-accent/30"
           :class="entry.is_archived ? 'opacity-70' : ''"
         >
           <div class="flex items-start justify-between gap-2">
@@ -195,7 +198,7 @@ function clearFilters() {
                 entry.output_sku
               }}</span>
             </template>
-            <span v-else class="text-amber-700 dark:text-amber-300">Sem SKU</span>
+            <span v-else class="text-warning">Sem SKU</span>
           </p>
 
           <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">

@@ -188,7 +188,7 @@ const hasDraft = computed(() => capture.state.value === "done" && !!capture.draf
     <RecipeHeader title="Nova receita" back="/recipes" hide-refresh />
 
     <section v-if="!accessPending && !canEdit" class="grid flex-1 place-items-center p-6 text-center">
-      <div class="grid max-w-md gap-2 rounded-lg border border-dashed p-10">
+      <div class="grid max-w-md gap-2 rounded-md border border-dashed p-10">
         <Icon name="lucide:lock" class="mx-auto size-8 text-muted-foreground" />
         <p class="text-base font-semibold">Só leitura</p>
         <p class="text-sm text-muted-foreground">
@@ -202,7 +202,8 @@ const hasDraft = computed(() => capture.state.value === "done" && !!capture.draf
 
     <section v-else class="min-h-0 flex-1 overflow-auto p-3 md:p-4">
       <div class="mx-auto grid max-w-4xl gap-4">
-        <div class="flex items-center gap-1 rounded-lg border bg-background p-0.5" role="tablist" aria-label="Como entrar a receita">
+        <div class="flex items-center gap-1 rounded-md border bg-background p-0.5" role="tablist" aria-label="Como entrar a receita">
+          <!-- Portas mutuamente exclusivas da captura; o tab segmentado é deliberadamente compacto. -->
           <button
             v-for="option in doors"
             :key="option.value"
@@ -226,21 +227,22 @@ const hasDraft = computed(() => capture.state.value === "done" && !!capture.draf
         <template v-if="door !== 'manual'">
           <div
             v-if="showUnavailable"
-            class="flex flex-wrap items-center gap-3 rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
+            class="flex flex-wrap items-center gap-3 rounded-md border border-dashed p-4 text-sm text-muted-foreground"
           >
             <Icon name="lucide:sparkles" class="size-5 shrink-0" />
             <span class="flex-1">{{ CAPTURE_UNAVAILABLE_MESSAGE }}</span>
-            <button
+            <UiButton
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition hover:bg-accent"
+              variant="outline"
+              size="sm"
               @click="door = 'manual'"
             >
               <Icon name="lucide:pencil" class="size-4" /> Preencher à mão
-            </button>
+            </UiButton>
           </div>
 
           <template v-else-if="!hasDraft">
-            <div v-if="door === 'note'" class="grid gap-2 rounded-lg border bg-card p-4">
+            <div v-if="door === 'note'" class="grid gap-2 rounded-md border bg-card p-4">
               <label class="grid gap-1 text-sm font-medium">
                 Cole ou digite a receita, em qualquer língua
                 <UiTextarea
@@ -252,33 +254,34 @@ const hasDraft = computed(() => capture.state.value === "done" && !!capture.draf
               <div class="flex flex-wrap items-end gap-3">
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Língua (opcional)
-                  <input
+                  <UiInput
                     v-model="languageHint"
                     type="text"
                     placeholder="pt, fr, en, ja…"
-                    class="h-9 w-32 rounded-md border bg-background px-2 text-sm text-foreground"
+                    class="w-32"
                   />
                 </label>
-                <button
+                <UiButton
                   type="button"
-                  class="ml-auto inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+                  class="ml-auto"
                   :disabled="!noteText.trim() || capture.reading.value"
                   @click="readNote"
                 >
                   <Icon :name="capture.reading.value ? 'lucide:loader-circle' : 'lucide:sparkles'" class="size-4" :class="capture.reading.value ? 'animate-spin' : ''" />
                   {{ capture.reading.value ? "Lendo…" : "Ler anotação" }}
-                </button>
+                </UiButton>
               </div>
             </div>
 
-            <div v-else class="grid gap-3 rounded-lg border bg-card p-4">
+            <div v-else class="grid gap-3 rounded-md border bg-card p-4">
               <label class="grid gap-1 text-sm font-medium">
                 Foto da ficha ou do caderno
+                <!-- Arquivo usa o seletor nativo: UiInput não pode reatribuir programaticamente seu value por segurança do navegador. -->
                 <input
                   type="file"
                   accept="image/*"
                   capture="environment"
-                  class="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+                  class="block min-h-11 w-full rounded-md text-sm text-muted-foreground outline-none file:mr-3 file:rounded-md file:border file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   @change="onPhotoChange"
                 />
               </label>
@@ -294,22 +297,22 @@ const hasDraft = computed(() => capture.state.value === "done" && !!capture.draf
               <div class="flex flex-wrap items-end gap-3">
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Língua (opcional)
-                  <input
+                  <UiInput
                     v-model="languageHint"
                     type="text"
                     placeholder="pt, fr, en, ja…"
-                    class="h-9 w-32 rounded-md border bg-background px-2 text-sm text-foreground"
+                    class="w-32"
                   />
                 </label>
-                <button
+                <UiButton
                   type="button"
-                  class="ml-auto inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+                  class="ml-auto"
                   :disabled="!photoFile || capture.reading.value"
                   @click="readPhoto"
                 >
                   <Icon :name="capture.reading.value ? 'lucide:loader-circle' : 'lucide:sparkles'" class="size-4" :class="capture.reading.value ? 'animate-spin' : ''" />
                   {{ capture.reading.value ? "Lendo…" : "Ler foto" }}
-                </button>
+                </UiButton>
               </div>
             </div>
 
@@ -319,63 +322,64 @@ const hasDraft = computed(() => capture.state.value === "done" && !!capture.draf
             >
               <Icon name="lucide:cloud-off" class="size-4 shrink-0 text-destructive/70" />
               <span class="flex-1">{{ capture.error.value }}</span>
-              <button type="button" class="text-sm text-primary underline-offset-2 hover:underline" @click="door = 'manual'">
+              <UiButton type="button" variant="link" size="sm" class="p-0" @click="door = 'manual'">
                 Preencher à mão
-              </button>
+              </UiButton>
             </div>
           </template>
 
           <!-- ── Rascunho lido: conferência ────────────────────────────── -->
           <div v-else class="grid gap-4">
-            <div class="grid gap-3 rounded-lg border bg-card p-4">
+            <div class="grid gap-3 rounded-md border bg-card p-4">
               <div class="flex flex-wrap items-center gap-2">
-                <h2 class="text-base font-bold">O que foi lido</h2>
+                <h2 class="text-lg font-semibold">O que foi lido</h2>
                 <UiBadge v-if="capture.draft.value?.language" variant="outline" class="px-1.5 py-0 text-xs">
                   Língua: {{ capture.draft.value.language }}
                 </UiBadge>
-                <button
+                <UiButton
                   type="button"
-                  class="ml-auto text-sm text-muted-foreground underline-offset-2 hover:underline"
+                  class="ml-auto"
+                  variant="ghost"
+                  size="sm"
                   @click="capture.reset()"
                 >
                   Ler outra
-                </button>
+                </UiButton>
               </div>
               <div class="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Nome
-                  <input
+                  <UiInput
                     v-model="draftName"
                     type="text"
-                    class="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
                   />
                 </label>
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Tipo
-                  <select v-model="draftKind" class="h-9 rounded-md border bg-background px-2 text-sm text-foreground">
+                  <UiNativeSelect v-model="draftKind" class="w-auto">
                     <option v-for="option in KIND_OPTIONS" :key="option.value" :value="option.value">
                       {{ option.label }}
                     </option>
-                  </select>
+                  </UiNativeSelect>
                 </label>
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Rendimento
                   <span class="flex items-center gap-1">
-                    <input
+                    <UiInput
                       v-model="draftYieldQuantity"
                       type="text"
                       inputmode="decimal"
-                      class="h-9 w-20 rounded-md border bg-background px-2 text-sm text-foreground"
+                      class="w-20"
                     />
-                    <select v-model="draftYieldUnit" class="h-9 rounded-md border bg-background px-2 text-sm text-foreground">
+                    <UiNativeSelect v-model="draftYieldUnit" class="w-auto">
                       <option v-for="unit in YIELD_UNIT_OPTIONS" :key="unit" :value="unit">{{ unit }}</option>
-                    </select>
+                    </UiNativeSelect>
                   </span>
                 </label>
               </div>
             </div>
 
-            <div class="overflow-hidden rounded-lg border">
+            <div class="overflow-hidden rounded-md border">
               <table class="w-full text-sm">
                 <thead class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
                   <tr>
@@ -400,10 +404,10 @@ const hasDraft = computed(() => capture.state.value === "done" && !!capture.draf
                     </td>
                     <td class="px-3 py-2 text-right tabular-nums">{{ item.quantity }} {{ item.unit }}</td>
                     <td class="px-3 py-2">
-                      <select
+                      <UiNativeSelect
                         :value="item.sku"
-                        class="h-9 w-full min-w-40 rounded-md border bg-background px-2 text-sm text-foreground"
-                        :class="item.sku ? '' : 'border-amber-500/50'"
+                        class="min-w-40"
+                        :class="item.sku ? '' : 'border-warning/50'"
                         :aria-label="`Insumo para ${item.name}`"
                         @change="chooseCandidate(index, ($event.target as HTMLSelectElement).value)"
                       >
@@ -411,27 +415,27 @@ const hasDraft = computed(() => capture.state.value === "done" && !!capture.draf
                         <option v-for="candidate in item.candidates" :key="candidate.sku" :value="candidate.sku">
                           {{ candidate.name }} · {{ candidate.sku }}
                         </option>
-                      </select>
+                      </UiNativeSelect>
                       <p v-if="candidateFor(item) && item.match_confidence" class="mt-0.5 text-xs text-muted-foreground">
                         Confiança {{ item.match_confidence }}
                       </p>
                     </td>
                     <td class="px-3 py-2">
-                      <select
+                      <UiNativeSelect
                         :value="item.role"
-                        class="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
+                        class="w-auto"
                         :aria-label="`Papel de ${item.name}`"
                         @change="setRole(index, ($event.target as HTMLSelectElement).value)"
                       >
                         <option v-for="role in ROLE_OPTIONS" :key="role.value" :value="role.value">{{ role.label }}</option>
-                      </select>
+                      </UiNativeSelect>
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
 
-            <div v-if="capture.draft.value?.steps?.length" class="rounded-lg border bg-card p-4">
+            <div v-if="capture.draft.value?.steps?.length" class="rounded-md border bg-card p-4">
               <p class="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">Passos lidos</p>
               <ol class="list-decimal space-y-0.5 pl-5 text-sm">
                 <li v-for="(step, index) in capture.draft.value.steps" :key="index">{{ step }}</li>
@@ -444,67 +448,66 @@ const hasDraft = computed(() => capture.state.value === "done" && !!capture.draf
                 <template v-else>Todos os ingredientes têm insumo.</template>
               </p>
               <p v-if="draftError" class="text-sm text-destructive">{{ draftError }}</p>
-              <button
+              <UiButton
                 type="button"
-                class="ml-auto inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+                class="ml-auto"
                 :disabled="creating"
                 @click="continueToEditor"
               >
                 <Icon name="lucide:arrow-right" class="size-4" />
                 {{ creating ? "Criando…" : "Continuar no editor" }}
-              </button>
+              </UiButton>
             </div>
           </div>
         </template>
 
         <!-- ── Manual: direto ao editor vazio ────────────────────────────── -->
-        <div v-else class="grid gap-3 rounded-lg border bg-card p-4">
+        <div v-else class="grid gap-3 rounded-md border bg-card p-4">
           <p class="text-sm text-muted-foreground">
             Dê um nome e um tipo; a fórmula você monta no editor, com a prévia da lente ao lado.
           </p>
           <div class="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Nome
-              <input
+              <UiInput
                 v-model="manualName"
                 type="text"
                 placeholder="Ex.: Pão de campanha"
-                class="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
                 @keydown.enter="startManual"
               />
             </label>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Tipo
-              <select v-model="manualKind" class="h-9 rounded-md border bg-background px-2 text-sm text-foreground">
+              <UiNativeSelect v-model="manualKind" class="w-auto">
                 <option v-for="option in KIND_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
-              </select>
+              </UiNativeSelect>
             </label>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Rendimento
               <span class="flex items-center gap-1">
-                <input
+                <UiInput
                   v-model="manualYieldQuantity"
                   type="text"
                   inputmode="decimal"
-                  class="h-9 w-20 rounded-md border bg-background px-2 text-sm text-foreground"
+                  class="w-20"
                 />
-                <select v-model="manualYieldUnit" class="h-9 rounded-md border bg-background px-2 text-sm text-foreground">
+                <UiNativeSelect v-model="manualYieldUnit" class="w-auto">
                   <option v-for="unit in YIELD_UNIT_OPTIONS" :key="unit" :value="unit">{{ unit }}</option>
-                </select>
+                </UiNativeSelect>
               </span>
             </label>
           </div>
           <div class="flex flex-wrap items-center gap-3">
             <p v-if="manualError" class="text-sm text-destructive">{{ manualError }}</p>
-            <button
+            <UiButton
               type="button"
-              class="ml-auto inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+              class="ml-auto"
               :disabled="creating"
               @click="startManual"
             >
               <Icon name="lucide:arrow-right" class="size-4" />
               {{ creating ? "Criando…" : "Abrir o editor" }}
-            </button>
+            </UiButton>
           </div>
         </div>
       </div>

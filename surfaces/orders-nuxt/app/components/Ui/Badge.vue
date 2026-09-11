@@ -29,7 +29,7 @@
         secondary:
           "bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90 border-transparent",
         destructive:
-          "bg-destructive focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40 [a&]:hover:bg-destructive/90 border-transparent text-white",
+          "bg-destructive focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40 [a&]:hover:bg-destructive/90 border-transparent text-destructive-foreground",
         outline: "text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         success:
           "border-transparent bg-success text-success-foreground focus-visible:ring-success/30 [a&]:hover:bg-success/90",
@@ -38,7 +38,7 @@
         info: "border-transparent bg-info text-info-foreground focus-visible:ring-info/30 [a&]:hover:bg-info/90",
         ghost: "text-foreground [a&]:hover:bg-accent/50 border-transparent bg-transparent",
         error:
-          "border-transparent bg-destructive text-white focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40 [a&]:hover:bg-destructive/90",
+          "border-transparent bg-destructive text-destructive-foreground focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40 [a&]:hover:bg-destructive/90",
       },
       disabled: {
         true: "cursor-not-allowed opacity-50",

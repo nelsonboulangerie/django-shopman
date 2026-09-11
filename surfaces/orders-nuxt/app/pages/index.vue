@@ -651,16 +651,16 @@ function printQueue() {
         </UiDialogHeader>
         <p v-if="rejectReasonsLoading" class="text-sm text-muted-foreground">Carregando motivos do iFood…</p>
         <!-- Marketplace (iFood): coded reason picker from the provider's live list -->
-        <select
+        <UiNativeSelect
           v-else-if="isMarketplaceReject"
           v-model="rejectCode"
-          class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+          class="w-full"
           aria-label="Motivo do cancelamento (iFood)"
           @change="onRejectCodeChange"
         >
           <option value="" disabled>Selecione o motivo…</option>
           <option v-for="r in rejectReasons" :key="r.code" :value="r.code">{{ r.description }}</option>
-        </select>
+        </UiNativeSelect>
         <!-- Other channels: free-text reason -->
         <textarea
           v-else

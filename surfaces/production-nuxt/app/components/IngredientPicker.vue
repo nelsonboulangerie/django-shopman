@@ -66,6 +66,7 @@ function onBlur() {
       <span v-if="matchedName" class="hidden truncate font-mono text-xs text-muted-foreground sm:inline">{{
         modelValue
       }}</span>
+      <!-- Limpar é affordance embutida no chip de insumo e precisa caber nos 24px reservados. -->
       <button
         v-if="!disabled"
         type="button"
@@ -78,13 +79,12 @@ function onBlur() {
       </button>
     </div>
     <template v-else>
-      <input
-        :value="term"
+      <UiInput
+        :model-value="term"
         type="text"
         autocomplete="off"
         :placeholder="placeholder || 'Buscar insumo…'"
         :disabled="disabled"
-        class="h-9 w-full rounded-md border bg-background px-2 text-sm text-foreground outline-none transition focus:ring-1 focus:ring-ring"
         aria-label="Buscar insumo"
         @input="onInput"
         @focus="open = true"
@@ -99,6 +99,7 @@ function onBlur() {
         <li v-if="pending" class="px-3 py-1.5 text-muted-foreground">Buscando…</li>
         <li v-else-if="!list.length" class="px-3 py-1.5 text-muted-foreground">Nenhum insumo encontrado.</li>
         <li v-for="option in list" :key="option.sku" role="option" :aria-selected="false">
+          <!-- A linha inteira é a opção do listbox; a anatomia textual não é a de um CTA UiButton. -->
           <button
             type="button"
             class="flex w-full items-center gap-2 px-3 py-1.5 text-left transition hover:bg-accent"

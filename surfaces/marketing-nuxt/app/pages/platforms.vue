@@ -475,10 +475,9 @@ useHead({ title: "Plataformas · Marketing" });
                   >
                     Aparelho verificado
                   </label>
-                  <select
+                  <UiNativeSelect
                     id="test-target"
                     v-model="testTargetRef"
-                    class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
                   >
                     <option value="" disabled>Escolha o aparelho</option>
                     <option
@@ -488,7 +487,7 @@ useHead({ title: "Plataformas · Marketing" });
                     >
                       {{ target.label }}
                     </option>
-                  </select>
+                  </UiNativeSelect>
                 </div>
                 <div>
                   <label for="test-sku" class="mb-1 block text-xs font-medium"

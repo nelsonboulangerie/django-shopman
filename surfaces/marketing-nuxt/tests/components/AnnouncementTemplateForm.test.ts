@@ -5,6 +5,7 @@ import AnnouncementTemplateForm from "~/components/AnnouncementTemplateForm.vue"
 import DraftRecoveryNotice from "~/components/DraftRecoveryNotice.vue";
 import type { AnnouncementTemplate } from "~/types/campaign";
 import { installMemoryLocalStorage } from "../support/localStorage";
+import { UiNativeSelectStub } from "../support/nativeUiStubs";
 
 beforeAll(() => {
   Object.assign(globalThis, { computed, ref, watch });
@@ -36,7 +37,7 @@ function form(value: AnnouncementTemplate, owner = "operator:7") {
       draftOwner: owner,
     },
     global: {
-      components: { DraftRecoveryNotice },
+      components: { DraftRecoveryNotice, UiNativeSelect: UiNativeSelectStub },
       stubs: { Icon: true },
     },
   });

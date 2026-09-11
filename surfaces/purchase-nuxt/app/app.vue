@@ -58,8 +58,12 @@ useHead({ title: "Compras" });
         <span>{{ item.label }}</span>
       </button>
     </nav>
-    <OperatorLogin v-if="!canIdentify" />
+    <OperatorLogin
+      v-if="!canIdentify"
+      title="Entre para operar Compras"
+      description="Use uma conta autorizada a comprar e receber insumos."
+    />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
-    <UiSonner />
+    <OperatorSonner />
   </div>
 </template>

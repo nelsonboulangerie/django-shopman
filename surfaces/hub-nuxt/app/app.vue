@@ -8,29 +8,6 @@ import { hubFailure, hubFailureCopy, hubGreeting, hubIsEmpty, tileIcon, tileTarg
 
 const apiPath = useHubApiPath();
 
-// Login no próprio hub (sessão de dispositivo cross-subdomínio `.boulangerie`): um submit
-// autentica e recarrega já na central. Reusa o endpoint de login do operador.
-const loginUser = ref("");
-const loginPass = ref("");
-const loginPending = ref(false);
-const loginError = ref("");
-async function submitLogin() {
-  if (loginPending.value) return;
-  loginError.value = "";
-  loginPending.value = true;
-  try {
-    await $fetch(apiPath("/api/v1/backstage/operator/login/"), {
-      method: "POST",
-      body: { username: loginUser.value.trim(), password: loginPass.value },
-    });
-    resetSession();
-    if (import.meta.client) window.location.reload();
-  } catch (error) {
-    loginError.value = httpErrorMessage(error, "Não foi possível entrar. Confira usuário e senha.");
-    loginPending.value = false;
-  }
-}
-
 const { tiles, operatorName, error, refresh } = await useOperatorHub();
 
 // Resiliência de rede (kit): reconciliação ao reconectar/reganhar foco.
@@ -38,7 +15,7 @@ const { onReconnect } = useConnectivity();
 onReconnect(() => refresh());
 
 // Re-gate de sessão (kit): sessão expirada → volta pro login.
-const { expired: sessionExpired, reset: resetSession } = useOperatorSession();
+const { expired: sessionExpired } = useOperatorSession();
 
 // ⚠️ Cinco causas distintas viravam UM booleano que subia o formulário de senha.
 // API fora do ar, deploy em andamento e estação travada pediam senha — num balcão
@@ -64,52 +41,18 @@ const isEmpty = computed(() => hubIsEmpty(tiles.value));
     <OfflineBanner />
 
     <!-- Gate de login (sessão ausente/expirada) -->
-    <div v-if="needsLogin" class="grid min-h-dvh place-items-center p-4">
-      <form class="grid w-full max-w-sm gap-4 text-center" @submit.prevent="submitLogin">
-        <div class="mx-auto grid size-14 place-items-center rounded-full border bg-muted">
-          <Icon name="lucide:layout-grid" class="size-7 text-muted-foreground" />
-        </div>
-        <div class="grid gap-1.5">
-          <h1 class="text-lg font-semibold">
-            {{ sessionExpired ? "Sua sessão expirou" : "Central de Apps" }}
-          </h1>
-          <p class="text-sm text-muted-foreground">
-            {{ sessionExpired ? "Entre de novo para continuar." : "Acesse com sua conta de operador." }}
-          </p>
-        </div>
-        <div class="grid gap-2.5 text-left">
-          <input
-            v-model="loginUser"
-            type="text"
-            autocomplete="username"
-            autocapitalize="none"
-            autocorrect="off"
-            placeholder="Usuário"
-            aria-label="Usuário"
-            :disabled="loginPending"
-            class="h-11 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring disabled:opacity-60"
-          >
-          <input
-            v-model="loginPass"
-            type="password"
-            autocomplete="current-password"
-            placeholder="Senha"
-            aria-label="Senha"
-            :disabled="loginPending"
-            class="h-11 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring disabled:opacity-60"
-          >
-          <p v-if="loginError" class="text-sm text-destructive" role="alert">{{ loginError }}</p>
-        </div>
-        <button
-          type="submit"
-          :disabled="loginPending || !loginUser.trim() || !loginPass"
-          class="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-        >
-          <Icon :name="loginPending ? 'line-md:loading-loop' : 'lucide:log-in'" class="size-5" />
-          {{ loginPending ? "Entrando…" : "Entrar" }}
-        </button>
-      </form>
-    </div>
+    <OperatorLogin
+      v-if="needsLogin"
+      mode="page"
+      icon="lucide:layout-grid"
+      :login-url="apiPath('/api/v1/backstage/operator/login/')"
+      :title="sessionExpired ? 'Sua sessão expirou' : 'Central de Apps'"
+      :description="
+        sessionExpired
+          ? 'Entre de novo para continuar.'
+          : 'Acesse com sua conta de operador.'
+      "
+    />
 
     <!-- Falha que NÃO se resolve com senha: estação travada, sem permissão, ou a
          Central fora do ar. Cada uma tem a sua saída — e "tentar de novo" só aparece
