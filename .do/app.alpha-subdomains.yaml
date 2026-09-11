@@ -402,9 +402,19 @@ envs:
   scope: RUN_TIME
   value: 'true'
   type: GENERAL
-# Piloto fechado: só estes assinantes/telefones recebem o concierge.
-# ⚠️ Vazio NÃO é "desligado" — é ABERTO A TODOS. Apagar esta lista solta o
-#    concierge em cima de toda a base do WhatsApp.
+# Mesma conta e mesmo portão #c do flow Concierge (piloto), conferidos por GET
+# getInfo/getFlows em 11/09/2026. Não recriar flow nem trocar sua chave X-Api-Key.
+# Versão 0 mantém o candidato contido até o Body real comprovar event_id estável.
+- key: CONCIERGE_CONTRACT_VERSION
+  scope: RUN_TIME
+  value: '0'
+  type: GENERAL
+- key: CONCIERGE_ACCOUNT_ID
+  scope: RUN_TIME
+  value: '764222643620409'
+  type: GENERAL
+# A v2 usa somente subscriber IDs; telefones legados abaixo não ampliam confiança.
+# Preservar os convidados existentes. Lista vazia contém a admissão na v2.
 - key: CONCIERGE_ALLOWED_SUBSCRIBERS
   scope: RUN_TIME
   value: '4605528796186498,1962036908,+5543984049009,+5543984035793'

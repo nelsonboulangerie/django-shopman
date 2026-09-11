@@ -1057,7 +1057,8 @@ SHOPMAN_MARKETING_AI_TIMEOUT_SECONDS = float(
 # (services do Shopman), nunca do texto gerado. Desligado por padrão: ligar é
 # `SHOPMAN_CONCIERGE_ENABLED=true` + credencial da Anthropic (`AI_ASSIST_API_KEY`)
 # + chave S2S que o ManyChat apresenta (`CONCIERGE_API_KEY`, ou a mesma do access
-# link). Sem chave S2S fora de DEBUG o endpoint falha FECHADO.
+# link). Sem chave S2S o endpoint falha FECHADO, inclusive em DEBUG.
+# O portão histórico #c continua no mesmo webhook; v2 exige conta e event_id estável.
 SHOPMAN_CONCIERGE = {
     # Cada capacidade só recebe opt-in após os gates nominalmente aprovados.
     # Versão 0 contém o worker novo mesmo se a flag legada estiver ligada.

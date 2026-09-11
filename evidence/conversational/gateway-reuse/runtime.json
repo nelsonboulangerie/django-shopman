@@ -1,0 +1,9 @@
+{
+  "root": "/var/folders/26/_q6qdvgd7ng__s8yvxymfy2h0000gn/T/concierge-gateway-reuse-20260911-3ylhpikw",
+  "socket_directory": "/tmp/cgr-uwxz4pej",
+  "postgres_port": 56429,
+  "redis_port": 56430,
+  "database": "concierge_gate",
+  "user": "concierge_test",
+  "external_credentials": false
+}
