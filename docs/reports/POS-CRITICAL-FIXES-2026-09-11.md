@@ -19,10 +19,10 @@ Base: `origin/main` em `7faf0259a`. Integração isolada em `codex/pos-critical-
 - Backend: **178 testes passaram**, cobrindo agendamento, identidade de cliente, bootstrap, contrato de superfície PDV, pedido de troco, filipeta e SSE.
 - Frontend: **410 testes unitários passaram** e **145 testes de componente/composable passaram** (checkout, cadastro, fechamento, identidade e refresh de recebimento).
 - Typecheck Nuxt, Ruff nos módulos alterados e `git diff --check` aprovados.
-- `makemigrations --check --dry-run`: sem drift; sem colisão de numeração de migração na base consultada.
+- `makemigrations --check --dry-run`: sem drift; sem colisão nova para `0063`. Há prefixos históricos repetidos (`0036` e `0058`); o grafo atual foi aceito pelo Django.
 - A revisão independente achou e motivou a correção da troca automática de recebimento. A revisão de cadastro não encontrou seleção silenciosa por digitação/blur.
 
-Não houve ensaio em impressora física, sessão real do operador nem validação visual em navegador de produção. Os testes usam ambiente local e adaptadores de teste. Avisos de lifecycle Vue em harness e depreciação Node não impediram as suítes.
+Não houve ensaio em impressora física, sessão real do operador nem validação visual em navegador de produção. Os testes usam ambiente local e adaptadores de teste. Avisos de lifecycle Vue em harness e depreciação Node não impediram as suítes. O comando de drift usa banco local vazio e registrou avisos de tabela/configuração ainda não inicializada; concluiu com exit 0 e “No changes detected”.
 
 ## Publicação e rollback
 
