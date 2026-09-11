@@ -1433,6 +1433,40 @@ def _fire_url(rule) -> str:
 
 
 class TestManualFire:
+    def test_fire_quota_counts_one_idempotent_intent_not_confirmation_round_trips(
+        self, client, gestor, rule, template, monkeypatch
+    ):
+        from django.core.cache import cache
+
+        from shopman.backstage.api.throttles import (
+            MarketingFireShopThrottle,
+            MarketingFireUserThrottle,
+        )
+
+        monkeypatch.setattr(MarketingFireUserThrottle, "rate", "1/hour", raising=False)
+        monkeypatch.setattr(MarketingFireShopThrottle, "rate", "100/day", raising=False)
+        cache.clear()
+        template.body = "Novidades frescas hoje!"
+        template.save(update_fields=["body"])
+        client.force_login(gestor)
+
+        response = _confirmed_post(
+            client,
+            _fire_url(rule),
+            {"base_version": rule.version},
+            key="fire-one-logical-operation-0001",
+        )
+
+        assert response.status_code == 200
+        limited = client.post(
+            _fire_url(rule),
+            data={"base_version": rule.version + 1},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="fire-second-logical-operation-0001",
+        )
+        assert limited.status_code == 429
+        assert int(limited.headers["Retry-After"]) > 0
+
     def test_body_bypass_is_rejected_before_any_announcement_or_effect(
         self, client, gestor, rule
     ):
