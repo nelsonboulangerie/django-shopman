@@ -35,3 +35,15 @@ Preview em http://127.0.0.1:43026/; backend sintético64929, banco de demonstra�
 separado dos testes e cookie próprio para não conflitar com o preview anterior.
 A primeira tentativa compartilhou o nome de cookie entre dois bancos locais e
 perdeu a sessão; corrigido no fixture, sem alterar autenticação do produto.
+
+## Gate comunicado pelo Gestor
+
+A tarefa responsável confirmou que a publicação integrada permanece pendente.
+Os contratos continuam em47e9c657a e a validação funcional passou, mas o ensaio
+com500 pedidos e10 aparelhos não atingiu os budgets: p95backend1058ms no ensaio
+por etapas, para limite500ms; navegador1695–1857ms nas rodadas concluídas,
+para limite1500ms. O host compartilhado tem swap elevado, mas isso não prova
+que a causa seja exclusivamente ambiental nem autoriza relaxar os limites.
+G06/G07 e piloto aplicável não estão liberados. Nenhuma publicação foi feita.
+Não exigir nova decisão visual do dono: o que falta é a evidência/correção de
+capacidade sob responsabilidade da frente Gestor e sua liberação coordenada.
