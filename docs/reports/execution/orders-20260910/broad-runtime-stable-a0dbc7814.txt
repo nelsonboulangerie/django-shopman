@@ -1,0 +1,329 @@
+bringing up nodes...
+bringing up nodes...
+
+........................................................................ [  0%]
+........................................................................ [  1%]
+........................................................................ [  2%]
+........................................................................ [  3%]
+........................................................................ [  4%]
+..............s.s..sss..s.s.....ss....s..ssss.........s..s...sss..s..s.. [  4%]
+.........................................s..s................s.......... [  5%]
+........................................................................ [  6%]
+........................................................................ [  7%]
+........................................................................ [  8%]
+........................................................................ [  9%]
+........................................................................ [  9%]
+........................................................................ [ 10%]
+........................................................................ [ 11%]
+........................................................................ [ 12%]
+........................................................................ [ 13%]
+...................F...F................................................ [ 14%]
+........................................................................ [ 14%]
+........................................................................ [ 15%]
+........................................................................ [ 16%]
+........................................................................ [ 17%]
+........................................................................ [ 18%]
+........................................................................ [ 19%]
+........................................................................ [ 19%]
+........................................................................ [ 20%]
+........................................................................ [ 21%]
+.........................................uuuu.uuuuuuu................... [ 22%]
+........................................................................ [ 23%]
+........................................................................ [ 23%]
+........................................................................ [ 24%]
+........................................................................ [ 25%]
+.......................s................................................ [ 26%]
+........................................................................ [ 27%]
+........................................................................ [ 28%]
+...................................................uuuu....uuuu......... [ 28%]
+..uuu................................uuuu...uu.......................... [ 29%]
+........................................................................ [ 30%]
+........................................................................ [ 31%]
+........................................................................ [ 31%]
+........................................................................ [ 32%]
+........................................................................ [ 33%]
+........................................................................ [ 34%]
+........................................................................ [ 35%]
+........................................................................ [ 36%]
+........................................................................ [ 36%]
+........................................................................ [ 37%]
+........................................................................ [ 38%]
+........................................................................ [ 39%]
+........................................................................ [ 40%]
+........................................................................ [ 41%]
+...................uuuuu................................................ [ 41%]
+........................................................................ [ 42%]
+........................................................................ [ 43%]
+........................................................................ [ 44%]
+........................................................................ [ 45%]
+........................................................................ [ 46%]
+........................................................................ [ 46%]
+........................................................................ [ 47%]
+........................................................................ [ 48%]
+........................................................................ [ 49%]
+........................................................................ [ 50%]
+........................................................................ [ 50%]
+........................................................................ [ 51%]
+........................................................................ [ 52%]
+........................................................................ [ 53%]
+........................................................................ [ 54%]
+........................................................................ [ 55%]
+...........................................ssssssssss................... [ 55%]
+........................................................................ [ 56%]
+..................................................F..................... [ 57%]
+........................................................................ [ 58%]
+........................................................................ [ 59%]
+........................................................................ [ 60%]
+........................................................................ [ 60%]
+........................................................................ [ 61%]
+........................................................................ [ 62%]
+........................................................................ [ 63%]
+........................................................................ [ 64%]
+........................................................................ [ 65%]
+........................................................................ [ 65%]
+........................................................................ [ 66%]
+.......................................................................u [ 67%]
+uuuu.................................................................... [ 68%]
+........................................................................ [ 69%]
+........................................................................ [ 69%]
+........................................................................ [ 70%]
+........................................................................ [ 71%]
+........................................................................ [ 72%]
+........................................................................ [ 73%]
+........................................................................ [ 74%]
+........................................................................ [ 74%]
+........................................................................ [ 75%]
+........................................................................ [ 76%]
+........................................................................ [ 77%]
+......................................s................................. [ 78%]
+.........................................................s.............. [ 79%]
+.........................................ss.s........................... [ 79%]
+........................................................................ [ 80%]
+........................................................................ [ 81%]
+........................................................................ [ 82%]
+...............................sss..................ss.sss.............. [ 83%]
+...............................ss....................................... [ 84%]
+........................................................................ [ 84%]
+........................................................................ [ 85%]
+........................................................................ [ 86%]
+........................................................................ [ 87%]
+........................................................................ [ 88%]
+........................................................................ [ 89%]
+........................................................................ [ 89%]
+........................................................................ [ 90%]
+........................................................................ [ 91%]
+........................................................................ [ 92%]
+........................................................................ [ 93%]
+........................................................................ [ 94%]
+........................................................................ [ 94%]
+........................................................................ [ 95%]
+........................................................................ [ 96%]
+..................................................................sssss. [ 97%]
+.............ss.ss..........ss..sss..................................... [ 98%]
+........................................................................ [ 98%]
+........................................................................ [ 99%]
+................                                                         [100%]
+=================================== FAILURES ===================================
+__ test_despacho_pergunta_o_troco_leva_da_gaveta_e_o_acerto_diz_o_que_voltou ___
+[gw0] darwin -- Python 3.12.5 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/bin/python
+
+client = <django.test.client.Client object at 0x15cf4d640>
+operator = <User: marina>
+
+    def test_despacho_pergunta_o_troco_leva_da_gaveta_e_o_acerto_diz_o_que_voltou(client, operator):
+        client.force_login(operator)
+        shift = cash.open_shift(operator=operator, float_q=10000)
+        order = _delivery_cash_order("DLV-1", change_for_q=5000)
+    
+        card = _card(client, "DLV-1")
+        assert (card["change_for_q"], card["change_out_suggested_q"], card["change_out_q"]) == (5000, 2000, 0)
+        assert card["change_label"] == "Cliente paga com R$ 50,00 · levar R$ 20,00 de troco"
+        assert card["change_back_pending"] is False
+    
+        # Avançar sem dizer o troco: o servidor recusa com a sugestão.
+        response = client.post(reverse("api-backstage-order-advance", args=["DLV-1"]), advance_payload(client, "DLV-1"), content_type="application/json")
+        assert response.status_code == 409
+        assert response.json()["code"] == "change_out_required"
+        assert response.json()["suggested_q"] == 2000
+        order.refresh_from_db()
+        assert order.status == "ready"
+    
+        response = client.post(
+            reverse("api-backstage-order-advance", args=["DLV-1"]), advance_payload(client, "DLV-1", **{"change_out": "20,00"}), content_type="application/json"
+        )
+        assert response.status_code == 200
+        order.refresh_from_db()
+        assert order.status == "dispatched"
+        line = Entry.objects.get(kind=Entry.Kind.COURIER_OUT, order_ref="DLV-1")
+        assert (line.amount_q, line.shift_id, line.operator) == (-2000, shift.pk, operator)
+        assert cash.balance(shift) == 8000
+    
+        card = _card(client, "DLV-1")
+        assert (card["change_out_q"], card["change_back_pending"]) == (2000, True)
+        assert card["change_label"] == "Entregador levou R$ 20,00 de troco"
+        assert card["can_settle_delivery_cash"] is True
+    
+        # Acertar sem dizer quanto voltou: recusado.
+        response = client.post(reverse("api-backstage-order-settle-delivery-cash", args=["DLV-1"]))
+>       assert response.status_code == 400
+E       assert 409 == 400
+E        +  where 409 = <Response status_code=409, "application/json">.status_code
+
+shopman/backstage/tests/test_api_courier_change.py:100: AssertionError
+----------------------------- Captured stderr call -----------------------------
+WARNING 2026-09-10 23:31:53,139 django.request Conflict: /api/v1/backstage/orders/DLV-1/advance/
+INFO 2026-09-10 23:31:53,157 shopman.shop.services.fulfillment fulfillment.create: created for order DLV-1
+INFO 2026-09-10 23:31:53,158 shopman.shop.services.fulfillment fulfillment.update: 1 → in_progress for order DLV-1
+INFO 2026-09-10 23:31:53,158 shopman.shop.services.fulfillment fulfillment.update: 1 → dispatched for order DLV-1
+WARNING 2026-09-10 23:31:53,195 django.request Conflict: /api/v1/backstage/orders/DLV-1/settle-delivery-cash/
+_______ test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao ________
+[gw0] darwin -- Python 3.12.5 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/bin/python
+
+client = <django.test.client.Client object at 0x15cf4d6a0>
+operator = <User: marina>
+
+    def test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao(client, operator):
+        """Custódia do aparelho, não de dinheiro: mora no pedido (``data.dispatch``),
+        o canal diz o que pode sair, o quadro diz onde está, e o acerto (ou o botão)
+        marca a volta."""
+        from shopman.shop.models import Channel
+    
+        Channel.objects.create(
+            ref="web", name="Loja", is_active=True,
+            config={"fulfillment": {"equipment": ["card_machine"]}, "payment": {"method": "cash", "timing": "external"}},
+        )
+        client.force_login(operator)
+        cash.open_shift(operator=operator, float_q=10000)
+        _delivery_cash_order("DLV-M1", change_for_q=5000)
+        _delivery_cash_order("DLV-M2")
+    
+        card = _card(client, "DLV-M1")
+        assert [o["ref"] for o in card["equipment_options"]] == ["card_machine"]
+        assert (card["equipment_out"], card["equipment_back_pending"]) == ([], False)
+    
+        # Aparelho que o canal não prevê: recusado.
+        response = client.post(
+            reverse("api-backstage-order-advance", args=["DLV-M2"]),
+            advance_payload(client, "DLV-M2", **{"equipment": ["drone"]}), content_type="application/json",
+        )
+        assert response.status_code == 400
+        assert "não previsto" in response.json()["detail"]
+    
+        response = client.post(
+            reverse("api-backstage-order-advance", args=["DLV-M1"]),
+            advance_payload(client, "DLV-M1", **{"change_out": "20,00", "equipment": ["card_machine"]}), content_type="application/json",
+        )
+        assert response.status_code == 200
+        card = _card(client, "DLV-M1")
+        assert (card["equipment_out"], card["equipment_back_pending"], card["equipment_label"]) == (
+            ["card_machine"], True, "Entregador levou maquininha",
+        )
+        board = client.get(reverse("api-backstage-orders")).json()["queue"]
+        assert [(e["ref"], e["order_ref"]) for e in board["equipment_out"]] == [("card_machine", "DLV-M1")]
+        order = Order.objects.get(ref="DLV-M1")
+        assert order.data["dispatch"]["equipment"] == ["card_machine"]
+        assert order.data["dispatch"]["equipment_out_by"] == "marina"
+    
+        # O acerto devolve troco E aparelho no mesmo gesto.
+        response = client.post(
+            reverse("api-backstage-order-settle-delivery-cash", args=["DLV-M1"]),
+            {"change_back": "0", "equipment_back": True}, content_type="application/json",
+        )
+>       assert response.status_code == 200
+E       assert 409 == 200
+E        +  where 409 = <Response status_code=409, "application/json">.status_code
+
+shopman/backstage/tests/test_api_courier_change.py:200: AssertionError
+----------------------------- Captured stderr call -----------------------------
+WARNING 2026-09-10 23:31:54,075 django.request Bad Request: /api/v1/backstage/orders/DLV-M2/advance/
+INFO 2026-09-10 23:31:54,085 shopman.shop.services.fulfillment fulfillment.create: created for order DLV-M1
+INFO 2026-09-10 23:31:54,085 shopman.shop.services.fulfillment fulfillment.update: 1 → in_progress for order DLV-M1
+INFO 2026-09-10 23:31:54,086 shopman.shop.services.fulfillment fulfillment.update: 1 → dispatched for order DLV-M1
+WARNING 2026-09-10 23:31:54,116 django.request Conflict: /api/v1/backstage/orders/DLV-M1/settle-delivery-cash/
+______________________ test_a_trilha_sai_no_nome_do_TOTEM ______________________
+[gw0] darwin -- Python 3.12.5 /Users/pablovalentini/Dev/Claude/django-shopman/.venv/bin/python
+
+client = <django.test.client.Client object at 0x15c8a03b0>
+
+    def test_a_trilha_sai_no_nome_do_TOTEM(client):
+        """Agir em nome próprio vale também para a trilha: o que ele faz tem dono.
+    
+        Sem isto, "age em nome próprio" seria só uma permissão a mais, e a linha
+        sairia órfã — o mesmo defeito que a Parte B existe para fechar, com um
+        dispositivo no lugar do ``admin``.
+    
+        O caminho aqui é um pedido, não a gaveta: abrir pedido é o que o dono disse
+        que o totem faz. A gaveta segue exigindo ``cashman.operate_pos``, que a conta
+        deste teste não tem.
+        """
+        from django.urls import reverse
+        from shopman.orderman.models import Order, OrderItem
+    
+        _terminal("totem-1", mode=station_trust.AUTONOMOUS, operator="totem-entrada")
+        conta = _conta_do_totem()
+        conta.user_permissions.add(
+            Permission.objects.get(
+                content_type=ContentType.objects.get(app_label="shop", model="shop"),
+                codename="manage_orders",
+            )
+        )
+        conta = get_user_model().objects.get(pk=conta.pk)
+        pedido = Order.objects.create(
+            ref="ORD-TOTEM-1", channel_ref="totem", status="accepted", total_q=1500,DEBUG 2026-09-10 23:29:13,344 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-10 23:29:13,344 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-10 23:29:13,345 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-10 23:29:13,346 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-10 23:29:13,400 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-10 23:29:13,402 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-10 23:29:13,405 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-10 23:29:13,408 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-10 23:29:13,414 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-10 23:29:13,416 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-10 23:29:13,416 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-10 23:29:13,419 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-10 23:29:13,419 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-10 23:29:13,423 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-10 23:29:13,424 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-10 23:29:13,425 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-10 23:29:13,425 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-10 23:29:13,425 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-10 23:29:13,430 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-10 23:29:13,431 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+
+            data={"customer": {"name": "Ana"}, "payment": {"method": "pix"}},
+        )
+        OrderItem.objects.create(
+            order=pedido, line_id="1", sku="SKU", name="Pão", qty=1,
+            unit_price_q=1500, line_total_q=1500,
+        )
+        trust_station(client, "totem-1")
+    
+        resposta = client.post(
+            reverse("api-backstage-order-comment", args=[pedido.ref]),
+            {"note": "Retirada pelo totem"},
+            content_type="application/json",
+        )
+    
+>       assert resposta.status_code == 200, resposta.content
+E       AssertionError: b'{"detail":"A identifica\xc3\xa7\xc3\xa3o mudou. Atualize o pedido antes de gravar.","code":"actor_changed"}'
+E       assert 409 == 200
+E        +  where 409 = <Response status_code=409, "application/json">.status_code
+
+shopman/backstage/tests/test_station_kinds.py:229: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-10 23:41:46,477 shopman.doorman.device_trust Device trust verified
+INFO 2026-09-10 23:41:46,478 shopman.doorman.device_trust Device trust verified
+WARNING 2026-09-10 23:41:46,481 django.request Conflict: /api/v1/backstage/orders/ORD-TOTEM-1/comment/
+=============================== warnings summary ===============================
+shopman/shop/tests/test_deploy_checks.py::test_database_backend_warns_for_sqlite_in_debug
+shopman/shop/tests/test_deploy_checks.py::test_database_backend_blocks_sqlite_outside_debug
+shopman/shop/tests/test_deploy_checks.py::test_database_backend_accepts_postgres_outside_debug
+  /Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/test/utils.py:455: UserWarning: Overriding setting DATABASES can lead to unexpected behavior.
+    with self as context:
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_api_courier_change.py::test_despacho_pergunta_o_troco_leva_da_gaveta_e_o_acerto_diz_o_que_voltou
+FAILED shopman/backstage/tests/test_api_courier_change.py::test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao
+FAILED shopman/backstage/tests/test_station_kinds.py::test_a_trilha_sai_no_nome_do_TOTEM
+3 failed, 8623 passed, 64 skipped, 3 warnings, 38 subtests passed in 862.40s (0:14:22)

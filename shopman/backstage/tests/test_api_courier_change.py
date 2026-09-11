@@ -17,7 +17,7 @@ from shopman.cashman import Entry
 from shopman.cashman import services as cash
 from shopman.orderman.models import Order, OrderItem
 
-from shopman.backstage.tests._order_intent import advance_payload
+from shopman.backstage.tests._order_intent import advance_payload, context_payload
 from shopman.shop.models import Shop
 from shopman.shop.services.operator_orders import operational_revision
 
@@ -96,13 +96,13 @@ def test_despacho_pergunta_o_troco_leva_da_gaveta_e_o_acerto_diz_o_que_voltou(cl
     assert card["can_settle_delivery_cash"] is True
 
     # Acertar sem dizer quanto voltou: recusado.
-    response = client.post(reverse("api-backstage-order-settle-delivery-cash", args=["DLV-1"]))
+    response = client.post(reverse("api-backstage-order-settle-delivery-cash", args=["DLV-1"]), context_payload(client, "DLV-1", "settle-delivery-cash"), content_type="application/json")
     assert response.status_code == 400
     assert "voltou" in response.json()["detail"]
 
     response = client.post(
         reverse("api-backstage-order-settle-delivery-cash", args=["DLV-1"]),
-        {"change_back": "5,00"},
+        context_payload(client, "DLV-1", "settle-delivery-cash", change_back="5,00"),
         content_type="application/json",
     )
     assert response.status_code == 200
@@ -195,7 +195,7 @@ def test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao(client, oper
     # O acerto devolve troco E aparelho no mesmo gesto.
     response = client.post(
         reverse("api-backstage-order-settle-delivery-cash", args=["DLV-M1"]),
-        {"change_back": "0", "equipment_back": True}, content_type="application/json",
+        context_payload(client, "DLV-M1", "settle-delivery-cash", change_back="0", equipment_back=True), content_type="application/json",
     )
     assert response.status_code == 200
     card = _card(client, "DLV-M1")
