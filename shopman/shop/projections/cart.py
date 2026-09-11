@@ -87,14 +87,14 @@ class CartLineProjection:
     line_id: str
     sku: str
     name: str
-    qty: int
+    qty: Decimal | int
     unit_price_q: int
     line_total_q: int
 
     # Availability at render-time (own-hold corrected: a session holding all
     # of its own stock is NOT flagged unavailable).
     is_available: bool
-    available_qty: int | None  # None = demand-based / no ceiling
+    available_qty: Decimal | int | None  # None = demand-based / no ceiling
 
     # Planned-hold lifecycle (AVAILABILITY-PLAN §8).
     is_awaiting_confirmation: bool
@@ -443,7 +443,9 @@ def _build_line(
     sellable_skus: frozenset[str] = frozenset(),
 ) -> CartLineProjection:
     sku = item.get("sku", "")
-    qty = int(Decimal(str(item.get("qty", 0) or 0)))
+    qty = Decimal(str(item.get("qty", 0) or 0))
+    if qty == qty.to_integral_value():
+        qty = int(qty)
     name = item.get("name") or names_by_sku.get(sku) or sku
 
     raw_avail = avail_map.get(sku)
@@ -562,7 +564,7 @@ def _line_availability(
         # sessão reabre a linha.
         return False, 0
 
-    own_hold = int(own_holds.get(sku, Decimal("0")))
+    own_hold = own_holds.get(sku, Decimal("0"))
     promisable = avail.get("total_promisable")
     if promisable is None:
         return True, None
@@ -573,7 +575,9 @@ def _line_availability(
     # ``ready_physical`` aqui era contar só a prateleira, e a linha em fila
     # nascia com máximo 0: o stepper travava no "+" e o checkout bloqueava
     # junto do selo que prometia a fornada (WP-P2E F1).
-    max_orderable = max(0, int(Decimal(str(promisable))) + own_hold)
+    max_orderable = max(Decimal("0"), Decimal(str(promisable)) + own_hold)
+    if max_orderable == max_orderable.to_integral_value():
+        max_orderable = int(max_orderable)
     return max_orderable >= qty, max_orderable
 
 

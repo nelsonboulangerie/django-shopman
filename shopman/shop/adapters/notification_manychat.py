@@ -454,37 +454,31 @@ def _prepare_call(subscriber_id: str | int, what: str) -> tuple[dict | None, int
 
 
 def send_text(subscriber_id: str | int, text: str) -> bool:
-    """Manda um texto livre ao assinante pelo WhatsApp (``sendContent``).
+    """Compatibilidade dos callers existentes; concierge usa resultado estruturado."""
+    return bool(send_text_result(subscriber_id, text).get("success"))
 
-    É a resposta do concierge. Ela nasce dentro da janela de 24 h por construção
-    (o cliente acabou de escrever), então não precisa de template aprovado: vai
-    como mensagem comum, do jeito que o modelo escreveu. A declaração
-    ``"type": "whatsapp"`` é a mesma do ``send`` e é o que faz o ManyChat avaliar
-    a janela do WhatsApp, e não a do Messenger.
 
-    Texto acima de ``TEXT_MAX_CHARS`` é cortado com aviso no log: o ManyChat
-    recusa a mensagem inteira em vez de quebrá-la, e resposta nenhuma é pior que
-    resposta sem o rabo.
+def send_text_result(subscriber_id: str | int, text: str) -> dict:
+    """Resultado de sendContent, sem perda de certeza ou truncamento.
+
+    O caller verifica janela/capacidade antes da rede. Aceite técnico não é
+    entrega; timeout mantém outcome_unknown. Bloco grande não é enviado.
     """
     text = (text or "").strip()
     if not text:
-        return False
+        return {"success": False, "error": "not_applied"}
     mc_config, subscriber = _prepare_call(subscriber_id, "send_text")
     if mc_config is None:
-        return False
+        return {"success": False, "error": "not_applied"}
 
     if len(text) > TEXT_MAX_CHARS:
-        logger.warning(
-            "ManyChat send_text: texto com %d caracteres cortado em %d (subscriber=%s)",
-            len(text), TEXT_MAX_CHARS, subscriber,
-        )
-        text = text[:TEXT_MAX_CHARS]
+        return {"success": False, "error": "block_too_large"}
 
     from ._external import inert
 
     if inert("SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG"):
         logger.info("ManyChat externo inerte (trava dev/seed): send_text -> %s: %s", subscriber, text[:120])
-        return True
+        return {"success": False, "error": "inert"}
 
     payload = {
         "subscriber_id": subscriber,
@@ -499,7 +493,7 @@ def send_text(subscriber_id: str | int, text: str) -> bool:
     result = _api_call("/sending/sendContent", payload, mc_config)
     if not result["success"]:
         logger.warning("ManyChat send_text failed: %s", result.get("error"))
-    return bool(result["success"])
+    return result
 
 
 def set_custom_field(subscriber_id: str | int, field_name: str, value: str) -> bool:
@@ -526,7 +520,7 @@ def set_custom_field(subscriber_id: str | int, field_name: str, value: str) -> b
             "ManyChat externo inerte (trava dev/seed): set_custom_field %s=%r -> %s",
             field_name, value, subscriber,
         )
-        return True
+        return False  # Inércia de teste não comprova sincronização remota.
 
     result = _api_call(
         "/subscriber/setCustomFieldByName",

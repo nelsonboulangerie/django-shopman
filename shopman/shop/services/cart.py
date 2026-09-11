@@ -116,7 +116,7 @@ def add_item(
     availability.bump_session_hold_expiry(resolved_key)
 
     if existing:
-        new_qty = int(Decimal(str(existing["qty"]))) + qty
+        new_qty = Decimal(str(existing["qty"])) + Decimal(str(qty))
         return (
             session_service.modify_session(
                 session_key=resolved_key,
@@ -169,7 +169,7 @@ def update_qty(
             raise CartUnavailableError(
                 sku=line_sku,
                 requested_qty=qty,
-                available_qty=int(result["available_qty"]),
+                available_qty=Decimal(str(result["available_qty"])),
                 is_paused=result["is_paused"],
                 substitutes=result["substitutes"],
                 error_code=result["error_code"],
@@ -515,7 +515,7 @@ def _reserve_or_raise(*, sku: str, qty: int, session_key: str, channel_ref: str)
     raise CartUnavailableError(
         sku=sku,
         requested_qty=qty,
-        available_qty=int(result["available_qty"]),
+        available_qty=Decimal(str(result["available_qty"])),
         is_paused=result["is_paused"],
         substitutes=result["substitutes"],
         error_code=result["error_code"],

@@ -14,8 +14,8 @@ from shopman.storefront.concierge import service, webhook
 pytestmark = pytest.mark.django_db
 
 KEY = "chave-do-manychat"
-CONFIG_ON = {"enabled": True, "api_key": KEY, "handoff_field": "concierge_handoff"}
-CONFIG_OFF = {"enabled": False, "api_key": KEY}
+CONFIG_ON = {"contract_version": 2, "account_id": "test-account", "enabled": True, "api_key": KEY, "handoff_field": "concierge_handoff"}
+CONFIG_OFF = {"contract_version": 2, "enabled": False, "api_key": KEY}
 
 
 @pytest.fixture(autouse=True)
@@ -103,8 +103,11 @@ def test_payload_plano_chama_receive_inbound(url, intake):
          "first_name": "Ana", "whatsapp_phone": "+5543999990000"},
         HTTP_AUTHORIZATION=f"Bearer {KEY}",
     )
-    assert res.status_code == 202
-    assert res.json() == {"status": "queued", "conversation_id": 42, "queued": True}
+    assert res.status_code == 200
+    assert res.json() == {"status": "queued", "queued": True}
+    assert len(intake) == 1
+    envelope = intake[0].pop("envelope")
+    assert envelope["account_id"] == "test-account"
     assert intake == [{
         "subscriber_id": "123",
         "text": "quero 2 baguetes",
@@ -120,14 +123,14 @@ def test_payload_aninhado_chama_receive_inbound(url, intake):
         {"subscriber": {"id": "456", "first_name": "Bia"}, "text": "tem pão de queijo?"},
         HTTP_X_API_KEY=KEY,
     )
-    assert res.status_code == 202
+    assert res.status_code == 200
     assert intake[0]["subscriber_id"] == "456"
     assert intake[0]["profile"] == {"first_name": "Bia"}
     assert intake[0]["external_id"] == ""
 
 
 @override_settings(SHOPMAN_CONCIERGE=CONFIG_ON, DEBUG=False)
-def test_texto_ausente_vem_do_getinfo(url, intake, monkeypatch):
+def test_texto_ausente_nao_busca_getinfo(url, intake, monkeypatch):
     from shopman.guestman.adapters.auth import CustomerResolver
 
     asked: list[str] = []
@@ -138,19 +141,19 @@ def test_texto_ausente_vem_do_getinfo(url, intake, monkeypatch):
 
     monkeypatch.setattr(CustomerResolver, "manychat_last_input_text", fake_last_input)
     res = _post(Client(), url, {"manychat_id": "789"}, HTTP_X_API_KEY=KEY)
-    assert res.status_code == 202
-    assert asked == ["789"]
-    assert intake[0]["text"] == "quero um croissant"
+    assert res.status_code == 200
+    assert asked == []
+    assert intake[0]["text"] == ""
 
 
 @override_settings(SHOPMAN_CONCIERGE=CONFIG_ON, DEBUG=False)
-def test_variavel_nao_renderizada_vem_do_getinfo(url, intake, monkeypatch):
+def test_variavel_nao_renderizada_nao_busca_getinfo(url, intake, monkeypatch):
     from shopman.guestman.adapters.auth import CustomerResolver
 
     monkeypatch.setattr(CustomerResolver, "manychat_last_input_text", lambda self, sid: "de verdade")
     res = _post(Client(), url, {"subscriber_id": "1", "text": "{{last_input_text}}"}, HTTP_X_API_KEY=KEY)
-    assert res.status_code == 202
-    assert intake[0]["text"] == "de verdade"
+    assert res.status_code == 200
+    assert intake[0]["text"] == ""
 
 
 @override_settings(SHOPMAN_CONCIERGE=CONFIG_ON, DEBUG=False)
@@ -169,7 +172,7 @@ def test_razao_nao_enfileirada_responde_200(url, monkeypatch):
     )
     res = _post(Client(), url, {"subscriber_id": "1", "text": "oi"}, HTTP_X_API_KEY=KEY)
     assert res.status_code == 200
-    assert res.json() == {"status": "handoff", "conversation_id": 42, "queued": False}
+    assert res.json() == {"status": "handoff", "queued": False}
 
 
 @override_settings(SHOPMAN_CONCIERGE=CONFIG_ON, DEBUG=False)

@@ -36,6 +36,10 @@ CHANNEL = "whatsapp"
 SKU = "PAO-FRANCES"
 PHONE = "+5543984049009"
 CONCIERGE_SETTINGS = {
+    "contract_version": 2,
+    "account_id": "test-account",
+    "allowed_subscribers": ["1962036908"],
+    "suggest_add_ons": True,
     "enabled": True,
     "api_key": "chave-s2s",
     "model": "claude-sonnet-5",
@@ -66,6 +70,12 @@ def _seed_stock(sku: str, qty: Decimal) -> None:
 
 @pytest.fixture
 def surface():
+    # TransactionTestCase faz flush dos dados semeados pelas migrations.
+    from importlib import import_module
+    seed = import_module("shopman.shop.migrations.0028_seed_attribute_definitions")
+    for definition in seed.DEFINITIONS:
+        from shopman.shop.models import AttributeDefinition
+        AttributeDefinition.objects.get_or_create(ref=definition["ref"], defaults={k: v for k, v in definition.items() if k != "ref"})
     Shop.objects.create(
         name="Nelson Boulangerie",
         brand_name="Nelson Boulangerie",
@@ -113,9 +123,11 @@ def customer():
 
 
 @pytest.fixture
-def conversation(surface, customer):
+def conversation(surface, customer, settings):
+    settings.AI_ASSIST_API_KEY = "isolated-fixture"
     return Conversation.objects.create(
         subscriber_id="1962036908",
+        account="test-account",
         phone=PHONE,
         customer_name="Ana",
         customer_ref=customer.ref,
@@ -124,7 +136,9 @@ def conversation(surface, customer):
 
 
 @pytest.fixture
-def ctx(conversation):
+def ctx(conversation, settings):
+    settings.SHOPMAN_CONCIERGE = CONCIERGE_SETTINGS
+    settings.AI_ASSIST_API_KEY = "isolated-fixture"
     return ToolContext(conversation=conversation, channel_ref=CHANNEL)
 
 
@@ -146,7 +160,16 @@ def _pickup_ready(ctx) -> dict:
     assert tools.set_item(ctx, SKU, 2)["ok"]
     result = tools.set_fulfillment(ctx, "pickup", _tomorrow(), "slot-12", "")
     assert result["ok"], result
-    return tools.review_order(ctx)
+    return tools.review_order(ctx, "pix")
+
+
+def _accept_review(ctx, review, *, confirm=True):
+    ConversationMessage.objects.create(conversation=ctx.conversation, role="assistant", kind="reply",
+        text=tools.render_result("review_order", review), transport_state="accepted",
+        envelope={"quote_token": review["quote_token"]})
+    if confirm:
+        ConversationMessage.objects.create(conversation=ctx.conversation, role="user", kind="inbound", text="confirmo",
+            envelope={"version": 2, "event_id": f"confirm-{ConversationMessage.objects.count()}"})
 
 
 # ── Cliente com roteiro ──────────────────────────────────────────────
@@ -252,6 +275,7 @@ def test_review_order_names_what_is_missing_before_issuing_a_quote(ctx, conversa
 
 def test_place_order_creates_the_order_and_sends_the_pix_apart(ctx, conversation, django_capture_on_commit_callbacks):
     review = _pickup_ready(ctx)
+    _accept_review(ctx, review)
     assert review["ready"], review
     assert review["payment_methods"][0]["ref"] == "pix"
     token = review["quote_token"]
@@ -269,12 +293,15 @@ def test_place_order_creates_the_order_and_sends_the_pix_apart(ctx, conversation
     assert order.data["customer"]["phone"] == PHONE
     assert order.data["payment"]["method"] == "pix"
     # O Pix nasce no commit (timing at_commit) e vai numa mensagem separada.
-    assert placed["payment"]["pix_code_sent_separately"] is True
+    # TestCase contém um outer atomic: callback só executa após o retorno da tool.
+    # Consulta pura recupera o pagamento já criado pelo callback, sem iniciar outro.
+    recovered = tools.place_order(ctx, token, "pix", "")
+    assert recovered["payment"]["pix_code_prepared_separately"] is True
     assert ctx.extra_replies == [order.data["payment"]["copy_paste"]]
     assert placed["tracking_url"].endswith(f"/pedido/{order.ref}/")
 
     conversation.refresh_from_db()
-    assert conversation.session_key == "" and conversation.quote == {}
+    assert conversation.session_key == "" and conversation.quote["token"] == token
 
 
 def test_the_add_on_suggestion_is_offered_once_per_conversation(ctx, conversation, monkeypatch):
@@ -327,15 +354,17 @@ def test_the_add_on_suggestion_can_still_be_turned_off_by_env(ctx, conversation,
 
 def test_place_order_refuses_a_stale_quote(ctx):
     review = _pickup_ready(ctx)
+    _accept_review(ctx, review)
     token = review["quote_token"]
     tools.set_item(ctx, SKU, 3)  # a sacola mudou depois do orçamento
     refused = tools.place_order(ctx, token, "pix", "")
-    assert refused["ok"] is False and refused["error"] == "quote_stale"
+    assert refused["ok"] is False and refused["error"] == "revision_conflict"
     assert not Order.objects.exists()
 
 
 def test_place_order_refuses_a_payment_method_the_channel_does_not_offer(ctx):
     review = _pickup_ready(ctx)
+    _accept_review(ctx, review)
     refused = tools.place_order(ctx, review["quote_token"], "cash", "")
     assert refused["error"] == "invalid_payment_method"
 
@@ -370,6 +399,7 @@ def test_set_fulfillment_delivery_stores_the_located_address(ctx, monkeypatch):
 
 def test_order_status_reads_the_customer_orders_through_the_projection(ctx, django_capture_on_commit_callbacks):
     review = _pickup_ready(ctx)
+    _accept_review(ctx, review)
     with django_capture_on_commit_callbacks(execute=True):
         placed = tools.place_order(ctx, review["quote_token"], "pix", "")
     status = tools.order_status(ctx, "")
@@ -378,6 +408,7 @@ def test_order_status_reads_the_customer_orders_through_the_projection(ctx, djan
     assert tools.order_status(ctx, "XYZ-000")["orders"] == []
 
 
+@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "transfer_enabled": True}, AI_ASSIST_API_KEY="fixture")
 def test_send_web_link_carries_the_cart_to_the_store_channel(ctx, conversation, monkeypatch):
     tools.set_item(ctx, SKU, 2)
     chat_key = Conversation.objects.get(pk=conversation.pk).session_key
@@ -408,6 +439,9 @@ def test_notify_when_available_subscribes_the_same_alert_as_the_site(ctx, conver
     """
     from shopman.storefront.models import StockAlertSubscription
 
+    offer = tools.notify_when_available(ctx, SKU)
+    ConversationMessage.objects.create(conversation=conversation, role="assistant", kind="reply", transport_state="accepted", envelope={"disclosure": offer["disclosure"]})
+    ConversationMessage.objects.create(conversation=conversation, role="user", kind="inbound", text="aceito", envelope={"version": 2, "event_id": "consent"})
     result = tools.notify_when_available(ctx, SKU)
     assert result["ok"], result
     subs = StockAlertSubscription.objects.filter(sku=SKU, customer_ref=conversation.customer_ref)
@@ -423,6 +457,7 @@ def test_the_pending_quote_token_is_visible_in_the_system_prompt(ctx, conversati
     from shopman.storefront.concierge import prompt as prompt_module
 
     review = _pickup_ready(ctx)
+    _accept_review(ctx, review)
     conversation.refresh_from_db()
     system = prompt_module.build_system(conversation, is_first_turn=False, cart_summary="")
     dynamic = system[1]["text"]
@@ -434,19 +469,21 @@ def test_send_web_link_for_a_placed_order_points_at_the_tracking_page(
 ):
     """Pagar pedido feito é no acompanhamento; o checkout ficaria vazio (o "link quebrado")."""
     review = _pickup_ready(ctx)
+    _accept_review(ctx, review)
     with django_capture_on_commit_callbacks(execute=True):
         placed = tools.place_order(ctx, review["quote_token"], "pix", "")
 
-    by_order = tools.send_web_link(ctx, "order")
+    assert tools.send_web_link(ctx, "order")["error"] == "target_required"
+    by_order = tools.send_web_link(ctx, "order", placed["order_ref"])
     assert by_order["order_ref"] == placed["order_ref"]
-    assert by_order["url"].endswith(f"/pedido/{placed['order_ref']}/")
-    # Sem sacola aberta, pedir "checkout" também cai no acompanhamento.
-    assert tools.send_web_link(ctx, "checkout")["url"] == by_order["url"]
+    assert by_order["url"]
+    # Link tem alvo autorizado explícito; checkout não escolhe pedido implicitamente.
+    assert tools.send_web_link(ctx, "checkout")["error"] == "transfer_disabled"
 
 
 def test_execute_never_raises(ctx):
     assert tools.execute("nao_existe", {}, ctx)["error"] == "unknown_tool"
-    assert tools.execute("set_item", {"sku": SKU}, ctx)["error"] == "bad_arguments"
+    assert tools.execute("set_item", {"sku": SKU}, ctx)["error"] == "invalid_input"
 
 
 # ── Laço do agente ───────────────────────────────────────────────────
@@ -469,7 +506,7 @@ def test_run_agent_executes_tools_and_keeps_the_transcript_in_api_format(convers
             conversation=conversation, history=agent_module.history_for(conversation), client=client
         )
 
-    assert outcome.reply_text == "Temos sim. Quantos você quer?"
+    assert "R$ 0,90" in outcome.reply_text and "Pão Francês" in outcome.reply_text
     assert [m["role"] for m in outcome.messages] == ["assistant", "user", "assistant"]
     tool_result = outcome.messages[1]["content"][0]
     assert tool_result["type"] == "tool_result" and tool_result["tool_use_id"] == "toolu_1"
@@ -556,10 +593,10 @@ def test_run_agent_stops_repeating_the_same_call(conversation):
         )
     # As duas primeiras rodam; da terceira em diante a ferramenta devolve "já feito".
     assert [e["ok"] for e in outcome.tool_events] == [True, True, False, False]
-    assert outcome.reply_text == "Hoje não temos folhados."
+    assert "Pão Francês" in outcome.reply_text and "Hoje não temos folhados" not in outcome.reply_text
 
 
-def test_run_agent_keeps_what_the_model_said_before_calling_a_tool(conversation):
+def test_run_agent_rejects_unfounded_preamble_and_uses_server_facts(conversation):
     """"A taxa é R$ 8,00, deixa eu ver os horários" + chamada → o cliente lê a taxa."""
     ConversationMessage.objects.create(
         conversation=conversation, role="user", kind="inbound", text="qual a taxa?", content=[{"type": "text", "text": "qual a taxa?"}]
@@ -572,7 +609,8 @@ def test_run_agent_keeps_what_the_model_said_before_calling_a_tool(conversation)
         outcome = agent_module.run_agent(
             conversation=conversation, history=agent_module.history_for(conversation), client=client
         )
-    assert outcome.reply_text == "A taxa é *R$ 8,00*. Deixa eu ver os horários.\n\nTemos janelas a partir das 13:30. Qual prefere?"
+    assert "R$ 8,00" not in outcome.reply_text and "13:30" not in outcome.reply_text
+    assert "sacola" in outcome.reply_text.lower()
 
 
 def test_run_agent_forces_text_when_iterations_run_out(conversation):
@@ -586,7 +624,7 @@ def test_run_agent_forces_text_when_iterations_run_out(conversation):
         outcome = agent_module.run_agent(
             conversation=conversation, history=agent_module.history_for(conversation), client=client
         )
-    assert outcome.reply_text == "Um instante."
+    assert outcome.reply_text == tools.render_result("view_cart", {"ok": True, "empty": True})
     assert client.requests[-1]["tool_choice"] == {"type": "none"}
 
 
@@ -621,7 +659,7 @@ def test_receive_inbound_queues_one_deferred_directive_per_conversation(surface,
     directives = Directive.objects.filter(topic=service.TURN_TOPIC)
     assert directives.count() == 1  # uma diretiva viva por conversa
     directive = directives.get()
-    assert directive.payload == {"conversation_id": first.conversation_id}
+    assert directive.payload == {"conversation_id": first.conversation_id, "contract_version": 2}
     assert directive.status == "queued"  # não rodou inline no request
     assert ConversationMessage.objects.filter(kind="inbound").count() == 2
 
@@ -644,10 +682,11 @@ def test_pilot_allowlist_keeps_everyone_else_out_without_side_effects(surface, m
     by_phone_from_getinfo = service.receive_inbound(subscriber_id="777", text="oi", external_id="c")
     stranger = service.receive_inbound(subscriber_id="999", text="oi", external_id="d")
 
-    assert by_id.queued and by_phone_in_body.queued and by_phone_from_getinfo.queued
+    assert by_id.queued
+    assert by_phone_in_body.reason == "not_allowed" and by_phone_from_getinfo.reason == "not_allowed"
     assert stranger.reason == "not_allowed" and stranger.conversation_id is None
     assert not Conversation.objects.filter(subscriber_id="999").exists()
-    assert Conversation.objects.count() == 3
+    assert Conversation.objects.count() == 1
 
 
 @override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "enabled": False}, AI_ASSIST_API_KEY="sk-teste")
@@ -667,13 +706,13 @@ def test_run_turn_answers_everything_pending_and_persists_the_transcript(convers
 
     result = service.run_turn(conversation.pk, client=client)
 
-    assert result.replies == ["Temos pão francês a R$ 0,90. Quantos?"]
+    assert "R$ 0,90" in result.replies[0]
     assert outbox.sent == result.replies
     assert result.processed_message_ids and not result.pending_more and not result.fallback
     kinds = list(conversation.messages.order_by("id").values_list("kind", flat=True))
     assert kinds == ["inbound", "inbound", "tool_call", "tool_result", "reply"]
     reply = conversation.messages.get(kind="reply")
-    assert reply.delivered is True
+    assert reply.delivered is None and reply.transport_state == "accepted"
     conversation.refresh_from_db()
     assert conversation.turns_today == 1 and conversation.input_tokens == 200
     # As duas mensagens do cliente foram ao modelo, na ordem.
@@ -682,11 +721,13 @@ def test_run_turn_answers_everything_pending_and_persists_the_transcript(convers
     assert service.unanswered_inbound(conversation) == []
 
 
+@pytest.mark.django_db(transaction=True)
 @override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
 def test_run_turn_sends_the_pix_code_as_its_own_message(conversation, outbox, django_capture_on_commit_callbacks):
     ctx = ToolContext(conversation=conversation, channel_ref=CHANNEL)
     review = _pickup_ready(ctx)
-    service.receive_inbound(subscriber_id=conversation.subscriber_id, text="confirmo, pix", external_id="m9")
+    _accept_review(ctx, review)
+    service.receive_inbound(subscriber_id=conversation.subscriber_id, text="confirmo", external_id="m9")
     client = ScriptedClient(
         _response(
             _tool("place_order", {"quote_token": review["quote_token"], "payment_method": "pix", "order_notes": ""}),
@@ -697,10 +738,9 @@ def test_run_turn_sends_the_pix_code_as_its_own_message(conversation, outbox, dj
     with django_capture_on_commit_callbacks(execute=True):
         result = service.run_turn(conversation.pk, client=client)
     order = Order.objects.get()
-    assert result.replies == [
-        "Pedido feito. O código Pix chega na próxima mensagem.",
-        order.data["payment"]["copy_paste"],
-    ]
+    assert len(result.replies) == 2
+    assert "registrado" in result.replies[0]
+    assert result.replies[1] == order.data["payment"]["copy_paste"]
     assert outbox.sent == result.replies
 
 
@@ -714,9 +754,9 @@ def test_run_turn_handoff_marks_the_conversation_and_flags_manychat(conversation
 
     conversation.refresh_from_db()
     assert result.handoff and conversation.state == Conversation.State.HANDOFF
-    assert conversation.handoff_reason == "pediu uma pessoa"
+    assert conversation.handoff_reason == "pedido do cliente"
     assert outbox.flags == [True]
-    assert outbox.sent == ["Claro."]
+    assert len(outbox.sent) == 1 and "atendimento humano" in outbox.sent[0]
     from shopman.backstage.models import OperatorAlert
 
     assert OperatorAlert.objects.get(type="concierge_handoff").acknowledged is False
@@ -726,9 +766,9 @@ def test_run_turn_handoff_marks_the_conversation_and_flags_manychat(conversation
     assert later.reason == "handoff" and not later.queued
     assert service.run_turn(conversation.pk, client=client).replies == []
 
-    service.return_to_concierge(conversation)
+    assert service.return_to_concierge(conversation) is False
     conversation.refresh_from_db()
-    assert conversation.state == Conversation.State.ACTIVE and outbox.flags == [True, False]
+    assert conversation.state == Conversation.State.HANDOFF and outbox.flags == [True]
 
 
 @override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")

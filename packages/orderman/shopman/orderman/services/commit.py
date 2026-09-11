@@ -5,6 +5,7 @@ CommitService — Fecha sessões e cria Orders.
 from __future__ import annotations
 
 import copy
+import hashlib
 import logging
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
@@ -81,6 +82,9 @@ class CommitService:
         # Escopo inclui a sessão: chave fornecida pelo cliente não pode
         # colidir/vazar o CommitResult de OUTRA sessão do mesmo canal.
         idem_scope = f"commit:{channel_ref}:{session_key}"
+        scope_limit = IdempotencyKey._meta.get_field("scope").max_length
+        if len(idem_scope) > scope_limit:
+            idem_scope = "commit:" + hashlib.sha256(idem_scope.encode()).hexdigest()[:scope_limit - 7]
 
         # 1. Check/create idempotency key (outside main transaction)
         try:

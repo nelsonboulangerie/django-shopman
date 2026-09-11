@@ -42,6 +42,7 @@ def process(
     idempotency_key: str,
     ctx: dict | None = None,
     expected_total_q: int | None = None,
+    expected_grand_total_q: int | None = None,
 ) -> CheckoutResult:
     """Convert checkout data to session operations and commit."""
     customer = data.get("customer") or {}
@@ -59,6 +60,7 @@ def process(
         idempotency_key=idempotency_key,
         ctx=ctx,
         expected_total_q=expected_total_q,
+        expected_grand_total_q=expected_grand_total_q,
     )
     _apply_post_commit_side_effects(data, channel_ref, order_ref=result.order_ref)
     return result
@@ -72,37 +74,53 @@ def process_ops(
     idempotency_key: str,
     ctx: dict | None = None,
     expected_total_q: int | None = None,
+    expected_grand_total_q: int | None = None,
 ) -> CheckoutResult:
     """Apply already-built session operations and commit."""
     ctx = ctx or {}
     channel = Channel.objects.get(ref=channel_ref)
     resolved_config = ChannelConfig.for_channel(channel).to_dict()
 
-    if ops:
-        sessions.modify_session(
+    # Modificação, comparação e commit usam a mesma Session bloqueada. Os callbacks
+    # de lifecycle continuam em on_commit, fora desta transação local.
+    from django.db import transaction
+    from shopman.orderman.models import Session
+    with transaction.atomic():
+        Session.objects.select_for_update().get(session_key=session_key, channel_ref=channel_ref)
+        if ops:
+            sessions.modify_session(
+                session_key=session_key,
+                channel_ref=channel_ref,
+                ops=ops,
+                ctx=ctx,
+                channel_config=resolved_config,
+            )
+
+        # O total que o cliente VIU é o total cobrado. A repricing final (preço de
+        # catálogo, cupom expirado) pode ter mudado o valor — commitar um total
+        # diferente do exibido, sem confirmação, é cobrança surpresa. Quando o cliente
+        # NÃO manda ``expected_total_q``, cobrar o preço recalculado (catálogo atual) é
+        # deliberado (defesa contra total obsoleto/adulterado); a garantia de que a
+        # baseline sempre chega é da superfície (o app manda o total exibido).
+        if expected_total_q is not None:
+            _ensure_total_matches(session_key, channel_ref, int(expected_total_q))
+
+        if expected_grand_total_q is not None:
+            from shopman.orderman.exceptions import ValidationError
+
+            from shopman.shop.projections.cart import build_cart
+            total = build_cart(session_key, channel_ref).grand_total_q
+            if total != expected_grand_total_q:
+                raise ValidationError(code="total_changed", message="O total completo mudou. Confira uma nova revisão.",
+                    context={"old_total_q": expected_grand_total_q, "new_total_q": total})
+
+        commit = sessions.commit_session(
             session_key=session_key,
             channel_ref=channel_ref,
-            ops=ops,
+            idempotency_key=idempotency_key,
             ctx=ctx,
             channel_config=resolved_config,
         )
-
-    # O total que o cliente VIU é o total cobrado. A repricing final (preço de
-    # catálogo, cupom expirado) pode ter mudado o valor — commitar um total
-    # diferente do exibido, sem confirmação, é cobrança surpresa. Quando o cliente
-    # NÃO manda ``expected_total_q``, cobrar o preço recalculado (catálogo atual) é
-    # deliberado (defesa contra total obsoleto/adulterado); a garantia de que a
-    # baseline sempre chega é da superfície (o app manda o total exibido).
-    if expected_total_q is not None:
-        _ensure_total_matches(session_key, channel_ref, int(expected_total_q))
-
-    commit = sessions.commit_session(
-        session_key=session_key,
-        channel_ref=channel_ref,
-        idempotency_key=idempotency_key,
-        ctx=ctx,
-        channel_config=resolved_config,
-    )
 
     logger.info("checkout.process: order %s committed for channel %s", commit.order_ref, channel_ref)
     return CheckoutResult(

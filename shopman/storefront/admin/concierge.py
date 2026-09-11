@@ -93,6 +93,28 @@ def message_summary(message: ConversationMessage) -> str:
     return " · ".join(p for p in parts if p) or "(vazio)"
 
 
+_TRANSPORT_LABELS = {
+    "prepared": ("Preparada; envio pendente", "base"),
+    "executing": ("Envio em execução; aguarde evidência", "yellow"),
+    "accepted": ("Aceita pelo fornecedor; entrega não comprovada", "blue"),
+    "not_applied": ("Envio não aplicado; verificar próxima ação", "yellow"),
+    "unknown": ("Envio desconhecido; não reenviar sem verificar", "yellow"),
+    "delivered": ("Entrega comprovada", "green"),
+    "read": ("Leitura comprovada", "green"),
+}
+
+
+def transport_badge(message):
+    """Evidência do envio é distinta de pedido/pagamento e do bool legado."""
+    if message.kind != ConversationMessage.Kind.REPLY:
+        return ""
+    label, color = _TRANSPORT_LABELS.get(
+        message.transport_state,
+        ("Registro legado; entrega não comprovada", "base"),
+    )
+    return unfold_badge(label, color)
+
+
 @admin.register(Conversation)
 class ConversationAdmin(ModelAdmin):
     list_display = (
@@ -111,6 +133,8 @@ class ConversationAdmin(ModelAdmin):
     actions = ["return_to_concierge_selected"]
 
     readonly_fields = (
+        "provider_display", "account_display", "transport_display",
+        "handoff_sync_display", "last_order_display",
         "subscriber_id",
         "phone",
         "customer_name",
@@ -138,12 +162,14 @@ class ConversationAdmin(ModelAdmin):
                 ("customer_name", "phone"),
                 ("subscriber_id", "customer_ref"),
                 ("state", "channel_ref"),
+                ("provider_display", "account_display", "transport_display"),
+                "handoff_sync_display",
                 ("handoff_reason", "handoff_at"),
                 ("last_inbound_at", "last_outbound_at"),
             ),
         }),
         (_("Transcrição"), {"fields": ("transcript_display",), "classes": ("tab",)}),
-        (_("Pedido em andamento"), {"fields": ("session_key", "quote_display", "summary"), "classes": ("tab",)}),
+        (_("Pedido em andamento"), {"fields": ("session_key", "last_order_display", "quote_display", "summary"), "classes": ("tab",)}),
         (_("Consumo"), {
             "fields": (("turns_day", "turns_today"), "consecutive_failures", "tokens_display", ("created_at", "updated_at")),
             "classes": ("tab",),
@@ -180,6 +206,31 @@ class ConversationAdmin(ModelAdmin):
     def tokens_display(self, obj):
         return f"{obj.input_tokens:,} / {obj.output_tokens:,} / {obj.cache_read_tokens:,}".replace(",", ".")
 
+    @display(description="fornecedor")
+    def provider_display(self, obj):
+        return "ManyChat" if obj.provider == "manychat" else obj.provider
+
+    @display(description="conta de atendimento")
+    def account_display(self, obj):
+        return "Legado sem verificação" if obj.account == "legacy_unverified" else obj.account
+
+    @display(description="canal de atendimento")
+    def transport_display(self, obj):
+        return "WhatsApp" if obj.transport_channel == "whatsapp" else obj.transport_channel
+
+    @display(description="sincronização do atendimento")
+    def handoff_sync_display(self, obj):
+        return {
+            "legacy": "Registro legado; verificar roteamento",
+            "executing": "Sincronização em andamento",
+            "accepted": "Sincronização aceita pelo fornecedor",
+            "unknown": "Não confirmada; atendimento humano preservado",
+        }.get(obj.handoff_sync_state, "Verificar evidência de sincronização")
+
+    @display(description="pedido vinculado")
+    def last_order_display(self, obj):
+        return obj.last_order_ref or "—"
+
     # ── Detalhe ────────────────────────────────────────────────────────
 
     @display(description="orçamento vigente")
@@ -212,7 +263,7 @@ class ConversationAdmin(ModelAdmin):
                     m.created_at.strftime("%d/%m %H:%M:%S") if m.created_at else "—",
                     unfold_badge(m.get_kind_display(), _KIND_COLOR.get(m.kind, "base")),
                     message_summary(m),
-                    format_html(' <span class="text-base-500">· {}</span>', "não entregue") if m.delivered is False else "",
+                    transport_badge(m),
                 )
                 for m in rows
             ),
@@ -221,7 +272,11 @@ class ConversationAdmin(ModelAdmin):
 
     # ── Action ─────────────────────────────────────────────────────────
 
-    @admin.action(description=_("Devolver ao concierge"), permissions=["view"])
+    def has_return_to_bot_permission(self, request):
+        from shopman.storefront.concierge.service import config
+        return bool(config().get("human_return_enabled")) and request.user.has_perm("shop.change_conversation")
+
+    @admin.action(description=_("Devolver ao concierge"), permissions=["return_to_bot"])
     def return_to_concierge_selected(self, request, queryset):
         from shopman.storefront.concierge.service import return_to_concierge
 
@@ -231,12 +286,14 @@ class ConversationAdmin(ModelAdmin):
             if conversation.state != Conversation.State.HANDOFF:
                 skipped += 1
                 continue
-            return_to_concierge(conversation)
-            done += 1
+            if return_to_concierge(conversation):
+                done += 1
+            else:
+                skipped += 1
         if done:
             messages.success(request, _("%(n)d conversa(s) devolvida(s) ao concierge.") % {"n": done})
         if skipped:
             messages.warning(
                 request,
-                _("%(n)d conversa(s) ignorada(s): só conversas com a equipe podem ser devolvidas.") % {"n": skipped},
+                _("%(n)d conversa(s) ignorada(s): retorno indisponível ou não confirmado; atendimento humano preservado.") % {"n": skipped},
             )

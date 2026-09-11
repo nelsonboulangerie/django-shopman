@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from django.contrib.admin.sites import site as admin_site
 from django.contrib.auth.models import User
@@ -88,10 +90,13 @@ def test_message_summary_clips_tool_result(conversation):
     summary = message_summary(result)
     assert len(summary) <= 200
     call = conversation.messages.get(kind=ConversationMessage.Kind.TOOL_CALL)
-    assert message_summary(call) == 'set_item({"sku":"CROISSANT","qty":2})'
+    assert json.loads(message_summary(call).removeprefix("set_item(").removesuffix(")")) == {"sku": "CROISSANT", "qty": 2}
 
 
-def test_return_to_concierge_action_flips_handoff(admin_client, conversation, monkeypatch):
+def test_return_to_concierge_action_flips_handoff(admin_client, conversation, monkeypatch, settings):
+    settings.SHOPMAN_CONCIERGE = {"enabled": True, "contract_version": 2, "account_id": "test-account", "human_return_enabled": True, "allowed_subscribers": ["sub-123"]}
+    settings.AI_ASSIST_API_KEY = "test-only"
+    conversation.account = "test-account"
     calls: list[tuple[str, bool]] = []
     monkeypatch.setattr(
         "shopman.storefront.concierge.transport.set_handoff",
@@ -130,3 +135,15 @@ def test_admin_is_read_only(db):
 
 def test_conversation_message_has_no_own_admin():
     assert ConversationMessage not in admin_site._registry
+
+
+def test_view_permission_does_not_grant_return(db, settings):
+    settings.SHOPMAN_CONCIERGE = {"human_return_enabled": True}
+    from django.contrib.auth.models import Permission
+    user = User.objects.create_user("viewer", is_staff=True)
+    user.user_permissions.add(Permission.objects.get(codename="view_conversation"))
+    request = RequestFactory().get("/")
+    request.user = user
+    model_admin = ConversationAdmin(Conversation, admin_site)
+    assert model_admin.has_view_permission(request)
+    assert not model_admin.has_return_to_bot_permission(request)
