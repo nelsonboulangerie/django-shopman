@@ -133,7 +133,16 @@ def test_stock_notice_checks_global_optout():
         patch("shopman.shop.notifications.notify", return_value=NotificationResult(success=True)) as send,
         patch.object(stock_alerts, "_image_url", return_value=""),
     ):
-        assert stock_alerts._deliver(sub, product_name="Produto") is False
+        assert (
+            stock_alerts._deliver_group_if_still_active(
+                [sub.pk],
+                channel_ref=sub.channel_ref,
+                product_name="Produto",
+                event="stock_arrived",
+                available_qty=1,
+            )
+            is False
+        )
     assert send.call_count == 0
 
 
@@ -389,8 +398,20 @@ def test_subscription_inventory_is_read_only_and_contains_no_contact_data():
 
     from shopman.storefront.models import StockAlertSubscription
 
-    for _ in range(2):
-        StockAlertSubscription.objects.create(sku="LEGACY", contact_phone="+5543999990007")
+    StockAlertSubscription.objects.create(
+        sku="LEGACY",
+        contact_phone="+5543999990007",
+        target_key="legacy-target",
+        evidence_hash="legacy-evidence-active",
+    )
+    StockAlertSubscription.objects.create(
+        sku="LEGACY",
+        contact_phone="+5543999990007",
+        target_key="legacy-target",
+        evidence_hash="legacy-evidence-revoked",
+        revoked_at=timezone.now(),
+        revoke_reason="legacy_duplicate",
+    )
     before = list(StockAlertSubscription.objects.values())
     out = io.StringIO()
     call_command("audit_storefront_subscriptions", stdout=out)
@@ -450,11 +471,15 @@ def test_expired_indeterminate_bound_receipt_never_repeats_by_age():
 
     payload = {"qty": 1}
     IdempotencyKey.objects.create(
-        scope="uncertain", key="retained", status="in_progress",
+        scope="uncertain",
+        key="retained",
+        status="in_progress",
         request_fingerprint=remote_mutations.fingerprint(payload),
         expires_at=timezone.now() - timedelta(days=30),
     )
     effect = Mock()
     with pytest.raises(remote_mutations.RemoteMutationInProgress):
-        remote_mutations.run_idempotent_mutation(scope="uncertain", key="retained", payload=payload, execute=effect, local_atomic=True)
+        remote_mutations.run_idempotent_mutation(
+            scope="uncertain", key="retained", payload=payload, execute=effect, local_atomic=True
+        )
     effect.assert_not_called()

@@ -1,5 +1,7 @@
 """Isolated expansion rehearsal; never a production down-migration recipe."""
 
+import uuid
+
 import pytest
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
@@ -9,7 +11,10 @@ from django.db.migrations.executor import MigrationExecutor
 def test_additive_migrations_preserve_legacy_unknown_receipts_and_subscriptions():
     executor = MigrationExecutor(connection)
     latest = executor.loader.graph.leaf_nodes()
-    previous = [("orderman", "0004_alter_sessionitem_sku"), ("storefront", "0002_rotulos_em_portugues")]
+    previous = [
+        ("orderman", "0004_alter_sessionitem_sku"),
+        ("storefront", "0003_stock_alert_consent_evidence"),
+    ]
     executor.migrate(previous)
     try:
         apps = executor.loader.project_state(previous).apps
@@ -24,13 +29,24 @@ def test_additive_migrations_preserve_legacy_unknown_receipts_and_subscriptions(
                 for i in range(1000)
             ]
         )
-        sub = LegacySub.objects.create(sku="LEGACY-MIGRATION", contact_phone="+5543999990008")
+        sub = LegacySub.objects.create(
+            sku="LEGACY-MIGRATION",
+            contact_phone="+5543999990008",
+            evidence_hash="legacy-migration-evidence",
+            target_key="legacy-migration-target",
+        )
         executor = MigrationExecutor(connection)
         executor.migrate(latest)
         # An old worker may still write after schema expansion. Exercise the
         # historical ORM, which cannot include the new columns in INSERT.
         mixed = LegacyReceipt.objects.create(scope="mixed-worker", key="legacy-write", status="in_progress")
-        LegacySub.objects.create(sku="MIXED-WORKER", contact_phone="+5543999990007")
+        LegacySub.objects.create(
+            ref=uuid.uuid4(),
+            sku="MIXED-WORKER",
+            contact_phone="+5543999990007",
+            evidence_hash="mixed-worker-evidence",
+            target_key="mixed-worker-target",
+        )
         # Repeating a completed expansion is safe; it must not synthesize proof.
         MigrationExecutor(connection).migrate(latest)
         from shopman.orderman.models import IdempotencyKey
