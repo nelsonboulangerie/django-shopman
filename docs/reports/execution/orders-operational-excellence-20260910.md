@@ -775,3 +775,11 @@ Validação ampla independente em andamento: worktree `/Users/pablovalentini/Dev
 ### Gate amplo em fonte imutável
 
 O ensaio SQLite em worktree de validação fixado em `9eb5d9525` terminou com **8574 passed, 57 skipped, 3 warnings, 38 subtests passed**, em 767,39 s. Log integral: `orders-20260910/broad-runtime-stable-9eb5d9525.txt`. Os skips não são ensaios PostgreSQL aprovados; as 3 advertências são de testes que substituem DATABASES. Equipamento/comentário e fiscal/link posteriores têm validações direcionadas separadas. A execução anterior contaminada por edição simultânea não foi renomeada como sucesso. Os achados PostgreSQL reproduzidos na base continuam explicitamente registrados.
+
+### WP04/H03 — cobrança enfileirada e estado que mudou antes do worker
+
+A testemunha anterior confirmou que o handler ainda chamava a entrega do link depois de cancelamento/vencimento. O caso de captura inicialmente usou indevidamente `PaymentService.settle(card)` e falhou na preparação: esse serviço exige atestação para cartão. O fixture corrigido usa create_intent/authorize/capture, somente livro sintético, sem gateway. Não contamos aquela falha como evidência da corrida.
+
+O handler agora reutiliza `payment_link_resend_refusal` imediatamente antes da entrega e grava `notification_delivery.skipped` com o motivo canônico. A projeção explica pagamento recebido, cancelamento ou vencimento; não os chama de envio. A mesma evidência accepted continua impedindo novo envio no replay. Não se adicionou regra de pagamento ou consentimento.
+
+**Validação:** 62 testes PostgreSQL passaram (novos casos + consentimento, reenvio, produção/avisos). Logs de preparação e resultado preservados. Ruff e diff-check passaram. Não há DDL/migração de dados; rollback reverte handler/copy e conserva as evidências gravadas. Limite: cobre mudanças já confirmadas antes da leitura do worker; não prova exclusão mútua com captura durante a chamada remota nem aceite perdido no fornecedor. G03 continua necessário para essa fronteira externa.

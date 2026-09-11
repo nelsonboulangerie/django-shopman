@@ -104,6 +104,14 @@ class NotificationSendHandler:
                 self._record_skip(message, "payment_not_pending")
                 return
 
+        # Enqueue eligibility can expire while the worker is unavailable. Reuse
+        # the same canonical link guard; do not send an obsolete charge notice.
+        if template == notification_svc.PAYMENT_LINK_TEMPLATE:
+            refusal = notification_svc.payment_link_resend_refusal(order)
+            if refusal is not None:
+                self._record_skip(message, refusal.code)
+                return
+
         success, last_error = notification_svc.deliver_order_notification(order, template, payload)
         # ``deliver_order_notification`` registra aceite, skip legítimo ou a
         # última falha no dicionário recebido. Persistir antes de retornar/lançar

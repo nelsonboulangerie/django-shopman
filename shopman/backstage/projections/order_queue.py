@@ -1483,6 +1483,10 @@ def payment_link_notice(order: Order) -> str:
             "expected_no_contact": "não há contato disponível",
             "notification_not_required": "a notificação não se aplica",
             "payment_not_pending": "o pagamento não está pendente",
+            "payment_link_already_paid": "o cliente já pagou",
+            "payment_link_order_cancelled": "o pedido foi cancelado",
+            "payment_link_expired": "o link venceu",
+            "payment_link_unavailable": "o link não está disponível",
         }.get(delivery.get("reason"), "o envio foi omitido")
         return f"Link não enviado: {reason}."
     if directive.status == "queued":

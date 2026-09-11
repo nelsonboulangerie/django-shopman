@@ -1,0 +1,202 @@
+FFF.                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_invalidated_link_is_skipped_before_any_backend[capture-payment_link_already_paid] _
+
+change = 'capture', reason = 'payment_link_already_paid'
+
+    @pytest.mark.parametrize("change,reason", [("capture", "payment_link_already_paid"), ("cancel", "payment_link_order_cancelled"), ("expire", "payment_link_expired")])
+    def test_invalidated_link_is_skipped_before_any_backend(change, reason):
+        order = Order.objects.create(ref="QUEUED-LINK", status="accepted", total_q=1200,
+            data={"payment": {"method": "link", "checkout_url": "https://example.invalid/synthetic"}})
+        notification.send(order, notification.PAYMENT_LINK_TEMPLATE)
+        directive = Directive.objects.get(topic=notification.TOPIC, payload__order_ref=order.ref)
+        if change == "capture":
+>           intent = PaymentService.settle(order.ref, 1200, "card")
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+shopman/shop/tests/test_queued_payment_link_state.py:23: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'shopman.payman.service.PaymentService'>, order_ref = 'QUEUED-LINK'
+amount_q = 1200, method = 'card'
+
+    @classmethod
+    @transaction.atomic
+    def settle(
+        cls,
+        order_ref: str,
+        amount_q: int,
+        method: str,
+        *,
+        currency: str = "BRL",
+        gateway_data: dict | None = None,
+        ref: str | None = None,
+        idempotency_key: str = "",
+        asserted_at_terminal: bool = False,
+    ) -> PaymentIntent:
+        """
+        Cria e captura, na mesma transação, um pagamento que liquidou sem gateway.
+    
+        Dinheiro em espécie e cobrança externa (maquininha avulsa, marketplace)
+        não passam por autorização remota nem por webhook: o valor está na mão
+        no instante em que a venda fecha. Mesmo assim o Payman é o livro de
+        pagamentos de TODOS os métodos: é isso que dá ao mix de meios de
+        pagamento um dono só (receita por método sai daqui, não do JSON do
+        pedido) e deixa a reconciliação financeira enxergar dinheiro em vez
+        de ser cega para ele. O caixa físico (turno, gaveta, sangria) é
+        pergunta de outro pacote (``cashman``); o único fato compartilhado é o
+        tender em dinheiro, ligado pelo ``ref`` deste intent.
+    
+        Não é adapter nem Protocol: só existe uma forma de "capturar" dinheiro,
+        e um seam plugável sem duas implementações reais é dívida. É um ramo
+        do próprio service, com ``gateway=""`` e ``gateway_id=""``. O intent
+        percorre a máquina de estados normal (pending → authorized →
+        captured): autorização e captura são o mesmo gesto porque a nota já
+        está na gaveta, mas os invariantes do modelo continuam os mesmos.
+    
+        Estorno de dinheiro é ``refund`` normal (``PaymentTransaction(REFUND)``).
+    
+        Args:
+            order_ref: Referência do pedido (string, sem FK)
+            amount_q: Valor efetivamente recebido para este pedido, em centavos
+                (o valor do tender depois de descontado o troco; nunca o que
+                o cliente entregou)
+            method: ``cash`` ou ``external`` (``PaymentIntent.METHODS_WITHOUT_GATEWAY``)
+            currency: Código ISO 4217
+            gateway_data: Dados livres de auditoria (ex.: terminal, operador)
+            ref: Referência customizada (auto-gerada se None)
+            idempotency_key: Chave estável para retry seguro; uma repetição
+                devolve o intent já capturado em vez de cobrar duas vezes
+            asserted_at_terminal: O operador ATESTOU no terminal que um método
+                COM gateway (pix, cartão) foi recebido fora dele — QR estático,
+                maquininha avulsa numa venda mista. É a única porta para pix/card
+                passarem por aqui, e fica gravada em ``gateway_data`` para a
+                reconciliação distinguir "capturado pelo gateway" de "atestado
+                pelo balcão". Sem a flag, pix/card continuam recusados: o caminho
+                deles é o gateway.
+    
+        Returns:
+            PaymentIntent com status CAPTURED e uma ``PaymentTransaction`` de captura.
+    
+        Raises:
+            PaymentError: METHOD_REQUIRES_GATEWAY (pix/card sem a atestação),
+                INVALID_AMOUNT, IDEMPOTENCY_KEY_CONFLICT, INVALID_TRANSITION
+                (chave reutilizada por um intent que já morreu)
+        """
+        if method == PaymentIntent.Method.ACCOUNT:
+            raise PaymentError(
+                code="account_is_not_settled_at_sale",
+                message="Venda em conta não liquida na hora: use charge_to_account (autoriza) e capture no acerto.",
+                context={"method": method, "order_ref": order_ref},
+            )
+        if method not in PaymentIntent.METHODS_WITHOUT_GATEWAY and not asserted_at_terminal:
+>           raise PaymentError(
+                code="method_requires_gateway",
+                message=(
+                    f"Método '{method}' passa por gateway; use create_intent/authorize/capture. "
+                    f"Sem gateway só {sorted(PaymentIntent.METHODS_WITHOUT_GATEWAY)}, "
+                    "ou pix/card atestados no terminal (asserted_at_terminal=True)."
+                ),
+                context={"method": method, "order_ref": order_ref},
+            )
+E           shopman.payman.exceptions.PaymentError: [method_requires_gateway] Método 'card' passa por gateway; use create_intent/authorize/capture. Sem gateway só [PaymentIntent.Method.ACCOUNT, PaymentIntent.Method.CASH, PaymentIntent.Method.CREDIT, PaymentIntent.Method.DEBIT, PaymentIntent.Method.EXTERNAL], ou pix/card atestados no terminal (asserted_at_terminal=True).
+
+packages/payman/shopman/payman/service.py:289: PaymentError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-10 22:19:42,612 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-10 22:19:43,587 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-10 22:19:46,819 shopman.shop.services.notification notification.send: queued payment_link_sent for order QUEUED-LINK
+_ test_invalidated_link_is_skipped_before_any_backend[cancel-payment_link_order_cancelled] _
+
+change = 'cancel', reason = 'payment_link_order_cancelled'
+
+    @pytest.mark.parametrize("change,reason", [("capture", "payment_link_already_paid"), ("cancel", "payment_link_order_cancelled"), ("expire", "payment_link_expired")])
+    def test_invalidated_link_is_skipped_before_any_backend(change, reason):
+        order = Order.objects.create(ref="QUEUED-LINK", status="accepted", total_q=1200,
+            data={"payment": {"method": "link", "checkout_url": "https://example.invalid/synthetic"}})
+        notification.send(order, notification.PAYMENT_LINK_TEMPLATE)
+        directive = Directive.objects.get(topic=notification.TOPIC, payload__order_ref=order.ref)
+        if change == "capture":
+            intent = PaymentService.settle(order.ref, 1200, "card")
+            order.data["payment"]["intent_ref"] = intent.ref
+        elif change == "cancel":
+            order.status = "cancelled"
+        else:
+            order.data["payment"]["expires_at"] = (timezone.now() - timedelta(seconds=1)).isoformat()
+        order.save(update_fields=["status", "data"])
+        with patch.object(notification, "deliver_order_notification", return_value=(True, None)) as deliver:
+            NotificationSendHandler().handle(message=directive, ctx={})
+>           deliver.assert_not_called()
+
+shopman/shop/tests/test_queued_payment_link_state.py:32: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock name='deliver_order_notification' id='4801739472'>
+
+    def assert_not_called(self):
+        """assert that the mock was never called.
+        """
+        if self.call_count != 0:
+            msg = ("Expected '%s' to not have been called. Called %s times.%s"
+                   % (self._mock_name or 'mock',
+                      self.call_count,
+                      self._calls_repr()))
+>           raise AssertionError(msg)
+E           AssertionError: Expected 'deliver_order_notification' to not have been called. Called 1 times.
+E           Calls: [call(<Order: QUEUED-LINK>, 'payment_link_sent', {'order_ref': 'QUEUED-LINK', 'channel_ref': '', 'template': 'payment_link_sent', 'requires_active_notification': True})].
+
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/unittest/mock.py:908: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-10 22:19:46,914 shopman.shop.services.notification notification.send: queued payment_link_sent for order QUEUED-LINK
+_ test_invalidated_link_is_skipped_before_any_backend[expire-payment_link_expired] _
+
+change = 'expire', reason = 'payment_link_expired'
+
+    @pytest.mark.parametrize("change,reason", [("capture", "payment_link_already_paid"), ("cancel", "payment_link_order_cancelled"), ("expire", "payment_link_expired")])
+    def test_invalidated_link_is_skipped_before_any_backend(change, reason):
+        order = Order.objects.create(ref="QUEUED-LINK", status="accepted", total_q=1200,
+            data={"payment": {"method": "link", "checkout_url": "https://example.invalid/synthetic"}})
+        notification.send(order, notification.PAYMENT_LINK_TEMPLATE)
+        directive = Directive.objects.get(topic=notification.TOPIC, payload__order_ref=order.ref)
+        if change == "capture":
+            intent = PaymentService.settle(order.ref, 1200, "card")
+            order.data["payment"]["intent_ref"] = intent.ref
+        elif change == "cancel":
+            order.status = "cancelled"
+        else:
+            order.data["payment"]["expires_at"] = (timezone.now() - timedelta(seconds=1)).isoformat()
+        order.save(update_fields=["status", "data"])
+        with patch.object(notification, "deliver_order_notification", return_value=(True, None)) as deliver:
+            NotificationSendHandler().handle(message=directive, ctx={})
+>           deliver.assert_not_called()
+
+shopman/shop/tests/test_queued_payment_link_state.py:32: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock name='deliver_order_notification' id='4820620624'>
+
+    def assert_not_called(self):
+        """assert that the mock was never called.
+        """
+        if self.call_count != 0:
+            msg = ("Expected '%s' to not have been called. Called %s times.%s"
+                   % (self._mock_name or 'mock',
+                      self.call_count,
+                      self._calls_repr()))
+>           raise AssertionError(msg)
+E           AssertionError: Expected 'deliver_order_notification' to not have been called. Called 1 times.
+E           Calls: [call(<Order: QUEUED-LINK>, 'payment_link_sent', {'order_ref': 'QUEUED-LINK', 'channel_ref': '', 'template': 'payment_link_sent', 'requires_active_notification': True})].
+
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/unittest/mock.py:908: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-10 22:19:47,008 shopman.shop.services.notification notification.send: queued payment_link_sent for order QUEUED-LINK
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_queued_payment_link_state.py::test_invalidated_link_is_skipped_before_any_backend[capture-payment_link_already_paid]
+FAILED shopman/shop/tests/test_queued_payment_link_state.py::test_invalidated_link_is_skipped_before_any_backend[cancel-payment_link_order_cancelled]
+FAILED shopman/shop/tests/test_queued_payment_link_state.py::test_invalidated_link_is_skipped_before_any_backend[expire-payment_link_expired]
+3 failed, 1 passed in 4.63s
