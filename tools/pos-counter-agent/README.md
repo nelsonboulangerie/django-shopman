@@ -59,8 +59,12 @@ emitido pelo Admin. A forma é:
 ```bash
 python3 counter_agent.py --install --token TOKEN-LOCAL --origin https://pdv.example \
   --server-url https://gestor.example --station preparo-01 \
-  --relay-token CREDENCIAL-DO-RELAY
+  --relay-token-prompt
 ```
+
+O instalador pede a credencial em seguida, sem mostrá-la na tela nem gravá-la
+no histórico do terminal. Copie o segredo separado que o Admin exibe uma única
+vez e cole nesse prompt.
 
 `--agent-id` é opcional: na primeira instalação nasce um UUID estável. O token
 local e a credencial do relay são separados. Nenhum deles é enviado ao tablet.

@@ -12,7 +12,7 @@
   <pre class="overflow-x-auto rounded-default bg-base-100 p-4 text-sm text-base-700 dark:bg-base-900 dark:text-base-300"><code x-ref="cmd">{{ command }}</code></pre>
   <div class="flex gap-2">
     {% component "unfold/components/button.html" with variant="default" size="sm" icon="content_copy" attrs=copy_button_attrs %}
-      <span x-text="copiado ? 'copiado!' : 'Copiar comando'"></span>
+      <span x-text="copiado ? 'copiado!' : '{{ copy_label|default:"Copiar comando" }}'"></span>
     {% endcomponent %}
   </div>
 </div>

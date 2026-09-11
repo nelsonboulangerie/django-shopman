@@ -162,13 +162,12 @@ def agent(monkeypatch):
 
     monkeypatch.setattr(counter_agent, "send_raw", fake_send_raw)
     monkeypatch.setattr(
-        counter_agent, "probe_queue",
+        counter_agent,
+        "probe_queue",
         lambda queue: {"ok": True, "accepting": True, "reason": ""},
     )
 
-    config = AgentConfig.from_dict(
-        {"queue": "TM-T20", "token": TOKEN, "port": 0, "allowed_origins": [ORIGIN]}
-    )
+    config = AgentConfig.from_dict({"queue": "TM-T20", "token": TOKEN, "port": 0, "allowed_origins": [ORIGIN]})
     handler = type("Bound", (CounterAgentHandler,), {"config": config})
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -361,9 +360,7 @@ def test_config_aceita_varias_origens_operacionais_na_primeira_instalacao(tmp_pa
 def test_token_do_admin_manda_na_primeira_instalacao(tmp_path):
     """O Admin é o dono do par — o agente não inventa um por cima."""
     path = tmp_path / "agent.json"
-    config, _ = counter_agent.write_config(
-        path, queue="TM-T20", origin="https://pos.exemplo", token=TOKEN
-    )
+    config, _ = counter_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo", token=TOKEN)
     assert config["token"] == TOKEN
 
 
@@ -383,9 +380,7 @@ def test_token_novo_do_admin_ROTACIONA_a_config_existente(tmp_path):
 def test_reinstalar_com_o_MESMO_token_nao_reescreve(tmp_path):
     path = tmp_path / "agent.json"
     counter_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo", token=TOKEN)
-    _, written = counter_agent.write_config(
-        path, queue="TM-T20", origin="https://pos.exemplo", token=TOKEN
-    )
+    _, written = counter_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo", token=TOKEN)
     assert written is False
 
 
@@ -467,9 +462,7 @@ def test_linux_e_macos_usam_o_MESMO_comando(monkeypatch):
 
     monkeypatch.setattr(counter_agent, "IS_WINDOWS", False)
     monkeypatch.setattr(counter_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(
-        counter_agent.subprocess, "run", lambda cmd, **k: (captured.update(cmd=cmd), Done())[1]
-    )
+    monkeypatch.setattr(counter_agent.subprocess, "run", lambda cmd, **k: (captured.update(cmd=cmd), Done())[1])
 
     counter_agent.send_raw(CANONICAL_KICK, queue="TM-T20")
     assert captured["cmd"][:5] == ["/usr/bin/lp", "-d", "TM-T20", "-o", "raw"]
@@ -480,7 +473,8 @@ def test_windows_despacha_para_o_spooler_proprio(monkeypatch):
     chamado = {}
     monkeypatch.setattr(counter_agent, "IS_WINDOWS", True)
     monkeypatch.setattr(
-        counter_agent, "_send_raw_windows",
+        counter_agent,
+        "_send_raw_windows",
         lambda payload, *, queue, title: chamado.update(payload=payload, queue=queue) or "42",
     )
 
@@ -559,7 +553,9 @@ def test_instalador_aprova_quando_o_agente_responde(monkeypatch, capsys, tmp_pat
     monkeypatch.setattr(counter_agent, "list_queues", lambda: ["TM-T20"])
     monkeypatch.setattr(counter_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(counter_agent, "_autostart_linux", lambda target: None)
-    monkeypatch.setattr(counter_agent, "_wait_until_listening", lambda config, **k: {"ok": True, "build": counter_agent.build_id()})
+    monkeypatch.setattr(
+        counter_agent, "_wait_until_listening", lambda config, **k: {"ok": True, "build": counter_agent.build_id()}
+    )
 
     assert counter_agent.install(["--install", "--queue", "TM-T20", "--token", TOKEN]) == 0
     saida = capsys.readouterr().out
@@ -611,7 +607,7 @@ def test_o_qr_declara_o_comprimento_certo():
     i = saida.index(marcador + bytes([(len(dados) + 3) % 256]))
     pL, pH = saida[i + 3], saida[i + 4]
     assert pL + pH * 256 == len(dados) + 3
-    assert saida[i + 5:i + 8] == bytes([0x31, 0x50, 0x30])  # cn, fn, m
+    assert saida[i + 5 : i + 8] == bytes([0x31, 0x50, 0x30])  # cn, fn, m
     assert dados in saida
 
 
@@ -645,9 +641,7 @@ def test_a_amostra_de_acento_DISCRIMINA_as_tabelas():
     }
     assert len(set(codificacoes.values())) == 3, "as três tabelas têm que produzir bytes diferentes"
 
-    diferencas = sum(
-        1 for a, b in zip(codificacoes["cp860"], codificacoes["cp850"], strict=True) if a != b
-    )
+    diferencas = sum(1 for a, b in zip(codificacoes["cp860"], codificacoes["cp850"], strict=True) if a != b)
     assert diferencas >= 4, f"só {diferencas} byte(s) separam CP860 de CP850 — fácil de não notar"
 
     assert any(c.isupper() and not c.isascii() for c in amostra), "faltam maiúsculas acentuadas"
@@ -702,9 +696,14 @@ def test_print_entrega_os_bytes_que_o_servidor_compos(agent):
     import base64
 
     papel = b"\x1b@\x1bt\x03NELSON\n"
-    status, body, _ = _print_req(base, {
-        "token": TOKEN, "title": "sangria", "payload_b64": base64.b64encode(papel).decode(),
-    })
+    status, body, _ = _print_req(
+        base,
+        {
+            "token": TOKEN,
+            "title": "sangria",
+            "payload_b64": base64.b64encode(papel).decode(),
+        },
+    )
 
     assert status == 200 and body["ok"] is True
     assert sent[0]["payload"] == papel
@@ -743,9 +742,14 @@ def test_print_aceita_documento_grande(agent):
 
     base, sent = agent
     grande = b"X" * 60_000
-    status, _, _ = _print_req(base, {
-        "token": TOKEN, "title": "danfe", "payload_b64": base64.b64encode(grande).decode(),
-    })
+    status, _, _ = _print_req(
+        base,
+        {
+            "token": TOKEN,
+            "title": "danfe",
+            "payload_b64": base64.b64encode(grande).decode(),
+        },
+    )
     assert status == 200
     assert sent[0]["payload"] == grande
 
@@ -797,6 +801,7 @@ def test_reinstalar_no_linux_REINICIA_o_servico(monkeypatch):
         class R:
             returncode = 0
             stderr = b""
+
         return R()
 
     monkeypatch.setattr(counter_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
@@ -830,9 +835,7 @@ def test_instalador_reprova_quando_quem_atende_e_outra_versao(monkeypatch, capsy
     monkeypatch.setattr(counter_agent, "list_queues", lambda: ["TM-T20"])
     monkeypatch.setattr(counter_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(counter_agent, "_autostart_linux", lambda target: None)
-    monkeypatch.setattr(
-        counter_agent, "_wait_until_listening", lambda config, **k: {"ok": True, "build": "deadbeef"}
-    )
+    monkeypatch.setattr(counter_agent, "_wait_until_listening", lambda config, **k: {"ok": True, "build": "deadbeef"})
 
     codigo = counter_agent.install(["--install", "--queue", "TM-T20", "--token", TOKEN])
 
@@ -906,6 +909,7 @@ def test_instalador_DERRUBA_o_servico_antigo_ANTES_de_subir_o_novo(monkeypatch, 
             returncode = 0
             stdout = b""
             stderr = b""
+
         return R()
 
     unit_antiga = tmp_path / "nelson-pos-drawer.service"
@@ -1010,9 +1014,7 @@ def test_o_nome_antigo_so_existe_para_ser_derrubado():
     sobras = [
         linha
         for linha in fonte.splitlines()
-        if ("pos-drawer" in linha or "PosDrawer" in linha)
-        and "LEGACY" not in linha
-        and "antigas" not in linha
+        if ("pos-drawer" in linha or "PosDrawer" in linha) and "LEGACY" not in linha and "antigas" not in linha
     ]
     assert not sobras, f"nome antigo fora da faxina: {sobras}"
 
@@ -1072,6 +1074,7 @@ def test_doctor_acusa_o_servico_antigo_de_pe(monkeypatch, capsys, tmp_path):
 
 def test_leitura_do_pino_sem_permissao_explica_o_grupo(monkeypatch, tmp_path):
     """Erro de permissão vira instrução, não `PermissionError` cru na tela."""
+
     def nega(*a, **k):
         raise PermissionError("negado")
 
@@ -1129,19 +1132,23 @@ def test_windows_tenta_o_usb_quando_o_spooler_nao_devolve(monkeypatch, capsys, t
     # A gaveta muda só o bit 0x04 do `DLE EOT 1`, que é onde o manual diz que
     # ele vive. Os outros status ficam iguais — é assim no aparelho real.
     estado = {"aberta": False}
+
     def usb(*, query, **k):
         n = query[2]
         if n == 1:
             return (0x16 if estado["aberta"] else 0x12), ""
         return 0x00, ""
+
     monkeypatch.setattr(counter_agent, "_ler_pino_usb_windows", usb)
 
     # O PRIMEIRO Enter é com a gaveta fechada; a partir do segundo, aberta.
     enters = {"n": 0}
+
     def enter(_):
         enters["n"] += 1
         estado["aberta"] = enters["n"] > 1
         return ""
+
     monkeypatch.setattr("builtins.input", enter)
 
     codigo = counter_agent._drawer_status_windows()
@@ -1185,9 +1192,7 @@ def test_toda_chamada_do_windows_declara_argtypes():
     declaradas = set(re.findall(r"\b(?:setupapi|kernel32|winspool|ole32)\.(\w+)\.argtypes\s*=", fonte))
 
     faltando = sorted(usadas - declaradas)
-    assert not faltando, (
-        f"sem argtypes (handle de 64 bits vira int de 32 e a chamada morre): {faltando}"
-    )
+    assert not faltando, f"sem argtypes (handle de 64 bits vira int de 32 e a chamada morre): {faltando}"
 
 
 def test_varredura_pergunta_os_QUATRO_status():
@@ -1206,6 +1211,7 @@ def test_varredura_pergunta_os_QUATRO_status():
 
 def test_varredura_ignora_o_status_que_nao_responde():
     """Nem todo status responde em toda impressora — e isso não é erro."""
+
     def so_o_primeiro(q):
         return (0x12, "") if q[2] == 1 else (None, "sem resposta")
 
@@ -1249,9 +1255,7 @@ class TestPolaridadeDaGaveta:
     """
 
     def _config(self, drawer_status=None):
-        return counter_agent.AgentConfig(
-            queue="TM-T20", token="token-de-teste-longo", drawer_status=drawer_status
-        )
+        return counter_agent.AgentConfig(queue="TM-T20", token="token-de-teste-longo", drawer_status=drawer_status)
 
     def test_a_medicao_do_balcao_da_nelson(self):
         # mask 0x04, fechada com o bit LIGADO
@@ -1284,6 +1288,7 @@ def test_veredito_grava_a_polaridade_medida(monkeypatch, capsys, tmp_path):
     counter_agent._veredito_da_varredura({1: 0x16, 3: 0x12}, {1: 0x12, 3: 0x12})
 
     import json as _json
+
     salvo = _json.loads(cfg.read_text())["drawer_status"]
     assert salvo == {"query": 1, "mask": 4, "closed_value": 4}
     assert "gravado" in capsys.readouterr().out
@@ -1300,15 +1305,21 @@ def test_veredito_grava_a_polaridade_medida(monkeypatch, capsys, tmp_path):
 def _agente_com(monkeypatch, drawer_status, leitura=None):
     """Sobe o agente com uma medição (ou sem) e um sensor dublado."""
     monkeypatch.setattr(
-        counter_agent, "probe_queue",
+        counter_agent,
+        "probe_queue",
         lambda queue: {"ok": True, "accepting": True, "reason": ""},
     )
     if leitura is not None:
         monkeypatch.setattr(counter_agent, "_ler_estado", lambda cfg, *, query: leitura)
-    config = AgentConfig.from_dict({
-        "queue": "TM-T20", "token": TOKEN, "port": 0,
-        "allowed_origins": [ORIGIN], "drawer_status": drawer_status,
-    })
+    config = AgentConfig.from_dict(
+        {
+            "queue": "TM-T20",
+            "token": TOKEN,
+            "port": 0,
+            "allowed_origins": [ORIGIN],
+            "drawer_status": drawer_status,
+        }
+    )
     handler = type("Bound", (CounterAgentHandler,), {"config": config})
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
@@ -1324,7 +1335,7 @@ MEDIDO = {"query": 1, "mask": 4, "closed_value": 4}
 
 
 def test_health_diz_se_a_trava_esta_armada(monkeypatch):
-    """"A trava está ligada?" tinha que ser respondida indo até o balcão."""
+    """ "A trava está ligada?" tinha que ser respondida indo até o balcão."""
     httpd, base = _agente_com(monkeypatch, MEDIDO)
     try:
         assert _get(base, "/health")["drawer_lock"] == {"calibrated": True, "query": 1}
@@ -1373,7 +1384,10 @@ def test_leitura_boa_continua_dizendo_aberta_e_o_byte(monkeypatch):
     httpd, base = _agente_com(monkeypatch, MEDIDO, leitura=(0x12, ""))
     try:
         assert _get(base, "/drawer") == {
-            "known": True, "calibrated": True, "open": True, "raw": "0x12",
+            "known": True,
+            "calibrated": True,
+            "open": True,
+            "raw": "0x12",
         }
     finally:
         httpd.shutdown()
@@ -1387,7 +1401,8 @@ def test_doctor_reprova_o_balcao_sem_medicao(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", cfg)
     monkeypatch.setattr(counter_agent, "_wait_until_listening", lambda *a, **k: None)
     monkeypatch.setattr(
-        counter_agent, "probe_queue",
+        counter_agent,
+        "probe_queue",
         lambda queue: {"ok": True, "accepting": True, "reason": ""},
     )
 
@@ -1404,7 +1419,8 @@ def test_doctor_confirma_a_trava_armada(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", cfg)
     monkeypatch.setattr(counter_agent, "_wait_until_listening", lambda *a, **k: None)
     monkeypatch.setattr(
-        counter_agent, "probe_queue",
+        counter_agent,
+        "probe_queue",
         lambda queue: {"ok": True, "accepting": True, "reason": ""},
     )
 
@@ -1486,14 +1502,147 @@ def test_instalacao_relay_gera_agent_id_e_guarda_tokens_em_0600(tmp_path):
     assert RELAY_TOKEN in path.read_text()
 
 
+def _prepare_relay_install(monkeypatch, tmp_path):
+    monkeypatch.setattr(counter_agent, "IS_WINDOWS", False)
+    monkeypatch.setattr(counter_agent, "IS_MACOS", False)
+    monkeypatch.setattr(counter_agent, "INSTALL_DIR", tmp_path / "inst")
+    monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", tmp_path / "agent.json")
+    monkeypatch.setattr(counter_agent, "LEGACY_CONFIG_PATHS", ())
+    monkeypatch.setattr(counter_agent, "list_queues", lambda: ["TM-T20"])
+    monkeypatch.setattr(counter_agent.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(counter_agent, "stop_legacy_service", lambda: None)
+    monkeypatch.setattr(counter_agent, "_autostart_linux", lambda target: None)
+    monkeypatch.setattr(
+        counter_agent,
+        "_wait_until_listening",
+        lambda config, **kwargs: {"ok": True, "build": counter_agent.build_id()},
+    )
+    return tmp_path / "agent.json"
+
+
+def test_instalacao_pede_relay_token_sem_exibir_no_terminal(monkeypatch, capsys, tmp_path):
+    path = _prepare_relay_install(monkeypatch, tmp_path)
+    monkeypatch.setattr(counter_agent.getpass, "getpass", lambda prompt: RELAY_TOKEN)
+
+    result = counter_agent.install(
+        [
+            "--install",
+            "--queue",
+            "TM-T20",
+            "--token",
+            TOKEN,
+            "--origin",
+            ORIGIN,
+            "--server-url",
+            "https://gestor.example",
+            "--station",
+            "preparo-01",
+            "--relay-token-prompt",
+        ]
+    )
+
+    assert result == 0
+    config = json.loads(path.read_text(encoding="utf-8"))
+    assert config["relay_token"] == RELAY_TOKEN
+    assert RELAY_TOKEN not in capsys.readouterr().out
+
+
+def test_reinstalacao_relay_preserva_pdv_fila_origens_e_agent_id(monkeypatch, tmp_path):
+    path = _prepare_relay_install(monkeypatch, tmp_path)
+    counter_agent.write_config(
+        path,
+        queue="TM-T20",
+        origin=ORIGIN,
+        token=TOKEN,
+        server_url="https://gestor.example",
+        station_ref="preparo-01",
+        agent_id="agente-estavel",
+        relay_token="relay-antigo-com-tamanho-suficiente",
+    )
+    novo_relay = "relay-novo-com-tamanho-suficiente"
+    monkeypatch.setattr(counter_agent.getpass, "getpass", lambda prompt: novo_relay)
+
+    result = counter_agent.install(
+        [
+            "--install",
+            "--queue",
+            "TM-T20",
+            "--token",
+            TOKEN,
+            "--origin",
+            "https://prod.example",
+            "--server-url",
+            "https://gestor.example",
+            "--station",
+            "preparo-01",
+            "--relay-token-prompt",
+        ]
+    )
+
+    assert result == 0
+    config = json.loads(path.read_text(encoding="utf-8"))
+    assert config["queue"] == "TM-T20"
+    assert config["token"] == TOKEN
+    assert config["agent_id"] == "agente-estavel"
+    assert config["relay_token"] == novo_relay
+    assert config["allowed_origins"] == [ORIGIN, "https://prod.example"]
+
+
+def test_prompt_e_token_explicito_sao_mutuamente_exclusivos(monkeypatch, capsys, tmp_path):
+    _prepare_relay_install(monkeypatch, tmp_path)
+
+    result = counter_agent.install(
+        [
+            "--install",
+            "--queue",
+            "TM-T20",
+            "--server-url",
+            "https://gestor.example",
+            "--station",
+            "preparo-01",
+            "--relay-token",
+            RELAY_TOKEN,
+            "--relay-token-prompt",
+        ]
+    )
+
+    assert result == 1
+    assert "nunca os dois" in capsys.readouterr().err
+
+
+def test_prompt_cancelado_nao_altera_config(monkeypatch, capsys, tmp_path):
+    path = _prepare_relay_install(monkeypatch, tmp_path)
+    counter_agent.write_config(path, queue="TM-T20", origin=ORIGIN, token=TOKEN)
+    before = path.read_bytes()
+
+    def cancel(_prompt):
+        raise EOFError
+
+    monkeypatch.setattr(counter_agent.getpass, "getpass", cancel)
+    result = counter_agent.install(
+        [
+            "--install",
+            "--queue",
+            "TM-T20",
+            "--server-url",
+            "https://gestor.example",
+            "--station",
+            "preparo-01",
+            "--relay-token-prompt",
+        ]
+    )
+
+    assert result == 1
+    assert path.read_bytes() == before
+    assert "não informada" in capsys.readouterr().err
+
+
 def test_reinstalacao_reaperta_permissao_da_config_sem_reescrever(tmp_path):
     path = tmp_path / "agent.json"
     counter_agent.write_config(path, queue="TM-T20", origin=ORIGIN, token=TOKEN)
     path.chmod(0o644)
 
-    _, written = counter_agent.write_config(
-        path, queue="TM-T20", origin=ORIGIN, token=TOKEN
-    )
+    _, written = counter_agent.write_config(path, queue="TM-T20", origin=ORIGIN, token=TOKEN)
 
     assert written is False
     assert oct(path.stat().st_mode)[-3:] == "600"
@@ -1547,9 +1696,7 @@ def test_payload_invalido_com_lease_valido_persiste_ack_failed(monkeypatch, tmp_
         raise counter_agent.RelayTransportError("ACK offline")
 
     journal = counter_agent.RelayJournal(tmp_path / "relay.sqlite3")
-    worker = counter_agent.RelayWorker(
-        _relay_config(), journal=journal, post=post, spool=lambda *a, **k: None
-    )
+    worker = counter_agent.RelayWorker(_relay_config(), journal=journal, post=post, spool=lambda *a, **k: None)
     with pytest.raises(counter_agent.RelayTransportError, match="ACK offline"):
         worker.poll_once()
 
@@ -1660,9 +1807,7 @@ def test_ack_perdido_redelivery_repete_so_ack(monkeypatch, tmp_path):
     # Simula restart real: o lease existe apenas no SQLite local; o backend
     # conserva só o digest e não precisa reemitir o segredo.
     journal = counter_agent.RelayJournal(tmp_path / "relay.sqlite3")
-    worker = counter_agent.RelayWorker(
-        _relay_config(), journal=journal, post=post, spool=spool
-    )
+    worker = counter_agent.RelayWorker(_relay_config(), journal=journal, post=post, spool=spool)
     assert worker.poll_once() is True
     assert spool_count == 1
     assert ack_count == 2
@@ -1693,9 +1838,7 @@ def test_failed_acked_retry_novo_lease_spoola_exatamente_uma_nova_vez(monkeypatc
         return "TM-T20-99"
 
     journal = counter_agent.RelayJournal(tmp_path / "relay.sqlite3")
-    worker = counter_agent.RelayWorker(
-        _relay_config(), journal=journal, post=post, spool=spool
-    )
+    worker = counter_agent.RelayWorker(_relay_config(), journal=journal, post=post, spool=spool)
 
     worker.poll_once()
     failed = journal.get("job-1")
@@ -1715,33 +1858,25 @@ def test_failed_acked_retry_novo_lease_spoola_exatamente_uma_nova_vez(monkeypatc
 @pytest.mark.parametrize("previous", ["submitted_to_spooler", "uncertain"])
 def test_novo_lease_nunca_reabre_submitted_ou_uncertain(tmp_path, previous):
     journal = counter_agent.RelayJournal(tmp_path / "relay.sqlite3")
-    first = counter_agent.RelayJob.from_claim(
-        _claimed_job(lease_token="lease-primeira-tentativa-123", attempt=1)
-    )
+    first = counter_agent.RelayJob.from_claim(_claimed_job(lease_token="lease-primeira-tentativa-123", attempt=1))
     journal.record_claimed(first)
     journal.begin_spooling(first.job_ref)
     journal.set_result(first.job_ref, previous, spooler_job_id="TM-T20-1")
     journal.mark_acknowledged(first.job_ref)
 
-    retry = counter_agent.RelayJob.from_claim(
-        _claimed_job(lease_token="lease-segunda-tentativa-456", attempt=2)
-    )
+    retry = counter_agent.RelayJob.from_claim(_claimed_job(lease_token="lease-segunda-tentativa-456", attempt=2))
     with pytest.raises(counter_agent.RelayInvalidJob, match="novo lease recusado"):
         journal.record_claimed(retry)
 
 
 def test_novo_lease_nao_fura_ack_failed_ainda_pendente(tmp_path):
     journal = counter_agent.RelayJournal(tmp_path / "relay.sqlite3")
-    first = counter_agent.RelayJob.from_claim(
-        _claimed_job(lease_token="lease-primeira-tentativa-123", attempt=1)
-    )
+    first = counter_agent.RelayJob.from_claim(_claimed_job(lease_token="lease-primeira-tentativa-123", attempt=1))
     journal.record_claimed(first)
     journal.begin_spooling(first.job_ref)
     journal.set_result(first.job_ref, "failed", detail="fila recusou")
 
-    retry = counter_agent.RelayJob.from_claim(
-        _claimed_job(lease_token="lease-segunda-tentativa-456", attempt=2)
-    )
+    retry = counter_agent.RelayJob.from_claim(_claimed_job(lease_token="lease-segunda-tentativa-456", attempt=2))
     with pytest.raises(counter_agent.RelayInvalidJob, match="novo lease recusado"):
         journal.record_claimed(retry)
 

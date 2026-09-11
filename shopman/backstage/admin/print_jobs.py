@@ -105,6 +105,7 @@ class PrintAgentCredentialAdmin(ModelAdmin):
         "terminal",
         "label",
         "token_hint",
+        "is_active",
         "last_seen_at",
         "last_build",
         "last_remote_addr",
