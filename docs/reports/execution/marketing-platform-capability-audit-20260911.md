@@ -55,21 +55,20 @@ limites, requisitos de mídia, CTA e insights. `provider_fields` aceita campos
 escalares desconhecidos que o adapter pode ignorar, o que é inadequado para ampliar
 recursos com promessa de prévia fiel.
 
-## Decisão relacionada ainda não implementada — Avise-me
+## Decisão relacionada — Avise-me
 
-A decisão do produto é manter a inscrição ativa até a própria pessoa pausar ou
-cancelar. O código atual ainda implementa o contrato anterior: cria a inscrição com
-30 dias de validade, considera ativa apenas a linha ainda não avisada e grava
-`notified_at` como estado terminal depois do primeiro envio. A loja também mostra o
-estado inscrito como botão desabilitado, sem oferecer pausa ou cancelamento no mesmo
-lugar.
+A base desta auditoria (#611) ainda contém o contrato antigo: validade de 30 dias,
+`notified_at` terminal e ausência de pausa na loja. A decisão de manter a inscrição
+ativa até a própria pessoa pausar ou cancelar, porém, **não está perdida**: já foi
+implementada na linha isolada do PR #612.
 
-Essa evolução precisa de pacote próprio: assinatura persistente com estados
-`active/paused/cancelled`, comprovante de consentimento e revogação, deduplicação por
-novo episódio de disponibilidade (não por vida inteira da assinatura), migração que
-não reative consentimento vencido/legado e autosserviço de pausa/cancelamento. Ela
-não deve ser confundida com a simples remoção de `expires_at`, que repetiria avisos
-ou conservaria consentimento sem controle adequado.
+Essa linha introduz assinatura persistente, ocorrências e recibos idempotentes por
+novo episódio de disponibilidade, pausa/retomada/cancelamento e gestão pela conta,
+sessão ou link seguro. A migração remove o TTL somente de inscrições verificadas e
+não revogadas, sem reativar legado sem prova. Para não duplicar nem regredir esse
+trabalho, a ordem de integração é #612 antes de #614. `expires_at` e `notified_at`
+devem permanecer apenas como compatibilidade explicitamente depreciada; retenção e
+exclusão do telefone continuam submetidas ao contrato de privacidade.
 
 ## Gate humano proposto — MKT-CAP-01
 
