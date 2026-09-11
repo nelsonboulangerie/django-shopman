@@ -392,10 +392,10 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         <button v-if="order.can_settle_delivery_cash" type="button" :disabled="busy || !settleAction?.enabled" :title="settleAction?.reason" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="openDialog('settle')">
           <Icon name="lucide:banknote" class="size-4" /> Acerto dinheiro
         </button>
-        <button v-if="order.equipment_back_pending && !order.can_settle_delivery_cash" type="button" :disabled="busy" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="equipmentBack">
+        <button v-if="order.equipment_back_pending && !order.can_settle_delivery_cash" type="button" :disabled="busy || !projectedAction('equipment-back')?.enabled" :title="projectedAction('equipment-back')?.reason || (projectedAction('equipment-back')?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="equipmentBack">
           <Icon name="lucide:smartphone-nfc" class="size-4" /> Maquininha voltou
         </button>
-        <button v-if="order.fiscal_status === 'failed'" type="button" :disabled="busy" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="requeueFiscal">
+        <button v-if="order.fiscal_status === 'failed'" type="button" :disabled="busy || !projectedAction('requeue-fiscal')?.enabled" :title="projectedAction('requeue-fiscal')?.reason || (projectedAction('requeue-fiscal')?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="requeueFiscal">
           <Icon name="lucide:file-text" class="size-4" /> Reprocessar fiscal
         </button>
         <!-- Só para o pedido de LINK ainda cobrável (forma link com URL, vivo,

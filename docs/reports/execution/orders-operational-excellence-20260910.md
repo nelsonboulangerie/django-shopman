@@ -1408,3 +1408,14 @@ recuperação. Regra madura de requeue foi lida e preservada: backend é respons
 do handler; o incremento não inventa elegibilidade fiscal nem resolve G03.
 Validação após desempate determinístico created_at/pk: 5 casos fiscais aprovados
 em 4,48s. Ruff do checkout inteiro aprovado em `.orders-lab/ruff-current.txt`.
+
+### WP01 — dois controles de retomada obedecem à Action projetada
+
+Antes: 2 testes de componente falharam (32 controles existentes passaram): fiscal
+failed e equipamento pendente deixavam seus botões habilitados mesmo com Action
+enabled=false. Correção mínima no detalhe: disabled/reason vêm da Action existente;
+metadado ausente pede atualizar em vez de autorizar. Não muda elegibilidade fiscal,
+permissão, custódia, confirmação física nem endpoint. **294 Vitest/3,71s**, typecheck
+aprovado; os testes verificam ausência de chamada ao comando ao clicar desabilitado.
+Logs `orders-20260910/recovery_actions/`. Sem migration; rollback volta a permitir
+ativação inútil/negada pelo servidor, sem apagar dados ou chaves.

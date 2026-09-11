@@ -19,6 +19,8 @@ import type { CustomerProfileProjection, OperatorOrderProjection } from "../../a
 
 const detalhe = ref<OperatorOrderProjection | null>(null);
 const resendPaymentLink = vi.fn();
+const requeueFiscal = vi.fn();
+const equipmentBack = vi.fn();
 const readError = ref<unknown>(null);
 
 const localStates = new Map<string, ReturnType<typeof ref>>();
@@ -52,8 +54,8 @@ vi.stubGlobal("useOrderDetail", () => ({
   cancel: vi.fn(),
   fetchCancellationReasons: vi.fn(async () => []),
   settleCash: vi.fn(),
-  equipmentBack: vi.fn(),
-  requeueFiscal: vi.fn(),
+  equipmentBack,
+  requeueFiscal,
   resendPaymentLink: resendPaymentLink,
   saveNotes: vi.fn(),
   addComment: vi.fn(),
@@ -541,4 +543,23 @@ it("fechar e reabrir o acerto conserva valor e pede revisar a custódia que mudo
   await open().trigger("click");
   expect((w.find('[aria-label="Valor recebido"]').element as HTMLInputElement).value).toBe("15,00");
   expect(w.text()).toContain("O pedido ou turno mudou");
+});
+
+
+it.each([
+  ["requeue-fiscal", "Reprocessar fiscal", { fiscal_status: "failed" }, requeueFiscal],
+  ["equipment-back", "Maquininha voltou", { equipment_back_pending: true }, equipmentBack],
+] as const)("respects disabled projected recovery %s without a request", async (refName, label, fields, execute) => {
+  execute.mockClear();
+  const reason = "Esta ação exige outra permissão.";
+  const w = abrir(order({ ...fields, can_confirm: false, actions: [{
+    ref: refName, kind: "mutation", label, enabled: false, reason, priority: "secondary",
+    href: "", method: "POST", idempotency: "required", payload_schema: {}, confirmation: {},
+  }] }));
+  const button = w.findAll("button").find((candidate) => candidate.text().includes(label))!;
+  expect(button.attributes("disabled")).toBeDefined();
+  expect(button.attributes("title")).toBe(reason);
+  await button.trigger("click");
+  expect(execute).not.toHaveBeenCalled();
+  w.unmount();
 });
