@@ -12,11 +12,12 @@ from rest_framework.views import APIView
 
 from shopman.backstage.api.permissions import HasBackstagePermission
 from shopman.backstage.api.projections import projection_data, read_data
+from shopman.backstage.api.telemetry import OperationalObservationMixin
 from shopman.backstage.services import feeds as feed_service
 from shopman.backstage.services.exceptions import CatalogError
 
 
-class _FeedBase(APIView):
+class _FeedBase(OperationalObservationMixin, APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "shop.manage_catalog"
 

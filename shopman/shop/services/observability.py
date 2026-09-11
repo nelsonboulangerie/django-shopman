@@ -7,17 +7,35 @@ for machines, debounced OperatorAlert rows for humans.
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import timedelta
 from typing import Any
 
 from django.utils import timezone
 
 logger = logging.getLogger("shopman.operational")
+_operation_context: ContextVar[dict | None] = ContextVar("shopman_operation_context", default=None)
+
+
+@contextmanager
+def operational_context(**fields):
+    """Correlação da execução atual; não persiste dados nem cruza requests."""
+    context = {**(_operation_context.get() or {}), **fields}
+    token = _operation_context.set(context)
+    try:
+        yield context
+    finally:
+        _operation_context.reset(token)
+
+
+def current_operational_context() -> dict:
+    return dict(_operation_context.get() or {})
 
 
 def operational_event(event: str, *, level: int = logging.INFO, **fields: Any) -> None:
     """Emit a structured operational event."""
-    payload = {"event": event}
+    payload = {"event": event, **_compact(current_operational_context())}
     payload.update(_compact(fields))
     logger.log(level, event, extra=payload)
 
@@ -270,6 +288,8 @@ def _without_order_ref(fields: dict[str, Any]) -> dict[str, Any]:
 __all__ = [
     "create_operator_alert",
     "operational_event",
+    "operational_context",
+    "current_operational_context",
     "record_integration_failure",
     "record_payment_reconciliation_failure",
     "record_webhook_failure",

@@ -16,6 +16,7 @@ from rest_framework.views import APIView
 
 from shopman.backstage.api.permissions import HasBackstagePermission
 from shopman.backstage.api.projections import projection_data, read_data
+from shopman.backstage.api.telemetry import OperationalObservationMixin
 from shopman.backstage.parsing import as_int
 from shopman.backstage.services import catalog as catalog_service
 from shopman.backstage.services.exceptions import (
@@ -31,7 +32,7 @@ def _actor(request) -> str:
     return getattr(user, "username", None) or "operator"
 
 
-class _CatalogBase(APIView):
+class _CatalogBase(OperationalObservationMixin, APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "shop.manage_catalog"
 

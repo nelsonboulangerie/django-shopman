@@ -86,6 +86,7 @@ from shopman.backstage.api.production_freshness import (
     signed_override_proof,
     validate_override_proof,
 )
+from shopman.backstage.api.telemetry import OperationalObservationMixin
 from shopman.backstage.constants import POS_CHANNEL_REF
 from shopman.backstage.models import SignInMethod, SignInOutcome
 from shopman.backstage.parsing import as_bool
@@ -1504,7 +1505,7 @@ def _reconcile_payment_if_due(order) -> None:
         responses={200: OpenApiResponse(description="Full operator order projection.")},
     ),
 )
-class OrderDetailView(APIView):
+class OrderDetailView(OperationalObservationMixin, APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "shop.manage_orders"
 
@@ -1537,7 +1538,7 @@ class OrderDetailView(APIView):
         responses={200: OpenApiResponse(description="Active and recent orders for operator.")},
     ),
 )
-class OrderQueueView(APIView):
+class OrderQueueView(OperationalObservationMixin, APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "shop.manage_orders"
 
@@ -1549,7 +1550,7 @@ class OrderQueueView(APIView):
 # ── Order action endpoints ────────────────────────────────────────────
 
 
-class _OrderActionBase(APIView):
+class _OrderActionBase(OperationalObservationMixin, APIView):
     """Shared base for order action endpoints (advance/confirm/reject/cancel)."""
 
     permission_classes = [HasBackstagePermission]

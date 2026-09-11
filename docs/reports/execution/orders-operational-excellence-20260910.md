@@ -1239,3 +1239,36 @@ G06 continua sem aprovação; 500/dez clientes e renderização de 500 não aten
 aos budgets propostos. Evidência não autoriza diminuir a meta, restringir coorte
 por conta própria ou declarar WP07/T concluído. Pacotes técnicos independentes
 continuam; não há autorização de piloto/rollout.
+
+### WP08 — correlação de requisição e recibo (preparação técnica parcial)
+
+Antes em 4cf8aa3bb, operational_event/JsonLogFormatter eram maduros, mas os novos
+comandos/recibos não os correlacionavam. Reutilizados: contexto local à execução,
+request_id próprio, operação finita pelo tipo da view, pessoa **após** permissão,
+ref do recurso, digests de chave/base, código/outcome e refs de Directive quando
+presentes. O header X-Request-ID identifica a resposta Django. Não logar nota,
+cliente, endereço, telefone, PIN, payload integral ou chave opaca literal.
+
+operator.command.local_result só é emitido em on_commit, inclusive diante de
+outer atomic. Receipt/replay fica separado de execução; falha da projeção após
+commit produz recibo aplicado e transporte desconhecido correlacionados. GET e
+recusa de permissão não produzem gravação atribuída a ator autorizado. ContextVar
+é limpo no finally e testado com duas threads. Tempo view_elapsed_ms inclui a
+view, não equivale ao HTTP completo/serialização final; o laboratório HTTP
+continua sendo a prova separada desses budgets.
+
+51 testes PostgreSQL passaram; ampliação por famílias (catálogo, feed, publicação,
+resync, courier e observabilidade): **138 passaram (34,83 s)**. Primeiro ensaio:
+47 passaram/4 falharam porque o logger shopman não propaga ao root capturado pelo
+pytest. Fixture passou a escutar o logger existente diretamente; produção não
+teve sua configuração alterada para acomodar o teste. Testes incluem ausência
+literal de segredos sintéticos nos JSON, rollback externo sem falso commit,
+permissão, replay e falha de resposta depois da gravação. Ruff passou.
+
+Evidências `orders-20260910/observation-*.txt`. Usar o JsonLogFormatter existente
+(SHOPMAN_JSON_LOGS) no ambiente homologado; não se ativou Sentry nem exportação
+externa. Retenção/acesso aos logs continuam dependentes de G08/G07.
+Migração: nenhuma. Rollback preserva todos os recibos; perde apenas essa
+correlação adicional. Não criar tabela de auditoria paralela. WP08 permanece
+parcial: efeitos externos, placar e runbooks ainda exigem complemento; WP07 e
+os gates de piloto não foram encerrados por estes testes.

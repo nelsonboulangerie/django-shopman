@@ -14,6 +14,8 @@ from django.db import transaction
 from django.utils import timezone
 from shopman.orderman.models import IdempotencyKey
 
+from shopman.shop.services.observability import current_operational_context, operational_event
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,7 +70,14 @@ def run_idempotent_mutation(
     if fingerprint is not None:
         if cache_response is not None:
             raise ValueError("Local mutations always retain their result")
-        return _run_local_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=execute)
+        try:
+            result = _run_local_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=execute)
+        except (RemoteMutationConflict, RemoteMutationInProgress) as exc:
+            if current_operational_context():
+                operational_event("operator.command.blocked", intention_digest=hashlib.sha256(key.encode()).hexdigest(), reason=type(exc).__name__)
+            raise
+        _observe_local_result(result, key=key, event="operator.command.local_result")
+        return result
 
     idem = _acquire(scope=scope, key=key)
     if idem.status == "done" and idem.response_body is not None:
@@ -159,7 +168,9 @@ def lookup_local_mutation(*, scope: str, key: str, fingerprint: str | None = Non
         return None
     if idem.status != "done":
         raise RemoteMutationInProgress("Mutation has no committed result")
-    return _local_result(idem, fingerprint)
+    result = _local_result(idem, fingerprint)
+    _observe_local_result(result, key=key, event="operator.command.receipt")
+    return result
 
 
 def _run_local_mutation(*, scope: str, key: str, fingerprint: str, execute) -> RemoteMutationResult:
@@ -184,3 +195,22 @@ def _run_local_mutation(*, scope: str, key: str, fingerprint: str, execute) -> R
         idem.response_code = code
         idem.save(update_fields=["status", "response_body", "response_code"])
         return RemoteMutationResult(body, code)
+
+
+def _observe_local_result(result: RemoteMutationResult, *, key: str, event: str):
+    context = current_operational_context()
+    if not context:
+        return
+    body = result.response_body
+    outcome = body.get("outcome")
+    outcome = outcome if outcome in {"applied", "not_applied", "unknown", "in_progress"} else "unclassified"
+    fields = {**context, "intention_digest": hashlib.sha256(key.encode()).hexdigest(), "response_status": result.response_code, "outcome": outcome, "replayed": result.replayed}
+    for name in ("directive_id", "shift_id", "cash_entry_id"):
+        value = body.get(name)
+        if isinstance(value, int) and not isinstance(value, bool):
+            fields[name] = value
+    ids = body.get("directive_ids")
+    if isinstance(ids, list) and all(isinstance(value, int) and not isinstance(value, bool) for value in ids):
+        fields["directive_ids"] = ids
+    # Um outer atomic ainda pode reverter o comando: só logar commit confirmado.
+    transaction.on_commit(lambda: operational_event(event, **fields), robust=True)

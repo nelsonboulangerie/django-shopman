@@ -1,0 +1,217 @@
+F....................................FF...........F                      [100%]
+=================================== FAILURES ===================================
+_ test_permission_denial_never_attributes_an_authorized_actor_or_local_effect __
+
+client = <django.test.client.Client object at 0x10c8f78f0>
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10cc308f0>
+
+    @pytest.mark.django_db
+    def test_permission_denial_never_attributes_an_authorized_actor_or_local_effect(client, caplog):
+        caplog.set_level(logging.INFO, logger="shopman.operational")
+        response = client.post(reverse("api-backstage-order-notes", args=["OTHER"]), {"expected_actor_id": 123, "notes": "SECRET"}, content_type="application/json")
+        assert response.status_code == 403
+        finished = records(caplog, "operator.request.finished")
+>       assert len(finished) == 1 and not hasattr(finished[0], "actor_id")
+E       assert (0 == 1)
+E        +  where 0 = len([])
+
+shopman/backstage/tests/test_orders_observability.py:90: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-11 02:23:26,045 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-11 02:23:26,358 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-11 02:23:27,380 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-11 02:23:31,593 shopman.operational operator.request.started
+INFO 2026-09-11 02:23:31,594 shopman.operational operator.request.finished
+WARNING 2026-09-11 02:23:31,594 django.request Forbidden: /api/v1/backstage/orders/OTHER/notes/
+________ test_commit_replay_and_receipt_correlate_without_private_input ________
+
+client = <django.test.client.Client object at 0x10ef706e0>
+actor = <User: trace-operator>
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10f080740>
+
+    @pytest.mark.django_db(transaction=True)
+    def test_commit_replay_and_receipt_correlate_without_private_input(client, actor, caplog):
+        caplog.set_level(logging.INFO, logger="shopman.operational")
+        order = Order.objects.create(ref="OBS-ORDER", channel_ref="web", status="accepted", data={"payment": {"method": "cash"}})
+        client.force_login(actor)
+        body = context_payload(client, order.ref, "notes", notes="SECRET CUSTOMER NOTE")
+        body["idempotency_key"] = "SECRET INTENTION TOKEN"
+        body["manager_approval"] = {"pin": "SECRET MANAGER PIN"}
+        url = reverse("api-backstage-order-notes", args=[order.ref])
+        caplog.clear()
+        first = client.post(url, body, content_type="application/json")
+        second = client.post(url, body, content_type="application/json")
+        receipt = client.get(url, {"idempotency_key": body["idempotency_key"]})
+        assert first.status_code == second.status_code == receipt.status_code == 200
+        assert len({response["X-Request-ID"] for response in (first, second, receipt)}) == 3
+        committed = records(caplog, "operator.command.local_result")
+>       assert len(committed) == 1 and committed[0].outcome == "applied"
+E       assert (0 == 1)
+E        +  where 0 = len([])
+
+shopman/backstage/tests/test_orders_observability.py:47: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-11 02:23:35,524 shopman.operational operator.request.started
+DEBUG 2026-09-11 02:23:35,533 shopman.backstage.projections.order_queue orders.cancellation_presets_read_failed
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/projections/order_queue.py", line 741, in _cancellation_presets
+    presets = Shop.load().cancellation_presets or []
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'cancellation_presets'
+DEBUG 2026-09-11 02:23:35,535 shopman.backstage.projections.order_queue orders.kitchen_note_tags_read_failed
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/projections/order_queue.py", line 758, in _kitchen_note_tags
+    tags = Shop.load().kitchen_note_tags or []
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'kitchen_note_tags'
+INFO 2026-09-11 02:23:35,536 shopman.operational operator.request.finished
+INFO 2026-09-11 02:23:35,538 shopman.operational operator.request.started
+INFO 2026-09-11 02:23:35,546 shopman.operational operator.command.local_result
+DEBUG 2026-09-11 02:23:35,549 shopman.backstage.projections.order_queue orders.cancellation_presets_read_failed
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/projections/order_queue.py", line 741, in _cancellation_presets
+    presets = Shop.load().cancellation_presets or []
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'cancellation_presets'
+DEBUG 2026-09-11 02:23:35,550 shopman.backstage.projections.order_queue orders.kitchen_note_tags_read_failed
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/projections/order_queue.py", line 758, in _kitchen_note_tags
+    tags = Shop.load().kitchen_note_tags or []
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'kitchen_note_tags'
+INFO 2026-09-11 02:23:35,550 shopman.operational operator.request.finished
+INFO 2026-09-11 02:23:35,552 shopman.operational operator.request.started
+INFO 2026-09-11 02:23:35,554 shopman.operational operator.command.receipt
+DEBUG 2026-09-11 02:23:35,557 shopman.backstage.projections.order_queue orders.cancellation_presets_read_failed
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/projections/order_queue.py", line 741, in _cancellation_presets
+    presets = Shop.load().cancellation_presets or []
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'cancellation_presets'
+DEBUG 2026-09-11 02:23:35,558 shopman.backstage.projections.order_queue orders.kitchen_note_tags_read_failed
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/projections/order_queue.py", line 758, in _kitchen_note_tags
+    tags = Shop.load().kitchen_note_tags or []
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'kitchen_note_tags'
+INFO 2026-09-11 02:23:35,559 shopman.operational operator.request.finished
+INFO 2026-09-11 02:23:35,560 shopman.operational operator.request.started
+INFO 2026-09-11 02:23:35,562 shopman.operational operator.command.receipt
+INFO 2026-09-11 02:23:35,562 shopman.operational operator.request.finished
+_____________ test_response_outage_does_not_erase_commit_evidence ______________
+
+client = <django.test.client.Client object at 0x10ee99fa0>
+actor = <User: trace-operator>
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10ef72030>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ee7c4d0>
+
+    @pytest.mark.django_db(transaction=True)
+    def test_response_outage_does_not_erase_commit_evidence(client, actor, caplog, monkeypatch):
+        caplog.set_level(logging.INFO, logger="shopman.operational")
+        order = Order.objects.create(ref="OBS-LOST", channel_ref="web", status="accepted", data={"payment": {"method": "cash"}})
+        client.force_login(actor)
+        body = context_payload(client, order.ref, "notes", notes="Saved once")
+        url = reverse("api-backstage-order-notes", args=[order.ref])
+        caplog.clear()
+        def unavailable(*args, **kwargs):
+            raise RuntimeError("projection outage")
+        monkeypatch.setattr("shopman.backstage.api.operations.build_operator_order", unavailable)
+        with pytest.raises(RuntimeError, match="projection outage"):
+            client.post(url, body, content_type="application/json")
+        committed = records(caplog, "operator.command.local_result")
+        finished = records(caplog, "operator.request.finished")
+>       assert committed[0].outcome == "applied"
+               ^^^^^^^^^^^^
+E       IndexError: list index out of range
+
+shopman/backstage/tests/test_orders_observability.py:76: IndexError
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-11 02:23:35,988 shopman.operational operator.request.started
+DEBUG 2026-09-11 02:23:35,994 shopman.backstage.projections.order_queue orders.cancellation_presets_read_failed
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/projections/order_queue.py", line 741, in _cancellation_presets
+    presets = Shop.load().cancellation_presets or []
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'cancellation_presets'
+DEBUG 2026-09-11 02:23:35,995 shopman.backstage.projections.order_queue orders.kitchen_note_tags_read_failed
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/projections/order_queue.py", line 758, in _kitchen_note_tags
+    tags = Shop.load().kitchen_note_tags or []
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'kitchen_note_tags'
+INFO 2026-09-11 02:23:35,996 shopman.operational operator.request.finished
+INFO 2026-09-11 02:23:35,997 shopman.operational operator.request.started
+INFO 2026-09-11 02:23:36,008 shopman.operational operator.command.local_result
+INFO 2026-09-11 02:23:36,008 shopman.operational operator.request.finished
+WARNING 2026-09-11 02:23:36,013 shopman.operational operator_alert.created
+ERROR 2026-09-11 02:23:36,013 django.request Internal Server Error: /api/v1/backstage/orders/OBS-LOST/notes/
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/core/handlers/exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/core/handlers/base.py", line 198, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/views/generic/base.py", line 106, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/api/telemetry.py", line 117, in dispatch
+    response = super().dispatch(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/api/operations.py", line 2511, in post
+    return self._context_response(request, order, "notes", {"notes": notes}, lambda base: orders_service.save_kitchen_note(order, notes=notes, expected_revision=base, actor=_actor(request)))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/api/operations.py", line 1578, in _context_response
+    return Response({**result.response_body, "replayed": result.replayed, "order": projection_data(build_operator_order(order, user=request.user))}, status=result.response_code)
+                                                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-orders-execution-20260910/shopman/backstage/tests/test_orders_observability.py", line 70, in unavailable
+    raise RuntimeError("projection outage")
+RuntimeError: projection outage
+___________ test_concurrent_contexts_do_not_cross_people_or_requests ___________
+
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10f13fd70>
+
+    def test_concurrent_contexts_do_not_cross_people_or_requests(caplog):
+        caplog.set_level(logging.INFO, logger="shopman.operational")
+        barrier = Barrier(2)
+        def emit(actor):
+            with operational_context(request_id=f"request-{actor}", actor_id=actor):
+                barrier.wait(timeout=5)
+                operational_event("observation.test")
+            assert current_operational_context() == {}
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            list(pool.map(emit, (1, 2)))
+>       assert {(record.request_id, record.actor_id) for record in records(caplog, "observation.test")} == {("request-1", 1), ("request-2", 2)}
+E       AssertionError: assert set() == {('request-1'...equest-2', 2)}
+E         
+E         Extra items in the right set:
+E         ('request-2', 2)
+E         ('request-1', 1)
+E         Use -v to get more diff
+
+shopman/backstage/tests/test_orders_observability.py:115: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-11 02:23:41,696 shopman.operational observation.test
+INFO 2026-09-11 02:23:41,696 shopman.operational observation.test
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-11 02:23:41,703 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_orders_observability.py::test_permission_denial_never_attributes_an_authorized_actor_or_local_effect
+FAILED shopman/backstage/tests/test_orders_observability.py::test_commit_replay_and_receipt_correlate_without_private_input
+FAILED shopman/backstage/tests/test_orders_observability.py::test_response_outage_does_not_erase_commit_evidence
+FAILED shopman/backstage/tests/test_orders_observability.py::test_concurrent_contexts_do_not_cross_people_or_requests
+4 failed, 47 passed in 16.46s
