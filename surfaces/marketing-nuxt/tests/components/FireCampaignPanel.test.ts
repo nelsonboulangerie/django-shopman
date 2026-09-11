@@ -268,6 +268,40 @@ describe("FireCampaignPanel — conteúdo sob revisão", () => {
   });
 });
 
+describe("FireCampaignPanel — publicação pública", () => {
+  it("prepara um Story sem pedir ou contar destinatários diretos", async () => {
+    counted = fakeCount({ total: 0, empty_selection: true });
+    const wrapper = panel(makeRule({
+      platforms: ["instagram"],
+      audience_rules: {},
+    }));
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.text()).toContain("1 publicação pública");
+    expect(wrapper.text()).toContain("Não há seleção de contatos");
+    expect(wrapper.text()).not.toContain("Para quem");
+    expect(wrapper.text()).not.toContain("pessoas recebem");
+    expect(lastCountedRules).toBeNull();
+    const submit = wrapper.find('button[type="submit"]');
+    expect(submit.text()).toContain("Preparar para revisão");
+    expect(submit.attributes("disabled")).toBeUndefined();
+
+    await wrapper.find("form").trigger("submit");
+    expect(wrapper.emitted("submit")?.[0]).toEqual([
+      { audience: {}, sku: "", productLabel: "" },
+    ]);
+  });
+
+  it("mantém audiência zero bloqueada quando há também WhatsApp", async () => {
+    counted = fakeCount({ total: 0 });
+    const wrapper = panel(makeRule({ platforms: ["instagram", "whatsapp"] }));
+    await settleCount(wrapper);
+
+    expect(wrapper.text()).toContain("Ninguém se encaixa neste público hoje");
+    expect(wrapper.find('button[type="submit"]').attributes("disabled")).toBeDefined();
+  });
+});
+
 
 // ── O número, antes de enviar ────────────────────────────────────────
 //
