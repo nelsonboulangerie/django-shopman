@@ -2490,3 +2490,9 @@ pré-CAS ou dependentes do relógio; os cinco foram corrigidos e passaram focado
 
 O preflight local está concluído. Canário externo, push, PR, merge, imagem, deploy,
 staging, produção, credencial, destinatário e envio continuam sem execução.
+
+Em 2026-09-10, o proprietário autorizou o canário Alpha contextual de API + Marketing,
+sem destinatário ou provider. Escopo, janela, failsafes e rollback estão registrados em
+[`marketing-MKT-051-canary-gate-20260910-codex.md`](marketing-MKT-051-canary-gate-20260910-codex.md).
+Push/PR podem começar imediatamente; o deploy continua condicionado a CI verde, ausência
+de concorrência e backup gerenciado fresco posterior a 21h13 BRT.
