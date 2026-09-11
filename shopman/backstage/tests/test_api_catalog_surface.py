@@ -735,10 +735,21 @@ def test_social_write_requires_manage_catalog(client, plain_staff, catalog):
     assert resp.status_code == 403
 
 
+def _post_social_intention(client, url, *, data, **kwargs):
+    from uuid import uuid4
+
+    observed = client.get(url, {"sku": data["sku"]})
+    if observed.status_code != 200:
+        return observed
+    patch = {key: value for key, value in data.items() if key != "sku"}
+    return client.post(url, {**observed.json()["action"]["payload_schema"], "sku": data["sku"], "patch": {"social": patch}},
+        HTTP_IDEMPOTENCY_KEY=str(uuid4()), **kwargs)
+
+
 def test_social_write_persists_and_validates(client, operator, catalog):
     client.force_login(operator)
     # grava marca + categoria
-    resp = client.post(
+    resp = _post_social_intention(client,
         SOCIAL_URL,
         data={"sku": "PAO", "brand": "Nelson", "google_product_category": "Food"},
         content_type="application/json",
@@ -750,7 +761,7 @@ def test_social_write_persists_and_validates(client, operator, catalog):
     assert catalog["pao"].metadata["social"]["brand"] == "Nelson"
 
     # merge parcial: enviar só hashtags mantém a marca
-    resp = client.post(
+    resp = _post_social_intention(client,
         SOCIAL_URL,
         data={"sku": "PAO", "hashtags": ["pão", "artesanal"]},
         content_type="application/json",
@@ -760,7 +771,7 @@ def test_social_write_persists_and_validates(client, operator, catalog):
     assert resp.json()["social"]["hashtags"] == ["pão", "artesanal"]
 
     # GTIN inválido → 400 com mensagem
-    resp = client.post(
+    resp = _post_social_intention(client,
         SOCIAL_URL,
         data={"sku": "PAO", "gtin": "123"},
         content_type="application/json",
@@ -771,7 +782,7 @@ def test_social_write_persists_and_validates(client, operator, catalog):
 
 def test_social_read_roundtrips(client, operator, catalog):
     client.force_login(operator)
-    client.post(
+    _post_social_intention(client,
         SOCIAL_URL,
         data={"sku": "BOLO", "brand": "Nelson", "condition": "new"},
         content_type="application/json",

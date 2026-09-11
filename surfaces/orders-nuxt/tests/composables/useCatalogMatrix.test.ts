@@ -143,19 +143,22 @@ describe("useCatalogMatrix — sync + PIM (Arc H)", () => {
     await first;
   });
 
-  it("saveSocial posta {sku, ...patch} e tosta sucesso", async () => {
+  it("saveSocial usa a leitura e o writer parcial do produto", async () => {
+    env.fetchMock.mockResolvedValueOnce({ product: { sku: "PAO" }, action: { ...cellAction, method: "PATCH" } });
     const m = useCatalogMatrix();
+    await m.fetchProductDetail("PAO");
     expect(await m.saveSocial("PAO", { brand: "Nelson", hashtags: ["pao"] })).toBe(true);
-    const [url, opts] = env.fetchMock.mock.calls[0]!;
-    expect(String(url)).toBe("/api/v1/backstage/catalog/social/");
-    expect(opts.body).toEqual({ sku: "PAO", brand: "Nelson", hashtags: ["pao"] });
+    expect(String(env.fetchMock.mock.calls[1]![0])).toBe("/api/v1/backstage/catalog/product/PAO/");
+    expect(env.fetchMock.mock.calls[1]![1].body.patch).toEqual({ social: { brand: "Nelson", hashtags: ["pao"] } });
     expect(env.refresh).toHaveBeenCalledTimes(1);
     expect(m.socialKey("PAO")).toBe("social@PAO");
   });
 
   it("saveSocial em erro de validação acende errorMsg + false", async () => {
-    env.fetchMock.mockRejectedValueOnce({ data: { detail: "GTIN inválido" } });
+    env.fetchMock.mockResolvedValueOnce({ product: { sku: "PAO" }, action: { ...cellAction, method: "PATCH" } });
     const m = useCatalogMatrix();
+    await m.fetchProductDetail("PAO");
+    env.fetchMock.mockRejectedValueOnce({ status: 400, data: { detail: "GTIN inválido" } });
     expect(await m.saveSocial("PAO", { gtin: "123" })).toBe(false);
     expect(m.errorMsg.value).toBe("GTIN inválido");
     expect(env.sonner.error).toHaveBeenCalledWith("GTIN inválido");

@@ -1,0 +1,28 @@
+...F                                                                     [100%]
+=================================== FAILURES ===================================
+________ test_social_only_edit_preserves_legacy_label_validation_scope _________
+
+client = <django.test.client.Client object at 0x13de4e000>
+operator = <User: catalog-api>
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Pão>}
+
+    def test_social_only_edit_preserves_legacy_label_validation_scope(client, operator, catalog):
+        from shopman.offerman.models import Product
+
+        Product.objects.filter(pk=catalog["pao"].pk).update(nutrition_facts={"serving_size_g": 0, "proteins_g": 4})
+        client.force_login(operator)
+        read = client.get(URL, {"sku": "PAO"}).json()
+        response = client.post(URL, {**read["action"]["payload_schema"], "sku": "PAO", "patch": {"social": {"brand": "Catalog brand"}}},
+            content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
+>       assert response.status_code == 200
+E       assert 400 == 200
+E        +  where 400 = <Response status_code=400, "application/json">.status_code
+
+shopman/backstage/tests/test_catalog_social_intentions.py:87: AssertionError
+----------------------------- Captured stderr call -----------------------------
+WARNING 2026-09-11 00:36:07,077 django.request Bad Request: /api/v1/backstage/catalog/social/
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-11 00:36:07,418 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_catalog_social_intentions.py::test_social_only_edit_preserves_legacy_label_validation_scope
+1 failed, 3 passed in 9.63s

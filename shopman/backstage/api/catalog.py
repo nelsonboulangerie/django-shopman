@@ -415,64 +415,33 @@ class CatalogSyncStatusView(_CatalogBase):
         return Response({"sync_status": sync_status_map(skus, channel_ref=channel_ref)})
 
 
-class CatalogSocialView(_CatalogBase):
-    """Lê/salva os atributos PIM sociais (Product.metadata['social']) de um SKU.
+class CatalogSocialView(CatalogProductDetailView):
+    """Social subset of the same product writer; old unversioned bodies cannot write."""
 
-    O painel PIM da matriz edita marca/GTIN/categoria/hashtags e salva aqui. A
-    escrita valida via ``ProductSocialAttributes.errors()`` e persiste com
-    ``set_social_attributes`` (só chaves não-default) — sem migração (padrão
-    fiscal/nutrition). Salvar re-projeta via o gatilho de ``Product.save``.
-    """
+    http_method_names = ["get", "post", "head", "options"]
+
+    @staticmethod
+    def _social_response(response):
+        data = response.data
+        if "product" in data:
+            product = data.pop("product")
+            data.update(sku=product["sku"], social=product["social"])
+            action = data["action"]
+            action.update(ref="edit-social", method="POST")
+            action["payload_schema"]["ref"] = product["sku"]
+        return response
 
     def get(self, request):
-        from shopman.offerman import get_social_attributes
-        from shopman.offerman.models import Product
-
-        sku = (request.query_params.get("sku") or "").strip()
-        if not sku:
+        sku = request.query_params.get("sku") or request.query_params.get("ref")
+        if not isinstance(sku, str) or not sku:
             return Response({"detail": "sku é obrigatório."}, status=400)
-        product = Product.objects.filter(sku=sku).first()
-        if product is None:
-            return Response({"detail": "Produto não encontrado."}, status=404)
-        return Response({"sku": sku, "social": _social_payload(get_social_attributes(product))})
+        return self._social_response(super().get(request, sku))
 
     def post(self, request):
-        from shopman.offerman import (
-            ProductSocialAttributes,
-            get_social_attributes,
-            set_social_attributes,
-        )
-        from shopman.offerman.models import Product
-
-        sku = (request.data.get("sku") or "").strip()
-        if not sku:
-            return Response({"detail": "sku é obrigatório."}, status=400)
-        product = Product.objects.filter(sku=sku).first()
-        if product is None:
-            return Response({"detail": "Produto não encontrado."}, status=404)
-
-        current = get_social_attributes(product)
-        data = request.data
-        # Merge parcial: campo ausente no corpo mantém o valor atual.
-        attrs = ProductSocialAttributes(
-            brand=_field(data, "brand", current.brand),
-            gtin=_field(data, "gtin", current.gtin),
-            mpn=_field(data, "mpn", current.mpn),
-            condition=_field(data, "condition", current.condition),
-            google_product_category=_field(
-                data, "google_product_category", current.google_product_category
-            ),
-            tiktok_category_id=_field(data, "tiktok_category_id", current.tiktok_category_id),
-            hashtags=data["hashtags"] if "hashtags" in data else list(current.hashtags),
-            social_caption=_field(data, "social_caption", current.social_caption),
-        )
-        problems = attrs.errors()
-        if problems:
-            return Response({"detail": problems[0], "errors": problems}, status=400)
-
-        product.metadata = set_social_attributes(product.metadata, attrs)
-        product.save(update_fields=["metadata"])
-        return Response({"ok": True, "sku": sku, "social": _social_payload(attrs)})
+        sku, patch = request.data.get("sku"), request.data.get("patch")
+        if not isinstance(sku, str) or not sku or not isinstance(patch, dict) or set(patch) != {"social"}:
+            return Response({"detail": "Atualize os dados sociais: a edição exige intenção, revisão e campos explícitos."}, status=400)
+        return self._social_response(super().patch(request, sku))
 
 
 class CatalogResyncView(_CatalogBase):
@@ -536,24 +505,4 @@ class CatalogResyncView(_CatalogBase):
         except RemoteMutationInProgress:
             return Response({"outcome": "in_progress"}, status=202)
 
-
-def _field(data, key: str, current: str) -> str:
-    """Valor textual do corpo (aparado) ou o atual quando a chave está ausente."""
-    if key not in data:
-        return current
-    return str(data.get(key) or "").strip()
-
-
-def _social_payload(attrs) -> dict:
-    return {
-        "brand": attrs.brand,
-        "gtin": attrs.gtin,
-        "mpn": attrs.mpn,
-        "condition": attrs.condition,
-        "google_product_category": attrs.google_product_category,
-        "tiktok_category_id": attrs.tiktok_category_id,
-        "hashtags": list(attrs.hashtags),
-        "social_caption": attrs.social_caption,
-        "has_data": attrs.has_data,
-    }
 

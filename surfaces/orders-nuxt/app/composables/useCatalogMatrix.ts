@@ -272,17 +272,9 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     clearError();
     busy.value = new Set(busy.value).add(key);
     try {
-      await $fetch("/api/v1/backstage/catalog/social/", {
-        method: "POST",
-        body: { sku, ...patch },
-      });
-      useSonner.success("Dados do produto salvos.");
-      await refreshAfterCommit();
-      return true;
-    } catch (error) {
-      errorMsg.value = httpErrorMessage(error, "Falha ao salvar. Confira os campos.");
-      useSonner.error(errorMsg.value);
-      return false;
+      // The action must come from the product the person actually read. Fetching
+      // a new base just before writing would hide a concurrent edit.
+      return await saveProductDetail(sku, { social: patch });
     } finally {
       const next = new Set(busy.value);
       next.delete(key);

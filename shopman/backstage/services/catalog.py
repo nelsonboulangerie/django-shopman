@@ -819,9 +819,9 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_rev
     if "fiscal" in data:
         _apply_fiscal(product, data.get("fiscal"))
 
-    # Global availability already had strict flag parsing and save's fiscal gate.
-    # Do not turn a pause into a mandatory review of untouched legacy label data.
-    if not set(data).issubset({"is_published", "is_sellable"}):
+    # Availability and social-only edits already had their own strict validators
+    # plus save's fiscal gate. Do not require review of untouched legacy labels.
+    if not (set(data).issubset({"is_published", "is_sellable"}) or set(data) == {"social"}):
         try:
             product.full_clean()
         except ValidationError as exc:

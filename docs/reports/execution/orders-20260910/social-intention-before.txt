@@ -1,0 +1,62 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+________________ test_old_social_payload_cannot_bypass_revision ________________
+
+client = <django.test.client.Client object at 0x10ab43b00>
+operator = <User: catalog-api>
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Pão>}
+
+    def test_old_social_payload_cannot_bypass_revision(client, operator, catalog):
+        client.force_login(operator)
+        before = dict(catalog["pao"].metadata)
+        response = client.post(URL, {"sku": "PAO", "brand": "Stale social writer"}, content_type="application/json")
+        catalog["pao"].refresh_from_db()
+>       assert catalog["pao"].metadata == before
+E       AssertionError: assert {'social': {'...cial writer'}} == {}
+E
+E         Left contains 1 more item:
+E         {'social': {'brand': 'Stale social writer'}}
+E         Use -v to get more diff
+
+shopman/backstage/tests/test_catalog_social_intentions.py:31: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-11 00:32:49,996 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-11 00:32:50,202 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-11 00:32:51,280 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+_____ test_social_replay_uses_product_receipt_and_cannot_restore_old_brand _____
+
+client = <django.test.client.Client object at 0x10b216b40>
+operator = <User: catalog-api>
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Pão>}
+
+    def test_social_replay_uses_product_receipt_and_cannot_restore_old_brand(client, operator, catalog):
+        client.force_login(operator)
+        before = client.get(URL, {"sku": "PAO"}).json()
+>       body = {**before["action"]["payload_schema"], "sku": "PAO", "patch": {"social": {"brand": "First"}}}
+                  ^^^^^^^^^^^^^^^^
+E       KeyError: 'action'
+
+shopman/backstage/tests/test_catalog_social_intentions.py:38: KeyError
+___________ test_social_and_detail_writers_merge_independent_fields ____________
+
+operator = <User: catalog-api>
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Pão>}
+
+    def test_social_and_detail_writers_merge_independent_fields(operator, catalog):
+        if connection.vendor != "postgresql":
+            pytest.skip("Requires PostgreSQL locks and independent connections")
+        clients = [Client(), Client()]
+        for client in clients:
+            client.force_login(operator)
+>       seen = clients[0].get(URL, {"sku": "PAO"}).json()["action"]["payload_schema"]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'action'
+
+shopman/backstage/tests/test_catalog_social_intentions.py:58: KeyError
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-11 00:32:56,711 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_catalog_social_intentions.py::test_old_social_payload_cannot_bypass_revision
+FAILED shopman/backstage/tests/test_catalog_social_intentions.py::test_social_replay_uses_product_receipt_and_cannot_restore_old_brand
+FAILED shopman/backstage/tests/test_catalog_social_intentions.py::test_social_and_detail_writers_merge_independent_fields
+3 failed in 7.09s
