@@ -800,3 +800,13 @@ A revalidação encontrou o detalhe removendo todo o conteúdo quando `error` fi
 Detalhe e feeds reutilizam `operator-kit.coalesceRefresh` (uma ativa, uma posterior), com dedupe de transporte e recuperação da identificação. SSE do pedido refaz leitura ao reconectar; feeds têm poll de 30 s e atualização ao acordar/reconectar. Não se confunde SSE conectado com leitura recente. Um recibo já aplicado permanece sucesso mesmo se apenas a leitura posterior falhar; a mensagem distingue os dois fatos e não sugere repetir o comando.
 
 **Testes:** 252 Orders passaram, incluindo 503 com leitura preservada/zero POST, dez disparos reduzidos a duas leituras, textarea preservado no componente e sucesso confirmado com GET posterior falhando. Typecheck passou. **Limites:** poll de 30 s é configuração, não medição de p95; ainda são necessários ensaios integrados atuais. Sem DDL/migração; rollback reverte composables/templates e não altera recibos. G05/G08 continuam pendentes para pós-reload.
+
+### Revalidação integrada em `92d97d01d`
+
+Nuxt/Nitro reconstruído para Django local 8014; Daphne reiniciado após conferir PID **e cwd** do próprio laboratório. Seed novo cria apenas pedidos/coleção/display/turno sintéticos no PostgreSQL próprio; sem worker de comunicação/fiscal/courier. **9 testes Chromium passaram em 43,3 s, sem retries**, via HTTP real + Redis/SSE. As seis jornadas anteriores continuam verdes e foram acrescentadas:
+
+1. Acerto COD com resposta descartada **depois** do commit: 1 POST/1 GET de recibo, turno mostrado, diálogo fecha apenas após confirmação do resultado; nenhuma segunda submissão.
+2. Coleções do display com resposta perdida: 1 POST/1 GET com a mesma ref, seleção canônica exata e editor fecha após recibo.
+3. GET 503 com nota dirty: textarea visível/conteúdo preservado, explicação persistente, tentativa de salvar faz **zero POST** enquanto stale.
+
+Screenshot de nota inspecionado visualmente: ref/valor/quantidade fracionária/nota/histórico aparecem no recurso correto, sem corte do editor. Ainda não constitui ensaio com leitor de tela ou hardware do operador. O tempo total inclui inicialização (a primeira jornada levou 21,4 s); não é p95 de interação nem comprova budget em campo. Livros reais, provedores e rollout não foram exercitados. Seed/testes/log reproduzíveis estão em `orders-20260910/integration/` e no teste Playwright versionado.

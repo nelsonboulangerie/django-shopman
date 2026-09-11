@@ -36,3 +36,29 @@ for suffix in ('advance', 'notes', 'price', 'product', 'cancel'):
     tester.set_password('synthetic-lab-only-20260910')
     tester.save()
     tester.user_permissions.set(user.user_permissions.all())
+
+# New synthetic journeys: custody receipt and display selection. No worker/adapters.
+from shopman.cashman import services as cash
+from shopman.cashman.models import Terminal
+from shopman.offerman.models import Collection
+
+active = list(Terminal.objects.filter(is_active=True))
+assert len(active) <= 1, 'Synthetic browser cohort requires one unambiguous drawer.'
+terminal = active[0] if active else Terminal.objects.create(ref='orders-browser-lab', label='Caixa do laboratório')
+shift = cash.open_shift_for_terminal(terminal)
+if shift is None:
+    shift = cash.open_shift(operator=user, terminal=terminal)
+cash_ref = f'LAB-CASH-{run}'
+Order.objects.create(ref=cash_ref, status='dispatched', total_q=1500, channel_ref='lab',
+    data={'customer': {'name': 'Acerto sintético'}, 'fulfillment_type': 'delivery', 'payment': {'method': 'cash', 'collection': 'on_delivery'}})
+collection, _ = Collection.objects.get_or_create(ref='orders-browser-bread', defaults={'name': 'Coleção do laboratório'})
+feed_ref = f'lab-tv-{run}'
+Channel.objects.create(ref=feed_ref, name=f'Tela sintética {run}', commerce_policy=Channel.CommercePolicy.DISPLAY,
+    config={'display': {'format': '', 'collections': [], 'prices_from': 'lab', 'rotate_seconds': 0, 'items_per_page': 0}})
+refs.update(cash_ref=cash_ref, cash_shift_id=shift.pk, feed_ref=feed_ref, feed_name=f'Tela sintética {run}', collection_ref=collection.ref, collection_name=collection.name)
+Path('.orders-lab/manifest.json').write_text(json.dumps(refs))
+for suffix in ('cash', 'feed', 'read'):
+    tester, _ = User.objects.get_or_create(username=f'orders-lab-{suffix}', defaults={'is_staff': True, 'first_name': f'Laboratório {suffix}'})
+    tester.set_password('synthetic-lab-only-20260910')
+    tester.save()
+    tester.user_permissions.set(user.user_permissions.all())

@@ -151,3 +151,76 @@ test("cancel response loss retains the reason and reads the committed receipt", 
   expect(posts).toBe(1);
   expect(lookups).toBe(1);
 });
+
+
+test("cash settlement response loss resolves one receipt in the observed drawer", async ({ page }) => {
+  await login(page, "orders-lab-cash");
+  let posts = 0;
+  let lookups = 0;
+  await page.route(`**/api/v1/backstage/orders/${lab.cash_ref}/settle-delivery-cash/**`, async route => {
+    if (route.request().method() === "POST") {
+      posts += 1;
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.abort("failed");
+    } else { lookups += 1; await route.continue(); }
+  });
+  await page.goto(`/${lab.cash_ref}`);
+  await page.getByRole("button", { name: "Acerto dinheiro", exact: true }).click();
+  await expect(page.getByText(new RegExp(`turno ${lab.cash_shift_id}`))).toBeVisible();
+  await page.getByRole("textbox", { name: "Valor recebido", exact: true }).fill("15,00");
+  await page.getByRole("button", { name: "Confirmar", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Acerto dinheiro", exact: true })).toHaveCount(0);
+  expect(posts).toBe(1);
+  expect(lookups).toBe(1);
+});
+
+
+test("feed selection survives response loss and consults the same scoped receipt", async ({ page }) => {
+  await login(page, "orders-lab-feed");
+  let posts = 0;
+  let lookups = 0;
+  await page.route("**/api/v1/backstage/feeds/collections/**", async route => {
+    if (route.request().method() === "POST") {
+      posts += 1;
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.abort("failed");
+    } else {
+      lookups += 1;
+      expect(new URL(route.request().url()).searchParams.get("ref")).toBe(lab.feed_ref);
+      await route.continue();
+    }
+  });
+  await page.goto("/feeds");
+  const feed = page.locator("article").filter({ hasText: lab.feed_name });
+  await feed.getByRole("button", { name: "Coleções", exact: true }).click();
+  await page.getByLabel(new RegExp(lab.collection_name)).check();
+  await page.getByRole("button", { name: "Aplicar", exact: true }).click();
+  await expect(page.getByText("Coleções exibidas", { exact: true })).toHaveCount(0);
+  await expect(feed.getByText(lab.collection_name, { exact: true })).toBeVisible();
+  expect(posts).toBe(1);
+  expect(lookups).toBe(1);
+  const state = await (await page.request.get("/api/v1/backstage/feeds/")).json();
+  expect(state.board.feeds.find((item: { ref: string }) => item.ref === lab.feed_ref).collections.map((item: { ref: string }) => item.ref)).toEqual([lab.collection_ref]);
+});
+
+
+test("failed refresh leaves the live draft visible and prevents a stale mutation", async ({ page }) => {
+  await login(page, "orders-lab-read");
+  await page.goto(`/${lab.notes_ref}`);
+  const editor = page.locator("#order-notes");
+  await editor.fill("Rascunho durante indisponibilidade");
+  let posts = 0;
+  await page.route(`**/api/v1/backstage/orders/${lab.notes_ref}/**`, async route => {
+    if (route.request().method() === "POST") { posts += 1; await route.continue(); }
+    else await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Synthetic read outage" }) });
+  });
+  await page.getByRole("button", { name: "Atualizar", exact: true }).click();
+  await expect(page.locator("[data-order-error]")).toContainText("Mantivemos a última leitura");
+  await expect(editor).toHaveValue("Rascunho durante indisponibilidade");
+  await page.getByRole("button", { name: "Salvar nota", exact: true }).click();
+  await expect(page.getByText("A leitura está desatualizada. Atualize o pedido antes de confirmar; seu rascunho foi mantido.", { exact: true })).toBeVisible();
+  expect(posts).toBe(0);
+});
