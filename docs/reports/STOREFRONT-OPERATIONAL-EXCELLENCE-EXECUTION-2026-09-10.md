@@ -29,7 +29,7 @@ O histórico completo e auditável está em `origin/main..HEAD`; o fechamento t�
 | W07 | Metadata concorrente preservada; POST confirmado sobrevive falha de refresh; tracking existente mantido | Fluxos SSE/poll passaram; leitor de tela exige avaliação assistiva |
 | W08 | Directive/recibo recupera só conveniência faltante; falhas após escrita revertem; resposta perdida não duplica | Providers externos e todas as etapas downstream exigem reconciliação/ambiente específico |
 | W09 | Superfícies existentes preservadas; storage bloqueado, duas abas, teclado, viewport estreito, zoom 200% e inspeção manual da árvore de acessibilidade passaram; exploração assistida em iPhone permitiu alguma navegação com VoiceOver | J01–J16 estruturadas, TalkBack e Maps/WhatsApp reais permanecem pendentes; a exploração não mediu conclusão nem compreensão |
-| W10 | Runtime PostgreSQL+Redis, browser real, build, migração mista, volume sintético, runbook e decisões D01–D06 concluídos | Jobs reais em voo, recuo operacional e medição humana impedem G2 |
+| W10 | Runtime PostgreSQL+Redis, browser real, build, migração mista, recuo de código com tentativa em voo, volume sintético, runbook e decisões D01–D06 concluídos | Jobs e recuo no ambiente real dependem de autorização; medição humana ainda impede G2 |
 
 ## Achados, hipóteses e decisões
 
@@ -95,7 +95,7 @@ A recuperação de conveniência usa estados/tentativas/erro dos Directive exist
 4. Executar auditoria de subscriptions em banco sintético antes de discutir constraint. Não apagar duplicatas nem claims incertos. O teste reverso de schema é apenas fixture isolada, **não receita de downgrade operacional**.
 5. Em recuo autorizado: conter novas entradas pelos controles existentes, manter leitura/recuperação e correções de integridade; pausar novos jobs afetados nos controles existentes; conferir cada Directive/Order em voo. Não apagar recibos, restaurar snapshot sobre transações novas, ressuscitar draft ou reativar opt-out. Não executar estorno/reemissão como rollback técnico.
 6. Provider com resultado desconhecido: consultar mecanismo canônico/recibo, reconciliar com responsável antes de nova tentativa. Não marcar entregue por timeout nem transferir ao cliente a redigitação do pedido.
-7. Versões de modelo mistas, 1.000 recibos, locks e migração aditiva passaram em PostgreSQL. Jobs reais em voo, volume produtivo e recuo operacional dependem de ambiente autorizado; G2 permanece fechado. Migração/desmigração em produção não autorizada.
+7. Versões de modelo mistas, 1.000 recibos, locks e migração aditiva passaram em PostgreSQL. O ensaio adicional criou uma tentativa vinculada em andamento com o modelo novo e a concluiu pelo modelo histórico após recuo de código; status, resposta e fingerprint sobreviveram em SQLite e PostgreSQL. Jobs reais em voo, volume produtivo e recuo operacional dependem de ambiente autorizado; G2 permanece fechado. Migração/desmigração em produção não autorizada.
 
 ## Reproduzir e fechar pendências
 
@@ -110,7 +110,7 @@ No diretório `surfaces/storefront-nuxt`, executar sequencialmente `npm test -- 
 
 Os bloqueios ambientais iniciais permanecem anexados como histórico e não contam como prova. A continuação usou serviços locais descartáveis autorizados e resolveu os skips relevantes no gate PostgreSQL+Redis.
 
-Para fechar G2: completar acessibilidade assistiva e medições emparelhadas J01–J16, conferir política/configuração no ambiente autorizado e ensaiar recuo com jobs em voo. D01–D06, responsabilidades e limiares estão aprovados. Piloto humano, rollout e qualquer ação externa permanecem sujeitos a autorização explícita.
+Para fechar G2: completar acessibilidade assistiva e medições emparelhadas J01–J16 e conferir política/configuração no ambiente autorizado. O recuo de código com tentativa sintética em voo passou; D01–D06, responsabilidades e limiares estão aprovados. Piloto humano, rollout e qualquer ação externa permanecem sujeitos a autorização explícita.
 
 ## Resultados executados
 
@@ -130,6 +130,7 @@ Os totais abaixo são execuções distintas, com sobreposição; não somar como
 | Typecheck / lint / build / schema | Exit 0; lint com 5 warnings existentes de ordem de atributos em WhatsappVerifyPanel; schema sem drift | [typecheck](storefront-operational-20260910/typecheck.txt), [lint](storefront-operational-20260910/lint.txt), [build](storefront-operational-20260910/build.txt), [schema](storefront-operational-20260910/schema.txt) |
 | PostgreSQL 16 + Redis 7, gate de runtime | 334 passed, 0 skipped; 4 warnings | [log](storefront-operational-20260910/continuation-postgres-redis-runtime.txt) |
 | Migração mista PostgreSQL, 1.000 recibos | 1 passed | [log](storefront-operational-20260910/continuation-postgres-migration.txt) |
+| Recuo de código com tentativa vinculada em voo | SQLite 1 passed; PostgreSQL 1 passed | [SQLite](storefront-operational-20260910/rollback-in-flight-sqlite-20260911.txt), [PostgreSQL](storefront-operational-20260910/rollback-in-flight-postgres-20260911.txt) |
 | Budget de mutação PostgreSQL | 24/24; p95 36,41 ms; máx. 456,54 ms | [log](storefront-operational-20260910/continuation-postgres-budget.txt) |
 | Browser mock-server | 4 passed | [log](storefront-operational-20260910/continuation-browser-mock-server.txt) |
 | Chromium real + Nuxt BFF + Django | 27 passed | [log](storefront-operational-20260910/continuation-browser-final.txt) |

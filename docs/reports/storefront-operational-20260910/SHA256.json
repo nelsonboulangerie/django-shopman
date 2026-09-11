@@ -44,6 +44,8 @@
   "offer-and-pg-skips.txt": "6bb2be4d8b3e21ad5cae31f1bde4378ccc5ab7540bd7dc83277f48765447875b",
   "postgres-blocked.txt": "3dda3345c902c6b43411b432a0162b02eb5fbc139fdb18f467bf48408c5b1452",
   "receipts-runtime-gate.txt": "4e899eefb35e196c30336b78c05eeb51a04500db49b0e778196dc79c727a160a",
+  "rollback-in-flight-postgres-20260911.txt": "9b3fc8f9df7bb50c394589a0795286a95d2911566524b92d7e277ad0137a38f0",
+  "rollback-in-flight-sqlite-20260911.txt": "4fd5b4cb546ae975f90d658f69cb37834064b640cf76b0efe59c8e69816ef06d",
   "ruff.txt": "aac3a0503d8b95052cc85fb9f1717dc82b74aa55853a5aa9749b41e30275d472",
   "schema.txt": "59503a2bf1246a33cbc5e35bc78fdc28f7e6a393271372fe95940288bf8d07cb",
   "synthetic-pilot-20260911.txt": "c77ed9b9059638a9ac83885a937ffe1946a74ae56cdb403c71532df42ef996a3",

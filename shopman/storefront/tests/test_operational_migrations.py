@@ -41,19 +41,24 @@ def test_additive_migrations_preserve_legacy_unknown_receipts_and_subscriptions(
         current = StockAlertSubscription.objects.get(pk=sub.pk)
         assert IdempotencyKey.objects.get(pk=mixed.pk).request_fingerprint == ""
         assert IdempotencyKey.objects.filter(scope="synthetic-volume", request_fingerprint="").count() == 1000
-        # Compatible code rollback keeps the expanded schema and protected data.
+        # A new worker may claim an intention immediately before a code rollback.
+        # The old worker must be able to finish that in-flight job without
+        # clearing the fingerprint that binds retries to the original request.
         bound = IdempotencyKey.objects.create(
             scope="new-worker",
             key="bound",
             request_fingerprint="a" * 64,
-            status="done",
-            response_body={"order_ref": "synthetic"},
+            status="in_progress",
         )
         legacy_view = LegacyReceipt.objects.get(pk=bound.pk)
+        legacy_view.status = "done"
         legacy_view.response_code = 201
-        legacy_view.save(update_fields=["response_code"])
+        legacy_view.response_body = {"order_ref": "synthetic"}
+        legacy_view.save(update_fields=["status", "response_code", "response_body"])
         bound.refresh_from_db()
         assert bound.request_fingerprint == "a" * 64
+        assert bound.status == "done"
+        assert bound.response_code == 201
         assert bound.response_body == {"order_ref": "synthetic"}
         assert receipt.request_fingerprint == ""
         assert receipt.response_body == {"ok": True}
