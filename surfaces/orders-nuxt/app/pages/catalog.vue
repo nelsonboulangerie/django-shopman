@@ -7,7 +7,7 @@
 import { cellPrice, cellSyncView, cellView, filterRows, rowStatus, surfaceDisplayIcon, syncBadge, syncErrorCount } from "~/presentation/catalog";
 import { catalogDimensions, filterByDimensions } from "~/presentation/catalogFilters";
 import { keepVisible, reconcile } from "../../../operator-kit/app/presentation/columnPicker";
-import type { Action, CatalogPricePreview } from "~/generated/ordersContract";
+import type { Action, CatalogPricePreview, CatalogPublicationPreview } from "~/generated/ordersContract";
 import type { HiddenColumns } from "../../../operator-kit/app/types/columns";
 import type { ActiveFilters } from "../../../operator-kit/app/types/filters";
 import type {
@@ -21,7 +21,7 @@ import type {
 
 const collectionRef = ref("");
 const {
-  matrix, pending, error, refresh, isBusy, cellKey, productKey, detailKey, setCell, setProduct, bulkSet, bulkPrice, previewBulkPrice,
+  matrix, pending, error, refresh, isBusy, cellKey, productKey, detailKey, setCell, setProduct, bulkSet, previewBulkSet, bulkPrice, previewBulkPrice,
   resync, fetchProductDetail, saveProductDetail, productConflict, acknowledgeProductConflict, errorMsg, reorderCollections, reorderItems, curationAction, verifyOrder, bulkBusy,
   aiAssist, aiAssistKey,
 } = useCatalogMatrix(collectionRef);
@@ -200,10 +200,32 @@ const bulkSurfaceIsFeed = computed(() => {
 });
 const channelSurfaces = computed(() => surfaces.value.filter((s) => s.transactional));
 const feedSurfaces = computed(() => surfaces.value.filter((s) => !s.transactional));
-async function bulk(patch: { is_sellable?: boolean; is_published?: boolean }) {
-  if (!bulkSurface.value || selected.value.size === 0) return;
-  const ok = await bulkSet(bulkSurface.value, { skus: [...selected.value] }, patch);
-  if (ok !== null) clearSelection();
+type PublicationDraft = { surface: string; skus: string[]; patch: { is_sellable?: boolean; is_published?: boolean }; preview: CatalogPublicationPreview };
+const publicationDraft = ref<PublicationDraft | null>(null);
+async function bulk(patch: PublicationDraft["patch"]) {
+  if (!bulkSurface.value || selected.value.size === 0 || publicationDraft.value) return;
+  const surface = bulkSurface.value, skus = [...selected.value];
+  const preview = await previewBulkSet(surface, { skus }, patch);
+  if (preview) publicationDraft.value = { surface, skus, patch, preview };
+}
+async function reviewPublication() {
+  const draft = publicationDraft.value;
+  if (!draft) return;
+  const preview = await previewBulkSet(draft.surface, { skus: draft.skus }, draft.patch);
+  if (preview && publicationDraft.value === draft) publicationDraft.value = { ...draft, preview };
+}
+async function confirmPublication() {
+  const draft = publicationDraft.value;
+  if (!draft) return;
+  const count = await bulkSet(draft.surface, { skus: draft.skus }, draft.patch, draft.preview);
+  if (count !== null && publicationDraft.value === draft) {
+    publicationDraft.value = null;
+    selected.value = new Set([...selected.value].filter(sku => !draft.skus.includes(sku)));
+  }
+}
+function publicationState(value: Record<string, boolean>) {
+  return [value.is_published === undefined ? "" : value.is_published ? "Exibido" : "Oculto",
+    value.is_sellable ? "Habilitado nesta célula" : "Pausado nesta célula"].filter(Boolean).join(" · ");
 }
 
 // ── reprecificação em lote (popover) ───────────────────────────────────────────
@@ -343,7 +365,7 @@ const detail = ref<ProductDetailProjection | null>(null);
 const detailLoading = ref(false);
 const detailTab = ref("geral");
 const detailDirty = ref(false);
-const hasUnsavedDraft = computed(() => !!orderDraft.value || detailDirty.value
+const hasUnsavedDraft = computed(() => !!orderDraft.value || !!publicationDraft.value || detailDirty.value
   || !!(editing.value && priceInput.value !== editing.value.original)
   || !!(priceOpen.value && priceInputBulk.value.trim()));
 function beforeUnload(event: BeforeUnloadEvent) {
@@ -474,6 +496,25 @@ useHead({ title: "Catálogo · Gestor" });
           <button type="button" class="min-h-12 rounded border px-3" @click="orderDraft = null">Descartar o rascunho de ordem</button>
         </div>
       </div>
+
+      <section v-if="publicationDraft" aria-label="Prévia de publicação" class="space-y-3 rounded border bg-card p-4">
+        <h2 class="font-semibold">Confira {{ publicationDraft.preview.cells.length }} células em {{ surfaceLabel(publicationDraft.surface) }}</h2>
+        <p class="text-sm text-muted-foreground">Esta prévia mostra o escopo da decisão. Após confirmar, acompanhe a sincronização das plataformas separadamente nas células.</p>
+        <ul class="max-h-64 space-y-1 overflow-auto text-sm">
+          <li v-for="cell in publicationDraft.preview.cells" :key="`${cell.sku}:${cell.surface_ref}:${cell.tier}`">
+            {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref) }}<span v-if="cell.tier"> · mínimo {{ cell.tier }}</span>:
+            {{ publicationState(cell.before) }} → {{ publicationState(cell.after) }}
+          </li>
+          <li v-for="cell in publicationDraft.preview.skipped" :key="`${cell.sku}:${cell.surface_ref}`">
+            {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref) }}: {{ cell.reason }} Nenhuma alteração.
+          </li>
+        </ul>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" :disabled="bulkBusy" class="min-h-action rounded bg-primary px-3 text-primary-foreground disabled:opacity-50" @click="confirmPublication">Confirmar este lote</button>
+          <button type="button" :disabled="bulkBusy" class="min-h-control rounded border px-3 disabled:opacity-50" @click="reviewPublication">Atualizar esta prévia</button>
+          <button type="button" :disabled="bulkBusy" class="min-h-control rounded border px-3 disabled:opacity-50" @click="publicationDraft = null">Descartar esta prévia</button>
+        </div>
+      </section>
 
       <!-- matrix -->
       <div v-if="loading" class="overflow-hidden rounded-xl border border-border bg-card">

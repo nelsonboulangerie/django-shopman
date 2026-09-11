@@ -20,6 +20,31 @@ export interface CatalogPricePreview {
   limit: number;
 }
 
+/** CatalogPublicationCell(sku: 'str', surface_ref: 'str', tier: 'str', before: 'dict[str, bool]', after: 'dict[str, bool]') */
+export interface CatalogPublicationCell {
+  sku: string;
+  surface_ref: string;
+  tier: string;
+  before: Record<string, boolean>;
+  after: Record<string, boolean>;
+}
+
+/** CatalogPublicationSkip(sku: 'str', surface_ref: 'str', reason: 'str') */
+export interface CatalogPublicationSkip {
+  sku: string;
+  surface_ref: string;
+  reason: string;
+}
+
+/** CatalogPublicationPreview(base_revision: 'str', expected_actor_id: 'int', cells: 'tuple[CatalogPublicationCell, ...]', skipped: 'tuple[CatalogPublicationSkip, ...]', limit: 'int') */
+export interface CatalogPublicationPreview {
+  base_revision: string;
+  expected_actor_id: number;
+  cells: CatalogPublicationCell[];
+  skipped: CatalogPublicationSkip[];
+  limit: number;
+}
+
 /** Canonical action offered by a Shopman projection to any surface. */
 export interface Action {
   ref: string;

@@ -95,6 +95,31 @@ class CatalogPricePreview:
     limit: int
 
 
+@dataclass(frozen=True)
+class CatalogPublicationCell:
+    sku: str
+    surface_ref: str
+    tier: str
+    before: dict[str, bool]
+    after: dict[str, bool]
+
+
+@dataclass(frozen=True)
+class CatalogPublicationSkip:
+    sku: str
+    surface_ref: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class CatalogPublicationPreview:
+    base_revision: str
+    expected_actor_id: int
+    cells: tuple[CatalogPublicationCell, ...]
+    skipped: tuple[CatalogPublicationSkip, ...]
+    limit: int
+
+
 def _money(value_q: int) -> str:
     return f"R$ {format_money(int(value_q))}"
 

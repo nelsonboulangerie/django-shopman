@@ -1078,28 +1078,20 @@ def reorder_collection_items(collection_ref: str, ordered_skus: list[str], *, ac
 MAX_BULK_PRICE_CELLS = 100
 
 
-def _price_snapshot(data: dict, *, actor_id: int, lock: bool = False) -> tuple[dict, list]:
+def _bulk_selection(data: dict, *, lock: bool, allow_display: bool = False):
     from shopman.offerman.models import Collection, Listing, ListingItem, Product
 
     from shopman.shop.models import Channel
-    from shopman.shop.services.remote_mutations import mutation_fingerprint
-
     surface = data.get("surface_ref")
-    op = data.get("op")
-    value = data.get("value")
     if not isinstance(surface, str) or not surface:
         raise CatalogError("surface_ref é obrigatório.")
-    if op not in _PRICE_OPS or not isinstance(value, int) or isinstance(value, bool):
-        raise CatalogError("Informe operação de preço e valor inteiro válidos.")
-    if op == "set" and value < 0:
-        raise CatalogError("Preço não pode ser negativo.")
     refs = _all_channel_refs() if surface == ALL_SURFACES else [surface]
     channels = Channel.objects.filter(ref__in=refs).order_by("pk")
     if lock:
         channels = channels.select_for_update()
     channels = list(channels)
-    if len(channels) != len(refs) or any(channel.commerce_policy != Channel.CommercePolicy.ORDER for channel in channels):
-        raise CatalogError("Preço pertence somente a canais de venda existentes.")
+    if len(channels) != len(refs) or any(channel.commerce_policy != Channel.CommercePolicy.ORDER for channel in channels) and not (allow_display and len(channels) == 1 and channels[0].commerce_policy == Channel.CommercePolicy.DISPLAY):
+        raise CatalogError("Selecione uma superfície existente compatível com a operação.")
     collection = None
     if data.get("collection_ref"):
         collections = Collection.objects.filter(ref=data["collection_ref"])
@@ -1112,6 +1104,10 @@ def _price_snapshot(data: dict, *, actor_id: int, lock: bool = False) -> tuple[d
         if not isinstance(skus, list) or not skus or any(not isinstance(sku, str) or not sku.strip() for sku in skus):
             raise CatalogError("Informe collection_ref ou uma lista skus.")
         skus = sorted(set(skus))
+    group_refs = [ref for channel in channels if channel.commerce_policy == Channel.CommercePolicy.DISPLAY
+        for ref in ((channel.config or {}).get("display") or {}).get("collections", [])]
+    groups = Collection.objects.filter(ref__in=group_refs).order_by("pk")
+    groups = list(groups.select_for_update() if lock else groups)
     products = Product.objects.filter(sku__in=skus).order_by("pk")
     listings = Listing.objects.filter(ref__in=refs).order_by("pk")
     if lock:
@@ -1123,6 +1119,18 @@ def _price_snapshot(data: dict, *, actor_id: int, lock: bool = False) -> tuple[d
     if lock:
         queryset = queryset.select_for_update()
     all_items = list(queryset)
+    return refs, channels, collection, skus, products, listings, all_items, groups
+
+
+def _price_snapshot(data: dict, *, actor_id: int, lock: bool = False) -> tuple[dict, list]:
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    op, value = data.get("op"), data.get("value")
+    if op not in _PRICE_OPS or not isinstance(value, int) or isinstance(value, bool):
+        raise CatalogError("Informe operação de preço e valor inteiro válidos.")
+    if op == "set" and value < 0:
+        raise CatalogError("Preço não pode ser negativo.")
+    refs, channels, collection, skus, products, listings, all_items, _groups = _bulk_selection(data, lock=lock)
     by_product = {product.pk: product for product in products}
     by_listing = {listing.pk: listing for listing in listings}
     seen = set()
@@ -1192,3 +1200,84 @@ def apply_bulk_price_intention(data: dict, *, actor_id: int) -> dict:
     for surface in surfaces:
         transaction.on_commit(lambda ref=surface: _notify_surface(ref))
     return {"ok": True, "outcome": "applied", "count": len(changed), "cells": preview["cells"], "sync_pending": pending}
+
+
+def _publication_snapshot(data: dict, *, actor_id: int, lock: bool = False) -> dict:
+    from shopman.backstage.projections.catalog import (
+        CatalogPublicationCell,
+        CatalogPublicationPreview,
+        CatalogPublicationSkip,
+    )
+    from shopman.shop.models import Channel
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    patch = {field: _as_flag(data[field], field) for field in ("is_published", "is_sellable") if field in data}
+    if not patch:
+        raise CatalogError("Informe is_published e/ou is_sellable.")
+    refs, channels, collection, skus, products, listings, items, groups = _bulk_selection(data, lock=lock, allow_display=True)
+    display = channels[0] if len(channels) == 1 and channels[0].commerce_policy == Channel.CommercePolicy.DISPLAY else None
+    cells, skipped = [], []
+    if display is not None:
+        if set(patch) != {"is_sellable"}:
+            raise CatalogError("Feed aceita apenas pausar/ativar (is_sellable).")
+        membership = {sku for group in groups for sku in group.product_queryset().filter(sku__in=skus).values_list("sku", flat=True)}
+        paused = ((display.config or {}).get("display") or {}).get("paused_skus") or []
+        for sku in skus:
+            if sku not in membership:
+                skipped.append({"sku": sku, "surface_ref": display.ref, "reason": "Produto fora do recorte do feed."})
+                continue
+            before = {"is_sellable": sku not in paused}
+            cells.append(CatalogPublicationCell(sku=sku, surface_ref=display.ref, tier="", before=before, after={**before, **patch}))
+    else:
+        by_product = {product.pk: product for product in products}
+        by_listing = {listing.pk: listing for listing in listings}
+        from shopman.shop.services.fiscal_catalog import validate_listing_item_publication
+
+        for item in items:
+            item.product, item.listing = by_product[item.product_id], by_listing[item.listing_id]
+            before = {field: getattr(item, field) for field in ("is_published", "is_sellable")}
+            after = {**before, **patch}
+            for field, value in patch.items():
+                setattr(item, field, value)
+            validate_listing_item_publication(item)
+            cells.append(CatalogPublicationCell(sku=item.product.sku, surface_ref=item.listing.ref,
+                tier=str(item.min_qty), before=before, after=after))
+        present = {(cell.sku, cell.surface_ref) for cell in cells}
+        skipped = [{"sku": sku, "surface_ref": ref, "reason": "Produto sem célula neste canal."}
+            for sku in skus for ref in refs if (sku, ref) not in present]
+    if not cells:
+        raise CatalogError("Nenhuma célula da seleção pertence ao destino.")
+    if len(cells) > MAX_BULK_PRICE_CELLS:
+        raise CatalogError(f"Selecione no máximo {MAX_BULK_PRICE_CELLS} células somando os canais e faixas.")
+    state = {"version": 1, "actor": actor_id, "operation": "catalog.publication", "patch": patch,
+        "skus": skus, "refs": refs, "cells": [asdict(cell) for cell in cells], "skipped": skipped,
+        "items": [(item.pk, item.price_q) for item in items],
+        "products": [(product.pk, product.base_price_q, product.is_published, product.is_sellable, product.metadata) for product in products],
+        "listings": [(listing.pk, listing.is_active) for listing in listings],
+        "channels": [(channel.pk, channel.is_active, channel.commerce_policy, channel.config) for channel in channels],
+        "collection": (collection.ref, collection.rule) if collection else None,
+        "groups": [(group.pk, group.rule) for group in groups]}
+    return asdict(CatalogPublicationPreview(base_revision=mutation_fingerprint(state), expected_actor_id=actor_id,
+        cells=tuple(cells), skipped=tuple(CatalogPublicationSkip(**cell) for cell in skipped), limit=MAX_BULK_PRICE_CELLS))
+
+
+def preview_bulk_publication(data: dict, *, actor_id: int) -> dict:
+    return _publication_snapshot(data, actor_id=actor_id)
+
+
+@transaction.atomic
+def apply_bulk_publication_intention(data: dict, *, actor_id: int) -> dict:
+    from shopman.backstage.services.exceptions import CatalogConflict
+
+    preview = _publication_snapshot(data, actor_id=actor_id, lock=True)
+    if data.get("expected_actor_id") != actor_id or data.get("base_revision") != preview["base_revision"]:
+        raise CatalogConflict("O catálogo ou a seleção mudou. Revise a prévia; nada foi alterado.")
+    patch = {field: _as_flag(data[field], field) for field in ("is_published", "is_sellable") if field in data}
+    # Frozen destinations from the validated snapshot; a newly created channel
+    # cannot silently join the operator's intention between validation and commit.
+    targets = sorted({cell["surface_ref"] for cell in preview["cells"]})
+    for ref in targets:
+        skus = sorted({cell["sku"] for cell in preview["cells"] if cell["surface_ref"] == ref})
+        bulk_set(skus, ref, **patch)
+    changed = sum(cell["before"] != cell["after"] for cell in preview["cells"])
+    return {"ok": True, "outcome": "applied", "count": changed, "cells": preview["cells"], "skipped": preview["skipped"]}

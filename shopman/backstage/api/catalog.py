@@ -244,59 +244,17 @@ class CatalogAiAssistView(_CatalogBase):
         return Response({"suggestion": suggestion})
 
 
-class CatalogBulkView(_CatalogBase):
-    """Bulk pausa/publica scoped a superfície + (coleção | seleção de skus)."""
-
-    def post(self, request):
-        surface_ref = (request.data.get("surface_ref") or "").strip()
-        if not surface_ref:
-            return Response({"detail": "surface_ref é obrigatório."}, status=400)
-
-        is_published = request.data.get("is_published")
-        is_sellable = request.data.get("is_sellable")
-        if is_published is None and is_sellable is None:
-            return Response(
-                {"detail": "Informe is_published e/ou is_sellable."}, status=400
-            )
-
-        collection_ref = (request.data.get("collection_ref") or "").strip()
-        skus = request.data.get("skus") or []
-
-        try:
-            if collection_ref:
-                count = catalog_service.bulk_set_collection(
-                    collection_ref,
-                    surface_ref,
-                    is_published=is_published,
-                    is_sellable=is_sellable,
-                    actor=_actor(request),
-                )
-            elif isinstance(skus, list) and skus:
-                count = catalog_service.bulk_set(
-                    [str(s).strip() for s in skus],
-                    surface_ref,
-                    is_published=is_published,
-                    is_sellable=is_sellable,
-                    actor=_actor(request),
-                )
-            else:
-                return Response(
-                    {"detail": "Informe collection_ref ou uma lista skus."}, status=400
-                )
-        except (CatalogError, ValidationError) as exc:
-            return Response({"detail": str(exc)}, status=400)
-
-        return Response({"ok": True, "surface_ref": surface_ref, "count": count})
-
-
-class CatalogBulkPriceView(_CatalogBase):
+class _CatalogPreviewMutationView(_CatalogBase):
     """Exact preview and atomic local receipt; remote sync is independently recoverable."""
 
-    @staticmethod
-    def _scope(request):
+    operation = ""
+    preview_command = None
+    apply_command = None
+
+    def _scope(self, request):
         from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-        return mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": "catalog.bulk-price"})
+        return mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": self.operation})
 
     def get(self, request):
         from shopman.shop.services.remote_mutations import RemoteMutationInProgress, lookup_local_mutation
@@ -324,7 +282,7 @@ class CatalogBulkPriceView(_CatalogBase):
         data = dict(request.data)
         try:
             if data.get("preview") is True:
-                return Response({"preview": catalog_service.preview_bulk_price(data, actor_id=request.user.pk)})
+                return Response({"preview": self.preview_command(data, actor_id=request.user.pk)})
             key = request.headers.get("Idempotency-Key") or data.get("idempotency_key")
             if not isinstance(key, str) or not key or len(key) > 128 or not data.get("base_revision"):
                 return Response({"detail": "Atualize o Gestor e revise a prévia antes de confirmar.", "error": {"code": "intention_required"}}, status=400)
@@ -335,7 +293,7 @@ class CatalogBulkPriceView(_CatalogBase):
 
             def execute():
                 try:
-                    return catalog_service.apply_bulk_price_intention(payload, actor_id=request.user.pk), 200
+                    return self.apply_command(payload, actor_id=request.user.pk), 200
                 except CatalogConflict as exc:
                     return {"outcome": "not_applied", "detail": str(exc), "error": {"code": "catalog_changed"}}, 409
                 except (CatalogError, ValidationError) as exc:
@@ -351,6 +309,18 @@ class CatalogBulkPriceView(_CatalogBase):
             return Response({"detail": "Esta intenção já representa outra alteração.", "error": {"code": "intention_conflict"}}, status=409)
         except RemoteMutationInProgress:
             return Response({"outcome": "unknown", "detail": "Alteração em processamento; consulte esta intenção."}, status=202)
+
+
+class CatalogBulkPriceView(_CatalogPreviewMutationView):
+    operation = "catalog.bulk-price"
+    preview_command = staticmethod(catalog_service.preview_bulk_price)
+    apply_command = staticmethod(catalog_service.apply_bulk_price_intention)
+
+
+class CatalogBulkView(_CatalogPreviewMutationView):
+    operation = "catalog.bulk-publication"
+    preview_command = staticmethod(catalog_service.preview_bulk_publication)
+    apply_command = staticmethod(catalog_service.apply_bulk_publication_intention)
 
 
 class _CatalogReorderView(_CatalogBase):

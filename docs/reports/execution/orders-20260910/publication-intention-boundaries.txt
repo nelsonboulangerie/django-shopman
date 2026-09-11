@@ -1,0 +1,19 @@
+.......F....                                                             [100%]
+=================================== FAILURES ===================================
+____ test_display_preview_skips_outside_membership_and_never_creates_price _____
+
+client = <django.test.client.Client object at 0x117e72510>
+operator = <User: catalog-api>
+catalog = {'bolo': <Product: BOLO - Bolo>, 'coll': <Collection: Doces>, 'pao': <Product: PAO - Pão>}
+
+    def test_display_preview_skips_outside_membership_and_never_creates_price(client, operator, catalog):
+        from shopman.shop.tests._display import display_channel
+
+>       display = display_channel("tv", collections=["doces"], prices_from="web")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: display_channel() missing 1 required positional argument: 'name'
+
+shopman/backstage/tests/test_catalog_publication_intentions.py:149: TypeError
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_catalog_publication_intentions.py::test_display_preview_skips_outside_membership_and_never_creates_price
+1 failed, 11 passed in 10.20s

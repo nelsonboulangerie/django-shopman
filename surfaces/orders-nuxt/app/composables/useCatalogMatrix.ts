@@ -1,7 +1,7 @@
 import { coalesceRefresh } from "../utils/coalesceRefresh";
 import { useOperatorResourceKey } from "./useOperatorResourceKey";
 import { useOrderIntention } from "./useOrderIntention";
-import type { Action, CatalogPricePreview } from "~/generated/ordersContract";
+import type { Action, CatalogPricePreview, CatalogPublicationPreview } from "~/generated/ordersContract";
 // Catalog matrix read/write. Single source for the produto × superfície grid:
 //   - useFetch the canonical matrix projection (GET /api/v1/backstage/catalog/);
 //   - poll every 30s, coalescing wake and mutation refreshes;
@@ -155,15 +155,16 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     surface: string,
     scope: { collection_ref?: string; skus?: string[] },
     patch: Pick<CellPatch, "is_published" | "is_sellable">,
+    preview: CatalogPublicationPreview,
   ): Promise<number | null> {
     if (bulkBusy.value || !canWrite()) return null;
     clearError();
     bulkBusy.value = true;
     try {
-      const res = await $fetch<{ count: number }>("/api/v1/backstage/catalog/bulk/", {
-        method: "POST",
-        body: { surface_ref: surface, ...scope, ...patch },
-      });
+      const body = { surface_ref: surface, ...scope, ...patch, base_revision: preview.base_revision, expected_actor_id: preview.expected_actor_id };
+      const res = await intentions.executePath("catalog:bulk-publication", "/api/v1/backstage/catalog/bulk/", {
+        enabled: true, reason: "", payload_schema: body,
+      }, body);
       await refreshAfterCommit();
       const count = res?.count ?? 0;
       useSonner.success(`${count} item(ns) atualizado(s).`);
@@ -175,6 +176,22 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     } finally {
       bulkBusy.value = false;
     }
+  }
+
+  async function previewBulkSet(surface: string, scope: { collection_ref?: string; skus?: string[] }, patch: Pick<CellPatch, "is_published" | "is_sellable">): Promise<CatalogPublicationPreview | null> {
+    if (bulkBusy.value || !canWrite()) return null;
+    clearError();
+    bulkBusy.value = true;
+    try {
+      const result = await $fetch<{ preview: CatalogPublicationPreview }>("/api/v1/backstage/catalog/bulk/", {
+        method: "POST", body: { surface_ref: surface, ...scope, ...patch, preview: true },
+      });
+      return result.preview;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(error, "Não foi possível preparar a prévia de publicação.");
+      useSonner.error(errorMsg.value);
+      return null;
+    } finally { bulkBusy.value = false; }
   }
 
   // Reprecificação em lote: op set|pct|delta, value em centavos (set/delta) ou
@@ -399,7 +416,7 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
 
   return {
     matrix, pending, error, refresh, isBusy, cellKey, productKey, socialKey, detailKey, errorMsg, clearError,
-    setCell, setProduct, bulkSet, bulkPrice, previewBulkPrice, resync, saveSocial, fetchProductDetail, saveProductDetail,
+    setCell, setProduct, bulkSet, previewBulkSet, bulkPrice, previewBulkPrice, resync, saveSocial, fetchProductDetail, saveProductDetail,
     reorderCollections, reorderItems, curationAction, verifyOrder, bulkBusy, aiAssist, aiAssistKey, productConflict, acknowledgeProductConflict,
   };
 }

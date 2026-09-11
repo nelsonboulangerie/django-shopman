@@ -1,0 +1,15 @@
+I001 [*] Import block is un-sorted or un-formatted
+    --> shopman/backstage/services/catalog.py:1206:5
+     |
+1205 |   def _publication_snapshot(data: dict, *, actor_id: int, lock: bool = False) -> dict:
+1206 | /     from shopman.backstage.projections.catalog import CatalogPublicationCell, CatalogPublicationPreview, CatalogPublicationSkip
+1207 | |     from shopman.shop.models import Channel
+1208 | |     from shopman.shop.services.remote_mutations import mutation_fingerprint
+     | |___________________________________________________________________________^
+1209 |
+1210 |       patch = {field: _as_flag(data[field], field) for field in ("is_published", "is_sellable") if field in data}
+     |
+help: Organize imports
+
+Found 1 error.
+[*] 1 fixable with the `--fix` option.

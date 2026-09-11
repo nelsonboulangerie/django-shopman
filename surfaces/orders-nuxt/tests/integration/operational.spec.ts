@@ -425,3 +425,28 @@ test("delayed collection response cannot replace the selected resource", async (
   await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await expect(page.locator('tr[data-dragkey="LAB-PROD-B"]')).toBeVisible();
 });
+
+test("publication preview leaves flags unchanged and lost confirmation response adopts one receipt", async ({ page }) => {
+  await login(page, "orders-lab-price");
+  await page.goto("/catalog");
+  const state = async () => (await (await page.request.get("/api/v1/backstage/catalog/")).json()).matrix.rows.find((row: { sku: string }) => row.sku === lab.edit_sku).cells.find((cell: { surface_ref: string }) => cell.surface_ref === "lab").is_sellable;
+  expect(await state()).toBe(true);
+  await page.locator(`tr[data-dragkey="${lab.edit_sku}"]`).getByRole("checkbox").check();
+  await page.locator('select').filter({ has: page.locator('option[value="*"]') }).selectOption("lab");
+  let posts = 0, receipts = 0;
+  await page.route("**/api/v1/backstage/catalog/bulk/**", async route => {
+    if (route.request().method() === "POST" && !route.request().postDataJSON().preview) {
+      posts += 1;
+      const response = await route.fetch(); expect(response.status()).toBe(200);
+      await route.abort("failed");
+    } else { if (route.request().method() === "GET") receipts += 1; await route.continue(); }
+  });
+  await page.getByRole("button", { name: "Pausar", exact: true }).click();
+  const preview = page.getByRole("region", { name: "Prévia de publicação", exact: true });
+  await expect(preview).toBeVisible();
+  expect(await state()).toBe(true); expect(posts).toBe(0);
+  await preview.getByRole("button", { name: "Confirmar este lote", exact: true }).click();
+  await expect(preview).toHaveCount(0);
+  await expect.poll(() => receipts).toBe(1); expect(posts).toBe(1);
+  expect(await state()).toBe(false);
+});

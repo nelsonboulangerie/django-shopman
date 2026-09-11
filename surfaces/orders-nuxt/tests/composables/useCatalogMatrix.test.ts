@@ -6,6 +6,7 @@ import { useCatalogMatrix } from "../../app/composables/useCatalogMatrix";
 const env = installNuxtGlobals();
 vi.stubGlobal("useNuxtData", () => ({ data: { value: { operator: { id: 1 } } } }));
 
+const publicationPreview = { base_revision: "publication", expected_actor_id: 1, cells: [], skipped: [], limit: 100 };
 const cellAction = { ref: "edit-cell", enabled: true, reason: "", method: "POST", payload_schema: { base_revision: "base", base_revisions: { price_q: "price", is_sellable: "sellable" }, expected_actor_id: 1, ref: "cell-ref" } } as any;
 describe("useCatalogMatrix — leitura + célula", () => {
   beforeEach(() => {
@@ -63,13 +64,13 @@ describe("useCatalogMatrix — lote + reordenação", () => {
   beforeEach(() => env.reset());
 
   it("bulkSet devolve count e tosta sucesso", async () => {
-    env.fetchMock.mockResolvedValueOnce({ count: 5 });
+    env.fetchMock.mockResolvedValueOnce({ count: 5, outcome: "applied" });
     const m = useCatalogMatrix();
-    const n = await m.bulkSet("web", { collection_ref: "c1" }, { is_published: true });
+    const n = await m.bulkSet("web", { collection_ref: "c1" }, { is_published: true }, publicationPreview);
     expect(n).toBe(5);
     const [url, opts] = env.fetchMock.mock.calls[0]!;
     expect(String(url)).toBe("/api/v1/backstage/catalog/bulk/");
-    expect(opts.body).toEqual({ surface_ref: "web", collection_ref: "c1", is_published: true });
+    expect(opts.body).toEqual({ surface_ref: "web", collection_ref: "c1", is_published: true, base_revision: "publication", expected_actor_id: 1 });
     expect(env.sonner.success).toHaveBeenCalledWith("5 item(ns) atualizado(s).");
   });
 
@@ -87,9 +88,9 @@ describe("useCatalogMatrix — lote + reordenação", () => {
     let release!: () => void;
     env.fetchMock.mockReturnValueOnce(new Promise((r) => { release = r; }));
     const m = useCatalogMatrix();
-    const first = m.bulkSet("web", {}, { is_published: true });
+    const first = m.bulkSet("web", {}, { is_published: true }, publicationPreview);
     expect(m.bulkBusy.value).toBe(true);
-    expect(await m.bulkSet("web", {}, { is_published: false })).toBeNull();
+    expect(await m.bulkSet("web", {}, { is_published: false }, publicationPreview)).toBeNull();
     expect(env.fetchMock).toHaveBeenCalledTimes(1);
     release();
     await first;
@@ -201,7 +202,7 @@ it("catálogo indisponível mantém última leitura e recusa nova escrita", asyn
     data.value = undefined;
     expect(m.matrix.value).toEqual(last);
     expect(await m.setCell("PAO", "web", { price_q: 700 })).toBe(false);
-    expect(await m.bulkSet("web", { skus: ["PAO"] }, { is_published: true })).toBeNull();
+    expect(await m.bulkSet("web", { skus: ["PAO"] }, { is_published: true }, publicationPreview)).toBeNull();
     expect(env.fetchMock).not.toHaveBeenCalled();
     expect(m.errorMsg.value).toContain("seu rascunho foi mantido");
   } finally { vi.stubGlobal("useFetch", originalUseFetch); }
@@ -265,4 +266,18 @@ it("resposta de outra coleção não aparece nem autoriza escrita no recorte atu
     data.value = { collection_ref: "a", matrix: a }; // late prior scope
     expect(m.matrix.value).toEqual(b);
   } finally { vi.stubGlobal("useFetch", originalUseFetch); }
+});
+
+it("publicação é primeiro prévia sem sucesso, depois uma intenção com consulta da resposta perdida", async () => {
+  env.reset();
+  env.fetchMock.mockResolvedValueOnce({ preview: publicationPreview });
+  const m = useCatalogMatrix();
+  expect(await m.previewBulkSet("web", { skus: ["PAO"] }, { is_sellable: false })).toEqual(publicationPreview);
+  expect(env.fetchMock.mock.calls[0]![1].body.preview).toBe(true);
+  expect(env.sonner.success).not.toHaveBeenCalled();
+  env.fetchMock.mockRejectedValueOnce({ status: 502 }).mockResolvedValueOnce({ outcome: "applied", count: 1 });
+  expect(await m.bulkSet("web", { skus: ["PAO"] }, { is_sellable: false }, publicationPreview)).toBe(1);
+  const key = env.fetchMock.mock.calls[1]![1].headers["Idempotency-Key"];
+  expect(env.fetchMock.mock.calls[2]![1]).toEqual({ query: { idempotency_key: key } });
+  expect(env.fetchMock).toHaveBeenCalledTimes(3);
 });

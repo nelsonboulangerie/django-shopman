@@ -269,7 +269,7 @@ def test_product_requires_manage_catalog(client, plain_staff, catalog):
 
 def test_bulk_by_skus(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_URL,
         data={"surface_ref": "web", "skus": ["PAO", "BOLO"], "is_sellable": False},
         content_type="application/json",
@@ -281,7 +281,7 @@ def test_bulk_by_skus(client, operator, catalog):
 
 def test_bulk_by_collection(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_URL,
         data={"surface_ref": "web", "collection_ref": "doces", "is_published": False},
         content_type="application/json",
@@ -302,7 +302,7 @@ def test_bulk_by_smart_collection(client, operator, catalog):
         rule={"match": "all", "conditions": [{"field": "base_price_q", "op": "gte", "value": 1000}]},
     )
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_URL,
         data={"surface_ref": "web", "collection_ref": "caros", "is_sellable": False},
         content_type="application/json",
@@ -315,7 +315,7 @@ def test_bulk_by_smart_collection(client, operator, catalog):
 
 def test_bulk_requires_field(client, operator, catalog):
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_URL,
         data={"surface_ref": "web", "skus": ["PAO"]},
         content_type="application/json",
@@ -413,7 +413,7 @@ def test_bulk_price_set_negative_rejected(client, operator, catalog):
 def test_bulk_all_channels_pause(client, operator, catalog):
     """surface_ref='*' aplica em todos os canais ativos."""
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_URL,
         data={"surface_ref": "*", "skus": ["PAO"], "is_sellable": False},
         content_type="application/json",
@@ -594,7 +594,7 @@ def test_global_pause_gates_feed_column(client, operator, catalog_with_display):
 def test_feed_bulk_pause(client, operator, catalog_with_display):
     """Bulk numa coluna de feed pausa os itens (options[paused_skus])."""
     client.force_login(operator)
-    resp = client.post(
+    resp = _post_price_intention(client,
         BULK_URL,
         data={"surface_ref": "tv-salao", "skus": ["BOLO"], "is_sellable": False},
         content_type="application/json",
@@ -1165,7 +1165,7 @@ def test_bulk_fiscal_refusal_matches_cell_and_leaves_all_items_unchanged(client,
         (CELL_URL, {"sku": "PAO", "surface_ref": "web", "is_published": True}),
         (BULK_URL, {"skus": ["PAO", "BOLO"], "surface_ref": "web", "is_published": True}),
     ]:
-        response = _post_cell(client, operator, body) if path == CELL_URL else client.post(path, body, content_type="application/json")
+        response = _post_cell(client, operator, body) if path == CELL_URL else _post_price_intention(client, path, data=body, content_type="application/json")
         assert response.status_code == 400
         assert "fiscal" in response.json()["detail"].lower()
         assert not ListingItem.objects.filter(listing__ref="web", is_published=True).exists()
@@ -1177,7 +1177,7 @@ def test_bulk_fiscal_refusal_matches_cell_and_leaves_all_items_unchanged(client,
 ])
 def test_invalid_boolean_does_not_toggle_catalog(client, operator, catalog, path, body):
     client.force_login(operator)
-    response = _post_cell(client, operator, {**body, "is_sellable": "not-a-boolean"}) if path == CELL_URL else client.post(path, {**body, "is_sellable": "not-a-boolean"}, content_type="application/json")
+    response = _post_cell(client, operator, {**body, "is_sellable": "not-a-boolean"}) if path == CELL_URL else _post_price_intention(client, path, data={**body, "is_sellable": "not-a-boolean"}, content_type="application/json")
     assert response.status_code == 400
     assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").is_sellable
 

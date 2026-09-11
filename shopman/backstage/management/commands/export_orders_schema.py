@@ -23,7 +23,13 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from shopman.backstage.contracts import render_contract_module, run_contract_export
-from shopman.backstage.projections.catalog import CatalogPricePreview, CatalogPricePreviewCell
+from shopman.backstage.projections.catalog import (
+    CatalogPricePreview,
+    CatalogPricePreviewCell,
+    CatalogPublicationCell,
+    CatalogPublicationPreview,
+    CatalogPublicationSkip,
+)
 from shopman.backstage.projections.feeds import (
     CollectionOptionProjection,
     FeedBoardProjection,
@@ -49,6 +55,9 @@ OUTPUT_RELATIVE_PATH = Path("surfaces/orders-nuxt/app/generated/ordersContract.t
 CONTRACT_DATACLASSES = (
     CatalogPricePreviewCell,
     CatalogPricePreview,
+    CatalogPublicationCell,
+    CatalogPublicationSkip,
+    CatalogPublicationPreview,
     Action,
     FeedCollectionRef,
     FeedProjection,
