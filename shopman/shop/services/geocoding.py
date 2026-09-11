@@ -15,8 +15,9 @@ import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
 
-from django.conf import settings
 from django.core.cache import cache
+
+from shopman.shop.services.google_maps_credentials import server_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -123,9 +124,9 @@ def reverse_geocode(lat: float, lng: float) -> ReverseGeocodeResult:
 
     Cached for 24h per (lat, lng) rounded to ~11m precision (6 decimals).
     """
-    api_key = getattr(settings, "GOOGLE_MAPS_API_KEY", "")
+    api_key = server_api_key()
     if not api_key:
-        raise GeocodingError("GOOGLE_MAPS_API_KEY not configured.")
+        raise GeocodingError("Google Maps server API key not configured.")
 
     key = f"geocode:rev:{lat:.6f}:{lng:.6f}"
     cached = cache.get(key)
@@ -170,13 +171,14 @@ def forward_geocode(address: str) -> tuple[float, float] | None:
     Caminho feliz da entrega: quando o endereço chega SEM coordenada (fallback ViaCEP /
     digitação manual), resolve lat/lng para o motor de distância — assim o cálculo por
     faixa funciona e a taxa-padrão fica como último recurso. Cache 24h por endereço
-    normalizado (inclui cache negativo p/ não martelar o Google). Reusa GOOGLE_MAPS_API_KEY.
+    normalizado (inclui cache negativo p/ não martelar o Google). Usa a chave
+    privada de servidor; ela nunca é projetada para o navegador.
     NUNCA levanta: o chamador cai no fallback se vier None.
     """
     address = " ".join((address or "").split()).strip()
     if not address:
         return None
-    api_key = getattr(settings, "GOOGLE_MAPS_API_KEY", "")
+    api_key = server_api_key()
     if not api_key:
         return None
 

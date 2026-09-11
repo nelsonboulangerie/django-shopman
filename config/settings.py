@@ -496,7 +496,14 @@ MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 MEDIA_URL = "/media/"
 
 # ── Google Maps ──────────────────────────────────────────────────────
+# A chave do navegador aparece, por natureza, no bootstrap do Maps JS e deve ser
+# limitada por referer + APIs. A chave de servidor nunca é projetada para o
+# cliente e deve ser limitada ao Geocoding (e por IP quando houver egress fixo).
+# GOOGLE_MAPS_API_KEY fica como compatibilidade temporária para rollout sem
+# interrupção; os consumidores preferem sempre as credenciais separadas.
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+GOOGLE_MAPS_BROWSER_API_KEY = os.environ.get("GOOGLE_MAPS_BROWSER_API_KEY", "")
+GOOGLE_MAPS_SERVER_API_KEY = os.environ.get("GOOGLE_MAPS_SERVER_API_KEY", "")
 
 # ── Stripe ────────────────────────────────────────────────────────────
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
