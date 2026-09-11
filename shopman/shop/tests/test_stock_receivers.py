@@ -225,3 +225,30 @@ def test_stock_arrived_template_also_renders_for_stock_alert_subscribers():
         "Boa notícia! Pão rústico chegou. Garanta o seu: "
         "https://shop.example/produto/PAO-001"
     )
+
+
+@pytest.mark.django_db
+def test_custom_stock_template_cannot_omit_persistent_alert_management_link():
+    from shopman.shop.adapters._notification_templates import render_message
+    from shopman.shop.adapters.notification_manychat import MESSAGE_TEMPLATES
+    from shopman.shop.models import NotificationTemplate
+
+    NotificationTemplate.objects.create(
+        event="stock_arrived",
+        subject="Produto disponível",
+        body="{product_name} chegou.",
+        is_active=True,
+    )
+    management_url = "https://shop.example/gerenciar-aviso#opaque-capability"
+
+    body = render_message(
+        "stock_arrived",
+        {
+            "product_name": "Pão rústico",
+            "management_url": management_url,
+            "management_note": f"Gerenciar este aviso: {management_url}",
+        },
+        MESSAGE_TEMPLATES,
+    )
+
+    assert body == f"Pão rústico chegou.\nGerenciar este aviso: {management_url}"

@@ -234,6 +234,7 @@ def has_committed_mutation_attempt(
 
     event_specs = {
         "start": ("start", WorkOrderEvent.Kind.STARTED),
+        "review_qc": ("quality-review", WorkOrderEvent.Kind.QUALITY_REVIEWED),
         "correct_qc": ("quality-correction", WorkOrderEvent.Kind.QUALITY_CORRECTED),
         "advance_step": ("advance-step", WorkOrderEvent.Kind.STEP_ADVANCED),
         "void": ("void", WorkOrderEvent.Kind.VOIDED),
@@ -2192,6 +2193,145 @@ def _quality_correction_replay(*, event_key: str, work_order_id, actor: str, att
     return replay.work_order
 
 
+def _quality_review_replay(*, event_key: str, work_order_id, actor: str, expected_rev: int):
+    """Return an exact manager QC confirmation retry."""
+    from shopman.craftsman.models import WorkOrderEvent
+
+    replay = WorkOrderEvent.objects.select_related("work_order").filter(idempotency_key=event_key).first()
+    if replay is None:
+        return None
+    if (
+        replay.kind != WorkOrderEvent.Kind.QUALITY_REVIEWED
+        or replay.work_order_id != work_order_id
+        or replay.actor != str(actor or "")
+        or (replay.payload or {}).get("attempt")
+        != {"work_order_id": work_order_id, "expected_rev": expected_rev}
+    ):
+        raise ProductionConflict(
+            "Esta chave de tentativa já foi usada em outra revisão.",
+            data={"work_order": replay.work_order.ref, "cause": "idempotency_conflict"},
+        )
+    return replay.work_order
+
+
+def _emit_quality_reviewed(work_order_id: int) -> None:
+    """Publish the canonical review fact only after its transaction commits."""
+    from django.db import transaction
+
+    def emit() -> None:
+        from shopman.craftsman.models import WorkOrder
+        from shopman.craftsman.signals import production_changed
+
+        work_order = WorkOrder.objects.get(pk=work_order_id)
+        production_changed.send(
+            sender=_emit_quality_reviewed,
+            product_ref=work_order.output_sku,
+            date=work_order.target_date,
+            action="quality_reviewed",
+            work_order=work_order,
+        )
+
+    transaction.on_commit(emit)
+
+
+def apply_quality_review(
+    *,
+    work_order_id,
+    actor: str,
+    expected_rev: int | None,
+    idempotency_key: str | None,
+):
+    """Confirm the effective QC partition without rewriting production facts."""
+    from django.db import transaction
+    from shopman.craftsman.models import WorkOrder, WorkOrderEvent
+    from shopman.craftsman.services.scheduling import _check_rev, _next_seq
+
+    from shopman.shop.services import quality as quality_service
+
+    _require_irreversible_attempt(
+        actor=actor,
+        expected_rev=expected_rev,
+        idempotency_key=idempotency_key,
+    )
+    event_key = _mutation_idempotency_key("quality-review", work_order_id, idempotency_key)
+    try:
+        with transaction.atomic():
+            replay = _quality_review_replay(
+                event_key=event_key,
+                work_order_id=work_order_id,
+                actor=actor,
+                expected_rev=expected_rev,
+            )
+            if replay is not None:
+                return replay
+
+            work_order = WorkOrder.objects.select_for_update().filter(pk=work_order_id).first()
+            if work_order is None:
+                raise ProductionNotFound(
+                    "Ordem de produção não encontrada.",
+                    resource="work_order",
+                    identifier=str(work_order_id),
+                )
+            replay = _quality_review_replay(
+                event_key=event_key,
+                work_order_id=work_order_id,
+                actor=actor,
+                expected_rev=expected_rev,
+            )
+            if replay is not None:
+                return replay
+            if work_order.status != WorkOrder.Status.FINISHED:
+                raise ProductionConflict(
+                    "Conclua a fornada antes de revisar a qualidade.",
+                    data={"work_order": work_order.ref, "cause": "quality_review_requires_finished"},
+                )
+            if WorkOrderEvent.objects.filter(
+                work_order=work_order,
+                kind__in=(
+                    WorkOrderEvent.Kind.QUALITY_REVIEWED,
+                    WorkOrderEvent.Kind.QUALITY_CORRECTED,
+                ),
+            ).exists():
+                raise ProductionConflict(
+                    "A qualidade desta fornada já foi revisada.",
+                    data={"work_order": work_order.ref, "cause": "quality_already_reviewed"},
+                )
+
+            _check_rev(work_order, expected_rev)
+            partition = quality_service.effective_partition(work_order)
+            if not partition:
+                raise ProductionError("A fornada não possui fatos de qualidade para revisar.")
+            event = WorkOrderEvent.objects.create(
+                work_order=work_order,
+                seq=_next_seq(work_order),
+                kind=WorkOrderEvent.Kind.QUALITY_REVIEWED,
+                payload={
+                    "schema_version": 1,
+                    "partition": partition,
+                    "attempt": {
+                        "work_order_id": work_order.pk,
+                        "expected_rev": expected_rev,
+                    },
+                },
+                actor=actor,
+                idempotency_key=event_key,
+            )
+            _emit_quality_reviewed(work_order.pk)
+            work_order.refresh_from_db(fields=["rev"])
+            logger.info(
+                "production.quality_reviewed wo=%s event=%s actor=%s",
+                work_order.ref,
+                event.pk,
+                actor,
+            )
+            return work_order
+    except (ProductionError, ProductionNotFound, ProductionConflict):
+        raise
+    except Exception as exc:
+        translated = _operator_error(exc)
+        raise translated from (None if translated is exc else exc)
+
+
 def _record_quality_hold_risk(exc: ProductionConflict) -> None:
     """Keep a blocked physical correction visible after its transaction rolls back."""
     data = dict(getattr(exc, "data", {}) or {})
@@ -2411,6 +2551,7 @@ def apply_quality_correction(
                 actor=actor,
                 idempotency_key=event_key,
             )
+            _emit_quality_reviewed(work_order.pk)
             work_order.refresh_from_db(fields=["rev"])
             logger.info(
                 "production.quality_corrected wo=%s event=%s actor=%s stock=%s",

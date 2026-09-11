@@ -100,7 +100,47 @@ class CheckoutView(APIView):
             429: DetailSerializer,
         },
     )
+    def get(self, request):
+        from shopman.shop.services import remote_mutations
+        key = remote_mutations.idempotency_key_from_request(request, fallback="")
+        if not key and not _cart_data(request).is_empty:
+            return Response(status=204)
+        principal = str(getattr(getattr(request, "customer", None), "uuid", "") or "")
+        response = checkout_service.recover_checkout_response(browser_session=request.session.session_key or "", principal=principal, key=key)
+        if response is None:
+            return Response(status=204)
+        order_service.grant_order_access(request, response["order_ref"])
+        return Response(response)
+
     def post(self, request):
+        from shopman.shop.services import remote_mutations
+        from shopman.storefront.api.surface import _session_scope
+        key = remote_mutations.idempotency_key_from_request(request, fallback=session_service.new_idempotency_key())
+        serializer = CheckoutSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = dict(serializer.validated_data)
+        payload.pop("idempotency_key", None)
+        payload.pop("address_label", None)
+        principal = str(getattr(getattr(request, "customer", None), "uuid", "") or "")
+        def execute():
+            response = self._post(request, key=key)
+            return dict(response.data), response.status_code
+        try:
+            receipt = remote_mutations.run_idempotent_mutation(
+                scope=checkout_service.checkout_receipt_scope(browser_session=_session_scope(request), principal=principal, cart_session=request.session.get("cart_session_key") or "", key=key),
+                key=key, payload=payload, execute=execute, local_atomic=True,
+                cache_response=lambda body, code: code == 201,
+            )
+        except remote_mutations.RemoteMutationInProgress:
+            return Response({"detail": "A confirmação ainda está em consulta. Mantenha esta tentativa.", "error_code": "mutation_in_progress"}, status=409)
+        if receipt.response_code == 201:
+            order_service.grant_order_access(request, receipt.response_body["order_ref"])
+            order_service.mark_just_placed(request, receipt.response_body["order_ref"])
+            request.session.pop("cart_session_key", None)
+        logger.info("storefront.checkout result=%s", "recovered" if receipt.replayed else receipt.response_code)
+        return Response(receipt.response_body, status=receipt.response_code)
+
+    def _post(self, request, *, key):
         if self._rate_limited(request, increment=False):
             return self._rate_limited_response()
 
@@ -131,7 +171,7 @@ class CheckoutView(APIView):
         delivery_time_slot = serializer.validated_data.get("delivery_time_slot", "")
         payment_method = serializer.validated_data.get("payment_method", "")
         use_loyalty = serializer.validated_data.get("use_loyalty", False)
-        idempotency_key = serializer.validated_data.get("idempotency_key") or session_service.new_idempotency_key()
+        idempotency_key = key
 
         if fulfillment_type != "delivery":
             saved_address_id = None
@@ -319,6 +359,7 @@ class CheckoutView(APIView):
         checkout_data = {
             "customer": {**_session_customer_identity(session_key), "name": name, "phone": phone},
             "fulfillment_type": fulfillment_type,
+            "address_label": serializer.validated_data.get("address_label") or {},
             # Omotenashi: lembrar escolhas é o default; toggle desmarcado → False.
             # (Endereço novo é salvo sempre, independente disto.)
             "save_as_default": serializer.validated_data.get("save_as_default", True),
@@ -407,6 +448,7 @@ class CheckoutView(APIView):
                 data=checkout_data,
                 idempotency_key=idempotency_key,
                 expected_total_q=serializer.validated_data.get("expected_total_q"),
+                expected_revision=serializer.validated_data.get("expected_revision"),
             )
         except Exception as exc:
             logger.debug("views.post degraded; using fallback", exc_info=True)
@@ -448,6 +490,7 @@ class CheckoutView(APIView):
                 "order_ref": result.order_ref,
                 "status": result.status,
                 "next_url": next_url,
+                "convenience_pending": list(result.convenience_pending),
             }
         ).data
         return Response(data, status=status.HTTP_201_CREATED)

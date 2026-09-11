@@ -86,3 +86,18 @@ def identity_strength(request) -> str:
 def knows_only_the_number(request) -> bool:
     """Atalho de leitura: esta sessão conhece o número, mas não provou as mãos."""
     return identity_strength(request) == IDENTITY_NUMBER
+
+
+def checkout_draft_context(request, session_key: str | None) -> str:
+    """Opaque draft binding; never an authorization credential.
+
+    Same-person renewal retains context, while identity or strength changes do
+    not restore personal data from another browser context.
+    """
+    from django.utils.crypto import salted_hmac
+    if not session_key:
+        return ""
+    principal = str(getattr(getattr(request, "customer", None), "uuid", "") or "")
+    owner = f"customer:{principal}" if principal else f"browser:{request.session.session_key}"
+    strength = request.session.get(IDENTITY_SESSION_KEY, "")
+    return salted_hmac("storefront.checkout-draft.v2", f"{owner}:{strength}:{session_key}").hexdigest()

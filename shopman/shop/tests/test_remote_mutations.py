@@ -43,7 +43,8 @@ def test_idempotency_key_from_request_prefers_header_then_body_then_fallback():
     body_request = SimpleNamespace(headers={}, data={"idempotency_key": "body-key"})
     fallback_request = SimpleNamespace(headers={}, data={})
 
-    assert remote_mutations.idempotency_key_from_request(header_request, fallback="fallback") == "header-key"
+    with pytest.raises(remote_mutations.RemoteMutationConflict):
+        remote_mutations.idempotency_key_from_request(header_request, fallback="fallback")
     assert remote_mutations.idempotency_key_from_request(body_request, fallback="fallback") == "body-key"
     assert remote_mutations.idempotency_key_from_request(fallback_request, fallback="fallback") == "fallback"
 

@@ -11,7 +11,7 @@ import type { MenuResponse } from '~/types/shopman'
 
 // Overlay de busca na MESMA tela (sem navegar) — assim o foco/teclado funciona no iOS
 // (foco dentro do gesto). A página /busca segue existindo como fallback (link direto).
-const { open, registerInput, closeSearch } = useSearchOverlay()
+const { open, returnFocusEl, registerInput, closeSearch } = useSearchOverlay()
 const apiPath = useShopmanApiPath()
 const route = useRoute()
 
@@ -48,7 +48,8 @@ onBeforeUnmount(() => registerInput(null))
 // então não passamos `focus` aqui.
 useOverlayLock(open, {
   inert: ['.shop-shell'],
-  onEscape: closeSearch
+  onEscape: closeSearch,
+  restoreFocus: returnFocusEl
 })
 
 // Carrega o cardápio na 1ª abertura.

@@ -195,3 +195,17 @@ def test_what_could_not_be_added_comes_back_to_be_explained(client, croissant):
         "is_notifiable": False,
         "is_notify_subscribed": False,
     }]
+
+
+def test_confirmed_claim_replays_after_offer_expires_without_adding_again(client, croissant):
+    promotion = _promotion()
+    first = _claim(client, mode="append", idempotency_key="lost-offer-response")
+    assert first.status_code == 200
+    promotion.is_active = False
+    promotion.save(update_fields=["is_active"])
+    second = _claim(client, mode="append", idempotency_key="lost-offer-response")
+    assert second.status_code == 200
+    assert second.json()["replayed"] is True
+    assert second.json()["cart"] == first.json()["cart"]
+    new_intention = _claim(client, mode="append", idempotency_key="new-offer-intention")
+    assert new_intention.status_code == 404

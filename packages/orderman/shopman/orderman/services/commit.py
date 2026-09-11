@@ -51,7 +51,19 @@ class CommitService:
     """
 
     @staticmethod
-    def commit(
+    def commit(session_key: str, channel_ref: str, idempotency_key: str, ctx: dict | None = None, channel_config: dict | None = None) -> CommitResult:
+        try:
+            return CommitService._commit_atomic(session_key, channel_ref, idempotency_key, ctx, channel_config)
+        except Exception:
+            # Preserve the failed-attempt contract without leaving a committed
+            # in-progress claim between receipt acquisition and the local seal.
+            # Never overwrite another request's live or completed receipt.
+            IdempotencyKey.objects.get_or_create(scope=f"commit:{channel_ref}:{session_key}", key=idempotency_key, defaults={"status": "failed"})
+            raise
+
+    @staticmethod
+    @transaction.atomic
+    def _commit_atomic(
         session_key: str,
         channel_ref: str,
         idempotency_key: str,
@@ -82,7 +94,7 @@ class CommitService:
         # colidir/vazar o CommitResult de OUTRA sessão do mesmo canal.
         idem_scope = f"commit:{channel_ref}:{session_key}"
 
-        # 1. Check/create idempotency key (outside main transaction)
+        # Receipt acquisition, seal and response share this outer transaction.
         try:
             idem = CommitService._acquire_idempotency_lock(idem_scope, idempotency_key)
         except IdempotencyCacheHit as cache_hit:
@@ -98,7 +110,7 @@ class CommitService:
                 channel_config=channel_config,
             )
 
-            # 3. Mark idempotency key as done (outside transaction)
+            # Persist the response before the outer transaction commits.
             idem.status = "done"
             idem.response_body = asdict(response)
             idem.response_code = 201
@@ -299,11 +311,16 @@ class CommitService:
                 context={"session_key": session_key},
             )
 
+        expected_total = ctx.get("expected_total_q")
+        actual_total = sum(int(item.get("line_total_q") or 0) for item in session.items)
+        if expected_total is not None and actual_total != expected_total:
+            raise ValidationError(code="total_changed", message="O total mudou. Confira e confirme novamente.", context={"new_total_q": actual_total, "old_total_q": expected_total})
+
         # Build order.data from session.data (key fields for handlers)
         order_data = {}
         session_data = session.data or {}
         for key in (
-            "customer", "customer_ref", "fulfillment_type", "delivery_address",
+            "customer", "customer_ref", "fulfillment_type", "delivery_address", "save_as_default", "saved_address_id", "address_label",
             "delivery_address_structured", "delivery_date",
             "delivery_time_slot", "order_notes",
             "origin_channel", "payment", "loyalty",
@@ -326,7 +343,7 @@ class CommitService:
             try:
                 delivery_dt = date_type.fromisoformat(delivery_date_str)
                 order_data["is_preorder"] = delivery_dt > timezone.localdate()
-            except (ValueError, TypeError):
+            except (ValueError, TypeError):  # silêncio-deliberado: data inválida não pode marcar pré-venda
                 pass
 
         # Create Order + OrderItems. Ref aleatório → savepoint + retry na corrida de índice.
@@ -416,7 +433,7 @@ class CommitService:
         try:
             from shopman.orderman.contrib.refs.services import on_session_committed
             on_session_committed(session.pk, order.pk)
-        except ImportError:
+        except ImportError:  # silêncio-deliberado: integração contrib é opcional
             pass
 
         # Preorder reminder: D-1 notification if delivery_date is future
@@ -456,7 +473,7 @@ class CommitService:
                         },
                     },
                 )
-            except (ValueError, TypeError):
+            except (ValueError, TypeError):  # silêncio-deliberado: data inválida não agenda lembrete
                 pass
 
         return CommitResult(

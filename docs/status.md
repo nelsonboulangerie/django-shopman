@@ -129,7 +129,7 @@ staging).
 
 ## Deploy / alpha
 
-- Alpha na DigitalOcean App Platform (`shopman-alpha`), ingress por subdomínio
+- App único na DigitalOcean App Platform (`shopman-nelson`), ingress por subdomínio
   (apex→loja Nuxt, `api.`/`admin.`/demais superfícies), Managed PostgreSQL 16 +
   Valkey. Deploy de código é **manual** via `doctl ... apps create-deployment`
   (nunca `apps update --spec` do repo — apaga segredos do app live).

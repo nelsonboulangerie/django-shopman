@@ -1,0 +1,34 @@
+D07 — fechamento da gestão após reload
+Data: 2026-09-11
+Branch: codex/storefront-operational-excellence-20260910
+
+Defeito comprovado
+- A projeção preservava is_notify_subscribed=true, mas StockNotifyButton guardava o
+  management_url apenas em memória. Depois de reload, o botão ficava desabilitado e
+  o cliente anônimo não via “Gerenciar este aviso” até receber uma mensagem.
+
+Depois
+- GET no endpoint canônico do aviso recupera a capacidade somente de marcador da
+  sessão do servidor e valida referência, SKU, finalidade, prova, revogação e contato.
+- Referência isolada ou marcador de outro contato recebe 404; resposta usa no-store e
+  no-referrer e não inclui telefone nem ref da assinatura.
+- O componente anônimo recupera o link após reload. O cliente autenticado recebe link
+  direto para Conta → Preferências → Avisos de produtos.
+- O contrato OpenAPI passou a descrever o GET e seu payload.
+- O ADR e o runbook registram que flows do ManyChat persistem management_note em campo
+  personalizado. A capacidade é limitada a uma assinatura, mas continua sendo segredo.
+
+Validação
+- Backend direcionado (alertas, contratos de serializer, jornada omotenashi e campos
+  ManyChat): 123 passed.
+- Storefront completo: 1.535 passed, 9 skips PostgreSQL declarados.
+- StockNotifyButton: 6 passed.
+- Nuxt completo: 557 passed em 61 arquivos; typecheck, lint sem erros e build passaram.
+- Ruff e git diff --check: passaram.
+- makemigrations --check --dry-run: no changes detected.
+- OpenAPI: GET /api/v1/availability/{sku}/notify/ usa StockAlertSessionState; os erros
+  globais preexistentes de APIViews fora de availability permanecem no gerador.
+
+Limites
+- Não houve deploy, rollout, provider externo, mensagem ou transação real.
+- A limpeza/retenção do campo no ManyChat continua pendente na decisão de retenção.

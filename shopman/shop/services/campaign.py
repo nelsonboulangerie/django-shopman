@@ -342,7 +342,7 @@ def reconcile_quality_correction(work_order, after_partition) -> dict:
 
     with transaction.atomic():
         announcements = list(
-            Announcement.objects.select_for_update()
+            Announcement.objects.select_for_update(of=("self",))
             .select_related("rule")
             .filter(trigger_context__work_order_ref=work_order_ref)
             .order_by("pk")

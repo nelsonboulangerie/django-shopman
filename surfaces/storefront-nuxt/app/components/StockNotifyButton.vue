@@ -22,8 +22,10 @@ const props = defineProps<{
   subscribed?: boolean
 }>()
 
-const label = computed(() => props.name ? `Me avise quando ${props.name} voltar` : 'Me avise quando voltar')
-const subscribedLabel = computed(() => props.name ? `Avisaremos você quando ${props.name} voltar` : 'Avisaremos você quando voltar')
+const label = computed(() => props.name ? `Ativar avisos recorrentes quando ${props.name} voltar` : 'Ativar avisos recorrentes quando voltar')
+const subscribedLabel = computed(() => props.name ? `Aviso recorrente ativo para ${props.name}` : 'Aviso recorrente ativo')
+const requestReceivedLabel = 'Pedido recebido. Entre com este WhatsApp para conferir ou reativar seus avisos.'
+const requestReceivedHref = '/entrar?next=%2Fconta%2Fpreferencias%23avisos-produtos'
 
 const apiPath = useShopmanApiPath()
 const csrfHeaders = useShopmanCsrfHeaders()
@@ -32,6 +34,8 @@ const defaultDdd = computed(() => publicConfig.value?.default_ddd || '')
 
 const submitting = ref(false)
 const isSubscribed = ref(!!props.subscribed)
+const requestReceived = ref(false)
+const managementUrl = ref('')
 const sheetOpen = ref(false)
 const phoneInput = ref('')
 const phoneError = ref('')
@@ -51,13 +55,16 @@ async function subscribe (phoneValue: string) {
   submitting.value = true
   phoneError.value = ''
   try {
-    await $fetch(apiPath(`/api/v1/availability/${encodeURIComponent(props.sku)}/notify/`), {
+    const result = await $fetch<{ management_url?: string }>(apiPath(`/api/v1/availability/${encodeURIComponent(props.sku)}/notify/`), {
       method: 'POST',
       headers: await csrfHeaders(),
       credentials: 'include',
       body: phoneValue ? { phone: phoneValue } : {}
     })
-    isSubscribed.value = true
+    managementUrl.value = String(result?.management_url || '')
+    if (!isAuthenticated.value && !managementUrl.value) await recoverManagementLink(true)
+    isSubscribed.value = isAuthenticated.value || !!managementUrl.value
+    requestReceived.value = !isSubscribed.value
     sheetOpen.value = false
     if (import.meta.client) useSonner.success(notifyConfirmationMessage(phoneValue))
   } catch (e) {
@@ -82,6 +89,26 @@ function onAnonymousSubmit () {
   }
   subscribe(normalized)
 }
+
+async function recoverManagementLink (force = false) {
+  if ((!force && !props.subscribed) || isAuthenticated.value || managementUrl.value) return false
+  try {
+    const result = await $fetch<{ active: boolean, management_url: string }>(apiPath(`/api/v1/availability/${encodeURIComponent(props.sku)}/notify/`), {
+      method: 'GET',
+      credentials: 'include'
+    })
+    managementUrl.value = String(result?.management_url || '')
+    return !!managementUrl.value
+  } catch {
+    // A projeção continua sendo a fonte do estado visual. A ausência de uma
+    // sessão recuperável não transforma falha de rede em nova assinatura.
+    return false
+  }
+}
+
+onMounted(recoverManagementLink)
+
+const managementHref = computed(() => managementUrl.value || (isAuthenticated.value ? '/conta/preferencias#avisos-produtos' : ''))
 </script>
 
 <template>
@@ -106,9 +133,41 @@ function onAnonymousSubmit () {
       icon="lucide:bell-ring"
       disabled
       :class="[compact ? '' : 'w-full', 'disabled:opacity-100', inverted ? 'shop-action-inverted' : 'border-primary text-primary']"
+      :aria-label="subscribedLabel"
+      :title="subscribedLabel"
     >
-      Avisaremos você
+      Aviso ativo
     </UiButton>
+    <UiButton
+      v-if="managementHref"
+      :to="managementHref"
+      variant="ghost"
+      size="sm"
+      icon="lucide:settings-2"
+    >
+      Gerenciar este aviso
+    </UiButton>
+  </template>
+
+  <!-- Repetição anônima em outra sessão recebe confirmação neutra: telefone +
+       SKU não concedem nem revelam a capacidade de uma assinatura existente. -->
+  <template v-else-if="requestReceived">
+    <div :class="['w-full', compact || pill ? '' : 'shop-stack-block']" role="status">
+      <p v-if="!compact && !pill" class="shop-meta text-muted-foreground">
+        Pedido recebido. Entre com este WhatsApp para conferir se o aviso está ativo ou reativá-lo.
+      </p>
+      <UiButton
+        :to="requestReceivedHref"
+        :size="compact || pill ? 'sm' : 'lg'"
+        variant="outline"
+        icon="lucide:log-in"
+        class="w-full"
+        :aria-label="requestReceivedLabel"
+        :title="requestReceivedLabel"
+      >
+        {{ compact || pill ? 'Conferir aviso' : 'Entrar para conferir' }}
+      </UiButton>
+    </div>
   </template>
 
   <!-- Logado: um clique assina com o telefone da conta. -->
@@ -133,9 +192,11 @@ function onAnonymousSubmit () {
       icon="lucide:bell"
       :loading="submitting"
       :class="[compact ? '' : 'w-full', inverted ? 'shop-action-inverted' : '']"
+      :aria-label="label"
+      :title="label"
       @click="onAuthenticatedClick"
     >
-      Me avise
+      Me avise sempre
     </UiButton>
   </template>
 
@@ -159,15 +220,17 @@ function onAnonymousSubmit () {
       variant="default"
       icon="lucide:bell"
       :class="[compact ? '' : 'w-full', inverted ? 'shop-action-inverted' : '']"
+      :aria-label="label"
+      :title="label"
       @click="sheetOpen = true"
     >
-      Me avise
+      Me avise sempre
     </UiButton>
     <BottomSheet
       v-model:open="sheetOpen"
       max-width="sm"
       title="Avisamos quando estiver disponível"
-      description="Deixe seu WhatsApp e mandamos uma mensagem assim que estiver disponível."
+      description="Deixe seu WhatsApp para receber um aviso a cada nova ocorrência elegível deste produto. O aviso continua ativo até você pausar ou cancelar."
       data-stock-notify-sheet
     >
       <form class="shop-stack-block px-4 py-4" @submit.prevent="onAnonymousSubmit">

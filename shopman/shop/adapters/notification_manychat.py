@@ -111,12 +111,12 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     # "Me avise" (sem reserva) traz o link do produto.
     "stock_arrived": (
         "Boa notícia! {product_name} chegou.{reserve_note}{deadline_note} "
-        "{cta} {action_url}"
+        "{cta} {action_url}{management_note}"
     ),
     # Fornada pronta ("Me avise quando sair do forno", F9 do FOMO-MARKETING):
     # o valor da mensagem e o frescor, entao ela nasce e envelhece rapido.
     "production_ready": (
-        "Saiu do forno agora: {product_name}! {cta} {action_url}"
+        "Saiu do forno agora: {product_name}! {cta} {action_url}{management_note}"
     ),
     "purchase_request": (
         "Olá, {supplier_greeting}! Aqui é da {shop_name}. "
@@ -316,9 +316,15 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
 #: mensagem nunca deve exibir. Lista explícita porque empurrar contexto inteiro para o
 #: perfil do cliente no ManyChat seria vazar estado interno para uma ferramenta de
 #: marketing.
+#:
+#: ``management_note`` é a exceção consciente: o flow configurado só resolve variáveis
+#: de campos personalizados, então a nota que contém a capacidade de uma única
+#: assinatura fica armazenada no perfil do ManyChat. A capacidade não identifica o
+#: contato nem abre a conta, mas continua sendo segredo operacional; ADR-029 e o
+#: runbook registram a limitação e os controles exigidos no provedor.
 _FIELD_DENYLIST = frozenset({
     "session_key", "sku", "subscriber_id", "recipient", "phone",
-    "customer_ref", "customer_uuid", "hold_ids",
+    "customer_ref", "customer_uuid", "hold_ids", "management_url",
 })
 
 #: Sufixo das chaves auxiliares: existem só para o link pessoal que SAI daqui poder ser

@@ -1,0 +1,167 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.5, pytest-9.0.2, pluggy-1.6.0
+django: version: 6.0.5, settings: config.settings_test (from env)
+rootdir: /private/tmp/shopman-storefront-execution-20260910
+configfile: pyproject.toml
+plugins: playwright-0.7.2, cov-7.1.0, locust-2.43.4, xdist-3.8.0, timeout-2.4.0, anyio-4.14.2, django-4.12.0, base-url-2.1.0
+collected 1 item
+
+shopman/shop/tests/e2e/test_storefront_e2e.py F                          [100%]
+
+=================================== FAILURES ===================================
+_ TestLiveOrderCrossing.test_11_live_pickup_order_reaches_operator_queue[chromium] _
+
+self = <shop.tests.e2e.test_storefront_e2e.TestLiveOrderCrossing object at 0x1167a5d60>
+playwright = <playwright._impl._playwright.Playwright object at 0x1210c37a0>
+page = <Page url='http://127.0.0.1:53103/entrar?next=/finalizar'>
+store_base_url = 'http://127.0.0.1:53103'
+operator_base_url = 'http://127.0.0.1:58004'
+operator_session = <function operator_session.<locals>.login at 0x1216e6200>
+
+    def test_11_live_pickup_order_reaches_operator_queue(
+        self, playwright, page, store_base_url, operator_base_url, operator_session
+    ):
+        # Viewport de desktop comum. A altura artificial que existia aqui era
+        # contorno para o tremor do ShopHeader (colapsar a status bar mudava a
+        # altura da página, o browser corrigia o scroll e a barra oscilava). O
+        # header agora tem altura constante no fluxo e desliza com translate, o
+        # que tira a realimentação — então o teste volta a rolar como um cliente.
+        page.set_viewport_size({"width": 1280, "height": 900})
+    
+        # ── Cliente: menu → PDP → sacola ─────────────────────────────
+        sku = _seeded_sku(page, store_base_url)
+        assert sku, "Seeded menu should expose at least one product SKU"
+        page.goto(
+            f"{store_base_url}{storefront_links.path_product(sku)}", wait_until="networkidle"
+        )
+        product_name = page.locator("h1").first.inner_text().strip()
+        assert product_name, "PDP should name the product"
+        page.get_by_role("button", name=ADD_TO_CART).first.click()
+        page.wait_for_timeout(600)
+    
+        # ── Identificação: o auth-gate do checkout é a PORTA, não o fim ──
+        page.goto(f"{store_base_url}{storefront_links.path_checkout()}")
+        page.wait_for_url(re.compile(re.escape(storefront_links.path_login())), timeout=15_000)
+>       _authenticate_via_debug_otp(page)
+
+shopman/shop/tests/e2e/test_storefront_e2e.py:491: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+page = <Page url='http://127.0.0.1:53103/entrar?next=/finalizar'>
+
+    def _authenticate_via_debug_otp(page) -> None:
+        """Entra pela UI de /entrar usando o código OTP de teste.
+    
+        Em DEBUG o backend devolve ``debug_otp_code`` no request-code e a tela
+        renderiza o alerta "Ambiente de teste" com o botão "Usar código de teste"
+        (que preenche os 6 dígitos; o watcher confirma sozinho). É o MESMO caminho
+        que um cliente real percorre — só a leitura do SMS é substituída pelo
+        código exposto na própria tela.
+        """
+        expect(page.get_by_role("button", name="Não consigo usar WhatsApp")).to_be_visible()
+        page.get_by_role("button", name="Não consigo usar WhatsApp").click()
+        page.locator("#login-phone").fill(LIVE_ORDER_PHONE)
+        page.locator("form:has(#login-phone) button[type='submit']").click()
+    
+        debug_alert = page.locator("[data-testid='debug-otp-alert']")
+        expect(debug_alert, (
+            "O alerta do OTP de teste não apareceu — o gate exige DJANGO_DEBUG=true "
+            "(o request-code só devolve debug_otp_code com o debug OTP exposto)."
+>       )).to_be_visible(timeout=15_000)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: O alerta do OTP de teste não apareceu — o gate exige DJANGO_DEBUG=true (o request-code só devolve debug_otp_code com o debug OTP exposto).
+E       Actual value: - status: Entrar | Nelson Boulangerie
+E       - link "Pular para o conteúdo":
+E         - /url: "#main-content"
+E       - banner:
+E         - text: Fechado agora. Abrimos hoje às 9h
+E         - link "Enviar mensagem para Nelson Boulangerie":
+E           - /url: https://wa.me/554333231997
+E           - text: Mensagem
+E         - link "Página inicial":
+E           - /url: /
+E         - navigation "Navegação principal":
+E           - link "Cardápio":
+E             - /url: /menu
+E           - link "Como funciona":
+E             - /url: /#como-funciona
+E           - link "Entrar":
+E             - /url: /entrar
+E         - link "Ver sacola":
+E           - /url: /sacola
+E           - text: "1"
+E       - main:
+E         - heading "Vamos entrar?" [level=1]
+E         - paragraph: Sua sacola está guardada.
+E         - alert:
+E           - heading "Algo não deu certo" [level=5]
+E           - text: Aguarde antes de solicitar um novo código.
+E         - paragraph: "Envie a mensagem pronta: você entra e sua sacola vai junto."
+E         - link "Entrar pelo WhatsApp":
+E           - /url: https://wa.me/554333231997?text=%23menu%20NB-N99XQK
+E         - paragraph: É prático e seguro, e não exige senha.
+E         - paragraph: Quer fazer você mesmo?
+E         - paragraph: Envie esta mensagem diretamente para o nosso WhatsApp (43) 3323-1997.
+E         - text: "#menu NB-N99XQK"
+E         - button "Copiar mensagem"
+E         - link "Abrir WhatsApp":
+E           - /url: https://wa.me/554333231997
+E         - group:
+E           - text: Telefone
+E           - button "Usar número internacional"
+E           - group:
+E             - group: "+55"
+E             - textbox "Telefone":
+E               - /placeholder: (43) 98404-9009
+E               - text: (43) 99184-0001
+E           - paragraph: Enviamos um código por SMS para este número.
+E         - button "Receber por SMS"
+E         - button "Voltar"
+E         - paragraph: Usamos seu telefone para autenticar a entrada. Seus dados não são compartilhados.
+E         - paragraph: Precisa de ajuda para entrar?
+E         - paragraph: Fale com a loja e resolvemos juntos.
+E         - link "Falar com a loja":
+E           - /url: https://wa.me/554333231997?text=Quero+finalizar+meu+pedido
+E       - contentinfo:
+E         - paragraph: Nelson Boulangerie
+E         - paragraph: Segue rigorosamente as normas da panificação artesanal francesa.
+E         - paragraph: Horário
+E         - paragraph: "Segunda a Sábado: 9h às 18h"
+E         - paragraph: "Domingo: Fechado"
+E         - paragraph: Links
+E         - link "Cardápio":
+E           - /url: /menu
+E         - link "Sacola":
+E           - /url: /sacola
+E         - link "Conta e pedidos":
+E           - /url: /conta
+E         - link "Privacidade":
+E           - /url: /privacy
+E         - link "Termos de uso":
+E           - /url: /terms
+E         - paragraph: Contato
+E         - link "Av. Madre Leônia Milito, 446 Bela Suíça Londrina - PR CEP 86050-270":
+E           - /url: https://www.google.com/maps/@-23.3045000,-51.1628000,17z
+E         - link "(43) 3323-1997":
+E           - /url: tel:+554333231997
+E         - link "nelson@boulangerie.com.br":
+E           - /url: mailto:nelson@boulangerie.com.br
+E         - link "Falar no WhatsApp":
+E           - /url: https://wa.me/554333231997
+E         - text: 2026 · Nelson Boulangerie · CNPJ 02.119.381/0001-58 · Todos os direitos reservados.
+E       - status: Ambiente de desenvolvimento
+E       - region "Notifications alt+T":
+E         - list
+E       Error: element(s) not found 
+E       Call log:
+E         - Expect "to_be_visible" with timeout 15000ms
+E         - waiting for locator("[data-testid='debug-otp-alert']")
+
+shopman/shop/tests/e2e/test_storefront_e2e.py:388: AssertionError
+============================== slowest durations ===============================
+18.65s call     shopman/shop/tests/e2e/test_storefront_e2e.py::TestLiveOrderCrossing::test_11_live_pickup_order_reaches_operator_queue[chromium]
+0.99s setup    shopman/shop/tests/e2e/test_storefront_e2e.py::TestLiveOrderCrossing::test_11_live_pickup_order_reaches_operator_queue[chromium]
+0.11s teardown shopman/shop/tests/e2e/test_storefront_e2e.py::TestLiveOrderCrossing::test_11_live_pickup_order_reaches_operator_queue[chromium]
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/e2e/test_storefront_e2e.py::TestLiveOrderCrossing::test_11_live_pickup_order_reaches_operator_queue[chromium]
+============================== 1 failed in 19.84s ==============================

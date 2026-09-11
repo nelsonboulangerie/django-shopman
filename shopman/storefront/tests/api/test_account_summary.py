@@ -49,6 +49,57 @@ def test_account_summary_returns_customer_memory_contract(client: Client):
     assert data["loyalty"] is None
     assert isinstance(data["food_preferences"], list)
     assert isinstance(data["notification_preferences"], list)
+    assert data["stock_alert_subscriptions"] == []
+
+
+def test_account_summary_exposes_specific_alert_controls_without_contact_data(client: Client):
+    from shopman.storefront.services import stock_alerts
+
+    customer = Customer.objects.create(
+        ref="CUS-SUMMARY-ALERTS",
+        first_name="Ana",
+        phone="+5543999990077",
+    )
+    _login_as_customer(client, customer)
+    sub = stock_alerts.subscribe("SKU-SUMMARY-ALERT", customer=customer, alert_type="production_ready")
+    stock_alerts.set_paused(sub.ref, paused=True, sku=sub.sku, customer=customer)
+
+    item = client.get("/api/v1/account/summary/").json()["stock_alert_subscriptions"][0]
+
+    assert item == {
+        "ref": str(sub.ref),
+        "sku": sub.sku,
+        "product_name": sub.sku,
+        "event_type": "production_ready",
+        "event_label": "saiu do forno",
+        "active": False,
+        "expires_at": None,
+    }
+    assert "phone" not in item and "customer_ref" not in item
+
+
+def test_account_summary_hides_alert_without_verified_consent(client: Client):
+    from shopman.storefront.models import StockAlertSubscription
+    from shopman.storefront.services import stock_alerts
+
+    customer = Customer.objects.create(
+        ref="CUS-SUMMARY-UNVERIFIED",
+        first_name="Ana",
+        phone="+5543999990078",
+    )
+    _login_as_customer(client, customer)
+    StockAlertSubscription.objects.create(
+        sku="SKU-UNVERIFIED",
+        customer_ref=customer.ref,
+        contact_phone=customer.phone,
+        target_key=stock_alerts._target_key(customer_ref=customer.ref, phone=customer.phone),
+        proof_status="legacy_unverified",
+    )
+
+    response = client.get("/api/v1/account/summary/")
+
+    assert response.status_code == 200
+    assert response.json()["stock_alert_subscriptions"] == []
 
 
 def _make_order(customer: Customer, *, ref: str, status: str, total_q: int = 2400):

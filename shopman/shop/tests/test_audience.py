@@ -126,13 +126,13 @@ class TestAlerts:
         result = audience.resolve({"alerts": True}, sku=SKU)
         assert [r.phone for r in result.general] == ["+5543999990002"]
 
-    def test_already_notified_subscription_is_skipped(self):
+    def test_already_notified_subscription_remains_active(self):
         from shopman.storefront.services import stock_alerts
 
         sub = stock_alerts.subscribe(SKU, phone="+5543999990002")
         sub.notified_at = timezone.now()
         sub.save(update_fields=["notified_at"])
-        assert audience.resolve({"alerts": True}, sku=SKU).total == 0
+        assert audience.resolve({"alerts": True}, sku=SKU).total == 1
 
     def test_subscription_without_phone_is_unreachable(self):
         StockAlertSubscription.objects.create(sku=SKU, customer_ref="CUST-1")

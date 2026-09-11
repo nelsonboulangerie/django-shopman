@@ -24,8 +24,13 @@ export function receiptFieldSelector(lineId: string, field: ReceiptFieldAnchor |
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
-    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => resolve());
-    else setTimeout(resolve, 16);
+    // Vue/Teleport may enqueue DOM work in a timer while test and browser
+    // requestAnimationFrame callbacks can run first. Yield one task before the
+    // frame so the sheet has a chance to mount before it is queried again.
+    setTimeout(() => {
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => resolve());
+      else resolve();
+    }, 0);
   });
 }
 

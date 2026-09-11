@@ -232,6 +232,7 @@ class TrackingData:
     # storefront recalculava por conta própria com a pergunta pobre ("estamos em
     # ambiente de teste?"), e o botão aparecia em pedido de cartão no Stripe real
     # — botão morto, porque o endpoint pergunta pelo método e devolve 404.
+    convenience_pending: tuple[str, ...] = ()
     can_mock_confirm_payment: bool = False
     stale_after_seconds: int = 30  # sobrescrito no build com a config viva
 
@@ -321,6 +322,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     )
 
     return TrackingData(
+        convenience_pending=convenience_pending(order.ref),
         can_mock_confirm_payment=can_mock_confirm_payment,
         stale_after_seconds=_stale_after_seconds(),
         cancellation_note=cancellation_note,
@@ -1296,7 +1298,7 @@ def _payment_confirmed_timestamp(order) -> str | None:
             from shopman.payman import PaymentService
 
             intent = PaymentService.get(intent_ref)
-        except Exception:
+        except Exception:  # silêncio-deliberado: projeção conserva o evento canônico como fallback
             logger.debug(
                 "order_tracking_payment_capture_timestamp_failed order=%s intent=%s",
                 order.ref,
@@ -1689,3 +1691,10 @@ __all__ = [
     "build_tracking",
     "build_tracking_status",
 ]
+
+
+def convenience_pending(order_ref: str) -> tuple[str, ...]:
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.directives import CHECKOUT_CONVENIENCE
+    return tuple(Directive.objects.filter(topic=CHECKOUT_CONVENIENCE, payload__order_ref=order_ref).exclude(status="done").values_list("payload__effect", flat=True))

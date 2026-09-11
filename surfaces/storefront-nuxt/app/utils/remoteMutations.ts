@@ -19,3 +19,23 @@ export function remoteMethod (method: string | null | undefined): HttpRequestMet
     ? normalized as HttpRequestMethod
     : 'POST'
 }
+
+
+// Correlation only, never a credential or an instruction to resubmit on reconnect.
+export function retainedRemoteMutationKey (resource: string, prefix: string): string {
+  let key = ''
+  if (import.meta.client) {
+    try { key = sessionStorage.getItem(`shopman-intention:${resource}`) || '' } catch { /* storage denied */ }
+  }
+  if (!key || key.length > 128) key = newRemoteMutationKey(prefix)
+  if (import.meta.client) {
+    try { sessionStorage.setItem(`shopman-intention:${resource}`, key) } catch { /* caller retains it in memory */ }
+  }
+  return key
+}
+
+export function forgetRemoteMutationKey (resource: string) {
+  if (import.meta.client) {
+    try { sessionStorage.removeItem(`shopman-intention:${resource}`) } catch { /* storage denied */ }
+  }
+}

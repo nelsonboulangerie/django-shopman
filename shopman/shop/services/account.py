@@ -466,38 +466,35 @@ def enabled_notification_channels(customer_ref: str) -> set[str]:
     return {channel for channel in NOTIFICATION_CONSENT_CHANNELS if ConsentService.has_consent(customer_ref, channel)}
 
 
-def toggle_notification_consent(
-    customer_ref: str,
-    channel: str,
-    *,
-    ip_address: str = "",
-) -> set[str]:
-    """Toggle one channel's consent; return the enabled consent channels.
-
-    Ao gravar, a tela inteira vira registro: os canais que aparecem desligados
-    passam a ter um opt-out explícito, e não a ausência de registro que tinham
-    antes.
-
-    Isso não é zelo burocrático — é o que faz a tela dizer a verdade. O aviso do
-    próprio pedido tem base legal de execução de contrato e sai por canal sem
-    registro (ver `shop/services/notification.py::_filter_backend_chain`), então
-    um canal "desligado na tela, ausente no banco" seria um botão que mostra
-    "não" e responde "sim". Quem mexeu numa chave viu as quatro; gravar as
-    quatro é registrar o que ela viu e decidiu.
-    """
+def set_notification_consent(customer_ref: str, channel: str, *, enabled: bool, ip_address: str = "") -> set[str]:
+    """Set an explicit desired state under the canonical customer lock."""
+    from django.db import transaction
     from shopman.guestman import ConsentService
+    from shopman.guestman.models import Customer
+    if type(enabled) is not bool or channel not in NOTIFICATION_CONSENT_CHANNELS:
+        raise ValueError("Invalid consent state")
+    with transaction.atomic():
+        Customer.objects.select_for_update().get(ref=customer_ref)
+        if not enabled:
+            ConsentService.revoke_consent(customer_ref, channel)
+        elif not ConsentService.has_consent(customer_ref, channel):
+            ConsentService.grant_consent(customer_ref, channel, source="storefront_settings", legal_basis="consent", ip_address=ip_address)
+        return _complete_notification_preferences(customer_ref)
 
-    if ConsentService.has_consent(customer_ref, channel):
-        ConsentService.revoke_consent(customer_ref, channel)
-    else:
-        ConsentService.grant_consent(
-            customer_ref,
-            channel,
-            source="storefront_settings",
-            legal_basis="consent",
-            ip_address=ip_address,
-        )
 
+def toggle_notification_consent(customer_ref: str, channel: str, *, ip_address: str = "") -> set[str]:
+    """Legacy adapter; new callers send the desired state and an intention key."""
+    from django.db import transaction
+    from shopman.guestman import ConsentService
+    from shopman.guestman.models import Customer
+    with transaction.atomic():
+        Customer.objects.select_for_update().get(ref=customer_ref)
+        return set_notification_consent(customer_ref, channel, enabled=not ConsentService.has_consent(customer_ref, channel), ip_address=ip_address)
+
+
+def _complete_notification_preferences(customer_ref: str) -> set[str]:
+    # Preserve the existing rule: preferences displayed off gain explicit opt-out.
+    from shopman.guestman import ConsentService
     known = {consent.channel for consent in ConsentService.get_consents(customer_ref)}
     for other in NOTIFICATION_CONSENT_CHANNELS:
         if other in known:

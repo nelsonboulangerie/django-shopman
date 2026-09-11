@@ -1,0 +1,7 @@
+........................................................................ [ 39%]
+........................................................................ [ 78%]
+................................ss......                                 [100%]
+=========================== short test summary info ============================
+SKIPPED [1] shopman/shop/tests/test_pos_cash_ledger.py:644: Requires PostgreSQL for real concurrency testing
+SKIPPED [1] shopman/storefront/tests/security/test_race_and_ratelimit.py:173: Requires PostgreSQL for real concurrency (row-level locking).
+182 passed, 2 skipped in 22.03s

@@ -41,6 +41,12 @@ function qcPayload(overrides: Record<string, unknown> = {}) {
           proof: "correct-proof",
           expected_rev: 4,
         },
+        {
+          ref: "review_qc:42",
+          enabled: true,
+          proof: "review-proof",
+          expected_rev: 4,
+        },
       ],
       ...overrides,
     },
@@ -95,7 +101,8 @@ describe("useQcKiosk — guarded writes", () => {
   it("blocks both closing paths on stale data and leaves the partition untouched", async () => {
     env.fetchData.value = qcPayload({ fresh_until: "2020-01-01T00:00:00Z" });
     const partition = [{ quantity: "8", quality_grade_ref: "standard" }];
-    const { finish, quickFinish, correctQuality, submitting } = useQcKiosk();
+    const { finish, quickFinish, reviewQuality, correctQuality, submitting } =
+      useQcKiosk();
 
     expect((await finish(42, 3, "8", partition)).blocked?.code).toBe(
       "stale_projection",
@@ -106,6 +113,7 @@ describe("useQcKiosk — guarded writes", () => {
     expect(
       (await correctQuality(42, 3, partition, "Reavaliação")).blocked?.code,
     ).toBe("stale_projection");
+    expect((await reviewQuality(42, 3)).blocked?.code).toBe("stale_projection");
     expect(env.fetchMock).not.toHaveBeenCalled();
     expect(submitting.value).toBe(false);
     expect(partition).toEqual([
@@ -121,6 +129,26 @@ describe("useQcKiosk — guarded writes", () => {
     expect((await correctQuality(42, 3, partition, "   ")).ok).toBe(false);
     expect(env.fetchMock).not.toHaveBeenCalled();
     expect(submitting.value).toBe(false);
+  });
+
+  it("confirms manager QC with the projected revision and proof", async () => {
+    env.fetchData.value = qcPayload();
+    const { reviewQuality } = useQcKiosk();
+
+    await reviewQuality(42, 3);
+
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/production/42/quality-review/",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.objectContaining({
+          expected_rev: 4,
+          action_ref: "review_qc:42",
+          action_proof: "review-proof",
+          idempotency_key: expect.any(String),
+        }),
+      }),
+    );
   });
 
   it("sends one guarded quality correction with audit metadata while pending", async () => {

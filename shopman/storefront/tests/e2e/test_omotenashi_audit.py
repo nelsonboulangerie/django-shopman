@@ -187,6 +187,12 @@ def test_06c_soldout_409_remembers_who_already_asked(client):
     assert body["is_notifiable"] is True
     assert body["is_notify_subscribed"] is True
 
+    # Reload/navigation rebuilds the projection, then the component recovers the
+    # same purpose-scoped management link from this session without another POST.
+    recovered = client.get(f"/api/v1/availability/{SKU}/notify/")
+    assert recovered.status_code == 200
+    assert recovered.json()["management_url"].startswith("/gerenciar-aviso#")
+
 
 def test_07_checkout_rejected_date_is_actionable(client):
     """✅ A checkout for a date we cannot serve returns a field-routed, pt-BR error."""
@@ -404,7 +410,7 @@ def test_12b_profile_update_error_does_not_leak_exception(client):
 
 
 def test_13_mutation_success_shape_is_consistent(client):
-    """✅ Mutations acknowledge success and return handles needed for recovery."""
+    """✅ Mutations acknowledge success; owned recovery returns its opaque handle."""
     _seed(stock_qty=5)
     # Stock-alert subscribe.
     resp = client.post(
@@ -414,9 +420,10 @@ def test_13_mutation_success_shape_is_consistent(client):
     )
     assert resp.status_code == 200
     subscription = resp.json()
-    assert subscription["ok"] is True
-    assert subscription["subscription_ref"]
-    assert subscription["expires_at"]
+    assert subscription == {"ok": True}
+    recovered = client.get(f"/api/v1/availability/{SKU}/notify/")
+    assert recovered.status_code == 200
+    assert recovered.json()["management_url"].startswith("/gerenciar-aviso#")
     # Cart mutation also acknowledges with ok:true (plus its projection).
     status, add = J.set_cart_qty(client, SKU, 1)
     assert status == 200
@@ -478,6 +485,55 @@ def test_15_checkout_prefills_known_customer_data(client):
     assert ck["preselected_address_id"] is not None
 
 
+def test_15b_address_survives_checkout_logout_and_same_customer_login(client):
+    """O endereço confirmado pertence à pessoa e reaparece após trocar a sessão."""
+    from shopman.shop.models import DeliveryZone, Shop
+
+    _seed(stock_qty=10)
+    DeliveryZone.objects.create(
+        shop=Shop.objects.first(),
+        name="Centro",
+        zone_type=DeliveryZone.ZONE_TYPE_CEP_PREFIX,
+        match_value="860",
+        fee_q=600,
+    )
+    customer = J.make_customer(first_name="Cliente", last_name="A", phone="+5543999990075")
+    J.authenticate(client, customer)
+    status, _ = J.set_cart_qty(client, SKU, 1)
+    assert status == 200
+
+    address = {
+        "formatted_address": "Rua Teste A, 95 - Centro, Londrina - PR",
+        "route": "Rua Teste A",
+        "street_number": "95",
+        "neighborhood": "Centro",
+        "city": "Londrina",
+        "state_code": "PR",
+        "postal_code": "86010-000",
+    }
+    status, body = J.checkout(
+        client,
+        name="Cliente A",
+        phone=customer.phone,
+        fulfillment_type="delivery",
+        delivery_address=address["formatted_address"],
+        delivery_address_structured=address,
+        delivery_date=J.tomorrow_iso(),
+    )
+    assert status == 201, body
+    assert customer.addresses.filter(formatted_address=address["formatted_address"]).exists()
+
+    logged_out = client.post("/api/v1/auth/logout/")
+    assert logged_out.status_code == 200
+    J.authenticate(client, customer)
+
+    response = client.get("/api/v1/account/addresses/?include=copy")
+    assert response.status_code == 200, response.content
+    rows = response.json()["addresses"]
+    assert [row["id"] for row in rows] == [customer.addresses.get().id]
+    assert rows[0]["formatted_address"] == address["formatted_address"]
+
+
 def test_16_reorder_readds_previous_order_in_one_call(client):
     """✅ Reorder re-adds a past order's items in one action and skips unavailable ones gracefully."""
     _seed(stock_qty=50)
@@ -528,9 +584,10 @@ def test_18_unavailable_product_exposes_notify_affordance(client):
     )
     assert resp.status_code == 200
     subscription = resp.json()
-    assert subscription["ok"] is True
-    assert subscription["subscription_ref"]
-    assert subscription["expires_at"]
+    assert subscription == {"ok": True}
+    recovered = client.get(f"/api/v1/availability/{SKU}/notify/")
+    assert recovered.status_code == 200
+    assert recovered.json()["management_url"].startswith("/gerenciar-aviso#")
     from shopman.storefront.services import stock_alerts
 
     # The subscription was persisted (phone is normalised on the way in).

@@ -1,3 +1,4 @@
+import { retainedRemoteMutationKey, forgetRemoteMutationKey } from '~/utils/remoteMutations'
 import type { CartProjection, ReorderConflictProjection, Action } from '~/types/shopman'
 
 export function useReorder () {
@@ -7,20 +8,29 @@ export function useReorder () {
   const pending = useState<Record<string, boolean>>('storefront-reorder-pending', () => ({}))
   const conflict = useState<ReorderConflictProjection | null>('storefront-reorder-conflict', () => null)
 
+  const outcome = useState<{ added: Array<{ sku: string, name: string }>, skipped: string[], ok: boolean } | null>('storefront-reorder-outcome', () => null)
+  const keys = useState<Record<string, string>>('storefront-reorder-keys', () => ({}))
+
   async function submit (orderRef: string, mode: 'append' | 'replace' = 'append') {
+    if (pending.value[orderRef]) return null
+    const intent = `${orderRef}:${mode}`
+    keys.value[intent] ||= retainedRemoteMutationKey(`reorder:${intent}`, `reorder-${mode}`)
     pending.value = { ...pending.value, [orderRef]: true }
     try {
-      const response = await $fetch<{ ok?: true, cart?: CartProjection }>(apiPath(`/api/v1/orders/${encodeURIComponent(orderRef)}/reorder/`), {
+      const response = await $fetch<{ ok?: boolean, cart?: CartProjection, added?: Array<{ sku: string, name: string }>, skipped?: string[], replayed?: boolean }>(apiPath(`/api/v1/orders/${encodeURIComponent(orderRef)}/reorder/`), {
         method: 'POST',
         headers: {
           ...(await csrfHeaders()),
-          'x-idempotency-key': newRemoteMutationKey(`reorder-${mode}`)
+          'Idempotency-Key': keys.value[intent]
         },
         credentials: 'include',
         body: { mode }
       })
       if (response.cart) setFromServer(response.cart)
-      if (import.meta.client) useSonner.success('Itens adicionados ao carrinho.')
+      outcome.value = { added: response.added || [], skipped: response.skipped || [], ok: response.ok === true }
+      forgetRemoteMutationKey(`reorder:${intent}`)
+      keys.value = omitKey(keys.value, intent)
+      if (import.meta.client && response.ok && !outcome.value.skipped.length) useSonner.success(response.replayed ? 'Esta tentativa já foi processada. Sua sacola está atualizada.' : 'Itens adicionados ao carrinho.')
       if (import.meta.client) await navigateTo('/sacola')
       conflict.value = null
       return response
@@ -50,6 +60,7 @@ export function useReorder () {
 
   return {
     pending,
+    outcome,
     conflict,
     submit,
     performAction

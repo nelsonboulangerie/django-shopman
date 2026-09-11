@@ -285,6 +285,7 @@ def test_second_round_same_phone_not_blocked_by_abandoned_session_ghost_holds(cl
                 "delivery_time_slot": get_slots()[-1]["ref"],
                 "payment_method": "cash",
                 "expected_total_q": 1,
+                "expected_revision": round1.get("/api/v1/storefront/cart/").json()["cart"]["revision"],
             }
         ),
         content_type="application/json",

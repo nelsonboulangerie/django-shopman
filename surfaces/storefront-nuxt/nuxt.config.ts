@@ -123,6 +123,7 @@ export default defineNuxtConfig({
 
   colorMode: {
     storageKey: 'storefront-nuxt-color-mode',
+    storage: 'cookie',
     classSuffix: ''
   },
 

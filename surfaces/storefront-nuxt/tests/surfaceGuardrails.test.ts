@@ -897,6 +897,9 @@ describe('surface UX guardrails', () => {
     expect(prefs).toContain('v-for="pref in summary?.notification_preferences || []"')
     expect(prefs).not.toContain(':checked')
     expect(prefs).not.toContain('@update:checked')
+    expect(prefs).toContain('@click="stockAlertCancelTarget = subscription"')
+    expect(prefs).toContain('<UiAlertDialogTitle>Cancelar este aviso?</UiAlertDialogTitle>')
+    expect(prefs).toContain("@click=\"changeStockAlert(stockAlertCancelTarget, 'cancel')\"")
 
     const security = read('app/pages/conta/seguranca.vue')
     expect(security).toContain("apiPath('/api/v1/account/devices/')")
@@ -1394,11 +1397,19 @@ describe('customer surface never names the reason behind unavailability', () => 
 
   const forbidden = /pausad|pausou|em pausa/i
 
-  it('keeps "pausado" out of every string the storefront renders', () => {
+  it('keeps internal pause reasons out of product availability copy', () => {
     const offenders = collectSourceFiles('app')
+      // "Pausado" is a customer-controlled state for a persistent alert, not
+      // the internal reason a product is unavailable.
+      .filter(file => ![
+        'app/pages/conta/preferencias.vue',
+        'app/pages/gerenciar-aviso.vue'
+      ].includes(file))
       .filter(file => forbidden.test(withoutComments(read(file))))
 
     expect(offenders).toEqual([])
+    expect(read('app/pages/conta/preferencias.vue')).toContain("subscription.active ? 'Ativo' : 'Pausado'")
+    expect(read('app/pages/gerenciar-aviso.vue')).toContain("alertState.state === 'paused'")
   })
 
   it('shows one label for every unavailable cause on the product page', () => {
@@ -1518,7 +1529,7 @@ describe('surface claims stay inside what the projection actually says', () => {
 
     expect(offer).toContain('v-for="item in skipped"')
     expect(offer).toContain('<StockNotifyButton')
-    expect(offer).not.toContain('ref<string[]>([])')
+    expect(offer).not.toMatch(/const skipped\s*=\s*ref<string\[\]>/)
   })
 
   it('keeps the progress timeline readable by assistive tech', () => {

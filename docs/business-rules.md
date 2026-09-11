@@ -289,10 +289,11 @@ waitlist:
   price_frozen:         bool    # O preço da reserva é o preço da confirmação (default: true)
 ```
 
-O `horizon_days` é a pergunta que faltava. O Stockman sempre somou fornada
-planejada em `total_promisable`, mas toda leitura de cliente perguntava "e
-para HOJE?" — e fornada de amanhã, por construção, não conta para hoje. Com o
-horizonte, a leitura pergunta pelo dia certo e a fornada volta a ser promessa.
+O `horizon_days` limita quais datas futuras podem ser consideradas. A leitura
+do cliente mantém duas perguntas separadas: quanto existe para hoje e qual é a
+primeira fornada elegível dentro do horizonte. Isso evita somar fornadas de
+datas incompatíveis ou tratar um perecível fresco de hoje como vencido apenas
+porque o horizonte termina depois de sua validade.
 
 A reserva ancora na data da FORNADA, não no horizonte: o hold precisa apontar
 para o lote certo para a sacola dizer "Previsto para <dia>" sem mentir. A

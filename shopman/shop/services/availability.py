@@ -232,10 +232,16 @@ def decide(
     """Return a canonical promise decision for one SKU in context."""
     qty_d = Decimal(str(qty))
     if target_date is None:
-        # Fila de espera (WP-P2E): sem data explícita, a pergunta é o HORIZONTE
-        # de promessa do canal, não "hoje". Com a fila desligada o horizonte É
-        # hoje, então nada muda; ligada, a fornada planejada passa a contar.
-        target_date = waitlist.promise_horizon(channel_ref)
+        # A decisão sem data explícita segue a mesma escolha da reserva: usa a
+        # pronta-entrega de hoje quando ela cobre a quantidade e só então ancora
+        # na primeira fornada elegível. Perguntar pelo fim do horizonte fazia
+        # perecíveis de validade zero parecerem vencidos ainda no dia da produção.
+        from django.utils import timezone
+
+        target_date = (
+            waitlist.reserve_target_date(sku, qty_d, channel_ref=channel_ref)
+            or timezone.localdate()
+        )
 
     components = _expand_if_bundle(sku, qty_d)
     if components is not None:

@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 # ── ALL_HANDLERS — single source of truth ──
 
 ALL_HANDLERS = [
+    "shopman.shop.handlers.checkout.CheckoutConvenienceHandler",
     # Lifecycle
     "shopman.shop.handlers.lifecycle_phase.LifecyclePhaseHandler",
     "shopman.shop.handlers.confirmation.ConfirmationTimeoutHandler",
@@ -85,6 +86,8 @@ ALL_HANDLERS = [
 
 def register_all() -> None:
     """Register all directive handlers, modifiers, validators, and signals."""
+    from shopman.shop.handlers.checkout import CheckoutConvenienceHandler
+    registry.register_directive_handler(CheckoutConvenienceHandler())
     _register_notification_handlers()
     _register_confirmation_handler()
     from shopman.shop.handlers.lifecycle_phase import LifecyclePhaseHandler

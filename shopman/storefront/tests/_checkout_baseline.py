@@ -65,6 +65,8 @@ def with_baseline(client, payload: dict) -> dict:
     Passe ``expected_total_q`` explicitamente para simular divergência de preço —
     é assim que se testa a recusa ``total_changed``.
     """
-    if "expected_total_q" in payload:
-        return payload
-    return {**payload, "expected_total_q": displayed_total_q(client, payload)}
+    total = payload.get("expected_total_q")
+    if total is None:
+        total = displayed_total_q(client, payload)
+    cart = _cart_from(client.get("/api/v1/storefront/cart/"))
+    return {**payload, "expected_total_q": total, "expected_revision": payload.get("expected_revision", cart["revision"])}

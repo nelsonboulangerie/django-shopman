@@ -179,7 +179,8 @@ class CartProjection:
     upsell: UpsellSuggestionProjection | None
 
     can_checkout: bool
-    checkout_block_reason: str  # "" | "empty" | "unavailable" | "below_minimum"
+    revision: int = 0
+    checkout_block_reason: str = ""  # "" | "empty" | "unavailable" | "below_minimum"
 
 
 def _empty_cart(session_key: str = "") -> CartProjection:
@@ -315,6 +316,7 @@ def build_cart(
 
     return CartProjection(
         session_key=session_key,
+        revision=session.rev,
         lines=lines,
         count=count,
         is_empty=False,
@@ -403,27 +405,19 @@ def _made_to_order_skus(skus: list[str]) -> frozenset[str]:
 def _availability(
     skus: list[str], session_key: str, channel_ref: str,
 ) -> tuple[dict[str, dict | None], dict[str, Decimal]]:
-    """Batch availability + own-hold lookup; degrades to empty maps on failure
-    (including when Stockman is not installed — the import simply raises)."""
+    """Canonical catalog availability + own-hold lookup.
+
+    The catalog resolver deliberately reads ready stock for today and, when
+    enabled, the first reservable future batch as a separate promise. Passing
+    the waitlist horizon directly to Stockman made a zero-day product's fresh
+    stock look expired in the cart even while the menu correctly offered it.
+    """
     try:
-        from shopman.stockman.services.availability import availability_for_skus
-
-        from shopman.shop.adapters import stock as stock_adapter
+        from shopman.shop.projections import catalog_context
         from shopman.shop.services import availability as availability_service
-        from shopman.shop.services import waitlist
 
-        scope = stock_adapter.get_channel_scope(channel_ref)
-        avail_map = availability_for_skus(
-            skus,
-            # Fila de espera (WP-P2E): a sacola lê no HORIZONTE de promessa do
-            # canal. Desligada, o horizonte é hoje — a leitura é a de sempre.
-            target_date=waitlist.promise_horizon(channel_ref),
-            safety_margin=scope["safety_margin"],
-            allowed_positions=scope["allowed_positions"],
-            excluded_positions=scope.get("excluded_positions"),
-            expiry_margin_days=scope.get("expiry_margin_days", 0),
-            include_nonconforming=scope.get("sells_nonconforming", True),
-            allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
+        avail_map = catalog_context.availability_for_skus(
+            skus, channel_ref=channel_ref,
         )
         own_holds = availability_service.own_holds_by_sku(session_key, skus)
         return avail_map, own_holds

@@ -1,0 +1,62 @@
+
+> test
+> vitest run --reporter=dot
+
+
+ RUN  v4.1.6 /private/tmp/shopman-storefront-execution-20260910/surfaces/storefront-nuxt
+
+stdout | tests/composables/useCartState.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+stdout | tests/composables/useShopSession.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+stdout | tests/composables/useOrderTrackingStream.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+stdout | tests/composables/useFavoritesState.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+stdout | tests/composables/useReorder.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+············stdout | tests/components/stockNotifyButton.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+··························stdout | tests/components/cartQuantityAction.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+stdout | tests/components/substituteSheet.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+stdout | tests/composables/confetti.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+··stdout | tests/components/pinInputLabel.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+·stdout | tests/pages/checkoutName.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+··stdout | tests/components/connectivity.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+···················································································································································································································································································stdout | tests/components/starRatingInSheet.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+·····················stderr | tests/components/starRatingInSheet.test.ts > StarRating dentro do BottomSheet > responde ao clique quando o sheet está aberto
+Warning: Missing `Description` or `aria-describedby="undefined"` for DialogContent.
+
+······················································································stdout | tests/components/starRating.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+························stdout | tests/components/badge.smoke.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+·······················································································
+
+ Test Files  57 passed (57)
+      Tests  536 passed (536)
+   Start at  22:50:31
+   Duration  10.16s (transform 25.41s, setup 1.89s, import 23.52s, tests 24.90s, environment 8.84s)
+

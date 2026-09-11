@@ -31,6 +31,6 @@ export function notifyPhoneTarget (raw: string, defaultDdd = ''): string {
 export function notifyConfirmationMessage (normalizedPhone: string): string {
   const display = normalizedPhone ? displayE164Phone(normalizedPhone) : ''
   return display
-    ? `Pronto. Avisaremos você no ${display}.`
-    : 'Pronto. Avisaremos você quando estiver disponível.'
+    ? `Pedido recebido para ${display}. Entre com esse WhatsApp para conferir ou reativar.`
+    : 'Aviso recorrente ativo. Você pode gerenciá-lo nas preferências.'
 }

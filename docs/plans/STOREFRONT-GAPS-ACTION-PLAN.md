@@ -90,6 +90,9 @@ falta **surfaceá-lo**.
 **Entrega:** documentar o modelo completo na spec (a parte robusta hoje é invisível) + ajustar copy.
 
 ### WP-3 — "Me avise quando disponível"  ✅ BACKEND FEITO (commit feat WP-3) · 🥇 ouro
+> **Superado pela ADR-029 em 2026-09-11:** `notified_at IS NULL` e “dispara uma
+> vez” abaixo descrevem o desenho histórico. A fonte vigente usa assinatura
+> persistente + ocorrência + recibo idempotente.
 > Modelo StockAlertSubscription (+migração), serviço subscribe/notify idempotente, endpoint
 > `POST /api/v1/availability/<sku>/notify/` (anônimo só-telefone OU logado), trigger no Move
 > (apps.ready → on_commit) só quando há pendente. Falta CTA na PDP Nuxt (lê `is_notifiable`).
