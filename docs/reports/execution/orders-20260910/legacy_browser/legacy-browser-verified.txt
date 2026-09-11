@@ -1,0 +1,1 @@
+Old browser read succeeded; incompatible POST refused; status and timeline unchanged.

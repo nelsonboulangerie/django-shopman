@@ -1419,3 +1419,13 @@ permissão, custódia, confirmação física nem endpoint. **294 Vitest/3,71s**,
 aprovado; os testes verificam ausência de chamada ao comando ao clicar desabilitado.
 Logs `orders-20260910/recovery_actions/`. Sem migration; rollback volta a permitir
 ativação inútil/negada pelo servidor, sem apagar dados ou chaves.
+
+### WP09 — bundle anterior navegando no backend atual
+
+Browser real 5a3383c9 construído em worktree próprio limpo, sem editar fontes;
+backend c935459be, Nitro 3006 e banco sintético. Login/GET/detalhe funcionaram.
+POST antigo de avanço recusado com 400 intention_required e mensagem de atualizar;
+Order accepted/timeline e hashes de 9 tabelas de negócio permaneceram iguais.
+Artefatos e reprodução em `orders-20260910/legacy_browser/README.md`; build e probe
+aprovados, screenshot inspecionado. Sem efeitos externos; não implica coexistência
+segura de worker antigo nem prova todos os endpoints do cliente anterior.
