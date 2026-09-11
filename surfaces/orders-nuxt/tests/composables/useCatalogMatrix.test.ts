@@ -169,3 +169,33 @@ describe("catalog price preview and lost response", () => {
     expect(env.fetchMock.mock.calls[1]![1].query.idempotency_key).toBe(env.fetchMock.mock.calls[0]![1].headers["Idempotency-Key"]);
   });
 });
+
+it("preços confirmados não viram falha de gravação quando o GET seguinte falha", async () => {
+  env.reset();
+  env.fetchMock.mockResolvedValueOnce({ count: 2, outcome: "applied" });
+  env.refresh.mockRejectedValueOnce({ status: 503 });
+  const m = useCatalogMatrix();
+  expect(await m.bulkPrice("web", { skus: ["PAO"] }, { op: "pct", value: 10 }, { base_revision: "base", expected_actor_id: 1, cells: [], limit: 100 })).toBe(2);
+  expect(m.errorMsg.value).toContain("Alteração confirmada");
+  expect(env.fetchMock).toHaveBeenCalledTimes(1);
+});
+
+it("catálogo indisponível mantém última leitura e recusa nova escrita", async () => {
+  const { ref } = await import("vue");
+  env.reset();
+  const originalUseFetch = (globalThis as any).useFetch;
+  const last = { rows: [{ sku: "PAO" }], surfaces: [], collections: [] };
+  const data = ref<any>({ matrix: last });
+  const failure = ref<any>(null);
+  vi.stubGlobal("useFetch", () => ({ data, error: failure, pending: ref(false), refresh: env.refresh }));
+  try {
+    const m = useCatalogMatrix();
+    failure.value = { status: 503 };
+    data.value = undefined;
+    expect(m.matrix.value).toEqual(last);
+    expect(await m.setCell("PAO", "web", { price_q: 700 })).toBe(false);
+    expect(await m.bulkSet("web", { skus: ["PAO"] }, { is_published: true })).toBeNull();
+    expect(env.fetchMock).not.toHaveBeenCalled();
+    expect(m.errorMsg.value).toContain("seu rascunho foi mantido");
+  } finally { vi.stubGlobal("useFetch", originalUseFetch); }
+});

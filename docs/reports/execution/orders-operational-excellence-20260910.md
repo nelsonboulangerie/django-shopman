@@ -867,3 +867,10 @@ Base `d7d0e8432`: teste de ciclo de vida reproduziu 0 conexões SSE após GET in
 Base `a4361379e`. Teste anterior: 8 falhas/9 sucessos. Preço inteiro aceitava True e truncava 12.5; infinity levantava OverflowError não traduzido. Nutrição aceitava booleanos, truncava porção fracionária e valores não finitos escapavam da recusa tipada. NaN em inteiro já era recusado e virou regressão. O parser de inteiro do facade agora segue o dialeto estrito já existente da entrada (int/string inteira; bool/float não são inteiros); nutrição usa a dataclass canônica para escolher inteiro/decimal e exige número finito. Não muda regra nutricional, origem dos fatos ou aprovação de rótulo.
 
 Validação: 106 testes PostgreSQL API/catálogo/preservação passaram. A primeira execução pós-edição falhou na coleta por import com indentação incorreta; corrigido antes da rodada válida e Ruff. As recusas mantêm nome, preço e dados nutricionais/proveniência anteriores. Sem migração; rollback de código, sem transformação de valores comerciais. G05 de rotulagem continua pendente; nenhum dado real editado.
+
+
+### WP06/WP07 — leitura e resultado confirmado do catálogo
+
+Base `39d6b7e21`: matriz não conservava explicitamente a última leitura e rotinas incluíam refresh no try da gravação; no lote de preços, um GET falho após recibo aplicado devolvia null. Agora atualização de leitura é separada do resultado da gravação, com mensagem persistente, última matriz preservada e bloqueio de nova escrita em erro. Vazio de primeira leitura falha não sugere cadastrar produtos. Refreshes usam coalescer existente, fallback 30s e retorno de aba/rede. Troca deliberada de coleção descarta o fallback anterior; não há persistência nova.
+
+Validação efetiva: 259 testes Orders/Vitest e typecheck passaram. Testemunhas verificam recibo de preço aplicado seguido de GET503 continua retornando contagem confirmada, e falha de GET conserva matriz/recusa célula e lote com zero POST. Migração/rollback de código apenas; não exige modificar produtos, flags ou recibos. Cadência de 30s é configuração local, não prova do budget de 35s ponta a ponta nem benefício medido em campo.

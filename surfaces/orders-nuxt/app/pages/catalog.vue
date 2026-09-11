@@ -375,8 +375,9 @@ useHead({ title: "Catálogo · Gestor" });
     </UiToolbar>
 
     <section class="flex min-h-0 flex-1 flex-col gap-4 p-4">
-      <p v-if="error" class="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-        Não foi possível carregar o catálogo. <button class="underline" @click="refresh()">Tentar de novo</button>
+      <p v-if="errorMsg" role="alert" class="text-sm text-destructive">{{ errorMsg }}</p>
+      <p v-if="error" role="alert" class="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        Não foi possível atualizar o catálogo. {{ matrix ? "Exibindo a última leitura disponível." : "" }} <button class="underline" @click="refresh()">Tentar de novo</button>
       </p>
 
       <!-- matrix -->
@@ -693,7 +694,7 @@ useHead({ title: "Catálogo · Gestor" });
       </table>
     </div>
 
-      <div v-else-if="!pending" class="grid place-items-center rounded-xl border border-dashed border-border py-16 text-center">
+      <div v-else-if="!pending && !error" class="grid place-items-center rounded-xl border border-dashed border-border py-16 text-center">
         <Icon name="lucide:package-search" class="mb-2 size-8 text-muted-foreground/40" />
         <p v-if="Object.keys(filters).length || query.trim()" class="text-sm text-muted-foreground">
           Nenhum produto com esses filtros.
