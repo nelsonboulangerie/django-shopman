@@ -154,6 +154,7 @@ class ReturnHandler:
         try:
             self._handle(message=message, ctx=ctx)
         except Exception as exc:
+            logger.warning("return.processing_pending directive=%s", message.pk, exc_info=True)
             from shopman.orderman.dispatch import MAX_ATTEMPTS
 
             if isinstance(exc, DirectiveTerminalError) or message.attempts >= MAX_ATTEMPTS:

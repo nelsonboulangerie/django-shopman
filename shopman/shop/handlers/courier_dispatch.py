@@ -101,6 +101,7 @@ class CourierDispatchHandler:
             self._record_terminal_failure(order, str(exc))
             raise DirectiveTerminalError(str(exc)) from exc
         except Exception as exc:
+            logger.warning("courier.dispatch_unknown order=%s directive=%s", order.ref, message.pk, exc_info=True)
             self._unknown(order, message, str(exc))
         if result.inert:
             self._set_attempt(message, "inert")

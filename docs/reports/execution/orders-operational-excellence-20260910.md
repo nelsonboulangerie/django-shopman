@@ -661,3 +661,24 @@ agora modelam o contrato real, mantendo o teste próprio que recusa cliente lega
 Migração sem DDL; publicar cliente compatível antes de exigir contrato em ambiente autorizado.
 Rollback não pode reabrir confirmação sem intenção; conservar recibos e GET durante G08.
 Concorrência/retomada dos demais comandos e jornadas completas seguem no escopo pendente.
+
+### WP09 — triagem da suíte ampla PostgreSQL
+
+Rodada ampla iniciada após e258b01d6: **8494 passed, 61 failed, 16 errors, 35 skipped,
+26 deselected, 38 subtests, 3 warnings**, 1223.52s. Módulos já carregados nessa rodada não
+validam automaticamente as mudanças posteriores; estas têm retestes próprios.
+
+Falhas atribuíveis à evolução do contrato: testes MagicMock de configuração chamavam o
+marcador persistente e dependiam do antigo swallow; agora isolam somente o marcador nos
+testes de roteamento, preservando provas reais de durabilidade. Teste C14 esperava estoque/
+estorno a partir de status returned sem registro de itens; agora exige tarefa failed+alerta,
+sem inventar recebimento. Os ensaios de ReturnHandler continuam comprovando o caminho com
+registro autorizado e recibo único. Três catches novos já alertavam/relevantavam fora da
+janela de quatro linhas do gate de higiene; adicionado log explícito imediato, sem elevar
+baseline. **121 passed, 2 skipped** no reteste lifecycle/config/conformance/courier/returns.
+
+Outros grupos mostram SQL PostgreSQL de base (FOR UPDATE com DISTINCT/outer join), tamanho
+de posição de forno e ordem de chaves JSON em teste. Atribuição definitiva ainda em ensaio:
+base 5a3383c9 extraída por git archive em diretório de laboratório, sem alterar checkout de
+terceiros; repetição dos 14 módulos problemáticos em andamento. Não são descartados como
+“preexistentes” sem essa prova, nem a rodada ampla é marcada verde.

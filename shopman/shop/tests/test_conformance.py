@@ -958,7 +958,7 @@ class TestC14ReturnWithRefund(TransactionTestCase):
     def tearDown(self):
         _stop(self.patchers)
 
-    def test_return_calls_revert_refund_cancel_notify(self):
+    def test_legacy_return_without_item_record_requires_inventory(self):
         session = _session(self.channel)
         result = _commit(session, self.channel)
         order = Order.objects.get(ref=result.order_ref)
@@ -971,11 +971,17 @@ class TestC14ReturnWithRefund(TransactionTestCase):
         order.transition_status(Order.Status.RETURNED, actor="customer")
         order.refresh_from_db()
 
-        # transition_status(RETURNED) emits order_changed → dispatch(on_returned) via signal
-        self.mocks["revert"].assert_called_with(order)
-        self.mocks["refund"].assert_called_with(order)
-        self.mocks["cancel"].assert_called_with(order)
-        self.mocks["send"].assert_called()
+        # A bare historical status contains no authorized item receipt. It must
+        # not invent a physical return or repeat stock/refund work.
+        self.mocks["revert"].assert_not_called()
+        self.mocks["refund"].assert_not_called()
+        from shopman.orderman.models import Directive
+
+        from shopman.backstage.models import OperatorAlert
+
+        assert Directive.objects.filter(topic="order.lifecycle_phase", payload__order_ref=order.ref,
+            payload__phase="on_returned", status="failed").exists()
+        assert OperatorAlert.objects.filter(type="lifecycle_phase_stuck", order_ref=order.ref).exists()
 
     def test_cancellation_calls_release_refund_notify(self):
         """Cancellation path: stock.release + payment.refund + notification (via signal)."""
