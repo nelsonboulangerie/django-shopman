@@ -21,6 +21,8 @@ LIFECYCLE_PHASE_RECEIPT_SCOPE = "lifecycle:phase"
 
 # Notification
 NOTIFICATION_SEND = "notification.send"
+STOCK_ALERT_DELIVER = "stock_alert.deliver"
+STOCK_ALERT_DELIVERY_RECEIPT_SCOPE = "stock_alert:delivery"
 
 # Receipts permanentes para a identidade de entrega. O envio original e os
 # reenvios vivem em scopes distintos: o primeiro nunca volta a nascer depois de

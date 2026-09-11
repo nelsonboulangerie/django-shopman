@@ -1,12 +1,10 @@
 """Storefront signal receivers.
 
-Alerts do cliente ("Me avise"), dois gatilhos:
+Alerts do cliente ("Me avise"), dois gatilhos persistentes:
 
-- ``stock_back`` — um ``Move`` do Stockman pousa para um SKU com inscrições
-  pendentes;
+- ``stock_back`` — cada ``Move`` reconcilia o ciclo indisponível→disponível;
 - ``production_ready`` — uma fornada (``production_changed``, action=finished)
-  conclui para esse SKU. E, como rede de segurança, um ``Move`` que NÃO é de
-  produção também serve essa fila: ver ``on_move_for_stock_alerts``.
+  conclui para esse SKU, com identidade da ordem de produção.
 
 Nos dois casos o envio é agendado para *depois* do commit da transação, para
 que o estoque novo já esteja visível quando o aviso prometer "pode pedir".
@@ -41,11 +39,8 @@ def on_move_for_stock_alerts(sender, instance, **kwargs) -> None:
     quant_id = getattr(instance, "quant_id", None)
     if not quant_id:
         return
-    # Só uma entrada líquida pode cumprir "me avise quando chegar". Débitos e
-    # transferências internas de revisão do QC não são uma nova fornada e não
-    # podem disparar uma promessa falsa ao cliente.
-    if getattr(instance, "delta", 0) <= 0:
-        return
+    # Débitos também passam pelo reconciliador: quando tornam o SKU indisponível,
+    # encerram o ciclo aberto para que a próxima volta seja uma nova ocorrência.
     metadata = getattr(instance, "metadata", None) or {}
     if metadata.get("suppress_notifications"):
         return
@@ -59,20 +54,15 @@ def on_move_for_stock_alerts(sender, instance, **kwargs) -> None:
     if not sku:
         return
 
-    from shopman.stockman.models import Move
-
     from shopman.storefront.services import stock_alerts
 
-    also_bake_waiters = getattr(instance, "kind", "") != Move.Kind.MAKE
-    types = ("stock_back", "production_ready") if also_bake_waiters else ("stock_back",)
-
-    # Fast path: skip unless someone is actually waiting on this SKU.
-    if not stock_alerts.has_pending(sku, alert_types=types):
+    if not stock_alerts.needs_stock_reconciliation(sku):
         return
 
     from django.db import transaction
 
-    transaction.on_commit(lambda: stock_alerts.notify_back_in_stock(sku, also_bake_waiters=also_bake_waiters))
+    source_ref = str(getattr(instance, "pk", "") or getattr(instance, "ref", "") or "")
+    transaction.on_commit(lambda: stock_alerts.notify_back_in_stock(sku, source_ref=source_ref))
 
 
 @resilient_receiver
@@ -92,7 +82,8 @@ def on_production_finished_for_stock_alerts(sender, product_ref, date, action, w
 
     from django.db import transaction
 
-    transaction.on_commit(lambda: stock_alerts.notify_bake_ready(product_ref))
+    source_ref = str(getattr(work_order, "ref", "") or getattr(work_order, "pk", "") or date or "")
+    transaction.on_commit(lambda: stock_alerts.notify_bake_ready(product_ref, source_ref=source_ref))
 
 
 def on_customer_anonymized(sender, customer_ref: str = "", phone: str = "", **kwargs) -> None:

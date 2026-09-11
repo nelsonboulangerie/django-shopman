@@ -602,7 +602,36 @@ class AccountSummaryView(APIView):
                 }
                 for pref in account.notification_prefs
             ],
+            "stock_alert_subscriptions": _stock_alert_preferences(customer),
         })
+
+
+def _stock_alert_preferences(customer) -> list[dict]:
+    """Active/paused purpose-specific opt-ins; never expose contact details."""
+    from django.db.models import Q
+
+    from shopman.storefront.models import StockAlertSubscription
+    from shopman.storefront.services.stock_alerts import product_name
+
+    now = timezone.now()
+    rows = StockAlertSubscription.objects.filter(
+        Q(customer_ref=customer.ref) | Q(contact_phone=customer.phone),
+        revoked_at__isnull=True,
+        proof_status="verified",
+    ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
+    labels = dict(StockAlertSubscription.AlertType.choices)
+    return [
+        {
+            "ref": str(row.ref),
+            "sku": row.sku,
+            "product_name": product_name(row.sku),
+            "event_type": row.alert_type,
+            "event_label": labels.get(row.alert_type, row.alert_type),
+            "active": row.paused_at is None,
+            "expires_at": row.expires_at.isoformat() if row.expires_at else None,
+        }
+        for row in rows.order_by("sku", "alert_type", "pk")
+    ]
 
 
 @extend_schema_view(

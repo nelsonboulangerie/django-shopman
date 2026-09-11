@@ -51,7 +51,7 @@ describe('StockNotifyButton', () => {
     const wrapper = await mountSuspended(StockNotifyButton, {
       props: { sku: 'PAO', name: 'Pão', subscribed: true }
     })
-    expect(wrapper.text()).toContain('Avisaremos você')
+    expect(wrapper.text()).toContain('Aviso ativo')
     expect(wrapper.get('button').attributes('disabled')).toBeDefined()
   })
 
@@ -68,7 +68,7 @@ describe('StockNotifyButton', () => {
 
     expect(fetchMock).toHaveBeenCalledOnce()
     expect(fetchMock.mock.calls[0]?.[0]).toContain('/availability/PAO/notify/')
-    expect(wrapper.text()).toContain('Avisaremos você') // virou estado confirmado
+    expect(wrapper.text()).toContain('Aviso ativo') // virou estado confirmado
   })
 
   it('renders the notify affordance with an accessible label when not subscribed', async () => {
@@ -76,7 +76,7 @@ describe('StockNotifyButton', () => {
     const wrapper = await mountSuspended(StockNotifyButton, {
       props: { sku: 'PAO', name: 'Pão', pill: true, subscribed: false }
     })
-    expect(wrapper.get('button').attributes('aria-label')).toBe('Me avise quando Pão voltar')
+    expect(wrapper.get('button').attributes('aria-label')).toBe('Ativar avisos recorrentes quando Pão voltar')
   })
 
   it('anonymous submit uses the shop default DDD and repairs legacy mobile input', async () => {

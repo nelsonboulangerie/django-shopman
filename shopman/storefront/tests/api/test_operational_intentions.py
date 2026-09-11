@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from django.test import RequestFactory
@@ -124,7 +124,9 @@ def test_stock_notice_checks_global_optout():
     from shopman.guestman.services import customer as customers
 
     from shopman.shop.protocols import NotificationResult
+    from shopman.storefront.models import StockAlertDelivery
     from shopman.storefront.services import stock_alerts
+    from shopman.storefront.stock_alert_delivery import StockAlertDeliveryHandler
 
     c = customers.create(ref="AUDIT-S", first_name="Ana", phone="+5543999990002")
     sub = stock_alerts.subscribe("AUDIT-SKU", customer=c, alert_type="stock_back")
@@ -133,16 +135,13 @@ def test_stock_notice_checks_global_optout():
         patch("shopman.shop.notifications.notify", return_value=NotificationResult(success=True)) as send,
         patch.object(stock_alerts, "_image_url", return_value=""),
     ):
-        assert (
-            stock_alerts._deliver_group_if_still_active(
-                [sub.pk],
-                channel_ref=sub.channel_ref,
-                product_name="Produto",
-                event="stock_arrived",
-                available_qty=1,
-            )
-            is False
-        )
+        with patch(
+            "shopman.storefront.services.sku_state.resolve",
+            return_value=MagicMock(can_add_to_cart=True, available_qty=1),
+        ):
+            assert stock_alerts.notify_back_in_stock(sub.sku, source_ref="audit-move") == 1
+            delivery = StockAlertDelivery.objects.get()
+            StockAlertDeliveryHandler().handle(message=MagicMock(payload={"delivery_id": delivery.pk}), ctx={})
     assert send.call_count == 0
 
 
@@ -336,7 +335,10 @@ def test_replace_replay_keeps_the_target_cart_and_does_not_reapply(client):
 def test_stock_claim_prevents_retry_after_unknown_provider_acceptance():
     from unittest.mock import MagicMock
 
+    from shopman.shop.protocols import NotificationResult
+    from shopman.storefront.models import StockAlertDelivery
     from shopman.storefront.services import stock_alerts
+    from shopman.storefront.stock_alert_delivery import StockAlertDeliveryHandler
 
     _seed_surface()
     sub = stock_alerts.subscribe("PAO-FRANCES", phone="+5543999990007", alert_type="stock_back")
@@ -345,13 +347,20 @@ def test_stock_claim_prevents_retry_after_unknown_provider_acceptance():
             "shopman.storefront.services.sku_state.resolve",
             return_value=MagicMock(can_add_to_cart=True, available_qty=3),
         ),
-        patch("shopman.shop.notifications.notify", side_effect=TimeoutError("remote acceptance unknown")) as send,
+        patch(
+            "shopman.shop.notifications.notify",
+            return_value=NotificationResult(success=False, error="acceptance_unconfirmed", outcome_unknown=True),
+        ) as send,
     ):
-        assert stock_alerts.notify_back_in_stock("PAO-FRANCES") == 0
-        assert stock_alerts.notify_back_in_stock("PAO-FRANCES") == 0
+        assert stock_alerts.notify_back_in_stock("PAO-FRANCES", source_ref="move-1") == 1
+        delivery = StockAlertDelivery.objects.get()
+        StockAlertDeliveryHandler().handle(message=MagicMock(payload={"delivery_id": delivery.pk}), ctx={})
+        assert stock_alerts.notify_back_in_stock("PAO-FRANCES", source_ref="move-1") == 0
     sub.refresh_from_db()
     assert send.call_count == 1
-    assert sub.dispatch_claimed_at is not None
+    delivery.refresh_from_db()
+    assert delivery.claimed_at is not None
+    assert delivery.status == "indeterminate"
     assert sub.dispatch_accepted_at is None
     assert sub.notified_at is None
 
@@ -416,7 +425,8 @@ def test_subscription_inventory_is_read_only_and_contains_no_contact_data():
     out = io.StringIO()
     call_command("audit_storefront_subscriptions", stdout=out)
     report = json.loads(out.getvalue())
-    assert report["exact_contact_duplicate_groups"] == 1
+    assert report["exact_contact_duplicate_groups"] == 0
+    assert report["active"] == 0  # legacy rows without verified evidence fail closed
     assert report["mutations"] == 0
     assert "+5543" not in out.getvalue()
     assert list(StockAlertSubscription.objects.values()) == before

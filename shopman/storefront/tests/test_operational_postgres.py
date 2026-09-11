@@ -2,11 +2,14 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
+from unittest.mock import patch
 
 import pytest
 from django.db import connection, connections
 
-requires_postgres = pytest.mark.skipif(connection.vendor != "postgresql", reason="Requires independent PostgreSQL connections")
+requires_postgres = pytest.mark.skipif(
+    connection.vendor != "postgresql", reason="Requires independent PostgreSQL connections"
+)
 
 pytestmark = [
     pytest.mark.django_db(transaction=True),
@@ -78,3 +81,36 @@ def test_concurrent_cart_metadata_preserves_untouched_fields_and_both_choices():
     assert cart.data["fulfillment_type"] == "pickup"
     assert cart.data["loyalty"]["redeem_points_q"] == 10
     assert cart.rev == 2
+
+
+def test_concurrent_stock_moves_create_one_occurrence_and_one_delivery():
+    from shopman.shop.models import Channel
+    from shopman.storefront.models import StockAlertDelivery, StockAlertOccurrence
+    from shopman.storefront.services import stock_alerts
+
+    Channel.objects.get_or_create(ref="web", defaults={"name": "Web", "is_active": True})
+    stock_alerts.subscribe("PG-STOCK-CYCLE", phone="+5543999990088", alert_type="stock_back")
+    barrier = Barrier(2)
+
+    def run(source_ref):
+        try:
+            barrier.wait(timeout=10)
+            return stock_alerts._create_eligible_occurrence(
+                sku="PG-STOCK-CYCLE",
+                event_type="stock_back",
+                channel_ref="web",
+                source_ref=source_ref,
+                available_qty=5,
+            )
+        finally:
+            connections.close_all()
+
+    # This test isolates the transactional occurrence/receipt graph. Provider IO
+    # belongs to the directive worker tests and is intentionally absent here.
+    with patch("shopman.shop.directives.create_persistently_deduped", return_value=None):
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = [job.result(timeout=30) for job in [pool.submit(run, "move-A"), pool.submit(run, "move-B")]]
+
+    assert sorted(results) == [0, 1]
+    assert StockAlertOccurrence.objects.filter(sku="PG-STOCK-CYCLE").count() == 1
+    assert StockAlertDelivery.objects.filter(occurrence__sku="PG-STOCK-CYCLE").count() == 1

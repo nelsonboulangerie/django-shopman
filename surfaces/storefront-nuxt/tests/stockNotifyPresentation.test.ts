@@ -37,13 +37,13 @@ describe('notifyPhoneTarget', () => {
 describe('notifyConfirmationMessage', () => {
   it('nomeia o número quando ele é conhecido', () => {
     expect(notifyConfirmationMessage('+5543998404900')).toBe(
-      'Pronto. Avisaremos você no +55 (43) 99840-4900.'
+      'Aviso recorrente ativo no +55 (43) 99840-4900.'
     )
   })
 
   it('sem telefone (cliente logado assina com o da conta) fica na frase calma', () => {
     expect(notifyConfirmationMessage('')).toBe(
-      'Pronto. Avisaremos você quando estiver disponível.'
+      'Aviso recorrente ativo. Você pode gerenciá-lo nas preferências.'
     )
   })
 })

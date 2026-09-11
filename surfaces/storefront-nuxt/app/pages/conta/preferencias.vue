@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AccountSummary } from '~/types/shopman'
+import type { AccountStockAlertSubscription, AccountSummary } from '~/types/shopman'
 
 definePageMeta({ middleware: 'account' })
 
@@ -54,6 +54,30 @@ async function toggleNotification (pref: { key: string, enabled: boolean }) {
     if (import.meta.client) useSonner.error('Não foi possível salvar sua preferência. Tente de novo.')
   } finally {
     preferencePending.value = omitKey(preferencePending.value, pref.key)
+  }
+}
+
+async function changeStockAlert (subscription: AccountStockAlertSubscription, action: 'pause' | 'resume' | 'cancel') {
+  if (preferencePending.value[subscription.ref]) return
+  preferencePending.value = { ...preferencePending.value, [subscription.ref]: true }
+  try {
+    await $fetch(apiPath(`/api/v1/availability/${encodeURIComponent(subscription.sku)}/notify/`), {
+      method: action === 'cancel' ? 'DELETE' : 'PATCH',
+      headers: await csrfHeaders(),
+      credentials: 'include',
+      body: action === 'cancel'
+        ? { subscription_ref: subscription.ref }
+        : { subscription_ref: subscription.ref, action }
+    })
+    await refreshSummary()
+    if (import.meta.client) {
+      useSonner.success(action === 'cancel' ? 'Aviso cancelado.' : action === 'pause' ? 'Aviso pausado.' : 'Aviso retomado.')
+    }
+  } catch (e) {
+    await refreshSummary()
+    if (import.meta.client) useSonner.error(errorDetail(e, 'Não foi possível alterar este aviso.'))
+  } finally {
+    preferencePending.value = omitKey(preferencePending.value, subscription.ref)
   }
 }
 
@@ -117,6 +141,41 @@ useSeoMeta({ title: 'Preferências' })
                 :disabled="!!preferencePending[pref.key]"
                 @update:model-value="toggleNotification(pref)"
               />
+            </UiField>
+          </UiFieldGroup>
+        </UiFieldSet>
+
+        <UiFieldSet v-if="summary?.stock_alert_subscriptions?.length" class="rounded-lg border bg-card p-4 lg:col-span-2">
+          <UiFieldLegend>Avisos de produtos</UiFieldLegend>
+          <UiFieldDescription class="mb-2">
+            Cada aviso vale para este produto e continua nas próximas ocorrências até você pausar ou cancelar.
+          </UiFieldDescription>
+          <UiFieldGroup>
+            <UiField v-for="subscription in summary.stock_alert_subscriptions" :key="subscription.ref" orientation="horizontal">
+              <UiFieldContent>
+                <UiFieldLabel>{{ subscription.product_name }}</UiFieldLabel>
+                <UiFieldDescription>
+                  {{ subscription.event_label }} · {{ subscription.active ? 'Ativo' : 'Pausado' }}
+                </UiFieldDescription>
+              </UiFieldContent>
+              <div class="flex flex-wrap justify-end gap-2">
+                <UiButton
+                  variant="outline"
+                  size="sm"
+                  :loading="!!preferencePending[subscription.ref]"
+                  @click="changeStockAlert(subscription, subscription.active ? 'pause' : 'resume')"
+                >
+                  {{ subscription.active ? 'Pausar' : 'Retomar' }}
+                </UiButton>
+                <UiButton
+                  variant="ghost"
+                  size="sm"
+                  :disabled="!!preferencePending[subscription.ref]"
+                  @click="changeStockAlert(subscription, 'cancel')"
+                >
+                  Cancelar
+                </UiButton>
+              </div>
             </UiField>
           </UiFieldGroup>
         </UiFieldSet>

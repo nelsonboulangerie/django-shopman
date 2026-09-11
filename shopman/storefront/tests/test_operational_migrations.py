@@ -5,6 +5,7 @@ import uuid
 import pytest
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
+from django.utils import timezone
 
 
 @pytest.mark.django_db(transaction=True)
@@ -35,6 +36,23 @@ def test_additive_migrations_preserve_legacy_unknown_receipts_and_subscriptions(
             evidence_hash="legacy-migration-evidence",
             target_key="legacy-migration-target",
         )
+        verified = LegacySub.objects.create(
+            ref=uuid.uuid4(),
+            sku="DUPLICATE-MIGRATION",
+            contact_phone="+5543999990010",
+            evidence_hash="verified-migration-evidence",
+            target_key="duplicate-migration-target",
+            proof_status="verified",
+            notified_at=timezone.now(),
+        )
+        unverified = LegacySub.objects.create(
+            ref=uuid.uuid4(),
+            sku="DUPLICATE-MIGRATION",
+            contact_phone="+5543999990010",
+            evidence_hash="unverified-migration-evidence",
+            target_key="duplicate-migration-target",
+            proof_status="legacy_unverified",
+        )
         executor = MigrationExecutor(connection)
         executor.migrate(latest)
         # An old worker may still write after schema expansion. Exercise the
@@ -55,6 +73,8 @@ def test_additive_migrations_preserve_legacy_unknown_receipts_and_subscriptions(
 
         receipt = IdempotencyKey.objects.get(pk=old.pk)
         current = StockAlertSubscription.objects.get(pk=sub.pk)
+        current_verified = StockAlertSubscription.objects.get(pk=verified.pk)
+        current_unverified = StockAlertSubscription.objects.get(pk=unverified.pk)
         assert IdempotencyKey.objects.get(pk=mixed.pk).request_fingerprint == ""
         assert IdempotencyKey.objects.filter(scope="synthetic-volume", request_fingerprint="").count() == 1000
         # A new worker may claim an intention immediately before a code rollback.
@@ -81,5 +101,10 @@ def test_additive_migrations_preserve_legacy_unknown_receipts_and_subscriptions(
         assert current.dispatch_claimed_at is None
         assert current.dispatch_accepted_at is None
         assert current.notified_at is None
+        assert current_verified.revoked_at is None
+        assert current_unverified.revoked_at is not None
+        assert current_unverified.revoke_reason == "superseded_during_persistent_migration"
+        assert current_unverified.revocation_evidence_hash
+        assert StockAlertSubscription.objects.get(evidence_hash="mixed-worker-evidence").pause_reason == ""
     finally:
         MigrationExecutor(connection).migrate(latest)

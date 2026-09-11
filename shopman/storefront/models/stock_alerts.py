@@ -1,4 +1,4 @@
-"""Alert subscriptions do cliente ("Me avise quando…").
+"""Persistent customer alert subscriptions, occurrences and delivery receipts.
 
 Customer-facing: a shopper (logged-in OR anonymous with just a phone) asks to be
 notified about a SKU. Dois gatilhos, um modelo:
@@ -6,8 +6,8 @@ notified about a SKU. Dois gatilhos, um modelo:
 - ``stock_back``      — o SKU esgotado voltou ao estoque
 - ``production_ready`` — saiu uma fornada nova (F9 do FOMO-MARKETING-SPECS)
 
-O segundo não exige que o produto esteja esgotado: quem quer pão quente quer
-saber da fornada, não da reposição. Ambos são idempotentes via ``notified_at``.
+The subscription is the customer's durable opt-in.  An occurrence identifies one
+real-world transition/bake and a delivery receipt makes that occurrence idempotent.
 """
 
 from __future__ import annotations
@@ -24,18 +24,18 @@ class StockAlertSubscriptionQuerySet(models.QuerySet):
     def active(self, *, now=None):
         now = now or timezone.now()
         return self.filter(
-            notified_at__isnull=True,
             revoked_at__isnull=True,
+            paused_at__isnull=True,
             proof_status="verified",
         ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
 
 
 class StockAlertSubscription(models.Model):
-    """One pending "notify me" request for a SKU.
+    """Persistent "notify me" opt-in for one SKU, event and contact.
 
     Anonymous subscribers carry only ``contact_phone``; authenticated ones carry
-    ``customer_ref`` (and usually a phone too). A subscription is *pending* until
-    ``notified_at`` is set.
+    ``customer_ref`` (and usually a phone too). ``notified_at`` is retained as a
+    compatibility/last-delivery timestamp; it never consumes the subscription.
     """
 
     class AlertType(models.TextChoices):
@@ -73,9 +73,9 @@ class StockAlertSubscription(models.Model):
     expires_at = models.DateTimeField(verbose_name="expira em", null=True, blank=True)
     revoked_at = models.DateTimeField(verbose_name="cancelado em", null=True, blank=True)
     revoke_reason = models.CharField(verbose_name="motivo do cancelamento", max_length=100, blank=True)
-    revocation_evidence_hash = models.CharField(
-        verbose_name="hash da revogação", max_length=64, blank=True
-    )
+    revocation_evidence_hash = models.CharField(verbose_name="hash da revogação", max_length=64, blank=True)
+    paused_at = models.DateTimeField(verbose_name="pausado em", null=True, blank=True)
+    pause_reason = models.CharField(verbose_name="motivo da pausa", max_length=100, blank=True, db_default="")
 
     objects = StockAlertSubscriptionQuerySet.as_manager()
 
@@ -90,21 +90,102 @@ class StockAlertSubscription(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["sku", "alert_type", "channel_ref", "target_key"],
-                condition=Q(notified_at__isnull=True, revoked_at__isnull=True),
-                name="storefront_stock_alert_pending_target_uq",
+                condition=Q(revoked_at__isnull=True),
+                name="storefront_stock_alert_active_target_uq",
             ),
         ]
 
     def __str__(self) -> str:  # pragma: no cover - admin/debug only
         who = self.customer_ref or self.contact_phone or "?"
-        state = "pending" if self.notified_at is None else "notified"
+        state = "active" if self.is_active else "inactive"
         return f"StockAlert({self.sku}/{self.alert_type} → {who}, {state})"
 
     @property
-    def is_pending(self) -> bool:
+    def is_active(self) -> bool:
         return (
-            self.notified_at is None
-            and self.revoked_at is None
+            self.revoked_at is None
+            and self.paused_at is None
             and self.proof_status == "verified"
             and (self.expires_at is None or self.expires_at > timezone.now())
         )
+
+    @property
+    def is_pending(self) -> bool:
+        """Compatibility alias for callers that mean an active opt-in."""
+        return self.is_active
+
+
+class StockAlertOccurrence(models.Model):
+    """One durable, semantically deduplicated product event."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "aguardando validação"
+        ELIGIBLE = "eligible", "elegível"
+        BLOCKED = "blocked", "bloqueada"
+        CLOSED = "closed", "encerrada"
+
+    ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    sku = RefField(ref_type="SKU", max_length=64, db_index=True)
+    event_type = models.CharField(max_length=24, choices=StockAlertSubscription.AlertType.choices)
+    channel_ref = models.CharField(max_length=32, default="web")
+    semantic_key = models.CharField(max_length=160, unique=True)
+    source_ref = models.CharField(max_length=100, blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    status_reason = models.CharField(max_length=100, blank=True)
+    available_qty = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = "storefront"
+        indexes = [models.Index(fields=["sku", "event_type", "closed_at"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["sku", "event_type", "channel_ref"],
+                condition=Q(event_type="stock_back", closed_at__isnull=True),
+                name="storefront_stock_alert_open_cycle_uq",
+            )
+        ]
+
+    def __str__(self) -> str:  # pragma: no cover - admin/debug only
+        return f"{self.sku} · {self.get_event_type_display()} · {self.get_status_display()}"
+
+
+class StockAlertDelivery(models.Model):
+    """Receipt for one subscription and one occurrence."""
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "na fila"
+        CLAIMED = "claimed", "em envio"
+        ACCEPTED = "accepted", "aceita"
+        RETRYABLE = "retryable", "tentar novamente"
+        INDETERMINATE = "indeterminate", "resultado incerto"
+        SUPPRESSED = "suppressed", "suprimida"
+
+    ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    subscription = models.ForeignKey(StockAlertSubscription, on_delete=models.CASCADE, related_name="deliveries")
+    occurrence = models.ForeignKey(StockAlertOccurrence, on_delete=models.CASCADE, related_name="deliveries")
+    purpose = models.CharField(max_length=32, default="stock_availability")
+    delivery_channel = models.CharField(max_length=20, default="whatsapp")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.QUEUED)
+    directive_id = models.BigIntegerField(null=True, blank=True, db_index=True)
+    claimed_at = models.DateTimeField(null=True, blank=True)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    provider_receipt_ref = models.CharField(max_length=160, blank=True)
+    last_error_code = models.CharField(max_length=100, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = "storefront"
+        indexes = [models.Index(fields=["status", "created_at"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["subscription", "occurrence", "purpose", "delivery_channel"],
+                name="storefront_stock_alert_delivery_uq",
+            )
+        ]
+
+    def __str__(self) -> str:  # pragma: no cover - admin/debug only
+        return f"{self.occurrence} · {self.get_status_display()}"

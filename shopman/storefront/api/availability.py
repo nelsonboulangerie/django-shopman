@@ -80,14 +80,12 @@ class AvailabilityView(APIView):
         return Response(data)
 
 
-@method_decorator(
-    ratelimit(key="user_or_ip", rate="10/m", method="POST", block=False), name="dispatch"
-)
+@method_decorator(ratelimit(key="user_or_ip", rate="10/m", method="POST", block=False), name="dispatch")
 class StockAlertSubscribeView(APIView):
     """POST /api/v1/availability/<sku>/notify/ — "Me avise quando…".
 
     Aberto a cliente logado (usa o telefone da conta) ou anônimo (telefone no
-    corpo). Registra uma assinatura pendente.
+    corpo). Registra uma assinatura persistente.
 
     O corpo PODE escolher o gatilho via ``alert_type`` (``stock_back`` ou
     ``production_ready``), mas a loja não escolhe: ela manda só o telefone, e
@@ -163,9 +161,37 @@ class StockAlertSubscribeView(APIView):
             {
                 "ok": True,
                 "subscription_ref": str(sub.ref),
+                "active": sub.is_active,
                 "expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
             }
         )
+
+    def patch(self, request, sku):
+        """Pause/resume the exact opt-in without changing its consent evidence."""
+        from shopman.storefront.identity import get_authenticated_customer
+        from shopman.storefront.services import stock_alerts
+
+        subscription_ref = str(request.data.get("subscription_ref") or "").strip()
+        action = str(request.data.get("action") or "").strip()
+        if not subscription_ref or action not in {"pause", "resume"}:
+            return Response(
+                {"detail": "Informe o aviso e a ação pause ou resume."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        customer = get_authenticated_customer(request)
+        phone, owned_marker = _anonymous_marker(request, subscription_ref)
+        if customer is None and owned_marker is None:
+            return Response({"detail": "Aviso não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        changed = stock_alerts.set_paused(
+            subscription_ref,
+            paused=action == "pause",
+            sku=sku,
+            customer=customer,
+            phone=phone,
+        )
+        if not changed:
+            return Response({"detail": "Aviso não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"ok": True, "active": action == "resume"})
 
     def delete(self, request, sku):
         """Cancel a subscription without exposing whether another person's ref exists."""
@@ -181,21 +207,16 @@ class StockAlertSubscribeView(APIView):
             )
 
         customer = get_authenticated_customer(request)
-        phone = ""
+        phone, owned_marker = _anonymous_marker(request, subscription_ref)
         session = getattr(request, "session", None)
         markers = session.get("stock_alert_subscriptions", []) if session is not None else []
         markers = list(markers) if isinstance(markers, (list, tuple)) else []
-        owned_marker = next(
-            (item for item in markers if str(item.get("ref") or "") == subscription_ref),
-            None,
-        )
         if customer is None:
             if owned_marker is None:
                 return Response(
                     {"detail": "Aviso não encontrado."},
                     status=status.HTTP_404_NOT_FOUND,
                 )
-            phone = str(owned_marker.get("contact_phone") or "")
 
         cancelled = stock_alerts.revoke(
             subscription_ref,
@@ -209,10 +230,16 @@ class StockAlertSubscribeView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
         if session is not None and owned_marker is not None:
-            session["stock_alert_subscriptions"] = [
-                item for item in markers if item is not owned_marker
-            ]
+            session["stock_alert_subscriptions"] = [item for item in markers if item is not owned_marker]
         return Response({"ok": True, "cancelled": True})
+
+
+def _anonymous_marker(request, subscription_ref: str) -> tuple[str, dict | None]:
+    session = getattr(request, "session", None)
+    markers = session.get("stock_alert_subscriptions", []) if session is not None else []
+    markers = list(markers) if isinstance(markers, (list, tuple)) else []
+    marker = next((item for item in markers if str(item.get("ref") or "") == subscription_ref), None)
+    return (str(marker.get("contact_phone") or "") if marker else "", marker)
 
 
 def _badge_for(result: dict) -> tuple[str, str]:

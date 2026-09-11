@@ -975,6 +975,16 @@ export interface AccountNotificationPreference {
   enabled: boolean
 }
 
+export interface AccountStockAlertSubscription {
+  ref: string
+  sku: string
+  product_name: string
+  event_type: 'stock_back' | 'production_ready'
+  event_label: string
+  active: boolean
+  expires_at: string | null
+}
+
 export interface AccountSummaryCopy {
   greeting_prefix: string
   page_title: string
@@ -992,6 +1002,7 @@ export interface AccountSummary {
   loyalty: AccountLoyalty | null
   food_preferences: AccountFoodPreference[]
   notification_preferences: AccountNotificationPreference[]
+  stock_alert_subscriptions: AccountStockAlertSubscription[]
 }
 
 export interface AccountProfileCopy {

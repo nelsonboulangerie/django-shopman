@@ -1394,11 +1394,15 @@ describe('customer surface never names the reason behind unavailability', () => 
 
   const forbidden = /pausad|pausou|em pausa/i
 
-  it('keeps "pausado" out of every string the storefront renders', () => {
+  it('keeps internal pause reasons out of product availability copy', () => {
     const offenders = collectSourceFiles('app')
+      // "Pausado" is a customer-controlled state for a persistent alert, not
+      // the internal reason a product is unavailable.
+      .filter(file => file !== 'app/pages/conta/preferencias.vue')
       .filter(file => forbidden.test(withoutComments(read(file))))
 
     expect(offenders).toEqual([])
+    expect(read('app/pages/conta/preferencias.vue')).toContain("subscription.active ? 'Ativo' : 'Pausado'")
   })
 
   it('shows one label for every unavailable cause on the product page', () => {

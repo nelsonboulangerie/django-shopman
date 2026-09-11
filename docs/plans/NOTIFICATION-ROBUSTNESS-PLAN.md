@@ -1,5 +1,10 @@
 # NOTIFICATION-ROBUSTNESS-PLAN
 
+> **Atualização de contrato (2026-09-11):** a ADR-029 substitui as passagens deste
+> plano que tratavam `notified_at` como consumo único da inscrição. A assinatura é
+> persistente; ocorrência e recibo de entrega são registros separados. Os itens de
+> transporte, observabilidade e resposta incerta continuam válidos.
+
 ## Estado atual
 
 - O storefront registra "Me avise" em `StockAlertSubscription` via `POST /api/v1/availability/<sku>/notify/`.
