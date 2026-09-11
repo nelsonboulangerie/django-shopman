@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import getpass
 import hashlib
 import hmac
 import json
@@ -42,7 +43,7 @@ from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 
 def build_id() -> str:
@@ -64,8 +65,10 @@ def build_id() -> str:
         return "desconhecido"
     return hashlib.sha256(fonte).hexdigest()[:8]
 
+
 IS_WINDOWS = os.name == "nt"
 IS_MACOS = sys.platform == "darwin"
+
 
 #: Tudo do agente numa pasta só, por sistema — programa, config e log juntos.
 #: A primeira versão espalhava: no Windows o programa ia para
@@ -89,9 +92,7 @@ def config_path_for(home: Path, *, windows: bool, localappdata: str = "") -> Pat
     return home / ".config" / "nelson-pos-counter" / "agent.json"
 
 
-INSTALL_DIR = install_dir_for(
-    Path.home(), windows=IS_WINDOWS, localappdata=os.environ.get("LOCALAPPDATA", "")
-)
+INSTALL_DIR = install_dir_for(Path.home(), windows=IS_WINDOWS, localappdata=os.environ.get("LOCALAPPDATA", ""))
 
 
 def legacy_config_paths(home: Path, *, windows: bool, localappdata: str = "") -> tuple[Path, ...]:
@@ -115,9 +116,11 @@ def legacy_config_paths(home: Path, *, windows: bool, localappdata: str = "") ->
 LEGACY_CONFIG_PATHS = legacy_config_paths(
     Path.home(), windows=IS_WINDOWS, localappdata=os.environ.get("LOCALAPPDATA", "")
 )
-DEFAULT_CONFIG_PATH = Path(os.environ.get("COUNTER_AGENT_CONFIG") or "") if os.environ.get(
-    "COUNTER_AGENT_CONFIG"
-) else config_path_for(Path.home(), windows=IS_WINDOWS, localappdata=os.environ.get("LOCALAPPDATA", ""))
+DEFAULT_CONFIG_PATH = (
+    Path(os.environ.get("COUNTER_AGENT_CONFIG") or "")
+    if os.environ.get("COUNTER_AGENT_CONFIG")
+    else config_path_for(Path.home(), windows=IS_WINDOWS, localappdata=os.environ.get("LOCALAPPDATA", ""))
+)
 
 LOG_PATH = INSTALL_DIR / "counter-agent.log"
 JOURNAL_PATH = INSTALL_DIR / "print-relay.sqlite3"
@@ -128,9 +131,7 @@ MAX_RELAY_RESPONSE_BYTES = 768 * 1024
 RELAY_CLAIM_PATH = "/api/v1/backstage/print-agent/jobs/claim/"
 RELAY_ACK_PATH = "/api/v1/backstage/print-agent/jobs/{job_ref}/ack/"
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
-_IDENTITY_CHARS = frozenset(
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.:"
-)
+_IDENTITY_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.:")
 
 logger = logging.getLogger("counter-agent")
 
@@ -282,12 +283,16 @@ def _qr_code(data: str, *, module: int = 6) -> bytes:
     """
     payload = data.encode("utf-8")
     tamanho = len(payload) + 3
-    return bytes(
-        [0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]  # modelo 2
-        + [0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, module]  # tamanho do modulo
-        + [0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]  # correcao de erro M
-        + [0x1D, 0x28, 0x6B, tamanho % 256, tamanho // 256, 0x31, 0x50, 0x30]
-    ) + payload + bytes([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30])  # imprime
+    return (
+        bytes(
+            [0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]  # modelo 2
+            + [0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, module]  # tamanho do modulo
+            + [0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]  # correcao de erro M
+            + [0x1D, 0x28, 0x6B, tamanho % 256, tamanho // 256, 0x31, 0x50, 0x30]
+        )
+        + payload
+        + bytes([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30])
+    )  # imprime
 
 
 def _pulse_units(value_ms: int, label: str) -> int:
@@ -295,10 +300,7 @@ def _pulse_units(value_ms: int, label: str) -> int:
     if units < 1:
         raise ValueError(f"{label} curto demais: {value_ms}ms não chega a um pulso")
     if units > _PULSE_MAX_UNITS:
-        raise ValueError(
-            f"{label} longo demais: {value_ms}ms passa do teto de "
-            f"{_PULSE_MAX_UNITS * _PULSE_UNIT_MS}ms"
-        )
+        raise ValueError(f"{label} longo demais: {value_ms}ms passa do teto de {_PULSE_MAX_UNITS * _PULSE_UNIT_MS}ms")
     return units
 
 
@@ -378,9 +380,7 @@ class AgentConfig:
             normalized_origins.append(origin)
         host = str(raw.get("host") or "127.0.0.1").strip().lower()
         if host not in _LOOPBACK_HOSTS:
-            raise SystemExit(
-                "config 'host' deve ser loopback: 127.0.0.1, ::1 ou localhost."
-            )
+            raise SystemExit("config 'host' deve ser loopback: 127.0.0.1, ::1 ou localhost.")
 
         server_url = str(raw.get("server_url") or "").strip().rstrip("/")
         station_ref = str(raw.get("station_ref") or "").strip()
@@ -388,9 +388,7 @@ class AgentConfig:
         relay_token = str(raw.get("relay_token") or "").strip()
         relay_values = (server_url, station_ref, agent_id, relay_token)
         if any(relay_values) and not all(relay_values):
-            raise SystemExit(
-                "relay incompleto: informe server_url, station_ref, agent_id e relay_token."
-            )
+            raise SystemExit("relay incompleto: informe server_url, station_ref, agent_id e relay_token.")
         if server_url:
             parsed = urllib.parse.urlparse(server_url)
             if (
@@ -544,9 +542,7 @@ def _send_raw_windows(payload: bytes, *, queue: str, title: str) -> str:
     winspool.ClosePrinter.argtypes = [wintypes.HANDLE]
     winspool.ClosePrinter.restype = wintypes.BOOL
     winspool.StartDocPrinterW.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(DOC_INFO_1)]
-    winspool.WritePrinter.argtypes = [
-        wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)
-    ]
+    winspool.WritePrinter.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
 
     def _fail(step: str, *, uncertain: bool = False) -> SpoolerError:
         error = SpoolerUncertainError if uncertain else SpoolerError
@@ -572,9 +568,7 @@ def _send_raw_windows(payload: bytes, *, queue: str, title: str) -> str:
             if not winspool.WritePrinter(handle, buffer, len(payload), ctypes.byref(written)):
                 raise _fail("escrever na impressora", uncertain=True)
             if written.value != len(payload):
-                raise SpoolerUncertainError(
-                    f"spooler aceitou {written.value} de {len(payload)} bytes"
-                )
+                raise SpoolerUncertainError(f"spooler aceitou {written.value} de {len(payload)} bytes")
             if not winspool.EndPagePrinter(handle):
                 raise _fail("encerrar a página", uncertain=True)
             page_started = False
@@ -643,9 +637,7 @@ def _probe_queue_cups(queue: str) -> dict:
     if not lpstat:
         return {"ok": False, "accepting": False, "reason": "comando 'lpstat' não encontrado"}
     try:
-        completed = subprocess.run(
-            [lpstat, "-a", queue], capture_output=True, timeout=10
-        )
+        completed = subprocess.run([lpstat, "-a", queue], capture_output=True, timeout=10)
     except subprocess.TimeoutExpired:
         return {"ok": False, "accepting": False, "reason": "CUPS não respondeu em 10s"}
     out = (completed.stdout or b"").decode("utf-8", "replace").strip()
@@ -712,11 +704,7 @@ class RelayJob:
         job_ref = str(raw.get("job_ref") or "").strip()
         payload_sha256 = str(raw.get("payload_sha256") or "").strip().lower()
         lease_token = str(raw.get("lease_token") or "").strip()
-        if (
-            not job_ref
-            or len(job_ref) > 200
-            or any(c not in _IDENTITY_CHARS for c in job_ref)
-        ):
+        if not job_ref or len(job_ref) > 200 or any(c not in _IDENTITY_CHARS for c in job_ref):
             raise RelayInvalidJob("job_ref ausente ou inválido")
         if not 20 <= len(lease_token) <= 128:
             raise RelayInvalidJob("lease_token ausente ou inválido", job_ref=job_ref)
@@ -826,9 +814,7 @@ class RelayJob:
         return cls(
             job_ref=job_ref,
             attempt=attempt,
-            title=" ".join(
-                str(raw.get("title") or raw.get("kind") or "documento").split()
-            )[:60],
+            title=" ".join(str(raw.get("title") or raw.get("kind") or "documento").split())[:60],
             payload=payload,
             payload_sha256=payload_sha256,
             lease_token=lease_token,
@@ -887,21 +873,13 @@ class RelayJournal:
             )
             # Upgrade defensivo para qualquer banco criado por uma revisão de
             # desenvolvimento anterior a ACK persistente.
-            columns = {
-                str(row[1]) for row in db.execute("PRAGMA table_info(print_jobs)").fetchall()
-            }
+            columns = {str(row[1]) for row in db.execute("PRAGMA table_info(print_jobs)").fetchall()}
             if "lease_token" not in columns:
-                db.execute(
-                    "ALTER TABLE print_jobs ADD COLUMN lease_token TEXT NOT NULL DEFAULT ''"
-                )
+                db.execute("ALTER TABLE print_jobs ADD COLUMN lease_token TEXT NOT NULL DEFAULT ''")
             if "acknowledged" not in columns:
-                db.execute(
-                    "ALTER TABLE print_jobs ADD COLUMN acknowledged INTEGER NOT NULL DEFAULT 0"
-                )
+                db.execute("ALTER TABLE print_jobs ADD COLUMN acknowledged INTEGER NOT NULL DEFAULT 0")
             if "attempt" not in columns:
-                db.execute(
-                    "ALTER TABLE print_jobs ADD COLUMN attempt INTEGER NOT NULL DEFAULT 0"
-                )
+                db.execute("ALTER TABLE print_jobs ADD COLUMN attempt INTEGER NOT NULL DEFAULT 0")
         try:
             self.path.chmod(0o600)
         except OSError:
@@ -985,11 +963,7 @@ class RelayJournal:
         # O backend reutiliza o PrintJob/ref em retry de falha comprovada. Só
         # essa combinação prova que o papel anterior NÃO foi aceito e que o ACK
         # respectivo chegou. Submitted/uncertain/ACK pendente ficam fechados.
-        if not (
-            entry.state == "failed"
-            and entry.acknowledged == 1
-            and attempt > entry.attempt
-        ):
+        if not (entry.state == "failed" and entry.acknowledged == 1 and attempt > entry.attempt):
             raise RelayInvalidJob(
                 "novo lease recusado: ocorrência anterior não é failed ACKed",
                 job_ref=entry.job_ref,
@@ -1160,9 +1134,7 @@ class RelayJournal:
 
     def counts(self) -> dict[str, int]:
         with self._connect() as db:
-            rows = db.execute(
-                "SELECT state, COUNT(*) AS amount FROM print_jobs GROUP BY state"
-            ).fetchall()
+            rows = db.execute("SELECT state, COUNT(*) AS amount FROM print_jobs GROUP BY state").fetchall()
         return {str(row["state"]): int(row["amount"]) for row in rows}
 
 
@@ -1693,9 +1665,7 @@ WINDOWS_TASK_NAME = "NelsonPosCounter"
 LEGACY_SERVICE_NAME = "nelson-pos-drawer.service"
 LEGACY_UNIT_PATH = Path.home() / ".config" / "systemd" / "user" / LEGACY_SERVICE_NAME
 LEGACY_LAUNCH_AGENT_LABEL = "com.nelson.pos-drawer"
-LEGACY_LAUNCH_AGENT_PATH = (
-    Path.home() / "Library" / "LaunchAgents" / f"{LEGACY_LAUNCH_AGENT_LABEL}.plist"
-)
+LEGACY_LAUNCH_AGENT_PATH = Path.home() / "Library" / "LaunchAgents" / f"{LEGACY_LAUNCH_AGENT_LABEL}.plist"
 LEGACY_WINDOWS_TASK_NAME = "NelsonPosDrawer"
 LEGACY_WINDOWS_LAUNCHER = "nelson-pos-drawer.cmd"
 
@@ -1789,17 +1759,20 @@ def _list_queues_windows() -> list[str]:
     needed = wintypes.DWORD(0)
     returned = wintypes.DWORD(0)
     winspool.EnumPrintersW.argtypes = [
-        wintypes.DWORD, wintypes.LPWSTR, wintypes.DWORD, ctypes.c_void_p,
-        wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), ctypes.POINTER(wintypes.DWORD),
+        wintypes.DWORD,
+        wintypes.LPWSTR,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        ctypes.POINTER(wintypes.DWORD),
     ]
     winspool.EnumPrintersW.restype = wintypes.BOOL
     winspool.EnumPrintersW(flags, None, 4, None, 0, ctypes.byref(needed), ctypes.byref(returned))
     if not needed.value:
         return []
     buffer = ctypes.create_string_buffer(needed.value)
-    if not winspool.EnumPrintersW(
-        flags, None, 4, buffer, needed.value, ctypes.byref(needed), ctypes.byref(returned)
-    ):
+    if not winspool.EnumPrintersW(flags, None, 4, buffer, needed.value, ctypes.byref(needed), ctypes.byref(returned)):
         return []
     entries = ctypes.cast(buffer, ctypes.POINTER(PRINTER_INFO_4))
     return [entries[i].pPrinterName for i in range(returned.value) if entries[i].pPrinterName]
@@ -1919,11 +1892,7 @@ def _arg_value(argv: list[str], flag: str) -> str:
 
 def _arg_values(argv: list[str], flag: str) -> tuple[str, ...]:
     """Todos os valores de uma opção repetível, na ordem informada."""
-    return tuple(
-        argv[index + 1]
-        for index, value in enumerate(argv[:-1])
-        if value == flag
-    )
+    return tuple(argv[index + 1] for index, value in enumerate(argv[:-1]) if value == flag)
 
 
 def stop_legacy_service() -> None:
@@ -1999,7 +1968,11 @@ def _windows_startup_dir() -> Path:
     """Pasta Inicializar do usuário — não precisa de agendador nem privilégio."""
     return (
         Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-        / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+        / "Microsoft"
+        / "Windows"
+        / "Start Menu"
+        / "Programs"
+        / "Startup"
     )
 
 
@@ -2058,8 +2031,7 @@ def _windows_launcher(target: Path) -> Path:
     runner = pythonw if pythonw.exists() else Path(sys.executable)
     launcher = INSTALL_DIR / "nelson-pos-counter.cmd"
     launcher.write_text(
-        "@echo off\r\n"
-        f'"{runner}" "{target}" --log-file "{LOG_PATH}"\r\n',
+        f'@echo off\r\n"{runner}" "{target}" --log-file "{LOG_PATH}"\r\n',
         encoding="utf-8",
     )
     return launcher
@@ -2124,6 +2096,7 @@ def _escolher_fila(queues: list[str], rotulo: str) -> str:
 # para que a resposta caiba numa linha e o diagnóstico seja do programa, não da
 # pessoa.
 
+
 def _mascarar(token: str, keep: int = 4) -> str:
     """As pontas do token: ``FxYA…8eRA``. Igual ao `mask_badge` do servidor.
 
@@ -2169,14 +2142,9 @@ def doctor() -> int:
         print("  credencial do relay ...... configurada (não exibida)")
         if JOURNAL_PATH.exists():
             journal = RelayJournal(JOURNAL_PATH)
-            resumo = ", ".join(
-                f"{state}={amount}" for state, amount in sorted(journal.counts().items())
-            ) or "vazio"
+            resumo = ", ".join(f"{state}={amount}" for state, amount in sorted(journal.counts().items())) or "vazio"
             print(f"  journal do relay ......... {resumo}")
-            print(
-                "  ACKs pendentes ............ "
-                f"{len(journal.pending_acknowledgements())}"
-            )
+            print(f"  ACKs pendentes ............ {len(journal.pending_acknowledgements())}")
         else:
             print("  journal do relay ......... ainda sem trabalhos")
     else:
@@ -2232,7 +2200,10 @@ def doctor() -> int:
 
     fila = probe_queue(config.queue)
     ok_fila = bool(fila.get("ok"))
-    print(f"  impressora ............... {config.queue}: " + ("aceitando ✓" if ok_fila else f"{fila.get('reason') or 'não aceita trabalho'} ✗"))
+    print(
+        f"  impressora ............... {config.queue}: "
+        + ("aceitando ✓" if ok_fila else f"{fila.get('reason') or 'não aceita trabalho'} ✗")
+    )
     tudo_certo = tudo_certo and ok_fila
 
     # ⚠️ A trava da gaveta é o único recurso deste agente que fica DESLIGADO em
@@ -2240,7 +2211,9 @@ def doctor() -> int:
     # nada em lugar nenhum diz que a proteção não existe. Um balcão sem medição
     # parecia idêntico a um balcão protegido.
     medido = bool(config.drawer_status)
-    print("  trava da gaveta .......... " + ("ARMADA ✓ (polaridade medida nesta estação)" if medido else "sem medição ✗"))
+    print(
+        "  trava da gaveta .......... " + ("ARMADA ✓ (polaridade medida nesta estação)" if medido else "sem medição ✗")
+    )
     if not medido:
         print("     ✗ o PDV não consegue saber se a gaveta ficou aberta, e a trava")
         print("       da próxima venda nunca vai agir neste balcão.")
@@ -2255,9 +2228,7 @@ def _servico_ativo(nome: str) -> bool:
     """`is-active` responde 0 só quando o serviço está de pé."""
     if not shutil.which("systemctl"):
         return False
-    r = subprocess.run(
-        ["systemctl", "--user", "is-active", "--quiet", nome], capture_output=True, check=False
-    )
+    r = subprocess.run(["systemctl", "--user", "is-active", "--quiet", nome], capture_output=True, check=False)
     return r.returncode == 0
 
 
@@ -2423,14 +2394,18 @@ def _caminho_usb_windows() -> tuple[str, str]:
 
     class GUID(ctypes.Structure):
         _fields_ = [
-            ("Data1", ctypes.c_ulong), ("Data2", ctypes.c_ushort),
-            ("Data3", ctypes.c_ushort), ("Data4", ctypes.c_ubyte * 8),
+            ("Data1", ctypes.c_ulong),
+            ("Data2", ctypes.c_ushort),
+            ("Data3", ctypes.c_ushort),
+            ("Data4", ctypes.c_ubyte * 8),
         ]
 
     class SP_DEVICE_INTERFACE_DATA(ctypes.Structure):
         _fields_ = [
-            ("cbSize", wintypes.DWORD), ("InterfaceClassGuid", GUID),
-            ("Flags", wintypes.DWORD), ("Reserved", ctypes.POINTER(ctypes.c_ulong)),
+            ("cbSize", wintypes.DWORD),
+            ("InterfaceClassGuid", GUID),
+            ("Flags", wintypes.DWORD),
+            ("Reserved", ctypes.POINTER(ctypes.c_ulong)),
         ]
 
     # ⚠️ TODA funcao usada aqui precisa de `argtypes`. Sem isso o ctypes assume
@@ -2442,18 +2417,23 @@ def _caminho_usb_windows() -> tuple[str, str]:
     ole32.CLSIDFromString.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(GUID)]
     ole32.CLSIDFromString.restype = ctypes.c_long
 
-    setupapi.SetupDiGetClassDevsW.argtypes = [
-        ctypes.POINTER(GUID), wintypes.LPCWSTR, wintypes.HWND, wintypes.DWORD
-    ]
+    setupapi.SetupDiGetClassDevsW.argtypes = [ctypes.POINTER(GUID), wintypes.LPCWSTR, wintypes.HWND, wintypes.DWORD]
     setupapi.SetupDiGetClassDevsW.restype = wintypes.HANDLE
     setupapi.SetupDiEnumDeviceInterfaces.argtypes = [
-        wintypes.HANDLE, ctypes.c_void_p, ctypes.POINTER(GUID), wintypes.DWORD,
+        wintypes.HANDLE,
+        ctypes.c_void_p,
+        ctypes.POINTER(GUID),
+        wintypes.DWORD,
         ctypes.POINTER(SP_DEVICE_INTERFACE_DATA),
     ]
     setupapi.SetupDiEnumDeviceInterfaces.restype = wintypes.BOOL
     setupapi.SetupDiGetDeviceInterfaceDetailW.argtypes = [
-        wintypes.HANDLE, ctypes.POINTER(SP_DEVICE_INTERFACE_DATA), ctypes.c_void_p,
-        wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p,
+        wintypes.HANDLE,
+        ctypes.POINTER(SP_DEVICE_INTERFACE_DATA),
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        ctypes.c_void_p,
     ]
     setupapi.SetupDiGetDeviceInterfaceDetailW.restype = wintypes.BOOL
     setupapi.SetupDiDestroyDeviceInfoList.argtypes = [wintypes.HANDLE]
@@ -2464,9 +2444,7 @@ def _caminho_usb_windows() -> tuple[str, str]:
         return "", "nao consegui montar o identificador da interface USB"
 
     DIGCF_PRESENT, DIGCF_DEVICEINTERFACE = 0x02, 0x10
-    conjunto = setupapi.SetupDiGetClassDevsW(
-        ctypes.byref(guid), None, None, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE
-    )
+    conjunto = setupapi.SetupDiGetClassDevsW(ctypes.byref(guid), None, None, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE)
     # `restype=HANDLE` devolve None quando o retorno e NULL; sem tratar, o
     # `finally` receberia None e mascararia o erro real.
     if not conjunto or conjunto == wintypes.HANDLE(-1).value:
@@ -2514,18 +2492,29 @@ def _ler_pino_usb_windows(*, query: bytes = _DRAWER_STATUS_QUERY, timeout: float
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     # Mesma regra do bloco acima: sem `argtypes` o handle de 64 bits nao passa.
     kernel32.CreateFileW.argtypes = [
-        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
-        wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
     ]
     kernel32.CreateFileW.restype = wintypes.HANDLE
     kernel32.WriteFile.argtypes = [
-        wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD,
-        ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p,
+        wintypes.HANDLE,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        ctypes.c_void_p,
     ]
     kernel32.WriteFile.restype = wintypes.BOOL
     kernel32.ReadFile.argtypes = [
-        wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD,
-        ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p,
+        wintypes.HANDLE,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        ctypes.c_void_p,
     ]
     kernel32.ReadFile.restype = wintypes.BOOL
     kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
@@ -2556,7 +2545,9 @@ def _ler_pino_usb_windows(*, query: bytes = _DRAWER_STATUS_QUERY, timeout: float
         kernel32.CloseHandle(h)
 
 
-def _ler_pino_windows(queue: str, *, query: bytes = _DRAWER_STATUS_QUERY, timeout: float = 2.0) -> tuple[int | None, str]:
+def _ler_pino_windows(
+    queue: str, *, query: bytes = _DRAWER_STATUS_QUERY, timeout: float = 2.0
+) -> tuple[int | None, str]:
     """Pergunta o estado pelo spooler e tenta LER a resposta de volta.
 
     O agente ja conversa com o ``winspool.drv`` para imprimir (``OpenPrinter`` +
@@ -2596,12 +2587,8 @@ def _ler_pino_windows(queue: str, *, query: bytes = _DRAWER_STATUS_QUERY, timeou
     winspool.ClosePrinter.argtypes = [wintypes.HANDLE]
     winspool.ClosePrinter.restype = wintypes.BOOL
     winspool.StartDocPrinterW.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(DOC_INFO_1)]
-    winspool.WritePrinter.argtypes = [
-        wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)
-    ]
-    winspool.ReadPrinter.argtypes = [
-        wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)
-    ]
+    winspool.WritePrinter.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+    winspool.ReadPrinter.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
 
     handle = wintypes.HANDLE()
     if not winspool.OpenPrinterW(queue, ctypes.byref(handle), None):
@@ -2696,7 +2683,10 @@ def drawer_status(argv: list[str]) -> int:
         print("A impressora está ligada e instalada?")
         return 1
     device = Path(_arg_value(argv, "--device") or dispositivos[0])
-    print(f"\nLendo pela {device}" + (f"  (outras: {', '.join(str(d) for d in dispositivos[1:])})" if len(dispositivos) > 1 else ""))
+    print(
+        f"\nLendo pela {device}"
+        + (f"  (outras: {', '.join(str(d) for d in dispositivos[1:])})" if len(dispositivos) > 1 else "")
+    )
 
     varreduras: list[dict[int, int]] = []
     for rotulo in ("FECHADA", "ABERTA"):
@@ -2739,12 +2729,22 @@ def install(argv: list[str]) -> int:
     station_ref = _arg_value(argv, "--station") or _arg_value(argv, "--station-ref")
     agent_id = _arg_value(argv, "--agent-id")
     relay_token = _arg_value(argv, "--relay-token")
-    if any((server_url, station_ref, agent_id, relay_token)) and not all(
-        (server_url, station_ref, relay_token)
-    ):
+    if "--relay-token-prompt" in argv:
+        if relay_token:
+            print(
+                "erro: use --relay-token OU --relay-token-prompt, nunca os dois.",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            relay_token = getpass.getpass("Cole a credencial do relay: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nerro: credencial do relay não informada.", file=sys.stderr)
+            return 1
+    if any((server_url, station_ref, agent_id, relay_token)) and not all((server_url, station_ref, relay_token)):
         print(
-            "erro: relay requer --server-url, --station e --relay-token "
-            "(--agent-id é opcional e será gerado).",
+            "erro: relay requer --server-url, --station e credencial via "
+            "--relay-token-prompt (ou --relay-token); --agent-id é opcional.",
             file=sys.stderr,
         )
         return 1
@@ -2814,10 +2814,7 @@ def install(argv: list[str]) -> int:
             "       terminal → Baixar o agente e ver como instalar."
         )
     if config.get("server_url"):
-        print(
-            "Relay HTTPS ativo para a estação "
-            f"{config.get('station_ref')} (agente {config.get('agent_id')})."
-        )
+        print(f"Relay HTTPS ativo para a estação {config.get('station_ref')} (agente {config.get('agent_id')}).")
     if token:
         # Veio do Admin: o par já existe dos dois lados, nada a transcrever.
         print("Token recebido do Admin — nada a copiar de volta.")
@@ -2836,7 +2833,7 @@ def install(argv: list[str]) -> int:
     else:
         print(f"Config já existia em {DEFAULT_CONFIG_PATH} — token e fila preservados.")
     runner = "python" if IS_WINDOWS else "python3"
-    print(f"\nTeste sem navegador:\n  {runner} \"{target}\" --kick")
+    print(f'\nTeste sem navegador:\n  {runner} "{target}" --kick')
 
     # ⚠️ Este bloco existe porque a versão anterior dizia "Agente instalado" sem
     # nunca ter conferido que o agente estava ouvindo. No Windows a tarefa
@@ -2854,7 +2851,7 @@ def install(argv: list[str]) -> int:
             f"\n✗ O agente NÃO está respondendo em http://127.0.0.1:{porta}/health.\n"
             "  O início automático não pegou. O kick pela linha de comando pode até\n"
             "  funcionar, mas o botão do PDV vai falhar até isto subir.\n"
-            f"  Suba na mão para confirmar:  {runner} \"{target}\"\n"
+            f'  Suba na mão para confirmar:  {runner} "{target}"\n'
             f"  E veja o motivo em:          {LOG_PATH}"
         )
         return 1
@@ -2880,7 +2877,7 @@ def install(argv: list[str]) -> int:
             "  agente está desatualizado — e vai estar certo.\n\n"
             f"  Quem está na porta:  {_quem_ocupa_a_porta(porta)}\n"
             f"  Derrube e reinstale: {_comando_de_parada()}\n"
-            f"                       {runner} \"{target}\" --install"
+            f'                       {runner} "{target}" --install'
         )
         return 1
 
@@ -2891,10 +2888,8 @@ def install(argv: list[str]) -> int:
 def _quem_ocupa_a_porta(porta: int) -> str:
     """PID que segura a porta, para o diagnóstico não parar em 'algo está lá'."""
     if os.name == "nt":
-        return f'netstat -ano | findstr :{porta}'
-    achado = subprocess.run(
-        ["lsof", "-ti", f":{porta}"], capture_output=True, text=True, check=False
-    )
+        return f"netstat -ano | findstr :{porta}"
+    achado = subprocess.run(["lsof", "-ti", f":{porta}"], capture_output=True, text=True, check=False)
     pids = achado.stdout.split()
     return f"PID {', '.join(pids)}" if pids else f"não identificado (tente: lsof -i :{porta})"
 

@@ -64,6 +64,84 @@
         {% endcomponent %}
       {% endcomponent %}
 
+      {% if agent_install.relay_install_command %}
+        {% component "unfold/components/card.html" %}
+          {% component "unfold/components/flex.html" with col=1 class="gap-3" %}
+            {% component "unfold/components/title.html" with class="text-lg" %}
+              Comando completo pronto
+            {% endcomponent %}
+            {% component "unfold/components/text.html" %}
+              Copie e execute este comando agora no PC do caixa. Ele mantém o PDV e acrescenta a impressão enviada por tablets. A credencial aparece somente nesta tela e não será recuperável depois de sair ou atualizar.
+            {% endcomponent %}
+            {% include "admin_console/pos_counter_agent/_command.html" with command=agent_install.relay_install_command %}
+            {% component "unfold/components/text.html" %}
+              O instalador pedirá a credencial sem exibi-la no terminal. Quando aparecer a pergunta, volte aqui, copie o segredo abaixo e cole no PC do caixa.
+            {% endcomponent %}
+            {% include "admin_console/pos_counter_agent/_command.html" with command=agent_install.relay_secret_once copy_label="Copiar segredo" %}
+            {% component "unfold/components/text.html" with class="text-sm text-base-500" %}
+              Quando o comando terminar, atualize esta página: o estado deve mudar para “Relay conectado”.
+            {% endcomponent %}
+          {% endcomponent %}
+        {% endcomponent %}
+      {% elif confirm_relay_issue %}
+        {% component "unfold/components/card.html" %}
+          {% component "unfold/components/flex.html" with col=1 class="gap-3" %}
+            {% component "unfold/components/title.html" with class="text-lg" %}
+              Confirmar novo pareamento
+            {% endcomponent %}
+            {% component "unfold/components/text.html" %}
+              {% if agent_install.relay_active %}
+                O pareamento anterior deixará de buscar trabalhos assim que o novo comando for gerado. O PDV e a impressão local continuam funcionando; execute o comando novo neste PC para reativar o relay.
+              {% else %}
+                O servidor criará um pareamento durável e mostrará seu segredo somente na próxima tela. Nenhuma etiqueta será enviada agora.
+              {% endif %}
+            {% endcomponent %}
+            <form id="relay-issue-form" method="post">
+              {% csrf_token %}
+              <input type="hidden" name="expected_credential_version" value="{{ agent_install.relay_credential_version }}">
+            </form>
+            {% component "unfold/components/flex.html" with class="flex-wrap gap-2" %}
+              {% component "unfold/components/button.html" with submit=1 form="relay-issue-form" name="action" value="issue_relay" variant="primary" icon="link" %}
+                Gerar o comando completo
+              {% endcomponent %}
+              {% component "unfold/components/button.html" with href=agent_install_url variant="default" %}
+                Voltar sem alterar
+              {% endcomponent %}
+            {% endcomponent %}
+          {% endcomponent %}
+        {% endcomponent %}
+      {% else %}
+        {% component "unfold/components/card.html" %}
+          {% component "unfold/components/flex.html" with col=1 class="gap-3" %}
+            {% component "unfold/components/title.html" with class="text-lg" %}
+              Impressão enviada por tablets
+            {% endcomponent %}
+            {% component "unfold/components/text.html" %}
+              {{ agent_install.relay_status_label }} · {{ agent_install.relay_status_detail }}
+            {% endcomponent %}
+            {% if not relay_issue_allowed %}
+              {% component "unfold/components/text.html" with class="text-sm text-base-500" %}
+                Um gerente habilitado faz o pareamento. Você pode consultar o estado e baixar o agente sem alterar a credencial.
+              {% endcomponent %}
+            {% elif agent_install.relay_blocker %}
+              {% component "unfold/components/text.html" with class="text-sm text-base-500" %}
+                {{ agent_install.relay_blocker }}
+              {% endcomponent %}
+              {% component "unfold/components/button.html" with href=terminal_change_url variant="default" size="sm" icon="tune" %}
+                Ajustar o terminal
+              {% endcomponent %}
+            {% else %}
+              <form id="relay-prepare-form" method="post">
+                {% csrf_token %}
+              </form>
+              {% component "unfold/components/button.html" with submit=1 form="relay-prepare-form" name="action" value="prepare_relay_issue" variant="default" icon="link" %}
+                {% if agent_install.relay_active %}Gerar novo comando de pareamento{% else %}Ativar impressão por tablets{% endif %}
+              {% endcomponent %}
+            {% endif %}
+          {% endcomponent %}
+        {% endcomponent %}
+      {% endif %}
+
       {% component "unfold/components/card.html" %}
         {% component "unfold/components/flex.html" with col=1 class="gap-3" %}
           {% component "unfold/components/title.html" with class="text-lg" %}
@@ -93,7 +171,9 @@
               {{ step.detail }}
             {% endcomponent %}
             {% if step.command %}
-              {% include "admin_console/pos_counter_agent/_command.html" with command=step.command %}
+              {% if not agent_install.relay_install_command %}
+                {% include "admin_console/pos_counter_agent/_command.html" with command=step.command %}
+              {% endif %}
             {% endif %}
           {% endcomponent %}
         {% endcomponent %}
