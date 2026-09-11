@@ -24,7 +24,7 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
-    "@nuxt/icon": "^2.2.2",
+    "@nuxt/icon": "^2.5.1",
     "@nuxtjs/color-mode": "^4.0.0",
     "@tailwindcss/forms": "^0.5.11",
     "@tailwindcss/vite": "^4.3.0",
@@ -42,8 +42,8 @@
   },
   "devDependencies": {
     "@iconify-json/lucide": "^1.2.109",
-    "@nuxt/eslint": "^1.16.0",
-    "@nuxt/test-utils": "^4.0.3",
+    "@nuxt/eslint": "^1.17.0",
+    "@nuxt/test-utils": "^4.3.2",
     "@playwright/test": "^1.62.1",
     "@vitejs/plugin-vue": "^6.0.1",
     "@vue/test-utils": "^2.4.11",
