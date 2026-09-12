@@ -16,11 +16,11 @@ from shopman.storefront.concierge.handler import MAX_LOOPS, ConciergeTurnHandler
 
 
 def _directive(conversation_id=1):
-    return SimpleNamespace(payload={"conversation_id": conversation_id})
+    return SimpleNamespace(payload={"conversation_id": conversation_id, "contract_version": 2}, save=lambda **kw: None)
 
 
 def test_handler_registrado_com_o_topico_do_service():
-    assert ConciergeTurnHandler.topic == service.TURN_TOPIC == "concierge.turn"
+    assert ConciergeTurnHandler.topic == service.TURN_TOPIC == "concierge.turn.v2"
     # Registrado pelo `StorefrontConfig.ready()` (superfície de cliente), não pelo
     # `shop.handlers`: o worker acha o handler pelo tópico no registro do Orderman.
     assert isinstance(registry.get_directive_handler(service.TURN_TOPIC), ConciergeTurnHandler)

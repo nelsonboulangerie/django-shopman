@@ -1,0 +1,22 @@
+DEBUG 2026-09-11 18:03:42,659 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 18:03:42,659 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 18:03:42,659 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 18:03:42,660 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 18:03:42,678 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 18:03:42,679 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 18:03:42,679 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 18:03:42,680 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 18:03:42,685 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 18:03:42,685 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 18:03:42,685 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 18:03:42,686 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 18:03:42,686 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 18:03:42,687 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 18:03:42,687 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 18:03:42,688 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 18:03:42,688 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 18:03:42,688 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 18:03:42,693 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 18:03:42,693 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+BROWSER_CONVERSATION 1
+SYNTHETIC_BACKUP {"archive_sha256": "b2724acbe7afa60e4f79f6cf27fb83d45752635e4a6cad50668edcc5b2b1453c", "no_automatic_send": true, "order_count": 1, "output_state": "unknown", "receipt_preserved": true, "restored": "concierge_restore", "source": "concierge_browser"}

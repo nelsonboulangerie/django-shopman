@@ -357,6 +357,7 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         # ledger — só quando nenhuma WO viva nem ledger aberto o reivindica.
         call("sweep_dead_production_stock"),
         call("sweep_waitlist_windows"),
+        call("recover_concierge"),
         call("check_directive_health"),
         # Checagem de ESTADO, não de evento: produto que já está invisível hoje
         # porque a coleção dele foi desativada. A cadência do sino (um alerta por

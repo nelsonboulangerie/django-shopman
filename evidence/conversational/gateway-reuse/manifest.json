@@ -1,0 +1,58 @@
+{
+  "previous_candidate": "dd5a23b0e6d8751d39a3d615a5d77e4a01acc674",
+  "adaptation_commit": "47450d0a0d318bc548f7e74362e128aeeea2ca84",
+  "files": [
+    {
+      "path": ".do/app.alpha-subdomains.yaml",
+      "sha256": "b477b289670d189e7280a990471f23a7e1b5b9db8ceaffc8e72692b1baeb3ea1"
+    },
+    {
+      "path": "config/settings.py",
+      "sha256": "25bb42732f0dc4edd8a00b226d2e268325bae78d3afbff0c6f0187bb7b3626b5"
+    },
+    {
+      "path": "docs/guides/whatsapp-concierge.md",
+      "sha256": "b133c9ed4ba2493f1f57a61356d92bdaba026f75f65c5fe9ac7802b47deaeff7"
+    },
+    {
+      "path": "evidence/conversational/flows/manychat-conversation-v2.json",
+      "sha256": "ca86f9141b2ba71c6f27c26e63e08ff2ea598f5c805ae61b9a497ae8e3720e8a"
+    },
+    {
+      "path": "evidence/conversational/gateway-reuse/README.md",
+      "sha256": "60f53ba4dc5a921cf0ac3eb6df2e04b920e1e77cf5466241f3c0f3639146be14"
+    },
+    {
+      "path": "evidence/conversational/gateway-reuse/inspection.json",
+      "sha256": "2cc6116b846cb31e93d74a2d30dec7dfbb5289bdad13d16024f6eb21d356895e"
+    },
+    {
+      "path": "evidence/conversational/gateway-reuse/ruff.txt",
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": "evidence/conversational/gateway-reuse/runtime.json",
+      "sha256": "16b14b8e0a166c90683d42dd480e7b1e32f79644af29426e625904724a475aef"
+    },
+    {
+      "path": "evidence/conversational/gateway-reuse/shutdown.txt",
+      "sha256": "717ff70a18d1e5f372769ae6f3bcf30f52f37c839813cdaae257d49ec7ce9e61"
+    },
+    {
+      "path": "evidence/conversational/gateway-reuse/spec-check.json",
+      "sha256": "b4b02026f7d919268c303659a628423b181ab06fa131d157dd74b80e9ee4000f"
+    },
+    {
+      "path": "evidence/conversational/gateway-reuse/spec-drift.txt",
+      "sha256": "4e04d2853b27baef5d493e0e297cd57c729e92c5014018df8e80ba0ef791d95f"
+    },
+    {
+      "path": "evidence/conversational/gateway-reuse/tests.txt",
+      "sha256": "4f1f4d43fc1070b8abf652b1231417ebf330158a595159abec4dfb1d1eb65814"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_existing_gateway.py",
+      "sha256": "ae9c5c1cd59b1f3f27b5c59dbaec9742539b5dfd882d39a31280827235859543"
+    }
+  ]
+}

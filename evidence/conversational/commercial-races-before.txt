@@ -1,0 +1,59 @@
+AUDIT_IMPORTS ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/orderman/shopman/orderman'] ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/guestman/shopman/guestman']
+..F                                                                      [100%]
+=================================== FAILURES ===================================
+__ test_transfer_and_site_edit_do_not_leave_reservations_on_abandoned_source ___
+shopman/storefront/tests/test_concierge_commercial_races.py:184: in test_transfer_and_site_edit_do_not_leave_reservations_on_abandoned_source
+    assert own_reserved(key) == 0
+E   AssertionError: assert Decimal('1.000') == 0
+E    +  where Decimal('1.000') = own_reserved('SESS-9EKK9CHPLMRU')
+---------------------------- Captured stderr setup -----------------------------
+INFO 2026-09-11 18:14:32,091 shopman.stockman stock.receive
+----------------------------- Captured stderr call -----------------------------
+DEBUG 2026-09-11 18:14:32,138 shopman.shop.modifiers discount_modifier: no insight for customer=CUST-696945FDAA8E
+DEBUG 2026-09-11 18:14:32,149 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+INFO 2026-09-11 18:14:32,161 shopman.stockman stock.hold.created
+DEBUG 2026-09-11 18:14:32,167 shopman.shop.modifiers discount_modifier: no insight for customer=CUST-696945FDAA8E
+DEBUG 2026-09-11 18:14:32,219 shopman.shop.modifiers discount_modifier: no insight for customer=CUST-696945FDAA8E
+DEBUG 2026-09-11 18:14:32,227 shopman.shop.modifiers discount_modifier: no insight for customer=CUST-696945FDAA8E
+DEBUG 2026-09-11 18:14:32,253 shopman.shop.modifiers discount_modifier: no insight for customer=CUST-696945FDAA8E
+INFO 2026-09-11 18:14:32,325 shopman.stockman stock.hold.released
+DEBUG 2026-09-11 18:14:32,331 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+INFO 2026-09-11 18:14:32,341 shopman.stockman stock.hold.created
+DEBUG 2026-09-11 18:14:32,351 shopman.shop.modifiers discount_modifier: no insight for customer=CUST-696945FDAA8E
+DEBUG 2026-09-11 18:14:32,374 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+INFO 2026-09-11 18:14:32,400 shopman.stockman stock.hold.created
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-11 18:14:32,911 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/storefront/tests/test_concierge_commercial_races.py::test_transfer_and_site_edit_do_not_leave_reservations_on_abandoned_source
+1 failed, 2 passed in 14.18s

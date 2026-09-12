@@ -1,0 +1,45 @@
+Isolated migrated synthetic database concierge_browser; settings_test; no provider keys.
+COMMAND manage.py ('check',)
+DEBUG 2026-09-11 18:10:41,778 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 18:10:41,778 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 18:10:41,778 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 18:10:41,778 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 18:10:41,793 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 18:10:41,794 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 18:10:41,794 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 18:10:41,795 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 18:10:41,800 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 18:10:41,801 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 18:10:41,801 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 18:10:41,801 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 18:10:41,802 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 18:10:41,802 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 18:10:41,803 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 18:10:41,803 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 18:10:41,803 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 18:10:41,804 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 18:10:41,810 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 18:10:41,811 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+System check identified no issues (1 silenced).
+COMMAND manage.py ('makemigrations', '--check', '--dry-run')
+DEBUG 2026-09-11 18:10:43,232 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 18:10:43,232 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 18:10:43,232 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 18:10:43,232 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 18:10:43,242 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 18:10:43,243 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 18:10:43,243 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 18:10:43,243 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 18:10:43,247 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 18:10:43,248 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 18:10:43,248 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 18:10:43,248 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 18:10:43,248 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 18:10:43,248 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 18:10:43,248 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 18:10:43,249 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 18:10:43,249 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 18:10:43,249 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 18:10:43,252 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 18:10:43,253 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+No changes detected

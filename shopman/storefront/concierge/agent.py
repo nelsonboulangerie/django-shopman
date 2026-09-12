@@ -81,6 +81,8 @@ class AgentOutcome:
     extra_replies: list[str] = field(default_factory=list)
     tool_events: list[dict] = field(default_factory=list)
     order_ref: str = ""
+    quote_token: str = ""
+    disclosure: dict = field(default_factory=dict)
 
 
 def _config() -> dict:
@@ -105,9 +107,14 @@ def history_for(conversation: Conversation) -> list[dict]:
     """
     window = int(_config().get("window_messages") or 40)
     rows = list(
-        conversation.messages.exclude(kind=ConversationMessage.Kind.NOTE).order_by("-id")[:window]
+        conversation.messages.exclude(kind=ConversationMessage.Kind.NOTE).filter(id__lte=getattr(conversation, "_inbound_max_id", 2**63-1)).order_by("-id")[:window]
     )
-    rows.reverse()
+    included = {row.pk for row in rows}
+    # A janela de linguagem pode cortar contexto antigo, nunca a entrada que o
+    # claim declarará consumida. Claims são limitados para justiça entre clientes.
+    required = set(getattr(conversation, "_inbound_ids", ())) - included
+    rows.extend(conversation.messages.filter(pk__in=required))
+    rows.sort(key=lambda row: row.pk)
     while rows and rows[0].kind != ConversationMessage.Kind.INBOUND:
         rows.pop(0)
 
@@ -249,6 +256,7 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
     # os horários"). Sem isto elas morriam na transcrição: o cliente só via o
     # texto final, e a taxa que ele perguntou nunca chegava (medido em 04/09).
     prefaces: list[str] = []
+    canonical_replies: list[str] = []
 
     for iteration in range(max_iterations + 1):
         request: dict = {
@@ -272,6 +280,8 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
             # Teto de iterações: a última ida sai em texto, sem ferramenta.
             request["tool_choice"] = {"type": "none"}
 
+        from .service import assert_turn_authority
+        assert_turn_authority(conversation, for_mutation=False)
         response = client.messages.create(**request)
         _accumulate(usage, response)
 
@@ -281,10 +291,9 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
 
         tool_uses = [b for b in response.content if getattr(b, "type", "") == "tool_use"]
         if stop != "tool_use" or not tool_uses:
-            text = clean_text(_text_of(response))
             if stop == "max_tokens":
                 logger.warning("concierge.agent max_tokens conversation=%s", conversation.pk)
-            outcome.reply_text = _join_prefaces(prefaces, text)
+            outcome.reply_text = canonical_replies[-1] if canonical_replies else "Preciso consultar os dados da loja para responder. Você pode pedir o cardápio, consultar seu pedido ou falar com a equipe."
             outcome.messages.append({"role": "assistant", "content": _persistable_content(response)})
             break
 
@@ -309,6 +318,11 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
                 }
             else:
                 result = tools_module.execute(use.name, arguments, ctx)
+            rendered = "" if result.get("error") == "repeated_call" else tools_module.render_result(use.name, result)
+            if rendered:
+                canonical_replies.append(rendered)
+                outcome.disclosure = result.get("disclosure") or {}
+                outcome.quote_token = str(result.get("quote_token") or "") if use.name == "review_order" and result.get("ready") else ""
             outcome.tool_events.append({"name": use.name, "input": arguments, "ok": result.get("ok", True)})
             results.append(
                 {
@@ -324,7 +338,7 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
         if ctx.handoff:
             # A equipe assume: fecha o turno com o que o modelo já tinha dito e
             # deixa a casa mandar a confirmação de handoff.
-            outcome.reply_text = _join_prefaces(prefaces, "")
+            outcome.reply_text = ""
             break
 
     outcome.usage = usage
