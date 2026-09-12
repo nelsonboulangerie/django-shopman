@@ -1,14 +1,4 @@
-// O CAMPO GÊMEO do e-mail do comprovante — o que a prova de navegador achou.
-//
-// O modal "Cliente" traz "Enviar por e-mail" + "E-mail do comprovante". O
-// operador digitava ali, o balão da pergunta abria lá atrás, na coluna, do
-// OUTRO lado do overlay — e ele fechava o modal com a oferta JÁ MARCADA sem
-// nunca ter sido perguntado. Como o padrão é marcado (decisão do dono), isso
-// gravava calado com outro nome: exatamente a meia-correção que este caminho
-// existe para acabar.
-//
-// A regra que estes testes travam: **não existe campo de e-mail do comprovante
-// sem a pergunta ao lado.**
+// O e-mail do comprovante oferece salvamento inline, sem pergunta automática.
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -60,12 +50,12 @@ afterEach(() => {
 });
 
 describe("PosCustomerModal — o e-mail do comprovante também pergunta", () => {
-  it("com a oferta, o modal abre a pergunta e mostra o interruptor", async () => {
+  it("com a oferta, o modal mostra somente a escolha inline", async () => {
     const wrapper = await mount({ receiptEmailOffer: ANONIMA, saveReceiptContact: true });
 
     const panel = popover();
-    expect(panel).not.toBeNull();
-    expect(panel!.textContent).toContain("Salvar como cliente?");
+    expect(panel).toBeNull();
+    expect(document.querySelector('[role="switch"]')).not.toBeNull();
     // O cadastro exige escolha explícita, mesmo sem cliente associado.
     expect(document.body.textContent).toContain(
       "Marque somente se quiser cadastrar o cliente.",
@@ -73,19 +63,11 @@ describe("PosCustomerModal — o e-mail do comprovante também pergunta", () => 
     expect(wrapper.html()).toBeTruthy();
   });
 
-  it("o balão abre para CIMA — embaixo está o Concluir", async () => {
-    await mount({ receiptEmailOffer: ANONIMA, saveReceiptContact: true });
-
-    expect(popover()!.getAttribute("data-side")).toBe("top");
-  });
-
   it("desmarcar dentro do modal viaja para fora dele", async () => {
     const wrapper = await mount({ receiptEmailOffer: ANONIMA, saveReceiptContact: true });
 
-    const decline = [...document.querySelectorAll("button")].find(
-      (b) => b.textContent?.includes("Não salvar"),
-    );
-    decline!.click();
+    const toggle = document.querySelector('[role="switch"]') as HTMLButtonElement;
+    toggle.click();
     await nextTick();
 
     expect(wrapper.emitted("update:saveReceiptContact")?.[0]).toEqual([false]);

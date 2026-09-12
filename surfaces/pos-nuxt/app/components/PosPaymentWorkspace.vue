@@ -1598,8 +1598,6 @@ defineExpose({
                   :offer="receiptTaxIdOffer"
                   :checked="saveReceiptTaxIdChecked"
                   :confirmed="confirmReceiptTaxId"
-                  side="left"
-                  :quiet="customerSheetOpen"
                   @update:checked="$emit('update:saveReceiptTaxId', $event)"
                   @update:confirmed="$emit('update:confirmReceiptTaxId', $event)"
                 >
@@ -1662,8 +1660,6 @@ defineExpose({
                 <PosReceiptSaveOffer
                   :offer="receiptEmailOffer"
                   :checked="saveReceiptEmailChecked"
-                  side="left"
-                  :quiet="customerSheetOpen"
                   @update:checked="$emit('update:saveReceiptContact', $event)"
                 >
                   <UiInput

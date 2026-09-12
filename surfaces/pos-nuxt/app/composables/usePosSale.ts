@@ -362,6 +362,16 @@ export function usePosSale(deps: PosSaleDeps) {
   });
 
   const receiptIdentityChoices = ref<POSReceiptIdentityChoice[]>([]);
+  const customerDraftPending = computed(() => !cart.customerRef.trim()
+    && Boolean(cart.customerName.trim() || cart.customerPhone.trim() || cart.customerTaxId.trim() || cart.customerEmail.trim()));
+  const customerDraftMessage = "Conclua o cadastro ou remova os dados do cliente antes de continuar.";
+  function requireCustomerDraftDecision() {
+    if (!customerDraftPending.value) return false;
+    unsaved.value = true;
+    serverError.value = customerDraftMessage;
+    customerFocusNonce.value += 1;
+    return true;
+  }
   const orderSetupComplete = ref(false);
   const orderSetupIssue = computed<"customer" | "fulfillment" | "address" | "schedule" | "">(() => {
     if (cart.salesMode !== "order") return "";
@@ -1777,7 +1787,8 @@ export function usePosSale(deps: PosSaleDeps) {
     const decision = customerDecision.value;
     if (decision?.kind === "receipt_identity") {
       const pending = pendingReceiptDecision.value;
-      if (!pending || !receiptDecisionMatches()) {
+      if (!pending) return;
+      if (!receiptDecisionMatches()) {
         customerDecision.value = null;
         return;
       }
@@ -1790,10 +1801,15 @@ export function usePosSale(deps: PosSaleDeps) {
         cart.saveReceiptTaxId = false;
         cart.confirmReceiptTaxId = false;
       } else cart.saveReceiptContact = false;
-      customerDecision.value = null;
       pendingReceiptDecision.value = null;
-      if (pending.origin === "close") await submitSale();
-      else await reviewCheckout();
+      lookupBusy.value = true;
+      try {
+        if (pending.origin === "close") await submitSale();
+        else await reviewCheckout();
+        if (customerDecision.value === decision) customerDecision.value = null;
+      } finally {
+        lookupBusy.value = false;
+      }
       return;
     }
     customerDecision.value = null;
@@ -1953,7 +1969,7 @@ export function usePosSale(deps: PosSaleDeps) {
     if (autosaveRetryTimer) return;
     autosaveRetryTimer = setTimeout(() => {
       autosaveRetryTimer = null;
-      if (hasOpenTab.value && !checkoutMode.value && !busy.value && !saving.value) {
+      if (hasOpenTab.value && !customerDraftPending.value && !checkoutMode.value && !busy.value && !saving.value) {
         persistTab(true).catch(() => onAutosaveFailed());
       }
     }, 5000);
@@ -1963,11 +1979,17 @@ export function usePosSale(deps: PosSaleDeps) {
   // outside checkout. Quiet save (no projection refresh) to stay light.
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   function scheduleAutosave() {
+    if (customerDraftPending.value) {
+      unsaved.value = true;
+      if (autosaveTimer) clearTimeout(autosaveTimer);
+      autosaveTimer = null;
+      return;
+    }
     if (tabLoading.value || !hasOpenTab.value || checkoutMode.value || (orderSetupPending.value && cart.items.length)) return;
     if (autosaveTimer) clearTimeout(autosaveTimer);
     autosaveTimer = setTimeout(() => {
       autosaveTimer = null;
-      if (!hasOpenTab.value || checkoutMode.value || busy.value || saving.value || (orderSetupPending.value && cart.items.length)) return;
+      if (!hasOpenTab.value || customerDraftPending.value || checkoutMode.value || busy.value || saving.value || (orderSetupPending.value && cart.items.length)) return;
       persistTab(true).catch(() => onAutosaveFailed());
     }, 1200);
   }
@@ -2040,7 +2062,7 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   async function prepareCheckout() {
-    if (!cart.items.length || orderSetupPending.value) return;
+    if (!cart.items.length || requireCustomerDraftDecision() || orderSetupPending.value) return;
     serverError.value = "";
     dismissResult();
     busy.value = true;
@@ -2094,7 +2116,7 @@ export function usePosSale(deps: PosSaleDeps) {
 
   async function submitSale() {
     if (busy.value) return; // guarda de reentrância: duplo-toque não dispara 2 close_sale
-    if (!cart.items.length) return;
+    if (!cart.items.length || requireCustomerDraftDecision()) return;
     if (!checkoutMode.value) {
       await prepareCheckout();
       return;

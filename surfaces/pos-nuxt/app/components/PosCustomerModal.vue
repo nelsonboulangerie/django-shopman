@@ -177,11 +177,15 @@ watch(() => props.open, (open) => { if (!open) emit("search", ""); });
 // A RECUSA TRAZ A TELA DE VOLTA. O "Concluir" fecha o modal e só depois a
 // resposta do servidor chega: sem isto, a recusa nasceria atrás de uma tela
 // fechada e o operador veria a venda seguir com o cliente errado.
+const isReceiptDecision = computed(() => props.customerDecision?.kind === "receipt_identity");
+const receiptActionRef = ref<{ $el?: HTMLElement } | null>(null);
 const decisionCopy = computed(() =>
   props.customerDecision ? customerDecisionCopy(props.customerDecision) : null,
 );
-watch(() => props.customerDecision, (decision) => {
+watch(() => props.customerDecision, (decision, previous) => {
   if (decision && !props.open) emit("update:open", true);
+  if (!decision && previous?.kind === "receipt_identity") emit("update:open", false);
+  if (decision?.kind === "receipt_identity") void nextTick(() => receiptActionRef.value?.$el?.focus());
 });
 // O contato que o painel libera: o que o operador digitou, ou o valor do dono
 // quando a recusa veio sem o digitado.
@@ -232,6 +236,7 @@ function askConfirm() {
 }
 
 async function cancelDecision() {
+  if (props.lookupBusy) return;
   const decision = props.customerDecision;
   emit("decisionCancel");
   if (decision?.kind !== "existing_customer") return;
@@ -280,7 +285,8 @@ const taxIdInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
 function onOpenAutoFocus(event: Event) {
   event.preventDefault();
   void nextTick(() => {
-    if (customerPanel.value === "search") searchRef.value?.focus();
+    if (isReceiptDecision.value) receiptActionRef.value?.$el?.focus();
+    else if (customerPanel.value === "search") searchRef.value?.focus();
     else nameInputRef.value?.inputRef?.focus();
   });
 }
@@ -304,8 +310,8 @@ const newCustomerNote = computed(() => {
          o operador reaprende a tela a cada uma. -->
     <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" @open-auto-focus="onOpenAutoFocus">
       <UiDialogHeader>
-        <UiDialogTitle>Cliente</UiDialogTitle>
-        <UiDialogDescription>
+        <UiDialogTitle>{{ isReceiptDecision ? (customerDecision?.field === "tax_id" ? "CPF na nota" : "E-mail do comprovante") : "Cliente" }}</UiDialogTitle>
+        <UiDialogDescription v-if="!isReceiptDecision">
           Busque por nome, telefone, CPF ou e-mail — selecione um cadastro ou crie um novo.
         </UiDialogDescription>
       </UiDialogHeader>
@@ -313,7 +319,7 @@ const newCustomerNote = computed(() => {
       <div>
         <div class="grid gap-5">
           <!-- 1 · associated customer (Odoo's pinned-and-highlighted) + Remover -->
-          <div v-if="hasCustomer" class="grid gap-3 rounded-md border border-primary bg-primary/5 p-4">
+          <div v-if="hasCustomer && !isReceiptDecision" class="grid gap-3 rounded-md border border-primary bg-primary/5 p-4">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
                 <p class="flex items-center gap-1.5 text-base font-semibold">
@@ -570,17 +576,28 @@ const newCustomerNote = computed(() => {
               :class="decisionCopy.confirmLabel ? 'sm:grid-cols-2' : ''"
             >
               <UiButton
+                v-if="isReceiptDecision"
+                ref="receiptActionRef"
+                type="button"
+                :disabled="lookupBusy"
+                class="h-11 justify-center gap-2"
+                @click="cancelDecision"
+              >
+                <Icon :name="decisionCopy.cancelIcon" class="size-4 shrink-0" />
+                <span class="min-w-0 truncate">{{ decisionCopy.cancelLabel }}</span>
+              </UiButton>
+              <UiButton
                 v-if="decisionCopy.confirmLabel"
                 type="button"
-                :variant="customerDecision.kind === 'receipt_identity' ? 'outline' : 'default'"
+                :disabled="lookupBusy"
+                :variant="isReceiptDecision ? 'outline' : 'default'"
                 class="h-11 justify-center gap-2"
-                :class="customerDecision.kind === 'receipt_identity' ? 'order-2' : ''"
                 @click="askConfirm()"
               >
                 <Icon :name="decisionCopy.confirmIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.confirmLabel }}</span>
               </UiButton>
-              <UiButton type="button" :variant="customerDecision.kind === 'receipt_identity' ? 'default' : 'outline'" class="h-11 justify-center gap-2" :class="customerDecision.kind === 'receipt_identity' ? 'order-1' : ''" @click="cancelDecision">
+              <UiButton v-if="!isReceiptDecision" type="button" variant="outline" class="h-11 justify-center gap-2" @click="cancelDecision">
                 <Icon :name="decisionCopy.cancelIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.cancelLabel }}</span>
               </UiButton>
@@ -607,7 +624,7 @@ const newCustomerNote = computed(() => {
 
           <!-- 2 · the picker: prominent search + rich results list.
                Enter decide (seleciona / cria por CPF / transfere / cadastra). -->
-          <div class="grid grid-cols-2 gap-2" aria-label="Escolher como identificar cliente">
+          <div v-if="!isReceiptDecision" class="grid grid-cols-2 gap-2" aria-label="Escolher como identificar cliente">
             <UiButton type="button" :variant="customerPanel === 'search' ? 'default' : 'outline'" @click="customerPanel = 'search'">
               Buscar existente
             </UiButton>
@@ -616,7 +633,7 @@ const newCustomerNote = computed(() => {
             </UiButton>
           </div>
           <PosCustomerSearch
-            v-if="customerPanel === 'search'"
+            v-if="customerPanel === 'search' && !isReceiptDecision"
             ref="searchRef"
             :results="searchResults"
             :busy="searchBusy"
@@ -631,7 +648,7 @@ const newCustomerNote = computed(() => {
           />
 
           <!-- 3 · create / edit form -->
-          <div v-if="customerPanel === 'form'" class="grid gap-3">
+          <div v-if="customerPanel === 'form' && !isReceiptDecision" class="grid gap-3">
             <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               {{ customerLookup?.ref ? "Editar cadastro" : "Novo cadastro" }}
             </p>
@@ -660,7 +677,7 @@ const newCustomerNote = computed(() => {
                não é decisão da REGRA no servidor, nunca de quem está no caixa. O
                pedido do consumidor é o CPF, e ele mora no campo de identidade
                acima — um número, uma intenção. -->
-          <div v-if="showFiscal" class="grid gap-3 border-t pt-4">
+          <div v-if="showFiscal && !isReceiptDecision" class="grid gap-3 border-t pt-4">
             <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Comprovante</p>
             <!-- MULTI: imprimir E enviar não competem. "Sem comprovante" é
                  nenhum canal marcado, não um terceiro botão. -->
@@ -684,14 +701,11 @@ const newCustomerNote = computed(() => {
                  campo passa a ser o `aria-label`. -->
             <div v-if="receiptChannels.includes('email')" class="grid gap-1.5 text-sm">
               <span class="font-medium text-muted-foreground">E-mail do comprovante</span>
-              <!-- A MESMA pergunta da coluna, no campo GÊMEO. `top` porque logo
-                   abaixo está o "Concluir": o balão não pode tapar o botão que
-                   encerra o modal. -->
+              <!-- Mesma escolha inline do fechamento, sem popover automático. -->
               <PosReceiptSaveOffer
                 v-if="receiptEmailOffer"
                 :offer="receiptEmailOffer"
                 :checked="saveReceiptContact"
-                side="top"
                 @update:checked="$emit('update:saveReceiptContact', $event)"
               >
                 <UiInput :model-value="receiptEmail" type="email" aria-label="E-mail do comprovante" :placeholder="customerEmail || 'cliente@email.com'" @update:model-value="$emit('update:receiptEmail', String($event || ''))" />
@@ -705,7 +719,7 @@ const newCustomerNote = computed(() => {
         </div>
       </div>
 
-      <UiDialogFooter>
+      <UiDialogFooter v-if="!isReceiptDecision">
         <UiButton class="h-14 w-full" :disabled="Boolean(customerDecision) || lookupBusy" @click="onConclude">
           {{ customerPanel === "form" ? (customerLookup?.ref ? "Salvar cadastro" : "Cadastrar cliente") : "Concluir" }}
         </UiButton>

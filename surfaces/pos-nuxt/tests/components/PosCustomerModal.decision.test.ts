@@ -374,6 +374,14 @@ describe("decisão do documento", () => {
     const wrapper = await mount({ customerDecision: {
       ...CONFLICT, kind: "receipt_identity", field: "tax_id", typed: "52998224725", fromReceipt: true,
     } });
+    expect(screenText()).toContain("CPF na nota");
+    expect(buttonByText("Buscar existente")).toBeUndefined();
+    expect(buttonByText("Cadastrar novo")).toBeUndefined();
+    expect(buttonByText("Concluir")).toBeUndefined();
+    expect(document.querySelector('input')).toBeNull();
+    expect(document.activeElement).toBe(buttonByText("Usar apenas nesta nota"));
+    const actions = Array.from(document.querySelectorAll('button'));
+    expect(actions.indexOf(buttonByText("Usar apenas nesta nota")!)).toBeLessThan(actions.indexOf(buttonByText("Associar Bruno Souza à venda")!));
     expect(screenText()).toContain("52998224725");
     expect(screenText()).toContain("Bruno Souza");
     expect(buttonByText("unificar")).toBeUndefined();

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { nextTick } from "vue";
+import { nextTick, watch } from "vue";
 import { makeProjection, makeSale, makeTabPayload } from "./_posSaleHarness";
 
 vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
@@ -72,8 +72,16 @@ describe("CPF/e-mail do documento têm decisão própria", () => {
     Object.assign(h.sale.cart, { invoiceTaxId: CPF, wantsCpfOnInvoice: true, receiptEmail: EMAIL, receiptChannels: ["email"] });
     await nextTick(); await h.sale.prepareCheckout();
     expect(h.sale.customerDecision.value?.field).toBe("tax_id");
-    await h.sale.cancelCustomerDecision();
+    const transitions: unknown[] = [];
+    const stop = watch(h.sale.customerDecision, (decision) => transitions.push(decision?.field || null), { flush: "sync" });
+    const pending = h.sale.cancelCustomerDecision();
+    expect(h.sale.lookupBusy.value).toBe(true);
+    await h.sale.cancelCustomerDecision(); // duplo toque não aceita o próximo campo
+    await pending;
+    expect(h.sale.lookupBusy.value).toBe(false);
     expect(h.sale.customerDecision.value?.field).toBe("email");
+    expect(transitions).not.toContain(null);
+    stop();
     await h.sale.cancelCustomerDecision();
     expect(h.sale.customerDecision.value).toBeNull();
     expect(h.bodies.at(-1)?.receipt_identity_choices).toHaveLength(2);
