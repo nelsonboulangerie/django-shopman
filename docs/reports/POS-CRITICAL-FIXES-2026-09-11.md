@@ -37,8 +37,14 @@ A migração `0063_cash_change_request_alert` e a Concierge `0064_concierge_aler
 
 Referência fiscal: [Integridade da entrega fiscal](execution/pos-20260912/fiscal-delivery-integrity.md).
 
-## Iteração: identidade do documento em uma janela
+## Iteração final: identidade e cadastro ao validar o pedido
 
-A decisão agrupa todas as pendências de CPF e e-mail retornadas pelo servidor. Um titular produz duas opções; titulares distintos produzem até três. A janela tem largura máxima de 360 px, ações secundárias neutras empilhadas e nomes completos. A tecla 1 mantém os dados apenas na nota; 2/3 escolhem um cliente para confirmação. Tab e setas navegam, Enter aciona e Esc volta sem aceitar. Repetição de tecla e ações durante consulta não avançam decisões. O cadastro continua separado da decisão de associar a venda.
+Uma única janela de 360 px reúne CPF e e-mail. Dados novos oferecem cadastrar e vincular; um titular oferece vínculo; dois titulares oferecem escolher um. Se já existe cliente no pedido, dados novos oferecem salvar no cadastro, sem copiar os dados pertencentes a terceiros. A opção final usa os dados somente no pedido. Os campos não exibem mais ofertas inline de salvar.
 
-O backend conserva os campos legados do erro e acrescenta `conflicts`. As autorizações de uso apenas no documento continuam vinculadas exatamente ao dado, titular, cliente atual e identificação da venda. Não há migração adicional.
+Botões secundários neutros ficam empilhados. 1/2/3 seguem a ordem visual; Tab/setas navegam; Enter aciona o botão focado; Esc volta sem aceitar. O foco inicial é no título para evitar aceitar com o Enter usado para abrir. Associação/criação exige confirmação. Troca de CPF mostra o anterior e o novo e confere o anterior sob lock no servidor.
+
+A criação aceita CPF ou e-mail sem inventar nome; a interface mostra o identificador quando não há nome. Dados do documento permanecem separados da identidade do pedido. Respostas atrasadas não associam outro pedido. Retry de criação após resposta perdida encontra o cadastro já criado e pede vínculo explícito.
+
+O backend conserva os campos legados do erro e acrescenta `conflicts`. Autorizações de uso avulso continuam vinculadas a dado, titular, cliente atual e identificação do pedido. Não há migração adicional para esta iteração.
+
+Validação local: CPF da Ana + e-mail do Bruno exibiram ambos os titulares na mesma janela; antes, o Bruno não existia na fixture do preview. Criação usando apenas `bi.preview619@example.org` gerou um cadastro único com nome/sobrenome vazios e vínculo visível no pedido. Nenhuma emissão ou mensagem externa foi usada nesses testes.
