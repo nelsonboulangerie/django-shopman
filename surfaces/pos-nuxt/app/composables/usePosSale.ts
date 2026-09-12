@@ -317,7 +317,8 @@ export function usePosSale(deps: PosSaleDeps) {
     customerEmail: "",
     customerMemoryAction: "",
     fulfillmentType: "pickup" as FulfillmentType,
-    fulfillmentConfirmed: false,
+    fulfillmentConfirmed: true,
+    salesMode: "counter" as "counter" | "order",
     deliveryAddress: "",
     deliveryAddressStructured: {} as StructuredAddressProjection,
     deliveryStreetNumber: "",
@@ -358,6 +359,50 @@ export function usePosSale(deps: PosSaleDeps) {
     managerPin: "",
     clientRequestId: "",
   });
+
+  const orderSetupComplete = ref(false);
+  const orderSetupIssue = computed<"customer" | "fulfillment" | "address" | "schedule" | "">(() => {
+    if (cart.salesMode !== "order") return "";
+    if (!cart.customerRef.trim()) return "customer";
+    if (!cart.fulfillmentConfirmed) return "fulfillment";
+    if (cart.fulfillmentType === "delivery" && !cart.deliveryAddress.trim()
+      && !cart.deliveryAddressStructured.route?.trim()) return "address";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(cart.deliveryDate)
+      || (pos.value?.delivery_today && cart.deliveryDate < pos.value.delivery_today)) return "schedule";
+    return "";
+  });
+  const orderSetupPending = computed(() => cart.salesMode === "order"
+    && (!orderSetupComplete.value || Boolean(orderSetupIssue.value)));
+  function completeOrderSetup() {
+    if (!orderSetupIssue.value) {
+      orderSetupComplete.value = true;
+      scheduleAutosave();
+    }
+  }
+  function setSalesMode(mode: "counter" | "order") {
+    if (mode === cart.salesMode) return;
+    cart.salesMode = mode;
+    orderSetupComplete.value = false;
+    checkoutMode.value = false;
+    review.value = null;
+    cart.fulfillmentConfirmed = mode === "counter";
+    if (mode === "counter") {
+      cart.fulfillmentType = "pickup";
+      cart.deliveryDate = "";
+      cart.deliveryTimeSlot = "";
+      cart.deliveryAddress = "";
+      cart.deliveryAddressStructured = {};
+      cart.deliveryStreetNumber = "";
+      cart.deliveryNeighborhood = "";
+      cart.deliveryComplement = "";
+      cart.deliveryInstructions = "";
+      cart.deliveryFeeOverride = false;
+      cart.deliveryFeeOverrideInput = "";
+      cart.paymentCollection = "terminal";
+      cart.paymentTenders = [];
+      cart.changeForInput = "";
+    }
+  }
 
   const checkoutContract = computed(() => pos.value?.checkout || null);
   const checkoutCapabilities = computed<POSCheckoutCapabilities>(
@@ -771,6 +816,7 @@ export function usePosSale(deps: PosSaleDeps) {
   watch(pos, (projection) => {
     if (!projection) return;
     if (!cart.paymentMethod) cart.paymentMethod = projection.payment_methods[0]?.ref || "cash";
+    if (cart.salesMode === "counter") return;
     const defaultFulfillment = projection.terminal_default_fulfillment_type === "delivery" ? "delivery" : "pickup";
     if (!cart.fulfillmentType) {
       cart.fulfillmentType = defaultFulfillment;
@@ -805,6 +851,8 @@ export function usePosSale(deps: PosSaleDeps) {
     }, 450);
   }
   watch(() => [
+    cart.salesMode,
+    cart.fulfillmentConfirmed,
     cart.fulfillmentType,
     cart.deliveryAddress,
     cart.deliveryAddressStructured,
@@ -874,6 +922,7 @@ export function usePosSale(deps: PosSaleDeps) {
    * com identidade nova — que é o que a cozinha precisa para receber um ticket.
    */
   function pushProduct(product: POSProductProjection) {
+    if (orderSetupPending.value) return;
     // Lançar item é sair da tela de resultado: pelo mesmo caminho do CTA
     // (PIX aguardando vira chip, nunca é descartado calado).
     dismissResult();
@@ -895,7 +944,7 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   function setQty(lineId: string, qty: number) {
-    if (!canUseCart.value) return;
+    if (!canUseCart.value || orderSetupPending.value) return;
     review.value = null;
     checkoutMode.value = false;
     const existing = cart.items.find((item) => item.line_id === lineId);
@@ -960,7 +1009,9 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.customerEmail = "";
     cart.customerMemoryAction = "";
     cart.fulfillmentType = "pickup";
-    cart.fulfillmentConfirmed = false;
+    cart.fulfillmentConfirmed = true;
+    cart.salesMode = "counter";
+    orderSetupComplete.value = false;
     cart.deliveryAddress = "";
     cart.deliveryAddressStructured = {};
     cart.deliveryStreetNumber = "";
@@ -1020,7 +1071,9 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.customerTaxId = payload.customer_tax_id || "";
     cart.customerEmail = payload.customer_email || "";
     cart.fulfillmentType = payload.fulfillment_type === "delivery" ? "delivery" : "pickup";
-    cart.fulfillmentConfirmed = fulfillmentWasConfirmed;
+    cart.salesMode = payload.sales_mode || (payload.fulfillment_type === "delivery" || payload.delivery_date || payload.delivery_time_slot ? "order" : "counter");
+    cart.fulfillmentConfirmed = cart.salesMode === "counter" || fulfillmentWasConfirmed || Boolean(payload.fulfillment_type);
+    orderSetupComplete.value = cart.salesMode === "order" && Boolean(payload.items?.length);
     cart.deliveryAddress = payload.delivery_address || "";
     cart.deliveryAddressStructured = payload.delivery_address_structured || {};
     cart.deliveryStreetNumber = payload.delivery_address_structured?.street_number || "";
@@ -1193,7 +1246,8 @@ export function usePosSale(deps: PosSaleDeps) {
       invoiceTaxId: cart.wantsCpfOnInvoice ? cart.invoiceTaxId : "",
       customerEmail: cart.customerEmail,
       customerMemoryAction: cart.customerMemoryAction,
-      fulfillmentType: cart.fulfillmentType,
+      salesMode: cart.salesMode,
+      fulfillmentType: cart.salesMode === "order" && !cart.fulfillmentConfirmed ? "" as const : cart.fulfillmentType,
       deliveryAddress,
       deliveryAddressStructured: structured,
       deliveryComplement: cart.deliveryComplement,
@@ -1639,7 +1693,7 @@ export function usePosSale(deps: PosSaleDeps) {
     customerDecision.value = null;
     const pendia = pendingSaleAfterDecision.value;
     pendingSaleAfterDecision.value = false;
-    if (!decision) return;
+    if (!decision || decision.kind === "existing_customer") return;
     const restored = decision.current?.value || "";
     let doComprovante = false;
     switch (conflictSource(decision.field).typedField) {
@@ -1769,6 +1823,10 @@ export function usePosSale(deps: PosSaleDeps) {
   let persistQueue: Promise<unknown> = Promise.resolve();
   function persistTab(quiet = false): Promise<void> {
     const run = async () => {
+      if (orderSetupPending.value && cart.items.length) {
+        unsaved.value = true;
+        return;
+      }
       const state = currentIntentState();
       cart.clientRequestId = state.clientRequestId;
       await action.call(actionHref(actions.value, "save_tab", "/api/v1/backstage/pos/tabs/save/"), {
@@ -1799,11 +1857,11 @@ export function usePosSale(deps: PosSaleDeps) {
   // outside checkout. Quiet save (no projection refresh) to stay light.
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   function scheduleAutosave() {
-    if (tabLoading.value || !hasOpenTab.value || checkoutMode.value) return;
+    if (tabLoading.value || !hasOpenTab.value || checkoutMode.value || (orderSetupPending.value && cart.items.length)) return;
     if (autosaveTimer) clearTimeout(autosaveTimer);
     autosaveTimer = setTimeout(() => {
       autosaveTimer = null;
-      if (!hasOpenTab.value || checkoutMode.value || busy.value || saving.value) return;
+      if (!hasOpenTab.value || checkoutMode.value || busy.value || saving.value || (orderSetupPending.value && cart.items.length)) return;
       persistTab(true).catch(() => onAutosaveFailed());
     }, 1200);
   }
@@ -1814,6 +1872,8 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.customerPhone,
     cart.customerTaxId,
     cart.customerEmail,
+    cart.salesMode,
+    cart.fulfillmentConfirmed,
     cart.fulfillmentType,
     cart.deliveryAddress,
     cart.deliveryStreetNumber,
@@ -1869,7 +1929,7 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   async function prepareCheckout() {
-    if (!cart.items.length) return;
+    if (!cart.items.length || orderSetupPending.value) return;
     serverError.value = "";
     dismissResult();
     busy.value = true;
@@ -1927,7 +1987,7 @@ export function usePosSale(deps: PosSaleDeps) {
       await prepareCheckout();
       return;
     }
-    if (!cart.fulfillmentConfirmed) {
+    if (orderSetupPending.value || !cart.fulfillmentConfirmed) {
       serverError.value = "Escolha Entrega ou Retirada antes de finalizar.";
       return;
     }
@@ -1973,6 +2033,7 @@ export function usePosSale(deps: PosSaleDeps) {
         };
         const proof = paymentProofView(response.payment);
         result.value = {
+          salesMode: cart.salesMode,
           orderRef,
           nextUrl: `${ordersUrl.value.replace(/\/+$/, "")}/${encodeURIComponent(orderRef)}`,
           payment: proof,
@@ -2167,6 +2228,7 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   async function fireTab(selectedLineIds?: string[]) {
+    if (orderSetupPending.value) return false;
     if (!cart.tabSessionKey) return false;
     serverError.value = "";
     firing.value = true;
@@ -2321,6 +2383,10 @@ export function usePosSale(deps: PosSaleDeps) {
   onScopeDispose(() => stopPixPolling());
 
   return {
+    orderSetupPending,
+    orderSetupIssue,
+    completeOrderSetup,
+    setSalesMode,
     // draft + flags
     cart,
     tabInput,

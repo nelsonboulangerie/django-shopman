@@ -542,6 +542,7 @@ export interface POSPaymentTenderDraft {
 }
 
 export interface POSTabPayload {
+  sales_mode?: "counter" | "order";
   session_key: string;
   tab_session_key: string;
   tab_ref: string;
@@ -599,6 +600,7 @@ export interface POSPaymentResultProjection {
 }
 
 export interface POSIntentCartState {
+  salesMode?: "counter" | "order";
   tabRef: string;
   tabSessionKey: string;
   items: POSCartItem[];
@@ -611,7 +613,7 @@ export interface POSIntentCartState {
   invoiceTaxId: string;
   customerEmail: string;
   customerMemoryAction: string;
-  fulfillmentType: "pickup" | "delivery";
+  fulfillmentType: "pickup" | "delivery" | "";
   deliveryAddress: string;
   deliveryAddressStructured: StructuredAddressProjection;
   deliveryComplement: string;

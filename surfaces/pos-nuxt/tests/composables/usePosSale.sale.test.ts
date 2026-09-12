@@ -596,33 +596,10 @@ describe("usePosSale — a trava da gaveta na venda SEM comanda", () => {
   });
 });
 
-describe("recebimento explícito", () => {
-  it("cliente e data preenchidos não autorizam retirada implícita", async () => {
-    const actionCall = saleRouter();
-    const h = saleReadyForCheckout(actionCall);
-    h.sale.cart.items = [{ sku: "PAO", name: "Pão", qty: 2, price_q: 500, notes: "" }];
-    h.sale.cart.fulfillmentConfirmed = false;
-    h.sale.cart.customerName = "Maria";
-    h.sale.cart.deliveryDate = "2026-09-11";
-    await h.sale.submitSale();
-    expect(h.sale.checkoutMode.value).toBe(true);
-    expect(h.sale.busy.value).toBe(false);
-    expect(h.sale.cart.items).toHaveLength(1);
-    await h.sale.submitSale();
-    expect(actionCall.mock.calls.filter((c) => String(c[0]).includes("/sale/close/"))).toHaveLength(0);
-    expect(toast.error).toHaveBeenCalledWith("Escolha Entrega ou Retirada antes de finalizar.");
-    h.sale.cart.fulfillmentConfirmed = true;
-    await h.sale.submitSale();
-    expect(h.sale.result.value?.orderRef).toBe("PED-1");
-    expect(h.sale.cart.fulfillmentConfirmed).toBe(false);
-    h.handles.dispose();
-  });
-});
-
-
 describe("mudança da oferta de recebimento", () => {
   it("exige nova escolha se entrega deixa de estar disponível", async () => {
     const h = makeSale({ projection: freeCartProjection() });
+    h.sale.setSalesMode("order");
     h.sale.cart.fulfillmentType = "delivery";
     h.sale.cart.fulfillmentConfirmed = true;
     h.handles.posValue.value = makeProjection({

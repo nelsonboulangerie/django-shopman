@@ -138,6 +138,7 @@ export function buildPosSaleIntent(
           }
         : {}),
     })),
+    ...(state.salesMode ? { sales_mode: state.salesMode } : {}),
     fulfillment_type: state.fulfillmentType,
     payment_method: state.paymentMethod,
     payment_collection: state.paymentCollection,
