@@ -51,11 +51,11 @@ regulação de pagamentos. Elas exigem frentes e especialistas próprios.
 | Consentimento | Prova, finalidade específica e revogação fácil (LGPD art. 8º) | `CommunicationConsent` mantém texto/hash/origem/instante; preferências permitem revogar por canal; audiência falha fechada sem opt-in | **Atendido tecnicamente para Marketing** |
 | Crianças e adolescentes | Melhor interesse e requisitos próprios de consentimento/informação (LGPD art. 14) | Audiência promocional exclui idade conhecida menor que 18; política e termos informam participação do responsável | **Mitigado; falta definir age gate/fluxo do responsável para idade desconhecida** |
 | Acesso, correção e eliminação | Direitos do titular (LGPD art. 18) | Autoatendimento exporta perfil, contatos, pedidos, consentimentos/histórico, preferências, loyalty, favoritos, alertas e conversas; exclusão alcança extensões e denuncia falha parcial | **Corrigido; auditoria de completude deve acompanhar novos modelos** |
-| Retenção | Encerrar/eliminar ao fim do tratamento, salvo hipóteses legais (LGPD arts. 15–16) | PII é anonimizada; dados fiscais transacionais permanecem; IP auxiliar limitado a 90 dias; aparelho confiável expira em 30 dias; “Avise-me” persiste até pausa/cancelamento | **Parcial: faltam descarte automático e tabela validada para algumas provas e históricos** |
+| Retenção | Encerrar/eliminar ao fim do tratamento, salvo hipóteses legais (LGPD arts. 15–16) | Matriz R01–R15 aprovada; dry-run único conta candidatos sem PII; IP auxiliar é limitado a 90 dias; “Avise-me” persiste até pausa/cancelamento | **Política aprovada e observável; contrações e ativação produtiva continuam bloqueadas** |
 | Segurança e privacy by design | Medidas desde a concepção (LGPD arts. 46 e 49) | Segredos no servidor, redaction do Sentry, trilhas append-only, permissões, confirmação humana e bloqueios de audiência | **Controles presentes; pentest e governança organizacional fora deste recorte** |
 | Incidente | Comunicar ANPD/titulares em três dias úteis quando aplicável e guardar registro por cinco anos | Runbook corrigido com prazo, decisão e retenção; exercício L6 concluído | **Atendido no recorte técnico e operacional exercitado** |
-| Contrato eletrônico | Identificação, informação prévia, resumo, correção, confirmação e contrato reproduzível (Decreto 7.962/2013) | Dados legais e links aparecem antes do envio; pedido recebe versões de termos/privacidade | **Parcial; falta arquivo imutável reproduzível de cada versão** |
-| Arrependimento/cancelamento | Direito remoto e exercício pelo mesmo meio (CDC art. 49; Decreto arts. 4º–5º) | Termos deixaram de criar exceção categórica para perecível; botão cancela quando elegível | **Bloqueante: depois que o botão some, “Ajuda” abre outro canal** |
+| Contrato eletrônico | Identificação, informação prévia, resumo, correção, confirmação e contrato reproduzível (Decreto 7.962/2013) | Dados legais e links aparecem antes do envio; pedido recebe versão, URL permanente e SHA-256 | **Implementado; falta smoke externo após deploy** |
+| Arrependimento/cancelamento | Direito remoto e exercício pelo mesmo meio (CDC art. 49; Decreto arts. 4º–5º) | Cancelamento automático quando seguro e solicitação eletrônica com protocolo nos demais casos | **Implementado e integrado no PR #629** |
 | Cláusulas compreensíveis | Consumidor deve conhecer e compreender previamente; cláusula abusiva é nula (CDC arts. 46 e 51) | Texto reescrito em pt-BR direto e sem renúncia de direitos | **Corrigido no código; revisão jurídica final pendente** |
 | Transferência internacional | Base legal + mecanismo válido e informação pública clara sobre países, finalidade, duração, agentes, segurança e direitos (Resolução ANPD 19/2024) | Política reconhece processamento internacional e canal de informação | **Bloqueante: inventário/contratos/países exatos não são prováveis pelo código** |
 | Google OAuth | Homepage relevante, termos/privacidade públicos, domínio verificado, escopo mínimo e uso limitado | `/shopman-marketing`, `/privacidade`, `/termos`; refresh token protegido; `business.manage`; uso publicitário vedado na política | **Código pronto; atualizar URLs no console apenas após deploy e smoke** |
@@ -159,18 +159,14 @@ base/mecanismo e informação pública clara, em português, sobre a operação.
 Antes da publicação final, o responsável deve reunir contratos/DPAs e validar a
 matriz `dado → fornecedor → país → finalidade → prazo → mecanismo → contato`.
 
-### Gate L2 — cancelamento eletrônico pelo mesmo meio (bloqueante)
+### Gate L2 — cancelamento eletrônico pelo mesmo meio
 
-Quando `cancel_order` está habilitado, o cliente resolve na própria tela. Depois,
-“Ajuda” abre atendimento externo. Isso não prova o exercício do arrependimento
-pelo mesmo instrumento usado na contratação nem gera imediatamente protocolo
-reproduzível, como pede o Decreto.[^3]
-
-Decisão necessária: adicionar na página do pedido a ação **Solicitar
-cancelamento**, disponível mesmo depois do cancelamento automático, que registre
-data, pedido, motivo opcional e protocolo, confirme o recebimento imediatamente e
-encaminhe ao operador/refundo. Ela não deve prometer cancelamento automático
-quando produção/entrega já começou; deve prometer recebimento e tratamento.
+**Implementado e integrado em 2026-09-12 pelo PR
+[#629](https://github.com/nelsonboulangerie/django-shopman/pull/629).** A ação
+**Solicitar cancelamento** permanece disponível quando o cancelamento automático
+já não é seguro, registra protocolo imediatamente e alerta Pedidos para análise.
+Ela não altera sozinha estado, pagamento ou estoque e, assim, não promete
+cancelamento automático depois do início da produção/entrega.[^3]
 
 ### Gate L3 — menores e idade desconhecida
 
@@ -255,6 +251,12 @@ fora de produção. Nenhum expurgo novo foi ativado: descarte do legado produtiv
 e ativação dos jobs em produção continuam sujeitos a dry-run, contagens sem PII
 e gate humano separado.
 
+**Primeira etapa técnica concluída:** `data_retention --dry-run` devolve
+contagens sem PII para as 15 regras, por padrão sem mutação; `--apply` recusa
+explicitamente enquanto não houver a implementação destrutiva revisada e o gate
+separado. Os testes cobrem a matriz completa, a preservação de um registro
+vencido no dry-run e a recusa do apply.
+
 ### Gate L8 — alertas de dependência nas demais superfícies
 
 O manifest do Storefront ficou com `npm audit` zerado, mas o Dependabot do
@@ -271,10 +273,18 @@ build; conteúdo SVG não confiável não deve entrar nessa cadeia até todas as
 superfícies adotarem a versão corrigida. Este gate não prova exploração ou
 ilegalidade, mas impede alegar segurança integral do repositório.
 
+**Correção preparada no PR
+[#631](https://github.com/nelsonboulangerie/django-shopman/pull/631):** 31 alertas
+das sete superfícies restantes foram tratados em worktree/branch isolados; os
+cinco do Storefront permanecem cobertos por este PR. A evidência local registra
+sete audits zerados, 1.711 testes, typecheck e build em 7/7 superfícies. O gate
+só fecha após CI remoto e nova contagem dos alertas no `main` depois de integrar
+ambos os PRs.
+
 ## Gate de release proposto
 
 1. Jurídico/dono valida o texto, dados empresariais e tratamento de perecíveis.
-2. L1–L8 recebem responsável, evidência e decisão; L1, L2, L7 e L8 impedem a
+2. L1–L8 recebem responsável, evidência e decisão; L1, L7 e L8 impedem a
    alegação de conformidade integral.
 3. CI, testes de backend, frontend, typecheck, build e `check --deploy` verdes.
 4. Merge autorizado; deploy continua sendo ato separado e explícito.
