@@ -27,7 +27,7 @@ from time import perf_counter
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Exists, F, OuterRef
+from django.db.models import Exists, F, OuterRef, Q
 from django.utils import timezone
 
 from shopman.shop.models import Conversation, ConversationMessage
@@ -169,8 +169,13 @@ def receive_inbound(
         logger.info("concierge.not_allowed")
         return IntakeResult(None, None, False, "not_allowed")
 
-    if not isinstance(external_id, str) or not external_id.strip():
+    if not isinstance(external_id, str):
         return IntakeResult(None, None, False, "event_id_required")
+    legacy = not external_id.strip()
+    if legacy and not config().get("legacy_read_handoff_enabled"):
+        return IntakeResult(None, None, False, "event_id_required")
+    if legacy:
+        external_id = ""
     if len(external_id) > 4096 or len(text) > 16000 or len(subscriber_id) > 512:
         return IntakeResult(None, None, False, "invalid_input")
     identity = {"provider": str(config().get("provider") or "manychat"),
@@ -184,31 +189,38 @@ def receive_inbound(
         if envelope_key in envelope and envelope[envelope_key] != value:
             return IntakeResult(None, None, False, "identity_conflict")
     envelope.update(version=2, event_id=external_id, subject=subscriber_id, account_id=identity["account"], provider=identity["provider"], transport_channel=identity["transport_channel"])
+    envelope["input_assurance"] = "legacy_unverified" if legacy else "provider_event"
     envelope["profile"] = profile or {}
     ext = _external_id(subscriber_id, text, external_id)
     with transaction.atomic():
         conversation = _get_or_create_conversation(subscriber_id, identity)
         conversation = Conversation.objects.select_for_update().get(pk=conversation.pk)
-        message, created = ConversationMessage.objects.get_or_create(
-            conversation=conversation,
-            external_id=ext,
-            defaults={
-                "role": ConversationMessage.Role.USER,
-                "kind": ConversationMessage.Kind.INBOUND,
-                "text": text,
-                "content": [{"type": "text", "text": text}],
-                "envelope": envelope,
-            },
-        )
+        values = {
+            "role": ConversationMessage.Role.USER,
+            "kind": ConversationMessage.Kind.INBOUND,
+            "text": text,
+            "content": [{"type": "text", "text": text}],
+            "envelope": envelope,
+        }
+        if legacy:
+            # PK identifica o recebimento local, nunca um evento do fornecedor.
+            # Sem ID confiável não há dedupe de retry nem exatamente-uma-intenção.
+            message = ConversationMessage.objects.create(conversation=conversation, external_id="", **values)
+            created = True
+        else:
+            message, created = ConversationMessage.objects.get_or_create(
+                conversation=conversation, external_id=ext, defaults=values,
+            )
         if not created and (message.text != text or message.envelope.get("event_id") != external_id or message.envelope.get("payload_hash") != envelope.get("payload_hash")):
             return IntakeResult(conversation.pk, message.pk, False, "intent_conflict")
-        if created:
+        if created and not legacy:
+            # Recibo legado não comprova nova interação nem renova a janela.
             Conversation.objects.filter(pk=conversation.pk).update(last_inbound_at=timezone.now())
         if conversation.state != Conversation.State.ACTIVE:
             return IntakeResult(conversation.pk, message.pk, False, "handoff")
         # Replay repara trabalho perdido; efeito e agendamento têm o mesmo commit.
         _enqueue_turn(conversation)
-    return IntakeResult(conversation.pk, message.pk, True, "queued" if created else "duplicate")
+    return IntakeResult(conversation.pk, message.pk, True, "legacy_read_only" if legacy else "queued" if created else "duplicate")
 
 
 def _enqueue_turn(conversation: Conversation) -> None:
@@ -271,10 +283,18 @@ class TurnResult:
 
 def unanswered_inbound(conversation: Conversation) -> list[ConversationMessage]:
     """Consumo explícito: notas/saídas nunca reconhecem entradas por posição."""
-    return list(conversation.messages.filter(
+    pending = conversation.messages.filter(
         kind=ConversationMessage.Kind.INBOUND, consumed_by__isnull=True,
         envelope__version=2,
-    ).order_by("id"))
+    )
+    if not config().get("legacy_read_handoff_enabled"):
+        pending = pending.filter(_nonlegacy_input())
+    return list(pending.order_by("id"))
+
+
+def _nonlegacy_input():
+    # Envelopes v2 anteriores à compatibilidade não têm input_assurance.
+    return Q(envelope__input_assurance__isnull=True) | ~Q(envelope__input_assurance="legacy_unverified")
 
 
 class TurnRevoked(Exception):
@@ -291,7 +311,16 @@ def assert_turn_authority(conversation, *, for_mutation=True):
         raise TurnRevoked("identity_changed")
     if not is_enabled() or not is_allowed(current.subscriber_id) or current.state != Conversation.State.ACTIVE:
         raise TurnRevoked("contained")
+    if getattr(conversation, "_legacy_read_only", False):
+        if for_mutation or not config().get("legacy_read_handoff_enabled"):
+            raise TurnRevoked("legacy_read_only")
     fence = getattr(conversation, "_turn_fence", None)
+    if for_mutation and fence is None:
+        # Caller interno com objeto recarregado não pode perder a contenção
+        # legada só porque os atributos transitórios do claim não estão nele.
+        latest = current.messages.filter(kind=ConversationMessage.Kind.INBOUND).order_by("-pk").values_list("envelope", flat=True).first()
+        if latest and latest.get("input_assurance") == "legacy_unverified":
+            raise TurnRevoked("legacy_read_only")
     if fence is not None:
         if current.turn_fence != fence or not current.claim_until or current.claim_until <= timezone.now():
             raise TurnRevoked("claim_expired")
@@ -322,6 +351,7 @@ def _claim(conversation_id):
         conversation._turn_fence = conversation.turn_fence
         conversation._inbound_max_id = inbound[-1].pk
         conversation._inbound_ids = [m.pk for m in inbound]
+        conversation._legacy_read_only = any(m.envelope.get("input_assurance") == "legacy_unverified" for m in inbound)
         return conversation, inbound
 
 
@@ -352,6 +382,7 @@ def run_turn(conversation_id: int, *, client=None) -> TurnResult:
     ids = [m.pk for m in inbound]
     from shopman.storefront.concierge import agent as agent_module
     try:
+        assert_turn_authority(conversation, for_mutation=False)
         # Escape funciona mesmo sem chamada à IA.
         if any(m.text.casefold().strip(" .!?") in {
             "humano", "atendente", "quero falar com alguém", "quero falar com alguem",
@@ -359,10 +390,21 @@ def run_turn(conversation_id: int, *, client=None) -> TurnResult:
         } for m in inbound):
             mark_handoff(conversation, "pedido do cliente", consumed_ids=ids)
             return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids)
-        if not conversation.customer_ref:
+        if not conversation.customer_ref and not conversation._legacy_read_only:
             identify(conversation, inbound[0].envelope.get("profile") or {})
         assert_turn_authority(conversation, for_mutation=False)
-        if all(_looks_like_media(m.text) for m in inbound):
+        if conversation._legacy_read_only:
+            # C01: somente leitura pública e escape humano; sem IA/enriquecimento.
+            # Batch misto é contido integralmente, sem promover o texto legado.
+            from . import tools
+            reply = copy_message("CONCIERGE_LEGACY_READ_ONLY")
+            menu_requests = {"menu", "cardápio", "cardapio", "oi", "olá", "ola"}
+            if any(m.text.casefold().strip(" .!?") in menu_requests or m.text.casefold().startswith("#menu ") for m in inbound):
+                ctx = tools.ToolContext(conversation=conversation, channel_ref=conversation.channel_ref)
+                reply = tools.render_result("browse_menu", tools.browse_menu(ctx)) + "\n\n" + reply
+            outcome = agent_module.AgentOutcome(reply_text=reply)
+            result.fallback = "legacy_read_only"
+        elif all(_looks_like_media(m.text) for m in inbound):
             outcome = agent_module.AgentOutcome(reply_text=copy_message("CONCIERGE_MEDIA_UNSUPPORTED"))
             result.fallback = "media"
         elif _bump_turn_counter(conversation) > int(config().get("max_turns_per_day") or 80):
@@ -449,6 +491,7 @@ def _prepare_reply(conversation, text, *, quote_token="", disclosure=None, depen
         kind=ConversationMessage.Kind.REPLY, text=text,
         content=[{"type": "text", "text": text}], transport_state="prepared",
         envelope={"version": 2, "turn_fence": conversation.turn_fence, "purpose": purpose,
+                  "legacy_read_only": bool(getattr(conversation, "_legacy_read_only", False)),
                   "quote_token": quote_token, "disclosure": disclosure or {}, "depends_on": depends_on,
                   "inbound_max_id": getattr(conversation, "_inbound_max_id", None), "content_hash": hashlib.sha256(text.encode()).hexdigest()},
     )
@@ -464,6 +507,8 @@ def _dispatch_reply(conversation, message):
             return message
         handoff_ack = message.envelope.get("purpose") == "handoff_ack" and current.state == Conversation.State.HANDOFF
         enabled = bool(config().get("enabled") and config().get("contract_version") == 2) if handoff_ack else is_enabled()
+        if message.envelope.get("legacy_read_only") and not config().get("legacy_read_handoff_enabled"):
+            enabled = False
         predecessor = message.envelope.get("depends_on")
         if predecessor and not current.messages.filter(pk=predecessor, transport_state="accepted").exists():
             message.transport_state = "not_applied"
@@ -533,6 +578,7 @@ def mark_handoff(conversation: Conversation, reason: str, *, consumed_ids=()) ->
     Conversation.objects.filter(pk=current.pk, turn_fence=current.turn_fence).update(handoff_sync_state="accepted" if synced else "unknown")
     _alert(current, "concierge_handoff", "Atendimento solicitado; sincronização " + ("aceita." if synced else "incerta; verificar ManyChat."))
     if consumed_ids:
+        current._legacy_read_only = bool(getattr(conversation, "_legacy_read_only", False))
         current._inbound_max_id = max(consumed_ids)
         ack = copy_message("CONCIERGE_HANDOFF_ACK")
         if ack:
@@ -604,9 +650,11 @@ def recover_pending(*, limit=100):
     from shopman.orderman.models import Directive
     now = timezone.now()
     counts = {"queued": 0, "unknown": 0}
+    eligible_input = Q(kind=ConversationMessage.Kind.INBOUND, envelope__version=2, consumed_by__isnull=True, conversation__state=Conversation.State.ACTIVE)
+    if not config().get("legacy_read_handoff_enabled"):
+        eligible_input &= _nonlegacy_input()
     pending = ConversationMessage.objects.filter(conversation_id=OuterRef("pk")).filter(
-        Q(kind=ConversationMessage.Kind.INBOUND, envelope__version=2, consumed_by__isnull=True, conversation__state=Conversation.State.ACTIVE)
-        | Q(transport_state__in=["prepared", "executing"])
+        eligible_input | Q(transport_state__in=["prepared", "executing"])
     )
     ids = list(Conversation.objects.annotate(has_pending=Exists(pending)).filter(
         Q(claim_until__isnull=True) | Q(claim_until__lte=now),
@@ -676,6 +724,8 @@ def retry_not_applied(conversation_id, message_id):
             return False
         quote_token = message.envelope.get("quote_token")
         if quote_token and quote_token != (conversation.quote or {}).get("token"):
+            return False
+        if message.envelope.get("legacy_read_only") and not config().get("legacy_read_handoff_enabled"):
             return False
         predecessor = message.envelope.get("depends_on")
         if predecessor and not conversation.messages.filter(pk=predecessor, transport_state="accepted").exists():
