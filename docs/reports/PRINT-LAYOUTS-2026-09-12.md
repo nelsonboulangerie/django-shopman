@@ -210,3 +210,13 @@ A prévia comparativa das fontes passou a usar os pesos Regular/Medium.
 
 Validado visualmente na aba existente; 82 testes de ficha, raster e fiscal passaram.
 Ruff e diff check aprovados. A tabela de medidas reflete esta revisão.
+
+## Pausa solicitada pelo usuário — não aprovado visualmente
+
+O usuário pediu para deixar o trabalho gravado e informou que ainda não gostou do
+resultado: não considera a evolução visual suficiente em relação aos modelos
+básicos e cogita desenhar no Adobe Illustrator. A implementação atual está salva
+no commit c96520216, com prévia e exemplos locais preservados. Não interpretar
+os testes aprovados como aprovação de design. Nenhuma nova iteração, integração,
+merge ou deploy está autorizada por este pedido de pausa. Retomar a direção
+visual a partir de uma nova orientação ou referência do usuário.
