@@ -36,14 +36,10 @@ from shopman.shop.models import (
     Trigger,
 )
 from shopman.shop.services import marketing_time
+from shopman.shop.services.marketing_capabilities import platform_choices
 
 #: Plataformas que uma regra pode alvejar, na ordem em que aparecem no formulário.
-PLATFORM_CHOICES: tuple[tuple[str, str], ...] = (
-    ("instagram", "Instagram"),
-    ("facebook", "Facebook"),
-    ("google_business", "Google Meu Negócio"),
-    ("whatsapp", "WhatsApp"),
-)
+PLATFORM_CHOICES: tuple[tuple[str, str], ...] = platform_choices()
 
 #: Janela do "publicados recentemente" no painel.
 RECENT_WINDOW = timedelta(hours=24)

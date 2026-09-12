@@ -16,10 +16,11 @@ from shopman.shop.models import (
     AnnouncementStatus,
     MarketingOutbox,
 )
+from shopman.shop.services.marketing_capabilities import platform_refs
 from shopman.shop.services.marketing_time import configured_timezone_name
 
 HISTORY_OUTCOMES = tuple(AnnouncementDeliveryState.values)
-HISTORY_PLATFORMS = ("instagram", "facebook", "google_business", "whatsapp")
+HISTORY_PLATFORMS = platform_refs()
 HISTORY_ACTORS = ("operator", "automation")
 HISTORY_PERIODS = ("today", "7d", "30d", "all")
 HISTORY_QUERY_FIELDS = frozenset({

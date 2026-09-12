@@ -27,7 +27,12 @@ from shopman.shop.models import (
     MarketingOutbox,
 )
 from shopman.shop.services import audience as audience_service
-from shopman.shop.services import audience_snapshot, marketing_artifacts, marketing_time
+from shopman.shop.services import (
+    audience_snapshot,
+    marketing_artifacts,
+    marketing_capabilities,
+    marketing_time,
+)
 from shopman.shop.services.marketing_commands import (
     CommandExecution,
     RejectCommand,
@@ -41,13 +46,8 @@ PUBLISH_MODES = frozenset({PUBLISH_NOW, PUBLISH_SCHEDULED})
 APPROVAL_RECORD_RETENTION = timedelta(days=365 * 5)
 MIN_GENERAL_COHORT = 10
 MAX_ARTIFACT_BYTES = 64 * 1024
-_PLATFORMS = frozenset({"instagram", "facebook", "google_business", "whatsapp"})
-_PLATFORM_LABELS = {
-    "instagram": "Instagram",
-    "facebook": "Facebook",
-    "google_business": "Google Meu Negócio",
-    "whatsapp": "WhatsApp",
-}
+_PLATFORMS = frozenset(marketing_capabilities.platform_refs())
+_PLATFORM_LABELS = marketing_capabilities.platform_labels()
 
 
 @dataclass(frozen=True, slots=True)

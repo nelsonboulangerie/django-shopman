@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Any
 
 from shopman.shop.models import DeliveryTarget, MarketingContentArtifact
+from shopman.shop.services import marketing_capabilities
 from shopman.shop.services.marketing_contracts import (
     MarketingContractError,
     ResolvedDispatchArtifact,
@@ -18,18 +19,14 @@ from shopman.shop.services.marketing_contracts import (
 
 SCHEMA_VERSION = 3
 RESOLVED_ARTIFACT_SCHEMA_VERSION = 2
-SUPPORTED_PLATFORMS = frozenset({"facebook", "google_business", "instagram", "whatsapp"})
+SUPPORTED_PLATFORMS = frozenset(marketing_capabilities.platform_refs())
 PUBLICATION_FORMATS: dict[str, frozenset[str]] = {
-    "instagram": frozenset({"story", "feed"}),
-    "facebook": frozenset({"feed"}),
-    "google_business": frozenset({"standard"}),
+    platform: marketing_capabilities.format_refs(platform)
+    for platform in marketing_capabilities.publication_platform_refs()
 }
 DEFAULT_PUBLICATION_FORMATS = {
-    # Product decision (2026-09-11): urgent/FOMO content belongs in Stories.
-    # Feed remains an explicit choice and is never a fallback.
-    "instagram": "story",
-    "facebook": "feed",
-    "google_business": "standard",
+    platform: marketing_capabilities.default_format(platform)
+    for platform in marketing_capabilities.publication_platform_refs()
 }
 _HASH = re.compile(r"^[a-f0-9]{64}$")
 _FIELD = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -247,7 +244,67 @@ def normalize_platform_content(
         # ``post_type`` was an unimplemented draft field. Once interpreted, it
         # must not survive beside the canonical field and create ambiguity.
         variant.pop("post_type", None)
+
+    for platform in platforms:
+        variant = normalized.setdefault(platform, {})
+        _validate_provider_schema(platform=platform, variant=variant)
     return normalized
+
+
+def _validate_provider_schema(
+    *,
+    platform: str,
+    variant: Mapping[str, Any],
+) -> None:
+    """Reject provider knobs that the selected destination cannot honor.
+
+    Historical sealed artifacts do not pass through this function. New preview
+    and approval input does, so compatibility remains read-only while every new
+    consequence has a closed schema.
+    """
+
+    destination = marketing_capabilities.DESTINATIONS_BY_PLATFORM.get(platform)
+    if destination is None:
+        return
+    format_ref = str(
+        variant.get("publication_format") or destination.default_format
+    ).strip().lower()
+    capability = destination.format(format_ref)
+    if capability is None:
+        raise MarketingContractError(
+            code="publication_format_invalid",
+            detail="O formato de publicação não é aceito por esta plataforma.",
+            field_errors={
+                f"platform_content.{platform}.publication_format": (
+                    "Escolha um formato disponível.",
+                )
+            },
+        )
+    provider_keys = set(variant) - _RESERVED_CONTENT_FIELDS
+    unexpected = sorted(provider_keys - capability.provider_fields)
+    if unexpected:
+        field = f"platform_content.{platform}.{unexpected[0]}"
+        raise MarketingContractError(
+            code="unsupported_provider_field",
+            detail="Há uma opção que esta plataforma não consegue aplicar.",
+            field_errors={
+                field: (
+                    "Remova esta opção ou escolha um formato que ofereça esse recurso.",
+                )
+            },
+        )
+    missing = sorted(
+        field
+        for field in capability.required_provider_fields
+        if variant.get(field) in (None, "")
+    )
+    if missing:
+        field = f"platform_content.{platform}.{missing[0]}"
+        raise MarketingContractError(
+            code="provider_field_required",
+            detail="Falta uma opção obrigatória para esta publicação.",
+            field_errors={field: ("Escolha uma opção antes de continuar.",)},
+        )
 
 
 def resolve_all_dispatch_artifacts(
