@@ -151,9 +151,9 @@ def test_raster_strips_preserve_every_pixel():
 def test_long_identifiers_wrap_without_losing_characters():
     layout = RasterLayout()
     value = "ABC123" * 60
-    lines = layout._lines(value, font(24), 220)
+    lines = layout._lines(value, font("normal"), 220)
     assert "".join(part.strip() for part in lines) == value
-    assert all(font(24).getlength(part.strip()) <= 220 for part in lines)
+    assert all(font("normal").getlength(part.strip()) <= 220 for part in lines)
 
 
 def test_monogram_has_black_artwork_and_transparent_background():

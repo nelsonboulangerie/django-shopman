@@ -521,7 +521,7 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
             if change_for:
                 out += _emphasis(f"TROCO PARA {money(change_for)}", tall=True)
                 if layout and cash_only:
-                    layout.text("Levar de troco", right=money(max(0, change_for - cash_due)), size=30, bold=True)
+                    layout.text("Levar de troco", right=money(max(0, change_for - cash_due)), style="normal")
                     cash_change_shown = True
                 else:
                     out += _pair("Levar de troco", money(max(0, change_for - cash_due)))

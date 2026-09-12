@@ -313,15 +313,15 @@ def main():
         + "".join(sections)
         + """<section><h2>Sobre o nome</h2><p><strong>Ficha do pedido</strong> é a proposta para o papel operacional. “Comanda” já tem outro significado no PDV; “romaneio” funciona melhor para lote/rota; “ordem de preparo” fica estreito para retirada e cobrança.</p><p>Sem validação em impressora física: contraste, avanço, corte, raster da marca, fonte residente, durabilidade e leitura óptica do QR ainda precisam de ensaio no balcão. Nenhum dado real, emissão, merge ou deploy foi executado.</p></section></main></html>"""
     )
-    for name in ("BarlowSemiCondensed-Medium.ttf", "BarlowSemiCondensed-Bold.ttf", "NotoSans.ttf"):
+    for name in ("BarlowSemiCondensed-Medium.ttf", "BarlowSemiCondensed-Regular.ttf", "NotoSans.ttf"):
         shutil.copyfile(ROOT / "shopman/backstage/assets/print" / name, output / name)
     for extension in ("svg", "png"):
         shutil.copyfile(ROOT / f"media/branding/nelson-monogram-print.{extension}", output / f"monogram.{extension}")
     (output / "typography.html").write_text("""<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Estudo de tipografia</title><style>
+    @font-face{font-family:Barlow;src:url('BarlowSemiCondensed-Regular.ttf');font-weight:400}
     @font-face{font-family:Barlow;src:url('BarlowSemiCondensed-Medium.ttf');font-weight:500}
-    @font-face{font-family:Barlow;src:url('BarlowSemiCondensed-Bold.ttf');font-weight:700}
     @font-face{font-family:Noto;src:url('NotoSans.ttf');font-weight:100 900}
-    body{margin:32px;background:#eeede9;font:16px system-ui;color:#111}main{display:flex;gap:24px;flex-wrap:wrap}article{width:320px;background:white;padding:24px;border-radius:12px}h1{font-size:28px}h2{font:600 16px system-ui;margin:0 0 24px}.sample{font-size:22px;font-weight:500}.sample strong{font-size:28px;display:block;margin:12px 0}.barlow{font-family:Barlow}.noto{font-family:Noto}.narrow{font-family:Noto;font-variation-settings:'wdth' 75}a{color:inherit}.logo{width:160px;background:white;padding:16px}
+    body{margin:32px;background:#eeede9;font:16px system-ui;color:#111}main{display:flex;gap:24px;flex-wrap:wrap}article{width:320px;background:white;padding:24px;border-radius:12px}h1{font-size:28px}h2{font:600 16px system-ui;margin:0 0 24px}.sample{font-size:22px;font-weight:400}.sample strong{font-weight:500;font-size:28px;display:block;margin:12px 0}.barlow{font-family:Barlow}.noto{font-family:Noto}.narrow{font-family:Noto;font-variation-settings:'wdth' 75}a{color:inherit}.logo{width:160px;background:white;padding:16px}
     </style><h1>Três tratamentos tipográficos</h1><p>Mesmos textos e tamanhos. A proposta aplicada é Barlow Semi Condensed. Este estudo mostra a fonte vetorial; a galeria principal mostra os pixels enviados à térmica.</p><main>
     <article><h2>01 · Barlow Semi Condensed — proposta</h2><div class="sample barlow"><strong>ENTREGA · HOJE</strong>Ana Exemplo · 14:00 às 14:30<strong>TROCO PARA R$ 100,00</strong>2 × Pão de fermentação natural<br>Rua das Araucárias, 1234<br>0123456789 · R$ 64,00</div></article>
     <article><h2>02 · Noto Sans — versão anterior</h2><div class="sample noto"><strong>ENTREGA · HOJE</strong>Ana Exemplo · 14:00 às 14:30<strong>TROCO PARA R$ 100,00</strong>2 × Pão de fermentação natural<br>Rua das Araucárias, 1234<br>0123456789 · R$ 64,00</div></article>

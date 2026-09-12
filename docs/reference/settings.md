@@ -492,3 +492,6 @@ que a configuração seja adotada em operação.
 O monograma preparado está em `media/branding/nelson-monogram-print.png` (e SVG),
 com traços pretos e fundo transparente. Use esse PNG em `SHOPMAN_PRINT_LOGO_PATH`
 para o cabeçalho com monograma à esquerda.
+
+A tipografia raster tem três estilos fixos: destaque 34 dots/Medium, normal
+26 dots/Regular e pequeno 20 dots/Regular. Os dois impressos usam a mesma escala.

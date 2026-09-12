@@ -61,12 +61,12 @@ Imprimir a galeria em A4 a 100%, sem ajustar e sem cabeçalho/rodapé. Régua de
 
 | Cenário | Antes (mm) | Depois (mm) |
 |---|---:|---:|
-| Retirada curta | 127,5 | 84,8 |
-| Longo com endereço/observações | 225,0 | 197,9 |
-| Entrega paga | 142,5 | 124,2 |
-| Entrega com troco | 165,0 | 134,6 |
-| Entrega com pagamento misto | 168,8 | 151,8 |
-| Balcão imediato | 114,0 | 81,6 |
+| Retirada curta | 127,5 | 85,1 |
+| Longo com endereço/observações | 225,0 | 206,8 |
+| Entrega paga | 142,5 | 125,2 |
+| Entrega com troco | 165,0 | 131,4 |
+| Entrega com pagamento misto | 168,8 | 152,4 |
+| Balcão imediato | 114,0 | 81,5 |
 
 São medidas nominais da simulação, incluindo avanço de corte. O DANFE de demonstração cresce porque passa a imprimir dados fiscais que faltavam (endereço do destinatário, pagamentos parciais, desconto/frete, horários e mensagens); não é lícito omiti-los para ganhar espaço.
 
@@ -196,3 +196,17 @@ informado, o bloco passa a mostrar somente “TROCO PARA” e “Levar de troco�
 Foi removida a célula concorrente “Valor a cobrar”. O valor dos itens permanece
 na conferência; cartão/misto e dinheiro sem troco informado mantêm seus valores
 de cobrança. Os 12 testes do backend raster passaram após esta revisão.
+
+
+## Apenas três estilos tipográficos — revisão atual
+
+Por orientação do usuário, o compositor raster aceita somente os estilos nomeados
+`highlight`, `normal` e `small`. Destaque = 34 dots / Barlow Semi Condensed Medium
+(500); normal = 26 dots / Regular (400); pequeno = 20 dots / Regular (400).
+Não aceita mais tamanho/peso arbitrários no método de texto. Cabeçalhos desenhados
+em colunas e dados fiscais também usam a mesma tabela, sem exceções de tamanho.
+Os arquivos anteriores permanecem como histórico/estudo; Bold não é usado na saída.
+A prévia comparativa das fontes passou a usar os pesos Regular/Medium.
+
+Validado visualmente na aba existente; 82 testes de ficha, raster e fiscal passaram.
+Ruff e diff check aprovados. A tabela de medidas reflete esta revisão.

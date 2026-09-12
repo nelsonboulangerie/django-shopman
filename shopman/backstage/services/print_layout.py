@@ -14,9 +14,16 @@ FONT_DIR = Path(__file__).resolve().parents[1] / "assets/print"
 WIDTH = 576
 
 
-@lru_cache(maxsize=32)
-def font(size, bold=False):
-    name = "BarlowSemiCondensed-Bold.ttf" if bold else "BarlowSemiCondensed-Medium.ttf"
+STYLES = {
+    "highlight": (34, "BarlowSemiCondensed-Medium.ttf"),
+    "normal": (26, "BarlowSemiCondensed-Regular.ttf"),
+    "small": (20, "BarlowSemiCondensed-Regular.ttf"),
+}
+
+
+@lru_cache(maxsize=3)
+def font(style="normal"):
+    size, name = STYLES[style]
     return ImageFont.truetype(str(FONT_DIR / name), size)
 
 
@@ -66,16 +73,17 @@ class RasterLayout:
             result.append(line.strip())
         return result or [""]
 
-    def text(self, text, *, size=24, bold=False, center=False, right="", inset=0, leading=5):
+    def text(self, text, *, style="normal", center=False, right="", inset=0, leading=5):
         text, right = str(text), str(right)
         self.texts.append((text, right))
-        face = font(size, bold)
+        size = STYLES[style][0]
+        face = font(style)
         inset = max(inset, self.inset)
         available = WIDTH - 2 * inset
         right_width = face.getlength(right)
         if right and right_width > available * 0.48:
-            self.text(text, size=size, bold=bold, inset=inset)
-            return self.text(right, size=size, bold=bold, inset=inset)
+            self.text(text, style=style, inset=inset)
+            return self.text(right, style=style, inset=inset)
         lines = self._lines(text, face, available - right_width - (16 if right else 0))
         line_height = size + leading
         block = Image.new("L", (WIDTH, len(lines) * line_height + 4), 255)
@@ -92,16 +100,16 @@ class RasterLayout:
         if not text:
             return self.space(9)
         small = str(text).startswith(("Pedido registrado", "Este papel", "e não comprova"))
-        return self.text(text, size=20 if small else 22 if self.fiscal else 24)
+        return self.text(text, style="small" if small else "normal")
 
     def pair(self, left, right, columns=48):
-        return self.text(left, right=right, size=22 if self.fiscal else 24)
+        return self.text(left, right=right, style="normal")
 
     def centered(self, text, columns=48):
         if text == "DANFE NFC-e":
             self.space(8)
-            return self.text(text, size=30, bold=True, center=True)
-        return self.text(text, size=22, center=True)
+            return self.text(text, style="highlight", center=True)
+        return self.text(text, style="small", center=True)
 
     def brand_header(self, name, details=()):
         # Texto fiscal vem do XML; a marca é a única imagem configurada.
@@ -117,18 +125,18 @@ class RasterLayout:
             except (OSError, ValueError):
                 pass
         lines = []
-        for text, size, bold in [(name, 29, True)] + [(text, 21, False) for text in details if text]:
+        for text, style in [(name, "normal")] + [(text, "small") for text in details if text]:
             self.texts.append((str(text), ""))
-            lines.extend((part, size, bold) for part in self._lines(text, font(size, bold), WIDTH - offset - 4))
-        height = max(100 if logo_image else 0, sum(size + 5 for _, size, _ in lines))
+            lines.extend((part, style) for part in self._lines(text, font(style), WIDTH - offset - 4))
+        height = max(100 if logo_image else 0, sum(STYLES[style][0] + 5 for _, style in lines))
         block = Image.new("L", (WIDTH, height + 12), 255)
         if logo_image:
             block.paste(logo_image.convert("L"), (0, 4), logo_image.getchannel("A"))
         draw = ImageDraw.Draw(block)
         y = 4
-        for text, size, bold in lines:
-            draw.text((offset, y), text, font=font(size, bold), fill=0, anchor="lt")
-            y += size + 5
+        for text, style in lines:
+            draw.text((offset, y), text, font=font(style), fill=0, anchor="lt")
+            y += STYLES[style][0] + 5
         self.blocks.append(block)
         return b""
 
@@ -162,23 +170,23 @@ class RasterLayout:
         self.brand_header(shop_name or "Ficha do pedido", ("FICHA DO PEDIDO",))
         self.begin_box()
         self.texts.extend([(str(ref), ""), (commitment, "")])
-        left = [("PEDIDO" + (" · 2ª VIA" if reprint else ""), 20, True)]
-        left.extend((part, 36, True) for part in self._lines(ref, font(36, True), 240))
+        left = [("PEDIDO" + (" · 2ª VIA" if reprint else ""), "small")]
+        left.extend((part, "highlight") for part in self._lines(ref, font("highlight"), 240))
         segments = commitment.split(" | ")
-        right = [(segments[0], 28, True)]
-        right.extend((part, 24, True) for segment in segments[1:] for part in self._lines(segment, font(24, True), 264))
-        height = max(sum(size + 5 for _, size, _ in left), sum(size + 5 for _, size, _ in right))
+        right = [(segments[0], "normal")]
+        right.extend((part, "normal") for segment in segments[1:] for part in self._lines(segment, font("normal"), 264))
+        height = max(sum(STYLES[style][0] + 5 for _, style in left), sum(STYLES[style][0] + 5 for _, style in right))
         block = Image.new("L", (WIDTH, height + 6), 255)
         draw = ImageDraw.Draw(block)
         for x, lines in [(16, left), (296, right)]:
             y = 2
-            for text, size, bold in lines:
-                draw.text((x, y), text, font=font(size, bold), fill=0, anchor="lt")
-                y += size + 5
+            for text, style in lines:
+                draw.text((x, y), text, font=font(style), fill=0, anchor="lt")
+                y += STYLES[style][0] + 5
         draw.line((278, 3, 278, height - 3), fill=0, width=2)
         self.blocks.append(block)
         self.end_box()
-        self.text(name, right=phone, size=27, bold=True)
+        self.text(name, right=phone, style="normal")
         return b""
 
     def delivery_address(self, data):
@@ -207,22 +215,22 @@ class RasterLayout:
                 for key in ("neighborhood", "city", "state_code", "postal_code")
                 if structured.get(key)
             )
-        self.text("ENDEREÇO DE ENTREGA", size=20, bold=True)
+        self.text("ENDEREÇO DE ENTREGA", style="small")
         self.space(4)
-        self.text(street or "Confirmar endereço", size=30, bold=True, leading=8)
+        self.text(street or "Confirmar endereço", style="highlight", leading=8)
         if complement:
             self.space(2)
-            self.text(complement, size=27, leading=8)
+            self.text(complement, style="normal", leading=8)
         if locality:
             self.space(3)
-            self.text(locality, size=24, leading=8)
+            self.text(locality, style="normal", leading=8)
         instructions = str(structured.get("delivery_instructions") or "").strip()
         if instructions:
             self.space(10)
             start = len(self.blocks)
-            self.text("NA CHEGADA", size=20, bold=True, inset=14)
+            self.text("NA CHEGADA", style="small", inset=14)
             for sentence in re.split(r"(?<=[.;])\s+", instructions):
-                self.text(sentence, size=26, inset=14, leading=8)
+                self.text(sentence, style="normal", inset=14, leading=8)
             for block in self.blocks[start:]:
                 ImageDraw.Draw(block).line((1, 0, 1, block.height - 1), fill=0, width=3)
         self.space(8)
@@ -232,11 +240,11 @@ class RasterLayout:
         text = str(text).strip("* ")
         if str(text).startswith("PEDIDO "):
             self.space(10)
-            return self.text(text, size=40, bold=True)
+            return self.text(text, style="highlight")
         if tall:
             self.space(6)
-            return self.text(text, size=36, bold=True)
-        return self.text(text, size=23 if self.fiscal else 25, bold=True)
+            return self.text(text, style="highlight")
+        return self.text(text, style="normal")
 
     def rule(self, columns=48):
         return self.space(10)
