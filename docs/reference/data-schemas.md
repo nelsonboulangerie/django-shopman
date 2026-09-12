@@ -680,6 +680,13 @@ Valores de `event`: `"stock.alert.triggered"`, `"system"`.
 
 #### `fiscal.emit_nfce`
 
+No reprocessamento de uma directive falha, o payload é reconstruído dos dados
+atuais de Order pelo mesmo `fiscal.build_emission_payload` da emissão inicial.
+A referência e as tentativas são preservadas; pedido com chave autorizada não
+é reconstruído. `OrderEvent(type="fiscal_requeued").payload.previous_error`
+preserva o motivo anterior antes de limpar `Directive.last_error` para retry.
+
+
 | Chave | Tipo | Escrito por | Lido por |
 |-------|------|-------------|----------|
 | `order_ref` | `string` | hooks | NFCeEmitHandler |
@@ -687,6 +694,11 @@ Valores de `event`: `"stock.alert.triggered"`, `"system"`.
 | `payment` | `dict` | hooks | NFCeEmitHandler |
 | `customer` | `dict` | hooks (opcional) | NFCeEmitHandler |
 | `additional_info` | `string` | hooks (opcional) | NFCeEmitHandler |
+| `delivery` | `dict` ou `null` | fiscal.build_emission_payload | NFCeEmitHandler → adapter |
+
+`delivery={"address": delivery_address_structured}` indica entrega a domicílio,
+inclusive frete zero; `null` indica retirada. Dado insuficiente impede emitir,
+sem substituir por operação presencial ou retirar o frete dos valores.
 
 #### `fiscal.cancel_nfce`
 

@@ -202,6 +202,8 @@ def fiscal_revision(order) -> str:
     data = order.data or {}
     return mutation_fingerprint({"version": 1, "ref": order.ref, "status": order.status, "total_q": order.total_q,
         "fiscal": data.get("fiscal"), "payment": data.get("payment"), "access_key": data.get("nfce_access_key"),
+        "customer": data.get("customer"), "fulfillment_type": data.get("fulfillment_type"),
+        "delivery_address_structured": data.get("delivery_address_structured"),
         "directive": [directive.pk, directive.status, directive.attempts, directive.updated_at.isoformat()] if directive else None})
 
 
@@ -241,18 +243,24 @@ def requeue_fiscal_emission(order, *, actor: str, expected_revision=None):
         .order_by("-created_at", "-pk")
         .first()
     )
+    previous_error = ""
     if directive and directive.status == "failed":
+        previous_error = directive.last_error
+        try:
+            directive.payload = fiscal.build_emission_payload(order)
+        except ValueError as exc:
+            raise OrderError(str(exc)) from exc
         directive.status = "queued"
         directive.error_code = ""
         directive.last_error = ""
         directive.available_at = timezone.now()
-        directive.save(update_fields=["status", "error_code", "last_error", "available_at", "updated_at"])
+        directive.save(update_fields=["payload", "status", "error_code", "last_error", "available_at", "updated_at"])
     else:
         fiscal.emit(order)
     current = Directive.objects.filter(topic=FISCAL_EMIT_NFCE, payload__order_ref=order.ref).order_by("-created_at", "-pk").first()
     if current is None or current.status not in {"queued", "running"}:
         raise OrderError("A emissão não foi enfileirada. Confira a configuração fiscal antes de tentar novamente.")
-    order.emit_event(event_type="fiscal_requeued", actor=actor, payload={"topic": FISCAL_EMIT_NFCE})
+    order.emit_event(event_type="fiscal_requeued", actor=actor, payload={"topic": FISCAL_EMIT_NFCE, "previous_error": previous_error})
     return current
 
 

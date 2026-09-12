@@ -318,3 +318,13 @@ def test_record_does_not_clobber_what_another_writer_saved_meanwhile(order):
     order.refresh_from_db()
     assert order.data["nfce_access_key"] == AUTHORIZED.access_key
     assert order.data["payment"] == {"captured_at": "2026-08-19T10:00:00Z"}
+
+
+def test_invalid_delivery_payload_is_terminal_and_visible_to_operator(order):
+    reason = "Entrega a domicílio: confira CPF/CNPJ solicitado para a nota, bairro."
+    backend = FakeBackend(emit_result=_error("focus_nfe_invalid_payload", reason))
+    with pytest.raises(DirectiveTerminalError, match="bairro"):
+        NFCeEmitHandler(backend).handle(message=_emit_directive(order), ctx={})
+    alert = OperatorAlert.objects.get(type="integration_failed")
+    assert order.ref in alert.message
+    assert reason in alert.message
