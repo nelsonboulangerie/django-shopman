@@ -5,6 +5,11 @@ Execução local em 12 de setembro de 2026 na branch
 formam o SHA `4a11724125509ad37d7d849aa8bcbb5e55ad535a`; a seed visual foi executada
 durante sua preparação sobre a mesma árvore de trabalho.
 
+O hardening final está no SHA
+`e87b9c4de04db9b48e3f02b0bf1ac6345a70c2fc`. Ele não alterou templates ou Admin;
+o checker canônico e os 268 testes do Admin foram repetidos nesse SHA. As imagens
+continuam identificando exatamente o código que renderizaram.
+
 ## Escopo e isolamento
 
 O harness usa somente dados sintéticos e exige explicitamente um PostgreSQL

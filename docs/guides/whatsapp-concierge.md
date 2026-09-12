@@ -10,7 +10,7 @@ habilitar uma connection, enviar a contatos reais, iniciar piloto ou fazer
 rollout.
 
 Código e testes da implementação técnica: SHA
-`4a11724125509ad37d7d849aa8bcbb5e55ad535a`. O endpoint abaixo ainda precisa ser
+`e87b9c4de04db9b48e3f02b0bf1ac6345a70c2fc`. O endpoint abaixo ainda precisa ser
 publicado em ambiente autorizado antes de poder ser chamado pelo flow real.
 
 ## Portão canônico
@@ -40,10 +40,10 @@ O operador confirmou estes cinco campos dinâmicos e o fuso da conta
 ```json
 {
   "subscriber_id": "<subscriber_id dinâmico>",
-  "text": "#menu NB-UTGJYD",
-  "first_name": "Pablo",
-  "last_name": "Valentini",
-  "provider_timestamp": "2026-09-11 11:29:01.391392"
+  "text": "<texto dinâmico desta interação>",
+  "first_name": "<primeiro nome dinâmico>",
+  "last_name": "<sobrenome dinâmico>",
+  "provider_timestamp": "<última interação WhatsApp dinâmica>"
 }
 ```
 
@@ -152,8 +152,8 @@ CONCIERGE_OUTPUT_RETRY_ENABLED=false
 CONCIERGE_TRANSFER_ENABLED=false
 ```
 
-Além disso, o ambiente precisa de `CONCIERGE_API_KEY` (ou o fallback já
-autorizado), `AI_ASSIST_API_KEY` e do worker canônico. A lista de subjects vazia
+Além disso, o ambiente precisa da chave dedicada `CONCIERGE_API_KEY`, de
+`AI_ASSIST_API_KEY` e do worker canônico. A lista de subjects vazia
 fecha a connection. Telefone ou nome no body não substituem essa lista.
 
 Para uma homologação autorizada, os dois switches de admissão são independentes:
@@ -171,7 +171,7 @@ ingresso atual sem ID já fica somente leitura por assurance mesmo sem esse flag
 ## Teste prático no portão ManyChat
 
 1. No External Request do flow de teste, trocar somente a URL para a rota v3 e
-   manter o header secreto existente.
+   configurar `X-Api-Key` com a chave dedicada `CONCIERGE_API_KEY` do ambiente.
 2. Confirmar `Content-Type: application/json` e os cinco campos dinâmicos acima.
 3. Não configurar resposta síncrona ao cliente a partir do ACK.
 4. Restringir o roteamento ao subject de teste autorizado.

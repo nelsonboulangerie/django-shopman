@@ -1,6 +1,6 @@
 # Evidências da implementação conversacional — 11/09/2026
 
-**Estado atual: implementação técnica v3 testada em ambiente isolado no SHA `4a11724125509ad37d7d849aa8bcbb5e55ad535a`; homologação, piloto e rollout não executados.** As seções anteriores ao adendo v3 preservam a evidência histórica do candidato v2 e os SHAs que nomeiam. O adendo ao final é a conclusão vigente. O aceite integral continua limitado pelos gates e provas humanas/fornecedor. Nenhuma contagem de testes comprova redução de esforço humano ou entrega no WhatsApp.
+**Estado atual: implementação técnica v3 testada em ambiente isolado no SHA `e87b9c4de04db9b48e3f02b0bf1ac6345a70c2fc`; homologação, piloto e rollout não executados.** As seções anteriores ao adendo v3 preservam a evidência histórica do candidato v2 e os SHAs que nomeiam. O adendo ao final é a conclusão vigente. O aceite integral continua limitado pelos gates e provas humanas/fornecedor. Nenhuma contagem de testes comprova redução de esforço humano ou entrega no WhatsApp.
 
 ## Proveniência e isolamento
 
@@ -291,7 +291,7 @@ reescrever as evidências históricas acima. A base registrada da nova worktree 
 `cbda00f02e692fc7d1949a4e11024ace33245362`, branch
 `codex/concierge-transport-bindings-20260912`. Após revalidação contra
 `origin/main` em `12f2b1b34c3e1f4b95d3b48e69937e5a6684e287`, o código e os testes v3
-validados formam o SHA `4a11724125509ad37d7d849aa8bcbb5e55ad535a`.
+validados formam o SHA `e87b9c4de04db9b48e3f02b0bf1ac6345a70c2fc`.
 
 O operador autorizou uma arquitetura pré-go-live sem compatibilidade no runtime.
 `Conversation` passa a representar a jornada lógica e os fatos comerciais.
@@ -326,17 +326,18 @@ somadas.
 
 | Prova | Resultado | Limite da evidência |
 |---|---|---|
-| Storefront integral em SQLite | **1710 passed, 34 skipped**, 77,54 s | os skips exigem PostgreSQL; SQLite não prova locks |
-| Seleção runtime em PostgreSQL 16 + Redis isolados | **103 passed, zero skips**, 47,62 s | adapters e efeitos externos são fakes; nenhum fornecedor foi chamado |
-| Concierge selecionado em SQLite | **251 passed, 24 skipped**, 35,89 s | regressão rápida, incluída no Storefront integral |
-| Admin/Unfold | checker canônico + **268 passed**, 58,46 s | superfície local, sem inbox ManyChat |
+| Storefront integral em SQLite | **1729 passed, 34 skipped**, 63,14 s | os skips exigem PostgreSQL; SQLite não prova locks |
+| Concierge integral em PostgreSQL 16 + Redis isolados | **293 passed, zero skips**, 70,66 s | adapters e efeitos externos são fakes; nenhum fornecedor foi chamado |
+| Concierge selecionado em SQLite | **269 passed, 24 skipped**, 27,70 s | regressão rápida; o Storefront integral foi repetido após o hardening final |
+| Admin/Unfold | checker canônico + **268 passed**, 53,07 s | superfície local, sem inbox ManyChat |
 | QA visual Admin | 2 perfis × 2 gates × 1440/390; console sem erros | dados sintéticos; oito capturas e JSONs em `evidence/conversational/browser-v3/` |
 | Schema e higiene | `check`, `makemigrations --check --dry-run`, Ruff e `git diff --check` aprovados | não executa migração em ambiente real |
 | Gate de runtime | roundtrip PostgreSQL + Redis aprovado | serviços privados temporários, sem credenciais externas |
 
 A carga isolada cobriu 100 conversas, 10 mil mensagens históricas, 109 entradas,
-burst 10 e quatro workers. Foram 100 saídas aceitas pelo fake, zero retry, zero
-estado `unknown`, zero deadlock e p95 de 0,076 s por turno. Isso prova contenção e
+burst 10 e quatro workers. Foram 100 saídas aceitas pelo fake, 3.000 queries,
+zero retry, zero estado `unknown`, zero deadlock, zero lock restante, p95 de
+0,043 s por turno e p95 de 0,835 s da entrada ao worker. Isso prova contenção e
 concorrência do software; não mede modelo, fila do provider, aparelho, custo ou
 ganho humano.
 
@@ -346,7 +347,7 @@ ganho humano.
 |---|---|---|
 | WP00 | base/SHA registrados, worktree exclusiva, owners e diagnóstico revalidados contra `origin/main` | fatia técnica concluída; baseline humana G06 pendente |
 | WP01 | rota por connection, autenticação antes da persistência, corpo ManyChat exato, ACK após Message + Directive e dedupe somente com ID verificado | software testado; contrato/flow real G02 pendente |
-| WP02 | claim/fence único da conversa, lote causal por binding, entrada tardia preservada e recuperação durável | concluído em PostgreSQL isolado |
+| WP02 | cada entrada avança o fence único; claim, ferramenta, persistência e envio com versão anterior são revogados; lote causal e recuperação permanecem duráveis | concluído em PostgreSQL isolado |
 | WP03 | resposta persistida antes da rede e `OutboundAttempt` com `accepted/not_applied/unknown/delivered/read`; `unknown` sem retry | software testado; aceitação/entrega do provider G02 pendentes |
 | WP04 | confirmação comercial exige evento e cliente verificados, revisão vigente, novo inbound, locks e receipt canônico | concluído no core e em corridas PostgreSQL; corpo atual sem ID permanece leitura |
 | WP05 | transferência, acesso e preservação da origem continuam nos services canônicos | regressões aprovadas; ativação/política G05 pendentes |
@@ -365,8 +366,18 @@ ganho humano.
 | defeito comprovado | política de janela preparada poderia sobreviver à revogação da configuração | autorização revalida configuração completa no instante da saída |
 | defeito do ensaio | MigrationExecutor com alias deixava RunPython histórico escrever em `default` | router do ensaio mantém todas as operações no banco isolado; suíte combinada verde |
 | defeito comprovado | inline tabular cortava campos finais dos bindings no desktop | `StackedInline`; repetição em 1440 e 390 com admin/viewer |
+| defeito comprovado | uma correção recebida durante o modelo ainda permitia persistir/enviar a resposta anterior | toda entrada avança o único `turn_fence`; resposta velha é revogada antes da persistência e revalidada antes da chamada remota |
+| defeito comprovado | URL com aparência de arquivo era inferida como mídia pelo núcleo | `message_type` normalizado é a única fonte; URL textual continua texto |
+| defeito comprovado | blocos extras, como Pix, não passavam pelo limite semântico do adapter | resposta principal e extras usam o mesmo fragmentador, sem cortar linha essencial |
+| defeito comprovado | a evidência do ACK de handoff usava o maior PK, que podia conter timestamp mais antigo | seleção usa a melhor evidência válida entre todas as entradas consumidas |
+| defeito comprovado | ferramentas gravavam origem WhatsApp/ManyChat mesmo sob outro transporte | origem vem do binding causal e é preservada no carrinho e no access link |
+| defeito comprovado | duas contas ManyChat pareciam isoladas, embora o gateway atual use credencial global | adapter declara gateway de conta única e falha fechado diante de duas contas ativas |
+| defeito comprovado | replay do mesmo evento podia conflitar apenas porque perfil ou janela mudaram | hash de intenção cobre subject, ID, tipo e texto; metadados voláteis ficam fora |
+| defeito comprovado | chave do Access Link podia autenticar também o webhook do Concierge | `CONCIERGE_API_KEY` é obrigatória e independente; rotação usa somente a chave anterior do Concierge |
 | hipótese rejeitada | receipt sintético `subscriber_id + provider_timestamp` poderia colapsar repetição legítima | não implementado; sem ID oficial o ingresso é at-least-once e somente leitura |
 | hipótese testada localmente | outro provider/canal exigiria ramificações no domínio | fake TikTok/DM usa o mesmo Conversation, Message, Directive e Attempt sem branches |
+| hipótese testada localmente | continuidade entre canais poderia ser inferida de nome/telefone do payload | payload nunca une jornadas; `attach_binding` exige scope configurado, gate e `IdentityResolution` verificada contra Customer canônico |
+| simplificação confirmada | detectar entrada tardia exigiria watermark e consulta extra por turno | o fence já canônico resolve a versão do contexto; carga permaneceu em 3.000 queries |
 | decisão humana | projeto pré-go-live não mantém rota, flags ou modelos v2 | testes e caminho runtime legados removidos; migração é forward-only |
 | gate externo | documentação pública e corpo atual não comprovam ID estável da mensagem | `event_id` é opcional; só ganha assurance após G02 e flag explícita |
 | gate humano | redução de esforço/erro e clareza final ainda não foram medidas com operador/cliente | G06 e jornadas J01–J13 permanecem pendentes |
@@ -377,6 +388,7 @@ ganho humano.
 |---|---|---|
 | entrada ManyChat | endpoint e domínio acoplados ao par ManyChat/WhatsApp | rota escolhe a connection; o adapter traduz cinco campos para contrato comum |
 | ausência de ID | tentação de fabricar dedupe por contato/tempo | cada POST é preservado; consulta/menu/humano disponíveis e mutação bloqueada |
+| correção durante resposta | a resposta baseada no contexto anterior podia chegar depois da correção | a entrada avança o fence, a resposta velha não sai e o lote inteiro volta com o contexto corrigido |
 | troca ou novo canal | identidade de transporte dentro da conversa | novo binding mantém a conversa lógica; associação entre clientes exige verificação explícita |
 | timeout de envio | um booleano não distinguia efeito possível | tentativa fica `unknown`, receipt/história permanecem e não há retry cego |
 | atendimento humano | sincronização remota confundida com posse lógica | conversa continua com a equipe enquanto qualquer binding não confirma retorno |
@@ -404,7 +416,7 @@ compensação. Correção de schema segue adiante com nova migração.
 
 | Etapa | Estado em 12/09/2026 | Prova necessária para avançar |
 |---|---|---|
-| Implementação técnica | **Concluída no SHA `4a11724125509ad37d7d849aa8bcbb5e55ad535a`** | Reabrir se drift, regressão ou divergência do contrato aparecer. |
+| Implementação técnica | **Concluída no SHA `e87b9c4de04db9b48e3f02b0bf1ac6345a70c2fc`** | Reabrir se drift, regressão ou divergência do contrato aparecer. |
 | Homologação | Não executada | Flow real, cinco campos, continuidade, janela, ACK/worker, handoff e saída/entrega observados com credenciais e coorte de teste autorizadas. |
 | Piloto | Não iniciado | Gates nominais, pessoas/coorte autorizadas, owner/SLA e medição J01–J13 de esforço, erro e compreensão. |
 | Rollout | Não autorizado | Release/alvo fixados, backup e rollback exercitados, reconciliação limpa, aceite dos gates e decisão explícita de expansão. |

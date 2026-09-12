@@ -23,7 +23,7 @@ O histórico anterior permanece relevante como evidência de descoberta:
 
 Esses fatos descrevem o caminho de descoberta. O contrato v3 substitui a
 estrutura v2 no candidato atual. A implementação técnica foi validada no SHA
-`4a11724125509ad37d7d849aa8bcbb5e55ad535a`; publicação, homologação ManyChat,
+`e87b9c4de04db9b48e3f02b0bf1ac6345a70c2fc`; publicação, homologação ManyChat,
 piloto e rollout do desenho final não foram executados.
 
 ## Arquitetura escolhida
@@ -33,6 +33,11 @@ transporte é um `ConversationBinding` com
 `provider + account + channel + subject + connection_key`. Mensagens de entrada e
 resposta apontam para o binding causal. Cada execução de saída gera um
 `OutboundAttempt` append-only, com estado e receipt próprios.
+
+Uma única versão, `Conversation.turn_fence`, governa contexto, ferramentas,
+persistência e envio. Cada entrada nova avança o fence e revoga trabalho feito
+sobre contexto anterior. Não há contador, fila ou consulta paralela para
+detectar correções tardias.
 
 Provider, canal, conta e subject são strings opacas. O domínio não contém
 `if whatsapp`, `if instagram` ou `if tiktok`. O registry explícito resolve a
@@ -47,8 +52,9 @@ carrinho em Custom User Field ou motor de diálogo no ManyChat.
 
 Um contato de outro canal não é unido automaticamente por nome, telefone ou
 payload. Associar um novo binding a uma conversa existente exige uma operação
-explícita e verificada. Essa escolha evita misturar clientes e permite preservar
-a mesma sacola/contexto quando a vinculação for autorizada.
+explícita com `IdentityResolution` verificada contra o Customer canônico. Essa
+escolha evita misturar clientes e permite preservar a mesma sacola/contexto
+quando a vinculação for autorizada.
 
 ## Entrada e continuidade no ManyChat
 
@@ -109,6 +115,10 @@ Deduplicação e autoridade só mudam depois de homologar estabilidade em retry,
 unicidade para mensagens iguais e escopo de conta/canal, e então ligar
 `CONCIERGE_MANYCHAT_EVENT_ID_VERIFIED`.
 
+O hash usado para detectar conflito de um ID verificado cobre apenas a intenção
+normalizada: subject, ID, tipo e texto. Mudanças em nome ou evidência de janela
+não transformam replay idêntico em conflito.
+
 Mesmo com transporte at-least-once, os efeitos comerciais continuam protegidos
 por revisão vigente, inbound causal posterior, `quote_token`, locks e recibos de
 mutação do Shopman. Essa proteção não transforma um evento sem assurance em
@@ -129,6 +139,11 @@ adapter normaliza seu payload para os mesmos contratos e declara capacidades de
 limite de texto, janela, saída, receipts e handoff. Nenhuma regra comercial ou
 fila é copiada. Mídia só entra no contrato quando um adapter real e o núcleo
 tiverem comportamento verificável para ela.
+
+O gateway ManyChat atual usa credenciais globais do provider e, por isso, aceita
+somente uma conta ativa por classe de adapter. Uma segunda conta falha fechada
+até existir um gateway que receba credenciais por connection. APIs diretas da
+Meta ou de outro provider podem implementar esse contrato sem essa restrição.
 
 Ativação, coorte, credenciais, identidade, janela e atendimento humano são gates
 separados por connection. Um fuso ou campo confirmado no WhatsApp não é
