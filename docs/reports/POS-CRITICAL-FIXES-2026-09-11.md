@@ -18,9 +18,10 @@ Base: `origin/main` em `7faf0259a`. Integração isolada em `codex/pos-critical-
 
 - Backend: **178 testes passaram**, cobrindo agendamento, identidade de cliente, bootstrap, contrato de superfície PDV, pedido de troco, filipeta e SSE.
 - Frontend: **410 testes unitários passaram** e **145 testes de componente/composable passaram** (checkout, cadastro, fechamento, identidade e refresh de recebimento).
-- Suíte ampliada de services POS: **188 passaram, 1 skip** (inclui testes já contabilizados acima). A suíte completa de componentes local sofreu timeout de inicialização e foi interrompida; o CI executou os 876 testes, encontrando uma asserção de texto antigo, corrigida nesta branch.
+- Suíte ampliada de services POS: **188 passaram, 1 skip** (inclui testes já contabilizados acima). A suíte completa de componentes local sofreu timeout de inicialização e foi interrompida; o CI executou os 876 testes, encontrando uma asserção de texto antigo, corrigida nesta branch. A reexecução do CI PDV passou.
 - Typecheck Nuxt, Ruff nos módulos alterados e `git diff --check` aprovados.
 - `makemigrations --check --dry-run`: sem drift; sem colisão nova para `0063`. Há prefixos históricos repetidos (`0036` e `0058`); o grafo atual foi aceito pelo Django.
+- O CI amplo `test-shop` executou 4.365 testes: 4.363 passaram e dois cenários fiscais ainda tentavam recadastrar cliente na segunda venda. Os cenários foram adaptados à seleção explícita por `customer_ref`, preservando as asserções fiscais e a proteção de identidade.
 - A revisão independente achou e motivou a correção da troca automática de recebimento. A revisão de cadastro não encontrou seleção silenciosa por digitação/blur.
 
 Não houve ensaio em impressora física, sessão real do operador nem validação visual em navegador de produção. Os testes usam ambiente local e adaptadores de teste. Avisos de lifecycle Vue em harness e depreciação Node não impediram as suítes. O comando de drift usa banco local vazio e registrou avisos de tabela/configuração ainda não inicializada; concluiu com exit 0 e “No changes detected”.

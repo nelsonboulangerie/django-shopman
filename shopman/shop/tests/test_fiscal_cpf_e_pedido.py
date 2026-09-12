@@ -81,7 +81,11 @@ def test_o_cpf_da_nota_tem_campo_proprio_o_do_cadastro_nao_entra():
     assert "customer.tax_id" in paths_com      # identidade (CRM)
     assert "fiscal.tax_id" in paths_com        # e o pedido desta venda
 
-    sem_cpf = build_session_ops(base, "op")  # cadastro tem CPF, ninguém pediu
+    # A próxima venda seleciona o cadastro explicitamente; não tenta recadastrá-lo.
+    from shopman.guestman.models import Customer
+
+    customer = Customer.objects.get(document="52998224725")
+    sem_cpf = build_session_ops({**base, "customer_ref": customer.ref}, "op")
     assert "fiscal.tax_id" not in {op.get("path") for op in sem_cpf}
 
 
@@ -168,9 +172,12 @@ def test_desmarcar_numa_venda_nao_apaga_a_preferencia():
     Channel.objects.create(ref="pdv", name="PDV", is_active=True, config={})
 
     base = {"customer_name": "Bia", "customer_phone": "43999990002"}
-    _persist_customer_from_payload({**base, "fiscal_tax_id": "52998224725"}, operator_username="op")
-    # "hoje não": venda seguinte sem pedir o documento
-    _persist_customer_from_payload({**base, "fiscal_tax_id": ""}, operator_username="op")
+    identified = _persist_customer_from_payload({**base, "fiscal_tax_id": "52998224725"}, operator_username="op")
+    # "hoje não": venda seguinte seleciona a cliente e não pede documento.
+    _persist_customer_from_payload(
+        {**base, "customer_ref": identified["ref"], "fiscal_tax_id": ""},
+        operator_username="op",
+    )
 
     customer = Customer.objects.get(phone="+5543999990002")
     assert customer.metadata["fiscal_prefs"]["cpf_na_nota"] is True
