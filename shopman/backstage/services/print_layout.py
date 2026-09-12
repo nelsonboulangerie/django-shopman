@@ -228,22 +228,6 @@ class RasterLayout:
         self.space(8)
         return b""
 
-    def cash_metrics(self, change, due):
-        self.texts.extend([("Levar de troco", change), ("Valor a cobrar", due)])
-        block = Image.new("L", (WIDTH, 65), 255)
-        draw = ImageDraw.Draw(block)
-        for x, label, value in [(16, "LEVAR DE TROCO", change), (296, "VALOR A COBRAR", due)]:
-            draw.text((x, 2), label, font=font(20), fill=0, anchor="lt")
-            if font(30, True).getlength(value) > 248:
-                # Valores extraordinariamente longos usam a quebra normal.
-                self.pair("Levar de troco", change)
-                self.pair("Valor a cobrar", due)
-                return b""
-            draw.text((x, 29), value, font=font(30, True), fill=0, anchor="lt")
-        draw.line((278, 4, 278, 58), fill=0, width=2)
-        self.blocks.append(block)
-        return b""
-
     def emphasis(self, text, *, tall=False):
         text = str(text).strip("* ")
         if str(text).startswith("PEDIDO "):

@@ -513,7 +513,7 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
         if any(t.get("method") in {"card", "credit", "debit"} for t in pending):
             out += _emphasis("LEVAR MAQUININHA")
         cash_due = sum(int(t.get("amount_q") or 0) for t in pending if t.get("method") == "cash")
-        cash_metrics_rendered = False
+        cash_change_shown = False
         if cash_due:
             from shopman.shop.services.operator_orders import _change_for_q
 
@@ -521,15 +521,15 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
             if change_for:
                 out += _emphasis(f"TROCO PARA {money(change_for)}", tall=True)
                 if layout and cash_only:
-                    layout.cash_metrics(money(max(0, change_for - cash_due)), money(due_q))
-                    cash_metrics_rendered = True
+                    layout.text("Levar de troco", right=money(max(0, change_for - cash_due)), size=30, bold=True)
+                    cash_change_shown = True
                 else:
                     out += _pair("Levar de troco", money(max(0, change_for - cash_due)))
             else:
                 if layout:
                     out += _emphasis("CONFIRMAR TROCO", tall=True)
                 out += _line("Troco: não informado; confirmar com cliente")
-        if layout and cash_only and not cash_metrics_rendered:
+        if layout and cash_only and not cash_change_shown:
             out += _pair("Valor a cobrar", money(due_q))
     else:
         out += _emphasis("*** PAGAMENTO PENDENTE ***")

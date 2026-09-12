@@ -72,8 +72,9 @@ def test_cash_change_is_main_instruction(capture):
     text = content(capture[0])
     assert "TROCO PARA R$ 100,00" in text
     assert "Levar de troco R$ 64,00" in text
-    assert "Valor a cobrar R$ 36,00" in text
-    assert text.index("TROCO PARA") < text.index("Valor a cobrar")
+    assert "Valor a cobrar" not in text
+    assert "A COBRAR" not in text
+    assert text.index("TROCO PARA") < text.index("Levar de troco")
     assert "Sem cortar; conferir embalagem." in text
     assert decode_raster(payload).height > 0
 

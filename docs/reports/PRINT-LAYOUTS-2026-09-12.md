@@ -188,3 +188,11 @@ Complemento já presente não se duplica. Sem texto formatado, utiliza os campos
 estruturados existentes, inclusive CEP. Instruções mantêm texto e pontuação.
 O DANFE não mudou nesta revisão. Verificação visual na aba do usuário; testes
 cobrem partes do endereço, dados estruturados, complemento e formato incomum.
+
+## Instrução única para entrega em dinheiro
+
+Na proposta raster, quando a entrega é integralmente em dinheiro e o troco está
+informado, o bloco passa a mostrar somente “TROCO PARA” e “Levar de troco”.
+Foi removida a célula concorrente “Valor a cobrar”. O valor dos itens permanece
+na conferência; cartão/misto e dinheiro sem troco informado mantêm seus valores
+de cobrança. Os 12 testes do backend raster passaram após esta revisão.
