@@ -19,13 +19,14 @@ Essas funções não usam o título de encarregado/DPO sem nomeação formal.
 1. Acione o freeze global de Marketing pela Action de emergência autorizada.
 2. Preserve receipt/target/attempt refs, timestamps e hashes; não exporte members.
 3. Rode `make marketing-diagnose receipt=<receipt_ref> platform=<platform>`.
-4. Notifique DPO/Security e SRE; registre escopo como “em apuração”, nunca zero presumido.
+4. Notifique o responsável operacional e a suplente; registre o escopo como “em apuração”, nunca zero presumido.
 
 ## Diagnóstico read-only
 
 O snapshot agregado não contém PII. A identificação de pessoa afetada, quando
-legalmente necessária, ocorre somente na interface access-controlled e sob orientação
-do DPO. Use o scanner de telemetria do gate MKT042; não copie o dado encontrado.
+legalmente necessária, ocorre somente na interface de acesso restrito e sob
+orientação do responsável por privacidade. Use o scanner de telemetria do gate
+MKT042; não copie o dado encontrado.
 
 ## Freeze/circuit
 
@@ -38,13 +39,15 @@ workers em modo de supressão/reconciliação; não destrua ledger, audit ou evi
 - não “corrigir” consentimento concedendo opt-in retroativo;
 - não reenviar para testar e não baixar a audiência;
 - não comunicar nome/telefone/copy em canal não aprovado;
-- não unfreeze sem DPO/Security distinto e reconciliação concluída.
+- não retirar o bloqueio sem decisão conjunta do responsável e da suplente, além
+  da reconciliação concluída.
 
 ## Comunicação
 
-Use refs técnicas, janela temporal, plataforma, contagem/bucket, tipo de dado e estado
-do freeze. DPO define notificações legais e destinatários; nenhuma hipótese é anunciada
-como fato antes da reconstrução do histórico.
+Use referências técnicas, janela temporal, plataforma, contagem/faixa, tipo de
+dado e estado do bloqueio. O responsável operacional, com a representante da
+administração, decide as notificações legais e os destinatários; nenhuma hipótese
+é anunciada como fato antes da reconstrução do histórico.
 
 Quando o incidente puder causar risco ou dano relevante, o controlador deve comunicar
 a ANPD e os titulares em até **três dias úteis**, ressalvado prazo específico mais curto.
@@ -56,19 +59,22 @@ Referência oficial: [Comunicação de Incidente de Segurança — ANPD](https:/
 
 ## Recuperação idempotente
 
-Reconstrua current state pelo ledger append-only, aplique subtract-only ao snapshot e
-suprima targets não iniciados. Efeito já confirmado não é apagado. Unfreeze exige TOTP,
-duplo controle Security e receipt de reconciliação; replay não amplia audiência.
+Reconstrua o estado atual pelo livro append-only, reduza o público calculado e
+suprima destinos não iniciados. Efeito já confirmado não é apagado. Retirar o
+bloqueio exige TOTP, decisão conjunta do responsável e da suplente e recibo de
+reconciliação; reprocessamento não amplia a audiência.
 
 ## Fechamento e reconciliação
 
 Exija escopo fechado, timeline, causa, prova do consent state no instante do claim,
-targets terminais, scan PII zero, decisão DPO e autorização independente de unfreeze.
+targets terminais, varredura de PII zerada, decisão registrada e autorização
+conjunta do responsável e da suplente para retirar o bloqueio.
 O registro do incidente, das avaliações e das comunicações deve ser preservado por pelo
 menos **cinco anos**, conforme a Resolução CD/ANPD nº 15/2024.
 
 ## Drill local
 
-`make marketing-drills` revoga consentimento após fan-out e prova supressão antes do
-provider. O operador não autor deve ordenar freeze, preservação e escalada ao DPO antes
-de qualquer recuperação.
+`make marketing-drills` revoga consentimento depois da distribuição interna e
+prova a supressão antes do provedor. O operador que não tenha autoridade para
+decidir deve ordenar bloqueio, preservação e aviso ao responsável e à suplente
+antes de qualquer recuperação.
