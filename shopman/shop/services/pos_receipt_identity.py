@@ -5,7 +5,7 @@ from shopman.shop.services.pos_intent import PosIntentError
 
 
 class ReceiptIdentityConflict(PosIntentError):
-    def __init__(self, *, value="", owner_ref="", customer_ref="", client_request_id="", candidates=(), **kwargs):
+    def __init__(self, *, value="", owner_ref="", customer_ref="", client_request_id="", candidates=(), conflicts=(), **kwargs):
         # Subclasse comum: context managers precisam poder atribuir __traceback__.
         super().__init__(**kwargs)
         self.value = value
@@ -13,12 +13,13 @@ class ReceiptIdentityConflict(PosIntentError):
         self.customer_ref = customer_ref
         self.client_request_id = client_request_id
         self.candidates = candidates
+        self.conflicts = conflicts
 
     def as_dict(self) -> dict:
         return {
             **super().as_dict(), "value": self.value, "owner_ref": self.owner_ref,
             "client_request_id": self.client_request_id, "customer_ref": self.customer_ref,
-            "candidates": list(self.candidates),
+            "candidates": list(self.candidates), "conflicts": list(self.conflicts),
         }
 
 
@@ -67,6 +68,9 @@ def require_receipt_identity_choice(payload: dict) -> None:
         ("tax_id", "fiscal_tax_id", "save_receipt_tax_id", "CPF/CNPJ"),
         ("email", "receipt_email", "save_receipt_contact", "e-mail"),
     )
+    conflicts = []
+    first_message = ""
+    first_owner_ref = ""
     for field, payload_key, save_key, label in fields:
         value = normalize_receipt_value(field, payload.get(payload_key))
         if not value:
@@ -80,10 +84,18 @@ def require_receipt_identity_choice(payload: dict) -> None:
         }
         if request_id and not payload.get(save_key) and expected in choices:
             continue
+        if not conflicts:
+            first_message = f"Este {label} pertence a {owner.name}. Associe o cliente ou use apenas no documento."
+            first_owner_ref = owner.ref
+        conflicts.append({
+            "field": payload_key, "value": value,
+            "candidates": [_conflict_row(owner, ["cpf" if field == "tax_id" else "email"])],
+        })
+    if conflicts:
+        first = conflicts[0]
         raise ReceiptIdentityConflict(
-            code="receipt_identity_conflict",
-            message=f"Este {label} pertence a {owner.name}. Associe o cliente ou use apenas no documento.",
-            field=payload_key, focus="receipt", value=value, owner_ref=owner.ref,
+            code="receipt_identity_conflict", message=first_message,
+            field=first["field"], focus="receipt", value=first["value"], owner_ref=first_owner_ref,
             client_request_id=request_id, customer_ref=customer_ref,
-            candidates=(_conflict_row(owner, ["cpf" if field == "tax_id" else "email"]),),
+            candidates=first["candidates"], conflicts=conflicts,
         )

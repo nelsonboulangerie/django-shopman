@@ -152,3 +152,62 @@ def test_document_only_does_not_teach_preferences_to_associated_customer(owner):
     # A trilha de atendimento (pos.last_operator/last_capture_at) continua normal.
     for field in ("first_name", "last_name", "document", "email", "phone"):
         assert saved[field] == original[field]
+
+
+@pytest.mark.parametrize("different_owners", [False, True])
+def test_all_unresolved_document_fields_are_returned_together(owner, different_owners):
+    email_owner = Customer.objects.create(ref="email-owner", first_name="Bruno", email="bruno@example.org") if different_owners else owner
+    original = list(Customer.objects.order_by("pk").values())
+    with pytest.raises(ReceiptIdentityConflict) as error:
+        _persist_customer_from_payload({
+            "fiscal_tax_id": "529.982.247-25", "receipt_email": f" {email_owner.email.upper()} ",
+            "receipt_channels": ["email"], "client_request_id": "sale-1",
+        }, operator_username="op")
+    data = error.value.as_dict()
+    assert [(item["field"], item["value"], item["candidates"][0]["ref"]) for item in data["conflicts"]] == [
+        ("fiscal_tax_id", owner.document, owner.ref),
+        ("receipt_email", email_owner.email, email_owner.ref),
+    ]
+    assert data["field"] == data["conflicts"][0]["field"]
+    assert data["value"] == data["conflicts"][0]["value"]
+    assert data["candidates"] == data["conflicts"][0]["candidates"]
+    assert data["owner_ref"] == owner.ref
+    assert data["customer_ref"] == ""
+    assert data["client_request_id"] == "sale-1"
+    assert list(Customer.objects.order_by("pk").values()) == original
+
+
+def test_group_omits_acknowledged_field_but_keeps_other_decision_pending(owner):
+    payload = {"fiscal_tax_id": owner.document, "receipt_email": owner.email,
+               "receipt_channels": ["email"], "client_request_id": "sale-1",
+               "receipt_identity_choices": [choice("tax_id", owner.document)]}
+    with pytest.raises(ReceiptIdentityConflict) as error:
+        require_receipt_identity_choice(payload)
+    data = error.value.as_dict()
+    assert data["field"] == "receipt_email"
+    assert [item["field"] for item in data["conflicts"]] == ["receipt_email"]
+    payload["receipt_identity_choices"].append(choice("email", owner.email))
+    require_receipt_identity_choice(payload)
+    # CRM opt-in invalidates only the matching acknowledgement, not the entire group.
+    with pytest.raises(ReceiptIdentityConflict) as error:
+        require_receipt_identity_choice({**payload, "save_receipt_tax_id": True})
+    assert [item["field"] for item in error.value.conflicts] == ["fiscal_tax_id"]
+
+
+def test_group_requires_new_ack_context_after_associating_one_of_two_owners(owner):
+    other = Customer.objects.create(ref="other", first_name="Bruno", email="bruno@example.org")
+    payload = {"customer_ref": owner.ref, "fiscal_tax_id": owner.document, "receipt_email": other.email,
+               "receipt_channels": ["email"], "client_request_id": "sale-1",
+               "receipt_identity_choices": [choice("email", other.email, owner_ref=other.ref)]}
+    with pytest.raises(ReceiptIdentityConflict) as error:
+        require_receipt_identity_choice(payload)
+    assert [item["field"] for item in error.value.conflicts] == ["receipt_email"]
+    payload["receipt_identity_choices"] = [choice("email", other.email, owner_ref=other.ref, customer_ref=owner.ref)]
+    require_receipt_identity_choice(payload)
+
+
+def test_group_excludes_hidden_email_even_when_both_values_have_owners(owner):
+    with pytest.raises(ReceiptIdentityConflict) as error:
+        require_receipt_identity_choice({"fiscal_tax_id": owner.document, "receipt_email": owner.email,
+                                        "receipt_channels": [], "client_request_id": "sale-1"})
+    assert [item["field"] for item in error.value.conflicts] == ["fiscal_tax_id"]
