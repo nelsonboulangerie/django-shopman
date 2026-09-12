@@ -29,10 +29,10 @@ descartes ocorridos desde a cópia.
 | R02 | Registro de incidente de segurança | data do registro | mínimo de 5 anos | eliminar ou anonimizar, salvo obrigação adicional | prazo e runbook documentados; exercício e rotina de arquivo pendentes |
 | R03 | Evento de consentimento e revogação | último evento da finalidade/canal | 5 anos | eliminar; preservar apenas tombstone R04 quando necessário | evento existe; IP bruto já é removido em até 90 dias |
 | R04 | Bloqueio de contato/opt-out mínimo | remoção do contato ou última revogação | enquanto o contato existir e 5 anos depois | eliminar | modelo deve conservar só identificador protegido, finalidade e prova mínima; implementação pendente |
-| R05 | Membro de público e vínculo pessoal de destino de Marketing | `settled`, `cancelled` ou `expired` | 90 dias; `unknown` até 180 dias | apagar FK/vínculo pessoal; manter apenas contagens, estado, horários e hashes não reversíveis | política já proposta; job pendente |
-| R06 | ID do provedor e recibo detalhado de entrega | encerramento/reconciliação | 180 dias | remover ID/PII; manter resultado técnico agregado | job pendente; `unknown` sem solução aos 180 dias exige legal hold ou anonimização |
-| R07 | Inscrição “Avise-me” | pausa ou cancelamento pelo cliente | ativa até pausa/cancelamento; depois 90 dias para dado operacional e 5 anos para prova mínima | apagar contato/capacidade operacional aos 90 dias; apagar prova ao fim de 5 anos | vigência ativa implementada; contração pós-cancelamento pendente |
-| R08 | Conversa e transcrição do concierge | encerramento; conversa sem atividade encerra após 30 dias | 90 dias após encerramento | eliminar transcrição, vínculos e IDs; exceção somente para disputa/incident legal hold | exclusão de conta já apaga a árvore completa; fechamento e expurgo temporal pendentes |
+| R05 | Membro de público e vínculo pessoal de destino de Marketing | `settled`, `cancelled` ou `expired` | 90 dias; `unknown` até 180 dias | apagar FK/vínculo pessoal; manter apenas contagens, estado, horários e hashes não reversíveis | dry-run conta vínculos vencidos sem entrega pendente; contração pendente |
+| R06 | ID do provedor e recibo detalhado de entrega | encerramento/reconciliação | 180 dias | remover ID/PII; manter resultado técnico agregado | dry-run conta referências vencidas; contração pendente; `unknown` sem solução exige legal hold ou anonimização |
+| R07 | Inscrição “Avise-me” | pausa ou cancelamento pelo cliente | ativa até pausa/cancelamento; depois 90 dias para dado operacional e 5 anos para prova mínima | apagar contato/capacidade operacional aos 90 dias; apagar prova ao fim de 5 anos | vigência ativa e contagem dry-run implementadas; contração pós-cancelamento pendente |
+| R08 | Conversa e transcrição do concierge | encerramento; conversa sem atividade encerra após 30 dias | 90 dias após encerramento | eliminar transcrição, vínculos e IDs; exceção somente para disputa/incident legal hold | exclusão de conta apaga a árvore; dry-run conta fechamento/expurgo; mutações pendentes |
 | R09 | Conta, endereços, preferências, favoritos, tags e perfil de compra | exclusão da conta ou fim da finalidade | enquanto a conta estiver ativa | apagar imediatamente; pedidos seguem R01 já pseudonimizados | autoatendimento abrangente implementado, com alerta se houver falha parcial |
 | R10 | Código de verificação, link de acesso e aparelho confiável | expiração individual | expiração + 7 dias | eliminar | `auth_cleanup` já implementado; falta comprovar agendamento e alerta de falha |
 | R11 | IP bruto auxiliar de consentimento | coleta | máximo 90 dias | redigir o IP, preservando a prova sem IP | `purge_consent_ip` implementado; falta comprovar agendamento e alerta de falha |
@@ -52,6 +52,14 @@ descartes ocorridos desde a cópia.
 4. Inventariar R12 por modelo/campo antes de qualquer exclusão genérica.
 5. Aplicar em staging com dados sintéticos, verificar idempotência, concorrência,
    legal hold e restauração de backup; produção exige gate próprio.
+
+### Primeira etapa técnica concluída
+
+`python manage.py data_retention --dry-run` cobre R01–R15 numa única leitura e
+emite somente contagens. `--json` produz evidência estável para o gate. A saída
+declara `pii=false` e `mutations=0`; `--apply` está implementado apenas como
+trava e recusa a operação com mensagem explícita. Portanto, esta etapa não
+apaga dados nem cria/agrega job ao worker de produção.
 
 ## Decisão humana registrada em 2026-09-12
 
