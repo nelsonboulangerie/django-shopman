@@ -11,6 +11,38 @@ candidato. O access link existente continua com seu próprio gatilho. A entrada
 conversacional mantém o endpoint e a autenticação já usados; a diferença essencial
 é registrar o evento de forma durável antes de responder ao ManyChat.
 
+## Corpo real confirmado e compatibilidade legada
+
+Em 11/09/2026, o operador confirmou o URL
+`https://api.boulangerie.com.br/api/webhooks/manychat/conversation/` e um corpo
+com `subscriber_id`, `text`, `first_name` e `last_name`, sem identidade de evento.
+O texto de exemplo era `#menu NB-…`; ele é preservado como texto, sem consumir
+código de acesso ou promover identidade. Não substituir o corpo dinâmico pelos
+valores fixos do exemplo.
+
+C01 permite reutilizar esse corpo para leitura e encaminhamento humano. O
+candidato acrescenta `CONCIERGE_LEGACY_READ_HANDOFF_ENABLED=false` por padrão.
+Com opt-in autorizado, versão 2, conta, coorte e demais requisitos configurados:
+
+- `#c cardápio`, `menu` ou `#menu NB-…` consultam o catálogo público canônico.
+- `#c atendente` preserva o contexto e aciona o handoff existente.
+- Texto de compra recebe orientação para consultar ou chamar a equipe, sem
+  alterar sacola, revisão, pedido, pagamento, link de acesso ou consentimento.
+
+Esse caminho é determinístico, sem modelo nem enriquecimento de identidade.
+Cada recebimento guarda `event_id` e `external_id` vazios e
+`input_assurance=legacy_unverified`, na mesma Conversation/Message/Directive.
+O PK identifica um recebimento local; retries podem produzir recebimentos e
+respostas públicas repetidos. Não há promessa de exatamente-uma-intenção.
+Um batch com entrada legada permanece inteiro em leitura; nem um “confirmo”
+legado já consumido vira autorização em turno posterior.
+
+Recebimento legado não renova `last_inbound_at`: não prova nova interação no
+WhatsApp. Sem janela previamente comprovada, a saída fica `not_applied` com
+`window_closed`; não preencher timestamps manualmente no ambiente real. A janela
+e a entrega ainda exigem homologação com ManyChat. A compatibilidade permanece
+local e desativada; o URL confirmado não comprova que o candidato está publicado.
+
 ## Contrato da entrada
 
 - Trigger existente: `#c`; o backend também reconhece `#concierge` e remove apenas
@@ -72,7 +104,8 @@ base no ACK.
 | `200 handoff` | Contexto preservado para equipe; bot contido. |
 | `200 disabled` | Capacidade contida; `reason` informa versão, chave de modelo ou switch. |
 | `200 not_allowed` | Subject fora da lista explícita; nenhum ingresso automático. |
-| `200 event_id_required` | Falta identidade estável; nenhum efeito automático. |
+| `200 legacy_read_only` | Recebimento sem ID, aceito apenas para catálogo/humano com opt-in; não autoriza compra. |
+| `200 event_id_required` | Falta identidade estável e compatibilidade legada está desligada; nenhum ingresso. |
 | `200 empty` | Falta texto útil deste evento. |
 | `409 intent_conflict` | Mesmo ID com payload diferente; triagem, sem gerar nova intenção. |
 | `401 / 503` | Autenticação ausente/incorreta ou configuração incompleta; conferir configuração sem expor segredo. |
@@ -134,6 +167,9 @@ como recuperação. Não realizar reseed, bootstrap de canal ou migração de pr
 como parte automática da adaptação do teste.
 
 ## Verificação e limites da prova
+
+`test_concierge_legacy_gateway.py` cobre o corpo de quatro campos, catálogo,
+handoff, bloqueio de compra e confirmação, batch misto e revogação.
 
 `test_concierge_existing_gateway.py` exercita localmente o mesmo endpoint, Keyword,
 chave compartilhada de fixture e corpo mínimo; verifica replay, duas mensagens de

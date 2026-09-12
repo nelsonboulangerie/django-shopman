@@ -40,10 +40,25 @@ O cluster original 56419 não estava ativo; a tentativa inicial do agente falhou
 
 ## O que falta para conectar a versão nova
 
-É necessário conferir o **Body real do External Request** e o seletor que fornece a identidade da mensagem. O Body histórico documentado tinha somente subscriber/text/nome. Não inventar que existe um campo sistêmico `Message ID`, nem preencher o exemplo com um identificador fixo. Mesmo evento em retry precisa manter ID/payload; duas mensagens legítimas iguais precisam ter IDs distintos.
+O operador confirmou o Body real: `subscriber_id`, `text`, `first_name`, `last_name`, sem event ID, e o URL `https://api.boulangerie.com.br/api/webhooks/manychat/conversation/`. IDs pessoais e código de acesso do exemplo não foram copiados para fixtures. O seletor/origem de uma identidade estável continua sem prova; não inventar um campo `Message ID`.
 
-Depois dessa prova, adaptar o Body e eventual tratamento do ACK **no mesmo flow**, conservar coorte/roteamento e preparar a ativação controlada da versão 2. A vinculação de identidade e o retorno humano têm flags próprias; não habilitar todas as capacidades indiscriminadamente. Conversas legadas não ganham autoridade de conta/evento por backfill de transcrição.
+C01 permite leitura/handoff sem identidade de evento. A compatibilidade local acrescenta opt-in `CONCIERGE_LEGACY_READ_HANDOFF_ENABLED`, desligado por padrão, usando as mesmas tabelas e Directive. `legacy_read_only` é o ACK200; sem flag, permanece `event_id_required`. O turno legado é determinístico: catálogo público pelo reader/renderer canônico ou orientação/handoff. Não chama modelo/getInfo nem mutantes, revisão, AccessLink, consentimento ou consulta de pedido com reconciliação. Batch misto é conservadoramente somente leitura. Confirmação legada jamais vira prova posterior.
+
+Antes: quatro campos → candidato recusa falta de ID. Depois, somente com opt-in autorizado: quatro campos → recibo local explicitamente não verificado → consulta pública ou atendimento, com contexto e próxima ação. Compra automatizada continua dependente de identidade estável. PK local não é event ID; retries podem repetir leituras/respostas. Recibos legados não atualizam last_inbound_at. Sem janela previamente comprovada, a saída é contida como not_applied/window_closed. A fixture que exercita envio sem rede fornece uma janela sintética previamente verificada; isso não é instrução de setar timestamp no ambiente real. Fornecedor/janela/roteamento humano seguem pendentes de homologação. Nenhum teste local comprova ganho humano ou entrega real.
+
+Sem nova migração: a constraint existente permite external_id vazio; não há backfill/replay de legado. Rollback funcional: desligar o opt-in, que contém admissão, execução, saída preparada e retry explícito. Entradas legadas não consumidas ficam preservadas e excluídas do agendamento enquanto a flag está desligada, sem loop nem bloquear novos eventos v2. Preservar Message/Directive/receipts; não apagar transcrição nem reprocessá-la com autoridade v2. Rollback de código ao candidato anterior mantém o gate geral em 0 até avaliação; não rodar worker anterior com opt-in ativo.
 
 `spec-drift.txt` registra por que o spec inteiro não pode ser aplicado agora: sete envs novas da frente Marketing existem no app vivo e não nesta base do arquivo. Substituir o spec as removeria. Nenhuma delas foi apagada ou alterada; a adaptação Concierge permanece local. O release precisa reconciliar esse drift com o trabalho da outra frente, além de ter seu alvo autorizado. Não alterar o script de drift para esconder essas diferenças.
 
-**Estado:** compatibilidade local testada e configuração preparada; flow existente identificado; Body/identidade real pendentes. Não declarar que o candidato novo já atende pelo WhatsApp. O teste antigo permanece como estava.
+**Estado:** compatibilidade local testada e configuração preparada; flow existente identificado; Body e URL confirmados; identidade estável, homologação e ativação pendentes. Não declarar que o candidato novo já atende pelo WhatsApp. O teste antigo permanece como estava.
+
+## Verificação da compatibilidade legada
+
+Código: `2583e3744c7b2f4f4330db1a5f5a6b9a11f84c08`, branch exclusiva `codex/conversational-excellence-implementation-20260911`; base desta fatia `ae4dec40b`. Quinze casos novos (`test_concierge_legacy_gateway.py`) abrangem endpoint de quatro campos, catálogo real, #menu sem AccessLink, compra contida, handoff, revogação em intake/claim/output/recovery, batch misto, chamada interna após reload, confirmação posterior, timeout desconhecido e janela não renovada por retry.
+
+- `legacy-tests.txt`: primeiro checkpoint 58 passed/3,65s.
+- `legacy-integration.txt`: seleção de `legacy-selection.json`, **419 passed/39,94s**, zero skips/warnings. PostgreSQL privado 56429, Redis 56430; modelo e fornecedor fakes, sem credenciais externas. Rodou antes do ajuste final que evita contar leitura normal como falha consecutiva.
+- `legacy-final-targeted.txt`: **96 passed/5,31s**, zero skips/warnings, após esse ajuste (novo teste confirma contador zero), com engine, ingresso, capacidades e todos os casos legados. Esse é o código do SHA acima.
+- `legacy-ruff.txt` e `git diff --check`: aprovados. Não houve alteração de schema; não é necessário novo migration/rollback de banco nesta fatia.
+
+Na retomada local, a primeira tentativa de iniciar este cluster sem repetir `-p/-k` tentou a porta padrão ocupada e falhou antes dos testes; nenhum processo existente foi interrompido. Reinício correto com portas/socket exclusivos passou. Os serviços privados foram encerrados ao final (`legacy-shutdown.txt`). Testes de fornecedor, janela real, publicação e medição humana não executados; não são substituídos pelos fakes.

@@ -267,3 +267,19 @@ Reprodução: `evidence/conversational/ISOLATED-RUNTIME.md` descreve o ambiente 
 Não houve homologação ManyChat, mensagem a contato real, cobrança real, piloto, rollout ou migração de ambiente real. G01–G07 permanecem sem aprovação nominal nesta sessão; as flags dependentes continuam fechadas por padrão. O candidato permite revisão de código e provas locais, não autorização implícita para ativar. A conclusão humana “menos esforço/erro e resultado/próxima ação entendidos” requer as medições J01–J13 e os gates do plano; não é inferida de testes ou carga fake.
 
 Ambiente encerrado após validação: browser local já parado; Redis privado recebeu `SHUTDOWN NOSAVE` e PostgreSQL privado `pg_ctl -m fast stop`, ambos exit 0 (`runtime-shutdown.txt`). Nenhum serviço alheio foi parado. A reprodução requer reiniciar o ambiente isolado conforme `ISOLATED-RUNTIME.md`.
+
+
+## Adendo: corpo real do portão ManyChat
+
+Em 11/09/2026, o operador confirmou o endpoint `https://api.boulangerie.com.br/api/webhooks/manychat/conversation/` e o corpo legado de quatro campos (subscriber_id, text, first_name, last_name), sem event ID. O candidato local `2583e3744c7b2f4f4330db1a5f5a6b9a11f84c08 aplica a exceção explícita C01: opt-in desligado por padrão para catálogo público e handoff determinísticos no mesmo Message/Conversation/Directive, sem modelo, identificação ou mutação comercial. Não altera flow ou servidor. Evidências e roteiro/rollback: [gateway-reuse](../../evidence/conversational/gateway-reuse/README.md).
+
+| WP / achado revalidado | Evidência / resultado | Limite ou gate |
+|---|---|---|
+| WP00/WP01: Body e URL antes desconhecidos | Informados pelo operador; dados pessoais do exemplo não viram fixture | Origem de event ID estável permanece sem prova |
+| WP01/WP02: formato sem ID | Agora pode registrar recebimento legacy_unverified para leitura/humano mediante opt-in; PK não é identidade de fornecedor | Sem exatamente-uma-intenção; retries podem repetir consulta |
+| WP02/WP03: revogação e autoridade | Backlog legado estaciona sem loop/bloqueio de novos v2; reload não libera tool mutante; confirmação legada nunca vira prova posterior | Opt-in false; não reprocessar legado como evento verificado |
+| WP06/WP07: janela e entrega | Retry legado não atualiza last_inbound_at; sem janela comprovada, not_applied/window_closed; unknown não reenvia | Janela e delivery reais não homologados |
+| WP08/WP09: omotenashi e operação | Copy canônica explica consulta/atendente e ausência de alteração; leitura normal não aumenta contador de falhas | Ganho humano e roteiro real não medidos |
+| WP10: testes/rollback | Integração 419 passed e, após ajuste do contador, seleção final 96 passed; gates descritos no adendo | Não é piloto, homologação nem rollout |
+
+Antes: Body legado recusado pelo candidato por ausência de ID. Depois: com opt-in autorizado, contexto preservado e consulta pública/encaminhamento possíveis, com saída condicionada à janela previamente comprovada. Compra permanece desabilitada nesse formato. Sem nova migração; rollback funcional desliga apenas a capacidade e preserva registros. O spec continua em contract_version=0 e o drift Marketing já documentado impede aplicação integral cega do arquivo.
