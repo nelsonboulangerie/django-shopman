@@ -1873,3 +1873,14 @@ Recusa comprovada not_applied pode receber nova intenção após correção; Mac
 id ou resposta ilegível é unknown. Não muda o significado do status de Order/courier.
 G03 decide verificação/adopção humana; G08 retenção antes de piloto. Rollback conserva
 os guards ou suspende despacho; nunca remove recibos de resultado desconhecido.
+
+### Decisão de identidade no documento do PDV (somente intent)
+
+`receipt_identity_choices` contém até duas decisões `{field: "tax_id" | "email",
+value, customer_ref, owner_ref, choice: "receipt_only", client_request_id}`.
+CPF/CNPJ normaliza para dígitos e e-mail para minúsculas sem espaços externos.
+A decisão vale apenas para o mesmo valor, dono, cliente associado e venda; não
+é persistida em Session/Order nem autoriza salvar/alterar cadastro. A opção
+exige `save_receipt_tax_id`/`save_receipt_contact` falso. Mesmo dono já associado
+por `customer_ref` dispensa pergunta. Revisão e escrita recusam a ausência de
+decisão com `receipt_identity_conflict`, campo fiscal/receipt, valor e candidato.

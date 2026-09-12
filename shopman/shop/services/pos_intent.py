@@ -41,6 +41,7 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "change_for_q",
     "receipt_channels",
     "receipt_email",
+    "receipt_identity_choices",
     # A ORDEM do operador para que o contato do comprovante vire cadastro. O
     # e-mail e o CPF pedidos na nota são fatos DA VENDA (o cliente pode pedir no
     # endereço do contador, no CPF da empresa) e por isso nunca viram identidade
@@ -268,6 +269,9 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
         _flag(payload.get("save_receipt_tax_id_confirmed")) and payload["save_receipt_tax_id"]
     )
 
+    from shopman.shop.services.pos_receipt_identity import receipt_identity_choices
+
+    payload["receipt_identity_choices"] = receipt_identity_choices(payload.get("receipt_identity_choices"))
     payload["client_request_id"] = _client_request_id(payload.get("client_request_id"))
     payload["tab_ref"] = _text(payload.get("tab_ref"), limit=64)
     payload["tab_session_key"] = _text(payload.get("tab_session_key"), limit=120)

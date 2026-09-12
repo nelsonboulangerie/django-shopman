@@ -627,8 +627,11 @@ def review_sale(
     operator_username: str,
 ) -> PosSaleReview:
     """Validate a POS checkout intent without committing the Orderman session."""
+    from shopman.shop.services.pos_receipt_identity import require_receipt_identity_choice
+
     payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
+    require_receipt_identity_choice(payload)
     channel, _config = _channel_and_config(channel_ref)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     if session is None and _payload_has_tab_identity(payload):
@@ -3474,6 +3477,9 @@ def resolve_or_create_customer(
 
 def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> dict:
     """Resolve/create/update a Guestman customer from any POS customer data."""
+    from shopman.shop.services.pos_receipt_identity import require_receipt_identity_choice
+
+    require_receipt_identity_choice(payload)
     name = str(payload.get("customer_name") or "").strip()
     phone = _normalize_phone(str(payload.get("customer_phone") or "").strip())
     # IDENTIDADE — com o que se ACHA o cliente.

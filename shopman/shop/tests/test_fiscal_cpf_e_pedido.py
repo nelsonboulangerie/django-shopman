@@ -242,7 +242,11 @@ def test_cpf_da_nota_nao_rouba_a_venda_de_quem_ja_foi_identificado(db):
     )
 
     resolvido = _persist_customer_from_payload(
-        {"customer_ref": marido.ref, "customer_phone": "43999990033", "fiscal_tax_id": "52998224725"},
+        {"customer_ref": marido.ref, "customer_phone": "43999990033", "fiscal_tax_id": "52998224725",
+         "client_request_id": "spouse-document", "receipt_identity_choices": [{
+             "field": "tax_id", "value": "52998224725", "customer_ref": marido.ref,
+             "owner_ref": esposa.ref, "choice": "receipt_only", "client_request_id": "spouse-document",
+         }]},
         operator_username="op",
     )
 
@@ -250,14 +254,8 @@ def test_cpf_da_nota_nao_rouba_a_venda_de_quem_ja_foi_identificado(db):
     assert resolvido["ref"] != esposa.ref
 
 
-def test_sem_ninguem_identificado_o_cpf_da_nota_resolve_QUANDO_MANDAM(db):
-    """A outra metade da regra, e a razão de ela ser condicional.
-
-    Cliente anônimo que só pede "põe no CPF tal", com o operador aceitando o
-    "Salvar como cliente?" que a tela ofereceu: esse documento é a ÚNICA
-    identidade que existe. Ignorá-lo criaria um cadastro duplicado a cada venda
-    de quem só quer nota — que é a maioria delas.
-    """
+def test_cpf_conhecido_so_associa_apos_selecao_explicita(db):
+    """Salvar documento não autoriza associar silenciosamente um cadastro existente."""
     from shopman.guestman.models import Customer
 
     from shopman.shop.models import Channel, Shop
@@ -270,9 +268,14 @@ def test_sem_ninguem_identificado_o_cpf_da_nota_resolve_QUANDO_MANDAM(db):
         phone="+5543999990044", document="52998224725",
     )
 
+    from shopman.shop.services.pos_receipt_identity import ReceiptIdentityConflict
+
+    with pytest.raises(ReceiptIdentityConflict):
+        _persist_customer_from_payload(
+            {"fiscal_tax_id": "52998224725", "save_receipt_tax_id": True}, operator_username="op",
+        )
     resolvido = _persist_customer_from_payload(
-        # Só o CPF da nota, mais nada — e a ordem explícita de guardá-lo.
-        {"fiscal_tax_id": "52998224725", "save_receipt_tax_id": True},
+        {"customer_ref": ja_existe.ref, "fiscal_tax_id": "52998224725", "save_receipt_tax_id": True},
         operator_username="op",
     )
 
@@ -333,7 +336,11 @@ def test_email_da_nota_de_outro_cadastro_nao_estoura_a_venda(db):
     # Duas vendas anônimas seguidas para o MESMO endereço, que já é de alguém.
     for _ in range(2):
         assert _persist_customer_from_payload(
-            {"receipt_channels": ["email"], "receipt_email": "dora@example.org"},
+            {"receipt_channels": ["email"], "receipt_email": "dora@example.org",
+             "client_request_id": "email-document", "receipt_identity_choices": [{
+                 "field": "email", "value": "dora@example.org", "customer_ref": "",
+                 "owner_ref": dona.ref, "choice": "receipt_only", "client_request_id": "email-document",
+             }]},
             operator_username="op",
         ) == {}
 

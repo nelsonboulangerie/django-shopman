@@ -1,0 +1,120 @@
+"""A nota pode usar dados de terceiro sem tomar posse do cadastro."""
+from __future__ import annotations
+
+import pytest
+from shopman.guestman.models import Customer
+
+from shopman.shop.services.pos import _persist_customer_from_payload, build_session_ops
+from shopman.shop.services.pos_intent import PosIntentError, parse_pos_sale_intent
+from shopman.shop.services.pos_receipt_identity import ReceiptIdentityConflict, require_receipt_identity_choice
+
+pytestmark = pytest.mark.django_db
+
+
+@pytest.fixture
+def owner():
+    return Customer.objects.create(ref="owner", first_name="Ana", document="52998224725", email="ana@example.org")
+
+
+def choice(field, value, *, customer_ref="", owner_ref="owner", request_id="sale-1"):
+    return {"field": field, "value": value, "customer_ref": customer_ref, "owner_ref": owner_ref,
+            "choice": "receipt_only", "client_request_id": request_id}
+
+
+@pytest.mark.parametrize("field,value,api_field", [("tax_id", "529.982.247-25", "fiscal_tax_id"), ("email", "ANA@EXAMPLE.ORG ", "receipt_email")])
+def test_known_document_prompts_without_save_opt_in(owner, field, value, api_field):
+    with pytest.raises(ReceiptIdentityConflict) as error:
+        _persist_customer_from_payload({api_field: value, "client_request_id": "sale-1"}, operator_username="op")
+    data = error.value.as_dict()
+    assert data["code"] == "receipt_identity_conflict"
+    assert data["field"] == api_field
+    assert data["customer_ref"] == ""
+    assert data["candidates"][0]["ref"] == owner.ref
+    assert data["client_request_id"] == "sale-1"
+    assert Customer.objects.count() == 1
+
+
+def test_receipt_only_retries_do_not_associate_or_write(owner):
+    payload = {"fiscal_tax_id": "52998224725", "receipt_email": "ana@example.org", "client_request_id": "sale-1",
+               "receipt_identity_choices": [choice("tax_id", "52998224725"), choice("email", "ana@example.org")]}
+    original = dict(Customer.objects.values().get(pk=owner.pk))
+    for _ in range(3):
+        assert _persist_customer_from_payload(payload, operator_username="op") == {}
+    ops = build_session_ops({**payload, "items": []}, "op")
+    assert not any(op.get("path") in ("customer.ref", "customer_ref") for op in ops)
+    assert any(op.get("path") == "fiscal.tax_id" and op["value"] == "52998224725" for op in ops)
+    assert dict(Customer.objects.values().get(pk=owner.pk)) == original
+
+
+@pytest.mark.parametrize("changed", [
+    {"customer_ref": "someone-else"}, {"client_request_id": "sale-2"},
+    {"save_receipt_tax_id": True},
+])
+def test_ack_cannot_authorize_another_sale_or_customer_or_crm_write(owner, changed):
+    with pytest.raises(ReceiptIdentityConflict):
+        require_receipt_identity_choice({"fiscal_tax_id": owner.document, "client_request_id": "sale-1",
+            "receipt_identity_choices": [choice("tax_id", owner.document)], **changed})
+
+
+def test_changed_value_or_owner_invalidates_choice(owner):
+    other = Customer.objects.create(ref="other", first_name="Bia", document="11144477735")
+    with pytest.raises(ReceiptIdentityConflict):
+        require_receipt_identity_choice({"fiscal_tax_id": other.document, "client_request_id": "sale-1",
+            "receipt_identity_choices": [choice("tax_id", owner.document)]})
+    stale = choice("tax_id", owner.document, owner_ref="old-owner")
+    with pytest.raises(ReceiptIdentityConflict):
+        require_receipt_identity_choice({"fiscal_tax_id": owner.document, "client_request_id": "sale-1", "receipt_identity_choices": [stale]})
+
+
+def test_associated_owner_needs_no_additional_ack(owner):
+    require_receipt_identity_choice({"customer_ref": owner.ref, "fiscal_tax_id": owner.document,
+                                    "receipt_email": owner.email, "save_receipt_tax_id": True})
+
+
+def test_inactive_owner_still_can_be_used_on_document(owner):
+    owner.is_active = False
+    owner.save(update_fields=["is_active"])
+    payload = {"fiscal_tax_id": owner.document, "client_request_id": "sale-1"}
+    with pytest.raises(ReceiptIdentityConflict) as error:
+        require_receipt_identity_choice(payload)
+    assert error.value.candidates[0]["owner_inactive"]
+    assert _persist_customer_from_payload({**payload, "receipt_identity_choices": [choice("tax_id", owner.document)]}, operator_username="op") == {}
+
+
+def test_choices_parser_normalizes_and_rejects_unsupported_actions():
+    raw = {"items": [], "receipt_identity_choices": [choice("email", " ANA@EXAMPLE.ORG ")]}
+    assert parse_pos_sale_intent(raw, for_commit=False).payload["receipt_identity_choices"][0]["value"] == "ana@example.org"
+    raw["receipt_identity_choices"][0]["choice"] = "associate"
+    with pytest.raises(PosIntentError):
+        parse_pos_sale_intent(raw, for_commit=False)
+
+
+@pytest.fixture
+def counter_runtime():
+    from shopman.shop.tests.test_pos_scheduled_order import balcao
+
+    return balcao.__wrapped__()
+
+
+def test_review_and_close_require_same_decision_without_associating(owner, counter_runtime):
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services.pos import review_sale
+    from shopman.shop.tests.test_pos_scheduled_order import _close, _payload
+
+    operator, shift = counter_runtime
+    payload = _payload(shift, client_request_id="sale-1", customer_name="", fiscal_tax_id=owner.document)
+    with pytest.raises(ReceiptIdentityConflict):
+        review_sale(channel_ref="pdv", payload=payload, operator_username=operator.username)
+    with pytest.raises(ReceiptIdentityConflict):
+        _close(operator, payload)
+    assert not Order.objects.exists()
+    assert Customer.objects.count() == 1
+    payload["receipt_identity_choices"] = [choice("tax_id", owner.document)]
+    assert review_sale(channel_ref="pdv", payload=payload, operator_username=operator.username).total_q > 0
+    order = Order.objects.get(ref=_close(operator, payload).order_ref)
+    assert order.data["fiscal"]["tax_id"] == owner.document
+    assert not order.data.get("customer_ref")
+    assert not order.data.get("customer", {}).get("ref")
+    assert "receipt_identity_choices" not in order.data
+    assert Customer.objects.count() == 1

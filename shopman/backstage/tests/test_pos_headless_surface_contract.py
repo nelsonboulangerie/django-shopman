@@ -477,36 +477,35 @@ class POSHeadlessSurfaceContractTests(TestCase):
             self.assertEqual((order.data.get("customer") or {}).get("email", ""), "")
 
     def test_receipt_email_of_an_existing_customer_does_not_500(self) -> None:
-        """E-mail da nota que já pertence a OUTRO cadastro: a venda passa.
-
-        Era o 500 mais cruel: o cliente da vez não é a Dora, mas o endereço que
-        ele pediu é o dela — e a venda travava.
-        """
-        Customer.objects.create(
+        """E-mail conhecido pergunta uma vez; apenas documento mantém venda anônima."""
+        owner = Customer.objects.create(
             ref=Customer.generate_ref(), first_name="Dora", last_name="Cliente",
             phone="+5543999990055", email="dora@example.org",
         )
+        payload = {
+            "intent_version": POS_SALE_INTENT_VERSION,
+            "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
+            "fulfillment_type": "pickup", "payment_method": "cash", "payment_collection": "terminal",
+            "receipt_channels": ["email"], "receipt_email": "dora@example.org",
+            "client_request_id": "pos-receipt-email-alheio",
+        }
         response = self.client.post(
-            "/api/v1/backstage/pos/sale/close/",
-            data=json.dumps({
-                "intent_version": POS_SALE_INTENT_VERSION,
-                "items": [{
-                    "sku": "POS-HEADLESS-ITEM", "name": "Headless Item",
-                    "qty": 1, "unit_price_q": 1300,
-                }],
-                "fulfillment_type": "pickup",
-                "payment_method": "cash",
-                "payment_collection": "terminal",
-                "receipt_channels": ["email"],
-                "receipt_email": "dora@example.org",
-                "client_request_id": "pos-receipt-email-alheio",
-            }),
-            content_type="application/json",
+            "/api/v1/backstage/pos/sale/close/", data=json.dumps(payload), content_type="application/json",
         )
-
+        self.assertEqual(response.status_code, 422, response.content)
+        self.assertEqual(response.json()["error"]["code"], "receipt_identity_conflict")
+        self.assertEqual(response.json()["error"]["value"], owner.email)
+        payload["receipt_identity_choices"] = [{
+            "field": "email", "value": owner.email, "customer_ref": "", "owner_ref": owner.ref,
+            "choice": "receipt_only", "client_request_id": payload["client_request_id"],
+        }]
+        response = self.client.post(
+            "/api/v1/backstage/pos/sale/close/", data=json.dumps(payload), content_type="application/json",
+        )
         self.assertEqual(response.status_code, 200, response.content)
         order = Order.objects.get(ref=response.json()["order_ref"])
         self.assertNotIn("customer_ref", order.data)
+        self.assertEqual(order.data["receipt"]["email"], owner.email)
 
     def _close_sale_for_fiscal(
         self, *, payment_method: str, receipt_channels: list[str] | None = None
