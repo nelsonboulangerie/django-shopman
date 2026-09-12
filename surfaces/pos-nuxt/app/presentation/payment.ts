@@ -263,6 +263,31 @@ export function collectionsForFulfillment(
   return collections.filter((collection) => collection.fulfillment_types.includes(fulfillmentType as "pickup" | "delivery"));
 }
 
+/** Explica quando o pedido será cobrado sem criar outra modalidade financeira. */
+export function orderPaymentGuidance(options: {
+  salesMode?: "counter" | "order";
+  fulfillmentType: "pickup" | "delivery";
+  collection: "terminal" | "on_delivery";
+  methods: string[];
+}): string {
+  if (options.salesMode !== "order") return "";
+  if (options.fulfillmentType === "delivery" && options.collection === "on_delivery") {
+    return "Combine a forma e o valor a cobrar na entrega. O pedido fica com pagamento pendente até o acerto no Gestor.";
+  }
+  if (options.methods.some((method) => ["pix", "card", "link"].includes(method))) {
+    return "A cobrança será gerada ao registrar a encomenda. O pagamento fica pendente até a confirmação automática; a filipeta acompanha o pedido.";
+  }
+  if (options.fulfillmentType === "pickup") {
+    return "Dinheiro e maquininha registram recebimento agora. Para aguardar pagamento, escolha Pix ou link disponível e cobre antes da retirada.";
+  }
+  return "Receba antes da entrega: dinheiro e maquininha são confirmados agora; Pix ou link aguardam confirmação automática.";
+}
+
+export function paymentCollectionLabel(collection: POSPaymentCollectionProjection, salesMode?: "counter" | "order"): string {
+  if (salesMode !== "order") return collection.label;
+  return collection.ref === "on_delivery" ? "Cobrar na entrega" : "Pagamento antecipado";
+}
+
 export type PaymentProofTone = "info" | "warning" | "success" | "danger" | "neutral";
 
 const PROOF_TONES: Record<string, PaymentProofTone> = {

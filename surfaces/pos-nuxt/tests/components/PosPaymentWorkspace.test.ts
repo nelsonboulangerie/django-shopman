@@ -1451,3 +1451,22 @@ describe("recebimento explícito", () => {
     expect(w.text()).not.toContain("Como o cliente vai receber?");
   });
 });
+
+it("explica antecipação e cobrança pendente no modo encomendas", async () => {
+  const w = await mountSuspended(PosPaymentWorkspace, { props: props({
+    salesMode: "order", fulfillmentType: "delivery", paymentCollection: "on_delivery",
+    paymentCollections: [
+      { ref: "terminal", label: "Receber no caixa", fulfillment_types: ["pickup", "delivery"], payment_method_refs: ["cash"] },
+      { ref: "on_delivery", label: "Receber na entrega", fulfillment_types: ["delivery"], payment_method_refs: ["cash", "credit"] },
+    ],
+    paymentTenders: [{ method: "credit", amount_q: 1000, collection: "on_delivery" }],
+  }) });
+  expect(w.text()).toContain("Pagamento da encomenda");
+  expect(w.text()).toContain("Pagamento antecipado");
+  expect(w.text()).toContain("Cobrar na entrega");
+  expect(w.text()).toContain("pagamento pendente até o acerto no Gestor");
+  expect(w.text()).toContain("Levar maquininha");
+  await w.setProps({ fulfillmentType: "pickup", paymentCollection: "terminal", paymentTenders: [{ method: "pix", amount_q: 1000, collection: "terminal" }] });
+  expect(w.text()).toContain("pendente até a confirmação automática");
+  expect(w.text()).not.toContain("Cobrar na entrega");
+});

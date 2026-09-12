@@ -34,6 +34,8 @@ import {
   cashNotesQ as contractCashNotesQ,
   cashNoteLabel,
   collectionsForFulfillment,
+  orderPaymentGuidance,
+  paymentCollectionLabel,
   injectableMethods as toInjectableMethods,
   machineTenderLines,
   methodShortcuts,
@@ -61,6 +63,7 @@ import {
 import { scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
 
 const props = defineProps<{
+  salesMode?: "counter" | "order";
   tabDisplay: string;
   items: POSCartItem[];
   hasOpenTab: boolean;
@@ -572,6 +575,12 @@ const injectableMethods = computed(() =>
 const methodKeys = computed(() => methodShortcuts(injectableMethods.value));
 const tenderLines = computed(() => props.paymentTenders.map((tender) => tenderLineView(tender, injectableMethods.value)));
 const deliveryCollections = computed(() => collectionsForFulfillment(props.paymentCollections, props.fulfillmentType));
+const paymentGuidance = computed(() => orderPaymentGuidance({
+  salesMode: props.salesMode,
+  fulfillmentType: props.fulfillmentType,
+  collection: props.paymentCollection,
+  methods: props.paymentTenders.map((tender) => tender.method),
+}));
 
 // ── O LINK COBRA A VENDA INTEIRA ─────────────────────────────────────────
 //
@@ -1122,14 +1131,15 @@ defineExpose({
                 @click="$emit('update:paymentCollection', collection.ref)"
               >
                 <Icon :name="collection.ref === 'terminal' ? 'lucide:store' : 'lucide:truck'" class="size-4 shrink-0" />
-                <span class="min-w-0 truncate text-left">{{ collection.label }}</span>
+                <span class="min-w-0 truncate text-left">{{ paymentCollectionLabel(collection, salesMode) }}</span>
               </button>
             </template>
           </div>
         </section>
 
         <section class="grid gap-1.5" aria-label="Forma de pagamento">
-          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Forma de pagamento</h3>
+          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{{ salesMode === "order" ? "Pagamento da encomenda" : "Forma de pagamento" }}</h3>
+          <p v-if="paymentGuidance" class="px-1 text-sm text-muted-foreground" role="status">{{ paymentGuidance }}</p>
 
           <div class="flex flex-col gap-1.5">
             <!-- Tocar aqui ADICIONA uma linha; não escolhe "a forma" da venda.
@@ -1149,7 +1159,7 @@ defineExpose({
               class="flex h-11 items-center gap-3 rounded-md border bg-card px-3 text-left text-sm font-medium transition hover:border-primary/50 hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
               :disabled="blockedForDelivery(method.ref) || blockedByLink(method.ref)"
               :title="blockedForDelivery(method.ref)
-                ? 'PIX Efí e pagamentos online precisam da confirmação automática antes da entrega. Use Receber no caixa.'
+                ? 'PIX Efí e pagamentos online precisam da confirmação automática antes da entrega. Escolha o recebimento antecipado.'
                 : blockedByLink(method.ref)
                   ? 'O link de pagamento cobra a venda inteira'
                   : undefined"
