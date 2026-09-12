@@ -223,11 +223,11 @@ watch(() => props.customerDecision, () => {
 
 const receiptPanelRef = ref<HTMLElement | null>(null);
 const selectedReceiptOwner = ref("");
-const receiptFields = computed(() => props.customerDecision?.receiptFields || (props.customerDecision?.other ? [{
+const receiptFields = computed(() => (props.customerDecision?.receiptFields || (props.customerDecision?.other ? [{
   field: props.customerDecision.field === "tax_id" ? "tax_id" as const : "email" as const,
   value: props.customerDecision.typed, owner: props.customerDecision.other,
   active: props.customerDecision.candidates?.find(c => c.ref === props.customerDecision?.other?.ref)?.owner_inactive !== true,
-}] : []));
+}] : [])).map(field => ({ ...field, owner: { ...field.owner, name: field.owner.name || (field.owner.ref ? formatReceiptValue(field.field, field.value) : '') } })));
 const receiptOwners = computed(() => [...new Map(receiptFields.value.filter(f => f.owner.ref).map(f => [f.owner.ref, f])).values()]);
 const receiptActiveOwners = computed(() => receiptOwners.value.filter(f => f.active !== false));
 const receiptNewFieldsLabel = computed(() => receiptFields.value.filter(f => !f.owner.ref).map(f => f.field === 'tax_id' ? 'CPF' : 'e-mail').join(' e '));
