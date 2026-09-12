@@ -508,8 +508,9 @@ def set_custom_field(subscriber_id: str | int, field_name: str, value: str) -> b
     O concierge usa isso para o handoff: não existe API do ManyChat para pausar a
     automação de um contato, então o combinado entre o flow e a casa é um campo
     (``SHOPMAN_CONCIERGE["handoff_field"]``) que o flow lê ANTES de chamar o
-    webhook. ``"1"`` = a equipe está na conversa, o flow não chama; vazio = o
-    concierge responde. O campo precisa existir no ManyChat com o mesmo nome.
+    webhook. ``"1"`` = a equipe está na conversa, o flow não chama; ``"0"`` = o
+    concierge responde. O campo precisa existir no ManyChat com o mesmo nome e
+    o flow testa igualdade com ``"1"``.
     """
     field_name = (field_name or "").strip()
     if not field_name:

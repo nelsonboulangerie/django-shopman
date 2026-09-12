@@ -585,3 +585,46 @@ todas as fronteiras Concierge **290 passed, 25 skipped**; Ruff e
 deploy imutável, compensação confirmada do handoff do único contato autorizado e
 novo smoke real ainda são gates de homologação. Piloto e rollout permanecem
 fechados.
+
+## Homologação controlada e estado textual do handoff — 12/09/2026
+
+A correção de autoridade entrou no `main` em
+`514391de2f1712e516ae658a85162b63c8126b60`. Runtime Gate, Omotenashi Gate,
+Surfaces Gate e a composição exclusiva da merge queue passaram. O workflow
+`Deploy Images` publicou somente `web-514391de2f1712e516ae658a85162b63c8126b60`,
+digest `sha256:a7af156c942f2d5f386d1fcbb160b45b7a19ef5bd401c0cd55e119f592b69f1f`.
+O deployment DigitalOcean `d4a1d20b-6b69-44c7-9ad5-144cdf45f36a` ficou
+`ACTIVE`; `/ready/` respondeu 200 com database, cache, migrations e queue em
+`ok`.
+
+O handoff acidental do único subscriber permitido foi compensado sem apagar ou
+reescrever o transcript. A primeira tentativa de retorno provou um defeito
+adicional: o adapter enviava string vazia para desligar
+`concierge_handoff`. A consulta read-only dos Custom Fields da conta confirmou
+que ele é textual, e o endpoint não confirmou vazio nem booleano. O valor
+explícito `"0"` foi aceito pelo ManyChat. A implementação passa a usar o
+contrato simétrico `"1"` = humano e `"0"` = Concierge; o flow compara igualdade
+com `"1"`. A especificação original reconsultada foi o Swagger do ManyChat,
+`https://api.manychat.com/swagger?urls.primaryName=Page+API`, método
+`POST /fb/subscriber/setCustomFieldByName`.
+
+Depois da compensação aceita, o portão canônico
+`/api/webhooks/concierge/manychat-whatsapp-primary/events/` recebeu exatamente
+`#c vou querer um pain perdu, vcs entregam?` e retornou 200/`queued`. O turno
+gravou `search_storefront`, encontrou `Pain Perdu`, `R$ 18,00`, disponibilidade
+e a política de entrega. A resposta final foi aceita pelo ManyChat:
+
+> “Pain Perdu” — R$ 18,00. Disponível
+> Sim. Fazemos entrega. Para confirmar se o endereço está na área atendida e
+> calcular a taxa, precisamos do endereço completo com número.
+
+A conversa permaneceu `active`; `Session` permaneceu em 71 e `Order` em 6.184.
+Nenhum novo handoff, sacola ou pedido foi criado. A tentativa de saída 44 e a
+mensagem 174 terminaram em `accepted`. Esta é prova de homologação da jornada
+pública na coorte autorizada; não é piloto nem rollout.
+
+A regressão do estado textual cobre ligar e desligar o handoff, além das suítes
+do motor e do transporte: 24 testes direcionados e 75 testes de engine/service
+passaram localmente, com Ruff e `git diff --check`. Não há migration. Rollback
+volta somente a imagem; o valor textual `0` já aceito pelo provider continua
+seguro porque o flow bloqueia apenas igualdade com `1`.
