@@ -1,174 +1,200 @@
-"""C08: o mesmo núcleo funciona com dois adapters sem elevar identidade."""
+"""C08: o mesmo núcleo funciona com bindings de canais diferentes."""
 
-from datetime import timedelta
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 from django.utils import timezone
 
-from shopman.shop.models import Conversation, ConversationMessage
+from shopman.shop.models import Conversation, ConversationBinding, ConversationMessage, OutboundAttempt
 from shopman.storefront.concierge import agent, service, transport
-from shopman.storefront.tests.support.concierge_fake import OpaqueAdapter
+from shopman.storefront.concierge.contracts import WindowEvidence
+from shopman.storefront.tests.support.concierge_transport_v3 import (
+    ADAPTER_PATH,
+    adapter_class,
+    connection,
+    event,
+    reset_adapter,
+)
 
 pytestmark = pytest.mark.django_db
 
 
-@pytest.fixture(params=["manychat", "opaque-test"])
+@pytest.fixture(params=["whatsapp", "tiktok"])
 def channel(request, settings, monkeypatch):
-    fake = request.param == "opaque-test"
-    subject = "subject:cliente-α" if fake else "123456"
-    cfg = {
+    is_tiktok = request.param == "tiktok"
+    key = "tiktok-primary" if is_tiktok else "manychat-wa"
+    provider = "future-provider" if is_tiktok else "manychat"
+    account = "tiktok-business" if is_tiktok else "manychat-account"
+    subject = "subject:cliente-α" if is_tiktok else "123456"
+    settings.AI_ASSIST_API_KEY = "test-only"
+    settings.SHOPMAN_CONCIERGE = {
         "enabled": True,
-        "contract_version": 2,
-        "account_id": "isolated-account",
-        "provider": request.param,
-        "transport_channel": "text-only-test" if fake else "whatsapp",
-        "allowed_subscribers": [subject],
+        "contract_version": 3,
         "channel_ref": "web",
+        "connections": {
+            key: connection(
+                provider=provider,
+                account=account,
+                channel=request.param,
+                subjects=[subject],
+            )
+        },
     }
-    if fake:
-        cfg["adapter_path"] = "shopman.storefront.tests.support.concierge_fake.OpaqueAdapter"
-    settings.SHOPMAN_CONCIERGE = cfg
-    settings.AI_ASSIST_API_KEY = "fake"
-    sent = []
-    OpaqueAdapter.sent = sent
-    monkeypatch.setattr(
-        transport, "send_text", lambda subject, text: sent.append((subject, text)) or transport.SendOutcome("accepted")
+    reset_adapter()
+    monkeypatch.setattr(service, "_alert", lambda *args, **kwargs: None)
+    return SimpleNamespace(
+        key=key,
+        provider=provider,
+        account=account,
+        transport_channel=request.param,
+        subject=subject,
     )
-    monkeypatch.setattr(transport, "set_handoff", lambda *args: True)
-    monkeypatch.setattr(service, "_alert", lambda *args: None)
-    return cfg, subject, sent
 
 
-def intake(channel, text="Olá", event="event-1"):
-    cfg, subject, _ = channel
-    result = service.receive_inbound(subscriber_id=subject, text=text, external_id=event)
+def intake(channel, text="Olá", event_id="event-1"):
+    normalized = event(
+        key=channel.key,
+        provider=channel.provider,
+        account=channel.account,
+        channel=channel.transport_channel,
+        subject=channel.subject,
+        text=text,
+        event_id=event_id,
+    )
+    result = service.receive_inbound(normalized)
     assert result.queued
-    return Conversation.objects.get(pk=result.conversation_id)
+    binding = ConversationBinding.objects.get(conversation_id=result.conversation_id)
+    return binding.conversation, binding, result.message_id
 
 
-def test_core_turn_preserves_inbound_and_accepted_is_not_delivered(channel, monkeypatch):
-    conversation = intake(channel)
-    monkeypatch.setattr(agent, "run_agent", lambda **kw: agent.AgentOutcome(reply_text="Como posso ajudar?"))
-    result = service.run_turn(conversation.pk)
-    inbound = conversation.messages.get(kind=ConversationMessage.Kind.INBOUND)
+def test_core_turn_preserves_causal_inbound_and_acceptance_evidence(channel, monkeypatch):
+    conversation, binding, inbound_id = intake(channel)
+    monkeypatch.setattr(
+        agent,
+        "run_agent",
+        lambda **kwargs: agent.AgentOutcome(reply_text="Como posso ajudar?"),
+    )
+    result = service.run_turn(conversation.pk, binding.pk)
+    inbound = ConversationMessage.objects.get(pk=inbound_id)
     reply = conversation.messages.get(kind=ConversationMessage.Kind.REPLY)
+    attempt = OutboundAttempt.objects.get(message=reply)
     assert result.processed_message_ids == [inbound.pk]
+    inbound.refresh_from_db()
     assert inbound.consumed_by is not None
-    assert reply.transport_state == "accepted" and reply.delivered is None
-    assert channel[2] == [(channel[1], "Como posso ajudar?")]
+    assert reply.binding == binding
+    assert reply.transport_state == attempt.state == "accepted"
+    assert adapter_class().sent == [(channel.key, channel.subject, "Como posso ajudar?")]
     conversation.refresh_from_db()
     assert conversation.phone == conversation.customer_ref == ""
 
 
 def test_essential_block_is_never_truncated(channel):
-    conversation = intake(channel)
+    conversation, binding, inbound_id = intake(channel)
+    evidence = ConversationMessage.objects.get(pk=inbound_id).envelope["window_evidence"]
     text = "Pix: " + "a" * 4100
-    result = service._send_reply(conversation, text)
+    result = service._send_reply(conversation, binding, text, window_evidence=evidence)
     assert result.text == text
     assert result.transport_state == "not_applied"
     assert result.envelope["code"] == "essential_block_too_large"
-    assert channel[2] == []
+    assert adapter_class().sent == []
 
 
 def test_expired_channel_window_blocks_worker_output(channel):
-    conversation = intake(channel)
-    capability = transport.adapter_for(conversation).capabilities
-    conversation.last_inbound_at = timezone.now() - capability.response_window - timedelta(seconds=1)
-    conversation.save(update_fields=["last_inbound_at"])
-    result = service._send_reply(conversation, "Resposta")
+    conversation, binding, _ = intake(channel)
+    now = timezone.now()
+    expired = WindowEvidence(
+        policy="test-window-v1",
+        source="authenticated-test-event",
+        observed_at=now,
+        valid_until=now,
+        assurance="provider_window",
+    )
+    result = service._send_reply(
+        conversation,
+        binding,
+        "Resposta",
+        window_evidence=expired.as_dict(),
+    )
     assert result.transport_state == "not_applied"
-    assert channel[2] == []
+    assert result.envelope["code"] == "window_closed"
+    assert adapter_class().sent == []
 
 
-def test_scope_change_blocks_persisted_reference_and_identity(channel, settings, monkeypatch):
-    conversation = intake(channel)
-    resolver = Mock(side_effect=AssertionError("cross-account identity"))
-    monkeypatch.setattr(transport.ManyChatAdapter, "identify", resolver)
-    settings.SHOPMAN_CONCIERGE = {**channel[0], "account_id": "another-account", "identity_link_enabled": True}
-    assert transport.identity_for(conversation, {"whatsapp_phone": "+550000000000"}) is None
-    result = service._send_reply(conversation, "Resposta de outra conta")
+def test_scope_change_blocks_persisted_reference_and_identity(channel, settings):
+    conversation, binding, inbound_id = intake(channel)
+    connection = settings.SHOPMAN_CONCIERGE["connections"][channel.key]
+    settings.SHOPMAN_CONCIERGE["connections"][channel.key] = {
+        **connection,
+        "account": "another-account",
+        "options": {**connection["options"], "identity_link_enabled": True},
+    }
+    assert transport.identity_for(binding, {"whatsapp_phone": "+550000000000"}) is None
+    evidence = ConversationMessage.objects.get(pk=inbound_id).envelope["window_evidence"]
+    result = service._send_reply(
+        conversation,
+        binding,
+        "Resposta de outra conta",
+        window_evidence=evidence,
+    )
     assert result.transport_state == "not_applied"
-    resolver.assert_not_called()
-    assert channel[2] == []
+    assert adapter_class().identified == []
+    assert adapter_class().sent == []
 
 
 def test_same_subject_in_another_account_has_separate_context(channel, settings):
-    first = intake(channel)
-    settings.SHOPMAN_CONCIERGE = {**channel[0], "account_id": "another-account"}
-    second = intake(channel)
+    first, _, _ = intake(channel)
+    second_key = f"{channel.key}-secondary"
+    second_account = f"{channel.account}-secondary"
+    settings.SHOPMAN_CONCIERGE["connections"][second_key] = connection(
+        provider=channel.provider,
+        account=second_account,
+        channel=channel.transport_channel,
+        subjects=[channel.subject],
+    )
+    result = service.receive_inbound(
+        event(
+            key=second_key,
+            provider=channel.provider,
+            account=second_account,
+            channel=channel.transport_channel,
+            subject=channel.subject,
+            event_id="event-2",
+        )
+    )
+    second = Conversation.objects.get(pk=result.conversation_id)
     assert first.pk != second.pk
     assert first.messages.count() == second.messages.count() == 1
     assert first.customer_ref == second.customer_ref == ""
 
 
-def test_human_escape_does_not_require_supported_remote_handoff(channel, monkeypatch):
-    conversation = intake(channel, text="Quero falar com alguém")
+def test_human_escape_skips_model_and_acks_on_causal_binding(channel, monkeypatch):
+    conversation, binding, _ = intake(channel, text="Quero falar com alguém")
     model = Mock(side_effect=AssertionError("human escape used model"))
     monkeypatch.setattr(agent, "run_agent", model)
-    result = service.run_turn(conversation.pk)
+    result = service.run_turn(conversation.pk, binding.pk)
     conversation.refresh_from_db()
-    assert result.handoff and conversation.state == Conversation.State.HANDOFF
-    assert channel[2] == [(channel[1], service.copy_message("CONCIERGE_HANDOFF_ACK"))]
     ack = conversation.messages.get(kind=ConversationMessage.Kind.REPLY)
+    assert result.handoff and conversation.state == Conversation.State.HANDOFF
+    assert ack.binding == binding
     assert ack.envelope["purpose"] == "handoff_ack"
     assert ack.transport_state == "accepted"
+    assert adapter_class().sent == [(channel.key, channel.subject, service.copy_message("CONCIERGE_HANDOFF_ACK"))]
     model.assert_not_called()
-    if channel[0]["provider"] == "opaque-test":
-        assert conversation.handoff_sync_state == "unknown"
 
 
-def test_identity_gate_is_closed_even_when_payload_claims_phone(channel, monkeypatch):
-    conversation = intake(channel)
-    resolver = Mock(side_effect=AssertionError("identity not authorized"))
-    monkeypatch.setattr(transport.ManyChatAdapter, "identify", resolver)
-    assert transport.identity_for(conversation, {"whatsapp_phone": "+5543999999999"}) is None
-    resolver.assert_not_called()
-
-
-def test_manychat_identity_does_not_trust_profile_claim(channel, settings, monkeypatch):
-    conversation = intake(channel)
-    from shopman.guestman.adapters.auth import CustomerResolver
-
-    resolver = Mock(return_value=None)
-    monkeypatch.setattr(CustomerResolver, "upsert_manychat_subscriber", resolver)
-    settings.SHOPMAN_CONCIERGE = {**channel[0], "identity_link_enabled": True}
-    assert transport.identity_for(conversation, {"whatsapp_phone": "+5543999999999"}) is None
-    if channel[0]["provider"] == "manychat":
-        resolver.assert_called_once_with({"id": channel[1]})
-    else:
-        resolver.assert_not_called()
-
-
-def test_unidentified_subject_cannot_consult_purchase_receipt(channel, monkeypatch):
-    from shopman.shop.services import remote_mutations
-    from shopman.storefront.concierge import tools
-
-    conversation = intake(channel)
-    lookup = Mock(side_effect=AssertionError("receipt consulted before identity"))
-    monkeypatch.setattr(remote_mutations, "lookup_local_mutation", lookup)
-    result = tools.place_order(tools.ToolContext(conversation, "web"), "known-token", "pix")
-    assert not result["ok"] and result["error"] == "identity_required"
-    lookup.assert_not_called()
-
-
-def test_account_swapped_reference_cannot_consult_receipt(channel, settings, monkeypatch):
-    from shopman.shop.services import remote_mutations
-    from shopman.storefront.concierge import tools
-
-    conversation = intake(channel)
-    settings.SHOPMAN_CONCIERGE = {**channel[0], "account_id": "other-account"}
-    lookup = Mock(side_effect=AssertionError("cross-account receipt consulted"))
-    monkeypatch.setattr(remote_mutations, "lookup_local_mutation", lookup)
-    result = tools.place_order(tools.ToolContext(conversation, "web"), "known-token", "pix")
-    assert not result["ok"] and result["error"] == "authority_unavailable"
-    lookup.assert_not_called()
+def test_identity_gate_is_closed_even_when_profile_claims_phone(channel, settings):
+    _, binding, _ = intake(channel)
+    connection = settings.SHOPMAN_CONCIERGE["connections"][channel.key]
+    connection["options"]["identity_link_enabled"] = False
+    assert transport.identity_for(binding, {"whatsapp_phone": "+5543999999999"}) is None
+    assert adapter_class().identified == []
 
 
 def test_semantic_blocks_preserve_every_character_and_whole_lines(channel):
-    conversation = intake(channel)
-    text = "\n".join(f"Item {i}: " + "a" * 600 for i in range(12))
-    blocks = transport.semantic_blocks(conversation, text)
+    _, binding, _ = intake(channel)
+    text = "\n".join(f"Item {index}: " + "a" * 600 for index in range(12))
+    blocks = transport.semantic_blocks(binding, text)
     assert len(blocks) > 1
     assert "".join(blocks) == text
     assert all(len(block) <= 4000 for block in blocks)
@@ -177,9 +203,20 @@ def test_semantic_blocks_preserve_every_character_and_whole_lines(channel):
 
 
 def test_semantic_blocks_never_cut_oversized_pix_line(channel):
-    conversation = intake(channel)
+    _, binding, _ = intake(channel)
     pix = "PIX" + "a" * 4500
-    blocks = transport.semantic_blocks(conversation, "Pedido registrado\n" + pix)
+    blocks = transport.semantic_blocks(binding, "Pedido registrado\n" + pix)
     assert blocks == ["Pedido registrado\n", pix]
-    assert transport.send_for(conversation, blocks[-1]).code == "essential_block_too_large"
-    assert channel[2] == []
+    assert transport.send_for(binding, blocks[-1]).code == "essential_block_too_large"
+    assert adapter_class().sent == []
+
+
+def test_registry_requires_exact_binding_scope(channel):
+    _, binding, _ = intake(channel)
+    assert transport.adapter_for(binding) is not None
+    binding.account = "payload-selected-account"
+    assert transport.adapter_for(binding) is None
+
+
+def test_test_adapter_path_is_explicit_and_not_a_provider_branch(channel, settings):
+    assert settings.SHOPMAN_CONCIERGE["connections"][channel.key]["adapter_path"] == ADAPTER_PATH

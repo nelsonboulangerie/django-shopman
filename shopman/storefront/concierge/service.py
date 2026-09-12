@@ -1,14 +1,9 @@
-"""A porta do concierge: receber a mensagem, rodar o turno, responder.
+"""Núcleo conversacional independente de provedor e canal.
 
-Duas entradas, e nenhuma delas fala com o modelo diretamente:
-
-- ``receive_inbound``: chamado pelo webhook (External Request do ManyChat). Guarda
-  a mensagem e enfileira UMA diretiva ``concierge.turn.v2``
-  por conversa. Volta em milissegundos: o ManyChat corta em 10 s, e um turno com
-  ferramentas não cabe nisso com folga.
-- ``run_turn``: chamado pelo handler da diretiva (worker). Junta as mensagens
-  ainda sem resposta, roda o agente, persiste a transcrição e envia a resposta
-  pelo transporte. Se chegou mensagem nova enquanto rodava, avisa que há mais.
+O ingresso entrega um ``InboundEvent`` normalizado. O núcleo persiste a mensagem
+no vínculo exato, enfileira uma diretiva por ``(conversation, binding)`` e devolve
+o ACK sem chamar modelo ou fornecedor. O worker preserva a memória lógica da
+conversa, mas envia a resposta pelo mesmo vínculo causal que recebeu a entrada.
 
 Tudo que é política de conversa e não é regra de pedido mora aqui: teto diário
 de turnos, o que fazer com áudio, o que dizer quando o modelo cai, quando
@@ -26,15 +21,22 @@ from functools import wraps
 from time import perf_counter
 
 from django.conf import settings
-from django.db import transaction
-from django.db.models import Exists, F, OuterRef, Q
+from django.db import IntegrityError, transaction
+from django.db.models import Exists, F, Max, OuterRef, Q
 from django.utils import timezone
 
-from shopman.shop.models import Conversation, ConversationMessage
+from shopman.shop.models import (
+    Conversation,
+    ConversationBinding,
+    ConversationMessage,
+    OutboundAttempt,
+)
+
+from .contracts import InboundEvent
 
 logger = logging.getLogger(__name__)
 
-TURN_TOPIC = "concierge.turn.v2"
+TURN_TOPIC = "concierge.turn.v3"
 
 
 def _observed(stage):
@@ -58,15 +60,14 @@ def _observed(stage):
                 message_id = getattr(result, "message_id", None)
                 if stage == "output" and len(args) > 1:
                     message_id = args[1].pk
-                operational_event("concierge.stage", stage=stage, contract_version=2,
+                operational_event("concierge.stage", stage=stage, contract_version=3,
                                   conversation_id=conversation_id, message_id=message_id,
                                   turn_fence=getattr(args[0], "turn_fence", None) if args else None,
                                   outcome=outcome, duration_ms=round((perf_counter()-started)*1000, 3))
         return execute
     return decorate
 
-#: Sufixos que denunciam mídia: desde 04/2025 o ManyChat entrega áudio/imagem
-#: como URL em ``last_input_text``. O concierge só lê texto por enquanto.
+#: Sufixos que denunciam mídia quando um adapter textual entrega uma URL.
 _MEDIA_SUFFIXES = (".ogg", ".oga", ".mp3", ".m4a", ".mp4", ".jpg", ".jpeg", ".png", ".webp", ".pdf")
 _MEDIA_HOSTS = ("lookaside.fbsbx.com", "cdn.manychat", "manychat.com/", "fbcdn.net")
 
@@ -82,7 +83,7 @@ def disabled_reason() -> str:
     e a credencial da Anthropic (``AI_ASSIST_API_KEY``). Um ``disabled`` sem motivo
     custou uma noite: a chave estava ligada e a credencial, vazia no painel.
     """
-    if config().get("contract_version") != 2:
+    if config().get("contract_version") != 3:
         return "contract_gate"
     if not config().get("enabled"):
         return "switch_off"
@@ -115,17 +116,24 @@ def copy_message(key: str) -> str:
 # ── Piloto fechado ────────────────────────────────────────────────────
 
 
-def allowed_subscribers() -> list[str]:
-    return [str(v).strip() for v in (config().get("allowed_subscribers") or []) if str(v).strip()]
+def _subject_allowed(connection, subject: str) -> bool:
+    values = connection.options.get("allowed_subjects")
+    if not isinstance(values, (list, tuple, set, frozenset)):
+        return False
+    allowed = {str(value).strip() for value in values or () if str(value).strip()}
+    return subject in allowed
 
 
-def is_allowed(subscriber_id: str, profile: dict | None = None) -> bool:
-    """Admissão por subject explícito; lista vazia contém o canal.
+def is_allowed(binding: ConversationBinding) -> bool:
+    """Admissão escopada pela connection; lista vazia contém a connection."""
+    from . import transport
 
-    Telefone informado no payload não é prova de identidade de transporte.
-    Nenhum enriquecimento remoto pertence ao ACK.
-    """
-    return str(subscriber_id or "").strip() in allowed_subscribers()
+    connection = transport.connection_for(binding)
+    return bool(
+        connection
+        and binding.status == ConversationBinding.Status.ACTIVE
+        and _subject_allowed(connection, binding.subject)
+    )
 
 
 # ── Intake ────────────────────────────────────────────────────────────
@@ -139,72 +147,51 @@ class IntakeResult:
     reason: str  # queued | duplicate | handoff | disabled | not_allowed | empty
 
 
-def _external_id(subscriber_id: str, text: str, external_id: str) -> str:
-    # O digest cabe no índice legado, sem truncar a identidade do fornecedor.
+def _external_id(external_id: str) -> str:
+    # O digest cabe no índice, sem truncar a identidade do fornecedor.
     # O envelope conserva o valor integral para auditoria e conflito.
     return "e:" + hashlib.sha256(str(external_id).encode()).hexdigest() if external_id else ""
 
 
 @_observed("intake")
-def receive_inbound(
-    *,
-    subscriber_id: str,
-    text: str,
-    external_id: str = "",
-    profile: dict | None = None,
-    envelope: dict | None = None,
-) -> IntakeResult:
-    """Guarda a mensagem e enfileira o turno. Idempotente por ``external_id``."""
-    if not isinstance(text, str) or not isinstance(subscriber_id, (str, int)) or isinstance(subscriber_id, bool):
+def receive_inbound(event: InboundEvent) -> IntakeResult:
+    """Persiste um evento normalizado; identidade só é concedida pelo adapter."""
+    if not isinstance(event, InboundEvent):
         return IntakeResult(None, None, False, "invalid_input")
-    subscriber_id = str(subscriber_id or "").strip()
-    text = text.strip()
-    if not subscriber_id or not text:
+    subject = event.scope.subject.strip()
+    text = event.text.strip()
+    if not subject or not text:
         return IntakeResult(None, None, False, "empty")
     reason = disabled_reason()
     if reason:
         logger.warning("concierge.disabled reason=%s", reason)
         return IntakeResult(None, None, False, "disabled")
-    if not is_allowed(subscriber_id, profile or {}):
+    if len(event.event_id) > 4096 or len(text) > 16000 or len(subject) > 512:
+        return IntakeResult(None, None, False, "invalid_input")
+    from . import transport
+
+    connection = transport.connection_for_key(event.scope.connection_key)
+    if connection is None or (
+        event.scope.provider,
+        event.scope.account,
+        event.scope.channel,
+    ) != (connection.provider, connection.account, connection.channel):
+        return IntakeResult(None, None, False, "scope_conflict")
+    if not _subject_allowed(connection, subject):
         logger.info("concierge.not_allowed")
         return IntakeResult(None, None, False, "not_allowed")
-
-    if not isinstance(external_id, str):
-        return IntakeResult(None, None, False, "event_id_required")
-    legacy = not external_id.strip()
-    if legacy and not config().get("legacy_read_handoff_enabled"):
-        return IntakeResult(None, None, False, "event_id_required")
-    if legacy:
-        external_id = ""
-    if len(external_id) > 4096 or len(text) > 16000 or len(subscriber_id) > 512:
-        return IntakeResult(None, None, False, "invalid_input")
-    identity = {"provider": str(config().get("provider") or "manychat"),
-                "account": str(config().get("account_id") or "legacy_unverified"),
-                "transport_channel": str(config().get("transport_channel") or "whatsapp")}
-    if identity["account"] == "legacy_unverified":
-        return IntakeResult(None, None, False, "account_required")
-    envelope = dict(envelope or {})
-    for key, value in identity.items():
-        envelope_key = "account_id" if key == "account" else key
-        if envelope_key in envelope and envelope[envelope_key] != value:
-            return IntakeResult(None, None, False, "identity_conflict")
-    envelope.update(version=2, event_id=external_id, subject=subscriber_id, account_id=identity["account"], provider=identity["provider"], transport_channel=identity["transport_channel"])
-    envelope["input_assurance"] = "legacy_unverified" if legacy else "provider_event"
-    envelope["profile"] = profile or {}
-    # Marcador interno é derivado da autenticação/conta, jamais copiado do body.
-    envelope.pop("window_evidence", None)
-    from .transport import whatsapp_interaction_at
-
-    interaction_at = whatsapp_interaction_at(envelope, timezone.now()) if legacy else None
-    if interaction_at:
-        envelope["window_evidence"] = {
-            "source": "manychat_whatsapp_last_interaction",
-            "at": interaction_at.isoformat(),
-            "timezone": config()["whatsapp_interaction_timezone"],
-        }
-    ext = _external_id(subscriber_id, text, external_id)
+    verified_event = event.event_identity_assurance == "verified" and bool(event.event_id)
+    envelope = event.as_envelope()
+    envelope["input_assurance"] = "provider_event" if verified_event else "at_least_once"
+    ext = _external_id(event.event_id) if verified_event else ""
     with transaction.atomic():
-        conversation = _get_or_create_conversation(subscriber_id, identity)
+        binding = _get_or_create_binding(event)
+        if binding.connection_key != event.scope.connection_key:
+            return IntakeResult(binding.conversation_id, None, False, "scope_conflict")
+        if not is_allowed(binding):
+            logger.info("concierge.not_allowed")
+            return IntakeResult(binding.conversation_id, None, False, "not_allowed")
+        conversation = binding.conversation
         conversation = Conversation.objects.select_for_update().get(pk=conversation.pk)
         values = {
             "role": ConversationMessage.Role.USER,
@@ -212,29 +199,31 @@ def receive_inbound(
             "text": text,
             "content": [{"type": "text", "text": text}],
             "envelope": envelope,
+            "binding": binding,
         }
-        if legacy:
-            # PK identifica o recebimento local, nunca um evento do fornecedor.
-            # Sem ID confiável não há dedupe de retry nem exatamente-uma-intenção.
+        if not verified_event:
+            # Sem ID verificável, cada POST autenticado é receipt local at-least-once.
             message = ConversationMessage.objects.create(conversation=conversation, external_id="", **values)
             created = True
         else:
             message, created = ConversationMessage.objects.get_or_create(
-                conversation=conversation, external_id=ext, defaults=values,
+                binding=binding,
+                external_id=ext,
+                defaults={"conversation": conversation, **values},
             )
-        if not created and (message.text != text or message.envelope.get("event_id") != external_id or message.envelope.get("payload_hash") != envelope.get("payload_hash")):
+        if not created and (message.text != text or message.envelope.get("event_id") != event.event_id or message.envelope.get("payload_hash") != envelope.get("payload_hash")):
             return IntakeResult(conversation.pk, message.pk, False, "intent_conflict")
-        if created and not legacy:
-            # Recibo legado não comprova nova interação nem renova a janela.
-            Conversation.objects.filter(pk=conversation.pk).update(last_inbound_at=timezone.now())
+        if created:
+            Conversation.objects.filter(pk=conversation.pk).update(last_inbound_at=event.received_at)
+            ConversationBinding.objects.filter(pk=binding.pk).update(last_inbound_at=event.received_at)
         if conversation.state != Conversation.State.ACTIVE:
             return IntakeResult(conversation.pk, message.pk, False, "handoff")
         # Replay repara trabalho perdido; efeito e agendamento têm o mesmo commit.
-        _enqueue_turn(conversation)
-    return IntakeResult(conversation.pk, message.pk, True, "legacy_read_only" if legacy else "queued" if created else "duplicate")
+        _enqueue_turn(conversation, binding)
+    return IntakeResult(conversation.pk, message.pk, True, "queued" if created else "duplicate")
 
 
-def _enqueue_turn(conversation: Conversation) -> None:
+def _enqueue_turn(conversation: Conversation, binding: ConversationBinding) -> None:
     from shopman.shop.directives import create_deduped
 
     delay = int(config().get("dispatch_delay_seconds") or 1)
@@ -243,26 +232,60 @@ def _enqueue_turn(conversation: Conversation) -> None:
     # e o ManyChat cortaria a chamada em 10 s.
     create_deduped(
         TURN_TOPIC,
-        payload={"conversation_id": conversation.pk, "contract_version": 2},
-        dedupe_key=f"{TURN_TOPIC}:{conversation.pk}",
+        payload={"conversation_id": conversation.pk, "binding_id": binding.pk, "contract_version": 3},
+        dedupe_key=f"{TURN_TOPIC}:{conversation.pk}:{binding.pk}",
         available_at=timezone.now() + timedelta(seconds=max(delay, 1)),
     )
 
 
-def _get_or_create_conversation(subscriber_id: str, identity: dict) -> Conversation:
-    conversation, _ = Conversation.objects.get_or_create(
-        subscriber_id=subscriber_id,
-        **identity,
-        defaults={"channel_ref": str(config().get("channel_ref") or "whatsapp")},
-    )
-    return conversation
-
-
-def identify(conversation: Conversation, profile: dict | None = None) -> Conversation:
-    """Enriquecimento pelo adapter autorizado, fora do ACK; sem promover o body."""
-    from shopman.storefront.concierge import transport
+def _get_or_create_binding(event: InboundEvent) -> ConversationBinding:
+    """Resolve identidade exata; nunca une jornadas por nome/telefone do payload."""
+    scope = event.scope
+    binding = ConversationBinding.objects.select_related("conversation").filter(
+        provider=scope.provider,
+        account=scope.account,
+        transport_channel=scope.channel,
+        subject=scope.subject,
+    ).first()
+    if binding:
+        return binding
     try:
-        info = transport.identity_for(conversation, profile)
+        with transaction.atomic():
+            conversation = Conversation.objects.create(
+                channel_ref=str(config().get("channel_ref") or "web")
+            )
+            return ConversationBinding.objects.create(
+                conversation=conversation,
+                connection_key=scope.connection_key,
+                provider=scope.provider,
+                account=scope.account,
+                transport_channel=scope.channel,
+                subject=scope.subject,
+                status=ConversationBinding.Status.ACTIVE,
+                identity_assurance="transport_subject",
+                activated_at=event.received_at,
+            )
+    except IntegrityError:
+        # Outro ACK venceu a corrida. A unicidade do binding escolhe o vencedor;
+        # o savepoint remove também a conversa órfã desta tentativa.
+        return ConversationBinding.objects.select_related("conversation").get(
+            provider=scope.provider,
+            account=scope.account,
+            transport_channel=scope.channel,
+            subject=scope.subject,
+        )
+
+
+def identify(
+    conversation: Conversation,
+    binding: ConversationBinding,
+    profile: dict | None = None,
+) -> Conversation:
+    """Enriquece identidade pelo adapter; conflito contém a conversa."""
+    from shopman.storefront.concierge import transport
+
+    try:
+        info = transport.identity_for(binding, profile)
     except Exception:
         logger.warning("concierge.identify failed conversation=%s", conversation.pk)
         info = None
@@ -272,10 +295,31 @@ def identify(conversation: Conversation, profile: dict | None = None) -> Convers
     from shopman.guestman.services import customer as customer_service
 
     customer = customer_service.get_by_uuid(str(info.uuid))
-    conversation.phone = (info.phone or "").strip()
-    conversation.customer_name = (info.name or "").strip()
-    conversation.customer_ref = getattr(customer, "ref", "") or ""
+    proposed = (
+        (info.phone or "").strip(),
+        getattr(customer, "ref", "") or "",
+        (info.name or "").strip(),
+    )
+    established = (conversation.phone, conversation.customer_ref, conversation.customer_name)
+    if any(old and new and old != new for old, new in zip(established[:2], proposed[:2], strict=True)):
+        Conversation.objects.filter(pk=conversation.pk).update(
+            state=Conversation.State.HANDOFF,
+            handoff_reason="conflito de identidade",
+            handoff_at=timezone.now(),
+            turn_fence=F("turn_fence") + 1,
+            claim_until=None,
+        )
+        _alert(conversation, "concierge_identity_conflict", "Identidade divergente; atendimento humano mantido.")
+        return conversation
+    conversation.phone = established[0] or proposed[0]
+    conversation.customer_ref = established[1] or proposed[1]
+    conversation.customer_name = established[2] or proposed[2]
     conversation.save(update_fields=["phone", "customer_name", "customer_ref", "updated_at"])
+    if conversation.customer_ref:
+        ConversationBinding.objects.filter(pk=binding.pk).update(
+            identity_assurance="verified_customer"
+        )
+        binding.identity_assurance = "verified_customer"
     return conversation
 
 
@@ -289,83 +333,98 @@ class TurnResult:
     handoff: bool = False
     processed_message_ids: list[int] = field(default_factory=list)
     pending_more: bool = False
-    fallback: str = ""  # vazio = o modelo respondeu; senão, a razão do fallback
+    fallback: str = ""
 
 
-def unanswered_inbound(conversation: Conversation) -> list[ConversationMessage]:
-    """Consumo explícito: notas/saídas nunca reconhecem entradas por posição."""
-    pending = conversation.messages.filter(
-        kind=ConversationMessage.Kind.INBOUND, consumed_by__isnull=True,
-        envelope__version=2,
+def unanswered_inbound(
+    conversation: Conversation, binding: ConversationBinding
+) -> list[ConversationMessage]:
+    """Retorna somente entradas v3 pendentes do vínculo causal."""
+    return list(
+        conversation.messages.filter(
+            binding=binding,
+            kind=ConversationMessage.Kind.INBOUND,
+            consumed_by__isnull=True,
+            envelope__version=3,
+        ).order_by("id")
     )
-    if not config().get("legacy_read_handoff_enabled"):
-        pending = pending.filter(_nonlegacy_input())
-    return list(pending.order_by("id"))
-
-
-def _nonlegacy_input():
-    # Envelopes v2 anteriores à compatibilidade não têm input_assurance.
-    return Q(envelope__input_assurance__isnull=True) | ~Q(envelope__input_assurance="legacy_unverified")
 
 
 class TurnRevoked(Exception):
-    """O claim não tem mais autoridade; conservar entradas e efeitos já registrados."""
+    """O claim não tem mais autoridade; preservar entradas e efeitos."""
 
 
 def assert_turn_authority(conversation, *, for_mutation=True):
-    from .transport import adapter_for
-    current = Conversation.objects.get(pk=conversation.pk)
-    if adapter_for(current) is None:
-        raise TurnRevoked("transport_scope_mismatch")
-    identity_fields = ("provider", "account", "transport_channel", "subscriber_id", "customer_ref", "phone", "channel_ref")
-    if any(getattr(current, key) != getattr(conversation, key) for key in identity_fields):
-        raise TurnRevoked("identity_changed")
-    if not is_enabled() or not is_allowed(current.subscriber_id) or current.state != Conversation.State.ACTIVE:
-        raise TurnRevoked("contained")
-    if for_mutation and config().get("read_only"):
-        raise TurnRevoked("read_only")
-    if getattr(conversation, "_legacy_read_only", False):
-        if for_mutation or not config().get("legacy_read_handoff_enabled"):
-            raise TurnRevoked("legacy_read_only")
+    from . import transport
+
+    binding_id = getattr(conversation, "_binding_id", None)
     fence = getattr(conversation, "_turn_fence", None)
-    if for_mutation and fence is None:
-        # Caller interno com objeto recarregado não pode perder a contenção
-        # legada só porque os atributos transitórios do claim não estão nele.
-        latest = current.messages.filter(kind=ConversationMessage.Kind.INBOUND).order_by("-pk").values_list("envelope", flat=True).first()
-        if latest and latest.get("input_assurance") == "legacy_unverified":
-            raise TurnRevoked("legacy_read_only")
-    if fence is not None:
-        if current.turn_fence != fence or not current.claim_until or current.claim_until <= timezone.now():
-            raise TurnRevoked("claim_expired")
-        if for_mutation and current.messages.filter(
-            kind=ConversationMessage.Kind.INBOUND, envelope__version=2,
-            pk__gt=conversation._inbound_max_id,
-        ).exists():
-            raise TurnRevoked("new_input")
+    if not binding_id or fence is None:
+        raise TurnRevoked("claim_required")
+    current = Conversation.objects.get(pk=conversation.pk)
+    binding = ConversationBinding.objects.filter(pk=binding_id, conversation=current).first()
+    if binding is None or transport.adapter_for(binding) is None:
+        raise TurnRevoked("transport_scope_mismatch")
+    if (current.customer_ref, current.phone, current.channel_ref) != (
+        conversation.customer_ref,
+        conversation.phone,
+        conversation.channel_ref,
+    ):
+        raise TurnRevoked("identity_changed")
+    if not is_enabled() or not is_allowed(binding) or current.state != Conversation.State.ACTIVE:
+        raise TurnRevoked("contained")
+    if current.turn_fence != fence or not current.claim_until or current.claim_until <= timezone.now():
+        raise TurnRevoked("claim_expired")
+    if for_mutation and not getattr(conversation, "_commercial_authority", False):
+        raise TurnRevoked("commercial_authority_missing")
+    if for_mutation and current.messages.filter(
+        kind=ConversationMessage.Kind.INBOUND,
+        envelope__version=3,
+        pk__gt=conversation._inbound_max_id,
+    ).exists():
+        raise TurnRevoked("new_input")
     return current
 
 
-def _claim(conversation_id):
-    from .transport import adapter_for
+def _claim(conversation_id: int, binding_id: int):
+    from . import transport
+
     with transaction.atomic():
         conversation = Conversation.objects.select_for_update().get(pk=conversation_id)
-        if adapter_for(conversation) is None:
-            return conversation, []
-        if not is_enabled() or not is_allowed(conversation.subscriber_id) or conversation.state != Conversation.State.ACTIVE:
-            return conversation, []
+        binding = ConversationBinding.objects.select_for_update().get(
+            pk=binding_id, conversation=conversation
+        )
+        if transport.adapter_for(binding) is None:
+            return conversation, binding, []
+        if not is_enabled() or not is_allowed(binding) or conversation.state != Conversation.State.ACTIVE:
+            return conversation, binding, []
         if conversation.claim_until and conversation.claim_until > timezone.now():
-            return conversation, []
-        inbound = unanswered_inbound(conversation)[:20]
+            conversation._claim_busy = True
+            return conversation, binding, []
+        inbound = unanswered_inbound(conversation, binding)[:20]
         if not inbound:
-            return conversation, []
+            return conversation, binding, []
         conversation.turn_fence += 1
         conversation.claim_until = timezone.now() + timedelta(seconds=120)
         conversation.save(update_fields=["turn_fence", "claim_until"])
+        adapter = transport.adapter_for(binding)
+        connection = transport.connection_for(binding)
         conversation._turn_fence = conversation.turn_fence
+        conversation._binding = binding
+        conversation._binding_id = binding.pk
         conversation._inbound_max_id = inbound[-1].pk
-        conversation._inbound_ids = [m.pk for m in inbound]
-        conversation._legacy_read_only = bool(config().get("read_only")) or any(m.envelope.get("input_assurance") == "legacy_unverified" for m in inbound)
-        return conversation, inbound
+        conversation._inbound_ids = [message.pk for message in inbound]
+        conversation._limited_event_assurance = bool(
+            config().get("read_only")
+            or (connection and connection.options.get("read_only"))
+            or not adapter.capabilities.stable_event_identity_verified
+            or any(message.envelope.get("input_assurance") != "provider_event" for message in inbound)
+        )
+        conversation._commercial_authority = bool(
+            not conversation._limited_event_assurance
+            and binding.identity_assurance == "verified_customer"
+        )
+        return conversation, binding, inbound
 
 
 def _looks_like_media(text: str) -> bool:
@@ -385,39 +444,76 @@ def _bump_turn_counter(conversation: Conversation) -> int:
     return conversation.turns_today
 
 
+def _best_window_evidence(
+    binding: ConversationBinding,
+    inbound: list[ConversationMessage],
+    *,
+    purpose: str = "reply",
+):
+    """Escolhe a prova válida mais duradoura sem fundir evidências."""
+    from . import transport
+
+    now = timezone.now()
+    candidates = []
+    for message in inbound:
+        evidence = (message.envelope or {}).get("window_evidence")
+        decision = transport.response_authorization(
+            binding, evidence, now, purpose=purpose
+        )
+        if decision.allowed and decision.valid_until is not None:
+            candidates.append((decision.valid_until, message.pk, evidence))
+    return max(candidates, default=(None, None, None))[2]
+
+
 @_observed("turn")
-def run_turn(conversation_id: int, *, client=None) -> TurnResult:
-    """Claim curto, modelo fora de lock e consumo junto da intenção de saída."""
-    conversation, inbound = _claim(conversation_id)
-    result = TurnResult(conversation_id=conversation.pk)
+def run_turn(conversation_id: int, binding_id: int, *, client=None) -> TurnResult:
+    """Processa uma entrada pelo vínculo causal e preserva a conversa lógica."""
+    conversation, binding, inbound = _claim(conversation_id, binding_id)
+    result = TurnResult(
+        conversation_id=conversation.pk,
+        pending_more=bool(getattr(conversation, "_claim_busy", False)),
+    )
     if not inbound:
         return result
-    ids = [m.pk for m in inbound]
+    ids = [message.pk for message in inbound]
+    window_evidence = _best_window_evidence(binding, inbound)
     from shopman.storefront.concierge import agent as agent_module
+
     try:
         assert_turn_authority(conversation, for_mutation=False)
-        # Escape funciona mesmo sem chamada à IA.
-        if any(m.text.casefold().strip(" .!?") in {
-            "humano", "atendente", "quero falar com alguém", "quero falar com alguem",
-            "falar com atendente", "quero atendimento humano",
-        } for m in inbound):
-            mark_handoff(conversation, "pedido do cliente", consumed_ids=ids)
+        human_phrases = {
+            "humano",
+            "atendente",
+            "quero falar com alguém",
+            "quero falar com alguem",
+            "falar com atendente",
+            "quero atendimento humano",
+        }
+        if any(message.text.casefold().strip(" .!?") in human_phrases for message in inbound):
+            mark_handoff(conversation, binding, "pedido do cliente", consumed_ids=ids)
             return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids)
-        if not conversation.customer_ref and not conversation._legacy_read_only:
-            identify(conversation, inbound[0].envelope.get("profile") or {})
+        if not conversation.customer_ref and not conversation._limited_event_assurance:
+            identify(conversation, binding, inbound[0].envelope.get("profile") or {})
+            conversation._commercial_authority = bool(
+                conversation.customer_ref
+                and binding.identity_assurance == "verified_customer"
+            )
         assert_turn_authority(conversation, for_mutation=False)
-        if conversation._legacy_read_only:
-            # C01: somente leitura pública e escape humano; sem IA/enriquecimento.
-            # Batch misto é contido integralmente, sem promover o texto legado.
+        if conversation._limited_event_assurance:
             from . import tools
-            reply = copy_message("CONCIERGE_LEGACY_READ_ONLY")
+
+            reply = copy_message("CONCIERGE_LIMITED_ASSURANCE")
             menu_requests = {"menu", "cardápio", "cardapio", "oi", "olá", "ola"}
-            if any(m.text.casefold().strip(" .!?") in menu_requests or m.text.casefold().startswith("#menu ") for m in inbound):
+            if any(
+                message.text.casefold().strip(" .!?") in menu_requests
+                or message.text.casefold().startswith("#menu ")
+                for message in inbound
+            ):
                 ctx = tools.ToolContext(conversation=conversation, channel_ref=conversation.channel_ref)
                 reply = tools.render_result("browse_menu", tools.browse_menu(ctx)) + "\n\n" + reply
             outcome = agent_module.AgentOutcome(reply_text=reply)
-            result.fallback = "legacy_read_only"
-        elif all(_looks_like_media(m.text) for m in inbound):
+            result.fallback = "limited_assurance"
+        elif all(_looks_like_media(message.text) for message in inbound):
             outcome = agent_module.AgentOutcome(reply_text=copy_message("CONCIERGE_MEDIA_UNSUPPORTED"))
             result.fallback = "media"
         elif _bump_turn_counter(conversation) > int(config().get("max_turns_per_day") or 80):
@@ -426,44 +522,82 @@ def run_turn(conversation_id: int, *, client=None) -> TurnResult:
         else:
             try:
                 outcome = agent_module.run_agent(
-                    conversation=conversation, history=agent_module.history_for(conversation), client=client,
+                    conversation=conversation,
+                    history=agent_module.history_for(conversation),
+                    client=client,
                 )
             except TurnRevoked:
                 raise
             except Exception:
                 logger.error("concierge.turn_failed conversation=%s", conversation.pk)
-                Conversation.objects.filter(pk=conversation.pk).update(consecutive_failures=F("consecutive_failures") + 1)
-                _alert(conversation, "concierge_unavailable", "Resposta automática indisponível; contexto preservado.")
+                Conversation.objects.filter(pk=conversation.pk).update(
+                    consecutive_failures=F("consecutive_failures") + 1
+                )
+                _alert(
+                    conversation,
+                    "concierge_unavailable",
+                    "Resposta automática indisponível; contexto preservado.",
+                )
                 outcome = agent_module.AgentOutcome(reply_text=copy_message("CONCIERGE_UNAVAILABLE"))
                 result.fallback = "error"
         if outcome.handoff:
-            mark_handoff(conversation, outcome.handoff_reason or "pedido do cliente", consumed_ids=ids)
+            mark_handoff(
+                conversation,
+                binding,
+                outcome.handoff_reason or "pedido do cliente",
+                consumed_ids=ids,
+            )
             return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids)
         from .transport import semantic_blocks
-        primary = semantic_blocks(conversation, outcome.reply_text) if outcome.reply_text else []
-        texts = [*primary, *[t for t in outcome.extra_replies if t and t.strip()]]
+
+        primary = semantic_blocks(binding, outcome.reply_text) if outcome.reply_text else []
+        texts = [*primary, *[text for text in outcome.extra_replies if text and text.strip()]]
         with transaction.atomic():
             Conversation.objects.select_for_update().get(pk=conversation.pk)
             assert_turn_authority(conversation, for_mutation=False)
             _persist_outcome(conversation, outcome)
             prepared = []
-            for i, text in enumerate(texts):
-                prepared.append(_prepare_reply(
-                    conversation, text, quote_token=getattr(outcome, "quote_token", "") if i == len(primary) - 1 else "",
-                    disclosure=getattr(outcome, "disclosure", {}) if i == len(primary) - 1 else {},
-                    depends_on=prepared[-1].pk if prepared else None,
-                ))
+            for index, text in enumerate(texts):
+                prepared.append(
+                    _prepare_reply(
+                        conversation,
+                        binding,
+                        text,
+                        quote_token=(
+                            getattr(outcome, "quote_token", "")
+                            if index == len(primary) - 1
+                            else ""
+                        ),
+                        disclosure=(
+                            getattr(outcome, "disclosure", {})
+                            if index == len(primary) - 1
+                            else {}
+                        ),
+                        depends_on=prepared[-1].pk if prepared else None,
+                        window_evidence=window_evidence,
+                    )
+                )
             if not prepared:
-                # Sem resposta útil não alegar consumo. Contenção evita loop de custo.
-                _alert(conversation, "concierge_empty_output", "Entrada sem resposta útil; atendimento necessário.")
-                Conversation.objects.filter(pk=conversation.pk).update(state=Conversation.State.HANDOFF)
+                _alert(
+                    conversation,
+                    "concierge_empty_output",
+                    "Entrada sem resposta útil; atendimento necessário.",
+                )
+                Conversation.objects.filter(pk=conversation.pk).update(
+                    state=Conversation.State.HANDOFF
+                )
                 return result
-            ConversationMessage.objects.filter(pk__in=ids, consumed_by__isnull=True).update(consumed_by=conversation.turn_fence)
+            ConversationMessage.objects.filter(
+                pk__in=ids, binding=binding, consumed_by__isnull=True
+            ).update(consumed_by=conversation.turn_fence)
             Conversation.objects.filter(pk=conversation.pk).update(
-                consecutive_failures=0 if not result.fallback else F("consecutive_failures"),
+                consecutive_failures=(
+                    0 if not result.fallback else F("consecutive_failures")
+                ),
                 input_tokens=F("input_tokens") + int(outcome.usage.get("input_tokens") or 0),
                 output_tokens=F("output_tokens") + int(outcome.usage.get("output_tokens") or 0),
-                cache_read_tokens=F("cache_read_tokens") + int(outcome.usage.get("cache_read_input_tokens") or 0),
+                cache_read_tokens=F("cache_read_tokens")
+                + int(outcome.usage.get("cache_read_input_tokens") or 0),
                 last_order_ref=outcome.order_ref or conversation.last_order_ref,
             )
         result.processed_message_ids = ids
@@ -473,8 +607,10 @@ def run_turn(conversation_id: int, *, client=None) -> TurnResult:
     except TurnRevoked:
         result.fallback = "revoked"
     finally:
-        Conversation.objects.filter(pk=conversation.pk, turn_fence=conversation.turn_fence).update(claim_until=None)
-    result.pending_more = bool(unanswered_inbound(conversation))
+        Conversation.objects.filter(
+            pk=conversation.pk, turn_fence=conversation.turn_fence
+        ).update(claim_until=None)
+    result.pending_more = bool(unanswered_inbound(conversation, binding))
     return result
 
 
@@ -486,8 +622,7 @@ def _persist_outcome(conversation: Conversation, outcome) -> None:
     for message in outcome.messages:
         role = message["role"]
         content = message["content"]
-        if role == "assistant" and not any(b.get("type") == "tool_use" for b in content):
-            # A resposta final é gravada por ``_send_reply`` (com o resultado do envio).
+        if role == "assistant" and not any(block.get("type") == "tool_use" for block in content):
             continue
         ConversationMessage.objects.create(
             conversation=conversation,
@@ -498,75 +633,207 @@ def _persist_outcome(conversation: Conversation, outcome) -> None:
         )
 
 
-def _prepare_reply(conversation, text, *, quote_token="", disclosure=None, depends_on=None, purpose="reply"):
+def _prepare_reply(
+    conversation,
+    binding,
+    text,
+    *,
+    quote_token="",
+    disclosure=None,
+    depends_on=None,
+    purpose="reply",
+    window_evidence=None,
+):
     return ConversationMessage.objects.create(
-        conversation=conversation, role=ConversationMessage.Role.ASSISTANT,
-        kind=ConversationMessage.Kind.REPLY, text=text,
-        content=[{"type": "text", "text": text}], transport_state="prepared",
-        envelope={"version": 2, "turn_fence": conversation.turn_fence, "purpose": purpose,
-                  "legacy_read_only": bool(getattr(conversation, "_legacy_read_only", False)),
-                  "quote_token": quote_token, "disclosure": disclosure or {}, "depends_on": depends_on,
-                  "inbound_max_id": getattr(conversation, "_inbound_max_id", None), "content_hash": hashlib.sha256(text.encode()).hexdigest()},
+        conversation=conversation,
+        binding=binding,
+        role=ConversationMessage.Role.ASSISTANT,
+        kind=ConversationMessage.Kind.REPLY,
+        text=text,
+        content=[{"type": "text", "text": text}],
+        transport_state="prepared",
+        envelope={
+            "version": 3,
+            "connection_key": binding.connection_key,
+            "turn_fence": conversation.turn_fence,
+            "purpose": purpose,
+            "quote_token": quote_token,
+            "disclosure": disclosure or {},
+            "depends_on": depends_on,
+            "inbound_max_id": getattr(conversation, "_inbound_max_id", None),
+            "window_evidence": window_evidence,
+            "content_hash": hashlib.sha256(text.encode()).hexdigest(),
+        },
     )
+
+
+def _next_attempt_no(message: ConversationMessage) -> int:
+    current = message.outbound_attempts.aggregate(value=Max("attempt_no"))["value"] or 0
+    return current + 1
 
 
 @_observed("output")
 def _dispatch_reply(conversation, message):
     from shopman.storefront.concierge import transport
+
     with transaction.atomic():
         current = Conversation.objects.select_for_update().get(pk=conversation.pk)
-        message.refresh_from_db()
+        message = ConversationMessage.objects.select_for_update().get(pk=message.pk)
+        binding = ConversationBinding.objects.select_for_update().get(pk=message.binding_id)
         if message.transport_state != "prepared":
             return message
-        handoff_ack = message.envelope.get("purpose") == "handoff_ack" and current.state == Conversation.State.HANDOFF
-        enabled = bool(config().get("enabled") and config().get("contract_version") == 2) if handoff_ack else is_enabled()
-        if message.envelope.get("legacy_read_only") and not config().get("legacy_read_handoff_enabled"):
-            enabled = False
+        purpose = message.envelope.get("purpose") or "reply"
+        handoff_ack = purpose == "handoff_ack" and current.state == Conversation.State.HANDOFF
+        enabled = (
+            bool(config().get("enabled") and config().get("contract_version") == 3)
+            if handoff_ack
+            else is_enabled()
+        )
         predecessor = message.envelope.get("depends_on")
-        if predecessor and not current.messages.filter(pk=predecessor, transport_state="accepted").exists():
-            message.transport_state = "not_applied"
-            message.envelope = {**message.envelope, "code": "preceding_block_pending"}
-        elif not enabled or not is_allowed(current.subscriber_id) or (current.state != Conversation.State.ACTIVE and not handoff_ack) or current.turn_fence != message.envelope.get("turn_fence"):
-            message.transport_state = "not_applied"
-            message.envelope = {**message.envelope, "code": "contained"}
-        elif not transport.response_allowed(current, timezone.now()):
-            message.transport_state = "not_applied"
-            message.envelope = {**message.envelope, "code": "window_closed"}
+        code = ""
+        if predecessor and not current.messages.filter(
+            pk=predecessor, transport_state="accepted"
+        ).exists():
+            code = "preceding_block_pending"
+        elif (
+            not enabled
+            or not is_allowed(binding)
+            or (current.state != Conversation.State.ACTIVE and not handoff_ack)
+            or current.turn_fence != message.envelope.get("turn_fence")
+            or message.envelope.get("connection_key") != binding.connection_key
+        ):
+            code = "contained"
         else:
-            message.transport_state = "executing"
+            authorization = transport.response_authorization(
+                binding,
+                message.envelope.get("window_evidence"),
+                timezone.now(),
+                purpose=purpose,
+            )
+            if not authorization.allowed:
+                code = authorization.code
+        attempt = OutboundAttempt.objects.create(
+            message=message,
+            binding=binding,
+            attempt_no=_next_attempt_no(message),
+            state=(
+                OutboundAttempt.State.NOT_APPLIED
+                if code
+                else OutboundAttempt.State.EXECUTING
+            ),
+            code=code,
+            payload_hash=message.envelope.get("content_hash")
+            or hashlib.sha256(message.text.encode()).hexdigest(),
+            completed_at=timezone.now() if code else None,
+        )
+        message.transport_state = attempt.state
+        message.envelope = {**message.envelope, "code": code, "attempt_no": attempt.attempt_no}
         message.save(update_fields=["transport_state", "envelope"])
-    if message.transport_state != "executing":
-        _alert(current, "concierge_output_blocked", "Resposta preparada e contida; verificar próxima ação de atendimento.")
+    if attempt.state != OutboundAttempt.State.EXECUTING:
+        _alert(
+            current,
+            "concierge_output_blocked",
+            "Resposta preparada e contida; verificar próxima ação de atendimento.",
+        )
         return message
-    # O início desta tentativa foi autorizado sob lock. Handoff posterior contém
-    # novas tentativas; esta precisa de reconciliação, nunca de repetição cega.
     try:
-        outcome = transport.send_for(current, message.text)
-        outcome = transport.normalize_outcome(outcome)
+        outcome = transport.send_for(binding, message.text)
     except Exception as exc:
-        logger.warning("concierge.dispatch.acceptance_unconfirmed conversation=%s message=%s exception_type=%s", current.pk, message.pk, type(exc).__name__)
-        outcome = transport.SendOutcome("unknown", "acceptance_unconfirmed")
-    message.transport_state = outcome.state
-    message.envelope = {**message.envelope, "code": outcome.code}
-    message.delivered = None  # Aceite não comprova chegada ao aparelho.
-    message.save(update_fields=["transport_state", "envelope", "delivered"])
+        logger.warning(
+            "concierge.dispatch.acceptance_unconfirmed conversation=%s message=%s exception_type=%s",
+            current.pk,
+            message.pk,
+            type(exc).__name__,
+        )
+        from .contracts import SendOutcome
+
+        outcome = SendOutcome("unknown", "acceptance_unconfirmed")
+    completed_at = timezone.now()
+    try:
+        with transaction.atomic():
+            attempt = OutboundAttempt.objects.select_for_update().get(pk=attempt.pk)
+            if attempt.state == OutboundAttempt.State.EXECUTING:
+                attempt.state = outcome.state
+                attempt.code = outcome.code
+                attempt.provider_receipt_ref = outcome.provider_receipt_ref
+                attempt.completed_at = completed_at
+                attempt.save(
+                    update_fields=["state", "code", "provider_receipt_ref", "completed_at"]
+                )
+                ConversationMessage.objects.filter(pk=message.pk).update(
+                    transport_state=outcome.state,
+                    envelope={**message.envelope, "code": outcome.code},
+                )
+    except IntegrityError:
+        OutboundAttempt.objects.filter(pk=attempt.pk).update(
+            state=OutboundAttempt.State.UNKNOWN,
+            code="provider_receipt_conflict",
+            provider_receipt_ref="",
+            completed_at=completed_at,
+        )
+        ConversationMessage.objects.filter(pk=message.pk).update(
+            transport_state=OutboundAttempt.State.UNKNOWN
+        )
+        outcome = type(outcome)("unknown", "provider_receipt_conflict")
+    message.refresh_from_db()
     if outcome.state == "accepted":
-        Conversation.objects.filter(pk=current.pk).update(last_outbound_at=timezone.now())
+        Conversation.objects.filter(pk=current.pk).update(last_outbound_at=completed_at)
+        ConversationBinding.objects.filter(pk=binding.pk).update(last_outbound_at=completed_at)
     else:
-        _alert(current, "concierge_output_pending", "Resposta com resultado " + outcome.state + "; consultar evidência antes de agir.")
+        _alert(
+            current,
+            "concierge_output_pending",
+            f"Resposta com resultado {outcome.state}; consultar evidência antes de agir.",
+        )
     return message
 
 
-def _send_reply(conversation: Conversation, text: str) -> ConversationMessage:
-    return _dispatch_reply(conversation, _prepare_reply(conversation, text))
+def _send_reply(
+    conversation: Conversation, binding: ConversationBinding, text: str, *, window_evidence=None
+) -> ConversationMessage:
+    return _dispatch_reply(
+        conversation,
+        _prepare_reply(
+            conversation, binding, text, window_evidence=window_evidence
+        ),
+    )
 
 
 # ── Handoff ───────────────────────────────────────────────────────────
 
 
-def mark_handoff(conversation: Conversation, reason: str, *, consumed_ids=()) -> bool:
-    """Posse local primeiro. Espelho remoto falho nunca devolve autoridade ao bot."""
+def _execute_handoff(binding: ConversationBinding, on: bool):
+    """Sincroniza a atribuição idempotente e conserva incerteza por vínculo."""
     from shopman.storefront.concierge import transport
+
+    ConversationBinding.objects.filter(pk=binding.pk).update(
+        handoff_sync_state="executing"
+    )
+    try:
+        outcome = transport.handoff_for(binding, on)
+    except Exception as exc:
+        logger.warning(
+            "concierge.handoff.acceptance_unconfirmed binding=%s exception_type=%s",
+            binding.pk,
+            type(exc).__name__,
+        )
+        from .contracts import HandoffOutcome
+
+        outcome = HandoffOutcome("unknown", "acceptance_unconfirmed")
+    ConversationBinding.objects.filter(pk=binding.pk).update(
+        handoff_sync_state=outcome.state
+    )
+    return outcome
+
+
+def mark_handoff(
+    conversation: Conversation,
+    causal_binding: ConversationBinding,
+    reason: str,
+    *,
+    consumed_ids=(),
+) -> bool:
+    """Transfere a posse local e sincroniza cada vínculo ativo."""
     with transaction.atomic():
         current = Conversation.objects.select_for_update().get(pk=conversation.pk)
         current.state = Conversation.State.HANDOFF
@@ -574,71 +841,158 @@ def mark_handoff(conversation: Conversation, reason: str, *, consumed_ids=()) ->
         current.claim_until = None
         current.handoff_reason = (reason or "")[:200]
         current.handoff_at = timezone.now()
-        current.handoff_sync_state = "executing"
-        current.save(update_fields=["state", "turn_fence", "claim_until", "handoff_reason", "handoff_at", "handoff_sync_state", "updated_at"])
-        current.messages.filter(pk__in=consumed_ids, kind=ConversationMessage.Kind.INBOUND,
-                                consumed_by__isnull=True).update(consumed_by=current.turn_fence)
+        current.save(
+            update_fields=[
+                "state",
+                "turn_fence",
+                "claim_until",
+                "handoff_reason",
+                "handoff_at",
+                "updated_at",
+            ]
+        )
+        bindings = list(
+            current.transport_bindings.select_for_update().filter(
+                status=ConversationBinding.Status.ACTIVE
+            )
+        )
+        ConversationBinding.objects.filter(pk__in=[item.pk for item in bindings]).update(
+            handoff_sync_state="executing"
+        )
+        current.messages.filter(
+            pk__in=consumed_ids,
+            binding=causal_binding,
+            kind=ConversationMessage.Kind.INBOUND,
+            consumed_by__isnull=True,
+        ).update(consumed_by=current.turn_fence)
         ConversationMessage.objects.create(
-            conversation=current, role=ConversationMessage.Role.ASSISTANT,
+            conversation=current,
+            role=ConversationMessage.Role.ASSISTANT,
             kind=ConversationMessage.Kind.NOTE,
             text="Atendimento humano solicitado. Contexto preservado.",
-            envelope={"version": 2, "session_key": current.session_key, "order_ref": current.last_order_ref,
-                      "turn_fence": current.turn_fence},
+            envelope={
+                "version": 3,
+                "session_key": current.session_key,
+                "order_ref": current.last_order_ref,
+                "turn_fence": current.turn_fence,
+            },
         )
-    try:
-        synced = transport.handoff_for(current, True) is True
-    except Exception as exc:
-        logger.warning("concierge.handoff.sync_unconfirmed conversation=%s exception_type=%s", current.pk, type(exc).__name__)
-        synced = False
-    Conversation.objects.filter(pk=current.pk, turn_fence=current.turn_fence).update(handoff_sync_state="accepted" if synced else "unknown")
-    _alert(current, "concierge_handoff", "Atendimento solicitado; sincronização " + ("aceita." if synced else "incerta; verificar ManyChat."))
+    accepted = True
+    for binding in bindings:
+        outcome = _execute_handoff(binding, True)
+        accepted &= outcome.state == "accepted"
+    _alert(
+        current,
+        "concierge_handoff",
+        "Atendimento solicitado; sincronização "
+        + ("aceita em todos os vínculos." if accepted else "pendente em pelo menos um vínculo."),
+    )
     if consumed_ids:
-        current._legacy_read_only = bool(getattr(conversation, "_legacy_read_only", False))
         current._inbound_max_id = max(consumed_ids)
+        evidence = (
+            ConversationMessage.objects.filter(pk=current._inbound_max_id)
+            .values_list("envelope__window_evidence", flat=True)
+            .first()
+        )
         ack = copy_message("CONCIERGE_HANDOFF_ACK")
         if ack:
-            _dispatch_reply(current, _prepare_reply(current, ack, purpose="handoff_ack"))
+            _dispatch_reply(
+                current,
+                _prepare_reply(
+                    current,
+                    causal_binding,
+                    ack,
+                    purpose="handoff_ack",
+                    window_evidence=evidence,
+                ),
+            )
     conversation.refresh_from_db()
-    return synced
+    return accepted
 
 
 def return_to_concierge(conversation: Conversation) -> bool:
-    """G03 pendente mantém retorno desligado; falha remota mantém posse humana."""
-    from shopman.storefront.concierge import transport
+    """Reativa somente após aceite remoto em todos os vínculos ativos."""
     if not config().get("human_return_enabled") or not is_enabled():
         return False
     with transaction.atomic():
         current = Conversation.objects.select_for_update().get(pk=conversation.pk)
-        if not is_allowed(current.subscriber_id) or current.state != Conversation.State.HANDOFF or current.handoff_sync_state == "executing":
+        bindings = list(
+            current.transport_bindings.select_for_update().filter(
+                status=ConversationBinding.Status.ACTIVE
+            )
+        )
+        if (
+            current.state != Conversation.State.HANDOFF
+            or not bindings
+            or any(not is_allowed(binding) for binding in bindings)
+            or any(binding.handoff_sync_state == "executing" for binding in bindings)
+        ):
             return False
         fence = current.turn_fence
-        current.handoff_sync_state = "executing"
-        current.save(update_fields=["handoff_sync_state", "updated_at"])
-    try:
-        synced = transport.handoff_for(current, False) is True
-    except Exception as exc:
-        logger.warning("concierge.resume.sync_unconfirmed conversation=%s exception_type=%s", current.pk, type(exc).__name__)
-        synced = False
+        ConversationBinding.objects.filter(pk__in=[item.pk for item in bindings]).update(
+            handoff_sync_state="executing"
+        )
+    outcomes = []
+    for binding in bindings:
+        outcome = _execute_handoff(binding, False)
+        outcomes.append((binding, outcome))
+    synced = all(outcome.state == "accepted" for _, outcome in outcomes)
+    if not synced:
+        # Retorno parcial pode deixar um canal com bot e outro com humano. Repor
+        # a posse humana nos vínculos já aceitos é a compensação conservadora.
+        for binding, outcome in outcomes:
+            if outcome.state != "accepted":
+                continue
+            _execute_handoff(binding, True)
+    restore_after_revalidation = False
     with transaction.atomic():
         current = Conversation.objects.select_for_update().get(pk=conversation.pk)
         if current.turn_fence != fence:
             return False
-        current.handoff_sync_state = "accepted" if synced else "unknown"
-        if synced and (not is_enabled() or not is_allowed(current.subscriber_id)):
-            current.handoff_sync_state = "routing_mismatch"
+        bindings = list(
+            current.transport_bindings.select_for_update().filter(
+                status=ConversationBinding.Status.ACTIVE
+            )
+        )
+        if synced and (not is_enabled() or any(not is_allowed(binding) for binding in bindings)):
             synced = False
+            restore_after_revalidation = True
+            ConversationBinding.objects.filter(pk__in=[item.pk for item in bindings]).update(
+                handoff_sync_state="routing_mismatch"
+            )
         if synced:
             current.state = Conversation.State.ACTIVE
             current.turn_fence += 1
             current.handoff_reason = ""
             current.handoff_at = None
-            _enqueue_turn(current)
-        current.save(update_fields=["handoff_sync_state", "state", "turn_fence", "handoff_reason", "handoff_at", "updated_at"])
-        if synced:
-            ConversationMessage.objects.create(conversation=current, role="assistant", kind="note",
-                text="Voltou para o concierge.", envelope={"version": 2, "turn_fence": current.turn_fence})
+            current.save(
+                update_fields=[
+                    "state",
+                    "turn_fence",
+                    "handoff_reason",
+                    "handoff_at",
+                    "updated_at",
+                ]
+            )
+            ConversationMessage.objects.create(
+                conversation=current,
+                role=ConversationMessage.Role.ASSISTANT,
+                kind=ConversationMessage.Kind.NOTE,
+                text="Voltou para o concierge.",
+                envelope={"version": 3, "turn_fence": current.turn_fence},
+            )
+            for binding in bindings:
+                if unanswered_inbound(current, binding):
+                    _enqueue_turn(current, binding)
+    if restore_after_revalidation:
+        for binding in bindings:
+            _execute_handoff(binding, True)
     if not synced:
-        _alert(current, "concierge_handoff_sync", "Retorno não confirmado. Atendimento humano mantido.")
+        _alert(
+            current,
+            "concierge_handoff_sync",
+            "Retorno não confirmado em todos os vínculos. Atendimento humano mantido.",
+        )
     conversation.refresh_from_db()
     return synced
 
@@ -661,94 +1015,198 @@ def _alert(conversation: Conversation, alert_type: str, message: str) -> None:
 
 
 def recover_pending(*, limit=100):
-    """Recupera só envelope v2. Nunca repete envio em execução/unknown."""
-    from django.db.models import Q
+    """Recupera claims e trabalho v3 sem repetir uma saída já iniciada."""
     from shopman.orderman.models import Directive
+
     now = timezone.now()
+    stale_at = now - timedelta(seconds=120)
     counts = {"queued": 0, "unknown": 0}
-    eligible_input = Q(kind=ConversationMessage.Kind.INBOUND, envelope__version=2, consumed_by__isnull=True, conversation__state=Conversation.State.ACTIVE)
-    if not config().get("legacy_read_handoff_enabled"):
-        eligible_input &= _nonlegacy_input()
     pending = ConversationMessage.objects.filter(conversation_id=OuterRef("pk")).filter(
-        eligible_input | Q(transport_state__in=["prepared", "executing"])
+        Q(
+            kind=ConversationMessage.Kind.INBOUND,
+            envelope__version=3,
+            consumed_by__isnull=True,
+        )
+        | Q(transport_state__in=["prepared", "executing"])
     )
-    ids = list(Conversation.objects.annotate(has_pending=Exists(pending)).filter(
-        Q(claim_until__isnull=True) | Q(claim_until__lte=now),
-    ).filter(Q(has_pending=True) | Q(claim_until__lte=now) | Q(handoff_sync_state="executing", updated_at__lte=now-timedelta(seconds=120))).order_by(
-        "last_inbound_at", "id"
-    ).values_list("id", flat=True)[:limit])
-    for pk in ids:
+    stale_handoff = ConversationBinding.objects.filter(
+        conversation_id=OuterRef("pk"),
+        handoff_sync_state="executing",
+        updated_at__lte=stale_at,
+    )
+    ids = list(
+        Conversation.objects.annotate(
+            has_pending=Exists(pending), has_stale_handoff=Exists(stale_handoff)
+        )
+        .filter(Q(claim_until__isnull=True) | Q(claim_until__lte=now))
+        .filter(
+            Q(has_pending=True)
+            | Q(has_stale_handoff=True)
+            | Q(claim_until__lte=now)
+        )
+        .order_by("last_inbound_at", "id")
+        .values_list("id", flat=True)[:limit]
+    )
+    for conversation_id in ids:
+        prepared = []
         with transaction.atomic():
-            conversation = Conversation.objects.select_for_update().get(pk=pk)
+            conversation = Conversation.objects.select_for_update().get(pk=conversation_id)
             if conversation.claim_until and conversation.claim_until > now:
                 continue
-            if conversation.handoff_sync_state == "executing" and conversation.updated_at <= now-timedelta(seconds=120):
-                conversation.handoff_sync_state = "unknown"
-                conversation.turn_fence += 1
-                conversation.save(update_fields=["handoff_sync_state", "turn_fence", "updated_at"])
-                _alert(conversation, "concierge_handoff_sync", "Sincronização de posse interrompida; resultado desconhecido. Verificar roteamento sem reativar o bot.")
             if conversation.claim_until:
                 conversation.turn_fence += 1
                 conversation.claim_until = None
                 conversation.save(update_fields=["turn_fence", "claim_until"])
-            unknown = conversation.messages.filter(transport_state="executing").update(transport_state="unknown")
+            attempts = OutboundAttempt.objects.select_for_update().filter(
+                message__conversation=conversation,
+                state=OutboundAttempt.State.EXECUTING,
+            )
+            unknown = attempts.update(
+                state=OutboundAttempt.State.UNKNOWN,
+                code="worker_interrupted",
+                completed_at=now,
+            )
+            conversation.messages.filter(transport_state="executing").update(
+                transport_state="unknown"
+            )
             counts["unknown"] += unknown
             if unknown:
-                _alert(conversation, "concierge_output_pending", "Processo interrompido após iniciar envio. Resultado desconhecido; não repetir.")
-            # Um worker morto deixou running. Só o fence expirado permite liberar.
-            Directive.objects.filter(topic=TURN_TOPIC, payload__conversation_id=pk,
-                                     status="running", started_at__lt=now-timedelta(seconds=120)).update(
-                status="failed", error_code="claim_expired", last_error="recovered by conversation fence")
-            if is_enabled() and conversation.state == Conversation.State.ACTIVE and unanswered_inbound(conversation):
-                _enqueue_turn(conversation)
-                counts["queued"] += 1
-            prepared = list(conversation.messages.filter(transport_state="prepared"))
+                _alert(
+                    conversation,
+                    "concierge_output_pending",
+                    "Processo interrompido após iniciar envio. Resultado desconhecido; não repetir.",
+                )
+            ConversationBinding.objects.filter(
+                conversation=conversation,
+                handoff_sync_state="executing",
+                updated_at__lte=stale_at,
+            ).update(handoff_sync_state="unknown")
+            Directive.objects.filter(
+                topic=TURN_TOPIC,
+                payload__conversation_id=conversation_id,
+                status="running",
+                started_at__lt=stale_at,
+            ).update(
+                status="failed",
+                error_code="claim_expired",
+                last_error="recovered by conversation fence",
+            )
+            if is_enabled() and conversation.state == Conversation.State.ACTIVE:
+                for binding in conversation.transport_bindings.filter(
+                    status=ConversationBinding.Status.ACTIVE
+                ):
+                    if unanswered_inbound(conversation, binding):
+                        _enqueue_turn(conversation, binding)
+                        counts["queued"] += 1
+            prepared = list(
+                conversation.messages.select_related("binding").filter(
+                    transport_state="prepared", envelope__version=3
+                )
+            )
             for message in prepared:
                 envelope = message.envelope
                 max_id = envelope.get("inbound_max_id")
                 unchanged = bool(max_id) and not conversation.messages.filter(
-                    kind=ConversationMessage.Kind.INBOUND, pk__gt=max_id,
+                    kind=ConversationMessage.Kind.INBOUND, pk__gt=max_id
                 ).exists()
                 quote_token = envelope.get("quote_token")
                 if quote_token and quote_token != (conversation.quote or {}).get("token"):
                     unchanged = False
                 if unchanged and conversation.state == Conversation.State.ACTIVE:
-                    message.envelope = {**envelope, "previous_fence": envelope.get("turn_fence"),
-                                        "turn_fence": conversation.turn_fence}
+                    message.envelope = {
+                        **envelope,
+                        "previous_fence": envelope.get("turn_fence"),
+                        "turn_fence": conversation.turn_fence,
+                    }
                     message.save(update_fields=["envelope"])
-
-        # Persistência antes de rede: retomar bloco que comprovadamente nem começou.
+                else:
+                    message.transport_state = "not_applied"
+                    message.envelope = {**envelope, "code": "stale_prepared_output"}
+                    message.save(update_fields=["transport_state", "envelope"])
         for message in prepared:
-            _dispatch_reply(conversation, message)
+            message.refresh_from_db()
+            if message.transport_state == "prepared":
+                _dispatch_reply(conversation, message)
     return counts
 
 
 def retry_not_applied(conversation_id, message_id):
-    """Recuperação explícita de um bloco comprovadamente não aplicado (G03)."""
+    """Nova tentativa somente quando o fornecedor comprovou não aplicação."""
     if not config().get("output_retry_enabled"):
         return False
     with transaction.atomic():
         conversation = Conversation.objects.select_for_update().get(pk=conversation_id)
-        assert_turn_authority(conversation, for_mutation=False)
-        message = conversation.messages.select_for_update().get(pk=message_id, kind=ConversationMessage.Kind.REPLY)
-        if message.transport_state != "not_applied":
+        message = conversation.messages.select_for_update().get(
+            pk=message_id, kind=ConversationMessage.Kind.REPLY
+        )
+        binding = ConversationBinding.objects.select_for_update().filter(
+            pk=message.binding_id,
+            conversation=conversation,
+        ).first()
+        if (
+            message.transport_state != "not_applied"
+            or binding is None
+            or conversation.state != Conversation.State.ACTIVE
+            or not is_enabled()
+            or not is_allowed(binding)
+        ):
             return False
-        if message.envelope.get("code") not in {"provider_rejected", "not_applied", "preceding_block_pending"}:
+        last_attempt = message.outbound_attempts.order_by("-attempt_no").first()
+        if last_attempt is None or last_attempt.state != OutboundAttempt.State.NOT_APPLIED:
             return False
         max_id = message.envelope.get("inbound_max_id")
-        if not max_id or conversation.messages.filter(kind=ConversationMessage.Kind.INBOUND, pk__gt=max_id).exists():
+        if not max_id or conversation.messages.filter(
+            kind=ConversationMessage.Kind.INBOUND, pk__gt=max_id
+        ).exists():
             return False
         quote_token = message.envelope.get("quote_token")
         if quote_token and quote_token != (conversation.quote or {}).get("token"):
             return False
-        if message.envelope.get("legacy_read_only") and not config().get("legacy_read_handoff_enabled"):
-            return False
         predecessor = message.envelope.get("depends_on")
-        if predecessor and not conversation.messages.filter(pk=predecessor, transport_state="accepted").exists():
+        if predecessor and not conversation.messages.filter(
+            pk=predecessor, transport_state="accepted"
+        ).exists():
             return False
         message.transport_state = "prepared"
-        message.envelope = {**message.envelope, "turn_fence": conversation.turn_fence,
-                            "explicit_retry": int(message.envelope.get("explicit_retry", 0)) + 1}
+        message.envelope = {
+            **message.envelope,
+            "turn_fence": conversation.turn_fence,
+            "explicit_retry": int(message.envelope.get("explicit_retry", 0)) + 1,
+        }
         message.save(update_fields=["transport_state", "envelope"])
-    _dispatch_reply(conversation, message)
+    message = _dispatch_reply(conversation, message)
     return message.transport_state == "accepted"
+
+
+def apply_delivery_receipt(
+    binding: ConversationBinding, provider_receipt_ref: str, state: str
+) -> bool:
+    """Aplica callback monotônico ao recibo exato do fornecedor."""
+    from shopman.storefront.concierge import transport
+
+    ranks = {"accepted": 1, "delivered": 2, "read": 3}
+    adapter = transport.adapter_for(binding)
+    if (
+        state not in ranks
+        or not provider_receipt_ref
+        or adapter is None
+        or not adapter.capabilities.delivery_receipts
+    ):
+        return False
+    with transaction.atomic():
+        attempt = (
+            OutboundAttempt.objects.select_for_update()
+            .select_related("message")
+            .filter(binding=binding, provider_receipt_ref=provider_receipt_ref)
+            .first()
+        )
+        if attempt is None or attempt.state not in ranks or ranks[state] < ranks[attempt.state]:
+            return False
+        if ranks[state] == ranks[attempt.state]:
+            return True
+        attempt.state = state
+        attempt.completed_at = timezone.now()
+        attempt.save(update_fields=["state", "completed_at"])
+        attempt.message.transport_state = state
+        attempt.message.save(update_fields=["transport_state"])
+    return True

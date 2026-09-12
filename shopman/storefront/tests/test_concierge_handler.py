@@ -15,12 +15,19 @@ from shopman.storefront.concierge import service
 from shopman.storefront.concierge.handler import MAX_LOOPS, ConciergeTurnHandler
 
 
-def _directive(conversation_id=1):
-    return SimpleNamespace(payload={"conversation_id": conversation_id, "contract_version": 2}, save=lambda **kw: None)
+def _directive(conversation_id=1, binding_id=2):
+    return SimpleNamespace(
+        payload={
+            "conversation_id": conversation_id,
+            "binding_id": binding_id,
+            "contract_version": 3,
+        },
+        save=lambda **kw: None,
+    )
 
 
 def test_handler_registrado_com_o_topico_do_service():
-    assert ConciergeTurnHandler.topic == service.TURN_TOPIC == "concierge.turn.v2"
+    assert ConciergeTurnHandler.topic == service.TURN_TOPIC == "concierge.turn.v3"
     # Registrado pelo `StorefrontConfig.ready()` (superfície de cliente), não pelo
     # `shop.handlers`: o worker acha o handler pelo tópico no registro do Orderman.
     assert isinstance(registry.get_directive_handler(service.TURN_TOPIC), ConciergeTurnHandler)
@@ -32,22 +39,22 @@ def test_roda_de_novo_enquanto_ha_mensagem_pendente(monkeypatch):
         service.TurnResult(conversation_id=1, pending_more=True),
         service.TurnResult(conversation_id=1, pending_more=False),
     ])
-    calls: list[int] = []
+    calls: list[tuple[int, int]] = []
 
-    def fake_run_turn(conversation_id, *, client=None):
-        calls.append(conversation_id)
+    def fake_run_turn(conversation_id, binding_id, *, client=None):
+        calls.append((conversation_id, binding_id))
         return next(results)
 
     monkeypatch.setattr(service, "run_turn", fake_run_turn)
     ConciergeTurnHandler().handle(message=_directive(1), ctx={})
-    assert calls == [1, 1, 1]
+    assert calls == [(1, 2), (1, 2), (1, 2)]
 
 
 def test_laco_tem_teto(monkeypatch):
-    calls: list[int] = []
+    calls: list[tuple[int, int]] = []
 
-    def sempre_pendente(conversation_id, *, client=None):
-        calls.append(conversation_id)
+    def sempre_pendente(conversation_id, binding_id, *, client=None):
+        calls.append((conversation_id, binding_id))
         return service.TurnResult(conversation_id=conversation_id, pending_more=True)
 
     monkeypatch.setattr(service, "run_turn", sempre_pendente)
@@ -56,7 +63,7 @@ def test_laco_tem_teto(monkeypatch):
 
 
 def test_conversa_inexistente_e_terminal(monkeypatch):
-    def missing(conversation_id, *, client=None):
+    def missing(conversation_id, binding_id, *, client=None):
         raise Conversation.DoesNotExist()
 
     monkeypatch.setattr(service, "run_turn", missing)
@@ -70,7 +77,7 @@ def test_payload_sem_conversation_id_e_terminal():
 
 
 def test_erro_de_conexao_e_transitorio(monkeypatch):
-    def offline(conversation_id, *, client=None):
+    def offline(conversation_id, binding_id, *, client=None):
         raise anthropic.APIConnectionError(request=httpx.Request("POST", "https://api.anthropic.test"))
 
     monkeypatch.setattr(service, "run_turn", offline)
@@ -81,14 +88,14 @@ def test_erro_de_conexao_e_transitorio(monkeypatch):
 def test_rate_limit_e_5xx_sao_transitorios(monkeypatch):
     request = httpx.Request("POST", "https://api.anthropic.test")
 
-    def too_many(conversation_id, *, client=None):
+    def too_many(conversation_id, binding_id, *, client=None):
         raise anthropic.RateLimitError("slow down", response=httpx.Response(429, request=request), body=None)
 
     monkeypatch.setattr(service, "run_turn", too_many)
     with pytest.raises(DirectiveTransientError):
         ConciergeTurnHandler().handle(message=_directive(1), ctx={})
 
-    def upstream_down(conversation_id, *, client=None):
+    def upstream_down(conversation_id, binding_id, *, client=None):
         raise anthropic.InternalServerError("boom", response=httpx.Response(503, request=request), body=None)
 
     monkeypatch.setattr(service, "run_turn", upstream_down)
@@ -98,7 +105,7 @@ def test_rate_limit_e_5xx_sao_transitorios(monkeypatch):
 
 def test_erro_de_programa_escapa_como_esta(monkeypatch):
     """Bug não é transitório: não pode virar retry infinito com backoff."""
-    def bug(conversation_id, *, client=None):
+    def bug(conversation_id, binding_id, *, client=None):
         raise KeyError("quote")
 
     monkeypatch.setattr(service, "run_turn", bug)

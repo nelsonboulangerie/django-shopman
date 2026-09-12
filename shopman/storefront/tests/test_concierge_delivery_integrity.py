@@ -1,172 +1,278 @@
 """C02/C03/C07: consumo, certeza e contenção sem fornecedor real."""
 # ruff: noqa: F811
+
 from datetime import timedelta
 
 import pytest
 from django.utils import timezone
 
-from shopman.shop.models import Conversation
-from shopman.shop.models import ConversationMessage as Message
-from shopman.storefront.concierge import agent, service, transport
-from shopman.storefront.tests.test_concierge_engine import conversation, customer, surface  # noqa: F401
+from shopman.shop.models import Conversation, ConversationBinding, ConversationMessage, OutboundAttempt
+from shopman.storefront.concierge import agent, service
+from shopman.storefront.concierge.contracts import HandoffOutcome, SendOutcome, WindowEvidence
+from shopman.storefront.tests.support.concierge_transport_v3 import (
+    adapter_class,
+    connection,
+    event,
+    reset_adapter,
+)
+from shopman.storefront.tests.test_concierge_engine import (
+    ScriptedClient,
+    _response,
+    _text,
+    surface,  # noqa: F401
+)
 
 pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture(autouse=True)
-def enabled(settings):
-    settings.SHOPMAN_CONCIERGE = {"enabled": True, "contract_version": 2, "account_id": "test-account", "allowed_subscribers": ["1962036908"]}
+def enabled(settings, monkeypatch):
     settings.AI_ASSIST_API_KEY = "test-only"
+    settings.SHOPMAN_CONCIERGE = {
+        "enabled": True,
+        "contract_version": 3,
+        "channel_ref": "web",
+        "human_return_enabled": True,
+        "output_retry_enabled": True,
+        "window_messages": 40,
+        "connections": {
+            "manychat-wa": connection(
+                provider="manychat",
+                account="test-account",
+                channel="whatsapp",
+                subjects=["wa-subject"],
+            )
+        },
+    }
+    reset_adapter()
+    monkeypatch.setattr(service, "_alert", lambda *args, **kwargs: None)
 
 
-def inbound(conversation, text="Quero pão", event="event-1"):
-    Conversation.objects.filter(pk=conversation.pk).update(last_inbound_at=timezone.now())
-    return Message.objects.create(conversation=conversation, role="user", kind="inbound", text=text,
-                                  external_id=event, envelope={"version": 2, "event_id": event},
-                                  content=[{"type": "text", "text": text}])
+def inbound(text="Quero pão", event_id="event-1"):
+    result = service.receive_inbound(event(account="test-account", subject="wa-subject", text=text, event_id=event_id))
+    assert result.queued
+    binding = ConversationBinding.objects.get(conversation_id=result.conversation_id)
+    return result, binding, ConversationMessage.objects.get(pk=result.message_id)
 
 
-def test_late_input_survives_answer_and_note(conversation, monkeypatch):
-    first = inbound(conversation)
+def test_late_input_survives_answer_and_note(monkeypatch):
+    first, binding, first_message = inbound()
     late = []
-    def respond(**kw):
-        late.append(inbound(conversation, "Na verdade, três", "event-2"))
+
+    def respond(**kwargs):
+        late.append(inbound("Na verdade, três", "event-2")[2])
         return agent.AgentOutcome(reply_text="Sacola consultada.")
+
     monkeypatch.setattr(agent, "run_agent", respond)
-    monkeypatch.setattr(transport, "send_text", lambda *a: transport.SendOutcome("accepted"))
-    result = service.run_turn(conversation.pk)
-    Message.objects.create(conversation=conversation, role="assistant", kind="note", text="nota posterior")
-    assert result.processed_message_ids == [first.pk]
+    result = service.run_turn(first.conversation_id, binding.pk)
+    ConversationMessage.objects.create(
+        conversation=binding.conversation,
+        role=ConversationMessage.Role.ASSISTANT,
+        kind=ConversationMessage.Kind.NOTE,
+        text="nota posterior",
+    )
+    assert result.processed_message_ids == [first_message.pk]
     assert result.pending_more
-    assert [m.pk for m in service.unanswered_inbound(conversation)] == [late[0].pk]
+    assert [message.pk for message in service.unanswered_inbound(binding.conversation, binding)] == [late[0].pk]
 
 
-def test_prepared_before_remote_effect_and_unknown_never_retried(conversation, monkeypatch):
-    inbound(conversation)
+def test_prepared_attempt_exists_before_remote_effect_and_unknown_is_not_retried(monkeypatch):
+    result, binding, _ = inbound()
     effects = []
-    monkeypatch.setattr(agent, "run_agent", lambda **kw: agent.AgentOutcome(reply_text="Resposta factual"))
-    def remote(*args):
-        row = conversation.messages.get(kind="reply")
-        assert row.transport_state == "executing"
+    monkeypatch.setattr(
+        agent,
+        "run_agent",
+        lambda **kwargs: agent.AgentOutcome(reply_text="Resposta factual"),
+    )
+
+    def remote(subject, text):
+        row = ConversationMessage.objects.get(kind=ConversationMessage.Kind.REPLY)
+        attempt = row.outbound_attempts.get()
+        assert row.transport_state == attempt.state == "executing"
         effects.append(row.pk)
         raise TimeoutError("effect applied but response lost")
-    monkeypatch.setattr(transport, "send_text", remote)
-    service.run_turn(conversation.pk)
-    row = conversation.messages.get(kind="reply")
-    assert row.transport_state == "unknown" and row.delivered is None
+
+    adapter_class().send_outcomes["manychat-wa"] = [remote]
+    service.run_turn(result.conversation_id, binding.pk)
+    row = ConversationMessage.objects.get(kind=ConversationMessage.Kind.REPLY)
+    assert row.transport_state == "unknown"
+    assert list(row.outbound_attempts.values_list("attempt_no", "state")) == [(1, "unknown")]
     service.recover_pending()
-    service.run_turn(conversation.pk)
+    service.run_turn(result.conversation_id, binding.pk)
     assert effects == [row.pk]
 
 
-def test_pix_second_block_failure_preserves_first(conversation, monkeypatch):
-    inbound(conversation)
-    monkeypatch.setattr(agent, "run_agent", lambda **kw: agent.AgentOutcome(reply_text="Pedido registrado; pagamento pendente.", extra_replies=["PIX-CANONICAL"]))
-    seen = []
-    def remote(sid, text):
-        seen.append(text)
-        return transport.SendOutcome("accepted" if len(seen) == 1 else "not_applied", "provider_rejected")
-    monkeypatch.setattr(transport, "send_text", remote)
-    service.run_turn(conversation.pk)
-    assert list(conversation.messages.filter(kind="reply").values_list("transport_state", flat=True)) == ["accepted", "not_applied"]
+def test_pix_second_block_failure_preserves_first(monkeypatch):
+    result, binding, _ = inbound()
+    monkeypatch.setattr(
+        agent,
+        "run_agent",
+        lambda **kwargs: agent.AgentOutcome(
+            reply_text="Pedido registrado; pagamento pendente.",
+            extra_replies=["PIX-CANONICAL"],
+        ),
+    )
+    adapter_class().send_outcomes["manychat-wa"] = [
+        SendOutcome("accepted", "accepted", "receipt-first"),
+        SendOutcome("not_applied", "provider_rejected"),
+    ]
+    service.run_turn(result.conversation_id, binding.pk)
+    replies = list(ConversationMessage.objects.filter(kind=ConversationMessage.Kind.REPLY).order_by("pk"))
+    assert [reply.transport_state for reply in replies] == ["accepted", "not_applied"]
+    assert [attempt.attempt_no for attempt in OutboundAttempt.objects.order_by("pk")] == [1, 1]
     service.recover_pending()
-    assert len(seen) == 2
+    assert len(adapter_class().sent) == 2
 
 
-def test_kill_switch_during_model_blocks_output(conversation, monkeypatch, settings):
-    first = inbound(conversation)
-    def respond(**kw):
+def test_kill_switch_during_model_blocks_output_and_preserves_input(monkeypatch, settings):
+    result, binding, message = inbound()
+
+    def respond(**kwargs):
         settings.SHOPMAN_CONCIERGE = {**settings.SHOPMAN_CONCIERGE, "enabled": False}
         return agent.AgentOutcome(reply_text="Não pode sair")
+
     monkeypatch.setattr(agent, "run_agent", respond)
-    monkeypatch.setattr(transport, "send_text", lambda *a: pytest.fail("output after switch off"))
-    assert service.run_turn(conversation.pk).fallback == "revoked"
-    first.refresh_from_db()
-    assert first.consumed_by is None
+    assert service.run_turn(result.conversation_id, binding.pk).fallback == "revoked"
+    message.refresh_from_db()
+    assert message.consumed_by is None
+    assert adapter_class().sent == []
 
 
-def test_human_escape_without_model(conversation, monkeypatch):
-    inbound(conversation, "Quero falar com alguém")
-    monkeypatch.setattr(agent, "run_agent", lambda **kw: pytest.fail("human request needs no model"))
-    monkeypatch.setattr(transport, "set_handoff", lambda *a: False)
-    result = service.run_turn(conversation.pk)
-    conversation.refresh_from_db()
-    assert result.handoff and conversation.state == "handoff"
-    assert conversation.handoff_sync_state == "unknown"
+def test_human_escape_without_model_preserves_local_human_ownership(monkeypatch):
+    result, binding, _ = inbound("Quero falar com alguém")
+    monkeypatch.setattr(agent, "run_agent", lambda **kwargs: pytest.fail("human request used model"))
+    adapter_class().handoff_outcomes[("manychat-wa", True)] = HandoffOutcome("unknown", "acceptance_unconfirmed")
+    turn = service.run_turn(result.conversation_id, binding.pk)
+    binding.conversation.refresh_from_db()
+    binding.refresh_from_db()
+    assert turn.handoff
+    assert binding.conversation.state == Conversation.State.HANDOFF
+    assert binding.handoff_sync_state == "unknown"
 
 
-def test_return_failure_preserves_human_ownership(conversation, monkeypatch, settings):
-    settings.SHOPMAN_CONCIERGE = {**settings.SHOPMAN_CONCIERGE, "human_return_enabled": True}
-    conversation.state = "handoff"
+def test_return_failure_preserves_human_ownership():
+    _, binding, _ = inbound()
+    conversation = binding.conversation
+    conversation.state = Conversation.State.HANDOFF
     conversation.save(update_fields=["state"])
-    monkeypatch.setattr(transport, "set_handoff", lambda *a: False)
+    adapter_class().handoff_outcomes[("manychat-wa", False)] = HandoffOutcome("unknown", "acceptance_unconfirmed")
     assert service.return_to_concierge(conversation) is False
     conversation.refresh_from_db()
-    assert conversation.state == "handoff"
+    assert conversation.state == Conversation.State.HANDOFF
 
 
-def test_expired_window_keeps_prepared_fact_without_network(conversation, monkeypatch):
-    conversation.last_inbound_at = timezone.now()-timedelta(hours=25)
-    conversation.save(update_fields=["last_inbound_at"])
-    monkeypatch.setattr(transport, "send_text", lambda *a: pytest.fail("expired window"))
-    row = service._send_reply(conversation, "Não cortar Pix")
+def test_expired_window_keeps_prepared_fact_without_network():
+    _, binding, _ = inbound()
+    now = timezone.now()
+    expired = WindowEvidence(
+        policy="test-window-v1",
+        source="authenticated-test-event",
+        observed_at=now - timedelta(hours=25),
+        valid_until=now - timedelta(hours=1),
+        assurance="provider_window",
+    )
+    row = service._send_reply(
+        binding.conversation,
+        binding,
+        "Não cortar Pix",
+        window_evidence=expired.as_dict(),
+    )
+    assert row.text == "Não cortar Pix"
     assert row.transport_state == "not_applied"
     assert row.envelope["code"] == "window_closed"
+    assert adapter_class().sent == []
 
 
-def test_legacy_input_not_replayed(conversation, monkeypatch):
-    Message.objects.create(conversation=conversation, role="user", kind="inbound", text="sim")
-    monkeypatch.setattr(agent, "run_agent", lambda **kw: pytest.fail("legacy input replay"))
-    assert not service.run_turn(conversation.pk).processed_message_ids
+def test_non_v3_input_is_not_replayed(monkeypatch):
+    _, binding, original = inbound()
+    original.delete()
+    stale = ConversationMessage.objects.create(
+        conversation=binding.conversation,
+        binding=binding,
+        role=ConversationMessage.Role.USER,
+        kind=ConversationMessage.Kind.INBOUND,
+        text="sim",
+        content=[{"type": "text", "text": "sim"}],
+        envelope={"version": 2},
+    )
+    monkeypatch.setattr(agent, "run_agent", lambda **kwargs: pytest.fail("v2 input replayed"))
+    turn = service.run_turn(binding.conversation_id, binding.pk)
+    stale.refresh_from_db()
+    assert not turn.processed_message_ids
+    assert stale.consumed_by is None
 
 
-def test_model_cannot_invent_critical_facts(conversation, monkeypatch):
-    from shopman.storefront.tests.test_concierge_engine import ScriptedClient, _response, _text
-    inbound(conversation, "Quanto custa o pão?")
-    sent = []
-    monkeypatch.setattr(transport, "send_text", lambda sid, text: sent.append(text) or transport.SendOutcome("accepted"))
-    client = ScriptedClient(_response(_text("O pão custa R$ 999,99. Sem glúten; entregue amanhã. https://evil.test"), stop_reason="end_turn"))
-    service.run_turn(conversation.pk, client=client)
-    assert len(sent) == 1 and "999" not in sent[0] and "evil" not in sent[0] and "glúten" not in sent[0]
+def test_model_cannot_invent_critical_facts(surface):  # noqa: ARG001
+    result, binding, _ = inbound("Quanto custa o pão?")
+    client = ScriptedClient(
+        _response(
+            _text("O pão custa R$ 999,99. Sem glúten; entregue amanhã. https://evil.test"),
+            stop_reason="end_turn",
+        )
+    )
+    service.run_turn(result.conversation_id, binding.pk, client=client)
+    assert len(adapter_class().sent) == 1
+    sent = adapter_class().sent[0][2]
+    assert "999" not in sent and "evil" not in sent and "glúten" not in sent
 
 
-def test_history_window_cannot_hide_claimed_input(conversation, monkeypatch, settings):
+def test_history_window_cannot_hide_claimed_input(monkeypatch, settings):
+    result, binding, _ = inbound("item 0", "event-0")
+    for index in range(1, 30):
+        inbound(f"item {index}", f"event-{index}")
     settings.SHOPMAN_CONCIERGE = {**settings.SHOPMAN_CONCIERGE, "window_messages": 2}
-    messages = [inbound(conversation, f"item {i}", f"event-{i}") for i in range(30)]
     captured = []
-    def respond(**kw):
-        captured.extend(block["text"] for msg in kw["history"] for block in msg["content"] if block.get("type") == "text")
+
+    def respond(**kwargs):
+        captured.extend(
+            block["text"]
+            for message in kwargs["history"]
+            for block in message["content"]
+            if block.get("type") == "text"
+        )
         return agent.AgentOutcome(reply_text="Entradas preservadas")
+
     monkeypatch.setattr(agent, "run_agent", respond)
-    monkeypatch.setattr(transport, "send_text", lambda *a: transport.SendOutcome("accepted"))
-    result = service.run_turn(conversation.pk)
-    assert result.processed_message_ids == [m.pk for m in messages[:20]]
-    assert captured == [f"item {i}" for i in range(20)]
-    assert result.pending_more
+    turn = service.run_turn(result.conversation_id, binding.pk)
+    messages = list(ConversationMessage.objects.filter(kind=ConversationMessage.Kind.INBOUND).order_by("pk"))
+    assert turn.processed_message_ids == [message.pk for message in messages[:20]]
+    assert captured == [f"item {index}" for index in range(20)]
+    assert turn.pending_more
 
 
-def test_kill_switch_during_human_return_never_reactivates_bot(conversation, settings, monkeypatch):
-    settings.SHOPMAN_CONCIERGE = {**settings.SHOPMAN_CONCIERGE, "human_return_enabled": True}
-    conversation.state = "handoff"
+def test_kill_switch_during_human_return_never_reactivates_bot(settings):
+    _, binding, _ = inbound()
+    conversation = binding.conversation
+    conversation.state = Conversation.State.HANDOFF
     conversation.save(update_fields=["state"])
-    def remote(*args):
+
+    def remote(subject, on):
         settings.SHOPMAN_CONCIERGE = {**settings.SHOPMAN_CONCIERGE, "enabled": False}
-        return True
-    monkeypatch.setattr(transport, "set_handoff", remote)
+        return HandoffOutcome("accepted", "accepted")
+
+    adapter_class().handoff_outcomes[("manychat-wa", False)] = remote
     assert not service.return_to_concierge(conversation)
     conversation.refresh_from_db()
-    assert conversation.state == "handoff" and conversation.handoff_sync_state == "routing_mismatch"
+    assert conversation.state == Conversation.State.HANDOFF
+    assert adapter_class().handoffs[-2:] == [
+        ("manychat-wa", "wa-subject", False),
+        ("manychat-wa", "wa-subject", True),
+    ]
 
 
-def test_turn_counter_uses_new_local_day_without_losing_input(conversation, monkeypatch):
+def test_turn_counter_uses_new_local_day_without_losing_input(monkeypatch):
+    result, binding, message = inbound()
+    conversation = binding.conversation
     today = timezone.localdate()
-    conversation.turns_day = today-timedelta(days=1)
+    conversation.turns_day = today - timedelta(days=1)
     conversation.turns_today = 80
     conversation.save(update_fields=["turns_day", "turns_today"])
-    message = inbound(conversation)
-    monkeypatch.setattr(agent, "run_agent", lambda **kw: agent.AgentOutcome(reply_text="Escolhas preservadas"))
-    monkeypatch.setattr(transport, "send_text", lambda *a: transport.SendOutcome("accepted"))
-    result = service.run_turn(conversation.pk)
+    monkeypatch.setattr(
+        agent,
+        "run_agent",
+        lambda **kwargs: agent.AgentOutcome(reply_text="Escolhas preservadas"),
+    )
+    turn = service.run_turn(result.conversation_id, binding.pk)
     conversation.refresh_from_db()
     assert conversation.turns_day == today and conversation.turns_today == 1
-    assert result.processed_message_ids == [message.pk] and not result.fallback
+    assert turn.processed_message_ids == [message.pk] and not turn.fallback

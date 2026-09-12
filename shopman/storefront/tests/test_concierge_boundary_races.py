@@ -1,6 +1,7 @@
 """Tabela 8.2: fronteiras de autoridade em PostgreSQL e corpus de dados hostis."""
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from threading import Barrier
 
 import pytest
@@ -8,30 +9,106 @@ from django.db import connection, connections, transaction
 from django.utils import timezone
 from shopman.orderman.models import Order, Session
 
-from shopman.shop.models import Conversation
+from shopman.shop.models import (
+    Conversation,
+    ConversationBinding,
+    ConversationMessage,
+    OutboundAttempt,
+)
 from shopman.storefront.concierge import service, tools, transport
+from shopman.storefront.concierge.contracts import (
+    HandoffOutcome,
+    InboundEvent,
+    SendOutcome,
+    TransportScope,
+    WindowEvidence,
+)
+from shopman.storefront.tests.support.concierge_transport_v3 import ADAPTER_PATH
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+CONNECTION_KEY = "boundary-test"
+PROVIDER = "provider-test"
+ACCOUNT = "boundary-account"
+TRANSPORT_CHANNEL = "whatsapp"
+SUBJECT = "123"
 
 
 @pytest.fixture
 def conversation(settings, monkeypatch):
     settings.SHOPMAN_CONCIERGE = {
         "enabled": True,
-        "contract_version": 2,
-        "account_id": "boundary-account",
-        "allowed_subscribers": ["123"],
+        "contract_version": 3,
         "channel_ref": "web",
+        "connections": {
+            CONNECTION_KEY: {
+                "active": True,
+                "provider": PROVIDER,
+                "account": ACCOUNT,
+                "channel": TRANSPORT_CHANNEL,
+                "adapter_path": ADAPTER_PATH,
+                "options": {
+                    "allowed_subjects": [SUBJECT],
+                    "stable_event_identity_verified": True,
+                },
+            }
+        },
     }
     settings.AI_ASSIST_API_KEY = "fake"
     monkeypatch.setattr(service, "_alert", lambda *args: None)
-    monkeypatch.setattr(transport, "set_handoff", lambda *args: True)
-    return Conversation.objects.create(
-        subscriber_id="123",
-        account="boundary-account",
+    monkeypatch.setattr(
+        transport,
+        "handoff_for",
+        lambda *args: HandoffOutcome("accepted", "accepted", "boundary-handoff"),
+    )
+    current = Conversation.objects.create(
         channel_ref="web",
         last_inbound_at=timezone.now(),
     )
+    binding = ConversationBinding.objects.create(
+        conversation=current,
+        provider=PROVIDER,
+        account=ACCOUNT,
+        transport_channel=TRANSPORT_CHANNEL,
+        subject=SUBJECT,
+        connection_key=CONNECTION_KEY,
+        status=ConversationBinding.Status.ACTIVE,
+        identity_assurance="verified_customer",
+        activated_at=timezone.now(),
+    )
+    now = timezone.now()
+    event = InboundEvent(
+        scope=TransportScope(PROVIDER, ACCOUNT, TRANSPORT_CHANNEL, SUBJECT, CONNECTION_KEY),
+        text="entrada autorizada",
+        message_type="text",
+        received_at=now,
+        event_id="boundary-event",
+        event_identity_assurance="verified",
+        occurred_at=now,
+        occurred_at_assurance="verified",
+        authentication_assurance="test",
+        payload_hash="b" * 64,
+        window_evidence=WindowEvidence(
+            policy="commercial-test-v1",
+            source="authenticated-test-event",
+            observed_at=now,
+            valid_until=now + timedelta(hours=24),
+            assurance="provider_window",
+        ),
+    )
+    ConversationMessage.objects.create(
+        conversation=current,
+        binding=binding,
+        role=ConversationMessage.Role.USER,
+        kind=ConversationMessage.Kind.INBOUND,
+        text=event.text,
+        content=[{"type": "text", "text": event.text}],
+        external_id=service._external_id(event.event_id),
+        envelope={**event.as_envelope(), "input_assurance": "provider_event"},
+    )
+    claimed, claimed_binding, inbound = service._claim(current.pk, binding.pk)
+    assert claimed_binding == binding and len(inbound) == 1
+    return claimed
 
 
 def pg_pid():
@@ -54,10 +131,23 @@ def independent(fn):
 
 def test_pg_revocation_committed_before_send_lock_blocks_provider(conversation, monkeypatch):
     main_pid = pg_pid()
-    message = service._prepare_reply(conversation, "Resposta preparada")
+    binding = conversation._binding
+    evidence = conversation.messages.get(kind=ConversationMessage.Kind.INBOUND).envelope[
+        "window_evidence"
+    ]
+    message = service._prepare_reply(
+        conversation,
+        binding,
+        "Resposta preparada",
+        window_evidence=evidence,
+    )
     rendezvous = Barrier(2)
     sent = []
-    monkeypatch.setattr(transport, "send_text", lambda *args: sent.append(args) or transport.SendOutcome("accepted"))
+    monkeypatch.setattr(
+        transport,
+        "send_for",
+        lambda *args: sent.append(args) or SendOutcome("accepted", "accepted", "boundary-send"),
+    )
 
     def worker():
         rendezvous.wait(timeout=10)
@@ -77,7 +167,8 @@ def test_pg_revocation_committed_before_send_lock_blocks_provider(conversation, 
     assert sent == []
     message.refresh_from_db()
     assert message.envelope["code"] == "contained"
-    assert message.delivered is None
+    attempt = OutboundAttempt.objects.get(message=message)
+    assert attempt.state == "not_applied" and attempt.code == "contained"
 
 
 def test_pg_handoff_wins_lock_before_tool_and_preserves_no_effect(conversation):
@@ -93,7 +184,11 @@ def test_pg_handoff_wins_lock_before_tool_and_preserves_no_effect(conversation):
             Conversation.objects.select_for_update().get(pk=conversation.pk)
             future = pool.submit(independent(worker))
             rendezvous.wait(timeout=10)
-            service.mark_handoff(conversation, "Equipe assumiu antes da mutação")
+            service.mark_handoff(
+                conversation,
+                conversation._binding,
+                "Equipe assumiu antes da mutação",
+            )
         worker_pid, result = future.result(timeout=20)
     assert worker_pid != main_pid
     assert not result["ok"] and result["error"] == "authority_unavailable"
@@ -179,5 +274,5 @@ def test_structured_access_link_order_actions_and_pix_are_preserved(conversation
     assert "Consultar pagamento: https://shop.example/orders/001/payment" in status
     assert "Acompanhar: https://shop.example/orders/001" in status
     pix = "00020101021226800014br.gov.bcb.pix2560pix.example/transaction/synthetic52040000530398654041.80"
-    assert transport.semantic_blocks(conversation, pix) == [pix]
+    assert transport.semantic_blocks(conversation._binding, pix) == [pix]
     assert "R$ 1,80" in status

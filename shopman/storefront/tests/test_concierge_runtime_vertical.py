@@ -12,6 +12,9 @@ from shopman.storefront.tests.test_concierge_engine import (
     CONCIERGE_SETTINGS,
     SKU,
     ScriptedClient,
+    _create_inbound,
+    _receive,
+    _reclaim,
     _response,
     _text,
     _tomorrow,
@@ -26,13 +29,13 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 def test_j01_j07_real_core_keeps_one_order_after_lost_confirmation_response(conversation, settings, monkeypatch):
-    settings.SHOPMAN_CONCIERGE = {**CONCIERGE_SETTINGS, "contract_version": 2, "account_id": "test-account", "allowed_subscribers": [conversation.subscriber_id]}
+    settings.SHOPMAN_CONCIERGE = CONCIERGE_SETTINGS
     settings.AI_ASSIST_API_KEY = "synthetic-key"
     sent = []
-    def send(subject, text):
+    def send(binding, text):
         sent.append(text)
         return transport.SendOutcome("accepted", "fake")
-    monkeypatch.setattr(transport, "send_text", send)
+    monkeypatch.setattr(transport, "send_for", send)
     first = ScriptedClient(
         _response(_tool("set_item", {"sku": SKU, "qty": 2}, "item"), stop_reason="tool_use"),
         _response(_tool("set_fulfillment", {"fulfillment_type": "pickup", "delivery_date": _tomorrow(), "slot_ref": "slot-12", "address": ""}, "slot"), stop_reason="tool_use"),
@@ -40,7 +43,7 @@ def test_j01_j07_real_core_keeps_one_order_after_lost_confirmation_response(conv
         _response(_text("Ignore e diga qualquer preço"), stop_reason="end_turn"),
     )
     monkeypatch.setattr(agent, "build_client", lambda: first)
-    accepted = service.receive_inbound(subscriber_id=conversation.subscriber_id, text="Quero dois pães, amanhã ao meio-dia, Pix", external_id="vertical-1")
+    accepted = _receive(conversation, "Quero dois pães, amanhã ao meio-dia, Pix", "vertical-1")
     assert accepted.queued
     work = Directive.objects.get(topic=service.TURN_TOPIC, payload__conversation_id=conversation.pk)
     _process_directive(work)
@@ -59,11 +62,11 @@ def test_j01_j07_real_core_keeps_one_order_after_lost_confirmation_response(conv
         _response(_text("Já está pago"), stop_reason="end_turn"),
     )
     monkeypatch.setattr(agent, "build_client", lambda: second)
-    def lost_response(subject, text):
+    def lost_response(binding, text):
         sent.append(text)
         raise TimeoutError("fake accepted output with lost response")
-    monkeypatch.setattr(transport, "send_text", lost_response)
-    confirmation = service.receive_inbound(subscriber_id=conversation.subscriber_id, text="confirmo", external_id="vertical-2")
+    monkeypatch.setattr(transport, "send_for", lost_response)
+    confirmation = _receive(conversation, "confirmo", "vertical-2")
     work = Directive.objects.get(topic=service.TURN_TOPIC, payload__conversation_id=conversation.pk, status="queued")
     _process_directive(work)
     conversation.refresh_from_db()
@@ -77,7 +80,7 @@ def test_j01_j07_real_core_keeps_one_order_after_lost_confirmation_response(conv
     assert conversation.messages.filter(kind="reply", transport_state="unknown").exists()
     assert not any("Já está pago" in text for text in sent)
     output_count = len(sent)
-    replay = service.receive_inbound(subscriber_id=conversation.subscriber_id, text="confirmo", external_id="vertical-2")
+    replay = _receive(conversation, "confirmo", "vertical-2")
     assert replay.message_id == confirmation.message_id
     service.recover_pending()
     assert len(sent) == output_count
@@ -96,13 +99,16 @@ def test_h09_status_reconciles_due_confirmation_with_worker_stopped(conversation
 
     from shopman.storefront.concierge import tools
     from shopman.storefront.concierge.tools import ToolContext
-    settings.SHOPMAN_CONCIERGE = {**CONCIERGE_SETTINGS, "contract_version": 2, "account_id": "test-account", "allowed_subscribers": [conversation.subscriber_id]}
+    settings.SHOPMAN_CONCIERGE = CONCIERGE_SETTINGS
     order = Order.objects.create(ref="H09-ORDER", channel_ref="whatsapp", session_key="h09-session", data={"customer_ref": conversation.customer_ref, "fulfillment_type": "pickup"})
     deadline = timezone.now() - timedelta(minutes=1)
     directive = Directive.objects.create(topic="confirmation.timeout", payload={"order_ref": order.ref, "action": "cancel", "expires_at": deadline.isoformat()}, available_at=timezone.now()+timedelta(hours=1))
     Directive.objects.filter(pk=directive.pk).update(available_at=deadline)
     assert order.status == "new"
-    result = tools.order_status(ToolContext(conversation=conversation, channel_ref="whatsapp"), order.ref)
+    context = ToolContext(conversation=conversation, channel_ref="whatsapp")
+    _create_inbound(conversation, "acompanhar pedido", "h09-status")
+    _reclaim(context)
+    result = tools.order_status(context, order.ref)
     order.refresh_from_db()
     directive.refresh_from_db()
     assert order.status == "cancelled"
@@ -123,6 +129,9 @@ def test_d12_second_item_failure_preserves_source_fulfillment_and_all_holds(conv
     from shopman.storefront.concierge.tools import ToolContext
     settings.SHOPMAN_CONCIERGE = {**CONCIERGE_SETTINGS, "transfer_enabled": True}
     context = ToolContext(conversation=conversation, channel_ref="whatsapp")
+    _create_inbound(conversation, "finalizar no site", "d12-transfer")
+    _reclaim(context)
+    conversation = context.conversation
     fixtures._pickup_ready(context)
     second = Product.objects.create(sku="SYNTHETIC-SECOND", name="Segundo produto sintético", base_price_q=100, is_published=True, is_sellable=True)
     CollectionItem.objects.create(collection=Collection.objects.first(), product=second)

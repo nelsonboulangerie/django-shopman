@@ -841,9 +841,11 @@ def _assert_authority(ctx: ToolContext, *, for_mutation=True):
 
 def _occurred_after_offer(message, offered) -> bool:
     from django.utils.dateparse import parse_datetime
-    raw = (message.envelope or {}).get("provider_timestamp")
-    if not raw:
-        return True
+
+    envelope = message.envelope or {}
+    raw = envelope.get("occurred_at")
+    if not raw or envelope.get("occurred_at_assurance") != "verified":
+        return False
     try:
         occurred_at = parse_datetime(str(raw))
     except (TypeError, ValueError):
@@ -870,7 +872,13 @@ def _confirmation(ctx: ToolContext, token: str):
         return None
     # Correção no mesmo envio ou outra intenção intermediária invalida o aceite.
     for message in messages:
-        if (message.envelope or {}).get("version") != 2 or not (message.envelope or {}).get("event_id") or not _occurred_after_offer(message, offered):
+        envelope = message.envelope or {}
+        if (
+            envelope.get("version") != 3
+            or envelope.get("event_identity_assurance") != "verified"
+            or not envelope.get("event_id")
+            or not _occurred_after_offer(message, offered)
+        ):
             return None
         if _fold(message.text).rstrip(".! ") not in {"sim", "confirmo", "pode confirmar", "confirmar pedido", "sim, confirmo"}:
             return None
@@ -1263,8 +1271,15 @@ def notify_when_available(ctx: ToolContext, sku: str) -> dict:
         if limit is not None:
             messages = messages.filter(pk__lte=limit)
         messages = list(messages.order_by("pk"))
-        if messages and all((m.envelope or {}).get("version") == 2 and (m.envelope or {}).get("event_id") and _occurred_after_offer(m, offered) and
-            _fold(m.text).rstrip(".! ") in {"sim", "aceito", "quero o aviso", "sim, aceito"} for m in messages):
+        if messages and all(
+            (message.envelope or {}).get("version") == 3
+            and (message.envelope or {}).get("event_identity_assurance") == "verified"
+            and (message.envelope or {}).get("event_id")
+            and _occurred_after_offer(message, offered)
+            and _fold(message.text).rstrip(".! ")
+            in {"sim", "aceito", "quero o aviso", "sim, aceito"}
+            for message in messages
+        ):
             accepted = messages[-1]
     if accepted is None:
         return {"ok": True, "code": "consent_required", "message": f"Aviso para {item.name}: {text} Deseja receber este aviso?",
