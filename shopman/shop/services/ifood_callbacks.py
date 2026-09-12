@@ -34,7 +34,11 @@ logger = logging.getLogger(__name__)
 
 
 class IFoodCallbackError(Exception):
-    """Raised when an iFood status callback fails."""
+    """Safe provider failure, classified for durable retries."""
+
+    def __init__(self, message: str, *, retryable: bool = True):
+        super().__init__(message)
+        self.retryable = retryable
 
 
 # Internal status → iFood order-action path segment.
@@ -93,12 +97,13 @@ def send_action(order_id: str, action: str, *, body: dict | None = None) -> None
     try:
         resp = requests.post(url, json=body, headers=headers, timeout=int(_cfg().get("timeout") or 30))
     except requests.RequestException as exc:
-        raise IFoodCallbackError(f"iFood {action} request failed: {exc}") from exc
+        raise IFoodCallbackError(f"iFood {action} request failed") from exc
 
     # iFood returns 202 Accepted for status actions.
     if resp.status_code not in (200, 202):
         raise IFoodCallbackError(
-            f"iFood {action} HTTP {resp.status_code}: {resp.text[:200]}"
+            f"iFood {action} HTTP {resp.status_code}",
+            retryable=resp.status_code in (408, 429) or resp.status_code >= 500
         )
     logger.info("ifood_callbacks: %s ok for order %s", action, order_id)
 

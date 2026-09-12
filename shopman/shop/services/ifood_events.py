@@ -41,6 +41,7 @@ _PLACED_CODES = {"PLC", "PLACED"}
 # Cancelamento originado no iFood (cliente desistiu no app / iFood cancelou):
 # refletir no Order local para o Gestor nao tratar pedido ja cancelado pelo iFood.
 _CANCELLATION_CODES = {"CAN", "CANCELLED"}
+_CONCLUSION_CODES = {"CON", "CONCLUDED"}
 _ACK_BATCH = 100  # iFood acknowledges in batches.
 
 
@@ -66,17 +67,14 @@ def poll() -> list[dict]:
 
     try:
         resp = requests.get(url, headers=poll_headers, timeout=timeout)
-        # x-polling-merchants é um filtro OPCIONAL. Se o iFood o rejeita (400 —
-        # tipicamente IFOOD_MERCHANT_ID malformado/errado), não deixe isso zerar
-        # o polling: refaz sem o filtro (todos os merchants do app) e avisa alto
-        # para corrigir o merchant_id (necessário também p/ o catálogo).
+        # Never broaden merchant scope on a rejected filter: the same app may
+        # authorize other stores, including production stores during testing.
         if resp.status_code == 400 and merchant_id:
             logger.warning(
                 "ifood_events.poll: iFood rejeitou x-polling-merchants (400) — "
-                "IFOOD_MERCHANT_ID provavelmente errado. Pollando sem filtro; "
+                "IFOOD_MERCHANT_ID provavelmente errado. Filtro preservado; "
                 "confira o Merchant ID no portal iFood."
             )
-            resp = requests.get(url, headers=headers, timeout=timeout)
     except requests.RequestException as exc:
         logger.warning("ifood_events.poll: request failed: %s", exc)
         return []
@@ -126,20 +124,32 @@ def process_events(events: list[dict]) -> dict:
     """
     ingested = deduped = ignored = failed = 0
     handled_ids: list[str] = []
+    merchant_id = str(_cfg().get("merchant_id") or "").strip()
 
     for event in events:
         event_id = str(event.get("id") or "").strip()
         code = str(event.get("fullCode") or event.get("code") or "").upper()
         order_id = str(event.get("orderId") or "").strip()
 
+        # Check before handling even ignorable codes: acknowledging an event
+        # from another merchant would consume it for that store's integration.
+        # Legacy event fixtures/providers can omit merchantId; retain support
+        # for those while rejecting explicit mismatches.
+        event_merchant_id = str(event.get("merchantId") or "").strip()
+        if merchant_id and event_merchant_id and event_merchant_id != merchant_id:
+            logger.warning("ifood_events: event %s belongs to another merchant; leaving unacknowledged", event_id)
+            failed += 1
+            continue
+
         if not event_id:
             logger.warning("ifood_events: event without id, skipping: %s", event)
             failed += 1
             continue
 
-        # Cancelamento originado no iFood: reflete no nosso Order.
-        if code in _CANCELLATION_CODES:
-            outcome = _process_cancellation(event_id, order_id)
+        # Remote terminal events reconcile only after the order exists.
+        if code in _CANCELLATION_CODES or code in _CONCLUSION_CODES:
+            processor = _process_cancellation if code in _CANCELLATION_CODES else _process_conclusion
+            outcome = processor(event_id, order_id)
             if outcome == "ingested":
                 ingested += 1
                 handled_ids.append(event_id)
@@ -249,10 +259,18 @@ def _process_cancellation(event_id: str, order_id: str) -> str:
         external_ref=order_id,
     ).first()
     if order is None:
-        # Pedido que não conhecemos (ou já varrido): nada a refletir — ack.
-        webhook_idempotency.mark_done(claim, response_body={"status": "already_processed"})
-        return "ingested"
+        # CAN can arrive before PLACED, including earlier in the same batch.
+        # Release the claim and leave CAN unacknowledged so redelivery applies
+        # the cancellation after the order has been materialized.
+        webhook_idempotency.mark_failed(claim)
+        return "failed"
     if order.status == "cancelled":
+        # Legacy versions cancelled locally before sending requestCancellation.
+        # CAN still confirms remote ownership, so queued legacy callbacks must
+        # be suppressed even when no further local transition is needed.
+        if not (order.data or {}).get("ifood_cancelled"):
+            order.data = {**(order.data or {}), "ifood_cancelled": True}
+            order.save(update_fields=["data", "updated_at"])
         webhook_idempotency.mark_done(claim, response_body={"status": "already_cancelled"})
         return "deduped"
 
@@ -261,7 +279,7 @@ def _process_cancellation(event_id: str, order_id: str) -> str:
 
         cancelled = cancellation.cancel(
             order,
-            reason="Cancelado pelo cliente no iFood",
+            reason="Cancelamento confirmado pelo iFood",
             actor="system:ifood",
             extra_data={"ifood_cancelled": True},
         )
@@ -273,6 +291,71 @@ def _process_cancellation(event_id: str, order_id: str) -> str:
 
     webhook_idempotency.mark_done(claim, response_body={"status": "cancelled", "order_ref": order.ref})
     return outcome
+
+
+def _process_conclusion(event_id: str, order_id: str) -> str:
+    """Close an order through its canonical handoff flow, without inventing work.
+
+    CON can precede PLACED or the operator's dispatch. Keep it retryable until
+    the local order can conclude legally; never manufacture preparation or
+    dispatch transitions (and their outbound iFood callbacks).
+    """
+    if not order_id:
+        return "failed"
+
+    claim = webhook_idempotency.claim(
+        _IDEMPOTENCY_SCOPE,
+        f"event:{webhook_idempotency.stable_webhook_key(event_id)}",
+    )
+    if claim.replayed:
+        return "deduped"
+    if claim.in_progress:
+        return "failed"
+
+    from django.db import transaction
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import operator_orders
+    from shopman.shop.services.order_helpers import get_fulfillment_type
+
+    try:
+        with transaction.atomic():
+            order = Order.objects.select_for_update().filter(
+                channel_ref=ifood_ingest.IFOOD_CHANNEL_REF, external_ref=order_id,
+            ).first()
+            if order is None:
+                webhook_idempotency.mark_failed(claim)
+                return "failed"
+            if order.status in Order.TERMINAL_STATUSES:
+                # A later CON must not reopen a cancellation or a return.
+                webhook_idempotency.mark_done(claim, response_body={"status": "already_terminal"})
+                return "deduped"
+
+            fulfillment_type = get_fulfillment_type(order)
+            delivery = fulfillment_type == "delivery"
+            allowed = (
+                order.status in (Order.Status.DISPATCHED, Order.Status.DELIVERED)
+                if delivery else fulfillment_type == "pickup" and order.status == Order.Status.READY
+            )
+            if not allowed:
+                logger.warning("ifood_events: CON awaiting local handoff for order %s (status %s)", order_id, order.status)
+                webhook_idempotency.mark_failed(claim)
+                return "failed"
+
+            if delivery and order.status == Order.Status.DISPATCHED:
+                operator_orders.confirm_received(order, actor="system:ifood")
+                order.refresh_from_db()
+            if order.status != Order.Status.COMPLETED:
+                operator_orders.advance_order(order, actor="system:ifood")
+                order.refresh_from_db()
+            if order.status != Order.Status.COMPLETED:
+                raise ValueError("iFood conclusion did not complete the local order")
+            webhook_idempotency.mark_done(claim, response_body={"status": "concluded", "order_ref": order.ref})
+    except Exception:
+        logger.exception("ifood_events: failed to conclude order %s (event %s)", order_id, event_id)
+        webhook_idempotency.mark_failed(claim)
+        return "failed"
+    return "ingested"
 
 
 def run_once() -> dict:

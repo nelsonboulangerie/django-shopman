@@ -220,9 +220,10 @@ def _map_payments(payments: dict) -> dict:
             {
                 "method": m.get("method", ""),
                 "type": m.get("type", ""),
-                "prepaid": bool(m.get("prepaid", False)),
+                "prepaid": m.get("prepaid"),
                 "value_q": _to_q(m.get("value", 0)),
                 "brand": (m.get("card") or {}).get("brand", ""),
+                "change_for_q": _to_q((m.get("cash") or {}).get("changeFor", 0)),
             }
             for m in methods
         ],

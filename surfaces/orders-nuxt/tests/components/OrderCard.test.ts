@@ -40,6 +40,8 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     next_action_label: "Iniciar preparo",
     payment_method: "cash",
     payment_method_label: "Dinheiro",
+    ifood_cancellation_notice: "",
+    ifood_payment_summary: [],
     payment_status: "pending",
     payment_pending: true,
     can_settle_delivery_cash: false,
@@ -188,5 +190,28 @@ describe("OrderCard — countdown do prazo (relógio compartilhado)", () => {
   it("sem prazo → sem chip de countdown", () => {
     const w = mountCard({ card: card({ confirmation_deadline_iso: "" }) });
     expect(w.find('[role="timer"]').exists()).toBe(false);
+  });
+});
+
+describe("OrderCard iFood", () => {
+  it("preserva o estado operacional e mostra cancelamento pendente junto da cobrança", () => {
+    const notice = "Cancelamento solicitado ao iFood. Aguardando confirmação.";
+    const w = mountCard({ card: card({
+      channel_ref: "ifood",
+      can_advance: false,
+      next_action_label: "",
+      advance_block_label: "Aguardando iFood",
+      advance_block_reason: notice,
+      ifood_cancellation_notice: notice,
+      ifood_payment_summary: ["Pago no iFood: R$ 10,00", "Cobrar na entrega: R$ 5,00"],
+    }) });
+    expect(w.get("[data-ifood-cancellation]").text()).toBe(notice);
+    expect(w.findAll("[data-ifood-payment]").map((line) => line.text())).toEqual([
+      "Pago no iFood: R$ 10,00", "Cobrar na entrega: R$ 5,00",
+    ]);
+    expect(w.text()).toContain("Confirmado");
+    const blocked = w.findAll("button").find((button) => button.text().includes("Aguardando iFood"));
+    expect(blocked?.attributes("disabled")).toBeDefined();
+    expect(w.findAll("button").some((button) => button.text().includes("Iniciar preparo"))).toBe(false);
   });
 });
