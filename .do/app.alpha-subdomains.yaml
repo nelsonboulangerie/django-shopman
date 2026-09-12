@@ -448,6 +448,11 @@ envs:
   scope: RUN_TIME
   value: 'true'
   type: GENERAL
+# Campo dinâmico última interação WhatsApp; fuso confirmado pelo operador.
+- key: CONCIERGE_WHATSAPP_INTERACTION_TIMEZONE
+  scope: RUN_TIME
+  value: America/Sao_Paulo
+  type: GENERAL
 - key: CONCIERGE_IDENTITY_LINK_ENABLED
   scope: RUN_TIME
   value: 'false'
