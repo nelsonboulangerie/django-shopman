@@ -264,6 +264,14 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "HOME_HOW_IT_WORKS_HEADING": {
         WILDCARD: {WILDCARD: CopyEntry(title="Como Funciona")},
     },
+    "HOME_FAQ_HEADING": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="Dúvidas frequentes",
+                message="Respostas diretas para você decidir o próximo passo.",
+            ),
+        },
+    },
     "HOME_HOW_ONLINE_HEADING": {
         WILDCARD: {WILDCARD: CopyEntry(title="Peça online")},
     },

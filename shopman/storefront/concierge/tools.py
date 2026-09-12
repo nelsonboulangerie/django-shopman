@@ -460,6 +460,42 @@ def browse_menu(
     return payload
 
 
+def store_info(ctx: ToolContext, topic: str, query: str = "") -> dict:
+    """Public shop information and FAQ answers from the storefront projection."""
+    from shopman.shop.models import Shop
+    from shopman.storefront.presentation.public_information import build_public_faq, search_public_faq
+
+    allowed_topics = {"delivery", "hours", "location", "contact", "faq"}
+    if topic not in allowed_topics:
+        return _error("invalid_topic", "Escolha entrega, horários, endereço, contato ou dúvidas frequentes.")
+    shop = Shop.load()
+    if shop is None:
+        return _error("shop_information_unavailable", "Não consegui consultar os dados públicos da loja agora.")
+    if topic == "faq":
+        if not query.strip():
+            return _error("faq_query_required", "Qual é a sua dúvida?")
+        answers = search_public_faq(query, channel_ref=ctx.channel_ref, shop=shop)
+    else:
+        answers = tuple(
+            answer for answer in build_public_faq(channel_ref=ctx.channel_ref, shop=shop)
+            if answer.ref == topic
+        )
+    if not answers:
+        return _error(
+            "public_answer_not_found",
+            "Não encontrei uma resposta pública para essa dúvida. Posso chamar a equipe.",
+        )
+    links = []
+    if topic == "location" and shop.maps_url:
+        links.append({"label": "Como chegar", "url": shop.maps_url})
+    return {
+        "ok": True,
+        "topic": topic,
+        "answers": [{"ref": answer.ref, "question": answer.question, "answer": answer.answer} for answer in answers],
+        "links": links,
+    }
+
+
 def _menu_overview(items: list, catalog, *, available_only: bool) -> dict:
     """Coleções com contagem de disponíveis e exemplos, no lugar de uma fatia cega."""
     by_collection: dict[str, list] = {}
@@ -611,10 +647,15 @@ def set_item(ctx: ToolContext, sku: str, qty: int) -> dict:
     return {"ok": True, **_cart_payload(ctx, session)}
 
 
-def list_pickup_slots(ctx: ToolContext, delivery_date: str = "", fulfillment_type: str = "pickup") -> dict:
+def list_fulfillment_slots(ctx: ToolContext, delivery_date: str = "", fulfillment_type: str = "pickup") -> dict:
     """Dias e horários em que a casa consegue entregar/servir esta sacola."""
+    from shopman.shop.projections.channel_policy import resolve_channel_policy
     from shopman.shop.services.business_calendar import available_dates, delivery_slots_for
     from shopman.storefront.services.pickup_slots import annotate_slots_for_checkout
+
+    if fulfillment_type not in resolve_channel_policy(ctx.channel_ref).fulfillment_types:
+        label = "entrega" if fulfillment_type == "delivery" else "retirada"
+        return _error("fulfillment_unavailable", f"Este canal não oferece {label}.")
 
     session = _open_session(ctx)
     skus = [str(item.get("sku")) for item in (session.items or [])] if session else []
@@ -669,6 +710,11 @@ def set_fulfillment(
     fulfillment_type = str(fulfillment_type or "").strip().lower()
     if fulfillment_type not in FULFILLMENT_TYPES:
         return _error("invalid_fulfillment", "Escolha retirada (pickup) ou entrega (delivery).")
+    from shopman.shop.projections.channel_policy import resolve_channel_policy
+
+    if fulfillment_type not in resolve_channel_policy(ctx.channel_ref).fulfillment_types:
+        label = "entrega" if fulfillment_type == "delivery" else "retirada"
+        return _error("fulfillment_unavailable", f"Este canal não oferece {label}.")
 
     session = _open_session(ctx)
     if session is None:
@@ -747,7 +793,7 @@ def set_fulfillment(
     payload = _cart_payload(ctx, session)
     result = {"ok": True, **payload}
     if fulfillment_type == "pickup" and not values.get("delivery_time_slot"):
-        result["pickup_slots"] = list_pickup_slots(ctx, when).get("pickup_slots", [])
+        result["pickup_slots"] = list_fulfillment_slots(ctx, when).get("pickup_slots", [])
     if fulfillment_type == "delivery" and payload.get("delivery_out_of_zone"):
         result["message"] = "Esse endereço está fora da nossa área de entrega."
     return result
@@ -1345,7 +1391,7 @@ def _guard(handler):
     @wraps(handler)
     def guarded(ctx, *args, **kwargs):
         try:
-            _assert_authority(ctx, for_mutation=handler.__name__ not in {"browse_menu", "view_cart", "last_order", "order_status", "list_pickup_slots"})
+            _assert_authority(ctx, for_mutation=handler.__name__ not in {"browse_menu", "store_info", "view_cart", "last_order", "order_status", "list_fulfillment_slots"})
             if handler.__name__ in {"set_item", "review_order"}:
                 from shopman.orderman.models import Session
                 with transaction.atomic():
@@ -1365,7 +1411,7 @@ def _guard(handler):
     return guarded
 
 
-for _name in ("browse_menu", "view_cart", "last_order", "order_status", "list_pickup_slots", "set_item", "set_fulfillment", "review_order", "place_order", "send_web_link", "notify_when_available"):
+for _name in ("browse_menu", "store_info", "view_cart", "last_order", "order_status", "list_fulfillment_slots", "set_item", "set_fulfillment", "review_order", "place_order", "send_web_link", "notify_when_available"):
     globals()[_name] = _guard(globals()[_name])
 
 
@@ -1401,7 +1447,20 @@ def render_result(name: str, result: dict) -> str:
             rows = [f"{_display_name(c['label'])}: {c['available_count']} disponíveis. " + "; ".join(f"{_display_name(i['name'])} — {i['price']}" for i in c['examples']) for c in result.get("collections", [])]
         else:
             rows = [f"{_display_name(i['name'])} — {i['price']}. {_display_text(i['availability_label'])}" for i in result.get("items", [])]
-        return "\n".join(rows) or "Não encontrei produtos para essa busca."
+        if not rows:
+            return "Não encontrei produtos para essa busca. Quer tentar outro nome ou ver o cardápio?"
+        if not result.get("overview") and len(rows) == 1 and result.get("items", [{}])[0].get("can_order"):
+            rows.append("Se quiser pedir, me diga a quantidade.")
+        elif not result.get("overview") and len(rows) > 1:
+            rows.append("Qual deles você prefere?")
+        return "\n".join(rows)
+    if name == "store_info":
+        rows = [_display_text(answer.get("answer")) for answer in result.get("answers", [])]
+        for link in result.get("links", []):
+            url = str(link.get("url") or "")
+            if url.startswith("https://www.google.com/maps/"):
+                rows.append(f"{_display_text(link.get('label'))}: {url}")
+        return "\n".join(row for row in rows if row) or "Não encontrei uma resposta pública para essa dúvida."
     if name in {"view_cart", "set_item", "set_fulfillment", "review_order"}:
         rows = [f"{i['qty']} × {_display_name(i['name'])} — {i['line_total']}" for i in result.get("lines", [])]
         if not rows:
@@ -1450,7 +1509,7 @@ def render_result(name: str, result: dict) -> str:
         return f"Continue no site: {result['url']}"
     if name == "last_order":
         return "\n".join(f"{i['qty']} × {_display_name(i['name'])}" for i in result.get("items", [])) or "Sem pedido anterior."
-    if name == "list_pickup_slots":
+    if name == "list_fulfillment_slots":
         slots = result.get("pickup_slots", result.get("delivery_slots", []))
         return "\n".join(_display_text(i['label']) for i in slots if i.get("available", True)) or "Nenhum horário disponível nessa data."
     return _display_text(result.get("message") or "Suas escolhas foram preservadas. Podemos continuar.")
@@ -1495,6 +1554,25 @@ TOOL_SPECS: list[dict] = [
         ),
     },
     {
+        "name": "store_info",
+        "description": (
+            "Consulta informações públicas canônicas da loja e perguntas frequentes. Use para saber "
+            "se fazemos entrega ou retirada, horários, endereço, contato e políticas públicas. Em "
+            "`faq`, passe a dúvida do cliente em `query`. Para preço, disponibilidade ou descrição "
+            "de produto, use browse_menu."
+        ),
+        "input_schema": _schema(
+            {
+                "topic": {
+                    "type": "string",
+                    "enum": ["delivery", "hours", "location", "contact", "faq"],
+                },
+                "query": {"type": "string", "description": "Dúvida original para pesquisar na FAQ."},
+            },
+            ["topic"],
+        ),
+    },
+    {
         "name": "view_cart",
         "description": "Mostra a sacola atual: itens, totais, entrega/retirada escolhida e o que falta para fechar.",
         "input_schema": _schema({}, []),
@@ -1514,7 +1592,7 @@ TOOL_SPECS: list[dict] = [
         ),
     },
     {
-        "name": "list_pickup_slots",
+        "name": "list_fulfillment_slots",
         "description": (
             "Dias e horários possíveis. Para retirada devolve os slots (com os que a produção "
             "ainda não alcança). Para entrega devolve as janelas do dia. `delivery_date` em AAAA-MM-DD "
@@ -1532,7 +1610,7 @@ TOOL_SPECS: list[dict] = [
         "name": "set_fulfillment",
         "description": (
             "Grava retirada (pickup) ou entrega (delivery), a data (AAAA-MM-DD, \"\" = hoje), o "
-            "horário (slot_ref de list_pickup_slots, \"\" se ainda não escolhido) e, na entrega, o "
+            "horário (slot_ref de list_fulfillment_slots, \"\" se ainda não escolhido) e, na entrega, o "
             "endereço completo com número. Valida como o site e devolve a taxa de entrega."
         ),
         "input_schema": _schema(
@@ -1620,9 +1698,10 @@ TOOL_SPECS: list[dict] = [
 
 _HANDLERS = {
     "browse_menu": browse_menu,
+    "store_info": store_info,
     "view_cart": view_cart,
     "set_item": set_item,
-    "list_pickup_slots": list_pickup_slots,
+    "list_fulfillment_slots": list_fulfillment_slots,
     "set_fulfillment": set_fulfillment,
     "review_order": review_order,
     "place_order": place_order,
@@ -1642,8 +1721,9 @@ TOOL_NAMES = tuple(_HANDLERS)
 LIMITED_AUTHORITY_TOOL_NAMES = frozenset(
     {
         "browse_menu",
+        "store_info",
         "view_cart",
-        "list_pickup_slots",
+        "list_fulfillment_slots",
         "order_status",
         "last_order",
         "handoff_to_human",
