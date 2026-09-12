@@ -322,7 +322,7 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
         if stop != "tool_use" or not tool_uses:
             if stop == "max_tokens":
                 logger.warning("concierge.agent max_tokens conversation=%s", conversation.pk)
-            if not canonical_replies:
+            if not any(event["name"] == "search_storefront" for event in outcome.tool_events):
                 # O modelo pode encerrar sem consultar. A busca pública ainda é
                 # executada pelo mesmo contrato canônico e só assume a resposta
                 # quando encontra um fato; saudações e conversa sem match mantêm

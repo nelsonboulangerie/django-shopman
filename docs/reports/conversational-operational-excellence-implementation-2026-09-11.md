@@ -549,3 +549,39 @@ CI, deploy do SHA e o transcript real com resposta aceita pelo ManyChat. Piloto 
 rollout continuam não iniciados e não autorizados; permanecem fechados os gates de
 ID oficial/receipt, identidade para mutações, transferência/retorno humano, SLA e
 medição das jornadas J01–J13.
+
+## Correção adversarial: autoridade de handoff — 12/09/2026
+
+Base revalidada: merge `786f3cc0a6d6e84d9f273a4fd9f48d46fccf3b49`, em
+worktree e branch `codex/concierge-handoff-policy-20260912` exclusivos. No smoke
+da busca unificada, o modelo tentou encaminhar “vou querer um pain perdu, vcs
+entregam?” para uma pessoa porque o contato não tinha telefone verificado. A
+conversa estava ativa antes do turno; portanto não era estado antigo. O ManyChat
+aceitou o handoff e a resposta, mas nenhum produto, FAQ ou pedido foi alterado.
+
+O defeito era de autoridade: `handoff_to_human` aceitava qualquer justificativa
+livre produzida pelo modelo. A ferramenta foi removida do agente. Um único
+classificador conservador do servidor lê a fala original e deriva uma categoria
+fechada: pedido de pessoa, reclamação, encomenda especial ou conferência de
+alergia. Falta de telefone, endereço ou permissão comercial deixa de ser causa
+possível. Se o modelo consultar outra ferramenta ou nenhuma, a reconciliação
+também executa `search_storefront` e acrescenta os fatos públicos encontrados.
+
+| Achado | Classificação atualizada | Correção e evidência |
+|---|---|---|
+| modelo podia converter limitação técnica em transferência humana | defeito comprovado no smoke real | agente não possui ferramenta de posse; regressão exige produto, preço e entrega mesmo quando ele escolhe outra consulta |
+| justificativa livre controlava posse local e estado remoto | defeito de autoridade | removida; categoria é inferida somente da fala original pelo servidor |
+| bloquear todo handoff eliminaria uma saída necessária | risco de regressão | um matcher canônico atende pedido de pessoa, reclamação, encomenda especial e alergia; positivos e falsos positivos reais têm regressão |
+
+WP00 registra transcript, causa e estado anterior; WP01 endurece a fronteira de
+autoridade; WP06 preserva a busca pública única; WP07 mantém handoff legítimo sem
+criar inbox paralela; WP08 continua independente de provider; WP09 acrescenta as
+regressões; WP02–WP05 e WP10 não mudam. Não há migration. Rollback de aplicação
+volta à imagem anterior, preservando transcript e receipts, mas reabre o defeito.
+
+Validação local desta correção: arquivo completo do motor Concierge **55 passed**;
+todas as fronteiras Concierge **290 passed, 25 skipped**; Ruff e
+`git diff --check` aprovados. CI,
+deploy imutável, compensação confirmada do handoff do único contato autorizado e
+novo smoke real ainda são gates de homologação. Piloto e rollout permanecem
+fechados.
