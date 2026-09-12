@@ -164,3 +164,12 @@ fiscal e raster. Inclui caixa extensa, reconstrução dos pixels, valores de tro
 nas duas células e PNG estritamente preto com transparência. Ruff e diff check
 aprovados. Continuam pendentes impressora física, leitura óptica e validação fiscal
 já descritas. Configuração raster segue opt-in; sem merge ou deploy.
+
+## Correção da comparação no painel estreito
+
+O corte reportado à direita foi reproduzido na aba do usuário: viewport de 620 px,
+comparação com 557 px disponíveis e conteúdo de 629 px. Era overflow horizontal
+da galeria, ocultando parte do segundo impresso. A comparação agora quebra em
+coluna e mostra o depois primeiro em telas estreitas; SVG limita-se ao contêiner.
+Verificado na mesma aba: as sete comparações têm scrollWidth = clientWidth = 557 px,
+e a ficha aparece inteira. A impressão mantém 80 mm e a composição RAW não mudou.
