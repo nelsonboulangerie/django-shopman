@@ -207,11 +207,13 @@ completa, sem autorizar escrita corretiva no banco de produção.
 
 ### Gate L5 — versão reproduzível
 
-O pedido agora carimba a versão, mas futuras edições do componente substituem o
-texto da URL. Para entrega imediata de contrato em meio reproduzível, arquivar
-cada versão legal como documento imutável e manter rota/download pela versão do
-pedido. Git ajuda a provar autoria, mas não é uma cópia operacional acessível ao
-consumidor.
+**Implementado nesta revisão; falta somente o smoke após deploy.** Termos e
+privacidade têm cópias públicas em URL versionada; o checkout abre essas cópias
+diretamente e o pedido grava versão, URL e SHA-256. O gate de CI
+`check_legal_archive.py` aceita somente arquivos novos e reprova modificação ou
+remoção de uma versão existente. Uma correção futura exige nova data e novo
+arquivo. Depois do deploy, o fechamento operacional exige confirmar HTTP 200 e
+o mesmo SHA-256 nas duas URLs externas.
 
 ### Gate L6 — incidente e operação
 

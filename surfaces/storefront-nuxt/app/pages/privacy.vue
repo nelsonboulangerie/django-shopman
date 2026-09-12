@@ -13,8 +13,9 @@ definePageMeta({
 const session = useShopSession()
 const shop = computed(() => resolveNelsonPublicShop(session.shop.value))
 const addressLinesList = computed(() => addressLines(shop.value?.full_address))
-const policyVersion = '2026-09-11'
-const updatedAt = '11 de setembro de 2026'
+const policyVersion = '2026-09-12'
+const updatedAt = '12 de setembro de 2026'
+const archivedVersionUrl = '/documentos-legais/privacidade/2026-09-12.html'
 
 useSeoMeta({
   title: 'Política de privacidade',
@@ -39,6 +40,9 @@ useHead({
       <div>
         <h1 class="shop-title">Política de privacidade</h1>
         <p class="shop-muted">Atualizada em {{ updatedAt }}.</p>
+        <NuxtLink :to="archivedVersionUrl" target="_blank" class="mt-2 inline-block text-sm underline underline-offset-2">
+          Abrir cópia permanente desta versão
+        </NuxtLink>
       </div>
 
       <section class="space-y-2">
@@ -103,7 +107,7 @@ useHead({
         <p class="text-sm leading-6">
           Só com quem precisa prestar uma parte do serviço, e apenas os dados necessários. Conforme
           o canal usado, isso pode incluir: <strong>Efí</strong> e <strong>Stripe</strong>, para pagamentos;
-          <strong>ManyChat</strong> e <strong>Meta</strong>, para WhatsApp e publicações no Instagram ou
+          <strong>ManyChat</strong> e <strong>Meta</strong>, para WhatsApp e postagens no Instagram ou
           Facebook; <strong>Twilio</strong> ou <strong>Comtele</strong>, para SMS; o provedor de e-mail;
           <strong>Focus NFe</strong> e a Secretaria da Fazenda, para documentos fiscais;
           <strong>Google</strong>, para endereço, mapas e o Perfil da Empresa;
@@ -113,7 +117,7 @@ useHead({
         </p>
         <p class="text-sm leading-6">
           A gente não vende seus dados, não entrega listas a anunciantes e não usa dados pessoais
-          recebidos das APIs do Google para publicidade. Publicações em redes sociais e no Perfil da
+          recebidos das APIs do Google para publicidade. Postagens em redes sociais e no Perfil da
           Empresa levam apenas o conteúdo público aprovado; mensagens diretas usam somente o contato
           necessário e exigem consentimento válido para aquela finalidade.
         </p>

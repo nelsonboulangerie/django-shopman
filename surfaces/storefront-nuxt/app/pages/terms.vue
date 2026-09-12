@@ -12,8 +12,9 @@ const session = useShopSession()
 const shop = computed(() => resolveNelsonPublicShop(session.shop.value))
 const addressLinesList = computed(() => addressLines(shop.value?.full_address))
 const openingHours = computed(() => session.openingHours.value)
-const policyVersion = '2026-09-11'
-const updatedAt = '11 de setembro de 2026'
+const policyVersion = '2026-09-12'
+const updatedAt = '12 de setembro de 2026'
+const archivedVersionUrl = '/documentos-legais/termos/2026-09-12.html'
 
 useSeoMeta({
   title: 'Termos de uso',
@@ -38,6 +39,9 @@ useHead({
       <div>
         <h1 class="shop-title">Termos de uso</h1>
         <p class="shop-muted">Atualizados em {{ updatedAt }}.</p>
+        <NuxtLink :to="archivedVersionUrl" target="_blank" class="mt-2 inline-block text-sm underline underline-offset-2">
+          Abrir cópia permanente desta versão
+        </NuxtLink>
       </div>
 
       <section class="space-y-2">
@@ -122,9 +126,10 @@ useHead({
           Em compra feita pela internet, você pode exercer o direito de arrependimento no prazo
           legal de sete dias, contado da contratação ou do recebimento. Enquanto o botão
           <strong>Cancelar pedido</strong> estiver disponível, ele resolve imediatamente. Depois
-          disso, use <strong>Ajuda</strong> (que abre o canal de atendimento) ou um dos contatos
-          acima; a solicitação será recebida e tratada sem limitar os direitos previstos no Código
-          de Defesa do Consumidor.
+          disso, <strong>Solicitar cancelamento</strong> registra o pedido no próprio acompanhamento,
+          confirma o recebimento com um protocolo e encaminha a análise à equipe. A solicitação não
+          promete cancelamento automático quando preparo ou entrega já começaram, mas não limita os
+          direitos previstos no Código de Defesa do Consumidor.
         </p>
         <p class="text-sm leading-6">
           Se houver pagamento, o estorno será solicitado pelo mesmo meio de pagamento; o prazo para
@@ -149,8 +154,7 @@ useHead({
         </p>
         <p class="text-sm leading-6">
           Menores de 18 anos devem usar a loja com a participação de seu responsável legal. A loja
-          não direciona mensagens promocionais a quem a data de nascimento cadastrada identifique
-          como menor de idade.
+          não direciona mensagens promocionais a quem não tenha declarado ser maior de idade.
         </p>
       </section>
 
@@ -158,7 +162,7 @@ useHead({
         <h2 class="shop-heading">Uso interno do Shopman</h2>
         <p class="text-sm leading-6">
           O Shopman é a ferramenta interna usada pela empresa para operar pedidos, produção,
-          pagamentos, atendimento e publicações nos canais oficiais. O acesso é restrito a pessoas
+          pagamentos, atendimento e postagens nos canais oficiais. O acesso é restrito a pessoas
           autorizadas; cada ação sensível respeita as permissões, confirmações e registros de
           auditoria do sistema. A ferramenta não é oferecida ao público como serviço independente.
         </p>

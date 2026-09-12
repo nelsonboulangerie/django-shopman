@@ -43,6 +43,11 @@ uso restrito dos dados do Google.
 9. “Avise-me” é uma preferência persistente: permanece ativa até pausa ou
    cancelamento pelo cliente, e cada aviso deve oferecer o caminho de gestão. A
    política não pode reintroduzir expiração arbitrária de 30 dias.
+10. Cada revisão de termos e privacidade entra em
+    `public/documentos-legais/<tipo>/<AAAA-MM-DD>.html` como novo arquivo. O
+    checkout abre diretamente essa cópia e grava versão, URL e SHA-256 no
+    pedido. O CI recusa alteração ou remoção de arquivo já existente; corrigir
+    texto publicado exige uma nova versão, nunca sobrescrever a anterior.
 
 ## Gates humanos antes de publicar esta revisão
 
@@ -65,8 +70,9 @@ L6 tem responsáveis nomeados, mas somente fecha após o exercício de incidente
 - validar com assessoria jurídica a redação final e uma tabela de retenção por
   categoria; implementar o descarte/anonimização que ainda faltar para provas,
   “Avise-me” e conversas;
-- arquivar e disponibilizar cada versão legal como documento imutável, para que
-  a versão carimbada no pedido continue reproduzível depois de futuras edições;
+- depois do deploy, confirmar externamente HTTP 200 e SHA-256 das duas cópias
+  permanentes; a implementação do arquivo append-only e do snapshot está nesta
+  revisão;
 - depois do deploy e do smoke público, trocar no Google OAuth as URLs para as
   rotas canônicas em português. Não apontar o console para rotas ainda 404.
 

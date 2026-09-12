@@ -1823,9 +1823,9 @@ useSeoMeta({
                 </div>
                 <p class="text-center text-xs leading-5 text-muted-foreground">
                   Ao confirmar, você concorda com os
-                  <NuxtLink to="/termos" target="_blank" class="underline underline-offset-2">Termos de uso</NuxtLink>
+                  <NuxtLink to="/documentos-legais/termos/2026-09-12.html" target="_blank" class="underline underline-offset-2">Termos de uso</NuxtLink>
                   e declara ter lido a
-                  <NuxtLink to="/privacidade" target="_blank" class="underline underline-offset-2">Política de privacidade</NuxtLink>.
+                  <NuxtLink to="/documentos-legais/privacidade/2026-09-12.html" target="_blank" class="underline underline-offset-2">Política de privacidade</NuxtLink>.
                 </p>
                 <UiButton
                   :loading="submitting"
