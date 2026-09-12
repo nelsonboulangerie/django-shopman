@@ -168,25 +168,14 @@ class RasterLayout:
 
     def header(self, ref, commitment, name, phone, shop_name, reprint):
         self.brand_header(shop_name or "Ficha do pedido", ("FICHA DO PEDIDO",))
-        self.begin_box()
-        self.texts.extend([(str(ref), ""), (commitment, "")])
-        left = [("PEDIDO" + (" · 2ª VIA" if reprint else ""), "small")]
-        left.extend((part, "highlight") for part in self._lines(ref, font("highlight"), 240))
+        self.text(f"PEDIDO {ref}", style="highlight", center=True)
+        if reprint:
+            self.text("2ª VIA", style="small", center=True)
+        self.space(8)
         segments = commitment.split(" | ")
-        right = [(segments[0], "normal")]
-        right.extend((part, "normal") for segment in segments[1:] for part in self._lines(segment, font("normal"), 264))
-        height = max(sum(STYLES[style][0] + 5 for _, style in left), sum(STYLES[style][0] + 5 for _, style in right))
-        block = Image.new("L", (WIDTH, height + 6), 255)
-        draw = ImageDraw.Draw(block)
-        for x, lines in [(16, left), (296, right)]:
-            y = 2
-            for text, style in lines:
-                draw.text((x, y), text, font=font(style), fill=0, anchor="lt")
-                y += STYLES[style][0] + 5
-        draw.line((278, 3, 278, height - 3), fill=0, width=2)
-        self.blocks.append(block)
-        self.end_box()
-        self.text(name, right=phone, style="normal")
+        self.pair(" · ".join(segments[:2]), " · ".join(segments[2:]))
+        self.space(6)
+        self.text(name, right=phone)
         return b""
 
     def delivery_address(self, data):

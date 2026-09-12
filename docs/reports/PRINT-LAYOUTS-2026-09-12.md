@@ -61,12 +61,12 @@ Imprimir a galeria em A4 a 100%, sem ajustar e sem cabeçalho/rodapé. Régua de
 
 | Cenário | Antes (mm) | Depois (mm) |
 |---|---:|---:|
-| Retirada curta | 127,5 | 85,1 |
-| Longo com endereço/observações | 225,0 | 206,8 |
-| Entrega paga | 142,5 | 125,2 |
-| Entrega com troco | 165,0 | 131,4 |
-| Entrega com pagamento misto | 168,8 | 152,4 |
-| Balcão imediato | 114,0 | 81,5 |
+| Retirada curta | 127,5 | 80,0 |
+| Longo com endereço/observações | 225,0 | 193,2 |
+| Entrega paga | 142,5 | 120,1 |
+| Entrega com troco | 165,0 | 126,2 |
+| Entrega com pagamento misto | 168,8 | 147,2 |
+| Balcão imediato | 114,0 | 80,0 |
 
 São medidas nominais da simulação, incluindo avanço de corte. O DANFE de demonstração cresce porque passa a imprimir dados fiscais que faltavam (endereço do destinatário, pagamentos parciais, desconto/frete, horários e mensagens); não é lícito omiti-los para ganhar espaço.
 
@@ -220,3 +220,22 @@ no commit c96520216, com prévia e exemplos locais preservados. Não interpretar
 os testes aprovados como aprovação de design. Nenhuma nova iteração, integração,
 merge ou deploy está autorizada por este pedido de pausa. Retomar a direção
 visual a partir de uma nova orientação ou referência do usuário.
+
+
+## Fichas baseadas no DANFE — nova direção solicitada
+
+O usuário retomou a iteração, escolhendo o DANFE como referência visual para as
+fichas. Aplicado o mesmo cabeçalho sóbrio, título central e fluxo vertical.
+Removidas as caixas do compromisso e das observações. Modalidade/dia e horário
+compartilham linha; nome e telefone compartilham outra. Endereço conserva sua
+hierarquia e instruções separadas. Observações precedem os itens. Pagamento passa
+à única caixa, depois da conferência dos itens, como os valores no DANFE.
+
+O bloco de pagamento é composto pela mesma função para ambos os modos; muda a
+posição no raster, preservando a ordem residente. Sem duplicar regras financeiras.
+Permanecem os três estilos tipográficos Regular/Medium e a simplificação do dinheiro
+para “TROCO PARA” + “Levar de troco”. DANFE não foi alterado nesta revisão.
+
+Prévia regenerada para todos os cenários. Retirada, delivery e pedido longo
+conferidos na aba do usuário. 82 testes passaram; Ruff e diff check aprovados.
+Esta escolha de referência não equivale a aprovação final do design. Sem merge/deploy.

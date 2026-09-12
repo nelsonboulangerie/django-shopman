@@ -474,85 +474,89 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
                     out += _line(part)
             out += _rule()
 
-    if layout:
-        layout.begin_box()
-    if paid:
-        out += _emphasis("PAGO - NÃO COBRAR")
-        out += _pair(method_label(method), money(order.total_q))
-    elif collect:
-        if not layout:
-            out += _emphasis("PAGAMENTO PENDENTE | COBRAR NA ENTREGA")
-        tenders = payment.get("tenders") or [{"method": method, "amount_q": order.total_q}]
-        pending = [
-            t
-            for t in tenders
-            if isinstance(t, dict)
-            and t.get("status") not in {"received", "captured", "paid"}
-            and t.get("collection", "on_delivery") == "on_delivery"
-        ]
+    def payment_block():
+        out = bytearray()
         if layout:
-            label = method_label(str(pending[0].get("method") or "")) if len(pending) == 1 else "Pagamento misto"
-            out += _emphasis(f"{label.upper()} · COBRAR NA ENTREGA")
-        due_q = sum(int(t.get("amount_q") or 0) for t in pending)
-        if due_q != int(order.total_q or 0):
-            out += _pair("Total do pedido", money(order.total_q))
-        cash_only = bool(pending) and all(t.get("method") == "cash" for t in pending)
-        if not (layout and cash_only):
-            out += _emphasis(f"A COBRAR {money(due_q)}", tall=not cash_only)
-        # Um método só divide a linha com o aviso; o valor já está no destaque.
-        if len(pending) == 1:
+            layout.begin_box()
+        if paid:
+            out += _emphasis("PAGO - NÃO COBRAR")
+            out += _pair(method_label(method), money(order.total_q))
+        elif collect:
             if not layout:
-                out += _line(method_label(str(pending[0].get("method") or "")))
-        else:
-            for tender in pending:
-                tender_label = method_label(str(tender.get("method") or ""))
-                if layout and tender.get("method") in {"card", "credit", "debit"}:
-                    out += _emphasis(f"{tender_label}: {money(tender.get('amount_q'))}", tall=True)
-                else:
-                    out += _pair(tender_label, money(tender.get("amount_q")))
-        if any(t.get("method") in {"card", "credit", "debit"} for t in pending):
-            out += _emphasis("LEVAR MAQUININHA")
-        cash_due = sum(int(t.get("amount_q") or 0) for t in pending if t.get("method") == "cash")
-        cash_change_shown = False
-        if cash_due:
-            from shopman.shop.services.operator_orders import _change_for_q
-
-            change_for = _change_for_q(order)
-            if change_for:
-                out += _emphasis(f"TROCO PARA {money(change_for)}", tall=True)
-                if layout and cash_only:
-                    layout.text("Levar de troco", right=money(max(0, change_for - cash_due)), style="normal")
-                    cash_change_shown = True
-                else:
-                    out += _pair("Levar de troco", money(max(0, change_for - cash_due)))
+                out += _emphasis("PAGAMENTO PENDENTE | COBRAR NA ENTREGA")
+            tenders = payment.get("tenders") or [{"method": method, "amount_q": order.total_q}]
+            pending = [
+                t
+                for t in tenders
+                if isinstance(t, dict)
+                and t.get("status") not in {"received", "captured", "paid"}
+                and t.get("collection", "on_delivery") == "on_delivery"
+            ]
+            if layout:
+                label = method_label(str(pending[0].get("method") or "")) if len(pending) == 1 else "Pagamento misto"
+                out += _emphasis(f"{label.upper()} · COBRAR NA ENTREGA")
+            due_q = sum(int(t.get("amount_q") or 0) for t in pending)
+            if due_q != int(order.total_q or 0):
+                out += _pair("Total do pedido", money(order.total_q))
+            cash_only = bool(pending) and all(t.get("method") == "cash" for t in pending)
+            if not (layout and cash_only):
+                out += _emphasis(f"A COBRAR {money(due_q)}", tall=not cash_only)
+            # Um método só divide a linha com o aviso; o valor já está no destaque.
+            if len(pending) == 1:
+                if not layout:
+                    out += _line(method_label(str(pending[0].get("method") or "")))
             else:
-                if layout:
-                    out += _emphasis("CONFIRMAR TROCO", tall=True)
-                out += _line("Troco: não informado; confirmar com cliente")
-        if layout and cash_only and not cash_change_shown:
-            out += _pair("Valor a cobrar", money(due_q))
-    else:
-        out += _emphasis("*** PAGAMENTO PENDENTE ***")
-        out += _pair(method_label(method) if method else "Total do pedido", money(order.total_q))
-        if status == "unknown":
-            out += _emphasis("CONFIRMAR PAGAMENTO ANTES DE COBRAR")
-    if layout:
-        layout.end_box()
-    else:
-        out += _rule()
-    notes = [("Observação do cliente:", data.get("order_notes")), ("Nota da cozinha:", data.get("kitchen_note"))]
-    if layout and any(str(note or "").strip() for _, note in notes):
-        layout.begin_box()
-    for label, note in notes:
-        if str(note or "").strip():
-            out += _emphasis(label)
-            for part in _wrap(str(note), COLUMNS):
-                out += _line(part)
-    if any(str(note or "").strip() for _, note in notes):
+                for tender in pending:
+                    tender_label = method_label(str(tender.get("method") or ""))
+                    if layout and tender.get("method") in {"card", "credit", "debit"}:
+                        out += _emphasis(f"{tender_label}: {money(tender.get('amount_q'))}", tall=True)
+                    else:
+                        out += _pair(tender_label, money(tender.get("amount_q")))
+            if any(t.get("method") in {"card", "credit", "debit"} for t in pending):
+                out += _emphasis("LEVAR MAQUININHA")
+            cash_due = sum(int(t.get("amount_q") or 0) for t in pending if t.get("method") == "cash")
+            cash_change_shown = False
+            if cash_due:
+                from shopman.shop.services.operator_orders import _change_for_q
+
+                change_for = _change_for_q(order)
+                if change_for:
+                    out += _emphasis(f"TROCO PARA {money(change_for)}", tall=True)
+                    if layout and cash_only:
+                        layout.text("Levar de troco", right=money(max(0, change_for - cash_due)), style="normal")
+                        cash_change_shown = True
+                    else:
+                        out += _pair("Levar de troco", money(max(0, change_for - cash_due)))
+                else:
+                    if layout:
+                        out += _emphasis("CONFIRMAR TROCO", tall=True)
+                    out += _line("Troco: não informado; confirmar com cliente")
+            if layout and cash_only and not cash_change_shown:
+                out += _pair("Valor a cobrar", money(due_q))
+        else:
+            out += _emphasis("*** PAGAMENTO PENDENTE ***")
+            out += _pair(method_label(method) if method else "Total do pedido", money(order.total_q))
+            if status == "unknown":
+                out += _emphasis("CONFIRMAR PAGAMENTO ANTES DE COBRAR")
         if layout:
             layout.end_box()
         else:
             out += _rule()
+        return bytes(out)
+
+    if not layout:
+        out += payment_block()
+    notes = [("Observação do cliente:", data.get("order_notes")), ("Nota da cozinha:", data.get("kitchen_note"))]
+    for label, note in notes:
+        if str(note or "").strip():
+            if layout:
+                layout.text(label.rstrip(":"), style="small")
+            else:
+                out += _emphasis(label)
+            for part in _wrap(str(note), COLUMNS):
+                out += _line(part)
+    if any(str(note or "").strip() for _, note in notes):
+        out += _rule()
     items = list(order.items.all())
     out += _emphasis(f"ITENS ({len(items)})")
     for item in items:
@@ -562,6 +566,8 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
         for part in parts[1:]:
             out += _line(f"    {part}")
     out += _rule()
+    if layout:
+        out += payment_block()
     out += _line(f"Pedido registrado em {_local(order.created_at)}")
     out += _centered("Este papel não é documento fiscal")
     out += _centered("e não comprova pagamento.")
