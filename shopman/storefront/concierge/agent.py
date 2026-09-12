@@ -6,7 +6,7 @@ resultado, até ele responder em texto. O laço tem teto de iterações; no teto
 a última ida ao modelo é sem ferramentas, para sair com uma frase e não com
 silêncio.
 
-O que este módulo NÃO faz: falar com o ManyChat (``service``/``transport``),
+O que este módulo NÃO faz: falar com o transporte (``service``/``transport``),
 gravar no banco (``service``), decidir preço (``tools``). Ele recebe a
 história já persistida e devolve o que aconteceu, para quem chamou gravar.
 
@@ -236,10 +236,18 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
     max_tokens = int(cfg.get("max_tokens") or 1024)
     max_iterations = max(1, int(cfg.get("max_iterations") or 6))
     effort = str(cfg.get("effort") or "").strip()
-    channel_ref = str(conversation.channel_ref or cfg.get("channel_ref") or "whatsapp")
+    channel_ref = str(conversation.channel_ref or cfg.get("channel_ref") or "")
+    binding = getattr(conversation, "_binding", None)
 
     client = client or build_client()
-    ctx = ToolContext(conversation=conversation, channel_ref=channel_ref)
+    ctx = ToolContext(
+        conversation=conversation,
+        channel_ref=channel_ref,
+        provider=str(getattr(binding, "provider", "") or ""),
+        account=str(getattr(binding, "account", "") or ""),
+        transport_channel=str(getattr(binding, "transport_channel", "") or ""),
+        connection_key=str(getattr(binding, "connection_key", "") or ""),
+    )
 
     is_first_turn = not conversation.messages.filter(kind=ConversationMessage.Kind.REPLY).exists()
     system = build_system(

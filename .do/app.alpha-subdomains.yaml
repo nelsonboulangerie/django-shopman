@@ -425,28 +425,33 @@ envs:
 - key: AI_ASSIST_API_KEY
   scope: RUN_TIME
   type: SECRET
-# Concierge de WhatsApp (docs/guides/whatsapp-concierge.md). LIGADO no ar desde
-# que o dono abriu o piloto fechado; a chave S2S do webhook é a mesma do access
-# link (DOORMAN_ACCESS_LINK_API_KEY) enquanto CONCIERGE_API_KEY não for definida.
+# Concierge de WhatsApp (docs/guides/whatsapp-concierge.md). O switch global e a
+# connection são independentes; a chave do ingresso é exclusiva do Concierge.
 - key: SHOPMAN_CONCIERGE_ENABLED
   scope: RUN_TIME
   value: 'true'
   type: GENERAL
+- key: CONCIERGE_MANYCHAT_WHATSAPP_ACTIVE
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: CONCIERGE_API_KEY
+  scope: RUN_TIME
+  type: SECRET
 # Mesma conta e mesmo portão #c do flow Concierge (piloto), conferidos por GET
-# getInfo/getFlows em 11/09/2026. Não recriar flow nem trocar sua chave X-Api-Key.
-# Teste autorizado pelo operador: versão 2 SOMENTE leitura/humano.
-# Compra permanece contida mesmo com event_id; referência, não aplicar spec inteiro.
+# getInfo/getFlows em 11/09/2026. Teste v3 somente leitura/humano: o corpo
+# confirmado não possui ID oficial de mensagem, portanto não autoriza mutação.
 - key: CONCIERGE_CONTRACT_VERSION
   scope: RUN_TIME
-  value: '2'
+  value: '3'
   type: GENERAL
 - key: CONCIERGE_READ_ONLY
   scope: RUN_TIME
   value: 'true'
   type: GENERAL
-- key: CONCIERGE_LEGACY_READ_HANDOFF_ENABLED
+- key: CONCIERGE_MANYCHAT_EVENT_ID_VERIFIED
   scope: RUN_TIME
-  value: 'true'
+  value: 'false'
   type: GENERAL
 # Campo dinâmico última interação WhatsApp; fuso confirmado pelo operador.
 - key: CONCIERGE_WHATSAPP_INTERACTION_TIMEZONE
@@ -473,11 +478,11 @@ envs:
   scope: RUN_TIME
   value: '764222643620409'
   type: GENERAL
-# A v2 usa somente subscriber IDs; telefones legados abaixo não ampliam confiança.
-# Preservar os convidados existentes. Lista vazia contém a admissão na v2.
+# Subjects opacos autorizados para a coorte fechada. Nomes e telefones do payload
+# não ampliam identidade; lista vazia fecha a connection.
 - key: CONCIERGE_ALLOWED_SUBSCRIBERS
   scope: RUN_TIME
-  value: '4605528796186498,1962036908,+5543984049009,+5543984035793'
+  value: '4605528796186498,4685528796186498,1962036908'
   type: GENERAL
 - key: META_PAGE_ACCESS_TOKEN
   scope: RUN_TIME

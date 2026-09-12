@@ -1,200 +1,218 @@
-# Concierge de WhatsApp — portão existente e contrato v2
+# Concierge no WhatsApp — connection ManyChat do contrato v3
 
-O candidato reutiliza a automação ManyChat **Concierge (piloto)**, identificador
-`content20260904134021_491685` (campo `ns` da API), e seu Keyword **#c**. A existência dessa automação
-e a conta **Nelson Boulangerie** (`764222643620409`) foram confirmadas por consultas
-somente leitura à API. Isso não comprova o conteúdo publicado dos nós nem a
-origem de um identificador estável de mensagem.
+O WhatsApp via ManyChat é a primeira connection real do núcleo conversacional.
+ManyChat recebe a mensagem e executa o External Request; o Shopman preserva a
+conversa, o contexto comercial, a fila, a autoridade e as tentativas de saída.
+Regras de venda, sacola, pedido ou diálogo não são duplicadas no flow.
 
-Não criar outro flow, trocar o Default Reply ou ampliar a coorte para adaptar o
-candidato. O access link existente continua com seu próprio gatilho. A entrada
-conversacional mantém o endpoint e a autenticação já usados; a diferença essencial
-é registrar o evento de forma durável antes de responder ao ManyChat.
+Este guia descreve configuração e teste. Ele não autoriza publicar o flow,
+habilitar uma connection, enviar a contatos reais, iniciar piloto ou fazer
+rollout.
 
-## Corpo real confirmado e compatibilidade legada
+Código e testes da implementação técnica: SHA
+`7dba54a6ac81866bd0708033d683ac47dcade30c`. O endpoint abaixo ainda precisa ser
+publicado em ambiente autorizado antes de poder ser chamado pelo flow real.
 
-Em 11/09/2026, o operador confirmou o URL
-`https://api.boulangerie.com.br/api/webhooks/manychat/conversation/` e um corpo
-com `subscriber_id`, `text`, `first_name` e `last_name`, sem identidade de evento.
-O texto de exemplo era `#menu NB-…`; ele é preservado como texto, sem consumir
-código de acesso ou promover identidade. Não substituir o corpo dinâmico pelos
-valores fixos do exemplo.
+## Portão canônico
 
-C01 permite reutilizar esse corpo para leitura e encaminhamento humano. O
-candidato acrescenta `CONCIERGE_LEGACY_READ_HANDOFF_ENABLED=false` por padrão.
-Com opt-in autorizado, versão 2, conta, coorte e demais requisitos configurados:
+- Connection: `manychat-whatsapp-primary`.
+- Endpoint relativo: `POST /api/webhooks/concierge/manychat-whatsapp-primary/events/`.
+- URL no host informado pelo operador:
+  `https://api.boulangerie.com.br/api/webhooks/concierge/manychat-whatsapp-primary/events/`.
+- `Content-Type`: `application/json`.
+- Autenticação: `X-Api-Key`. A rotação aceita temporariamente a chave anterior
+  configurada; o valor nunca deve aparecer em documentação, fixture ou log.
+- Keyword de entrada já usada no teste: `#c`. O adapter também reconhece
+  `#concierge`.
+- Campo de handoff no ManyChat: `concierge_handoff`, com `"1"` para posse humana
+  e `""` para retorno confirmado.
 
-- `#c cardápio`, `menu` ou `#menu NB-…` consultam o catálogo público canônico.
-- `#c atendente` preserva o contexto e aciona o handoff existente.
-- Texto de compra recebe orientação para consultar ou chamar a equipe, sem
-  alterar sacola, revisão, pedido, pagamento, link de acesso ou consentimento.
+A chave da connection vem da rota confiável. `provider`, conta, canal e adapter
+vêm do registry do servidor; o corpo não escolhe nenhum deles. Essa separação
+permite adicionar outra connection, inclusive Instagram ou TikTok, sem
+condicionais no domínio.
 
-Esse caminho é determinístico, sem modelo nem enriquecimento de identidade.
-Cada recebimento guarda `event_id` e `external_id` vazios e
-`input_assurance=legacy_unverified`, na mesma Conversation/Message/Directive.
-O PK identifica um recebimento local; retries podem produzir recebimentos e
-respostas públicas repetidos. Não há promessa de exatamente-uma-intenção.
-Um batch com entrada legada permanece inteiro em leitura; nem um “confirmo”
-legado já consumido vira autorização em turno posterior.
+## Corpo confirmado no ManyChat
 
-Recebimento legado não renova `last_inbound_at`: não prova nova interação no
-WhatsApp. Sem janela previamente comprovada, a saída fica `not_applied` com
-`window_closed`; não preencher timestamps manualmente no ambiente real. A janela
-e a entrega ainda exigem homologação com ManyChat. A compatibilidade permanece
-local e desativada; o URL confirmado não comprova que o candidato está publicado.
-
-## Contrato da entrada
-
-- Trigger existente: `#c`; o backend também reconhece `#concierge` e remove apenas
-  esse prefixo inicial. `#c quero dois pães` vira `quero dois pães`.
-- Endpoint: `POST /api/webhooks/manychat/conversation/` no mesmo host de API já
-  configurado no flow, usando `Content-Type: application/json`.
-- Header existente: `X-Api-Key`. `Authorization: Bearer` também é aceito.
-  `CONCIERGE_API_KEY` continua usando `DOORMAN_ACCESS_LINK_API_KEY` como fallback.
-  Não copiar nem registrar o valor da chave em documentação ou logs.
-- Campo de handoff existente: `concierge_handoff`, texto `"1"` para equipe e `""`
-  para retorno confirmado. A posse local contém o bot; esse campo espelha o
-  roteamento no ManyChat Live Chat.
-
-O corpo mínimo abaixo é **ilustrativo**: cada valor dinâmico deve entrar pelo
-seletor real do ManyChat. Os rótulos não são nomes garantidos de variáveis:
+O operador confirmou estes cinco campos dinâmicos e o fuso da conta
+`(UTC-03:00) - Brasilia Standard Time - Sao Paulo`:
 
 ```json
 {
-  "subscriber_id": "<subject selecionado no flow existente>",
-  "text": "<texto desta mensagem selecionado no flow existente>",
-  "event_id": "<identificador estável desta mensagem, ainda a comprovar>"
+  "subscriber_id": "<subscriber_id dinâmico>",
+  "text": "<texto dinâmico desta interação>",
+  "first_name": "<primeiro nome dinâmico>",
+  "last_name": "<sobrenome dinâmico>",
+  "provider_timestamp": "<última interação WhatsApp dinâmica>"
 }
 ```
 
-`message_id` e `external_id` também são aceitos como identidade do evento. Um
-retry precisa conservar o mesmo ID e payload; duas mensagens legítimas iguais
-precisam ter IDs diferentes. Não usar ID do assinante, texto+minuto, UUID gerado a
-cada retry ou contador compartilhado de perfil como substituto não comprovado.
-A consulta somente leitura aos campos personalizados confirmou `concierge_handoff`
-como texto e não encontrou campo personalizado de ID de evento/mensagem; isso
-não prova ausência de um campo sistêmico. A fonte do event ID permanece pendente
-de verificação no portão existente. Sem
-essa prova, a automação de mutações desse caminho fica contida.
+Os valores acima são uma amostra do contrato, não valores para fixar no flow.
+Cada propriedade deve continuar ligada ao seletor dinâmico correspondente:
 
-`first_name` e `last_name` são opcionais; não são requisitos de ingresso. Telefone
-ou perfil enviados no body não promovem identidade. Conta/provider/transporte
-vêm da configuração confiável; não é necessário acrescentá-los ao corpo. Se
-vierem, precisam corresponder à configuração. Texto vazio ou variável literal
-como `{{last_input_text}}` não é substituído pela última mensagem do perfil via
-`getInfo`: isso poderia processar outra mensagem e atrasar o ACK.
-
-## Recebimento e resposta ao cliente
-
-O ACK normal agora é **HTTP 200**, com `status` e `queued`, sem IDs internos. Ele
-confirma recebimento/trabalho local, não pedido, pagamento nem entrega de uma
-resposta ao aparelho. A transação grava Message e a Directive existente no tópico
-versionado `concierge.turn.v2`; o worker processa o turno depois. A saída usa o
-adapter ManyChat existente e revalida a janela antes do envio.
-
-O guia antigo orientava não mapear resposta síncrona em campos; essa orientação
-permanece. Se o flow real tratar status HTTP explicitamente, seu ramo deve ser
-conferido para 200. Não configurar uma mensagem estática de sucesso de compra com
-base no ACK.
-
-| Resposta | Significado e recuperação |
+| Campo | Uso no contrato v3 |
 |---|---|
-| `200 queued` | Evento e trabalho aceitos; resposta posterior pelo worker. |
-| `200 duplicate` | Mesmo evento/payload; consulta/reparo de trabalho sem duplicar mensagem. |
-| `200 handoff` | Contexto preservado para equipe; bot contido. |
-| `200 disabled` | Capacidade contida; `reason` informa versão, chave de modelo ou switch. |
-| `200 not_allowed` | Subject fora da lista explícita; nenhum ingresso automático. |
-| `200 legacy_read_only` | Recebimento sem ID, aceito apenas para catálogo/humano com opt-in; não autoriza compra. |
-| `200 event_id_required` | Falta identidade estável e compatibilidade legada está desligada; nenhum ingresso. |
-| `200 empty` | Falta texto útil deste evento. |
-| `409 intent_conflict` | Mesmo ID com payload diferente; triagem, sem gerar nova intenção. |
-| `401 / 503` | Autenticação ausente/incorreta ou configuração incompleta; conferir configuração sem expor segredo. |
-| `400 / 413 / 415 / 429` | Corpo inválido, tamanho, MIME ou frequência; corrigir origem/política e preservar identidade do evento. |
-| `500` ou timeout | Não presumir ausência de efeito; retry do mesmo ID/payload, nunca nova compra. |
+| `subscriber_id` | Subject opaco dentro de provider + conta + canal. Não é identidade comercial universal. |
+| `text` | Fotografia do texto que acionou o External Request. Não consultar o perfil depois para substituí-lo. |
+| `first_name`, `last_name` | Contexto de perfil opcional. Não promovem identidade nem autorizam compra. |
+| `provider_timestamp` | Última interação do usuário no WhatsApp. Serve somente como evidência da janela de resposta. |
 
-A adaptação exata dos ramos de erro e do caminho humano deve ser revista no flow
-existente. Esta documentação não publica nem altera a automação.
+`provider_timestamp` não é instante da mensagem atual, ID de evento, prova de
+confirmação comercial ou chave de deduplicação. O adapter interpreta o valor no
+fuso configurado e preserva no envelope apenas a evidência normalizada da janela.
 
-## Teste controlado: contenção adicional
+## Keyword e texto efetivo
 
-A publicação autorizada para teste usa `CONCIERGE_READ_ONLY=true` junto da
-compatibilidade legada. Todo turno permanece em catálogo/humano, inclusive
-quando vier event_id; tools de compra continuam contidas após reload da conversa.
-Isso não substitui o gate da janela: o corpo de quatro campos, sozinho, não
-comprova interação recente do WhatsApp. Veja o relatório de release para o estado
-verificado da publicação, sem presumir que preparação de configuração é deploy.
+O prefixo é removido somente no início do texto:
 
-## Configuração do candidato
+- `#c` sozinho vira `oi`, para que a entrada sempre tenha conteúdo útil;
+- `#c cardápio` vira `cardápio`;
+- `#concierge quero dois pães` vira `quero dois pães`;
+- texto sem esses prefixos é preservado;
+- `#menu NB-UTGJYD` permanece texto comum e não consome código de acesso.
 
-Além das credenciais e do switch já existentes, o contrato v2 exige configuração
-explícita. O inventário de configuração não é autorização para ativação:
+O primeiro `#c` consegue abrir a experiência pelo Keyword já existente. Para
+uma conversa com vários turnos, cada mensagem seguinte do subject de teste deve
+chegar ao mesmo External Request, sem exigir novo prefixo. Isso precisa ser
+confirmado no grafo do flow/Default Reply antes da homologação; a rota do backend
+não comprova sozinha essa continuidade.
+
+## Ausência de ID de mensagem
+
+O corpo confirmado não contém ID imutável da mensagem. O contrato v3 trata esse
+caso diretamente como ingresso **at-least-once**:
+
+1. cada POST autenticado recebe um recibo local e é persistido no mesmo modelo
+   canônico de mensagem e trabalho;
+2. `event_identity_assurance=unavailable` e
+   `input_assurance=at_least_once` registram o limite da evidência;
+3. o turno desse lote fica somente leitura por assurance, mesmo que o switch
+   global `CONCIERGE_READ_ONLY` esteja desligado;
+4. catálogo público, orientação e handoff permanecem disponíveis;
+5. ferramentas que mutam sacola, pedido, pagamento, identidade ou transferência
+   não recebem autoridade desse ingresso;
+6. um retry técnico pode ser indistinguível de uma repetição legítima do cliente,
+   portanto nenhum hash de contato + timestamp é usado para descartar mensagens.
+
+Não há modo de compatibilidade paralelo. Esse é um estado normal e explícito do
+contrato. Se no futuro o fornecedor expuser um ID oficial, o flow deve mapeá-lo
+para o campo canônico `event_id`, mas ele só ganha assurance
+`verified` quando `CONCIERGE_MANYCHAT_EVENT_ID_VERIFIED=true` após homologação de
+unicidade e estabilidade em retry. Um ID recebido antes desse gate é preservado
+como candidato não verificado e continua sem autorizar mutações.
+
+## ACK e processamento
+
+O endpoint autentica, normaliza, grava e agenda o trabalho antes de responder. O
+modelo e o envio rodam depois no worker da fila `Directive`, com payload v3
+contendo `conversation_id` e `binding_id`.
+
+O ACK não é mensagem para o cliente e não comprova pedido, pagamento, aceitação
+do provedor ou entrega no aparelho. Não mapear seu JSON para um campo de resposta
+nem adicionar uma mensagem estática de sucesso no flow.
+
+| HTTP / status | Significado e próxima ação |
+|---|---|
+| `200 queued` | Recebimento persistido e trabalho agendado. A resposta ao cliente ocorre pela saída do adapter. |
+| `200 duplicate` | Mesmo evento verificado e mesmo payload; o trabalho pode ser reparado sem nova mensagem. Não se aplica ao corpo atual sem ID. |
+| `200 handoff` | Contexto preservado; a conversa continua sob posse humana. |
+| `200 disabled` | Núcleo contido. Verificar `reason`, contrato, switch e credencial do modelo. |
+| `200 not_allowed` | Subject fora da coorte explícita. Nenhum turno automático. |
+| `200 empty` | O texto dinâmico chegou vazio ou não renderizado; corrigir o campo `text`. |
+| `409 intent_conflict` | ID verificado repetido com payload diferente. Triar sem inventar nova intenção. |
+| `409 scope_conflict` | Binding persistido diverge da connection autenticada. Manter contido e corrigir configuração. |
+| `400` | JSON/campo inválido ou texto ausente. Corrigir o mapeamento dinâmico. |
+| `401` | Chave ausente ou inválida. Conferir o secret sem expô-lo. |
+| `404` | Connection desconhecida ou inativa. Conferir rota e gate da connection. |
+| `503` | Connection/adapter/segredo incompleto ou escopo inconsistente. Manter contido e corrigir a configuração. |
+| `413` / `415` / `429` | Corpo grande, MIME incorreto ou limite de frequência. Corrigir a origem e repetir somente quando seguro. |
+| `500` ou timeout | O efeito local pode ter ocorrido. Não fabricar um novo ID nem presumir ausência de persistência. |
+
+Na saída, `prepared`, `executing`, `accepted`, `not_applied`, `unknown`,
+`delivered` e `read` têm significados separados. `accepted` confirma apenas a
+aceitação declarada pelo provider. Cada execução gera `OutboundAttempt`
+append-only; `unknown` não admite reenvio cego.
+
+## Configuração v3
+
+Estado seguro para preparar um teste sem ativá-lo:
 
 ```env
-CONCIERGE_CONTRACT_VERSION=2
+CONCIERGE_CONTRACT_VERSION=3
+SHOPMAN_CONCIERGE_ENABLED=false
+CONCIERGE_MANYCHAT_WHATSAPP_ACTIVE=false
 CONCIERGE_ACCOUNT_ID=764222643620409
-CONCIERGE_ALLOWED_SUBSCRIBERS=<somente subjects de teste explicitamente autorizados>
+CONCIERGE_ALLOWED_SUBSCRIBERS=<subscriber_id de teste>
+CONCIERGE_WHATSAPP_INTERACTION_TIMEZONE=America/Sao_Paulo
+CONCIERGE_MANYCHAT_EVENT_ID_VERIFIED=false
+CONCIERGE_READ_ONLY=true
+CONCIERGE_IDENTITY_LINK_ENABLED=false
+CONCIERGE_HUMAN_RETURN_ENABLED=false
+CONCIERGE_OUTPUT_RETRY_ENABLED=false
+CONCIERGE_TRANSFER_ENABLED=false
 ```
 
-O inventário legado encontrou duas entradas de subject e duas entradas de telefone.
-Conservar a autorização dos contatos de teste não significa promover telefones a
-subjects: a lista v2 compara **subject ManyChat**. Resolver a correspondência pela
-fonte confiável já usada; não inferir identidade a partir do telefone recebido no
-body. Lista vazia contém o canal, nunca o abre a todos.
+Além disso, o ambiente precisa da chave dedicada `CONCIERGE_API_KEY`, de
+`AI_ASSIST_API_KEY` e do worker canônico. A lista de subjects vazia
+fecha a connection. Telefone ou nome no body não substituem essa lista.
 
-`SHOPMAN_CONCIERGE_ENABLED`, `AI_ASSIST_API_KEY` e a credencial ManyChat continuam
-sendo requisitos próprios. Tokens existentes devem ser reutilizados no ambiente
-autorizado, sem impressão ou cópia para fixtures. Configuração efetiva fica em
-`config/settings.py`, bloco `SHOPMAN_CONCIERGE`.
+Para uma homologação autorizada, os dois switches de admissão são independentes:
 
-Capacidades adicionais continuam desligadas até seus gates:
-`CONCIERGE_IDENTITY_LINK_ENABLED`, `CONCIERGE_HUMAN_RETURN_ENABLED`,
-`CONCIERGE_OUTPUT_RETRY_ENABLED` e `CONCIERGE_TRANSFER_ENABLED`. Não habilitar todas
-para fazer um teste de ingresso. A rotação de entrada permite
-`CONCIERGE_API_KEY_PREVIOUS` durante janela controlada; retirar a chave antiga é
-operação separada no ambiente autorizado.
+```env
+SHOPMAN_CONCIERGE_ENABLED=true
+CONCIERGE_MANYCHAT_WHATSAPP_ACTIVE=true
+```
 
-## Handoff, acompanhamento e recuperação
+Ativá-los permite ingresso somente quando os demais requisitos estão válidos;
+não aprova identidade, retorno humano, retry, transferência, piloto ou rollout.
+Manter `CONCIERGE_READ_ONLY=true` no primeiro ensaio dá contenção adicional. O
+ingresso atual sem ID já fica somente leitura por assurance mesmo sem esse flag.
 
-O escape textual para equipe funciona sem IA. Uma solicitação explícita recebe
-ACK determinístico, sem promessa de atendimento imediato; contexto, escolhas e
-refs permanecem na Conversation e nos owners canônicos. ManyChat Live Chat é a
-superfície de atendimento, não uma inbox nova no Admin.
+## Teste prático no portão ManyChat
 
-A ação de retorno no Admin exige capacidade própria e sincronização confirmada;
-uma falha remota conserva a posse humana. Pedido registrado, pagamento pendente
-e resultado desconhecido são estados distintos. A consulta retorna ao mesmo
-pedido/recibo; não é preciso reconstruir a sacola após resposta perdida.
+1. No External Request do flow de teste, trocar somente a URL para a rota v3 e
+   configurar `X-Api-Key` com a chave dedicada `CONCIERGE_API_KEY` do ambiente.
+2. Confirmar `Content-Type: application/json` e os cinco campos dinâmicos acima.
+3. Não configurar resposta síncrona ao cliente a partir do ACK.
+4. Restringir o roteamento ao subject de teste autorizado.
+5. Com homologação e ambiente de teste autorizados, enviar `#c`. O registro
+   normalizado deve conter texto `oi`, binding ManyChat/WhatsApp e assurance
+   at-least-once.
+6. Enviar `#c cardápio`. O texto persistido deve ser `cardápio`; a resposta deve
+   sair pelo worker e permanecer separada do ACK.
+7. Enviar duas mensagens rápidas, incluindo aspas e quebra de linha. Ambas devem
+   ser preservadas; sem ID oficial, não declarar deduplicação do provider.
+8. Pedir uma compra. O sistema pode orientar e consultar catálogo, mas o ingresso
+   sem ID verificado não deve criar efeito comercial.
+9. Pedir `atendente`. O contexto deve permanecer legível e o bot deve parar de
+   competir após a posse humana.
+10. Conferir o Admin: conversa lógica, bindings, transcrição, estado de cada
+    tentativa e próxima ação devem ser compreensíveis sem consultar logs.
 
-Saída distingue `prepared`, `executing`, `accepted`, `not_applied` e `unknown`.
-`accepted` não comprova entrega. Timeout após possível efeito não admite reenvio
-cego. Blocos dependentes, inclusive Pix, aguardam o bloco anterior; recuperação
-explícita exige não aplicação comprovada, contexto atual e gate autorizado.
+Registrar hora, subject pseudonimizado, resposta HTTP, estado da Directive,
+Message/Binding/OutboundAttempt e observação no aparelho. Não registrar chave,
+telefone completo, payload sensível ou conteúdo desnecessário.
 
-Desligar o switch contém admissão, execução, ferramentas e saídas não autorizadas.
-Preservar pedidos, receipts e reconciliação; não apagar fila nem repetir histórico
-como recuperação. Não realizar reseed, bootstrap de canal ou migração de produção
-como parte automática da adaptação do teste.
+O teste local/fake prova o contrato de software. A homologação ManyChat precisa
+provar o flow real, continuidade entre mensagens, janela, handoff e saída no
+aparelho. Piloto mede pessoas e operação numa coorte autorizada. Rollout exige os
+gates do plano, alvo/release fixados, backup, janela e rollback exercitado.
 
-## Verificação e limites da prova
+## Contenção e recuperação
 
-`test_concierge_legacy_gateway.py` cobre o corpo de quatro campos, catálogo,
-handoff, bloqueio de compra e confirmação, batch misto e revogação.
+Para conter a capacidade, desligar primeiro
+`CONCIERGE_MANYCHAT_WHATSAPP_ACTIVE` e/ou `SHOPMAN_CONCIERGE_ENABLED`. Preservar
+conversas, bindings, mensagens, directives, tentativas e receipts. Conciliar
+estados `executing`/`unknown`; não reenviar automaticamente nem apagar histórico.
 
-`test_concierge_existing_gateway.py` exercita localmente o mesmo endpoint, Keyword,
-chave compartilhada de fixture e corpo mínimo; verifica replay, duas mensagens de
-texto igual com IDs distintos e falta de ID sem efeitos. Credenciais são falsas e
-nenhuma mensagem sai para o fornecedor. Isso prova compatibilidade técnica do
-contrato proposto; não comprova a fonte do event ID na conta real.
-
-Antes de homologar o portão existente, conferir seus nós/seletores, fonte e
-estabilidade do event ID em retry, resposta 200, rota humana e janela. Registrar
-artefato/hash do flow autorizado antes de eventual publicação. Não confundir:
-implementação testada localmente, homologação controlada, piloto e rollout têm
-provas e autorizações distintas. Reutilizar o teste existente não autoriza envio a
-cliente real, publicação, deploy ou expansão.
+A migração do modelo v3 aceita downgrade somente enquanto cada conversa tiver
+um único binding; nesse caso, o ensaio restaura identidade e evidência de entrega
+do contrato v2. Com múltiplos bindings, ela recusa perda de dados. O rollback
+operacional continua começando pela contenção e conciliação; downgrade exige
+backup, alvo fixado e ensaio G07. Retorno humano, retry de saída e transferência
+continuam fechados até seus gates próprios.
 
 Referências: [plano de excelência operacional](../plans/CONVERSATIONAL-SALES-OPERATIONAL-EXCELLENCE-PLAN-2026-09-11.md),
-[contratos e evidências de ingresso](../../evidence/conversational/INGRESS.md),
-[plano original](../plans/WHATSAPP-CONCIERGE-PLAN.md) e
-[access link](whatsapp-access-link.md). O commit `d777be1cc` documenta a adoção do
-Keyword `#c` em 04/09/2026, posterior à orientação histórica de Default Reply.
+[fluxo canônico ManyChat](../plans/CONCIERGE-MANYCHAT-CANONICAL-FLOW-2026-09-12.md),
+[relatório da janela](../reports/concierge-whatsapp-window-20260912.md) e
+[evidências de ingresso](../../evidence/conversational/INGRESS.md).

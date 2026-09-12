@@ -11,7 +11,7 @@ from django.db import close_old_connections, connection, connections, transactio
 from shopman.orderman.models import IdempotencyKey, Order, Session
 from shopman.stockman.models import Hold
 
-from shopman.shop.models import Conversation
+from shopman.shop.models import Conversation, ConversationBinding
 from shopman.shop.services import availability, cart, checkout, sessions
 from shopman.storefront.concierge import tools
 from shopman.storefront.tests.test_concierge_authority import accept_review
@@ -80,6 +80,30 @@ def total_reserved():
     return sum(Hold.objects.active().filter(sku=SKU).values_list("quantity", flat=True), Decimal(0))
 
 
+def worker_tool_context(source):
+    """Reabre a linha em outra conexão sem inventar uma nova autoridade."""
+    current = Conversation.objects.get(pk=source.pk)
+    binding = ConversationBinding.objects.get(pk=source._binding_id)
+    for name in (
+        "_binding_id",
+        "_turn_fence",
+        "_inbound_max_id",
+        "_inbound_ids",
+        "_limited_event_assurance",
+        "_commercial_authority",
+    ):
+        setattr(current, name, getattr(source, name))
+    current._binding = binding
+    return tools.ToolContext(
+        current,
+        "whatsapp",
+        provider=binding.provider,
+        account=binding.account,
+        transport_channel=binding.transport_channel,
+        connection_key=binding.connection_key,
+    )
+
+
 def test_modify_waits_for_checkout_commit_and_cannot_change_sealed_order(ctx, monkeypatch):
     quote = _pickup_ready(ctx)
     key = ctx.conversation.session_key
@@ -119,7 +143,7 @@ def test_modify_waits_for_checkout_commit_and_cannot_change_sealed_order(ctx, mo
 def test_confirmation_waits_for_cart_edit_and_records_conflict_without_order(ctx):
     quote = _pickup_ready(ctx)
     accept_review(ctx, quote)
-    key, pk = ctx.conversation.session_key, ctx.conversation.pk
+    key = ctx.conversation.session_key
     line_id = Session.objects.get(session_key=key).items[0]["line_id"]
     boundary, release = Event(), Event()
 
@@ -132,7 +156,13 @@ def test_confirmation_waits_for_cart_edit_and_records_conflict_without_order(ctx
         return result.rev
 
     edit_worker = Worker(edit)
-    confirm = Worker(lambda: tools.place_order(tools.ToolContext(Conversation.objects.get(pk=pk), "whatsapp"), quote["quote_token"], "pix"))
+    confirm = Worker(
+        lambda: tools.place_order(
+            worker_tool_context(ctx.conversation),
+            quote["quote_token"],
+            "pix",
+        )
+    )
     with ThreadPoolExecutor(max_workers=2) as pool:
         edited = pool.submit(edit_worker)
         try:
@@ -158,7 +188,7 @@ def test_confirmation_waits_for_cart_edit_and_records_conflict_without_order(ctx
 def test_transfer_and_site_edit_do_not_leave_reservations_on_abandoned_source(ctx, settings, monkeypatch, operation):
     settings.SHOPMAN_CONCIERGE = {**CONCIERGE_SETTINGS, "transfer_enabled": True}
     _pickup_ready(ctx)
-    key, pk = ctx.conversation.session_key, ctx.conversation.pk
+    key = ctx.conversation.session_key
     line_id = Session.objects.get(session_key=key).items[0]["line_id"]
     boundary, release = Event(), Event()
 
@@ -168,7 +198,9 @@ def test_transfer_and_site_edit_do_not_leave_reservations_on_abandoned_source(ct
         return SimpleNamespace(success=True, url="https://example.invalid/transfer", expires_at="")
 
     monkeypatch.setattr("shopman.doorman.services.access_link.AccessLinkService.create_token", paused_mint)
-    transfer = Worker(lambda: tools.send_web_link(tools.ToolContext(Conversation.objects.get(pk=pk), "whatsapp"), "checkout"))
+    transfer = Worker(
+        lambda: tools.send_web_link(worker_tool_context(ctx.conversation), "checkout")
+    )
     commands = {
         "update": lambda: cart.update_qty(session_key=key, channel_ref="whatsapp", line_id=line_id, sku=SKU, qty=3),
         "add": lambda: cart.add_item(session_key=key, channel_ref="whatsapp", origin_channel="web", sku=SKU, qty=1, unit_price_q=90),

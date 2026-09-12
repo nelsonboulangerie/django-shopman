@@ -148,8 +148,8 @@ def get_sidebar_navigation(request):
             _model_item("Avisos de reposição", "notifications_active", "storefront.StockAlertSubscription"),
             _model_item("Ocorrências dos avisos", "event_repeat", "storefront.StockAlertOccurrence"),
             _model_item("Entregas dos avisos", "outbox", "storefront.StockAlertDelivery"),
-            # Concierge de WhatsApp: a transcrição de cada conversa e a volta ao bot.
-            _model_item("Conversas do WhatsApp", "chat", "shop.Conversation"),
+            # Atendimento conversacional: contexto, vínculos e volta ao concierge.
+            _model_item("Conversas do concierge", "chat", "shop.Conversation"),
         ]),
         # O que se fabrica e com o quê. A régua de qualidade e o planejamento do dia
         # são ajuste, não operação: moram na Configuração.
