@@ -33,7 +33,7 @@ A coordenação de inatividade cobre abas do mesmo origin do PDV. Não promete r
 
 Frontend e backend precisam ser publicados juntos. Nenhum reseed, credencial ou variável nova é necessário em produção. `sales_mode` usa JSON existente (`Session.data.pos` e `Order.data.pos`), sem coluna nova. O snapshot selado da sessão fornece o modo durante os callbacks iniciais do pedido.
 
-A migração `0063_cash_change_request_alert` e a Concierge `0064_concierge_alert_labels` foram conciliadas por `0065_merge_cash_change_concierge_alerts`, fixando a união das choices. Migrações anteriores preservadas. Rollback deve reverter código sem apagar eventos de caixa, alertas ou histórico de pagamento.
+A migração `0063_cash_change_request_alert` e a Concierge `0064_concierge_alert_labels` foram conciliadas por `0065_merge_cash_change_concierge_alerts`, fixando a união das choices. Após integrar o PR #623, `0066_merge_pos_concierge_identity_alerts` concilia os dois ramos 0065 e preserva também o alerta de identidade Concierge. Migrações anteriores preservadas. Rollback deve reverter código sem apagar eventos de caixa, alertas ou histórico de pagamento.
 
 Referência fiscal: [Integridade da entrega fiscal](execution/pos-20260912/fiscal-delivery-integrity.md).
 
