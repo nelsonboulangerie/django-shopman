@@ -379,19 +379,19 @@ describe("decisão do documento", () => {
     expect(buttonByText("Cadastrar novo")).toBeUndefined();
     expect(buttonByText("Concluir")).toBeUndefined();
     expect(document.querySelector('input')).toBeNull();
-    expect(document.activeElement).toBe(buttonByText("Só na nota"));
+    expect(document.activeElement).toBe(buttonByText("Só usar na nota"));
     const actions = Array.from(document.querySelectorAll('button'));
-    expect(actions.indexOf(buttonByText("Só na nota")!)).toBeLessThan(actions.indexOf(buttonByText("Associar cliente")!));
+    expect(actions.indexOf(buttonByText("Só usar na nota")!)).toBeLessThan(actions.indexOf(buttonByText("Sim, é de Bruno Souza")!));
     expect(screenText()).toContain("529.982.247-25");
     expect(screenText()).toContain("Bruno Souza");
     expect(buttonByText("unificar")).toBeUndefined();
-    buttonByText("Associar cliente")!.click();
+    buttonByText("Sim, é de Bruno Souza")!.click();
     await wrapper.vm.$nextTick();
     expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
     expect(screenText()).toContain("Associar Bruno Souza à venda?");
     buttonByText("Voltar")!.click();
     await wrapper.vm.$nextTick();
-    buttonByText("Só na nota")!.click();
+    buttonByText("Só usar na nota")!.click();
     expect(wrapper.emitted("decisionCancel")).toHaveLength(1);
   });
   it("corrigir WhatsApp devolve foco ao campo sem apagar o rascunho", async () => {
@@ -412,9 +412,9 @@ describe("atalhos da decisão do documento", () => {
   it("setas navegam, 2 pede confirmação e Escape volta sem aceitar", async () => {
     const wrapper = await mount({ customerDecision: decision });
     key("ArrowRight");
-    expect(document.activeElement).toBe(buttonByText("Associar cliente"));
+    expect(document.activeElement).toBe(buttonByText("Sim, é de Bruno Souza"));
     key("ArrowLeft");
-    expect(document.activeElement).toBe(buttonByText("Só na nota"));
+    expect(document.activeElement).toBe(buttonByText("Só usar na nota"));
     key("2");
     await wrapper.vm.$nextTick();
     await wrapper.vm.$nextTick();
@@ -423,7 +423,7 @@ describe("atalhos da decisão do documento", () => {
     key("Escape");
     await wrapper.vm.$nextTick();
     await wrapper.vm.$nextTick();
-    expect(document.activeElement).toBe(buttonByText("Só na nota"));
+    expect(document.activeElement).toBe(buttonByText("Só usar na nota"));
     key("Escape");
     expect(wrapper.emitted("update:open")).toEqual([[false]]);
     expect(wrapper.emitted("decisionCancel")).toBeUndefined();
@@ -437,9 +437,37 @@ describe("atalhos da decisão do documento", () => {
     document.querySelector("[data-receipt-choice]")?.dispatchEvent(new KeyboardEvent("keydown", { key: "1", bubbles: true }));
     expect(wrapper.emitted("decisionCancel")).toBeUndefined();
     await wrapper.setProps({ lookupBusy: false });
-    buttonByText("Só na nota")!.focus();
+    buttonByText("Só usar na nota")!.focus();
     key("1");
     expect(wrapper.emitted("decisionCancel")).toHaveLength(1);
     expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
+  });
+});
+
+
+describe("documentos reunidos", () => {
+  const fields = [
+    { field: "tax_id", value: "52998224725", owner: { ref: "B", name: "Bruno Souza", value: "52998224725" } },
+    { field: "email", value: "ana@example.org", owner: { ref: "A", name: "Ana Prado", value: "ana@example.org" } },
+  ];
+  it("mostra os dois titulares e o atalho 3 confirma apenas o escolhido", async () => {
+    const wrapper = await mount({ customerDecision: { ...CONFLICT, kind: "receipt_identity", receiptFields: fields } });
+    expect(screenText()).toContain("Quem é o cliente desta compra?");
+    expect(screenText()).toContain("529.982.247-25");
+    expect(screenText()).toContain("ana@example.org");
+    expect(document.querySelectorAll('[data-receipt-choice] button')).toHaveLength(3);
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "3", bubbles: true }));
+    await wrapper.vm.$nextTick();
+    expect(screenText()).toContain("Associar Ana Prado à venda?");
+    expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
+    buttonByText("Confirmar cliente")!.click();
+    expect(wrapper.emitted("decisionConfirm")).toEqual([["A"]]);
+  });
+  it("deduplica o mesmo titular e não oferece associação a inativos", async () => {
+    const wrapper = await mount({ customerDecision: { ...CONFLICT, kind: "receipt_identity", receiptFields: [fields[0], { ...fields[1], owner: fields[0]!.owner }] } });
+    expect(document.querySelectorAll('[data-receipt-choice] button')).toHaveLength(2);
+    await wrapper.setProps({ customerDecision: { ...CONFLICT, kind: "receipt_identity", receiptFields: fields.map(f => ({ ...f, active: false })) } });
+    expect(document.querySelectorAll('[data-receipt-choice] button')).toHaveLength(1);
+    expect(screenText()).toContain("(inativo)");
   });
 });

@@ -72,6 +72,7 @@ export interface CustomerDecision {
    * do campo.
    */
   fromReceipt?: boolean;
+  receiptFields?: Array<{ field: "tax_id" | "email"; value: string; owner: CustomerDecisionParty; active?: boolean }>;
 }
 
 /** Um botão a mais no painel, quando o caso pede. */

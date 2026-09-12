@@ -36,3 +36,9 @@ Frontend e backend precisam ser publicados juntos. Nenhum reseed, credencial ou 
 A migração `0063_cash_change_request_alert` e a Concierge `0064_concierge_alert_labels` foram conciliadas por `0065_merge_cash_change_concierge_alerts`, fixando a união das choices. Migrações anteriores preservadas. Rollback deve reverter código sem apagar eventos de caixa, alertas ou histórico de pagamento.
 
 Referência fiscal: [Integridade da entrega fiscal](execution/pos-20260912/fiscal-delivery-integrity.md).
+
+## Iteração: identidade do documento em uma janela
+
+A decisão agrupa todas as pendências de CPF e e-mail retornadas pelo servidor. Um titular produz duas opções; titulares distintos produzem até três. A janela tem largura máxima de 360 px, ações secundárias neutras empilhadas e nomes completos. A tecla 1 mantém os dados apenas na nota; 2/3 escolhem um cliente para confirmação. Tab e setas navegam, Enter aciona e Esc volta sem aceitar. Repetição de tecla e ações durante consulta não avançam decisões. O cadastro continua separado da decisão de associar a venda.
+
+O backend conserva os campos legados do erro e acrescenta `conflicts`. As autorizações de uso apenas no documento continuam vinculadas exatamente ao dado, titular, cliente atual e identificação da venda. Não há migração adicional.

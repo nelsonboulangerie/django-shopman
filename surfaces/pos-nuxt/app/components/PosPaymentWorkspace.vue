@@ -215,7 +215,7 @@ const emit = defineEmits<{
   submit: [];
   lookupCustomer: [];
   resolveCustomer: [];
-  decisionConfirm: [];
+  decisionConfirm: [ownerRef?: string];
   decisionCancel: [];
   decisionMerge: [];
   /** LIBERAR o contato preso num cadastro desativado. */
@@ -1803,7 +1803,7 @@ defineExpose({
     @select-result="onSelectResult"
     @clear="$emit('clearCustomer')"
     @resolve-customer="$emit('resolveCustomer')"
-    @decision-confirm="$emit('decisionConfirm')"
+    @decision-confirm="$emit('decisionConfirm', $event)"
     @decision-cancel="$emit('decisionCancel')"
     @decision-merge="$emit('decisionMerge')"
     @decision-release="$emit('decisionRelease', $event)"

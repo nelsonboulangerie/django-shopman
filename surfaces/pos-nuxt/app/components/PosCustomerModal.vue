@@ -84,7 +84,7 @@ const emit = defineEmits<{
   clear: [];
   resolveCustomer: [];
   /** O operador assumiu a mudança (trocar de cliente / trocar o contato). */
-  decisionConfirm: [];
+  decisionConfirm: [ownerRef?: string];
   /** LIBERAR o contato preso num cadastro desativado — o valor a soltar viaja
    *  junto porque na LISTA ele é o da linha, não o do painel. */
   decisionRelease: [value: string];
@@ -221,11 +221,26 @@ watch(() => props.customerDecision, () => {
 });
 
 const receiptPanelRef = ref<HTMLElement | null>(null);
-const receiptValue = computed(() => {
-  const value = props.customerDecision?.typed || "";
-  return props.customerDecision?.field === "tax_id" && /^\d{11}$/.test(value)
+const selectedReceiptOwner = ref("");
+const receiptFields = computed(() => props.customerDecision?.receiptFields || (props.customerDecision?.other ? [{
+  field: props.customerDecision.field === "tax_id" ? "tax_id" as const : "email" as const,
+  value: props.customerDecision.typed, owner: props.customerDecision.other,
+  active: props.customerDecision.candidates?.find(c => c.ref === props.customerDecision?.other?.ref)?.owner_inactive !== true,
+}] : []));
+const receiptOwners = computed(() => [...new Map(receiptFields.value.map(f => [f.owner.ref, f])).values()]);
+const receiptActiveOwners = computed(() => receiptOwners.value.filter(f => f.active !== false));
+const receiptTitle = computed(() => confirmingAttend.value
+  ? `Associar ${receiptOwners.value.find(f => f.owner.ref === selectedReceiptOwner.value)?.owner.name || "cliente"} à venda?`
+  : receiptOwners.value.length === 1 ? `Esta compra é de ${receiptOwners.value[0]!.owner.name}?` : "Quem é o cliente desta compra?");
+function formatReceiptValue(field: string, value: string) {
+  return field === "tax_id" && /^\d{11}$/.test(value)
     ? value.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4") : value;
-});
+}
+function chooseReceiptOwner(ref: string) {
+  if (props.lookupBusy) return;
+  selectedReceiptOwner.value = ref;
+  confirmingAttend.value = true;
+}
 function receiptButtons() {
   return [...(receiptPanelRef.value?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") || [])];
 }
@@ -235,7 +250,7 @@ watch(confirmingAttend, () => {
 function onReceiptKey(event: KeyboardEvent) {
   if (!isReceiptDecision.value || event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
   const key = event.key;
-  if (!["1", "2", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " ", "Escape"].includes(key)) return;
+  if (!["1", "2", "3", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " ", "Escape"].includes(key)) return;
   event.stopPropagation();
   if (props.lookupBusy || event.repeat) { event.preventDefault(); return; }
   if (key === "Escape") {
@@ -250,10 +265,13 @@ function onReceiptKey(event: KeyboardEvent) {
     const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
     const direction = key === "ArrowLeft" || key === "ArrowUp" ? -1 : 1;
     buttons[(current + direction + buttons.length) % buttons.length]?.focus();
-  } else if (!confirmingAttend.value && (key === "1" || key === "2")) {
+  } else if (!confirmingAttend.value && ["1", "2", "3"].includes(key)) {
     event.preventDefault();
     if (key === "1") void cancelDecision();
-    else if (decisionCopy.value?.confirmLabel) askConfirm();
+    else {
+      const owner = receiptActiveOwners.value[Number(key) - 2];
+      if (owner) chooseReceiptOwner(owner.owner.ref);
+    }
   }
   // Enter/Space usam o clique nativo do botão focado. Tab mantém a navegação do diálogo.
 }
@@ -339,16 +357,10 @@ const newCustomerNote = computed(() => {
 
 <template>
   <UiDialog :open="open" @update:open="$emit('update:open', Boolean($event))">
-    <!-- MESMA CAIXA dos irmãos (Recebimento, Desconto): `max-h-[85vh]
-         overflow-y-auto sm:max-w-lg`, cabeçalho padrão, altura pelo conteúdo.
-         Era um painel fixo de 90vh × 60rem — sempre com a altura inteira da tela
-         mesmo com três campos dentro, e um conteúdo de 42rem centrado num painel
-         de 60rem, gerando faixas vazias dos dois lados. Três perguntas feitas na
-         mesma sequência do balcão não podem chegar em três formatos diferentes:
-         o operador reaprende a tela a cada uma. -->
-    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" @open-auto-focus="onOpenAutoFocus" @keydown.capture="onReceiptKey">
+    <!-- A decisão do documento usa largura compacta; o cadastro mantém seu formulário. -->
+    <UiDialogContent class="max-h-[85vh] overflow-y-auto" :class="isReceiptDecision ? 'w-[calc(100%-2rem)] max-w-[360px] sm:max-w-[360px]' : 'sm:max-w-lg'" @open-auto-focus="onOpenAutoFocus" @keydown.capture="onReceiptKey">
       <UiDialogHeader>
-        <UiDialogTitle>{{ isReceiptDecision ? (customerDecision?.field === "tax_id" ? "CPF na nota" : "E-mail do comprovante") : "Cliente" }}</UiDialogTitle>
+        <UiDialogTitle :class="isReceiptDecision ? 'pr-4 text-left' : undefined">{{ isReceiptDecision ? receiptTitle : "Cliente" }}</UiDialogTitle>
         <UiDialogDescription v-if="!isReceiptDecision">
           Busque por nome, telefone, CPF ou e-mail — selecione um cadastro ou crie um novo.
         </UiDialogDescription>
@@ -460,31 +472,35 @@ const newCustomerNote = computed(() => {
                neutra e cor aqui só existe por função. -->
           <div v-if="isReceiptDecision && decisionCopy" ref="receiptPanelRef" class="grid gap-4" data-receipt-choice aria-live="polite">
             <template v-if="!confirmingAttend">
-              <div class="grid gap-1">
-                <p class="font-mono text-sm break-all">{{ receiptValue }}</p>
-                <p class="text-sm text-muted-foreground">{{ decisionCopy.title }}: <strong class="text-foreground">{{ decisionCopy.body }}</strong></p>
+              <div class="grid gap-3">
+                <div v-for="field in receiptFields" :key="field.field" class="grid gap-1">
+                  <p class="text-xs text-muted-foreground">{{ field.field === 'tax_id' ? 'CPF na nota' : 'Enviar por e-mail' }}</p>
+                  <p class="text-sm break-all">{{ formatReceiptValue(field.field, field.value) }}</p>
+                  <p v-if="receiptOwners.length > 1" class="text-sm font-medium">{{ field.owner.name }}{{ field.active === false ? ' (inativo)' : '' }}</p>
+                </div>
+                <div v-if="receiptOwners.length === 1">
+                  <p class="text-xs text-muted-foreground">Cadastro encontrado</p>
+                  <p class="text-sm font-medium">{{ receiptOwners[0]!.owner.name }}{{ receiptOwners[0]!.active === false ? ' (inativo)' : '' }}</p>
+                </div>
                 <p v-if="customerDecision?.current" class="text-xs text-muted-foreground">Cliente da venda: {{ customerDecision.current.name }}</p>
               </div>
-              <div class="grid gap-2 sm:grid-cols-2">
-                <UiButton ref="receiptActionRef" type="button" class="h-11 gap-2" :disabled="lookupBusy" aria-keyshortcuts="1" @click="cancelDecision">
-                  {{ decisionCopy.cancelLabel }} <kbd aria-hidden="true" class="text-xs opacity-70">1</kbd>
+              <div class="grid gap-2">
+                <UiButton ref="receiptActionRef" type="button" variant="secondary" class="min-h-12 h-auto justify-between whitespace-normal py-3 text-left" :disabled="lookupBusy" aria-keyshortcuts="1" @click="cancelDecision">
+                  Só usar na nota <kbd aria-hidden="true" class="text-xs opacity-70">1</kbd>
                 </UiButton>
-                <UiButton v-if="decisionCopy.confirmLabel" type="button" variant="outline" class="h-11 gap-2" :disabled="lookupBusy" aria-keyshortcuts="2" @click="askConfirm">
-                  {{ decisionCopy.confirmLabel }} <kbd aria-hidden="true" class="text-xs opacity-70">2</kbd>
+                <UiButton v-for="(field, index) in receiptActiveOwners" :key="field.owner.ref" type="button" variant="secondary" class="min-h-12 h-auto justify-between whitespace-normal py-3 text-left" :disabled="lookupBusy" :aria-keyshortcuts="String(index + 2)" @click="chooseReceiptOwner(field.owner.ref)">
+                  {{ receiptOwners.length === 1 ? 'Sim, é de ' : 'É de ' }}{{ field.owner.name }} <kbd aria-hidden="true" class="text-xs opacity-70">{{ index + 2 }}</kbd>
                 </UiButton>
               </div>
             </template>
             <template v-else>
-              <div class="grid gap-1">
-                <p class="text-sm font-medium">{{ decisionCopy.confirmPrompt }}</p>
-                <p class="text-xs text-muted-foreground">Preços e benefícios serão revisados.</p>
-              </div>
-              <div class="grid gap-2 sm:grid-cols-2">
-                <UiButton type="button" class="h-11" :disabled="lookupBusy" @click="$emit('decisionConfirm')">Confirmar cliente</UiButton>
-                <UiButton type="button" variant="outline" class="h-11" :disabled="lookupBusy" @click="confirmingAttend = false">Voltar</UiButton>
+              <p class="text-xs text-muted-foreground">Preços e benefícios serão revisados.</p>
+              <div class="grid gap-2">
+                <UiButton type="button" variant="secondary" class="min-h-12" :disabled="lookupBusy" @click="$emit('decisionConfirm', selectedReceiptOwner)">Confirmar cliente</UiButton>
+                <UiButton type="button" variant="secondary" class="min-h-12" :disabled="lookupBusy" @click="confirmingAttend = false">Voltar</UiButton>
               </div>
             </template>
-            <p class="text-xs text-muted-foreground">Tab / ← → escolher · Enter confirmar · Esc voltar</p>
+            <p class="text-xs text-muted-foreground">{{ confirmingAttend ? '' : '1–' + (receiptActiveOwners.length + 1) + ' escolher · ' }}Tab / ↑ ↓ navegar<br>Enter acionar · Esc voltar</p>
           </div>
           <div
             v-if="customerDecision && decisionCopy && !isReceiptDecision"

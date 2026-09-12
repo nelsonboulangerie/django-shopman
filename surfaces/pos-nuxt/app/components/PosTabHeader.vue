@@ -58,7 +58,7 @@ const emit = defineEmits<{
   clearCustomer: [];
   lookupCustomer: [];
   resolveCustomer: [];
-  decisionConfirm: [];
+  decisionConfirm: [ownerRef?: string];
   decisionCancel: [];
   decisionMerge: [];
   /** LIBERAR o contato preso num cadastro desativado. */
@@ -276,7 +276,7 @@ function runClear() {
       @select-result="$emit('selectResult', $event)"
       @clear="$emit('clearCustomer')"
       @resolve-customer="$emit('resolveCustomer')"
-      @decision-confirm="$emit('decisionConfirm')"
+      @decision-confirm="$emit('decisionConfirm', $event)"
       @decision-cancel="$emit('decisionCancel')"
       @decision-merge="$emit('decisionMerge')"
       @decision-release="$emit('decisionRelease', $event)"
