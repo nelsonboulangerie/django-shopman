@@ -50,6 +50,7 @@ export function workspaceProps(overrides: Record<string, unknown> = {}) {
     managerPin: "",
     managers: [],
     fulfillmentType: "pickup",
+    fulfillmentConfirmed: true,
     paymentCollection: "terminal",
     paymentTenders: [],
     splitCount: 0,

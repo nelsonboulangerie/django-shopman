@@ -39,7 +39,9 @@ const emit = defineEmits<{
   resendLink: [];
 }>();
 
-const title = computed(() => saleResultTitle(props.result.receipt.customerName, props.result.payment));
+const title = computed(() => props.result.salesMode === "order"
+  ? paymentFailed(props.result.payment) ? "Encomenda registrada, cobrança não criada" : "Encomenda registrada"
+  : saleResultTitle(props.result.receipt.customerName, props.result.payment));
 const chargeFailed = computed(() => paymentFailed(props.result.payment));
 const changeDisplay = computed(() => toChangeDisplay(props.result.changeQ));
 const pixPending = computed(() => pixAwaiting(props.result.payment, props.pixStatus));
@@ -62,6 +64,8 @@ function cancelCountdown() {
   countdown.value = 0;
 }
 onMounted(() => {
+  // A encomenda precisa ficar disponível para conferir e imprimir a filipeta.
+  if (props.result.salesMode === "order") return;
   const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
   const seconds = autoAdvanceSeconds({
     changeQ: props.result.changeQ,

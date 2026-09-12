@@ -141,7 +141,7 @@ describe("PosCustomerModal — a recusa tem motivo E caminho", () => {
 
   it("uma pergunta aberta não se responde fechando a tela: Concluir espera", async () => {
     const wrapper = await mount({ customerDecision: CONFLICT });
-    const concluir = buttonByText("Concluir")!;
+    const concluir = buttonByText("Cadastrar cliente")!;
     expect(concluir.disabled).toBe(true);
     concluir.click();
     await wrapper.vm.$nextTick();
@@ -311,9 +311,197 @@ describe("PosCustomerModal — a recusa tem motivo E caminho", () => {
 
   it("sem pergunta pendente, Concluir resolve e fecha como sempre", async () => {
     const wrapper = await mount();
-    buttonByText("Concluir")!.click();
+    buttonByText("Cadastrar cliente")!.click();
     await wrapper.vm.$nextTick();
     expect(wrapper.emitted("resolveCustomer")).toHaveLength(1);
     expect(wrapper.emitted("update:open")?.at(-1)).toEqual([false]);
+  });
+});
+
+describe("cadastro novo com telefone existente", () => {
+  it("mantém a decisão aberta e só seleciona após conferir o dono", async () => {
+    const wrapper = await mount({
+      customerName: "Outra Pessoa",
+      customerDecision: { ...CONFLICT, kind: "existing_customer", current: null },
+    });
+    expect(document.body.textContent).toContain("Nenhum cadastro foi alterado");
+    expect(buttonByText("Cadastrar cliente")?.disabled).toBe(true);
+    expect(buttonByText("unificar")).toBeUndefined();
+    buttonByText("Usar cadastro de Bruno Souza")!.click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
+    expect(document.body.textContent).toContain("O cliente atendido é Bruno Souza?");
+    buttonByText("Sim, tenho certeza")!.click();
+    expect(wrapper.emitted("decisionConfirm")).toHaveLength(1);
+  });
+});
+
+describe("buscar existente e cadastrar novo são atos separados", () => {
+  it("digitar telefone no cadastro novo e sair do campo não busca nem seleciona", async () => {
+    const wrapper = await mount({ customerName: "", customerPhone: "" });
+    expect(document.querySelector('input[aria-label="Buscar cliente"]')).not.toBeNull();
+    buttonByText("Cadastrar novo")!.click();
+    await wrapper.vm.$nextTick();
+    expect(document.querySelector('input[aria-label="Buscar cliente"]')).toBeNull();
+    const phone = document.querySelector('input[inputmode="tel"]') as HTMLInputElement;
+    phone.value = "43999990022";
+    phone.dispatchEvent(new Event("input", { bubbles: true }));
+    phone.dispatchEvent(new Event("blur", { bubbles: true }));
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("update:customerPhone")?.at(-1)).toEqual(["43999990022"]);
+    expect(wrapper.emitted("search")).toBeUndefined();
+    expect(wrapper.emitted("selectResult")).toBeUndefined();
+    expect(wrapper.emitted("resolveCustomer")).toBeUndefined();
+    expect(document.body.textContent).not.toContain("Remover cliente");
+    buttonByText("Cadastrar cliente")!.click();
+    expect(wrapper.emitted("resolveCustomer")).toHaveLength(1);
+  });
+
+  it("alternar para busca e voltar preserva o rascunho de cadastro", async () => {
+    const wrapper = await mount({ customerName: "Outra Pessoa", customerPhone: "43999990022" });
+    buttonByText("Buscar existente")!.click();
+    await wrapper.vm.$nextTick();
+    buttonByText("Cadastrar novo")!.click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("clear")).toBeUndefined();
+    expect((document.querySelector('input[inputmode="tel"]') as HTMLInputElement).value).toBe("43999990022");
+  });
+});
+
+
+describe("decisão do documento", () => {
+  it("prioriza só documento e pede confirmação para associar", async () => {
+    const wrapper = await mount({ customerDecision: {
+      ...CONFLICT, kind: "receipt_identity", field: "tax_id", typed: "52998224725", fromReceipt: true,
+    } });
+    expect(screenText()).toContain("CPF na nota");
+    expect(buttonByText("Buscar existente")).toBeUndefined();
+    expect(buttonByText("Cadastrar novo")).toBeUndefined();
+    expect(buttonByText("Concluir")).toBeUndefined();
+    expect(document.querySelector('input')).toBeNull();
+    expect(document.activeElement?.tagName).toBe("H2");
+    const actions = Array.from(document.querySelectorAll('button'));
+    expect(actions.indexOf(buttonByText("Usar dados só neste pedido")!)).toBeGreaterThan(actions.indexOf(buttonByText("Sim, vincular ao pedido")!));
+    expect(screenText()).toContain("529.982.247-25");
+    expect(screenText()).toContain("Bruno Souza");
+    expect(buttonByText("unificar")).toBeUndefined();
+    buttonByText("Sim, vincular ao pedido")!.click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
+    expect(screenText()).toContain("Vincular Bruno Souza ao pedido?");
+    buttonByText("Voltar")!.click();
+    await wrapper.vm.$nextTick();
+    buttonByText("Usar dados só neste pedido")!.click();
+    expect(wrapper.emitted("decisionCancel")).toHaveLength(1);
+  });
+  it("corrigir WhatsApp devolve foco ao campo sem apagar o rascunho", async () => {
+    const wrapper = await mount({ customerDecision: { ...CONFLICT, kind: "existing_customer", current: null } });
+    buttonByText("Corrigir WhatsApp")!.click();
+    await wrapper.vm.$nextTick();
+    expect(document.activeElement).toBe(document.querySelector('input[inputmode="tel"]'));
+    expect(wrapper.emitted("update:customerPhone")).toBeUndefined();
+  });
+});
+
+
+describe("atalhos da decisão do documento", () => {
+  const decision = { ...CONFLICT, kind: "receipt_identity", field: "tax_id", typed: "52998224725", fromReceipt: true };
+  function key(value: string, options: KeyboardEventInit = {}) {
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true, ...options }));
+  }
+  it("setas navegam, 2 pede confirmação e Escape volta sem aceitar", async () => {
+    const wrapper = await mount({ customerDecision: decision });
+    key("ArrowRight");
+    expect(document.activeElement).toBe(buttonByText("Sim, vincular ao pedido"));
+    key("ArrowLeft");
+    expect(document.activeElement).toBe(buttonByText("Usar dados só neste pedido"));
+    key("1");
+    await wrapper.vm.$nextTick();
+    await wrapper.vm.$nextTick();
+    expect(document.activeElement?.tagName).toBe("H2");
+    expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
+    key("Escape");
+    await wrapper.vm.$nextTick();
+    await wrapper.vm.$nextTick();
+    expect(document.activeElement?.tagName).toBe("H2");
+    key("Escape");
+    expect(wrapper.emitted("update:open")).toEqual([[false]]);
+    expect(wrapper.emitted("decisionCancel")).toBeUndefined();
+  });
+  it("1 aceita só o documento; modificadores, repetição e espera não aceitam", async () => {
+    const wrapper = await mount({ customerDecision: decision });
+    key("2", { ctrlKey: true });
+    key("2", { repeat: true });
+    expect(wrapper.emitted("decisionCancel")).toBeUndefined();
+    await wrapper.setProps({ lookupBusy: true });
+    document.querySelector("[data-receipt-choice]")?.dispatchEvent(new KeyboardEvent("keydown", { key: "2", bubbles: true }));
+    expect(wrapper.emitted("decisionCancel")).toBeUndefined();
+    await wrapper.setProps({ lookupBusy: false });
+    buttonByText("Usar dados só neste pedido")!.focus();
+    key("2");
+    expect(wrapper.emitted("decisionCancel")).toHaveLength(1);
+    expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
+  });
+});
+
+
+describe("documentos reunidos", () => {
+  const fields = [
+    { field: "tax_id", value: "52998224725", owner: { ref: "B", name: "Bruno Souza", value: "52998224725" } },
+    { field: "email", value: "ana@example.org", owner: { ref: "A", name: "Ana Prado", value: "ana@example.org" } },
+  ];
+  it("mostra os dois titulares e o atalho 3 confirma apenas o escolhido", async () => {
+    const wrapper = await mount({ customerDecision: { ...CONFLICT, kind: "receipt_identity", receiptFields: fields } });
+    expect(screenText()).toContain("Quem é o cliente deste pedido?");
+    expect(screenText()).toContain("529.982.247-25");
+    expect(screenText()).toContain("ana@example.org");
+    expect(document.querySelectorAll('[data-receipt-choice] button')).toHaveLength(3);
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "2", bubbles: true }));
+    await wrapper.vm.$nextTick();
+    expect(screenText()).toContain("Vincular Ana Prado ao pedido?");
+    expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
+    buttonByText("Confirmar cliente")!.click();
+    expect(wrapper.emitted("decisionConfirm")).toEqual([["A"]]);
+  });
+  it("deduplica o mesmo titular e não oferece associação a inativos", async () => {
+    const wrapper = await mount({ customerDecision: { ...CONFLICT, kind: "receipt_identity", receiptFields: [fields[0], { ...fields[1], owner: fields[0]!.owner }] } });
+    expect(document.querySelectorAll('[data-receipt-choice] button')).toHaveLength(2);
+    await wrapper.setProps({ customerDecision: { ...CONFLICT, kind: "receipt_identity", receiptFields: fields.map(f => ({ ...f, active: false })) } });
+    expect(document.querySelectorAll('[data-receipt-choice] button')).toHaveLength(1);
+    expect(screenText()).toContain("(inativo)");
+  });
+});
+
+describe("cadastro pelo documento", () => {
+  const newField = { field: 'email', value: 'novo@example.org', owner: { ref: '', name: '', value: 'novo@example.org' }, active: true };
+  it('prioriza cadastrar sem aceitar o Enter usado para abrir', async () => {
+    const wrapper = await mount({ customerDecision: { ...CONFLICT, kind: 'receipt_identity', receiptCreate: true, current: null, other: null, receiptFields: [newField] } });
+    expect(screenText()).toContain('Cadastrar o cliente deste pedido?');
+    expect(document.activeElement?.tagName).toBe('H2');
+    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(wrapper.emitted('decisionConfirm')).toBeUndefined();
+    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: '1', bubbles: true }));
+    await wrapper.vm.$nextTick();
+    expect(screenText()).toContain('Os dados serão salvos em um novo cadastro.');
+    buttonByText('Confirmar cliente')!.click();
+    expect(wrapper.emitted('decisionConfirm')).toEqual([['__create__']]);
+  });
+  it('explicita salvar o dado novo junto da associação ao titular conhecido', async () => {
+    await mount({ customerDecision: { ...CONFLICT, kind: 'receipt_identity', receiptFields: [
+      { field: 'tax_id', value: '52998224725', owner: CONFLICT.other }, newField,
+    ] } });
+    expect(buttonByText('Vincular Bruno Souza e salvar e-mail')).toBeDefined();
+    expect(buttonByText('Cadastrar e vincular')).toBeUndefined();
+  });
+  it('troca de CPF mostra antigo e novo antes da confirmação explícita', async () => {
+    const wrapper = await mount({ customerDecision: { ...CONFLICT, kind: 'receipt_identity', receiptSave: true,
+      receiptTaxIdOverwrite: { from: '52998224725', to: '11144477735' }, receiptFields: [newField] } });
+    expect(screenText()).toContain('Atual: 529.982.247-25');
+    expect(screenText()).toContain('Novo: 111.444.777-35');
+    buttonByText('Trocar CPF e vincular')!.click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted('decisionConfirm')).toBeUndefined();
+    buttonByText('Confirmar cliente')!.click();
+    expect(wrapper.emitted('decisionConfirm')).toEqual([['__save_confirmed__']]);
   });
 });

@@ -215,3 +215,26 @@ def test_customer_holds_the_goods_predicate():
         data_extra={"payment": {"method": "link", "collection": "terminal", "amount_q": 1000}},
     )
     assert _customer_holds_the_goods(link) is False
+
+
+@pytest.mark.parametrize("source", ["data", "snapshot"])
+def test_same_day_order_mode_never_hands_goods_over_implicitly(source):
+    from django.utils import timezone
+
+    from shopman.shop.services.kds import _customer_holds_the_goods
+
+    order = _counter_order(
+        ref=f"PDV-ORDER-{source}",
+        data_extra={"delivery_date": timezone.localdate().isoformat()},
+    )
+    if source == "data":
+        order.data["pos"] = {"sales_mode": "order"}
+        order.save(update_fields=["data"])
+    else:
+        # Este é o contexto disponível durante os callbacks iniciais do commit.
+        Order.objects.filter(pk=order.pk).update(snapshot={**order.snapshot, "data": {"pos": {"sales_mode": "order"}}})
+        order.refresh_from_db()
+    assert _customer_holds_the_goods(order) is False
+    lifecycle._on_accepted(order, ChannelConfig.for_channel("pdv"))
+    order.refresh_from_db()
+    assert order.status == Order.Status.ACCEPTED

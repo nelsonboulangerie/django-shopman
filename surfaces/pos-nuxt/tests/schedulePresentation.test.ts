@@ -71,8 +71,8 @@ describe("scheduleLabel — o botão da barra de contexto", () => {
   it("sem combinado, afirma 'Para hoje'", () => {
     // Afirmação, não campo vazio: a maioria das vendas é para agora, e a barra
     // não pode parecer que falta preencher alguma coisa.
-    expect(scheduleLabel("", "", HOJE)).toBe("Para hoje");
-    expect(scheduleLabel(HOJE, "", HOJE)).toBe("Para hoje");
+    expect(scheduleLabel("", "", HOJE)).toBe("Sem agendamento");
+    expect(scheduleLabel(HOJE, "", HOJE)).toBe("Hoje · horário a combinar");
   });
 
   it("hoje com hora marcada carrega a hora", () => {
@@ -183,8 +183,10 @@ describe("scheduledNeedsCustomer — a régua da tela não pode ser mais apertad
     expect(scheduledNeedsCustomer({ ...base, customerName: "   " })).toBe(true);
   });
 
-  it("para hoje segue anônimo: a regra é da ENCOMENDA, não de toda venda", () => {
-    expect(scheduledNeedsCustomer({ ...base, deliveryDate: "2026-09-01" })).toBe(false);
+  it("retirada combinada hoje exige cliente; venda imediata não", () => {
+    expect(scheduledNeedsCustomer({ ...base, deliveryDate: "2026-09-01" })).toBe(true);
+    expect(scheduledNeedsCustomer({ ...base, deliveryDate: "", deliveryTimeSlot: "15:00-15:30" })).toBe(true);
+    expect(scheduledNeedsCustomer({ ...base, deliveryDate: "", fulfillmentType: "delivery" })).toBe(true);
     expect(scheduledNeedsCustomer({ ...base, deliveryDate: "" })).toBe(false);
   });
 });

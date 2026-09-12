@@ -34,6 +34,8 @@ import {
   cashNotesQ as contractCashNotesQ,
   cashNoteLabel,
   collectionsForFulfillment,
+  orderPaymentGuidance,
+  paymentCollectionLabel,
   injectableMethods as toInjectableMethods,
   machineTenderLines,
   methodShortcuts,
@@ -61,6 +63,7 @@ import {
 import { scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
 
 const props = defineProps<{
+  salesMode?: "counter" | "order";
   tabDisplay: string;
   items: POSCartItem[];
   hasOpenTab: boolean;
@@ -93,6 +96,7 @@ const props = defineProps<{
   /** Quem CONTINUA operando depois da assinatura do gerente. Ver OperatorManagerAuth. */
   operatorName?: string;
   fulfillmentType: "pickup" | "delivery";
+  fulfillmentConfirmed?: boolean;
   paymentCollection: "terminal" | "on_delivery";
   paymentTenders: POSPaymentTenderDraft[];
   /** Em quantas pessoas a conta está dividida (0 = sem divisão). */
@@ -171,6 +175,7 @@ const emit = defineEmits<{
   "update:managerUsername": [string];
   "update:managerPin": [string];
   "update:fulfillmentType": ["pickup" | "delivery"];
+  "update:fulfillmentConfirmed": [boolean];
   "update:paymentCollection": ["terminal" | "on_delivery"];
   addTender: [string];
   removeTender: [number];
@@ -210,7 +215,7 @@ const emit = defineEmits<{
   submit: [];
   lookupCustomer: [];
   resolveCustomer: [];
-  decisionConfirm: [];
+  decisionConfirm: [ownerRef?: string];
   decisionCancel: [];
   decisionMerge: [];
   /** LIBERAR o contato preso num cadastro desativado. */
@@ -277,6 +282,8 @@ const nonCashExcess = computed(() => nonCashExcessQ(props.paymentTenders, props.
 // três identificadores, e o cadastro só-com-CPF (sem telefone) existe.
 const scheduledWithoutCustomer = computed(() => scheduledNeedsCustomer({
   deliveryDate: props.deliveryDate,
+  deliveryTimeSlot: props.deliveryTimeSlot,
+  fulfillmentType: props.fulfillmentType,
   today: props.scheduleToday,
   customerName: props.customerName,
   customerPhone: props.customerPhone,
@@ -444,9 +451,6 @@ const receiptTaxIdOffer = computed(() => receiptOffers.value.taxId);
 const saveReceiptEmailChecked = computed(() =>
   receiptContactChecked(receiptEmailOffer.value, props.saveReceiptContact),
 );
-const saveReceiptTaxIdChecked = computed(() =>
-  receiptContactChecked(receiptTaxIdOffer.value, props.saveReceiptTaxId),
-);
 // A segunda metade da promessa: quem chega ao fechamento pelo teclado nunca viu
 // o popover, e ninguém deve descobrir depois que um cadastro mudou.
 // ⚠️ ARMADO, não marcado. O CPF divergente só entra no resumo depois da
@@ -568,6 +572,12 @@ const injectableMethods = computed(() =>
 const methodKeys = computed(() => methodShortcuts(injectableMethods.value));
 const tenderLines = computed(() => props.paymentTenders.map((tender) => tenderLineView(tender, injectableMethods.value)));
 const deliveryCollections = computed(() => collectionsForFulfillment(props.paymentCollections, props.fulfillmentType));
+const paymentGuidance = computed(() => orderPaymentGuidance({
+  salesMode: props.salesMode,
+  fulfillmentType: props.fulfillmentType,
+  collection: props.paymentCollection,
+  methods: props.paymentTenders.map((tender) => tender.method),
+}));
 
 // ── O LINK COBRA A VENDA INTEIRA ─────────────────────────────────────────
 //
@@ -701,10 +711,17 @@ const ctaBlock = computed<{ message: string; hint?: string; action?: CheckoutAct
       hint: "Troque a linha por dinheiro ou cartão na maquininha, ou escolha Receber no caixa.",
     };
   }
+  if (props.salesMode !== "counter" && !props.fulfillmentConfirmed) {
+    return {
+      message: "Como o cliente vai receber?",
+      hint: "Escolher data ou cliente não define entrega ou retirada.",
+      action: { label: "Escolher entrega ou retirada", run: () => { fulfillmentSheetOpen.value = true; } },
+    };
+  }
   if (scheduledWithoutCustomer.value) {
     return {
       message: "Encomenda precisa de cliente.",
-      hint: "É o contato se algo mudar até a data.",
+      hint: "Identifique quem vai receber a entrega ou retirar o pedido combinado.",
       action: { label: "Identificar cliente", run: () => { customerSheetOpen.value = true; } },
     };
   }
@@ -909,8 +926,8 @@ function onMachineConfirmed() {
 defineExpose({
   validate: () => { if (!ctaDisabled.value) onCta(); },
   openCustomer: () => { customerSheetOpen.value = true; },
-  openFulfillment: () => { fulfillmentSheetOpen.value = true; },
-  openSchedule: () => { scheduleSheetOpen.value = true; },
+  openFulfillment: () => { if (props.salesMode !== "counter") fulfillmentSheetOpen.value = true; },
+  openSchedule: () => { if (props.salesMode !== "counter") scheduleSheetOpen.value = true; },
   openDiscount: () => { if (props.discountTypes.length) discountSheetOpen.value = true; },
   /** O irmão do desconto: os dois Ajustes da conta abrem pela mesma dupla de
    *  teclas. Recusa quando o botão recusa — uma tecla que abre o que o dedo não
@@ -1111,14 +1128,15 @@ defineExpose({
                 @click="$emit('update:paymentCollection', collection.ref)"
               >
                 <Icon :name="collection.ref === 'terminal' ? 'lucide:store' : 'lucide:truck'" class="size-4 shrink-0" />
-                <span class="min-w-0 truncate text-left">{{ collection.label }}</span>
+                <span class="min-w-0 truncate text-left">{{ paymentCollectionLabel(collection, salesMode) }}</span>
               </button>
             </template>
           </div>
         </section>
 
         <section class="grid gap-1.5" aria-label="Forma de pagamento">
-          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Forma de pagamento</h3>
+          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{{ salesMode === "order" ? "Pagamento da encomenda" : "Forma de pagamento" }}</h3>
+          <p v-if="paymentGuidance" class="px-1 text-sm text-muted-foreground" role="status">{{ paymentGuidance }}</p>
 
           <div class="flex flex-col gap-1.5">
             <!-- Tocar aqui ADICIONA uma linha; não escolhe "a forma" da venda.
@@ -1138,7 +1156,7 @@ defineExpose({
               class="flex h-11 items-center gap-3 rounded-md border bg-card px-3 text-left text-sm font-medium transition hover:border-primary/50 hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
               :disabled="blockedForDelivery(method.ref) || blockedByLink(method.ref)"
               :title="blockedForDelivery(method.ref)
-                ? 'PIX Efí e pagamentos online precisam da confirmação automática antes da entrega. Use Receber no caixa.'
+                ? 'PIX Efí e pagamentos online precisam da confirmação automática antes da entrega. Escolha o recebimento antecipado.'
                 : blockedByLink(method.ref)
                   ? 'O link de pagamento cobra a venda inteira'
                   : undefined"
@@ -1573,15 +1591,7 @@ defineExpose({
                 />
               </label>
               <template v-if="wantsCpfOnInvoice">
-                <PosReceiptSaveOffer
-                  :offer="receiptTaxIdOffer"
-                  :checked="saveReceiptTaxIdChecked"
-                  :confirmed="confirmReceiptTaxId"
-                  side="left"
-                  :quiet="customerSheetOpen"
-                  @update:checked="$emit('update:saveReceiptTaxId', $event)"
-                  @update:confirmed="$emit('update:confirmReceiptTaxId', $event)"
-                >
+
                   <UiInput
                     :model-value="invoiceTaxIdMasked"
                     inputmode="numeric"
@@ -1591,7 +1601,7 @@ defineExpose({
                     :maxlength="18"
                     @update:model-value="$emit('update:invoiceTaxId', String($event || '').replace(/\D/g, '').slice(0, 14))"
                   />
-                </PosReceiptSaveOffer>
+
                 <!-- Eco do documento: o operador lê de volta o que vai sair e diz
                      ao cliente. Sem isto, "pôs o meu?" não tem resposta na tela. -->
                 <p class="flex items-center gap-1.5 text-xs" :class="taxIdEcho.ok ? 'text-muted-foreground' : 'text-warning'">
@@ -1599,7 +1609,7 @@ defineExpose({
                   {{ taxIdEcho.text }}
                 </p>
                 <p v-if="taxIdIsFromCadastro" class="text-xs text-muted-foreground">
-                  Do cadastro. Trocar aqui vale só nesta venda.
+                  Do cadastro do cliente.
                 </p>
               </template>
             </div>
@@ -1638,13 +1648,7 @@ defineExpose({
                 />
               </label>
               <template v-if="wantsEmailReceipt">
-                <PosReceiptSaveOffer
-                  :offer="receiptEmailOffer"
-                  :checked="saveReceiptEmailChecked"
-                  side="left"
-                  :quiet="customerSheetOpen"
-                  @update:checked="$emit('update:saveReceiptContact', $event)"
-                >
+
                   <UiInput
                     :model-value="receiptEmail"
                     type="email"
@@ -1653,12 +1657,12 @@ defineExpose({
                     aria-label="E-mail que recebe a nota"
                     @update:model-value="$emit('update:receiptEmail', String($event || ''))"
                   />
-                </PosReceiptSaveOffer>
+
                 <p v-if="!receiptEmail.trim() && customerEmail.trim()" class="text-xs text-muted-foreground">
                   Sem preencher, vai para <span class="font-medium text-foreground">{{ customerEmail }}</span>.
                 </p>
                 <p v-else-if="emailIsFromCadastro" class="text-xs text-muted-foreground">
-                  Do cadastro. Trocar aqui vale só nesta venda.
+                  Do cadastro do cliente.
                 </p>
               </template>
             </div>
@@ -1698,9 +1702,12 @@ defineExpose({
        agora REVÊ o que foi decidido no começo do atendimento, em vez de ser o
        único lugar onde a pergunta existe. -->
   <PosFulfillmentModal
+    v-if="salesMode !== 'counter'"
     v-model:open="fulfillmentSheetOpen"
     :fulfillment-options="fulfillmentOptions"
     :fulfillment-type="fulfillmentType"
+    :fulfillment-confirmed="fulfillmentConfirmed"
+    @update:fulfillment-confirmed="$emit('update:fulfillmentConfirmed', $event)"
     :saved-addresses="savedAddresses"
     :address-autocomplete="addressAutocomplete"
     :delivery-address="deliveryAddress"
@@ -1732,8 +1739,12 @@ defineExpose({
   <!-- QUANDO — a MESMA caixa que a tela de venda abre. O agendamento é decidido
        na abertura do atendimento; aqui ele é revisto, com as mesmas palavras. -->
   <PosScheduleModal
+    v-if="salesMode !== 'counter'"
+    :sales-mode="salesMode"
     v-model:open="scheduleSheetOpen"
     :today="scheduleToday"
+    :delivery-date="deliveryDate"
+    :fulfillment-type="fulfillmentConfirmed ? fulfillmentType : undefined"
     :delivery-date-effective="deliveryDateEffective"
     :delivery-time-slot="deliveryTimeSlot"
     :available-dates="scheduleAvailableDates"
@@ -1779,7 +1790,7 @@ defineExpose({
     @select-result="onSelectResult"
     @clear="$emit('clearCustomer')"
     @resolve-customer="$emit('resolveCustomer')"
-    @decision-confirm="$emit('decisionConfirm')"
+    @decision-confirm="$emit('decisionConfirm', $event)"
     @decision-cancel="$emit('decisionCancel')"
     @decision-merge="$emit('decisionMerge')"
     @decision-release="$emit('decisionRelease', $event)"

@@ -10,6 +10,8 @@ do pacote e da retaguarda, nunca do terminal (fechamento cego, ADR-011 §4).
 
 from __future__ import annotations
 
+from django.db import transaction
+
 from shopman.backstage.services.exceptions import (
     POSError,
     POSPermissionError,
@@ -534,6 +536,7 @@ def _clean_denominations(raw) -> list[int]:
     return sorted(limpas, reverse=True)
 
 
+@transaction.atomic
 def request_change(
     *, operator, amount_raw="0", denominations=None, note: str = "", terminal_ref: str = ""
 ):
@@ -563,15 +566,19 @@ def request_change(
     denominations = _clean_denominations(denominations)
     note = str(note or "").strip()[:120]
 
+    from shopman.backstage.services.cash_change_alerts import notify_change_request
+
     shift = _open_shift_or_raise(operator, terminal_ref)
+    alert = notify_change_request(shift=shift, operator=operator, amount_q=amount_q, denominations=denominations, note=note)
     return _record(
         "change_requested",
         shift=shift,
         operator=operator,
-        payload={"amount_q": amount_q, "denominations": denominations, "note": note},
+        payload={"amount_q": amount_q, "denominations": denominations, "note": note, "alert_id": alert.pk},
     )
 
 
+@transaction.atomic
 def serve_change_request(
     *, operator, request_ref: str, manager_approval: dict | None = None, terminal_ref: str = ""
 ):
@@ -592,15 +599,18 @@ def serve_change_request(
 
     shift = _open_shift_or_raise(operator, terminal_ref)
     request = _pending_request(shift, request_ref)
-    return _record(
+    entry = _record(
         "change_served",
         shift=shift,
         operator=operator,
         approved_by=approved_by,
         parent=request,
     )
+    _resolve_change_alert(request, operator)
+    return entry
 
 
+@transaction.atomic
 def cancel_change_request(*, operator, request_ref: str, terminal_ref: str = ""):
     """O operador achou troco na gaveta e o pedido não vale mais (``change_cancelled``).
 
@@ -610,7 +620,15 @@ def cancel_change_request(*, operator, request_ref: str, terminal_ref: str = "")
     """
     shift = _open_shift_or_raise(operator, terminal_ref)
     request = _pending_request(shift, request_ref)
-    return _record("change_cancelled", shift=shift, operator=operator, parent=request)
+    entry = _record("change_cancelled", shift=shift, operator=operator, parent=request)
+    _resolve_change_alert(request, operator)
+    return entry
+
+
+def _resolve_change_alert(request, operator):
+    from shopman.backstage.services.cash_change_alerts import resolve_change_request
+
+    resolve_change_request(request=request, actor=operator.get_username())
 
 
 def pending_change_requests(shift) -> list[dict]:

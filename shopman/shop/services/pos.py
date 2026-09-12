@@ -294,6 +294,7 @@ def close_sale(
     operator_username: str,
 ) -> PosSaleResult:
     """Create and commit a POS sale from a parsed cart payload."""
+    payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
     channel, config = _channel_and_config(channel_ref)
     # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou, e o
@@ -626,7 +627,11 @@ def review_sale(
     operator_username: str,
 ) -> PosSaleReview:
     """Validate a POS checkout intent without committing the Orderman session."""
+    from shopman.shop.services.pos_receipt_identity import require_receipt_identity_choice
+
+    payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
+    require_receipt_identity_choice(payload)
     channel, _config = _channel_and_config(channel_ref)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     if session is None and _payload_has_tab_identity(payload):
@@ -677,7 +682,7 @@ def review_sale(
     # Agendado sem cliente é promessa sem destinatário. Aqui é aviso (a review
     # é tela); a recusa de verdade mora em `_require_customer_if_scheduled`,
     # no `close_sale` — mesmo code/field, para a UI apontar o mesmo lugar.
-    if _is_scheduled_for_future(payload) and not _payload_identifies_customer(payload):
+    if _fulfillment_requires_customer(payload) and not _payload_identifies_customer(payload):
         warnings.append({
             "code": "customer_required_for_scheduled",
             "field": "customer_phone",
@@ -909,22 +914,13 @@ def _validate_schedule(payload: dict) -> None:
         raise ValueError(error)
 
 
-def _is_scheduled_for_future(payload: dict) -> bool:
-    """A venda é para OUTRO dia? Data de HOJE não conta — estritamente futura.
-
-    Mesmo predicado do lifecycle (`_physical_work_deferred`): `>` e não `>=`,
-    para que a venda de balcão com a data de hoje continue sendo balcão.
-    """
-    from datetime import date as _date
-
-    raw = str(payload.get("delivery_date") or "").strip()
-    if not raw:
-        return False
-    try:
-        return _date.fromisoformat(raw) > timezone.localdate()
-    except ValueError:
-        # Data ilegível é problema de `_validate_schedule`, que roda antes.
-        return False
+def _fulfillment_requires_customer(payload: dict) -> bool:
+    """Data/janela explícita distingue retirada combinada de venda imediata."""
+    return (
+        _payload_fulfillment_type(payload) == "delivery"
+        or bool(str(payload.get("delivery_date") or "").strip())
+        or bool(str(payload.get("delivery_time_slot") or "").strip())
+    )
 
 
 def _payload_identifies_customer(payload: dict) -> bool:
@@ -969,19 +965,8 @@ def _payload_payment_method_set(payload: dict) -> set[str]:
 
 
 def _require_customer_if_scheduled(payload: dict) -> None:
-    """Encomenda para outro dia só com cliente identificado; recusa ANTES do commit.
-
-    O agendado é uma promessa que atravessa dias: se a fornada atrasar, se o
-    item acabar, se a casa fechar — alguém precisa AVISAR alguém. Um pedido
-    agendado 100% anônimo é uma promessa sem destinatário: ninguém para chamar
-    quando algo muda, e ninguém para cobrar quando ninguém aparece.
-
-    A venda de agora segue anônima (o cliente está na frente do operador); a
-    data de HOJE também não conta como agendamento (ver
-    `test_data_de_HOJE_nao_adia_a_venda_de_balcao`). Basta UM identificador:
-    nome, telefone ou cadastro — o balcão não vira formulário.
-    """
-    if not _is_scheduled_for_future(payload):
+    """Pedido combinado, inclusive hoje, e entrega exigem identificação."""
+    if not _fulfillment_requires_customer(payload):
         return
     if _payload_identifies_customer(payload):
         return
@@ -1073,16 +1058,21 @@ def save_pos_tab(
     operator_username: str,
 ) -> PosTabResult:
     """Save the current POS cart on its tab and return to the tab grid."""
+    payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=False).payload
     channel, config = _channel_and_config(channel_ref)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     if session is None:
         raise ValueError("Abra um POS tab antes de deixar em espera.")
 
+    if payload.get("sales_mode") == "order" and payload.get("items"):
+        _validate_schedule(payload)
     before_items = session.items
     tab_ref = _session_tab_ref(session)
     tab_display = _ensure_pos_tab(tab_ref, display=_session_tab_display(session))
     fulfillment_type = _payload_fulfillment_type(payload)
+    if payload.get("sales_mode") == "order" and not payload.get("items") and not payload.get("fulfillment_type"):
+        fulfillment_type = ""
     ops = _replace_session_ops(session, payload, operator_username)
     ops.extend([
         {"op": "set_data", "path": "origin_channel", "value": "pos"},
@@ -1313,6 +1303,17 @@ def move_pos_tab_lines(
             focus="cart",
         )
 
+    from shopman.shop.services.pos_sales_mode import sales_mode, session_sales_payload, validate_sales_mode
+
+    if sales_mode(source.data or {}) != sales_mode(target.data or {}):
+        if target_created:
+            session_service.abandon_session(session_key=target.session_key, channel_ref=channel.ref)
+        raise PosIntentError(
+            "sales_mode_transfer_mismatch", "Mova itens apenas entre atendimentos do mesmo modo.",
+            field="to_session_key", focus="cart",
+        )
+    validate_sales_mode(session_sales_payload(target), require_ready=True)
+
     try:
         session_service.move_session_lines(
             from_session_key=source.session_key,
@@ -1416,6 +1417,10 @@ def fire_pos_tab(
             field="session_key",
             focus="cart",
         )
+
+    from shopman.shop.services.pos_sales_mode import session_sales_payload, validate_sales_mode
+
+    validate_sales_mode(session_sales_payload(session), require_ready=True)
 
     requested = {str(lid).strip() for lid in (line_ids or []) if str(lid).strip()}
     lines = _session_to_fire_lines(session)
@@ -1733,6 +1738,9 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
             op["meta"] = meta
         ops.append(op)
 
+    from shopman.shop.services.pos_receipt_identity import receipt_payload_for_channels
+
+    payload = receipt_payload_for_channels(payload)
     customer_name = str(payload.get("customer_name", "") or "").strip()
     customer_phone = str(payload.get("customer_phone", "") or "").strip()
     customer_tax_id = str(payload.get("customer_tax_id", "") or "").strip()
@@ -1780,6 +1788,9 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
                     "value": customer.price_tier.ref,
                 })
 
+    from shopman.shop.services.pos_sales_mode import sales_mode
+
+    ops.append({"op": "set_data", "path": "pos.sales_mode", "value": sales_mode(payload)})
     fulfillment_type = _payload_fulfillment_type(payload)
     ops.append({"op": "set_data", "path": "fulfillment_type", "value": fulfillment_type})
     # Observações do pedido valem para QUALQUER recebimento (retirada incluída):
@@ -2133,6 +2144,15 @@ def _replace_session_ops(
     ])
     ops.extend(build_session_ops(payload, operator_username, approved_by=approved_by))
     return ops
+
+
+def _inherit_sales_mode(channel_ref: str, payload: dict) -> dict:
+    """Omitir o modo não apaga o contrato de uma comanda já marcada."""
+    if not isinstance(payload, dict) or payload.get("sales_mode") is not None:
+        return payload
+    session = _payload_open_tab_session(channel_ref=channel_ref, payload=payload)
+    mode = ((session.data or {}).get("pos") or {}).get("sales_mode") if session is not None else None
+    return {**payload, "sales_mode": mode} if mode else payload
 
 
 def _payload_fulfillment_type(payload: dict) -> str:
@@ -3425,12 +3445,14 @@ def resolve_or_create_customer(
     tax_id: str = "",
     email: str = "",
     contact_correction: bool = False,
+    receipt_identity_action: dict | None = None,
     operator_username: str,
 ) -> dict:
     """Get-or-create a POS customer JUST-IN-TIME — when the operator defines them
     on the counter, not deferred to order commit. Resolves by phone/CPF/email or
     creates a fresh record, and returns the customer dict (ref/name/phone/tax_id/
-    email/tier). Idempotent (same identifiers → same customer). Reuses the exact
+    email/tier). Repeated updates use the selected ref. A registration
+    matching an existing identifier requires explicit selection. Reuses the exact
     commit-time logic so the just-in-time customer is identical to the final one.
 
     ⚠️ ``ref`` é o cliente JÁ ASSOCIADO à comanda, e ele não é decoração: sem
@@ -3444,6 +3466,10 @@ def resolve_or_create_customer(
     contato do cliente associado (o telefone digitado errado ontem). Sem ela o
     merge só preenche lacuna.
     """
+    if receipt_identity_action is not None:
+        from shopman.shop.services.pos_receipt_identity import resolve_receipt_identity
+
+        return resolve_receipt_identity(receipt_identity_action, operator_username=operator_username)
     return _persist_customer_from_payload(
         {
             "customer_ref": ref,
@@ -3459,6 +3485,10 @@ def resolve_or_create_customer(
 
 def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> dict:
     """Resolve/create/update a Guestman customer from any POS customer data."""
+    from shopman.shop.services.pos_receipt_identity import receipt_payload_for_channels, require_receipt_identity_choice
+
+    payload = receipt_payload_for_channels(payload)
+    require_receipt_identity_choice(payload)
     name = str(payload.get("customer_name") or "").strip()
     phone = _normalize_phone(str(payload.get("customer_phone") or "").strip())
     # IDENTIDADE — com o que se ACHA o cliente.
@@ -3554,6 +3584,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             phone=phone,
             tax_id=resolve_tax_id,
             email=resolve_email,
+            require_selection=bool((name or phone or tax_id or email or payload.get("_receipt_registration")) and not raw_ref),
         )
         created = customer is None
         # A correção vale para o cadastro que o REF apontou — e para mais
@@ -3582,7 +3613,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
         )
         if customer is None:
             first_name, last_name = _split_name(name)
-            fallback = _fallback_customer_name(phone=phone, tax_id=fill_tax_id, email=fill_email)
+            fallback = ("", "") if payload.get("_receipt_registration") else _fallback_customer_name(phone=phone, tax_id=fill_tax_id, email=fill_email)
             customer = Customer.objects.create(
                 ref=Customer.generate_ref(),
                 first_name=first_name or fallback[0],
@@ -3658,8 +3689,13 @@ def _remember_fiscal_prefs(customer, payload: dict) -> None:
     lookup projection e pré-seta o toggle fiscal / o canal de e-mail.
     """
     # A preferência lembrada é sobre a NOTA, então lê o campo da nota.
-    wants_fiscal = bool(str(payload.get("fiscal_tax_id") or "").strip())
-    wants_email = "email" in (payload.get("receipt_channels") or [])
+    document_only = {
+        choice["field"] for choice in (payload.get("receipt_identity_choices") or [])
+        if choice.get("choice") == "receipt_only"
+    }
+    # Documento de terceiro não ensina preferências fiscais ao cliente atual.
+    wants_fiscal = "tax_id" not in document_only and bool(str(payload.get("fiscal_tax_id") or "").strip())
+    wants_email = "email" not in document_only and "email" in (payload.get("receipt_channels") or [])
     if not (wants_fiscal or wants_email):
         return
     metadata = dict(customer.metadata or {})
@@ -3735,7 +3771,7 @@ def _guard_receipt_tax_id_overwrite(
     )
 
 
-def _resolve_pos_customer(Customer, *, ref: str, phone: str, tax_id: str, email: str):
+def _resolve_pos_customer(Customer, *, ref: str, phone: str, tax_id: str, email: str, require_selection: bool = False):
     candidates: dict[int, object] = {}
     evidence: dict[int, set[str]] = {}
 
@@ -3746,7 +3782,10 @@ def _resolve_pos_customer(Customer, *, ref: str, phone: str, tax_id: str, email:
         evidence.setdefault(candidate.pk, set()).add(source)
 
     if ref:
-        add(Customer.objects.filter(ref=ref, is_active=True).first(), "ref")
+        selected = Customer.objects.filter(ref=ref, is_active=True).first()
+        if selected is None:
+            raise ValueError("O cadastro selecionado não está disponível. Busque o cliente novamente.")
+        add(selected, "ref")
     if phone:
         from shopman.guestman.services import customer as customer_service
 
@@ -3764,6 +3803,10 @@ def _resolve_pos_customer(Customer, *, ref: str, phone: str, tax_id: str, email:
     if not candidates:
         return None
     if len(candidates) == 1:
+        if require_selection:
+            # Novo cadastro não autoriza reutilizar ou preencher o
+            # cadastro encontrado. O operador deve selecioná-lo explicitamente.
+            raise _pos_customer_conflict(candidates, evidence)
         return next(iter(candidates.values()))
 
     detail = ", ".join(
@@ -3804,8 +3847,8 @@ def _pos_customer_conflict(candidates: dict, evidence: dict) -> PosCustomerConfl
         "Os dados do cliente apontam para cadastros diferentes. "
         "Revise telefone, CPF/CNPJ ou e-mail antes de fechar."
     )
-    if len(intruding) == 1:
-        source = next(iter(intruding))
+    if len(intruding) == 1 or (len(candidates) == 1 and intruding):
+        source = next(source for source in ("phone", "email", "document", "cpf") if source in intruding)
         field, message = _CONFLICT_FIELDS.get(source, ("", message))
 
     rows = [

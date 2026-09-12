@@ -327,6 +327,11 @@ class POSTabSessionTests(TestCase):
             "tendered_q": 5000,
             "receipt_channels": ["email"],
             "receipt_email": "ana@example.com",
+            "client_request_id": "checkout-fields-receipt",
+            "receipt_identity_choices": [{
+                "field": "email", "value": "ana@example.com", "customer_ref": "", "owner_ref": "",
+                "choice": "receipt_only", "client_request_id": "checkout-fields-receipt",
+            }],
         })
 
         result = pos_service.close_sale(

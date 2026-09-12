@@ -88,3 +88,44 @@ def test_changed_effect_context_refuses_without_enqueue(client, context, operati
     assert response.status_code == 409, response.content
     assert response.json()["outcome"] == "not_applied"
     assert not Directive.objects.filter(payload__order_ref=order.ref).exists()
+
+
+def test_retry_refreshes_corrected_fiscal_data_and_preserves_failure_history():
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.directives import FISCAL_EMIT_NFCE
+
+    order = Order.objects.create(ref="CORRECT-FISCAL", status="completed", total_q=1000, data={
+        "fiscal": {"issue_document": True, "tax_id": "52998224725"},
+        "fulfillment_type": "delivery", "delivery_address_structured": {"route": "Rua corrigida", "neighborhood": "Bairro real"},
+        "payment": {"method": "cash", "amount_q": 1000},
+    })
+    directive = Directive.objects.create(topic=FISCAL_EMIT_NFCE, status="failed", attempts=1,
+        last_error="Entrega a domicílio: confira bairro.", payload={"order_ref": order.ref, "delivery": {"address": {}}})
+    orders.requeue_fiscal_emission(order, actor="manager")
+    directive.refresh_from_db()
+    assert directive.status == "queued"
+    assert directive.payload["delivery"]["address"]["neighborhood"] == "Bairro real"
+    assert directive.payload["customer"]["tax_id"] == "52998224725"
+    assert directive.payload["payment"]["amount_q"] == 1000
+    assert directive.attempts == 1
+    assert Directive.objects.filter(payload__order_ref=order.ref).count() == 1
+    event = order.events.get(type="fiscal_requeued")
+    assert "bairro" in event.payload["previous_error"]
+
+
+def test_retry_never_rebuilds_authorized_document():
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.directives import FISCAL_EMIT_NFCE
+
+    order = Order.objects.create(ref="ALREADY-AUTHORIZED", status="completed", total_q=1000,
+        data={"nfce_access_key": "AUTHORIZED", "fiscal": {"issue_document": True}})
+    directive = Directive.objects.create(topic=FISCAL_EMIT_NFCE, status="failed", payload={"order_ref": order.ref, "sealed": True})
+    with patch("shopman.shop.services.fiscal.build_emission_payload") as rebuild:
+        with pytest.raises(OrderError, match="já autorizada"):
+            orders.requeue_fiscal_emission(order, actor="manager")
+    rebuild.assert_not_called()
+    directive.refresh_from_db()
+    assert directive.status == "failed"
+    assert directive.payload["sealed"] is True

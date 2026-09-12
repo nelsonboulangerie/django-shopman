@@ -1140,6 +1140,10 @@ python manage.py configure_shop_contact \
 Cria ou atualiza um superuser nominal de forma idempotente, sem depender do
 `createsuperuser` interativo. Use para bootstrap de staging/pre-prod/prod.
 
+Reexecutar com a mesma senha preserva as sessões abertas do Admin e dos apps de
+operador. Informar uma senha diferente continua invalidando as sessões antigas.
+A mesma regra vale para `ensure_dev_superuser` no bootstrap de desenvolvimento/staging.
+
 | Flag | Default | Descrição |
 |------|---------|-----------|
 | `--username` | `SHOPMAN_ADMIN_USERNAME` | Usuário administrativo nominal |

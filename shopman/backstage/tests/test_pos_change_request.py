@@ -523,3 +523,44 @@ def test_atender_o_pedido_anuncia_o_estado_do_PEDIDO_nao_o_do_atendimento(
 
     assert enviados[-1]["ref"] == str(entry.pk)
     assert enviados[-1]["status"] == "served"
+
+
+def test_change_request_alert_reaches_manager_and_resolves_on_cancel(operator):
+    from shopman.backstage.models import OperatorAlert
+    from shopman.backstage.services.alerts import list_active_alerts
+
+    entry = pos_service.request_change(operator=operator, amount_raw="50", denominations=[1000, 50], note="Moedas para fila")
+    alert = OperatorAlert.objects.get(pk=entry.payload["alert_id"])
+    assert alert.type == "cash_change_requested"
+    assert alert.audience == "operations"
+    assert "R$ 50,00" in alert.message
+    assert "marina" in alert.message
+    assert "R$ 10,00" in alert.message
+    assert "Moedas para fila" in alert.message
+    assert alert in list_active_alerts()
+    pos_service.cancel_change_request(operator=operator, request_ref=str(entry.pk))
+    alert.refresh_from_db()
+    assert alert.resolved_at is not None
+    assert alert.resolved_by == "marina"
+    assert alert not in list_active_alerts()
+
+
+def test_change_request_alert_resolves_on_service(operator, manager):
+    from shopman.backstage.models import OperatorAlert
+
+    entry = pos_service.request_change(operator=operator, amount_raw="50")
+    pos_service.serve_change_request(operator=operator, request_ref=str(entry.pk), manager_approval=_approval())
+    alert = OperatorAlert.objects.get(pk=entry.payload["alert_id"])
+    assert alert.resolved_at is not None
+
+
+def test_change_request_failure_does_not_leave_orphan_alert(operator, monkeypatch):
+    from shopman.backstage.models import OperatorAlert
+
+    def fail(*args, **kwargs):
+        raise POSError("Turno fechado")
+
+    monkeypatch.setattr(pos_service, "_record", fail)
+    with pytest.raises(POSError):
+        pos_service.request_change(operator=operator, amount_raw="50")
+    assert not OperatorAlert.objects.filter(type="cash_change_requested").exists()

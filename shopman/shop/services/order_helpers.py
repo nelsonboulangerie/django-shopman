@@ -91,7 +91,8 @@ def customer_holds_the_goods(order) -> bool:
     cada um respondia por conta própria, uma regra nova entrava num e faltava
     no outro.
 
-    Sim quando: PDV, retirada, sem data futura — e pagamento que NÃO é link.
+    Sim quando: PDV, retirada, fora de Encomendas e sem data futura —
+    e pagamento que NÃO é link.
     O link é o pedido REMOTO anotado no balcão: o cliente não está na loja,
     paga depois pelo celular e vem buscar. A sacola não está na mão dele; há
     trajeto pela frente por definição. Sem esta linha a venda de link fechava
@@ -100,6 +101,13 @@ def customer_holds_the_goods(order) -> bool:
     motivo: têm trabalho e trajeto pela frente, e a esteira existe para elas.
     """
     data = order.data or {}
+    # O snapshot já contém o contexto da sessão ao nascer o pedido. O carimbo
+    # operacional em order.data.pos só é completado após os callbacks do commit;
+    # a decisão de entregar/separar não pode esperar por ele.
+    snapshot_data = (getattr(order, "snapshot", None) or {}).get("data") or {}
+    mode = (data.get("pos") or {}).get("sales_mode") or (snapshot_data.get("pos") or {}).get("sales_mode")
+    if mode == "order":
+        return False
     if data.get("origin_channel") != "pos":
         return False
     if (data.get("fulfillment_type") or "pickup") != "pickup":

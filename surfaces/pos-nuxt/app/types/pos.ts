@@ -542,6 +542,7 @@ export interface POSPaymentTenderDraft {
 }
 
 export interface POSTabPayload {
+  sales_mode?: "counter" | "order";
   session_key: string;
   tab_session_key: string;
   tab_ref: string;
@@ -553,7 +554,7 @@ export interface POSTabPayload {
   price_tier?: string;
   customer_tax_id: string;
   customer_email: string;
-  fulfillment_type: "pickup" | "delivery";
+  fulfillment_type: "pickup" | "delivery" | "";
   delivery_address: string;
   delivery_address_structured: StructuredAddressProjection;
   delivery_date: string;
@@ -598,7 +599,17 @@ export interface POSPaymentResultProjection {
   error?: string;
 }
 
+export interface POSReceiptIdentityChoice {
+  field: "tax_id" | "email";
+  value: string;
+  customer_ref: string;
+  owner_ref: string;
+  client_request_id: string;
+  choice: "receipt_only";
+}
+
 export interface POSIntentCartState {
+  salesMode?: "counter" | "order";
   tabRef: string;
   tabSessionKey: string;
   items: POSCartItem[];
@@ -611,7 +622,7 @@ export interface POSIntentCartState {
   invoiceTaxId: string;
   customerEmail: string;
   customerMemoryAction: string;
-  fulfillmentType: "pickup" | "delivery";
+  fulfillmentType: "pickup" | "delivery" | "";
   deliveryAddress: string;
   deliveryAddressStructured: StructuredAddressProjection;
   deliveryComplement: string;
@@ -642,6 +653,7 @@ export interface POSIntentCartState {
    *  ordem porque o servidor a exige por conta própria: trava que mora só na
    *  tela não é trava. */
   saveReceiptTaxIdConfirmed: boolean;
+  receiptIdentityChoices?: POSReceiptIdentityChoice[];
   manualDiscount: Record<string, unknown> | null;
   managerApproval: Record<string, unknown> | null;
   clientRequestId: string;

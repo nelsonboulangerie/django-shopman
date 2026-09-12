@@ -20,6 +20,7 @@ export type PixPollStatus = "idle" | "polling" | "paid" | "expired";
  * do operador, a tela do cliente e o recibo.
  */
 export interface PosSaleResultSnapshot {
+  salesMode?: "counter" | "order";
   orderRef: string;
   /** Link do pedido no Gestor de Pedidos (orders app). */
   nextUrl: string;

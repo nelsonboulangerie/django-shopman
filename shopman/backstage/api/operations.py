@@ -4359,8 +4359,11 @@ class POSCustomerResolveView(APIView):
                 tax_id=str(body.get("customer_tax_id") or "").strip(),
                 email=str(body.get("customer_email") or "").strip(),
                 contact_correction=as_bool(body, "customer_contact_correction", default=False),
+                receipt_identity_action=body.get("receipt_identity_action"),
                 operator_username=_username(request),
             )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=422)
         except PosCustomerConflict as exc:
             return _pos_customer_conflict_response(exc)
         except PosTaxIdOverwriteError as exc:
@@ -4371,6 +4374,8 @@ class POSCustomerResolveView(APIView):
                 {"detail": str(exc) or "Cadastro conflitante.", "error": {"code": "customer_conflict"}},
                 status=422,
             )
+        except IntegrityError as exc:
+            return _pos_customer_integrity_response(exc, action="customer_resolve")
         if not customer:
             return Response({"customer": None})
         # A resposta carrega SEMPRE a projeção do cliente resolvido, chaveada

@@ -145,7 +145,26 @@ Required for delivery:
 - `delivery_address`
 - preferably `delivery_address_structured`.
 
-Optional canonical keys:
+Modo comercial do PDV:
+
+- O intent e as projections expõem `sales_mode=counter|order`. A persistência
+  usa `Session.data.pos.sales_mode` e `Order.data.pos.sales_mode`.
+- `counter` significa levar agora no balcão: retirada, sem data/janela agendada;
+  identificação do cliente opcional. Não exige uma confirmação de retirada por venda.
+- `order` exige `customer_ref` ativo selecionado explicitamente, recebimento
+  `pickup|delivery` explícito e `delivery_date` válida antes de salvar itens ou
+  fechar. Retirada hoje também é encomenda. A janela continua opcional, a combinar.
+- Rascunho de encomenda vazio aceita etapas incompletas, inclusive
+  `fulfillment_type=""`. Não inventa retirada para preencher a etapa.
+- Clientes existentes encontrados por telefone, CPF ou e-mail exigem seleção
+  explícita; informar esses dados no cadastro novo não associa nem mescla sozinho.
+- Payload legado sem modo continua aceito; se a comanda já tem modo salvo,
+  a omissão herda esse modo. A troca explícita no próprio rascunho é permitida;
+  transferência de itens entre modos diferentes é recusada.
+- Filipeta operacional acompanha encomenda, inclusive pagamento pendente. A
+  emissão fiscal continua seguindo seu contrato próprio.
+
+Demais chaves canônicas (cliente e data são obrigatórios em `order`, como acima):
 
 - customer: `customer_name`, `customer_ref`, `customer_phone`,
   `customer_tax_id`, `customer_email`, `customer_memory_action`.

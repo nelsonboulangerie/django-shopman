@@ -352,6 +352,7 @@ class POSTabProjection:
     # already went to the kitchen is, by nature, still unpaid. Derived from
     # Session.data["fired_lines"] — no extra storage.
     fired: bool = False
+    sales_mode: str = "counter"
 
 
 @dataclass(frozen=True)
@@ -2096,6 +2097,8 @@ def _sold_out_skus(skus: list[str]) -> set[str]:
 
 
 def _tab_projection(*, ref: str, session: Session | None, display_ref: str = "") -> POSTabProjection:
+    from shopman.shop.services.pos_sales_mode import sales_mode
+
     display_ref = display_ref or _display_ref(ref)
     if session is None:
         return POSTabProjection(
@@ -2140,6 +2143,7 @@ def _tab_projection(*, ref: str, session: Session | None, display_ref: str = "")
         last_touched_display=_format_time(last_touched),
         items_preview=_items_preview(items),
         fired=bool(data.get("fired_lines")),
+        sales_mode=sales_mode(data),
     )
 
 
@@ -2425,6 +2429,8 @@ def build_open_tab(session: Session) -> dict:
     The stored ``tab_ref``/``tab_display`` are already normalized at open time,
     so they are read back verbatim (no re-normalization).
     """
+    from shopman.shop.services.pos_sales_mode import sales_mode
+
     data = session.data or {}
     customer = data.get("customer") or {}
     payment = data.get("payment") or {}
@@ -2474,7 +2480,8 @@ def build_open_tab(session: Session) -> dict:
         "price_tier": customer.get("price_tier", ""),
         "customer_tax_id": customer.get("tax_id", ""),
         "customer_email": customer.get("email", ""),
-        "fulfillment_type": data.get("fulfillment_type", "pickup") or "pickup",
+        "sales_mode": sales_mode(data),
+        "fulfillment_type": data.get("fulfillment_type") or ("" if (data.get("pos") or {}).get("sales_mode") == "order" else "pickup"),
         "delivery_address": data.get("delivery_address", ""),
         "delivery_address_structured": data.get("delivery_address_structured", {}),
         "delivery_date": data.get("delivery_date", ""),

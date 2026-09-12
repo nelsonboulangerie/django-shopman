@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockNuxtImport } from "@nuxt/test-utils/runtime";
 import { toast } from "vue-sonner";
+import { nextTick } from "vue";
 
 import { makeProjection, makeSale, makeTabPayload } from "./_posSaleHarness";
 
@@ -591,6 +592,22 @@ describe("usePosSale — a trava da gaveta na venda SEM comanda", () => {
 
     expect(h.sale.cart.items).toHaveLength(2);
     expect(h.sale.drawerLock.open.value).toBe(false);
+    h.handles.dispose();
+  });
+});
+
+describe("mudança da oferta de recebimento", () => {
+  it("exige nova escolha se entrega deixa de estar disponível", async () => {
+    const h = makeSale({ projection: freeCartProjection() });
+    h.sale.setSalesMode("order");
+    h.sale.cart.fulfillmentType = "delivery";
+    h.sale.cart.fulfillmentConfirmed = true;
+    h.handles.posValue.value = makeProjection({
+      fulfillment_options: [{ ref: "pickup", label: "Retirada", description: "Na loja" }],
+    });
+    await nextTick();
+    expect(h.sale.cart.fulfillmentType).toBe("pickup");
+    expect(h.sale.cart.fulfillmentConfirmed).toBe(false);
     h.handles.dispose();
   });
 });

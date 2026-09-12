@@ -48,6 +48,7 @@ function props(overrides: Record<string, unknown> = {}) {
     managerPin: "",
     managers: [],
     fulfillmentType: "pickup",
+    fulfillmentConfirmed: true,
     paymentCollection: "terminal",
     paymentTenders: [],
     splitCount: 0,
@@ -647,7 +648,7 @@ describe("PosPaymentWorkspace — agendado sem cliente trava o Validar, com cami
     expect(avisos(wrapper).text()).toContain("Encomenda precisa de cliente.");
     // O porquê continua na tela — é o que o operador DIZ ao cliente —, mas em
     // segunda linha: a frase que trava o botão precisa ser lida de longe.
-    expect(avisos(wrapper).text()).toContain("É o contato se algo mudar até a data.");
+    expect(avisos(wrapper).text()).toContain("Identifique quem vai receber a entrega ou retirar o pedido combinado.");
     expect(linhasDeAviso(wrapper)[0]).toContain("Encomenda precisa de cliente.");
   });
 
@@ -704,11 +705,12 @@ describe("PosPaymentWorkspace — agendado sem cliente trava o Validar, com cami
     expect(comCliente.text()).not.toContain("Encomenda precisa de cliente.");
   });
 
-  it("para hoje continua anônimo: data de hoje não trava nada", async () => {
+  it("retirada combinada hoje exige identificação", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: scheduled({ deliveryDate: "2026-09-01" }),
     });
-    expect(cta(wrapper)!.attributes("disabled")).toBeUndefined();
+    expect(cta(wrapper)!.attributes("disabled")).toBeDefined();
+    expect(wrapper.text()).toContain("Identificar cliente");
   });
 });
 
@@ -838,7 +840,7 @@ describe("PosPaymentWorkspace — toda recusa do commit tem gêmea na tela", () 
   });
   it("CPF com taxa de entrega mantém o pagamento disponível", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
-      props: ready({ wantsCpfOnInvoice: true, invoiceTaxId: "52998224725", fulfillmentType: "delivery", deliveryFeeQ: 800 }),
+      props: ready({ customerName: "Maria", wantsCpfOnInvoice: true, invoiceTaxId: "52998224725", fulfillmentType: "delivery", deliveryFeeQ: 800 }),
     });
     expect(cta(wrapper)!.attributes("disabled")).toBeUndefined();
     expect(wrapper.text()).not.toContain("Tirar o CPF");
@@ -865,6 +867,7 @@ describe("PosPaymentWorkspace — toda recusa do commit tem gêmea na tela", () 
     // seguia verde, e a recusa subia como 422 sem campo nenhum.
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: ready({
+        customerName: "Maria",
         deliveryTimeSlot: "09:00",
         deliverySlots: [{ ref: "09:00", label: "09:00 às 09:30", enabled: false, reason: "A baguete só fica pronta 10:30." }],
       }),
@@ -1320,10 +1323,7 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
     w.findAll('[aria-label="Cadastro do cliente"] li').map((li) => li.text());
   afterEach(() => { document.body.innerHTML = ""; });
 
-  it("sem cliente identificado, a venda anônima já anuncia o cadastro novo", async () => {
-    // ⚠️ "Já marcado" é decisão do dono, contra a recomendação de nascer
-    // desmarcado. O que segura a transparência é esta linha (e o interruptor
-    // à vista) — não reverter o padrão.
+  it("e-mail de comprovante não anuncia cadastro sem uma escolha explícita", async () => {
     const w = await mountSuspended(PosPaymentWorkspace, {
       props: props({
         checkoutContract: comFiscal,
@@ -1331,12 +1331,7 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
         receiptEmail: "novo@example.org",
       }),
     });
-
-    // ⚠️ E a linha NÃO promete cadastro novo: numa venda anônima o servidor
-    // acha quem já tem este e-mail e a venda vai para ele.
-    expect(registryLines(w)).toEqual([
-      "Este e-mail será salvo como cliente — ou vai para o cadastro que já o tem.",
-    ]);
+    expect(registryLines(w)).toEqual([]);
   });
 
   it("desmarcar cala a linha", async () => {
@@ -1377,14 +1372,11 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
     });
 
     expect(registryLines(w)).toEqual([
-      "O e-mail do cadastro de Ana será atualizado para este.",
+      "E-mail de Ana: ana@example.org → contador@example.org.",
     ]);
   });
 
-  it("o balão da coluna abre para a ESQUERDA — embaixo ficam o Validar e as perguntas", async () => {
-    // A coluna encosta na borda direita da tela e o miolo ao lado está vazio.
-    // Abrindo para baixo, o balão do e-mail (último campo) cobria o Validar, e
-    // o do CPF (primeiro da seção) cobria "Impressa?", "Por e-mail?" e o eco.
+  it("digitar e-mail não abre uma oferta automática sobre o checkout", async () => {
     await mountSuspended(PosPaymentWorkspace, {
       props: props({
         checkoutContract: comFiscal,
@@ -1394,8 +1386,7 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
     });
 
     const panel = document.querySelector('[role="dialog"][aria-label]');
-    expect(panel).not.toBeNull();
-    expect(panel!.getAttribute("data-side")).toBe("left");
+    expect(panel).toBeNull();
   });
 
   it("o CPF da nota tem a linha dele, com o mesmo interruptor à vista", async () => {
@@ -1409,9 +1400,9 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
       }),
     });
 
-    expect(registryLines(w)).toEqual(["O CPF será salvo no cadastro de Ana."]);
+    expect(registryLines(w)).toEqual(["CPF de Ana: 52998224725."]);
     const fiscal = w.find('section[aria-label="Nota fiscal"]');
-    expect(fiscal.text()).toContain("Salvar este CPF no cadastro de Ana?");
+    expect(fiscal.text()).not.toContain("Salvar no cadastro de Ana");
   });
 });
 
@@ -1434,4 +1425,46 @@ it("na entrega oferece crédito e débito sem exigir cobrança antecipada na maq
   await validate.trigger("click");
   expect(wrapper.emitted("submit")).toHaveLength(1);
   expect(wrapper.text()).not.toContain("OK, cobrei na maquininha");
+});
+
+describe("recebimento explícito", () => {
+  it("exibe ação para escolher mesmo com cliente e data preenchidos", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, { props: props({
+      fulfillmentConfirmed: false, customerName: "Maria", deliveryDate: "2026-09-01",
+      scheduleToday: "2026-09-01", paymentTenders: [tender],
+    }) });
+    expect(w.text()).toContain("Como o cliente vai receber?");
+    expect(w.text()).toContain("Escolher entrega ou retirada");
+    await w.setProps({ fulfillmentConfirmed: true });
+    expect(w.text()).not.toContain("Como o cliente vai receber?");
+  });
+});
+
+it("explica antecipação e cobrança pendente no modo encomendas", async () => {
+  const w = await mountSuspended(PosPaymentWorkspace, { props: props({
+    salesMode: "order", fulfillmentType: "delivery", paymentCollection: "on_delivery",
+    paymentCollections: [
+      { ref: "terminal", label: "Receber no caixa", fulfillment_types: ["pickup", "delivery"], payment_method_refs: ["cash"] },
+      { ref: "on_delivery", label: "Receber na entrega", fulfillment_types: ["delivery"], payment_method_refs: ["cash", "credit"] },
+    ],
+    paymentTenders: [{ method: "credit", amount_q: 1000, collection: "on_delivery" }],
+  }) });
+  expect(w.text()).toContain("Pagamento da encomenda");
+  expect(w.text()).toContain("Pagamento antecipado");
+  expect(w.text()).toContain("Cobrar na entrega");
+  expect(w.text()).toContain("pagamento pendente até o acerto no Gestor");
+  expect(w.text()).toContain("Levar maquininha");
+  await w.setProps({ fulfillmentType: "pickup", paymentCollection: "terminal", paymentTenders: [{ method: "pix", amount_q: 1000, collection: "terminal" }] });
+  expect(w.text()).toContain("pendente até a confirmação do provedor de pagamento");
+  expect(w.text()).not.toContain("Cobrar na entrega");
+});
+
+it("balcão não abre entrega ou agenda pelos atalhos expostos", async () => {
+  const w = await mountSuspended(PosPaymentWorkspace, { props: props({ salesMode: "counter" }) });
+  const vm = (w.vm as unknown as { $: { exposed: { openFulfillment(): void; openSchedule(): void } } }).$.exposed;
+  vm.openFulfillment();
+  vm.openSchedule();
+  await nextTick();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(w.text()).not.toContain("Como o cliente vai receber?");
 });

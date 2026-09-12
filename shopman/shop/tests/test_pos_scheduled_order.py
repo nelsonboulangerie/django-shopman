@@ -437,17 +437,33 @@ def test_agendado_com_so_o_telefone_passa(balcao):
     assert order.data["delivery_date"] == amanha
 
 
-def test_data_de_HOJE_sem_cliente_passa(balcao):
-    """A venda de agora segue anônima: data de hoje não é agendamento."""
+@pytest.mark.parametrize("day", ["", "today"])
+def test_retirada_hoje_distingue_agendamento_de_venda_imediata(balcao, day):
+    from shopman.shop.services.pos_intent import PosIntentError
+
     operator, shift = balcao
-    hoje = timezone.localdate().isoformat()
+    payload = _payload(shift, client_request_id="anon-today", customer_name="",
+                       delivery_date=timezone.localdate().isoformat() if day else "")
+    if day:
+        with pytest.raises(PosIntentError) as error:
+            _close(operator, payload)
+        assert error.value.code == "customer_required_for_scheduled"
+        assert Order.objects.count() == 0
+    else:
+        assert Order.objects.get(ref=_close(operator, payload).order_ref)
 
-    result = _close(
-        operator,
-        _payload(shift, client_request_id="anon-3", customer_name="", delivery_date=hoje),
-    )
 
-    assert Order.objects.get(ref=result.order_ref)
+@pytest.mark.parametrize("extra", [
+    {"delivery_date": "today"},
+    {"delivery_time_slot": "15:00-15:30"},
+    {"fulfillment_type": "delivery"},
+])
+def test_pedido_combinado_exige_identificacao_mesmo_hoje(extra):
+    from shopman.shop.services.pos_intent import PosIntentError
+
+    with pytest.raises(PosIntentError):
+        pos_service._require_customer_if_scheduled(extra)
+    pos_service._require_customer_if_scheduled({**extra, "customer_name": "Maria"})
 
 
 def test_review_avisa_o_agendado_sem_cliente(balcao):
