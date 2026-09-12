@@ -1,6 +1,6 @@
 # Evidências da implementação conversacional — 11/09/2026
 
-**Estado atual: implementação técnica v3 testada em ambiente isolado no SHA `e87b9c4de04db9b48e3f02b0bf1ac6345a70c2fc`; homologação, piloto e rollout não executados.** As seções anteriores ao adendo v3 preservam a evidência histórica do candidato v2 e os SHAs que nomeiam. O adendo ao final é a conclusão vigente. O aceite integral continua limitado pelos gates e provas humanas/fornecedor. Nenhuma contagem de testes comprova redução de esforço humano ou entrega no WhatsApp.
+**Estado atual: implementação técnica v3 testada em ambiente isolado no SHA `895f50a3dd32723d3309f20b3d2914b31f33b64c`; homologação, piloto e rollout não executados.** As seções anteriores ao adendo v3 preservam a evidência histórica do candidato v2 e os SHAs que nomeiam. O adendo ao final é a conclusão vigente. O aceite integral continua limitado pelos gates e provas humanas/fornecedor. Nenhuma contagem de testes comprova redução de esforço humano ou entrega no WhatsApp.
 
 ## Proveniência e isolamento
 
@@ -291,7 +291,7 @@ reescrever as evidências históricas acima. A base registrada da nova worktree 
 `cbda00f02e692fc7d1949a4e11024ace33245362`, branch
 `codex/concierge-transport-bindings-20260912`. Após revalidação contra
 `origin/main` em `12f2b1b34c3e1f4b95d3b48e69937e5a6684e287`, o código e os testes v3
-validados formam o SHA `e87b9c4de04db9b48e3f02b0bf1ac6345a70c2fc`.
+validados formam o SHA `895f50a3dd32723d3309f20b3d2914b31f33b64c`.
 
 O operador autorizou uma arquitetura pré-go-live sem compatibilidade no runtime.
 `Conversation` passa a representar a jornada lógica e os fatos comerciais.
@@ -416,7 +416,7 @@ compensação. Correção de schema segue adiante com nova migração.
 
 | Etapa | Estado em 12/09/2026 | Prova necessária para avançar |
 |---|---|---|
-| Implementação técnica | **Concluída no SHA `e87b9c4de04db9b48e3f02b0bf1ac6345a70c2fc`** | Reabrir se drift, regressão ou divergência do contrato aparecer. |
+| Implementação técnica | **Concluída no SHA `895f50a3dd32723d3309f20b3d2914b31f33b64c`** | Reabrir se drift, regressão ou divergência do contrato aparecer. |
 | Homologação | Não executada | Flow real, cinco campos, continuidade, janela, ACK/worker, handoff e saída/entrega observados com credenciais e coorte de teste autorizadas. |
 | Piloto | Não iniciado | Gates nominais, pessoas/coorte autorizadas, owner/SLA e medição J01–J13 de esforço, erro e compreensão. |
 | Rollout | Não autorizado | Release/alvo fixados, backup e rollback exercitados, reconciliação limpa, aceite dos gates e decisão explícita de expansão. |

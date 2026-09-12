@@ -10,7 +10,7 @@ habilitar uma connection, enviar a contatos reais, iniciar piloto ou fazer
 rollout.
 
 Código e testes da implementação técnica: SHA
-`e87b9c4de04db9b48e3f02b0bf1ac6345a70c2fc`. O endpoint abaixo ainda precisa ser
+`895f50a3dd32723d3309f20b3d2914b31f33b64c`. O endpoint abaixo ainda precisa ser
 publicado em ambiente autorizado antes de poder ser chamado pelo flow real.
 
 ## Portão canônico

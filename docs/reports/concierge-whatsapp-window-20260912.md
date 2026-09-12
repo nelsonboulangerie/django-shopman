@@ -52,7 +52,7 @@ extrapolada automaticamente.
 
 A validação de 95 testes acima permanece evidência do experimento isolado da
 janela. A integração v3 foi depois validada no SHA
-`e87b9c4de04db9b48e3f02b0bf1ac6345a70c2fc` por 293 testes do Concierge em
+`895f50a3dd32723d3309f20b3d2914b31f33b64c` por 293 testes do Concierge em
 PostgreSQL/Redis e pelo Storefront integral de 1729 testes em SQLite. Isso não
 certifica homologação no flow real, entrega no aparelho, piloto ou rollout. A
 migração v3 é forward-only; rollback operacional contém a connection/switches,
