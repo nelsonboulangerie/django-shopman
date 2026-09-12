@@ -20,7 +20,7 @@ const fulfillmentReady = computed(() => customerReady.value && !["fulfillment", 
 <template>
   <section ref="sectionRef" class="mx-auto grid max-w-2xl gap-5 p-4 md:p-8" aria-label="Preparar encomenda">
     <div class="grid gap-1">
-      <h1 class="text-2xl font-semibold">{{ itemCount ? "Preparar encomenda" : "Nova encomenda" }}</h1>
+      <h1 class="text-xl font-semibold">{{ itemCount ? "Preparar encomenda" : "Nova encomenda" }}</h1>
       <p class="text-sm text-muted-foreground">Combine quem recebe, como e quando. Depois, monte o pedido.</p>
     </div>
     <p v-if="itemCount" class="rounded-md border bg-muted/30 px-3 py-2 text-sm">{{ itemCount }} {{ itemCount === 1 ? "item preservado" : "itens preservados" }}. Complete os dados para continuar.</p>
