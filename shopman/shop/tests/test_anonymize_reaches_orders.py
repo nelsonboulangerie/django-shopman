@@ -226,7 +226,12 @@ def test_personalizacao_e_conversa_nao_sobrevivem():
     from shopman.guestman import LoyaltyService, PreferenceService, TimelineService
     from shopman.guestman.contrib.loyalty.models import LoyaltyAccount
 
-    from shopman.shop.models import Conversation, ConversationMessage
+    from shopman.shop.models import (
+        Conversation,
+        ConversationBinding,
+        ConversationMessage,
+        OutboundAttempt,
+    )
 
     customer = _customer()
     PreferenceService.set_preference(customer.ref, "dietary", "sem_lactose", True)
@@ -234,16 +239,35 @@ def test_personalizacao_e_conversa_nao_sobrevivem():
     LoyaltyService.enroll(customer.ref)
     customer.tags.add("vizinho")
     conversation = Conversation.objects.create(
-        subscriber_id="manychat-marina",
         phone=PHONE,
         customer_ref=customer.ref,
         customer_name=FIRST_NAME,
     )
-    ConversationMessage.objects.create(
+    binding = ConversationBinding.objects.create(
         conversation=conversation,
-        role="user",
-        kind="inbound",
-        text="Tenho alergia a castanhas",
+        provider="manychat",
+        account="nelson-boulangerie",
+        transport_channel="whatsapp",
+        subject="manychat-marina",
+        connection_key="manychat-whatsapp",
+        status=ConversationBinding.Status.ACTIVE,
+        identity_assurance=ConversationBinding.IdentityAssurance.TRANSPORT_SUBJECT,
+    )
+    message = ConversationMessage.objects.create(
+        conversation=conversation,
+        binding=binding,
+        role="assistant",
+        kind="reply",
+        text="Consigo orientar sobre os ingredientes.",
+        transport_state="accepted",
+    )
+    OutboundAttempt.objects.create(
+        message=message,
+        binding=binding,
+        attempt_no=1,
+        state=OutboundAttempt.State.ACCEPTED,
+        provider_receipt_ref="receipt-anon-marina",
+        payload_hash="a" * 64,
     )
 
     anonymize_customer(customer)

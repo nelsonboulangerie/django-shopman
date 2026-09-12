@@ -596,6 +596,26 @@ def _customer_conversations(customer_ref: str, phone: str):
     return Conversation.objects.filter(query) if query.children else Conversation.objects.none()
 
 
+def _delete_customer_conversations(customer_ref: str, phone: str) -> int:
+    """Apaga a árvore atual do concierge na ordem exigida pelos vínculos protegidos."""
+    from django.db import transaction
+
+    from shopman.shop.models import ConversationBinding, ConversationMessage, OutboundAttempt
+
+    conversations = _customer_conversations(customer_ref, phone)
+    conversation_ids = tuple(conversations.values_list("id", flat=True))
+    if not conversation_ids:
+        return 0
+
+    with transaction.atomic():
+        messages = ConversationMessage.objects.filter(conversation_id__in=conversation_ids)
+        OutboundAttempt.objects.filter(message__in=messages).delete()
+        messages.delete()
+        ConversationBinding.objects.filter(conversation_id__in=conversation_ids).delete()
+        deleted, _ = conversations.delete()
+    return deleted
+
+
 def _order_personal_data(order) -> dict:
     """Prefer current order PII, falling back to the immutable checkout snapshot."""
 
@@ -1111,7 +1131,7 @@ def anonymize_customer(customer) -> tuple[str, str]:
         ("apagar etiquetas", lambda: customer.tags.clear()),
         (
             "apagar conversas",
-            lambda: _customer_conversations(original_ref, original_phone).delete(),
+            lambda: _delete_customer_conversations(original_ref, original_phone),
         ),
         (
             "desvincular públicos de marketing",
