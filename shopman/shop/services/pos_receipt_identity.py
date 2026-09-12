@@ -76,20 +76,21 @@ def require_receipt_identity_choice(payload: dict) -> None:
         if not value:
             continue
         owner = _identifier_owner("cpf", value) if field == "tax_id" else _contact_owner("email", value)
-        if owner is None or owner.ref == customer_ref:
+        if (owner is not None and owner.ref == customer_ref) or (owner is None and payload.get(save_key)):
             continue
         expected = {
             "field": field, "value": value, "customer_ref": customer_ref,
-            "owner_ref": owner.ref, "choice": "receipt_only", "client_request_id": request_id,
+            "owner_ref": owner.ref if owner else "", "choice": "receipt_only", "client_request_id": request_id,
         }
         if request_id and not payload.get(save_key) and expected in choices:
             continue
         if not conflicts:
-            first_message = f"Este {label} pertence a {owner.name}. Associe o cliente ou use apenas no documento."
-            first_owner_ref = owner.ref
+            first_message = (f"Este {label} pertence a {owner.name}. Associe o cliente ou use apenas no documento."
+                             if owner else f"Deseja salvar este {label} no cadastro ou usar apenas no documento?")
+            first_owner_ref = owner.ref if owner else ""
         conflicts.append({
             "field": payload_key, "value": value,
-            "candidates": [_conflict_row(owner, ["cpf" if field == "tax_id" else "email"])],
+            "candidates": [_conflict_row(owner, ["cpf" if field == "tax_id" else "email"])] if owner else [],
         })
     if conflicts:
         first = conflicts[0]
@@ -99,3 +100,60 @@ def require_receipt_identity_choice(payload: dict) -> None:
             client_request_id=request_id, customer_ref=customer_ref,
             candidates=first["candidates"], conflicts=conflicts,
         )
+
+
+def resolve_receipt_identity(action: dict, *, operator_username: str) -> dict:
+    """Apply the displayed receipt decision after rechecking every owner."""
+    from django.db import transaction
+
+    from shopman.shop.services.pos import _contact_owner, _identifier_owner, _persist_customer_from_payload
+
+    if not isinstance(action, dict):
+        raise PosIntentError("invalid_receipt_identity_choice", "Revise a decisão sobre o documento.")
+    fields = action.get("fields")
+    kind = action.get("action")
+    target = action.get("target_ref", "")
+    current = action.get("customer_ref", "")
+    request_id = action.get("client_request_id", "")
+    if (kind not in ("create", "save") or not isinstance(target, str) or not isinstance(current, str)
+            or not isinstance(request_id, str) or not request_id.strip()
+            or not isinstance(fields, list) or not 1 <= len(fields) <= 2
+            or (kind == "create" and (target or current)) or (kind == "save" and not target)
+            or not isinstance(action.get("tax_id_overwrite_confirmed", False), bool)):
+        raise PosIntentError("invalid_receipt_identity_choice", "Revise a decisão sobre o documento.")
+    seen = set()
+    for item in fields:
+        if (not isinstance(item, dict) or set(item) != {"field", "value", "owner_ref"}
+                or item.get("field") not in ("tax_id", "email") or item["field"] in seen
+                or not isinstance(item.get("value"), str) or not isinstance(item.get("owner_ref"), str)
+                or not normalize_receipt_value(item["field"], item["value"])):
+            raise PosIntentError("invalid_receipt_identity_choice", "Revise os dados do documento.")
+        seen.add(item["field"])
+    with transaction.atomic():
+        if target:
+            from shopman.guestman.models import Customer
+            selected = Customer.objects.select_for_update().filter(ref=target, is_active=True).first()
+            if selected is None:
+                raise PosIntentError("receipt_identity_changed", "O cadastro selecionado não está disponível.", focus="receipt")
+            if action.get("tax_id_overwrite_confirmed") and (
+                    not isinstance(action.get("tax_id_before"), str)
+                    or normalize_receipt_value("tax_id", action["tax_id_before"]) != normalize_receipt_value("tax_id", selected.document)):
+                raise PosIntentError("receipt_identity_changed", "O CPF do cadastro mudou. Revise a alteração novamente.", focus="receipt")
+        payload = {"customer_ref": target, "client_request_id": request_id, "receipt_channels": ["email"],
+                   "_receipt_registration": True,
+                   "save_receipt_tax_id_confirmed": action.get("tax_id_overwrite_confirmed", False)}
+        stale = False
+        for item in fields:
+            field = item["field"]
+            value = normalize_receipt_value(field, item["value"])
+            owner = _identifier_owner("cpf", value) if field == "tax_id" else _contact_owner("email", value)
+            owner_ref = owner.ref if owner else ""
+            stale |= owner_ref != item["owner_ref"] or bool(owner_ref and (kind == "create" or owner_ref != target))
+            payload["fiscal_tax_id" if field == "tax_id" else "receipt_email"] = value
+        if stale:
+            # No write has happened. Show current ownership again, including after a lost create response.
+            require_receipt_identity_choice({**payload, "customer_ref": current})
+            raise PosIntentError("receipt_identity_changed", "O cadastro mudou. Revise os dados do documento.", focus="receipt")
+        for item in fields:
+            payload["save_receipt_tax_id" if item["field"] == "tax_id" else "save_receipt_contact"] = True
+        return _persist_customer_from_payload(payload, operator_username=operator_username)

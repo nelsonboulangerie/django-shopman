@@ -1900,3 +1900,25 @@ decisão com `receipt_identity_conflict`, campo fiscal/receipt, valor e candidat
 Quando `receipt_channels` não inclui `email`, o intent zera `receipt_email` e
 `save_receipt_contact`. O e-mail oculto não dispara consulta/decisão nem escrita;
 `customer_email` permanece sendo o contato do cliente associado.
+
+
+### POS receipt identity decisions (2026-09-12)
+
+`receipt_identity_conflict.conflicts` includes all undecided nonempty document
+fields, including new values (`candidates: []`). Unknown values require either an
+exact `receipt_only` choice (`owner_ref: ""`) or an explicit legacy save opt-in.
+A missing request ID never bypasses this decision. Hidden email remains ignored.
+
+`POST /api/v1/backstage/pos/customer/resolve/` accepts optional
+`receipt_identity_action`: `{action: "create" | "save", client_request_id,
+customer_ref, target_ref, fields: [{field: "tax_id" | "email", value, owner_ref}],
+tax_id_overwrite_confirmed?: boolean, tax_id_before?: string}`.
+Create requires empty current/target refs and no known owners; it saves only the
+explicit fields and leaves names empty. Save requires an active explicit target.
+Owners are checked again before writing; changed ownership returns a receipt
+conflict and no mutation. CPF overwrite additionally requires confirmation and
+the exact prior CPF, checked under a lock on the target customer. Existing CPF
+confirmation rules remain enforced. A repeated create after a lost response
+returns the newly discovered owner for explicit selection, never a duplicate or
+silent association. `receipt_identity_changed` asks the operator to review a
+changed selected record or stale CPF confirmation.

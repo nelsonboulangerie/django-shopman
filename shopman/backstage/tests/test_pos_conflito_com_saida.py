@@ -525,11 +525,13 @@ class POSConflitoComSaidaTests(TestCase):
 
         self.assertEqual(response.status_code, 422)
         body = response.json()
-        self.assertEqual(body["error"]["code"], "customer_conflict")
-        self.assertEqual(body["error"]["field"], "customer_email")
+        self.assertEqual(body["error"]["code"], "receipt_identity_conflict")
+        self.assertEqual(body["error"]["field"], "receipt_email")
         candidatos = {row["ref"]: row for row in body["error"]["candidates"]}
-        self.assertEqual(set(candidatos), {"CUST-RCPT-A", "CUST-RCPT-B"})
-        self.assertTrue(candidatos["CUST-RCPT-A"]["is_current"])
+        self.assertEqual(set(candidatos), {"CUST-RCPT-B"})
+        self.assertEqual(body["error"]["customer_ref"], ana.ref)
+        ana.refresh_from_db()
+        self.assertEqual(ana.email, "")
         # Recusa é recusa: a venda NÃO fechou.
         self.assertEqual(Order.objects.count(), pedidos_antes)
 
@@ -549,13 +551,13 @@ class POSConflitoComSaidaTests(TestCase):
 
         self.assertEqual(response.status_code, 422)
         body = response.json()
-        self.assertEqual(body["error"]["field"], "customer_tax_id")
+        self.assertEqual(body["error"]["field"], "fiscal_tax_id")
         self.assertEqual(
             {row["ref"] for row in body["error"]["candidates"]},
-            {"CUST-RCPT-C", "CUST-RCPT-D"},
+            {"CUST-RCPT-D"},
         )
 
-    def test_sem_a_ordem_a_nota_vai_para_o_email_de_outro_e_a_venda_FECHA(self) -> None:
+    def test_decisao_apenas_documento_permite_email_de_outro_sem_alterar_cadastros(self) -> None:
         """"A pessoa pode querer enviar para outro e-mail, por algum motivo."
 
         Sem ordem de gravar não há posse em disputa: a nota vai para o endereço
@@ -566,12 +568,22 @@ class POSConflitoComSaidaTests(TestCase):
             "CUST-RCPT-F", "Bruno", "Souza", phone="+5543999990022", email="bruno@example.org",
         )
 
-        response = self._post(CLOSE_URL, self._intent(
+        intent = self._intent(
             customer_ref=ana.ref,
             customer_name="Ana Prado",
             receipt_channels=["email"],
             receipt_email="bruno@example.org",
-        ))
+        )
+        response = self._post(CLOSE_URL, intent)
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["error"]["code"], "receipt_identity_conflict")
+        self.assertEqual(Order.objects.count(), 0)
+        intent["receipt_identity_choices"] = [{
+            "field": "email", "value": bruno.email, "owner_ref": bruno.ref,
+            "customer_ref": ana.ref, "client_request_id": intent["client_request_id"],
+            "choice": "receipt_only",
+        }]
+        response = self._post(CLOSE_URL, intent)
 
         self.assertEqual(response.status_code, 200)
         ana.refresh_from_db()
@@ -665,3 +677,18 @@ class POSConflitoComSaidaTests(TestCase):
         self.assertEqual(response.status_code, 200)
         ana.refresh_from_db()
         self.assertEqual(ana.email, "ana.nova@example.org")
+
+
+    def test_receipt_resolve_creates_explicitly_and_returns_rich_conflict_after_lost_response(self):
+        action = {"action": "create", "customer_ref": "", "target_ref": "", "client_request_id": "receipt-create",
+                  "fields": [{"field": "email", "value": "new@example.org", "owner_ref": ""}]}
+        url = "/api/v1/backstage/pos/customer/resolve/"
+        response = self._post(url, {"receipt_identity_action": action})
+        self.assertEqual(response.status_code, 200)
+        created = Customer.objects.get(ref=response.json()["customer"]["ref"])
+        self.assertEqual(created.first_name, "")
+        self.assertEqual(created.last_name, "")
+        retry = self._post(url, {"receipt_identity_action": action})
+        self.assertEqual(retry.status_code, 422)
+        self.assertEqual(retry.json()["error"]["code"], "receipt_identity_conflict")
+        self.assertEqual(Customer.objects.count(), 1)

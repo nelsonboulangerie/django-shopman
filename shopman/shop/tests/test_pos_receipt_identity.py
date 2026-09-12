@@ -211,3 +211,77 @@ def test_group_excludes_hidden_email_even_when_both_values_have_owners(owner):
         require_receipt_identity_choice({"fiscal_tax_id": owner.document, "receipt_email": owner.email,
                                         "receipt_channels": [], "client_request_id": "sale-1"})
     assert [item["field"] for item in error.value.conflicts] == ["fiscal_tax_id"]
+
+
+@pytest.mark.parametrize("save", [False, True])
+def test_unknown_values_require_choice_or_explicit_save(save):
+    payload = {"fiscal_tax_id": "11144477735", "receipt_email": "new@example.org", "receipt_channels": ["email"]}
+    if save:
+        require_receipt_identity_choice({**payload, "save_receipt_tax_id": True, "save_receipt_contact": True})
+    else:
+        with pytest.raises(ReceiptIdentityConflict) as error:
+            require_receipt_identity_choice(payload)
+        assert len(error.value.conflicts) == 2
+        assert all(item["candidates"] == [] for item in error.value.conflicts)
+        assert error.value.owner_ref == ""
+    assert Customer.objects.count() == 0
+
+
+def test_unknown_receipt_only_ack_never_creates_and_rechecks_new_owner():
+    payload = {"fiscal_tax_id": "11144477735", "client_request_id": "sale-1",
+               "receipt_identity_choices": [choice("tax_id", "11144477735", owner_ref="")]}
+    assert _persist_customer_from_payload(payload, operator_username="op") == {}
+    assert Customer.objects.count() == 0
+    Customer.objects.create(ref="new-owner", document="11144477735")
+    with pytest.raises(ReceiptIdentityConflict):
+        _persist_customer_from_payload(payload, operator_username="op")
+
+
+def receipt_action(**changes):
+    return {"action": "create", "customer_ref": "", "target_ref": "", "client_request_id": "sale-1",
+            "fields": [{"field": "tax_id", "value": "11144477735", "owner_ref": ""},
+                       {"field": "email", "value": "new@example.org", "owner_ref": ""}], **changes}
+
+
+def test_receipt_create_has_no_invented_name_and_retry_never_duplicates():
+    from shopman.shop.services.pos import resolve_or_create_customer
+    action = receipt_action()
+    result = resolve_or_create_customer(receipt_identity_action=action, operator_username="op")
+    saved = Customer.objects.get(ref=result["ref"])
+    assert saved.first_name == saved.last_name == ""
+    assert saved.document == "11144477735"
+    assert saved.email == "new@example.org"
+    with pytest.raises(ReceiptIdentityConflict):
+        resolve_or_create_customer(receipt_identity_action=action, operator_username="op")
+    assert Customer.objects.count() == 1
+
+
+def test_receipt_save_mixed_known_new_requires_target_and_preserves_cpf_confirmation(owner):
+    from shopman.shop.services.pos import PosTaxIdOverwriteError, resolve_or_create_customer
+    action = receipt_action(action="save", target_ref=owner.ref, fields=[
+        {"field": "email", "value": owner.email, "owner_ref": owner.ref},
+        {"field": "tax_id", "value": "11144477735", "owner_ref": ""},
+    ])
+    with pytest.raises(PosTaxIdOverwriteError):
+        resolve_or_create_customer(receipt_identity_action=action, operator_username="op")
+    owner.refresh_from_db()
+    assert owner.document == "52998224725"
+    with pytest.raises(PosIntentError) as error:
+        resolve_or_create_customer(receipt_identity_action={**action, "tax_id_overwrite_confirmed": True, "tax_id_before": "stale"}, operator_username="op")
+    assert error.value.code == "receipt_identity_changed"
+    result = resolve_or_create_customer(receipt_identity_action={**action, "tax_id_overwrite_confirmed": True, "tax_id_before": owner.document}, operator_username="op")
+    assert result["ref"] == owner.ref
+    owner.refresh_from_db()
+    assert owner.document == "11144477735"
+    assert Customer.objects.count() == 1
+
+
+def test_receipt_create_rechecks_snapshot_before_any_write(owner):
+    from shopman.shop.services.pos import resolve_or_create_customer
+    original = list(Customer.objects.values())
+    with pytest.raises(ReceiptIdentityConflict):
+        resolve_or_create_customer(receipt_identity_action=receipt_action(fields=[
+            {"field": "email", "value": owner.email, "owner_ref": ""},
+            {"field": "tax_id", "value": "11144477735", "owner_ref": ""},
+        ]), operator_username="op")
+    assert list(Customer.objects.values()) == original

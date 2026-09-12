@@ -4359,8 +4359,11 @@ class POSCustomerResolveView(APIView):
                 tax_id=str(body.get("customer_tax_id") or "").strip(),
                 email=str(body.get("customer_email") or "").strip(),
                 contact_correction=as_bool(body, "customer_contact_correction", default=False),
+                receipt_identity_action=body.get("receipt_identity_action"),
                 operator_username=_username(request),
             )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=422)
         except PosCustomerConflict as exc:
             return _pos_customer_conflict_response(exc)
         except PosTaxIdOverwriteError as exc:

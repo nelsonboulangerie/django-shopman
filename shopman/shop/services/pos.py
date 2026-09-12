@@ -3445,6 +3445,7 @@ def resolve_or_create_customer(
     tax_id: str = "",
     email: str = "",
     contact_correction: bool = False,
+    receipt_identity_action: dict | None = None,
     operator_username: str,
 ) -> dict:
     """Get-or-create a POS customer JUST-IN-TIME — when the operator defines them
@@ -3465,6 +3466,10 @@ def resolve_or_create_customer(
     contato do cliente associado (o telefone digitado errado ontem). Sem ela o
     merge só preenche lacuna.
     """
+    if receipt_identity_action is not None:
+        from shopman.shop.services.pos_receipt_identity import resolve_receipt_identity
+
+        return resolve_receipt_identity(receipt_identity_action, operator_username=operator_username)
     return _persist_customer_from_payload(
         {
             "customer_ref": ref,
@@ -3579,7 +3584,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             phone=phone,
             tax_id=resolve_tax_id,
             email=resolve_email,
-            require_selection=bool((name or phone or tax_id or email) and not raw_ref),
+            require_selection=bool((name or phone or tax_id or email or payload.get("_receipt_registration")) and not raw_ref),
         )
         created = customer is None
         # A correção vale para o cadastro que o REF apontou — e para mais
@@ -3608,7 +3613,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
         )
         if customer is None:
             first_name, last_name = _split_name(name)
-            fallback = _fallback_customer_name(phone=phone, tax_id=fill_tax_id, email=fill_email)
+            fallback = ("", "") if payload.get("_receipt_registration") else _fallback_customer_name(phone=phone, tax_id=fill_tax_id, email=fill_email)
             customer = Customer.objects.create(
                 ref=Customer.generate_ref(),
                 first_name=first_name or fallback[0],
