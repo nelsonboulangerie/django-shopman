@@ -25,7 +25,11 @@ from shopman.storefront.tests.test_concierge_engine import (
     surface,
 )
 
-pytestmark = pytest.mark.django_db(transaction=True)
+requires_postgres = pytest.mark.skipif(
+    connection.vendor != "postgresql", reason="Requires independent PostgreSQL connections"
+)
+
+pytestmark = [pytest.mark.django_db(transaction=True), requires_postgres]
 
 
 @pytest.fixture(autouse=True)

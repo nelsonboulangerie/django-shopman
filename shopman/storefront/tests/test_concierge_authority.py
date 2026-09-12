@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 import pytest
+from django.db import connection
 from django.test import override_settings
 from shopman.orderman.models import Order, Session
 
@@ -17,6 +18,10 @@ from shopman.storefront.tests.test_concierge_engine import (
     ctx,
     customer,
     surface,
+)
+
+requires_postgres = pytest.mark.skipif(
+    connection.vendor != "postgresql", reason="Requires independent PostgreSQL connections"
 )
 
 pytestmark = pytest.mark.django_db
@@ -193,6 +198,7 @@ def test_c04_provider_callback_runs_after_local_receipt_and_outside_transaction(
     assert seen == [(False, 1, 1)]
 
 
+@requires_postgres
 @pytest.mark.django_db(transaction=True)
 def test_c04_two_postgres_confirmation_workers_create_one_order_and_receipt(ctx, monkeypatch):
     from concurrent.futures import ThreadPoolExecutor

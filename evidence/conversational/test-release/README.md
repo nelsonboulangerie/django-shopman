@@ -27,3 +27,10 @@ O corpo atual sozinho NÃO comprova janela WhatsApp: sem evidência válida, res
 Estado deste registro: preflight local concluído; PR/CI, deploy por imagens e atualização restrita de envs ainda pendentes. Merge main dispara workflow canônico Deploy Images. Só depois de deploymentACTIVE e releasejob/migrations saudáveis aplicar envs a partir de snapshot vivo revalidado. Registrar SHA/imagem/deployment e probes finais antes de declarar publicado.
 
 Rollback funcional: manter read_onlytrue e desligar LEGACY_READ_HANDOFF_ENABLED ou contract_version0, sem apagar registros/filas. Antes de rollback de imagem, conter ingresso novo e manter schemas expansivos; não reenviar unknown. Configurações de terceiros nunca são revertidas por snapshot inteiro sem comparar alterações posteriores.
+
+
+## Ajustes encontrados pela primeira rodada de CI
+
+Quality identificou imports desorganizados no runner de evidências, corrigidos sem alterar isolamento. Gate da meia-correção exigiu declarar ausência de identificador opcional como fallback deliberado para a próxima fonte canônica (não é erro de negócio). Test-storefront roda SQLite: as provas PG são explicitamente marcadas e ligadas ao DEFAULT_RUNTIME_TEST_PATHS existente, cujo SkipCollector reprova qualquer skip. Nenhum novo workflow ou gate dispensado.
+
+A seleção adicionada ao runtime estrito passou com84testes/49,13s, zero skips/warnings (`ci-postgresql.txt`). A suíte comum dos4módulos marcou36passed/14skipped (`ci-sqlite.txt`), exclusivamente por exigir PostgreSQL; essa contagem não é prova de lock. Runner e contrato ManyChat/legado:30passed/1,74s (`ci-quality-regressions.txt`).

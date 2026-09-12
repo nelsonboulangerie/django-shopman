@@ -185,7 +185,7 @@ class ManychatService:
                     identifier_value=phone,
                 )
                 return ident.customer if ident.customer.is_active else None
-            except CustomerIdentifier.DoesNotExist:
+            except CustomerIdentifier.DoesNotExist:  # silêncio-deliberado: identificador opcional ausente; tentar a próxima fonte canônica
                 pass
             customer = Customer.objects.filter(phone=phone, is_active=True).first()
             if customer:
@@ -204,7 +204,7 @@ class ManychatService:
                     identifier_value=email,
                 )
                 return ident.customer if ident.customer.is_active else None
-            except CustomerIdentifier.DoesNotExist:
+            except CustomerIdentifier.DoesNotExist:  # silêncio-deliberado: identificador opcional ausente; tentar a próxima fonte canônica
                 pass
             customer = Customer.objects.filter(email=email, is_active=True).first()
             if customer:
@@ -218,7 +218,7 @@ class ManychatService:
                     identifier_value=phone,
                 )
                 return ident.customer if ident.customer.is_active else None
-            except CustomerIdentifier.DoesNotExist:
+            except CustomerIdentifier.DoesNotExist:  # silêncio-deliberado: identificador opcional ausente; tentar a próxima fonte canônica
                 pass
             customer = Customer.objects.filter(phone=phone, is_active=True).first()
             if customer:

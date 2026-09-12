@@ -11,6 +11,12 @@ from shopman.backstage.models import OperatorAlert
 from shopman.shop.models import Channel
 from shopman.shop.services import cancellation, pix_confirmation
 
+requires_postgres = pytest.mark.skipif(
+    connection.vendor != "postgresql", reason="Requires independent PostgreSQL connections"
+)
+
+pytestmark = requires_postgres
+
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.parametrize("winner", ["callback", "cancel"])

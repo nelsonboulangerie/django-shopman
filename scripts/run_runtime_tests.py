@@ -36,6 +36,18 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     "shopman/shop/tests/test_concurrent_finish_does_not_double_credit.py",
     "shopman/storefront/tests/test_concurrent_checkout.py",
     "shopman/storefront/tests/test_operational_postgres.py",
+    # Provas do concierge dependem de locks, conexões independentes e migrações
+    # reais; skips do lote SQLite precisam executar neste gate estrito.
+    "shopman/storefront/tests/test_concierge_authority.py",
+    "shopman/storefront/tests/test_concierge_commercial_races.py",
+    "shopman/storefront/tests/test_concierge_consent_race.py",
+    "shopman/storefront/tests/test_concierge_payment_race.py",
+    "shopman/storefront/tests/test_concierge_boundary_races.py",
+    "shopman/storefront/tests/test_concierge_runtime_turns.py",
+    "shopman/storefront/tests/test_concierge_runtime_fulfillment.py",
+    "shopman/storefront/tests/test_concierge_runtime_load.py",
+    "shopman/storefront/tests/test_concierge_runtime_migration.py",
+    "shopman/storefront/tests/test_concierge_runtime_vertical.py",
     "shopman/storefront/tests/security/test_race_and_ratelimit.py",
     "shopman/shop/tests/integration/test_storefront_backstage_stress.py",
     "shopman/shop/tests/test_directive_dedupe.py",

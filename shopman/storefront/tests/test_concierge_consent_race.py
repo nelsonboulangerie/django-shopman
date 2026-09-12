@@ -11,7 +11,11 @@ from shopman.storefront.models import StockAlertDelivery, StockAlertOccurrence
 from shopman.storefront.services import stock_alerts
 from shopman.storefront.tests.test_concierge_commercial_races import Worker, assert_database_wait
 
-pytestmark = pytest.mark.django_db(transaction=True)
+requires_postgres = pytest.mark.skipif(
+    connection.vendor != "postgresql", reason="Requires independent PostgreSQL connections"
+)
+
+pytestmark = [pytest.mark.django_db(transaction=True), requires_postgres]
 
 
 @pytest.mark.parametrize("phase", ["queued", "claimed"])
