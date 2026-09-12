@@ -60,3 +60,11 @@ Reutilizar core/contratos, implementar adapterManyChatInstagram e configurar ing
 - https://help.manychat.com/hc/en-us/articles/14281292522652-System-Fields — ContactID, texto e última interação distintos; campos específicos por canal.
 - https://help.manychat.com/hc/en-us/articles/26673580447900-Response-Reference-for-Instagram-WhatsApp-and-Telegram-Automation — formatos de saída/capacidades variam por canal.
 - https://help.manychat.com/hc/en-us/articles/23358636027932-Understanding-messaging-windows — janelaAPIWhatsApp24h.
+
+## Auditoria adicional de identidade de mensagem
+
+O OpenAPI público Page_API consultado em12/09/2026 contém34paths, nenhum de histórico/mensagens/eventos/webhooks de ingresso. Subscriber expõe last_input_text e last_interaction, sem message_id/event_id documentado. A lista oficialSystemFields diferencia ContactID e LastInteraction, sem documentar ID de mensagem. A referência DynamicBlockWA/IG não documenta external_message_callback (a capacidade Messenger não deve ser extrapolada). Isso comprova a lacuna documental consultada, não a impossibilidade de recurso específico da conta. Evidência sanitizada: evidence/conversational/whatsapp-window/message-identity-audit.json.
+
+Para G02, solicitar ao fornecedor/inspecionar na conta: “Na automação DefaultReply de WhatsApp e Instagram, há variável oficial ou callback que entregue o ID imutável da mensagem recebida (e timestamp daquela mensagem), preservado em retries? Qual campo/API e quais garantias para duas mensagens rápidas e reexecução do ExternalRequest? ContactID e LastInteraction não atendem essa finalidade.” Texto preparado, nenhuma mensagem enviada ao suporte.
+
+Composição contato+timestamp permanece hipótese somente se timestamp for por evento e estável em retry, e identidade incluir conta/canal. Timestamp de última interação mutável não é promovido a ID; microssegundos não comprovam unicidade. UUID por recebimento continua sendo receipt local, não dedupe do fornecedor. O caminho de compra depende de boundary comprovado; a prova da janela e as capacidades de leitura podem evoluir independentemente.
