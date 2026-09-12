@@ -1,4 +1,4 @@
-import type { CatalogItemProjection, ProductDetailProjection, ShopProjection } from '~/types/shopman'
+import type { CatalogItemProjection, FAQItemProjection, ProductDetailProjection, ShopProjection } from '~/types/shopman'
 
 // Lógica pura de SEO técnico. Contrato vem das projeções do backend (SAGRADO):
 // montamos meta tags + JSON-LD schema.org a partir do dado já servido (produto,
@@ -186,4 +186,26 @@ export function bakeryJsonLd (params: {
     ld.sameAs = shop.social_links.map(link => link.url).filter(Boolean)
   }
   return ld
+}
+
+export function faqJsonLd (items: FAQItemProjection[]): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: items.map(item => ({
+      '@type': 'Question',
+      name: item.question,
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: item.answer
+      }
+    }))
+  }
+}
+
+export function jsonLdText (value: Record<string, unknown>): string {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029')
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { dynamicCollectionMenuTarget } from '~/presentation/menu'
-import { breadcrumbJsonLd, collectionJsonLd } from '~/presentation/seo'
+import { breadcrumbJsonLd, collectionJsonLd, jsonLdText } from '~/presentation/seo'
 import type { MenuResponse } from '~/types/shopman'
 
 // Página de coleção indexável (rota própria, self-canonical) — diferente das
@@ -62,7 +62,7 @@ useHead({
     ? [
         {
           type: 'application/ld+json',
-          innerHTML: JSON.stringify(collectionJsonLd({
+          innerHTML: jsonLdText(collectionJsonLd({
             name: title.value,
             url: canonicalUrl.value,
             origin: requestUrl.origin,
@@ -71,7 +71,7 @@ useHead({
         },
         {
           type: 'application/ld+json',
-          innerHTML: JSON.stringify(breadcrumbJsonLd([
+          innerHTML: jsonLdText(breadcrumbJsonLd([
             { name: 'Início', url: `${requestUrl.origin}/` },
             { name: 'Cardápio', url: `${requestUrl.origin}/menu` },
             { name: title.value, url: canonicalUrl.value }

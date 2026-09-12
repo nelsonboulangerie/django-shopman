@@ -7,6 +7,8 @@ import {
   bakeryJsonLd,
   breadcrumbJsonLd,
   collectionJsonLd,
+  faqJsonLd,
+  jsonLdText,
   metaDescription,
   priceFromQ,
   productJsonLd,
@@ -192,5 +194,37 @@ describe('bakeryJsonLd', () => {
   it('omite geo quando faltam coordenadas', () => {
     const ld = bakeryJsonLd({ shop: shop(), origin: ORIGIN, url: ORIGIN, latitude: null, longitude: null })
     expect(ld.geo).toBeUndefined()
+  })
+})
+
+describe('faqJsonLd', () => {
+  it('publica as mesmas perguntas e respostas servidas pela projeção', () => {
+    const ld = faqJsonLd([
+      {
+        ref: 'delivery',
+        question: 'Vocês fazem entrega?',
+        answer: 'Sim. Fazemos entrega.'
+      }
+    ])
+    expect(ld['@type']).toBe('FAQPage')
+    expect(ld.mainEntity).toEqual([
+      {
+        '@type': 'Question',
+        name: 'Vocês fazem entrega?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'Sim. Fazemos entrega.'
+        }
+      }
+    ])
+  })
+})
+
+describe('jsonLdText', () => {
+  it('neutraliza fechamento de script em conteúdo editorial', () => {
+    const text = jsonLdText({ answer: '</script><script>alert(1)</script>' })
+    expect(text).not.toContain('<')
+    expect(text).toContain('\\u003c/script>')
+    expect(JSON.parse(text).answer).toBe('</script><script>alert(1)</script>')
   })
 })

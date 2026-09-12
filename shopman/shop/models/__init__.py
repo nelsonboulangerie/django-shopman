@@ -42,6 +42,7 @@ from .concierge import (
 )
 from .contact_release import ContactRelease, ReleasedContactKind
 from .delivery import DeliveryDistanceBand, DeliveryZone
+from .faq import FAQEntry
 from .omotenashi_copy import OmotenashiCopy
 from .promotion import Coupon, Promotion
 from .quality import QualityDefect, QualityGrade
@@ -85,6 +86,7 @@ __all__ = [
     "Coupon",
     "DeliveryZone",
     "DeliveryDistanceBand",
+    "FAQEntry",
     "CatalogSyncState",
     "SyncStatus",
     "NotificationTemplate",

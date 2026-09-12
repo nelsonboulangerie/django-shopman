@@ -46,6 +46,7 @@ _TAG_OPEN = "<" + "/?" + "\\w*" + "antml" + "[^>]*>"
 _LEAK_RE = re.compile(_TAG_OPEN + "|<" + "/?parameter[^>]*>|<" + "/?invoke[^>]*>|" + 'name="[a-z_]+">', re.I)
 #: Quantas vezes a mesma chamada (ferramenta + argumentos) pode se repetir num turno.
 MAX_REPEATED_CALLS = 2
+_CART_STATE_TOOLS = {"view_cart", "set_item", "set_fulfillment", "review_order"}
 
 
 def clean_text(value: str) -> str:
@@ -107,7 +108,9 @@ def history_for(conversation: Conversation) -> list[dict]:
     """
     window = int(_config().get("window_messages") or 40)
     rows = list(
-        conversation.messages.exclude(kind=ConversationMessage.Kind.NOTE).filter(id__lte=getattr(conversation, "_inbound_max_id", 2**63-1)).order_by("-id")[:window]
+        conversation.messages.exclude(kind=ConversationMessage.Kind.NOTE)
+        .filter(id__lte=getattr(conversation, "_inbound_max_id", 2**63 - 1))
+        .order_by("-id")[:window]
     )
     included = {row.pk for row in rows}
     # A janela de linguagem pode cortar contexto antigo, nunca a entrada que o
@@ -176,9 +179,7 @@ def _persistable_content(response) -> list[dict]:
 
 
 def _text_of(response) -> str:
-    return "\n".join(
-        (block.text or "") for block in response.content if getattr(block, "type", "") == "text"
-    ).strip()
+    return "\n".join((block.text or "") for block in response.content if getattr(block, "type", "") == "text").strip()
 
 
 def _join_prefaces(prefaces: list[str], final: str) -> str:
@@ -262,16 +263,12 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
     seen_calls: dict[str, int] = {}
     tool_specs = tools_module.TOOL_SPECS
     if not getattr(conversation, "_commercial_authority", False):
-        tool_specs = [
-            spec
-            for spec in tool_specs
-            if spec["name"] in tools_module.LIMITED_AUTHORITY_TOOL_NAMES
-        ]
+        tool_specs = [spec for spec in tool_specs if spec["name"] in tools_module.LIMITED_AUTHORITY_TOOL_NAMES]
     # Frases ditas ANTES de chamar uma ferramenta ("a taxa é R$ 8,00, deixa eu ver
     # os horários"). Sem isto elas morriam na transcrição: o cliente só via o
     # texto final, e a taxa que ele perguntou nunca chegava (medido em 04/09).
     prefaces: list[str] = []
-    canonical_replies: list[str] = []
+    canonical_replies: dict[str, str] = {}
 
     for iteration in range(max_iterations + 1):
         request: dict = {
@@ -296,6 +293,7 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
             request["tool_choice"] = {"type": "none"}
 
         from .service import assert_turn_authority
+
         assert_turn_authority(conversation, for_mutation=False)
         response = client.messages.create(**request)
         _accumulate(usage, response)
@@ -308,7 +306,11 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
         if stop != "tool_use" or not tool_uses:
             if stop == "max_tokens":
                 logger.warning("concierge.agent max_tokens conversation=%s", conversation.pk)
-            outcome.reply_text = canonical_replies[-1] if canonical_replies else "Preciso consultar os dados da loja para responder. Você pode pedir o cardápio, consultar seu pedido ou falar com a equipe."
+            outcome.reply_text = (
+                "\n\n".join(dict.fromkeys(canonical_replies.values()))
+                if canonical_replies
+                else "Preciso consultar os dados da loja para responder. Você pode pedir o cardápio, consultar seu pedido ou falar com a equipe."
+            )
             outcome.messages.append({"role": "assistant", "content": _persistable_content(response)})
             break
 
@@ -335,16 +337,23 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
                 result = tools_module.execute(use.name, arguments, ctx)
             rendered = "" if result.get("error") == "repeated_call" else tools_module.render_result(use.name, result)
             if rendered:
-                canonical_replies.append(rendered)
-                outcome.disclosure = result.get("disclosure") or {}
-                outcome.quote_token = str(result.get("quote_token") or "") if use.name == "review_order" and result.get("ready") else ""
+                reply_key = "cart_state" if use.name in _CART_STATE_TOOLS else signature
+                canonical_replies[reply_key] = rendered
+                if result.get("disclosure"):
+                    outcome.disclosure = result["disclosure"]
+                if use.name == "review_order":
+                    outcome.quote_token = str(result.get("quote_token") or "") if result.get("ready") else ""
+                elif use.name in {"set_item", "set_fulfillment"}:
+                    outcome.quote_token = ""
             outcome.tool_events.append({"name": use.name, "input": arguments, "ok": result.get("ok", True)})
             results.append(
                 {
                     "type": "tool_result",
                     "tool_use_id": use.id,
                     "content": _tool_result_text(result),
-                    **({"is_error": True} if result.get("ok") is False and result.get("error") == "tool_failed" else {}),
+                    **(
+                        {"is_error": True} if result.get("ok") is False and result.get("error") == "tool_failed" else {}
+                    ),
                 }
             )
         messages.append({"role": "user", "content": results})

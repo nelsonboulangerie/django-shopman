@@ -431,3 +431,56 @@ O guia operacional atualizado está em
 altera a exigência central do plano: o operador precisa enxergar contexto,
 resultado e próxima ação com menos esforço e erro, e essa melhoria humana só pode
 ser declarada após a medição correspondente.
+
+## Adendo: informação pública e FAQ canônicas — 12/09/2026
+
+Base revalidada: `6f9532a5986bd6bf941209ab75208af37d7bbf76`, em worktree e branch
+`codex/concierge-public-storefront-projections-20260912` exclusivos. O incidente
+observado no piloto foi reproduzido: “vou querer um pain perdu, vcs entregam?”
+encontrava o produto e as janelas no domínio, mas o modelo não possuía ferramenta
+para consultar a política pública de entrega e o motor enviava o fallback genérico.
+
+WP00 revalidou o incidente e os owners; WP06 passou a expor `store_info` sobre uma
+única projeção pública; WP08 manteve `channel_ref` como dono da política comercial,
+independente de ManyChat/provider; WP09 acrescentou as regressões e o browser; WP10
+adicionou a migration reversível 0052. WP01–WP05 e WP07 conservaram seus contratos
+v3, gates e fontes maduras sem rota, fila, regra ou superfície paralela.
+
+| Achado | Classificação | Correção e prova |
+|---|---|---|
+| pergunta composta perdia fatos ou caía no fallback | defeito comprovado | `browse_menu` + `store_info(delivery)` compõem uma resposta; regressão usa o texto normalizado do ingresso e autoridade somente leitura |
+| acumular toda saída mostrava sacolas/totais intermediários | defeito comprovado na revisão adversarial | fatos independentes acumulam por assinatura; projeções de estado substituem o estado anterior; duas chamadas `set_item` geram um recap final |
+| ferramenta posterior apagava quote/disclosure | defeito comprovado na revisão adversarial | leitura posterior preserva a prova; mutação de sacola invalida quote; regressão `review_order` + `store_info` preserva o token |
+| `list_pickup_slots` induzia uso incorreto para entrega | defeito comprovado | contrato pré-go-live renomeado para `list_fulfillment_slots`, sem alias legado; modalidade é validada por `resolve_channel_policy` |
+| FAQ poderia publicar rascunho ou metadado interno | defeito comprovado na revisão adversarial | nasce despublicada; termos de busca ficam apenas no servidor; payload público contém somente ref/pergunta/resposta |
+| FAQ editorial poderia duplicar pergunta operacional | risco comprovado por construção | perguntas operacionais exatas são reservadas e a publicação é recusada; fatos operacionais continuam derivados da política, calendário e `Shop` |
+| texto editorial poderia fechar o bloco JSON-LD | hipótese de segurança confirmada por análise do sink | serialização JSON-LD neutraliza `<`, U+2028 e U+2029; teste cobre `</script><script>` |
+
+Antes, a pergunta sobre Pain Perdu terminava em “Preciso consultar os dados da
+loja”. Depois testado, o turno devolve nome, preço e disponibilidade do catálogo,
+confirma a modalidade de entrega pela política do canal e pede quantidade/endereço
+como próxima ação. Horário, endereço, contato e FAQ usam a mesma projeção exibida
+no storefront. A Home ganhou um acordeão público; o Admin Unfold ganhou CRUD em
+“O que dizemos”, com rascunho por padrão, histórico e backup.
+
+Validação final local: Storefront Django **1.738 passed, 35 skipped**; Shop
+**4.437 passed, 32 skipped, 31 deselected**; Admin/Unfold **270 passed**; fatia
+Concierge/Home **47 passed**; Nuxt **560 passed**, typecheck aprovado e lint sem
+erros (cinco warnings preexistentes em `WhatsappVerifyPanel.vue`). PostgreSQL 16
+local isolado aprovou os 47 casos e a ida 0051→0052, volta 0052→0051 e reaplicação
+0051→0052. Browser local confirmou FAQ visível/expansível e Admin canônico, sem
+erro de console. Não houve credencial ou provider externo nesses ensaios.
+
+Rollback de aplicação: desligar a connection/switch global, preservar mensagens,
+attempts, receipts e fila e corrigir adiante. A migration 0052 pode voltar para
+0051 e remove somente FAQ/histórico; faça isso apenas após export/backup se já
+houver conteúdo editorial. O código anterior não lê `HomeProjection.faq`, então
+rollback de imagem antes do downgrade é compatível. Não usar o spec DigitalOcean
+versionado: o preflight encontrou drift destrutivo de envs/domínios; o caminho de
+publicação continua sendo imagem imutável por SHA.
+
+A implementação desta fatia pode ser declarada testada após CI e publicação do
+SHA. Homologação do roteamento real do modelo e aceitação ManyChat exigem o smoke
+controlado da coorte `4605528796186498`. Piloto comercial e rollout continuam
+fechados: `read_only=true`, ID de evento/receipts/identidade/transferência/retorno
+humano desativados e gates G02–G07 pendentes conforme a matriz principal.

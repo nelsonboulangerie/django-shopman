@@ -26,7 +26,7 @@ from django.utils import timezone
 from shopman.offerman.models import Collection, CollectionItem, Listing, ListingItem, Product
 from shopman.orderman.models import Directive, Order, Session
 
-from shopman.shop.models import Channel, Conversation, ConversationBinding, ConversationMessage, Shop
+from shopman.shop.models import Channel, Conversation, ConversationBinding, ConversationMessage, FAQEntry, Shop
 from shopman.storefront.concierge import agent as agent_module
 from shopman.storefront.concierge import service, tools
 from shopman.storefront.concierge.contracts import (
@@ -414,6 +414,54 @@ def test_browse_menu_accepts_the_collection_by_label_and_ignores_unknown_ones(ct
     assert unknown["count"] == 1 and "não existe" in unknown["note"]
 
 
+def test_store_info_uses_the_public_storefront_projection(ctx):
+    shop = Shop.load()
+    shop.formatted_address = "Av. Madre Leônia Milito, 446 - Londrina - PR"
+    shop.email = "oi@nelsonboulangerie.com.br"
+    shop.save()
+    FAQEntry.objects.create(
+        question="Tem opção vegana?",
+        answer="As opções variam; consulte o cardápio do dia.",
+        search_terms="sem ingredientes animais, plant based",
+        is_published=True,
+    )
+
+    delivery = tools.store_info(ctx, "delivery")
+    location = tools.store_info(ctx, "location")
+    faq = tools.store_info(ctx, "faq", "plant based")
+
+    assert delivery["ok"] and "Fazemos entrega" in delivery["answers"][0]["answer"]
+    assert location["answers"][0]["answer"].endswith("Londrina - PR.")
+    assert location["links"][0]["url"].startswith("https://www.google.com/maps/")
+    assert faq["answers"] == [
+        {
+            "ref": "curated-tem-opcao-vegana",
+            "question": "Tem opção vegana?",
+            "answer": "As opções variam; consulte o cardápio do dia.",
+        }
+    ]
+
+
+def test_store_info_requires_a_precise_topic_and_faq_question(ctx):
+    assert tools.execute("store_info", {}, ctx)["error"] == "invalid_input"
+    assert tools.store_info(ctx, "faq")["error"] == "faq_query_required"
+
+
+def test_fulfillment_tools_obey_the_canonical_channel_policy(ctx):
+    channel = Channel.objects.get(ref=CHANNEL)
+    channel.config = {
+        **channel.config,
+        "surface_policy": {"fulfillment_types": ["pickup"]},
+    }
+    channel.save()
+
+    slots = tools.list_fulfillment_slots(ctx, _tomorrow(), "delivery")
+    selected = tools.set_fulfillment(ctx, "delivery", _tomorrow(), "", "Rua das Flores, 10")
+
+    assert slots["error"] == "fulfillment_unavailable"
+    assert selected["error"] == "fulfillment_unavailable"
+
+
 def test_set_item_reserves_stock_and_tells_the_real_balance(ctx, conversation):
     ok = tools.set_item(ctx, SKU, 3)
     assert ok["ok"] and ok["lines"][0]["qty"] == 3
@@ -708,6 +756,109 @@ def test_run_agent_executes_tools_and_keeps_the_transcript_in_api_format(convers
     assert browse["input_schema"]["required"] == []
     # A segunda ida leva a chamada e o resultado da ferramenta de volta.
     assert client.requests[1]["messages"][-1]["content"][0]["type"] == "tool_result"
+
+
+def test_run_agent_answers_product_and_delivery_in_the_same_turn(conversation):
+    """Regressão do piloto: "pain perdu, vocês entregam?" precisa dos dois fatos."""
+    product = Product.objects.create(
+        sku="PAIN-PERDU",
+        name="Pain Perdu",
+        base_price_q=1800,
+        is_published=True,
+        is_sellable=True,
+    )
+    CollectionItem.objects.create(
+        collection=Collection.objects.get(ref="paes"),
+        product=product,
+        sort_order=2,
+    )
+    ListingItem.objects.create(
+        listing=Listing.objects.get(ref=CHANNEL),
+        product=product,
+        price_q=1800,
+        is_published=True,
+        is_sellable=True,
+    )
+    _seed_stock(product.sku, Decimal("4"))
+    _create_inbound(
+        conversation,
+        "vou querer um pain perdu, vcs entregam?",
+        "agent-product-delivery",
+    )
+    conversation = _claim_conversation(conversation)
+    conversation._limited_event_assurance = True
+    conversation._commercial_authority = False
+    client = ScriptedClient(
+        _response(
+            _tool("browse_menu", {"query": "pain perdu"}, "toolu_product"),
+            _tool("store_info", {"topic": "delivery"}, "toolu_delivery"),
+            stop_reason="tool_use",
+        ),
+        _response(_text("Temos sim. Quantos você quer?"), stop_reason="end_turn"),
+    )
+
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        outcome = agent_module.run_agent(
+            conversation=conversation,
+            history=agent_module.history_for(conversation),
+            client=client,
+        )
+
+    assert "Pain Perdu" in outcome.reply_text
+    assert "R$ 18,00" in outcome.reply_text
+    assert "Fazemos entrega" in outcome.reply_text
+    assert [event["name"] for event in outcome.tool_events] == ["browse_menu", "store_info"]
+    assert not Session.objects.exists()
+
+
+def test_run_agent_only_sends_the_latest_cart_state(conversation):
+    _create_inbound(conversation, "quero dois pães", "agent-two-cart-states")
+    conversation = _claim_conversation(conversation)
+    client = ScriptedClient(
+        _response(
+            _tool("set_item", {"sku": SKU, "qty": 1}, "toolu_one"),
+            _tool("set_item", {"sku": SKU, "qty": 2}, "toolu_two"),
+            stop_reason="tool_use",
+        ),
+        _response(_text("Coloquei dois."), stop_reason="end_turn"),
+    )
+
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        outcome = agent_module.run_agent(
+            conversation=conversation,
+            history=agent_module.history_for(conversation),
+            client=client,
+        )
+
+    assert "2 ×" in outcome.reply_text
+    assert "1 ×" not in outcome.reply_text
+    assert outcome.reply_text.count("Total:") == 1
+
+
+def test_run_agent_preserves_ready_quote_across_later_read_only_tool(ctx):
+    tools.set_item(ctx, SKU, 1)
+    tools.set_fulfillment(ctx, "pickup", _tomorrow(), "slot-12", "")
+    _create_inbound(ctx.conversation, "pode revisar e confirmar a entrega?", "agent-quote-and-info")
+    conversation = _claim_conversation(ctx.conversation)
+    client = ScriptedClient(
+        _response(
+            _tool("review_order", {"payment_method": "pix"}, "toolu_review"),
+            _tool("store_info", {"topic": "delivery"}, "toolu_info"),
+            stop_reason="tool_use",
+        ),
+        _response(_text("Confira e confirme."), stop_reason="end_turn"),
+    )
+
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        outcome = agent_module.run_agent(
+            conversation=conversation,
+            history=agent_module.history_for(conversation),
+            client=client,
+        )
+
+    assert outcome.quote_token
+    assert "Confira o resumo" in outcome.reply_text
+    assert "Fazemos entrega" in outcome.reply_text
 
 
 def test_run_agent_keeps_language_intelligence_but_hides_mutations_without_authority(
