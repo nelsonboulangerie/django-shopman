@@ -1923,3 +1923,11 @@ confirmation rules remain enforced. A repeated create after a lost response
 returns the newly discovered owner for explicit selection, never a duplicate or
 silent association. `receipt_identity_changed` asks the operator to review a
 changed selected record or stale CPF confirmation.
+
+Successful receipt SAVE stores only a SHA-256 fingerprint in
+`Customer.metadata.pos.last_receipt_action`, covering operator and the entire
+explicit action (sale ID, current/target refs, fields, owner snapshot and CPF
+confirmation). An exact retry returns without any writes only while current
+saved values and all owner mappings still match. CPF changes, owner changes,
+new sale IDs or operators cannot reuse that receipt; normal guards apply.
+Only the most recent successful SAVE fingerprint is retained per customer.

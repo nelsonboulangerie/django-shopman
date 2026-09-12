@@ -317,3 +317,63 @@ def test_receipt_save_new_cpf_keeps_third_party_email_outside_customer(owner):
     assert current.document == "11144477735"
     assert current.email == ""
     assert dict(Customer.objects.values().get(pk=owner.pk)) == original_owner
+
+
+@pytest.mark.parametrize("current_ref", ["target", ""])
+def test_lost_save_response_retries_without_writes_for_current_or_new_target(current_ref):
+    from shopman.shop.services.pos import resolve_or_create_customer
+    target = Customer.objects.create(ref="target", first_name="Ana", metadata={"keep": "yes", "pos": {"other": "retained"}})
+    action = receipt_action(action="save", customer_ref=current_ref, target_ref=target.ref,
+                            fields=[{"field": "email", "value": "new@example.org", "owner_ref": ""}])
+    resolve_or_create_customer(receipt_identity_action=action, operator_username="op")
+    target.refresh_from_db()
+    assert target.metadata["keep"] == "yes"
+    assert target.metadata["pos"]["other"] == "retained"
+    original = list(Customer.objects.values())
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+    for _ in range(2):
+        with CaptureQueriesContext(connection) as queries:
+            result = resolve_or_create_customer(receipt_identity_action=action, operator_username="op")
+        assert not any(query["sql"].lstrip().upper().startswith(("UPDATE", "INSERT", "DELETE")) for query in queries)
+        assert result["ref"] == target.ref
+        assert result["created"] is False
+        assert list(Customer.objects.values()) == original
+
+
+def test_lost_confirmed_cpf_save_response_is_replay_but_new_sale_or_changed_cpf_is_not(owner):
+    from shopman.shop.services.pos import resolve_or_create_customer
+    action = receipt_action(action="save", customer_ref=owner.ref, target_ref=owner.ref,
+                            fields=[{"field": "tax_id", "value": "11144477735", "owner_ref": ""}],
+                            tax_id_overwrite_confirmed=True, tax_id_before=owner.document)
+    resolve_or_create_customer(receipt_identity_action=action, operator_username="op")
+    original = list(Customer.objects.values())
+    assert resolve_or_create_customer(receipt_identity_action=action, operator_username="op")["ref"] == owner.ref
+    assert list(Customer.objects.values()) == original
+    with pytest.raises(PosIntentError):
+        resolve_or_create_customer(receipt_identity_action={**action, "client_request_id": "new-sale"}, operator_username="op")
+    with pytest.raises(PosIntentError):
+        resolve_or_create_customer(receipt_identity_action=action, operator_username="another-operator")
+    Customer.objects.filter(pk=owner.pk).update(document="12345678909")
+    with pytest.raises(PosIntentError):
+        resolve_or_create_customer(receipt_identity_action=action, operator_username="op")
+    owner.refresh_from_db()
+    assert owner.document == "12345678909"
+
+
+def test_save_replay_still_rechecks_third_party_ownership(owner):
+    from unittest.mock import patch
+
+    from shopman.shop.services.pos import resolve_or_create_customer
+    target = Customer.objects.create(ref="target", first_name="Bia")
+    action = receipt_action(action="save", customer_ref=target.ref, target_ref=target.ref, fields=[
+        {"field": "tax_id", "value": "11144477735", "owner_ref": ""},
+        {"field": "email", "value": owner.email, "owner_ref": owner.ref},
+    ])
+    resolve_or_create_customer(receipt_identity_action=action, operator_username="op")
+    new_owner = Customer.objects.create(ref="new-owner", first_name="Carla")
+    original = list(Customer.objects.values())
+    with patch("shopman.shop.services.pos._contact_owner", return_value=new_owner):
+        with pytest.raises(ReceiptIdentityConflict):
+            resolve_or_create_customer(receipt_identity_action=action, operator_username="op")
+    assert list(Customer.objects.values()) == original

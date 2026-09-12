@@ -104,6 +104,9 @@ def require_receipt_identity_choice(payload: dict) -> None:
 
 def resolve_receipt_identity(action: dict, *, operator_username: str) -> dict:
     """Apply the displayed receipt decision after rechecking every owner."""
+    import hashlib
+    import json
+
     from django.db import transaction
 
     from shopman.shop.services.pos import _contact_owner, _identifier_owner, _persist_customer_from_payload
@@ -129,16 +132,17 @@ def resolve_receipt_identity(action: dict, *, operator_username: str) -> dict:
                 or not normalize_receipt_value(item["field"], item["value"])):
             raise PosIntentError("invalid_receipt_identity_choice", "Revise os dados do documento.")
         seen.add(item["field"])
+    fingerprint = hashlib.sha256(json.dumps(
+        {"operator": operator_username, "action": action}, sort_keys=True, ensure_ascii=True,
+    ).encode()).hexdigest()
     with transaction.atomic():
+        replay = False
         if target:
             from shopman.guestman.models import Customer
             selected = Customer.objects.select_for_update().filter(ref=target, is_active=True).first()
             if selected is None:
                 raise PosIntentError("receipt_identity_changed", "O cadastro selecionado não está disponível.", focus="receipt")
-            if action.get("tax_id_overwrite_confirmed") and (
-                    not isinstance(action.get("tax_id_before"), str)
-                    or normalize_receipt_value("tax_id", action["tax_id_before"]) != normalize_receipt_value("tax_id", selected.document)):
-                raise PosIntentError("receipt_identity_changed", "O CPF do cadastro mudou. Revise a alteração novamente.", focus="receipt")
+            replay = (selected.metadata or {}).get("pos", {}).get("last_receipt_action") == fingerprint
         payload = {"customer_ref": target, "client_request_id": request_id, "receipt_channels": ["email"],
                    "_receipt_registration": True,
                    "save_receipt_tax_id_confirmed": action.get("tax_id_overwrite_confirmed", False)}
@@ -148,8 +152,21 @@ def resolve_receipt_identity(action: dict, *, operator_username: str) -> dict:
             value = normalize_receipt_value(field, item["value"])
             owner = _identifier_owner("cpf", value) if field == "tax_id" else _contact_owner("email", value)
             owner_ref = owner.ref if owner else ""
+            owns_saved_field = not item["owner_ref"] or item["owner_ref"] == target
+            replay_field_matches = (
+                owner_ref == target
+                and normalize_receipt_value(field, selected.document if field == "tax_id" else selected.email) == value
+            ) if target and owns_saved_field else owner_ref == item["owner_ref"]
+            replay = replay and replay_field_matches
             stale |= owner_ref != item["owner_ref"] or bool(owner_ref and kind == "create")
             payload["fiscal_tax_id" if field == "tax_id" else "receipt_email"] = value
+        if replay:
+            # Exact completed command and unchanged results: return without writing or re-confirming.
+            return {"ref": target, "created": False}
+        if target and action.get("tax_id_overwrite_confirmed") and (
+                    not isinstance(action.get("tax_id_before"), str)
+                    or normalize_receipt_value("tax_id", action["tax_id_before"]) != normalize_receipt_value("tax_id", selected.document)):
+            raise PosIntentError("receipt_identity_changed", "O CPF do cadastro mudou. Revise a alteração novamente.", focus="receipt")
         if stale:
             # No write has happened. Show current ownership again, including after a lost create response.
             require_receipt_identity_choice({**payload, "customer_ref": current})
@@ -160,4 +177,11 @@ def resolve_receipt_identity(action: dict, *, operator_username: str) -> dict:
                 payload.pop("fiscal_tax_id" if item["field"] == "tax_id" else "receipt_email", None)
                 continue
             payload["save_receipt_tax_id" if item["field"] == "tax_id" else "save_receipt_contact"] = True
-        return _persist_customer_from_payload(payload, operator_username=operator_username)
+        result = _persist_customer_from_payload(payload, operator_username=operator_username)
+        if target:
+            selected.refresh_from_db()
+            metadata = dict(selected.metadata or {})
+            metadata["pos"] = {**metadata.get("pos", {}), "last_receipt_action": fingerprint}
+            selected.metadata = metadata
+            selected.save(update_fields=["metadata"])
+        return result
