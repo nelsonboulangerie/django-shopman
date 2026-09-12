@@ -61,6 +61,7 @@ EVENT_LABELS: dict[str, str | None] = {
     "payment.refunded": "Pagamento estornado",
     "return_initiated": "Devolução solicitada",
     "refund_processed": "Reembolso processado",
+    "customer_cancellation_requested": "Cancelamento solicitado",
     "fiscal_cancelled": "Nota fiscal cancelada",
     "fulfillment.dispatched": "Saiu para entrega",
     "fulfillment.delivered": "Pedido entregue",
@@ -248,6 +249,14 @@ class OrderTrackingPromiseProjection:
 
 
 @dataclass(frozen=True)
+class CancellationRequestProjection:
+    protocol: str
+    requested_at_display: str
+    title: str
+    message: str
+
+
+@dataclass(frozen=True)
 class OrderTrackingProjection:
     """Canonical full tracking projection, rendered."""
 
@@ -304,6 +313,7 @@ class OrderTrackingProjection:
     convenience_pending: tuple[str, ...] = ()
     cancellation_note: str = ""
     refund_status_label: str | None = None
+    cancellation_request: CancellationRequestProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -378,6 +388,19 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         payment_status_label=_payment_status_label(data.payment_status_key),
         cancellation_note=data.cancellation_note,
         refund_status_label=_refund_status_label(data.refund_status_key, copy),
+        cancellation_request=(
+            CancellationRequestProjection(
+                protocol=data.cancellation_request.protocol,
+                requested_at_display=_fmt_timestamp(data.cancellation_request.requested_at),
+                title="Solicitação recebida",
+                message=(
+                    "A equipe vai analisar o cancelamento e um possível estorno. "
+                    "Acompanhe a resposta por aqui."
+                ),
+            )
+            if data.cancellation_request
+            else None
+        ),
         payment_expires_at=data.payment_expires_at,
         confirmation_countdown=data.confirmation_countdown,
         confirmation_expires_at=data.confirmation_expires_at,

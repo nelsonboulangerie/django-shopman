@@ -901,6 +901,12 @@ export interface TrackingResponse {
   // estorno na própria tela, sem depender da notificação.
   cancellation_note: string
   refund_status_label: string | null
+  cancellation_request: {
+    protocol: string
+    requested_at_display: string
+    title: string
+    message: string
+  } | null
   // Fila de espera: 'none' | 'fermata' | 'confirming' | 'confirmed' |
   // 'released'. Em confirming o deadline é o relógio do cliente.
   waitlist_state: string

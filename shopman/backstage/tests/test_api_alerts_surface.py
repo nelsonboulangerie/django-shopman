@@ -226,6 +226,26 @@ def test_production_alert_projects_server_owned_recovery_context(client, shop):
 
 
 @pytest.mark.django_db
+def test_cancellation_request_alert_opens_the_exact_order(client, operator):
+    alert = OperatorAlert.objects.create(
+        type="customer_cancellation_requested",
+        audience="orders",
+        severity="warning",
+        message="Cliente pediu análise de cancelamento",
+        order_ref="WEB-42",
+    )
+    client.force_login(operator)
+
+    projected = client.get(reverse("api-backstage-alerts")).json()
+    row = next(item for item in projected["alerts"] if item["pk"] == alert.pk)
+    context = next(action for action in row["actions"] if action["kind"] == "open_alert_context")
+
+    assert row["type_label"] == "Cliente solicitou cancelamento"
+    assert context["label"] == "Resolver no contexto"
+    assert context["href"] == "/WEB-42"
+
+
+@pytest.mark.django_db
 @pytest.mark.parametrize(
     "alert_type",
     ("production_low_yield", "production_batch_traceability"),

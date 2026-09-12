@@ -112,6 +112,7 @@ def register_all() -> None:
     _register_stock_signals()
     _register_production_alerts()
     _register_production_order_sync()
+    _register_cancellation_request_signals()
     _register_sse_emitters()
     _register_catalog_projection_handler()
     _register_catalog_signals()
@@ -120,6 +121,12 @@ def register_all() -> None:
 
 
 # ── Individual registrations ──
+
+
+def _register_cancellation_request_signals() -> None:
+    from shopman.shop.handlers import cancellation_requests
+
+    cancellation_requests.connect()
 
 
 def _register_notification_handlers() -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Literal
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from django.utils import timezone
 
@@ -104,6 +104,7 @@ _PRODUCTION_CONTEXT_PATHS = {
 
 _ORDER_CONTEXT_PATHS = {
     "order_production_quality_risk": "/",
+    "customer_cancellation_requested": "/",
 }
 
 
@@ -111,8 +112,11 @@ def _alert_actions(alert, *, target_date: str = "") -> tuple[ProductionActionPro
     actions = []
     path = _PRODUCTION_CONTEXT_PATHS.get(alert.type) or _ORDER_CONTEXT_PATHS.get(alert.type)
     if path is not None:
+        exact_order_path = alert.type == "customer_cancellation_requested" and bool(alert.order_ref)
+        if exact_order_path:
+            path = f"/{quote(alert.order_ref, safe='')}"
         query_params = {}
-        if alert.order_ref:
+        if alert.order_ref and not exact_order_path:
             query_params["q"] = alert.order_ref
         if target_date:
             query_params["date"] = target_date

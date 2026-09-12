@@ -128,6 +128,14 @@ class TrackingPickupData:
 
 
 @dataclass(frozen=True)
+class TrackingCancellationRequestData:
+    """Customer request awaiting a human cancellation/refund decision."""
+
+    protocol: str
+    requested_at: str
+
+
+@dataclass(frozen=True)
 class TrackingPromiseData:
     """The active operational promise as data.
 
@@ -219,6 +227,7 @@ class TrackingData:
     # notificação para contar a história.
     cancellation_note: str = ""
     refund_status_key: str | None = None
+    cancellation_request: TrackingCancellationRequestData | None = None
     # Fila de espera (WP-P2E): o acompanhamento é a superfície que SEMPRE
     # existe. A notificação pode não chegar (janela do WhatsApp, número
     # trocado); esta tela não depende dela para o cliente saber que a fornada
@@ -282,6 +291,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     # que o lifecycle usa na notificação. Sem nota, a tela não inventa motivo.
     cancellation_note = str(order_data.get("cancellation_note") or "")
     refund_status_key = _refund_status_key(order)
+    cancellation_request = _cancellation_request(order)
     progress_steps = _build_progress_steps(
         order,
         is_delivery=is_delivery,
@@ -317,6 +327,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     actions = _build_order_actions(
         order,
         can_cancel=can_cancel,
+        cancellation_requested=cancellation_request is not None,
         can_rate=_can_rate(order),
         can_mock_confirm_payment=can_mock_confirm_payment,
     )
@@ -327,6 +338,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         stale_after_seconds=_stale_after_seconds(),
         cancellation_note=cancellation_note,
         refund_status_key=refund_status_key,
+        cancellation_request=cancellation_request,
         order_ref=interaction.order_ref,
         status=order.status,
         display_status_key=_display_status_key(order),
@@ -479,6 +491,18 @@ def _refund_status_key(order) -> str | None:
         return "processing"
     return None
 
+
+def _cancellation_request(order) -> TrackingCancellationRequestData | None:
+    from shopman.shop.services import cancellation_requests
+
+    request = cancellation_requests.current(order)
+    if request is None:
+        return None
+    return TrackingCancellationRequestData(
+        protocol=request.protocol,
+        requested_at=request.requested_at.isoformat(),
+    )
+
 def _can_mock_confirm_payment(order) -> bool:
     """Este pedido pode receber uma captura simulada AGORA?
 
@@ -589,6 +613,7 @@ def _build_order_actions(
     order,
     *,
     can_cancel: bool,
+    cancellation_requested: bool,
     can_rate: bool,
     can_mock_confirm_payment: bool,
 ) -> tuple[Action, ...]:
@@ -629,6 +654,40 @@ def _build_order_actions(
                 ),
                 "cancel_label": _copy_title("TRACKING_CANCEL_KEEP_CTA", "Manter pedido"),
                 "confirm_label": _copy_title("TRACKING_CANCEL_CONFIRM_CTA", "Confirmar cancelamento"),
+                "severity": "danger",
+            },
+        ))
+    elif order.status not in {"cancelled", "returned"} and not cancellation_requested:
+        actions.append(_action(
+            ref="request_cancellation",
+            kind="mutation",
+            label=_copy_title("TRACKING_ACTION_REQUEST_CANCELLATION", "Solicitar cancelamento"),
+            priority="danger",
+            href=f"/api/v1/orders/{order.ref}/cancellation-request/",
+            method="POST",
+            payload_schema={
+                "type": "object",
+                "required": ["idempotency_key"],
+                "properties": {
+                    "reason": {"type": "string", "maxLength": 500},
+                    "idempotency_key": {"type": "string"},
+                },
+            },
+            idempotency="required",
+            confirmation={
+                "title": _copy_title(
+                    "TRACKING_REQUEST_CANCELLATION_TITLE",
+                    "Solicitar cancelamento",
+                ),
+                "message": _copy_message(
+                    "TRACKING_REQUEST_CANCELLATION_MESSAGE",
+                    "Como o pedido já avançou, a equipe precisa analisar o cancelamento e um possível estorno. Você recebe um protocolo agora.",
+                ),
+                "confirm_label": _copy_title(
+                    "TRACKING_REQUEST_CANCELLATION_CONFIRM_CTA",
+                    "Enviar solicitação",
+                ),
+                "cancel_label": _copy_title("TRACKING_CANCEL_KEEP_CTA", "Manter pedido"),
                 "severity": "danger",
             },
         ))
