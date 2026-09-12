@@ -22,10 +22,10 @@ from __future__ import annotations
 import pytest
 
 from shopman.shop.services.pos import (
-    PosCustomerConflict,
     PosTaxIdOverwriteError,
     _persist_customer_from_payload,
 )
+from shopman.shop.services.pos_receipt_identity import ReceiptIdentityConflict
 
 pytestmark = pytest.mark.django_db
 
@@ -298,7 +298,7 @@ def test_email_de_outro_cadastro_vira_conflito_RICO_e_nao_IntegrityError():
     cliente = _cliente(phone="+5543999990013")
     outro = _cliente(first_name="Bia", phone="+5543999990014", email="bia@example.org")
 
-    with pytest.raises(PosCustomerConflict) as excinfo:
+    with pytest.raises(ReceiptIdentityConflict) as excinfo:
         _salvar({
             "customer_ref": cliente.ref,
             "receipt_channels": ["email"],
@@ -307,16 +307,22 @@ def test_email_de_outro_cadastro_vira_conflito_RICO_e_nao_IntegrityError():
         })
 
     conflito = excinfo.value
-    assert conflito.field == "customer_email"
-    assert {row["ref"] for row in conflito.candidates} == {cliente.ref, outro.ref}
-    assert any(row["is_current"] for row in conflito.candidates)
+    assert conflito.code == "receipt_identity_conflict"
+    assert conflito.field == "receipt_email"
+    assert conflito.customer_ref == cliente.ref
+    assert conflito.value == "bia@example.org"
+    assert {row["ref"] for row in conflito.candidates} == {outro.ref}
+    cliente.refresh_from_db()
+    outro.refresh_from_db()
+    assert cliente.email == ""
+    assert outro.email == "bia@example.org"
 
 
 def test_cpf_de_outro_cadastro_vira_conflito_RICO_e_nao_IntegrityError():
     cliente = _cliente(phone="+5543999990015")
     outro = _cliente(first_name="Bia", phone="+5543999990016", document=CPF_A)
 
-    with pytest.raises(PosCustomerConflict) as excinfo:
+    with pytest.raises(ReceiptIdentityConflict) as excinfo:
         _salvar({
             "customer_ref": cliente.ref,
             "fiscal_tax_id": CPF_A,
@@ -324,8 +330,15 @@ def test_cpf_de_outro_cadastro_vira_conflito_RICO_e_nao_IntegrityError():
         })
 
     conflito = excinfo.value
-    assert conflito.field == "customer_tax_id"
-    assert {row["ref"] for row in conflito.candidates} == {cliente.ref, outro.ref}
+    assert conflito.code == "receipt_identity_conflict"
+    assert conflito.field == "fiscal_tax_id"
+    assert conflito.customer_ref == cliente.ref
+    assert conflito.value == CPF_A
+    assert {row["ref"] for row in conflito.candidates} == {outro.ref}
+    cliente.refresh_from_db()
+    outro.refresh_from_db()
+    assert cliente.document == ""
+    assert outro.document == CPF_A
 
 
 def test_dono_DESATIVADO_do_email_tambem_sai_nomeado():
@@ -335,9 +348,9 @@ def test_dono_DESATIVADO_do_email_tambem_sai_nomeado():
     operador lia "já é de outro cadastro" e procurava alguém invisível.
     """
     cliente = _cliente(phone="+5543999990017")
-    _cliente(first_name="Bia", phone="+5543999990018", email="bia@example.org", is_active=False)
+    outro = _cliente(first_name="Bia", phone="+5543999990018", email="bia@example.org", is_active=False)
 
-    with pytest.raises(PosCustomerConflict) as excinfo:
+    with pytest.raises(ReceiptIdentityConflict) as excinfo:
         _salvar({
             "customer_ref": cliente.ref,
             "receipt_channels": ["email"],
@@ -345,25 +358,52 @@ def test_dono_DESATIVADO_do_email_tambem_sai_nomeado():
             "save_receipt_contact": True,
         })
 
+    assert excinfo.value.code == "receipt_identity_conflict"
+    assert excinfo.value.owner_ref == outro.ref
     assert any(row["owner_inactive"] for row in excinfo.value.candidates)
+    cliente.refresh_from_db()
+    outro.refresh_from_db()
+    assert cliente.email == ""
+    assert outro.email == "bia@example.org"
+    assert outro.is_active is False
 
 
-def test_sem_a_ordem_o_email_de_outro_cadastro_nem_e_olhado():
-    """A nota vai para o endereço de outro cliente sem conflito nenhum.
+def test_email_de_outro_cadastro_pede_decisao_mesmo_sem_opt_in_e_ACK_preserva_cadastro():
+    """Usar apenas no documento exige decisão e nunca transfere o contato."""
+    from shopman.guestman.models import Customer
 
-    É o pedido do dono: "a pessoa pode querer enviar para outro e-mail". Sem
-    ordem de gravar, ninguém disputa a posse de nada.
-    """
     cliente = _cliente(phone="+5543999990019")
-    _cliente(first_name="Bia", phone="+5543999990020", email="bia@example.org")
-
-    resolvido = _salvar({
+    outro = _cliente(first_name="Bia", phone="+5543999990020", email="bia@example.org")
+    payload = {
         "customer_ref": cliente.ref,
+        "client_request_id": "receipt-third-party-sale",
         "receipt_channels": ["email"],
         "receipt_email": "bia@example.org",
-    })
+    }
+    with pytest.raises(ReceiptIdentityConflict) as excinfo:
+        _salvar(payload)
+    assert excinfo.value.code == "receipt_identity_conflict"
+    cliente.refresh_from_db()
+    assert cliente.email == ""
 
+    payload["receipt_identity_choices"] = [{
+        "field": "email", "value": "bia@example.org", "customer_ref": cliente.ref,
+        "owner_ref": outro.ref, "choice": "receipt_only",
+        "client_request_id": payload["client_request_id"],
+    }]
+    resolvido = _salvar(payload)
     assert resolvido["ref"] == cliente.ref
+    cliente.refresh_from_db()
+    outro.refresh_from_db()
+    assert cliente.email == ""
+    assert outro.email == "bia@example.org"
+    assert Customer.objects.count() == 2
+
+    # A decisão sobre o documento não autoriza gravar o contato de terceiro.
+    with pytest.raises(ReceiptIdentityConflict):
+        _salvar({**payload, "save_receipt_contact": True})
+    cliente.refresh_from_db()
+    assert cliente.email == ""
 
 
 # ── Linha 5: SEM cliente identificado → "Salvar como cliente?" ────────────
@@ -409,15 +449,27 @@ def test_sem_cliente_identificado_o_cpf_desmarcado_NAO_cria_cadastro():
     assert Customer.objects.count() == 0
 
 
-def test_salvar_como_cliente_ACHA_quem_ja_existe_em_vez_de_duplicar():
+def test_salvar_como_cliente_existente_exige_associacao_explicita_sem_duplicar():
     from shopman.guestman.models import Customer
 
     ja_existe = _cliente(first_name="Bia", phone="+5543999990021", email="bia@example.org")
 
-    resolvido = _salvar({
+    payload = {
         "receipt_channels": ["email"],
         "receipt_email": "bia@example.org",
         "save_receipt_contact": True,
+    }
+    with pytest.raises(ReceiptIdentityConflict) as excinfo:
+        _salvar(payload)
+    assert excinfo.value.customer_ref == ""
+    assert excinfo.value.owner_ref == ja_existe.ref
+    assert Customer.objects.count() == 1
+    ja_existe.refresh_from_db()
+    assert ja_existe.email == "bia@example.org"
+    assert ja_existe.phone == "+5543999990021"
+
+    resolvido = _salvar({
+        **payload, "customer_ref": ja_existe.ref, "save_receipt_contact": False,
     })
 
     assert resolvido["ref"] == ja_existe.ref

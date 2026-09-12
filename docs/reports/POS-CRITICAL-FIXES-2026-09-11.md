@@ -1,41 +1,37 @@
-# Correções pontuais PDV — 11/09/2026
+# Correções do PDV — revisão de 12/09/2026
 
-Base: `origin/main` em `7faf0259a`. Integração isolada em `codex/pos-critical-fixes-20260911`, sem alterações no checkout compartilhado. Três agentes trabalharam em worktrees independentes; sessões Storefront e Conversacional foram consultadas para evitar sobreposição. Nenhum deploy ou alteração de dados reais foi realizado.
+Integração isolada em `codex/pos-critical-fixes-20260911`, PR619 em rascunho. Checkout compartilhado preservado. Frentes de identidade, autenticação, pagamentos e fiscal trabalharam em worktrees próprios. A tarefa dedicada de layouts entregou outro preview e não foi incorporada a este PR. Sem merge, deploy ou alteração de dados reais.
 
-## Resultado por solicitação
+## Comportamento resultante
 
-| Solicitação | Resultado |
+| Demanda | Solução |
 | --- | --- |
-| Pedido de troco | A troca de cédulas no PDV cria alerta `cash_change_requested` na fila canônica de operações, visível no Gestor/Admin, com terminal, operador, valor e denominações. Atendimento/cancelamento resolve o alerta na mesma transação e dispara atualização SSE. Não é suprimento nem movimentação de saldo. |
-| Relogins Admin | `bootstrap_admin` e `ensure_dev_superuser` refaziam o hash mesmo quando a senha era igual. Isso invalida sessões Django. Agora preservam o hash; senha realmente alterada ainda revoga sessões. PIN, permissões e duração permanecem iguais. Documentação histórica liga bootstrap ao deploy; não foi auditada a configuração viva do job nem provado que esta era a única causa percebida no dispositivo. |
-| Retirada hoje | Data explicitamente combinada, mesmo hoje, ou janela de horário exige identificação no backend e na tela. Nome, telefone ou ref do cadastro satisfazem a regra existente. Venda imediata sem agendamento pode continuar anônima. Entrega também exige identificação. |
-| Cliente / recebimento / data | O chip começa com “Entrega ou retirada?”. Escolher cliente/data não confirma recebimento. O operador escolhe uma opção; fechamento tem guarda no composable e ação de recuperação no checkout. Refresh que muda a opção disponível invalida a confirmação. A agenda distingue “Sem agendamento” de “Hoje · horário a combinar”; selecionar hoje grava a data, e “Sem agendamento · levar agora” limpa o combinado. |
-| Filipeta delivery | Endereço e referência vêm antes dos itens. A cobrança na entrega mostra parcelas por método, “Troco para”, “Levar de troco” ou necessidade de confirmar. Pedido já pago não recebe orientação de cobrança. |
-| PIX Storefront | Não houve alteração: `.do/app.alpha-subdomains.yaml` mantém `SHOPMAN_EXPOSE_MOCK_CAPTURE=true` e `SHOPMAN_MOCK_PIX_AUTO_CONFIRM=false`. A sessão Storefront confirmou a configuração de pré-go-live: mock exige “Simular pagamento”; a confirmação Efí real é por webhook. Não se deve confundir confirmação do pedido com confirmação do pagamento. |
-| Contato já cadastrado | Cadastro com nome e contato existente, sem ref selecionado, não reutiliza nem altera silenciosamente o registro. O modal mostra o dono, permite corrigir e exige confirmação para usar o cadastro. A proteção também roda no fechamento direto. Conflito concorrente no resolve retorna erro legível. Lookup puro por identificador e seleção explícita continuam disponíveis. |
+| Pedido de troco | Alerta canônico `cash_change_requested` para operações, com terminal, operador, valor e denominações; atendimento/cancelamento resolve o alerta e atualiza via SSE. Não altera saldo. |
+| Relogins | Bootstrap preserva o hash quando a senha é a mesma. Além disso, uma aba ociosa do PDV não pode mais travar outra em atendimento: atividade e proteção do pagamento são coordenadas entre abas do mesmo origin. Cadeado manual e bloqueio por inatividade real permanecem. |
+| Balcão | Venda para levar agora, sem pergunta de retirada a cada venda; cliente opcional. Nova venda começa nesse modo. |
+| Encomendas | Reutiliza cadastro, recebimento, agenda e pagamento existentes. Antes dos produtos, exige cliente ativo selecionado, escolha explícita retirada/entrega e data válida; entrega pede endereço. Hoje é uma escolha explícita. Horário continua podendo ficar a combinar. |
+| Troca e retomada | Mantém itens e cliente ao mudar o modo. Voltar ao Balcão exige confirmação e remove contexto de agendamento/entrega/cobrança futura. Modo persiste por comanda. Encomenda de retirada hoje segue no preparo, sem entrega automática ao cliente. |
+| Identidade | Telefone, CPF e e-mail de outro cadastro exigem escolha explícita, inclusive quando o nome não foi informado. Busca e cadastro novo ficam separados. Enter não pode selecionar um resultado que ainda não chegou. Corrigir conserva o rascunho. |
+| CPF da nota / e-mail do comprovante | Se o dado existir em outro cadastro, pergunta entre usar apenas no documento e associar o cliente. Apenas documento não associa cliente nem altera contatos/preferências fiscais. A escolha é vinculada a valor, dono, cliente atual e venda; mudanças invalidam a escolha. Mesmo cliente já associado dispensa pergunta redundante. Canal de e-mail desligado não consulta nem grava o campo. |
+| Pagamento | Reutiliza antecipação, Pix/link pendente e cobrança na entrega. Cartão na entrega informa levar maquininha; dinheiro conserva troco para/valor a levar. Retirada com pagamento pendente usa os fluxos Pix/link existentes; não foi criado novo mecanismo de crédito na retirada. |
+| Filipeta | Resultado de encomenda oferece impressão operacional mesmo antes de pagar e permanece disponível para conferência. A filipeta não substitui o documento fiscal. O layout anterior desta branch inclui endereço antes dos itens, métodos de cobrança e troco. O redesenho visual dedicado está em outra tarefa. |
+| Fiscal da entrega | Entrega grátis continua classificada como entrega. Dados fiscais/endereço incompletos geram erro explícito e alerta; não reclassifica como presencial nem reduz frete/pagamento. Retry de emissão falhada recompõe os dados corrigidos preservando histórico; documento autorizado não é reconstruído. Detalhes e fontes no relatório fiscal abaixo. |
+| Pix Storefront | Sem mudança: configuração versionada mantém mock com confirmação manual, `SHOPMAN_MOCK_PIX_AUTO_CONFIRM=false`. Não se confunde pedido registrado com pagamento confirmado. |
 
-## Validação integrada
+## Validação
 
-- Backend: **178 testes passaram**, cobrindo agendamento, identidade de cliente, bootstrap, contrato de superfície PDV, pedido de troco, filipeta e SSE.
-- Frontend: **410 testes unitários passaram** e **145 testes de componente/composable passaram** (checkout, cadastro, fechamento, identidade e refresh de recebimento).
-- Suíte ampliada de services POS: **188 passaram, 1 skip** (inclui testes já contabilizados acima). A suíte completa de componentes local sofreu timeout de inicialização e foi interrompida; o CI executou os 876 testes, encontrando uma asserção de texto antigo, corrigida nesta branch. A reexecução do CI PDV passou.
-- Typecheck Nuxt, Ruff nos módulos alterados e `git diff --check` aprovados.
-- `makemigrations --check --dry-run`: sem drift; sem colisão nova para `0063`. Há prefixos históricos repetidos (`0036` e `0058`); o grafo atual foi aceito pelo Django.
-- O CI amplo `test-shop` executou 4.365 testes: 4.363 passaram e dois cenários fiscais ainda tentavam recadastrar cliente na segunda venda. Os cenários foram adaptados à seleção explícita por `customer_ref`, preservando as asserções fiscais e a proteção de identidade.
-- A revisão independente achou e motivou a correção da troca automática de recebimento. A revisão de cadastro não encontrou seleção silenciosa por digitação/blur.
+- Testes backend cobrem identidade, dados de documento, modo, agenda, transferências, cozinha, handoff, fiscal/retry, alertas e sessões.
+- Testes frontend cobrem decisões em sequência, respostas atrasadas, invalidação por dado/cliente/venda, preservação do rascunho, modo, retomada, pagamentos, impressão e coordenação de abas.
+- Typecheck Nuxt e verificações de diff/Ruff executados sobre os arquivos alterados.
+- Smoke real em navegador local: telefone da Ana de teste não associou automaticamente; corrigir preservou os dados. Retirada hoje exigiu as três etapas. Pedido `PDV-260912-F10` ficou com Pix pendente e ação de filipeta. Venda `PDV-260912-L92` usou CPF e e-mail existentes exclusivamente no documento após duas escolhas; consulta ao banco confirmou `customer_ref` ausente, `customer={}`, CPF em `fiscal.tax_id` e e-mail em `receipt.email`.
+- Prévia: `http://localhost:13619/`, API em `18619`, Gestor em `13620`. SQLite e dados sintéticos isolados em `/tmp/shopman-pdv-preview-619/`; fiscal simulado e notificações externas desativadas para testes. Não houve impressão física nem emissão fiscal real.
 
-Não houve ensaio em impressora física, sessão real do operador nem validação visual em navegador de produção. Os testes usam ambiente local e adaptadores de teste. Avisos de lifecycle Vue em harness e depreciação Node não impediram as suítes. O comando de drift usa banco local vazio e registrou avisos de tabela/configuração ainda não inicializada; concluiu com exit 0 e “No changes detected”.
+A coordenação de inatividade cobre abas do mesmo origin do PDV. Não promete resolver toda causa possível de perda de conexão ou expiração. Em entrega, a emissão continua usando somente o CPF pedido para o documento; cadastro identificado não autoriza puxar CPF silenciosamente. Dados fiscais insuficientes deixam pendência explícita até correção e nova tentativa.
 
-## Publicação e rollback
+## Publicação e migrações
 
-A migração `backstage.0063_cash_change_request_alert` acrescenta uma choice de alerta; não reescreve dados nem cria coluna. Front e backend devem ser publicados juntos para refletir a regra de retirada combinada hoje. Não requer reseed, credencial ou variável nova.
+Frontend e backend precisam ser publicados juntos. Nenhum reseed, credencial ou variável nova é necessário em produção. `sales_mode` usa JSON existente (`Session.data.pos` e `Order.data.pos`), sem coluna nova. O snapshot selado da sessão fornece o modo durante os callbacks iniciais do pedido.
 
-Pedidos antigos de troco sem `alert_id` continuam legíveis e atendíveis, sem backfill automático. A escolha explícita de recebimento é estado da tela, não um novo campo de pedido; uma comanda reaberta para revisão solicita nova escolha, enquanto recarga da mesma comanda no checkout preserva a confirmação se o tipo continuar igual.
+A migração `0063_cash_change_request_alert` e a Concierge `0064_concierge_alert_labels` foram conciliadas por `0065_merge_cash_change_concierge_alerts`, fixando a união das choices. Migrações anteriores preservadas. Rollback deve reverter código sem apagar eventos de caixa, alertas ou histórico de pagamento.
 
-Rollback por reversão dos commits desta branch; não apagar eventos de caixa nem alertas já gravados. Reverter a aplicação não exige apagar o histórico ou reconciliar pagamentos.
-
-## Integração coordenada com Concierge
-
-Após o PR620 entrar na main (`ed9a0d6dc`), a base foi incorporada nesta branch, sem conflitos textuais. A migração Concierge `0064_concierge_alert_labels` e a PDV `0063_cash_change_request_alert` partem ambas da 0062 e alteram a mesma lista de choices. A nova `0065_merge_cash_change_concierge_alerts` depende das duas e fixa a união dos tipos de alerta. Nenhum arquivo de migração anterior foi reescrito.
-
-Validação do estado de migração nas duas ordens de aplicação dos ramos: ambas chegam exatamente às choices atuais do modelo; grafo sem conflitos e `makemigrations --check --dry-run` sem drift. Os 134 testes de regressão (troco, filipeta, agendamento, identidade e preferências fiscais) passaram sobre esta base. Mantido PR em rascunho, sem merge/deploy, durante a janela de publicação do Concierge.
+Referência fiscal: [Integridade da entrega fiscal](execution/pos-20260912/fiscal-delivery-integrity.md).
