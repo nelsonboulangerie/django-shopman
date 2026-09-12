@@ -260,6 +260,13 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
     outcome = AgentOutcome(reply_text="")
     usage: dict = {}
     seen_calls: dict[str, int] = {}
+    tool_specs = tools_module.TOOL_SPECS
+    if not getattr(conversation, "_commercial_authority", False):
+        tool_specs = [
+            spec
+            for spec in tool_specs
+            if spec["name"] in tools_module.LIMITED_AUTHORITY_TOOL_NAMES
+        ]
     # Frases ditas ANTES de chamar uma ferramenta ("a taxa é R$ 8,00, deixa eu ver
     # os horários"). Sem isto elas morriam na transcrição: o cliente só via o
     # texto final, e a taxa que ele perguntou nunca chegava (medido em 04/09).
@@ -271,7 +278,7 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
             "model": model,
             "max_tokens": max_tokens,
             "system": system,
-            "tools": tools_module.TOOL_SPECS,
+            "tools": tool_specs,
             "messages": messages,
             # Segundo ponto de cache, no fim do histórico: o prefixo (sistema + turnos
             # anteriores) é lido do cache a um décimo do preço a cada ida.

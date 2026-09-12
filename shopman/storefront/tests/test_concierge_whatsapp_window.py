@@ -11,7 +11,7 @@ from django.urls import reverse
 from shopman.orderman.models import Order, Session
 
 from shopman.shop.models import Conversation, ConversationBinding, OutboundAttempt
-from shopman.storefront.concierge import service, tools, transport, webhook
+from shopman.storefront.concierge import agent, service, tools, transport, webhook
 from shopman.storefront.concierge.contracts import HandoffOutcome, SendOutcome
 from shopman.storefront.tests.test_concierge_engine import surface as surface_fixture
 
@@ -58,6 +58,11 @@ CONFIG = {
 def configured(settings, monkeypatch):
     settings.SHOPMAN_CONCIERGE = CONFIG
     settings.AI_ASSIST_API_KEY = "fake"
+    monkeypatch.setattr(
+        agent,
+        "run_agent",
+        lambda **_kwargs: agent.AgentOutcome(reply_text="Resposta inteligente em modo de consulta."),
+    )
     monkeypatch.setattr(service.timezone, "now", lambda: NOW)
     monkeypatch.setattr(webhook.timezone, "now", lambda: NOW)
     cache.clear()
@@ -129,7 +134,18 @@ def set_window_config(settings, **changes):
     }
 
 
-def test_live_field_opens_read_reply_without_identity_or_purchase(client, catalog, gateway):
+def test_live_field_opens_intelligent_read_reply_without_identity_or_purchase(
+    client, catalog, gateway, monkeypatch
+):
+    blocked = {}
+
+    def read_only_agent(*, conversation, **_kwargs):
+        ctx = tools.ToolContext(conversation, conversation.channel_ref)
+        menu = tools.browse_menu(ctx, query="Pão Francês", available_only=True)
+        blocked["mutation"] = tools.set_item(ctx, "PAO-FRANCES", 2)
+        return agent.AgentOutcome(reply_text=tools.render_result("browse_menu", menu))
+
+    monkeypatch.setattr(agent, "run_agent", read_only_agent)
     assert post(client, "2026-09-12 11:29:01.391392").json() == {
         "status": "queued",
         "queued": True,
@@ -147,8 +163,9 @@ def test_live_field_opens_read_reply_without_identity_or_purchase(client, catalo
 
     result = service.run_turn(conversation.pk, binding.pk)
 
-    assert result.fallback == "limited_assurance"
+    assert not result.fallback
     assert gateway and "Pão Francês" in "\n".join(gateway)
+    assert blocked["mutation"]["error"] == "authority_unavailable"
     assert OutboundAttempt.objects.get().state == "accepted"
     reloaded = Conversation.objects.get(pk=conversation.pk)
     assert not tools.set_item(tools.ToolContext(reloaded, "web"), "PAO-FRANCES", 2)["ok"]

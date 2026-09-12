@@ -111,12 +111,23 @@ def dynamic_block(conversation: Conversation, *, is_first_turn: bool, cart_summa
 
     if conversation.customer_name:
         lines.append(f"Cliente: {conversation.customer_name}.")
-    if conversation.phone:
+    commercial_authority = bool(getattr(conversation, "_commercial_authority", False))
+    if conversation.phone and commercial_authority:
         lines.append("Telefone conhecido: pode fechar pedido pelo chat.")
-    else:
+    elif conversation.phone:
+        lines.append("Telefone conhecido, mas este turno não pode alterar ou fechar pedido pelo chat.")
+    elif commercial_authority:
         lines.append(
             "Este contato NÃO tem telefone conhecido: pode tirar dúvidas, mas o pedido só fecha pelo site "
             "(send_web_link). Não prometa fechar aqui."
+        )
+    else:
+        lines.append("Este contato não tem telefone conhecido: pode tirar dúvidas; não prometa fechar pedido aqui.")
+    if not commercial_authority:
+        lines.append(
+            "Modo de consulta: converse normalmente e use as ferramentas de consulta disponíveis para "
+            "obter fatos atuais. Não prometa adicionar ou remover itens, alterar entrega, criar pedido, "
+            "pagamento, acesso ou aviso. Se o cliente quiser uma dessas ações, ofereça atendimento humano."
         )
     lines.append(f"Sacola: {cart_summary or 'vazia'}.")
     token = (conversation.quote or {}).get("token")

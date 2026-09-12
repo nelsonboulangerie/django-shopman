@@ -1635,6 +1635,21 @@ _HANDLERS = {
 
 TOOL_NAMES = tuple(_HANDLERS)
 
+# Uma entrada sem identidade estável do evento ainda pode conversar e consultar
+# fatos. O servidor não oferece ao modelo comandos que alteram sacola, entrega,
+# pedido, pagamento, acesso ou consentimento enquanto a autoridade comercial do
+# turno estiver fechada. Os guards abaixo continuam sendo a garantia primária.
+LIMITED_AUTHORITY_TOOL_NAMES = frozenset(
+    {
+        "browse_menu",
+        "view_cart",
+        "list_pickup_slots",
+        "order_status",
+        "last_order",
+        "handoff_to_human",
+    }
+)
+
 
 def execute(name: str, arguments: dict, ctx: ToolContext) -> dict:
     """Roda a ferramenta ``name``. Nunca levanta: erro vira resultado explicável."""

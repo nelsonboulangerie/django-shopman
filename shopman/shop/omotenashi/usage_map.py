@@ -113,9 +113,6 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),
     ),
-    "CONCIERGE_LIMITED_ASSURANCE": (
-        ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),
-    ),
     "CONCIERGE_MEDIA_UNSUPPORTED": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),
