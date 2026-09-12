@@ -105,11 +105,58 @@ def move_transport_identity(apps, schema_editor):
         Attempt.objects.using(database).bulk_create(attempts, batch_size=1000)
 
 
-def irreversible_transport_split(apps, schema_editor):
-    raise RuntimeError(
-        "shop.0051 is intentionally irreversible: transport identity now lives in "
-        "ConversationBinding and cannot be collapsed back into Conversation."
-    )
+def restore_transport_identity(apps, schema_editor):
+    """Collapse the transport split while the v2 schema still represents it.
+
+    A v2 conversation can hold one transport identity.  Refuse a lossy rollback
+    when v3 data already uses more than one binding; otherwise restore the old
+    columns and its tri-state delivery evidence.
+    """
+    Conversation = apps.get_model("shop", "Conversation")
+    Binding = apps.get_model("shop", "ConversationBinding")
+    Message = apps.get_model("shop", "ConversationMessage")
+    Attempt = apps.get_model("shop", "OutboundAttempt")
+    database = schema_editor.connection.alias
+
+    for conversation in Conversation.objects.using(database).all().iterator(chunk_size=1000):
+        bindings = list(
+            Binding.objects.using(database)
+            .filter(conversation_id=conversation.pk)
+            .order_by("id")[:2]
+        )
+        if len(bindings) != 1:
+            raise RuntimeError(
+                "shop.0051 rollback requires exactly one transport binding per conversation; "
+                f"conversation {conversation.pk} has {len(bindings)}."
+            )
+        binding = bindings[0]
+        Conversation.objects.using(database).filter(pk=conversation.pk).update(
+            provider=binding.provider,
+            account="legacy_unverified" if binding.account == "unverified" else binding.account,
+            transport_channel=binding.transport_channel,
+            subscriber_id=binding.subject,
+            handoff_sync_state=(
+                "legacy" if binding.handoff_sync_state == "not_applied" else binding.handoff_sync_state
+            ),
+        )
+
+    replies = Message.objects.using(database).filter(kind="reply").iterator(chunk_size=1000)
+    for message in replies:
+        attempt = (
+            Attempt.objects.using(database)
+            .filter(message_id=message.pk)
+            .order_by("-attempt_no")
+            .first()
+        )
+        delivered = None
+        if attempt is not None:
+            if attempt.code == "migrated_not_delivered":
+                delivered = False
+            elif attempt.code == "migrated_delivery_evidence" or attempt.state in {"delivered", "read"}:
+                delivered = True
+            elif attempt.state == "not_applied":
+                delivered = False
+        Message.objects.using(database).filter(pk=message.pk).update(delivered=delivered)
 
 
 class Migration(migrations.Migration):
@@ -303,7 +350,7 @@ class Migration(migrations.Migration):
             model_name="conversationmessage",
             name="shop_convmsg_external_id_unique",
         ),
-        migrations.RunPython(move_transport_identity, migrations.RunPython.noop),
+        migrations.RunPython(move_transport_identity, restore_transport_identity),
         migrations.AddConstraint(
             model_name="conversationmessage",
             constraint=models.UniqueConstraint(
@@ -323,6 +370,14 @@ class Migration(migrations.Migration):
             model_name="conversation",
             name="shop_conv_transport_identity_unique",
         ),
+        # The temporary default is used only if this migration is reversed:
+        # Django must recreate the non-null v2 column before RunPython can
+        # restore its value from ConversationBinding.
+        migrations.AlterField(
+            model_name="conversation",
+            name="subscriber_id",
+            field=models.CharField(default="", max_length=512, verbose_name="assinante ManyChat"),
+        ),
         migrations.RemoveField(model_name="conversation", name="provider"),
         migrations.RemoveField(model_name="conversation", name="account"),
         migrations.RemoveField(model_name="conversation", name="transport_channel"),
@@ -339,5 +394,4 @@ class Migration(migrations.Migration):
                 verbose_name="estado do envio",
             ),
         ),
-        migrations.RunPython(migrations.RunPython.noop, irreversible_transport_split),
     ]

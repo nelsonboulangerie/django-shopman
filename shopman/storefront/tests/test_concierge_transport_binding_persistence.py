@@ -1,7 +1,5 @@
 """Persistência canônica: conversa lógica separada de transporte e tentativas."""
 
-from importlib import import_module
-
 import pytest
 from django.core.exceptions import FieldDoesNotExist
 from django.db import IntegrityError, connections, router, transaction
@@ -124,6 +122,21 @@ def test_0051_moves_transport_without_losing_logical_conversation(tmp_path, djan
         assert attempt.state == "delivered"
         assert attempt.code == "migrated_delivery_evidence"
         assert len(attempt.payload_hash) == 64
+
+        executor = MigrationExecutor(isolated)
+        executor.migrate(before)
+        restored_apps = executor.loader.project_state(before).apps
+        RestoredConversation = restored_apps.get_model("shop", "Conversation")
+        RestoredMessage = restored_apps.get_model("shop", "ConversationMessage")
+        restored = RestoredConversation.objects.using(alias).get(pk=conversation.pk)
+        assert (
+            restored.provider,
+            restored.account,
+            restored.transport_channel,
+            restored.subscriber_id,
+            restored.handoff_sync_state,
+        ) == ("manychat", "account-1", "whatsapp", "subject-123", "accepted")
+        assert RestoredMessage.objects.using(alias).get(pk=reply.pk).delivered is True
     finally:
         router.routers.remove(alias_router)
         if isolated is not None:
@@ -283,9 +296,3 @@ def test_outbound_attempts_keep_receipts_and_attempt_numbers_distinct():
     )
     assert other_provider.pk
     assert not hasattr(whatsapp_reply, "provider_receipt_ref")
-
-
-def test_schema_split_is_explicitly_irreversible():
-    migration = import_module("shopman.shop.migrations.0051_concierge_transport_bindings")
-    with pytest.raises(RuntimeError, match="intentionally irreversible"):
-        migration.irreversible_transport_split(None, None)
