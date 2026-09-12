@@ -299,7 +299,7 @@ describe("CPF/e-mail do documento têm decisão própria", () => {
     dollarFetch.mockResolvedValue({customer: {...owner, ref: "CUST-A", tax_id: "11144477735", fiscal_prefs: {}, saved_addresses: []}});
     await nextTick(); await h.sale.prepareCheckout(); await h.sale.confirmCustomerDecision("__save__");
     expect(h.calls).toHaveLength(0);
-    expect(h.sale.customerDecision.value?.receiptTaxIdOverwrite).toEqual({from: "11144477735", to: CPF});
+    expect(h.sale.customerDecision.value?.receiptTaxIdOverwrite).toMatchObject({from: "11144477735", to: CPF, targetRef: "CUST-A"});
     await h.sale.confirmCustomerDecision("__save_confirmed__");
     expect(h.calls[0]).toMatchObject({action: "save", target_ref: "CUST-A", tax_id_overwrite_confirmed: true, tax_id_before: "11144477735"});
   });

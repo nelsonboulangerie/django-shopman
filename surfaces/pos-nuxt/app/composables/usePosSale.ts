@@ -1667,7 +1667,7 @@ export function usePosSale(deps: PosSaleDeps) {
           const oldTaxId = (response.customer.tax_id || "").replace(/\D/g, "");
           if (newTaxId && oldTaxId && newTaxId !== oldTaxId && (!confirmedOverwrite || decision.receiptTaxIdOverwrite?.from !== oldTaxId)) {
             receiptOverwriteTarget = actionTarget || targetRef;
-            customerDecision.value = { ...decision, receiptTaxIdOverwrite: { from: oldTaxId, to: newTaxId } };
+            customerDecision.value = { ...decision, receiptTaxIdOverwrite: { from: oldTaxId, to: newTaxId, customerName: response.customer.name, targetRef } };
             return;
           }
         } else response = { customer: null };
