@@ -75,12 +75,21 @@ NON_MIRROR = {
     # Corpos de request (entrada, não projection).
     "SetSkuQtySerializer",
     "CheckoutSerializer",
+    "CheckoutAddressLabelSerializer",
     "ReverseGeocodeRequestSerializer",
+    "StockAlertSubscribeRequestSerializer",
+    "StockAlertSubscriptionRefSerializer",
+    "StockAlertSubscriptionControlRequestSerializer",
+    "StockAlertManagementActionSerializer",
     # Envelope de erro canônico ({detail, ...}).
     "DetailSerializer",
     # Respostas montadas como dict ad-hoc no view (não há dataclass fonte).
     "CheckoutResponseSerializer",
     "AvailabilityResponseSerializer",
+    "StockAlertSubscribeResponseSerializer",
+    "StockAlertSessionStateSerializer",
+    "StockAlertSubscriptionControlResponseSerializer",
+    "StockAlertManagementStateSerializer",
     "ReverseGeocodeResponseSerializer",
     "CollectionSerializer",
     "OrderHistoryItemSerializer",

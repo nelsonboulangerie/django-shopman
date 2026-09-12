@@ -156,6 +156,7 @@ def add_offer_items(
     sacola e voltam na resposta, para a tela explicar em vez de mentir.
     """
     from shopman.shop.services import customer_orders
+    from shopman.shop.services.cart import CartUnavailableError
 
     added: list[str] = []
     skipped: list[SkippedOfferItem] = []
@@ -174,7 +175,7 @@ def add_offer_items(
                 unit_price_q=customer_orders._price_q(product, channel_ref=channel_ref),
                 name=product.name,
             )
-        except Exception:
+        except CartUnavailableError:
             # Inclui `CartUnavailableError` (estoque recusou). Uma oferta que não pode
             # ser montada inteira ainda vale pelo que couber — melhor sacola parcial
             # explicada que erro na cara de quem clicou num anúncio.

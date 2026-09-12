@@ -21,7 +21,7 @@ from typing import Literal
 from django.conf import settings
 from django.utils import timezone
 from shopman.craftsman import craft
-from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder
+from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderEvent
 from shopman.stockman import Position
 from shopman.utils import units
 from shopman.utils.units import UnitError
@@ -93,6 +93,7 @@ class ProductionActionProjection:
         "start",
         "advance_step",
         "finish",
+        "review_qc",
         "correct_qc",
         "quick_finish",
         "void",
@@ -767,6 +768,22 @@ def _qc_actions(
     actions: list[ProductionActionProjection] = []
     for card in cards:
         if card.closed:
+            if not card.quality_reviewed:
+                actions.append(
+                    _production_action(
+                        ref=f"review_qc:{card.pk}",
+                        kind="review_qc",
+                        label="Confirmar qualidade",
+                        priority=20,
+                        enabled=card.can_correct,
+                        reason="Somente a gestão pode revisar uma fornada concluída.",
+                        href=f"/api/v1/backstage/production/{card.pk}/quality-review/",
+                        payload_schema="ProductionQualityReviewMutationRequest",
+                        expected_rev=card.rev,
+                        confirmation_title="Confirmar o QC desta fornada?",
+                        confirmation_label="Confirmar qualidade",
+                    )
+                )
             actions.append(
                 _production_action(
                     ref=f"correct_qc:{card.pk}",
@@ -1021,6 +1038,7 @@ class QCOrderCardProjection:
     can_close: bool
     closed: bool
     can_correct: bool
+    quality_reviewed: bool
     partition: tuple[QCPartitionGroupProjection, ...]
     correction_count: int
     last_correction_at_display: str
@@ -1942,6 +1960,14 @@ def build_qc_kiosk(
         if wo.started_at and not closed:
             elapsed = max(0, int((now - wo.started_at).total_seconds() // 60))
         started_qty = _wo_started_qty(wo)
+        quality_reviewed = any(
+            event.kind
+            in {
+                WorkOrderEvent.Kind.QUALITY_REVIEWED,
+                WorkOrderEvent.Kind.QUALITY_CORRECTED,
+            }
+            for event in wo.events.all()
+        )
         card = QCOrderCardProjection(
             pk=wo.pk,
             ref=wo.ref,
@@ -1963,6 +1989,7 @@ def build_qc_kiosk(
             ),
             closed=closed,
             can_correct=closed and access.can_correct_qc,
+            quality_reviewed=quality_reviewed,
             partition=effective_partition,
             correction_count=correction_count,
             last_correction_at_display=last_correction_at_display,

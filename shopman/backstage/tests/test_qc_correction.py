@@ -85,7 +85,11 @@ def _quality_announcement(work_order, *, status):
 
 
 @pytest.mark.django_db
-def test_correction_versions_lots_moves_stock_and_effective_projection(qc_recipe, monkeypatch):
+def test_correction_versions_lots_moves_stock_and_effective_projection(
+    qc_recipe,
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
     from shopman.craftsman.signals import production_changed
 
     from shopman.shop.services import quality as quality_service
@@ -106,27 +110,28 @@ def test_correction_versions_lots_moves_stock_and_effective_projection(qc_recipe
 
     production_changed.connect(receiver, dispatch_uid="test-qc-correction-no-refinish", weak=False)
     try:
-        corrected = production.apply_quality_correction(
-            work_order_id=wo.pk,
-            partition=[
-                {"quantity": "6", "quality_grade_ref": "standard"},
-                {
-                    "quantity": "4",
-                    "quality_grade_ref": "fair",
-                    "quality_defect_ref": "misshapen",
-                },
-            ],
-            reason="Quatro unidades ficaram menores após a conferência.",
-            actor="production:gerente",
-            expected_rev=original_rev,
-            idempotency_key="correct-qc-1",
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            corrected = production.apply_quality_correction(
+                work_order_id=wo.pk,
+                partition=[
+                    {"quantity": "6", "quality_grade_ref": "standard"},
+                    {
+                        "quantity": "4",
+                        "quality_grade_ref": "fair",
+                        "quality_defect_ref": "misshapen",
+                    },
+                ],
+                reason="Quatro unidades ficaram menores após a conferência.",
+                actor="production:gerente",
+                expected_rev=original_rev,
+                idempotency_key="correct-qc-1",
+            )
     finally:
         production_changed.disconnect(dispatch_uid="test-qc-correction-no-refinish")
 
     assert corrected.finished == Decimal("10")
     assert corrected.rev == original_rev + 1
-    assert seen == [], "correction must never replay the finished signal"
+    assert seen == ["quality_reviewed"], "correction must publish only the reviewed QC fact"
     assert (
         list(
             WorkOrderItem.objects.filter(work_order=wo).values_list(
@@ -173,6 +178,153 @@ def test_correction_versions_lots_moves_stock_and_effective_projection(qc_recipe
     ]
     action = next(item for item in kiosk.actions if item.ref == f"correct_qc:{wo.pk}")
     assert action.href.endswith(f"/{wo.pk}/quality-correction/")
+
+
+@pytest.mark.django_db
+def test_manager_review_is_immutable_exactly_once_and_updates_qc_projection(qc_recipe, monkeypatch):
+    wo = _finished(qc_recipe, monkeypatch)
+    expected_rev = wo.rev
+    kwargs = {
+        "work_order_id": wo.pk,
+        "actor": "production:gerente",
+        "expected_rev": expected_rev,
+        "idempotency_key": "review-qc-once",
+    }
+
+    first = production.apply_quality_review(**kwargs)
+    second = production.apply_quality_review(**kwargs)
+
+    assert first.pk == second.pk == wo.pk
+    event = WorkOrderEvent.objects.get(
+        work_order=wo,
+        kind=WorkOrderEvent.Kind.QUALITY_REVIEWED,
+    )
+    assert event.actor == "production:gerente"
+    assert event.payload["partition"][0]["quality_grade_ref"] == "standard"
+    assert WorkOrderEvent.objects.filter(
+        work_order=wo,
+        kind=WorkOrderEvent.Kind.QUALITY_REVIEWED,
+    ).count() == 1
+
+    kiosk = build_qc_kiosk(selected_date=date.today())
+    card = next(item for item in kiosk.orders if item.pk == wo.pk)
+    assert card.quality_reviewed is True
+    assert not any(item.ref == f"review_qc:{wo.pk}" for item in kiosk.actions)
+
+
+@pytest.mark.django_db
+def test_bake_alert_is_pending_at_finish_and_queues_only_after_manager_review(
+    qc_recipe,
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
+    from unittest.mock import MagicMock
+
+    from shopman.storefront.models import (
+        StockAlertDelivery,
+        StockAlertOccurrence,
+    )
+    from shopman.storefront.services import stock_alerts
+
+    stock_alerts.subscribe(
+        qc_recipe.output_sku,
+        phone="+5543999997777",
+        alert_type="production_ready",
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        wo = _finished(qc_recipe, monkeypatch)
+
+    occurrence = StockAlertOccurrence.objects.get(source_ref=wo.ref)
+    assert occurrence.status == StockAlertOccurrence.Status.PENDING
+    assert not StockAlertDelivery.objects.exists()
+
+    monkeypatch.setattr(
+        "shopman.storefront.services.sku_state.resolve",
+        lambda **_kwargs: MagicMock(can_add_to_cart=True, available_qty=Decimal("10")),
+    )
+    with django_capture_on_commit_callbacks(execute=True):
+        production.apply_quality_review(
+            work_order_id=wo.pk,
+            actor="production:gerente",
+            expected_rev=wo.rev,
+            idempotency_key="review-qc-alert-release",
+        )
+
+    occurrence.refresh_from_db()
+    assert occurrence.status == StockAlertOccurrence.Status.ELIGIBLE
+    assert occurrence.status_reason == "quality_reviewed_sellable"
+    assert StockAlertDelivery.objects.filter(
+        occurrence=occurrence,
+        status=StockAlertDelivery.Status.QUEUED,
+    ).count() == 1
+
+
+@pytest.mark.django_db
+def test_fair_quality_review_remains_ineligible_for_remote_channel(qc_recipe, monkeypatch):
+    from shopman.shop.services import quality as quality_service
+
+    wo = _finished(
+        qc_recipe,
+        monkeypatch,
+        partition=[
+            {
+                "quantity": "10",
+                "quality_grade_ref": "fair",
+                "quality_defect_ref": "misshapen",
+            }
+        ],
+    )
+    production.apply_quality_review(
+        work_order_id=wo.pk,
+        actor="production:gerente",
+        expected_rev=wo.rev,
+        idempotency_key="review-qc-fair",
+    )
+
+    assert quality_service.reviewed_saleable_quantity(wo.ref, channel_ref="web") == 0
+
+
+@pytest.mark.django_db
+def test_quality_review_api_requires_manager_capability(client, qc_recipe, monkeypatch):
+    wo = _finished(qc_recipe, monkeypatch)
+    floor = grant_production_operator(
+        User.objects.create_user("qc-review-floor", password="pw", is_staff=True)
+    )
+    url = reverse("api-backstage-wo-quality-review", args=[wo.pk])
+    body = {
+        "expected_rev": wo.rev,
+        "idempotency_key": "review-qc-api",
+    }
+    client.force_login(floor)
+    denied = production_mutation_post(client, url, body, content_type="application/json")
+    assert denied.status_code == 403
+
+    floor.user_permissions.add(
+        Permission.objects.get(
+            content_type__app_label="backstage",
+            codename="correct_production_qc",
+        )
+    )
+    floor = User.objects.get(pk=floor.pk)
+    client.force_login(floor)
+    accepted = production_mutation_post(client, url, body, content_type="application/json")
+    assert accepted.status_code == 200, accepted.content
+    assert accepted.json()["current"]["rev"] == wo.rev + 1
+
+    replay = production_mutation_post(client, url, body, content_type="application/json")
+    assert replay.status_code == 200, replay.content
+    assert WorkOrderEvent.objects.filter(
+        work_order=wo,
+        kind=WorkOrderEvent.Kind.QUALITY_REVIEWED,
+    ).count() == 1
+
+    conflicting_retry = production_mutation_post(
+        client,
+        url,
+        {**body, "expected_rev": wo.rev + 1},
+        content_type="application/json",
+    )
+    assert conflicting_retry.status_code == 409
 
 
 @pytest.mark.django_db

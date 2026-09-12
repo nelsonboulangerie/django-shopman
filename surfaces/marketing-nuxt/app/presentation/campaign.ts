@@ -70,8 +70,10 @@ export function alertsNote(
   const pending = counts?.alerts_count;
   if (pending === undefined || pending > 0) return "";
   const already = counts?.alerts_notified_count ?? 0;
-  if (already === 1) return "A pessoa que pediu aviso deste produto já foi avisada";
-  if (already > 1) return `As ${already} pessoas que pediram aviso deste produto já foram avisadas`;
+  if (already === 1)
+    return "A pessoa que pediu aviso deste produto já foi avisada";
+  if (already > 1)
+    return `As ${already} pessoas que pediram aviso deste produto já foram avisadas`;
   return "Ninguém pediu para ser avisado deste produto ainda";
 }
 
@@ -334,8 +336,10 @@ export function isStillReviewable(announcement: Announcement): boolean {
  * próxima janela). O gestor fechava a tela achando que já estava no ar. Quem sabe o que
  * aconteceu é o servidor, e ele devolve `scheduled`.
  */
-export function approvalMessage(resposta: { scheduled?: boolean } | null | undefined): string {
-  return resposta?.scheduled ? "Anúncio agendado." : "Anúncio publicado.";
+export function approvalMessage(
+  resposta: { scheduled?: boolean } | null | undefined,
+): string {
+  return resposta?.scheduled ? "Entrega agendada." : "Entrega iniciada.";
 }
 
 /**

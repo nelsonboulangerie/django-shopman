@@ -3,6 +3,7 @@ import {
   createError,
   getQuery,
   getRequestHeader,
+  getRequestURL,
   readRawBody,
   setResponseHeader,
   setResponseStatus,
@@ -135,6 +136,13 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
     accept: getRequestHeader(event, 'accept') || 'application/json'
   }
 
+  for (const name of ['idempotency-key', 'x-idempotency-key', 'x-stock-alert-capability']) {
+    const value = getRequestHeader(event, name)
+    if (value) headers[name] = value
+  }
+  // Authenticated API responses must never become a shared-cache snapshot.
+  setResponseHeader(event, 'cache-control', 'private, no-store')
+
   let cookie = getRequestHeader(event, 'cookie')
   if (cookie) headers.cookie = cookie
 
@@ -156,6 +164,11 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
   if (forwardedFor) headers['x-forwarded-for'] = forwardedFor
 
   if (isUnsafeMethod) {
+    const origin = getRequestHeader(event, 'origin')
+    const site = getRequestHeader(event, 'sec-fetch-site')
+    if ((origin && origin !== getRequestURL(event).origin) || site === 'cross-site' || site === 'same-site') {
+      throw createError({ statusCode: 403, statusMessage: 'Origem não autorizada.' })
+    }
     headers.origin = djangoOrigin
     headers.referer = `${djangoOrigin}/`
   }
@@ -195,6 +208,8 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
     }
   }
 
+  const retryAfter = response.headers.get('retry-after')
+  if (retryAfter) event.node.res.setHeader('Retry-After', retryAfter)
   setResponseStatus(event, response.status)
   const contentTypeResponse = response.headers.get('content-type')
   if (shouldSanitizeHtmlError(response.status, contentTypeResponse, normalizedPath)) {

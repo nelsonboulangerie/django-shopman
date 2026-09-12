@@ -11,6 +11,8 @@ import logging
 from collections import Counter
 from decimal import Decimal
 
+from django.db import transaction
+
 from shopman.shop.adapters import get_adapter
 
 logger = logging.getLogger(__name__)
@@ -63,6 +65,7 @@ class CheckoutDefaultsService:
         }
 
     @classmethod
+    @transaction.atomic
     def save_defaults(
         cls,
         customer_ref: str,
@@ -72,8 +75,15 @@ class CheckoutDefaultsService:
     ) -> None:
         """Salva defaults explícitos (usuário marcou 'salvar como padrão')."""
         adapter = get_adapter("customer")
+        protected_keys = set()
+        if source.startswith("order:"):
+            from shopman.guestman.contrib.preferences.models import CustomerPreference
+            from shopman.orderman.models import Order
+            order = Order.objects.filter(ref=source.removeprefix("order:")).first()
+            if order is not None:
+                protected_keys = set(CustomerPreference.objects.select_for_update().filter(customer__ref=customer_ref, category=CATEGORY, preference_type="explicit", updated_at__gt=order.created_at).exclude(source=source).values_list("key", flat=True))
         for key, value in data.items():
-            if key in KEYS and value:
+            if key in KEYS and value and f"{channel_ref}:{key}" not in protected_keys:
                 adapter.set_preference(
                     customer_ref=customer_ref,
                     category=CATEGORY,

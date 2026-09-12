@@ -15,6 +15,8 @@ interface OverlayLockOptions {
    * para o elemento que abriu a overlay.
    */
   focus?: MaybeRefOrGetter<HTMLElement | null | undefined>
+  /** Elemento explícito que deve recuperar o foco; por padrão usa o foco pré-abertura. */
+  restoreFocus?: MaybeRefOrGetter<HTMLElement | null | undefined>
 }
 
 const FOCUSABLE =
@@ -55,7 +57,7 @@ export function useOverlayLock (isOpen: Ref<boolean>, options: OverlayLockOption
     if (!import.meta.client) return
     isLocked.value = open
     if (open) {
-      lastActive = document.activeElement as HTMLElement | null
+      lastActive = toValue(options.restoreFocus) ?? document.activeElement as HTMLElement | null
       for (const el of resolveInert()) {
         el.inert = true
         inertEls.push(el)

@@ -1,0 +1,68 @@
+Storefront W00-W10 — revalidação após reconciliação com a main
+Data: 2026-09-11
+
+Base do GitHub: 1138c95eee0862630330328cf3bfe2f0b6424796
+Branch: codex/storefront-operational-excellence-20260910
+
+Preservação e integração
+- Os 18 commits da candidata foram rebaseados sobre a main do GitHub.
+- A implementação operacional mais recente da main para comandos idempotentes,
+  consentimento de alertas e configuração do smoke foi preservada.
+- A migração de claim passou de storefront.0003 para storefront.0004, depois da
+  migração canônica de evidência de consentimento já presente na main.
+- Fixtures de migração e auditoria foram adaptadas ao modelo canônico mais novo;
+  os oráculos de segurança não foram enfraquecidos.
+
+Resultados finais sobre a base reconciliada
+- Backend Storefront e fronteiras: 1.536 passed, 6 skipped. Os seis skips são os
+  casos exclusivos de PostgreSQL e foram executados no gate abaixo.
+- Gate PostgreSQL 16 + Redis 7: 355 passed, 0 skipped.
+- Orderman isolado: 291 passed.
+- Frontend unitário: 552 passed em 60 arquivos.
+- Typecheck: passou.
+- ESLint: 0 erros; 5 warnings de ordem de atributos já existentes em
+  WhatsappVerifyPanel.vue.
+- Build Nuxt de produção: passou.
+- Migrações: makemigrations --check --dry-run sem drift.
+- Checks de implantação: 51 passed; 3 warnings esperados de override de DATABASES.
+- Ruff nos arquivos Python de produto alterados: passou.
+- git diff --check: passou.
+- Chromium + Nuxt BFF + Django real: 28 passed.
+- Chromium com backend mock, limitado aos specs aplicáveis: 6 passed e 1 skipped;
+  o skip é o fluxo explicitamente marcado como dependente de Django real.
+
+Dependências do laboratório
+- webauthn==2.8.0, já declarado pelo pacote Doorman, foi instalado no ambiente.
+- playwright e pytest-playwright foram instalados; pytest-playwright passou a ser
+  declarado no extra dev raiz para que o gate existente tenha suas fixtures.
+
+Tentativa descartada
+- Um comando Playwright sem seleção de arquivos também coletou a suíte histórica
+  tests/e2e/alpha contra o backend mock vazio. Ele foi interrompido, pois mistura
+  dois harnesses incompatíveis e não constitui resultado do produto. A suíte
+  aplicável foi executada separadamente e passou, conforme acima.
+
+Limites
+- Nenhum provider externo, cobrança, mensagem ou transação real foi acionado.
+- O teste humano J06 ocorreu antes do rebase. Os commits de identidade e interface
+  foram reaplicados sem conflito; a candidata final recebeu regressão automatizada,
+  mas a observação humana não foi repetida e não é apresentada como medição nova.
+- TalkBack, rollout de código, promoção do ambiente, produção e retenção de recibos/dados
+  continuam fora desta execução.
+- Servidores manuais encerrados; bancos PostgreSQL descartáveis removidos e Redis
+  DB 14 esvaziado após a validação.
+
+Correções reveladas pela primeira execução do PR
+- O Gate da meia-correção encontrou três `except: pass` e um `logger.debug` em
+  dois arquivos de produção tocados pela candidata. As quatro degradações foram
+  mantidas e ganharam o marcador canônico com a razão explícita; o gate passou.
+- O job purchase-nuxt expôs uma corrida já presente na main: a espera pelo campo
+  da gaveta podia consumir todos os callbacks de frame antes de um timer montar o
+  Teleport. A espera agora cede um ciclo de tarefas antes do frame.
+- Prova da corrida antes: falha local na 3ª de 20 repetições, igual à CI.
+- Prova depois: 50/50 repetições focadas; 93/93 testes purchase-nuxt; typecheck,
+  lint e build de produção passaram.
+- O gate `ruff check .` também inclui `baseline_reproductions.py`, preservado no
+  dossiê. O script recebeu somente formatação automática e remoção de um import
+  sem uso; os sete cenários e suas asserções permaneceram iguais. O gate completo
+  passou e o hash do artefato foi renovado.

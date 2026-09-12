@@ -1,0 +1,59 @@
+D07 — validação final da assinatura persistente “Avise-me”
+Data: 2026-09-11
+Branch: codex/storefront-operational-excellence-20260910
+
+Contrato comprovado
+- A assinatura continua ativa após uma entrega aceita e só deixa de ser elegível por
+  pausa, cancelamento, prova inválida ou opt-out global. Não expira por idade.
+- stock_back cria uma ocorrência por ciclo indisponível→disponível e fecha o ciclo
+  mesmo quando a última assinatura foi cancelada ou pausada.
+- production_ready usa a identidade estável da ordem/fornada; replay não cria outra
+  ocorrência ou entrega.
+- A entrega é única por assinatura + ocorrência + finalidade + canal e reutiliza a
+  Directive/recibo canônicos.
+- Pausa, cancelamento, consentimento e disponibilidade são rechecados sob o lock do
+  canal imediatamente antes do adapter.
+- Aceite remoto incerto não é reenviado às cegas: fica indeterminate e abre o alerta
+  operacional existente. Falha determinística permanece retryable na mesma Directive.
+- Falha parcial mantém recibos independentes: a entrega aceita não é repetida e a
+  entrega recusada permanece recuperável.
+- Grade/QC não vendável cria ocorrência bloqueada sem consumir a assinatura.
+- Preferências e a capacidade anônima permitem pausar, retomar e cancelar o aviso
+  específico em outro aparelho sem expor telefone ou customer_ref. GET não altera estado.
+- Uma inscrição legada sem prova não aparece como ativa nem é promovida silenciosamente;
+  nova confirmação encerra a linha legada e cria evidência verificável.
+- No público de Marketing, o merge canônico já deduplica o telefone na mesma campanha
+  e preserva as razões de origem; não foi criado segundo ledger ou fila.
+
+Resultados frescos após a revisão final
+- SQLite focado (alertas, migração, conta, intenções, audiência e ofertas):
+  149 passed em 19,37 s.
+- PostgreSQL 16 (alertas + concorrência com duas conexões):
+  59 passed em 16,28 s; a corrida criou exatamente uma ocorrência e uma entrega.
+- PostgreSQL 16, expansão mista a partir de storefront.0003:
+  1 passed em 18,96 s; 1.000 recibos preservados, INSERT por modelo antigo após
+  expansão aceito, inscrição verificada preferida à duplicata sem prova e default
+  de pause_reason compatível com worker antigo.
+- Admin/Unfold canônico: check de maturidade passou; 268 passed.
+- makemigrations --check --dry-run: No changes detected.
+- Ruff nos arquivos Python alterados: All checks passed.
+- git diff --check: passou.
+
+Resultados amplos já executados depois da implementação D07
+- Storefront completo final: 1.519 passed, 6 skips exclusivos de PostgreSQL; os casos de
+  PostgreSQL foram executados no gate específico.
+- Frontend completo: 552 passed em 60 arquivos; typecheck e build passaram; lint teve
+  0 erros e 5 warnings preexistentes em WhatsappVerifyPanel.vue.
+- Chromium com Nuxt BFF + Django real: 28 passed.
+- Shop amplo: 4.345 passed, 31 skipped, 31 deselected e 2 falhas na fake _Cart do
+  teste de ofertas, que ainda lançava RuntimeError depois que a produção passou a
+  tratar somente CartUnavailableError. A fake foi corrigida sem ampliar a exceção de
+  produção; test_offers.py então passou 19/19. A suíte ampla não foi repetida porque
+  o único delta era a fixture desse arquivo.
+
+Limites
+- Nenhum provider externo, mensagem, pagamento, pedido real, rollout ou promoção de
+  configuração foi executado.
+- Retenção de recibos e dados históricos continua pendente sob a proteção atual; a
+  vigência da assinatura foi definida até pausa/cancelamento, sem expiração automática.
+- Os testes automatizados não medem compreensão, esforço, abandono ou ganho humano.

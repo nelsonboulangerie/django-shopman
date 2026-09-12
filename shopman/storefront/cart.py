@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 
+from django.db import transaction
 from django.http import HttpRequest
 from shopman.orderman.models import Session
 from shopman.utils.monetary import format_money
@@ -80,6 +81,7 @@ class CartService:
         }
 
     @staticmethod
+    @transaction.atomic
     def _link_customer(request: HttpRequest, session_key: str) -> bool:
         """Idempotently persist the authenticated customer (ref + group) onto the
         cart session. Returns ``True`` when the session was actually updated.
@@ -90,9 +92,9 @@ class CartService:
         payload = CartService._customer_link(request)
         if not payload:
             return False
-        session = cart_mutations.get_open_session(
-            session_key=session_key, channel_ref=CHANNEL_REF
-        )
+        session = Session.objects.select_for_update().filter(
+            session_key=session_key, channel_ref=CHANNEL_REF, state="open"
+        ).first()
         if session is None:
             return False
         existing = (session.data or {}).get("customer") or {}
@@ -224,6 +226,19 @@ class CartService:
             if item.get("line_id") == line_id:
                 return item
         return None
+
+    @staticmethod
+    @transaction.atomic
+    def clear_items(request: HttpRequest) -> None:
+        """Explicit replacement retains the authorized Session and its context."""
+        key = request.session.get("cart_session_key")
+        if not key:
+            return
+        session = cart_mutations.lock_cart_session(session_key=key, channel_ref=CHANNEL_REF)
+        if session is None or session.state != "open":
+            return
+        for line in list(session.items):
+            cart_mutations.remove_item(session_key=key, channel_ref=CHANNEL_REF, line_id=line["line_id"], sku=line["sku"])
 
     @staticmethod
     def has_items(request: HttpRequest) -> bool:

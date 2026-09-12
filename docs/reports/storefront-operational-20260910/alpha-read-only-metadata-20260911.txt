@@ -1,0 +1,22 @@
+Conferência externa somente leitura — 2026-09-11 12:10 UTC
+
+Escopo
+- Consulta DNS do endereço de alpha documentado.
+- Leitura dos metadados não secretos do app pelo contexto doctl existente.
+- Nenhum deploy, alteração de spec, página de produção, variável, segredo, banco, mensagem ou transação.
+
+Fatos observados
+- alpha.nelsonboulangerie.com.br: sem registro A ou CNAME na consulta.
+- App ID documentado: 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f.
+- Nome do app: shopman-alpha.
+- Fase do deployment ativo: ACTIVE.
+- Deployment ativo criado em: 2026-09-11T11:48:09Z.
+- Ingress padrão: https://shopman-staging-cdjpy.ondigitalocean.app.
+- Live URL: https://menu.nelsonboulangerie.com.br.
+- Domínio primário no spec vivo: menu.nelsonboulangerie.com.br.
+- alpha.nelsonboulangerie.com.br não consta entre os domínios do spec vivo.
+
+Classificação
+- Comprovado: configuração viva e runbook divergem quanto ao domínio do alpha e ao domínio primário.
+- Hipótese não assumida: a troca pode ter sido uma decisão operacional posterior de terceiros.
+- Decisão existente aplicável: D06 exige confirmar coorte/ambiente e autorização antes de exposição; nenhuma alteração foi feita.

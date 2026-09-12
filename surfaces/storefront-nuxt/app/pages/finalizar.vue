@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { navigateTo } from '#app'
-import type { CheckoutMutationResponse, CheckoutResponse } from '~/types/shopman'
-import { addressLabelDisplay, labelPatchPayload, type AddressSelection, type AddressLabelKey } from '~/presentation/address'
+import type { CartProjection, CartResponse, CheckoutMutationResponse, CheckoutResponse } from '~/types/shopman'
+import type { AddressSelection, AddressLabelKey } from '~/presentation/address'
 import { reviewWaitlist } from '~/presentation/cart'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
 import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
@@ -110,6 +110,8 @@ watch(useLoyalty, async (enabled) => {
   }
 })
 const submitting = ref(false)
+const confirmedTrackingUrl = ref('')
+const confirmationUnknown = ref(false)
 const serverError = ref('')
 const fieldErrors = ref<Record<string, string>>({})
 
@@ -143,6 +145,7 @@ const pickupSwapOffer = ref(false)
 const identityConfirmOffer = ref(false)
 const { confirm: confirmByWhatsApp, starting: confirming } = useWhatsAppConfirm()
 const quotingZone = ref(false)
+const draftSyncing = ref(false)
 const changePhoneOpen = ref(false)
 const addressLabelOpen = ref(false)
 const savedAddressIdForLabel = ref<number | null>(null)
@@ -232,7 +235,29 @@ const { data, pending, error, refresh } = await useFetch<CheckoutResponse>(apiPa
   query: checkoutQuery
 })
 
-const checkout = computed(() => data.value?.checkout || null)
+// Uma leitura iniciada antes de uma mutação do rascunho pode terminar depois
+// dela. Os demais campos da projection (datas/slots/copy) continuam úteis, mas
+// a revisão da sacola nunca pode andar para trás: ela é a trava otimista usada
+// no commit. Sem esta barreira, a resposta atrasada fazia o servidor recusar
+// corretamente o pedido e obrigava o cliente a confirmar tudo outra vez.
+const freshestCheckout = shallowRef<CheckoutResponse['checkout'] | null>(data.value?.checkout || null)
+function cartRevision (value: CartProjection | null | undefined): number {
+  return typeof value?.revision === 'number' ? value.revision : -1
+}
+watch(() => data.value?.checkout, (incoming) => {
+  if (!incoming) return
+  const current = freshestCheckout.value
+  freshestCheckout.value = current && cartRevision(incoming.cart) < cartRevision(current.cart)
+    ? { ...incoming, cart: current.cart }
+    : incoming
+}, { immediate: true })
+function acceptCartProjection (incoming: CartProjection) {
+  const current = freshestCheckout.value
+  if (!current || cartRevision(incoming) < cartRevision(current.cart)) return
+  freshestCheckout.value = { ...current, cart: incoming }
+}
+
+const checkout = computed(() => freshestCheckout.value)
 const cart = computed(() => checkout.value?.cart)
 
 // Cupom: aplica/remove via cart state (servidor) e re-busca o checkout p/ refletir
@@ -435,9 +460,10 @@ function clearCheckoutDraft () {
 // e sobrescrito). Há um leve mismatch de hidratação (estado é client-only), aceitável.
 if (import.meta.client) {
   try {
-    const { draft, stale } = parseCheckoutDraft(localStorage.getItem(CHECKOUT_DRAFT_KEY))
+    const { draft, stale } = parseCheckoutDraft(localStorage.getItem(CHECKOUT_DRAFT_KEY), Date.now(), cart.value?.draft_context || '')
     if (draft) {
       Object.assign(state, draft.state)
+      if (draft.attemptKey) attemptKey.value = draft.attemptKey
       if (draft.activeStep) activeStep.value = draft.activeStep
       if (draft.pendingAddressLabel) pendingAddressLabel.value = draft.pendingAddressLabel
       // A seleção de endereço restaurada alimenta o AddressPicker (prop
@@ -452,10 +478,13 @@ if (import.meta.client) {
   } catch { /* rascunho corrompido: ignora */ }
 }
 draftRestored = true
-watch([state, activeStep, pendingAddressLabel, addressSelection], () => {
+function saveCheckoutDraft () {
   if (!import.meta.client || !draftRestored) return
   try {
     localStorage.setItem(CHECKOUT_DRAFT_KEY, JSON.stringify({
+      version: 2,
+      context: cart.value?.draft_context || '',
+      attemptKey: attemptKey.value,
       state,
       activeStep: activeStep.value,
       pendingAddressLabel: pendingAddressLabel.value,
@@ -463,7 +492,8 @@ watch([state, activeStep, pendingAddressLabel, addressSelection], () => {
       savedAt: Date.now()
     }))
   } catch { /* quota/serialização: ignora */ }
-}, { deep: true })
+}
+watch([state, activeStep, pendingAddressLabel, addressSelection, attemptKey], saveCheckoutDraft, { deep: true })
 
 function pickDeliveryDate (value: string) {
   if (isCheckoutDateUnavailable(value, dateBounds.value, closedDateEntries.value, closedWeekdays.value)) return
@@ -570,33 +600,56 @@ watch(addressSelection, selection => {
 // TAXA já entre no total (e a cobertura de zona seja conhecida) antes do
 // commit — fonte única (Core), sem matemática no cliente. A DeliveryZoneRule
 // segue como gate autoritativo no commit.
-async function applyDeliveryDraft () {
+let draftSyncTail: Promise<void> = Promise.resolve()
+let draftSyncCount = 0
+let deliverySyncCount = 0
+
+function applyDeliveryDraft (): Promise<void> {
   const isDelivery = state.fulfillment_type === 'delivery'
-  const structured = state.delivery_address_structured || {}
-  if (isDelivery && !structured.route) return
-  quotingZone.value = isDelivery
-  try {
-    await $fetch(apiPath('/api/v1/checkout/draft/'), {
-      method: 'PATCH',
-      headers: await csrfHeaders(),
-      credentials: 'include',
-      body: {
-        fulfillment_type: state.fulfillment_type,
-        delivery_address_structured: isDelivery ? structured : {}
+  const fulfillmentType = state.fulfillment_type
+  const structured = { ...(state.delivery_address_structured || {}) }
+  if (isDelivery && !structured.route) return draftSyncTail
+
+  draftSyncCount += 1
+  if (isDelivery) deliverySyncCount += 1
+  draftSyncing.value = true
+  quotingZone.value = deliverySyncCount > 0
+
+  const run = async () => {
+    try {
+      const response = await $fetch<CartResponse>(apiPath('/api/v1/checkout/draft/'), {
+        method: 'PATCH',
+        headers: await csrfHeaders(),
+        credentials: 'include',
+        body: {
+          fulfillment_type: fulfillmentType,
+          delivery_address_structured: isDelivery ? structured : {}
+        }
+      })
+      // O PATCH devolve a revisão que acabou de gravar. Aceitá-la antes do
+      // refresh fecha a janela em que um GET anterior poderia reintroduzir a
+      // revisão velha; o refresh atualiza o restante da projection.
+      acceptCartProjection(response.cart)
+      await refresh()
+      if (isDelivery) {
+        const covered = !cart.value?.delivery_zone_error && cart.value?.delivery_fee_q !== null
+        pickupSwapOffer.value = covered ? false : availableFulfillment.value.includes('pickup')
+        if (covered) serverError.value = ''
       }
-    })
-    await refresh()
-    if (isDelivery) {
-      const covered = !cart.value?.delivery_zone_error && cart.value?.delivery_fee_q !== null
-      pickupSwapOffer.value = covered ? false : availableFulfillment.value.includes('pickup')
-      if (covered) serverError.value = ''
+    } catch {
+      // Falha no rascunho não bloqueia — o commit ainda valida a zona.
+      if (isDelivery) pickupSwapOffer.value = false
+    } finally {
+      draftSyncCount -= 1
+      if (isDelivery) deliverySyncCount -= 1
+      draftSyncing.value = draftSyncCount > 0
+      quotingZone.value = deliverySyncCount > 0
     }
-  } catch {
-    // Falha no rascunho não bloqueia — o commit ainda valida a zona.
-    if (isDelivery) pickupSwapOffer.value = false
-  } finally {
-    quotingZone.value = false
   }
+
+  const operation = draftSyncTail.then(run, run)
+  draftSyncTail = operation.catch(() => {})
+  return operation
 }
 
 watch(chosenDate, value => {
@@ -788,16 +841,20 @@ function revealFirstError () {
   })
 }
 
-function continueFromFulfillment () {
+async function continueFromFulfillment () {
   if (!validateFulfillmentStep()) { revealFirstError(); return }
   // Retirada zera a taxa de entrega no total; entrega recalcula ao confirmar
   // o endereço (applyDeliveryDraft no passo seguinte).
-  if (state.fulfillment_type === 'pickup') void applyDeliveryDraft()
+  if (state.fulfillment_type === 'pickup') await applyDeliveryDraft()
   activeStep.value = state.fulfillment_type === 'delivery' ? 'address' : 'when'
 }
 
-function continueFromAddress () {
+async function continueFromAddress () {
   if (!validateAddressStep()) { revealFirstError(); return }
+  // O picker grava o endereço e emite `confirmed` na mesma interação. Esperar
+  // a fila garante que taxa, cobertura e revisão usadas adiante são as que o
+  // servidor acabou de aceitar.
+  await draftSyncTail
   activeStep.value = 'when'
   // Endereço NOVO (não-salvo) em entrega: pergunta a etiqueta na hora. A escolha é
   // guardada e aplicada quando o pedido fecha (o endereço só ganha ID na confirmação).
@@ -875,23 +932,6 @@ async function findNewlySavedAddress (): Promise<number | null> {
   }
 }
 
-// Aplica a etiqueta escolhida ao adicionar o endereço, agora que ele tem ID (pós-pedido).
-async function applyPendingLabel (addressId: number) {
-  const chosen = pendingAddressLabel.value
-  pendingAddressLabel.value = null
-  if (!chosen) return
-  try {
-    await $fetch(apiPath(`/api/v1/account/addresses/${encodeURIComponent(addressId)}/`), {
-      method: 'PATCH',
-      headers: await csrfHeaders(),
-      credentials: 'include',
-      body: labelPatchPayload(chosen.key, chosen.custom)
-    })
-  } catch {
-    // Etiqueta é açúcar — não trava a conclusão se o PATCH falhar.
-  }
-}
-
 async function finishAfterCheckout () {
   const target = pendingTrackingUrl.value
   pendingTrackingUrl.value = ''
@@ -907,22 +947,55 @@ async function goToAuthRoute () {
   await navigateTo(authRoute.value)
 }
 
+async function recoverCheckout (key = '') {
+  try {
+    const receipt = await $fetch<CheckoutMutationResponse | undefined>(apiPath('/api/v1/checkout/'), {
+      credentials: 'include', headers: key ? { 'Idempotency-Key': key } : {}
+    })
+    if (!receipt?.order_ref) return false
+    confirmedTrackingUrl.value = receipt.next_url || `/pedido/${encodeURIComponent(receipt.order_ref)}`
+    clearCheckoutDraft()
+    clearCart()
+    await navigateTo(receipt.next_url || `/pedido/${encodeURIComponent(receipt.order_ref)}`)
+    return true
+  } catch {
+    if (confirmedTrackingUrl.value) {
+      serverError.value = 'Pedido confirmado. Continue no acompanhamento.'
+      confirmOpen.value = false
+      return true
+    }
+    return false
+  }
+}
+function onDraftRemoved (event: StorageEvent) {
+  if (event.key === CHECKOUT_DRAFT_KEY && event.newValue === null) window.location.reload()
+}
+onMounted(() => {
+  window.addEventListener('storage', onDraftRemoved)
+  if (cart.value?.is_empty) void recoverCheckout()
+})
+onBeforeUnmount(() => { if (import.meta.client) window.removeEventListener('storage', onDraftRemoved) })
+
 async function submitCheckout () {
   if (!checkout.value || !validate()) return
   submitting.value = true
+  confirmationUnknown.value = false
   serverError.value = ''
   deliveryDateHint.value = ''
   try {
+    saveCheckoutDraft()
     const idempotencyKey = attemptKey.value
     const response = await $fetch<CheckoutMutationResponse>(apiPath('/api/v1/checkout/'), {
       method: 'POST',
       headers: {
         ...(await csrfHeaders()),
-        'x-idempotency-key': idempotencyKey
+        'Idempotency-Key': idempotencyKey
       },
       credentials: 'include',
-      body: buildCheckoutPayload(state, idempotencyKey, useLoyalty.value, cart.value?.grand_total_q ?? null)
+      body: { ...buildCheckoutPayload(state, idempotencyKey, useLoyalty.value, cart.value?.grand_total_q ?? null, cart.value?.revision), ...(pendingAddressLabel.value ? { address_label: pendingAddressLabel.value } : {}) }
     })
+    if (response.convenience_pending?.length && import.meta.client) useSonner.info('Pedido confirmado. Estamos tentando salvar suas escolhas para a próxima vez.')
+    confirmedTrackingUrl.value = response.next_url || `/pedido/${encodeURIComponent(response.order_ref)}`
     clearCart()
     clearCheckoutDraft()
     attemptKey.value = createCheckoutAttemptKey()
@@ -935,15 +1008,13 @@ async function submitCheckout () {
     // O Core já salvou o endereço de entrega ao confirmar (só em pedido que
     // de fato fechou — fora-de-zona/abandonado nunca poluem o perfil). Se foi
     // um endereço novo, oferecemos a etiqueta nele antes de seguir.
-    const newAddressId = await findNewlySavedAddress()
-    if (newAddressId && pendingAddressLabel.value) {
-      // Etiqueta já escolhida ao adicionar o endereço: aplica direto (sem perguntar
-      // de novo) — e CONTA que salvou (transparência: nada de endereço "aparecendo"
-      // salvo em silêncio na próxima compra). O toast sobrevive à navegação.
-      const chosenLabel = addressLabelDisplay(pendingAddressLabel.value.key, pendingAddressLabel.value.custom)
-      await applyPendingLabel(newAddressId)
-      if (import.meta.client) useSonner.success(`Endereço salvo como ${chosenLabel}.`)
-    } else if (newAddressId) {
+    if (pendingAddressLabel.value) {
+      // The same confirmed intention durably saves the chosen label server-side.
+      await navigateTo(confirmedUrl)
+      return
+    }
+    const newAddressId = await findNewlySavedAddress().catch(() => null)
+    if (newAddressId) {
       // Sem etiqueta escolhida antes: oferece agora (fallback pós-pedido).
       savedAddressIdForLabel.value = newAddressId
       pendingTrackingUrl.value = confirmedUrl
@@ -953,7 +1024,23 @@ async function submitCheckout () {
     }
     await navigateTo(confirmedUrl)
   } catch (e) {
-    const data = httpError(e).data || {}
+    if (confirmedTrackingUrl.value) {
+      serverError.value = 'Pedido confirmado. Continue no acompanhamento.'
+      confirmOpen.value = false
+      return
+    }
+    const failure = httpError(e)
+    if (!failure.status || failure.status >= 500) {
+      if (await recoverCheckout(attemptKey.value)) return
+      confirmationUnknown.value = true
+      serverError.value = 'A confirmação ainda está em consulta. Mantenha esta tentativa.'
+      if (import.meta.client) useSonner.info(serverError.value)
+      return
+    }
+    const data = failure.data || {}
+    confirmationUnknown.value = data.error_code === 'mutation_in_progress'
+    if (data.error_code === 'idempotency_conflict' && await recoverCheckout(attemptKey.value)) return
+    if (failure.status < 500 && data.error_code !== 'mutation_in_progress') attemptKey.value = createCheckoutAttemptKey()
     const field = typeof data.field === 'string' ? data.field : ''
     serverError.value = errorDetail(e, 'Não foi possível confirmar o pedido.')
     // Preço/cupom mudou entre a revisão e o confirm: o servidor já reprecificou a
@@ -968,7 +1055,8 @@ async function submitCheckout () {
       submitting.value = false
       return
     }
-    if (data.error_code === 'total_changed') {
+    if (data.error_code === 'total_changed' || data.error_code === 'revision_changed') {
+      attemptKey.value = createCheckoutAttemptKey()
       await refresh()
       if (import.meta.client) useSonner.error(serverError.value)
       return
@@ -1098,9 +1186,10 @@ useSeoMeta({
             </UiAlertDescription>
           </UiAlert>
 
-          <UiAlert v-else-if="serverError && !confirmOpen" variant="destructive">
-            <UiAlertTitle>Não confirmado</UiAlertTitle>
+          <UiAlert v-else-if="serverError && !confirmOpen" :variant="confirmedTrackingUrl || confirmationUnknown ? 'warning' : 'destructive'">
+            <UiAlertTitle>{{ confirmedTrackingUrl ? 'Pedido confirmado' : confirmationUnknown ? 'Confirmação em consulta' : 'Confira os dados' }}</UiAlertTitle>
             <UiAlertDescription>{{ serverError }}</UiAlertDescription>
+            <UiButton v-if="confirmedTrackingUrl" :to="confirmedTrackingUrl">Acompanhar pedido</UiButton>
           </UiAlert>
 
           <!-- ⚠️ FORA da cadeia de `v-else-if` acima: `v-else-if` exige irmão imediato, e pôr
@@ -1237,7 +1326,7 @@ useSeoMeta({
               </UiAlert>
               <template #footer>
                 <div class="mt-4">
-                  <UiButton class="w-full" size="lg" icon="lucide:arrow-right" icon-placement="right" :disabled="deliveryBelowMinimum" @click="continueFromFulfillment">
+                  <UiButton class="w-full" size="lg" icon="lucide:arrow-right" icon-placement="right" :loading="draftSyncing" :disabled="deliveryBelowMinimum || draftSyncing" @click="continueFromFulfillment">
                     Continuar
                   </UiButton>
                 </div>
@@ -1296,7 +1385,7 @@ useSeoMeta({
               </div>
               <template v-if="addressSelection && !pickupSwapOffer" #footer>
                 <div class="mt-4">
-                  <UiButton class="w-full" size="lg" icon="lucide:arrow-right" icon-placement="right" @click="continueFromAddress">
+                  <UiButton class="w-full" size="lg" icon="lucide:arrow-right" icon-placement="right" :loading="draftSyncing" :disabled="draftSyncing" @click="continueFromAddress">
                     Continuar
                   </UiButton>
                 </div>
@@ -1654,9 +1743,10 @@ useSeoMeta({
             <!-- Superfície única, diagramação enxuta. O corpo rola; o rodapé fica
                  mínimo (Total + 1 ação) e sempre visível — nada vaza da tela. -->
             <div class="px-4 py-4">
-              <UiAlert v-if="serverError" variant="destructive" class="mb-4">
-                <UiAlertTitle>Não confirmado</UiAlertTitle>
+              <UiAlert v-if="serverError" :variant="confirmedTrackingUrl || confirmationUnknown ? 'warning' : 'destructive'" class="mb-4">
+                <UiAlertTitle>{{ confirmedTrackingUrl ? 'Pedido confirmado' : confirmationUnknown ? 'Confirmação em consulta' : 'Confira os dados' }}</UiAlertTitle>
                 <UiAlertDescription>{{ serverError }}</UiAlertDescription>
+            <UiButton v-if="confirmedTrackingUrl" :to="confirmedTrackingUrl">Acompanhar pedido</UiButton>
               </UiAlert>
 
               <!-- O quê: itens em linha única (qty + nome). Os valores vivem no resumo. -->

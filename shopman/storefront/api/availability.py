@@ -16,7 +16,17 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shopman.shop.services import availability as avail_service
-from shopman.storefront.api.serializers import AvailabilityResponseSerializer
+from shopman.storefront.api.serializers import (
+    AvailabilityResponseSerializer,
+    StockAlertManagementActionSerializer,
+    StockAlertManagementStateSerializer,
+    StockAlertSessionStateSerializer,
+    StockAlertSubscribeRequestSerializer,
+    StockAlertSubscribeResponseSerializer,
+    StockAlertSubscriptionControlRequestSerializer,
+    StockAlertSubscriptionControlResponseSerializer,
+    StockAlertSubscriptionRefSerializer,
+)
 from shopman.storefront.services import catalog as catalog_service
 
 
@@ -80,14 +90,12 @@ class AvailabilityView(APIView):
         return Response(data)
 
 
-@method_decorator(
-    ratelimit(key="user_or_ip", rate="10/m", method="POST", block=False), name="dispatch"
-)
+@method_decorator(ratelimit(key="user_or_ip", rate="10/m", method="POST", block=False), name="dispatch")
 class StockAlertSubscribeView(APIView):
     """POST /api/v1/availability/<sku>/notify/ — "Me avise quando…".
 
     Aberto a cliente logado (usa o telefone da conta) ou anônimo (telefone no
-    corpo). Registra uma assinatura pendente.
+    corpo). Registra uma assinatura persistente.
 
     O corpo PODE escolher o gatilho via ``alert_type`` (``stock_back`` ou
     ``production_ready``), mas a loja não escolhe: ela manda só o telefone, e
@@ -100,6 +108,50 @@ class StockAlertSubscribeView(APIView):
     authentication_classes = [SessionAuthentication]
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        tags=["availability"],
+        summary="Recover the current session's product alert management link",
+        responses={200: StockAlertSessionStateSerializer},
+    )
+    def get(self, request, sku):
+        """Recover only an exact alert already owned by this browser session.
+
+        The subscription ref comes from the server-side session and is still
+        checked against SKU and contact before a capability is minted.  A ref
+        supplied by the caller never authorizes access.
+        """
+        from shopman.storefront.services import stock_alerts
+
+        session = getattr(request, "session", None)
+        markers = session.get("stock_alert_subscriptions", []) if session is not None else []
+        markers = list(markers) if isinstance(markers, (list, tuple)) else []
+        for marker in reversed(markers):
+            if not isinstance(marker, dict) or str(marker.get("sku") or "") != sku:
+                continue
+            sub = stock_alerts.subscription_for_owner(
+                marker.get("ref"),
+                sku=sku,
+                phone=str(marker.get("contact_phone") or ""),
+            )
+            if sub is not None:
+                return _no_store_response(
+                    {
+                        "active": sub.paused_at is None,
+                        "management_url": stock_alerts.management_url(sub),
+                    },
+                    status_code=status.HTTP_200_OK,
+                )
+        return _no_store_response(
+            {"detail": "Aviso não encontrado nesta sessão."},
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    @extend_schema(
+        tags=["availability"],
+        summary="Subscribe to a persistent product alert",
+        request=StockAlertSubscribeRequestSerializer,
+        responses={200: StockAlertSubscribeResponseSerializer},
+    )
     def post(self, request, sku):
         if getattr(request, "limited", False):
             return Response(
@@ -131,13 +183,20 @@ class StockAlertSubscribeView(APIView):
             )
 
         channel_ref = request.GET.get("channel") or STOREFRONT_CHANNEL_REF
-        sub = stock_alerts.subscribe(
+        if customer is not None:
+            # A sessão autenticada usa sempre o contato da identidade canônica;
+            # um telefone no corpo não pode redirecionar o aviso.
+            phone = ""
+
+        outcome = stock_alerts.subscribe_with_outcome(
             sku,
             channel_ref=channel_ref,
             customer=customer,
             phone=phone,
             alert_type=alert_type,
+            resume_existing=False,
         )
+        sub = outcome.subscription
         if sub is None:
             return Response(
                 {"detail": "Não foi possível registrar o aviso."},
@@ -146,10 +205,28 @@ class StockAlertSubscribeView(APIView):
         # Persiste o estado do sino p/ anônimo com contato + SKU. O marcador
         # legado guardava só o SKU e ficava preso depois que o aviso era enviado.
         session = getattr(request, "session", None)
+        marked: list[dict] = []
         if session is not None:
             session.pop("stock_alert_skus", None)
             marked = session.get("stock_alert_subscriptions")
             marked = list(marked) if isinstance(marked, (list, tuple)) else []
+        owned_marker = _marker_for_subscription(marked, sub)
+        may_manage = customer is not None or outcome.created or owned_marker is not None
+
+        # subscribe_with_outcome deliberately leaves an existing paused row
+        # untouched. Only its authenticated customer or the browser session
+        # that created it may explicitly repeat the opt-in and resume it.
+        if may_manage and sub.paused_at is not None:
+            stock_alerts.set_paused(
+                sub.ref,
+                paused=False,
+                sku=sub.sku,
+                customer=customer,
+                phone=str(owned_marker.get("contact_phone") or "") if owned_marker else "",
+            )
+            sub.refresh_from_db()
+
+        if session is not None and may_manage:
             marker = {
                 "ref": str(sub.ref),
                 "sku": sub.sku,
@@ -159,14 +236,63 @@ class StockAlertSubscribeView(APIView):
             if marker not in marked:
                 marked.append(marker)
                 session["stock_alert_subscriptions"] = marked
-        return Response(
+
+        # Anonymous POSTs are deliberately indistinguishable. A new row is
+        # bound to this server-side session and its capability is recovered by
+        # the subsequent GET; a different session repeating phone + SKU gets
+        # the same acknowledgement without learning or controlling the row.
+        if customer is None:
+            return _no_store_response({"ok": True}, status_code=status.HTTP_200_OK)
+        return _no_store_response(
             {
                 "ok": True,
                 "subscription_ref": str(sub.ref),
+                "active": sub.is_active,
                 "expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
-            }
+                "management_url": stock_alerts.management_url(sub),
+            },
+            status_code=status.HTTP_200_OK,
         )
 
+    @extend_schema(
+        tags=["availability"],
+        summary="Pause or resume one owned product alert",
+        request=StockAlertSubscriptionControlRequestSerializer,
+        responses={200: StockAlertSubscriptionControlResponseSerializer},
+    )
+    def patch(self, request, sku):
+        """Pause/resume the exact opt-in without changing its consent evidence."""
+        from shopman.storefront.identity import get_authenticated_customer
+        from shopman.storefront.services import stock_alerts
+
+        subscription_ref = str(request.data.get("subscription_ref") or "").strip()
+        action = str(request.data.get("action") or "").strip()
+        if not subscription_ref or action not in {"pause", "resume"}:
+            return Response(
+                {"detail": "Informe o aviso e a ação pause ou resume."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        customer = get_authenticated_customer(request)
+        phone, owned_marker = _anonymous_marker(request, subscription_ref)
+        if customer is None and owned_marker is None:
+            return Response({"detail": "Aviso não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        changed = stock_alerts.set_paused(
+            subscription_ref,
+            paused=action == "pause",
+            sku=sku,
+            customer=customer,
+            phone=phone,
+        )
+        if not changed:
+            return Response({"detail": "Aviso não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"ok": True, "active": action == "resume"})
+
+    @extend_schema(
+        tags=["availability"],
+        summary="Cancel one owned product alert",
+        request=StockAlertSubscriptionRefSerializer,
+        responses={200: StockAlertSubscriptionControlResponseSerializer},
+    )
     def delete(self, request, sku):
         """Cancel a subscription without exposing whether another person's ref exists."""
 
@@ -181,21 +307,16 @@ class StockAlertSubscribeView(APIView):
             )
 
         customer = get_authenticated_customer(request)
-        phone = ""
+        phone, owned_marker = _anonymous_marker(request, subscription_ref)
         session = getattr(request, "session", None)
         markers = session.get("stock_alert_subscriptions", []) if session is not None else []
         markers = list(markers) if isinstance(markers, (list, tuple)) else []
-        owned_marker = next(
-            (item for item in markers if str(item.get("ref") or "") == subscription_ref),
-            None,
-        )
         if customer is None:
             if owned_marker is None:
                 return Response(
                     {"detail": "Aviso não encontrado."},
                     status=status.HTTP_404_NOT_FOUND,
                 )
-            phone = str(owned_marker.get("contact_phone") or "")
 
         cancelled = stock_alerts.revoke(
             subscription_ref,
@@ -209,10 +330,155 @@ class StockAlertSubscribeView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
         if session is not None and owned_marker is not None:
-            session["stock_alert_subscriptions"] = [
-                item for item in markers if item is not owned_marker
-            ]
+            session["stock_alert_subscriptions"] = [item for item in markers if item is not owned_marker]
         return Response({"ok": True, "cancelled": True})
+
+
+def _anonymous_marker(request, subscription_ref: str) -> tuple[str, dict | None]:
+    session = getattr(request, "session", None)
+    markers = session.get("stock_alert_subscriptions", []) if session is not None else []
+    markers = list(markers) if isinstance(markers, (list, tuple)) else []
+    marker = next((item for item in markers if str(item.get("ref") or "") == subscription_ref), None)
+    return (str(marker.get("contact_phone") or "") if marker else "", marker)
+
+
+def _marker_for_subscription(markers: list[dict], sub) -> dict | None:
+    """Return the exact trusted session marker for ``sub``, if present."""
+
+    for marker in markers:
+        if not isinstance(marker, dict):
+            continue
+        if (
+            str(marker.get("ref") or "") == str(sub.ref)
+            and str(marker.get("sku") or "") == str(sub.sku)
+            and str(marker.get("alert_type") or "") == str(sub.alert_type)
+            and str(marker.get("contact_phone") or "") == str(sub.contact_phone)
+        ):
+            return marker
+    return None
+
+
+_MANAGEMENT_CAPABILITY_HEADER = OpenApiParameter(
+    "X-Stock-Alert-Capability",
+    str,
+    location=OpenApiParameter.HEADER,
+    required=True,
+    description="Opaque capability from the management link fragment.",
+)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["availability"],
+        summary="Read one product alert state",
+        parameters=[_MANAGEMENT_CAPABILITY_HEADER],
+        responses={200: StockAlertManagementStateSerializer},
+    ),
+    patch=extend_schema(
+        tags=["availability"],
+        summary="Pause or resume one product alert",
+        parameters=[_MANAGEMENT_CAPABILITY_HEADER],
+        request=StockAlertManagementActionSerializer,
+        responses={200: StockAlertManagementStateSerializer},
+    ),
+    delete=extend_schema(
+        tags=["availability"],
+        summary="Cancel one product alert",
+        parameters=[_MANAGEMENT_CAPABILITY_HEADER],
+        request=None,
+        responses={200: StockAlertManagementStateSerializer},
+    ),
+)
+class StockAlertManagementView(APIView):
+    """Cross-device control for one purpose-scoped stock alert capability."""
+
+    authentication_classes = [SessionAuthentication]
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        """Read state only; link scanners cannot change the subscription."""
+        from shopman.storefront.services import stock_alerts
+
+        sub = stock_alerts.subscription_for_management(_management_capability(request))
+        if sub is None:
+            return _management_not_found()
+        return _management_response(sub)
+
+    def patch(self, request):
+        from shopman.storefront.services import stock_alerts
+
+        action = str(request.data.get("action") or "").strip()
+        if action not in {"pause", "resume"}:
+            return _management_response_data(
+                {"detail": "Escolha pausar ou retomar."},
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        outcome = stock_alerts.set_paused_by_capability(
+            _management_capability(request),
+            paused=action == "pause",
+        )
+        if outcome is None:
+            return _management_not_found()
+        sub, suppressed = outcome
+        return _management_response(sub, suppressed=suppressed)
+
+    def delete(self, request):
+        from shopman.storefront.services import stock_alerts
+
+        outcome = stock_alerts.revoke_by_capability(_management_capability(request))
+        if outcome is None:
+            return _management_not_found()
+        sub, suppressed = outcome
+        return _management_response(sub, suppressed=suppressed)
+
+
+def _management_capability(request) -> str:
+    return str(request.headers.get("X-Stock-Alert-Capability") or "").strip()
+
+
+def _management_payload(sub, *, suppressed: int = 0) -> dict:
+    from shopman.storefront.models import StockAlertDelivery, StockAlertSubscription
+    from shopman.storefront.services.stock_alerts import product_name
+
+    accepted = sub.deliveries.filter(status=StockAlertDelivery.Status.ACCEPTED).count()
+    unresolved = sub.deliveries.filter(status=StockAlertDelivery.Status.INDETERMINATE).count()
+    state = "cancelled" if sub.revoked_at is not None else "paused" if sub.paused_at is not None else "active"
+    return {
+        "ok": True,
+        "product_name": product_name(sub.sku),
+        "event_label": dict(StockAlertSubscription.AlertType.choices).get(sub.alert_type, sub.alert_type),
+        "state": state,
+        "can_pause": state == "active",
+        "can_resume": state == "paused",
+        "can_cancel": state in {"active", "paused"},
+        "suppressed_deliveries": suppressed,
+        "accepted_deliveries": accepted,
+        "unresolved_deliveries": unresolved,
+        "delivery_note": "Mensagens já aceitas pelo provedor não podem ser retiradas.",
+    }
+
+
+def _management_response(sub, *, suppressed: int = 0, status_code: int = status.HTTP_200_OK):
+    return _management_response_data(_management_payload(sub, suppressed=suppressed), status_code=status_code)
+
+
+def _management_not_found():
+    return _management_response_data(
+        {"detail": "Este link de gestão não é válido."},
+        status_code=status.HTTP_404_NOT_FOUND,
+    )
+
+
+def _management_response_data(data: dict, *, status_code: int):
+    return _no_store_response(data, status_code=status_code)
+
+
+def _no_store_response(data: dict, *, status_code: int):
+    response = Response(data, status=status_code)
+    response["Cache-Control"] = "private, no-store, max-age=0"
+    response["Pragma"] = "no-cache"
+    response["Referrer-Policy"] = "no-referrer"
+    return response
 
 
 def _badge_for(result: dict) -> tuple[str, str]:

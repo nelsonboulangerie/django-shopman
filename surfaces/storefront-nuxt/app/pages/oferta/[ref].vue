@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { retainedRemoteMutationKey, forgetRemoteMutationKey } from '~/utils/remoteMutations'
 import type { CartProjection } from '~/types/shopman'
 
 // A ponta do anúncio: quem tocou no link do WhatsApp cai aqui e a sacola se monta.
@@ -35,12 +36,17 @@ type ClaimResponse = {
 
 const pending = ref(true)
 const offerName = ref('')
+const addedNames = ref<string[]>([])
 const skipped = ref<SkippedOfferItem[]>([])
 const problem = ref('')
+const assembled = ref(false)
+const intention = ref('')
 /** Sacola já tinha itens: quem decide somar ou trocar é o cliente, não nós. */
 const conflict = ref(false)
 
 async function claim (mode?: 'append' | 'replace') {
+  const resource = `offer:${offerRef.value}:${mode || 'default'}`
+  intention.value = retainedRemoteMutationKey(resource, 'offer')
   pending.value = true
   problem.value = ''
   conflict.value = false
@@ -49,20 +55,23 @@ async function claim (mode?: 'append' | 'replace') {
       apiPath(`/api/v1/offers/${encodeURIComponent(offerRef.value)}/claim/`),
       {
         method: 'POST',
-        headers: await csrfHeaders(),
+        headers: { ...(await csrfHeaders()), 'Idempotency-Key': intention.value },
         body: mode ? { mode } : {},
         credentials: 'include'
       }
     )
     offerName.value = response.offer?.name || ''
     skipped.value = response.skipped || []
+    addedNames.value = response.cart.items.filter(item => response.added.includes(item.sku)).map(item => item.name)
     setFromServer(response.cart)
-    if (response.ok) {
+    assembled.value = response.ok
+    if (response.ok && !skipped.value.length) {
       await navigateTo('/sacola')
+      forgetRemoteMutationKey(resource)
       return
     }
     // Nada entrou: a oferta existe, mas nenhum item dela está vendável agora.
-    problem.value = 'Os itens desta oferta não estão disponíveis neste momento.'
+    if (!skipped.value.length) problem.value = 'Nenhum item foi adicionado à sacola.'
   } catch (error: unknown) {
     const status = (error as { statusCode?: number; status?: number })?.statusCode
       ?? (error as { status?: number })?.status
@@ -130,11 +139,12 @@ useSeoMeta({ title: 'Sua oferta', robots: 'noindex, nofollow' })
              descobrir na sacola — e quem pode ser avisado é avisado daqui mesmo. -->
         <section v-else-if="skipped.length">
           <div class="text-center">
-            <h1 class="shop-title">{{ offerName || 'Oferta' }} na sua sacola</h1>
+            <h1 class="shop-title">{{ assembled ? `${offerName || 'Oferta'} parcialmente na sua sacola` : 'Nenhum item foi adicionado' }}</h1>
             <p class="mt-2 shop-muted">
               {{ skipped.length === 1 ? 'Um item não estava disponível agora e ficou de fora:' : 'Alguns itens não estavam disponíveis agora e ficaram de fora:' }}
             </p>
           </div>
+          <p v-if="addedNames.length" class="mt-4" role="status">Adicionados: {{ addedNames.join(', ') }}.</p>
           <ul class="mt-4 divide-y rounded-lg border">
             <li
               v-for="item in skipped"

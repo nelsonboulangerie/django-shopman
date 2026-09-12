@@ -13,6 +13,7 @@ import {
   correctProductionQuality,
   finishProductionWorkOrder,
   quickFinishProduction,
+  reviewProductionQuality,
 } from "~/generated/productionContract";
 import { parseShortage } from "~/presentation/production";
 import { newProductionMutationKey } from "~/utils/api";
@@ -165,6 +166,21 @@ export function useQcKiosk(initialDate = "") {
     );
   };
 
+  const reviewQuality = (pk: number, rev: number): Promise<QcActResult> =>
+    post(
+      `review_qc:${pk}`,
+      (idempotencyKey, metadata) =>
+        reviewProductionQuality(pk, {
+          expected_rev:
+            kiosk.value?.actions.find(
+              (action) => action.ref === `review_qc:${pk}`,
+            )?.expected_rev ?? rev,
+          ...metadata,
+          idempotency_key: idempotencyKey,
+        }),
+      "Não deu para confirmar a qualidade. Tente de novo.",
+    );
+
   return {
     kiosk,
     selectedDate,
@@ -174,6 +190,7 @@ export function useQcKiosk(initialDate = "") {
     submitting,
     finish,
     quickFinish,
+    reviewQuality,
     correctQuality,
   };
 }

@@ -1,0 +1,36 @@
+REVALIDAÇÃO — ENDEREÇO APÓS TROCA DE PESSOA — 2026-09-11
+
+Relato
+- Depois do percurso assistido em iPhone, foi relatado que a pessoa A aparecia sem
+  endereço cadastrado.
+
+Fatos comprovados na base online de pré-go-live (leitura sem expor PII)
+- A identidade que confirmou o pedido de entrega tem um endereço canônico.
+- O endereço foi criado cinco segundos depois do pedido.
+- A outra identidade sintética usada no ensaio tem zero endereço.
+- O log do backend contém GET da lista de endereços e PATCH da etiqueta do endereço,
+  ambos com resposta 200.
+- O relato de vazio não reproduz perda de escrita. Permanecem duas hipóteses: consulta
+  da outra identidade ou superfície que não carregou a lista canônica.
+
+Prova adicional na candidata
+- Cenário: cliente autenticado confirma entrega com endereço novo, sai, entra novamente
+  como a mesma pessoa e consulta GET /api/v1/account/addresses/?include=copy.
+- Resultado: o mesmo identificador e o endereço completo retornam sem redigitação.
+- Suíte dirigida (persistência, IDOR, redução de endereço, prefill e novo cenário):
+  16 passed in 16.56s.
+- Storefront completo após a regressão: 1.536 passed, 9 skipped em 66,42 s.
+
+Incidente do probe
+- Um probe autenticado foi interrompido antes da leitura porque a solicitação de OTP
+  acionou a Comtele e enviou um SMS ao contato sintético. A app spec anunciava
+  DOORMAN_MESSAGE_SENDER_CLASS=LogSender, mas a DELIVERY_CHAIN efetiva prevalece e
+  resolve sms para Comtele fora de DEBUG.
+- O código não foi usado; não houve segunda solicitação. Ajustar a cadeia do ambiente
+  é decisão operacional e não foi aplicado sem autorização de configuração/rollout.
+
+Conclusão
+- Defeito de perda de endereço: não comprovado.
+- Divergência de identidade/superfície: hipótese, ainda sem reprodução determinística.
+- Persistência após logout/login na candidata: comprovada automaticamente.
+- Segurança de provider no pré-go-live: risco de configuração comprovado.

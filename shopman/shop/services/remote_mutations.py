@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -36,25 +37,48 @@ class RemoteMutationInProgress(Exception):
     """Raised when the same idempotency key is already running."""
 
 
+def _payload_fingerprint(payload: Any) -> str:
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def fingerprint(payload: Any) -> str:
+    """Stable digest for the legacy surface-mutation contract."""
+    return _payload_fingerprint(payload)
+
+
+def mutation_scope(*parts: str) -> str:
+    """Bound scopes to the existing 64-character column without losing identity."""
+    return fingerprint(parts)
+
+
 def idempotency_key_from_request(request: Any, *, fallback: str) -> str:
     """Resolve an idempotency key from HTTP headers/body with a safe fallback."""
 
-    header_key = ""
-    try:
-        header_key = str(request.headers.get("Idempotency-Key") or "").strip()
-    except Exception:
-        logger.debug("remote_mutations.idempotency_key_from_request degraded; using fallback", exc_info=True)
-        header_key = ""
-
-    body_key = ""
-    try:
-        data = request.data if hasattr(request, "data") else {}
-        body_key = str((data or {}).get("idempotency_key") or "").strip()
-    except Exception:
-        logger.debug("remote_mutations.idempotency_key_from_request degraded; using fallback", exc_info=True)
-        body_key = ""
-
-    return _normalize_key(header_key or body_key or fallback)
+    headers = request.headers
+    data = getattr(request, "data", {})
+    data = data if isinstance(data, dict) else {}
+    values = [
+        headers.get("Idempotency-Key"),
+        headers.get("X-Idempotency-Key"),
+        data.get("idempotency_key"),
+    ]
+    keys = []
+    for value in values:
+        if value is None or value == "":
+            continue
+        if not isinstance(value, str):
+            raise RemoteMutationConflict("Chave de tentativa inválida.")
+        if value.strip():
+            keys.append(_normalize_key(value))
+    if len(set(keys)) > 1:
+        raise RemoteMutationConflict("As chaves da tentativa divergem. Nenhuma ação foi aplicada.")
+    return keys[0] if keys else _normalize_key(fallback)
 
 
 def run_idempotent_mutation(
@@ -64,50 +88,66 @@ def run_idempotent_mutation(
     execute: Callable[[], tuple[dict[str, Any], int]],
     cache_response: Callable[[dict[str, Any], int], bool] | None = None,
     fingerprint: str | None = None,
+    payload: Any = None,
+    local_atomic: bool = False,
 ) -> RemoteMutationResult:
     """Run ``execute`` once for ``scope``/``key`` and replay cached responses."""
 
     if fingerprint is not None:
-        if cache_response is not None:
+        if cache_response is not None or payload is not None or local_atomic:
             raise ValueError("Local mutations always retain their result")
         try:
             result = _run_local_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=execute)
         except (RemoteMutationConflict, RemoteMutationInProgress) as exc:
             if current_operational_context():
-                operational_event("operator.command.blocked", intention_digest=hashlib.sha256(key.encode()).hexdigest(), reason=type(exc).__name__)
+                operational_event(
+                    "operator.command.blocked",
+                    intention_digest=hashlib.sha256(key.encode()).hexdigest(),
+                    reason=type(exc).__name__,
+                )
             raise
         _observe_local_result(result, key=key, event="operator.command.local_result")
         return result
 
-    idem = _acquire(scope=scope, key=key)
-    if idem.status == "done" and idem.response_body is not None:
+    # Opt-in only: callers with remote effects retain provider reconciliation semantics.
+    with transaction.atomic() if local_atomic else nullcontext():
+        idem = _acquire(scope=scope, key=key)
+        digest = _payload_fingerprint(payload) if payload is not None else ""
+        if digest and idem.request_fingerprint != digest:
+            if idem.request_fingerprint or idem.status == "done":
+                raise RemoteMutationConflict(
+                    "Esta tentativa pertence a outra escolha ou a um recibo legado. Confira antes de continuar."
+                )
+            idem.request_fingerprint = digest
+            idem.save(update_fields=["request_fingerprint"])
+        if idem.status == "done" and idem.response_body is not None:
+            return RemoteMutationResult(
+                response_body=idem.response_body,
+                response_code=idem.response_code or 200,
+                replayed=True,
+            )
+
+        try:
+            response_body, response_code = execute()
+        except Exception:
+            idem.status = "failed"
+            idem.save(update_fields=["status"])
+            raise
+
+        should_cache = cache_response(response_body, response_code) if cache_response else response_code < 500
+        if should_cache:
+            idem.status = "done"
+            idem.response_body = response_body
+            idem.response_code = response_code
+            idem.save(update_fields=["status", "response_body", "response_code"])
+        else:
+            idem.status = "failed"
+            idem.save(update_fields=["status"])
         return RemoteMutationResult(
-            response_body=idem.response_body,
-            response_code=idem.response_code or 200,
-            replayed=True,
+            response_body=response_body,
+            response_code=response_code,
+            replayed=False,
         )
-
-    try:
-        response_body, response_code = execute()
-    except Exception:
-        idem.status = "failed"
-        idem.save(update_fields=["status"])
-        raise
-
-    should_cache = cache_response(response_body, response_code) if cache_response else response_code < 500
-    if should_cache:
-        idem.status = "done"
-        idem.response_body = response_body
-        idem.response_code = response_code
-        idem.save(update_fields=["status", "response_body", "response_code"])
-    else:
-        idem.status = "failed"
-        idem.save(update_fields=["status"])
-    return RemoteMutationResult(
-        response_body=response_body,
-        response_code=response_code,
-        replayed=False,
-    )
 
 
 def _acquire(*, scope: str, key: str) -> IdempotencyKey:
@@ -122,7 +162,9 @@ def _acquire(*, scope: str, key: str) -> IdempotencyKey:
             return idem
         if idem.status == "done" and idem.response_body is not None:
             return idem
-        if idem.status == "in_progress" and (idem.expires_at is None or idem.expires_at > timezone.now()):
+        if idem.status == "in_progress" and (
+            idem.request_fingerprint or idem.expires_at is None or idem.expires_at > timezone.now()
+        ):
             raise RemoteMutationInProgress(f"Mutation already in progress for {scope}:{key}")
         idem.status = "in_progress"
         idem.expires_at = expires_at
@@ -204,7 +246,13 @@ def _observe_local_result(result: RemoteMutationResult, *, key: str, event: str)
     body = result.response_body
     outcome = body.get("outcome")
     outcome = outcome if outcome in {"applied", "not_applied", "unknown", "in_progress"} else "unclassified"
-    fields = {**context, "intention_digest": hashlib.sha256(key.encode()).hexdigest(), "response_status": result.response_code, "outcome": outcome, "replayed": result.replayed}
+    fields = {
+        **context,
+        "intention_digest": hashlib.sha256(key.encode()).hexdigest(),
+        "response_status": result.response_code,
+        "outcome": outcome,
+        "replayed": result.replayed,
+    }
     for name in ("directive_id", "shift_id", "cash_entry_id"):
         value = body.get(name)
         if isinstance(value, int) and not isinstance(value, bool):

@@ -1,6 +1,6 @@
-name: Alpha Smoke
+name: Pre-go-live Smoke
 
-# O único guardrail que enxerga o ALPHA VIVO. Os gates de CI provam o código
+# O único guardrail que enxerga o AMBIENTE VIVO DE PRE-GO-LIVE. Os gates de CI provam o código
 # contra banco fresco; a classe de quebra que chegou à tela em 26/08 (dado
 # envelhecido, insumo zerado, config de ambiente) só aparece no ambiente real.
 # O health check do Nuxt responde 200 com a tela vazia — este smoke pergunta
@@ -20,7 +20,7 @@ name: Alpha Smoke
     # nas 12 execuções anteriores: os intervalos reais foram de 1h40 a 4h06,
     # média ~2h50. O GitHub estrangula workflow agendado em repositório movimentado
     # e não avisa — o comentário antigo dizia "a cada 15 minutos" e quem lia
-    # acreditava. Fica como REDE (pega o alpha quebrando sem deploy nenhum:
+    # acreditava. Fica como REDE (pega o ambiente quebrando sem deploy nenhum:
     # dado que envelhece, insumo que zera, certificado que vence), não como a
     # guarda principal.
     - cron: "*/15 * * * *"
@@ -78,7 +78,7 @@ concurrency:
   #
   # E o custo do cancelamento não é desperdício, é CEGUEIRA: run cancelado não
   # fica vermelho. A guarda deixava de rodar e ninguém ficava sabendo.
-  group: alpha-smoke-${{ github.run_id }}
+  group: pre-go-live-smoke-${{ github.run_id }}
   cancel-in-progress: true
 
 # ⚠️ A URL da loja é UMA variável, e é de propósito.
@@ -124,13 +124,13 @@ env:
 
 jobs:
   smoke:
-    # Deploy reprovado não publica imagem: rodar o smoke aí acusaria o alpha por
+    # Deploy reprovado não publica imagem: rodar o smoke aí acusaria o ambiente por
     # algo que nunca chegou nele. Nos outros gatilhos (`schedule`,
     # `workflow_dispatch`) não há `workflow_run`, e a condição passa.
     if: >-
       github.event_name != 'workflow_run' ||
       github.event.workflow_run.conclusion == 'success'
-    name: Alpha responde como loja
+    name: App Nelson responde como loja
     runs-on: ubuntu-latest
     # ⚠️ Tem que caber `DEPLOY_WAIT_MAX_SECONDS` (900s) MAIS as asserções e o
     # setup. 25 min dá 10 de folga sobre o teto da espera.
@@ -171,7 +171,7 @@ jobs:
       # quando o deployment ficou ACTIVE, e o `workflow_run` nos diz a que
       # instante o deploy terminou. O passo só solta quando existe um deployment
       # criado DEPOIS desse instante e ele está ACTIVE — ou grita, se ele deu
-      # ERROR/CANCELED, que é deploy que não chegou no alpha.
+      # ERROR/CANCELED, que é deploy que não chegou no ambiente vivo.
       #
       # Nos outros gatilhos não há o que esperar, e o passo é pulado (exceto
       # pelo `probe_deploy_wait` do dispatch, que existe para provar o caminho).

@@ -51,13 +51,33 @@ describe('StockNotifyButton', () => {
     const wrapper = await mountSuspended(StockNotifyButton, {
       props: { sku: 'PAO', name: 'Pão', subscribed: true }
     })
-    expect(wrapper.text()).toContain('Avisaremos você')
+    expect(wrapper.text()).toContain('Aviso ativo')
     expect(wrapper.get('button').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('Gerenciar este aviso')
+    expect(wrapper.get('a').attributes('href')).toBe('/conta/preferencias#avisos-produtos')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('anonymous reload recovers the exact session management link', async () => {
+    await setAuthenticated(false)
+    fetchMock.mockResolvedValue({ active: true, management_url: '/gerenciar-aviso#recovered-capability' })
+    const wrapper = await mountSuspended(StockNotifyButton, {
+      props: { sku: 'PAO', name: 'Pão', subscribed: true }
+    })
+
+    await new Promise(r => setTimeout(r, 0))
+    await nextTick()
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('/availability/PAO/notify/')
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'GET', credentials: 'include' })
+    expect(wrapper.text()).toContain('Gerenciar este aviso')
+    expect(wrapper.get('a').attributes('href')).toBe('/gerenciar-aviso#recovered-capability')
   })
 
   it('authenticated one-click subscribe hits the notify endpoint and confirms', async () => {
     await setAuthenticated(true)
-    fetchMock.mockResolvedValue({})
+    fetchMock.mockResolvedValue({ management_url: '/gerenciar-aviso#opaque-capability' })
     const wrapper = await mountSuspended(StockNotifyButton, {
       props: { sku: 'PAO', name: 'Pão', subscribed: false }
     })
@@ -68,7 +88,9 @@ describe('StockNotifyButton', () => {
 
     expect(fetchMock).toHaveBeenCalledOnce()
     expect(fetchMock.mock.calls[0]?.[0]).toContain('/availability/PAO/notify/')
-    expect(wrapper.text()).toContain('Avisaremos você') // virou estado confirmado
+    expect(wrapper.text()).toContain('Aviso ativo') // virou estado confirmado
+    expect(wrapper.text()).toContain('Gerenciar este aviso')
+    expect(wrapper.get('a').attributes('href')).toBe('/gerenciar-aviso#opaque-capability')
   })
 
   it('renders the notify affordance with an accessible label when not subscribed', async () => {
@@ -76,13 +98,13 @@ describe('StockNotifyButton', () => {
     const wrapper = await mountSuspended(StockNotifyButton, {
       props: { sku: 'PAO', name: 'Pão', pill: true, subscribed: false }
     })
-    expect(wrapper.get('button').attributes('aria-label')).toBe('Me avise quando Pão voltar')
+    expect(wrapper.get('button').attributes('aria-label')).toBe('Ativar avisos recorrentes quando Pão voltar')
   })
 
   it('anonymous submit uses the shop default DDD and repairs legacy mobile input', async () => {
     await setAuthenticated(false)
     await setDefaultDdd('43')
-    fetchMock.mockResolvedValue({})
+    fetchMock.mockResolvedValueOnce({ ok: true }).mockRejectedValueOnce(new Error('not owned'))
     const wrapper = await mountSuspended(StockNotifyButton, {
       props: { sku: 'PAO', name: 'Pão', subscribed: false }
     })
@@ -97,8 +119,42 @@ describe('StockNotifyButton', () => {
     await new DOMWrapper(form!).trigger('submit')
     await new Promise(r => setTimeout(r, 0))
 
-    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(fetchMock.mock.calls[0]?.[1]?.body).toEqual({ phone: '+5543998404900' })
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'GET', credentials: 'include' })
+    expect(wrapper.text()).toContain('Pedido recebido. Entre com este WhatsApp para conferir se o aviso está ativo ou reativá-lo.')
+    expect(wrapper.text()).toContain('Entrar para conferir')
+    expect(wrapper.get('a').attributes('href')).toBe('/entrar?next=%2Fconta%2Fpreferencias%23avisos-produtos')
+    expect(wrapper.get('a').attributes('aria-label')).toContain('Entre com este WhatsApp')
+
+    await wrapper.setProps({ compact: true })
+    await nextTick()
+    expect(wrapper.text()).toContain('Conferir aviso')
+    expect(wrapper.get('a').attributes('href')).toBe('/entrar?next=%2Fconta%2Fpreferencias%23avisos-produtos')
+  })
+
+  it('anonymous first subscribe recovers the capability bound to its session', async () => {
+    await setAuthenticated(false)
+    await setDefaultDdd('43')
+    fetchMock
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ active: true, management_url: '/gerenciar-aviso#owned-capability' })
+    const wrapper = await mountSuspended(StockNotifyButton, {
+      props: { sku: 'PAO', name: 'Pão', subscribed: false }
+    })
+
+    await wrapper.get('button').trigger('click')
+    await nextTick()
+    const input = document.body.querySelector<HTMLInputElement>('input[aria-label="Telefone para aviso"]')
+    const form = document.body.querySelector<HTMLFormElement>('form')
+    await new DOMWrapper(input!).setValue('(43) 99840-4900')
+    await new DOMWrapper(form!).trigger('submit')
+    await new Promise(r => setTimeout(r, 0))
+    await nextTick()
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('Aviso ativo')
+    expect(wrapper.get('a').attributes('href')).toBe('/gerenciar-aviso#owned-capability')
   })
 
   // O reparo do normalizador (DDD da loja + nono dígito) tem que ficar VISÍVEL
@@ -121,5 +177,7 @@ describe('StockNotifyButton', () => {
     // Espaço na borda de nó de texto some no compilador do Vue; a frase inteira
     // é o que prova que o número não colou na palavra anterior.
     expect(sheetText).toContain('Mandaremos a mensagem para +55 (43) 99840-4900.')
+    expect(sheetText).toContain('continua ativo até você pausar ou cancelar')
+    expect(sheetText).not.toContain('30 dias')
   })
 })

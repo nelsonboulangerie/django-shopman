@@ -95,6 +95,10 @@ def path_access() -> str:
     return "/a"
 
 
+def path_stock_alert_management() -> str:
+    return "/gerenciar-aviso"
+
+
 def storefront_url(path: str) -> str:
     """URL absoluta da loja para um caminho (base + caminho).
 
@@ -130,3 +134,8 @@ def cart_url() -> str:
 
 def account_url() -> str:
     return storefront_url(path_account())
+
+
+def stock_alert_management_url(capability: str) -> str:
+    """Capability in the fragment never reaches HTTP logs or referrer headers."""
+    return f"{storefront_url(path_stock_alert_management())}#{capability}"

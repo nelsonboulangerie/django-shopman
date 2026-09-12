@@ -1,9 +1,8 @@
-"""Stock-back alerts ("Me avise quando disponível") — subscribe + notify.
+"""Persistent stock/bake alerts with occurrence-scoped delivery.
 
 Subscribe is open to anonymous shoppers (phone only) and logged-in customers.
-The notify path is triggered by a stock-arrival receiver and is idempotent: it
-only fires for *pending* subscriptions of a SKU that is *now* available, and
-stamps ``notified_at`` so each subscription notifies exactly once.
+The opt-in stays active until pause or revocation.  Each real occurrence
+gets a semantic identity and one durable delivery receipt per subscription.
 """
 
 from __future__ import annotations
@@ -13,7 +12,8 @@ import hmac
 import json
 import logging
 import uuid
-from datetime import timedelta
+from base64 import urlsafe_b64decode, urlsafe_b64encode
+from dataclasses import dataclass
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -24,11 +24,20 @@ from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 
 logger = logging.getLogger(__name__)
 
-STOCK_ALERT_DISCLOSURE_VERSION = "stock-availability-pt-BR-v1"
+STOCK_ALERT_DISCLOSURE_VERSION = "stock-availability-pt-BR-v3"
 STOCK_ALERT_DISCLOSURE = (
-    "Quero receber um aviso por WhatsApp sobre este produto. A assinatura termina "
-    "no primeiro aviso, quando eu cancelar ou em 30 dias."
+    "Quero receber avisos por WhatsApp sobre novas ocorrências deste produto. "
+    "O aviso continua ativo até eu pausar ou cancelar."
 )
+
+_MANAGEMENT_CAPABILITY_VERSION = b"stock-alert-management:v1"
+_MANAGEMENT_CAPABILITY_BYTES = 48
+
+
+@dataclass(frozen=True)
+class SubscribeOutcome:
+    subscription: object | None
+    created: bool
 
 
 def has_pending(sku: str, *, alert_types: tuple[str, ...] = ()) -> bool:
@@ -39,6 +48,17 @@ def has_pending(sku: str, *, alert_types: tuple[str, ...] = ()) -> bool:
     if alert_types:
         qs = qs.filter(alert_type__in=alert_types)
     return qs.exists()
+
+
+def needs_stock_reconciliation(sku: str) -> bool:
+    """Keep an open stock cycle accurate even when its last opt-in disappears."""
+    from shopman.storefront.models import StockAlertOccurrence
+
+    return has_pending(sku, alert_types=("stock_back",)) or StockAlertOccurrence.objects.filter(
+        sku=sku,
+        event_type="stock_back",
+        closed_at__isnull=True,
+    ).exists()
 
 
 def default_alert_type(sku: str) -> str:
@@ -70,7 +90,7 @@ def default_alert_type(sku: str) -> str:
 
 
 def subscribed_skus(*, customer=None, phone: str = "") -> set[str]:
-    """SKUs com inscrição PENDENTE para este viewer (cliente logado e/ou telefone).
+    """SKUs com inscrição ativa para este viewer (cliente logado e/ou telefone).
 
     Usado pela projeção para persistir o estado do sino "Me avise" entre reloads.
     """
@@ -88,15 +108,11 @@ def subscribed_skus(*, customer=None, phone: str = "") -> set[str]:
         cond |= Q(customer_ref=customer_ref)
     if contact:
         cond |= Q(contact_phone=contact)
-    return set(
-        StockAlertSubscription.objects.active()
-        .filter(cond)
-        .values_list("sku", flat=True)
-    )
+    return set(StockAlertSubscription.objects.active().filter(cond).values_list("sku", flat=True))
 
 
 def has_pending_for(*, sku: str, customer=None, phone: str = "", alert_type: str = "") -> bool:
-    """True when this customer/contact still has a pending alert for ``sku``."""
+    """True when this customer/contact still has an active alert for ``sku``."""
     from django.db.models import Q
 
     from shopman.storefront.models import StockAlertSubscription
@@ -127,19 +143,49 @@ def subscribe(
     disclosure_text: str = STOCK_ALERT_DISCLOSURE,
     disclosure_version: str = STOCK_ALERT_DISCLOSURE_VERSION,
 ):
-    """Register a pending alert. Returns the subscription or None.
+    """Register or resume a persistent alert. Returns it or ``None``.
 
     ``alert_type`` vazio NÃO é ``stock_back``: é "decida você", e a decisão sai
     de :func:`default_alert_type`, pela natureza do produto. Quem passa o tipo
     explicitamente manda — é o caso do endpoint quando o corpo escolhe.
 
-    Dedupes a pending alert per (sku, alert_type, target): os dois eixos podem
+    Dedupes an active alert per (sku, alert_type, target): os dois eixos podem
     coexistir para o mesmo contato sem um sobrescrever o outro. Ninguém cria os
     dois de propósito — quem faz isso é um pedido explícito, ou uma linha
     antiga; ``_notify`` garante que ainda assim sai UMA mensagem por pessoa.
 
     ``customer`` is a Guestman Customer (or None for anonymous); ``phone`` is
     the anonymous contact.
+    """
+    return subscribe_with_outcome(
+        sku,
+        channel_ref=channel_ref,
+        customer=customer,
+        phone=phone,
+        alert_type=alert_type,
+        disclosure_text=disclosure_text,
+        disclosure_version=disclosure_version,
+    ).subscription
+
+
+@transaction.atomic
+def subscribe_with_outcome(
+    sku: str,
+    *,
+    channel_ref: str = STOREFRONT_CHANNEL_REF,
+    customer=None,
+    phone: str = "",
+    alert_type: str = "",
+    disclosure_text: str = STOCK_ALERT_DISCLOSURE,
+    disclosure_version: str = STOCK_ALERT_DISCLOSURE_VERSION,
+    resume_existing: bool = True,
+) -> SubscribeOutcome:
+    """Subscribe and report whether this transaction created the row.
+
+    Public anonymous endpoints set ``resume_existing=False`` until the caller
+    proves ownership through authenticated identity or trusted server-side
+    session state. Merely knowing a phone number must not resume or take over a
+    subscription created in another browser session.
     """
     from shopman.storefront.models import StockAlertSubscription
 
@@ -149,48 +195,40 @@ def subscribe(
     disclosure_text = (disclosure_text or "").strip()
     disclosure_version = (disclosure_version or "").strip()
     if not contact or not disclosure_text or not disclosure_version:
-        return None
+        return SubscribeOutcome(None, False)
 
-    now = timezone.now()
     channel_ref = channel_ref or "web"
+    _lock_channel_if_configured(channel_ref)
     target_key = _target_key(customer_ref=customer_ref, phone=contact)
     selector = {
         "sku": sku,
         "alert_type": alert_type,
         "channel_ref": channel_ref,
         "target_key": target_key,
-        "notified_at__isnull": True,
         "revoked_at__isnull": True,
     }
-    stale = StockAlertSubscription.objects.filter(
+    existing = StockAlertSubscription.objects.filter(
         **selector,
-        expires_at__lte=now,
-    )
-    for old in stale.only("pk", "ref"):
-        old.revoked_at = now
-        old.revoke_reason = "expired"
-        old.revocation_evidence_hash = _revocation_hash(old.ref, now, "expired")
-        old.save(
-            update_fields=["revoked_at", "revoke_reason", "revocation_evidence_hash"]
-        )
-
-    existing = StockAlertSubscription.objects.active(now=now).filter(**selector).first()
+        proof_status="verified",
+    ).first()
     if existing:
-        return existing
+        if resume_existing and existing.paused_at is not None:
+            existing.paused_at = None
+            existing.pause_reason = ""
+            existing.save(update_fields=["paused_at", "pause_reason"])
+        return SubscribeOutcome(existing, False)
 
     # An old row without evidence cannot silently become proof. Close it and create
     # a fresh subscription carrying the text the shopper has just accepted.
     legacy = StockAlertSubscription.objects.filter(**selector).first()
     if legacy:
+        now = timezone.now()
         legacy.revoked_at = now
         legacy.revoke_reason = "reconfirmed_with_evidence"
-        legacy.revocation_evidence_hash = _revocation_hash(
-            legacy.ref, now, legacy.revoke_reason
-        )
-        legacy.save(
-            update_fields=["revoked_at", "revoke_reason", "revocation_evidence_hash"]
-        )
+        legacy.revocation_evidence_hash = _revocation_hash(legacy.ref, now, legacy.revoke_reason)
+        legacy.save(update_fields=["revoked_at", "revoke_reason", "revocation_evidence_hash"])
 
+    now = timezone.now()
     subscription_ref = uuid.uuid4()
     disclosure_hash = hashlib.sha256(disclosure_text.encode()).hexdigest()
     evidence_hash = _subscription_evidence_hash(
@@ -205,7 +243,7 @@ def subscribe(
     )
     try:
         with transaction.atomic():
-            return StockAlertSubscription.objects.create(
+            created = StockAlertSubscription.objects.create(
                 ref=subscription_ref,
                 sku=sku,
                 alert_type=alert_type,
@@ -220,12 +258,13 @@ def subscribe(
                 disclosure_hash=disclosure_hash,
                 evidence_hash=evidence_hash,
                 proof_status="verified",
-                expires_at=now + timedelta(days=30),
+                expires_at=None,
             )
+            return SubscribeOutcome(created, True)
     except IntegrityError:
         # The database unique is the race winner. A simultaneous equivalent click
         # receives that same subscription instead of surfacing a transient 500.
-        return StockAlertSubscription.objects.active().get(**selector)
+        return SubscribeOutcome(StockAlertSubscription.objects.active().get(**selector), False)
 
 
 @transaction.atomic
@@ -241,178 +280,550 @@ def revoke(
 
     from shopman.storefront.models import StockAlertSubscription
 
-    subscriptions = StockAlertSubscription.objects.select_for_update().filter(
-        ref=subscription_ref
+    _lock_channel_if_configured(
+        StockAlertSubscription.objects.filter(ref=subscription_ref).values_list("channel_ref", flat=True).first()
+        or STOREFRONT_CHANNEL_REF
     )
+
+    subscriptions = StockAlertSubscription.objects.select_for_update().filter(ref=subscription_ref)
     if sku:
         subscriptions = subscriptions.filter(sku=sku)
     sub = subscriptions.first()
     if sub is None:
         return False
-    customer_ref = (getattr(customer, "ref", "") or "").strip()
-    contact = normalize_phone(phone or getattr(customer, "phone", "") or "")
-    owned = (customer_ref and sub.customer_ref == customer_ref) or (
-        contact and sub.contact_phone == contact
-    )
-    if not owned:
+    if not _owned_by(sub, customer=customer, phone=phone):
         return False
     if sub.revoked_at is not None:
         return True
-    if sub.notified_at is not None:
-        return False
-
     now = timezone.now()
     sub.revoked_at = now
     sub.revoke_reason = (reason or "customer_request")[:100]
-    sub.revocation_evidence_hash = _revocation_hash(
-        sub.ref, now, sub.revoke_reason
-    )
+    sub.revocation_evidence_hash = _revocation_hash(sub.ref, now, sub.revoke_reason)
     sub.save(update_fields=["revoked_at", "revoke_reason", "revocation_evidence_hash"])
+    _suppress_pending_deliveries(sub, reason="subscription_cancelled")
     return True
-
-
-def notify_back_in_stock(sku: str, *, also_bake_waiters: bool = False) -> int:
-    """Notify pending subscribers once ``sku`` is available again.
-
-    Idempotent: marks ``notified_at`` only on a successful send, so a failed
-    delivery is retried on the next stock arrival. Devolve quantas PESSOAS
-    foram avisadas (não quantas assinaturas: ver ``_notify``).
-
-    ⚠️ ``also_bake_waiters`` é a REDE DE SEGURANÇA de quem espera fornada.
-
-    Um item de fornada pode voltar a ter estoque por um caminho que não é
-    produção — recebimento, devolução, ajuste de inventário. Quem assinou
-    ``production_ready`` ficaria calado para sempre nesses casos, porque o
-    ``production_changed`` nunca vai acontecer para aquela unidade. Então:
-    chegou estoque por fora da produção, a promessa "o produto está aí" está
-    cumprida e a fila da fornada também é servida — com a copy de CHEGADA
-    (``stock_arrived``), porque nada saiu do forno e mentir sobre isso é pior
-    que o silêncio que estamos consertando.
-
-    O receptor liga a rede só quando o ``Move`` NÃO é de produção
-    (``kind != make``). Ligá-la também na fornada faria a mesma pessoa ser
-    servida duas vezes no mesmo instante — e, pior, pelo caminho errado: os
-    dois ``on_commit`` correm em ordem de registro, e o do ``Move`` costuma
-    chegar primeiro, então o "saiu do forno" viraria "chegou ao estoque".
-    """
-    from shopman.storefront.models import StockAlertSubscription
-
-    types = [StockAlertSubscription.AlertType.STOCK_BACK]
-    if also_bake_waiters:
-        types.append(StockAlertSubscription.AlertType.PRODUCTION_READY)
-    return _notify(sku, alert_types=types, event="stock_arrived")
-
-
-def notify_bake_ready(sku: str) -> int:
-    """Notify pending ``production_ready`` subscribers quando sai uma fornada.
-
-    Mesmo gate de disponibilidade do ``stock_back``: fornada concluída que ainda
-    não virou estoque vendável no canal não vira aviso, porque o aviso promete
-    "pode pedir agora". Frustrar quem pediu para ser avisado é pior que calar.
-    """
-    from shopman.storefront.models import StockAlertSubscription
-
-    return _notify(
-        sku,
-        alert_types=[StockAlertSubscription.AlertType.PRODUCTION_READY],
-        event="production_ready",
-    )
-
-
-def _notify(sku: str, *, alert_types: list[str], event: str) -> int:
-    """Serve as inscrições pendentes destes tipos com UMA copy: a do que aconteceu.
-
-    ``event`` é do EVENTO, não da inscrição: "chegou ao estoque" e "saiu do
-    forno" prometem coisas diferentes, e quem sabe qual das duas é verdade
-    agora é quem disparou, não quem assinou.
-
-    Uma pessoa, uma mensagem: assinaturas do mesmo telefone são agrupadas e
-    carimbadas juntas. Contatos legados que assinaram os dois eixos do mesmo
-    produto (era o que o concierge fazia) recebiam duas mensagens iguais.
-    """
-    from shopman.storefront.models import StockAlertSubscription
-    from shopman.storefront.services import sku_state
-
-    pending = list(
-        StockAlertSubscription.objects.active().filter(
-            sku=sku,
-            alert_type__in=alert_types,
-        )
-    )
-    if not pending:
-        return 0
-
-    product_name = _product_name(sku)
-    notified = 0
-    #: Uma entrada por destinatário: a chave é o canal + o telefone, porque é o
-    #: telefone que recebe. Assinatura sem telefone fica de fora do agrupamento
-    #: e falha sozinha em ``_deliver`` (não há a quem avisar).
-    groups: dict[tuple[str, str], list] = {}
-    for sub in pending:
-        channel_ref = sub.channel_ref or STOREFRONT_CHANNEL_REF
-        groups.setdefault((channel_ref, (sub.contact_phone or "").strip()), []).append(sub)
-
-    for (channel_ref, _phone), subs in groups.items():
-        try:
-            state = sku_state.resolve(sku=sku, channel_ref=channel_ref)
-        except Exception:
-            logger.debug("stock_alerts: availability check failed sku=%s", sku, exc_info=True)
-            continue
-        if not state.can_add_to_cart:
-            continue  # still unavailable for this channel — keep pending
-        if _deliver_group_if_still_active(
-            [sub.pk for sub in subs],
-            product_name=product_name,
-            event=event,
-            available_qty=state.available_qty,
-        ):
-            notified += 1
-    if notified:
-        logger.info(
-            "stock_alerts: notified %s subscriber(s) for sku=%s event=%s",
-            notified, sku, event,
-        )
-    return notified
 
 
 @transaction.atomic
-def _deliver_group_if_still_active(
-    subscription_pks: list[int],
+def set_paused(
+    subscription_ref,
     *,
-    product_name: str,
-    event: str,
-    available_qty: int | None,
+    paused: bool,
+    sku: str = "",
+    customer=None,
+    phone: str = "",
+    reason: str = "customer_request",
 ) -> bool:
-    """Lock, recheck revocation/expiry/global opt-out, then deliver once.
-
-    This intentionally holds the row lock across the legacy adapter call. WP-03
-    replaces that temporary boundary with a persisted DeliveryAttempt, without
-    weakening this revoke-before-send guarantee in the meantime.
-    """
-
+    """Pause/resume one opt-in after the same ownership check used by revoke."""
     from shopman.storefront.models import StockAlertSubscription
 
-    subscriptions = list(
-        StockAlertSubscription.objects.select_for_update()
-        .active()
-        .filter(pk__in=subscription_pks)
-        .order_by("pk")
+    _lock_channel_if_configured(
+        StockAlertSubscription.objects.filter(ref=subscription_ref).values_list("channel_ref", flat=True).first()
+        or STOREFRONT_CHANNEL_REF
     )
-    if not subscriptions or any(_globally_opted_out(sub) for sub in subscriptions):
+
+    qs = StockAlertSubscription.objects.select_for_update().filter(
+        ref=subscription_ref,
+        revoked_at__isnull=True,
+        proof_status="verified",
+    )
+    if sku:
+        qs = qs.filter(sku=sku)
+    sub = qs.first()
+    if sub is None or not _owned_by(sub, customer=customer, phone=phone):
         return False
-    sub = subscriptions[0]
-    if not _deliver(
-        sub,
-        product_name=product_name,
-        event=event,
-        available_qty=available_qty,
-    ):
-        return False
-    stamped = timezone.now()
-    for item in subscriptions:
-        item.notified_at = stamped
-        item.save(update_fields=["notified_at"])
+    sub.paused_at = timezone.now() if paused else None
+    sub.pause_reason = (reason or "customer_request")[:100] if paused else ""
+    sub.save(update_fields=["paused_at", "pause_reason"])
+    if paused:
+        _suppress_pending_deliveries(sub, reason="subscription_paused")
     return True
+
+
+def management_capability(sub) -> str:
+    """Return a purpose-scoped bearer capability without persisting plaintext."""
+    ref_bytes = uuid.UUID(str(sub.ref)).bytes
+    scope = b":".join(
+        (
+            _MANAGEMENT_CAPABILITY_VERSION,
+            str(sub.purpose or "").encode(),
+            str(sub.channel_ref or "").encode(),
+        )
+    )
+    signature = hmac.new(settings.SECRET_KEY.encode(), scope + b":" + ref_bytes, hashlib.sha256).digest()
+    return urlsafe_b64encode(ref_bytes + signature).rstrip(b"=").decode("ascii")
+
+
+def management_url(sub) -> str:
+    """Return the public management page; the capability stays in the URL fragment."""
+    from shopman.shop.services import storefront_links
+
+    return storefront_links.stock_alert_management_url(management_capability(sub))
+
+
+def subscription_for_owner(subscription_ref, *, sku: str, customer=None, phone: str = ""):
+    """Resolve one verified, non-revoked alert after the canonical ownership check.
+
+    Used to recover a management capability from trusted session state.  The
+    opaque ref is only a selector; it is never sufficient authorization.
+    """
+    from shopman.storefront.models import StockAlertSubscription
+
+    try:
+        subscription_uuid = uuid.UUID(str(subscription_ref))
+        sub = StockAlertSubscription.objects.filter(
+            ref=subscription_uuid,
+            sku=sku,
+            purpose="stock_availability",
+            proof_status="verified",
+            revoked_at__isnull=True,
+        ).first()
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if sub is None or not _owned_by(sub, customer=customer, phone=phone):
+        return None
+    return sub
+
+
+def subscription_for_management(capability: str, *, for_update: bool = False):
+    """Resolve one active verified subscription without logging the bearer token."""
+    from shopman.storefront.models import StockAlertSubscription
+
+    raw = str(capability or "").strip()
+    if not raw or len(raw) > 128:
+        return None
+    try:
+        decoded = urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
+        if len(decoded) != _MANAGEMENT_CAPABILITY_BYTES:
+            return None
+        canonical = urlsafe_b64encode(decoded).rstrip(b"=").decode("ascii")
+        if not hmac.compare_digest(raw, canonical):
+            return None
+        subscription_ref = uuid.UUID(bytes=decoded[:16])
+    except (ValueError, TypeError):
+        return None
+    queryset = StockAlertSubscription.objects
+    if for_update:
+        queryset = queryset.select_for_update()
+    sub = queryset.filter(
+        ref=subscription_ref,
+        purpose="stock_availability",
+        proof_status="verified",
+        revoked_at__isnull=True,
+    ).first()
+    if sub is None or not hmac.compare_digest(raw, management_capability(sub)):
+        return None
+    return sub
+
+
+@transaction.atomic
+def set_paused_by_capability(capability: str, *, paused: bool):
+    """Pause/resume through a bearer capability; suppressed history never revives."""
+    candidate = subscription_for_management(capability)
+    if candidate is None:
+        return None
+    _lock_channel_if_configured(candidate.channel_ref)
+    sub = subscription_for_management(capability, for_update=True)
+    if sub is None:
+        return None
+    sub.paused_at = timezone.now() if paused else None
+    sub.pause_reason = "customer_capability" if paused else ""
+    sub.save(update_fields=["paused_at", "pause_reason"])
+    suppressed = _suppress_pending_deliveries(sub, reason="subscription_paused") if paused else 0
+    return sub, suppressed
+
+
+@transaction.atomic
+def revoke_by_capability(capability: str):
+    """Irreversibly cancel the exact subscription granted by the capability."""
+    candidate = subscription_for_management(capability)
+    if candidate is None:
+        return None
+    _lock_channel_if_configured(candidate.channel_ref)
+    sub = subscription_for_management(capability, for_update=True)
+    if sub is None:
+        return None
+    now = timezone.now()
+    sub.revoked_at = now
+    sub.revoke_reason = "customer_capability"
+    sub.revocation_evidence_hash = _revocation_hash(sub.ref, now, sub.revoke_reason)
+    sub.save(update_fields=["revoked_at", "revoke_reason", "revocation_evidence_hash"])
+    suppressed = _suppress_pending_deliveries(sub, reason="subscription_cancelled")
+    return sub, suppressed
+
+
+def notify_back_in_stock(sku: str, *, source_ref: str = "", also_bake_waiters: bool = False) -> int:
+    """Reconcile one stock cycle and queue the unavailable→available occurrence.
+
+    ``also_bake_waiters`` remains accepted for rollout compatibility but never
+    crosses event purposes: an arrival is not a bake.
+    """
+    del also_bake_waiters
+    return _record_occurrences(sku, event_type="stock_back", source_ref=source_ref, close_when_unavailable=True)
+
+
+def notify_bake_ready(sku: str, *, source_ref: str = "") -> int:
+    """Compatibility name for releasing a manager-reviewed bake occurrence."""
+    return review_bake_ready(sku, source_ref=source_ref)
+
+
+def record_bake_pending(sku: str, *, source_ref: str) -> int:
+    """Record a finished bake without authorizing communication yet."""
+    from shopman.storefront.models import StockAlertSubscription
+
+    channels = set(
+        StockAlertSubscription.objects.active().filter(
+            sku=sku,
+            alert_type="production_ready",
+            revoked_at__isnull=True,
+        )
+        .values_list("channel_ref", flat=True)
+        .distinct()
+    )
+    created = 0
+    for channel_ref in sorted(channels):
+        if _create_pending_bake_occurrence(
+            sku=sku,
+            channel_ref=channel_ref,
+            source_ref=source_ref,
+        ):
+            created += 1
+    return created
+
+
+def review_bake_ready(sku: str, *, source_ref: str) -> int:
+    """Release one bake only after canonical manager QC and channel checks."""
+    from shopman.shop.services import quality as quality_service
+    from shopman.storefront.models import StockAlertOccurrence, StockAlertSubscription
+    from shopman.storefront.services import sku_state
+
+    channels = set(
+        StockAlertSubscription.objects.active().filter(
+            sku=sku,
+            alert_type="production_ready",
+            revoked_at__isnull=True,
+        )
+        .values_list("channel_ref", flat=True)
+        .distinct()
+    )
+    channels.update(
+        StockAlertOccurrence.objects.filter(
+            sku=sku,
+            event_type="production_ready",
+            source_ref=source_ref,
+        ).values_list("channel_ref", flat=True)
+    )
+    queued = 0
+    for channel_ref in sorted(channels):
+        try:
+            reviewed_qty = quality_service.reviewed_saleable_quantity(
+                source_ref,
+                channel_ref=channel_ref,
+            )
+            state = sku_state.resolve(sku=sku, channel_ref=channel_ref)
+        except Exception:
+            logger.warning(
+                "stock_alerts: bake review evaluation failed sku=%s source=%s",
+                sku,
+                source_ref,
+                exc_info=True,
+            )
+            continue
+        if reviewed_qty is None:
+            _create_pending_bake_occurrence(
+                sku=sku,
+                channel_ref=channel_ref,
+                source_ref=source_ref,
+            )
+            continue
+        if reviewed_qty <= 0:
+            _create_blocked_occurrence(
+                sku=sku,
+                event_type="production_ready",
+                channel_ref=channel_ref,
+                source_ref=source_ref,
+                reason="quality_not_sellable_for_channel",
+            )
+            continue
+        if not state.can_add_to_cart:
+            _create_blocked_occurrence(
+                sku=sku,
+                event_type="production_ready",
+                channel_ref=channel_ref,
+                source_ref=source_ref,
+                reason="unavailable_after_quality_review",
+            )
+            continue
+        queued += _create_eligible_occurrence(
+            sku=sku,
+            event_type="production_ready",
+            channel_ref=channel_ref,
+            source_ref=source_ref,
+            available_qty=(
+                reviewed_qty
+                if state.available_qty is None
+                else min(reviewed_qty, state.available_qty)
+            ),
+        )
+    return queued
+
+
+@transaction.atomic
+def _create_pending_bake_occurrence(*, sku: str, channel_ref: str, source_ref: str) -> bool:
+    from shopman.storefront.models import StockAlertOccurrence
+
+    _lock_channel_if_configured(channel_ref)
+    occurrence, created = StockAlertOccurrence.objects.get_or_create(
+        semantic_key=_occurrence_key("production_ready", sku, channel_ref, source_ref),
+        defaults={
+            "sku": sku,
+            "event_type": "production_ready",
+            "channel_ref": channel_ref,
+            "source_ref": source_ref,
+            "status_reason": "awaiting_quality_review",
+        },
+    )
+    if not created and occurrence.status == StockAlertOccurrence.Status.PENDING:
+        updates = []
+        if occurrence.status_reason != "awaiting_quality_review":
+            occurrence.status_reason = "awaiting_quality_review"
+            updates.append("status_reason")
+        if occurrence.closed_at is not None:
+            occurrence.closed_at = None
+            updates.append("closed_at")
+        if updates:
+            occurrence.save(update_fields=[*updates, "updated_at"])
+    return created
+
+
+def _record_occurrences(
+    sku: str,
+    *,
+    event_type: str,
+    source_ref: str,
+    close_when_unavailable: bool = False,
+) -> int:
+    """Evaluate every subscribed channel and atomically queue new deliveries."""
+    from shopman.storefront.models import StockAlertOccurrence, StockAlertSubscription
+    from shopman.storefront.services import sku_state
+
+    channels = set(
+        StockAlertSubscription.objects.filter(sku=sku, alert_type=event_type, revoked_at__isnull=True)
+        .values_list("channel_ref", flat=True)
+        .distinct()
+    )
+    if close_when_unavailable:
+        channels.update(
+            StockAlertOccurrence.objects.filter(
+                sku=sku,
+                event_type=event_type,
+                closed_at__isnull=True,
+            ).values_list("channel_ref", flat=True)
+        )
+    if not channels:
+        return 0
+    queued = 0
+    for channel_ref in sorted(channels):
+        try:
+            state = sku_state.resolve(sku=sku, channel_ref=channel_ref)
+        except Exception:
+            logger.warning("stock_alerts: occurrence evaluation failed sku=%s", sku, exc_info=True)
+            continue
+        if not state.can_add_to_cart:
+            if close_when_unavailable:
+                StockAlertOccurrence.objects.filter(
+                    sku=sku,
+                    event_type=event_type,
+                    channel_ref=channel_ref,
+                    closed_at__isnull=True,
+                ).update(
+                    status=StockAlertOccurrence.Status.CLOSED,
+                    status_reason="unavailable_cycle_closed",
+                    closed_at=timezone.now(),
+                )
+            elif source_ref:
+                _create_blocked_occurrence(
+                    sku=sku,
+                    event_type=event_type,
+                    channel_ref=channel_ref,
+                    source_ref=source_ref,
+                    reason="not_sellable_after_qc",
+                )
+            continue
+        queued += _create_eligible_occurrence(
+            sku=sku,
+            event_type=event_type,
+            channel_ref=channel_ref,
+            source_ref=source_ref,
+            available_qty=state.available_qty,
+        )
+    return queued
+
+
+@transaction.atomic
+def _create_eligible_occurrence(*, sku: str, event_type: str, channel_ref: str, source_ref: str, available_qty) -> int:
+    from shopman.storefront.models import StockAlertDelivery, StockAlertOccurrence, StockAlertSubscription
+
+    _lock_channel_if_configured(channel_ref)
+    if event_type == "stock_back":
+        existing = (
+            StockAlertOccurrence.objects.select_for_update()
+            .filter(sku=sku, event_type=event_type, channel_ref=channel_ref, closed_at__isnull=True)
+            .first()
+        )
+        if existing:
+            return 0
+        semantic_key = _occurrence_key("stock_back", sku, channel_ref, source_ref)
+    else:
+        semantic_key = _occurrence_key("production_ready", sku, channel_ref, source_ref)
+    try:
+        with transaction.atomic():
+            occurrence, created = StockAlertOccurrence.objects.get_or_create(
+                semantic_key=semantic_key,
+                defaults={
+                    "sku": sku,
+                    "event_type": event_type,
+                    "channel_ref": channel_ref,
+                    "source_ref": source_ref,
+                    "available_qty": available_qty,
+                },
+            )
+    except IntegrityError:
+        # Two distinct positive Move rows can observe the same newly-available
+        # cycle. The partial unique constraint picks its one occurrence.
+        if (
+            event_type == "stock_back"
+            and StockAlertOccurrence.objects.filter(
+                sku=sku, event_type=event_type, channel_ref=channel_ref, closed_at__isnull=True
+            ).exists()
+        ):
+            return 0
+        raise
+    if not created:
+        occurrence = StockAlertOccurrence.objects.select_for_update().get(pk=occurrence.pk)
+        if event_type != "production_ready" or occurrence.deliveries.exists():
+            return 0
+        if occurrence.status not in {
+            StockAlertOccurrence.Status.PENDING,
+            StockAlertOccurrence.Status.BLOCKED,
+        }:
+            return 0
+    occurrence.status = StockAlertOccurrence.Status.ELIGIBLE
+    occurrence.status_reason = (
+        "quality_reviewed_sellable" if event_type == "production_ready" else "sellable_after_event"
+    )
+    occurrence.available_qty = available_qty
+    occurrence.closed_at = timezone.now() if event_type == "production_ready" else None
+    occurrence.save(update_fields=["status", "status_reason", "available_qty", "closed_at", "updated_at"])
+    subscriptions = StockAlertSubscription.objects.active().filter(
+        sku=sku, alert_type=event_type, channel_ref=channel_ref
+    )
+    queued = 0
+    for sub in subscriptions.iterator():
+        delivery, delivery_created = StockAlertDelivery.objects.get_or_create(
+            subscription=sub,
+            occurrence=occurrence,
+            purpose=sub.purpose,
+            delivery_channel=sub.delivery_channel,
+        )
+        if delivery_created:
+            _queue_delivery(delivery)
+            queued += 1
+    return queued
+
+
+@transaction.atomic
+def _create_blocked_occurrence(*, sku, event_type, channel_ref, source_ref, reason) -> None:
+    from shopman.storefront.models import StockAlertDelivery, StockAlertOccurrence
+
+    _lock_channel_if_configured(channel_ref)
+    semantic_key = _occurrence_key(event_type, sku, channel_ref, source_ref)
+    occurrence, _created = StockAlertOccurrence.objects.get_or_create(
+        semantic_key=semantic_key,
+        defaults={
+            "sku": sku,
+            "event_type": event_type,
+            "channel_ref": channel_ref,
+            "source_ref": source_ref,
+        },
+    )
+    occurrence = StockAlertOccurrence.objects.select_for_update().get(pk=occurrence.pk)
+    accepted = occurrence.deliveries.filter(status=StockAlertDelivery.Status.ACCEPTED).count()
+    occurrence.status = StockAlertOccurrence.Status.BLOCKED
+    occurrence.status_reason = reason
+    occurrence.available_qty = None
+    occurrence.closed_at = timezone.now()
+    occurrence.save(update_fields=["status", "status_reason", "available_qty", "closed_at", "updated_at"])
+    occurrence.deliveries.filter(
+        status__in=(
+            StockAlertDelivery.Status.QUEUED,
+            StockAlertDelivery.Status.CLAIMED,
+            StockAlertDelivery.Status.RETRYABLE,
+        )
+    ).update(
+        status=StockAlertDelivery.Status.SUPPRESSED,
+        last_error_code=reason[:100],
+        updated_at=timezone.now(),
+    )
+    if accepted:
+        transaction.on_commit(
+            lambda: _alert_quality_changed_after_delivery(
+                source_ref=source_ref,
+                accepted=accepted,
+            )
+        )
+
+
+def _alert_quality_changed_after_delivery(*, source_ref: str, accepted: int) -> None:
+    from shopman.shop.services.observability import create_operator_alert
+
+    create_operator_alert(
+        type="production_quality_communication",
+        severity="warning",
+        message=(
+            f"O QC de {source_ref} deixou a fornada inelegível depois de "
+            f"{accepted} aviso(s) aceito(s). Confira a fornada e o histórico de comunicação."
+        ),
+        order_ref=source_ref,
+        dedupe_key=f"stock-alert-quality:{source_ref}",
+    )
+
+
+def _queue_delivery(delivery) -> None:
+    from shopman.shop.directives import (
+        STOCK_ALERT_DELIVER,
+        STOCK_ALERT_DELIVERY_RECEIPT_SCOPE,
+        create_persistently_deduped,
+    )
+
+    key = f"stock-alert-delivery:{delivery.ref}"
+    directive = create_persistently_deduped(
+        STOCK_ALERT_DELIVER,
+        payload={"delivery_id": delivery.pk},
+        dedupe_key=key,
+        receipt_scope=STOCK_ALERT_DELIVERY_RECEIPT_SCOPE,
+    )
+    if directive is not None:
+        delivery.directive_id = directive.pk
+        delivery.save(update_fields=["directive_id", "updated_at"])
+
+
+def _suppress_pending_deliveries(sub, *, reason: str) -> int:
+    """Stop every delivery that has not crossed the provider boundary."""
+    from shopman.storefront.models import StockAlertDelivery
+
+    return sub.deliveries.filter(
+        status__in=(
+            StockAlertDelivery.Status.QUEUED,
+            StockAlertDelivery.Status.CLAIMED,
+            StockAlertDelivery.Status.RETRYABLE,
+        )
+    ).update(
+        status=StockAlertDelivery.Status.SUPPRESSED,
+        claimed_at=None,
+        last_error_code=reason[:100],
+        updated_at=timezone.now(),
+    )
 
 
 def _globally_opted_out(sub) -> bool:
@@ -423,15 +834,25 @@ def _globally_opted_out(sub) -> bool:
     return customer_is_opted_out(sub.customer_ref, sub.delivery_channel)
 
 
+def _owned_by(sub, *, customer=None, phone: str = "") -> bool:
+    customer_ref = (getattr(customer, "ref", "") or "").strip()
+    contact = normalize_phone(phone or getattr(customer, "phone", "") or "")
+    return bool((customer_ref and sub.customer_ref == customer_ref) or (contact and sub.contact_phone == contact))
+
+
 # ── private ──────────────────────────────────────────────────────────
 
 
-def _product_name(sku: str) -> str:
+def product_name(sku: str) -> str:
     # Read through the shop projection (surface modules don't import kernels).
     from shopman.shop.projections import catalog_context
 
     product = catalog_context.get_product(sku)
     return product.name if product is not None else sku
+
+
+# Compatibility for callers deployed before the public projection helper existed.
+_product_name = product_name
 
 
 def _image_url(sku: str) -> str:
@@ -466,9 +887,13 @@ def _first_name(sub) -> str:
 
 
 def _deliver(
-    sub, *, product_name: str, event: str = "stock_arrived", available_qty: int | None = None,
-) -> bool:
-    """Send the subscription's notification via the channel's backend. True on success."""
+    sub,
+    *,
+    product_name: str,
+    event: str = "stock_arrived",
+    available_qty: int | None = None,
+):
+    """Send through the configured adapter and return its acceptance result."""
     from shopman.shop.config import ChannelConfig
     from shopman.shop.notifications import notify
     from shopman.shop.services import storefront_links
@@ -479,16 +904,21 @@ def _deliver(
     recipient = (sub.contact_phone or "").strip()
     if not recipient:
         logger.debug("stock_alerts: no recipient for sub=%s", sub.pk)
-        return False
+        from shopman.shop.protocols import NotificationResult
+
+        return NotificationResult(success=False, error="missing_recipient")
 
     try:
-        backend = (ChannelConfig.for_channel(sub.channel_ref or STOREFRONT_CHANNEL_REF).notifications.backend) or "manychat"
+        backend = (
+            ChannelConfig.for_channel(sub.channel_ref or STOREFRONT_CHANNEL_REF).notifications.backend
+        ) or "manychat"
     except Exception:
         logger.debug("stock_alerts: backend resolve failed, default manychat", exc_info=True)
         backend = "manychat"
 
     try:
-        result = notify(
+        alert_management_url = management_url(sub)
+        return notify(
             event=event,
             recipient=recipient,
             context={
@@ -509,20 +939,23 @@ def _deliver(
                 # Quantidade REAL, já resolvida na checagem de disponibilidade acima.
                 # Vazio quando o canal não sabe contar (`available_qty=None`): a
                 # mensagem então não fala em número, em vez de inventar um.
-                "available_qty": "" if available_qty is None else str(available_qty),
+                "available_qty": _quantity_text(available_qty),
                 # Frase pronta para template aprovado do WhatsApp. O ManyChat não
                 # deve montar gramática com pedaços soltos: campo vazio ou valor
                 # antigo no perfil do assinante vira FOMO falso.
                 "availability_phrase": availability_phrase(available_qty),
                 "cta": "Garanta o seu:",
                 "action_url": storefront_links.product_url(sub.sku),
+                "management_url": alert_management_url,
+                "management_note": f"\nGerenciar este aviso: {alert_management_url}",
             },
             backend=backend,
         )
-        return bool(getattr(result, "success", False))
     except Exception:
         logger.warning("stock_alerts: delivery failed sub=%s sku=%s", sub.pk, sub.sku, exc_info=True)
-        return False
+        from shopman.shop.protocols import NotificationResult
+
+        return NotificationResult(success=False, error="notification_adapter_error", outcome_unknown=True)
 
 
 def _target_key(*, customer_ref: str, phone: str) -> str:
@@ -532,6 +965,21 @@ def _target_key(*, customer_ref: str, phone: str) -> str:
         identity.encode(),
         hashlib.sha256,
     ).hexdigest()
+
+
+def _quantity_text(value) -> str:
+    if value is None:
+        return ""
+    text = format(value, "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def _occurrence_key(event_type: str, sku: str, channel_ref: str, source_ref: str) -> str:
+    raw = f"{event_type}:{sku}:{channel_ref}:{source_ref or uuid.uuid4()}"
+    if len(raw) <= 160:
+        return raw
+    digest = hashlib.sha256(raw.encode()).hexdigest()
+    return f"{event_type}:{digest}"
 
 
 def _subscription_evidence_hash(
@@ -562,13 +1010,20 @@ def _subscription_evidence_hash(
         separators=(",", ":"),
         sort_keys=True,
     )
-    return hmac.new(
-        settings.SECRET_KEY.encode(), evidence.encode(), hashlib.sha256
-    ).hexdigest()
+    return hmac.new(settings.SECRET_KEY.encode(), evidence.encode(), hashlib.sha256).hexdigest()
+
+
+def _lock_channel_if_configured(channel_ref: str) -> bool:
+    """Use the canonical Channel row as mutex when it exists.
+
+    A missing bootstrap row must not lose the customer's opt-in. Delivery stays
+    fail-closed because its handler requires the configured Channel before IO.
+    """
+    from shopman.shop.models import Channel
+
+    return Channel.objects.select_for_update().filter(ref=channel_ref).exists()
 
 
 def _revocation_hash(subscription_ref, occurred_at, reason: str) -> str:
     value = f"{subscription_ref}:{occurred_at.isoformat()}:{reason}"
-    return hmac.new(
-        settings.SECRET_KEY.encode(), value.encode(), hashlib.sha256
-    ).hexdigest()
+    return hmac.new(settings.SECRET_KEY.encode(), value.encode(), hashlib.sha256).hexdigest()

@@ -39,7 +39,7 @@ describe('useReorder', () => {
     expect(reorder.conflict.value).toBeNull()
     expect(navigateTo).toHaveBeenCalledWith('/sacola')
     // idempotency key foi enviada
-    expect(fetchMock.mock.calls[0]?.[1]?.headers?.['x-idempotency-key']).toBeTruthy()
+    expect(fetchMock.mock.calls[0]?.[1]?.headers?.['Idempotency-Key']).toBeTruthy()
     expect(reorder.pending.value['ORD-9']).toBeUndefined() // limpo no finally
   })
 
@@ -69,5 +69,26 @@ describe('useReorder', () => {
     const res = await reorder.performAction({ href: '/nope/' } as never)
     expect(res).toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('reorder intention recovery', () => {
+  it('retains a lost-response key and creates a new key after confirmed success', async () => {
+    document.cookie = 'csrftoken=testtoken'
+    fetchMock.mockReset().mockRejectedValueOnce(new Error('response lost')).mockResolvedValue({ ok: true, added: [{ sku: 'P', name: 'Pão' }], skipped: [] })
+    const reorder = await loadReorder()
+    await expect(reorder.submit('RECOVERY-ONLY')).rejects.toThrow()
+    const first = fetchMock.mock.calls[0]?.[1]?.headers?.['Idempotency-Key']
+    await reorder.submit('RECOVERY-ONLY')
+    expect(fetchMock.mock.calls[1]?.[1]?.headers?.['Idempotency-Key']).toBe(first)
+    await reorder.submit('RECOVERY-ONLY')
+    expect(fetchMock.mock.calls[2]?.[1]?.headers?.['Idempotency-Key']).not.toBe(first)
+  })
+
+  it('retains the named partial result for the existing bag surface', async () => {
+    fetchMock.mockReset().mockResolvedValue({ ok: true, added: [{ sku: 'P', name: 'Pão' }], skipped: ['Croissant'] })
+    const reorder = await loadReorder()
+    await reorder.submit('PARTIAL-ONLY')
+    expect(reorder.outcome.value).toEqual({ ok: true, added: [{ sku: 'P', name: 'Pão' }], skipped: ['Croissant'] })
   })
 })

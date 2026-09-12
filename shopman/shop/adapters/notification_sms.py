@@ -46,8 +46,8 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     "preorder_reminder": "Lembrete: seu pedido {order_ref} esta agendado para amanha. Ja estamos preparando tudo!",
     "waitlist_available": "Sua fornada saiu! Confirme o pedido {order_ref} para garantir o seu: {tracking_url}",
     "waitlist_released": "O prazo de confirmacao do pedido {order_ref} passou e liberamos a sua vaga. Nada foi cobrado.",
-    "stock_arrived": "{product_name} chegou!{reserve_note}{deadline_note} {cta} {action_url}",
-    "production_ready": "Saiu do forno agora: {product_name}! {cta} {action_url}",
+    "stock_arrived": "{product_name} chegou!{reserve_note}{deadline_note} {cta} {action_url}{management_note}",
+    "production_ready": "Saiu do forno agora: {product_name}! {cta} {action_url}{management_note}",
     "announcement_published": "{body} {cta} {action_url}",
     "purchase_request": (
         "Ola, {supplier_greeting}! Pedido {purchase_ref} da {shop_name}: "

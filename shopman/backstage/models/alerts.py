@@ -67,6 +67,7 @@ class OperatorAlert(models.Model):
         # switch — e, por não ter dono, ficava invisível até um cliente reclamar.
         ("catalog_hidden_by_inactive_collection", "Produto fora do cardápio: categoria desativada"),
         ("stale_new_order", "Pedido parado aguardando confirmação"),
+        ("checkout_convenience_pending", "Conveniência do checkout pendente"),
         # Pedido fechado sem dono: nesta loja o telefone É a identidade, e sem
         # o vínculo o cliente fica sem histórico, fidelidade e rastreio.
         ("checkout_customer_unlinked", "Pedido fechou sem vínculo com cadastro"),
@@ -170,6 +171,8 @@ class OperatorAlert(models.Model):
         ("marketing_unknown_stale", "Marketing: resultado desconhecido sem resolução"),
         ("marketing_partial_without_action", "Marketing: parcial sem ação de recuperação"),
         ("marketing_readiness_stale", "Marketing: prontidão do canal vencida"),
+        ("stock_alert_delivery_stuck", "Entrega de aviso de produto atrasada"),
+        ("stock_alert_dispatch_unknown", "Resultado de envio de aviso incerto"),
         # Concierge de WhatsApp: o cliente pediu gente (o bot calou e a conversa
         # espera a equipe), ou o modelo falhou três vezes seguidas numa conversa.
         ("concierge_handoff", "WhatsApp: cliente pediu a equipe"),

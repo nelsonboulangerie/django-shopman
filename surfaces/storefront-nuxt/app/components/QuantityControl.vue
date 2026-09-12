@@ -50,6 +50,7 @@ function commit (value: number) {
     />
     <span class="min-w-6 text-center text-sm font-semibold tabular-nums" aria-live="polite">{{ qty }}</span>
     <UiButton
+      data-quantity-increase
       variant="ghost"
       size="icon-sm"
       class="size-10 rounded-full text-foreground"

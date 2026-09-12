@@ -1433,6 +1433,40 @@ def _fire_url(rule) -> str:
 
 
 class TestManualFire:
+    def test_fire_quota_counts_one_idempotent_intent_not_confirmation_round_trips(
+        self, client, gestor, rule, template, monkeypatch
+    ):
+        from django.core.cache import cache
+
+        from shopman.backstage.api.throttles import (
+            MarketingFireShopThrottle,
+            MarketingFireUserThrottle,
+        )
+
+        monkeypatch.setattr(MarketingFireUserThrottle, "rate", "1/hour", raising=False)
+        monkeypatch.setattr(MarketingFireShopThrottle, "rate", "100/day", raising=False)
+        cache.clear()
+        template.body = "Novidades frescas hoje!"
+        template.save(update_fields=["body"])
+        client.force_login(gestor)
+
+        response = _confirmed_post(
+            client,
+            _fire_url(rule),
+            {"base_version": rule.version},
+            key="fire-one-logical-operation-0001",
+        )
+
+        assert response.status_code == 200
+        limited = client.post(
+            _fire_url(rule),
+            data={"base_version": rule.version + 1},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="fire-second-logical-operation-0001",
+        )
+        assert limited.status_code == 429
+        assert int(limited.headers["Retry-After"]) > 0
+
     def test_body_bypass_is_rejected_before_any_announcement_or_effect(
         self, client, gestor, rule
     ):
@@ -2313,38 +2347,39 @@ class TestAudienceCount:
         assert chosen["empty_selection"] is False
         assert chosen["total"] == 0
 
-    def test_an_exhausted_alert_queue_says_so_instead_of_going_mute(self, client, gestor):
-        """O caso do Pablo: "ninguém para avisar" com quatro inscrições no banco.
-
-        A inscrição do pai dele existia; o estoque voltou 7 minutos depois, o aviso
-        saiu e a linha foi consumida. A conta zerou com razão — e a tela não tinha como
-        dizer isso, porque o número de quem JÁ foi avisado nunca saía do servidor.
-        """
-        from django.utils import timezone
-
-        from shopman.storefront.models import StockAlertSubscription
+    def test_a_delivered_alert_remains_an_active_marketing_opt_in(self, client, gestor):
+        """Uma entrega aceita não consome a assinatura persistente do cliente."""
+        from shopman.storefront.models import StockAlertDelivery, StockAlertOccurrence
+        from shopman.storefront.services import stock_alerts
 
         client.force_login(gestor)
-        StockAlertSubscription.objects.create(
+        subscriptions = [
+            stock_alerts.subscribe("BF", phone="+5543999993010"),
+            stock_alerts.subscribe("BF", phone="+5543999993011"),
+        ]
+        occurrence = StockAlertOccurrence.objects.create(
             sku="BF",
-            contact_phone="+5543999993010",
-            notified_at=timezone.now(),
-            evidence_hash="a" * 64,
+            event_type="production_ready",
+            semantic_key="production_ready:BF:test-batch",
+            source_ref="test-batch",
+            status=StockAlertOccurrence.Status.ELIGIBLE,
         )
-        StockAlertSubscription.objects.create(
-            sku="BF",
-            contact_phone="+5543999993011",
-            notified_at=timezone.now(),
-            evidence_hash="b" * 64,
-        )
+        StockAlertDelivery.objects.bulk_create([
+            StockAlertDelivery(
+                subscription=subscription,
+                occurrence=occurrence,
+                status=StockAlertDelivery.Status.ACCEPTED,
+            )
+            for subscription in subscriptions
+        ])
 
         data = client.post(
             COUNT_URL, {"audience_rules": {"alerts": True}, "sku": "BF"},
             content_type="application/json",
         ).json()
 
-        assert data["total"] == 0
-        assert data["alerts_pending"] == 0
+        assert data["total"] == 2
+        assert data["alerts_pending"] == 2
         assert data["alerts_notified"] == 2
 
     def test_a_queue_nobody_ever_joined_is_a_different_zero(self, client, gestor):

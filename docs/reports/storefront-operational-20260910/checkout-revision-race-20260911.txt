@@ -1,0 +1,26 @@
+Checkout — resposta de leitura atrasada não retrocede a revisão
+Data: 2026-09-11
+Branch: codex/storefront-operational-excellence-20260910
+
+Antes (CI, run 34622531379 / job 103339717258)
+- O cliente escolheu retirada e a tela avançou sem esperar PATCH /api/v1/checkout/draft/.
+- Uma leitura GET /api/v1/storefront/checkout/?delivery_date=... iniciada antes terminou depois do PATCH.
+- A tela enviou expected_revision antigo; o servidor preservou a integridade e respondeu 409 revision_changed.
+- Oráculo: TestLiveOrderCrossing.test_11_live_pickup_order_reaches_operator_queue expirou sem chegar a /pedido/; log Django registrou revision_changed.
+
+Correção
+- Mutações do rascunho são serializadas na ordem em que foram autorizadas.
+- Retirada e endereço aguardam a mutação aplicável antes de liberar o próximo passo.
+- O cart devolvido pelo PATCH é aceito imediatamente.
+- Respostas GET tardias ainda atualizam datas/slots/copy, mas não podem substituir o cart por uma revisão menor.
+- A validação otimista do servidor foi mantida.
+
+Depois (local real: Nuxt production build + BFF + Django)
+- Frontend: 552 passed em 60 arquivos.
+- Typecheck: passou.
+- Lint: 0 erros; 5 warnings preexistentes em WhatsappVerifyPanel.vue.
+- Storefront E2E completo: 28 passed em 46,96 s.
+
+Limites
+- A execução foi sintética e não enviou mensagem, pagamento ou transação externa.
+- A CI do commit final é a confirmação independente em Linux/PostgreSQL.

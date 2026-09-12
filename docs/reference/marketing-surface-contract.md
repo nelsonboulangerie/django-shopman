@@ -20,12 +20,24 @@ e sem navegação por membro, contato, outbox, destino ou tentativa.
 | Plataforma | Consequência atual | Cardinalidade | Não significa |
 |---|---|---:|---|
 | Instagram | Story público por padrão; Feed só por escolha explícita | 1 por anúncio | mensagem direta ou fallback de Story para Feed |
-| Facebook | publicação pública na página | 1 por anúncio | mensagem por pessoa |
+| Facebook | postagem pública na página | 1 por anúncio | mensagem por pessoa |
 | Google Meu Negócio | atualização pública padrão do estabelecimento | 1 por anúncio | mensagem por pessoa |
-| WhatsApp | mensagem direta | até 1 por pessoa elegível | publicação pública |
+| WhatsApp | mensagem direta | até 1 por pessoa elegível | postagem pública |
 
 Mensagem direta no Instagram está fora do contrato. Se for aprovada no futuro, exige
 fluxo de entrega, capability, consentimento, prontidão, limites e comprovante próprios.
+
+**Vocabulário da operação:** mensagem é uma mensagem direta e possui destinatário;
+publicação é uma postagem pública e não possui destinatário individual; entrega é o
+termo genérico que pode se referir às duas anteriores. Identificadores técnicos podem
+permanecer em inglês, mas esses termos não podem ser trocados na UI.
+
+O gate `MKT-CAP-01` foi aprovado em 2026-09-11: a evolução adotará a identidade
+`{platform, delivery_kind, format}`, um catálogo server-owned de capacidades e schemas
+fechados por destino. Durante a transição, cada plataforma continua resumida a uma
+única modalidade de entrega e nenhum novo efeito externo será habilitado. A auditoria
+e a decisão completas estão em
+[`marketing-platform-capability-audit-20260911.md`](../reports/execution/marketing-platform-capability-audit-20260911.md).
 
 O formato público faz parte do artefato imutável (`publication_format`). A prévia,
 aprovação e chamada do provider leem o mesmo valor. No Instagram, `story` é o default
@@ -193,7 +205,7 @@ segredos e obter autorização explícita.
 
 Em 2026-09-11, o cockpit e o pipeline-base de `#601` estão em produção e o teste
 WhatsApp unitário para contato verificado foi recebido pelo proprietário. Os adapters
-de publicação pública e a escolha Story/Feed estão em branch isolada, desligados por
+de postagem pública e a escolha Story/Feed estão em branch isolada, desligados por
 default e ainda sem deploy. Publicar Story, Feed, página do Facebook ou atualização do
 Google continua sendo gate humano: requer peça válida, conferência da prévia, conta
 correta, credenciais/escopos, autorização explícita e canário público observável. Teste

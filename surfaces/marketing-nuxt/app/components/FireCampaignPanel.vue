@@ -74,14 +74,23 @@ const publicOnly = computed(
 );
 const publicPublicationCount = computed(() => campaignPlatforms.value.length);
 
-const { count, pending: counting, failed: countFailed, measure, clear } = useAudienceCount();
+const {
+  count,
+  pending: counting,
+  failed: countFailed,
+  measure,
+  clear,
+} = useAudienceCount();
 
 /** Por que a fila de "me avise" está vazia — a mesma frase do card do anúncio.
  *  Zero calado é indistinguível de tela quebrada: foi o que aconteceu com a Baguette. */
 const emptyAlerts = computed(() =>
   count.value
     ? alertsNote({
-        alerts_count: count.value.alerts_pending < 0 ? undefined : count.value.alerts_pending,
+        alerts_count:
+          count.value.alerts_pending < 0
+            ? undefined
+            : count.value.alerts_pending,
         alerts_notified_count: Math.max(count.value.alerts_notified, 0),
       })
     : "",
@@ -186,7 +195,8 @@ const rulesChosen = computed(
 );
 
 const cannotSubmit = computed(() => {
-  if (Boolean(props.busy) || (needsProduct.value && !productSku.value)) return true;
+  if (Boolean(props.busy) || (needsProduct.value && !productSku.value))
+    return true;
   if (publicOnly.value) return false;
   return (
     nothingChosen.value ||
@@ -233,11 +243,7 @@ watch(
 </script>
 
 <template>
-  <section
-    v-if="result"
-    class="space-y-4"
-    aria-labelledby="fire-result-title"
-  >
+  <section v-if="result" class="space-y-4" aria-labelledby="fire-result-title">
     <div class="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-4">
       <div class="flex items-start gap-3">
         <Icon
@@ -250,13 +256,19 @@ watch(
           </h2>
           <p v-if="publicOnly" class="mt-1 text-sm text-muted-foreground">
             {{ formatCount(publicPublicationCount) }}
-            {{ publicPublicationCount === 1 ? "publicação pública preparada" : "publicações públicas preparadas" }}.
-            Nada foi publicado ainda.
+            {{
+              publicPublicationCount === 1
+                ? "postagem pública preparada"
+                : "postagens públicas preparadas"
+            }}. Nada foi publicado ainda.
           </p>
           <p v-else class="mt-1 text-sm text-muted-foreground">
             {{ formatCount(resultAudienceCount) }}
-            {{ resultAudienceCount === 1 ? "pessoa elegível" : "pessoas elegíveis" }}.
-            Nenhuma publicação ou mensagem foi enviada.
+            {{
+              resultAudienceCount === 1
+                ? "pessoa elegível"
+                : "pessoas elegíveis"
+            }}. Nenhuma publicação ou mensagem foi enviada.
           </p>
         </div>
       </div>
@@ -272,16 +284,13 @@ watch(
         <dd class="font-semibold">{{ result.receipt.resulting_version }}</dd>
       </div>
       <p v-if="result.replayed" class="mt-2 text-xs text-muted-foreground">
-        Este é o mesmo resultado do toque anterior; nenhum anúncio foi duplicado.
+        Este é o mesmo resultado do toque anterior; nenhum anúncio foi
+        duplicado.
       </p>
     </dl>
 
     <div class="flex flex-wrap justify-end gap-2">
-      <UiButton
-        type="button"
-        variant="outline"
-        @click="emit('cancel')"
-      >
+      <UiButton type="button" variant="outline" @click="emit('cancel')">
         Fechar
       </UiButton>
       <NuxtLink
@@ -304,23 +313,25 @@ watch(
       })
     "
   >
-    <div class="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm">
+    <div
+      class="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
+    >
       <p class="font-semibold">Texto protegido pelo fluxo de revisão</p>
       <p class="mt-1 text-xs text-muted-foreground">
-        Este disparo usa o modelo salvo da campanha e cria um anúncio para revisão antes
-        de qualquer publicação. Para mudar a mensagem, edite o modelo da campanha.
+        Este disparo usa o modelo salvo da campanha e cria um anúncio para
+        revisão antes de qualquer publicação. Para mudar a mensagem, edite o
+        modelo da campanha.
       </p>
     </div>
 
     <div v-if="needsProduct">
-      <label for="fire-product" class="mb-1 block text-xs font-medium text-muted-foreground">
+      <label
+        for="fire-product"
+        class="mb-1 block text-xs font-medium text-muted-foreground"
+      >
         Produto desta ocorrência
       </label>
-      <UiNativeSelect
-        id="fire-product"
-        v-model="productSku"
-        required
-      >
+      <UiNativeSelect id="fire-product" v-model="productSku" required>
         <option value="">Escolha o produto</option>
         <option
           v-for="product in products ?? []"
@@ -330,11 +341,16 @@ watch(
           {{ product.label }}
         </option>
       </UiNativeSelect>
-      <p v-if="(products ?? []).length" class="mt-1 text-xs text-muted-foreground">
-        Preenche nome, preço, disponibilidade e link com dados atuais do catálogo.
+      <p
+        v-if="(products ?? []).length"
+        class="mt-1 text-xs text-muted-foreground"
+      >
+        Preenche nome, preço, disponibilidade e link com dados atuais do
+        catálogo.
       </p>
       <p v-else class="mt-1 text-xs text-destructive" role="alert">
-        Nenhum produto publicável está disponível; o disparo permanece bloqueado.
+        Nenhum produto publicável está disponível; o disparo permanece
+        bloqueado.
       </p>
     </div>
 
@@ -343,36 +359,65 @@ watch(
       class="rounded-lg border border-primary/30 bg-primary/5 p-3"
     >
       <div class="flex items-start gap-3">
-        <Icon name="lucide:megaphone" class="mt-0.5 size-5 shrink-0 text-primary" />
+        <Icon
+          name="lucide:megaphone"
+          class="mt-0.5 size-5 shrink-0 text-primary"
+        />
         <div>
           <p class="text-sm font-semibold">
             {{ formatCount(publicPublicationCount) }}
-            {{ publicPublicationCount === 1 ? "publicação pública" : "publicações públicas" }}
+            {{
+              publicPublicationCount === 1
+                ? "postagem pública"
+                : "postagens públicas"
+            }}
           </p>
           <p class="mt-1 text-xs text-muted-foreground">
-            Este anúncio será preparado uma vez por plataforma para revisão. Não há seleção
-            de contatos e nenhuma mensagem direta será enviada.
+            Este anúncio será preparado uma vez por plataforma para revisão. Não
+            há seleção de contatos e nenhuma mensagem direta será enviada.
           </p>
         </div>
       </div>
     </div>
 
     <fieldset v-else class="space-y-2">
-      <legend class="text-xs font-medium text-muted-foreground">Para quem</legend>
+      <legend class="text-xs font-medium text-muted-foreground">
+        Para quem
+      </legend>
 
       <!-- Rádios nativos tornam explícita a escolha exclusiva entre público salvo e escolha avulsa. -->
-      <label class="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-3">
-        <input v-model="useSaved" type="radio" :value="true" class="mt-0.5" name="audience-mode">
+      <label
+        class="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-3"
+      >
+        <input
+          v-model="useSaved"
+          type="radio"
+          :value="true"
+          class="mt-0.5"
+          name="audience-mode"
+        />
         <span>
           <span class="block text-sm font-medium">O público da campanha</span>
           <span class="block text-xs text-muted-foreground">
-            {{ rule ? audienceRulesSummary(rule.audience_rules, audienceLabels) : "" }}
+            {{
+              rule
+                ? audienceRulesSummary(rule.audience_rules, audienceLabels)
+                : ""
+            }}
           </span>
         </span>
       </label>
 
-      <label class="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-3">
-        <input v-model="useSaved" type="radio" :value="false" class="mt-0.5" name="audience-mode">
+      <label
+        class="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-3"
+      >
+        <input
+          v-model="useSaved"
+          type="radio"
+          :value="false"
+          class="mt-0.5"
+          name="audience-mode"
+        />
         <span>
           <span class="block text-sm font-medium">Escolher agora</span>
           <span class="block text-xs text-muted-foreground">
@@ -382,11 +427,16 @@ watch(
       </label>
     </fieldset>
 
-    <div v-if="!publicOnly && !useSaved" class="space-y-4 rounded-lg bg-muted/40 p-3">
+    <div
+      v-if="!publicOnly && !useSaved"
+      class="space-y-4 rounded-lg bg-muted/40 p-3"
+    >
       <!-- Etiquetas primeiro: é o único público que o operador monta sozinho. RFM e
            churn são calculados, faixa é comercial, aniversário é cadastral. -->
       <fieldset v-if="tags.length">
-        <legend class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground">
+        <legend
+          class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground"
+        >
           Etiquetas
         </legend>
         <div class="flex flex-wrap gap-1.5">
@@ -396,9 +446,11 @@ watch(
             :key="tag.value"
             type="button"
             class="rounded-full border px-2.5 py-1 text-xs transition"
-            :class="chosenTags.includes(tag.value)
-              ? 'border-primary bg-primary text-primary-foreground'
-              : 'border-border hover:bg-muted'"
+            :class="
+              chosenTags.includes(tag.value)
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border hover:bg-muted'
+            "
             :aria-pressed="chosenTags.includes(tag.value)"
             @click="toggleTag(tag.value)"
           >
@@ -411,7 +463,9 @@ watch(
       </fieldset>
 
       <fieldset v-if="priceTiers.length">
-        <legend class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground">
+        <legend
+          class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground"
+        >
           Faixa de preço
         </legend>
         <div class="flex flex-wrap gap-1.5">
@@ -421,9 +475,11 @@ watch(
             :key="tier.value"
             type="button"
             class="rounded-full border px-2.5 py-1 text-xs transition"
-            :class="tiers.includes(tier.value)
-              ? 'border-primary bg-primary text-primary-foreground'
-              : 'border-border hover:bg-muted'"
+            :class="
+              tiers.includes(tier.value)
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border hover:bg-muted'
+            "
             :aria-pressed="tiers.includes(tier.value)"
             @click="toggleTier(tier.value)"
           >
@@ -433,7 +489,9 @@ watch(
       </fieldset>
 
       <fieldset v-if="rfmSegments.length">
-        <legend class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground">
+        <legend
+          class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground"
+        >
           Comportamento de compra
         </legend>
         <div class="flex flex-wrap gap-1.5">
@@ -443,9 +501,11 @@ watch(
             :key="segment.value"
             type="button"
             class="rounded-full border px-2.5 py-1 text-xs transition"
-            :class="segments.includes(segment.value)
-              ? 'border-primary bg-primary text-primary-foreground'
-              : 'border-border hover:bg-muted'"
+            :class="
+              segments.includes(segment.value)
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border hover:bg-muted'
+            "
             :aria-pressed="segments.includes(segment.value)"
             @click="toggleSegment(segment.value)"
           >
@@ -456,7 +516,11 @@ watch(
 
       <!-- Checkboxes permanecem nativos porque não há primitivo compartilhado de seleção binária. -->
       <label class="flex items-start gap-2 text-sm">
-        <input v-model="winBack" type="checkbox" class="mt-0.5 size-4 rounded border-border">
+        <input
+          v-model="winBack"
+          type="checkbox"
+          class="mt-0.5 size-4 rounded border-border"
+        />
         <span>
           Quem está sumindo
           <span class="block text-xs text-muted-foreground">
@@ -466,15 +530,25 @@ watch(
       </label>
 
       <label class="flex items-start gap-2 text-sm">
-        <input v-model="birthday" type="checkbox" class="mt-0.5 size-4 rounded border-border">
+        <input
+          v-model="birthday"
+          type="checkbox"
+          class="mt-0.5 size-4 rounded border-border"
+        />
         <span>
           Aniversariantes de hoje
-          <span class="block text-xs text-muted-foreground">Só quem tem data cadastrada.</span>
+          <span class="block text-xs text-muted-foreground"
+            >Só quem tem data cadastrada.</span
+          >
         </span>
       </label>
 
       <label class="flex items-start gap-2 text-sm">
-        <input v-model="vipFirst" type="checkbox" class="mt-0.5 size-4 rounded border-border">
+        <input
+          v-model="vipFirst"
+          type="checkbox"
+          class="mt-0.5 size-4 rounded border-border"
+        />
         <span>
           Avisar os melhores clientes 15 min antes
           <span class="block text-xs text-muted-foreground">
@@ -490,21 +564,33 @@ watch(
         <div class="flex gap-2">
           <!-- Cartões nativos mantêm a escolha exclusiva e o significado de cada combinação visíveis. -->
           <button
-            v-for="mode in ([
-              { value: 'any', title: 'Qualquer uma', hint: 'Quem se encaixa em pelo menos uma regra' },
-              { value: 'all', title: 'Todas', hint: 'Só quem se encaixa em todas as regras' },
-            ] as const)"
+            v-for="mode in [
+              {
+                value: 'any',
+                title: 'Qualquer uma',
+                hint: 'Quem se encaixa em pelo menos uma regra',
+              },
+              {
+                value: 'all',
+                title: 'Todas',
+                hint: 'Só quem se encaixa em todas as regras',
+              },
+            ] as const"
             :key="mode.value"
             type="button"
             class="flex-1 rounded-lg border p-2.5 text-left transition"
-            :class="match === mode.value
-              ? 'border-primary bg-primary/5'
-              : 'border-border hover:bg-muted'"
+            :class="
+              match === mode.value
+                ? 'border-primary bg-primary/5'
+                : 'border-border hover:bg-muted'
+            "
             :aria-pressed="match === mode.value"
             @click="match = mode.value"
           >
             <span class="block text-sm font-medium">{{ mode.title }}</span>
-            <span class="block text-xs text-muted-foreground">{{ mode.hint }}</span>
+            <span class="block text-xs text-muted-foreground">{{
+              mode.hint
+            }}</span>
           </button>
         </div>
       </fieldset>
@@ -519,12 +605,16 @@ watch(
     >
       <div class="flex items-baseline gap-2">
         <template v-if="count && !count.empty_selection">
-          <span class="text-2xl font-semibold tabular-nums">{{ formatCount(count.total) }}</span>
+          <span class="text-2xl font-semibold tabular-nums">{{
+            formatCount(count.total)
+          }}</span>
           <span class="text-sm text-muted-foreground">
             {{ count.total === 1 ? "pessoa recebe" : "pessoas recebem" }}
           </span>
         </template>
-        <span v-else-if="counting" class="text-sm text-muted-foreground">Contando…</span>
+        <span v-else-if="counting" class="text-sm text-muted-foreground"
+          >Contando…</span
+        >
         <span v-else-if="countFailed" class="text-sm font-medium text-warning">
           Não foi possível conferir o público. O disparo está bloqueado.
         </span>
@@ -546,14 +636,22 @@ watch(
           <span class="truncate">{{ part.label }}</span>
           <span class="tabular-nums">{{ formatCount(part.count) }}</span>
         </li>
-        <li class="flex items-baseline justify-between gap-3 border-t border-border pt-1 text-xs">
+        <li
+          class="flex items-baseline justify-between gap-3 border-t border-border pt-1 text-xs"
+        >
           <span class="text-muted-foreground">{{ count.match_label }}</span>
-          <span class="font-medium tabular-nums">{{ formatCount(count.total) }}</span>
+          <span class="font-medium tabular-nums">{{
+            formatCount(count.total)
+          }}</span>
         </li>
       </ul>
 
-      <p v-if="count && count.vip_count > 0" class="mt-2 text-xs text-muted-foreground">
-        {{ formatCount(count.vip_count) }} recebem primeiro; o resto, 15 min depois.
+      <p
+        v-if="count && count.vip_count > 0"
+        class="mt-2 text-xs text-muted-foreground"
+      >
+        {{ formatCount(count.vip_count) }} recebem primeiro; o resto, 15 min
+        depois.
       </p>
 
       <p
@@ -579,9 +677,12 @@ watch(
       </p>
     </div>
 
-    <p v-if="!publicOnly" class="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-      Quem não deu consentimento para receber no WhatsApp fica de fora, mesmo se estiver
-      no público escolhido.
+    <p
+      v-if="!publicOnly"
+      class="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+    >
+      Quem não deu consentimento para receber no WhatsApp fica de fora, mesmo se
+      estiver no público escolhido.
     </p>
 
     <p v-if="error" class="text-sm text-destructive" role="alert">
@@ -589,21 +690,16 @@ watch(
     </p>
 
     <div class="flex items-center justify-end gap-2">
-      <UiButton
-        type="button"
-        variant="ghost"
-        @click="emit('cancel')"
-      >
+      <UiButton type="button" variant="ghost" @click="emit('cancel')">
         Cancelar
       </UiButton>
-      <UiButton
-        type="submit"
-        :disabled="cannotSubmit"
-      >
+      <UiButton type="submit" :disabled="cannotSubmit">
         <Icon name="lucide:send" class="size-4" />
         {{
           busy
-            ? (publicOnly ? "Preparando…" : "Disparando…")
+            ? publicOnly
+              ? "Preparando…"
+              : "Disparando…"
             : publicOnly
               ? "Preparar para revisão"
               : countFailed

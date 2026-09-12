@@ -222,6 +222,8 @@ export interface CartItemProjection {
 }
 
 export interface CartProjection {
+  revision?: number
+  draft_context?: string
   items: CartItemProjection[]
   items_count: number
   is_empty: boolean
@@ -714,6 +716,7 @@ export interface CheckoutResponse {
 }
 
 export interface CheckoutMutationResponse {
+  convenience_pending?: string[]
   order_ref: string
   status: string
   next_url?: string
@@ -851,6 +854,7 @@ export interface TrackingCopyProjection {
 }
 
 export interface TrackingResponse {
+  convenience_pending?: string[]
   ref: string
   status: string
   status_label: string
@@ -971,6 +975,16 @@ export interface AccountNotificationPreference {
   enabled: boolean
 }
 
+export interface AccountStockAlertSubscription {
+  ref: string
+  sku: string
+  product_name: string
+  event_type: 'stock_back' | 'production_ready'
+  event_label: string
+  active: boolean
+  expires_at: string | null
+}
+
 export interface AccountSummaryCopy {
   greeting_prefix: string
   page_title: string
@@ -988,6 +1002,7 @@ export interface AccountSummary {
   loyalty: AccountLoyalty | null
   food_preferences: AccountFoodPreference[]
   notification_preferences: AccountNotificationPreference[]
+  stock_alert_subscriptions: AccountStockAlertSubscription[]
 }
 
 export interface AccountProfileCopy {

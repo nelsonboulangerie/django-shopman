@@ -84,6 +84,57 @@ class TestWaitlistDisabledKeepsTodaysBehaviour:
 
 
 class TestWaitlistAdmitsUpToTheKnownLimit:
+    def test_expired_hold_does_not_hide_fresh_zero_day_stock(
+        self, client, channel, product,
+    ):
+        """A sacola volta a oferecer a produção fresca após o hold expirar.
+
+        O cardápio já lia o pronto para hoje separado da próxima fornada. A
+        sacola passava o horizonte inteiro ao Stockman; em produto com validade
+        zero, isso descartava o estoque de hoje e mantinha a linha bloqueada.
+        """
+        from django.utils import timezone
+
+        _ensure_listing_item(channel, product, price_q=90)
+        _enable_waitlist(channel)
+        product.shelf_life_days = 0
+        product.save(update_fields=["shelf_life_days"])
+        stock.receive(
+            quantity=Decimal("3"),
+            sku=product.sku,
+            position=_position(),
+            target_date=date.today(),
+            reason="produção fresca antes do hold",
+        )
+
+        assert _set_qty(client, product.sku, 3).status_code in (200, 201)
+        Hold.objects.filter(sku=product.sku).update(
+            expires_at=timezone.now() - timedelta(minutes=1),
+        )
+        stock.receive(
+            quantity=Decimal("3"),
+            sku=product.sku,
+            position=_position(),
+            target_date=date.today(),
+            reason="reposição fresca após hold vencido",
+        )
+
+        from shopman.shop.services import availability
+
+        decision = availability.decide(
+            product.sku, Decimal("3"), channel_ref=STOREFRONT_CHANNEL_REF,
+        )
+        proj = _cart(client)
+
+        assert decision["approved"] is True
+        assert decision["available_qty"] == Decimal("6")
+        assert decision["target_date"] == date.today()
+        assert proj.items[0].is_available is True
+        assert proj.items[0].available_qty == 6
+        assert proj.has_unavailable_items is False
+        checkout = next(action for action in proj.actions if action.ref == "checkout")
+        assert checkout.enabled is True
+
     def test_future_batch_admits_and_creates_a_fermata_hold(
         self, client, channel, product,
     ):

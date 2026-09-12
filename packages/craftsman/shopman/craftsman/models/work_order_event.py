@@ -66,6 +66,11 @@ Canonical payload schemas per kind:
         impact: dict         — stock/holds/communications reconciliation
         attempt: dict        — canonical request used for idempotent replay
 
+    quality_reviewed:
+        schema_version: int
+        partition: list[dict] — effective QC facts confirmed by the manager
+        attempt: dict         — canonical request used for idempotent replay
+
     voided:
         reason: str         — cancellation reason
 
@@ -99,6 +104,7 @@ class WorkOrderEvent(models.Model):
         SHORTAGE_OVERRIDDEN = "shortage_overridden", _("Falta sobreposta")
         FINISHED = "finished", _("Concluído")
         QUALITY_CORRECTED = "quality_corrected", _("Qualidade corrigida")
+        QUALITY_REVIEWED = "quality_reviewed", _("Qualidade revisada")
         VOIDED = "voided", _("Cancelado")
 
     work_order = models.ForeignKey(

@@ -898,7 +898,20 @@ def _reserve_external_quota(actor, *, context: AuthorizationContext, now: dateti
 
 
 def _external_target_count(context: AuthorizationContext) -> int:
-    return max(context.audience_count, len(context.platforms), 1)
+    # ``audience_count`` is the sealed cohort available to direct-message lanes;
+    # it is not the cardinality of a public post.  Mixed campaigns must add both
+    # consequences: N WhatsApp messages + one publication for every other
+    # selected platform.  ``max(...)`` used to undercount that sum precisely at
+    # the thresholds where step-up and dual control become stronger.
+    # Some non-delivery/legacy callers do not carry platforms yet.  Preserve
+    # their conservative cohort count until those contexts are migrated.
+    if not context.platforms:
+        return max(context.audience_count, 1)
+    direct_messages = context.audience_count if "whatsapp" in context.platforms else 0
+    public_publications = sum(
+        platform != "whatsapp" for platform in context.platforms
+    )
+    return max(direct_messages + public_publications, 1)
 
 
 def _require_second_actor(

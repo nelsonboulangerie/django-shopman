@@ -55,7 +55,7 @@ exatamente **um** caminho até você: um cliente reclamando. Números e tabela e
 O spec versionado **já declara a env** (este PR fez isso). Você só preenche o
 valor:
 
-1. <https://cloud.digitalocean.com/apps> → **shopman-alpha**.
+1. <https://cloud.digitalocean.com/apps> → **shopman-nelson**.
 2. **Settings → App-Level Environment Variables → Edit**.
 3. Ache `SENTRY_DSN` (já está lá, vazio, marcado como encrypted).
 4. Cole o DSN. **Save**.

@@ -223,7 +223,7 @@ const DRAFT_LABELS = {
   body: "Texto",
   hashtags: "Hashtags",
   platforms: "Plataformas",
-  scheduling: "Modo de publicação",
+  scheduling: "Modo de entrega",
   publish_at: "Data e hora",
   publish_fold: "Ocorrência do horário",
 };
@@ -275,6 +275,14 @@ const canPublish = computed(
     platforms.value.length > 0,
 );
 const hasDirectMessage = computed(() => platforms.value.includes("whatsapp"));
+const hasPublicPublication = computed(() =>
+  platforms.value.some((platform) => platform !== "whatsapp"),
+);
+const deliverNowLabel = computed(() => {
+  if (hasDirectMessage.value && hasPublicPublication.value)
+    return "Entregar agora";
+  return hasDirectMessage.value ? "Enviar agora" : "Publicar agora";
+});
 const nowFallsInQuietHours = computed(
   () =>
     hasDirectMessage.value &&
@@ -599,7 +607,7 @@ function askToReject() {
         <!-- Plataformas: pré-marcadas pela regra, o gestor tira ou põe -->
         <fieldset>
           <legend class="mb-1 text-xs font-medium text-muted-foreground">
-            Publicar em
+            Entregar por
           </legend>
           <div class="flex flex-wrap gap-1.5">
             <label
@@ -644,14 +652,23 @@ function askToReject() {
           :platform-content="announcement.platform_content"
         />
 
-        <!-- Audiência resolvida: quem recebe, e por quê -->
-        <div class="rounded-lg bg-muted/50 px-3 py-2">
+        <!-- Audiência só governa mensagens diretas. Publicações não têm destinatário individual. -->
+        <div v-if="hasDirectMessage" class="rounded-lg bg-muted/50 px-3 py-2">
           <p class="flex items-center gap-1.5 text-sm">
             <Icon name="lucide:users" class="size-4 text-muted-foreground" />
             <span>{{ audience }}</span>
           </p>
           <p v-if="vip" class="mt-0.5 pl-6 text-xs text-muted-foreground">
             {{ vip }}
+          </p>
+        </div>
+        <div v-else class="rounded-lg bg-muted/50 px-3 py-2 text-sm">
+          <p class="flex items-center gap-1.5">
+            <Icon name="lucide:globe-2" class="size-4 text-muted-foreground" />
+            <span>Publicação para o público geral da plataforma</span>
+          </p>
+          <p class="mt-0.5 pl-6 text-xs text-muted-foreground">
+            Não usa lista de contatos nem envia mensagem direta.
           </p>
         </div>
       </div>
@@ -665,7 +682,7 @@ function askToReject() {
         <p class="text-sm font-semibold">Como aprovar este anúncio</p>
         <p class="text-xs text-muted-foreground">
           Aprovar confirma esta versão e define quando ela fica pronta para
-          entrega. Agende o próximo horário seguro; publicar agora é uma decisão
+          entrega. Agende o próximo horário seguro; entregar agora é uma decisão
           separada.
         </p>
       </div>
@@ -691,7 +708,7 @@ function askToReject() {
           :name="busy ? 'line-md:loading-loop' : 'lucide:send'"
           class="size-4"
         />
-        Publicar agora
+        {{ deliverNowLabel }}
       </UiButton>
 
       <UiButton
@@ -735,7 +752,7 @@ function askToReject() {
           <label
             :for="`when-${announcement.pk}`"
             class="text-xs font-medium text-muted-foreground"
-            >Publicar em</label
+            >Entregar em</label
           >
           <UiInput
             :id="`when-${announcement.pk}`"

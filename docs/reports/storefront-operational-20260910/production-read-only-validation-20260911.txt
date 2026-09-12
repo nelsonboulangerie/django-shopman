@@ -1,0 +1,75 @@
+Conferência somente leitura — domínio definitivo, segurança HTTP e nomenclatura — 2026-09-11
+
+DigitalOcean App Platform (campos não secretos)
+app_id=40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f
+app_name=shopman-alpha
+live_url=https://menu.nelsonboulangerie.com.br
+active_deployment_id=4795dd53-f47b-421c-9af6-d0800b12f596
+active_deployment_phase=ACTIVE
+active_deployment_created_at=2026-09-11T12:41:55Z
+domains=menu.nelsonboulangerie.com.br:PRIMARY,gestor.boulangerie.com.br:ALIAS,kds.boulangerie.com.br:ALIAS,pdv.boulangerie.com.br:ALIAS,prod.boulangerie.com.br:ALIAS,api.boulangerie.com.br:ALIAS,admin.boulangerie.com.br:ALIAS,central.boulangerie.com.br:ALIAS,mkt.boulangerie.com.br:ALIAS,bi.boulangerie.com.br:ALIAS,compras.boulangerie.com.br:ALIAS,backup.boulangerie.com.br:ALIAS
+services=web,storefront-nuxt,pos-nuxt,kds-nuxt,orders-nuxt,production-nuxt,hub-nuxt,marketing-nuxt,bi-nuxt,purchase-nuxt
+web_run_command=daphne -b 0.0.0.0 -p 8000 config.asgi:application
+
+Proposta de rename já validada, sem aplicação
+app_name_available=True
+app_cost=84
+proposed_name=shopman-nelson
+changed_field=name only (live spec was copied byte-for-byte except top-level name)
+applied=false
+
+Configuração operacional viva sanitizada
+
+Respostas públicas
+200 https://menu.nelsonboulangerie.com.br/
+200 https://menu.nelsonboulangerie.com.br/menu
+200 https://menu.nelsonboulangerie.com.br/privacy
+200 https://menu.nelsonboulangerie.com.br/terms
+200 https://api.boulangerie.com.br/health/
+200 https://api.boulangerie.com.br/api/v1/storefront/home/
+
+Cabeçalhos atuais de /menu
+HTTP/2 200
+content-type: text/html;charset=utf-8
+server: cloudflare
+cache-control: private
+
+Cabeçalhos atuais da API /health/
+HTTP/2 200
+content-type: application/json
+cache-control: no-store
+x-content-type-options: nosniff
+x-frame-options: DENY
+content-security-policy: img-src 'self' data: https: blob:; script-src 'self' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net https://maps.googleapis.com https://js.stripe.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; default-src 'self'; frame-src https://js.stripe.com; connect-src 'self' https://maps.googleapis.com https://api.stripe.com https://viacep.com.br; font-src 'self' https://fonts.gstatic.com
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+referrer-policy: strict-origin-when-cross-origin
+server: cloudflare
+
+Configuração operacional viva sanitizada
+app.AUTH_DEFAULT_DOMAIN=menu.nelsonboulangerie.com.br
+app.DJANGO_DEBUG=false
+app.SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true
+app.SHOPMAN_CARD_ADAPTER=shopman.shop.adapters.payment_stripe
+app.SHOPMAN_DOMAIN=https://menu.nelsonboulangerie.com.br
+app.SHOPMAN_ENVIRONMENT=staging
+app.SHOPMAN_EXPOSE_DEBUG_OTP=true
+app.SHOPMAN_EXPOSE_MOCK_CAPTURE=true
+app.SHOPMAN_MOCK_PIX_AUTO_CONFIRM=false
+app.SHOPMAN_PIX_ADAPTER=shopman.shop.adapters.payment_mock
+app.SHOPMAN_PREPROD_URL=https://menu.nelsonboulangerie.com.br
+app.SHOPMAN_STAGING_AUTOPILOT=false
+app.SHOPMAN_STOREFRONT_BASE_URL=https://menu.nelsonboulangerie.com.br
+app.WHATSAPP_STOREFRONT_URL=https://menu.nelsonboulangerie.com.br
+
+Classificação
+- Defeito comprovado: o documento HTML do Storefront vivo não envia CSP, HSTS, nosniff, X-Frame-Options, Referrer-Policy ou Permissions-Policy.
+- Estado comprovado: o domínio definitivo está ativo, mas o app ainda usa configuração de pre-go-live com Pix mock, OTP debug e captura mock expostos.
+- Hipótese não assumida: um filtro externo poderia remover headers; a candidata foi comprovada até a resposta Nitro local, e a confirmação após CDN depende de deploy autorizado.
+- Decisão humana pendente: promover a configuração de produção, aplicar a candidata e executar o rename em janela controlada.
+- Decisão técnica: manter o serviço web, pois ele é Django/Daphne; storefront-nuxt já existe separadamente.
+
+Fontes de comportamento da plataforma e allowlists
+- https://docs.digitalocean.com/products/app-platform/how-to/update-app-spec/
+- https://docs.digitalocean.com/reference/doctl/reference/apps/update/
+- https://developers.google.com/maps/documentation/javascript/content-security-policy
+- https://docs.stripe.com/security/guide

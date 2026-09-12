@@ -404,13 +404,35 @@ def capture(order) -> None:
 
     SYNC — capture must succeed.
     """
-    payment_data = (order.data or {}).get("payment", {})
-    intent_ref = payment_data.get("intent_ref")
+    from django.db import transaction
+    from shopman.orderman.models import Order
 
-    if not intent_ref:
+    if not isinstance(order, Order):
+        # Unit-level adapters also use a lightweight Order protocol. The real
+        # orchestration path below always receives the persisted model.
+        _capture_once(order)
         return
 
-    # Idempotency via Payman — skip if already captured
+    # Serialize the final Payman check and adapter call by the canonical order.
+    # This keeps two lifecycle workers from both issuing a capture. A process
+    # crash after provider acceptance still requires provider reconciliation;
+    # the row lock does not claim otherwise.
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        _capture_once(locked)
+        order.data = locked.data
+
+
+def _capture_once(order) -> None:
+    """Capture after the caller has acquired the canonical Order lock."""
+    data = dict(order.data or {})
+    payment_data = dict(data.get("payment") or {})
+    intent_ref = payment_data.get("intent_ref")
+
+    if not intent_ref or payment_data.get("transaction_id"):
+        return
+
+    # Payman is authoritative, and persisted callers make this check under lock.
     if _payman_intent_captured(intent_ref):
         return
 
@@ -422,7 +444,8 @@ def capture(order) -> None:
     result = adapter.capture(intent_ref)
     if result.success:
         payment_data["transaction_id"] = result.transaction_id
-        order.data["payment"] = payment_data
+        data["payment"] = payment_data
+        order.data = data
         order.save(update_fields=["data", "updated_at"])
         _ack_payment_failed_alerts(order)
         cancel_stale_intents(order, keep_intent_ref=intent_ref)
@@ -430,19 +453,7 @@ def capture(order) -> None:
         logger.info("payment.capture: captured %s for order %s", intent_ref, order.ref)
         return
 
-    # ⚠️ Captura que falha NÃO pode ser silenciosa, e era.
-    #
-    # O docstring já dizia "capture must succeed" e o código, no ``else``
-    # implícito, não fazia nada: sem log, sem alerta, sem exceção. O efeito no
-    # balcão é o pior tipo de pane — a autorização do cliente segue de pé no
-    # gateway, o pedido fica ACCEPTED com o avanço barrado por "Aguardando
-    # pagamento…", e ninguém no mundo é avisado de que o dinheiro não entrou.
-    # O operador vê um pedido parado sem causa e o cliente vê um pedido pago.
-    #
-    # Não levantamos: quem chama é lifecycle/webhook/reconciliação, e derrubar
-    # o handler perderia a fase inteira (o pedido para em pior estado ainda). O
-    # contrato é falhar GRITANDO — a próxima rodada da reconciliação tenta de
-    # novo, e enquanto não conseguir há alerta aberto no Gestor.
+    # A captura recusada fica observável e continua recuperável.
     logger.error(
         "payment.capture_failed order=%s intent=%s method=%s code=%s",
         order.ref,
