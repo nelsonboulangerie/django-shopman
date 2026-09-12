@@ -98,7 +98,7 @@ velho. Um `apps update` hoje não reverte nada.
 |---|---|---|---|
 | `SHOPMAN_CARD_ADAPTER` | `payment_stripe` | `payment_mock` | o cartão está no Stripe (chave de teste); o arquivo devolveria a simulação |
 | `SHOPMAN_CONCIERGE_ENABLED` | `true` | `false` | o dono abriu o piloto fechado do concierge |
-| `CONCIERGE_ALLOWED_SUBSCRIBERS` | 4 assinantes | vazio | vazio **não** é desligado: é aberto a todos |
+| `CONCIERGE_ALLOWED_SUBSCRIBERS` | coorte explícita | vazio | no contrato v3, vazio fecha a connection; nunca significa acesso irrestrito |
 | `SHOPMAN_FISCAL_EMISSION_RESOLVER` | 4 resolvers | 2 | o arquivo perdia `deferred_settlement` e `on_requested_receipt` — sem o segundo, pedir a nota impressa ou por e-mail não emitia nada |
 | `MANYCHAT_WHATSAPP_ID_FIELD_ID` | `8932087` | vazio | sem o id o ManyChat não acha o campo |
 | `IFOOD_MERCHANT_ID` | `f36a17d0-…` | `2512433` | o merchant do iFood é UUID; `2512433` é o número de loja do painel |

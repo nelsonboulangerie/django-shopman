@@ -12,7 +12,10 @@ from shopman.storefront.concierge import tools
 from shopman.storefront.tests.test_concierge_engine import (
     CONCIERGE_SETTINGS,
     SKU,
+    _binding,
+    _create_inbound,
     _pickup_ready,
+    _reclaim,
     _tomorrow,
     conversation,
     ctx,
@@ -28,11 +31,16 @@ pytestmark = pytest.mark.django_db
 
 
 def accept_review(ctx, review, text="confirmo"):
-    Message.objects.create(conversation=ctx.conversation, role="assistant", kind="reply",
+    Message.objects.create(conversation=ctx.conversation, binding=_binding(ctx.conversation), role="assistant", kind="reply",
         text=tools.render_result("review_order", review), transport_state="accepted",
         envelope={"quote_token": review["quote_token"]})
-    return Message.objects.create(conversation=ctx.conversation, role="user", kind="inbound", text=text,
-        envelope={"version": 2, "event_id": f"confirm-{Message.objects.count()}"})
+    accepted = _create_inbound(
+        ctx.conversation,
+        text,
+        f"confirm-{Message.objects.count()}",
+    )
+    _reclaim(ctx)
+    return accepted
 
 
 def test_d04_review_without_offered_message_and_new_confirmation_cannot_buy(ctx):
@@ -100,8 +108,16 @@ def test_d16_disclosure_alone_never_subscribes_and_real_acceptance_links_proof(c
     from shopman.storefront.models import StockAlertSubscription
     offer = tools.notify_when_available(ctx, SKU)
     assert offer["code"] == "consent_required" and not StockAlertSubscription.objects.exists()
-    msg = Message.objects.create(conversation=ctx.conversation, role="assistant", kind="reply", transport_state="accepted", envelope={"disclosure": offer["disclosure"]})
-    accepted = Message.objects.create(conversation=ctx.conversation, role="user", kind="inbound", text="aceito", envelope={"version": 2, "event_id": "consent-1"})
+    msg = Message.objects.create(
+        conversation=ctx.conversation,
+        binding=_binding(ctx.conversation),
+        role="assistant",
+        kind="reply",
+        transport_state="accepted",
+        envelope={"disclosure": offer["disclosure"]},
+    )
+    accepted = _create_inbound(ctx.conversation, "aceito", "consent-1")
+    _reclaim(ctx)
     result = tools.notify_when_available(ctx, SKU)
     assert result["code"] == "subscribed"
     assert StockAlertSubscription.objects.count() == 1
@@ -220,10 +236,24 @@ def test_c04_two_postgres_confirmation_workers_create_one_order_and_receipt(ctx,
     monkeypatch.setattr(remote_mutations, "run_idempotent_mutation", synchronized)
     monkeypatch.setattr("shopman.shop.services.payment.initiate", lambda order: None)
     pk = ctx.conversation.pk
+    claim = {
+        name: getattr(ctx.conversation, name)
+        for name in (
+            "_binding_id",
+            "_turn_fence",
+            "_inbound_max_id",
+            "_inbound_ids",
+            "_limited_event_assurance",
+            "_commercial_authority",
+        )
+    }
     def run():
         close_old_connections()
         try:
-            local = tools.ToolContext(Conversation.objects.get(pk=pk), "whatsapp")
+            claimed = Conversation.objects.get(pk=pk)
+            for name, value in claim.items():
+                setattr(claimed, name, value)
+            local = tools.ToolContext(claimed, "whatsapp")
             return tools.place_order(local, quote["quote_token"], "pix")
         finally:
             close_old_connections()
@@ -335,13 +365,17 @@ def test_purchase_receipt_scope_accepts_long_commercial_channel(ctx):
     assert repeated["order_ref"] == result["order_ref"] and Order.objects.count() == 1
 
 
-def test_out_of_order_confirmation_timestamp_cannot_accept_later_revision(ctx):
+def test_out_of_order_verified_occurred_at_cannot_accept_later_revision(ctx):
     from datetime import timedelta
 
     from django.utils import timezone
     quote = _pickup_ready(ctx)
     confirmed = accept_review(ctx, quote)
-    confirmed.envelope = {**confirmed.envelope, "provider_timestamp": (timezone.now() - timedelta(minutes=5)).isoformat()}
+    confirmed.envelope = {
+        **confirmed.envelope,
+        "occurred_at": (timezone.now() - timedelta(minutes=5)).isoformat(),
+        "occurred_at_assurance": "verified",
+    }
     confirmed.save(update_fields=["envelope"])
     result = tools.place_order(ctx, quote["quote_token"], "pix")
     assert result["error"] == "confirmation_required"

@@ -1,0 +1,64 @@
+{
+  "contract_version": 3,
+  "mode": "contained",
+  "database": "isolated PostgreSQL",
+  "external_credentials": false,
+  "provider_network": false,
+  "results": [
+    {
+      "mode": "contained",
+      "user": "synthetic-admin",
+      "return_action": false,
+      "save_controls": false,
+      "bindings_inline_read_only": true,
+      "bindings": [
+        "manychat/whatsapp",
+        "tiktok/direct_message"
+      ],
+      "output_states": [
+        "unknown",
+        "accepted"
+      ],
+      "desktop_1440": {
+        "unknown_text_not_clipped": true,
+        "accepted_text_not_clipped": true,
+        "binding_subject_not_clipped": true,
+        "handoff_status_not_clipped": true
+      },
+      "mobile_390": {
+        "unknown_text_not_clipped": true,
+        "accepted_text_not_clipped": true,
+        "binding_subject_not_clipped": true,
+        "handoff_status_not_clipped": true
+      }
+    },
+    {
+      "mode": "contained",
+      "user": "synthetic-viewer",
+      "return_action": false,
+      "save_controls": false,
+      "bindings_inline_read_only": true,
+      "bindings": [
+        "manychat/whatsapp",
+        "tiktok/direct_message"
+      ],
+      "output_states": [
+        "unknown",
+        "accepted"
+      ],
+      "desktop_1440": {
+        "unknown_text_not_clipped": true,
+        "accepted_text_not_clipped": true,
+        "binding_subject_not_clipped": true,
+        "handoff_status_not_clipped": true
+      },
+      "mobile_390": {
+        "unknown_text_not_clipped": true,
+        "accepted_text_not_clipped": true,
+        "binding_subject_not_clipped": true,
+        "handoff_status_not_clipped": true
+      }
+    }
+  ],
+  "console_errors": []
+}

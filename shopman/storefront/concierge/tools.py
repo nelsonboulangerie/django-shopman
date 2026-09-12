@@ -65,7 +65,13 @@ class ToolContext:
     """O que as ferramentas sabem sobre a conversa, e o que devolvem à casa."""
 
     conversation: Conversation
+    #: Canal comercial: pricing, estoque, fulfillment e pedido.
     channel_ref: str
+    #: Origem causal opaca: auditoria e integrações, nunca política comercial.
+    provider: str = ""
+    account: str = ""
+    transport_channel: str = ""
+    connection_key: str = ""
     extra_replies: list[str] = field(default_factory=list)
     handoff: bool = False
     handoff_reason: str = ""
@@ -108,6 +114,24 @@ def _catalog_channel_ref(channel_ref: str) -> str:
     return channel_ref
 
 
+def _transport_scope(ctx: ToolContext) -> dict[str, str]:
+    """Escopo causal do claim; suporta contextos construídos antes do claim."""
+    binding = getattr(ctx.conversation, "_binding", None)
+    return {
+        "provider": ctx.provider or str(getattr(binding, "provider", "") or ""),
+        "account": ctx.account or str(getattr(binding, "account", "") or ""),
+        "transport_channel": ctx.transport_channel or str(getattr(binding, "transport_channel", "") or ""),
+        "connection_key": ctx.connection_key or str(getattr(binding, "connection_key", "") or ""),
+    }
+
+
+def _transport_origin(ctx: ToolContext) -> str:
+    channel = _transport_scope(ctx)["transport_channel"]
+    if not channel:
+        raise ValueError("transport_context_required")
+    return channel
+
+
 def _open_session(ctx: ToolContext):
     from shopman.shop.services import cart as cart_service
 
@@ -140,7 +164,7 @@ def _ensure_session(ctx: ToolContext):
     session, key = cart_service.get_or_create_session(
         session_key=None,
         channel_ref=ctx.channel_ref,
-        origin_channel="whatsapp",
+        origin_channel=_transport_origin(ctx),
     )
     ops = [{"op": "set_data", "path": "concierge", "value": {"conversation_id": conversation.pk}}]
     customer = {
@@ -550,7 +574,7 @@ def set_item(ctx: ToolContext, sku: str, qty: int) -> dict:
             cart_service.add_item(
                 session_key=session.session_key,
                 channel_ref=ctx.channel_ref,
-                origin_channel="whatsapp",
+                origin_channel=_transport_origin(ctx),
                 sku=sku,
                 qty=qty,
                 unit_price_q=int(item.base_price_q),
@@ -841,9 +865,11 @@ def _assert_authority(ctx: ToolContext, *, for_mutation=True):
 
 def _occurred_after_offer(message, offered) -> bool:
     from django.utils.dateparse import parse_datetime
-    raw = (message.envelope or {}).get("provider_timestamp")
-    if not raw:
-        return True
+
+    envelope = message.envelope or {}
+    raw = envelope.get("occurred_at")
+    if not raw or envelope.get("occurred_at_assurance") != "verified":
+        return False
     try:
         occurred_at = parse_datetime(str(raw))
     except (TypeError, ValueError):
@@ -870,7 +896,13 @@ def _confirmation(ctx: ToolContext, token: str):
         return None
     # Correção no mesmo envio ou outra intenção intermediária invalida o aceite.
     for message in messages:
-        if (message.envelope or {}).get("version") != 2 or not (message.envelope or {}).get("event_id") or not _occurred_after_offer(message, offered):
+        envelope = message.envelope or {}
+        if (
+            envelope.get("version") != 3
+            or envelope.get("event_identity_assurance") != "verified"
+            or not envelope.get("event_id")
+            or not _occurred_after_offer(message, offered)
+        ):
             return None
         if _fold(message.text).rstrip(".! ") not in {"sim", "confirmo", "pode confirmar", "confirmar pedido", "sim, confirmo"}:
             return None
@@ -1141,11 +1173,15 @@ def send_web_link(ctx: ToolContext, destination: str = "menu", order_ref: str = 
                 current = Conversation.objects.select_for_update().get(pk=ctx.conversation.pk)
                 _assert_authority(ctx)
                 web_key = _copy_cart_to_web(ctx) if destination == "checkout" else ""
-                metadata = {"next": path, "conversation_id": ctx.conversation.pk}
+                metadata = {
+                    "next": path,
+                    "conversation_id": ctx.conversation.pk,
+                    "transport": _transport_scope(ctx),
+                }
                 if web_key:
                     metadata["cart_session_key"] = web_key
                 result = AccessLinkService.create_token(info, audience=AccessLink.Audience.WEB_GENERAL,
-                    source=AccessLink.Source.MANYCHAT, metadata=metadata)
+                    source=AccessLink.Source.API, metadata=metadata)
                 if result is None or not result.success or not result.url:
                     raise ValueError("access_link_unavailable")
                 if destination == "checkout":
@@ -1225,7 +1261,7 @@ def _copy_cart_to_web(ctx: ToolContext) -> str:
             if not qty.is_finite() or qty <= 0 or qty != qty.quantize(precision):
                 raise ValueError("unsupported_quantity")
             _, web_key = cart_service.add_item(session_key=web_key, channel_ref=web_ref,
-                origin_channel=ctx.conversation.channel_ref, sku=str(item["sku"]), qty=qty,
+                origin_channel=_transport_origin(ctx), sku=str(item["sku"]), qty=qty,
                 unit_price_q=int(item.get("unit_price_q") or 0), name=str(item.get("name") or ""))
         values = {key: value for key, value in source.data.items() if key in {
             "customer", "fulfillment_type", "delivery_address", "delivery_address_structured", "delivery_date",
@@ -1263,8 +1299,15 @@ def notify_when_available(ctx: ToolContext, sku: str) -> dict:
         if limit is not None:
             messages = messages.filter(pk__lte=limit)
         messages = list(messages.order_by("pk"))
-        if messages and all((m.envelope or {}).get("version") == 2 and (m.envelope or {}).get("event_id") and _occurred_after_offer(m, offered) and
-            _fold(m.text).rstrip(".! ") in {"sim", "aceito", "quero o aviso", "sim, aceito"} for m in messages):
+        if messages and all(
+            (message.envelope or {}).get("version") == 3
+            and (message.envelope or {}).get("event_identity_assurance") == "verified"
+            and (message.envelope or {}).get("event_id")
+            and _occurred_after_offer(message, offered)
+            and _fold(message.text).rstrip(".! ")
+            in {"sim", "aceito", "quero o aviso", "sim, aceito"}
+            for message in messages
+        ):
             accepted = messages[-1]
     if accepted is None:
         return {"ok": True, "code": "consent_required", "message": f"Aviso para {item.name}: {text} Deseja receber este aviso?",
@@ -1292,7 +1335,7 @@ def notify_when_available(ctx: ToolContext, sku: str) -> dict:
 
 
 def handoff_to_human(ctx: ToolContext, reason: str = "") -> dict:
-    """Passa a conversa para a equipe. A casa cuida do alerta e do campo no ManyChat."""
+    """Passa a conversa para a equipe; a casa sincroniza o transporte causal."""
     ctx.handoff = True
     ctx.handoff_reason = " ".join(str(reason or "").split()).strip()[:200] or "pedido do cliente"
     return {"ok": True, "message": "Solicitação de atendimento registrada. A equipe continuará por aqui conforme a disponibilidade."}

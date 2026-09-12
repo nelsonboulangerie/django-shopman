@@ -1,76 +1,184 @@
-# ManyChat: fluxo canônico da Concierge
+# ManyChat como primeira connection canônica da Concierge
 
-Decisão de direção solicitada pelo operador em12/09/2026: simplicidade nativa e integração canônica; manter WhatsApp como primeiro canal, preparar extensão posterior à DM Instagram. Complementa C01/C03/C07/C08 e gates do plano de excelência, não os substitui.
+Decisão de direção do operador em 12/09/2026: começar com a melhor arquitetura
+para um projeto pré-go-live, sem camada de compatibilidade no runtime. WhatsApp
+via ManyChat é o primeiro binding real. Instagram, TikTok, Meta direta ou outro
+provider devem entrar por adapter + connection, sem ramificar regras de domínio.
+Este documento complementa C01/C03/C07/C08 e os gates do plano de excelência.
 
-## Estado comprovado
+## Estado e proveniência
 
-- Publicado: corev2 e compatibilidade leitura/humano, SHAed9a0d6dc, coorte restrita, compra/identidade/transferência/retry/retorno contidos.
-- Flow antigo: keyword#c e External Request no endpoint existente; corpo com subscriber_id/text/first_name/last_name. Não há export do grafo nem prova de continuidade após keyword.
-- Operador confirmou campo dinâmico de última interação WhatsApp e fusoUTC-03SaoPaulo. CorreçãoPR622 interpreta o timestamp mediante opt-in e passou95testesPG locais. Ainda não publicada; auto-merge suspenso para consolidar desenho.
-- ID estável do evento continua sem fonte comprovada. ContactID e última interação não o substituem. A fixture manychat-conversation-v2.json é contrato local, não export de flow ou prova de capacidade do fornecedor.
-- read_only atual oferece catálogo/orientação/humano determinísticos; não é a experiência conversacional completa do agente. Remover read_only não torna o ingresso legado apto a compras.
+O histórico anterior permanece relevante como evidência de descoberta:
 
-## Desenho escolhido
+- o core v2 e uma capacidade restrita de leitura/humano chegaram a ser
+  publicados no SHA `ed9a0d6dc`;
+- o flow observado tinha Keyword `#c`, External Request na rota anterior e corpo
+  de quatro campos (`subscriber_id`, `text`, `first_name`, `last_name`);
+- o operador depois confirmou `provider_timestamp` como última interação do
+  usuário no WhatsApp e o fuso UTC-03 de São Paulo;
+- a correção isolada do parsing dessa janela foi validada no PR 622, base
+  `cbda00f02e692fc7d1949a4e11024ace33245362`;
+- a documentação pública consultada não comprovou ID imutável da mensagem para
+  esse External Request.
 
-ManyChat contém somente trigger, roteamento técnico e atendimento humano. O coreShopman conserva Message/Conversation/Directive, contexto, modelo, ferramentas, verdade comercial, ações e receipts. Não acrescentar n8n, fila paralela, carrinho em custom fields ou motor de diálogo no ManyChat.
+Esses fatos descrevem o caminho de descoberta. O contrato v3 substitui a
+estrutura v2 no candidato atual. A implementação técnica foi validada no SHA
+`7dba54a6ac81866bd0708033d683ac47dcade30c`; publicação, homologação ManyChat,
+piloto e rollout do desenho final não foram executados.
 
-Um flow de ingresso por canal normaliza transporte e encaminha ao mesmo núcleo; uma única implementação das regras no Shopman. WhatsApp e Instagram mantêm identidade escopada por provider+conta+canal+subject. Não unir contatos pelo nome ou exigir telefone para navegação; vinculação comercial segue gate próprio.
+## Arquitetura escolhida
 
-### Entrada e continuidade
+`Conversation` conserva a jornada lógica e os fatos comerciais. Cada endereço de
+transporte é um `ConversationBinding` com
+`provider + account + channel + subject + connection_key`. Mensagens de entrada e
+resposta apontam para o binding causal. Cada execução de saída gera um
+`OutboundAttempt` append-only, com estado e receipt próprios.
 
-Usar o Default Reply nativo, configurado para cada mensagem, roteando somente a coorte de teste e preservando atendimento das demais pessoas. Keyword#c pode iniciar a experiência de teste, mas cada mensagem subsequente precisa chegar ao mesmo ingresso sem exigir prefixo. Não criar loop de pergunta/Data Collection só para manter a conversa viva.
+Uma única versão, `Conversation.turn_fence`, governa contexto, ferramentas,
+persistência e envio. Cada entrada nova avança o fence e revoga trabalho feito
+sobre contexto anterior. Não há contador, fila ou consulta paralela para
+detectar correções tardias.
 
-Antes de modificar Default Reply, inspecionar a automação existente, suas keywords concorrentes, condição de humano e ordem de triggers. Nenhuma substituição global ou expansão automática da coorte. O mecanismo técnico de roteamento de teste deve refletir a autorização canônica; não virar segunda política comercial.
+Provider, canal, conta e subject são strings opacas. O domínio não contém
+`if whatsapp`, `if instagram` ou `if tiktok`. O registry explícito resolve a
+connection pela rota confiável e instancia o adapter declarado. Limite de texto,
+janela, handoff, identidade estável e delivery receipts pertencem ao adapter e
+só existem quando o núcleo realmente os aplica.
 
-### Requisição e resposta
+ManyChat mantém trigger, roteamento técnico e atendimento humano. O Shopman
+mantém Message/Conversation/Binding/Attempt/Directive, contexto, modelo,
+ferramentas, autoridade comercial e receipts. Não acrescentar n8n, fila paralela,
+carrinho em Custom User Field ou motor de diálogo no ManyChat.
 
-External RequestHTTPSPOST no endpoint existente, autenticação existente, JSON com escaping correto para aspas/quebras de linha. Texto deve ser fotografado no disparo; não buscar getInfo para substituir a mensagem recebida. Conta e canal vinculados à configuração autenticada; IDs de contato sempre string.
+Um contato de outro canal não é unido automaticamente por nome, telefone ou
+payload. Associar um novo binding a uma conversa existente exige uma operação
+explícita com `IdentityResolution` verificada contra o Customer canônico. Essa
+escolha evita misturar clientes e permite preservar a mesma sacola/contexto
+quando a vinculação for autorizada.
 
-Envelope lógico: versão, provider, conta, canal, subject, texto/tipo, eventID quando realmente disponível, instante do evento quando realmente disponível, última interação do canal em campo semanticamente distinto, receivedAt servidor e autenticação. Não promover lastInteraction a eventTimestamp/confirmation. O mapeamento exato deve usar campos reais do seletor/preview, sem inventar placeholders de fornecedor.
+## Entrada e continuidade no ManyChat
 
-ACK200 confirma persistência/fila, sem mensagem de cliente ou resultado comercial. Worker produz e persiste blocos antes de enviar pelo adapterManyChat. Não manter requisição aberta aguardando o modelo, nem mapear ACK para campo de resposta e enviá-lo ao cliente. Uma única via de saída preserva prepared/accepted/unknown e evita resposta duplicada entreflow eworker. DynamicBlock não é o executor do turno assíncrono planejado.
+Usar a connection `manychat-whatsapp-primary` e a rota:
 
-### Humano
+```text
+POST /api/webhooks/concierge/manychat-whatsapp-primary/events/
+```
 
-Atendimento permanece no ManyChatInbox; campo concierge_handoff espelha o estado canônico. Mensagens recebidas durante handoff preservam contexto, sem bot competindo. Retorno ao bot é explícito e condicionado à autoridade/sincronização já previstas. Inspecionar pausa nativa e fluxo de atribuição antes de mudar configuração.
+O External Request envia os cinco campos confirmados:
 
-### Identidade de evento: sem recibo sintético; gate comercial ainda bloqueado
+```json
+{
+  "subscriber_id": "<contact id dinâmico>",
+  "text": "<texto desta interação>",
+  "first_name": "<nome dinâmico>",
+  "last_name": "<sobrenome dinâmico>",
+  "provider_timestamp": "<última interação WhatsApp>"
+}
+```
 
-As referências consultadas descrevem ContactID/LastTextInput/LastInteraction, mas não comprovam ID estável de mensagem no ExternalRequest deste flow. Para mutações automáticas, homologar evento original e comportamento de retry/burst. Não gerar UUID a cada execução, contador mutável ou hash de texto/data como substituto.
+Conta, provider e canal não vêm do corpo. A connection autenticada fixa esse
+escopo. O adapter transforma `#c` sozinho em `oi`, remove `#c`/`#concierge`
+quando forem prefixos e preserva os demais textos.
 
-O contrato definitivo do ingresso legado é at-least-once sem deduplicação alegada pelo fornecedor: cada POST autenticado gera um receipt local, e o worker canônico agrupa entradas ainda não consumidas sob o lock/fence da conversa. `provider_timestamp` prova somente a janela de resposta. Uma repetição legítima do cliente e uma reexecução técnica podem produzir os mesmos campos; descartá-las por hash criaria perda silenciosa impossível de distinguir.
+Keyword `#c` pode abrir o teste. Cada mensagem posterior precisa alcançar o
+mesmo External Request sem novo prefixo, por configuração nativa do flow/Default
+Reply restrita à coorte. Antes de alterar o Default Reply, inspecionar keywords
+concorrentes, condição de humano, ordem de triggers e exclusões existentes.
+Nenhuma substituição global ou expansão automática da coorte.
 
-Os efeitos comerciais usam causalidade emitida pelo próprio Shopman, não identidade inventada no transporte: o resumo aceito carrega `quote_token`, a confirmação precisa ocorrer depois dele, revisão/total/identidade são revalidados sob lock e `place_order` usa receipt de mutação e idempotency key por conversa+quote. Isso protege o pedido mesmo que o transporte entregue mais de uma vez. O ingresso legado continua impedido de comprar porque não fornece `event_id`; a proteção comercial madura não relaxa esse gate.
+## Requisição, ACK e saída
 
-Um contador ou token em Custom User Field do ManyChat não melhora o contrato: acrescenta estado distribuído e não há garantia pública consultada de incremento atômico, associação ao evento ou estabilidade em retry. Um token Shopman devolvido ao flow também identifica um turno causal, não a mensagem recebida, e permanece desnecessário enquanto leitura/humano usam o receipt local e compra exige evento comprovado.
+O adapter autentica e normaliza o request para `InboundEvent`. A transação grava
+Message e Directive antes do ACK. O worker recebe `conversation_id`, `binding_id`
+e `contract_version=3`, agrupa somente entradas daquele binding sob lock/fence e
+revalida autoridade antes de qualquer efeito.
 
-Se a integração nativa não expuser essa evidência, registrar limitação do fornecedor e escolher conscientemente o boundary: manter leitura/orientação e confirmação comercial pelo Storefront canônico, ou avaliar contrato oficial de ingresso por evento compatível com a conexãoManyChat existente. Não ativar Meta direto em paralelo por hipótese. A escolha depende de evidência real e autorização para alteração do canal.
+O ACK HTTP 200 confirma recebimento/trabalho local. Não é resposta ao cliente nem
+resultado comercial. O flow não deve mapear esse ACK para mensagem. A resposta
+persistida sai por uma única via, o adapter, com estados distintos de preparação,
+execução, aceitação, não aplicação, incerteza, entrega e leitura.
 
-## Instagram depois
+`provider_timestamp` representa última interação do usuário no canal. Ele é
+evidência separada para a janela de resposta e nunca vira `occurred_at`, ID da
+mensagem ou prova de confirmação. A janela é revalidada no momento de enviar.
 
-Reutilizar core/contratos, implementar adapterManyChatInstagram e configurar ingressoDM próprio. Não trocar apenas stringwhatsapp porinstagram na configuração atual: validar escopo de identidade, credenciais, formato de saída, janela, mídia, handoff e retomada. DefaultReplyInstagram pode excluir respostas aStories; DM é a primeira fatia proposta. Coorte e ativação separadas, explicitamente autorizadas depois. O fusoWA confirmado não é automaticamente o fusoIG; obter amostra real por canal.
+## Identidade de evento e autoridade
+
+Sem ID oficial da mensagem, cada POST autenticado é um recebimento local
+at-least-once. Isso não é compatibilidade nem exceção temporária. O envelope
+declara a assurance indisponível e o lote fica somente leitura por regra do
+núcleo. Não descartar por hash de contato + timestamp, pois retry técnico e
+repetição legítima podem ter os mesmos cinco campos.
+
+Se surgir um ID oficial, o adapter pode preservá-lo imediatamente como candidato.
+Deduplicação e autoridade só mudam depois de homologar estabilidade em retry,
+unicidade para mensagens iguais e escopo de conta/canal, e então ligar
+`CONCIERGE_MANYCHAT_EVENT_ID_VERIFIED`.
+
+O hash usado para detectar conflito de um ID verificado cobre apenas a intenção
+normalizada: subject, ID, tipo e texto. Mudanças em nome ou evidência de janela
+não transformam replay idêntico em conflito.
+
+Mesmo com transporte at-least-once, os efeitos comerciais continuam protegidos
+por revisão vigente, inbound causal posterior, `quote_token`, locks e recibos de
+mutação do Shopman. Essa proteção não transforma um evento sem assurance em
+autorização para comprar; as ferramentas mutantes permanecem bloqueadas.
+
+## Posse humana
+
+Atendimento permanece na inbox do ManyChat. O binding espelha a sincronização do
+campo `concierge_handoff`, enquanto `Conversation.state` contém o bot em todos os
+bindings lógicos. Mensagens durante handoff preservam contexto. Retorno ao bot é
+explícito; se qualquer binding aplicável falhar ou ficar `unknown`, a posse humana
+permanece.
+
+## Outros canais e providers
+
+Instagram DM ou TikTok entram como novas connections com adapter próprio. Cada
+adapter normaliza seu payload para os mesmos contratos e declara capacidades de
+limite de texto, janela, saída, receipts e handoff. Nenhuma regra comercial ou
+fila é copiada. Mídia só entra no contrato quando um adapter real e o núcleo
+tiverem comportamento verificável para ela.
+
+O gateway ManyChat atual usa credenciais globais do provider e, por isso, aceita
+somente uma conta ativa por classe de adapter. Uma segunda conta falha fechada
+até existir um gateway que receba credenciais por connection. APIs diretas da
+Meta ou de outro provider podem implementar esse contrato sem essa restrição.
+
+Ativação, coorte, credenciais, identidade, janela e atendimento humano são gates
+separados por connection. Um fuso ou campo confirmado no WhatsApp não é
+extrapolado para Instagram/TikTok. Meta direta pode coexistir como provider em
+outro binding; a migração de provider exige roteamento explícito e nunca muda o
+significado da conversa lógica.
 
 ## Homologação necessária
 
-1. Export/capturas do grafo atual e configuração DefaultReply; registrar origem de cada campo.
-2. Três mensagens rápidas com aspas/quebra de linha: texto exato, nenhuma perda ou repetição indevida; reexecução técnica reconhecida quando há ID.
-3. Resposta real pelo worker, accepted separado de entrega observada no aparelho.
-4. Humano assume, mensagem continua sendo preservada, bot para; retorno autorizado funciona.
-5. Janela vence na fila e opt-in é revogado: saída contida; dado antigo não renova janela.
-6. Compra fica contida enquanto evento/identidade/autoridade não forem provados; homologação de conversa não é piloto comercial.
+1. Registrar o grafo atual do flow, origem dos cinco campos e condição que envia
+   todas as mensagens subsequentes.
+2. Enviar `#c`, `#c cardápio` e mensagens rápidas com aspas/quebra de linha;
+   preservar texto e ordem sem alegar dedupe inexistente.
+3. Observar ACK separado da resposta do worker e `accepted` separado da entrega
+   no aparelho.
+4. Confirmar que ingresso sem ID consulta/orienta e não produz mutação comercial.
+5. Exercitar humano, mensagem durante posse e retorno autorizado; incerteza deve
+   manter o bot contido.
+6. Vencer/revogar a janela antes do envio e comprovar `not_applied`, sem renovar
+   a janela com dado antigo.
+7. Conferir conversa, binding e attempts no Admin com resultado/próxima ação
+   compreensíveis para o operador.
 
-## Referências primárias conferidas em12/09/2026
+Homologação técnica do provider não é piloto comercial. Piloto exige coorte e
+responsáveis aprovados, e rollout exige os gates G01–G07 do plano.
 
-- https://help.manychat.com/hc/en-us/articles/14281159586588-Default-Reply-in-Manychat — configuração por mensagem e opçãoInstagramDMsemStories.
-- https://help.manychat.com/hc/en-us/articles/14281285374364-Dev-Tools-External-request — HTTPJSON e integração externa nativa.
-- https://help.manychat.com/hc/en-us/articles/14281292522652-System-Fields — ContactID, texto e última interação distintos; campos específicos por canal.
-- https://help.manychat.com/hc/en-us/articles/26673580447900-Response-Reference-for-Instagram-WhatsApp-and-Telegram-Automation — formatos de saída/capacidades variam por canal.
-- https://help.manychat.com/hc/en-us/articles/23358636027932-Understanding-messaging-windows — janelaAPIWhatsApp24h.
+## Referências primárias conferidas em 12/09/2026
 
-## Auditoria adicional de identidade de mensagem
+- [Default Reply in ManyChat](https://help.manychat.com/hc/en-us/articles/14281159586588-Default-Reply-in-Manychat)
+- [Dev Tools: External Request](https://help.manychat.com/hc/en-us/articles/14281285374364-Dev-Tools-External-request)
+- [System Fields](https://help.manychat.com/hc/en-us/articles/14281292522652-System-Fields)
+- [Response Reference](https://help.manychat.com/hc/en-us/articles/26673580447900-Response-Reference-for-Instagram-WhatsApp-and-Telegram-Automation)
+- [Understanding messaging windows](https://help.manychat.com/hc/en-us/articles/23358636027932-Understanding-messaging-windows)
 
-O OpenAPI público Page_API consultado em12/09/2026 contém34paths, nenhum de histórico/mensagens/eventos/webhooks de ingresso. Subscriber expõe last_input_text e last_interaction, sem message_id/event_id documentado. A lista oficialSystemFields diferencia ContactID e LastInteraction, sem documentar ID de mensagem. A referência DynamicBlockWA/IG não documenta external_message_callback (a capacidade Messenger não deve ser extrapolada). Isso comprova a lacuna documental consultada, não a impossibilidade de recurso específico da conta. Evidência sanitizada: evidence/conversational/whatsapp-window/message-identity-audit.json.
-
-Para G02, solicitar ao fornecedor/inspecionar na conta: “Na automação DefaultReply de WhatsApp e Instagram, há variável oficial ou callback que entregue o ID imutável da mensagem recebida (e timestamp daquela mensagem), preservado em retries? Qual campo/API e quais garantias para duas mensagens rápidas e reexecução do ExternalRequest? ContactID e LastInteraction não atendem essa finalidade.” Texto preparado, nenhuma mensagem enviada ao suporte.
-
-Composição contato+timestamp permanece hipótese somente se timestamp for por evento e estável em retry, e identidade incluir conta/canal. Timestamp de última interação mutável não é promovido a ID; microssegundos não comprovam unicidade. UUID por recebimento continua sendo receipt local, não dedupe do fornecedor. O caminho de compra depende de boundary comprovado; a prova da janela e as capacidades de leitura podem evoluir independentemente.
+A auditoria histórica da documentação pública está preservada em
+`evidence/conversational/whatsapp-window/message-identity-audit.json`. Ela
+comprova a lacuna nas fontes consultadas, não a impossibilidade de uma capacidade
+específica da conta.

@@ -22,12 +22,22 @@ from types import SimpleNamespace
 import pytest
 from django.conf import settings
 from django.test import override_settings
+from django.utils import timezone
 from shopman.offerman.models import Collection, CollectionItem, Listing, ListingItem, Product
 from shopman.orderman.models import Directive, Order, Session
 
-from shopman.shop.models import Channel, Conversation, ConversationMessage, Shop
+from shopman.shop.models import Channel, Conversation, ConversationBinding, ConversationMessage, Shop
 from shopman.storefront.concierge import agent as agent_module
 from shopman.storefront.concierge import service, tools
+from shopman.storefront.concierge.contracts import (
+    ChannelCapabilities,
+    HandoffOutcome,
+    InboundEvent,
+    ResponseAuthorization,
+    SendOutcome,
+    TransportScope,
+    WindowEvidence,
+)
 from shopman.storefront.concierge.tools import ToolContext
 
 pytestmark = pytest.mark.django_db
@@ -35,13 +45,53 @@ pytestmark = pytest.mark.django_db
 CHANNEL = "whatsapp"
 SKU = "PAO-FRANCES"
 PHONE = "+5543984049009"
+ADAPTER_PATH = "shopman.storefront.tests.test_concierge_engine.CommercialTestAdapter"
+CONNECTION_KEY = "commercial-test"
+PROVIDER = "provider-test"
+ACCOUNT = "test-account"
+SUBJECT = "1962036908"
+
+
+class CommercialTestAdapter:
+    """Transporte hermético: os testes comerciais não acessam rede externa."""
+
+    def __init__(self, *, connection):
+        self.connection = connection
+        self.provider = connection.provider
+        self.channel = connection.channel
+        self.capabilities = ChannelCapabilities(
+            max_text_chars=4000,
+            response_window=timedelta(hours=24),
+            stable_event_identity_verified=True,
+            supports_handoff=True,
+        )
+
+    def send_text(self, subject, text):
+        return SendOutcome("accepted", "accepted", f"test:{subject}:{hash(text)}")
+
+    def set_handoff(self, subject, on):
+        return HandoffOutcome("accepted", "accepted", f"handoff:{subject}:{on}")
+
+    def identify(self, subject, profile):
+        return None
+
+    def window_evidence(self, envelope, now):
+        return WindowEvidence.from_value(envelope.get("window_evidence"))
+
+    def authorize_response(self, evidence, now, *, purpose):
+        evidence = WindowEvidence.from_value(evidence)
+        allowed = bool(evidence and evidence.valid_until > now)
+        return ResponseAuthorization(
+            allowed,
+            "test_window" if allowed else "window_closed",
+            evidence.valid_until if evidence else None,
+        )
+
+
 CONCIERGE_SETTINGS = {
-    "contract_version": 2,
-    "account_id": "test-account",
-    "allowed_subscribers": ["1962036908"],
+    "contract_version": 3,
     "suggest_add_ons": True,
     "enabled": True,
-    "api_key": "chave-s2s",
     "model": "claude-sonnet-5",
     "effort": "low",
     "max_tokens": 512,
@@ -49,8 +99,20 @@ CONCIERGE_SETTINGS = {
     "window_messages": 40,
     "max_turns_per_day": 80,
     "max_iterations": 6,
-    "handoff_field": "concierge_handoff",
     "dispatch_delay_seconds": 1,
+    "connections": {
+        CONNECTION_KEY: {
+            "active": True,
+            "provider": PROVIDER,
+            "account": ACCOUNT,
+            "channel": CHANNEL,
+            "adapter_path": ADAPTER_PATH,
+            "options": {
+                "allowed_subjects": [SUBJECT],
+                "stable_event_identity_verified": True,
+            },
+        }
+    },
 }
 
 
@@ -125,30 +187,140 @@ def customer():
 @pytest.fixture
 def conversation(surface, customer, settings):
     settings.AI_ASSIST_API_KEY = "isolated-fixture"
-    return Conversation.objects.create(
-        subscriber_id="1962036908",
-        account="test-account",
+    settings.SHOPMAN_CONCIERGE = CONCIERGE_SETTINGS
+    conversation = Conversation.objects.create(
         phone=PHONE,
         customer_name="Ana",
         customer_ref=customer.ref,
         channel_ref=CHANNEL,
     )
+    ConversationBinding.objects.create(
+        conversation=conversation,
+        provider=PROVIDER,
+        account=ACCOUNT,
+        transport_channel=CHANNEL,
+        subject=SUBJECT,
+        connection_key=CONNECTION_KEY,
+        status=ConversationBinding.Status.ACTIVE,
+        identity_assurance="verified_customer",
+        activated_at=timezone.now(),
+    )
+    return conversation
 
 
 @pytest.fixture
 def ctx(conversation, settings):
     settings.SHOPMAN_CONCIERGE = CONCIERGE_SETTINGS
     settings.AI_ASSIST_API_KEY = "isolated-fixture"
-    return ToolContext(conversation=conversation, channel_ref=CHANNEL)
+    context = ToolContext(conversation=conversation, channel_ref=CHANNEL)
+    _create_inbound(conversation, "autoridade da fixture", "fixture-authority")
+    _reclaim(context)
+    return context
 
 
 @pytest.fixture
 def outbox(monkeypatch):
     sent: list[str] = []
     flags: list[bool] = []
-    monkeypatch.setattr("shopman.storefront.concierge.transport.send_text", lambda sid, text: sent.append(text) or True)
-    monkeypatch.setattr("shopman.storefront.concierge.transport.set_handoff", lambda sid, on: flags.append(on) or True)
+
+    def send(binding, text):
+        sent.append(text)
+        return SendOutcome("accepted", "accepted", f"test:{binding.subject}:{len(sent)}")
+
+    def handoff(binding, on):
+        flags.append(on)
+        return HandoffOutcome("accepted", "accepted", f"handoff:{binding.subject}:{on}")
+
+    monkeypatch.setattr("shopman.storefront.concierge.transport.send_for", send)
+    monkeypatch.setattr("shopman.storefront.concierge.transport.handoff_for", handoff)
     return SimpleNamespace(sent=sent, flags=flags)
+
+
+def _binding(conversation: Conversation) -> ConversationBinding:
+    return ConversationBinding.objects.get(conversation=conversation)
+
+
+def _event(
+    *,
+    text: str,
+    event_id: str,
+    subject: str = SUBJECT,
+    profile: dict | None = None,
+    occurred_at=None,
+    message_type="text",
+) -> InboundEvent:
+    now = timezone.now()
+    occurred_at = occurred_at or now
+    return InboundEvent(
+        scope=TransportScope(
+            provider=PROVIDER,
+            account=ACCOUNT,
+            channel=CHANNEL,
+            subject=subject,
+            connection_key=CONNECTION_KEY,
+        ),
+        text=text,
+        message_type=message_type,
+        received_at=now,
+        event_id=event_id,
+        event_identity_assurance="verified",
+        occurred_at=occurred_at,
+        occurred_at_assurance="verified",
+        profile=profile or {},
+        authentication_assurance="test",
+        payload_hash=f"hash:{event_id}:{text}",
+        window_evidence=WindowEvidence(
+            policy="commercial-test-v1",
+            source="authenticated-test-event",
+            observed_at=now,
+            valid_until=now + timedelta(hours=24),
+            assurance="provider_window",
+        ),
+    )
+
+
+def _receive(conversation: Conversation, text: str, event_id: str, *, message_type="text"):
+    return service.receive_inbound(
+        _event(
+            text=text,
+            event_id=event_id,
+            subject=_binding(conversation).subject,
+            message_type=message_type,
+        )
+    )
+
+
+def _create_inbound(
+    conversation: Conversation,
+    text: str,
+    event_id: str,
+    *,
+    occurred_at=None,
+) -> ConversationMessage:
+    event = _event(text=text, event_id=event_id, occurred_at=occurred_at)
+    return ConversationMessage.objects.create(
+        conversation=conversation,
+        binding=_binding(conversation),
+        role=ConversationMessage.Role.USER,
+        kind=ConversationMessage.Kind.INBOUND,
+        text=text,
+        content=[{"type": "text", "text": text}],
+        external_id=service._external_id(event_id),
+        envelope={**event.as_envelope(), "input_assurance": "provider_event"},
+    )
+
+
+def _reclaim(ctx: ToolContext) -> None:
+    ctx.conversation = _claim_conversation(ctx.conversation)
+
+
+def _claim_conversation(conversation: Conversation) -> Conversation:
+    Conversation.objects.filter(pk=conversation.pk).update(claim_until=None)
+    claimed, _claimed_binding, inbound = service._claim(
+        conversation.pk, _binding(conversation).pk
+    )
+    assert inbound
+    return claimed
 
 
 def _tomorrow() -> str:
@@ -164,12 +336,16 @@ def _pickup_ready(ctx) -> dict:
 
 
 def _accept_review(ctx, review, *, confirm=True):
-    ConversationMessage.objects.create(conversation=ctx.conversation, role="assistant", kind="reply",
+    ConversationMessage.objects.create(conversation=ctx.conversation, binding=_binding(ctx.conversation), role="assistant", kind="reply",
         text=tools.render_result("review_order", review), transport_state="accepted",
         envelope={"quote_token": review["quote_token"]})
     if confirm:
-        ConversationMessage.objects.create(conversation=ctx.conversation, role="user", kind="inbound", text="confirmo",
-            envelope={"version": 2, "event_id": f"confirm-{ConversationMessage.objects.count()}"})
+        _create_inbound(
+            ctx.conversation,
+            "confirmo",
+            f"confirm-{ConversationMessage.objects.count()}",
+        )
+        _reclaim(ctx)
 
 
 # ── Cliente com roteiro ──────────────────────────────────────────────
@@ -440,8 +616,16 @@ def test_notify_when_available_subscribes_the_same_alert_as_the_site(ctx, conver
     from shopman.storefront.models import StockAlertSubscription
 
     offer = tools.notify_when_available(ctx, SKU)
-    ConversationMessage.objects.create(conversation=conversation, role="assistant", kind="reply", transport_state="accepted", envelope={"disclosure": offer["disclosure"]})
-    ConversationMessage.objects.create(conversation=conversation, role="user", kind="inbound", text="aceito", envelope={"version": 2, "event_id": "consent"})
+    ConversationMessage.objects.create(
+        conversation=conversation,
+        binding=_binding(conversation),
+        role="assistant",
+        kind="reply",
+        transport_state="accepted",
+        envelope={"disclosure": offer["disclosure"]},
+    )
+    _create_inbound(conversation, "aceito", "consent")
+    _reclaim(ctx)
     result = tools.notify_when_available(ctx, SKU)
     assert result["ok"], result
     subs = StockAlertSubscription.objects.filter(sku=SKU, customer_ref=conversation.customer_ref)
@@ -490,13 +674,8 @@ def test_execute_never_raises(ctx):
 
 
 def test_run_agent_executes_tools_and_keeps_the_transcript_in_api_format(conversation):
-    ConversationMessage.objects.create(
-        conversation=conversation,
-        role="user",
-        kind="inbound",
-        text="tem pão francês?",
-        content=[{"type": "text", "text": "tem pão francês?"}],
-    )
+    _create_inbound(conversation, "tem pão francês?", "agent-menu")
+    conversation = _claim_conversation(conversation)
     client = ScriptedClient(
         _response(_tool("browse_menu", {"query": "pão", "collection": ""}), stop_reason="tool_use"),
         _response(_text("Temos sim. Quantos você quer?"), stop_reason="end_turn"),
@@ -537,9 +716,7 @@ LEAK_NAME = 'name="browse_menu">'
 
 def test_history_replays_tool_calls_and_text_without_leaked_syntax(conversation):
     """Transcrição com lixo não volta ao modelo como exemplo do formato."""
-    ConversationMessage.objects.create(
-        conversation=conversation, role="user", kind="inbound", text="oi", content=[{"type": "text", "text": "oi"}]
-    )
+    _create_inbound(conversation, "oi", "history-leak")
     ConversationMessage.objects.create(
         conversation=conversation,
         role="assistant",
@@ -556,9 +733,7 @@ def test_history_replays_tool_calls_and_text_without_leaked_syntax(conversation)
 
 
 def test_history_summarizes_old_tool_results(conversation):
-    ConversationMessage.objects.create(
-        conversation=conversation, role="user", kind="inbound", text="oi", content=[{"type": "text", "text": "oi"}]
-    )
+    _create_inbound(conversation, "oi", "history-summary")
     ConversationMessage.objects.create(
         conversation=conversation, role="assistant", kind="tool_call",
         content=[{"type": "tool_use", "id": "t1", "name": "browse_menu", "input": {"query": "pao"}}],
@@ -580,9 +755,8 @@ def test_clean_text_and_arguments_drop_leaked_tool_syntax():
 
 
 def test_run_agent_stops_repeating_the_same_call(conversation):
-    ConversationMessage.objects.create(
-        conversation=conversation, role="user", kind="inbound", text="folhados?", content=[{"type": "text", "text": "folhados?"}]
-    )
+    _create_inbound(conversation, "folhados?", "agent-repeat")
+    conversation = _claim_conversation(conversation)
     same = {"query": "", "collection": "folhados"}
     script = [_response(_tool("browse_menu", same, f"toolu_{i}"), stop_reason="tool_use") for i in range(4)]
     script.append(_response(_text("Hoje não temos folhados."), stop_reason="end_turn"))
@@ -598,9 +772,8 @@ def test_run_agent_stops_repeating_the_same_call(conversation):
 
 def test_run_agent_rejects_unfounded_preamble_and_uses_server_facts(conversation):
     """"A taxa é R$ 8,00, deixa eu ver os horários" + chamada → o cliente lê a taxa."""
-    ConversationMessage.objects.create(
-        conversation=conversation, role="user", kind="inbound", text="qual a taxa?", content=[{"type": "text", "text": "qual a taxa?"}]
-    )
+    _create_inbound(conversation, "qual a taxa?", "agent-preamble")
+    conversation = _claim_conversation(conversation)
     client = ScriptedClient(
         _response(_text("A taxa é *R$ 8,00*. Deixa eu ver os horários."), _tool("view_cart", {}), stop_reason="tool_use"),
         _response(_text("Temos janelas a partir das 13:30. Qual prefere?"), stop_reason="end_turn"),
@@ -614,9 +787,8 @@ def test_run_agent_rejects_unfounded_preamble_and_uses_server_facts(conversation
 
 
 def test_run_agent_forces_text_when_iterations_run_out(conversation):
-    ConversationMessage.objects.create(
-        conversation=conversation, role="user", kind="inbound", text="oi", content=[{"type": "text", "text": "oi"}]
-    )
+    _create_inbound(conversation, "oi", "agent-iterations")
+    conversation = _claim_conversation(conversation)
     script = [_response(_tool("view_cart", {}, f"toolu_{i}"), stop_reason="tool_use") for i in range(2)]
     script.append(_response(_text("Um instante."), stop_reason="end_turn"))
     client = ScriptedClient(*script)
@@ -633,11 +805,14 @@ def test_history_window_starts_at_a_customer_message(conversation):
         conversation=conversation, role="user", kind="tool_result", content=[{"type": "tool_result", "tool_use_id": "x", "content": "{}"}]
     )
     ConversationMessage.objects.create(
-        conversation=conversation, role="assistant", kind="reply", text="Olá", content=[{"type": "text", "text": "Olá"}]
+        conversation=conversation,
+        binding=_binding(conversation),
+        role="assistant",
+        kind="reply",
+        text="Olá",
+        content=[{"type": "text", "text": "Olá"}],
     )
-    ConversationMessage.objects.create(
-        conversation=conversation, role="user", kind="inbound", text="oi", content=[{"type": "text", "text": "oi"}]
-    )
+    _create_inbound(conversation, "oi", "history-window")
     ConversationMessage.objects.create(conversation=conversation, role="assistant", kind="note", text="nota interna")
     history = agent_module.history_for(conversation)
     assert history == [{"role": "user", "content": [{"type": "text", "text": "oi"}]}]
@@ -648,10 +823,10 @@ def test_history_window_starts_at_a_customer_message(conversation):
 
 @override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
 def test_receive_inbound_queues_one_deferred_directive_per_conversation(surface, customer, monkeypatch):
-    monkeypatch.setattr(service, "identify", lambda conversation, profile=None: conversation)
-    first = service.receive_inbound(subscriber_id="1962036908", text="oi", external_id="m1")
-    again = service.receive_inbound(subscriber_id="1962036908", text="oi", external_id="m1")
-    more = service.receive_inbound(subscriber_id="1962036908", text="tem croissant?", external_id="m2")
+    monkeypatch.setattr(service, "identify", lambda conversation, binding, profile=None: conversation)
+    first = service.receive_inbound(_event(text="oi", event_id="m1"))
+    again = service.receive_inbound(_event(text="oi", event_id="m1"))
+    more = service.receive_inbound(_event(text="tem croissant?", event_id="m2"))
 
     assert first.queued and first.reason == "queued"
     assert again.reason == "duplicate"
@@ -659,52 +834,77 @@ def test_receive_inbound_queues_one_deferred_directive_per_conversation(surface,
     directives = Directive.objects.filter(topic=service.TURN_TOPIC)
     assert directives.count() == 1  # uma diretiva viva por conversa
     directive = directives.get()
-    assert directive.payload == {"conversation_id": first.conversation_id, "contract_version": 2}
+    binding = ConversationBinding.objects.get(conversation_id=first.conversation_id)
+    assert directive.payload == {
+        "conversation_id": first.conversation_id,
+        "binding_id": binding.pk,
+        "contract_version": 3,
+    }
     assert directive.status == "queued"  # não rodou inline no request
     assert ConversationMessage.objects.filter(kind="inbound").count() == 2
 
 
 @override_settings(
-    SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "allowed_subscribers": ["1962036908", "+5543984049009"]},
+    SHOPMAN_CONCIERGE={
+        **CONCIERGE_SETTINGS,
+        "connections": {
+            CONNECTION_KEY: {
+                **CONCIERGE_SETTINGS["connections"][CONNECTION_KEY],
+                "options": {
+                    **CONCIERGE_SETTINGS["connections"][CONNECTION_KEY]["options"],
+                    "allowed_subjects": [SUBJECT],
+                },
+            }
+        },
+    },
     AI_ASSIST_API_KEY="sk-teste",
 )
 def test_pilot_allowlist_keeps_everyone_else_out_without_side_effects(surface, monkeypatch):
-    """Piloto fechado: quem não está na lista não ganha conversa, mensagem nem cliente."""
-    monkeypatch.setattr(service, "identify", lambda conversation, profile=None: conversation)
-    monkeypatch.setattr(
-        "shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.fetch_subscriber_info",
-        lambda subscriber_id: {"whatsapp_phone": "+5543984049009"} if subscriber_id == "777" else {},
-    )
-    by_id = service.receive_inbound(subscriber_id="1962036908", text="oi", external_id="a")
+    """A admissão usa o subject autenticado; perfil e telefone não concedem acesso."""
+    monkeypatch.setattr(service, "identify", lambda conversation, binding, profile=None: conversation)
+    by_id = service.receive_inbound(_event(text="oi", event_id="a"))
     by_phone_in_body = service.receive_inbound(
-        subscriber_id="555", text="oi", external_id="b", profile={"whatsapp_phone": "+55 43 98404-9009"}
+        _event(
+            text="oi",
+            event_id="b",
+            subject="555",
+            profile={"whatsapp_phone": "+55 43 98404-9009"},
+        )
     )
-    by_phone_from_getinfo = service.receive_inbound(subscriber_id="777", text="oi", external_id="c")
-    stranger = service.receive_inbound(subscriber_id="999", text="oi", external_id="d")
+    by_phone_from_provider = service.receive_inbound(
+        _event(
+            text="oi",
+            event_id="c",
+            subject="777",
+            profile={"whatsapp_phone": PHONE},
+        )
+    )
+    stranger = service.receive_inbound(_event(text="oi", event_id="d", subject="999"))
 
     assert by_id.queued
-    assert by_phone_in_body.reason == "not_allowed" and by_phone_from_getinfo.reason == "not_allowed"
+    assert by_phone_in_body.reason == "not_allowed" and by_phone_from_provider.reason == "not_allowed"
     assert stranger.reason == "not_allowed" and stranger.conversation_id is None
-    assert not Conversation.objects.filter(subscriber_id="999").exists()
+    assert not ConversationBinding.objects.exclude(subject=SUBJECT).exists()
     assert Conversation.objects.count() == 1
 
 
 @override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "enabled": False}, AI_ASSIST_API_KEY="sk-teste")
 def test_receive_inbound_is_silent_when_disabled(surface):
-    result = service.receive_inbound(subscriber_id="1", text="oi")
+    result = service.receive_inbound(_event(text="oi", event_id="disabled", subject="1"))
     assert result.reason == "disabled" and not Conversation.objects.exists()
 
 
 @override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
 def test_run_turn_answers_everything_pending_and_persists_the_transcript(conversation, outbox):
     for i, text in enumerate(("oi", "tem pão?")):
-        service.receive_inbound(subscriber_id=conversation.subscriber_id, text=text, external_id=f"m{i}")
+        _receive(conversation, text, f"m{i}")
     client = ScriptedClient(
         _response(_tool("browse_menu", {"query": "pão", "collection": ""}), stop_reason="tool_use"),
         _response(_text("Temos pão francês a R$ 0,90. Quantos?"), stop_reason="end_turn"),
     )
 
-    result = service.run_turn(conversation.pk, client=client)
+    binding = _binding(conversation)
+    result = service.run_turn(conversation.pk, binding.pk, client=client)
 
     assert "R$ 0,90" in result.replies[0]
     assert outbox.sent == result.replies
@@ -712,22 +912,25 @@ def test_run_turn_answers_everything_pending_and_persists_the_transcript(convers
     kinds = list(conversation.messages.order_by("id").values_list("kind", flat=True))
     assert kinds == ["inbound", "inbound", "tool_call", "tool_result", "reply"]
     reply = conversation.messages.get(kind="reply")
-    assert reply.delivered is None and reply.transport_state == "accepted"
+    assert reply.transport_state == "accepted"
+    assert reply.outbound_attempts.get().state == "accepted"
     conversation.refresh_from_db()
     assert conversation.turns_today == 1 and conversation.input_tokens == 200
     # As duas mensagens do cliente foram ao modelo, na ordem.
     sent_roles = [m["role"] for m in client.requests[0]["messages"]]
     assert sent_roles == ["user", "user"]
-    assert service.unanswered_inbound(conversation) == []
+    assert service.unanswered_inbound(conversation, binding) == []
 
 
 @pytest.mark.django_db(transaction=True)
 @override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
-def test_run_turn_sends_the_pix_code_as_its_own_message(conversation, outbox, django_capture_on_commit_callbacks):
-    ctx = ToolContext(conversation=conversation, channel_ref=CHANNEL)
+def test_run_turn_sends_the_pix_code_as_its_own_message(ctx, outbox, django_capture_on_commit_callbacks):
+    conversation = ctx.conversation
     review = _pickup_ready(ctx)
     _accept_review(ctx, review)
-    service.receive_inbound(subscriber_id=conversation.subscriber_id, text="confirmo", external_id="m9")
+    conversation = ctx.conversation
+    _receive(conversation, "confirmo", "m9")
+    Conversation.objects.filter(pk=conversation.pk).update(claim_until=None)
     client = ScriptedClient(
         _response(
             _tool("place_order", {"quote_token": review["quote_token"], "payment_method": "pix", "order_notes": ""}),
@@ -736,7 +939,7 @@ def test_run_turn_sends_the_pix_code_as_its_own_message(conversation, outbox, dj
         _response(_text("Pedido feito. O código Pix chega na próxima mensagem."), stop_reason="end_turn"),
     )
     with django_capture_on_commit_callbacks(execute=True):
-        result = service.run_turn(conversation.pk, client=client)
+        result = service.run_turn(conversation.pk, _binding(conversation).pk, client=client)
     order = Order.objects.get()
     assert len(result.replies) == 2
     assert "registrado" in result.replies[0]
@@ -746,11 +949,12 @@ def test_run_turn_sends_the_pix_code_as_its_own_message(conversation, outbox, dj
 
 @override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
 def test_run_turn_handoff_marks_the_conversation_and_flags_manychat(conversation, outbox):
-    service.receive_inbound(subscriber_id=conversation.subscriber_id, text="quero falar com alguém", external_id="m1")
+    _receive(conversation, "quero falar com alguém", "m1")
     client = ScriptedClient(
         _response(_text("Claro."), _tool("handoff_to_human", {"reason": "pediu uma pessoa"}), stop_reason="tool_use"),
     )
-    result = service.run_turn(conversation.pk, client=client)
+    binding = _binding(conversation)
+    result = service.run_turn(conversation.pk, binding.pk, client=client)
 
     conversation.refresh_from_db()
     assert result.handoff and conversation.state == Conversation.State.HANDOFF
@@ -762,9 +966,9 @@ def test_run_turn_handoff_marks_the_conversation_and_flags_manychat(conversation
     assert OperatorAlert.objects.get(type="concierge_handoff").acknowledged is False
 
     # Com a equipe na conversa, a próxima mensagem fica na transcrição e o bot cala.
-    later = service.receive_inbound(subscriber_id=conversation.subscriber_id, text="oi?", external_id="m2")
+    later = _receive(conversation, "oi?", "m2")
     assert later.reason == "handoff" and not later.queued
-    assert service.run_turn(conversation.pk, client=client).replies == []
+    assert service.run_turn(conversation.pk, binding.pk, client=client).replies == []
 
     assert service.return_to_concierge(conversation) is False
     conversation.refresh_from_db()
@@ -774,14 +978,15 @@ def test_run_turn_handoff_marks_the_conversation_and_flags_manychat(conversation
 @override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
 def test_run_turn_falls_back_to_house_copy_when_the_model_fails(conversation, outbox, monkeypatch):
     monkeypatch.setattr(service, "copy_message", lambda key: f"[{key}]")
-    service.receive_inbound(subscriber_id=conversation.subscriber_id, text="oi", external_id="m1")
+    _receive(conversation, "oi", "m1")
+    binding = _binding(conversation)
 
     class BrokenClient:
         messages = SimpleNamespace(create=lambda **kw: (_ for _ in ()).throw(RuntimeError("boom")))
 
     for _ in range(3):
-        result = service.run_turn(conversation.pk, client=BrokenClient())
-        service.receive_inbound(subscriber_id=conversation.subscriber_id, text="oi de novo", external_id=str(_))
+        result = service.run_turn(conversation.pk, binding.pk, client=BrokenClient())
+        _receive(conversation, "oi de novo", f"failure-{_}")
     assert result.fallback == "error" and result.replies == ["[CONCIERGE_UNAVAILABLE]"]
     conversation.refresh_from_db()
     assert conversation.consecutive_failures == 3
@@ -793,16 +998,20 @@ def test_run_turn_falls_back_to_house_copy_when_the_model_fails(conversation, ou
 @override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
 def test_run_turn_answers_media_and_daily_limit_without_the_model(conversation, outbox, monkeypatch):
     monkeypatch.setattr(service, "copy_message", lambda key: f"[{key}]")
-    service.receive_inbound(
-        subscriber_id=conversation.subscriber_id, text="https://lookaside.fbsbx.com/x/audio.ogg", external_id="a1"
+    _receive(
+        conversation,
+        "https://lookaside.fbsbx.com/x/audio.ogg",
+        "a1",
+        message_type="audio",
     )
-    result = service.run_turn(conversation.pk, client=ScriptedClient())
+    binding = _binding(conversation)
+    result = service.run_turn(conversation.pk, binding.pk, client=ScriptedClient())
     assert result.fallback == "media" and outbox.sent == ["[CONCIERGE_MEDIA_UNSUPPORTED]"]
 
     conversation.refresh_from_db()
     conversation.turns_today = 80
     conversation.turns_day = date.today()
     conversation.save()
-    service.receive_inbound(subscriber_id=conversation.subscriber_id, text="oi", external_id="a2")
-    result = service.run_turn(conversation.pk, client=ScriptedClient())
+    _receive(conversation, "oi", "a2")
+    result = service.run_turn(conversation.pk, binding.pk, client=ScriptedClient())
     assert result.fallback == "turn_limit" and outbox.sent[-1] == "[CONCIERGE_TURN_LIMIT]"

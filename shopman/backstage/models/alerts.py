@@ -34,6 +34,7 @@ class OperatorAlert(models.Model):
         # está no simulador — e esperava alguém abrir /admin/diagnostics/ para
         # contar. Este tipo é a mesma verdade, empurrada em vez de puxada.
         ("integration_config_drift", "Integração em configuração degradada"),
+        ("concierge_identity_conflict", "Concierge encontrou identidade divergente"),
         ("stock_discrepancy", "Discrepância de estoque"),
         ("payment_after_cancel", "Pagamento após cancelamento"),
         # A gêmea do `payment_after_cancel`: o dinheiro chegou com o pedido
