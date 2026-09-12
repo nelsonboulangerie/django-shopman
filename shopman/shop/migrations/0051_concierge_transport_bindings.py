@@ -104,6 +104,14 @@ def move_transport_identity(apps, schema_editor):
     if attempts:
         Attempt.objects.using(database).bulk_create(attempts, batch_size=1000)
 
+    # PostgreSQL keeps Django's new foreign keys deferred until transaction
+    # commit.  The constraints added by the next operations build indexes and
+    # require those trigger events to be settled first.  The backend helper
+    # validates them now and restores deferred mode without giving up the
+    # all-or-nothing migration transaction.
+    if schema_editor.connection.vendor == "postgresql":
+        schema_editor.connection.check_constraints()
+
 
 def restore_transport_identity(apps, schema_editor):
     """Collapse the transport split while the v2 schema still represents it.
