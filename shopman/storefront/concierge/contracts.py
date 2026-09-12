@@ -57,6 +57,7 @@ class ChannelCapabilities:
     stable_event_identity_verified: bool = False
     delivery_receipts: bool = False
     supports_handoff: bool = False
+    provider_enforces_response_window: bool = False
 
 
 @dataclass(frozen=True)
