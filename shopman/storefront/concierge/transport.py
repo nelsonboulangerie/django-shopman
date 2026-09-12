@@ -9,9 +9,11 @@ sem receipt verificável. Janela é revalidada na execução, nunca presumida no
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.conf import settings
 from django.utils.module_loading import import_string
@@ -131,10 +133,57 @@ def adapter_for(conversation) -> ConversationAdapter | None:
     return adapter
 
 
+def whatsapp_interaction_at(envelope, now):
+    """Campo de última interação WA, opt-in por conta; nunca é ID do evento.
+
+    O dono do flow confirma a origem do campo e o fuso antes de configurar.
+    Retry conserva o instante original; timestamp inválido não abre janela.
+    """
+    config = _config()
+    zone = config.get("whatsapp_interaction_timezone")
+    if not zone or envelope.get("authentication") != "api_key":
+        return None
+    if (envelope.get("provider"), envelope.get("transport_channel"), envelope.get("account_id")) != (
+        "manychat", "whatsapp", config.get("account_id")
+    ):
+        return None
+    raw = envelope.get("provider_timestamp")
+    if not isinstance(raw, str) or not re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})?", raw
+    ):
+        return None
+    try:
+        local_zone = ZoneInfo(zone)
+        instant = datetime.fromisoformat(raw)
+        if instant.tzinfo is None:
+            instant = instant.replace(tzinfo=local_zone)
+        instant = instant.astimezone(UTC)
+    except (ValueError, TypeError, OverflowError, ZoneInfoNotFoundError):
+        return None
+    return instant if timedelta(0) <= now - instant < ManyChatAdapter.capabilities.response_window else None
+
+
 def response_allowed(conversation, now) -> bool:
     adapter = adapter_for(conversation)
     received = conversation.last_inbound_at
-    return bool(adapter and received and timedelta(0) <= now - received < adapter.capabilities.response_window)
+    if not adapter:
+        return False
+    if received and timedelta(0) <= now - received < adapter.capabilities.response_window:
+        return True
+    zone = _config().get("whatsapp_interaction_timezone")
+    if not zone or not _config().get("legacy_read_handoff_enabled"):
+        return False
+    # Evidência nasce no ingresso autenticado, sem backfill da transcrição.
+    # Fonte separada preserva last_inbound_at e permite revogar o opt-in.
+    envelope = conversation.messages.filter(
+        kind="inbound", envelope__input_assurance="legacy_unverified",
+        envelope__window_evidence__source="manychat_whatsapp_last_interaction",
+        envelope__window_evidence__timezone=zone,
+    ).order_by("-envelope__window_evidence__at").values_list("envelope", flat=True).first()
+    if not envelope:
+        return False
+    instant = whatsapp_interaction_at(envelope, now)
+    return bool(instant and envelope["window_evidence"].get("at") == instant.isoformat())
 
 
 def send_for(conversation, text) -> SendOutcome:
