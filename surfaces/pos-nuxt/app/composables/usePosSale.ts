@@ -1407,10 +1407,8 @@ export function usePosSale(deps: PosSaleDeps) {
   // mudar). Enquanto ela existe, o modal fica aberto esperando a resposta.
   const customerDecision = ref<CustomerDecision | null>(null);
   const pendingReceiptDecision = ref<{
-    field: "tax_id" | "email";
-    value: string;
+    fields: Array<{ field: "tax_id" | "email"; value: string; owner_ref: string; name: string; active: boolean }>;
     customer_ref: string;
-    owner_ref: string;
     client_request_id: string;
     origin: "review" | "close";
   } | null>(null);
@@ -1429,7 +1427,7 @@ export function usePosSale(deps: PosSaleDeps) {
 
   function receiptDecisionMatches() {
     const pending = pendingReceiptDecision.value;
-    return Boolean(pending && receiptIdentityValue(pending.field) === pending.value
+    return Boolean(pending && pending.fields.every((item) => receiptIdentityValue(item.field) === item.value)
       && cart.customerRef === pending.customer_ref && cart.clientRequestId === pending.client_request_id);
   }
 
@@ -1437,24 +1435,31 @@ export function usePosSale(deps: PosSaleDeps) {
     const failure = (httpError(error).data as { error?: {
       code?: string; field?: string; value?: string; customer_ref?: string; client_request_id?: string;
       candidates?: ServerConflictCandidate[];
+      conflicts?: Array<{ field: string; value: string; candidates: ServerConflictCandidate[] }>;
     } } | null)?.error;
     if (failure?.code !== "receipt_identity_conflict") return false;
-    const field = failure.field === "fiscal_tax_id" ? "tax_id" : "email";
-    const owner = failure.candidates?.find((candidate) => !candidate.is_current);
-    if (!owner || !failure.value || receiptIdentityValue(field) !== failure.value
+    const conflicts = failure.conflicts?.length ? failure.conflicts : [failure];
+    const fields = conflicts.map((conflict) => {
+      const field = conflict.field === "fiscal_tax_id" ? "tax_id" as const : "email" as const;
+      const owner = conflict.candidates?.find((candidate) => !candidate.is_current);
+      return { field, value: conflict.value || "", owner_ref: owner?.ref || "", name: owner?.name || "", active: !owner?.owner_inactive };
+    });
+    if (fields.some((item) => !item.owner_ref || !item.value || receiptIdentityValue(item.field) !== item.value)
       || cart.customerRef !== (failure.customer_ref || "") || cart.clientRequestId !== failure.client_request_id) {
       review.value = null;
       serverError.value = "Os dados do documento mudaram. Revise a venda novamente.";
       return true;
     }
+    const first = fields[0]!;
     pendingReceiptDecision.value = {
-      field, value: failure.value, customer_ref: cart.customerRef, owner_ref: owner.ref,
-      client_request_id: cart.clientRequestId, origin,
+      fields, customer_ref: cart.customerRef, client_request_id: cart.clientRequestId, origin,
     };
     customerDecision.value = {
-      kind: "receipt_identity", field, typed: failure.value,
+      kind: "receipt_identity", field: first.field, typed: first.value,
       current: cart.customerRef ? { ref: cart.customerRef, name: cart.customerName, value: "" } : null,
-      other: { ref: owner.ref, name: owner.name, value: failure.value },
+      other: { ref: first.owner_ref, name: first.name, value: first.value },
+      receiptFields: fields.map((item) => ({ field: item.field, value: item.value,
+        owner: { ref: item.owner_ref, name: item.name, value: item.value }, active: item.active })),
       candidates: failure.candidates,
       fromReceipt: true,
     };
@@ -1620,32 +1625,58 @@ export function usePosSale(deps: PosSaleDeps) {
 
   /** O operador assumiu a mudança. Trocar de cliente pelo caminho EXPLÍCITO —
    *  o mesmo destino da busca, e nunca um efeito colateral de digitar. */
-  async function confirmCustomerDecision() {
+  async function confirmCustomerDecision(ownerRef?: string) {
     const decision = customerDecision.value;
     if (!decision) return;
     if (decision.kind === "receipt_identity") {
-      if (!receiptDecisionMatches() || !decision.other) {
-        customerDecision.value = null;
-        return;
-      }
-      const invoiceTaxId = cart.invoiceTaxId;
-      const wantsCpfOnInvoice = cart.wantsCpfOnInvoice;
-      const receiptEmail = cart.receiptEmail;
-      const receiptChannels = [...cart.receiptChannels];
-      customerDecision.value = null;
-      pendingReceiptDecision.value = null;
+      if (receiptDecisionBusy) return;
+      const pending = pendingReceiptDecision.value;
+      const owners = pending?.fields.filter((item) => item.active) || [];
+      const chosen = ownerRef ? owners.find((item) => item.owner_ref === ownerRef)
+        : new Set(owners.map((item) => item.owner_ref)).size === 1 ? owners[0] : undefined;
+      if (!receiptDecisionMatches() || !pending || !chosen) return;
+      const document = { invoiceTaxId: cart.invoiceTaxId, wantsCpfOnInvoice: cart.wantsCpfOnInvoice,
+        receiptEmail: cart.receiptChannels.includes("email") ? (cart.receiptEmail || cart.customerEmail) : cart.receiptEmail, receiptChannels: [...cart.receiptChannels] };
+      const saleId = cart.clientRequestId;
+      const session = cart.tabSessionKey;
+      receiptDecisionBusy = true;
       pendingSaleAfterDecision.value = false;
-      await attendCustomer(decision.other.ref, decision.other.name);
-      // Associar cliente não muda o destino/documento que foi pedido para a nota.
-      cart.invoiceTaxId = invoiceTaxId;
-      cart.wantsCpfOnInvoice = wantsCpfOnInvoice;
-      cart.receiptEmail = receiptEmail;
-      cart.receiptChannels = receiptChannels;
-      cart.saveReceiptContact = false;
-      cart.saveReceiptTaxId = false;
-      cart.confirmReceiptTaxId = false;
-      review.value = null;
-      if (checkoutMode.value) await reviewCheckout();
+      try {
+        // Validate the selected owner before changing the cart. A failed or stale
+        // lookup must never acknowledge either document identity.
+        lookupBusy.value = true;
+        const path = concreteActionHref(actions.value, "customer_lookup",
+          "/api/v1/backstage/pos/customer/lookup/?phone={phone}&ref={ref}", { phone: "", ref: chosen.owner_ref });
+        const response = await $fetch<POSCustomerLookupResponse>(apiPath(path), {
+          method: "GET", credentials: "include", headers: requestHeaders,
+        });
+        if (customerDecision.value !== decision || pendingReceiptDecision.value !== pending || !receiptDecisionMatches()
+          || session !== cart.tabSessionKey || !response.customer || response.customer.ref !== chosen.owner_ref) return;
+        customerLookup.value = response.customer;
+        cart.customerPhone = "";
+        cart.customerEmail = "";
+        cart.customerTaxId = "";
+        applyCustomerDefaults(response.customer);
+        customerSearchResults.value = [];
+        customerResolvedNew.value = false;
+        Object.assign(cart, document);
+        cart.saveReceiptContact = false;
+        cart.saveReceiptTaxId = false;
+        cart.confirmReceiptTaxId = false;
+        receiptIdentityChoices.value = pending.fields.filter((item) => item.owner_ref !== chosen.owner_ref).map((item) => ({
+          field: item.field, value: item.value, owner_ref: item.owner_ref, customer_ref: chosen.owner_ref,
+          client_request_id: saleId, choice: "receipt_only" as const,
+        }));
+        customerDecision.value = null;
+        pendingReceiptDecision.value = null;
+        review.value = null;
+        if (checkoutMode.value) await reviewCheckout();
+      } catch (error) {
+        serverError.value = httpErrorMessage(error, "Falha ao buscar cliente.");
+      } finally {
+        receiptDecisionBusy = false;
+        lookupBusy.value = false;
+      }
       return;
     }
     // Trocar de cliente muda faixa de preço e restrições: a venda NÃO retoma
@@ -1783,24 +1814,27 @@ export function usePosSale(deps: PosSaleDeps) {
    *
    *  No PAINEL do cliente é diferente e continua como estava: ali o valor É
    *  identidade, e descartá-lo significa voltar ao que o cadastro tem. */
+  let receiptDecisionBusy = false;
   async function cancelCustomerDecision() {
     const decision = customerDecision.value;
     if (decision?.kind === "receipt_identity") {
       const pending = pendingReceiptDecision.value;
-      if (!pending) return;
+      if (!pending || receiptDecisionBusy) return;
       if (!receiptDecisionMatches()) {
         customerDecision.value = null;
         return;
       }
       receiptIdentityChoices.value = [
-        ...receiptIdentityChoices.value.filter((choice) => choice.field !== pending.field),
-        { field: pending.field, value: pending.value, customer_ref: pending.customer_ref,
-          owner_ref: pending.owner_ref, client_request_id: pending.client_request_id, choice: "receipt_only" },
+        ...receiptIdentityChoices.value.filter((choice) => !pending.fields.some((item) => item.field === choice.field)),
+        ...pending.fields.map((item) => ({ field: item.field, value: item.value, customer_ref: pending.customer_ref,
+          owner_ref: item.owner_ref, client_request_id: pending.client_request_id, choice: "receipt_only" as const })),
       ];
-      if (pending.field === "tax_id") {
+      if (pending.fields.some((item) => item.field === "tax_id")) {
         cart.saveReceiptTaxId = false;
         cart.confirmReceiptTaxId = false;
-      } else cart.saveReceiptContact = false;
+      }
+      if (pending.fields.some((item) => item.field === "email")) cart.saveReceiptContact = false;
+      receiptDecisionBusy = true;
       pendingReceiptDecision.value = null;
       lookupBusy.value = true;
       try {
@@ -1808,6 +1842,7 @@ export function usePosSale(deps: PosSaleDeps) {
         else await reviewCheckout();
         if (customerDecision.value === decision) customerDecision.value = null;
       } finally {
+        receiptDecisionBusy = false;
         lookupBusy.value = false;
       }
       return;

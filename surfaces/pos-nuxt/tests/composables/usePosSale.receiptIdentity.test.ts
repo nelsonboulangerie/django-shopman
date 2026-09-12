@@ -1,8 +1,11 @@
+import { mockNuxtImport } from "@nuxt/test-utils/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick, watch } from "vue";
 import { makeProjection, makeSale, makeTabPayload } from "./_posSaleHarness";
 
 vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
+const { dollarFetch } = vi.hoisted(() => ({ dollarFetch: vi.fn() }));
+mockNuxtImport("$fetch", () => dollarFetch);
 const CPF = "52998224725";
 const EMAIL = "bia@example.org";
 const owner = { ref: "CUST-B", name: "Bia Nunes", phone: "", email: EMAIL, tax_id: CPF, matched_by: ["cpf"], is_current: false };
@@ -15,20 +18,26 @@ function identityError(body: Body, field: "tax_id" | "email") {
     client_request_id: body.client_request_id, candidates: [owner],
   } } };
 }
-function setup(checkAt: "review" | "close" = "review") {
+function setup(checkAt: "review" | "close" = "review", batch = false, emailOwner = owner) {
   const bodies: Body[] = [];
   const actionCall = vi.fn(async (path: string, options?: { body?: Body }): Promise<any> => {
     const body = options?.body || {};
     bodies.push(body);
     if (path.includes(`/sale/${checkAt}/`)) {
+      const conflicts: Body[] = [];
       for (const field of ["tax_id", "email"] as const) {
+        const fieldOwner = field === "email" ? emailOwner : owner;
         const value = field === "tax_id" ? body.fiscal_tax_id : body.receipt_email?.trim().toLowerCase();
-        if (value !== (field === "tax_id" ? CPF : EMAIL) || body.customer_ref === owner.ref) continue;
+        if (value !== (field === "tax_id" ? CPF : EMAIL) || body.customer_ref === fieldOwner.ref) continue;
         const choice = body.receipt_identity_choices?.find((item: Body) => item.field === field
-          && item.value === value && item.customer_ref === (body.customer_ref || "") && item.owner_ref === owner.ref
+          && item.value === value && item.customer_ref === (body.customer_ref || "") && item.owner_ref === fieldOwner.ref
           && item.client_request_id === body.client_request_id && item.choice === "receipt_only");
-        if (!choice) throw identityError(body, field);
+        if (!choice) {
+          if (!batch) throw identityError(body, field);
+          conflicts.push({ field: field === "tax_id" ? "fiscal_tax_id" : "receipt_email", value, candidates: [fieldOwner] });
+        }
       }
+      if (conflicts.length) throw { data: { error: { ...identityError(body, "tax_id").data.error, ...conflicts[0], conflicts } } };
     }
     if (path.includes("/sale/close/")) return { ok: true, order_ref: "PED-1", payment: null };
     return { review: { total_q: 500, subtotal_q: 500, total_display: "R$ 5,00" } };
@@ -42,7 +51,7 @@ function setup(checkAt: "review" | "close" = "review") {
 }
 beforeEach(() => {
   instances = []; vi.useFakeTimers();
-  vi.stubGlobal("$fetch", vi.fn().mockResolvedValue({ customer: { ...owner, fiscal_prefs: {}, saved_addresses: [] } }));
+  dollarFetch.mockReset().mockResolvedValue({ customer: { ...owner, fiscal_prefs: {}, saved_addresses: [] } });
 });
 afterEach(() => {
   instances.forEach((h) => h.handles.dispose());
@@ -93,6 +102,7 @@ describe("CPF/e-mail do documento têm decisão própria", () => {
     Object.assign(h.sale.cart, { invoiceTaxId: CPF, wantsCpfOnInvoice: true, receiptEmail: "contador@example.com", receiptChannels: ["email"], customerRef: "CUST-A", customerName: "Ana" });
     await nextTick(); await h.sale.prepareCheckout();
     expect(h.sale.cart.customerRef).toBe("CUST-A");
+    dollarFetch.mockReset().mockResolvedValue({ customer: { ...owner, fiscal_prefs: {}, saved_addresses: [] } });
     await h.sale.confirmCustomerDecision();
     expect(h.sale.cart.customerRef).toBe(owner.ref);
     expect(h.sale.cart.customerName).toBe(owner.name);
@@ -163,6 +173,75 @@ describe("CPF/e-mail do documento têm decisão própria", () => {
     expect(h.sale.customerDecision.value).toBeNull();
     expect(h.sale.cart.clientRequestId).toBe(requestId);
     expect(h.bodies.at(-1)?.receipt_identity_choices).toHaveLength(1);
+  });
+
+  it("consolida os dois dados do mesmo dono numa decisão", async () => {
+    const h = setup("review", true);
+    Object.assign(h.sale.cart, { invoiceTaxId: CPF, wantsCpfOnInvoice: true, receiptEmail: EMAIL, receiptChannels: ["email"] });
+    await nextTick(); await h.sale.prepareCheckout();
+    expect(h.sale.customerDecision.value?.receiptFields).toHaveLength(2);
+    await h.sale.cancelCustomerDecision();
+    expect(h.sale.customerDecision.value).toBeNull();
+    expect(h.bodies.at(-1)?.receipt_identity_choices).toHaveLength(2);
+  });
+  it("escolhe um dono e reconhece o outro só no documento sem nova pergunta", async () => {
+    const second = { ...owner, ref: "CUST-C", name: "Carla" };
+    const h = setup("review", true, second);
+    Object.assign(h.sale.cart, { invoiceTaxId: CPF, wantsCpfOnInvoice: true, receiptEmail: EMAIL, receiptChannels: ["email"] });
+    await nextTick(); await h.sale.prepareCheckout();
+    await h.sale.confirmCustomerDecision();
+    expect(h.sale.cart.customerRef).toBe("");
+    dollarFetch.mockReset().mockResolvedValue({ customer: { ...owner, fiscal_prefs: {}, saved_addresses: [] } });
+    await h.sale.confirmCustomerDecision(owner.ref);
+    expect(h.sale.cart.customerRef).toBe(owner.ref);
+    expect(h.sale.customerDecision.value).toBeNull();
+    expect(h.bodies.at(-1)?.receipt_identity_choices).toEqual([expect.objectContaining({field: "email", owner_ref: second.ref, customer_ref: owner.ref})]);
+    expect(h.sale.cart.invoiceTaxId).toBe(CPF);
+    expect(h.sale.cart.receiptEmail).toBe(EMAIL);
+  });
+  it("lookup pendente ignora duplo clique e mudança de documento", async () => {
+    const h = setup("review", true);
+    Object.assign(h.sale.cart, { invoiceTaxId: CPF, wantsCpfOnInvoice: true, receiptEmail: EMAIL, receiptChannels: ["email"] });
+    await nextTick(); await h.sale.prepareCheckout();
+    let finish!: (value: unknown) => void;
+    dollarFetch.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const pending = h.sale.confirmCustomerDecision(owner.ref);
+    await h.sale.confirmCustomerDecision(owner.ref);
+    await h.sale.cancelCustomerDecision();
+    h.sale.cart.receiptEmail = "changed@example.org";
+    finish({customer: {...owner, fiscal_prefs: {}, saved_addresses: []}});
+    await pending;
+    expect(h.sale.cart.customerRef).toBe("");
+    expect(h.sale.cart.receiptEmail).toBe("changed@example.org");
+    expect(h.sale.customerDecision.value).toBeNull();
+  });
+
+  it("preserva e-mail do documento vindo do cliente anterior", async () => {
+    const h = setup("review", true);
+    Object.assign(h.sale.cart, { customerRef: "CUST-A", customerName: "Ana", customerEmail: "contador@example.org", invoiceTaxId: CPF, wantsCpfOnInvoice: true, receiptEmail: "", receiptChannels: ["email"] });
+    await nextTick(); await h.sale.prepareCheckout();
+    dollarFetch.mockReset().mockResolvedValue({ customer: { ...owner, fiscal_prefs: {}, saved_addresses: [] } });
+    await h.sale.confirmCustomerDecision(owner.ref);
+    expect(h.sale.cart.customerEmail).toBe(EMAIL);
+    expect(h.sale.cart.receiptEmail).toBe("contador@example.org");
+    expect(h.bodies.at(-1)?.receipt_email).toBe("contador@example.org");
+  });
+  it.each(["reset", "failure"])("não confirma ao %s durante lookup", async (mode) => {
+    const h = setup("review", true);
+    Object.assign(h.sale.cart, { invoiceTaxId: CPF, wantsCpfOnInvoice: true, receiptEmail: EMAIL, receiptChannels: ["email"] });
+    await nextTick(); await h.sale.prepareCheckout();
+    let finish!: (value: unknown) => void;
+    let fail!: (reason: unknown) => void;
+    dollarFetch.mockImplementationOnce(() => new Promise((resolve, reject) => { finish = resolve; fail = reject; }));
+    const pending = h.sale.confirmCustomerDecision(owner.ref);
+    if (mode === "reset") {
+      h.sale.cart.clientRequestId = "next-sale";
+      finish({customer: {...owner, fiscal_prefs: {}, saved_addresses: []}});
+    } else fail(new Error("offline"));
+    await pending;
+    expect(h.sale.cart.customerRef).toBe("");
+    expect(h.bodies.at(-1)?.receipt_identity_choices).toBeUndefined();
+    expect(h.sale.lookupBusy.value).toBe(false);
   });
 
 });
