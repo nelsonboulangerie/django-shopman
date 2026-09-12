@@ -1454,13 +1454,6 @@ def notify_when_available(ctx: ToolContext, sku: str) -> dict:
         "resource_ref": str(subscription.ref)}
 
 
-def handoff_to_human(ctx: ToolContext, reason: str = "") -> dict:
-    """Passa a conversa para a equipe; a casa sincroniza o transporte causal."""
-    ctx.handoff = True
-    ctx.handoff_reason = " ".join(str(reason or "").split()).strip()[:200] or "pedido do cliente"
-    return {"ok": True, "message": "Solicitação de atendimento registrada. A equipe continuará por aqui conforme a disponibilidade."}
-
-
 def _guard(handler):
     @wraps(handler)
     def guarded(ctx, *args, **kwargs):
@@ -1512,7 +1505,7 @@ def render_result(name: str, result: dict) -> str:
     if not result.get("ok"):
         return _display_text(result.get("message") or "Não consegui concluir. Suas escolhas estão preservadas.")
     if result.get("message") and (
-        name in {"notify_when_available", "handoff_to_human"}
+        name == "notify_when_available"
         or not any(result.get(key) for key in ("lines", "orders", "items", "collections", "payment", "url", "pickup_slots", "delivery_slots"))
     ):
         return _display_text(result["message"])
@@ -1739,14 +1732,6 @@ TOOL_SPECS: list[dict] = [
         ),
         "input_schema": _schema({"sku": {"type": "string", "description": "SKU do produto."}}, ["sku"]),
     },
-    {
-        "name": "handoff_to_human",
-        "description": (
-            "Passa a conversa para a equipe da casa. Use quando o cliente pedir uma pessoa, reclamar, "
-            "ou quando você não consegue resolver com as outras ferramentas."
-        ),
-        "input_schema": _schema({"reason": {"type": "string", "description": "Motivo, em uma frase."}}, []),
-    },
 ]
 
 _HANDLERS = {
@@ -1761,7 +1746,6 @@ _HANDLERS = {
     "last_order": last_order,
     "send_web_link": send_web_link,
     "notify_when_available": notify_when_available,
-    "handoff_to_human": handoff_to_human,
 }
 
 TOOL_NAMES = tuple(_HANDLERS)
@@ -1777,7 +1761,6 @@ LIMITED_AUTHORITY_TOOL_NAMES = frozenset(
         "list_fulfillment_slots",
         "order_status",
         "last_order",
-        "handoff_to_human",
     }
 )
 

@@ -632,16 +632,14 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None) -> TurnResul
 
     try:
         assert_turn_authority(conversation, for_mutation=False)
-        human_phrases = {
-            "humano",
-            "atendente",
-            "quero falar com alguém",
-            "quero falar com alguem",
-            "falar com atendente",
-            "quero atendimento humano",
-        }
-        if any(message.text.casefold().strip(" .!?") in human_phrases for message in inbound):
-            mark_handoff(conversation, binding, "pedido do cliente", consumed_ids=ids)
+        from .handoff import classify_handoff_request
+
+        handoff_category = next(
+            (category for message in inbound if (category := classify_handoff_request(message.text))),
+            "",
+        )
+        if handoff_category:
+            mark_handoff(conversation, binding, handoff_category, consumed_ids=ids)
             return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids)
         if (
             binding.identity_assurance

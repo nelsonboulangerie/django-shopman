@@ -38,6 +38,7 @@ from shopman.storefront.concierge.contracts import (
     TransportScope,
     WindowEvidence,
 )
+from shopman.storefront.concierge.handoff import classify_handoff_request
 from shopman.storefront.concierge.tools import ToolContext
 
 pytestmark = pytest.mark.django_db
@@ -894,6 +895,69 @@ def test_run_agent_reconciles_public_facts_when_model_skips_tools(conversation):
     assert not Session.objects.exists()
 
 
+def test_run_agent_refuses_unfounded_handoff_and_answers_public_facts(conversation):
+    """Outra consulta do modelo não pode apagar os fatos públicos da pergunta."""
+    product = Product.objects.create(
+        sku="PAIN-PERDU-HANDOFF", name="Pain Perdu", base_price_q=1800,
+        is_published=True, is_sellable=True,
+    )
+    CollectionItem.objects.create(
+        collection=Collection.objects.get(ref="paes"), product=product, sort_order=2,
+    )
+    ListingItem.objects.create(
+        listing=Listing.objects.get(ref=CHANNEL), product=product, price_q=1800,
+        is_published=True, is_sellable=True,
+    )
+    _seed_stock(product.sku, Decimal("4"))
+    _create_inbound(
+        conversation, "vou querer um pain perdu, vcs entregam?", "agent-unfounded-handoff",
+    )
+    conversation = _claim_conversation(conversation)
+    conversation._limited_event_assurance = True
+    conversation._commercial_authority = False
+    client = ScriptedClient(
+        _response(
+            _tool("view_cart", {}, "toolu_irrelevant_cart"),
+            stop_reason="tool_use",
+        ),
+        _response(_text("Vou verificar."), stop_reason="end_turn"),
+    )
+
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        outcome = agent_module.run_agent(
+            conversation=conversation, history=agent_module.history_for(conversation), client=client,
+        )
+
+    assert not outcome.handoff
+    assert "Pain Perdu" in outcome.reply_text
+    assert "R$ 18,00" in outcome.reply_text
+    assert "Fazemos entrega" in outcome.reply_text
+    assert [event["name"] for event in outcome.tool_events] == [
+        "view_cart", "search_storefront",
+    ]
+    assert not Session.objects.exists()
+
+
+@pytest.mark.parametrize(("text", "category"), [
+    ("quero falar com alguém da equipe", "customer_request"),
+    ("meu pedido veio queimado", "complaint"),
+    ("preciso de uma encomenda especial", "special_order"),
+    ("sou celíaca, tem glúten?", "allergy_review"),
+])
+def test_handoff_policy_classifies_supported_customer_intent(text, category):
+    assert classify_handoff_request(text) == category
+
+
+@pytest.mark.parametrize("text", [
+    "vou querer um pain perdu, vcs entregam?",
+    "quais ingredientes tem no Pain Perdu?",
+    "sem problema, quero um Pain Perdu",
+    "a equipe recomenda qual pão?",
+])
+def test_handoff_policy_does_not_infer_human_intent_from_public_questions(text):
+    assert classify_handoff_request(text) == ""
+
+
 def test_run_agent_only_sends_the_latest_cart_state(conversation):
     _create_inbound(conversation, "quero dois pães", "agent-two-cart-states")
     conversation = _claim_conversation(conversation)
@@ -1214,15 +1278,13 @@ def test_run_turn_sends_the_pix_code_as_its_own_message(ctx, outbox, django_capt
 @override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
 def test_run_turn_handoff_marks_the_conversation_and_flags_manychat(conversation, outbox):
     _receive(conversation, "quero falar com alguém", "m1")
-    client = ScriptedClient(
-        _response(_text("Claro."), _tool("handoff_to_human", {"reason": "pediu uma pessoa"}), stop_reason="tool_use"),
-    )
+    client = ScriptedClient()
     binding = _binding(conversation)
     result = service.run_turn(conversation.pk, binding.pk, client=client)
 
     conversation.refresh_from_db()
     assert result.handoff and conversation.state == Conversation.State.HANDOFF
-    assert conversation.handoff_reason == "pedido do cliente"
+    assert conversation.handoff_reason == "customer_request"
     assert outbox.flags == [True]
     assert len(outbox.sent) == 1 and "atendimento humano" in outbox.sent[0]
     from shopman.backstage.models import OperatorAlert
