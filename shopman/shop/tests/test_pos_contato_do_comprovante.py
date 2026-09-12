@@ -53,6 +53,17 @@ def _salvar(payload):
     return _persist_customer_from_payload(payload, operator_username="op")
 
 
+def _so_no_documento(payload):
+    """Decisão explícita de usar dados ainda sem titular apenas nesta venda."""
+    request_id = "receipt-only-test"
+    choices = [
+        {"field": field, "value": payload[key], "customer_ref": payload.get("customer_ref", ""),
+         "owner_ref": "", "choice": "receipt_only", "client_request_id": request_id}
+        for field, key in (("tax_id", "fiscal_tax_id"), ("email", "receipt_email")) if payload.get(key)
+    ]
+    return {**payload, "client_request_id": request_id, "receipt_identity_choices": choices}
+
+
 # ── Linha 1: cliente identificado, SEM o contato no cadastro ──────────────
 
 
@@ -73,11 +84,11 @@ def test_email_do_comprovante_entra_no_cadastro_vazio_quando_mandam():
 def test_email_do_comprovante_NAO_entra_no_cadastro_vazio_sem_a_ordem():
     cliente = _cliente(phone="+5543999990002")
 
-    _salvar({
+    _salvar(_so_no_documento({
         "customer_ref": cliente.ref,
         "receipt_channels": ["email"],
         "receipt_email": "ana@example.org",
-    })
+    }))
 
     cliente.refresh_from_db()
     assert cliente.email == ""
@@ -95,7 +106,7 @@ def test_cpf_da_nota_entra_no_cadastro_vazio_quando_mandam():
 def test_cpf_da_nota_NAO_entra_no_cadastro_vazio_sem_a_ordem():
     cliente = _cliente(phone="+5543999990004")
 
-    _salvar({"customer_ref": cliente.ref, "fiscal_tax_id": CPF_A})
+    _salvar(_so_no_documento({"customer_ref": cliente.ref, "fiscal_tax_id": CPF_A}))
 
     cliente.refresh_from_db()
     assert cliente.document == ""
@@ -141,12 +152,12 @@ def test_email_diferente_deixa_o_cadastro_INTACTO_e_a_nota_vai_para_o_informado(
     cliente = _cliente(phone="+5543999990007", email="ana@example.org")
 
     ops = build_session_ops(
-        {
+        _so_no_documento({
             "customer_ref": cliente.ref,
             "items": [],
             "receipt_channels": ["email"],
             "receipt_email": "contador@example.org",
-        },
+        }),
         "op",
     )
 
@@ -172,7 +183,7 @@ def test_email_diferente_SO_e_atualizado_com_a_ordem_nomeada():
 def test_cpf_diferente_deixa_o_cadastro_INTACTO():
     cliente = _cliente(phone="+5543999990009", document=CPF_A)
 
-    _salvar({"customer_ref": cliente.ref, "fiscal_tax_id": CPF_B})
+    _salvar(_so_no_documento({"customer_ref": cliente.ref, "fiscal_tax_id": CPF_B}))
 
     cliente.refresh_from_db()
     assert cliente.document == CPF_A
@@ -262,12 +273,12 @@ def test_corrigir_contato_NAO_arrasta_o_documento_junto():
     """
     cliente = _cliente(phone="+5543999990011", document=CPF_A)
 
-    _salvar({
+    _salvar(_so_no_documento({
         "customer_ref": cliente.ref,
         "customer_phone": "43999998888",
         "fiscal_tax_id": CPF_B,
         "customer_contact_correction": True,
-    })
+    }))
 
     cliente.refresh_from_db()
     assert cliente.phone == "+5543999998888"
@@ -425,7 +436,7 @@ def test_sem_cliente_identificado_marcado_faz_o_cadastro_NASCER():
 def test_sem_cliente_identificado_desmarcado_NAO_cria_cadastro():
     from shopman.guestman.models import Customer
 
-    resolvido = _salvar({"receipt_channels": ["email"], "receipt_email": "novo@example.org"})
+    resolvido = _salvar(_so_no_documento({"receipt_channels": ["email"], "receipt_email": "novo@example.org"}))
 
     assert resolvido == {}
     assert Customer.objects.count() == 0
@@ -443,7 +454,7 @@ def test_sem_cliente_identificado_o_cpf_marcado_faz_o_cadastro_NASCER():
 def test_sem_cliente_identificado_o_cpf_desmarcado_NAO_cria_cadastro():
     from shopman.guestman.models import Customer
 
-    resolvido = _salvar({"fiscal_tax_id": CPF_A})
+    resolvido = _salvar(_so_no_documento({"fiscal_tax_id": CPF_A}))
 
     assert resolvido == {}
     assert Customer.objects.count() == 0
@@ -487,7 +498,7 @@ def test_a_venda_fecha_igual_com_a_oferta_desmarcada():
         "receipt_email": "novo@example.org",
         "fiscal_tax_id": CPF_A,
     }
-    ops = build_session_ops(dict(base), "op")
+    ops = build_session_ops(_so_no_documento(base), "op")
 
     assert {"op": "set_data", "path": "receipt.email", "value": "novo@example.org"} in ops
     assert {"op": "set_data", "path": "fiscal.tax_id", "value": CPF_A} in ops

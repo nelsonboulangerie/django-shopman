@@ -76,7 +76,7 @@ def test_o_cpf_da_nota_tem_campo_proprio_o_do_cadastro_nao_entra():
     # toggle desligado o CPF digitado não virava `fiscal.tax_id`, a nota saía
     # assim mesmo (o resolver emite por forma de pagamento) e saía como
     # CONSUMIDOR NÃO IDENTIFICADO. Agora digitar o documento É o pedido.
-    com_cpf = build_session_ops({**base, "fiscal_tax_id": "52998224725"}, "op")
+    com_cpf = build_session_ops({**base, "fiscal_tax_id": "52998224725", "save_receipt_tax_id": True}, "op")
     paths_com = {op.get("path") for op in com_cpf}
     assert "customer.tax_id" in paths_com      # identidade (CRM)
     assert "fiscal.tax_id" in paths_com        # e o pedido desta venda
@@ -140,6 +140,8 @@ def test_cliente_que_optou_fica_lembrado_e_pre_marca_a_proxima():
             "fiscal_tax_id": "52998224725",
             "receipt_channels": ["email"],
             "receipt_email": "ana@example.org",
+            "save_receipt_tax_id": True,
+            "save_receipt_contact": True,
         },
         operator_username="op",
     )
@@ -173,7 +175,7 @@ def test_desmarcar_numa_venda_nao_apaga_a_preferencia():
     Channel.objects.create(ref="pdv", name="PDV", is_active=True, config={})
 
     base = {"customer_name": "Bia", "customer_phone": "43999990002"}
-    identified = _persist_customer_from_payload({**base, "fiscal_tax_id": "52998224725"}, operator_username="op")
+    identified = _persist_customer_from_payload({**base, "fiscal_tax_id": "52998224725", "save_receipt_tax_id": True}, operator_username="op")
     # "hoje não": venda seguinte seleciona a cliente e não pede documento.
     _persist_customer_from_payload(
         {**base, "customer_ref": identified["ref"], "fiscal_tax_id": ""},
@@ -302,7 +304,11 @@ def test_o_email_da_nota_nao_vira_identidade_de_ninguem(db):
     Channel.objects.create(ref="pdv", name="PDV", is_active=True, config={})
 
     resolvido = _persist_customer_from_payload(
-        {"receipt_channels": ["email"], "receipt_email": "contador@example.org"},
+        {"receipt_channels": ["email"], "receipt_email": "contador@example.org",
+         "client_request_id": "anonymous-receipt", "receipt_identity_choices": [{
+             "field": "email", "value": "contador@example.org", "customer_ref": "",
+             "owner_ref": "", "choice": "receipt_only", "client_request_id": "anonymous-receipt",
+         }]},
         operator_username="op",
     )
 

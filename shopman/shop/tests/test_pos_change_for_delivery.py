@@ -150,7 +150,10 @@ def test_cpf_com_taxa_de_entrega_chega_ao_adapter_fiscal(counter, monkeypatch):
     monkeypatch.setattr(fiscal.fiscal_pool, "get_backend", lambda: backend)
     monkeypatch.setattr(fiscal, "emission_resolver", lambda order: True)
     address = {"formatted_address": "Rua Pará, 86", "route": "Rua Pará", "street_number": "86", "neighborhood": "Centro", "postal_code": "86010000", "city": "Londrina", "state": "PR"}
-    result = _close(operator, _delivery_payload(shift, client_request_id="cpf-delivery", fiscal_tax_id="52998224725", delivery_address_structured=address, payment_collection="terminal", tendered_q=1800))
+    result = _close(operator, _delivery_payload(shift, client_request_id="cpf-delivery", fiscal_tax_id="52998224725", receipt_identity_choices=[{
+        "field": "tax_id", "value": "52998224725", "customer_ref": "", "owner_ref": "",
+        "choice": "receipt_only", "client_request_id": "cpf-delivery",
+    }], delivery_address_structured=address, payment_collection="terminal", tendered_q=1800))
     order = Order.objects.get(ref=result.order_ref)
     assert order.total_q == 1800
     message = Directive.objects.get(topic="fiscal.emit_nfce", payload__order_ref=order.ref)
