@@ -38,6 +38,9 @@ from .contracts import (
 
 logger = logging.getLogger(__name__)
 
+AUTHENTICATED_INGRESS_SOURCE = "authenticated_ingress_received_at"
+PROVIDER_ENFORCED_ATTEMPT = "provider_enforced_attempt"
+
 
 def _config() -> Mapping[str, Any]:
     return getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}
@@ -258,6 +261,7 @@ class ManyChatWhatsAppAdapter:
         max_text_chars=4000,
         response_window=timedelta(hours=24),
         supports_handoff=True,
+        provider_enforces_response_window=True,
     )
 
     def __init__(self, *, connection: TransportConnection):
@@ -425,29 +429,44 @@ class ManyChatWhatsAppAdapter:
             envelope.get("transport_channel"),
         ) != (self.connection.provider, self.connection.account, self.connection.channel):
             return None
+        try:
+            local_zone = ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError:
+            return None
+        duration = self.capabilities.response_window
+        if duration is None:
+            return None
         raw = envelope.get(field)
-        if not isinstance(raw, str) or not re.fullmatch(
+        if isinstance(raw, str) and re.fullmatch(
             r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})?",
             raw,
         ):
+            try:
+                observed_at = datetime.fromisoformat(raw)
+                if observed_at.tzinfo is None:
+                    observed_at = observed_at.replace(tzinfo=local_zone)
+                observed_at = observed_at.astimezone(UTC)
+            except (ValueError, TypeError, OverflowError):
+                observed_at = None
+            if observed_at is not None and timedelta(0) <= now - observed_at < duration:
+                return WindowEvidence(
+                    policy=policy,
+                    source=source,
+                    observed_at=observed_at,
+                    valid_until=observed_at + duration,
+                    assurance="provider_window",
+                )
+        if not self.capabilities.provider_enforces_response_window:
             return None
-        try:
-            local_zone = ZoneInfo(timezone_name)
-            observed_at = datetime.fromisoformat(raw)
-            if observed_at.tzinfo is None:
-                observed_at = observed_at.replace(tzinfo=local_zone)
-            observed_at = observed_at.astimezone(UTC)
-        except (ValueError, TypeError, OverflowError, ZoneInfoNotFoundError):
-            return None
-        duration = self.capabilities.response_window
-        if duration is None or not timedelta(0) <= now - observed_at < duration:
-            return None
+        # A recepcao autenticada autoriza somente uma tentativa imediata. Ela nao
+        # afirma quando o cliente falou nem que a janela esta aberta: o provider
+        # continua sendo a barreira final e seu resultado fica no OutboundAttempt.
         return WindowEvidence(
             policy=policy,
-            source=source,
-            observed_at=observed_at,
-            valid_until=observed_at + duration,
-            assurance="provider_window",
+            source=AUTHENTICATED_INGRESS_SOURCE,
+            observed_at=now,
+            valid_until=now + duration,
+            assurance=PROVIDER_ENFORCED_ATTEMPT,
         )
 
     def authorize_response(
@@ -468,15 +487,26 @@ class ManyChatWhatsAppAdapter:
             return ResponseAuthorization(False, "purpose_not_allowed")
         if evidence is None:
             return ResponseAuthorization(False, "window_evidence_missing")
-        if (
-            evidence.policy != _clean(config.get("policy"))
-            or evidence.source != _clean(config.get("source"))
-            or evidence.assurance != "provider_window"
+        provider_window = (
+            evidence.source == _clean(config.get("source"))
+            and evidence.assurance == "provider_window"
+        )
+        provider_enforced_attempt = (
+            self.capabilities.provider_enforces_response_window
+            and evidence.source == AUTHENTICATED_INGRESS_SOURCE
+            and evidence.assurance == PROVIDER_ENFORCED_ATTEMPT
+        )
+        if evidence.policy != _clean(config.get("policy")) or not (
+            provider_window or provider_enforced_attempt
         ):
             return ResponseAuthorization(False, "window_policy_mismatch")
         if evidence.observed_at > now or evidence.valid_until <= now:
             return ResponseAuthorization(False, "window_closed")
-        return ResponseAuthorization(True, "provider_window_evidence", evidence.valid_until)
+        return ResponseAuthorization(
+            True,
+            "provider_window_evidence" if provider_window else PROVIDER_ENFORCED_ATTEMPT,
+            evidence.valid_until,
+        )
 
     def send_text(self, subject: str, text: str) -> SendOutcome:
         from shopman.shop.adapters import notification_manychat

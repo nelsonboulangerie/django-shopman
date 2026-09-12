@@ -1,6 +1,7 @@
 """A janela WhatsApp autoriza resposta de leitura sem autoridade comercial."""
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -166,39 +167,90 @@ def test_live_field_opens_read_reply_without_identity_or_purchase(client, catalo
         "2026-09-11 12:00:00",
     ],
 )
-def test_invalid_future_or_expired_field_cannot_open_window(client, gateway, value):
+def test_unusable_provider_field_allows_only_a_provider_enforced_attempt(
+    client, catalog, gateway, value
+):
     assert post(client, value).json()["queued"]
     conversation = Conversation.objects.get()
     binding = binding_for(conversation)
-    assert evidence_for(conversation) == []
-    assert not transport.response_authorization(binding, None, NOW).allowed
+    [evidence] = evidence_for(conversation)
+    assert evidence == {
+        "policy": WINDOW["policy"],
+        "source": transport.AUTHENTICATED_INGRESS_SOURCE,
+        "observed_at": NOW.isoformat(),
+        "valid_until": (NOW + timedelta(hours=24)).isoformat(),
+        "assurance": transport.PROVIDER_ENFORCED_ATTEMPT,
+    }
+    authorization = transport.response_authorization(binding, evidence, NOW)
+    assert authorization.allowed
+    assert authorization.code == transport.PROVIDER_ENFORCED_ATTEMPT
 
     service.run_turn(conversation.pk, binding.pk)
 
-    assert not gateway
+    assert gateway
     attempt = OutboundAttempt.objects.get()
-    assert attempt.state == "not_applied" and attempt.code == "window_evidence_missing"
+    assert attempt.state == "accepted"
+    assert not Session.objects.exists() and not Order.objects.exists()
 
 
-def test_queue_expiry_and_replay_do_not_renew_window(client, gateway, monkeypatch):
-    original = NOW - timedelta(hours=23, minutes=59)
-    post(client, local(original))
+def test_authenticated_ingress_attempt_expires_in_queue(client, gateway, monkeypatch):
+    post(client, "")
     conversation = Conversation.objects.get()
     binding = binding_for(conversation)
     [evidence] = evidence_for(conversation)
     assert transport.response_authorization(binding, evidence, NOW).allowed
 
-    later = NOW + timedelta(minutes=1)
+    later = NOW + timedelta(hours=24)
     monkeypatch.setattr(service.timezone, "now", lambda: later)
     monkeypatch.setattr(webhook.timezone, "now", lambda: later)
-    post(client, local(original))
     assert not transport.response_authorization(binding, evidence, later).allowed
 
     service.run_turn(conversation.pk, binding.pk)
 
     assert not gateway
-    assert conversation.messages.filter(kind="inbound").count() == 2
     assert OutboundAttempt.objects.get().state == "not_applied"
+
+
+def test_fallback_requires_adapter_declaring_provider_window_enforcement():
+    connection = transport.connection_for_key(CONNECTION_KEY)
+    adapter = transport.adapter_for_connection(connection)
+    adapter.capabilities = replace(
+        adapter.capabilities, provider_enforces_response_window=False
+    )
+
+    evidence = adapter.window_evidence(
+        {
+            "authentication": "api_key",
+            "account_id": "window-account",
+            "provider": "manychat",
+            "transport_channel": "whatsapp",
+            "provider_timestamp": "",
+        },
+        NOW,
+    )
+
+    assert evidence is None
+
+
+def test_provider_remains_final_window_authority(client, catalog, monkeypatch):
+    attempts = []
+
+    def reject(binding, text):
+        attempts.append((binding.pk, text))
+        return SendOutcome("not_applied", "provider_window_closed")
+
+    monkeypatch.setattr(transport, "send_for", reject)
+    assert post(client, "").json()["queued"]
+    conversation = Conversation.objects.get()
+    binding = binding_for(conversation)
+
+    service.run_turn(conversation.pk, binding.pk)
+
+    attempt = OutboundAttempt.objects.get()
+    assert len(attempts) == 1
+    assert attempt.state == "not_applied"
+    assert attempt.code == "provider_window_closed"
+    assert not Session.objects.exists() and not Order.objects.exists()
 
 
 def test_out_of_order_does_not_shorten_existing_window(client):
