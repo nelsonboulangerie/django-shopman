@@ -33,3 +33,9 @@ A migração `backstage.0063_cash_change_request_alert` acrescenta uma choice de
 Pedidos antigos de troco sem `alert_id` continuam legíveis e atendíveis, sem backfill automático. A escolha explícita de recebimento é estado da tela, não um novo campo de pedido; uma comanda reaberta para revisão solicita nova escolha, enquanto recarga da mesma comanda no checkout preserva a confirmação se o tipo continuar igual.
 
 Rollback por reversão dos commits desta branch; não apagar eventos de caixa nem alertas já gravados. Reverter a aplicação não exige apagar o histórico ou reconciliar pagamentos.
+
+## Integração coordenada com Concierge
+
+Após o PR620 entrar na main (`ed9a0d6dc`), a base foi incorporada nesta branch, sem conflitos textuais. A migração Concierge `0064_concierge_alert_labels` e a PDV `0063_cash_change_request_alert` partem ambas da 0062 e alteram a mesma lista de choices. A nova `0065_merge_cash_change_concierge_alerts` depende das duas e fixa a união dos tipos de alerta. Nenhum arquivo de migração anterior foi reescrito.
+
+Validação do estado de migração nas duas ordens de aplicação dos ramos: ambas chegam exatamente às choices atuais do modelo; grafo sem conflitos e `makemigrations --check --dry-run` sem drift. Os 134 testes de regressão (troco, filipeta, agendamento, identidade e preferências fiscais) passaram sobre esta base. Mantido PR em rascunho, sem merge/deploy, durante a janela de publicação do Concierge.
