@@ -11,7 +11,7 @@ from django.db import close_old_connections, connection, connections, transactio
 from shopman.orderman.models import IdempotencyKey, Order, Session
 from shopman.stockman.models import Hold
 
-from shopman.shop.models import Conversation
+from shopman.shop.models import Conversation, ConversationBinding
 from shopman.shop.services import availability, cart, checkout, sessions
 from shopman.storefront.concierge import tools
 from shopman.storefront.tests.test_concierge_authority import accept_review
@@ -83,6 +83,7 @@ def total_reserved():
 def worker_tool_context(source):
     """Reabre a linha em outra conexão sem inventar uma nova autoridade."""
     current = Conversation.objects.get(pk=source.pk)
+    binding = ConversationBinding.objects.get(pk=source._binding_id)
     for name in (
         "_binding_id",
         "_turn_fence",
@@ -92,7 +93,15 @@ def worker_tool_context(source):
         "_commercial_authority",
     ):
         setattr(current, name, getattr(source, name))
-    return tools.ToolContext(current, "whatsapp")
+    current._binding = binding
+    return tools.ToolContext(
+        current,
+        "whatsapp",
+        provider=binding.provider,
+        account=binding.account,
+        transport_channel=binding.transport_channel,
+        connection_key=binding.connection_key,
+    )
 
 
 def test_modify_waits_for_checkout_commit_and_cannot_change_sealed_order(ctx, monkeypatch):

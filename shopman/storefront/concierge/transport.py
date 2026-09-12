@@ -26,6 +26,7 @@ from .contracts import (
     ChannelCapabilities,
     ConversationAdapter,
     HandoffOutcome,
+    IdentityResolution,
     InboundEvent,
     IngressRejected,
     ResponseAuthorization,
@@ -124,6 +125,15 @@ def adapter_for_connection(connection: TransportConnection) -> ConversationAdapt
     """Instancia um adapter a partir da connection já resolvida."""
     try:
         adapter_class = import_string(connection.adapter_path)
+        if getattr(adapter_class, "single_account_gateway", False):
+            accounts = {
+                configured.account
+                for configured in configured_connections()
+                if configured.adapter_path == connection.adapter_path
+            }
+            if accounts and accounts != {connection.account}:
+                logger.error("concierge.transport.adapter_account_ambiguous")
+                return None
         adapter = adapter_class(connection=connection)
     except (ImportError, AttributeError, TypeError, ValueError):
         logger.error("concierge.transport.adapter_unavailable", exc_info=True)
@@ -243,6 +253,7 @@ class ManyChatWhatsAppAdapter:
 
     provider = "manychat"
     channel = "whatsapp"
+    single_account_gateway = True
     _default_capabilities = ChannelCapabilities(
         max_text_chars=4000,
         response_window=timedelta(hours=24),
@@ -370,6 +381,12 @@ class ManyChatWhatsAppAdapter:
         }
         evidence = self.window_evidence(envelope, received_at)
         assurance = "verified" if event_id and self.capabilities.stable_event_identity_verified else "unverified" if event_id else "unavailable"
+        semantic_payload = {
+            "subject": subject,
+            "event_id": event_id,
+            "message_type": str(message_type),
+            "text": text,
+        }
         return InboundEvent(
             scope=scope,
             text=text,
@@ -381,7 +398,12 @@ class ManyChatWhatsAppAdapter:
             correlation_ref=correlation_ref,
             authentication_assurance=authentication,
             payload_hash=hashlib.sha256(
-                json.dumps(data, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
+                json.dumps(
+                    semantic_payload,
+                    sort_keys=True,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ).encode()
             ).hexdigest(),
             window_evidence=evidence,
         )
@@ -486,4 +508,12 @@ class ManyChatWhatsAppAdapter:
     def identify(self, subject: str, profile: Mapping[str, Any]):
         from shopman.guestman.adapters.auth import CustomerResolver
 
-        return CustomerResolver().upsert_manychat_subscriber({"id": subject})
+        info = CustomerResolver().upsert_manychat_subscriber({"id": subject})
+        if info is None:
+            return None
+        return IdentityResolution(
+            customer_uuid=info.uuid,
+            assurance="verified_customer",
+            phone=info.phone or "",
+            name=info.name or "",
+        )

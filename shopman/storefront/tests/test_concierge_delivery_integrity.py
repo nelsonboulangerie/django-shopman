@@ -55,7 +55,7 @@ def inbound(text="Quero pão", event_id="event-1"):
     return result, binding, ConversationMessage.objects.get(pk=result.message_id)
 
 
-def test_late_input_survives_answer_and_note(monkeypatch):
+def test_late_input_revokes_stale_answer_and_replays_the_whole_context(monkeypatch):
     first, binding, first_message = inbound()
     late = []
 
@@ -65,15 +65,25 @@ def test_late_input_survives_answer_and_note(monkeypatch):
 
     monkeypatch.setattr(agent, "run_agent", respond)
     result = service.run_turn(first.conversation_id, binding.pk)
-    ConversationMessage.objects.create(
-        conversation=binding.conversation,
-        role=ConversationMessage.Role.ASSISTANT,
-        kind=ConversationMessage.Kind.NOTE,
-        text="nota posterior",
-    )
-    assert result.processed_message_ids == [first_message.pk]
+    assert result.fallback == "revoked"
+    assert result.processed_message_ids == []
     assert result.pending_more
-    assert [message.pk for message in service.unanswered_inbound(binding.conversation, binding)] == [late[0].pk]
+    assert [message.pk for message in service.unanswered_inbound(binding.conversation, binding)] == [
+        first_message.pk,
+        late[0].pk,
+    ]
+    assert not ConversationMessage.objects.filter(kind=ConversationMessage.Kind.REPLY).exists()
+
+    monkeypatch.setattr(
+        agent,
+        "run_agent",
+        lambda **kwargs: agent.AgentOutcome(reply_text="Entendi a correção para três."),
+    )
+    replay = service.run_turn(first.conversation_id, binding.pk)
+    assert replay.processed_message_ids == [first_message.pk, late[0].pk]
+    assert [message.text for message in ConversationMessage.objects.filter(kind=ConversationMessage.Kind.REPLY)] == [
+        "Entendi a correção para três."
+    ]
 
 
 def test_prepared_attempt_exists_before_remote_effect_and_unknown_is_not_retried(monkeypatch):
@@ -122,6 +132,22 @@ def test_pix_second_block_failure_preserves_first(monkeypatch):
     assert [attempt.attempt_no for attempt in OutboundAttempt.objects.order_by("pk")] == [1, 1]
     service.recover_pending()
     assert len(adapter_class().sent) == 2
+
+
+def test_extra_reply_uses_the_same_semantic_fragmentation(monkeypatch):
+    result, binding, _ = inbound()
+    extra = "a" * 2500 + "\n" + "b" * 2500
+    monkeypatch.setattr(
+        agent,
+        "run_agent",
+        lambda **kwargs: agent.AgentOutcome(reply_text="Resumo", extra_replies=[extra]),
+    )
+
+    turn = service.run_turn(result.conversation_id, binding.pk)
+
+    assert len(turn.replies) == 3
+    assert "".join(turn.replies[1:]) == extra
+    assert all(len(text) <= 4000 for text in turn.replies)
 
 
 def test_kill_switch_during_model_blocks_output_and_preserves_input(monkeypatch, settings):

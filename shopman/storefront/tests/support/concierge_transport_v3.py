@@ -114,6 +114,7 @@ def event(
     text="Olá",
     event_id="event-1",
     assurance="verified",
+    message_type="text",
 ):
     now = timezone.now()
     return InboundEvent(
@@ -125,7 +126,7 @@ def event(
             connection_key=key,
         ),
         text=text,
-        message_type="text",
+        message_type=message_type,
         received_at=now,
         event_id=event_id,
         event_identity_assurance=assurance,

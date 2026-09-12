@@ -230,7 +230,7 @@ def test_semantic_blocks_preserve_all_characters_and_do_not_cut_lines():
         assert sum(line in block for block in blocks) == 1
 
 
-def test_late_input_is_not_consumed_by_the_turn_that_was_already_running(monkeypatch):
+def test_late_input_revokes_the_turn_that_was_already_running(monkeypatch):
     first, binding = _intake()
     late = []
 
@@ -241,9 +241,53 @@ def test_late_input_is_not_consumed_by_the_turn_that_was_already_running(monkeyp
     monkeypatch.setattr(agent, "run_agent", respond)
     turn = service.run_turn(first.conversation_id, binding.pk)
 
-    assert turn.processed_message_ids == [first.message_id]
+    assert turn.fallback == "revoked"
+    assert turn.processed_message_ids == []
     assert turn.pending_more
-    assert [message.pk for message in service.unanswered_inbound(binding.conversation, binding)] == [late[0].message_id]
+    assert [message.pk for message in service.unanswered_inbound(binding.conversation, binding)] == [
+        first.message_id,
+        late[0].message_id,
+    ]
+    assert not ConversationMessage.objects.filter(kind=ConversationMessage.Kind.REPLY).exists()
+
+
+def test_new_input_after_prepare_blocks_the_remote_send():
+    first, binding = _intake()
+    claimed, claimed_binding, inbound = service._claim(first.conversation_id, binding.pk)
+    reply = service._prepare_reply(
+        claimed,
+        claimed_binding,
+        "Resposta que ficou velha",
+        window_evidence=inbound[0].envelope["window_evidence"],
+    )
+    service.receive_inbound(_event(event_id="event-2", text="Na verdade, três"))
+
+    service._dispatch_reply(claimed, reply)
+
+    reply.refresh_from_db()
+    assert reply.transport_state == "not_applied"
+    assert reply.envelope["code"] == "stale_turn"
+    assert _adapter_class().sent == []
+
+
+def test_message_type_drives_media_handling_instead_of_url_shape(monkeypatch):
+    first, binding = _intake(_event(text="https://cdn.example/menu.jpg"))
+    monkeypatch.setattr(
+        agent,
+        "run_agent",
+        lambda **kwargs: agent.AgentOutcome(reply_text="Link entendido como texto."),
+    )
+    text_turn = service.run_turn(first.conversation_id, binding.pk)
+    assert text_turn.fallback == ""
+    assert text_turn.replies == ["Link entendido como texto."]
+
+    media = service.receive_inbound(
+        _event(event_id="event-2", text="opaque-provider-reference", message_type="image")
+    )
+    monkeypatch.setattr(service, "copy_message", lambda key: f"[{key}]")
+    media_turn = service.run_turn(media.conversation_id, binding.pk)
+    assert media_turn.fallback == "media"
+    assert media_turn.replies == ["[CONCIERGE_MEDIA_UNSUPPORTED]"]
 
 
 def test_kill_switch_during_model_revokes_output_and_preserves_input(monkeypatch, settings):

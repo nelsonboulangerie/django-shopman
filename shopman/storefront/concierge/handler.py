@@ -67,6 +67,10 @@ class ConciergeTurnHandler:
                 raise
             if not result.pending_more:
                 return
+            if not result.processed_message_ids:
+                # O turno não concluiu (claim ocupado ou contexto revogado).
+                # Devolver a diretiva à fila sem repetir trabalho velho em loop.
+                break
             logger.info(
                 "concierge.turn: mensagens novas durante o turno, rodando de novo (%d/%d) conversation=%s",
                 loop, MAX_LOOPS, conversation_id,

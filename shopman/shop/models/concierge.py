@@ -97,7 +97,6 @@ class ConversationBinding(models.Model):
     class Status(models.TextChoices):
         PENDING = "pending", "Pendente"
         ACTIVE = "active", "Ativo"
-        DRAINING = "draining", "Em transição"
         DISABLED = "disabled", "Desativado"
 
     class IdentityAssurance(models.TextChoices):

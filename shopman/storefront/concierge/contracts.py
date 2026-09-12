@@ -6,8 +6,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Literal, Protocol
+from uuid import UUID
 
 OutcomeState = Literal["accepted", "not_applied", "unknown"]
+IdentityAssurance = Literal["verified_customer", "unverified"]
 
 
 @dataclass(frozen=True)
@@ -17,6 +19,25 @@ class TransportScope:
     channel: str
     subject: str
     connection_key: str
+
+
+@dataclass(frozen=True)
+class IdentityResolution:
+    """Resultado tipado de um resolver; perfil de transporte não é prova.
+
+    ``customer_uuid`` aponta para a fonte canônica de clientes. O adapter só
+    pode conceder continuidade quando também declara ``verified_customer``;
+    qualquer outro nível mantém as conversas separadas.
+    """
+
+    customer_uuid: UUID
+    assurance: IdentityAssurance
+    phone: str = ""
+    name: str = ""
+
+    @property
+    def verified(self) -> bool:
+        return self.assurance == "verified_customer"
 
 
 @dataclass(frozen=True)
@@ -167,4 +188,8 @@ class ConversationAdapter(Protocol):
     ) -> ResponseAuthorization: ...
     def send_text(self, subject: str, text: str) -> SendOutcome: ...
     def set_handoff(self, subject: str, on: bool) -> HandoffOutcome: ...
-    def identify(self, subject: str, profile: Mapping[str, Any]): ...
+    def identify(
+        self,
+        subject: str,
+        profile: Mapping[str, Any],
+    ) -> IdentityResolution | None: ...

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -53,7 +54,7 @@ CONFIG = {
 
 @pytest.fixture(autouse=True)
 def configured(settings, monkeypatch):
-    settings.SHOPMAN_CONCIERGE = CONFIG
+    settings.SHOPMAN_CONCIERGE = deepcopy(CONFIG)
     settings.AI_ASSIST_API_KEY = "fake"
     monkeypatch.setattr(webhook.timezone, "now", lambda: NOW)
     cache.clear()
@@ -131,6 +132,24 @@ def test_adapter_normalizes_manychat_payload_without_inventing_event_identity(ur
     assert normalized.event_identity_assurance == "unavailable"
     assert normalized.occurred_at is None
     assert normalized.window_evidence is not None
+
+
+def test_verified_replay_hash_ignores_profile_and_window_metadata(url, intake, settings):
+    settings.SHOPMAN_CONCIERGE["connections"][CONNECTION_KEY]["options"][
+        "stable_event_identity_verified"
+    ] = True
+    first = post(url, event(event_id="provider-event-1"))
+    second = post(
+        url,
+        event(
+            event_id="provider-event-1",
+            first_name="Nome atualizado",
+            provider_timestamp="2026-09-12 11:30:01.391392",
+        ),
+    )
+    assert first.status_code == second.status_code == 200
+    assert len(intake) == 2
+    assert intake[0].payload_hash == intake[1].payload_hash
 
 
 def test_body_cannot_choose_transport_scope(url, intake):

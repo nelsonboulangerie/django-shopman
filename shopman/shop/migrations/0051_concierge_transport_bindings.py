@@ -132,7 +132,6 @@ class Migration(migrations.Migration):
                         choices=[
                             ("pending", "Pendente"),
                             ("active", "Ativo"),
-                            ("draining", "Em transição"),
                             ("disabled", "Desativado"),
                         ],
                         default="pending",

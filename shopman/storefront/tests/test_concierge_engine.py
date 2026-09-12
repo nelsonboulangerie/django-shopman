@@ -247,6 +247,7 @@ def _event(
     subject: str = SUBJECT,
     profile: dict | None = None,
     occurred_at=None,
+    message_type="text",
 ) -> InboundEvent:
     now = timezone.now()
     occurred_at = occurred_at or now
@@ -259,7 +260,7 @@ def _event(
             connection_key=CONNECTION_KEY,
         ),
         text=text,
-        message_type="text",
+        message_type=message_type,
         received_at=now,
         event_id=event_id,
         event_identity_assurance="verified",
@@ -278,9 +279,14 @@ def _event(
     )
 
 
-def _receive(conversation: Conversation, text: str, event_id: str):
+def _receive(conversation: Conversation, text: str, event_id: str, *, message_type="text"):
     return service.receive_inbound(
-        _event(text=text, event_id=event_id, subject=_binding(conversation).subject)
+        _event(
+            text=text,
+            event_id=event_id,
+            subject=_binding(conversation).subject,
+            message_type=message_type,
+        )
     )
 
 
@@ -992,7 +998,12 @@ def test_run_turn_falls_back_to_house_copy_when_the_model_fails(conversation, ou
 @override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
 def test_run_turn_answers_media_and_daily_limit_without_the_model(conversation, outbox, monkeypatch):
     monkeypatch.setattr(service, "copy_message", lambda key: f"[{key}]")
-    _receive(conversation, "https://lookaside.fbsbx.com/x/audio.ogg", "a1")
+    _receive(
+        conversation,
+        "https://lookaside.fbsbx.com/x/audio.ogg",
+        "a1",
+        message_type="audio",
+    )
     binding = _binding(conversation)
     result = service.run_turn(conversation.pk, binding.pk, client=ScriptedClient())
     assert result.fallback == "media" and outbox.sent == ["[CONCIERGE_MEDIA_UNSUPPORTED]"]

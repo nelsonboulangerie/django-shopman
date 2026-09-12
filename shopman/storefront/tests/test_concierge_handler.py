@@ -22,6 +22,9 @@ def _directive(conversation_id=1, binding_id=2):
             "binding_id": binding_id,
             "contract_version": 3,
         },
+        status="running",
+        available_at=None,
+        attempts=1,
         save=lambda **kw: None,
     )
 
@@ -35,8 +38,12 @@ def test_handler_registrado_com_o_topico_do_service():
 
 def test_roda_de_novo_enquanto_ha_mensagem_pendente(monkeypatch):
     results = iter([
-        service.TurnResult(conversation_id=1, pending_more=True),
-        service.TurnResult(conversation_id=1, pending_more=True),
+        service.TurnResult(
+            conversation_id=1, pending_more=True, processed_message_ids=[1]
+        ),
+        service.TurnResult(
+            conversation_id=1, pending_more=True, processed_message_ids=[2]
+        ),
         service.TurnResult(conversation_id=1, pending_more=False),
     ])
     calls: list[tuple[int, int]] = []
@@ -55,11 +62,30 @@ def test_laco_tem_teto(monkeypatch):
 
     def sempre_pendente(conversation_id, binding_id, *, client=None):
         calls.append((conversation_id, binding_id))
-        return service.TurnResult(conversation_id=conversation_id, pending_more=True)
+        return service.TurnResult(
+            conversation_id=conversation_id,
+            pending_more=True,
+            processed_message_ids=[len(calls)],
+        )
 
     monkeypatch.setattr(service, "run_turn", sempre_pendente)
     ConciergeTurnHandler().handle(message=_directive(9), ctx={})
     assert len(calls) == MAX_LOOPS
+
+
+def test_claim_ocupado_e_deferido_sem_disputar_cinco_vezes(monkeypatch):
+    calls = []
+
+    def busy(conversation_id, binding_id, *, client=None):
+        calls.append((conversation_id, binding_id))
+        return service.TurnResult(conversation_id=conversation_id, pending_more=True)
+
+    directive = _directive(9)
+    monkeypatch.setattr(service, "run_turn", busy)
+    ConciergeTurnHandler().handle(message=directive, ctx={})
+    assert calls == [(9, 2)]
+    assert directive.status == "queued"
+    assert directive.attempts == 0
 
 
 def test_conversa_inexistente_e_terminal(monkeypatch):

@@ -7,6 +7,7 @@ from threading import Barrier, Event
 import pytest
 from django.db import connection as database_connection
 from django.db import connections
+from django.db.models import F
 from django.utils import timezone
 from shopman.orderman.dispatch import _process_directive
 from shopman.orderman.models import Directive
@@ -73,7 +74,7 @@ def binding_for(conversation):
 def inbound(conversation, text="Quero pão", event_id=None):
     binding = binding_for(conversation)
     now = timezone.now()
-    return Message.objects.create(
+    message = Message.objects.create(
         conversation=conversation,
         binding=binding,
         role=Message.Role.USER,
@@ -94,6 +95,12 @@ def inbound(conversation, text="Quero pão", event_id=None):
             ).as_dict(),
         },
     )
+    Conversation.objects.filter(pk=conversation.pk).update(
+        last_inbound_at=now,
+        turn_fence=F("turn_fence") + 1,
+        claim_until=None,
+    )
+    return message
 
 
 def normalized_event(text="Olá", event_id="durable-event"):
@@ -139,7 +146,7 @@ def test_two_workers_claim_exactly_one_turn(conversation):
     assert sorted(len(messages) for _, _, messages in results) == [0, 1]
     assert [item.pk for _, _, messages in results for item in messages] == [message.pk]
     conversation.refresh_from_db()
-    assert conversation.turn_fence == 1
+    assert conversation.turn_fence == 2  # uma versão da entrada + um claim vencedor
 
 
 def test_expired_lease_new_claim_revokes_old_worker(conversation):
@@ -211,9 +218,14 @@ def test_new_input_during_model_stays_pending_and_invalidates_mutation(conversat
         finally:
             release.set()
         result = pending.result(timeout=20)
-    assert result.processed_message_ids == [first.pk]
+    assert result.fallback == "revoked"
+    assert result.processed_message_ids == []
     assert result.pending_more is True
-    assert [message.pk for message in service.unanswered_inbound(conversation, binding)] == [late.pk]
+    assert [message.pk for message in service.unanswered_inbound(conversation, binding)] == [
+        first.pk,
+        late.pk,
+    ]
+    assert not conversation.messages.filter(kind=Message.Kind.REPLY).exists()
 
 
 def test_provider_effect_timeout_is_unknown_and_same_block_is_not_retried(conversation):
@@ -234,15 +246,14 @@ def test_provider_effect_timeout_is_unknown_and_same_block_is_not_retried(conver
     assert list(message.outbound_attempts.values_list("attempt_no", "state")) == [(1, "unknown")]
 
 
-def test_burst_after_five_loops_defers_same_directive_then_finishes(conversation, monkeypatch):
+def test_input_during_model_defers_without_spinning_then_finishes(conversation, monkeypatch):
     binding = binding_for(conversation)
     inbound(conversation)
     calls = []
 
     def model(**kwargs):
         calls.append(1)
-        if len(calls) <= 6:
-            inbound(conversation, f"Correção {len(calls)}")
+        inbound(conversation, "Correção 1")
         return agent.AgentOutcome(reply_text="Contexto preservado")
 
     monkeypatch.setattr(agent, "run_agent", model)
@@ -257,16 +268,21 @@ def test_burst_after_five_loops_defers_same_directive_then_finishes(conversation
     )
     _process_directive(directive)
     directive.refresh_from_db()
-    assert len(calls) == 5
+    assert len(calls) == 1
     assert directive.status == "queued"
     assert directive.attempts == 0
     assert service.unanswered_inbound(conversation, binding)
+    monkeypatch.setattr(
+        agent,
+        "run_agent",
+        lambda **kwargs: calls.append(1) or agent.AgentOutcome(reply_text="Contexto preservado"),
+    )
     _process_directive(directive)
     directive.refresh_from_db()
-    assert len(calls) == 7
+    assert len(calls) == 2
     assert directive.status == "done"
     assert not service.unanswered_inbound(conversation, binding)
-    assert conversation.messages.filter(kind=Message.Kind.INBOUND, consumed_by__isnull=False).count() == 7
+    assert conversation.messages.filter(kind=Message.Kind.INBOUND, consumed_by__isnull=False).count() == 2
     assert Directive.objects.filter(topic=service.TURN_TOPIC).count() == 1
 
 

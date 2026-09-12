@@ -32,7 +32,7 @@ from shopman.shop.models import (
     OutboundAttempt,
 )
 
-from .contracts import InboundEvent
+from .contracts import IdentityResolution, InboundEvent, TransportScope
 
 logger = logging.getLogger(__name__)
 
@@ -66,11 +66,6 @@ def _observed(stage):
                                   outcome=outcome, duration_ms=round((perf_counter()-started)*1000, 3))
         return execute
     return decorate
-
-#: Sufixos que denunciam mídia quando um adapter textual entrega uma URL.
-_MEDIA_SUFFIXES = (".ogg", ".oga", ".mp3", ".m4a", ".mp4", ".jpg", ".jpeg", ".png", ".webp", ".pdf")
-_MEDIA_HOSTS = ("lookaside.fbsbx.com", "cdn.manychat", "manychat.com/", "fbcdn.net")
-
 
 def config() -> dict:
     return getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}
@@ -214,7 +209,13 @@ def receive_inbound(event: InboundEvent) -> IntakeResult:
         if not created and (message.text != text or message.envelope.get("event_id") != event.event_id or message.envelope.get("payload_hash") != envelope.get("payload_hash")):
             return IntakeResult(conversation.pk, message.pk, False, "intent_conflict")
         if created:
-            Conversation.objects.filter(pk=conversation.pk).update(last_inbound_at=event.received_at)
+            # Uma entrada nova invalida qualquer trabalho baseado no contexto
+            # anterior. O mesmo fence governa ferramentas, persistência e envio.
+            Conversation.objects.filter(pk=conversation.pk).update(
+                last_inbound_at=event.received_at,
+                turn_fence=F("turn_fence") + 1,
+                claim_until=None,
+            )
             ConversationBinding.objects.filter(pk=binding.pk).update(last_inbound_at=event.received_at)
         if conversation.state != Conversation.State.ACTIVE:
             return IntakeResult(conversation.pk, message.pk, False, "handoff")
@@ -276,6 +277,156 @@ def _get_or_create_binding(event: InboundEvent) -> ConversationBinding:
         )
 
 
+class BindingAttachmentRejected(Exception):
+    """Um vínculo explícito não satisfez a prova de identidade ou de escopo."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+def _resolved_customer(resolution: IdentityResolution):
+    """Converte somente resolução tipada e verificada na identidade canônica."""
+    if not isinstance(resolution, IdentityResolution) or not resolution.verified:
+        return None
+    from shopman.guestman.services import customer as customer_service
+
+    customer = customer_service.get_by_uuid(str(resolution.customer_uuid))
+    if customer is None:
+        return None
+    return customer, (
+        (resolution.phone or customer.phone or "").strip(),
+        customer.ref,
+        (resolution.name or customer.name or "").strip(),
+    )
+
+
+def _scope_connection(scope: TransportScope):
+    """Exige que a connection configurada seja exatamente a do novo vínculo."""
+    if not isinstance(scope, TransportScope):
+        return None
+    values = (scope.provider, scope.account, scope.channel, scope.subject, scope.connection_key)
+    if any(not isinstance(value, str) or not value.strip() for value in values):
+        return None
+    if any(
+        len(value) > limit
+        for value, limit in zip(values, (40, 128, 40, 512, 80), strict=True)
+    ):
+        return None
+    from . import transport
+
+    connection = transport.connection_for_key(scope.connection_key)
+    if connection is None or (scope.provider, scope.account, scope.channel) != (
+        connection.provider,
+        connection.account,
+        connection.channel,
+    ):
+        return None
+    if not _subject_allowed(connection, scope.subject):
+        return None
+    return connection
+
+
+def attach_binding(
+    conversation_id: int,
+    scope: TransportScope,
+    resolution: IdentityResolution,
+) -> ConversationBinding:
+    """Anexa um endereço novo somente por resolução verificada e explícita.
+
+    O payload de ingresso nunca chama este serviço. Um binding já pertencente
+    a outra conversa também não é movido: isso seria merge de jornadas e exige
+    uma decisão própria, com tratamento da transcrição e da sacola.
+    """
+    connection = _scope_connection(scope)
+    if connection is None:
+        raise BindingAttachmentRejected("scope_conflict")
+    if connection.options.get("identity_link_enabled") is not True:
+        raise BindingAttachmentRejected("identity_link_disabled")
+    resolved = _resolved_customer(resolution)
+    if resolved is None:
+        raise BindingAttachmentRejected("identity_unverified")
+    _customer, proposed = resolved
+
+    with transaction.atomic():
+        try:
+            conversation = Conversation.objects.select_for_update().get(pk=conversation_id)
+        except (Conversation.DoesNotExist, TypeError, ValueError) as exc:
+            raise BindingAttachmentRejected("conversation_not_found") from exc
+
+        established = (conversation.phone, conversation.customer_ref, conversation.customer_name)
+        if any(old and new and old != new for old, new in zip(established[:2], proposed[:2], strict=True)):
+            raise BindingAttachmentRejected("identity_conflict")
+
+        lookup = {
+            "provider": scope.provider,
+            "account": scope.account,
+            "transport_channel": scope.channel,
+            "subject": scope.subject,
+        }
+        binding = ConversationBinding.objects.select_for_update().filter(**lookup).first()
+        if binding is not None and binding.conversation_id != conversation.pk:
+            raise BindingAttachmentRejected("binding_already_attached")
+
+        competing = ConversationBinding.objects.filter(
+            conversation=conversation,
+            transport_channel=scope.channel,
+            status=ConversationBinding.Status.ACTIVE,
+        )
+        if binding is not None:
+            competing = competing.exclude(pk=binding.pk)
+        if competing.exists():
+            raise BindingAttachmentRejected("active_channel_conflict")
+
+        now = timezone.now()
+        if binding is None:
+            try:
+                with transaction.atomic():
+                    binding = ConversationBinding.objects.create(
+                        conversation=conversation,
+                        connection_key=scope.connection_key,
+                        **lookup,
+                        status=ConversationBinding.Status.ACTIVE,
+                        identity_assurance=ConversationBinding.IdentityAssurance.VERIFIED_CUSTOMER,
+                        activated_at=now,
+                    )
+            except IntegrityError:
+                binding = ConversationBinding.objects.select_for_update().filter(**lookup).first()
+                if binding is None or binding.conversation_id != conversation.pk:
+                    raise BindingAttachmentRejected("binding_already_attached") from None
+        else:
+            binding.connection_key = scope.connection_key
+            binding.status = ConversationBinding.Status.ACTIVE
+            binding.identity_assurance = ConversationBinding.IdentityAssurance.VERIFIED_CUSTOMER
+            binding.activated_at = binding.activated_at or now
+            binding.deactivated_at = None
+            binding.save(
+                update_fields=[
+                    "connection_key",
+                    "status",
+                    "identity_assurance",
+                    "activated_at",
+                    "deactivated_at",
+                    "updated_at",
+                ]
+            )
+
+        identity_changed = established[:2] != (
+            established[0] or proposed[0],
+            established[1] or proposed[1],
+        )
+        conversation.phone = established[0] or proposed[0]
+        conversation.customer_ref = established[1] or proposed[1]
+        conversation.customer_name = established[2] or proposed[2]
+        fields = ["phone", "customer_ref", "customer_name", "updated_at"]
+        if identity_changed:
+            conversation.turn_fence += 1
+            conversation.claim_until = None
+            fields.extend(["turn_fence", "claim_until"])
+        conversation.save(update_fields=fields)
+        return binding
+
+
 def identify(
     conversation: Conversation,
     binding: ConversationBinding,
@@ -289,38 +440,49 @@ def identify(
     except Exception:
         logger.warning("concierge.identify failed conversation=%s", conversation.pk)
         info = None
-    if info is None:
+    resolved = _resolved_customer(info)
+    if resolved is None:
         return conversation
+    _customer, proposed = resolved
 
-    from shopman.guestman.services import customer as customer_service
-
-    customer = customer_service.get_by_uuid(str(info.uuid))
-    proposed = (
-        (info.phone or "").strip(),
-        getattr(customer, "ref", "") or "",
-        (info.name or "").strip(),
-    )
-    established = (conversation.phone, conversation.customer_ref, conversation.customer_name)
-    if any(old and new and old != new for old, new in zip(established[:2], proposed[:2], strict=True)):
-        Conversation.objects.filter(pk=conversation.pk).update(
-            state=Conversation.State.HANDOFF,
-            handoff_reason="conflito de identidade",
-            handoff_at=timezone.now(),
-            turn_fence=F("turn_fence") + 1,
-            claim_until=None,
-        )
-        _alert(conversation, "concierge_identity_conflict", "Identidade divergente; atendimento humano mantido.")
+    with transaction.atomic():
+        current = Conversation.objects.select_for_update().get(pk=conversation.pk)
+        current_binding = ConversationBinding.objects.select_for_update().filter(
+            pk=binding.pk,
+            conversation=current,
+        ).first()
+        if current_binding is None:
+            return conversation
+        established = (current.phone, current.customer_ref, current.customer_name)
+        if any(old and new and old != new for old, new in zip(established[:2], proposed[:2], strict=True)):
+            current.state = Conversation.State.HANDOFF
+            current.handoff_reason = "conflito de identidade"
+            current.handoff_at = timezone.now()
+            current.turn_fence += 1
+            current.claim_until = None
+            current.save(
+                update_fields=[
+                    "state",
+                    "handoff_reason",
+                    "handoff_at",
+                    "turn_fence",
+                    "claim_until",
+                    "updated_at",
+                ]
+            )
+            _alert(current, "concierge_identity_conflict", "Identidade divergente; atendimento humano mantido.")
+            return current
+        current.phone = established[0] or proposed[0]
+        current.customer_ref = established[1] or proposed[1]
+        current.customer_name = established[2] or proposed[2]
+        current.save(update_fields=["phone", "customer_name", "customer_ref", "updated_at"])
+        current_binding.identity_assurance = ConversationBinding.IdentityAssurance.VERIFIED_CUSTOMER
+        current_binding.save(update_fields=["identity_assurance", "updated_at"])
+        conversation.phone = current.phone
+        conversation.customer_ref = current.customer_ref
+        conversation.customer_name = current.customer_name
+        binding.identity_assurance = ConversationBinding.IdentityAssurance.VERIFIED_CUSTOMER
         return conversation
-    conversation.phone = established[0] or proposed[0]
-    conversation.customer_ref = established[1] or proposed[1]
-    conversation.customer_name = established[2] or proposed[2]
-    conversation.save(update_fields=["phone", "customer_name", "customer_ref", "updated_at"])
-    if conversation.customer_ref:
-        ConversationBinding.objects.filter(pk=binding.pk).update(
-            identity_assurance="verified_customer"
-        )
-        binding.identity_assurance = "verified_customer"
-    return conversation
 
 
 # ── Turno ─────────────────────────────────────────────────────────────
@@ -373,16 +535,12 @@ def assert_turn_authority(conversation, *, for_mutation=True):
         raise TurnRevoked("identity_changed")
     if not is_enabled() or not is_allowed(binding) or current.state != Conversation.State.ACTIVE:
         raise TurnRevoked("contained")
-    if current.turn_fence != fence or not current.claim_until or current.claim_until <= timezone.now():
+    if current.turn_fence != fence:
+        raise TurnRevoked("new_input")
+    if not current.claim_until or current.claim_until <= timezone.now():
         raise TurnRevoked("claim_expired")
     if for_mutation and not getattr(conversation, "_commercial_authority", False):
         raise TurnRevoked("commercial_authority_missing")
-    if for_mutation and current.messages.filter(
-        kind=ConversationMessage.Kind.INBOUND,
-        envelope__version=3,
-        pk__gt=conversation._inbound_max_id,
-    ).exists():
-        raise TurnRevoked("new_input")
     return current
 
 
@@ -425,13 +583,6 @@ def _claim(conversation_id: int, binding_id: int):
             and binding.identity_assurance == "verified_customer"
         )
         return conversation, binding, inbound
-
-
-def _looks_like_media(text: str) -> bool:
-    lowered = text.lower().strip()
-    if not lowered.startswith(("http://", "https://")):
-        return False
-    return lowered.endswith(_MEDIA_SUFFIXES) or any(host in lowered for host in _MEDIA_HOSTS)
 
 
 def _bump_turn_counter(conversation: Conversation) -> int:
@@ -492,7 +643,11 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None) -> TurnResul
         if any(message.text.casefold().strip(" .!?") in human_phrases for message in inbound):
             mark_handoff(conversation, binding, "pedido do cliente", consumed_ids=ids)
             return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids)
-        if not conversation.customer_ref and not conversation._limited_event_assurance:
+        if (
+            binding.identity_assurance
+            != ConversationBinding.IdentityAssurance.VERIFIED_CUSTOMER
+            and not conversation._limited_event_assurance
+        ):
             identify(conversation, binding, inbound[0].envelope.get("profile") or {})
             conversation._commercial_authority = bool(
                 conversation.customer_ref
@@ -513,7 +668,10 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None) -> TurnResul
                 reply = tools.render_result("browse_menu", tools.browse_menu(ctx)) + "\n\n" + reply
             outcome = agent_module.AgentOutcome(reply_text=reply)
             result.fallback = "limited_assurance"
-        elif all(_looks_like_media(message.text) for message in inbound):
+        elif all(
+            (message.envelope or {}).get("message_type", "text") != "text"
+            for message in inbound
+        ):
             outcome = agent_module.AgentOutcome(reply_text=copy_message("CONCIERGE_MEDIA_UNSUPPORTED"))
             result.fallback = "media"
         elif _bump_turn_counter(conversation) > int(config().get("max_turns_per_day") or 80):
@@ -551,7 +709,13 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None) -> TurnResul
         from .transport import semantic_blocks
 
         primary = semantic_blocks(binding, outcome.reply_text) if outcome.reply_text else []
-        texts = [*primary, *[text for text in outcome.extra_replies if text and text.strip()]]
+        extras = [
+            block
+            for text in outcome.extra_replies
+            if text and text.strip()
+            for block in semantic_blocks(binding, text)
+        ]
+        texts = [*primary, *extras]
         with transaction.atomic():
             Conversation.objects.select_for_update().get(pk=conversation.pk)
             assert_turn_authority(conversation, for_mutation=False)
@@ -699,10 +863,11 @@ def _dispatch_reply(conversation, message):
             not enabled
             or not is_allowed(binding)
             or (current.state != Conversation.State.ACTIVE and not handoff_ack)
-            or current.turn_fence != message.envelope.get("turn_fence")
             or message.envelope.get("connection_key") != binding.connection_key
         ):
             code = "contained"
+        elif current.turn_fence != message.envelope.get("turn_fence"):
+            code = "stale_turn"
         else:
             authorization = transport.response_authorization(
                 binding,
@@ -888,11 +1053,18 @@ def mark_handoff(
         + ("aceita em todos os vínculos." if accepted else "pendente em pelo menos um vínculo."),
     )
     if consumed_ids:
+        consumed = list(
+            ConversationMessage.objects.filter(
+                pk__in=consumed_ids,
+                binding=causal_binding,
+                kind=ConversationMessage.Kind.INBOUND,
+            ).order_by("pk")
+        )
         current._inbound_max_id = max(consumed_ids)
-        evidence = (
-            ConversationMessage.objects.filter(pk=current._inbound_max_id)
-            .values_list("envelope__window_evidence", flat=True)
-            .first()
+        evidence = _best_window_evidence(
+            causal_binding,
+            consumed,
+            purpose="handoff_ack",
         )
         ack = copy_message("CONCIERGE_HANDOFF_ACK")
         if ack:

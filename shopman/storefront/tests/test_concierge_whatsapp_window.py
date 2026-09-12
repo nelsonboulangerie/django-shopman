@@ -11,7 +11,7 @@ from shopman.orderman.models import Order, Session
 
 from shopman.shop.models import Conversation, ConversationBinding, OutboundAttempt
 from shopman.storefront.concierge import service, tools, transport, webhook
-from shopman.storefront.concierge.contracts import SendOutcome
+from shopman.storefront.concierge.contracts import HandoffOutcome, SendOutcome
 from shopman.storefront.tests.test_concierge_engine import surface as surface_fixture
 
 pytestmark = pytest.mark.django_db
@@ -214,6 +214,33 @@ def test_out_of_order_does_not_shorten_existing_window(client):
     assert transport.response_authorization(
         binding, evidence, NOW + timedelta(hours=2)
     ).allowed
+
+
+def test_handoff_ack_uses_best_consumed_window_evidence(client, gateway, monkeypatch):
+    post(client, local(NOW - timedelta(minutes=10)))
+    post(client, local(NOW - timedelta(hours=23)))
+    conversation = Conversation.objects.get()
+    binding = binding_for(conversation)
+    inbound = list(conversation.messages.filter(kind="inbound").order_by("pk"))
+    monkeypatch.setattr(
+        transport,
+        "handoff_for",
+        lambda *_args, **_kwargs: HandoffOutcome("accepted", "accepted"),
+    )
+    monkeypatch.setattr(service, "copy_message", lambda _key: "Equipe avisada.")
+
+    assert service.mark_handoff(
+        conversation,
+        binding,
+        "pedido do cliente",
+        consumed_ids=[message.pk for message in inbound],
+    )
+
+    reply = conversation.messages.get(kind="reply")
+    assert reply.envelope["window_evidence"]["observed_at"] == (
+        NOW - timedelta(minutes=10)
+    ).isoformat()
+    assert gateway == ["Equipe avisada."]
 
 
 def test_revocation_after_prepare_contains_send(client, settings, gateway):

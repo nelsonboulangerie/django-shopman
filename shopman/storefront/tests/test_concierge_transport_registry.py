@@ -109,6 +109,36 @@ def test_duplicate_provider_account_channel_scope_fails_closed(settings):
     assert transport.configured_connections() == ()
 
 
+def test_global_manychat_gateway_rejects_two_accounts(settings):
+    second = {
+        **CONFIG["connections"]["manychat-wa"],
+        "account": "another-account",
+    }
+    settings.SHOPMAN_CONCIERGE = {
+        "connections": {
+            "manychat-wa": CONFIG["connections"]["manychat-wa"],
+            "manychat-other-account": second,
+        }
+    }
+    assert (
+        transport.adapter_for(
+            binding("manychat-wa", "manychat", "mc-account", "whatsapp")
+        )
+        is None
+    )
+    assert (
+        transport.adapter_for(
+            binding(
+                "manychat-other-account",
+                "manychat",
+                "another-account",
+                "whatsapp",
+            )
+        )
+        is None
+    )
+
+
 def test_manychat_window_is_normalized_and_revalidated_by_adapter():
     current = binding("manychat-wa", "manychat", "mc-account", "whatsapp")
     envelope = {

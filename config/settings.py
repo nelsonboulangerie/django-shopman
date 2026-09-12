@@ -1108,8 +1108,7 @@ SHOPMAN_CONCIERGE = {
                     "keys": [
                         value
                         for value in (
-                            os.environ.get("CONCIERGE_API_KEY", "")
-                            or os.environ.get("DOORMAN_ACCESS_LINK_API_KEY", ""),
+                            os.environ.get("CONCIERGE_API_KEY", ""),
                             os.environ.get("CONCIERGE_API_KEY_PREVIOUS", ""),
                         )
                         if value
