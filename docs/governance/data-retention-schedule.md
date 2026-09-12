@@ -1,7 +1,8 @@
 # Tabela de retenção e descarte de dados
 
-**Estado:** proposta técnica consolidada; descarte novo bloqueado até aprovação
-da controladora e validação jurídica.  
+**Estado:** política operacional inicial aprovada em 2026-09-12 para
+implementação e testes fora de produção. Descarte do legado e ativação de jobs
+em produção permanecem bloqueados até dry-run e gate humano separado.
 **Responsável operacional:** Pablo Valentini. **Suplente:** Laís Kohatsu Kataoka.  
 **Revisão mínima:** anual e sempre que mudar finalidade, fornecedor, país,
 categoria de dado ou obrigação legal.
@@ -20,7 +21,7 @@ responsável, escopo, data de revisão e acesso restrito. Não existe prorrogaç
 silenciosa. Backup não cria um segundo prazo: restauração exige reaplicar os
 descartes ocorridos desde a cópia.
 
-## Matriz proposta para aprovação única
+## Matriz aprovada
 
 | ID | Categoria e finalidade | Marco inicial | Prazo proposto | Destino no vencimento | Estado técnico |
 |---|---|---|---|---|---|
@@ -40,7 +41,7 @@ descartes ocorridos desde a cópia.
 | R14 | Cópias públicas de termos e privacidade | publicação da versão | permanente | não apagar nem sobrescrever | arquivo append-only, URL e SHA-256 implementados; não contém PII de cliente |
 | R15 | Backups transacionais | criação do backup | 7 dias na infraestrutura atual | expiração automática; restore reaplica descartes posteriores | retenção documentada; prova periódica de backup/restore continua operacional |
 
-## Ordem de implementação depois da aprovação
+## Ordem de implementação autorizada fora de produção
 
 1. Entregar primeiro um comando único em `--dry-run`, com contagens por linha da
    matriz e zero PII na saída.
@@ -52,13 +53,18 @@ descartes ocorridos desde a cópia.
 5. Aplicar em staging com dados sintéticos, verificar idempotência, concorrência,
    legal hold e restauração de backup; produção exige gate próprio.
 
-## Texto de decisão preparado
+## Decisão humana registrada em 2026-09-12
 
 > Aprovo R01–R15 da tabela de retenção como política operacional inicial,
 > reconhecendo que os prazos de prova são decisões de gestão de risco e que
 > obrigações legais específicas e legal hold documentado prevalecem. Autorizo
 > implementação e testes fora de produção; descarte do legado produtivo e
 > ativação dos jobs em produção exigem um gate separado com dry-run e contagens.
+
+O responsável confirmou o exercício L6 e aprovou a matriz R01–R15 com testes
+fora de produção. Esta decisão **não** autoriza descarte de dados legados nem
+agendamento/ativação de jobs em produção; ambos exigem evidência do dry-run e
+uma nova confirmação humana específica.
 
 ## Fontes normativas primárias
 

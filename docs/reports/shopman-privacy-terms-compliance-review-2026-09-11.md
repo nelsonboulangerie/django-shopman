@@ -53,7 +53,7 @@ regulação de pagamentos. Elas exigem frentes e especialistas próprios.
 | Acesso, correção e eliminação | Direitos do titular (LGPD art. 18) | Autoatendimento exporta perfil, contatos, pedidos, consentimentos/histórico, preferências, loyalty, favoritos, alertas e conversas; exclusão alcança extensões e denuncia falha parcial | **Corrigido; auditoria de completude deve acompanhar novos modelos** |
 | Retenção | Encerrar/eliminar ao fim do tratamento, salvo hipóteses legais (LGPD arts. 15–16) | PII é anonimizada; dados fiscais transacionais permanecem; IP auxiliar limitado a 90 dias; aparelho confiável expira em 30 dias; “Avise-me” persiste até pausa/cancelamento | **Parcial: faltam descarte automático e tabela validada para algumas provas e históricos** |
 | Segurança e privacy by design | Medidas desde a concepção (LGPD arts. 46 e 49) | Segredos no servidor, redaction do Sentry, trilhas append-only, permissões, confirmação humana e bloqueios de audiência | **Controles presentes; pentest e governança organizacional fora deste recorte** |
-| Incidente | Comunicar ANPD/titulares em três dias úteis quando aplicável e guardar registro por cinco anos | Runbook corrigido com prazo, decisão e retenção | **Texto corrigido; responsável e exercício de mesa pendentes** |
+| Incidente | Comunicar ANPD/titulares em três dias úteis quando aplicável e guardar registro por cinco anos | Runbook corrigido com prazo, decisão e retenção; exercício L6 concluído | **Atendido no recorte técnico e operacional exercitado** |
 | Contrato eletrônico | Identificação, informação prévia, resumo, correção, confirmação e contrato reproduzível (Decreto 7.962/2013) | Dados legais e links aparecem antes do envio; pedido recebe versões de termos/privacidade | **Parcial; falta arquivo imutável reproduzível de cada versão** |
 | Arrependimento/cancelamento | Direito remoto e exercício pelo mesmo meio (CDC art. 49; Decreto arts. 4º–5º) | Termos deixaram de criar exceção categórica para perecível; botão cancela quando elegível | **Bloqueante: depois que o botão some, “Ajuda” abre outro canal** |
 | Cláusulas compreensíveis | Consumidor deve conhecer e compreender previamente; cláusula abusiva é nula (CDC arts. 46 e 51) | Texto reescrito em pt-BR direto e sem renúncia de direitos | **Corrigido no código; revisão jurídica final pendente** |
@@ -224,8 +224,11 @@ cinco anos de retenção dos registros do incidente.[^4]
 
 **Responsáveis confirmados em 2026-09-12:** Pablo Valentini responde pela
 operação; Laís Kohatsu Kataoka é suplente e representante da administração.
-A nomeação não usa o título de encarregado/DPO e não elimina o exercício de
-mesa pendente.
+A nomeação não usa o título de encarregado/DPO. **Exercício concluído em
+2026-09-12:** o responsável confirmou congelamento das entregas, preservação de
+evidências, proibição de reenvio cego, avaliação de risco em conjunto com a
+suplente e desbloqueio somente após reconciliação. A evidência está em
+`docs/reports/execution/privacy-incident-tabletop-20260912.md`.
 
 ### Gate L7 — tabela de retenção e descarte (bloqueante para promessa integral)
 
@@ -244,11 +247,13 @@ prazo deve virar campo/rotina testada e monitorada. Até lá, exclusão de conta
 esses dados no autoatendimento, mas isso não substitui o descarte proativo exigido
 quando a finalidade termina.[^1]
 
-**Preparação concluída em 2026-09-12:** a proposta única R01–R15 está em
+**Decisão concluída em 2026-09-12:** a matriz R01–R15 foi aprovada como política
+operacional inicial em
 `docs/governance/data-retention-schedule.md`, com marco, prazo, destino, estado
-técnico e uma frase única de aprovação. Nenhum expurgo novo foi ativado: a
-matriz ainda exige confirmação humana e, depois dela, a ativação produtiva terá
-gate separado precedido de dry-run e contagens sem PII.
+técnico e registro da aprovação. A autorização cobre implementação e testes
+fora de produção. Nenhum expurgo novo foi ativado: descarte do legado produtivo
+e ativação dos jobs em produção continuam sujeitos a dry-run, contagens sem PII
+e gate humano separado.
 
 ### Gate L8 — alertas de dependência nas demais superfícies
 
