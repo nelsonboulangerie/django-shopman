@@ -1323,10 +1323,7 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
     w.findAll('[aria-label="Cadastro do cliente"] li').map((li) => li.text());
   afterEach(() => { document.body.innerHTML = ""; });
 
-  it("sem cliente identificado, a venda anônima já anuncia o cadastro novo", async () => {
-    // ⚠️ "Já marcado" é decisão do dono, contra a recomendação de nascer
-    // desmarcado. O que segura a transparência é esta linha (e o interruptor
-    // à vista) — não reverter o padrão.
+  it("e-mail de comprovante não anuncia cadastro sem uma escolha explícita", async () => {
     const w = await mountSuspended(PosPaymentWorkspace, {
       props: props({
         checkoutContract: comFiscal,
@@ -1334,12 +1331,7 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
         receiptEmail: "novo@example.org",
       }),
     });
-
-    // ⚠️ E a linha NÃO promete cadastro novo: numa venda anônima o servidor
-    // acha quem já tem este e-mail e a venda vai para ele.
-    expect(registryLines(w)).toEqual([
-      "Este e-mail será salvo como cliente — ou vai para o cadastro que já o tem.",
-    ]);
+    expect(registryLines(w)).toEqual([]);
   });
 
   it("desmarcar cala a linha", async () => {
@@ -1467,7 +1459,7 @@ it("explica antecipação e cobrança pendente no modo encomendas", async () => 
   expect(w.text()).toContain("pagamento pendente até o acerto no Gestor");
   expect(w.text()).toContain("Levar maquininha");
   await w.setProps({ fulfillmentType: "pickup", paymentCollection: "terminal", paymentTenders: [{ method: "pix", amount_q: 1000, collection: "terminal" }] });
-  expect(w.text()).toContain("pendente até a confirmação automática");
+  expect(w.text()).toContain("pendente até a confirmação do provedor de pagamento");
   expect(w.text()).not.toContain("Cobrar na entrega");
 });
 
