@@ -285,3 +285,35 @@ def test_receipt_create_rechecks_snapshot_before_any_write(owner):
             {"field": "tax_id", "value": "11144477735", "owner_ref": ""},
         ]), operator_username="op")
     assert list(Customer.objects.values()) == original
+
+
+def test_receipt_save_validates_third_party_snapshot_without_copying_it(owner):
+    from shopman.shop.services.pos import resolve_or_create_customer
+    current = Customer.objects.create(ref="current", first_name="Bia")
+    original_owner = dict(Customer.objects.values().get(pk=owner.pk))
+    action = receipt_action(action="save", customer_ref=current.ref, target_ref=current.ref, fields=[
+        {"field": "tax_id", "value": owner.document, "owner_ref": owner.ref},
+        {"field": "email", "value": "new@example.org", "owner_ref": ""},
+    ])
+    result = resolve_or_create_customer(receipt_identity_action=action, operator_username="op")
+    assert result["ref"] == current.ref
+    current.refresh_from_db()
+    assert current.document == ""
+    assert current.email == "new@example.org"
+    assert dict(Customer.objects.values().get(pk=owner.pk)) == original_owner
+    assert Customer.objects.count() == 2
+
+
+def test_receipt_save_new_cpf_keeps_third_party_email_outside_customer(owner):
+    from shopman.shop.services.pos import resolve_or_create_customer
+    current = Customer.objects.create(ref="current", first_name="Bia")
+    original_owner = dict(Customer.objects.values().get(pk=owner.pk))
+    action = receipt_action(action="save", customer_ref=current.ref, target_ref=current.ref, fields=[
+        {"field": "tax_id", "value": "11144477735", "owner_ref": ""},
+        {"field": "email", "value": owner.email, "owner_ref": owner.ref},
+    ])
+    resolve_or_create_customer(receipt_identity_action=action, operator_username="op")
+    current.refresh_from_db()
+    assert current.document == "11144477735"
+    assert current.email == ""
+    assert dict(Customer.objects.values().get(pk=owner.pk)) == original_owner

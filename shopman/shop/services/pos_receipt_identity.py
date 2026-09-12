@@ -148,12 +148,16 @@ def resolve_receipt_identity(action: dict, *, operator_username: str) -> dict:
             value = normalize_receipt_value(field, item["value"])
             owner = _identifier_owner("cpf", value) if field == "tax_id" else _contact_owner("email", value)
             owner_ref = owner.ref if owner else ""
-            stale |= owner_ref != item["owner_ref"] or bool(owner_ref and (kind == "create" or owner_ref != target))
+            stale |= owner_ref != item["owner_ref"] or bool(owner_ref and kind == "create")
             payload["fiscal_tax_id" if field == "tax_id" else "receipt_email"] = value
         if stale:
             # No write has happened. Show current ownership again, including after a lost create response.
             require_receipt_identity_choice({**payload, "customer_ref": current})
             raise PosIntentError("receipt_identity_changed", "O cadastro mudou. Revise os dados do documento.", focus="receipt")
         for item in fields:
+            if item["owner_ref"] and item["owner_ref"] != target:
+                # Validate the whole displayed snapshot, but never copy a third party's field.
+                payload.pop("fiscal_tax_id" if item["field"] == "tax_id" else "receipt_email", None)
+                continue
             payload["save_receipt_tax_id" if item["field"] == "tax_id" else "save_receipt_contact"] = True
         return _persist_customer_from_payload(payload, operator_username=operator_username)

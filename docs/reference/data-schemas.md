@@ -1915,7 +1915,8 @@ customer_ref, target_ref, fields: [{field: "tax_id" | "email", value, owner_ref}
 tax_id_overwrite_confirmed?: boolean, tax_id_before?: string}`.
 Create requires empty current/target refs and no known owners; it saves only the
 explicit fields and leaves names empty. Save requires an active explicit target.
-Owners are checked again before writing; changed ownership returns a receipt
+All displayed owners are checked again before writing; save skips fields owned
+by a different customer without copying them. Changed ownership returns a receipt
 conflict and no mutation. CPF overwrite additionally requires confirmation and
 the exact prior CPF, checked under a lock on the target customer. Existing CPF
 confirmation rules remain enforced. A repeated create after a lost response
