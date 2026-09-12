@@ -34,9 +34,15 @@ ACK200 confirma persistência/fila, sem mensagem de cliente ou resultado comerci
 
 Atendimento permanece no ManyChatInbox; campo concierge_handoff espelha o estado canônico. Mensagens recebidas durante handoff preservam contexto, sem bot competindo. Retorno ao bot é explícito e condicionado à autoridade/sincronização já previstas. Inspecionar pausa nativa e fluxo de atribuição antes de mudar configuração.
 
-### Identidade de evento: decisão ainda bloqueada
+### Identidade de evento: sem recibo sintético; gate comercial ainda bloqueado
 
 As referências consultadas descrevem ContactID/LastTextInput/LastInteraction, mas não comprovam ID estável de mensagem no ExternalRequest deste flow. Para mutações automáticas, homologar evento original e comportamento de retry/burst. Não gerar UUID a cada execução, contador mutável ou hash de texto/data como substituto.
+
+O contrato definitivo do ingresso legado é at-least-once sem deduplicação alegada pelo fornecedor: cada POST autenticado gera um receipt local, e o worker canônico agrupa entradas ainda não consumidas sob o lock/fence da conversa. `provider_timestamp` prova somente a janela de resposta. Uma repetição legítima do cliente e uma reexecução técnica podem produzir os mesmos campos; descartá-las por hash criaria perda silenciosa impossível de distinguir.
+
+Os efeitos comerciais usam causalidade emitida pelo próprio Shopman, não identidade inventada no transporte: o resumo aceito carrega `quote_token`, a confirmação precisa ocorrer depois dele, revisão/total/identidade são revalidados sob lock e `place_order` usa receipt de mutação e idempotency key por conversa+quote. Isso protege o pedido mesmo que o transporte entregue mais de uma vez. O ingresso legado continua impedido de comprar porque não fornece `event_id`; a proteção comercial madura não relaxa esse gate.
+
+Um contador ou token em Custom User Field do ManyChat não melhora o contrato: acrescenta estado distribuído e não há garantia pública consultada de incremento atômico, associação ao evento ou estabilidade em retry. Um token Shopman devolvido ao flow também identifica um turno causal, não a mensagem recebida, e permanece desnecessário enquanto leitura/humano usam o receipt local e compra exige evento comprovado.
 
 Se a integração nativa não expuser essa evidência, registrar limitação do fornecedor e escolher conscientemente o boundary: manter leitura/orientação e confirmação comercial pelo Storefront canônico, ou avaliar contrato oficial de ingresso por evento compatível com a conexãoManyChat existente. Não ativar Meta direto em paralelo por hipótese. A escolha depende de evidência real e autorização para alteração do canal.
 
