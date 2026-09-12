@@ -244,6 +244,12 @@ prazo deve virar campo/rotina testada e monitorada. Até lá, exclusão de conta
 esses dados no autoatendimento, mas isso não substitui o descarte proativo exigido
 quando a finalidade termina.[^1]
 
+**Preparação concluída em 2026-09-12:** a proposta única R01–R15 está em
+`docs/governance/data-retention-schedule.md`, com marco, prazo, destino, estado
+técnico e uma frase única de aprovação. Nenhum expurgo novo foi ativado: a
+matriz ainda exige confirmação humana e, depois dela, a ativação produtiva terá
+gate separado precedido de dry-run e contagens sem PII.
+
 ### Gate L8 — alertas de dependência nas demais superfícies
 
 O manifest do Storefront ficou com `npm audit` zerado, mas o Dependabot do
