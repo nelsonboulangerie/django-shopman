@@ -101,9 +101,21 @@ def send_action(order_id: str, action: str, *, body: dict | None = None) -> None
 
     # iFood returns 202 Accepted for status actions.
     if resp.status_code not in (200, 202):
+        retryable = resp.status_code in (408, 429) or resp.status_code >= 500
+        if resp.status_code == 403:
+            # The edge can return HTML "Access Denied" intermittently. That is
+            # not a marketplace decision: preserve the pending request and retry.
+            # Only a structured API response supports treating 403 as a definite
+            # authorization/configuration failure. Never retain its raw body.
+            try:
+                structured_error = isinstance(resp.json(), (dict, list))
+            except ValueError:
+                structured_error = False
+            content_type = str(resp.headers.get("Content-Type", "")).lower()
+            retryable = "html" in content_type or not structured_error
         raise IFoodCallbackError(
             f"iFood {action} HTTP {resp.status_code}",
-            retryable=resp.status_code in (408, 429) or resp.status_code >= 500
+            retryable=retryable,
         )
     logger.info("ifood_callbacks: %s ok for order %s", action, order_id)
 

@@ -145,5 +145,5 @@ Validação adicional: 76 testes de projeção/fila e 13 subtests; frontend type
 - Nova reentrega às 23:35:47 UTC deduplicou corretamente e ACK retornou sucesso. Portanto, recebimento, persistência, retry e dedupe foram exercitados no ambiente publicado, mas a instabilidade 403 permanece.
 - Gestor autenticado exibiu o pedido `new`, R$ 27,00, produtos oficiais nomeados NÃO ENTREGAR e observação de geração automática pelo Developer Portal. Consulta no banco confirmou `is_test=true` e SKUs `1953`/`1394`. Não foi acionado aceite/preparo/despacho/conclusão.
 - A versão publicada exibiu `Pago online · paid`, reproduzindo a deficiência de apresentação corrigida no PR.
-- Recusa do pedido de teste em acompanhamento. Não considerar o pedido encerrado até verificar estado remoto.
-- Correções abertas no draft PR #633. Nenhum merge/deploy realizado.
+- Recusa executada no Gestor com motivo oficial Problemas de sistema na loja. Callback 20925 concluiu após duas tentativas: primeira 403, sucesso às 23:38:04 UTC. Evento CAN processado/ACKado às 23:38:17 UTC, receipt idempotente 6418 com already_cancelled. Pedido encerrado; não foi aceito, preparado, despachado ou concluído.
+- Correções abertas no draft PR #633. Nenhum merge/deploy realizado. O ensaio mostrou que 403 HTML precisa permanecer transitório também no novo fluxo de cancelamento; correção adicional validada com 65 testes e 8 subtests.
