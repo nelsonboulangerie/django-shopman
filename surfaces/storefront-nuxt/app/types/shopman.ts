@@ -425,6 +425,13 @@ export interface HomeSectionsCopyProjection {
   tomorrow_hook: CopyEntryProjection
   whatsapp_cta: CopyEntryProjection
   whatsapp_cta_label: CopyEntryProjection
+  faq_heading: CopyEntryProjection
+}
+
+export interface FAQItemProjection {
+  ref: string
+  question: string
+  answer: string
 }
 
 export interface AuthCopyProjection {
@@ -486,6 +493,7 @@ export interface HomeProjection {
   shop_status: ShopStatusProjection
   notices: HomeNoticeProjection[]
   opening_hours: OpeningHoursEntry[]
+  faq: FAQItemProjection[]
   last_order_ref: string | null
   last_order_items: LastOrderItemProjection[]
   actions: Action[]

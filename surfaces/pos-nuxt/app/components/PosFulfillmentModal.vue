@@ -24,6 +24,7 @@ const props = defineProps<{
   open: boolean;
   fulfillmentOptions: POSFulfillmentOptionProjection[];
   fulfillmentType: "pickup" | "delivery";
+  fulfillmentConfirmed?: boolean;
   /** Endereços que o cliente já usou — atalho para não redigitar. */
   savedAddresses: SavedAddressProjection[];
   addressAutocomplete: POSAddressAutocompleteProjection | null;
@@ -46,6 +47,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:open": [boolean];
   "update:fulfillmentType": ["pickup" | "delivery"];
+  "update:fulfillmentConfirmed": [boolean];
   "update:deliveryAddress": [string];
   "update:deliveryAddressStructured": [StructuredAddressProjection];
   "update:deliveryStreetNumber": [string];
@@ -113,7 +115,7 @@ function onAddressSelected(address: StructuredAddressProjection) {
     <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" @open-auto-focus="onOpenAutoFocus">
       <UiDialogHeader>
         <UiDialogTitle>Recebimento</UiDialogTitle>
-        <UiDialogDescription>Como o cliente recebe o pedido.</UiDialogDescription>
+        <UiDialogDescription>Escolha uma opção. Cliente e data não definem como o pedido será recebido.</UiDialogDescription>
       </UiDialogHeader>
       <div class="grid gap-4">
         <div class="grid grid-cols-2 gap-2">
@@ -122,8 +124,9 @@ function onAddressSelected(address: StructuredAddressProjection) {
             :key="option.ref"
             variant="outline"
             class="h-auto justify-start whitespace-normal px-3 py-2 text-left"
-            :class="fulfillmentType === option.ref ? 'border-primary bg-primary/5' : ''"
-            @click="$emit('update:fulfillmentType', option.ref as 'pickup' | 'delivery')"
+            :class="fulfillmentConfirmed && fulfillmentType === option.ref ? 'border-primary bg-primary/5' : ''"
+            @click="$emit('update:fulfillmentType', option.ref as 'pickup' | 'delivery'); $emit('update:fulfillmentConfirmed', true)"
+            :aria-pressed="!!fulfillmentConfirmed && fulfillmentType === option.ref"
           >
             <span>
               <span class="block text-sm font-semibold">{{ option.label }}</span>
@@ -231,7 +234,7 @@ function onAddressSelected(address: StructuredAddressProjection) {
         </label>
       </div>
       <UiDialogFooter>
-        <UiButton class="w-full" @click="isOpen = false">Concluir</UiButton>
+        <UiButton class="w-full" :disabled="!fulfillmentConfirmed" @click="isOpen = false">{{ !fulfillmentConfirmed ? "Escolha o recebimento" : fulfillmentType === "delivery" ? "Concluir entrega" : "Concluir retirada" }}</UiButton>
       </UiDialogFooter>
     </UiDialogContent>
   </UiDialog>

@@ -15,6 +15,7 @@ from django.http import HttpRequest
 from shopman.shop.projections.types import Action
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF, get_default_ddd
 from shopman.storefront.presentation.catalog import CatalogItemProjection, build_catalog
+from shopman.storefront.presentation.public_information import FAQItemProjection, build_public_faq
 from shopman.storefront.presentation.shop import ShopProjection, build_shop_projection
 from shopman.storefront.presentation.shop_status import _format_opening_hours, _shop_status
 
@@ -114,6 +115,7 @@ class HomeSectionsCopyProjection:
     tomorrow_hook: CopyEntryProjection
     whatsapp_cta: CopyEntryProjection
     whatsapp_cta_label: CopyEntryProjection
+    faq_heading: CopyEntryProjection
 
 
 @dataclass(frozen=True)
@@ -209,6 +211,7 @@ class HomeProjection:
     shop_status: ShopStatusProjection
     notices: tuple[HomeNoticeProjection, ...]
     opening_hours: tuple[OpeningHoursEntry, ...]
+    faq: tuple[FAQItemProjection, ...]
     last_order_ref: str | None
     last_order_items: tuple[LastOrderItemProjection, ...]
     actions: tuple[Action, ...]
@@ -298,6 +301,12 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         shop_status=shop_status,
         notices=notices,
         opening_hours=hours,
+        faq=build_public_faq(
+            channel_ref=STOREFRONT_CHANNEL_REF,
+            shop=shop,
+            status=status_dict,
+            opening_hours=hours,
+        ),
         last_order_ref=last_ref,
         last_order_items=last_items,
         actions=_home_actions(last_ref),
@@ -469,6 +478,7 @@ def _home_sections_copy(
         tomorrow_hook=_copy_entry("TRACKING_TOMORROW_HOOK", omotenashi=omotenashi),
         whatsapp_cta=_copy_entry("HOME_WHATSAPP_CTA", omotenashi=omotenashi),
         whatsapp_cta_label=_copy_entry("HOME_WHATSAPP_CTA_LABEL", omotenashi=omotenashi),
+        faq_heading=_copy_entry("HOME_FAQ_HEADING", omotenashi=omotenashi),
     )
 
 

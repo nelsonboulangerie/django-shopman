@@ -84,7 +84,7 @@ const emit = defineEmits<{
   clear: [];
   resolveCustomer: [];
   /** O operador assumiu a mudança (trocar de cliente / trocar o contato). */
-  decisionConfirm: [];
+  decisionConfirm: [ownerRef?: string];
   /** LIBERAR o contato preso num cadastro desativado — o valor a soltar viaja
    *  junto porque na LISTA ele é o da linha, não o do painel. */
   decisionRelease: [value: string];
@@ -150,8 +150,22 @@ function toggleReceiptChannel(ref: string) {
   emit("update:receiptChannels", next);
 }
 
-// A customer is associated when there's a loaded lookup or a name in context.
-const hasCustomer = computed(() => Boolean(props.customerName.trim() || props.customerLookup));
+// Só um cadastro carregado representa cliente associado; texto digitado é rascunho.
+const hasCustomer = computed(() => Boolean(props.customerLookup?.ref));
+function initialCustomerPanel(): "search" | "form" {
+  return props.customerLookup?.ref || props.customerName.trim() || props.customerPhone.trim() || props.customerTaxId.trim() || props.customerEmail.trim() ? "form" : "search";
+}
+const customerPanel = ref<"search" | "form">(initialCustomerPanel());
+watch(() => props.open, (open) => {
+  if (open) customerPanel.value = initialCustomerPanel();
+});
+function openNewCustomer() {
+  if (props.customerLookup?.ref) emit("clear");
+  customerPanel.value = "form";
+}
+watch(() => props.customerLookup?.ref, (ref) => {
+  if (ref) customerPanel.value = "form";
+});
 const memory = computed(() => props.customerLookup?.memory || null);
 const identityChips = computed(() =>
   [props.customerPhone, props.customerTaxId, props.customerEmail].map((v) => v.trim()).filter(Boolean),
@@ -163,11 +177,16 @@ watch(() => props.open, (open) => { if (!open) emit("search", ""); });
 // A RECUSA TRAZ A TELA DE VOLTA. O "Concluir" fecha o modal e só depois a
 // resposta do servidor chega: sem isto, a recusa nasceria atrás de uma tela
 // fechada e o operador veria a venda seguir com o cliente errado.
+const isReceiptDecision = computed(() => props.customerDecision?.kind === "receipt_identity");
+const receiptTitleRef = ref<{ $el?: HTMLElement } | null>(null);
+const receiptActionRef = ref<{ $el?: HTMLElement } | null>(null);
 const decisionCopy = computed(() =>
   props.customerDecision ? customerDecisionCopy(props.customerDecision) : null,
 );
-watch(() => props.customerDecision, (decision) => {
+watch(() => props.customerDecision, (decision, previous) => {
   if (decision && !props.open) emit("update:open", true);
+  if (!decision && previous?.kind === "receipt_identity") emit("update:open", false);
+  if (decision?.kind === "receipt_identity") void nextTick(() => receiptTitleRef.value?.$el?.focus());
 });
 // O contato que o painel libera: o que o operador digitou, ou o valor do dono
 // quando a recusa veio sem o digitado.
@@ -202,6 +221,84 @@ watch(() => props.customerDecision, () => {
   confirmingAttend.value = false;
 });
 
+const receiptPanelRef = ref<HTMLElement | null>(null);
+const selectedReceiptOwner = ref("");
+const receiptFields = computed(() => (props.customerDecision?.receiptFields || (props.customerDecision?.other ? [{
+  field: props.customerDecision.field === "tax_id" ? "tax_id" as const : "email" as const,
+  value: props.customerDecision.typed, owner: props.customerDecision.other,
+  active: props.customerDecision.candidates?.find(c => c.ref === props.customerDecision?.other?.ref)?.owner_inactive !== true,
+}] : [])).map(field => ({ ...field, owner: { ...field.owner, name: field.owner.name || (field.owner.ref ? formatReceiptValue(field.field, field.value) : '') } })));
+const receiptOwners = computed(() => [...new Map(receiptFields.value.filter(f => f.owner.ref).map(f => [f.owner.ref, f])).values()]);
+const receiptActiveOwners = computed(() => receiptOwners.value.filter(f => f.active !== false));
+const receiptNewFieldsLabel = computed(() => receiptFields.value.filter(f => !f.owner.ref).map(f => f.field === 'tax_id' ? 'CPF' : 'e-mail').join(' e '));
+const receiptActions = computed(() => {
+  const choices: Array<{ ref: string; label: string }> = [];
+  if (props.customerDecision?.receiptTaxIdOverwrite) return [{ ref: '__save_confirmed__', label: 'Trocar CPF e vincular ao pedido' }, { ref: '', label: 'Usar dados só neste pedido' }];
+  if (props.customerDecision?.receiptCreate) choices.push({ ref: '__create__', label: 'Cadastrar e vincular ao pedido' });
+  if (props.customerDecision?.receiptSave) choices.push({ ref: '__save__', label: `Salvar no cadastro de ${props.customerDecision.current?.name || 'cliente'}` });
+  for (const field of receiptActiveOwners.value) choices.push({ ref: field.owner.ref,
+    label: receiptNewFieldsLabel.value ? `Vincular ${field.owner.name} e salvar ${receiptNewFieldsLabel.value}`
+      : receiptOwners.value.length === 1 ? 'Sim, vincular ao pedido' : `Vincular ${field.owner.name}` });
+  choices.push({ ref: '', label: 'Usar dados só neste pedido' });
+  return choices;
+});
+const receiptTitle = computed(() => {
+  if (props.customerDecision?.receiptTaxIdOverwrite) return `Trocar CPF do cadastro${props.customerDecision.receiptTaxIdOverwrite.customerName ? ' de ' + props.customerDecision.receiptTaxIdOverwrite.customerName : ''}?`;
+  if (confirmingAttend.value) {
+    if (selectedReceiptOwner.value === '__create__') return 'Cadastrar e vincular ao pedido?';
+    if (selectedReceiptOwner.value === '__save__') return `Salvar ${receiptNewFieldsLabel.value} no cadastro de ${props.customerDecision?.current?.name || 'cliente'}?`;
+    return `Vincular ${receiptOwners.value.find(f => f.owner.ref === selectedReceiptOwner.value)?.owner.name || 'cliente'} ao pedido?`;
+  }
+  if (props.customerDecision?.receiptCreate) return 'Cadastrar o cliente deste pedido?';
+  if (props.customerDecision?.receiptSave && !receiptOwners.value.length) return 'Salvar os dados no cadastro?';
+  return receiptOwners.value.length === 1 ? `Este pedido é de ${receiptOwners.value[0]!.owner.name}?` : 'Quem é o cliente deste pedido?';
+});
+function activateReceiptAction(index: number) {
+  const action = receiptActions.value[index];
+  if (!action || props.lookupBusy) return;
+  if (!action.ref) void cancelDecision();
+  else chooseReceiptOwner(action.ref);
+}
+function formatReceiptValue(field: string, value: string) {
+  return field === "tax_id" && /^\d{11}$/.test(value)
+    ? value.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4") : value;
+}
+function chooseReceiptOwner(ref: string) {
+  if (props.lookupBusy) return;
+  selectedReceiptOwner.value = ref;
+  confirmingAttend.value = true;
+}
+function receiptButtons() {
+  return [...(receiptPanelRef.value?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") || [])];
+}
+watch(confirmingAttend, () => {
+  if (isReceiptDecision.value) void nextTick(() => receiptTitleRef.value?.$el?.focus());
+});
+function onReceiptKey(event: KeyboardEvent) {
+  if (!isReceiptDecision.value || event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
+  const key = event.key;
+  if (!["1", "2", "3", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " ", "Escape"].includes(key)) return;
+  event.stopPropagation();
+  if (props.lookupBusy || event.repeat) { event.preventDefault(); return; }
+  if (key === "Escape") {
+    event.preventDefault();
+    if (confirmingAttend.value) confirmingAttend.value = false;
+    else emit("update:open", false);
+    return;
+  }
+  if (key.startsWith("Arrow")) {
+    event.preventDefault();
+    const buttons = receiptButtons();
+    const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const direction = key === "ArrowLeft" || key === "ArrowUp" ? -1 : 1;
+    buttons[current < 0 ? (direction > 0 ? 0 : buttons.length - 1) : (current + direction + buttons.length) % buttons.length]?.focus();
+  } else if (!confirmingAttend.value && ["1", "2", "3"].includes(key)) {
+    event.preventDefault();
+    activateReceiptAction(Number(key) - 1);
+  }
+  // Enter/Space usam o clique nativo do botão focado. Tab mantém a navegação do diálogo.
+}
+
 function askRelease(value: string) {
   if (!decisionCopy.value?.release?.prompt) {
     emit("decisionRelease", value);
@@ -217,43 +314,60 @@ function askConfirm() {
   confirmingAttend.value = true;
 }
 
+async function cancelDecision() {
+  if (props.lookupBusy) return;
+  const decision = props.customerDecision;
+  emit("decisionCancel");
+  if (decision?.kind !== "existing_customer") return;
+  customerPanel.value = "form";
+  await nextTick();
+  const input = decision.field === "phone" ? phoneInputRef : decision.field === "email" ? emailInputRef : taxIdInputRef;
+  input.value?.inputRef?.focus();
+}
+
 function onSelect(result: POSCustomerSearchResult) {
+  customerPanel.value = "form";
   emit("selectResult", result);
 }
 function onConclude() {
   // Uma pergunta aberta na tela não se responde fechando a tela.
-  if (props.customerDecision) return;
-  emit("resolveCustomer");
+  if (props.customerDecision || props.lookupBusy) return;
+  if (customerPanel.value === "form") emit("resolveCustomer");
   emit("update:open", false);
 }
 
 // ── Atos NOMEADOS vindos do PosCustomerSearch ───────────────────────────────
-// CPF válido sem resultado: o documento entra no campo fiscal e o resolve roda
-// JÁ (get-or-create idempotente) — o cliente novo aparece fixado no topo.
-async function onResolveCpf(cpf: string) {
+// CPF sem resultado abre cadastro para revisão. Documento só para a nota
+// permanece no fluxo fiscal separado.
+function onResolveCpf(cpf: string) {
   emit("update:customerTaxId", cpf);
-  await nextTick(); // o v-model sobe dois níveis; o resolve lê o cart já atualizado
-  emit("resolveCustomer");
+  customerPanel.value = "form";
 }
 // Telefone sem resultado: transfere para o campo do cadastro novo.
 function onTransfer(payload: { field: "phone"; value: string }) {
   emit("update:customerPhone", payload.value);
+  customerPanel.value = "form";
 }
-// CADASTRAR SÓ COM O NOME — o ato que antes acontecia por inércia de dois
-// Enters e agora tem botão, rótulo e ressalva. Um toque, como era; a diferença
-// é que o operador leu o que ia acontecer.
-async function onCreateNameOnly(name: string) {
+// Nome sem resultado abre o formulário; cadastrar exige o botão próprio.
+function onCreateNameOnly(name: string) {
   emit("update:customerName", name);
-  await nextTick(); // o v-model sobe dois níveis; o resolve lê o cart atualizado
-  emit("resolveCustomer");
+  customerPanel.value = "form";
 }
 
 // Foco garantido na BUSCA ao abrir: sem isto o foco inicial do diálogo caía no
 // primeiro focável — "Remover cliente", o pior lugar para um Enter distraído.
 const searchRef = ref<{ focus: () => void; reset: () => void } | null>(null);
+const nameInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
+const phoneInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
+const emailInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
+const taxIdInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
 function onOpenAutoFocus(event: Event) {
   event.preventDefault();
-  void nextTick(() => searchRef.value?.focus());
+  void nextTick(() => {
+    if (isReceiptDecision.value) receiptTitleRef.value?.$el?.focus();
+    else if (customerPanel.value === "search") searchRef.value?.focus();
+    else nameInputRef.value?.inputRef?.focus();
+  });
 }
 
 // Confirmação visual do cadastro criado agora: "Cliente novo · CPF ···789-00".
@@ -266,17 +380,11 @@ const newCustomerNote = computed(() => {
 
 <template>
   <UiDialog :open="open" @update:open="$emit('update:open', Boolean($event))">
-    <!-- MESMA CAIXA dos irmãos (Recebimento, Desconto): `max-h-[85vh]
-         overflow-y-auto sm:max-w-lg`, cabeçalho padrão, altura pelo conteúdo.
-         Era um painel fixo de 90vh × 60rem — sempre com a altura inteira da tela
-         mesmo com três campos dentro, e um conteúdo de 42rem centrado num painel
-         de 60rem, gerando faixas vazias dos dois lados. Três perguntas feitas na
-         mesma sequência do balcão não podem chegar em três formatos diferentes:
-         o operador reaprende a tela a cada uma. -->
-    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" @open-auto-focus="onOpenAutoFocus">
+    <!-- A decisão do documento usa largura compacta; o cadastro mantém seu formulário. -->
+    <UiDialogContent class="max-h-[85vh] overflow-y-auto" :class="isReceiptDecision ? 'w-[calc(100%-2rem)] max-w-[360px] sm:max-w-[360px]' : 'sm:max-w-lg'" @open-auto-focus="onOpenAutoFocus" @keydown.capture="onReceiptKey">
       <UiDialogHeader>
-        <UiDialogTitle>Cliente</UiDialogTitle>
-        <UiDialogDescription>
+        <UiDialogTitle ref="receiptTitleRef" :tabindex="isReceiptDecision ? -1 : undefined" :class="isReceiptDecision ? 'pr-4 text-left' : undefined">{{ isReceiptDecision ? receiptTitle : "Cliente" }}</UiDialogTitle>
+        <UiDialogDescription v-if="!isReceiptDecision">
           Busque por nome, telefone, CPF ou e-mail — selecione um cadastro ou crie um novo.
         </UiDialogDescription>
       </UiDialogHeader>
@@ -284,12 +392,12 @@ const newCustomerNote = computed(() => {
       <div>
         <div class="grid gap-5">
           <!-- 1 · associated customer (Odoo's pinned-and-highlighted) + Remover -->
-          <div v-if="hasCustomer" class="grid gap-3 rounded-md border border-primary bg-primary/5 p-4">
+          <div v-if="hasCustomer && !isReceiptDecision" class="grid gap-3 rounded-md border border-primary bg-primary/5 p-4">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
                 <p class="flex items-center gap-1.5 text-base font-semibold">
                   <Icon name="lucide:user-check" class="size-4 shrink-0 text-primary" />
-                  <span class="truncate">{{ customerName || customerLookup?.name || "Cliente" }}</span>
+                  <span class="truncate">{{ customerName || customerLookup?.name || customerLookup?.email || customerLookup?.tax_id || "Cliente" }}</span>
                   <span
                     v-if="newCustomerNote"
                     class="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
@@ -385,8 +493,41 @@ const newCustomerNote = computed(() => {
 
                Âmbar porque é ATENÇÃO, não destruição — a paleta do operador é
                neutra e cor aqui só existe por função. -->
+          <div v-if="isReceiptDecision && decisionCopy" ref="receiptPanelRef" class="grid gap-4" data-receipt-choice aria-live="polite">
+            <template v-if="!confirmingAttend">
+              <div v-if="customerDecision?.receiptTaxIdOverwrite" class="grid gap-1 text-sm">
+                <p>Atual: {{ formatReceiptValue('tax_id', customerDecision.receiptTaxIdOverwrite.from) }}</p>
+                <p>Novo: {{ formatReceiptValue('tax_id', customerDecision.receiptTaxIdOverwrite.to) }}</p>
+              </div>
+              <div class="grid gap-3">
+                <div v-for="field in receiptFields" :key="field.field" class="grid gap-1">
+                  <p class="text-xs text-muted-foreground">{{ field.field === 'tax_id' ? 'CPF na nota' : 'Enviar por e-mail' }}</p>
+                  <p class="text-sm break-all">{{ formatReceiptValue(field.field, field.value) }}</p>
+                  <p v-if="receiptOwners.length > 1 && field.owner.ref" class="text-sm font-medium">{{ field.owner.name }}{{ field.active === false ? ' (inativo)' : '' }}</p>
+                </div>
+                <div v-if="receiptOwners.length === 1">
+                  <p class="text-xs text-muted-foreground">Cadastro encontrado</p>
+                  <p class="text-sm font-medium">{{ receiptOwners[0]!.owner.name }}{{ receiptOwners[0]!.active === false ? ' (inativo)' : '' }}</p>
+                </div>
+                <p v-if="customerDecision?.current" class="text-xs text-muted-foreground">Cliente do pedido: {{ customerDecision.current.name }}</p>
+              </div>
+              <div class="grid gap-2">
+                <UiButton v-for="(action, index) in receiptActions" :key="action.ref" type="button" variant="secondary" class="min-h-12 h-auto justify-between whitespace-normal py-3 text-left" :disabled="lookupBusy" :aria-keyshortcuts="String(index + 1)" @click="activateReceiptAction(index)">
+                  {{ action.label }} <kbd aria-hidden="true" class="text-xs opacity-70">{{ index + 1 }}</kbd>
+                </UiButton>
+              </div>
+            </template>
+            <template v-else>
+              <p class="text-xs text-muted-foreground">{{ selectedReceiptOwner === '__create__' ? 'Os dados serão salvos em um novo cadastro.' : selectedReceiptOwner.startsWith('__save') ? 'Os dados do cadastro serão alterados.' : receiptNewFieldsLabel ? `Salvar ${receiptNewFieldsLabel} no cadastro escolhido. Preços e benefícios serão revisados.` : 'Preços e benefícios serão revisados.' }}</p>
+              <div class="grid gap-2">
+                <UiButton type="button" variant="secondary" class="min-h-12" :disabled="lookupBusy" @click="$emit('decisionConfirm', selectedReceiptOwner)">Confirmar cliente</UiButton>
+                <UiButton type="button" variant="secondary" class="min-h-12" :disabled="lookupBusy" @click="confirmingAttend = false">Voltar</UiButton>
+              </div>
+            </template>
+            <p class="text-xs text-muted-foreground">{{ confirmingAttend ? '' : '1–' + receiptActions.length + ' escolher · ' }}Tab / ↑ ↓ navegar<br>Enter acionar · Esc voltar</p>
+          </div>
           <div
-            v-if="customerDecision && decisionCopy"
+            v-if="customerDecision && decisionCopy && !isReceiptDecision"
             class="grid gap-3 rounded-md border border-warning/60 bg-warning/10 p-4"
             role="alertdialog"
             aria-live="assertive"
@@ -541,15 +682,28 @@ const newCustomerNote = computed(() => {
               :class="decisionCopy.confirmLabel ? 'sm:grid-cols-2' : ''"
             >
               <UiButton
+                v-if="isReceiptDecision"
+                ref="receiptActionRef"
+                type="button"
+                :disabled="lookupBusy"
+                class="h-11 justify-center gap-2"
+                @click="cancelDecision"
+              >
+                <Icon :name="decisionCopy.cancelIcon" class="size-4 shrink-0" />
+                <span class="min-w-0 truncate">{{ decisionCopy.cancelLabel }}</span>
+              </UiButton>
+              <UiButton
                 v-if="decisionCopy.confirmLabel"
                 type="button"
+                :disabled="lookupBusy"
+                :variant="isReceiptDecision ? 'outline' : 'default'"
                 class="h-11 justify-center gap-2"
                 @click="askConfirm()"
               >
                 <Icon :name="decisionCopy.confirmIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.confirmLabel }}</span>
               </UiButton>
-              <UiButton type="button" variant="outline" class="h-11 justify-center gap-2" @click="$emit('decisionCancel')">
+              <UiButton v-if="!isReceiptDecision" type="button" variant="outline" class="h-11 justify-center gap-2" @click="cancelDecision">
                 <Icon :name="decisionCopy.cancelIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.cancelLabel }}</span>
               </UiButton>
@@ -576,7 +730,16 @@ const newCustomerNote = computed(() => {
 
           <!-- 2 · the picker: prominent search + rich results list.
                Enter decide (seleciona / cria por CPF / transfere / cadastra). -->
+          <div v-if="!isReceiptDecision" class="grid grid-cols-2 gap-2" aria-label="Escolher como identificar cliente">
+            <UiButton type="button" :variant="customerPanel === 'search' ? 'default' : 'outline'" @click="customerPanel = 'search'">
+              Buscar existente
+            </UiButton>
+            <UiButton type="button" :variant="customerPanel === 'form' ? 'default' : 'outline'" @click="openNewCustomer">
+              Cadastrar novo
+            </UiButton>
+          </div>
           <PosCustomerSearch
+            v-if="customerPanel === 'search' && !isReceiptDecision"
             ref="searchRef"
             :results="searchResults"
             :busy="searchBusy"
@@ -591,26 +754,26 @@ const newCustomerNote = computed(() => {
           />
 
           <!-- 3 · create / edit form -->
-          <div class="grid gap-3">
+          <div v-if="customerPanel === 'form' && !isReceiptDecision" class="grid gap-3">
             <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {{ hasCustomer ? "Editar cadastro" : "Novo cadastro" }}
+              {{ customerLookup?.ref ? "Editar cadastro" : "Novo cadastro" }}
             </p>
             <div class="grid gap-3 sm:grid-cols-2">
               <label class="grid gap-1.5 text-sm">
                 <span class="font-medium text-muted-foreground">Nome</span>
-                <UiInput :model-value="customerName" placeholder="Nome no balcão" @update:model-value="$emit('update:customerName', String($event || ''))" />
+                <UiInput ref="nameInputRef" :model-value="customerName" placeholder="Nome no balcão" @update:model-value="$emit('update:customerName', String($event || ''))" />
               </label>
               <label class="grid gap-1.5 text-sm">
                 <span class="font-medium text-muted-foreground">WhatsApp</span>
-                <UiInput :model-value="customerPhone" inputmode="tel" placeholder="(43) 99999-0000" @update:model-value="$emit('update:customerPhone', String($event || ''))" />
+                <UiInput ref="phoneInputRef" :model-value="customerPhone" inputmode="tel" placeholder="(43) 99999-0000" @update:model-value="$emit('update:customerPhone', String($event || ''))" />
               </label>
               <label class="grid gap-1.5 text-sm">
                 <span class="font-medium text-muted-foreground">CPF/CNPJ</span>
-                <UiInput :model-value="customerTaxId" inputmode="numeric" placeholder="Para fiscal" @update:model-value="$emit('update:customerTaxId', String($event || ''))" />
+                <UiInput ref="taxIdInputRef" :model-value="customerTaxId" inputmode="numeric" placeholder="Documento do cadastro" @update:model-value="$emit('update:customerTaxId', String($event || ''))" />
               </label>
               <label class="grid gap-1.5 text-sm">
                 <span class="font-medium text-muted-foreground">E-mail</span>
-                <UiInput :model-value="customerEmail" type="email" placeholder="cliente@email.com" @update:model-value="$emit('update:customerEmail', String($event || ''))" />
+                <UiInput ref="emailInputRef" :model-value="customerEmail" type="email" placeholder="cliente@email.com" @update:model-value="$emit('update:customerEmail', String($event || ''))" />
               </label>
             </div>
           </div>
@@ -620,7 +783,7 @@ const newCustomerNote = computed(() => {
                não é decisão da REGRA no servidor, nunca de quem está no caixa. O
                pedido do consumidor é o CPF, e ele mora no campo de identidade
                acima — um número, uma intenção. -->
-          <div v-if="showFiscal" class="grid gap-3 border-t pt-4">
+          <div v-if="showFiscal && !isReceiptDecision" class="grid gap-3 border-t pt-4">
             <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Comprovante</p>
             <!-- MULTI: imprimir E enviar não competem. "Sem comprovante" é
                  nenhum canal marcado, não um terceiro botão. -->
@@ -644,19 +807,7 @@ const newCustomerNote = computed(() => {
                  campo passa a ser o `aria-label`. -->
             <div v-if="receiptChannels.includes('email')" class="grid gap-1.5 text-sm">
               <span class="font-medium text-muted-foreground">E-mail do comprovante</span>
-              <!-- A MESMA pergunta da coluna, no campo GÊMEO. `top` porque logo
-                   abaixo está o "Concluir": o balão não pode tapar o botão que
-                   encerra o modal. -->
-              <PosReceiptSaveOffer
-                v-if="receiptEmailOffer"
-                :offer="receiptEmailOffer"
-                :checked="saveReceiptContact"
-                side="top"
-                @update:checked="$emit('update:saveReceiptContact', $event)"
-              >
-                <UiInput :model-value="receiptEmail" type="email" aria-label="E-mail do comprovante" :placeholder="customerEmail || 'cliente@email.com'" @update:model-value="$emit('update:receiptEmail', String($event || ''))" />
-              </PosReceiptSaveOffer>
-              <UiInput v-else :model-value="receiptEmail" type="email" aria-label="E-mail do comprovante" :placeholder="customerEmail || 'cliente@email.com'" @update:model-value="$emit('update:receiptEmail', String($event || ''))" />
+              <UiInput :model-value="receiptEmail" type="email" aria-label="E-mail do comprovante" :placeholder="customerEmail || 'cliente@email.com'" @update:model-value="$emit('update:receiptEmail', String($event || ''))" />
               <span v-if="!receiptEmail.trim() && customerEmail.trim()" class="text-xs text-muted-foreground">
                 Sem preencher, enviamos para o e-mail do cliente: <span class="font-medium text-foreground">{{ customerEmail }}</span>
               </span>
@@ -665,9 +816,9 @@ const newCustomerNote = computed(() => {
         </div>
       </div>
 
-      <UiDialogFooter>
-        <UiButton class="h-14 w-full" :disabled="Boolean(customerDecision)" @click="onConclude">
-          Concluir
+      <UiDialogFooter v-if="!isReceiptDecision">
+        <UiButton class="h-14 w-full" :disabled="Boolean(customerDecision) || lookupBusy" @click="onConclude">
+          {{ customerPanel === "form" ? (customerLookup?.ref ? "Salvar cadastro" : "Cadastrar cliente") : "Concluir" }}
         </UiButton>
       </UiDialogFooter>
     </UiDialogContent>

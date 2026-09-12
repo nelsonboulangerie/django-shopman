@@ -227,7 +227,8 @@ MANYCHAT_SUBSCRIBER_RESOLVER=shopman.guestman.contrib.manychat.resolver.Manychat
 MANYCHAT_WHATSAPP_ID_FIELD_ID=<id do campo espelho WhatsApp ID no ManyChat>
 DOORMAN_ACCESS_LINK_API_KEY=<mesmo segredo core acima>
 SHOPMAN_CONCIERGE_ENABLED=false            # concierge de WhatsApp; ligar só com o flow do ManyChat montado
-# CONCIERGE_API_KEY=<opcional; sem ela o webhook usa DOORMAN_ACCESS_LINK_API_KEY>
+CONCIERGE_MANYCHAT_WHATSAPP_ACTIVE=false   # gate independente desta connection
+CONCIERGE_API_KEY=<segredo exclusivo do ingresso do Concierge>
 ```
 
 Nao confunda:
@@ -236,6 +237,7 @@ Nao confunda:
 - `MANYCHAT_WEBHOOK_SECRET`: valida chamadas ManyChat -> Shopman.
 - `MANYCHAT_WHATSAPP_ID_FIELD_ID`: permite resolver subscriber por `WhatsApp ID`, sem depender do campo sistêmico `phone`.
 - `DOORMAN_ACCESS_LINK_API_KEY`: autentica criacao server-to-server de access links.
+- `CONCIERGE_API_KEY`: autentica somente o ingresso da Concierge; não reutilizar a chave de AccessLink.
 
 ## 8. Ativar gateways reais
 

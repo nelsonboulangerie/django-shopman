@@ -34,9 +34,15 @@ from .campaign import (
 )
 from .catalog_sync import CatalogSyncState, SyncStatus
 from .channel import Channel
-from .concierge import Conversation, ConversationMessage
+from .concierge import (
+    Conversation,
+    ConversationBinding,
+    ConversationMessage,
+    OutboundAttempt,
+)
 from .contact_release import ContactRelease, ReleasedContactKind
 from .delivery import DeliveryDistanceBand, DeliveryZone
+from .faq import FAQEntry
 from .omotenashi_copy import OmotenashiCopy
 from .promotion import Coupon, Promotion
 from .quality import QualityDefect, QualityGrade
@@ -70,7 +76,9 @@ __all__ = [
     "AttributeType",
     "ProductAffinity",
     "Conversation",
+    "ConversationBinding",
     "ConversationMessage",
+    "OutboundAttempt",
     "ContactRelease",
     "ReleasedContactKind",
     "Channel",
@@ -78,6 +86,7 @@ __all__ = [
     "Coupon",
     "DeliveryZone",
     "DeliveryDistanceBand",
+    "FAQEntry",
     "CatalogSyncState",
     "SyncStatus",
     "NotificationTemplate",

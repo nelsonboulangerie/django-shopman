@@ -43,7 +43,7 @@ interface TicketPrintResponse {
   reprint_count?: number;
 }
 
-export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>) {
+export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>, options: { loadBatch?: boolean } = {}) {
   const apiPath = usePosApiPath();
   const agent = useCounterAgent(pos);
 
@@ -56,7 +56,7 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>) {
 
   const { data, pending, error, refresh } = useFetch<TicketBatchResponse>(
     () => apiPath("/api/v1/backstage/orders/tickets/"),
-    { query, credentials: "include", key: "pos-order-tickets" },
+    { query, credentials: "include", key: options.loadBatch === false ? "pos-order-ticket-single" : "pos-order-tickets", immediate: options.loadBatch !== false, watch: options.loadBatch === false ? false : undefined },
   );
 
   const rows = computed<TicketRow[]>(() => data.value?.orders ?? []);
@@ -110,7 +110,7 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>) {
         `${job.count ?? count.value} filipetas na bobina.`
         + (reimpressas ? ` ${reimpressas} saíram marcadas como 2ª via.` : ""),
       );
-      await refresh();
+      if (options.loadBatch !== false) await refresh();
       return true;
     } catch (error) {
       toast.error(httpErrorMessage(error, "Falha ao compor as filipetas no servidor."));
@@ -138,7 +138,7 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>) {
         return false;
       }
       toast.success(`Filipeta de ${ref} na bobina.`);
-      await refresh();
+      if (options.loadBatch !== false) await refresh();
       return true;
     } catch (error) {
       toast.error(httpErrorMessage(error, "Falha ao compor a filipeta no servidor."));

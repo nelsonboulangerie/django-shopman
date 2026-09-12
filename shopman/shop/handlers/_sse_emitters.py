@@ -373,8 +373,7 @@ def _on_production_changed(sender, product_ref, date, action, work_order, **kwar
 
 
 def _on_operator_alert_saved(sender, instance, created, **kwargs):
-    if not created:
-        return
+    # Resolver/escalar também muda a fila: as outras telas precisam refazê-la.
     _emit_backstage(
         "alerts",
         "backstage-alerts-update",

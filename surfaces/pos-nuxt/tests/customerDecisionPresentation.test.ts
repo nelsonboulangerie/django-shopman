@@ -544,3 +544,20 @@ describe("liberar contato pede a SEGUNDA palavra, e ela promete o rastro", () =>
     expect(copy.release?.prompt).toContain("dá para refazer o cadastro depois");
   });
 });
+
+describe("new customer with an existing contact", () => {
+  it("names the owner and requires selection without offering a merge", () => {
+    const decision = conflictDecision({
+      field: "customer_phone",
+      typed: "43999990022",
+      candidates: [candidate({ ref: "CUST-B", name: "Bruno Souza", is_current: false })],
+    });
+    expect(decision?.kind).toBe("existing_customer");
+    const copy = customerDecisionCopy(decision!);
+    expect(copy.body).toContain("Bruno Souza");
+    expect(copy.body).toContain("Nenhum cadastro foi alterado");
+    expect(copy.requiresConfirmation).toBe(true);
+    expect(copy.cancelLabel).toBe("Corrigir WhatsApp");
+    expect(copy.merge).toBeNull();
+  });
+});

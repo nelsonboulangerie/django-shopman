@@ -8,7 +8,7 @@ import {
   resolveSectionRefFromParam,
   uniqueItemsBySku
 } from '~/presentation/menu'
-import { collectionJsonLd } from '~/presentation/seo'
+import { collectionJsonLd, jsonLdText } from '~/presentation/seo'
 import type { MenuResponse } from '~/types/shopman'
 
 const apiPath = useShopmanApiPath()
@@ -308,7 +308,7 @@ useHead({
   script: () => catalog.value && uniqueItems.value.length
     ? [{
         type: 'application/ld+json',
-        innerHTML: JSON.stringify(collectionJsonLd({
+        innerHTML: jsonLdText(collectionJsonLd({
           name: 'Cardápio',
           url: menuCanonical.value,
           origin: requestUrl.origin,

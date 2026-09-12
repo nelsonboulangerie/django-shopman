@@ -84,6 +84,29 @@ terminou `ACTIVE`; health, readiness e rotas públicas responderam 200. O spec
 pós-deploy corresponde byte a byte à candidata validada. O deployment anterior
 `20f67ba8-7134-4126-b3ba-099d898566d7` permanece identificado para recuo.
 
+### Publicação W00–W10 do Storefront
+
+A promoção autorizada do PR #612 entrou em `main` como
+`cc135f47c5bcabe62ff43eab1e9bb819f191f92c`. O workflow por imagens publicou
+`web`, `storefront`, `production` e `purchase`; o deployment final
+`0f6dda3d-6bef-43c3-a458-945d9fc1d52f` terminou `ACTIVE` em 11/09/2026 às
+21:39:47Z, com 47/47 etapas e todos os serviços, workers e o job `release` em
+`SUCCESS`. O release aplicou `backstage.0062`, `craftsman.0011`,
+`orderman.0005`–`0006` e `storefront.0004`–`0007` com `OK`.
+
+O smoke correlacionado por digest passou readiness, cardápio, checkout e SSR.
+Como âncoras de recuo, as imagens anteriores continuam disponíveis nas tags
+imutáveis `web-1de5f3496a2b4fe4f3c8f1862f316301cc70540e`,
+`storefront-587392a49280fadf6740ede27a8dfe67a5c34676`,
+`production-c14cdb64781b82a7ed70453a8fc75aaf9e426465` e
+`purchase-587392a49280fadf6740ede27a8dfe67a5c34676`.
+
+Os merges posteriores #611 e #615 preservaram esta implementação. O deployment
+`239c5fd5-846f-4983-be70-9fb660654c73` publicou `web` no descendente
+`29e0737e99a806975df8810b5b03393af83e9f02`, reutilizou a imagem Storefront e
+terminou `ACTIVE` com 47/47 etapas; o smoke correlacionado passou. O merge
+documental #617 não publicou imagem nem iniciou novo deployment.
+
 ## Dominio da loja
 
 Configurar a loja em seu dominio definitivo:

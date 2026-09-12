@@ -1064,19 +1064,23 @@ SHOPMAN_CONSENT_IP_RETENTION_DAYS = min(
     max(1, _env_int("SHOPMAN_CONSENT_IP_RETENTION_DAYS", 90)),
 )
 
-# ── Concierge de WhatsApp (venda conversacional) ─────────────────────
+# ── Concierge multicanal (venda conversacional) ──────────────────────
 #
 # O atendente que vende pelo chat. A LÍNGUA é do modelo; o DINHEIRO é do código:
 # preço, disponibilidade, sacola, prazo e pagamento saem das ferramentas
 # (services do Shopman), nunca do texto gerado. Desligado por padrão: ligar é
-# `SHOPMAN_CONCIERGE_ENABLED=true` + credencial da Anthropic (`AI_ASSIST_API_KEY`)
-# + chave S2S que o ManyChat apresenta (`CONCIERGE_API_KEY`, ou a mesma do access
-# link). Sem chave S2S fora de DEBUG o endpoint falha FECHADO.
+# `SHOPMAN_CONCIERGE_ENABLED=true` + credencial da Anthropic (`AI_ASSIST_API_KEY`).
+# Cada connection declara adapter, conta, canal e autenticação próprios e permanece
+# inativa até seu gate explícito. Nenhuma credencial liga outro provider por efeito
+# colateral.
 SHOPMAN_CONCIERGE = {
+    # Contrato do núcleo. Transportes existem somente no registry explícito abaixo.
+    "contract_version": int(os.environ.get("CONCIERGE_CONTRACT_VERSION", "0")),
+    "read_only": _env_bool("CONCIERGE_READ_ONLY", False),
+    "human_return_enabled": _env_bool("CONCIERGE_HUMAN_RETURN_ENABLED", False),
+    "output_retry_enabled": _env_bool("CONCIERGE_OUTPUT_RETRY_ENABLED", False),
+    "transfer_enabled": _env_bool("CONCIERGE_TRANSFER_ENABLED", False),
     "enabled": _env_bool("SHOPMAN_CONCIERGE_ENABLED", False),
-    # Chave que o External Request do ManyChat apresenta (X-Api-Key). Default: a
-    # mesma do access link, que já é a chave "ManyChat → casa".
-    "api_key": os.environ.get("CONCIERGE_API_KEY", "") or os.environ.get("DOORMAN_ACCESS_LINK_API_KEY", ""),
     # Modelo do concierge. Sonnet 5 por padrão: latência de chat e custo de
     # centavos por conversa. `claude-opus-5` é troca de env, sem deploy de código.
     "model": os.environ.get("CONCIERGE_MODEL", "claude-sonnet-5"),
@@ -1093,9 +1097,6 @@ SHOPMAN_CONCIERGE = {
     "max_turns_per_day": int(os.environ.get("CONCIERGE_MAX_TURNS_PER_DAY", "80")),
     # Máximo de idas ao modelo num turno (cada ida pode chamar ferramentas).
     "max_iterations": int(os.environ.get("CONCIERGE_MAX_ITERATIONS", "6")),
-    # Campo personalizado do ManyChat que o flow consulta ANTES de chamar a casa:
-    # "1" = conversa com a equipe, o bot não responde.
-    "handoff_field": os.environ.get("CONCIERGE_HANDOFF_FIELD", "concierge_handoff"),
     # Segundos entre a chegada da mensagem e o processamento: o webhook responde
     # em milissegundos e a diretiva fica para o worker (nunca inline no request).
     "dispatch_delay_seconds": int(os.environ.get("CONCIERGE_DISPATCH_DELAY_SECONDS", "1")),
@@ -1106,13 +1107,52 @@ SHOPMAN_CONCIERGE = {
     # popularidade) e os pareamentos configuráveis de `suggestion.complement`.
     # Continua UMA por conversa — o `suggestion_offered` em `Conversation.flags`.
     "suggest_add_ons": _env_bool("CONCIERGE_SUGGEST_ADD_ONS", True),
-    # Piloto fechado: só estes assinantes (ids do ManyChat) ou telefones (E.164, com
-    # "+") recebem o concierge; todo o resto volta `not_allowed` sem tocar em nada.
-    # Vazio = aberto a todos. É a segunda tranca, além da tag no flow do ManyChat:
-    # um gatilho errado lá não vira cliente "testando" sem querer aqui.
-    "allowed_subscribers": [
-        v.strip() for v in os.environ.get("CONCIERGE_ALLOWED_SUBSCRIBERS", "").split(",") if v.strip()
-    ],
+    # Primeira connection real. Novos providers/canais entram como irmãos com o
+    # mesmo contrato; nenhuma view ou service recebe defaults de transporte.
+    "connections": {
+        "manychat-whatsapp-primary": {
+            "active": _env_bool("CONCIERGE_MANYCHAT_WHATSAPP_ACTIVE", False),
+            "provider": "manychat",
+            "account": os.environ.get("CONCIERGE_ACCOUNT_ID", ""),
+            "channel": "whatsapp",
+            "adapter_path": "shopman.storefront.concierge.transport.ManyChatWhatsAppAdapter",
+            "options": {
+                "authentication": {
+                    "scheme": "api_key",
+                    "keys": [
+                        value
+                        for value in (
+                            os.environ.get("CONCIERGE_API_KEY", ""),
+                            os.environ.get("CONCIERGE_API_KEY_PREVIOUS", ""),
+                        )
+                        if value
+                    ],
+                },
+                "allowed_subjects": [
+                    value.strip()
+                    for value in os.environ.get("CONCIERGE_ALLOWED_SUBSCRIBERS", "").split(",")
+                    if value.strip()
+                ],
+                "identity_link_enabled": _env_bool("CONCIERGE_IDENTITY_LINK_ENABLED", False),
+                "stable_event_identity_verified": _env_bool(
+                    "CONCIERGE_MANYCHAT_EVENT_ID_VERIFIED", False
+                ),
+                "delivery_receipts": False,
+                "handoff_field": os.environ.get("CONCIERGE_HANDOFF_FIELD", "concierge_handoff"),
+                "pilot_prefixes": ["#concierge", "#c"],
+                "pilot_entry_text": "oi",
+                "response_window": {
+                    "policy": "manychat-whatsapp-customer-care-24h-v1",
+                    "source": "manychat_whatsapp_last_interaction",
+                    "field": "provider_timestamp",
+                    "timezone": os.environ.get("CONCIERGE_WHATSAPP_INTERACTION_TIMEZONE", ""),
+                    "authentication": "api_key",
+                    "duration_seconds": 24 * 60 * 60,
+                    "purposes": ["reply", "handoff_ack"],
+                },
+            },
+        },
+    },
 }
 
 # ── Craftsman (micro-MRP integration) ──────────────────────────────

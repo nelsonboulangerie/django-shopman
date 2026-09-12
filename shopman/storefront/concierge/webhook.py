@@ -1,132 +1,56 @@
-"""Webhook do concierge: a mensagem do cliente entra por aqui.
-
-O flow do ManyChat faz um External Request para cá a cada mensagem de WhatsApp
-que não é tratada por outro flow (e só quando o campo de handoff está vazio).
-A view guarda a mensagem via ``service.receive_inbound`` e responde em
-milissegundos: o turno com o modelo roda na diretiva ``concierge.turn``, no
-worker. O ManyChat corta a chamada em 10 s, então NADA de trabalho aqui.
-
-Autenticação por chave S2S (``SHOPMAN_CONCIERGE["api_key"]``), em
-``Authorization: Bearer`` ou ``X-Api-Key``, como no access link. Sem chave
-configurada fora de DEBUG, a porta falha FECHADA (503).
-"""
+"""Fronteira HTTP provider-agnostic para eventos do concierge."""
 
 from __future__ import annotations
 
-import json
+import hashlib
 import logging
-import secrets
 
-from django.conf import settings
 from django.http import HttpRequest, JsonResponse
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django_ratelimit.core import is_ratelimited
 
-from shopman.storefront.concierge import service
+from shopman.storefront.concierge import service, transport
+from shopman.storefront.concierge.contracts import InboundEvent, IngressRejected
 
 logger = logging.getLogger(__name__)
 
 RATE_LIMIT_GROUP = "concierge_inbound"
-RATE_LIMIT_RATE = "120/m"
-
-#: Chaves de perfil que o flow pode mandar junto e que ajudam a identificar o
-#: cliente sem uma ida extra ao ``getInfo``.
-_PROFILE_KEYS = ("first_name", "last_name", "whatsapp_id", "whatsapp_phone")
+RATE_LIMIT_RATE = "1200/m"
+MAX_BODY_BYTES = 32768
 
 
-def _config() -> dict:
-    return getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}
-
-
-def _subscriber_id_from_payload(data: dict) -> str:
-    """O ``subscriber_id`` do ManyChat, venha ele aninhado ou no topo."""
-    subscriber = data.get("subscriber") or data.get("manychat_subscriber") or {}
-    value = (
-        (subscriber.get("id") if isinstance(subscriber, dict) else None)
-        or data.get("manychat_id")
-        or data.get("subscriber_id")
+def _limited(request: HttpRequest, *, group: str, identity: str, rate: str) -> bool:
+    digest = hashlib.sha256(identity.encode()).hexdigest()
+    return is_ratelimited(
+        request=request,
+        group=f"{RATE_LIMIT_GROUP}:{group}",
+        key=lambda _group, _request: digest,
+        rate=rate,
+        method="POST",
+        increment=True,
     )
-    return str(value).strip() if value else ""
-
-
-#: Palavra-chave do piloto fechado no ManyChat: um gatilho de Keyword ("#c" no início)
-#: chama a casa sem tocar no Default Reply dos clientes. A palavra é do gatilho, não
-#: da conversa: sai do texto antes de chegar ao modelo.
-_PILOT_PREFIXES = ("#concierge", "#c")
-
-
-def strip_pilot_prefix(text: str) -> str:
-    stripped = (text or "").strip()
-    lowered = stripped.lower()
-    for prefix in _PILOT_PREFIXES:
-        if lowered == prefix or lowered.startswith(prefix + " "):
-            return stripped[len(prefix):].strip()
-    return stripped
-
-
-def _looks_unrendered(text: str) -> bool:
-    """Variável do ManyChat digitada à mão chega literal: ``{{last_input_text}}``."""
-    return "{{" in text
-
-
-def _text_from_payload(data: dict, subscriber_id: str) -> str:
-    """O texto da mensagem: do corpo, ou do ``getInfo`` quando o corpo não trouxe.
-
-    Pedir ao ManyChat tira do flow a obrigação de saber QUAL variável carrega a
-    mensagem (nome que muda por canal e por conta). Falha da API vira texto
-    vazio, e ``receive_inbound`` responde ``empty`` sem derrubar o flow.
-    """
-    text = str(data.get("text") or data.get("message") or data.get("last_input_text") or "").strip()
-    if text and not _looks_unrendered(text):
-        return strip_pilot_prefix(text)
-    if text:
-        logger.warning("concierge.webhook: variável não renderizada no corpo: %r", text[:60])
-    from shopman.guestman.adapters.auth import CustomerResolver
-
-    try:
-        return strip_pilot_prefix(str(CustomerResolver().manychat_last_input_text(subscriber_id) or ""))
-    except Exception:
-        logger.warning("concierge.webhook: getInfo falhou subscriber=%s", subscriber_id, exc_info=True)
-        return ""
-
-
-def _profile_from_payload(data: dict) -> dict:
-    subscriber = data.get("subscriber") or data.get("manychat_subscriber") or {}
-    if not isinstance(subscriber, dict):
-        subscriber = {}
-    profile: dict = {}
-    for key in _PROFILE_KEYS:
-        value = data.get(key) if data.get(key) is not None else subscriber.get(key)
-        if isinstance(value, str) and value.strip() and not _looks_unrendered(value):
-            profile[key] = value.strip()
-    return profile
 
 
 @method_decorator(csrf_exempt, name="dispatch")
-class ConciergeInboundView(View):
-    """POST /api/webhooks/manychat/conversation/
-
-    Corpo (JSON), tudo além do assinante é opcional::
-
-        {"subscriber_id": "123", "text": "quero 2 baguetes", "message_id": "...",
-         "first_name": "Ana", "whatsapp_phone": "+5543..."}
-
-    ``subscriber_id`` também é aceito em ``subscriber.id`` ou ``manychat_id``.
-
-    Com o concierge DESLIGADO a resposta é 200 ``{"status": "disabled"}``: o
-    flow do ManyChat não pode quebrar porque a casa desligou a IA; ele segue
-    para o próximo bloco (a mensagem fica para a equipe).
-    """
+class ConciergeEventView(View):
+    """POST /api/webhooks/concierge/<connection_key>/events/."""
 
     http_method_names = ["post"]
 
-    def post(self, request: HttpRequest):
-        denied = self._authenticate(request)
-        if denied is not None:
-            return denied
-
+    def post(self, request: HttpRequest, connection_key: str):
+        connection = transport.connection_for_key(connection_key)
+        if connection is None:
+            return JsonResponse({"detail": "Connection não encontrada"}, status=404)
+        adapter = transport.adapter_for_connection(connection)
+        if adapter is None:
+            return JsonResponse({"detail": "Connection indisponível"}, status=503)
+        if request.content_type != "application/json":
+            return JsonResponse({"detail": "Content-Type precisa ser application/json"}, status=415)
+        if len(request.body) > MAX_BODY_BYTES:
+            return JsonResponse({"detail": "Corpo muito grande"}, status=413)
         if is_ratelimited(
             request=request,
             group=RATE_LIMIT_GROUP,
@@ -137,65 +61,41 @@ class ConciergeInboundView(View):
         ):
             return JsonResponse({"detail": "Muitas requisições. Tente de novo em instantes."}, status=429)
 
+        try:
+            event = adapter.authenticate_and_normalize(request, timezone.now())
+        except IngressRejected as exc:
+            body = {"detail": exc.detail, "code": exc.code}
+            if exc.field:
+                body["field"] = exc.field
+            return JsonResponse(body, status=exc.status)
+        if not isinstance(event, InboundEvent) or (
+            event.scope.connection_key,
+            event.scope.provider,
+            event.scope.account,
+            event.scope.channel,
+        ) != (connection.key, connection.provider, connection.account, connection.channel):
+            logger.error("concierge.webhook.adapter_scope_mismatch")
+            return JsonResponse({"detail": "Connection indisponível"}, status=503)
+
+        if _limited(request, group="connection", identity=event.scope.connection_key, rate="1200/m") or _limited(
+            request,
+            group="subject",
+            identity=f"{event.scope.connection_key}:{event.scope.subject}",
+            rate="60/m",
+        ):
+            return JsonResponse({"detail": "Muitas requisições. Tente de novo em instantes."}, status=429)
+
         reason = service.disabled_reason()
         if reason:
-            # O motivo sai no corpo: "disabled" sem explicação já mandou procurar a
-            # chave errada. `switch_off` = SHOPMAN_CONCIERGE_ENABLED; `ai_key_missing` =
-            # AI_ASSIST_API_KEY vazia no painel.
             if reason != "switch_off":
                 logger.error("concierge.webhook: concierge ligado mas inoperante (%s)", reason)
             return JsonResponse({"status": "disabled", "reason": reason}, status=200)
-
         try:
-            data = json.loads(request.body or b"{}")
-        except json.JSONDecodeError:
-            return JsonResponse({"detail": "JSON inválido"}, status=400)
-        if not isinstance(data, dict):
-            return JsonResponse({"detail": "Corpo precisa ser um objeto JSON"}, status=400)
-
-        subscriber_id = _subscriber_id_from_payload(data)
-        if not subscriber_id or _looks_unrendered(subscriber_id):
-            return JsonResponse({"detail": "subscriber_id obrigatório", "field": "subscriber_id"}, status=400)
-
-        try:
-            text = _text_from_payload(data, subscriber_id)
-            external_id = str(data.get("message_id") or data.get("external_id") or "").strip()
-            if _looks_unrendered(external_id):
-                external_id = ""
-            result = service.receive_inbound(
-                subscriber_id=subscriber_id,
-                text=text,
-                external_id=external_id,
-                profile=_profile_from_payload(data),
-            )
+            result = service.receive_inbound(event)
         except Exception:
-            logger.exception("concierge.webhook: falha inesperada subscriber=%s", subscriber_id)
+            logger.exception("concierge.webhook: falha inesperada")
             return JsonResponse({"detail": "Erro interno"}, status=500)
-
         return JsonResponse(
-            {
-                "status": result.reason,
-                "conversation_id": result.conversation_id,
-                "queued": bool(result.queued),
-            },
-            status=202 if result.queued else 200,
+            {"status": result.reason, "queued": bool(result.queued)},
+            status=409 if result.reason in {"intent_conflict", "scope_conflict"} else 200,
         )
-
-    @staticmethod
-    def _authenticate(request: HttpRequest) -> JsonResponse | None:
-        api_key = str(_config().get("api_key") or "")
-        if not api_key:
-            if settings.DEBUG:
-                return None
-            logger.error("concierge.webhook: CONCIERGE_API_KEY não configurada, recusando (falha fechada).")
-            return JsonResponse({"detail": "Concierge não configurado"}, status=503)
-
-        auth_header = request.META.get("HTTP_AUTHORIZATION", "")
-        provided = ""
-        if auth_header.startswith("Bearer "):
-            provided = auth_header[7:].strip()
-        elif request.META.get("HTTP_X_API_KEY"):
-            provided = str(request.META["HTTP_X_API_KEY"]).strip()
-        if not provided or not secrets.compare_digest(provided, api_key):
-            return JsonResponse({"detail": "Não autorizado"}, status=401)
-        return None

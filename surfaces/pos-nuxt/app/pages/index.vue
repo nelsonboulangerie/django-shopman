@@ -4,7 +4,7 @@ import { toast } from "vue-sonner";
 import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { rollStyle } from "~/presentation/printGeometry";
-import { isScheduled, scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
+import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
 import { enterAdvances, paymentFailed } from "~/presentation/saleResult";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
@@ -57,6 +57,11 @@ async function goToOrderTickets() {
 // Write-side of the open sale: cart draft + every session command.
 const {
   cart,
+  orderSetupPending,
+  orderSetupIssue,
+  completeOrderSetup,
+  setSalesMode,
+  itemCount,
   tabInput,
   busy,
   saving,
@@ -181,6 +186,17 @@ const {
   drawerLock,
 } = usePosSale({ pos, tabs, actions, refresh, action, apiPath, requestHeaders, ordersUrl });
 
+const confirmCounterMode = ref(false);
+function requestSalesMode(mode: "counter" | "order") {
+  if (mode === (cart.salesMode || "counter")) return;
+  if (mode === "counter") { confirmCounterMode.value = true; return; }
+  void setSalesMode(mode);
+}
+function convertToCounter() {
+  confirmCounterMode.value = false;
+  void setSalesMode("counter");
+}
+
 // Tela do cliente (segundo monitor): fontes lidas por getter; publicação e
 // transformação vivem inteiras no <PosDisplayPublisher> (renderless). O troco
 // congelado já viaja dentro do `result` (`changeQ`).
@@ -208,7 +224,7 @@ const screenTitle = computed(() => {
   // A barra do topo não pode discordar da tela: com a cobrança recusada pelo
   // gateway, "Venda concluída" ali em cima desmente o aviso vermelho logo
   // abaixo — e é a barra que fica na periferia da visão do operador.
-  if (result.value) return paymentFailed(result.value.payment) ? "Cobrança não criada" : "Venda concluída";
+  if (result.value) return paymentFailed(result.value.payment) ? "Cobrança não criada" : result.value.salesMode === "order" ? "Encomenda registrada" : "Venda concluída";
   if (checkoutMode.value) return cart.tabDisplay ? `Pagamento · #${cart.tabDisplay}` : "Pagamento";
   if (inSaleView.value) return cart.tabDisplay || "Venda";
   return "Comandas";
@@ -225,6 +241,7 @@ const recentSalesOpen = ref(false);
 const agent = useCounterAgent(pos);
 const printingReceipt = ref(false);
 const printingDanfe = ref(false);
+const { printOne: printOrderTicket, printingRef: printingOrderRef } = usePosOrderTickets(pos, { loadBatch: false });
 
 async function fetchPrintable(orderRef: string, endpoint: "receipt-escpos" | "danfe-escpos") {
   return await $fetch<{ payload_b64: string; title: string }>(
@@ -359,6 +376,10 @@ useHead({ htmlAttrs: { style: computed(() => rollStyle(pos.value)) } });
 // checkout, "/" focuses product search when not editing, "?" opens the help).
 const tabBoardRef = ref<{ focus: () => void } | null>(null);
 const productGridRef = ref<{ focusSearch: (seed?: string) => void } | null>(null);
+const orderEntryRef = ref<{ focusCurrent: () => void } | null>(null);
+function focusOrderEntry() {
+  if (orderSetupPending.value) void nextTick(() => orderEntryRef.value?.focusCurrent());
+}
 const tabHeaderRef = ref<{ openCustomer: () => void } | null>(null);
 
 // O Recebimento agora é perguntado na TELA DE VENDA (chip da barra e abertura da
@@ -370,11 +391,19 @@ const fulfillmentSheetOpen = ref(false);
 // de venda porque agendar acontece na ABERTURA do atendimento (o operador está no
 // telefone), não no fim. O checkout abre a MESMA caixa.
 const scheduleSheetOpen = ref(false);
+watch([fulfillmentSheetOpen, scheduleSheetOpen], ([fulfillment, schedule]) => {
+  if (!fulfillment && !schedule) focusOrderEntry();
+});
 
 // O chip da barra abre a caixa de quem é dono dela na tela atual: no checkout, a
 // da tela de pagamento (mesmo componente, outro estado) — assim F7 e o chip
 // nunca abrem duas caixas diferentes.
 function openFulfillmentHere() {
+  if (cart.salesMode === "counter") return;
+  if (orderSetupPending.value && orderSetupIssue.value === "customer") {
+    tabHeaderRef.value?.openCustomer();
+    return;
+  }
   if (checkoutMode.value) paymentWorkspaceRef.value?.openFulfillment();
   else fulfillmentSheetOpen.value = true;
 }
@@ -385,7 +414,7 @@ function openFulfillmentHere() {
 watch(fulfillmentSheetOpen, (open, wasOpen) => {
   if (open || !wasOpen) return;
   if (cart.fulfillmentType !== "delivery") return;
-  if (cart.customerName.trim() || cart.customerPhone.trim()) return;
+  if (cart.customerRef || cart.customerName.trim() || cart.customerPhone.trim()) return;
   void nextTick(() => tabHeaderRef.value?.openCustomer());
 });
 // AGENDADO também identifica o cliente — o servidor recusa encomenda anônima
@@ -393,8 +422,8 @@ watch(fulfillmentSheetOpen, (open, wasOpen) => {
 // não como surpresa no Validar. Mesmo desenho do irmão acima: só oferecido.
 watch(scheduleSheetOpen, (open, wasOpen) => {
   if (open || !wasOpen) return;
-  if (!isScheduled(cart.deliveryDate, scheduleToday.value)) return;
-  if (cart.customerName.trim() || cart.customerPhone.trim()) return;
+  if (!customerRequiredForSchedule.value) return;
+  if (cart.customerRef || cart.customerName.trim() || cart.customerPhone.trim()) return;
   void nextTick(() => tabHeaderRef.value?.openCustomer());
 });
 // O servidor recusou pedindo o CLIENTE (`focus: "customer"`): abre a
@@ -414,6 +443,11 @@ watch(customerFocusNonce, () => {
 // exatamente o que a barra de contexto veio desfazer (mesmo desvio de
 // `openFulfillmentHere`).
 function openScheduleHere() {
+  if (cart.salesMode === "counter") return;
+  if (orderSetupPending.value && ["customer", "fulfillment", "address"].includes(orderSetupIssue.value)) {
+    openFulfillmentHere();
+    return;
+  }
   // A grade do dia só é buscada quando alguém vai agendar de fato — a venda
   // dominante do balcão é para agora e não paga por essa pergunta.
   void refreshSchedule();
@@ -428,13 +462,15 @@ const scheduleChipLabel = computed(() => scheduleLabel(
   windowLabel(deliverySlots.value, cart.deliveryTimeSlot),
   scheduleToday.value,
 ));
-const scheduleChipActive = computed(() => isScheduled(cart.deliveryDate, scheduleToday.value));
+const scheduleChipActive = computed(() => Boolean(cart.deliveryDate || cart.deliveryTimeSlot));
 // ENCOMENDA ANÔNIMA — o servidor recusa (`customer_required_for_scheduled`), e o
 // checkout trava o Validar por isso. A barra é quem tem o botão que resolve, e
 // portanto é ela que chama: o chip pulsa. A REGRA é a mesma do bloqueio do CTA
 // porque as duas chamam a mesma função — um dono só, em `presentation/schedule`.
 const customerRequiredForSchedule = computed(() => scheduledNeedsCustomer({
   deliveryDate: cart.deliveryDate,
+  deliveryTimeSlot: cart.deliveryTimeSlot,
+  fulfillmentType: cart.fulfillmentType,
   today: scheduleToday.value,
   customerName: cart.customerName,
   customerPhone: cart.customerPhone,
@@ -453,6 +489,7 @@ const scheduleConflictReason = computed(
 // O rótulo do chip: com entrega, o BAIRRO diz mais que a palavra "entrega" — é o
 // que o operador confere de relance quando o cliente muda de ideia no meio.
 const fulfillmentChipLabel = computed(() => {
+  if (!cart.fulfillmentConfirmed) return "Entrega ou retirada?";
   const base = pos.value?.fulfillment_options.find((o) => o.ref === cart.fulfillmentType)?.label
     || (cart.fulfillmentType === "delivery" ? "Entrega" : "Retirada");
   if (cart.fulfillmentType !== "delivery") return base;
@@ -767,6 +804,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           v-model:customer-email="cart.customerEmail"
           class="min-w-0 flex-1"
           :tab-display="cart.tabDisplay"
+          :sales-mode="cart.salesMode"
           :has-open-tab="hasOpenTab"
           :can-rename="canRenameTab"
           :customer-lookup="customerLookup"
@@ -786,6 +824,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           :schedule-conflict="scheduleChipConflict"
           :schedule-conflict-reason="scheduleConflictReason"
           :loading="busy"
+          @sales-mode-change="requestSalesMode"
+          @customer-closed="focusOrderEntry"
           @rename="renameTab"
           @clear="clearCurrentTab"
           @clear-customer="clearCustomer"
@@ -843,6 +883,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       <!-- TELA DE RESULTADO — substitui o banner de antes: tela cheia no fluxo
            de venda, com o troco congelado como herói e "Nova venda" dominante. -->
       <div v-if="result" class="h-full md:overflow-y-auto">
+        <div v-if="result.salesMode === 'order'" class="mx-auto mb-4 flex max-w-3xl flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4">
+          <div><h2 class="font-semibold">Filipeta do pedido</h2><p class="text-sm text-muted-foreground">Imprima a filipeta para acompanhar o preparo e o recebimento, inclusive com pagamento pendente.</p></div>
+          <UiButton :disabled="Boolean(printingOrderRef)" @click="printOrderTicket(result.orderRef)"><Icon name="lucide:printer" class="mr-2 size-4" />{{ printingOrderRef ? 'Imprimindo…' : 'Imprimir filipeta' }}</UiButton>
+        </div>
         <PosSaleResult
           :result="result"
           :pix-status="pixStatus"
@@ -862,6 +906,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       <div v-else-if="checkoutMode" class="h-full md:overflow-y-auto">
       <PosPaymentWorkspace
         ref="paymentWorkspaceRef"
+        :sales-mode="cart.salesMode"
         v-model:discount-type="cart.discountType"
         v-model:discount-value="cart.discountValue"
         v-model:discount-reason="cart.discountReason"
@@ -869,6 +914,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         v-model:manager-pin="cart.managerPin"
         :manager-approval-error="managerApprovalError"
         v-model:fulfillment-type="cart.fulfillmentType"
+        v-model:fulfillment-confirmed="cart.fulfillmentConfirmed"
         v-model:payment-collection="cart.paymentCollection"
         v-model:customer-name="cart.customerName"
         v-model:customer-phone="cart.customerPhone"
@@ -1005,6 +1051,20 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
 
         <!-- SALE VIEW · product grid (the ticket/comanda is a full-height sibling
              of the work column, so it reaches the top edge like the rail) -->
+        <PosOrderEntry
+          ref="orderEntryRef"
+          v-else-if="inSaleView && orderSetupPending"
+          :issue="orderSetupIssue"
+          :item-count="itemCount"
+          :customer-name="cart.customerName"
+          :fulfillment-label="fulfillmentChipLabel"
+          :schedule-label="scheduleChipLabel"
+          :loading="busy"
+          @customer="tabHeaderRef?.openCustomer()"
+          @fulfillment="openFulfillmentHere"
+          @schedule="openScheduleHere"
+          @complete="completeOrderSetup"
+        />
         <PosProductGrid
           v-else
           ref="productGridRef"
@@ -1023,7 +1083,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
     <!-- TICKET / COMANDA — full-height right flank (cart-direita, reaches the top
          edge alongside the rail; on mobile it wraps below the product grid). -->
     <aside
-      v-if="pos && inSaleView && !checkoutMode"
+      v-if="pos && inSaleView && !checkoutMode && !orderSetupPending"
       class="flex w-full shrink-0 flex-col border-t border-border bg-card md:order-none md:h-full md:w-[360px] md:border-l md:border-t-0"
     >
         <div class="min-h-0 flex-1 md:overflow-hidden">
@@ -1062,6 +1122,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
     <PosFulfillmentModal
       v-model:open="fulfillmentSheetOpen"
       v-model:fulfillment-type="cart.fulfillmentType"
+      v-model:fulfillment-confirmed="cart.fulfillmentConfirmed"
       v-model:delivery-address="cart.deliveryAddress"
       v-model:delivery-address-structured="cart.deliveryAddressStructured"
       v-model:delivery-street-number="cart.deliveryStreetNumber"
@@ -1085,10 +1146,12 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
     <!-- QUANDO — data e janela, para retirada E entrega. Extraído do formulário
          de entrega, onde a retirada agendada era literalmente impossível. -->
     <PosScheduleModal
+      :sales-mode="cart.salesMode"
       v-model:open="scheduleSheetOpen"
       v-model:delivery-date="cart.deliveryDate"
       v-model:delivery-time-slot="cart.deliveryTimeSlot"
       :today="scheduleToday"
+      :fulfillment-type="cart.fulfillmentConfirmed ? cart.fulfillmentType : undefined"
       :delivery-date-effective="deliveryDateEffective"
       :available-dates="scheduleAvailableDates"
       :windows="deliverySlots"
@@ -1098,6 +1161,19 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       :failed="scheduleFailed"
       :max-date="scheduleMaxDate"
     />
+
+    <UiDialog v-model:open="confirmCounterMode">
+      <UiDialogContent class="sm:max-w-md">
+        <UiDialogHeader>
+          <UiDialogTitle>Converter para atendimento de balcão?</UiDialogTitle>
+          <UiDialogDescription>A entrega, o agendamento e a cobrança na entrega serão removidos. Os itens e o cliente continuam neste atendimento.</UiDialogDescription>
+        </UiDialogHeader>
+        <UiDialogFooter class="gap-2">
+          <UiButton variant="outline" @click="confirmCounterMode = false">Continuar encomenda</UiButton>
+          <UiButton :disabled="busy" @click="convertToCounter">Converter para balcão</UiButton>
+        </UiDialogFooter>
+      </UiDialogContent>
+    </UiDialog>
 
     <PosTabPickerDialog
       v-model:open="tabDialogOpen"

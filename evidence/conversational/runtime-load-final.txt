@@ -1,0 +1,228 @@
+DEBUG 2026-09-11 18:20:16,659 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 18:20:16,659 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 18:20:16,660 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 18:20:16,660 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 18:20:16,679 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 18:20:16,680 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 18:20:16,681 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 18:20:16,682 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 18:20:16,687 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 18:20:16,687 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 18:20:16,687 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 18:20:16,688 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 18:20:16,688 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 18:20:16,689 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 18:20:16,689 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 18:20:16,689 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 18:20:16,689 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 18:20:16,690 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 18:20:16,694 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 18:20:16,694 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+DEBUG 2026-09-11 18:20:16,814 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-11 18:20:17,775 shopman.shop.rules.engine rules.engine: bootstrap already in progress; skipping reentrant call.
+DEBUG 2026-09-11 18:20:17,775 shopman.shop.rules.engine rules.engine: bootstrap already in progress; skipping reentrant call.
+DEBUG 2026-09-11 18:20:17,775 shopman.shop.rules.engine rules.engine: bootstrap already in progress; skipping reentrant call.
+INFO 2026-09-11 18:20:17,803 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,804 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,805 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,805 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,807 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,808 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,808 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,809 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,831 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,831 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,833 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,834 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,835 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,837 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,837 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,838 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,859 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,860 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,861 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,861 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,862 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,864 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,864 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,865 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,886 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,886 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,886 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,887 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,888 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,888 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,888 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,890 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,922 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,923 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,925 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,927 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,929 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,929 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,931 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,931 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,953 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,954 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,955 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,956 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,957 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,958 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,960 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:17,961 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,000 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,004 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,005 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,006 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,007 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,011 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,016 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,020 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,061 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,064 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,065 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,066 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,067 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,070 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,073 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,075 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,106 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,110 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,111 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,116 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,120 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,121 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,122 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,123 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,154 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,157 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,157 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,159 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,160 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,162 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,167 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,171 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,193 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,200 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,200 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,204 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,205 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,209 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,217 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,219 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,240 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,243 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,246 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,247 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,249 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,250 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,254 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,256 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,298 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,298 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,300 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,300 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,301 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,303 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,320 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,324 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,377 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,379 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,380 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,381 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,382 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,384 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,412 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,416 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,426 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,430 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,431 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,434 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,434 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,439 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,469 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,475 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,484 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,485 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,490 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,491 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,499 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,502 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,524 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,527 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,535 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,536 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,539 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,541 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,549 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,553 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,578 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,580 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,586 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,587 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,588 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,589 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,590 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,592 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,612 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,615 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,622 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,624 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,625 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,627 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,628 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,631 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,648 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,653 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,659 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,660 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,661 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,662 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,663 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,664 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,682 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,684 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,690 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,691 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,701 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,703 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,705 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,705 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,723 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,725 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,728 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,729 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,730 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,731 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,732 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,734 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,749 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,753 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,756 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,758 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,763 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,769 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,770 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,774 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,795 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,798 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,800 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,802 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,803 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,803 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,806 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,806 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,831 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,832 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,833 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,834 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,835 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,835 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,836 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,838 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,848 shopman.operational concierge.stage
+INFO 2026-09-11 18:20:18,849 shopman.operational concierge.stage
+AUDIT_IMPORTS ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/orderman/shopman/orderman'] ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/guestman/shopman/guestman']
+SYNTHETIC_LOAD {"accepted_by_fake": 100, "backend_connections": 100, "burst": 10, "conversations": 100, "deadlocks_delta": 0, "history_messages": 10000, "input_wait_to_worker_p95_seconds": 1.024, "largest_output_utf8_bytes": 52, "new_inputs": 109, "orders": 0, "output_retries": 0, "parallel_workers": 4, "process_peak_rss_bytes": 173768704, "queries_total": 1800, "seconds_total": 1.086, "seconds_turn_max": 0.092, "seconds_turn_median": 0.041, "seconds_turn_p95": 0.063, "sql_seconds_max": 0.011, "sql_seconds_total": 2.547, "unknown_outputs": 0, "waiting_locks_at_end": 0}
+.
+1 passed in 2.54s

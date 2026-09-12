@@ -18,7 +18,8 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 | `customer` | `dict` | CheckoutView, POS, API (`set_data`), iFood webhook | CommitService, handlers | Dados do cliente: `{name, phone, notes, ref, price_tier, cpf, address}` |
 | `fulfillment_type` | `string` | CheckoutView, POS, API, iFood webhook | CommitService, MinimumOrderValidator | `"pickup"` ou `"delivery"` |
 | `delivery_address` | `string` | CheckoutView, API, iFood webhook | CommitService, CustomerIdentificationHandler | Endereço formatado (texto livre) |
-| `delivery_date` | `string` | CheckoutView | CommitService | ISO date (`YYYY-MM-DD`). Se futuro, indica encomenda |
+| `pos.sales_mode` | `string` | PDV intent/save | PDV projection e `_mark_tab_committed` | `counter` (retirada imediata, sem data/janela) ou `order` (cadastro ativo selecionado + recebimento explícito + data antes dos itens). Draft sem itens pode completar o funil. Registros antigos inferem pelo recebimento/data/janela. Copiado para `Order.data.pos.sales_mode` pelo carimbo POS existente. |
+| `delivery_date` | `string` | CheckoutView | CommitService | ISO date (`YYYY-MM-DD`). Se futuro, indica encomenda. No PDV, data explícita (inclusive hoje) ou janela exige cliente identificado; vazio sem janela é venda imediata. |
 | `delivery_time_slot` | `string` | CheckoutView · PDV | CommitService | **Dois vocabulários na mesma chave, e a DATA decide qual.** Encomenda (data futura, loja e PDV) → ref do slot canônico de `Shop.defaults["pickup_slots"]` (`"slot-09"`, `"slot-12"`, `"slot-15"`; label via `shop.services.fulfillment_window.canonical_slots`). Venda para HOJE no PDV → janela de meia hora do expediente, onde o ref É o par de horas (`"14:00-14:30"`) e por isso se lê sozinho num pedido antigo. Quem escolhe a grade é `fulfillment_window._grid_for`; quem lê deve tolerar as duas formas. ⚠️ Ficou assim porque encomenda é TURNO ("a partir das 12h", promessa de fornada) e a entrega de hoje é JANELA (o combinado com o entregador) — são compromissos diferentes, e unificá-los perderia um dos dois. |
 | `order_notes` | `string` | CheckoutView, iFood webhook | CommitService, KDS ticket (`customer_note`) | Observações do pedido escritas pelo **cliente** no checkout. Exibida no ticket do KDS (nota do cliente). Distinta da `kitchen_note` (nota do operador) |
 | `origin_channel` | `string` | CartService, POS, iFood webhook | CommitService, hooks.py | Canal de origem: `"web"`, `"whatsapp"`, `"ifood"`, `"pos"`, `"instagram"` |
@@ -27,7 +28,7 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 | `outside_business_hours` | `bool` | BusinessHoursRule (validation) | CheckoutView, CommitService | `True` se pedido feito fora do horário. Não bloqueia checkout — apenas flag informativa |
 | `delivery_address_structured` | `dict` | CheckoutView (`set_data`) | CommitService | Endereço estruturado do Google Places: `{route, street_number, complement, neighborhood, city, state_code, postal_code, place_id, formatted_address, delivery_instructions, is_verified, latitude, longitude}` |
 | `payment` | `dict` | CheckoutView (`set_data`), POS, API | CommitService, hooks, handlers | Dados de pagamento iniciais: `{method}` (+ `change_for_q` em centavos quando dinheiro **na entrega** e o cliente pediu troco). Enriquecido por handlers pós-commit (intent_ref, status, etc.) |
-| `delivery_fee_q` | `int` | DeliveryFeeModifier (via `session.save`) | CommitService, CartService, tracking view | Taxa de entrega efetiva em centavos. 0 = grátis (faixa/zona grátis ou subtotal ≥ `rules.free_delivery_above_q`). Resolvida por **faixa de distância** (`DeliveryDistanceBand`, motor) com **zona** (`DeliveryZone` modo `override`) como exceção. Só presente quando `fulfillment_type == "delivery"` e há cobertura. Reavaliada a cada passagem dos modifiers (depende do subtotal). Mapeável a `vFrete` na NF-e — **nunca** vira OrderItem |
+| `delivery_fee_q` | `int` | DeliveryFeeModifier (via `session.save`) | CommitService, CartService, tracking view | Taxa de entrega efetiva em centavos. 0 = grátis (faixa/zona grátis ou subtotal ≥ `rules.free_delivery_above_q`). Resolvida por **faixa de distância** (`DeliveryDistanceBand`, motor) com **zona** (`DeliveryZone` modo `override`) como exceção. Só presente quando `fulfillment_type == "delivery"` e há cobertura. Reavaliada a cada passagem dos modifiers (depende do subtotal). Mapeável a `vFrete` na NF-e; o modificador mantém a linha sintética `__DELIVERY_FEE__` para o total canônico de Order/Payman (projeções comerciais a separam dos produtos). Conferido no código atual; não somar a taxa novamente ao total |
 | `delivery_fee_override_q` | `int \| null` | POS (`build_session_ops`) | `pos._resolve_delivery_fee` | A **exceção** de taxa que o operador do balcão assumiu para esta entrega (combinado de porta, cortesia), em centavos. `null`/ausente = sem exceção, e a taxa é a que o motor resolve pelo endereço — nunca leia ausência como zero. Existe porque no PDV a taxa deixou de ser digitada: o campo livre era um segundo dono do preço, e duas vendas do mesmo endereço saíam diferentes conforme quem estava no caixa. Fica gravada ao lado da `delivery_fee_q` que ela produziu, para o rascunho retomado não voltar à tabela da loja em silêncio |
 | `delivery_zone_error` | `bool` | DeliveryFeeModifier (via `session.save`) | DeliveryZoneRule validator | `True` quando o endereço está fora da área: sem faixa de distância que o cubra, ou zona `exclude` casada. Bloqueia commit |
 | `delivery_distance_km` | `float` | DeliveryFeeModifier (via `session.save`) | checkout/tracking (transparência) | Distância loja→endereço em km (1 casa), quando calculável (lat/lng presentes). Exibida ao cliente p/ justificar a taxa. Ausente quando não há coordenada |
@@ -112,6 +113,37 @@ pelas ferramentas em `shopman/storefront/concierge/tools.py`:
 O `quote_token` que prende a confirmação ao orçamento vive em `Conversation.quote`, não
 na sessão: mudou a sacola, o token muda, e `place_order` recusa o antigo.
 
+Contrato conversacional v2 (ativação pendente de gates): Conversation identifica
+provider + account + transport_channel + subject opaco; account legado permanece
+`legacy_unverified`. `turn_fence`/`claim_until` são claim e posse; `last_order_ref`
+é referência ao owner Order; `handoff_sync_state` é evidência do espelho remoto.
+Message.envelope guarda version, event_id íntegro, account_id/provider/canal,
+subject, autenticação, timestamps, correlation_ref e payload_hash; saída guarda
+turn_fence, content_hash, quote_token/disclosure apresentados e code técnico.
+`consumed_by` liga entrada ao fence que persistiu seu resultado, sem inferir
+consumo por posição. `transport_state` distingue legacy/prepared/executing/accepted/
+not_applied/unknown; `delivered` legado não comprova receipt do fornecedor.
+A retenção continua sob G04; hashes não promovem identidade/consentimento.
+
+`Conversation.quote` v2 contém token, session_key, customer_ref/phone vinculados,
+snapshot factual, revision de Session, payment_method selecionado, total_q completo,
+lines_total_q, issued_at e validity=`session_open_and_current_policy`. Sem TTL comercial inventado: Session aberta, holds, preço, data/slot são revalidados; G05 decide eventual validade adicional. Não concede autorização: Message de revisão aceita pelo
+provider + nova entrada verificada são a evidência; replay usa IdempotencyKey.
+`Conversation.flags.web_transfer_key` referencia a Session de origem da última
+transferência para consultar o recibo canônico da mesma intenção. Não é outra sacola.
+Message de aceite de disponibilidade liga `subscription_ref` e
+`disclosure_message_id` à StockAlertSubscription canônica; disclosure contém SKU,
+texto, versão/token apresentados. Não replica estado de consentimento.
+Saídas em blocos registram `depends_on` (Message precedente), `inbound_max_id`,
+`purpose` (reply/handoff_ack), e eventual `previous_fence`/`explicit_retry`.
+A revisão/disclosure só é oferecida no último bloco aceito da cadeia completa;
+`preceding_block_pending` impede Pix/CTA sem contexto. Retry explícito é gate G03,
+proibido para unknown e para contexto/revisão alterados.
+
+Directive usa tópico versionado `concierge.turn.v2` na mesma fila Orderman e
+payload `{conversation_id, contract_version: 2}`. Worker anterior desconhece esse
+tópico e não executa envelope novo. Não publicar flow v2 em ingresso antigo.
+
 ---
 
 ## Order.data
@@ -190,7 +222,7 @@ for key in (
 | `awaiting_wo_refs` | `list[string]` | `shop.handlers.production_order_sync` | Backstage pedidos/producao projections | Refs de WorkOrders que cobrem itens produzidos do pedido. Contextual, derivável e limpável em void. |
 | `pos_committed_at` | `string` | `shop/services/pos.py` (`_mark_tab_committed`) | — | Timestamp ISO de quando a comanda foi finalizada no POS |
 | `client_request_id` | `string` | `shop/services/pos.py` (`_mark_tab_committed`) | `_existing_sale_by_client_request_id` (dedupe) | Chave de idempotência do checkout direto POS. Espelhada em `pos.client_request_id` |
-| `pos` | `dict` | `shop/services/pos.py` (`_mark_tab_committed`, `close_sale`) | POS projections | Contexto POS selado no Order: `{terminal_ref, client_request_id, direct_checkout, intent_version, customer_memory_action}`. **Não há `cash_shift_id`**: a atribuição da venda ao turno é a linha `sale` no livro do `cashman` (ADR-022), nunca etiqueta no pedido |
+| `pos` | `dict` | `shop/services/pos.py` (`_mark_tab_committed`, `close_sale`) | POS projections | Contexto POS selado no Order: `{terminal_ref, client_request_id, direct_checkout, intent_version, customer_memory_action, sales_mode}`. **Não há `cash_shift_id`**: a atribuição da venda ao turno é a linha `sale` no livro do `cashman` (ADR-022), nunca etiqueta no pedido |
 | `external_order_code` | `string` | `shop/services/ifood_ingest.py` | — | Código do pedido no marketplace iFood. Duplicado em `ifood.order_code` |
 | `merchant_id` | `string` | `shop/services/ifood_ingest.py` | — | ID do merchant na iFood. Duplicado em `ifood.merchant_id` |
 | `ifood` | `dict` | `shop/services/ifood_ingest.py` | — | Contexto da iFood (só em pedidos ingeridos via `ifood_ingest`): `{order_code, merchant_id, created_at}` |
@@ -343,7 +375,7 @@ todo canal novo (ManyChat, iFood direto) herda a mesma disciplina. Guarda:
 | `tendered_q` | `int` | measurement | POS (`shop/services/pos.py`) | B.I. de troco | Quanto o cliente entregou em espécie. **Ausente quando o operador não digitou** — ausência de medição, nunca "pagou justo" |
 | `change_q` | `int` | measurement | POS (`shop/services/pos.py`) | POS (revisão), B.I. de troco | Troco devolvido, em centavos. Escrito junto com `tendered_q`. É a única fonte de troco do sistema: `HistoricalSale` (export externo) **não tem troco**, e por isso a previsão de necessidade de troco lê só pedido nativo |
 | `cod_settled_at` / `cod_settled_by` | `string` | audit | `operator_orders.settle_delivery_cash` | acerto (guard de repetição), gestor | Quando e quem confirmou dinheiro/cartão/misto da entrega. Somente a parcela cash gera `cod_settled` no `cashman`; cartão permanece no Payman. Devolução do aparelho é independente |
-| `change_for_q` | `int` | **canonical** | checkout da loja (`storefront/api/views.py`, `intents/checkout.py`) e PDV (`shop/services/pos.py`, soma das cédulas informadas no mesmo teclado de pagamento): dinheiro **na entrega** e o cliente disse com quanto paga | `operator_orders.change_out_suggested_q` (despacho: sugestão `change_for − parcela em dinheiro`, que vira `courier_out` no livro do caixa), projection do gestor (`change_for_q`/`change_label` no card) | Com quanto o cliente vai pagar a parcela em dinheiro na porta, em centavos; inclusive em pagamento misto. Era dado morto até o WP-9 do CASHMAN-PLAN: hoje o despacho pergunta quanto o entregador leva e o acerto quanto voltou |
+| `change_for_q` | `int` | **canonical** | checkout da loja (`storefront/api/views.py`, `intents/checkout.py`) e PDV (`shop/services/pos.py`, soma das cédulas informadas no mesmo teclado de pagamento): dinheiro **na entrega** e o cliente disse com quanto paga | `operator_orders.change_out_suggested_q` (despacho: sugestão `change_for − parcela em dinheiro`, que vira `courier_out` no livro do caixa), projection do gestor (`change_for_q`/`change_label` no card), filipeta (`Troco para` e valor a levar, somente cobrança na entrega pendente) | Com quanto o cliente vai pagar a parcela em dinheiro na porta, em centavos; inclusive em pagamento misto. Era dado morto até o WP-9 do CASHMAN-PLAN: hoje o despacho pergunta quanto o entregador leva e o acerto quanto voltou |
 
 ### returns — detalhamento
 
@@ -648,6 +680,13 @@ Valores de `event`: `"stock.alert.triggered"`, `"system"`.
 
 #### `fiscal.emit_nfce`
 
+No reprocessamento de uma directive falha, o payload é reconstruído dos dados
+atuais de Order pelo mesmo `fiscal.build_emission_payload` da emissão inicial.
+A referência e as tentativas são preservadas; pedido com chave autorizada não
+é reconstruído. `OrderEvent(type="fiscal_requeued").payload.previous_error`
+preserva o motivo anterior antes de limpar `Directive.last_error` para retry.
+
+
 | Chave | Tipo | Escrito por | Lido por |
 |-------|------|-------------|----------|
 | `order_ref` | `string` | hooks | NFCeEmitHandler |
@@ -655,6 +694,11 @@ Valores de `event`: `"stock.alert.triggered"`, `"system"`.
 | `payment` | `dict` | hooks | NFCeEmitHandler |
 | `customer` | `dict` | hooks (opcional) | NFCeEmitHandler |
 | `additional_info` | `string` | hooks (opcional) | NFCeEmitHandler |
+| `delivery` | `dict` ou `null` | fiscal.build_emission_payload | NFCeEmitHandler → adapter |
+
+`delivery={"address": delivery_address_structured}` indica entrega a domicílio,
+inclusive frete zero; `null` indica retirada. Dado insuficiente impede emitir,
+sem substituir por operação presencial ou retirar o frete dos valores.
 
 #### `fiscal.cancel_nfce`
 
@@ -1529,7 +1573,7 @@ TOCTOU. Quem chama recebe `CashError("DUPLICATE_ENTRY")`, não `IntegrityError`.
 | `note` (bloqueio) | 0 | — | `{event: "drawer_blocked", outcome, duration_ms, drawer_raw}` | o bloqueio por gaveta aberta terminou: `record_drawer_block` (`POST pos/cash/drawer-block/`). `outcome` = `closed` (o operador fechou — caminho normal) \| `dismissed` (desistiu da venda pelo X, ou saiu da tela com a trava de pé) \| `sensor_lost` \| `manager_override`. É esta linha que torna a duração real mensurável: no desenho antigo o PIN cortava a medição no meio |
 | `note` (busca da saída) | 0 | — | `{event: "drawer_unlock_attempt", outcome}` | alguém ABRIU a tela de PIN da trava: `record_unlock_attempt` (`POST pos/cash/drawer-unlock-attempt/`). `outcome` = `opened` \| `abandoned` (Esc de volta) \| `denied` (PIN recusado). A tela de trava **não mostra** a saída de emergência — mostrá-la ensinaria o bypass —, e por isso quem a procura é sinal: registrar só o destrave bem-sucedido apagaria justamente quem tenta e desiste |
 | `note` (esquecida) | 0 | — | `{event: "drawer_left_open", minutes}` | gaveta aberta ENTRE vendas além do limiar: `report_drawer_left_open` (`POST pos/cash/drawer-left-open/`). A trava só age quando alguém tenta vender; isto cobre a hora morta. Limiar em `Shop.defaults["pos"]["drawer_idle_alert_minutes"]` (default 3; `0` desliga). Sai junto um `OperatorAlert` `pos_drawer_left_open` |
-| `change_requested` | 0 | — | `{amount_q, denominations: [int], note}` | pedido de troco: `backstage/services/pos.py::request_change`. `amount_q` inteiro > 0 e `denominations` lista de centavos positivos são exigidos pelo próprio `record` (`CashError("INVALID_PAYLOAD")`); QUAIS valores valem é da superfície (ver abaixo) |
+| `change_requested` | 0 | — | `{amount_q, denominations: [int], note, alert_id?}` | `alert_id` vincula o alerta operacional ao pedido para resolver ao atender/cancelar; pedido de troco: `backstage/services/pos.py::request_change`. `amount_q` inteiro > 0 e `denominations` lista de centavos positivos são exigidos pelo próprio `record` (`CashError("INVALID_PAYLOAD")`); QUAIS valores valem é da superfície (ver abaixo) |
 | `change_served` | 0 (exige `approved_by`) | `change_requested` | — | `serve_change_request` (PIN de gerente, `cashman.adjust_shift`) |
 | `change_cancelled` | 0 | `change_requested` | — | `cancel_change_request` |
 | `receipt_result` | 0 | `cash_out`/`cash_in` | `{status: printed\|failed\|skipped, detail}` | comprovante: `record_receipt_result` (só o navegador do balcão sabe se imprimiu; a conferência no Admin lê o ÚLTIMO filho). A lista de status é fonte única em `cashman.Entry.RECEIPT_STATUSES`, exigida pelo `record`; o backstage valida antes só para a mensagem |
@@ -1841,3 +1885,49 @@ Recusa comprovada not_applied pode receber nova intenção após correção; Mac
 id ou resposta ilegível é unknown. Não muda o significado do status de Order/courier.
 G03 decide verificação/adopção humana; G08 retenção antes de piloto. Rollback conserva
 os guards ou suspende despacho; nunca remove recibos de resultado desconhecido.
+
+### Decisão de identidade no documento do PDV (somente intent)
+
+`receipt_identity_choices` contém até duas decisões `{field: "tax_id" | "email",
+value, customer_ref, owner_ref, choice: "receipt_only", client_request_id}`.
+CPF/CNPJ normaliza para dígitos e e-mail para minúsculas sem espaços externos.
+A decisão vale apenas para o mesmo valor, dono, cliente associado e venda; não
+é persistida em Session/Order nem autoriza salvar/alterar cadastro. A opção
+exige `save_receipt_tax_id`/`save_receipt_contact` falso. Mesmo dono já associado
+por `customer_ref` dispensa pergunta. Revisão e escrita recusam a ausência de
+decisão com `receipt_identity_conflict`, campo fiscal/receipt, valor e candidato.
+
+Quando `receipt_channels` não inclui `email`, o intent zera `receipt_email` e
+`save_receipt_contact`. O e-mail oculto não dispara consulta/decisão nem escrita;
+`customer_email` permanece sendo o contato do cliente associado.
+
+
+### POS receipt identity decisions (2026-09-12)
+
+`receipt_identity_conflict.conflicts` includes all undecided nonempty document
+fields, including new values (`candidates: []`). Unknown values require either an
+exact `receipt_only` choice (`owner_ref: ""`) or an explicit legacy save opt-in.
+A missing request ID never bypasses this decision. Hidden email remains ignored.
+
+`POST /api/v1/backstage/pos/customer/resolve/` accepts optional
+`receipt_identity_action`: `{action: "create" | "save", client_request_id,
+customer_ref, target_ref, fields: [{field: "tax_id" | "email", value, owner_ref}],
+tax_id_overwrite_confirmed?: boolean, tax_id_before?: string}`.
+Create requires empty current/target refs and no known owners; it saves only the
+explicit fields and leaves names empty. Save requires an active explicit target.
+All displayed owners are checked again before writing; save skips fields owned
+by a different customer without copying them. Changed ownership returns a receipt
+conflict and no mutation. CPF overwrite additionally requires confirmation and
+the exact prior CPF, checked under a lock on the target customer. Existing CPF
+confirmation rules remain enforced. A repeated create after a lost response
+returns the newly discovered owner for explicit selection, never a duplicate or
+silent association. `receipt_identity_changed` asks the operator to review a
+changed selected record or stale CPF confirmation.
+
+Successful receipt SAVE stores only a SHA-256 fingerprint in
+`Customer.metadata.pos.last_receipt_action`, covering operator and the entire
+explicit action (sale ID, current/target refs, fields, owner snapshot and CPF
+confirmation). An exact retry returns without any writes only while current
+saved values and all owner mappings still match. CPF changes, owner changes,
+new sale IDs or operators cannot reuse that receipt; normal guards apply.
+Only the most recent successful SAVE fingerprint is retained per customer.

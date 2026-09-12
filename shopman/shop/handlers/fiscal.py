@@ -105,6 +105,14 @@ class NFCeEmitHandler:
             raise DirectiveTransientError(
                 f"NFC-e emission transient ({result.error_code}): {result.error_message}"
             )
+        if result.error_code == "focus_nfe_invalid_payload":
+            from shopman.shop.services.observability import record_integration_failure
+
+            record_integration_failure(
+                provider="fiscal", operation="emit_nfce",
+                detail=f"Pedido {order_ref}: {result.error_message}",
+                context={"order_ref": order_ref, "error_code": result.error_code},
+            )
         raise DirectiveTerminalError(f"NFC-e emission failed: {result.error_message}")
 
     def _adopt_existing(self, order, order_ref: str) -> bool:

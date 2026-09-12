@@ -264,6 +264,14 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "HOME_HOW_IT_WORKS_HEADING": {
         WILDCARD: {WILDCARD: CopyEntry(title="Como Funciona")},
     },
+    "HOME_FAQ_HEADING": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="Dúvidas frequentes",
+                message="Respostas diretas para você decidir o próximo passo.",
+            ),
+        },
+    },
     "HOME_HOW_ONLINE_HEADING": {
         WILDCARD: {WILDCARD: CopyEntry(title="Peça online")},
     },
@@ -1099,12 +1107,12 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "CONCIERGE_MEDIA_UNSUPPORTED": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Por enquanto eu leio só mensagens de texto. Pode escrever o seu pedido por aqui que eu sigo com você.",
+            message="Ainda não consigo ouvir áudios ou interpretar esta mídia. Suas escolhas anteriores estão preservadas. Você pode escrever apenas o que falta ou pedir atendimento humano.",
         )},
     },
     "CONCIERGE_HANDOFF_ACK": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Claro. Alguém da equipe continua com você por aqui em instantes.",
+            message="Solicitei atendimento humano e preservei suas escolhas. A equipe continuará por aqui conforme a disponibilidade.",
         )},
     },
     "CONCIERGE_TURN_LIMIT": {

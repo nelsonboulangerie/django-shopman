@@ -1,0 +1,53 @@
+AUDIT_IMPORTS ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/orderman/shopman/orderman'] ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/guestman/shopman/guestman']
+..FF..                                                                   [100%]
+=================================== FAILURES ===================================
+____________________ test_message_summary_clips_tool_result ____________________
+
+conversation = <Conversation: Conversa 3 · Ana Souza>
+
+    def test_message_summary_clips_tool_result(conversation):
+        result = conversation.messages.get(kind=ConversationMessage.Kind.TOOL_RESULT)
+        summary = message_summary(result)
+        assert len(summary) <= 200
+        call = conversation.messages.get(kind=ConversationMessage.Kind.TOOL_CALL)
+>       assert message_summary(call) == 'set_item({"sku":"CROISSANT","qty":2})'
+E       assert 'set_item({"q..."CROISSANT"})' == 'set_item({"s...NT","qty":2})'
+E         
+E         - set_item({"sku":"CROISSANT","qty":2})
+E         ?                            --------
+E         + set_item({"qty":2,"sku":"CROISSANT"})
+E         ?           ++++++++
+
+shopman/storefront/tests/test_concierge_admin.py:91: AssertionError
+________________ test_return_to_concierge_action_flips_handoff _________________
+
+admin_client = <django.test.client.Client object at 0x119ecf410>
+conversation = <Conversation: Conversa 4 · Ana Souza>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11a1800e0>
+
+    def test_return_to_concierge_action_flips_handoff(admin_client, conversation, monkeypatch):
+        calls: list[tuple[str, bool]] = []
+        monkeypatch.setattr(
+            "shopman.storefront.concierge.transport.set_handoff",
+            lambda subscriber_id, on: calls.append((subscriber_id, on)) or True,
+        )
+        conversation.state = Conversation.State.HANDOFF
+        conversation.handoff_reason = "pediu uma pessoa"
+        conversation.save()
+        active = Conversation.objects.create(subscriber_id="sub-456", phone="+5543999990001")
+    
+        response = admin_client.post(
+            reverse("admin:shop_conversation_changelist"),
+            {"action": "return_to_concierge_selected", "_selected_action": [conversation.pk, active.pk]},
+            follow=True,
+        )
+        assert response.status_code == 200
+        conversation.refresh_from_db()
+>       assert conversation.state == Conversation.State.ACTIVE
+E       AssertionError: assert 'handoff' == Conversation.State.ACTIVE
+E         
+E         - active
+E         + handoff
+
+shopman/storefront/tests/test_concierge_admin.py:112: AssertionError
+2 failed, 4 passed in 19.46s

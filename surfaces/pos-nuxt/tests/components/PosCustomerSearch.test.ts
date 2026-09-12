@@ -143,7 +143,7 @@ describe("PosCustomerSearch — sem resultado, o ato vira BOTÃO", () => {
     expect(wrapper.emitted("resolveCpf")?.[0]).toEqual([CPF]);
   });
 
-  it("Enter no meio do debounce espera a resposta antes de decidir", async () => {
+  it("Enter no meio do debounce exige nova escolha depois da resposta", async () => {
     const wrapper = await mount();
     const input = await type(wrapper, "Maria");
     // Enter antes dos 350ms: flush + espera (nada de transferir com lista velha).
@@ -151,11 +151,25 @@ describe("PosCustomerSearch — sem resultado, o ato vira BOTÃO", () => {
     expect(wrapper.emitted("search")?.at(-1)).toEqual(["Maria"]);
     expect(wrapper.emitted("transfer")).toBeUndefined();
 
-    // A resposta chega (a lista troca de referência) → decide: 1 resultado, pega.
+    // A resposta chega, mas o Enter anterior não escolhe quem ainda não estava visível.
     const found = result();
     await wrapper.setProps({ results: [found] });
+    vi.advanceTimersByTime(1000);
+    expect(wrapper.emitted("select")).toBeUndefined();
+    await input.trigger("keydown", { key: "Enter" });
     expect(wrapper.emitted("select")?.[0]).toEqual([found]);
   });
+  it("Enter durante busca em voo não seleciona nem após busy terminar", async () => {
+    const wrapper = await mount({ busy: true });
+    await wrapper.find("input").trigger("keydown", { key: "Enter" });
+    const found = result();
+    await wrapper.setProps({ busy: false, results: [found] });
+    vi.advanceTimersByTime(1000);
+    expect(wrapper.emitted("select")).toBeUndefined();
+    await wrapper.findAll('button[role="option"]')[0]!.trigger("click");
+    expect(wrapper.emitted("select")?.[0]).toEqual([found]);
+  });
+
 });
 
 describe("PosCustomerSearch — máscara e aviso de CPF", () => {

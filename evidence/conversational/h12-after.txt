@@ -1,0 +1,292 @@
+AUDIT_IMPORTS ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/orderman/shopman/orderman'] ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/guestman/shopman/guestman']
+....F.F..                                                                [100%]
+=================================== FAILURES ===================================
+________ test_h12_notification_failure_rolls_back_order_sync_and_events ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10d994230>
+
+    def test_h12_notification_failure_rolls_back_order_sync_and_events(monkeypatch):
+        order = make_order()
+        record = Fulfillment.objects.create(order=order, status="in_progress")
+        work = queue("fulfillment.update", order_ref=order.ref, fulfillment_id=record.pk, new_status="dispatched")
+        def fail(*args):
+            raise RuntimeError("synthetic notification scheduling failure")
+        with monkeypatch.context() as patch:
+            patch.setattr(FulfillmentUpdateHandler, "_create_notifications", fail)
+            _process_directive(work)
+        record.refresh_from_db()
+        order.refresh_from_db()
+        assert record.status == "in_progress"
+        assert order.status == "ready"
+        assert not Directive.objects.filter(topic="order.lifecycle_phase", payload__order_ref=order.ref).exists()
+>       assert not order.events.filter(event_type="status_changed").exists()
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+shopman/storefront/tests/test_concierge_runtime_fulfillment.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/manager.py:87: in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:1542: in filter
+    return self._filter_or_exclude(False, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:1560: in _filter_or_exclude
+    clone._filter_or_exclude_inplace(negate, args, kwargs)
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:1570: in _filter_or_exclude_inplace
+    self._query.add_q(Q(*args, **kwargs))
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/query.py:1676: in add_q
+    clause, _ = self._add_q(q_object, can_reuse)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/query.py:1708: in _add_q
+    child_clause, needed_inner = self.build_filter(
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/query.py:1556: in build_filter
+    lookups, parts, reffed_expression = self.solve_lookup_type(arg, summarize)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/query.py:1363: in solve_lookup_type
+    _, field, _, lookup_parts = self.names_to_path(lookup_splitted, self.get_meta())
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <django.db.models.sql.query.Query object at 0x10da90a70>
+names = ['event_type'], opts = <Options for OrderEvent>, allow_many = True
+fail_on_missing = False
+
+    def names_to_path(self, names, opts, allow_many=True, fail_on_missing=False):
+        """
+        Walk the list of names and turns them into PathInfo tuples. A single
+        name in 'names' can generate multiple PathInfos (m2m, for example).
+    
+        'names' is the path of names to travel, 'opts' is the model Options we
+        start the name resolving from, 'allow_many' is as for setup_joins().
+        If fail_on_missing is set to True, then a name that can't be resolved
+        will generate a FieldError.
+    
+        Return a list of PathInfo tuples. In addition return the final field
+        (the last used join field) and target (which is a field guaranteed to
+        contain the same value as the final field). Finally, return those names
+        that weren't found (which are likely transforms and the final lookup).
+        """
+        path, names_with_path = [], []
+        for pos, name in enumerate(names):
+            cur_names_with_path = (name, [])
+            if name == "pk" and opts is not None:
+                name = opts.pk.name
+    
+            field = None
+            filtered_relation = None
+            try:
+                if opts is None:
+                    raise FieldDoesNotExist
+                field = opts.get_field(name)
+            except FieldDoesNotExist:
+                if name in self.annotation_select:
+                    field = self.annotation_select[name].output_field
+                elif name in self._filtered_relations and pos == 0:
+                    filtered_relation = self._filtered_relations[name]
+                    if LOOKUP_SEP in filtered_relation.relation_name:
+                        parts = filtered_relation.relation_name.split(LOOKUP_SEP)
+                        filtered_relation_path, field, _, _ = self.names_to_path(
+                            parts,
+                            opts,
+                            allow_many,
+                            fail_on_missing,
+                        )
+                        path.extend(filtered_relation_path[:-1])
+                    else:
+                        field = opts.get_field(filtered_relation.relation_name)
+            if field is not None:
+                # Fields that contain one-to-many relations with a generic
+                # model (like a GenericForeignKey) cannot generate reverse
+                # relations and therefore cannot be used for reverse querying.
+                if field.is_relation and not field.related_model:
+                    raise FieldError(
+                        "Field %r does not generate an automatic reverse "
+                        "relation and therefore cannot be used for reverse "
+                        "querying. If it is a GenericForeignKey, consider "
+                        "adding a GenericRelation." % name
+                    )
+                try:
+                    model = field.model._meta.concrete_model
+                except AttributeError:
+                    # QuerySet.annotate() may introduce fields that aren't
+                    # attached to a model.
+                    model = None
+            else:
+                # We didn't find the current field, so move position back
+                # one step.
+                pos -= 1
+                if pos == -1 or fail_on_missing:
+                    available = sorted(
+                        [
+                            *get_field_names_from_opts(opts),
+                            *self.annotation_select,
+                            *self._filtered_relations,
+                        ]
+                    )
+>                   raise FieldError(
+                        "Cannot resolve keyword '%s' into field. "
+                        "Choices are: %s" % (name, ", ".join(available))
+                    )
+E                   django.core.exceptions.FieldError: Cannot resolve keyword 'event_type' into field. Choices are: actor, created_at, id, order, order_id, payload, seq, type
+
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/query.py:1842: FieldError
+----------------------------- Captured stderr call -----------------------------
+DEBUG 2026-09-11 17:40:44,315 shopman.orderman.dispatch Directive #20 is scheduled for 2026-09-11 21:40:44.311162+00:00, skipping immediate dispatch.
+INFO 2026-09-11 17:40:44,318 shopman.shop.services.fulfillment fulfillment.update: 13 → dispatched for order H12-ORDER
+INFO 2026-09-11 17:40:44,318 shopman.shop.handlers.fulfillment FulfillmentUpdateHandler: fulfillment 13 → dispatched for order H12-ORDER
+INFO 2026-09-11 17:40:44,328 shopman.shop.handlers.fulfillment FulfillmentUpdateHandler: synced order H12-ORDER → dispatched
+ERROR 2026-09-11 17:40:44,329 shopman.orderman.dispatch Directive fulfillment.update #20 failed (attempt 1/5)
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/orderman/shopman/orderman/dispatch.py", line 81, in _process_directive
+    handler.handle(message=directive, ctx={"actor": "signal_dispatch"})
+  File "/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/handlers/fulfillment.py", line 133, in handle
+    self._create_notifications(order, fulfillment, new_status)
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/storefront/tests/test_concierge_runtime_fulfillment.py", line 101, in fail
+    raise RuntimeError("synthetic notification scheduling failure")
+RuntimeError: synthetic notification scheduling failure
+______ test_h12_concurrent_updates_create_one_transition_and_notification ______
+
+    def test_h12_concurrent_updates_create_one_transition_and_notification():
+        if connection.vendor != "postgresql":
+            pytest.skip("PostgreSQL required for independent row locks")
+        order = make_order()
+        record = Fulfillment.objects.create(order=order, status="in_progress")
+        jobs = [queue("fulfillment.update", order_ref=order.ref, fulfillment_id=record.pk, new_status="dispatched") for _ in range(2)]
+        barrier = Barrier(2)
+        def update_one(pk):
+            try:
+                message = Directive.objects.get(pk=pk)
+                barrier.wait(timeout=10)
+                _process_directive(message)
+            finally:
+                connections.close_all()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(update_one, job.pk) for job in jobs]
+            for future in futures:
+                future.result(timeout=20)
+        order.refresh_from_db()
+        record.refresh_from_db()
+        assert order.status == record.status == "dispatched"
+>       assert order.events.filter(event_type="status_changed").count() == 1
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+shopman/storefront/tests/test_concierge_runtime_fulfillment.py:147: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/manager.py:87: in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:1542: in filter
+    return self._filter_or_exclude(False, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:1560: in _filter_or_exclude
+    clone._filter_or_exclude_inplace(negate, args, kwargs)
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:1570: in _filter_or_exclude_inplace
+    self._query.add_q(Q(*args, **kwargs))
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/query.py:1676: in add_q
+    clause, _ = self._add_q(q_object, can_reuse)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/query.py:1708: in _add_q
+    child_clause, needed_inner = self.build_filter(
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/query.py:1556: in build_filter
+    lookups, parts, reffed_expression = self.solve_lookup_type(arg, summarize)
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/query.py:1363: in solve_lookup_type
+    _, field, _, lookup_parts = self.names_to_path(lookup_splitted, self.get_meta())
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <django.db.models.sql.query.Query object at 0x10e050e30>
+names = ['event_type'], opts = <Options for OrderEvent>, allow_many = True
+fail_on_missing = False
+
+    def names_to_path(self, names, opts, allow_many=True, fail_on_missing=False):
+        """
+        Walk the list of names and turns them into PathInfo tuples. A single
+        name in 'names' can generate multiple PathInfos (m2m, for example).
+    
+        'names' is the path of names to travel, 'opts' is the model Options we
+        start the name resolving from, 'allow_many' is as for setup_joins().
+        If fail_on_missing is set to True, then a name that can't be resolved
+        will generate a FieldError.
+    
+        Return a list of PathInfo tuples. In addition return the final field
+        (the last used join field) and target (which is a field guaranteed to
+        contain the same value as the final field). Finally, return those names
+        that weren't found (which are likely transforms and the final lookup).
+        """
+        path, names_with_path = [], []
+        for pos, name in enumerate(names):
+            cur_names_with_path = (name, [])
+            if name == "pk" and opts is not None:
+                name = opts.pk.name
+    
+            field = None
+            filtered_relation = None
+            try:
+                if opts is None:
+                    raise FieldDoesNotExist
+                field = opts.get_field(name)
+            except FieldDoesNotExist:
+                if name in self.annotation_select:
+                    field = self.annotation_select[name].output_field
+                elif name in self._filtered_relations and pos == 0:
+                    filtered_relation = self._filtered_relations[name]
+                    if LOOKUP_SEP in filtered_relation.relation_name:
+                        parts = filtered_relation.relation_name.split(LOOKUP_SEP)
+                        filtered_relation_path, field, _, _ = self.names_to_path(
+                            parts,
+                            opts,
+                            allow_many,
+                            fail_on_missing,
+                        )
+                        path.extend(filtered_relation_path[:-1])
+                    else:
+                        field = opts.get_field(filtered_relation.relation_name)
+            if field is not None:
+                # Fields that contain one-to-many relations with a generic
+                # model (like a GenericForeignKey) cannot generate reverse
+                # relations and therefore cannot be used for reverse querying.
+                if field.is_relation and not field.related_model:
+                    raise FieldError(
+                        "Field %r does not generate an automatic reverse "
+                        "relation and therefore cannot be used for reverse "
+                        "querying. If it is a GenericForeignKey, consider "
+                        "adding a GenericRelation." % name
+                    )
+                try:
+                    model = field.model._meta.concrete_model
+                except AttributeError:
+                    # QuerySet.annotate() may introduce fields that aren't
+                    # attached to a model.
+                    model = None
+            else:
+                # We didn't find the current field, so move position back
+                # one step.
+                pos -= 1
+                if pos == -1 or fail_on_missing:
+                    available = sorted(
+                        [
+                            *get_field_names_from_opts(opts),
+                            *self.annotation_select,
+                            *self._filtered_relations,
+                        ]
+                    )
+>                   raise FieldError(
+                        "Cannot resolve keyword '%s' into field. "
+                        "Choices are: %s" % (name, ", ".join(available))
+                    )
+E                   django.core.exceptions.FieldError: Cannot resolve keyword 'event_type' into field. Choices are: actor, created_at, id, order, order_id, payload, seq, type
+
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/query.py:1842: FieldError
+----------------------------- Captured stderr call -----------------------------
+DEBUG 2026-09-11 17:40:45,193 shopman.orderman.dispatch Directive #22 is scheduled for 2026-09-11 21:40:45.192213+00:00, skipping immediate dispatch.
+DEBUG 2026-09-11 17:40:45,194 shopman.orderman.dispatch Directive #23 is scheduled for 2026-09-11 21:40:45.193685+00:00, skipping immediate dispatch.
+INFO 2026-09-11 17:40:45,202 shopman.shop.services.fulfillment fulfillment.update: 15 → dispatched for order H12-ORDER
+INFO 2026-09-11 17:40:45,202 shopman.shop.handlers.fulfillment FulfillmentUpdateHandler: fulfillment 15 → dispatched for order H12-ORDER
+INFO 2026-09-11 17:40:45,212 shopman.shop.handlers.fulfillment FulfillmentUpdateHandler: synced order H12-ORDER → dispatched
+INFO 2026-09-11 17:40:45,214 shopman.shop.services.notification notification.send: queued order_dispatched for order H12-ORDER
+INFO 2026-09-11 17:40:45,215 shopman.shop.handlers.fulfillment FulfillmentUpdateHandler: fulfillment 15 already at dispatched
+2 failed, 7 passed in 3.02s

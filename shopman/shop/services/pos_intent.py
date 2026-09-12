@@ -27,6 +27,7 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "customer_email",
     "customer_memory_action",
     "fulfillment_type",
+    "sales_mode",
     "delivery_address",
     "delivery_address_structured",
     "delivery_date",
@@ -40,6 +41,7 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "change_for_q",
     "receipt_channels",
     "receipt_email",
+    "receipt_identity_choices",
     # A ORDEM do operador para que o contato do comprovante vire cadastro. O
     # e-mail e o CPF pedidos na nota são fatos DA VENDA (o cliente pode pedir no
     # endereço do contador, no CPF da empresa) e por isso nunca viram identidade
@@ -150,7 +152,12 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
     payload["intent_version"] = POS_SALE_INTENT_VERSION
     payload["items"] = _items(payload.get("items"), for_commit=for_commit)
 
+    from shopman.shop.services.pos_sales_mode import validate_sales_mode
+
+    validate_sales_mode(payload, require_ready=for_commit or bool(payload["items"]))
     fulfillment_type = _fulfillment_type(payload.get("fulfillment_type"))
+    if payload.get("sales_mode") == "order" and not for_commit and not payload["items"] and not payload.get("fulfillment_type"):
+        fulfillment_type = ""
     payload["fulfillment_type"] = fulfillment_type
 
     payload["customer_name"] = _text(payload.get("customer_name"), limit=160)
@@ -242,7 +249,10 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
             )
         payload["fiscal_tax_id"] = digits
     payload["receipt_channels"] = _receipt_channels(payload.get("receipt_channels"))
-    payload["receipt_email"] = _emailish(payload.get("receipt_email"), field="receipt_email")
+    payload["receipt_email"] = (
+        _emailish(payload.get("receipt_email"), field="receipt_email")
+        if "email" in payload["receipt_channels"] else ""
+    )
     if for_commit and "email" in payload["receipt_channels"] and not payload["receipt_email"]:
         raise PosIntentError(
             code="receipt_email_required",
@@ -262,6 +272,9 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
         _flag(payload.get("save_receipt_tax_id_confirmed")) and payload["save_receipt_tax_id"]
     )
 
+    from shopman.shop.services.pos_receipt_identity import receipt_identity_choices
+
+    payload["receipt_identity_choices"] = receipt_identity_choices(payload.get("receipt_identity_choices"))
     payload["client_request_id"] = _client_request_id(payload.get("client_request_id"))
     payload["tab_ref"] = _text(payload.get("tab_ref"), limit=64)
     payload["tab_session_key"] = _text(payload.get("tab_session_key"), limit=120)

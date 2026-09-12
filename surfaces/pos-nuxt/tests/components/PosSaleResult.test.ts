@@ -88,6 +88,15 @@ describe("PosSaleResult — o palco pós-venda", () => {
     expect(wrapper.text()).not.toContain("Nova venda em");
   });
 
+  it("encomenda permanece para conferência e impressão, mesmo paga", async () => {
+    const wrapper = await mountSuspended(PosSaleResult, {
+      props: props({ result: result({ salesMode: "order" }) }),
+    });
+    expect(wrapper.text()).toContain("Encomenda registrada");
+    expect(wrapper.text()).not.toContain("Venda concluída");
+    expect(wrapper.text()).not.toContain("Nova venda em");
+  });
+
   it("o CTA emite newSale", async () => {
     const wrapper = await mountSuspended(PosSaleResult, { props: props() });
     const cta = wrapper.findAll("button").find((b) => b.text().includes("Nova venda"));

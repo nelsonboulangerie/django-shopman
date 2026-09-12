@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
+import { toast } from "vue-sonner";
 
 import { makeProjection, makeSale, makeTabPayload } from "./_posSaleHarness";
 
@@ -139,6 +140,46 @@ describe("usePosSale — persistQueue serializa gravações", () => {
 
     expect(overlapped).toBe(false);
     expect(actionCall.mock.calls.length).toBeGreaterThanOrEqual(2);
+    h.handles.dispose();
+  });
+});
+
+describe("cadastro em rascunho não é persistência autorizada", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
+  it("não salva versões digitadas do cadastro; selecionar ref libera autosave", async () => {
+    const h = saleWithOpenTab();
+    h.sale.addProduct(h.handles.posValue.value!.products[0]!);
+    await nextTick();
+    h.sale.cart.customerName = "Br";
+    await nextTick();
+    await vi.advanceTimersByTimeAsync(6000);
+    h.sale.cart.customerName = "Bruno";
+    h.sale.cart.customerPhone = "43999990022";
+    await nextTick();
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(h.handles.actionCall).not.toHaveBeenCalled();
+    expect(h.sale.unsaved.value).toBe(true);
+    h.sale.cart.customerRef = "CUST-B";
+    await nextTick();
+    await vi.advanceTimersByTimeAsync(1200);
+    expect(h.handles.actionCall).toHaveBeenCalledTimes(1);
+    expect(h.sale.unsaved.value).toBe(false);
+    h.handles.dispose();
+  });
+  it("checkout e fechamento pedem concluir cadastro, sem chamar API", async () => {
+    const h = saleWithOpenTab();
+    h.sale.addProduct(h.handles.posValue.value!.products[0]!);
+    h.sale.cart.customerPhone = "43999990022";
+    await nextTick();
+    const focus = h.sale.customerFocusNonce.value;
+    await h.sale.prepareCheckout();
+    expect(h.sale.checkoutMode.value).toBe(false);
+    expect(h.sale.customerFocusNonce.value).toBeGreaterThan(focus);
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("Conclua o cadastro ou remova os dados"));
+    h.sale.checkoutMode.value = true;
+    await h.sale.submitSale();
+    expect(h.handles.actionCall).not.toHaveBeenCalled();
     h.handles.dispose();
   });
 });

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { absoluteImage, bakeryJsonLd } from '~/presentation/seo'
+import { absoluteImage, bakeryJsonLd, faqJsonLd, jsonLdText } from '~/presentation/seo'
 import type { HomeResponse, Action } from '~/types/shopman'
 import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
 
@@ -32,6 +32,7 @@ const storeSteps = computed(() => [
   { label: sectionsCopy.value?.how_counter_label.title, message: sectionsCopy.value?.how_store_counter_message.message }
 ].filter(step => step.message))
 const howFacets = computed(() => sectionsCopy.value?.how_facets || [])
+const faq = computed(() => home.value?.faq || [])
 const facetIcon = (ref: string) => (({
   delivery: 'lucide:truck',
   preorder: 'lucide:calendar-clock',
@@ -131,16 +132,24 @@ useSeoMeta({
 useHead({
   link: [{ rel: 'canonical', href: () => canonicalUrl.value }],
   script: () => home.value
-    ? [{
-        type: 'application/ld+json',
-        innerHTML: JSON.stringify(bakeryJsonLd({
-          shop: home.value.shop,
-          origin: requestUrl.origin,
-          url: canonicalUrl.value,
-          latitude: home.value.public_config.shop_latitude,
-          longitude: home.value.public_config.shop_longitude
-        }))
-      }]
+    ? [
+        {
+          type: 'application/ld+json' as const,
+          innerHTML: jsonLdText(bakeryJsonLd({
+            shop: home.value.shop,
+            origin: requestUrl.origin,
+            url: canonicalUrl.value,
+            latitude: home.value.public_config.shop_latitude,
+            longitude: home.value.public_config.shop_longitude
+          }))
+        },
+        ...(faq.value.length
+          ? [{
+              type: 'application/ld+json' as const,
+              innerHTML: jsonLdText(faqJsonLd(faq.value))
+            }]
+          : [])
+      ]
     : []
 })
 </script>
@@ -393,6 +402,25 @@ useHead({
             <Icon :name="facetIcon(facet.ref)" class="size-5 shrink-0 text-muted-foreground" />
             <p class="shop-muted">{{ facet.message }}</p>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="home && faq.length && sectionsCopy" id="duvidas-frequentes" class="shop-section border-t bg-background scroll-mt-20">
+      <div class="shop-container">
+        <div class="mx-auto max-w-4xl">
+          <div class="text-center">
+            <h2 class="shop-heading font-display">{{ sectionsCopy.faq_heading.title }}</h2>
+            <p v-if="sectionsCopy.faq_heading.message" class="mt-2 shop-muted">
+              {{ sectionsCopy.faq_heading.message }}
+            </p>
+          </div>
+          <UiAccordion
+            :items="faq.map(item => ({ value: item.ref, title: item.question, content: item.answer }))"
+            type="single"
+            collapsible
+            class="mt-6 border-y"
+          />
         </div>
       </div>
     </section>

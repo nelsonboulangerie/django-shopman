@@ -102,6 +102,7 @@ MAINTENANCE_COMMANDS = (
     # a quem não respondeu, com o próximo da fila esperando para sempre.
     "sweep_waitlist_windows",
     # Por último: as checagens veem o estado PÓS-remediação do ciclo (menos flap).
+    "recover_concierge",
     "check_directive_health",
     # Produto que sumiu do cardápio porque a coleção dele foi desativada. É
     # checagem de ESTADO, não de evento: o que importa não é o instante em que

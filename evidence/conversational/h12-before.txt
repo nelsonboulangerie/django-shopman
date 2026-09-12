@@ -1,0 +1,116 @@
+AUDIT_IMPORTS ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/orderman/shopman/orderman'] ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/guestman/shopman/guestman']
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+________ test_h12_create_crash_rolls_back_record_and_retry_creates_once ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12a65a4e0>
+
+    def test_h12_create_crash_rolls_back_record_and_retry_creates_once(monkeypatch):
+        order = make_order()
+        work = queue("fulfillment.create", order_ref=order.ref)
+        original = Order.save
+        def fail_marker(self, *args, **kwargs):
+            if self.data.get("fulfillment_created"):
+                raise RuntimeError("synthetic marker write failure")
+            return original(self, *args, **kwargs)
+        with monkeypatch.context() as patch:
+            patch.setattr(Order, "save", fail_marker)
+            _process_directive(work)
+        work.refresh_from_db()
+        order.refresh_from_db()
+        assert work.status == "queued"
+        assert not order.data.get("fulfillment_created")
+>       assert not Fulfillment.objects.filter(order=order).exists()
+E       assert not True
+E        +  where True = exists()
+E        +    where exists = <QuerySet [<Fulfillment: Fulfillment #1 (pendente)>]>.exists
+E        +      where <QuerySet [<Fulfillment: Fulfillment #1 (pendente)>]> = filter(order=<Order: H12-ORDER>)
+E        +        where filter = <django.db.models.manager.Manager object at 0x12ad3f4a0>.filter
+E        +          where <django.db.models.manager.Manager object at 0x12ad3f4a0> = Fulfillment.objects
+
+shopman/storefront/tests/test_concierge_runtime_fulfillment.py:41: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-11 17:39:29,637 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+----------------------------- Captured stderr call -----------------------------
+DEBUG 2026-09-11 17:39:29,916 shopman.orderman.dispatch Directive #10 is scheduled for 2026-09-11 21:39:29.913224+00:00, skipping immediate dispatch.
+ERROR 2026-09-11 17:39:29,921 shopman.orderman.dispatch Directive fulfillment.create #10 failed (attempt 1/5)
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/orderman/shopman/orderman/dispatch.py", line 81, in _process_directive
+    handler.handle(message=directive, ctx={"actor": "signal_dispatch"})
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/handlers/fulfillment.py", line 48, in handle
+    fulfillment_svc.create(order)
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/services/fulfillment.py", line 38, in create
+    order.save(update_fields=["data", "updated_at"])
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/storefront/tests/test_concierge_runtime_fulfillment.py", line 32, in fail_marker
+    raise RuntimeError("synthetic marker write failure")
+RuntimeError: synthetic marker write failure
+______ test_h12_update_crash_does_not_skip_sync_and_notification_on_retry ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12ab296a0>
+
+    def test_h12_update_crash_does_not_skip_sync_and_notification_on_retry(monkeypatch):
+        order = make_order()
+        record = Fulfillment.objects.create(order=order, status="in_progress")
+        work = queue("fulfillment.update", order_ref=order.ref, fulfillment_id=record.pk, new_status="dispatched")
+        def fail(*args):
+            raise RuntimeError("synthetic sync boundary failure")
+        with monkeypatch.context() as patch:
+            patch.setattr(FulfillmentUpdateHandler, "_sync_order_status", fail)
+            _process_directive(work)
+        record.refresh_from_db()
+        order.refresh_from_db()
+        work.refresh_from_db()
+        assert work.status == "queued"
+>       assert record.status == "in_progress"
+E       AssertionError: assert 'dispatched' == 'in_progress'
+E         
+E         - in_progress
+E         + dispatched
+
+shopman/storefront/tests/test_concierge_runtime_fulfillment.py:63: AssertionError
+----------------------------- Captured stderr call -----------------------------
+DEBUG 2026-09-11 17:39:30,405 shopman.orderman.dispatch Directive #11 is scheduled for 2026-09-11 21:39:30.403759+00:00, skipping immediate dispatch.
+INFO 2026-09-11 17:39:30,407 shopman.shop.services.fulfillment fulfillment.update: 2 → dispatched for order H12-ORDER
+INFO 2026-09-11 17:39:30,407 shopman.shop.handlers.fulfillment FulfillmentUpdateHandler: fulfillment 2 → dispatched for order H12-ORDER
+ERROR 2026-09-11 17:39:30,409 shopman.orderman.dispatch Directive fulfillment.update #11 failed (attempt 1/5)
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/orderman/shopman/orderman/dispatch.py", line 81, in _process_directive
+    handler.handle(message=directive, ctx={"actor": "signal_dispatch"})
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/handlers/fulfillment.py", line 125, in handle
+    self._sync_order_status(order, new_status)
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/storefront/tests/test_concierge_runtime_fulfillment.py", line 55, in fail
+    raise RuntimeError("synthetic sync boundary failure")
+RuntimeError: synthetic sync boundary failure
+_______________ test_h12_concurrent_creation_has_one_fulfillment _______________
+
+    def test_h12_concurrent_creation_has_one_fulfillment():
+        if connection.vendor != "postgresql":
+            pytest.skip("PostgreSQL required for independent row locks")
+        order = make_order()
+        barrier = Barrier(2)
+        def create_one():
+            try:
+                snapshot = Order.objects.get(pk=order.pk)
+                barrier.wait(timeout=10)
+                fulfillment.create(snapshot)
+            finally:
+                connections.close_all()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            jobs = [pool.submit(create_one) for _ in range(2)]
+            for job in jobs:
+                job.result(timeout=20)
+        order.refresh_from_db()
+        assert order.data["fulfillment_created"] is True
+>       assert Fulfillment.objects.filter(order=order).count() == 1
+E       assert 2 == 1
+E        +  where 2 = count()
+E        +    where count = <QuerySet [<Fulfillment: Fulfillment #4 (pendente)>, <Fulfillment: Fulfillment #3 (pendente)>]>.count
+E        +      where <QuerySet [<Fulfillment: Fulfillment #4 (pendente)>, <Fulfillment: Fulfillment #3 (pendente)>]> = filter(order=<Order: H12-ORDER>)
+E        +        where filter = <django.db.models.manager.Manager object at 0x12ad3f4a0>.filter
+E        +          where <django.db.models.manager.Manager object at 0x12ad3f4a0> = Fulfillment.objects
+
+shopman/storefront/tests/test_concierge_runtime_fulfillment.py:93: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-11 17:39:30,742 shopman.shop.services.fulfillment fulfillment.create: created for order H12-ORDER
+INFO 2026-09-11 17:39:30,742 shopman.shop.services.fulfillment fulfillment.create: created for order H12-ORDER
+3 failed in 1.60s

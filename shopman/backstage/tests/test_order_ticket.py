@@ -543,3 +543,41 @@ def test_a_rota_do_lote_nao_e_confundida_com_um_ref_de_pedido(logado, shop):
 
     assert resposta.status_code == 200
     assert "orders" in resposta.json()
+
+
+@pytest.mark.parametrize("method,tenders,cash_due", [
+    ("cash", [], 3600),
+    ("mixed", [{"method": "cash", "amount_q": 2000, "collection": "on_delivery", "status": "pending"},
+               {"method": "credit", "amount_q": 1600, "collection": "on_delivery", "status": "pending"}], 2000),
+])
+def test_delivery_ticket_states_cash_tender_and_correct_change(shop, method, tenders, cash_due):
+    order = _order("ORD-CHANGE", fulfillment_type="delivery", delivery_address="Rua Azul, 42",
+                   payment={"method": method, "collection": "on_delivery", "change_for_q": 5000, "tenders": tenders})
+    lines = _linhas(order_ticket(order))
+    paper = "\n".join(lines)
+    from shopman.utils.monetary import format_money
+
+    assert "COBRAR NA ENTREGA" in paper
+    assert any("Troco para" in line and "R$ 50,00" in line for line in lines)
+    assert any("Levar de troco" in line and f"R$ {format_money(5000 - cash_due)}" in line for line in lines)
+    assert paper.index("Rua Azul, 42") < paper.index("ITENS (")
+    if method == "mixed":
+        assert "R$ 20,00" in paper
+        assert "R$ 16,00" in paper
+
+
+def test_paid_delivery_ticket_does_not_ask_courier_to_collect_again(shop):
+    order = _order("ORD-CHANGE-PAID", fulfillment_type="delivery", payment={
+        "method": "cash", "collection": "on_delivery", "status": "captured", "change_for_q": 5000,
+    })
+    paper = _texto(order_ticket(order))
+    assert "COBRAR NA ENTREGA" not in paper
+    assert "Levar de troco" not in paper
+    assert "Pago" in paper
+
+
+def test_delivery_ticket_without_change_amount_requests_confirmation(shop):
+    order = _order("ORD-NO-CHANGE", fulfillment_type="delivery", payment={"method": "cash", "collection": "on_delivery"})
+    paper = _texto(order_ticket(order))
+    assert "Troco: não informado; confirmar com cliente" in paper
+    assert "Levar de troco" not in paper

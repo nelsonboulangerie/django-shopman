@@ -34,6 +34,7 @@ class OperatorAlert(models.Model):
         # está no simulador — e esperava alguém abrir /admin/diagnostics/ para
         # contar. Este tipo é a mesma verdade, empurrada em vez de puxada.
         ("integration_config_drift", "Integração em configuração degradada"),
+        ("concierge_identity_conflict", "Concierge encontrou identidade divergente"),
         ("stock_discrepancy", "Discrepância de estoque"),
         ("payment_after_cancel", "Pagamento após cancelamento"),
         # A gêmea do `payment_after_cancel`: o dinheiro chegou com o pedido
@@ -132,6 +133,7 @@ class OperatorAlert(models.Model):
         ("directive_worker_stale", "Processador de tarefas de fundo parado"),
         ("lifecycle_phase_stuck", "Fase do pedido travada"),
         ("low_rating", "Avaliação baixa recebida"),
+        ("cash_change_requested", "Troco solicitado no PDV"),
         ("cash_shift_open_at_closing", "Caixa aberto no fechamento do dia"),
         # A venda foi criada e cobrada, mas o turno fechou entre o commit do
         # pedido e a linha do livro, e o livro-caixa é append-only num turno
@@ -177,6 +179,10 @@ class OperatorAlert(models.Model):
         # espera a equipe), ou o modelo falhou três vezes seguidas numa conversa.
         ("concierge_handoff", "WhatsApp: cliente pediu a equipe"),
         ("concierge_unavailable", "WhatsApp: concierge fora do ar"),
+        ("concierge_empty_output", "WhatsApp: resposta automática vazia"),
+        ("concierge_handoff_sync", "WhatsApp: sincronização do atendimento pendente"),
+        ("concierge_output_blocked", "WhatsApp: resposta automática bloqueada"),
+        ("concierge_output_pending", "WhatsApp: resultado do envio pendente"),
         # ⚠️ Vai para o GESTOR, não para o CI. Teste vermelho é visto por quem
         # programa; a obrigação de cumprir a norma é de quem opera — então o
         # vencimento de um parâmetro legal precisa aparecer na tela dele.

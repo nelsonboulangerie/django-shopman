@@ -117,6 +117,12 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
                 icon="format_quote",
                 is_custom_page=True,
             ),
+            _model(
+                "Perguntas frequentes",
+                "shop_faqentry",
+                "Respostas públicas compartilhadas pelo site e pela Concierge.",
+                "help_center",
+            ),
             _model("Modelos de mensagem", "shop_notificationtemplate", "O texto de cada aviso enviado por WhatsApp, SMS e e-mail.", "mail"),
         ),
     ),

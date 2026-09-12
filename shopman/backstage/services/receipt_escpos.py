@@ -469,6 +469,16 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
         out += _line(f"Telefone: {telefone}"[:COLUMNS])
     out += _rule()
 
+    if is_delivery:
+        endereco, instrucoes = _delivery_lines(data)
+        out += _line("ENTREGAR EM:")
+        for pedaco in _wrap(endereco or "-", COLUMNS):
+            out += _line(pedaco)
+        if instrucoes:
+            for pedaco in _wrap(f"Referência: {instrucoes}", COLUMNS):
+                out += _line(pedaco)
+        out += _rule()
+
     itens = list(order.items.all())
     out += _line(f"ITENS ({len(itens)})")
     for item in itens:
@@ -484,16 +494,6 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
         for pedaco in pedacos[1:]:
             out += _line(f"    {pedaco}"[:COLUMNS])
     out += _rule()
-
-    if is_delivery:
-        endereco, instrucoes = _delivery_lines(data)
-        out += _line("ENTREGAR EM:")
-        for pedaco in _wrap(endereco or "-", COLUMNS):
-            out += _line(pedaco)
-        if instrucoes:
-            for pedaco in _wrap(f"Referência: {instrucoes}", COLUMNS):
-                out += _line(pedaco)
-        out += _rule()
 
     # As duas notas são de DONOS diferentes (data-schemas) e por isso saem com
     # nome: ``order_notes`` é a voz do cliente no checkout, ``kitchen_note`` é o
@@ -527,6 +527,27 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
         out += _line("")
         out += _centered("*** PAGAMENTO PENDENTE ***")
         out += _line("")
+    if is_delivery and payment.get("collection") == "on_delivery" and not pago and not payment.get("cod_settled_at"):
+        from shopman.shop.services.operator_orders import _change_for_q, change_out_suggested_q
+
+        out += _centered("COBRAR NA ENTREGA")
+        tenders = payment.get("tenders") or [{"method": metodo, "amount_q": order.total_q}]
+        for tender in tenders:
+            if tender.get("status") in {"received", "captured", "paid"}:
+                continue
+            if tender.get("collection", "on_delivery") != "on_delivery":
+                continue
+            out += _pair(
+                payment_method_label(str(tender.get("method") or "")),
+                f"R$ {format_money(int(tender.get('amount_q') or 0))}",
+            )
+        change_for_q = _change_for_q(order)
+        if metodo in {"cash", "mixed"}:
+            if change_for_q:
+                out += _pair("Troco para", f"R$ {format_money(change_for_q)}")
+                out += _pair("Levar de troco", f"R$ {format_money(change_out_suggested_q(order))}")
+            else:
+                out += _line("Troco: não informado; confirmar com cliente")
     out += _rule()
 
     # ⚠️ O que este papel NÃO é. Ele nasce antes do pagamento e traz um total

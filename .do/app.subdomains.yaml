@@ -339,6 +339,62 @@ envs:
     value: production
     scope: RUN_TIME
     type: GENERAL
+  # Concierge v3 nasce contida no template de produção. Ativação exige conta,
+  # coorte, chave dedicada e autorização explícita no ambiente real.
+  - key: AI_ASSIST_API_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: SHOPMAN_CONCIERGE_ENABLED
+    value: "false"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: CONCIERGE_MANYCHAT_WHATSAPP_ACTIVE
+    value: "false"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: CONCIERGE_API_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: CONCIERGE_CONTRACT_VERSION
+    value: "3"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: CONCIERGE_READ_ONLY
+    value: "true"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: CONCIERGE_MANYCHAT_EVENT_ID_VERIFIED
+    value: "false"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: CONCIERGE_WHATSAPP_INTERACTION_TIMEZONE
+    value: America/Sao_Paulo
+    scope: RUN_TIME
+    type: GENERAL
+  - key: CONCIERGE_IDENTITY_LINK_ENABLED
+    value: "false"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: CONCIERGE_HUMAN_RETURN_ENABLED
+    value: "false"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: CONCIERGE_OUTPUT_RETRY_ENABLED
+    value: "false"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: CONCIERGE_TRANSFER_ENABLED
+    value: "false"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: CONCIERGE_ACCOUNT_ID
+    value: ""
+    scope: RUN_TIME
+    type: GENERAL
+  - key: CONCIERGE_ALLOWED_SUBSCRIBERS
+    value: ""
+    scope: RUN_TIME
+    type: GENERAL
   # false em produção: nunca expor OTP no corpo da resposta em produção (E010).
   - key: SHOPMAN_EXPOSE_DEBUG_OTP
     value: "false"

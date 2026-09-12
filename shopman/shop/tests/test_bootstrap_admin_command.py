@@ -75,3 +75,43 @@ def test_bootstrap_admin_rejects_weak_password_when_not_debug(monkeypatch):
                 email="pablo@example.com",
                 stdout=StringIO(),
             )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("command", ["bootstrap_admin", "ensure_dev_superuser"])
+def test_repeated_bootstrap_preserves_sessions_but_password_rotation_revokes_them(command, monkeypatch):
+    """Um deploy não troca a identidade; senha nova continua revogando acesso."""
+    from django.contrib.auth import SESSION_KEY
+    from django.test import Client
+
+    password = "strong-staging-owner-password"
+
+    def bootstrap(secret):
+        monkeypatch.setenv("SHOPMAN_ADMIN_PASSWORD", secret)
+        if command == "bootstrap_admin":
+            call_command(command, username="owner", email="owner@example.com", stdout=StringIO())
+        else:
+            call_command(command, "owner", password=secret, stdout=StringIO())
+
+    bootstrap(password)
+    user = get_user_model().objects.get(username="owner")
+    original_hash = user.password
+    # Sessões independentes: o Admin e o balcão continuam autenticados após bootstrap.
+    admin, operator = Client(), Client()
+    for client in (admin, operator):
+        client.force_login(user, backend="django.contrib.auth.backends.ModelBackend")
+    bootstrap(password)
+    user.refresh_from_db()
+    assert user.password == original_hash
+    assert admin.get("/admin/").wsgi_request.user.pk == user.pk
+    assert operator.get("/api/v1/backstage/operator/session/").json()["operator"]["id"] == user.pk
+    for client in (admin, operator):
+        assert client.session[SESSION_KEY] == str(user.pk)
+
+    bootstrap("a-different-strong-password")
+    user.refresh_from_db()
+    assert user.check_password("a-different-strong-password")
+    assert admin.get("/admin/").status_code == 302
+    assert operator.get("/api/v1/backstage/operator/session/").status_code in (401, 403)
+    for client in (admin, operator):
+        assert SESSION_KEY not in client.session

@@ -55,6 +55,7 @@
   "offer-and-pg-skips.txt": "6bb2be4d8b3e21ad5cae31f1bde4378ccc5ab7540bd7dc83277f48765447875b",
   "post-rebase-validation-20260911.txt": "b4f34d79e3c20b8160c95e85a590df73cef2b387ba5c9bf2f304e1a687e60b40",
   "postgres-blocked.txt": "3dda3345c902c6b43411b432a0162b02eb5fbc139fdb18f467bf48408c5b1452",
+  "pre-go-live-deployment-20260911.txt": "34331ff17524e2cef3e2ee95c022142b669a5eb1b28398088028419f4c234758",
   "production-read-only-validation-20260911.txt": "49c85a74c31f2666e279e6e0f57efd5fe80065260fc3bcd56a59641b88c1841e",
   "receipts-runtime-gate.txt": "4e899eefb35e196c30336b78c05eeb51a04500db49b0e778196dc79c727a160a",
   "rollback-in-flight-postgres-20260911.txt": "9b3fc8f9df7bb50c394589a0795286a95d2911566524b92d7e277ad0137a38f0",

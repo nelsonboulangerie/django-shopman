@@ -12,6 +12,7 @@ import logging
 from decimal import Decimal
 
 from django.db import transaction
+from shopman.orderman.exceptions import SessionError
 from shopman.orderman.models import Session
 
 from shopman.shop.services import availability, lot_pricing
@@ -94,6 +95,17 @@ def get_or_create_session(
     return session, session.session_key
 
 
+def _lock_cart_session(*, session_key: str, channel_ref: str) -> Session:
+    """O lock da Session precede reserva e escrita; a sessão selada não ganha holds."""
+    try:
+        session = Session.objects.select_for_update().get(session_key=session_key, channel_ref=channel_ref)
+    except Session.DoesNotExist as exc:
+        raise SessionError(code="not_found", message="Sacola não encontrada.") from exc
+    if session.state != "open":
+        raise SessionError(code=f"already_{session.state}", message="Esta sacola foi encerrada; consulte o resultado antes de continuar.")
+    return session
+
+
 @transaction.atomic
 def add_item(
     *,
@@ -112,7 +124,7 @@ def add_item(
         origin_channel=origin_channel,
     )
 
-    session = Session.objects.select_for_update().get(pk=session.pk)
+    session = _lock_cart_session(session_key=resolved_key, channel_ref=channel_ref)
     existing = next((item for item in session.items if item.get("sku") == sku), None)
     hold_id = _reserve_or_raise(
         sku=sku,
@@ -123,7 +135,7 @@ def add_item(
     availability.bump_session_hold_expiry(resolved_key)
 
     if existing:
-        new_qty = int(Decimal(str(existing["qty"]))) + qty
+        new_qty = Decimal(str(existing["qty"])) + Decimal(str(qty))
         return (
             session_service.modify_session(
                 session_key=resolved_key,
@@ -161,8 +173,8 @@ def update_qty(
     qty: int,
     sku: str | None = None,
 ) -> Session:
-    """Reconcile holds and update a cart line quantity."""
-    Session.objects.select_for_update().get(session_key=session_key, channel_ref=channel_ref, state="open")
+    """Reconcile holds and update a cart line quantity in one local commit."""
+    _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
     line_sku = sku
     if line_sku is None:
         line = get_line(session_key=session_key, channel_ref=channel_ref, line_id=line_id)
@@ -178,7 +190,7 @@ def update_qty(
             raise CartUnavailableError(
                 sku=line_sku,
                 requested_qty=qty,
-                available_qty=int(result["available_qty"]),
+                available_qty=Decimal(str(result["available_qty"])),
                 is_paused=result["is_paused"],
                 substitutes=result["substitutes"],
                 error_code=result["error_code"],
@@ -201,8 +213,8 @@ def remove_item(
     line_id: str,
     sku: str | None = None,
 ) -> Session:
-    """Reconcile holds and remove a cart line."""
-    Session.objects.select_for_update().get(session_key=session_key, channel_ref=channel_ref, state="open")
+    """Reconcile holds and remove a cart line in one local commit."""
+    _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
     line_sku = sku
     if line_sku is None:
         line = get_line(session_key=session_key, channel_ref=channel_ref, line_id=line_id)
@@ -530,7 +542,7 @@ def _reserve_or_raise(*, sku: str, qty: int, session_key: str, channel_ref: str)
     raise CartUnavailableError(
         sku=sku,
         requested_qty=qty,
-        available_qty=int(result["available_qty"]),
+        available_qty=Decimal(str(result["available_qty"])),
         is_paused=result["is_paused"],
         substitutes=result["substitutes"],
         error_code=result["error_code"],

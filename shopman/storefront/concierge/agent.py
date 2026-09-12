@@ -6,7 +6,7 @@ resultado, até ele responder em texto. O laço tem teto de iterações; no teto
 a última ida ao modelo é sem ferramentas, para sair com uma frase e não com
 silêncio.
 
-O que este módulo NÃO faz: falar com o ManyChat (``service``/``transport``),
+O que este módulo NÃO faz: falar com o transporte (``service``/``transport``),
 gravar no banco (``service``), decidir preço (``tools``). Ele recebe a
 história já persistida e devolve o que aconteceu, para quem chamou gravar.
 
@@ -46,6 +46,7 @@ _TAG_OPEN = "<" + "/?" + "\\w*" + "antml" + "[^>]*>"
 _LEAK_RE = re.compile(_TAG_OPEN + "|<" + "/?parameter[^>]*>|<" + "/?invoke[^>]*>|" + 'name="[a-z_]+">', re.I)
 #: Quantas vezes a mesma chamada (ferramenta + argumentos) pode se repetir num turno.
 MAX_REPEATED_CALLS = 2
+_CART_STATE_TOOLS = {"view_cart", "set_item", "set_fulfillment", "review_order"}
 
 
 def clean_text(value: str) -> str:
@@ -81,6 +82,8 @@ class AgentOutcome:
     extra_replies: list[str] = field(default_factory=list)
     tool_events: list[dict] = field(default_factory=list)
     order_ref: str = ""
+    quote_token: str = ""
+    disclosure: dict = field(default_factory=dict)
 
 
 def _config() -> dict:
@@ -105,9 +108,16 @@ def history_for(conversation: Conversation) -> list[dict]:
     """
     window = int(_config().get("window_messages") or 40)
     rows = list(
-        conversation.messages.exclude(kind=ConversationMessage.Kind.NOTE).order_by("-id")[:window]
+        conversation.messages.exclude(kind=ConversationMessage.Kind.NOTE)
+        .filter(id__lte=getattr(conversation, "_inbound_max_id", 2**63 - 1))
+        .order_by("-id")[:window]
     )
-    rows.reverse()
+    included = {row.pk for row in rows}
+    # A janela de linguagem pode cortar contexto antigo, nunca a entrada que o
+    # claim declarará consumida. Claims são limitados para justiça entre clientes.
+    required = set(getattr(conversation, "_inbound_ids", ())) - included
+    rows.extend(conversation.messages.filter(pk__in=required))
+    rows.sort(key=lambda row: row.pk)
     while rows and rows[0].kind != ConversationMessage.Kind.INBOUND:
         rows.pop(0)
 
@@ -169,9 +179,7 @@ def _persistable_content(response) -> list[dict]:
 
 
 def _text_of(response) -> str:
-    return "\n".join(
-        (block.text or "") for block in response.content if getattr(block, "type", "") == "text"
-    ).strip()
+    return "\n".join((block.text or "") for block in response.content if getattr(block, "type", "") == "text").strip()
 
 
 def _join_prefaces(prefaces: list[str], final: str) -> str:
@@ -229,10 +237,18 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
     max_tokens = int(cfg.get("max_tokens") or 1024)
     max_iterations = max(1, int(cfg.get("max_iterations") or 6))
     effort = str(cfg.get("effort") or "").strip()
-    channel_ref = str(conversation.channel_ref or cfg.get("channel_ref") or "whatsapp")
+    channel_ref = str(conversation.channel_ref or cfg.get("channel_ref") or "")
+    binding = getattr(conversation, "_binding", None)
 
     client = client or build_client()
-    ctx = ToolContext(conversation=conversation, channel_ref=channel_ref)
+    ctx = ToolContext(
+        conversation=conversation,
+        channel_ref=channel_ref,
+        provider=str(getattr(binding, "provider", "") or ""),
+        account=str(getattr(binding, "account", "") or ""),
+        transport_channel=str(getattr(binding, "transport_channel", "") or ""),
+        connection_key=str(getattr(binding, "connection_key", "") or ""),
+    )
 
     is_first_turn = not conversation.messages.filter(kind=ConversationMessage.Kind.REPLY).exists()
     system = build_system(
@@ -245,17 +261,21 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
     outcome = AgentOutcome(reply_text="")
     usage: dict = {}
     seen_calls: dict[str, int] = {}
+    tool_specs = tools_module.TOOL_SPECS
+    if not getattr(conversation, "_commercial_authority", False):
+        tool_specs = [spec for spec in tool_specs if spec["name"] in tools_module.LIMITED_AUTHORITY_TOOL_NAMES]
     # Frases ditas ANTES de chamar uma ferramenta ("a taxa é R$ 8,00, deixa eu ver
     # os horários"). Sem isto elas morriam na transcrição: o cliente só via o
     # texto final, e a taxa que ele perguntou nunca chegava (medido em 04/09).
     prefaces: list[str] = []
+    canonical_replies: dict[str, str] = {}
 
     for iteration in range(max_iterations + 1):
         request: dict = {
             "model": model,
             "max_tokens": max_tokens,
             "system": system,
-            "tools": tools_module.TOOL_SPECS,
+            "tools": tool_specs,
             "messages": messages,
             # Segundo ponto de cache, no fim do histórico: o prefixo (sistema + turnos
             # anteriores) é lido do cache a um décimo do preço a cada ida.
@@ -272,6 +292,9 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
             # Teto de iterações: a última ida sai em texto, sem ferramenta.
             request["tool_choice"] = {"type": "none"}
 
+        from .service import assert_turn_authority
+
+        assert_turn_authority(conversation, for_mutation=False)
         response = client.messages.create(**request)
         _accumulate(usage, response)
 
@@ -281,10 +304,13 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
 
         tool_uses = [b for b in response.content if getattr(b, "type", "") == "tool_use"]
         if stop != "tool_use" or not tool_uses:
-            text = clean_text(_text_of(response))
             if stop == "max_tokens":
                 logger.warning("concierge.agent max_tokens conversation=%s", conversation.pk)
-            outcome.reply_text = _join_prefaces(prefaces, text)
+            outcome.reply_text = (
+                "\n\n".join(dict.fromkeys(canonical_replies.values()))
+                if canonical_replies
+                else "Preciso consultar os dados da loja para responder. Você pode pedir o cardápio, consultar seu pedido ou falar com a equipe."
+            )
             outcome.messages.append({"role": "assistant", "content": _persistable_content(response)})
             break
 
@@ -309,13 +335,25 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
                 }
             else:
                 result = tools_module.execute(use.name, arguments, ctx)
+            rendered = "" if result.get("error") == "repeated_call" else tools_module.render_result(use.name, result)
+            if rendered:
+                reply_key = "cart_state" if use.name in _CART_STATE_TOOLS else signature
+                canonical_replies[reply_key] = rendered
+                if result.get("disclosure"):
+                    outcome.disclosure = result["disclosure"]
+                if use.name == "review_order":
+                    outcome.quote_token = str(result.get("quote_token") or "") if result.get("ready") else ""
+                elif use.name in {"set_item", "set_fulfillment"}:
+                    outcome.quote_token = ""
             outcome.tool_events.append({"name": use.name, "input": arguments, "ok": result.get("ok", True)})
             results.append(
                 {
                     "type": "tool_result",
                     "tool_use_id": use.id,
                     "content": _tool_result_text(result),
-                    **({"is_error": True} if result.get("ok") is False and result.get("error") == "tool_failed" else {}),
+                    **(
+                        {"is_error": True} if result.get("ok") is False and result.get("error") == "tool_failed" else {}
+                    ),
                 }
             )
         messages.append({"role": "user", "content": results})
@@ -324,7 +362,7 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
         if ctx.handoff:
             # A equipe assume: fecha o turno com o que o modelo já tinha dito e
             # deixa a casa mandar a confirmação de handoff.
-            outcome.reply_text = _join_prefaces(prefaces, "")
+            outcome.reply_text = ""
             break
 
     outcome.usage = usage

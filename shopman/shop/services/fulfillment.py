@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import logging
 
-from shopman.orderman.models import Fulfillment
+from django.db import transaction
+from shopman.orderman.models import Fulfillment, Order
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +33,21 @@ def create(order) -> Fulfillment | None:
     if (order.data or {}).get("fulfillment_created"):
         return None
 
-    fulfillment = Fulfillment.objects.create(order=order)
+    # O snapshot do caller pode anteceder outro worker. Trava o owner canônico
+    # e grava o registro e seu marcador no mesmo commit, sem rede sob o lock.
+    with transaction.atomic():
+        current = Order.objects.select_for_update().get(pk=order.pk)
+        if (current.data or {}).get("fulfillment_created"):
+            order.data = current.data
+            return None
+        existing = Fulfillment.objects.filter(order=current).order_by("pk").first()
+        record = existing or Fulfillment.objects.create(order=current)
+        current.data = {**(current.data or {}), "fulfillment_created": True}
+        current.save(update_fields=["data", "updated_at"])
+        order.data = current.data
 
-    order.data["fulfillment_created"] = True
-    order.save(update_fields=["data", "updated_at"])
-
-    logger.info("fulfillment.create: created for order %s", order.ref)
-    return fulfillment
+    logger.info("fulfillment.create: recorded for order %s", order.ref)
+    return record
 
 
 def update(fulfillment, status, tracking_code=None, carrier=None) -> None:
