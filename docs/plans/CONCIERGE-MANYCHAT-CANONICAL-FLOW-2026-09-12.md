@@ -23,7 +23,7 @@ O histórico anterior permanece relevante como evidência de descoberta:
 
 Esses fatos descrevem o caminho de descoberta. O contrato v3 substitui a
 estrutura v2 no candidato atual. A implementação técnica foi validada no SHA
-`895f50a3dd32723d3309f20b3d2914b31f33b64c`; publicação, homologação ManyChat,
+`7dba54a6ac81866bd0708033d683ac47dcade30c`; publicação, homologação ManyChat,
 piloto e rollout do desenho final não foram executados.
 
 ## Arquitetura escolhida

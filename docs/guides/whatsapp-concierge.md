@@ -10,7 +10,7 @@ habilitar uma connection, enviar a contatos reais, iniciar piloto ou fazer
 rollout.
 
 Código e testes da implementação técnica: SHA
-`895f50a3dd32723d3309f20b3d2914b31f33b64c`. O endpoint abaixo ainda precisa ser
+`7dba54a6ac81866bd0708033d683ac47dcade30c`. O endpoint abaixo ainda precisa ser
 publicado em ambiente autorizado antes de poder ser chamado pelo flow real.
 
 ## Portão canônico
@@ -205,10 +205,12 @@ Para conter a capacidade, desligar primeiro
 conversas, bindings, mensagens, directives, tentativas e receipts. Conciliar
 estados `executing`/`unknown`; não reenviar automaticamente nem apagar histórico.
 
-A migração do modelo v3 é forward-only. Rollback operacional é contenção com o
-schema novo preservado e correção adiante; não executar downgrade que apague
-evidências. Retorno humano, retry de saída e transferência continuam fechados
-até seus gates próprios.
+A migração do modelo v3 aceita downgrade somente enquanto cada conversa tiver
+um único binding; nesse caso, o ensaio restaura identidade e evidência de entrega
+do contrato v2. Com múltiplos bindings, ela recusa perda de dados. O rollback
+operacional continua começando pela contenção e conciliação; downgrade exige
+backup, alvo fixado e ensaio G07. Retorno humano, retry de saída e transferência
+continuam fechados até seus gates próprios.
 
 Referências: [plano de excelência operacional](../plans/CONVERSATIONAL-SALES-OPERATIONAL-EXCELLENCE-PLAN-2026-09-11.md),
 [fluxo canônico ManyChat](../plans/CONCIERGE-MANYCHAT-CANONICAL-FLOW-2026-09-12.md),

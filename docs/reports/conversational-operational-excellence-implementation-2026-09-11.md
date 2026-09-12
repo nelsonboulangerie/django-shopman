@@ -1,6 +1,6 @@
 # Evidências da implementação conversacional — 11/09/2026
 
-**Estado atual: implementação técnica v3 testada em ambiente isolado no SHA `895f50a3dd32723d3309f20b3d2914b31f33b64c`; homologação, piloto e rollout não executados.** As seções anteriores ao adendo v3 preservam a evidência histórica do candidato v2 e os SHAs que nomeiam. O adendo ao final é a conclusão vigente. O aceite integral continua limitado pelos gates e provas humanas/fornecedor. Nenhuma contagem de testes comprova redução de esforço humano ou entrega no WhatsApp.
+**Estado atual: implementação técnica v3 testada em ambiente isolado no SHA `7dba54a6ac81866bd0708033d683ac47dcade30c`; homologação, piloto e rollout não executados.** As seções anteriores ao adendo v3 preservam a evidência histórica do candidato v2 e os SHAs que nomeiam. O adendo ao final é a conclusão vigente. O aceite integral continua limitado pelos gates e provas humanas/fornecedor. Nenhuma contagem de testes comprova redução de esforço humano ou entrega no WhatsApp.
 
 ## Proveniência e isolamento
 
@@ -291,7 +291,7 @@ reescrever as evidências históricas acima. A base registrada da nova worktree 
 `cbda00f02e692fc7d1949a4e11024ace33245362`, branch
 `codex/concierge-transport-bindings-20260912`. Após revalidação contra
 `origin/main` em `12f2b1b34c3e1f4b95d3b48e69937e5a6684e287`, o código e os testes v3
-validados formam o SHA `895f50a3dd32723d3309f20b3d2914b31f33b64c`.
+validados formam o SHA `7dba54a6ac81866bd0708033d683ac47dcade30c`.
 
 O operador autorizou uma arquitetura pré-go-live sem compatibilidade no runtime.
 `Conversation` passa a representar a jornada lógica e os fatos comerciais.
@@ -333,6 +333,7 @@ somadas.
 | QA visual Admin | 2 perfis × 2 gates × 1440/390; console sem erros | dados sintéticos; oito capturas e JSONs em `evidence/conversational/browser-v3/` |
 | Schema e higiene | `check`, `makemigrations --check --dry-run`, Ruff e `git diff --check` aprovados | não executa migração em ambiente real |
 | Gate de runtime | roundtrip PostgreSQL + Redis aprovado | serviços privados temporários, sem credenciais externas |
+| Regressões de migração após o CI | **138 passed**, 156,93 s; foco migração/alerta/mapa: **10 passed**, 21,28 s | rollback 0051 exercitado em SQLite isolado; o CI completo do PR permanece gate obrigatório |
 
 A carga isolada cobriu 100 conversas, 10 mil mensagens históricas, 109 entradas,
 burst 10 e quatro workers. Foram 100 saídas aceitas pelo fake, 3.000 queries,
@@ -355,7 +356,7 @@ ganho humano.
 | WP07 | handoff lógico contém todos os bindings, sync é por binding e incerteza preserva posse humana; Admin mostra próxima ação | software e browser aprovados; owner/SLA/retorno G03 pendentes |
 | WP08 | domínio sem branches de provider/canal; adapter opaco estilo TikTok prova segundo transporte no mesmo core | arquitetura testada; adapters e gates reais de novos canais pendentes |
 | WP09 | Storefront, PostgreSQL/Redis, carga, regressões e browser executados | prova técnica concluída; pessoas, webview e fornecedor G02/G06 pendentes |
-| WP10 | migração 0051 move transporte para Binding e cria Attempts antes de remover colunas; ensaio preserva conversa, mensagens e evidência | migração sintética aprovada; backup/alvo/janela real G07 pendentes |
+| WP10 | migração 0051 move transporte para Binding e cria Attempts antes de remover colunas; ida e volta preservam conversa, identidade, mensagens e evidência quando o estado ainda cabe no contrato v2 | migração sintética aprovada; backup/alvo/janela real G07 pendentes |
 
 ### Matriz de achados v3
 
@@ -378,7 +379,7 @@ ganho humano.
 | hipótese testada localmente | outro provider/canal exigiria ramificações no domínio | fake TikTok/DM usa o mesmo Conversation, Message, Directive e Attempt sem branches |
 | hipótese testada localmente | continuidade entre canais poderia ser inferida de nome/telefone do payload | payload nunca une jornadas; `attach_binding` exige scope configurado, gate e `IdentityResolution` verificada contra Customer canônico |
 | simplificação confirmada | detectar entrada tardia exigiria watermark e consulta extra por turno | o fence já canônico resolve a versão do contexto; carga permaneceu em 3.000 queries |
-| decisão humana | projeto pré-go-live não mantém rota, flags ou modelos v2 | testes e caminho runtime legados removidos; migração é forward-only |
+| decisão humana | projeto pré-go-live não mantém rota, flags ou modelos runtime v2 | testes e caminho runtime legados removidos; o downgrade de schema só é permitido enquanto cada conversa tiver um único binding |
 | gate externo | documentação pública e corpo atual não comprovam ID estável da mensagem | `event_id` é opcional; só ganha assurance após G02 e flag explícita |
 | gate humano | redução de esforço/erro e clareza final ainda não foram medidas com operador/cliente | G06 e jornadas J01–J13 permanecem pendentes |
 
@@ -403,20 +404,23 @@ assurance permanecem contidas.
 
 A migração v3 converte os registros existentes para Conversation + Binding +
 Message + Attempt e remove da Conversation os campos de transporte que passam a
-pertencer ao binding. Ela é intencionalmente **forward-only**: o reverse não
-descarta evidence nem recria uma representação menos precisa.
+pertencer ao binding. O reverse foi exercitado e restaura a identidade e a
+evidência tri-state do contrato v2 quando existe exatamente um binding por
+conversa. Se uma conversa já usa múltiplos bindings, o downgrade recusa a perda
+de dados explicitamente.
 
 Rollback operacional significa desligar a connection e/ou o switch global,
 interromper novas admissões e saídas, conciliar `executing`/`unknown` e preservar
 Conversation, Binding, Message, Directive, Attempt, pedidos e receipts. Não
 executar downgrade destrutivo, apagar fila, reenviar efeito incerto ou fabricar
-compensação. Correção de schema segue adiante com nova migração.
+compensação. O downgrade de schema só cabe antes do uso multicanal e depois de
+backup e ensaio no alvo de release; fora dessa condição, a correção segue adiante.
 
 ### Etapas que não se confundem
 
 | Etapa | Estado em 12/09/2026 | Prova necessária para avançar |
 |---|---|---|
-| Implementação técnica | **Concluída no SHA `895f50a3dd32723d3309f20b3d2914b31f33b64c`** | Reabrir se drift, regressão ou divergência do contrato aparecer. |
+| Implementação técnica | **Concluída no SHA `7dba54a6ac81866bd0708033d683ac47dcade30c`** | Reabrir se drift, regressão ou divergência do contrato aparecer. |
 | Homologação | Não executada | Flow real, cinco campos, continuidade, janela, ACK/worker, handoff e saída/entrega observados com credenciais e coorte de teste autorizadas. |
 | Piloto | Não iniciado | Gates nominais, pessoas/coorte autorizadas, owner/SLA e medição J01–J13 de esforço, erro e compreensão. |
 | Rollout | Não autorizado | Release/alvo fixados, backup e rollback exercitados, reconciliação limpa, aceite dos gates e decisão explícita de expansão. |
