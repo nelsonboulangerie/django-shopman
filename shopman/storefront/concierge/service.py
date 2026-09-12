@@ -191,6 +191,17 @@ def receive_inbound(
     envelope.update(version=2, event_id=external_id, subject=subscriber_id, account_id=identity["account"], provider=identity["provider"], transport_channel=identity["transport_channel"])
     envelope["input_assurance"] = "legacy_unverified" if legacy else "provider_event"
     envelope["profile"] = profile or {}
+    # Marcador interno é derivado da autenticação/conta, jamais copiado do body.
+    envelope.pop("window_evidence", None)
+    from .transport import whatsapp_interaction_at
+
+    interaction_at = whatsapp_interaction_at(envelope, timezone.now()) if legacy else None
+    if interaction_at:
+        envelope["window_evidence"] = {
+            "source": "manychat_whatsapp_last_interaction",
+            "at": interaction_at.isoformat(),
+            "timezone": config()["whatsapp_interaction_timezone"],
+        }
     ext = _external_id(subscriber_id, text, external_id)
     with transaction.atomic():
         conversation = _get_or_create_conversation(subscriber_id, identity)

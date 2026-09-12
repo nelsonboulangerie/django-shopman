@@ -43,6 +43,7 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     "shopman/storefront/tests/test_concierge_consent_race.py",
     "shopman/storefront/tests/test_concierge_payment_race.py",
     "shopman/storefront/tests/test_concierge_boundary_races.py",
+    "shopman/storefront/tests/test_concierge_whatsapp_window.py",
     "shopman/storefront/tests/test_concierge_runtime_turns.py",
     "shopman/storefront/tests/test_concierge_runtime_fulfillment.py",
     "shopman/storefront/tests/test_concierge_runtime_load.py",
