@@ -27,6 +27,7 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "customer_email",
     "customer_memory_action",
     "fulfillment_type",
+    "sales_mode",
     "delivery_address",
     "delivery_address_structured",
     "delivery_date",
@@ -150,7 +151,12 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
     payload["intent_version"] = POS_SALE_INTENT_VERSION
     payload["items"] = _items(payload.get("items"), for_commit=for_commit)
 
+    from shopman.shop.services.pos_sales_mode import validate_sales_mode
+
+    validate_sales_mode(payload, require_ready=for_commit or bool(payload["items"]))
     fulfillment_type = _fulfillment_type(payload.get("fulfillment_type"))
+    if payload.get("sales_mode") == "order" and not for_commit and not payload["items"] and not payload.get("fulfillment_type"):
+        fulfillment_type = ""
     payload["fulfillment_type"] = fulfillment_type
 
     payload["customer_name"] = _text(payload.get("customer_name"), limit=160)

@@ -294,6 +294,7 @@ def close_sale(
     operator_username: str,
 ) -> PosSaleResult:
     """Create and commit a POS sale from a parsed cart payload."""
+    payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
     channel, config = _channel_and_config(channel_ref)
     # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou, e o
@@ -626,6 +627,7 @@ def review_sale(
     operator_username: str,
 ) -> PosSaleReview:
     """Validate a POS checkout intent without committing the Orderman session."""
+    payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
     channel, _config = _channel_and_config(channel_ref)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
@@ -1053,16 +1055,21 @@ def save_pos_tab(
     operator_username: str,
 ) -> PosTabResult:
     """Save the current POS cart on its tab and return to the tab grid."""
+    payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=False).payload
     channel, config = _channel_and_config(channel_ref)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     if session is None:
         raise ValueError("Abra um POS tab antes de deixar em espera.")
 
+    if payload.get("sales_mode") == "order" and payload.get("items"):
+        _validate_schedule(payload)
     before_items = session.items
     tab_ref = _session_tab_ref(session)
     tab_display = _ensure_pos_tab(tab_ref, display=_session_tab_display(session))
     fulfillment_type = _payload_fulfillment_type(payload)
+    if payload.get("sales_mode") == "order" and not payload.get("items") and not payload.get("fulfillment_type"):
+        fulfillment_type = ""
     ops = _replace_session_ops(session, payload, operator_username)
     ops.extend([
         {"op": "set_data", "path": "origin_channel", "value": "pos"},
@@ -1293,6 +1300,17 @@ def move_pos_tab_lines(
             focus="cart",
         )
 
+    from shopman.shop.services.pos_sales_mode import sales_mode, session_sales_payload, validate_sales_mode
+
+    if sales_mode(source.data or {}) != sales_mode(target.data or {}):
+        if target_created:
+            session_service.abandon_session(session_key=target.session_key, channel_ref=channel.ref)
+        raise PosIntentError(
+            "sales_mode_transfer_mismatch", "Mova itens apenas entre atendimentos do mesmo modo.",
+            field="to_session_key", focus="cart",
+        )
+    validate_sales_mode(session_sales_payload(target), require_ready=True)
+
     try:
         session_service.move_session_lines(
             from_session_key=source.session_key,
@@ -1396,6 +1414,10 @@ def fire_pos_tab(
             field="session_key",
             focus="cart",
         )
+
+    from shopman.shop.services.pos_sales_mode import session_sales_payload, validate_sales_mode
+
+    validate_sales_mode(session_sales_payload(session), require_ready=True)
 
     requested = {str(lid).strip() for lid in (line_ids or []) if str(lid).strip()}
     lines = _session_to_fire_lines(session)
@@ -1760,6 +1782,9 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
                     "value": customer.price_tier.ref,
                 })
 
+    from shopman.shop.services.pos_sales_mode import sales_mode
+
+    ops.append({"op": "set_data", "path": "pos.sales_mode", "value": sales_mode(payload)})
     fulfillment_type = _payload_fulfillment_type(payload)
     ops.append({"op": "set_data", "path": "fulfillment_type", "value": fulfillment_type})
     # Observações do pedido valem para QUALQUER recebimento (retirada incluída):
@@ -2113,6 +2138,15 @@ def _replace_session_ops(
     ])
     ops.extend(build_session_ops(payload, operator_username, approved_by=approved_by))
     return ops
+
+
+def _inherit_sales_mode(channel_ref: str, payload: dict) -> dict:
+    """Omitir o modo não apaga o contrato de uma comanda já marcada."""
+    if not isinstance(payload, dict) or payload.get("sales_mode") is not None:
+        return payload
+    session = _payload_open_tab_session(channel_ref=channel_ref, payload=payload)
+    mode = ((session.data or {}).get("pos") or {}).get("sales_mode") if session is not None else None
+    return {**payload, "sales_mode": mode} if mode else payload
 
 
 def _payload_fulfillment_type(payload: dict) -> str:
