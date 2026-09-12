@@ -1,38 +1,30 @@
 <script setup lang="ts">
-// Política de privacidade da loja.
-//
-// A loja coleta nome, telefone e endereço desde o primeiro pedido e não dizia,
-// em lugar nenhum, o que faz com eles: a varredura de 20/08 não achou uma
-// ocorrência de "Privacidade", "Termos", "LGPD", "cookie" ou "CNPJ" no site
-// inteiro. O art. 9º da LGPD exige informar; o Decreto 7.962/2013 exige CNPJ e
-// endereço visíveis no comércio eletrônico.
-//
-// ⚠️ ESTE TEXTO PRECISA DO AVAL DO DONO antes do go-live. Ele descreve o que o
-// sistema REALMENTE faz hoje — foi escrito a partir do código, não de modelo.
-//
-// As quatro pendências de 20/08 foram fechadas em 21/08, três com FATO e uma com
-// o mínimo legal:
-//   1. ✅ prazo de guarda: 5 anos para pedido e nota (prazo fiscal em lei), e o
-//      resto apagado na exclusão. É o MÍNIMO legal — se a Nelson quiser guardar
-//      menos do resto, ou mais, é trocar este parágrafo.
-//   2. ✅ fornecedores: nomeados a partir do código (Efí, Stripe, ManyChat,
-//      Comtele, Focus NFe, Google Maps, iFood). A Meta NÃO entra: o posting de
-//      anúncio (F13b) não foi implementado, então nenhum dado de cliente sai
-//      para lá hoje. Se a F13b entrar, ESTA LISTA MUDA JUNTO.
-//   3. ✅ encarregado: o canal é o e-mail da loja, que a página já mostra e que
-//      vem do cadastro. Se a Nelson nomear um DPO com contato próprio, trocar.
-//   4. ✅ razão social: é a da Nelson, a mesma que emite a NFC-e, e vem do
-//      cadastro — nunca escrita à mão aqui.
-// Os dados do estabelecimento (CNPJ, endereço, e-mail) vêm do cadastro da loja,
-// nunca escritos à mão aqui.
+import { resolveNelsonPublicShop } from '~/utils/nelsonFallback'
+
+// Política pública única para a loja e para as integrações internas Shopman.
+// Toda afirmação abaixo precisa continuar verificável no código e na operação.
+// Mudança de fornecedor, finalidade, dado ou prazo exige atualizar este texto
+// antes de ativar o novo tratamento.
+definePageMeta({
+  path: '/privacidade',
+  alias: ['/privacy']
+})
+
 const session = useShopSession()
-const shop = computed(() => session.shop.value)
+const shop = computed(() => resolveNelsonPublicShop(session.shop.value))
 const addressLinesList = computed(() => addressLines(shop.value?.full_address))
-const updatedAt = '20 de agosto de 2026'
+const policyVersion = '2026-09-12'
+const updatedAt = '12 de setembro de 2026'
+const archivedVersionUrl = '/documentos-legais/privacidade/2026-09-12.html'
 
 useSeoMeta({
   title: 'Política de privacidade',
   description: 'O que a loja coleta, por que coleta e como você apaga ou exporta os seus dados.'
+})
+
+useHead({
+  link: [{ rel: 'canonical', href: '/privacidade' }],
+  meta: [{ name: 'policy-version', content: policyVersion }]
 })
 </script>
 
@@ -48,12 +40,15 @@ useSeoMeta({
       <div>
         <h1 class="shop-title">Política de privacidade</h1>
         <p class="shop-muted">Atualizada em {{ updatedAt }}.</p>
+        <NuxtLink :to="archivedVersionUrl" target="_blank" class="mt-2 inline-block text-sm underline underline-offset-2">
+          Abrir cópia permanente desta versão
+        </NuxtLink>
       </div>
 
       <section class="space-y-2">
         <h2 class="shop-heading">Quem trata os seus dados</h2>
         <p class="text-sm leading-6">
-          {{ shop?.brand_name || 'A loja' }}<template v-if="shop?.document_display">, CNPJ {{ shop.document_display }}</template>.
+          <strong>{{ shop?.legal_name || shop?.brand_name || 'A loja' }}</strong><template v-if="shop?.brand_name && shop.brand_name !== shop.legal_name">, nome fantasia {{ shop.brand_name }}</template><template v-if="shop?.document_display">, CNPJ {{ shop.document_display }}</template>, é a controladora dos dados descritos nesta política.
         </p>
         <p v-if="addressLinesList.length" class="text-sm leading-6">
           <span v-for="line in addressLinesList" :key="line" class="block">{{ line }}</span>
@@ -72,8 +67,10 @@ useSeoMeta({
           <li><strong>E-mail.</strong> Opcional, para segunda via e recado quando o WhatsApp não vai.</li>
           <li><strong>Endereço de entrega.</strong> Só quando você pede entrega. Guardamos os endereços que você salva na conta.</li>
           <li><strong>O que você comprou.</strong> Itens, valores, datas, forma de pagamento e o que você escreveu como observação.</li>
+          <li><strong>Preferências.</strong> Favoritos, avaliação, data de aniversário quando informada e escolhas sobre mensagens.</li>
+          <li><strong>Dados de outra pessoa.</strong> Nome, telefone, endereço e recado quando você pede uma entrega ou presente para ela.</li>
           <li><strong>Aparelhos confiáveis.</strong> Um registro do navegador em que você escolheu não pedir código de novo.</li>
-          <li><strong>Avaliação e favoritos</strong>, quando você usa.</li>
+          <li><strong>Dados técnicos e de segurança.</strong> IP, navegador, horários e eventos necessários para evitar abuso, investigar falhas e provar consentimentos.</li>
         </ul>
         <p class="text-sm leading-6">
           A gente não guarda senha e não guarda número de cartão: o pagamento acontece dentro do
@@ -98,36 +95,109 @@ useSeoMeta({
             <NuxtLink to="/conta/preferencias" class="underline underline-offset-2">Preferências</NuxtLink>,
             quando quiser.
           </li>
+          <li>
+            <strong>Para segurança e defesa de direitos</strong>, usando somente o necessário para prevenir
+            fraude, manter trilhas de auditoria e atender uma reclamação ou obrigação regulatória.
+          </li>
         </ul>
       </section>
 
       <section class="space-y-2">
         <h2 class="shop-heading">Com quem a gente divide</h2>
         <p class="text-sm leading-6">
-          Só com quem precisa para o pedido acontecer, e só o necessário. Hoje são estes, e é a
-          lista inteira: <strong>Efí</strong> e <strong>Stripe</strong> processam o pagamento;
-          <strong>ManyChat</strong> entrega a mensagem no WhatsApp e <strong>Comtele</strong> no SMS;
-          <strong>Focus NFe</strong> transmite a nota para a Secretaria da Fazenda;
-          <strong>Google Maps</strong> completa o endereço quando você busca;
-          <strong>iFood</strong>, quando o pedido chega por lá; e o entregador, quando a entrega é
-          terceirizada.
+          Só com quem precisa prestar uma parte do serviço, e apenas os dados necessários. Conforme
+          o canal usado, isso pode incluir: <strong>Efí</strong> e <strong>Stripe</strong>, para pagamentos;
+          <strong>ManyChat</strong> e <strong>Meta</strong>, para WhatsApp e postagens no Instagram ou
+          Facebook; <strong>Twilio</strong> ou <strong>Comtele</strong>, para SMS; o provedor de e-mail;
+          <strong>Focus NFe</strong> e a Secretaria da Fazenda, para documentos fiscais;
+          <strong>Google</strong>, para endereço, mapas e o Perfil da Empresa;
+          <strong>iFood</strong>, quando o pedido vem de lá; infraestrutura de hospedagem e
+          monitoramento de erros; <strong>Anthropic</strong>, quando você conversa com o
+          concierge automatizado no WhatsApp; e o entregador responsável pela entrega.
         </p>
         <p class="text-sm leading-6">
-          A gente não vende os seus dados, não cede lista para terceiro nenhum e não manda o seu
-          cadastro para rede social ou plataforma de anúncio.
+          A gente não vende seus dados, não entrega listas a anunciantes e não usa dados pessoais
+          recebidos das APIs do Google para publicidade. Postagens em redes sociais e no Perfil da
+          Empresa levam apenas o conteúdo público aprovado; mensagens diretas usam somente o contato
+          necessário e exigem consentimento válido para aquela finalidade.
+        </p>
+      </section>
+
+      <section class="space-y-2">
+        <h2 class="shop-heading">Atendimento com inteligência artificial</h2>
+        <p class="text-sm leading-6">
+          Quando o concierge automatizado está ativo, a mensagem que você envia, o histórico
+          recente da conversa, seu primeiro nome e o contexto necessário da sacola podem ser
+          processados pela Anthropic para responder e ajudar a montar o pedido. O número não é
+          escrito no comando enviado ao modelo, mas o serviço sabe que existe um telefone
+          confirmado para poder concluir a compra. Você pode pedir uma pessoa a qualquer momento.
+        </p>
+        <p class="text-sm leading-6">
+          A decisão final de comprar continua sendo sua. Preço, estoque, prazo e pagamento vêm
+          dos sistemas da loja e não são decididos pelo modelo.
+        </p>
+      </section>
+
+      <section class="space-y-2">
+        <h2 class="shop-heading">Transferência internacional</h2>
+        <p class="text-sm leading-6">
+          Alguns fornecedores globais citados acima podem processar dados fora do Brasil,
+          inclusive nos Estados Unidos. A loja limita o envio ao necessário e deve manter, para
+          cada transferência, uma base legal e um mecanismo admitido pela LGPD, como cláusulas
+          contratuais adequadas. Você pode pedir pelo canal de privacidade a relação atualizada de
+          fornecedores, países, finalidades, duração, medidas de segurança e responsabilidades.
+        </p>
+      </section>
+
+      <section class="space-y-2">
+        <h2 class="shop-heading">Crianças e adolescentes</h2>
+        <p class="text-sm leading-6">
+          A loja não direciona mensagens promocionais a uma pessoa que a data de nascimento
+          cadastrada identifique como menor de 18 anos. Menores devem usar a loja com a participação
+          do responsável legal. Se você souber que dados de uma criança ou adolescente foram
+          cadastrados sem essa participação, avise pelo canal de privacidade para bloquearmos o uso
+          promocional e avaliarmos a exclusão.
+        </p>
+      </section>
+
+      <section class="space-y-2">
+        <h2 class="shop-heading">Como o Shopman usa dados do Google</h2>
+        <p class="text-sm leading-6">
+          A ferramenta interna Shopman Marketing acessa, mediante autorização da conta da empresa,
+          os perfis e locais empresariais administrados e o conteúdo necessário para criar, consultar
+          e acompanhar publicações no Perfil da Empresa no Google. Ela não pede acesso ao e-mail,
+          arquivos, contatos ou dados particulares da conta Google.
+        </p>
+        <p class="text-sm leading-6">
+          Esses dados são usados exclusivamente para operar o perfil oficial da empresa. Não são
+          vendidos, usados para anúncios de terceiros nem para treinar modelos. Credenciais ficam em
+          configuração protegida do servidor; a integração pode ser revogada na Conta Google ou por
+          solicitação ao canal de privacidade acima.
         </p>
       </section>
 
       <section class="space-y-2">
         <h2 class="shop-heading">Por quanto tempo a gente guarda</h2>
         <p class="text-sm leading-6">
-          O pedido e a nota ficam <strong>cinco anos</strong>. Não é escolha nossa: documento fiscal
-          tem prazo de guarda na lei, e ele vale mesmo depois de você apagar a conta.
+          Pedido, pagamento e documento fiscal ficam pelo prazo necessário para cumprir obrigações
+          fiscais e defender direitos — em regra, <strong>cinco anos</strong>, sem prejuízo de prazo
+          legal maior que se aplique ao caso. Dados da conta, preferências e conversas ficam enquanto
+          a conta estiver ativa e forem necessários para prestar o serviço e manter o histórico que
+          você vê; você pode eliminá-los excluindo a conta.
         </p>
         <p class="text-sm leading-6">
-          O resto vai embora quando você pede. Ao excluir a conta, o seu nome, telefone, e-mail,
+          Um pedido de <strong>Avise-me</strong> autoriza avisos sobre novas ocorrências daquele produto
+          e continua ativo até você pausar ou cancelar. Cada aviso traz o caminho para gerenciar essa
+          escolha. Depois do cancelamento, a prova mínima do pedido e da revogação pode permanecer pelo
+          prazo necessário para demonstrar e respeitar a sua decisão. A autorização de aparelho confiável
+          vence em 30 dias. IP bruto usado como prova de consentimento fica por no máximo 90 dias.
+        </p>
+        <p class="text-sm leading-6">
+          Ao excluir a conta, o seu nome, telefone, e-mail,
           endereços e preferências são apagados na hora, e os pedidos antigos passam a não apontar
-          mais para você: viram registro de venda sem dono. Se alguma parte da exclusão falhar, a
+          mais para você: viram registro de venda sem identificação pessoal. Permanecem somente dados
+          que a lei permite ou exige conservar e a prova mínima necessária para respeitar uma
+          revogação. Se alguma parte da exclusão falhar, a
           tela avisa e a gente é chamado — a gente não diz "pronto" pela metade.
         </p>
       </section>
@@ -135,19 +205,29 @@ useSeoMeta({
       <section class="space-y-2">
         <h2 class="shop-heading">Cookies</h2>
         <p class="text-sm leading-6">
-          A loja usa cookie para duas coisas: manter a sua sacola entre uma tela e outra e manter
-          você logado. Não há cookie de publicidade nem de rastreamento de terceiro. Apagar os
-          cookies do navegador esvazia a sacola e desconecta a conta.
+          A loja usa cookies essenciais para manter a sacola, a sessão, a proteção contra fraude e,
+          quando você escolhe, reconhecer um aparelho confiável. Não há cookie de publicidade nem de
+          rastreamento de terceiro. Apagar os cookies pode esvaziar a sacola, desconectar a conta e
+          fazer o aparelho pedir nova confirmação.
         </p>
       </section>
 
       <section class="space-y-2">
         <h2 class="shop-heading">Os seus direitos, e onde eles ficam</h2>
         <p class="text-sm leading-6">
+          Você pode pedir confirmação de tratamento e acesso; corrigir dados; pedir anonimização,
+          bloqueio ou exclusão do que for desnecessário ou irregular; solicitar portabilidade
+          quando aplicável; saber com quem houve compartilhamento; obter informação sobre a opção
+          de negar ou revogar consentimento; opor-se a tratamento irregular; e pedir revisão de
+          decisão tomada somente por sistema automatizado. O atendimento é gratuito e pode exigir
+          confirmação de identidade para proteger a própria conta.
+        </p>
+        <p class="text-sm leading-6">
           Em
           <NuxtLink to="/conta/seguranca" class="underline underline-offset-2">Segurança e dados</NuxtLink>
-          você baixa uma cópia de tudo que a loja tem sobre você e pode excluir a conta na hora, sem
-          pedir para ninguém.
+          você baixa uma cópia dos dados disponíveis para autoatendimento e pode excluir a conta na
+          hora, sem pedir para ninguém. Para complementar a resposta ou exercer qualquer outro
+          direito, use o canal de privacidade indicado no início desta página.
         </p>
         <p class="text-sm leading-6">
           Ao excluir, a gente apaga o seu nome, telefone, e-mail, endereços e o perfil de compra,

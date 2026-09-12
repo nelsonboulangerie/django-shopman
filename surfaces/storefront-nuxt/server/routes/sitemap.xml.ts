@@ -27,6 +27,9 @@ export default defineEventHandler(async (event) => {
   const urls = [
     { loc: `${origin}/`, priority: '1.0' },
     { loc: `${origin}/menu`, priority: '0.9' },
+    { loc: `${origin}/privacidade`, priority: '0.3' },
+    { loc: `${origin}/termos`, priority: '0.3' },
+    { loc: `${origin}/shopman-marketing`, priority: '0.2' },
     ...collectionRefs.map(ref => ({ loc: `${origin}/colecao/${encodeURIComponent(ref)}`, priority: '0.7' })),
     ...skus.map(sku => ({ loc: `${origin}/produto/${encodeURIComponent(sku)}`, priority: '0.8' }))
   ]

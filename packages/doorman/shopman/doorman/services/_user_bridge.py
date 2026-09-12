@@ -37,7 +37,7 @@ def get_or_create_user_for_customer(customer: AuthCustomerInfo) -> tuple:
             customer_id=customer.uuid,
         )
         return link.user, False
-    except CustomerUser.DoesNotExist:
+    except CustomerUser.DoesNotExist:  # silêncio-deliberado: primeiro login cria o vínculo abaixo
         pass
 
     # Create User
@@ -86,46 +86,65 @@ def forget_customer(customer_uuid, phone: str = "") -> None:
 
     O bridge copia first_name/last_name do cliente para o User no login; a
     anonimização precisa alcançá-los, senão o nome sobrevive no auth. Também
-    desativa o login, revoga TrustedDevices, zera o `metadata` do vínculo e
-    apaga os códigos de verificação emitidos para o telefone.
+    desativa o login, revoga TrustedDevices, apaga passkeys, zera o `metadata`
+    do vínculo e apaga os códigos de verificação emitidos para o telefone.
 
     ``phone`` é o número original do titular, e vem do chamador porque o código
     OTP é indexado pelo DESTINO (`target_value`), não pelo cliente: sem ele,
     quem excluiu a conta agora mesmo deixava o próprio telefone no banco, no
     código que acabou de usar para provar que era ele. Idempotente e defensivo.
     """
-    from ..models import TrustedDevice, VerificationCode
+    from ..models import Passkey, TrustedDevice, VerificationCode
 
+    failures: list[str] = []
     try:
         link = CustomerUser.objects.select_related("user").get(customer_id=customer_uuid)
     except CustomerUser.DoesNotExist:
         link = None
     except Exception:
         logger.warning("forget_customer: lookup do User falhou", exc_info=True)
+        failures.append("localizar vínculo de login")
         link = None
 
     if link is not None:
-        user = link.user
-        user.first_name = ""
-        user.last_name = ""
-        user.email = ""
-        user.is_active = False
-        user.save(update_fields=["first_name", "last_name", "email", "is_active"])
-        # O `metadata` do vínculo guarda o telefone com que a conta nasceu, e a
-        # varredura do banco depois de uma exclusão feita pela tela ainda o
-        # encontrava ali. Nesta loja o telefone É a identidade (é o único
-        # login), então deixá-lo no vínculo é deixar a pessoa identificável.
-        if link.metadata:
-            link.metadata = {}
-            link.save(update_fields=["metadata"])
+        try:
+            user = link.user
+            user.first_name = ""
+            user.last_name = ""
+            user.email = ""
+            user.is_active = False
+            user.save(update_fields=["first_name", "last_name", "email", "is_active"])
+            # O `metadata` do vínculo guarda o telefone com que a conta nasceu, e a
+            # varredura do banco depois de uma exclusão feita pela tela ainda o
+            # encontrava ali. Nesta loja o telefone É a identidade (é o único
+            # login), então deixá-lo no vínculo é deixar a pessoa identificável.
+            if link.metadata:
+                link.metadata = {}
+                link.save(update_fields=["metadata"])
+        except Exception:
+            logger.warning("forget_customer: anonimização do User falhou", exc_info=True)
+            failures.append("anonimizar vínculo de login")
 
     try:
         TrustedDevice.revoke_all_for("customer", customer_uuid)
     except Exception:
         logger.warning("forget_customer: revogação de devices falhou", exc_info=True)
+        failures.append("revogar dispositivos confiáveis")
+
+    try:
+        Passkey.objects.filter(customer_id=customer_uuid).delete()
+    except Exception:
+        logger.warning("forget_customer: limpeza de passkeys falhou", exc_info=True)
+        failures.append("apagar passkeys")
 
     if phone:
         try:
             VerificationCode.objects.filter(target_value=phone).delete()
         except Exception:
             logger.warning("forget_customer: limpeza de códigos OTP falhou", exc_info=True)
+            failures.append("apagar códigos de verificação")
+
+    if failures:
+        # O chamador da exclusão agrega esta falha às demais e recusa sucesso
+        # parcial. Continuamos tentando todos os alvos antes de levantar.
+        raise RuntimeError("Exclusão incompleta no login: " + ", ".join(failures))

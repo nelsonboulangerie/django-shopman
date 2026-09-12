@@ -123,6 +123,9 @@ SHOPMAN_MARKETING_META.update(  # noqa: F405
 )
 SHOPMAN_MARKETING_GOOGLE.update(  # noqa: F405
     access_token="",
+    client_id="",
+    client_secret="",
+    refresh_token="",
     account_id="",
     location_id="",
 )

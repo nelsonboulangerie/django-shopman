@@ -35,7 +35,7 @@
       "id": "consent-or-privacy",
       "runbook": "docs/runbooks/marketing-consent-or-privacy-incident.md",
       "automated_test": "test_revocation_after_fanout_suppresses_before_claim_and_provider",
-      "operator_decision": "Freeze, preserve evidence and escalate to DPO/Security first."
+      "operator_decision": "Freeze, preserve evidence and notify the privacy owner and backup first."
     },
     {
       "id": "bad-content-or-link",

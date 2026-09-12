@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 from django.test import Client
 from django.utils import timezone
@@ -100,10 +102,27 @@ def test_step_up_then_delete_succeeds(client: Client):
 
 
 def test_fresh_step_up_flag_lets_export_through(client: Client):
+    from shopman.doorman.models import CustomerUser, Passkey, TrustedDevice
+
     from shopman.storefront.api.account import STEP_UP_SESSION_KEY
 
     customer = Customer.objects.create(ref="CUS-SU-FLAG", first_name="Edu", phone="+5543999990014")
     _login_as_customer(client, customer)
+    CustomerUser.objects.filter(customer_id=customer.uuid).update(
+        metadata={"source": "storefront"}
+    )
+    TrustedDevice.create_for(
+        "customer",
+        customer.uuid,
+        user_agent="Safari no iPhone",
+        ip_address="192.0.2.10",
+    )
+    Passkey.objects.create(
+        customer_id=customer.uuid,
+        credential_id="cred-export",
+        public_key="public-export",
+        label="iPhone do Edu",
+    )
 
     session = client.session
     session[STEP_UP_SESSION_KEY] = timezone.now().isoformat()
@@ -113,3 +132,8 @@ def test_fresh_step_up_flag_lets_export_through(client: Client):
 
     assert response.status_code == 200
     assert response["Content-Type"].startswith("application/json")
+    exported = json.loads(response.content)
+    assert exported["authentication_profile"]["metadata"] == {"source": "storefront"}
+    assert exported["trusted_devices"][0]["ip_address"] == "192.0.2.10"
+    assert exported["passkeys"][0]["credential_id"] == "cred-export"
+    assert exported["passkeys"][0]["public_key"] == "public-export"

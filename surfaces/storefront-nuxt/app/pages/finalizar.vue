@@ -1821,6 +1821,12 @@ useSeoMeta({
                   <span class="shop-kicker">Total</span>
                   <span class="shop-price-strong">{{ cart?.grand_total_display || 'R$ 0,00' }}</span>
                 </div>
+                <p class="text-center text-xs leading-5 text-muted-foreground">
+                  Ao confirmar, você concorda com os
+                  <NuxtLink to="/documentos-legais/termos/2026-09-12.html" target="_blank" class="underline underline-offset-2">Termos de uso</NuxtLink>
+                  e declara ter lido a
+                  <NuxtLink to="/documentos-legais/privacidade/2026-09-12.html" target="_blank" class="underline underline-offset-2">Política de privacidade</NuxtLink>.
+                </p>
                 <UiButton
                   :loading="submitting"
                   :disabled="submitDisabled"

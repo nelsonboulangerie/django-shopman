@@ -35,6 +35,14 @@ GOOGLE = {
     "access_token": "secret-google-token",
     "timeout": 8,
 }
+GOOGLE_OAUTH = {
+    **GOOGLE,
+    "access_token": "",
+    "client_id": "client-id.apps.googleusercontent.com",
+    "client_secret": "secret-client",
+    "refresh_token": "secret-refresh",
+    "token_url": "https://oauth.example.test/token",
+}
 
 
 def artifact(platform: str, publication_format: str, *, image=True):
@@ -87,6 +95,31 @@ def test_http_boundary_keeps_token_out_of_url_and_normalizes_form_boole(monkeypa
     assert request.get_header("Authorization") == "Bearer secret-meta-token"
     assert b"published=true" in request.data
     assert observed["timeout"] == 7
+
+
+def test_http_credential_form_has_no_bearer_and_never_places_secrets_in_url(monkeypatch):
+    observed = {}
+
+    def open_request(request, *, timeout):
+        observed["request"] = request
+        observed["timeout"] = timeout
+        return _Response(b'{"access_token":"fresh","expires_in":3600}')
+
+    monkeypatch.setattr(http, "_open", open_request)
+
+    result = http.request_form_json(
+        url="https://oauth.example.test/token",
+        timeout=8,
+        payload={"client_secret": "secret-client", "refresh_token": "secret-refresh"},
+    )
+
+    request = observed["request"]
+    assert result["access_token"] == "fresh"
+    assert request.full_url == "https://oauth.example.test/token"
+    assert request.get_header("Authorization") is None
+    assert b"client_secret=secret-client" in request.data
+    assert b"refresh_token=secret-refresh" in request.data
+    assert observed["timeout"] == 8
 
 
 def test_http_boundary_never_propagates_provider_response_body(monkeypatch):
@@ -317,6 +350,80 @@ def test_google_standard_post_and_lookup(monkeypatch):
     assert sent.provider_receipt_ref == "gbp:post-3"
     assert confirmed.kind == ProviderOutcomeKind.CONFIRMED
     assert "secret-google-token" not in request.call_args_list[0].kwargs["url"]
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED=True,
+    SHOPMAN_MARKETING_GOOGLE=GOOGLE_OAUTH,
+)
+def test_google_refreshes_once_and_reuses_short_lived_access_token(monkeypatch):
+    refresh = Mock(
+        return_value={
+            "access_token": "fresh-google-token",
+            "expires_in": 3600,
+            "token_type": "Bearer",
+        }
+    )
+    request = Mock(
+        side_effect=[
+            {"name": "accounts/account-1/locations/location-2/localPosts/post-3"},
+            {"name": "accounts/account-1/locations/location-2/localPosts/post-3"},
+        ]
+    )
+    google._TOKEN_CACHE.clear()
+    monkeypatch.setattr(google, "request_form_json", refresh)
+    monkeypatch.setattr(google, "request_json", request)
+
+    sent = google.send(
+        artifact=artifact("google_business", "standard"),
+        target_key="public",
+        idempotency_token="idem",
+    )
+    google.lookup(
+        target_key="public",
+        idempotency_token="idem",
+        provider_receipt_ref=sent.provider_receipt_ref,
+    )
+
+    assert refresh.call_count == 1
+    assert refresh.call_args.kwargs["url"] == "https://oauth.example.test/token"
+    assert refresh.call_args.kwargs["payload"] == {
+        "client_id": "client-id.apps.googleusercontent.com",
+        "client_secret": "secret-client",
+        "refresh_token": "secret-refresh",
+        "grant_type": "refresh_token",
+    }
+    assert [call.kwargs["access_token"] for call in request.call_args_list] == [
+        "fresh-google-token",
+        "fresh-google-token",
+    ]
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED=True,
+    SHOPMAN_MARKETING_GOOGLE=GOOGLE_OAUTH,
+)
+def test_google_business_oauth_refresh_failures_to_retry_without_leaking_secrets(monkeypatch):
+    google._TOKEN_CACHE.clear()
+    monkeypatch.setattr(
+        google,
+        "request_form_json",
+        Mock(side_effect=HTTPFailure(503)),
+    )
+
+    with pytest.raises(ProviderCallFailure) as caught:
+        google.send(
+            artifact=artifact("google_business", "standard"),
+            target_key="public",
+            idempotency_token="idem",
+        )
+
+    assert caught.value.kind == ProviderOutcomeKind.FAILED_RETRYABLE
+    assert caught.value.code == "google_oauth_refresh_unavailable"
+    assert "secret-client" not in str(caught.value)
+    assert "secret-refresh" not in str(caught.value)
 
 
 @override_settings(

@@ -219,6 +219,9 @@ def interpret_checkout(request, channel_ref: str) -> IntentResult:
         "customer": {"name": name, "phone": phone},
         "fulfillment_type": fulfillment_type,
     }
+    from shopman.storefront.legal import checkout_legal_snapshot
+
+    checkout_data["legal"] = checkout_legal_snapshot()
     if stock_check_unavailable:
         checkout_data["stock_check_unavailable"] = True
     if notes:

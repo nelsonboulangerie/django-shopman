@@ -579,6 +579,7 @@ def _reorder_context(request: HttpRequest) -> tuple[str | None, tuple[LastOrderI
 def _empty_shop() -> ShopProjection:
     return ShopProjection(
         brand_name="",
+        legal_name="",
         tagline="",
         description="",
         description_html="",

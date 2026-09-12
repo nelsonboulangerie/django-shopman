@@ -69,8 +69,8 @@ test.describe('smoke — páginas e navegação', () => {
     expect(res?.status()).toBe(404)
   })
 
-  test('termos e privacidade renderizam', async ({ page }) => {
-    for (const route of ['/terms', '/privacy']) {
+  test('páginas legais e do Shopman Marketing renderizam', async ({ page }) => {
+    for (const route of ['/termos', '/privacidade', '/terms', '/privacy', '/shopman-marketing']) {
       const res = await page.goto(route, { waitUntil: 'domcontentloaded' })
       await page.waitForTimeout(1200)
       expect(res?.status()).toBe(200)

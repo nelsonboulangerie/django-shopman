@@ -8,10 +8,11 @@ nome do cliente sobrevive no auth e os aparelhos seguem confiados.
 from __future__ import annotations
 
 import uuid
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
-from shopman.doorman.models import CustomerUser, TrustedDevice, VerificationCode
+from shopman.doorman.models import CustomerUser, Passkey, TrustedDevice, VerificationCode
 from shopman.doorman.services._user_bridge import forget_customer
 
 User = get_user_model()
@@ -26,6 +27,11 @@ def test_forget_customer_scrubs_user_and_revokes_devices():
     CustomerUser.objects.create(user=user, customer_id=cid)
     TrustedDevice.create_for("customer", cid, user_agent="A")
     TrustedDevice.create_for("customer", cid, user_agent="B")
+    Passkey.objects.create(
+        customer_id=cid,
+        credential_id="credencial-a-apagar",
+        public_key="chave-publica",
+    )
 
     forget_customer(cid)
 
@@ -35,6 +41,7 @@ def test_forget_customer_scrubs_user_and_revokes_devices():
     assert user.email == ""
     assert user.is_active is False
     assert TrustedDevice.objects.filter(subject_type="customer", subject_id=str(cid), is_active=True).count() == 0
+    assert not Passkey.objects.filter(customer_id=cid).exists()
 
 
 def test_forget_customer_without_link_is_safe():
@@ -65,3 +72,19 @@ def test_forget_customer_apaga_o_telefone_do_vinculo_e_os_codigos():
     assert not VerificationCode.objects.filter(target_value=phone).exists()
     # O código de outra pessoa não é assunto desta exclusão.
     assert VerificationCode.objects.filter(target_value="+5543990000000").exists()
+
+
+def test_forget_customer_reports_partial_failure_after_best_effort():
+    cid = uuid.uuid4()
+    TrustedDevice.create_for("customer", cid, user_agent="Safari")
+
+    with (
+        patch.object(Passkey.objects, "filter", side_effect=RuntimeError("banco indisponível")),
+        pytest.raises(RuntimeError, match="apagar passkeys"),
+    ):
+        forget_customer(cid)
+
+    # Uma falha não impede que os outros alvos sejam tratados.
+    assert not TrustedDevice.objects.filter(
+        subject_type="customer", subject_id=str(cid), is_active=True
+    ).exists()

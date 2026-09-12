@@ -1043,6 +1043,15 @@ class AccountExportView(APIView):
         if not _step_up_is_fresh(request):
             return _step_up_required_response()
         payload = account_service.export_customer_data(customer)
+        payload.update(account_service.export_auth_data(customer.uuid))
+        from shopman.storefront.services.account_privacy import export_surface_data
+
+        payload.update(
+            export_surface_data(
+                customer_ref=customer.ref,
+                phone=customer.phone or "",
+            )
+        )
         body = json.dumps(payload, ensure_ascii=False, indent=2, default=str)
         response = HttpResponse(body, content_type="application/json; charset=utf-8")
         response["Content-Disposition"] = 'attachment; filename="shopman-dados-cliente.json"'

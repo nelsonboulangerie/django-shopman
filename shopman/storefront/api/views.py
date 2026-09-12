@@ -364,6 +364,9 @@ class CheckoutView(APIView):
             # (Endereço novo é salvo sempre, independente disto.)
             "save_as_default": serializer.validated_data.get("save_as_default", True),
         }
+        from shopman.storefront.legal import checkout_legal_snapshot
+
+        checkout_data["legal"] = checkout_legal_snapshot()
         if notes:
             checkout_data["order_notes"] = notes
         if delivery_address:

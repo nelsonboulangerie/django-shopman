@@ -642,6 +642,12 @@ SHOPMAN_MARKETING_META = {
 # required before the adapter reports ready.
 SHOPMAN_MARKETING_GOOGLE = {
     "access_token": os.environ.get("GOOGLE_BUSINESS_ACCESS_TOKEN", "").strip(),
+    "client_id": os.environ.get("GOOGLE_BUSINESS_OAUTH_CLIENT_ID", "").strip(),
+    "client_secret": os.environ.get("GOOGLE_BUSINESS_OAUTH_CLIENT_SECRET", "").strip(),
+    "refresh_token": os.environ.get("GOOGLE_BUSINESS_OAUTH_REFRESH_TOKEN", "").strip(),
+    "token_url": os.environ.get(
+        "GOOGLE_BUSINESS_OAUTH_TOKEN_URL", "https://oauth2.googleapis.com/token"
+    ).strip(),
     "account_id": os.environ.get("GOOGLE_BUSINESS_ACCOUNT_ID", "").strip(),
     "location_id": os.environ.get("GOOGLE_BUSINESS_LOCATION_ID", "").strip(),
     "api_base": os.environ.get(
@@ -1048,6 +1054,14 @@ SHOPMAN_MARKETING_AI_PROVIDER_POLICY_APPROVED = os.environ.get(
 ).lower() in ("true", "1", "yes")
 SHOPMAN_MARKETING_AI_TIMEOUT_SECONDS = float(
     os.environ.get("SHOPMAN_MARKETING_AI_TIMEOUT_SECONDS", "12")
+)
+
+# A prova de consentimento permanece, mas IP bruto não: o gate humano de
+# privacidade limita esse identificador a 90 dias. O teto é deliberadamente
+# irredutível por configuração acidental; um prazo menor continua permitido.
+SHOPMAN_CONSENT_IP_RETENTION_DAYS = min(
+    90,
+    max(1, _env_int("SHOPMAN_CONSENT_IP_RETENTION_DAYS", 90)),
 )
 
 # ── Concierge multicanal (venda conversacional) ──────────────────────

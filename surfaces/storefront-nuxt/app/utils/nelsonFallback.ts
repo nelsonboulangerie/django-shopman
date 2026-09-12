@@ -2,6 +2,7 @@ import type { ShopProjection } from '~/types/shopman'
 
 export const NELSON_FALLBACK_SHOP: ShopProjection = {
   brand_name: 'Nelson Boulangerie',
+  legal_name: 'N. H. K. Panificadora LTDA',
   tagline: 'Padaria artesanal',
   description: 'Padaria artesanal brasileira inspirada na panificação francesa.',
   description_html: '',
@@ -10,12 +11,12 @@ export const NELSON_FALLBACK_SHOP: ShopProjection = {
   theme_color: '#7c3a40',
   background_color: '#f5e9c2',
   whatsapp_url: '',
-  phone: '',
-  phone_display: '',
-  phone_url: '',
-  email: '',
-  document_display: '',
-  full_address: '',
+  phone: '+554333231997',
+  phone_display: '(43) 3323-1997',
+  phone_url: 'tel:+554333231997',
+  email: 'nelson@boulangerie.com.br',
+  document_display: '02.119.381/0001-58',
+  full_address: 'Av. Madre Leônia Milito, 446 - Bela Suíça, Londrina - PR, 86050-270',
   maps_url: '',
   default_city: 'Londrina',
   copyright: '',
@@ -96,5 +97,20 @@ export const NELSON_FALLBACK_SHOP: ShopProjection = {
       cta: '150 116 52',
       cta_foreground: '250 246 237'
     }
+  }
+}
+
+export function resolveNelsonPublicShop (shop: ShopProjection | null | undefined): ShopProjection {
+  return {
+    ...NELSON_FALLBACK_SHOP,
+    ...(shop || {}),
+    brand_name: shop?.brand_name || NELSON_FALLBACK_SHOP.brand_name,
+    legal_name: shop?.legal_name || NELSON_FALLBACK_SHOP.legal_name,
+    phone: shop?.phone || NELSON_FALLBACK_SHOP.phone,
+    phone_display: shop?.phone_display || NELSON_FALLBACK_SHOP.phone_display,
+    phone_url: shop?.phone_url || NELSON_FALLBACK_SHOP.phone_url,
+    email: shop?.email || NELSON_FALLBACK_SHOP.email,
+    document_display: shop?.document_display || NELSON_FALLBACK_SHOP.document_display,
+    full_address: shop?.full_address || NELSON_FALLBACK_SHOP.full_address
   }
 }

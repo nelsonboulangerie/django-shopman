@@ -377,6 +377,8 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         # ⚠️ A única com OPÇÃO: no worker a conferência de parâmetro legal
         # existe para ALERTAR o gestor, não só para imprimir.
         call("conferir_parametros_legais", vencidos=True, alertar=True),
+        # Minimização da prova: mantém a decisão, remove só o IP bruto vencido.
+        call("purge_consent_ip"),
         call("purge_sign_in_audit"),
     ]
 

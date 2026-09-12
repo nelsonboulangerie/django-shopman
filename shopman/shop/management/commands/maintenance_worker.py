@@ -23,6 +23,7 @@ manutenção num loop (default: a cada 5 minutos):
                               próprio comando recusa recálculo fora da hora)
   recalculate_customer_insights — quem PAROU de comprar volta a ser percebido (1x/dia)
   purge_sign_in_audit       — trilha de acessos de operador fora da retenção
+  purge_consent_ip          — remove IP bruto vencido da prova de consentimento
 
 Cada tarefa é isolada: uma falha loga e NUNCA derruba o ciclo das demais.
 Cada ciclo grava o heartbeat "maintenance_worker" (shopman.orderman.worker_heartbeat).
@@ -140,6 +141,8 @@ MAINTENANCE_COMMANDS = (
     # ⚠️ Vai para o GESTOR, não para o CI: quem responde por cumprir a norma é
     # quem opera, e teste vermelho ele não vê.
     ("conferir_parametros_legais", {"vencidos": True, "alertar": True}),
+    # A prova append-only continua; só o IP auxiliar envelhece no prazo aprovado.
+    "purge_consent_ip",
     "purge_sign_in_audit",
 )
 

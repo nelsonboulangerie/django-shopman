@@ -325,6 +325,7 @@ export interface ShopDesignTokensProjection {
 
 export interface ShopProjection {
   brand_name: string
+  legal_name: string
   tagline: string
   description: string
   description_html: string
