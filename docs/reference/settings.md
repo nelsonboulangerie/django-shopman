@@ -478,3 +478,13 @@ Configurados via Admin no model `Promotion` e `Coupon` (app `shop`):
 ### Marca da bobina
 
 `SHOPMAN_PRINT_LOGO_PATH` (env, default vazio): caminho local de um PNG preto sobre branco para ficha do pedido e DANFE NFC-e. Raster limitado a 24 × 8 mm nominais em 203 dpi; sem arquivo usa o nome em texto. Asset de exemplo do deployment: `media/branding/nelson-print.png`. Não use diretamente a marca branca/dourada de tela. Ver [validação dos impressos](../reports/PRINT-LAYOUTS-2026-09-12.md).
+
+### Tipografia proporcional dos impressos
+
+`SHOPMAN_PRINT_RENDERER=raster` ativa a composição Noto Sans em imagem 1-bit,
+576 pontos, somente para ficha do pedido e DANFE NFC-e. O padrão `native` mantém
+texto residente; serve também para retornar ao modo anterior após um ensaio.
+A prévia offline usa raster explicitamente. Fonte e licença OFL são distribuídas
+em `shopman/backstage/assets/print/`. Nenhum browser ou download é usado em runtime.
+Usar bobina de 80 mm; validar nitidez, corte e tempo na impressora física antes
+que a configuração seja adotada em operação.

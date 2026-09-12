@@ -569,7 +569,7 @@ def test_delivery_ticket_states_cash_tender_and_correct_change(shop, method, ten
     from shopman.utils.monetary import format_money
 
     assert "COBRAR NA ENTREGA" in paper
-    assert any("Troco para" in line and "R$ 50,00" in line for line in lines)
+    assert any("TROCO PARA" in line and "R$ 50,00" in line for line in lines)
     assert any("Levar de troco" in line and f"R$ {format_money(5000 - cash_due)}" in line for line in lines)
     assert paper.index("Rua Azul, 42") < paper.index("ITENS (")
     if method == "mixed":
@@ -676,5 +676,5 @@ def test_prepaid_cash_is_not_subtracted_from_courier_change(shop):
         },
     )
     paper = _texto(order_ticket(order))
-    assert "Troco para R$ 100,00" in paper
-    assert "Levar de troco R$ 80,00" in paper
+    assert "TROCO PARA R$ 100,00" in paper
+    assert "Levar de troco R$ 80,00" in " ".join(paper.split())

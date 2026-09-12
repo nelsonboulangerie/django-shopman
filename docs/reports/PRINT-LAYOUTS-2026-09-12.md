@@ -20,9 +20,9 @@ O trabalho do #619 foi mantido: endereço antes dos itens, cobrança por método
 
 “Ficha do pedido” é a proposta de nome, sem renomeação global de APIs/modelos. “Comanda” já identifica outra entidade; “romaneio” descreve melhor lote/rota; “ordem de preparo” não cobre cobrança e retirada.
 
-Número do pedido em corpo duplo; modalidade/dia/janela compartilham linha; nome e telefone compartilham linha quando cabem. Nome extenso permanece completo. Endereço, cobrança e observações aparecem antes dos itens. Valores recebidos não entram novamente na cobrança. Somente a parcela pendente em dinheiro determina o troco a levar. Método externo, isoladamente, não prova pagamento. Estado desconhecido não manda cobrar.
+No modo residente, número do pedido em corpo duplo; modalidade/dia/janela compartilham linha; nome e telefone compartilham linha quando cabem. Nome extenso permanece completo. Endereço, cobrança e observações aparecem antes dos itens. Valores recebidos não entram novamente na cobrança. Somente a parcela pendente em dinheiro determina o troco a levar. Método externo, isoladamente, não prova pagamento. Estado desconhecido não manda cobrar.
 
-Marca de impressão derivada do SVG existente, em preto sobre branco: `media/branding/nelson-print.svg` e `.png`. O PNG é limitado a 24 × 8 mm nominais. Configuração do deployment: `SHOPMAN_PRINT_LOGO_PATH` com caminho local para esse PNG. Default vazio conserva o nome em texto; arquivo indisponível também usa texto e registra aviso. Nenhuma configuração de produção foi alterada.
+Marca de impressão derivada do SVG existente, em preto sobre branco: `media/branding/nelson-print.svg` e `.png`. No modo residente o PNG é limitado a 24 × 8 mm nominais; no raster a ficha usa marca de até 20 × 7,5 mm ao lado do pedido e o fiscal até 28 × 10 mm. Configuração do deployment: `SHOPMAN_PRINT_LOGO_PATH` com caminho local para esse PNG. Default vazio conserva o nome em texto; arquivo indisponível usa texto na ficha; o modo residente registra aviso. Nenhuma configuração de produção foi alterada.
 
 ## Fonte fiscal e regras verificadas
 
@@ -57,16 +57,16 @@ Na raiz desta worktree, usando o Python canônico do repositório:
 
 `output/print-layouts/index.html` compara bytes do commit base aos bytes do código atual. Inclui curto, longo/endereço/observações, retirada hoje, entrega paga, dinheiro com troco para R$ 100,00, pagamento misto, balcão imediato e XML fiscal fictício. Há SVGs de 80 mm e `.bin` ESC/POS, além da consulta fiscal HTML. O banco da prévia é SQLite em memória; não usa dados de operação nem chama o provedor.
 
-Imprimir a galeria em A4 a 100%, sem ajustar e sem cabeçalho/rodapé. Régua de 80 mm para conferência. A escala na tela depende do monitor. A fonte residente é aproximada por monospace; o interpretador respeita comandos de dimensão, negrito, raster, QR e avanço, e recusa linhas que excedam a área.
+Imprimir a galeria em A4 a 100%, sem ajustar e sem cabeçalho/rodapé. Régua de 80 mm para conferência. A escala na tela depende do monitor. O antes aproxima a fonte residente por monospace; o depois mostra os pixels exatos enviados no raster. O interpretador respeita comandos de dimensão, negrito, raster, QR e avanço, e recusa linhas que excedam a área.
 
 | Cenário | Antes (mm) | Depois (mm) |
 |---|---:|---:|
-| Retirada curta | 127,5 | 74,0 |
-| Longo com endereço/observações | 225,0 | 171,5 |
-| Entrega paga | 142,5 | 96,5 |
-| Entrega com troco | 165,0 | 110,0 |
-| Entrega com pagamento misto | 168,8 | 117,5 |
-| Balcão imediato | 114,0 | 74,0 |
+| Retirada curta | 127,5 | 70,6 |
+| Longo com endereço/observações | 225,0 | 174,4 |
+| Entrega paga | 142,5 | 91,9 |
+| Entrega com troco | 165,0 | 102,4 |
+| Entrega com pagamento misto | 168,8 | 119,4 |
+| Balcão imediato | 114,0 | 70,6 |
 
 São medidas nominais da simulação, incluindo avanço de corte. O DANFE de demonstração cresce porque passa a imprimir dados fiscais que faltavam (endereço do destinatário, pagamentos parciais, desconto/frete, horários e mensagens); não é lícito omiti-los para ganhar espaço.
 
@@ -81,3 +81,47 @@ Não houve impressora conectada, emissão de homologação real, validação cri
 Ensaio físico pendente: densidade e resolução da marca raster, fonte A real, acentos, alinhamento, margens, avanço até a guilhotina, segunda via, bobina longa, leitura óptica do QR com celular e durabilidade do papel. Homologação fiscal, RTC e formatos diferentes de 80 mm permanecem limites explícitos; testes de software não substituem esse ensaio.
 
 Rollback futuro: reverter apenas os commits desta branch e a configuração opcional da marca. Não há migrações, reseed ou mudança de pagamento/emissão.
+
+## Iteração proporcional — feedback do usuário
+
+O usuário autorizou priorizar acabamento mesmo com pequena perda de velocidade.
+Foi implementado backend raster selecionável por `SHOPMAN_PRINT_RENDERER=raster`;
+o default de operação permanece `native` até o ensaio. A prévia usa raster.
+Os dois modos recebem os mesmos campos pelos compositores existentes: não há
+segunda regra de pagamento, coleta, troco ou fonte fiscal. O backend gráfico mede
+texto em pixels, quebra nomes/identificadores sem truncar e alinha valores à direita.
+
+Noto Sans de peso 500/700 é distribuída com licença OFL, obtida do
+[repositório oficial Google Fonts](https://github.com/google/fonts/tree/main/ofl/notosans).
+A composição usa Pillow já instalado por `qrcode[pil]`. A fonte está incluída no
+package-data. O corpo operacional é 24 dots (~8,5 pt), fiscal 22 dots (~7,8 pt),
+rodapé operacional 20 dots; destaques têm 28–42 dots. Não usa dithering: o arquivo
+final tem somente preto/branco e QR com módulos inteiros e zona livre preservada.
+
+Marca e referência compartilham o cabeçalho operacional. Dinheiro destaca
+**TROCO PARA**, seguido de **Levar de troco** e **Valor a cobrar**. Cartão destaca
+**A COBRAR**; no misto a parcela específica do cartão também é destacada, para
+não confundi-la com o total. Pedido pago continua indicando **PAGO — NÃO COBRAR**.
+O fiscal tem divisões visuais entre itens, valores, consulta e destinatário.
+
+Saída `GS v 0`, 576 dots, em faixas de até 128 linhas, sem avanço entre faixas.
+Foi mantida a família de comandos já usada para o logo. A
+[referência oficial Epson](https://download4.epson.biz/sec_pubs/pos/reference_en/escpos/gs_lv_0.html)
+documenta o formato e observa que é um comando legado, com alternativas mais
+recentes. O suporte e a fluidez das faixas precisam do ensaio na TM-T20 da loja;
+não alteramos densidade, velocidade ou configuração persistente do equipamento.
+
+Após a iteração: **136 testes e 11 subtests passaram**. Novas regressões cobrem
+dinheiro, entrega paga, misto, conteúdo fiscal, identificador longo e reconstrução
+pixel a pixel das faixas (incluindo o QR dentro do raster fiscal). Ruff aprovado. Build do wheel também aprovado, com fonte e licença conferidas dentro do pacote.
+
+Benchmark local de 20 composições após aquecimento: mediana de **25 ms** no pedido
+curto, **63 ms** no longo e **118 ms** no DANFE. Arquivos desses cenários de benchmark:
+32.083, 62.419 e 127.563 bytes. Valores não incluem fetch do XML, banco, transmissão,
+fila nem impressão. Não equivalem a promessa de latência no balcão. Resultados em
+`output/print-layouts/benchmark.json`; exemplos RAW em `*-depois.bin`.
+
+Ensaio a realizar: usar os RAW de exemplo pelo mesmo agente/fila da loja, cronometrar
+curto/longo/fiscal até o corte, conferir acentos/números em tamanho real e ler o QR
+com celular. Só então decidir a configuração operacional. Não houve impressão
+física nesta conversa, e não se afirma garantia física ou homologação fiscal.

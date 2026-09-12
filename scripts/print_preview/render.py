@@ -242,7 +242,7 @@ def main():
     ]
     sections = []
     metrics = []
-    with override_settings(SHOPMAN_PRINT_LOGO_PATH=str(ROOT / "media/branding/nelson-print.png")):
+    with override_settings(SHOPMAN_PRINT_RENDERER="raster", SHOPMAN_PRINT_LOGO_PATH=str(ROOT / "media/branding/nelson-print.png")):
         for slug, title, example in cases:
             versions = [
                 before.order_ticket(example, shop_name="Nelson Boulangerie"),
@@ -306,7 +306,7 @@ def main():
     page = (
         """<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Impressos · antes e depois</title><style>
     *{box-sizing:border-box}body{margin:0;background:#eeede9;color:#181818;font:16px/1.5 system-ui,sans-serif}header,main{max-width:1000px;margin:auto;padding:24px}h1{font-size:36px;line-height:1.15;margin:8px 0 16px}h2{font-size:23px;margin:0 0 12px}p{max-width:78ch}a{color:inherit}nav{line-height:2.1}.comparison{display:flex;gap:24px;align-items:flex-start;overflow-x:auto;padding:8px 0 24px}figure{margin:0;flex:none}figcaption{font:600 13px system-ui;margin-bottom:8px}section{padding:28px 0;border-top:1px solid #bbb}svg{display:block;box-shadow:0 2px 8px #0002}.ruler{width:80mm;border-top:2px solid black;border-left:2px solid black;border-right:2px solid black;height:8mm;font-size:12px;text-align:center}.note{padding:14px 18px;background:white;border-left:4px solid #222} @media print{@page{size:A4;margin:12mm}body{background:white;font-size:10pt}header{padding:0}main{padding:0}nav{display:none}.comparison{gap:10mm;overflow:visible}section{break-before:page;border:0;padding:0}section>p{display:none}.comparison{padding:0}svg{box-shadow:none}h1{font-size:20pt}h2{font-size:13pt}.note{padding:0;border:0}}
-    </style><header><p>ESTUDO DE IMPRESSÃO · DADOS FICTÍCIOS</p><h1>Informação no lugar certo.</h1><p>Ficha do pedido: preparar, conferir e encaminhar. DANFE NFC-e: reproduzir o documento autorizado.</p><div class="note">Prévia dos bytes ESC/POS reais, com fonte A aproximada. Bobina de 80 mm; área útil de 72 mm; 48 colunas. Imprima em A4, escala 100%, sem ajustar e sem cabeçalho/rodapé. A escala física na tela depende do monitor.</div><p class="ruler">80 mm · régua de conferência</p><nav>"""
+    </style><header><p>ESTUDO DE IMPRESSÃO · DADOS FICTÍCIOS</p><h1>Informação no lugar certo.</h1><p>Ficha do pedido: preparar, conferir e encaminhar. DANFE NFC-e: reproduzir o documento autorizado.</p><div class="note">Nova composição proporcional: imagem preto e branco enviada à térmica, com Noto Sans incorporada. Antes: fonte residente aproximada. Bobina de 80 mm; área útil de 72 mm. Imprima em A4, escala 100%, sem ajustar e sem cabeçalho/rodapé. A escala física na tela depende do monitor.</div><p class="ruler">80 mm · régua de conferência</p><nav>"""
         + links
         + """</nav><p><a href="danfe-screen.html">Abrir consulta fiscal em tela</a></p></header><main>"""
         + "".join(sections)

@@ -440,21 +440,27 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
     def method_label(value):
         return "Canal externo" if value == "external" and not paid else payment_method_label(value)
 
+    from shopman.backstage.services.print_layout import bindings
+
+    layout, (_line, _pair, _emphasis, _centered, _rule, _wrap, _qr) = bindings(fiscal=False)
     out = bytearray([ESC, ord("@"), ESC, ord("t"), CODE_PAGE])
-    out += logo_bytes() or _centered((shop_name or "NELSON BOULANGERIE").upper())
-    out += _emphasis(f"PEDIDO {order.ref}", tall=True)
-    if reprint:
-        out += _emphasis("*** 2a VIA ***")
     day, window = _commitment_headline(order)
     fulfillment = "BALCÃO IMEDIATO" if is_counter else "ENTREGA" if is_delivery else "RETIRADA"
     commitment = fulfillment if is_counter else " | ".join(part for part in (fulfillment, day, window) if part)
-    out += _emphasis(commitment)
     name = str(customer.get("name") or "").strip()
     phone = str(customer.get("phone") or data.get("customer_phone") or "").strip()
-    if name and phone:
-        out += bytes([ESC, ord("E"), 1]) + _pair(name, phone) + bytes([ESC, ord("E"), 0])
-    elif name or phone:
-        out += _emphasis(name or f"Telefone: {phone}")
+    if layout:
+        layout.header(str(order.ref), commitment, name, phone, shop_name, reprint)
+    else:
+        out += logo_bytes() or _centered((shop_name or "NELSON BOULANGERIE").upper())
+        out += _emphasis(f"PEDIDO {order.ref}", tall=True)
+        if reprint:
+            out += _emphasis("*** 2a VIA ***")
+        out += _emphasis(commitment)
+        if name and phone:
+            out += _pair(name, phone)
+        elif name or phone:
+            out += _emphasis(name or f"Telefone: {phone}")
     out += _rule()
     if is_delivery:
         address, instructions = _delivery_lines(data)
@@ -469,7 +475,8 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
         out += _emphasis("PAGO - NÃO COBRAR")
         out += _pair(method_label(method), money(order.total_q))
     elif collect:
-        out += _emphasis("PAGAMENTO PENDENTE | COBRAR NA ENTREGA")
+        if not layout:
+            out += _emphasis("PAGAMENTO PENDENTE | COBRAR NA ENTREGA")
         tenders = payment.get("tenders") or [{"method": method, "amount_q": order.total_q}]
         pending = [
             t
@@ -478,16 +485,26 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
             and t.get("status") not in {"received", "captured", "paid"}
             and t.get("collection", "on_delivery") == "on_delivery"
         ]
+        if layout:
+            label = method_label(str(pending[0].get("method") or "")) if len(pending) == 1 else "Pagamento misto"
+            out += _emphasis(f"{label.upper()} · COBRAR NA ENTREGA")
         due_q = sum(int(t.get("amount_q") or 0) for t in pending)
         if due_q != int(order.total_q or 0):
             out += _pair("Total do pedido", money(order.total_q))
-        out += _emphasis(f"A COBRAR {money(due_q)}", tall=True)
+        cash_only = bool(pending) and all(t.get("method") == "cash" for t in pending)
+        if not (layout and cash_only):
+            out += _emphasis(f"A COBRAR {money(due_q)}", tall=not cash_only)
         # Um método só divide a linha com o aviso; o valor já está no destaque.
         if len(pending) == 1:
-            out += _line(method_label(str(pending[0].get("method") or "")))
+            if not layout:
+                out += _line(method_label(str(pending[0].get("method") or "")))
         else:
             for tender in pending:
-                out += _pair(method_label(str(tender.get("method") or "")), money(tender.get("amount_q")))
+                tender_label = method_label(str(tender.get("method") or ""))
+                if layout and tender.get("method") in {"card", "credit", "debit"}:
+                    out += _emphasis(f"{tender_label}: {money(tender.get('amount_q'))}", tall=True)
+                else:
+                    out += _pair(tender_label, money(tender.get("amount_q")))
         if any(t.get("method") in {"card", "credit", "debit"} for t in pending):
             out += _emphasis("LEVAR MAQUININHA")
         cash_due = sum(int(t.get("amount_q") or 0) for t in pending if t.get("method") == "cash")
@@ -496,10 +513,14 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
 
             change_for = _change_for_q(order)
             if change_for:
-                out += _emphasis(f"Troco para {money(change_for)}")
-                out += _emphasis(f"Levar de troco {money(max(0, change_for - cash_due))}")
+                out += _emphasis(f"TROCO PARA {money(change_for)}", tall=True)
+                out += _pair("Levar de troco", money(max(0, change_for - cash_due)))
             else:
+                if layout:
+                    out += _emphasis("CONFIRMAR TROCO", tall=True)
                 out += _line("Troco: não informado; confirmar com cliente")
+        if layout and cash_only:
+            out += _pair("Valor a cobrar", money(due_q))
     else:
         out += _emphasis("*** PAGAMENTO PENDENTE ***")
         out += _pair(method_label(method) if method else "Total do pedido", money(order.total_q))
@@ -530,7 +551,7 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
         out += _centered("Acompanhe o pedido pelo QR" if paid or collect else "Pague e acompanhe pelo QR")
         out += _qr(tracking_url)
     out += bytes([ESC, ord("d"), 4, GS, ord("V"), 1])
-    return bytes(out)
+    return layout.finish() if layout else bytes(out)
 
 
 def _delivery_lines(data: dict) -> tuple[str, str]:
@@ -578,10 +599,14 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
         raise ValueError(
             "A fonte residente não representa todos os caracteres fiscais. Use o DANFE do provedor."
         ) from exc
+    from shopman.backstage.services.print_layout import bindings
+
+    layout, (_line, _pair, _emphasis, _centered, _rule, _wrap, _qr) = bindings(fiscal=True)
     out = bytearray([ESC, ord("@"), ESC, ord("t"), CODE_PAGE])
     from shopman.backstage.services.print_branding import logo_bytes
 
-    out += logo_bytes(centered=False)
+    logo = layout.logo if layout else logo_bytes
+    out += logo(centered=False)
     out += _emphasis(doc.shop_legal_name)
     if doc.shop_name and doc.shop_name != doc.shop_legal_name:
         out += _line(doc.shop_name)
@@ -599,6 +624,8 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
     if doc.contingency:
         out += _emphasis("EMITIDA EM CONTINGÊNCIA")
     out += _line("")
+    if layout:
+        out += _rule()
     out += _emphasis("CÓDIGO / DESCRIÇÃO")
     out += _pair("QTD UN x VALOR UNITÁRIO", "VALOR TOTAL")
     for item in doc.items:
@@ -606,6 +633,8 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
             out += _line(part)
         out += _pair(f"{item.qty} {item.unit} x {item.unit_price_display}", item.total_display)
     out += _line("")
+    if layout:
+        out += _rule()
     out += _pair("QTD. TOTAL DE ITENS", str(doc.item_count))
     for label, amount in doc.totals:
         out += _pair(label, amount)
@@ -614,11 +643,15 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
     for label, amount in doc.payments:
         out += _pair(label, amount)
     out += _line("")
+    if layout:
+        out += _rule()
     out += _line("Consulte pela Chave de Acesso em")
     for part in _wrap(doc.query_url, COLUMNS):
         out += _line(part)
     for part in _wrap(doc.chave_grouped, COLUMNS):
         out += _line(part)
+    if layout:
+        out += _rule()
     if doc.customer_tax_id_display:
         for part in _wrap(f"CONSUMIDOR {doc.customer_tax_id_label} {doc.customer_tax_id_display}", COLUMNS):
             out += _line(part)
@@ -654,4 +687,4 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
         for part in _wrap(text, COLUMNS):
             out += _line(part)
     out += bytes([ESC, ord("d"), 4, GS, ord("V"), 1])
-    return bytes(out)
+    return layout.finish() if layout else bytes(out)

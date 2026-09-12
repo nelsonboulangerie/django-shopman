@@ -1822,3 +1822,6 @@ if not DEBUG:
 
 # PNG preto sobre branco para bobina; a marca de tela pode ser branca/dourada.
 SHOPMAN_PRINT_LOGO_PATH = os.environ.get("SHOPMAN_PRINT_LOGO_PATH", "")
+
+# Raster proporcional para ensaio em térmica; native conserva o protocolo residente.
+SHOPMAN_PRINT_RENDERER = os.environ.get("SHOPMAN_PRINT_RENDERER", "native")

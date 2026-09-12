@@ -114,3 +114,6 @@ ignore = [
     "E402",   # module-level import not at top — intentional lazy imports in adapters
     "B008",   # function call in default argument — common Django pattern
 ]
+
+[tool.setuptools.package-data]
+"shopman.backstage" = ["assets/print/*.ttf", "assets/print/OFL.txt"]
