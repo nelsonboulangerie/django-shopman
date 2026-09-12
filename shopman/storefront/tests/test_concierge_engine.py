@@ -710,6 +710,35 @@ def test_run_agent_executes_tools_and_keeps_the_transcript_in_api_format(convers
     assert client.requests[1]["messages"][-1]["content"][0]["type"] == "tool_result"
 
 
+def test_run_agent_keeps_language_intelligence_but_hides_mutations_without_authority(
+    conversation,
+):
+    _create_inbound(conversation, "tem pão francês?", "agent-read-only")
+    conversation = _claim_conversation(conversation)
+    conversation._limited_event_assurance = True
+    conversation._commercial_authority = False
+    client = ScriptedClient(
+        _response(_tool("browse_menu", {"query": "pão"}), stop_reason="tool_use"),
+        _response(_text("Temos Pão Francês a R$ 0,90."), stop_reason="end_turn"),
+    )
+
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        outcome = agent_module.run_agent(
+            conversation=conversation,
+            history=agent_module.history_for(conversation),
+            client=client,
+        )
+
+    assert "Pão Francês" in outcome.reply_text
+    names = {spec["name"] for spec in client.requests[0]["tools"]}
+    assert names == set(tools.LIMITED_AUTHORITY_TOOL_NAMES)
+    assert not names.intersection(
+        {"set_item", "set_fulfillment", "review_order", "place_order", "send_web_link", "notify_when_available"}
+    )
+    assert "Modo de consulta" in client.requests[0]["system"][1]["text"]
+    assert not Session.objects.exists()
+
+
 LEAK_TAG = "<" + "/antml:parameter>"
 LEAK_NAME = 'name="browse_menu">'
 

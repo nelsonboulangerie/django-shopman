@@ -1097,11 +1097,6 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             message="Nosso concierge está fora do ar por alguns minutos. Se preferir, peça pelo site; ou siga por aqui, que a equipe continua o atendimento.",
         )},
     },
-    "CONCIERGE_LIMITED_ASSURANCE": {
-        WILDCARD: {WILDCARD: CopyEntry(
-            message="Por aqui posso mostrar o cardápio ou chamar a equipe. Para consultar, escreva cardápio; para fazer ou alterar um pedido, escreva atendente. Seu pedido não foi alterado.",
-        )},
-    },
     "CONCIERGE_MEDIA_UNSUPPORTED": {
         WILDCARD: {WILDCARD: CopyEntry(
             message="Ainda não consigo ouvir áudios ou interpretar esta mídia. Suas escolhas anteriores estão preservadas. Você pode escrever apenas o que falta ou pedir atendimento humano.",

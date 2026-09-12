@@ -129,10 +129,10 @@ def test_tiktok_shaped_connection_uses_same_core_and_causal_binding(monkeypatch)
     assert _adapter_class().sent == [("tiktok-primary", "tiktok-subject", "Resposta no mesmo canal.")]
 
 
-def test_unverified_event_is_first_class_at_least_once_and_forces_read_only(monkeypatch):
+def test_unverified_event_runs_the_agent_with_read_only_authority(monkeypatch):
     first, binding = _intake(_event(event_id="synthetic", assurance="unverified"))
     second = service.receive_inbound(_event(event_id="synthetic", assurance="unverified"))
-    model = Mock(side_effect=AssertionError("read-only input reached the model"))
+    model = Mock(return_value=agent.AgentOutcome(reply_text="Consultei os dados atuais da casa."))
     monkeypatch.setattr(agent, "run_agent", model)
 
     turn = service.run_turn(first.conversation_id, binding.pk)
@@ -142,10 +142,14 @@ def test_unverified_event_is_first_class_at_least_once_and_forces_read_only(monk
     assert len(inputs) == 2
     assert all(message.external_id == "" for message in inputs)
     assert all(message.envelope["input_assurance"] == "at_least_once" for message in inputs)
-    assert turn.fallback == "limited_assurance"
+    assert not turn.fallback
     assert turn.processed_message_ids == [message.pk for message in inputs]
+    assert ConversationMessage.objects.get(kind="reply").text == "Consultei os dados atuais da casa."
     assert OutboundAttempt.objects.get().state == "accepted"
-    model.assert_not_called()
+    [call] = model.call_args_list
+    claimed = call.kwargs["conversation"]
+    assert claimed._limited_event_assurance is True
+    assert claimed._commercial_authority is False
 
 
 def test_response_limits_and_window_evidence_fail_closed_without_losing_text():

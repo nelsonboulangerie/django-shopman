@@ -654,21 +654,7 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None) -> TurnResul
                 and binding.identity_assurance == "verified_customer"
             )
         assert_turn_authority(conversation, for_mutation=False)
-        if conversation._limited_event_assurance:
-            from . import tools
-
-            reply = copy_message("CONCIERGE_LIMITED_ASSURANCE")
-            menu_requests = {"menu", "cardápio", "cardapio", "oi", "olá", "ola"}
-            if any(
-                message.text.casefold().strip(" .!?") in menu_requests
-                or message.text.casefold().startswith("#menu ")
-                for message in inbound
-            ):
-                ctx = tools.ToolContext(conversation=conversation, channel_ref=conversation.channel_ref)
-                reply = tools.render_result("browse_menu", tools.browse_menu(ctx)) + "\n\n" + reply
-            outcome = agent_module.AgentOutcome(reply_text=reply)
-            result.fallback = "limited_assurance"
-        elif all(
+        if all(
             (message.envelope or {}).get("message_type", "text") != "text"
             for message in inbound
         ):

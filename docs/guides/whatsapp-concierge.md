@@ -86,8 +86,9 @@ caso diretamente como ingresso **at-least-once**:
    canônico de mensagem e trabalho;
 2. `event_identity_assurance=unavailable` e
    `input_assurance=at_least_once` registram o limite da evidência;
-3. o turno desse lote fica somente leitura por assurance, mesmo que o switch
-   global `CONCIERGE_READ_ONLY` esteja desligado;
+3. o turno desse lote conversa com o modelo em modo de consulta: pode ler fontes
+   canônicas, mas comandos que alteram estado não são oferecidos ao modelo e
+   continuam recusados pelos guards do servidor;
 4. catálogo público, orientação e handoff permanecem disponíveis;
 5. ferramentas que mutam sacola, pedido, pagamento, identidade ou transferência
    não recebem autoridade desse ingresso;
