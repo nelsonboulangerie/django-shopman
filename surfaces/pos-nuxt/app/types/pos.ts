@@ -554,7 +554,7 @@ export interface POSTabPayload {
   price_tier?: string;
   customer_tax_id: string;
   customer_email: string;
-  fulfillment_type: "pickup" | "delivery";
+  fulfillment_type: "pickup" | "delivery" | "";
   delivery_address: string;
   delivery_address_structured: StructuredAddressProjection;
   delivery_date: string;

@@ -234,7 +234,7 @@ function onAddressSelected(address: StructuredAddressProjection) {
         </label>
       </div>
       <UiDialogFooter>
-        <UiButton class="w-full" :disabled="!fulfillmentConfirmed" @click="isOpen = false">{{ fulfillmentType === "delivery" ? "Concluir entrega" : "Concluir retirada" }}</UiButton>
+        <UiButton class="w-full" :disabled="!fulfillmentConfirmed" @click="isOpen = false">{{ !fulfillmentConfirmed ? "Escolha o recebimento" : fulfillmentType === "delivery" ? "Concluir entrega" : "Concluir retirada" }}</UiButton>
       </UiDialogFooter>
     </UiDialogContent>
   </UiDialog>

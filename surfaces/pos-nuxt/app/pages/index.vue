@@ -61,6 +61,7 @@ const {
   orderSetupIssue,
   completeOrderSetup,
   setSalesMode,
+  itemCount,
   tabInput,
   busy,
   saving,
@@ -883,7 +884,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
            de venda, com o troco congelado como herói e "Nova venda" dominante. -->
       <div v-if="result" class="h-full md:overflow-y-auto">
         <div v-if="result.salesMode === 'order'" class="mx-auto mb-4 flex max-w-3xl flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4">
-          <div><h2 class="font-semibold">Encomenda registrada</h2><p class="text-sm text-muted-foreground">Imprima a filipeta para acompanhar o preparo e o recebimento, inclusive com pagamento pendente.</p></div>
+          <div><h2 class="font-semibold">Filipeta do pedido</h2><p class="text-sm text-muted-foreground">Imprima a filipeta para acompanhar o preparo e o recebimento, inclusive com pagamento pendente.</p></div>
           <UiButton :disabled="Boolean(printingOrderRef)" @click="printOrderTicket(result.orderRef)"><Icon name="lucide:printer" class="mr-2 size-4" />{{ printingOrderRef ? 'Imprimindo…' : 'Imprimir filipeta' }}</UiButton>
         </div>
         <PosSaleResult
@@ -1054,6 +1055,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           ref="orderEntryRef"
           v-else-if="inSaleView && orderSetupPending"
           :issue="orderSetupIssue"
+          :item-count="itemCount"
           :customer-name="cart.customerName"
           :fulfillment-label="fulfillmentChipLabel"
           :schedule-label="scheduleChipLabel"

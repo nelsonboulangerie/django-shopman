@@ -20,7 +20,7 @@ describe("pagamento da encomenda pelo contrato existente", () => {
   it("explica retirada pendente via gateway sem dizer que dinheiro já foi recebido", () => {
     expect(orderPaymentGuidance({ salesMode: "order", fulfillmentType: "pickup", collection: "terminal", methods: ["cash"] })).toContain("registram recebimento agora");
     for (const method of ["pix", "link"]) {
-      expect(orderPaymentGuidance({ salesMode: "order", fulfillmentType: "pickup", collection: "terminal", methods: [method] })).toContain("pendente até a confirmação automática");
+      expect(orderPaymentGuidance({ salesMode: "order", fulfillmentType: "pickup", collection: "terminal", methods: [method] })).toContain("pendente até a confirmação do provedor de pagamento");
     }
   });
 });
