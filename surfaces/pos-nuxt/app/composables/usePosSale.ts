@@ -1444,7 +1444,7 @@ export function usePosSale(deps: PosSaleDeps) {
       const owner = conflict.candidates?.find((candidate) => !candidate.is_current);
       return { field, value: conflict.value || "", owner_ref: owner?.ref || "", name: owner?.name || "", active: !owner?.owner_inactive };
     });
-    if (fields.some((item) => !item.owner_ref || !item.value || receiptIdentityValue(item.field) !== item.value)
+    if (fields.some((item) => !item.value || receiptIdentityValue(item.field) !== item.value)
       || cart.customerRef !== (failure.customer_ref || "") || cart.clientRequestId !== failure.client_request_id) {
       review.value = null;
       serverError.value = "Os dados do documento mudaram. Revise a venda novamente.";
@@ -1461,6 +1461,8 @@ export function usePosSale(deps: PosSaleDeps) {
       receiptFields: fields.map((item) => ({ field: item.field, value: item.value,
         owner: { ref: item.owner_ref, name: item.name, value: item.value }, active: item.active })),
       candidates: failure.candidates,
+      receiptCreate: !cart.customerRef && fields.every((item) => !item.owner_ref),
+      receiptSave: !!cart.customerRef && fields.some((item) => !item.owner_ref),
       fromReceipt: true,
     };
     customerFocusNonce.value += 1;
@@ -1631,10 +1633,17 @@ export function usePosSale(deps: PosSaleDeps) {
     if (decision.kind === "receipt_identity") {
       if (receiptDecisionBusy) return;
       const pending = pendingReceiptDecision.value;
-      const owners = pending?.fields.filter((item) => item.active) || [];
-      const chosen = ownerRef ? owners.find((item) => item.owner_ref === ownerRef)
+      const owners = pending?.fields.filter((item) => item.active && item.owner_ref) || [];
+      const unknown = pending?.fields.filter((item) => !item.owner_ref) || [];
+      const confirmedOverwrite = ownerRef === "__save_confirmed__";
+      if (confirmedOverwrite && !decision.receiptTaxIdOverwrite) return;
+      const actionTarget = confirmedOverwrite ? receiptOverwriteTarget : ownerRef;
+      const create = actionTarget === "__create__" && decision.receiptCreate;
+      const saveCurrent = actionTarget === "__save__" && decision.receiptSave;
+      const chosen = actionTarget ? owners.find((item) => item.owner_ref === actionTarget)
         : new Set(owners.map((item) => item.owner_ref)).size === 1 ? owners[0] : undefined;
-      if (!receiptDecisionMatches() || !pending || !chosen) return;
+      if (!receiptDecisionMatches() || !pending || (!chosen && !create && !saveCurrent)) return;
+      const targetRef = create ? "" : saveCurrent ? pending.customer_ref : chosen!.owner_ref;
       const document = { invoiceTaxId: cart.invoiceTaxId, wantsCpfOnInvoice: cart.wantsCpfOnInvoice,
         receiptEmail: cart.receiptChannels.includes("email") ? (cart.receiptEmail || cart.customerEmail) : cart.receiptEmail, receiptChannels: [...cart.receiptChannels] };
       const saleId = cart.clientRequestId;
@@ -1645,26 +1654,49 @@ export function usePosSale(deps: PosSaleDeps) {
         // Validate the selected owner before changing the cart. A failed or stale
         // lookup must never acknowledge either document identity.
         lookupBusy.value = true;
-        const path = concreteActionHref(actions.value, "customer_lookup",
-          "/api/v1/backstage/pos/customer/lookup/?phone={phone}&ref={ref}", { phone: "", ref: chosen.owner_ref });
-        const response = await $fetch<POSCustomerLookupResponse>(apiPath(path), {
-          method: "GET", credentials: "include", headers: requestHeaders,
-        });
+        let response: POSCustomerLookupResponse;
+        if (targetRef) {
+          const path = concreteActionHref(actions.value, "customer_lookup",
+            "/api/v1/backstage/pos/customer/lookup/?phone={phone}&ref={ref}", { phone: "", ref: targetRef });
+          response = await $fetch<POSCustomerLookupResponse>(apiPath(path), {
+            method: "GET", credentials: "include", headers: requestHeaders,
+          });
+          if (customerDecision.value !== decision || pendingReceiptDecision.value !== pending || !receiptDecisionMatches()
+            || session !== cart.tabSessionKey || !response.customer || response.customer.ref !== targetRef) return;
+          const newTaxId = unknown.find((item) => item.field === "tax_id")?.value;
+          const oldTaxId = (response.customer.tax_id || "").replace(/\D/g, "");
+          if (newTaxId && oldTaxId && newTaxId !== oldTaxId && (!confirmedOverwrite || decision.receiptTaxIdOverwrite?.from !== oldTaxId)) {
+            receiptOverwriteTarget = actionTarget || targetRef;
+            customerDecision.value = { ...decision, receiptTaxIdOverwrite: { from: oldTaxId, to: newTaxId } };
+            return;
+          }
+        } else response = { customer: null };
+        if (unknown.length) {
+          const path = actionHref(actions.value, "customer_resolve", "/api/v1/backstage/pos/customer/resolve/");
+          response = await action.call<POSCustomerLookupResponse>(path, { body: { receipt_identity_action: {
+            action: create ? "create" : "save", client_request_id: saleId, customer_ref: pending.customer_ref,
+            target_ref: targetRef, fields: pending.fields.map(({ field, value, owner_ref }) => ({ field, value, owner_ref })),
+            tax_id_overwrite_confirmed: confirmedOverwrite,
+            ...(confirmedOverwrite ? { tax_id_before: decision.receiptTaxIdOverwrite!.from } : {}),
+          } } });
+        }
         if (customerDecision.value !== decision || pendingReceiptDecision.value !== pending || !receiptDecisionMatches()
-          || session !== cart.tabSessionKey || !response.customer || response.customer.ref !== chosen.owner_ref) return;
+          || session !== cart.tabSessionKey || !response.customer || (targetRef && response.customer.ref !== targetRef)) return;
+        const resolvedRef = response.customer.ref;
         customerLookup.value = response.customer;
+        cart.customerName = "";
         cart.customerPhone = "";
         cart.customerEmail = "";
         cart.customerTaxId = "";
         applyCustomerDefaults(response.customer);
         customerSearchResults.value = [];
-        customerResolvedNew.value = false;
+        customerResolvedNew.value = !!response.created;
         Object.assign(cart, document);
         cart.saveReceiptContact = false;
         cart.saveReceiptTaxId = false;
         cart.confirmReceiptTaxId = false;
-        receiptIdentityChoices.value = pending.fields.filter((item) => item.owner_ref !== chosen.owner_ref).map((item) => ({
-          field: item.field, value: item.value, owner_ref: item.owner_ref, customer_ref: chosen.owner_ref,
+        receiptIdentityChoices.value = pending.fields.filter((item) => item.owner_ref && item.owner_ref !== resolvedRef).map((item) => ({
+          field: item.field, value: item.value, owner_ref: item.owner_ref, customer_ref: resolvedRef,
           client_request_id: saleId, choice: "receipt_only" as const,
         }));
         customerDecision.value = null;
@@ -1672,7 +1704,10 @@ export function usePosSale(deps: PosSaleDeps) {
         review.value = null;
         if (checkoutMode.value) await reviewCheckout();
       } catch (error) {
-        serverError.value = httpErrorMessage(error, "Falha ao buscar cliente.");
+        if (customerDecision.value === decision && receiptDecisionMatches()) {
+          if (handleReceiptIdentityFailure(error, pending.origin)) return;
+          serverError.value = httpErrorMessage(error, "Falha ao salvar o cliente.");
+        }
       } finally {
         receiptDecisionBusy = false;
         lookupBusy.value = false;
@@ -1815,6 +1850,7 @@ export function usePosSale(deps: PosSaleDeps) {
    *  No PAINEL do cliente é diferente e continua como estava: ali o valor É
    *  identidade, e descartá-lo significa voltar ao que o cadastro tem. */
   let receiptDecisionBusy = false;
+  let receiptOverwriteTarget: string | undefined;
   async function cancelCustomerDecision() {
     const decision = customerDecision.value;
     if (decision?.kind === "receipt_identity") {

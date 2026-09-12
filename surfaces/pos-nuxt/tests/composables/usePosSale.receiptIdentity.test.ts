@@ -244,4 +244,77 @@ describe("CPF/e-mail do documento têm decisão própria", () => {
     expect(h.sale.lookupBusy.value).toBe(false);
   });
 
+  function setupNew({ current = "", knownEmail = false } = {}) {
+    const h = setup();
+    const calls: Body[] = [];
+    let saved = false;
+    h.handles.actionCall.mockImplementation(async (path: string, options?: { body?: Body }) => {
+      const body = options?.body || {};
+      if (path.includes("customer/resolve")) {
+        calls.push(body.receipt_identity_action);
+        saved = true;
+        return { customer: { ...owner, ref: body.receipt_identity_action.target_ref || "NEW", name: "", email: knownEmail ? EMAIL : "", fiscal_prefs: {}, saved_addresses: [] }, created: !current };
+      }
+      if (!saved && !body.receipt_identity_choices?.length) throw { data: { error: {
+        code: "receipt_identity_conflict", customer_ref: body.customer_ref || "", client_request_id: body.client_request_id,
+        conflicts: [{field: "fiscal_tax_id", value: CPF, candidates: []}, ...(knownEmail ? [{field: "receipt_email", value: EMAIL, candidates: [owner]}] : [])],
+      } } };
+      return {review: {total_q: 500, subtotal_q: 500, total_display: "R$ 5,00"}};
+    });
+    Object.assign(h.sale.cart, { customerRef: current, customerName: current ? "Ana" : "", invoiceTaxId: CPF, wantsCpfOnInvoice: true,
+      ...(knownEmail ? { receiptEmail: EMAIL, receiptChannels: ["email"] } : {}) });
+    return { ...h, calls };
+  }
+  it("novo CPF oferece criar e só cria/vincula após ação explícita", async () => {
+    const h = setupNew();
+    await nextTick(); await h.sale.prepareCheckout();
+    expect(h.sale.customerDecision.value).toMatchObject({receiptCreate: true, receiptFields: [{owner: {ref: ""}}]});
+    expect(h.calls).toHaveLength(0);
+    await h.sale.confirmCustomerDecision("__create__");
+    expect(h.calls).toEqual([expect.objectContaining({action: "create", target_ref: "", fields: [{field: "tax_id", value: CPF, owner_ref: ""}]})]);
+    expect(h.sale.cart.customerRef).toBe("NEW");
+    expect(h.sale.cart.customerName).toBe("");
+    expect(h.sale.cart.invoiceTaxId).toBe(CPF);
+    expect(h.sale.customerDecision.value).toBeNull();
+  });
+  it("novo dado apenas no pedido não cria cadastro", async () => {
+    const h = setupNew();
+    await nextTick(); await h.sale.prepareCheckout(); await h.sale.cancelCustomerDecision();
+    expect(h.calls).toHaveLength(0);
+    expect(h.sale.cart.customerRef).toBe("");
+    expect(h.sale.customerDecision.value).toBeNull();
+  });
+  it("vincula conhecido e salva somente dado livre por intenção explícita", async () => {
+    const h = setupNew({knownEmail: true});
+    dollarFetch.mockResolvedValue({customer: {...owner, tax_id: "", fiscal_prefs: {}, saved_addresses: []}});
+    await nextTick(); await h.sale.prepareCheckout();
+    expect(h.sale.customerDecision.value?.receiptCreate).toBe(false);
+    await h.sale.confirmCustomerDecision(owner.ref);
+    expect(h.calls[0]).toMatchObject({action: "save", target_ref: owner.ref});
+    expect(h.sale.cart.customerRef).toBe(owner.ref);
+    expect(h.sale.customerDecision.value).toBeNull();
+  });
+  it("CPF divergente exige segunda confirmação e transporta o valor anterior", async () => {
+    const h = setupNew({current: "CUST-A"});
+    dollarFetch.mockResolvedValue({customer: {...owner, ref: "CUST-A", tax_id: "11144477735", fiscal_prefs: {}, saved_addresses: []}});
+    await nextTick(); await h.sale.prepareCheckout(); await h.sale.confirmCustomerDecision("__save__");
+    expect(h.calls).toHaveLength(0);
+    expect(h.sale.customerDecision.value?.receiptTaxIdOverwrite).toEqual({from: "11144477735", to: CPF});
+    await h.sale.confirmCustomerDecision("__save_confirmed__");
+    expect(h.calls[0]).toMatchObject({action: "save", target_ref: "CUST-A", tax_id_overwrite_confirmed: true, tax_id_before: "11144477735"});
+  });
+
+  it("resposta de criação atrasada não vincula outra venda", async () => {
+    const h = setupNew();
+    await nextTick(); await h.sale.prepareCheckout();
+    let finish!: (value: unknown) => void;
+    h.handles.actionCall.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const creating = h.sale.confirmCustomerDecision("__create__");
+    h.sale.cart.clientRequestId = "another-sale";
+    finish({ customer: { ...owner, ref: "CREATED", name: "", fiscal_prefs: {}, saved_addresses: [] }, created: true });
+    await creating;
+    expect(h.sale.cart.customerRef).toBe("");
+    expect(h.sale.customerDecision.value).toBeNull();
+  });
+
 });
