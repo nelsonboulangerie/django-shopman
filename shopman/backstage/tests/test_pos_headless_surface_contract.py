@@ -1084,7 +1084,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         # Idempotente: o mesmo CPF resolve o MESMO cadastro, agora com created=False.
         again = self.client.post(
             "/api/v1/backstage/pos/customer/resolve/",
-            {"customer_tax_id": "529.982.247-25"},
+            {"customer_ref": ref, "customer_tax_id": "529.982.247-25"},
             content_type="application/json",
         )
         self.assertEqual(again.status_code, 200)

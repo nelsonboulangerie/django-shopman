@@ -150,8 +150,22 @@ function toggleReceiptChannel(ref: string) {
   emit("update:receiptChannels", next);
 }
 
-// A customer is associated when there's a loaded lookup or a name in context.
-const hasCustomer = computed(() => Boolean(props.customerName.trim() || props.customerLookup));
+// Só um cadastro carregado representa cliente associado; texto digitado é rascunho.
+const hasCustomer = computed(() => Boolean(props.customerLookup?.ref));
+function initialCustomerPanel(): "search" | "form" {
+  return props.customerLookup?.ref || props.customerName.trim() || props.customerPhone.trim() || props.customerTaxId.trim() || props.customerEmail.trim() ? "form" : "search";
+}
+const customerPanel = ref<"search" | "form">(initialCustomerPanel());
+watch(() => props.open, (open) => {
+  if (open) customerPanel.value = initialCustomerPanel();
+});
+function openNewCustomer() {
+  if (props.customerLookup?.ref) emit("clear");
+  customerPanel.value = "form";
+}
+watch(() => props.customerLookup?.ref, (ref) => {
+  if (ref) customerPanel.value = "form";
+});
 const memory = computed(() => props.customerLookup?.memory || null);
 const identityChips = computed(() =>
   [props.customerPhone, props.customerTaxId, props.customerEmail].map((v) => v.trim()).filter(Boolean),
@@ -218,42 +232,44 @@ function askConfirm() {
 }
 
 function onSelect(result: POSCustomerSearchResult) {
+  customerPanel.value = "form";
   emit("selectResult", result);
 }
 function onConclude() {
   // Uma pergunta aberta na tela não se responde fechando a tela.
   if (props.customerDecision || props.lookupBusy) return;
-  emit("resolveCustomer");
+  if (customerPanel.value === "form") emit("resolveCustomer");
   emit("update:open", false);
 }
 
 // ── Atos NOMEADOS vindos do PosCustomerSearch ───────────────────────────────
-// CPF válido sem resultado: o documento entra no campo fiscal e o resolve roda
-// JÁ (get-or-create idempotente) — o cliente novo aparece fixado no topo.
-async function onResolveCpf(cpf: string) {
+// CPF sem resultado abre cadastro para revisão. Documento só para a nota
+// permanece no fluxo fiscal separado.
+function onResolveCpf(cpf: string) {
   emit("update:customerTaxId", cpf);
-  await nextTick(); // o v-model sobe dois níveis; o resolve lê o cart já atualizado
-  emit("resolveCustomer");
+  customerPanel.value = "form";
 }
 // Telefone sem resultado: transfere para o campo do cadastro novo.
 function onTransfer(payload: { field: "phone"; value: string }) {
   emit("update:customerPhone", payload.value);
+  customerPanel.value = "form";
 }
-// CADASTRAR SÓ COM O NOME — o ato que antes acontecia por inércia de dois
-// Enters e agora tem botão, rótulo e ressalva. Um toque, como era; a diferença
-// é que o operador leu o que ia acontecer.
-async function onCreateNameOnly(name: string) {
+// Nome sem resultado abre o formulário; cadastrar exige o botão próprio.
+function onCreateNameOnly(name: string) {
   emit("update:customerName", name);
-  await nextTick(); // o v-model sobe dois níveis; o resolve lê o cart atualizado
-  emit("resolveCustomer");
+  customerPanel.value = "form";
 }
 
 // Foco garantido na BUSCA ao abrir: sem isto o foco inicial do diálogo caía no
 // primeiro focável — "Remover cliente", o pior lugar para um Enter distraído.
 const searchRef = ref<{ focus: () => void; reset: () => void } | null>(null);
+const nameInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
 function onOpenAutoFocus(event: Event) {
   event.preventDefault();
-  void nextTick(() => searchRef.value?.focus());
+  void nextTick(() => {
+    if (customerPanel.value === "search") searchRef.value?.focus();
+    else nameInputRef.value?.inputRef?.focus();
+  });
 }
 
 // Confirmação visual do cadastro criado agora: "Cliente novo · CPF ···789-00".
@@ -576,7 +592,16 @@ const newCustomerNote = computed(() => {
 
           <!-- 2 · the picker: prominent search + rich results list.
                Enter decide (seleciona / cria por CPF / transfere / cadastra). -->
+          <div class="grid grid-cols-2 gap-2" aria-label="Escolher como identificar cliente">
+            <UiButton type="button" :variant="customerPanel === 'search' ? 'default' : 'outline'" @click="customerPanel = 'search'">
+              Buscar existente
+            </UiButton>
+            <UiButton type="button" :variant="customerPanel === 'form' ? 'default' : 'outline'" @click="openNewCustomer">
+              Cadastrar novo
+            </UiButton>
+          </div>
           <PosCustomerSearch
+            v-if="customerPanel === 'search'"
             ref="searchRef"
             :results="searchResults"
             :busy="searchBusy"
@@ -591,14 +616,14 @@ const newCustomerNote = computed(() => {
           />
 
           <!-- 3 · create / edit form -->
-          <div class="grid gap-3">
+          <div v-if="customerPanel === 'form'" class="grid gap-3">
             <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               {{ customerLookup?.ref ? "Editar cadastro" : "Novo cadastro" }}
             </p>
             <div class="grid gap-3 sm:grid-cols-2">
               <label class="grid gap-1.5 text-sm">
                 <span class="font-medium text-muted-foreground">Nome</span>
-                <UiInput :model-value="customerName" placeholder="Nome no balcão" @update:model-value="$emit('update:customerName', String($event || ''))" />
+                <UiInput ref="nameInputRef" :model-value="customerName" placeholder="Nome no balcão" @update:model-value="$emit('update:customerName', String($event || ''))" />
               </label>
               <label class="grid gap-1.5 text-sm">
                 <span class="font-medium text-muted-foreground">WhatsApp</span>
@@ -606,7 +631,7 @@ const newCustomerNote = computed(() => {
               </label>
               <label class="grid gap-1.5 text-sm">
                 <span class="font-medium text-muted-foreground">CPF/CNPJ</span>
-                <UiInput :model-value="customerTaxId" inputmode="numeric" placeholder="Para fiscal" @update:model-value="$emit('update:customerTaxId', String($event || ''))" />
+                <UiInput :model-value="customerTaxId" inputmode="numeric" placeholder="Documento do cadastro" @update:model-value="$emit('update:customerTaxId', String($event || ''))" />
               </label>
               <label class="grid gap-1.5 text-sm">
                 <span class="font-medium text-muted-foreground">E-mail</span>
@@ -667,7 +692,7 @@ const newCustomerNote = computed(() => {
 
       <UiDialogFooter>
         <UiButton class="h-14 w-full" :disabled="Boolean(customerDecision) || lookupBusy" @click="onConclude">
-          Concluir
+          {{ customerPanel === "form" ? (customerLookup?.ref ? "Salvar cadastro" : "Cadastrar cliente") : "Concluir" }}
         </UiButton>
       </UiDialogFooter>
     </UiDialogContent>

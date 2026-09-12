@@ -93,7 +93,7 @@ def test_cpf_que_vem_so_do_cadastro_nao_entra_na_nota(db):
     """A invariante que o #306 estabeleceu, agora sem toggle para protegê-la.
 
     Cliente com CPF no CRM, venda em que ninguém pediu documento: o balcão manda
-    só o telefone, o servidor completa a identidade pelo cadastro — e essa
+    a seleção explícita, o servidor completa a identidade pelo cadastro — e essa
     completação NÃO pode virar pedido. Sem esta separação, todo cliente
     identificado volta a sair com o documento em toda nota, compulsório.
     """
@@ -104,14 +104,15 @@ def test_cpf_que_vem_so_do_cadastro_nao_entra_na_nota(db):
 
     Shop.objects.create(name="T", brand_name="T")
     Channel.objects.create(ref="pdv", name="PDV", is_active=True, config={})
-    Customer.objects.create(
+    customer = Customer.objects.create(
         ref=Customer.generate_ref(), first_name="Rita", last_name="CRM",
         phone="+5543999990009", document="52998224725",
     )
 
     ops = build_session_ops({
         "items": [{"sku": "X", "name": "X", "qty": 1, "unit_price_q": 100}],
-        "customer_phone": "43999990009",   # só o telefone; ninguém pediu CPF
+        "customer_ref": customer.ref,  # seleção explícita; ninguém pediu CPF
+        "customer_phone": "43999990009",
         "payment_method": "cash",
         "payment_collection": "terminal",
         "receipt_channels": [],
@@ -198,13 +199,14 @@ def test_cadastro_sem_cpf_APRENDE_o_cpf_pedido_na_nota_QUANDO_MANDAM(db):
 
     Shop.objects.create(name="T", brand_name="T")
     Channel.objects.create(ref="pdv", name="PDV", is_active=True, config={})
-    Customer.objects.create(
+    customer = Customer.objects.create(
         ref=Customer.generate_ref(), first_name="Rita", last_name="Sem Doc",
         phone="+5543999990011",
     )
 
     _persist_customer_from_payload(
         {
+            "customer_ref": customer.ref,
             "customer_phone": "43999990011",
             "fiscal_tax_id": "52998224725",
             "save_receipt_tax_id": True,
@@ -218,7 +220,7 @@ def test_cadastro_sem_cpf_APRENDE_o_cpf_pedido_na_nota_QUANDO_MANDAM(db):
 def test_cpf_da_nota_nao_rouba_a_venda_de_quem_ja_foi_identificado(db):
     """O cliente pede a nota no CPF da esposa; a venda continua sendo dele.
 
-    Com o telefone já identificando alguém, deixar o documento da nota resolver
+    Com o cadastro já selecionado, deixar o documento da nota resolver
     mandaria para a esposa os PONTOS e o histórico, e traria a FAIXA DE PREÇO e
     as RESTRIÇÕES ALIMENTARES dela para um pedido que não é dela — duas
     identificações discordando, com a silenciosa vencendo.
@@ -240,7 +242,7 @@ def test_cpf_da_nota_nao_rouba_a_venda_de_quem_ja_foi_identificado(db):
     )
 
     resolvido = _persist_customer_from_payload(
-        {"customer_phone": "43999990033", "fiscal_tax_id": "52998224725"},
+        {"customer_ref": marido.ref, "customer_phone": "43999990033", "fiscal_tax_id": "52998224725"},
         operator_username="op",
     )
 

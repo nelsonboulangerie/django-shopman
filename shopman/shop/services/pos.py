@@ -3444,7 +3444,7 @@ def resolve_or_create_customer(
     """Get-or-create a POS customer JUST-IN-TIME — when the operator defines them
     on the counter, not deferred to order commit. Resolves by phone/CPF/email or
     creates a fresh record, and returns the customer dict (ref/name/phone/tax_id/
-    email/tier). Repeated updates use the selected ref. A named registration
+    email/tier). Repeated updates use the selected ref. A registration
     matching an existing identifier requires explicit selection. Reuses the exact
     commit-time logic so the just-in-time customer is identical to the final one.
 
@@ -3569,7 +3569,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             phone=phone,
             tax_id=resolve_tax_id,
             email=resolve_email,
-            require_selection=bool(name and not raw_ref),
+            require_selection=bool((name or phone or tax_id or email) and not raw_ref),
         )
         created = customer is None
         # A correção vale para o cadastro que o REF apontou — e para mais
@@ -3762,7 +3762,10 @@ def _resolve_pos_customer(Customer, *, ref: str, phone: str, tax_id: str, email:
         evidence.setdefault(candidate.pk, set()).add(source)
 
     if ref:
-        add(Customer.objects.filter(ref=ref, is_active=True).first(), "ref")
+        selected = Customer.objects.filter(ref=ref, is_active=True).first()
+        if selected is None:
+            raise ValueError("O cadastro selecionado não está disponível. Busque o cliente novamente.")
+        add(selected, "ref")
     if phone:
         from shopman.guestman.services import customer as customer_service
 
@@ -3781,7 +3784,7 @@ def _resolve_pos_customer(Customer, *, ref: str, phone: str, tax_id: str, email:
         return None
     if len(candidates) == 1:
         if require_selection:
-            # Novo cadastro com nome não autoriza reutilizar ou preencher o
+            # Novo cadastro não autoriza reutilizar ou preencher o
             # cadastro encontrado. O operador deve selecioná-lo explicitamente.
             raise _pos_customer_conflict(candidates, evidence)
         return next(iter(candidates.values()))

@@ -49,36 +49,9 @@ const emit = defineEmits<{
 
 const query = ref("");
 const highlighted = ref(0);
-// Enter no meio do debounce: dispara a busca JÁ e decide quando ela voltar.
-const pendingEnter = ref(false);
+// Enter durante a busca apenas antecipa o pedido. Um resultado que ainda não
+// estava visível precisa de uma nova escolha quando chegar.
 let timer: ReturnType<typeof setTimeout> | null = null;
-let pendingEnterTimer: ReturnType<typeof setTimeout> | null = null;
-
-function cancelPendingEnter() {
-  pendingEnter.value = false;
-  if (pendingEnterTimer) {
-    clearTimeout(pendingEnterTimer);
-    pendingEnterTimer = null;
-  }
-}
-
-/** O Enter espera a busca disparada agora: decide quando ela responder — e num
- *  teto curto de qualquer jeito, para o Enter nunca ficar preso num caminho que
- *  não mexe nem em `results` nem em `busy`. */
-function armPendingEnter() {
-  pendingEnter.value = true;
-  if (pendingEnterTimer) clearTimeout(pendingEnterTimer);
-  pendingEnterTimer = setTimeout(() => {
-    pendingEnterTimer = null;
-    settlePendingEnter();
-  }, 500);
-}
-
-function settlePendingEnter() {
-  if (!pendingEnter.value) return;
-  cancelPendingEnter();
-  decide();
-}
 
 watch(query, (q) => {
   const masked = maskQueryIfCpf(q);
@@ -88,7 +61,6 @@ watch(query, (q) => {
     return;
   }
   highlighted.value = 0;
-  cancelPendingEnter();
   if (timer) clearTimeout(timer);
   timer = setTimeout(() => {
     timer = null;
@@ -96,14 +68,8 @@ watch(query, (q) => {
   }, 350);
 });
 
-// A busca respondeu (a lista trocou de referência) com um Enter esperando →
-// decide agora. `busy` caindo cobre o caso em que a resposta repete a lista.
 watch(() => props.results, () => {
   highlighted.value = 0;
-  settlePendingEnter();
-});
-watch(() => props.busy, (busy, was) => {
-  if (was && !busy) settlePendingEnter();
 });
 
 const hint = computed(() => cpfHint(query.value));
@@ -150,11 +116,9 @@ function onEnter(event: KeyboardEvent) {
     timer = null;
     emit("search", query.value);
     if (query.value.trim().length >= 2) {
-      armPendingEnter();
       return;
     }
   } else if (props.busy) {
-    armPendingEnter();
     return;
   }
   decide();
@@ -174,6 +138,7 @@ function optionId(index: number): string {
 }
 
 function pick(result: POSCustomerSearchResult) {
+  if (props.busy || timer) return;
   emit("select", result);
   query.value = "";
 }
@@ -189,7 +154,6 @@ function focus() {
 defineExpose({ reset, focus });
 onBeforeUnmount(() => {
   if (timer) clearTimeout(timer);
-  if (pendingEnterTimer) clearTimeout(pendingEnterTimer);
 });
 </script>
 
@@ -237,6 +201,7 @@ onBeforeUnmount(() => {
         type="button"
         role="option"
         :aria-selected="index === highlighted"
+        :disabled="busy"
         class="flex items-center justify-between gap-2 rounded-md px-3 py-2 text-left transition hover:bg-accent"
         :class="index === highlighted ? 'bg-accent' : ''"
         @mousemove="highlighted = index"

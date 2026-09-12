@@ -97,17 +97,13 @@ def test_a_recusa_nao_escreve_nada_em_ninguem(_pdv):
     assert Customer.objects.count() == 2     # nem cadastro novo nasceu
 
 
-def test_sem_ref_o_telefone_resolve_normalmente(_pdv):
-    """A outra metade: cliente anônimo digitando o próprio telefone.
-
-    Sem ninguém associado, o telefone é a única identidade que existe — e
-    ignorá-lo criaria um cadastro duplicado por venda.
-    """
-    b = _customer("Bruno", "Souza", "+5543999990022")
-
-    resolvido = resolve_or_create_customer(phone="43999990022", operator_username="op")
-
-    assert resolvido["ref"] == b.ref
+@pytest.mark.parametrize("identifier", ["phone", "email", "tax_id"])
+def test_registration_without_name_requires_explicit_selection(_pdv, identifier):
+    existing = _customer("Bruno", "Souza", "+5543999990022", email="bruno@example.com", document="52998224725")
+    value = {"phone": "43999990022", "email": "bruno@example.com", "tax_id": "52998224725"}[identifier]
+    with pytest.raises(PosCustomerConflict) as conflict:
+        resolve_or_create_customer(**{identifier: value}, operator_username="op")
+    assert conflict.value.candidates[0]["ref"] == existing.ref
     assert Customer.objects.count() == 1
 
 
@@ -229,15 +225,16 @@ def test_a_correcao_so_vale_para_o_cadastro_que_o_ref_apontou(_pdv):
     """Sem ref não há 'de quem' corrigir — e o resolve por telefone não vira porta."""
     b = _customer("Bruno", "Souza", "+5543999990022")
 
-    resolve_or_create_customer(
-        phone="43999990022",
-        email="bruno@example.com",
-        contact_correction=True,   # sem ref: a correção não se aplica
-        operator_username="op",
-    )
+    with pytest.raises(PosCustomerConflict):
+        resolve_or_create_customer(
+            phone="43999990022",
+            email="bruno@example.com",
+            contact_correction=True,
+            operator_username="op",
+        )
 
     b.refresh_from_db()
-    assert b.email == "bruno@example.com"   # lacuna, isso o merge sempre fez
+    assert b.email == ""
 
 
 def test_a_correcao_nao_toca_no_documento_fiscal(_pdv):
@@ -299,3 +296,10 @@ def test_sale_cannot_bypass_duplicate_customer_confirmation(_pdv):
         )
     assert Customer.objects.count() == 1
     assert resolve_or_create_customer(ref=existing.ref, operator_username="op")["ref"] == existing.ref
+
+
+def test_stale_selection_never_falls_back_to_another_customer(_pdv):
+    existing = _customer("Bruno", "Souza", "+5543999990022")
+    with pytest.raises(ValueError, match="cadastro selecionado não está disponível"):
+        resolve_or_create_customer(ref="missing", phone=existing.phone, operator_username="op")
+    assert Customer.objects.count() == 1

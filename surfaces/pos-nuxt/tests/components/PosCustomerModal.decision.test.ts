@@ -141,7 +141,7 @@ describe("PosCustomerModal — a recusa tem motivo E caminho", () => {
 
   it("uma pergunta aberta não se responde fechando a tela: Concluir espera", async () => {
     const wrapper = await mount({ customerDecision: CONFLICT });
-    const concluir = buttonByText("Concluir")!;
+    const concluir = buttonByText("Cadastrar cliente")!;
     expect(concluir.disabled).toBe(true);
     concluir.click();
     await wrapper.vm.$nextTick();
@@ -311,7 +311,7 @@ describe("PosCustomerModal — a recusa tem motivo E caminho", () => {
 
   it("sem pergunta pendente, Concluir resolve e fecha como sempre", async () => {
     const wrapper = await mount();
-    buttonByText("Concluir")!.click();
+    buttonByText("Cadastrar cliente")!.click();
     await wrapper.vm.$nextTick();
     expect(wrapper.emitted("resolveCustomer")).toHaveLength(1);
     expect(wrapper.emitted("update:open")?.at(-1)).toEqual([false]);
@@ -325,7 +325,7 @@ describe("cadastro novo com telefone existente", () => {
       customerDecision: { ...CONFLICT, kind: "existing_customer", current: null },
     });
     expect(document.body.textContent).toContain("Nenhum cadastro foi alterado");
-    expect(buttonByText("Concluir")?.disabled).toBe(true);
+    expect(buttonByText("Cadastrar cliente")?.disabled).toBe(true);
     expect(buttonByText("unificar")).toBeUndefined();
     buttonByText("Usar cadastro de Bruno Souza")!.click();
     await wrapper.vm.$nextTick();
@@ -333,5 +333,37 @@ describe("cadastro novo com telefone existente", () => {
     expect(document.body.textContent).toContain("O cliente atendido é Bruno Souza?");
     buttonByText("Sim, tenho certeza")!.click();
     expect(wrapper.emitted("decisionConfirm")).toHaveLength(1);
+  });
+});
+
+describe("buscar existente e cadastrar novo são atos separados", () => {
+  it("digitar telefone no cadastro novo e sair do campo não busca nem seleciona", async () => {
+    const wrapper = await mount({ customerName: "", customerPhone: "" });
+    expect(document.querySelector('input[aria-label="Buscar cliente"]')).not.toBeNull();
+    buttonByText("Cadastrar novo")!.click();
+    await wrapper.vm.$nextTick();
+    expect(document.querySelector('input[aria-label="Buscar cliente"]')).toBeNull();
+    const phone = document.querySelector('input[inputmode="tel"]') as HTMLInputElement;
+    phone.value = "43999990022";
+    phone.dispatchEvent(new Event("input", { bubbles: true }));
+    phone.dispatchEvent(new Event("blur", { bubbles: true }));
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("update:customerPhone")?.at(-1)).toEqual(["43999990022"]);
+    expect(wrapper.emitted("search")).toBeUndefined();
+    expect(wrapper.emitted("selectResult")).toBeUndefined();
+    expect(wrapper.emitted("resolveCustomer")).toBeUndefined();
+    expect(document.body.textContent).not.toContain("Remover cliente");
+    buttonByText("Cadastrar cliente")!.click();
+    expect(wrapper.emitted("resolveCustomer")).toHaveLength(1);
+  });
+
+  it("alternar para busca e voltar preserva o rascunho de cadastro", async () => {
+    const wrapper = await mount({ customerName: "Outra Pessoa", customerPhone: "43999990022" });
+    buttonByText("Buscar existente")!.click();
+    await wrapper.vm.$nextTick();
+    buttonByText("Cadastrar novo")!.click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("clear")).toBeUndefined();
+    expect((document.querySelector('input[inputmode="tel"]') as HTMLInputElement).value).toBe("43999990022");
   });
 });
