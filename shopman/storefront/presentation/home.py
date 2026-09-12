@@ -223,6 +223,7 @@ class HomeProjection:
 def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> HomeProjection:
     from shopman.shop.models import Shop
     from shopman.shop.omotenashi import OmotenashiContext
+    from shopman.shop.services.google_maps_credentials import browser_api_key
 
     omo = OmotenashiContext.from_request(request)
     omotenashi = OmotenashiProjection(
@@ -266,12 +267,10 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         logger.debug("home.origin_channel_unavailable", exc_info=True)
         origin_channel = None
 
-    from django.conf import settings
-
     shop_latitude = float(shop.latitude) if shop and shop.latitude else None
     shop_longitude = float(shop.longitude) if shop and shop.longitude else None
     public_config = PublicConfigProjection(
-        google_maps_api_key=getattr(settings, "GOOGLE_MAPS_API_KEY", "") or "",
+        google_maps_api_key=browser_api_key(),
         whatsapp_url=shop_proj.whatsapp_url or "",
         shop_latitude=shop_latitude,
         shop_longitude=shop_longitude,
