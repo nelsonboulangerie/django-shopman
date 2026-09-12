@@ -220,6 +220,7 @@ def test_customer_holds_the_goods_predicate():
 @pytest.mark.parametrize("source", ["data", "snapshot"])
 def test_same_day_order_mode_never_hands_goods_over_implicitly(source):
     from django.utils import timezone
+
     from shopman.shop.services.kds import _customer_holds_the_goods
 
     order = _counter_order(
