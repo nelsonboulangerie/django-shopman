@@ -462,6 +462,10 @@ class POSHeadlessSurfaceContractTests(TestCase):
                     "receipt_channels": ["email"],
                     "receipt_email": "cliente@example.org",
                     "client_request_id": f"pos-receipt-email-{n}",
+                    "receipt_identity_choices": [{
+                        "field": "email", "value": "cliente@example.org", "customer_ref": "", "owner_ref": "",
+                        "choice": "receipt_only", "client_request_id": f"pos-receipt-email-{n}",
+                    }],
                 }),
                 content_type="application/json",
             )
@@ -537,6 +541,10 @@ class POSHeadlessSurfaceContractTests(TestCase):
             if "email" in receipt_channels:
                 # O canal de e-mail exige para ONDE mandar — o intent recusa sem isso.
                 payload["receipt_email"] = "cliente@example.org"
+                payload["receipt_identity_choices"] = [{
+                    "field": "email", "value": "cliente@example.org", "customer_ref": "", "owner_ref": "",
+                    "choice": "receipt_only", "client_request_id": payload["client_request_id"],
+                }]
         response = self.client.post(
             "/api/v1/backstage/pos/sale/close/",
             data=json.dumps(payload),
