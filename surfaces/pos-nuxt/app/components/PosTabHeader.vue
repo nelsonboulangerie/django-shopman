@@ -189,7 +189,7 @@ function runClear() {
         class="size-4 shrink-0"
         :class="customerRequired ? 'text-warning' : 'text-muted-foreground'"
       />
-      <span v-if="customerName" class="min-w-0 max-w-40 truncate font-medium">{{ customerName }}</span>
+      <span v-if="customerName || customerLookup?.ref" class="min-w-0 max-w-40 truncate font-medium">{{ customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref }}</span>
       <span v-else class="min-w-0 truncate" :class="customerRequired ? '' : 'text-muted-foreground'">Identificar cliente</span>
       <OperatorKbd
         aria-hidden="true"

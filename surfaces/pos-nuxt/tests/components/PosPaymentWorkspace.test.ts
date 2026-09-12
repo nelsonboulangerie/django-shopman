@@ -1402,7 +1402,7 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
 
     expect(registryLines(w)).toEqual(["CPF de Ana: 52998224725."]);
     const fiscal = w.find('section[aria-label="Nota fiscal"]');
-    expect(fiscal.text()).toContain("Salvar no cadastro de Ana");
+    expect(fiscal.text()).not.toContain("Salvar no cadastro de Ana");
   });
 });
 

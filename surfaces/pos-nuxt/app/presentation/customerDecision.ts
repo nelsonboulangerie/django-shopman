@@ -72,6 +72,9 @@ export interface CustomerDecision {
    * do campo.
    */
   fromReceipt?: boolean;
+  receiptTaxIdOverwrite?: { from: string; to: string; customerName?: string; targetRef?: string };
+  receiptCreate?: boolean;
+  receiptSave?: boolean;
   receiptFields?: Array<{ field: "tax_id" | "email"; value: string; owner: CustomerDecisionParty; active?: boolean }>;
 }
 

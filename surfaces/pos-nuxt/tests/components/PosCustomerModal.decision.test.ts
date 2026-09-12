@@ -379,19 +379,19 @@ describe("decisão do documento", () => {
     expect(buttonByText("Cadastrar novo")).toBeUndefined();
     expect(buttonByText("Concluir")).toBeUndefined();
     expect(document.querySelector('input')).toBeNull();
-    expect(document.activeElement).toBe(buttonByText("Só usar na nota"));
+    expect(document.activeElement?.tagName).toBe("H2");
     const actions = Array.from(document.querySelectorAll('button'));
-    expect(actions.indexOf(buttonByText("Só usar na nota")!)).toBeLessThan(actions.indexOf(buttonByText("Sim, é de Bruno Souza")!));
+    expect(actions.indexOf(buttonByText("Usar dados só neste pedido")!)).toBeGreaterThan(actions.indexOf(buttonByText("Sim, vincular ao pedido")!));
     expect(screenText()).toContain("529.982.247-25");
     expect(screenText()).toContain("Bruno Souza");
     expect(buttonByText("unificar")).toBeUndefined();
-    buttonByText("Sim, é de Bruno Souza")!.click();
+    buttonByText("Sim, vincular ao pedido")!.click();
     await wrapper.vm.$nextTick();
     expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
-    expect(screenText()).toContain("Associar Bruno Souza à venda?");
+    expect(screenText()).toContain("Vincular Bruno Souza ao pedido?");
     buttonByText("Voltar")!.click();
     await wrapper.vm.$nextTick();
-    buttonByText("Só usar na nota")!.click();
+    buttonByText("Usar dados só neste pedido")!.click();
     expect(wrapper.emitted("decisionCancel")).toHaveLength(1);
   });
   it("corrigir WhatsApp devolve foco ao campo sem apagar o rascunho", async () => {
@@ -412,33 +412,33 @@ describe("atalhos da decisão do documento", () => {
   it("setas navegam, 2 pede confirmação e Escape volta sem aceitar", async () => {
     const wrapper = await mount({ customerDecision: decision });
     key("ArrowRight");
-    expect(document.activeElement).toBe(buttonByText("Sim, é de Bruno Souza"));
+    expect(document.activeElement).toBe(buttonByText("Sim, vincular ao pedido"));
     key("ArrowLeft");
-    expect(document.activeElement).toBe(buttonByText("Só usar na nota"));
-    key("2");
+    expect(document.activeElement).toBe(buttonByText("Usar dados só neste pedido"));
+    key("1");
     await wrapper.vm.$nextTick();
     await wrapper.vm.$nextTick();
-    expect(document.activeElement).toBe(buttonByText("Confirmar cliente"));
+    expect(document.activeElement?.tagName).toBe("H2");
     expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
     key("Escape");
     await wrapper.vm.$nextTick();
     await wrapper.vm.$nextTick();
-    expect(document.activeElement).toBe(buttonByText("Só usar na nota"));
+    expect(document.activeElement?.tagName).toBe("H2");
     key("Escape");
     expect(wrapper.emitted("update:open")).toEqual([[false]]);
     expect(wrapper.emitted("decisionCancel")).toBeUndefined();
   });
   it("1 aceita só o documento; modificadores, repetição e espera não aceitam", async () => {
     const wrapper = await mount({ customerDecision: decision });
-    key("1", { ctrlKey: true });
-    key("1", { repeat: true });
+    key("2", { ctrlKey: true });
+    key("2", { repeat: true });
     expect(wrapper.emitted("decisionCancel")).toBeUndefined();
     await wrapper.setProps({ lookupBusy: true });
-    document.querySelector("[data-receipt-choice]")?.dispatchEvent(new KeyboardEvent("keydown", { key: "1", bubbles: true }));
+    document.querySelector("[data-receipt-choice]")?.dispatchEvent(new KeyboardEvent("keydown", { key: "2", bubbles: true }));
     expect(wrapper.emitted("decisionCancel")).toBeUndefined();
     await wrapper.setProps({ lookupBusy: false });
-    buttonByText("Só usar na nota")!.focus();
-    key("1");
+    buttonByText("Usar dados só neste pedido")!.focus();
+    key("2");
     expect(wrapper.emitted("decisionCancel")).toHaveLength(1);
     expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
   });
@@ -452,13 +452,13 @@ describe("documentos reunidos", () => {
   ];
   it("mostra os dois titulares e o atalho 3 confirma apenas o escolhido", async () => {
     const wrapper = await mount({ customerDecision: { ...CONFLICT, kind: "receipt_identity", receiptFields: fields } });
-    expect(screenText()).toContain("Quem é o cliente desta compra?");
+    expect(screenText()).toContain("Quem é o cliente deste pedido?");
     expect(screenText()).toContain("529.982.247-25");
     expect(screenText()).toContain("ana@example.org");
     expect(document.querySelectorAll('[data-receipt-choice] button')).toHaveLength(3);
-    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "3", bubbles: true }));
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "2", bubbles: true }));
     await wrapper.vm.$nextTick();
-    expect(screenText()).toContain("Associar Ana Prado à venda?");
+    expect(screenText()).toContain("Vincular Ana Prado ao pedido?");
     expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
     buttonByText("Confirmar cliente")!.click();
     expect(wrapper.emitted("decisionConfirm")).toEqual([["A"]]);
@@ -469,5 +469,39 @@ describe("documentos reunidos", () => {
     await wrapper.setProps({ customerDecision: { ...CONFLICT, kind: "receipt_identity", receiptFields: fields.map(f => ({ ...f, active: false })) } });
     expect(document.querySelectorAll('[data-receipt-choice] button')).toHaveLength(1);
     expect(screenText()).toContain("(inativo)");
+  });
+});
+
+describe("cadastro pelo documento", () => {
+  const newField = { field: 'email', value: 'novo@example.org', owner: { ref: '', name: '', value: 'novo@example.org' }, active: true };
+  it('prioriza cadastrar sem aceitar o Enter usado para abrir', async () => {
+    const wrapper = await mount({ customerDecision: { ...CONFLICT, kind: 'receipt_identity', receiptCreate: true, current: null, other: null, receiptFields: [newField] } });
+    expect(screenText()).toContain('Cadastrar o cliente deste pedido?');
+    expect(document.activeElement?.tagName).toBe('H2');
+    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(wrapper.emitted('decisionConfirm')).toBeUndefined();
+    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: '1', bubbles: true }));
+    await wrapper.vm.$nextTick();
+    expect(screenText()).toContain('Os dados serão salvos em um novo cadastro.');
+    buttonByText('Confirmar cliente')!.click();
+    expect(wrapper.emitted('decisionConfirm')).toEqual([['__create__']]);
+  });
+  it('explicita salvar o dado novo junto da associação ao titular conhecido', async () => {
+    await mount({ customerDecision: { ...CONFLICT, kind: 'receipt_identity', receiptFields: [
+      { field: 'tax_id', value: '52998224725', owner: CONFLICT.other }, newField,
+    ] } });
+    expect(buttonByText('Vincular Bruno Souza e salvar e-mail')).toBeDefined();
+    expect(buttonByText('Cadastrar e vincular')).toBeUndefined();
+  });
+  it('troca de CPF mostra antigo e novo antes da confirmação explícita', async () => {
+    const wrapper = await mount({ customerDecision: { ...CONFLICT, kind: 'receipt_identity', receiptSave: true,
+      receiptTaxIdOverwrite: { from: '52998224725', to: '11144477735' }, receiptFields: [newField] } });
+    expect(screenText()).toContain('Atual: 529.982.247-25');
+    expect(screenText()).toContain('Novo: 111.444.777-35');
+    buttonByText('Trocar CPF e vincular')!.click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted('decisionConfirm')).toBeUndefined();
+    buttonByText('Confirmar cliente')!.click();
+    expect(wrapper.emitted('decisionConfirm')).toEqual([['__save_confirmed__']]);
   });
 });

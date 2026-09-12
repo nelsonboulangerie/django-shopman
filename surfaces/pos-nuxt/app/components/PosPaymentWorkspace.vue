@@ -451,9 +451,6 @@ const receiptTaxIdOffer = computed(() => receiptOffers.value.taxId);
 const saveReceiptEmailChecked = computed(() =>
   receiptContactChecked(receiptEmailOffer.value, props.saveReceiptContact),
 );
-const saveReceiptTaxIdChecked = computed(() =>
-  receiptContactChecked(receiptTaxIdOffer.value, props.saveReceiptTaxId),
-);
 // A segunda metade da promessa: quem chega ao fechamento pelo teclado nunca viu
 // o popover, e ninguém deve descobrir depois que um cadastro mudou.
 // ⚠️ ARMADO, não marcado. O CPF divergente só entra no resumo depois da
@@ -1594,13 +1591,7 @@ defineExpose({
                 />
               </label>
               <template v-if="wantsCpfOnInvoice">
-                <PosReceiptSaveOffer
-                  :offer="receiptTaxIdOffer"
-                  :checked="saveReceiptTaxIdChecked"
-                  :confirmed="confirmReceiptTaxId"
-                  @update:checked="$emit('update:saveReceiptTaxId', $event)"
-                  @update:confirmed="$emit('update:confirmReceiptTaxId', $event)"
-                >
+
                   <UiInput
                     :model-value="invoiceTaxIdMasked"
                     inputmode="numeric"
@@ -1610,7 +1601,7 @@ defineExpose({
                     :maxlength="18"
                     @update:model-value="$emit('update:invoiceTaxId', String($event || '').replace(/\D/g, '').slice(0, 14))"
                   />
-                </PosReceiptSaveOffer>
+
                 <!-- Eco do documento: o operador lê de volta o que vai sair e diz
                      ao cliente. Sem isto, "pôs o meu?" não tem resposta na tela. -->
                 <p class="flex items-center gap-1.5 text-xs" :class="taxIdEcho.ok ? 'text-muted-foreground' : 'text-warning'">
@@ -1618,7 +1609,7 @@ defineExpose({
                   {{ taxIdEcho.text }}
                 </p>
                 <p v-if="taxIdIsFromCadastro" class="text-xs text-muted-foreground">
-                  Do cadastro. Trocar aqui vale só nesta venda.
+                  Do cadastro do cliente.
                 </p>
               </template>
             </div>
@@ -1657,11 +1648,7 @@ defineExpose({
                 />
               </label>
               <template v-if="wantsEmailReceipt">
-                <PosReceiptSaveOffer
-                  :offer="receiptEmailOffer"
-                  :checked="saveReceiptEmailChecked"
-                  @update:checked="$emit('update:saveReceiptContact', $event)"
-                >
+
                   <UiInput
                     :model-value="receiptEmail"
                     type="email"
@@ -1670,12 +1657,12 @@ defineExpose({
                     aria-label="E-mail que recebe a nota"
                     @update:model-value="$emit('update:receiptEmail', String($event || ''))"
                   />
-                </PosReceiptSaveOffer>
+
                 <p v-if="!receiptEmail.trim() && customerEmail.trim()" class="text-xs text-muted-foreground">
                   Sem preencher, vai para <span class="font-medium text-foreground">{{ customerEmail }}</span>.
                 </p>
                 <p v-else-if="emailIsFromCadastro" class="text-xs text-muted-foreground">
-                  Do cadastro. Trocar aqui vale só nesta venda.
+                  Do cadastro do cliente.
                 </p>
               </template>
             </div>
