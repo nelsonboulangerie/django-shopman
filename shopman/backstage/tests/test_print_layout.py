@@ -153,3 +153,27 @@ def test_long_identifiers_wrap_without_losing_characters():
     lines = layout._lines(value, font(24), 220)
     assert "".join(part.strip() for part in lines) == value
     assert all(font(24).getlength(part.strip()) <= 220 for part in lines)
+
+
+def test_monogram_has_black_artwork_and_transparent_background():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    with Image.open(root / "media/branding/nelson-monogram-print.png") as logo:
+        assert logo.mode == "RGBA"
+        assert logo.getchannel("A").getextrema() == (0, 255)
+        assert all(extrema == (0, 0) for extrema in logo.convert("RGB").getextrema())
+
+
+def test_long_content_preserved_inside_rounded_box():
+    layout = RasterLayout()
+    layout.begin_box()
+    content = "Endereço extenso com complemento e referência. " * 20
+    layout.text(content)
+    layout.end_box()
+    image = layout.image()
+    assert image.width == 576 and image.height > 300
+    assert image.getpixel((1, 30)) == 0
+    assert image.getpixel((574, 30)) == 0
+    assert content in "\n".join(text for text, _ in layout.texts)
+    assert decode_raster(layout.finish()).height == image.height

@@ -11,6 +11,7 @@ import base64
 import html
 import io
 import os
+import shutil
 import subprocess
 import sys
 import types
@@ -242,7 +243,7 @@ def main():
     ]
     sections = []
     metrics = []
-    with override_settings(SHOPMAN_PRINT_RENDERER="raster", SHOPMAN_PRINT_LOGO_PATH=str(ROOT / "media/branding/nelson-print.png")):
+    with override_settings(SHOPMAN_PRINT_RENDERER="raster", SHOPMAN_PRINT_LOGO_PATH=str(ROOT / "media/branding/nelson-monogram-print.png")):
         for slug, title, example in cases:
             versions = [
                 before.order_ticket(example, shop_name="Nelson Boulangerie"),
@@ -306,12 +307,27 @@ def main():
     page = (
         """<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Impressos · antes e depois</title><style>
     *{box-sizing:border-box}body{margin:0;background:#eeede9;color:#181818;font:16px/1.5 system-ui,sans-serif}header,main{max-width:1000px;margin:auto;padding:24px}h1{font-size:36px;line-height:1.15;margin:8px 0 16px}h2{font-size:23px;margin:0 0 12px}p{max-width:78ch}a{color:inherit}nav{line-height:2.1}.comparison{display:flex;gap:24px;align-items:flex-start;overflow-x:auto;padding:8px 0 24px}figure{margin:0;flex:none}figcaption{font:600 13px system-ui;margin-bottom:8px}section{padding:28px 0;border-top:1px solid #bbb}svg{display:block;box-shadow:0 2px 8px #0002}.ruler{width:80mm;border-top:2px solid black;border-left:2px solid black;border-right:2px solid black;height:8mm;font-size:12px;text-align:center}.note{padding:14px 18px;background:white;border-left:4px solid #222} @media print{@page{size:A4;margin:12mm}body{background:white;font-size:10pt}header{padding:0}main{padding:0}nav{display:none}.comparison{gap:10mm;overflow:visible}section{break-before:page;border:0;padding:0}section>p{display:none}.comparison{padding:0}svg{box-shadow:none}h1{font-size:20pt}h2{font-size:13pt}.note{padding:0;border:0}}
-    </style><header><p>ESTUDO DE IMPRESSÃO · DADOS FICTÍCIOS</p><h1>Informação no lugar certo.</h1><p>Ficha do pedido: preparar, conferir e encaminhar. DANFE NFC-e: reproduzir o documento autorizado.</p><div class="note">Nova composição proporcional: imagem preto e branco enviada à térmica, com Noto Sans incorporada. Antes: fonte residente aproximada. Bobina de 80 mm; área útil de 72 mm. Imprima em A4, escala 100%, sem ajustar e sem cabeçalho/rodapé. A escala física na tela depende do monitor.</div><p class="ruler">80 mm · régua de conferência</p><nav>"""
+    </style><header><p>ESTUDO DE IMPRESSÃO · DADOS FICTÍCIOS</p><h1>Informação no lugar certo.</h1><p>Ficha do pedido: preparar, conferir e encaminhar. DANFE NFC-e: reproduzir o documento autorizado.</p><div class="note">Nova composição proporcional: imagem preto e branco enviada à térmica, com Barlow Semi Condensed incorporada. Antes: fonte residente aproximada. Bobina de 80 mm; área útil de 72 mm. Imprima em A4, escala 100%, sem ajustar e sem cabeçalho/rodapé. A escala física na tela depende do monitor.</div><p class="ruler">80 mm · régua de conferência</p><nav>"""
         + links
         + """</nav><p><a href="danfe-screen.html">Abrir consulta fiscal em tela</a></p></header><main>"""
         + "".join(sections)
         + """<section><h2>Sobre o nome</h2><p><strong>Ficha do pedido</strong> é a proposta para o papel operacional. “Comanda” já tem outro significado no PDV; “romaneio” funciona melhor para lote/rota; “ordem de preparo” fica estreito para retirada e cobrança.</p><p>Sem validação em impressora física: contraste, avanço, corte, raster da marca, fonte residente, durabilidade e leitura óptica do QR ainda precisam de ensaio no balcão. Nenhum dado real, emissão, merge ou deploy foi executado.</p></section></main></html>"""
     )
+    for name in ("BarlowSemiCondensed-Medium.ttf", "BarlowSemiCondensed-Bold.ttf", "NotoSans.ttf"):
+        shutil.copyfile(ROOT / "shopman/backstage/assets/print" / name, output / name)
+    for extension in ("svg", "png"):
+        shutil.copyfile(ROOT / f"media/branding/nelson-monogram-print.{extension}", output / f"monogram.{extension}")
+    (output / "typography.html").write_text("""<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Estudo de tipografia</title><style>
+    @font-face{font-family:Barlow;src:url('BarlowSemiCondensed-Medium.ttf');font-weight:500}
+    @font-face{font-family:Barlow;src:url('BarlowSemiCondensed-Bold.ttf');font-weight:700}
+    @font-face{font-family:Noto;src:url('NotoSans.ttf');font-weight:100 900}
+    body{margin:32px;background:#eeede9;font:16px system-ui;color:#111}main{display:flex;gap:24px;flex-wrap:wrap}article{width:320px;background:white;padding:24px;border-radius:12px}h1{font-size:28px}h2{font:600 16px system-ui;margin:0 0 24px}.sample{font-size:22px;font-weight:500}.sample strong{font-size:28px;display:block;margin:12px 0}.barlow{font-family:Barlow}.noto{font-family:Noto}.narrow{font-family:Noto;font-variation-settings:'wdth' 75}a{color:inherit}.logo{width:160px;background:white;padding:16px}
+    </style><h1>Três tratamentos tipográficos</h1><p>Mesmos textos e tamanhos. A proposta aplicada é Barlow Semi Condensed. Este estudo mostra a fonte vetorial; a galeria principal mostra os pixels enviados à térmica.</p><main>
+    <article><h2>01 · Barlow Semi Condensed — proposta</h2><div class="sample barlow"><strong>ENTREGA · HOJE</strong>Ana Exemplo · 14:00 às 14:30<strong>TROCO PARA R$ 100,00</strong>2 × Pão de fermentação natural<br>Rua das Araucárias, 1234<br>0123456789 · R$ 64,00</div></article>
+    <article><h2>02 · Noto Sans — versão anterior</h2><div class="sample noto"><strong>ENTREGA · HOJE</strong>Ana Exemplo · 14:00 às 14:30<strong>TROCO PARA R$ 100,00</strong>2 × Pão de fermentação natural<br>Rua das Araucárias, 1234<br>0123456789 · R$ 64,00</div></article>
+    <article><h2>03 · Noto Sans Condensed — alternativa</h2><div class="sample narrow"><strong>ENTREGA · HOJE</strong>Ana Exemplo · 14:00 às 14:30<strong>TROCO PARA R$ 100,00</strong>2 × Pão de fermentação natural<br>Rua das Araucárias, 1234<br>0123456789 · R$ 64,00</div></article>
+    </main><p>A Parisine Narrow permanece uma candidata, mas não está reproduzida neste estudo: não temos o arquivo licenciado incorporado ao projeto.</p><p><a href="index.html#troco">Ver os impressos</a> · <a href="monogram.svg" download>Baixar monograma SVG</a> · <a href="monogram.png" download>Baixar PNG transparente</a></p><img class="logo" src="monogram.svg" alt="Monograma Nelson preto, sem fundo"></html>""")
+    page = page.replace('<nav>', '<p><a href="typography.html">Comparar as fontes e baixar o monograma</a></p><nav>')
     (output / "index.html").write_text(page)
     (output / "measurements.tsv").write_text(
         "Cenário\tAntes_mm\tDepois_mm\n" + "\n".join(f"{title}\t{old:.1f}\t{new:.1f}" for title, old, new in metrics)

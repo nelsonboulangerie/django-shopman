@@ -116,4 +116,4 @@ ignore = [
 ]
 
 [tool.setuptools.package-data]
-"shopman.backstage" = ["assets/print/*.ttf", "assets/print/OFL.txt"]
+"shopman.backstage" = ["assets/print/*.ttf", "assets/print/*OFL.txt"]

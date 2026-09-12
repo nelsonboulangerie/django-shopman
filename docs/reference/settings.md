@@ -481,10 +481,14 @@ Configurados via Admin no model `Promotion` e `Coupon` (app `shop`):
 
 ### Tipografia proporcional dos impressos
 
-`SHOPMAN_PRINT_RENDERER=raster` ativa a composição Noto Sans em imagem 1-bit,
+`SHOPMAN_PRINT_RENDERER=raster` ativa a composição Barlow Semi Condensed em imagem 1-bit,
 576 pontos, somente para ficha do pedido e DANFE NFC-e. O padrão `native` mantém
 texto residente; serve também para retornar ao modo anterior após um ensaio.
 A prévia offline usa raster explicitamente. Fonte e licença OFL são distribuídas
 em `shopman/backstage/assets/print/`. Nenhum browser ou download é usado em runtime.
 Usar bobina de 80 mm; validar nitidez, corte e tempo na impressora física antes
 que a configuração seja adotada em operação.
+
+O monograma preparado está em `media/branding/nelson-monogram-print.png` (e SVG),
+com traços pretos e fundo transparente. Use esse PNG em `SHOPMAN_PRINT_LOGO_PATH`
+para o cabeçalho com monograma à esquerda.

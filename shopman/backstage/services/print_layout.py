@@ -10,15 +10,14 @@ from pathlib import Path
 from django.conf import settings
 from PIL import Image, ImageDraw, ImageFont
 
-FONT = Path(__file__).resolve().parents[1] / "assets/print/NotoSans.ttf"
+FONT_DIR = Path(__file__).resolve().parents[1] / "assets/print"
 WIDTH = 576
 
 
 @lru_cache(maxsize=32)
 def font(size, bold=False):
-    result = ImageFont.truetype(str(FONT), size)
-    result.set_variation_by_axes([700 if bold else 500, 100])
-    return result
+    name = "BarlowSemiCondensed-Bold.ttf" if bold else "BarlowSemiCondensed-Medium.ttf"
+    return ImageFont.truetype(str(FONT_DIR / name), size)
 
 
 def raster_bytes(image):
@@ -40,6 +39,8 @@ class RasterLayout:
         self.fiscal = fiscal
         self.blocks = []
         self.texts = []
+        self.box_start = None
+        self.inset = 0
 
     def space(self, height=10):
         self.blocks.append(Image.new("L", (WIDTH, height), 255))
@@ -69,6 +70,7 @@ class RasterLayout:
         text, right = str(text), str(right)
         self.texts.append((text, right))
         face = font(size, bold)
+        inset = max(inset, self.inset)
         available = WIDTH - 2 * inset
         right_width = face.getlength(right)
         if right and right_width > available * 0.48:
@@ -101,35 +103,102 @@ class RasterLayout:
             return self.text(text, size=30, bold=True, center=True)
         return self.text(text, size=22, center=True)
 
+    def brand_header(self, name, details=()):
+        # Texto fiscal vem do XML; a marca é a única imagem configurada.
+        offset = 0
+        logo_image = None
+        path = getattr(settings, "SHOPMAN_PRINT_LOGO_PATH", "")
+        if path:
+            try:
+                with Image.open(path) as source:
+                    logo_image = source.convert("RGBA")
+                    logo_image.thumbnail((96, 96), Image.Resampling.LANCZOS)
+                    offset = 118
+            except (OSError, ValueError):
+                pass
+        lines = []
+        for text, size, bold in [(name, 29, True)] + [(text, 21, False) for text in details if text]:
+            self.texts.append((str(text), ""))
+            lines.extend((part, size, bold) for part in self._lines(text, font(size, bold), WIDTH - offset - 4))
+        height = max(100 if logo_image else 0, sum(size + 5 for _, size, _ in lines))
+        block = Image.new("L", (WIDTH, height + 12), 255)
+        if logo_image:
+            block.paste(logo_image.convert("L"), (0, 4), logo_image.getchannel("A"))
+        draw = ImageDraw.Draw(block)
+        y = 4
+        for text, size, bold in lines:
+            draw.text((offset, y), text, font=font(size, bold), fill=0, anchor="lt")
+            y += size + 5
+        self.blocks.append(block)
+        return b""
+
+    def begin_box(self):
+        if self.box_start is not None:
+            raise ValueError("Caixas não podem ser aninhadas.")
+        self.box_start = len(self.blocks)
+        self.inset = 16
+        self.space(12)
+        return b""
+
+    def end_box(self):
+        if self.box_start is None:
+            return b""
+        self.space(10)
+        parts = self.blocks[self.box_start :]
+        del self.blocks[self.box_start :]
+        block = Image.new("L", (WIDTH, sum(part.height for part in parts)), 255)
+        y = 0
+        for part in parts:
+            block.paste(part, (0, y))
+            y += part.height
+        ImageDraw.Draw(block).rounded_rectangle((1, 1, WIDTH - 2, block.height - 2), radius=12, outline=0, width=2)
+        self.blocks.append(block)
+        self.box_start = None
+        self.inset = 0
+        self.space(12)
+        return b""
+
     def header(self, ref, commitment, name, phone, shop_name, reprint):
-        if self.logo(centered=False):
-            logo = self.blocks.pop()
-            logo = logo.crop((0, 0, 224, logo.height))
-            logo.thumbnail((160, 60), Image.Resampling.LANCZOS)
-            header = Image.new("L", (WIDTH, 76), 255)
-            header.paste(logo, (0, 7))
-            draw = ImageDraw.Draw(header)
-            draw.text((WIDTH, 0), "PEDIDO", font=font(18, True), fill=0, anchor="rt")
-            face = font(36, True)
-            if face.getlength(ref) <= 390:
-                draw.text((WIDTH, 27), ref, font=face, fill=0, anchor="rt")
-                self.texts.append((ref, ""))
-                self.blocks.append(header)
-            else:
-                self.blocks.append(header)
-                self.text(ref, size=36, bold=True)
-        else:
-            self.text(shop_name or "Ficha do pedido", size=24, bold=True)
-            self.text("PEDIDO " + ref, size=36, bold=True)
-        self.rule()
-        self.text(commitment, size=28, bold=True)
-        if reprint:
-            self.text("2ª VIA", size=24, bold=True)
-        self.space(5)
-        self.text(name, right=phone, size=25, bold=True)
+        self.brand_header(shop_name or "Ficha do pedido", ("FICHA DO PEDIDO",))
+        self.begin_box()
+        self.texts.extend([(str(ref), ""), (commitment, "")])
+        left = [("PEDIDO" + (" · 2ª VIA" if reprint else ""), 20, True)]
+        left.extend((part, 36, True) for part in self._lines(ref, font(36, True), 240))
+        segments = commitment.split(" | ")
+        right = [(segments[0], 28, True)]
+        right.extend((part, 24, True) for segment in segments[1:] for part in self._lines(segment, font(24, True), 264))
+        height = max(sum(size + 5 for _, size, _ in left), sum(size + 5 for _, size, _ in right))
+        block = Image.new("L", (WIDTH, height + 6), 255)
+        draw = ImageDraw.Draw(block)
+        for x, lines in [(16, left), (296, right)]:
+            y = 2
+            for text, size, bold in lines:
+                draw.text((x, y), text, font=font(size, bold), fill=0, anchor="lt")
+                y += size + 5
+        draw.line((278, 3, 278, height - 3), fill=0, width=2)
+        self.blocks.append(block)
+        self.end_box()
+        self.text(name, right=phone, size=27, bold=True)
+        return b""
+
+    def cash_metrics(self, change, due):
+        self.texts.extend([("Levar de troco", change), ("Valor a cobrar", due)])
+        block = Image.new("L", (WIDTH, 65), 255)
+        draw = ImageDraw.Draw(block)
+        for x, label, value in [(16, "LEVAR DE TROCO", change), (296, "VALOR A COBRAR", due)]:
+            draw.text((x, 2), label, font=font(20), fill=0, anchor="lt")
+            if font(30, True).getlength(value) > 248:
+                # Valores extraordinariamente longos usam a quebra normal.
+                self.pair("Levar de troco", change)
+                self.pair("Valor a cobrar", due)
+                return b""
+            draw.text((x, 29), value, font=font(30, True), fill=0, anchor="lt")
+        draw.line((278, 4, 278, 58), fill=0, width=2)
+        self.blocks.append(block)
         return b""
 
     def emphasis(self, text, *, tall=False):
+        text = str(text).strip("* ")
         if str(text).startswith("PEDIDO "):
             self.space(10)
             return self.text(text, size=40, bold=True)
@@ -139,10 +208,7 @@ class RasterLayout:
         return self.text(text, size=23 if self.fiscal else 25, bold=True)
 
     def rule(self, columns=48):
-        block = Image.new("L", (WIDTH, 17), 255)
-        ImageDraw.Draw(block).line((0, 8, WIDTH, 8), fill=0, width=2)
-        self.blocks.append(block)
-        return b""
+        return self.space(10)
 
     def logo(self, centered=True):
         path = getattr(settings, "SHOPMAN_PRINT_LOGO_PATH", "")
@@ -185,6 +251,8 @@ class RasterLayout:
         return image
 
     def finish(self):
+        if self.box_start is not None:
+            raise ValueError("Caixa de impressão não foi encerrada.")
         return raster_bytes(self.image())
 
 

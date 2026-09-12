@@ -471,6 +471,8 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
                 out += _line(part)
         out += _rule()
 
+    if layout:
+        layout.begin_box()
     if paid:
         out += _emphasis("PAGO - NÃO COBRAR")
         out += _pair(method_label(method), money(order.total_q))
@@ -508,33 +510,46 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
         if any(t.get("method") in {"card", "credit", "debit"} for t in pending):
             out += _emphasis("LEVAR MAQUININHA")
         cash_due = sum(int(t.get("amount_q") or 0) for t in pending if t.get("method") == "cash")
+        cash_metrics_rendered = False
         if cash_due:
             from shopman.shop.services.operator_orders import _change_for_q
 
             change_for = _change_for_q(order)
             if change_for:
                 out += _emphasis(f"TROCO PARA {money(change_for)}", tall=True)
-                out += _pair("Levar de troco", money(max(0, change_for - cash_due)))
+                if layout and cash_only:
+                    layout.cash_metrics(money(max(0, change_for - cash_due)), money(due_q))
+                    cash_metrics_rendered = True
+                else:
+                    out += _pair("Levar de troco", money(max(0, change_for - cash_due)))
             else:
                 if layout:
                     out += _emphasis("CONFIRMAR TROCO", tall=True)
                 out += _line("Troco: não informado; confirmar com cliente")
-        if layout and cash_only:
+        if layout and cash_only and not cash_metrics_rendered:
             out += _pair("Valor a cobrar", money(due_q))
     else:
         out += _emphasis("*** PAGAMENTO PENDENTE ***")
         out += _pair(method_label(method) if method else "Total do pedido", money(order.total_q))
         if status == "unknown":
             out += _emphasis("CONFIRMAR PAGAMENTO ANTES DE COBRAR")
-    out += _rule()
+    if layout:
+        layout.end_box()
+    else:
+        out += _rule()
     notes = [("Observação do cliente:", data.get("order_notes")), ("Nota da cozinha:", data.get("kitchen_note"))]
+    if layout and any(str(note or "").strip() for _, note in notes):
+        layout.begin_box()
     for label, note in notes:
         if str(note or "").strip():
             out += _emphasis(label)
             for part in _wrap(str(note), COLUMNS):
                 out += _line(part)
     if any(str(note or "").strip() for _, note in notes):
-        out += _rule()
+        if layout:
+            layout.end_box()
+        else:
+            out += _rule()
     items = list(order.items.all())
     out += _emphasis(f"ITENS ({len(items)})")
     for item in items:
@@ -605,17 +620,27 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
     out = bytearray([ESC, ord("@"), ESC, ord("t"), CODE_PAGE])
     from shopman.backstage.services.print_branding import logo_bytes
 
-    logo = layout.logo if layout else logo_bytes
-    out += logo(centered=False)
-    out += _emphasis(doc.shop_legal_name)
-    if doc.shop_name and doc.shop_name != doc.shop_legal_name:
-        out += _line(doc.shop_name)
     emit_id = "CPF" if len(doc.shop_cnpj) == 14 else "CNPJ"
-    out += _line(f"{emit_id} {doc.shop_cnpj}")
-    if doc.shop_ie:
-        out += _line(f"IE {doc.shop_ie}")
-    for part in _wrap(doc.shop_address, COLUMNS):
-        out += _line(part)
+    if layout:
+        details = [
+            doc.shop_name if doc.shop_name != doc.shop_legal_name else "",
+            f"{emit_id} {doc.shop_cnpj}",
+            f"IE {doc.shop_ie}" if doc.shop_ie else "",
+            doc.shop_address,
+        ]
+        layout.brand_header(doc.shop_legal_name, details)
+    else:
+        logo = layout.logo if layout else logo_bytes
+        out += logo(centered=False)
+        out += _emphasis(doc.shop_legal_name)
+        if doc.shop_name and doc.shop_name != doc.shop_legal_name:
+            out += _line(doc.shop_name)
+        emit_id = "CPF" if len(doc.shop_cnpj) == 14 else "CNPJ"
+        out += _line(f"{emit_id} {doc.shop_cnpj}")
+        if doc.shop_ie:
+            out += _line(f"IE {doc.shop_ie}")
+        for part in _wrap(doc.shop_address, COLUMNS):
+            out += _line(part)
     out += _centered("DANFE NFC-e")
     out += _centered("Documento Auxiliar da Nota Fiscal")
     out += _centered("de Consumidor Eletrônica")
@@ -635,6 +660,8 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
     out += _line("")
     if layout:
         out += _rule()
+    if layout:
+        layout.begin_box()
     out += _pair("QTD. TOTAL DE ITENS", str(doc.item_count))
     for label, amount in doc.totals:
         out += _pair(label, amount)
@@ -642,6 +669,8 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
     out += _pair("FORMA DE PAGAMENTO", "VALOR PAGO")
     for label, amount in doc.payments:
         out += _pair(label, amount)
+    if layout:
+        layout.end_box()
     out += _line("")
     if layout:
         out += _rule()

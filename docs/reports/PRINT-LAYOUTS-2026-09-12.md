@@ -61,12 +61,12 @@ Imprimir a galeria em A4 a 100%, sem ajustar e sem cabeçalho/rodapé. Régua de
 
 | Cenário | Antes (mm) | Depois (mm) |
 |---|---:|---:|
-| Retirada curta | 127,5 | 70,6 |
-| Longo com endereço/observações | 225,0 | 174,4 |
-| Entrega paga | 142,5 | 91,9 |
-| Entrega com troco | 165,0 | 102,4 |
-| Entrega com pagamento misto | 168,8 | 119,4 |
-| Balcão imediato | 114,0 | 70,6 |
+| Retirada curta | 127,5 | 84,8 |
+| Longo com endereço/observações | 225,0 | 175,1 |
+| Entrega paga | 142,5 | 101,5 |
+| Entrega com troco | 165,0 | 111,9 |
+| Entrega com pagamento misto | 168,8 | 129,0 |
+| Balcão imediato | 114,0 | 81,6 |
 
 São medidas nominais da simulação, incluindo avanço de corte. O DANFE de demonstração cresce porque passa a imprimir dados fiscais que faltavam (endereço do destinatário, pagamentos parciais, desconto/frete, horários e mensagens); não é lícito omiti-los para ganhar espaço.
 
@@ -82,7 +82,7 @@ Ensaio físico pendente: densidade e resolução da marca raster, fonte A real, 
 
 Rollback futuro: reverter apenas os commits desta branch e a configuração opcional da marca. Não há migrações, reseed ou mudança de pagamento/emissão.
 
-## Iteração proporcional — feedback do usuário
+## Iteração proporcional inicial — feedback do usuário
 
 O usuário autorizou priorizar acabamento mesmo com pequena perda de velocidade.
 Foi implementado backend raster selecionável por `SHOPMAN_PRINT_RENDERER=raster`;
@@ -125,3 +125,42 @@ Ensaio a realizar: usar os RAW de exemplo pelo mesmo agente/fila da loja, cronom
 curto/longo/fiscal até o corte, conferir acentos/números em tamanho real e ler o QR
 com celular. Só então decidir a configuração operacional. Não houve impressão
 física nesta conversa, e não se afirma garantia física ou homologação fiscal.
+
+## Direção de sinalização, monograma e blocos — revisão atual
+
+A proposta aplicada passa a usar **Barlow Semi Condensed Medium/Bold**, do
+[projeto oficial de Jeremy Tribby](https://github.com/jpt/barlow), inspirada na
+sinalização e infraestrutura pública californiana, sob SIL OFL 1.1. Arquivos
+obtidos do repositório Google Fonts; licença em `Barlow-OFL.txt`. A Noto Sans
+permanece somente para o estudo comparativo da prévia. A Parisine Narrow é uma
+candidata mencionada pelo usuário, não uma fonte incorporada sem arquivo/licença.
+
+`typography.html` compara Barlow Semi Condensed, Noto Sans e o eixo condensado da
+Noto Sans com o mesmo texto/tamanho. A galeria principal mostra o raster real.
+
+Monograma extraído de `nelson_monograma_flat_2023.svg`, fornecido pelo usuário.
+O SVG original contém material de trabalho adicional e referência a JPEG externo.
+Foi selecionado somente o grupo vetorial principal do monograma circular,
+preservando suas curvas; fundos amarelos e elementos externos não foram copiados.
+Saída `media/branding/nelson-monogram-print.svg`, traços `#000000`, sem fundo,
+sem imagens externas; PNG RGBA correspondente com transparência, também preto.
+O original no diretório Design não foi modificado. A prévia oferece ambos para baixar.
+
+Cabeçalho com monograma de até 96 dots à esquerda e nome/dados à direita.
+No DANFE, os dados do emissor continuam exclusivamente do XML; a ficha usa o
+nome comercial já recebido pelo serviço. Cartão do pedido em duas colunas,
+com identificação à esquerda e modalidade/dia/janela à direita. Caixas de borda
+2 dots e raio 12 dots agrupam pagamento e observações; endereços/itens permanecem
+livres. No dinheiro, duas células separam valor do troco a levar e valor a cobrar.
+Os campos crescem por conteúdo, sem altura fixa que corte endereços ou notas.
+
+A tabela acima corresponde a esta revisão. O exemplo fiscal completo fica em
+221,6 mm, preservando os mesmos dados da revisão anterior (242,4 mm). Espaço e
+hierarquia foram equilibrados; a ficha com troco usa 111,9 mm para separar blocos
+que antes ocupavam 102,4 mm na versão proporcional inicial.
+
+Validação desta revisão: **78 testes passaram**, cobrindo compositor operacional,
+fiscal e raster. Inclui caixa extensa, reconstrução dos pixels, valores de troco
+nas duas células e PNG estritamente preto com transparência. Ruff e diff check
+aprovados. Continuam pendentes impressora física, leitura óptica e validação fiscal
+já descritas. Configuração raster segue opt-in; sem merge ou deploy.
