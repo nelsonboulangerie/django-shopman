@@ -6,7 +6,7 @@ import pytest
 from django.test import override_settings
 from shopman.orderman.models import Directive, Fulfillment, IdempotencyKey, Order
 
-from shopman.shop.services import ifood_events, operator_orders, webhook_idempotency
+from shopman.shop.services import ifood_cancellation, ifood_events, operator_orders, webhook_idempotency
 
 pytestmark = pytest.mark.django_db
 
@@ -129,3 +129,49 @@ def test_failure_after_delivery_rolls_back_order_fulfillment_and_events_for_retr
     assert _claim_status() == "failed"
     with patch.object(ifood_events, "acknowledge", return_value=True):
         assert ifood_events.process_events([_event()])["ingested"] == 1
+
+
+@pytest.mark.parametrize("status,fulfillment_type", [
+    (Order.Status.DISPATCHED, "delivery"), (Order.Status.DELIVERED, "delivery"), (Order.Status.READY, "pickup"),
+])
+@pytest.mark.parametrize("request_state", ["queued", "sent"])
+def test_conclusion_supersedes_pending_cancellation_without_claiming_it_was_cancelled(status, fulfillment_type, request_state):
+    order = _order(status, fulfillment_type)
+    order.data[ifood_cancellation.KEY] = {"id": "req-1", "state": request_state, "reason": "Sem estoque", "code": "501"}
+    order.save(update_fields=["data"])
+    with patch.object(ifood_events, "acknowledge", return_value=True) as ack:
+        assert ifood_events.process_events([_event()])["ingested"] == 1
+    ack.assert_called_once_with(["con-1"])
+    order.refresh_from_db()
+    assert order.status == Order.Status.COMPLETED
+    request = order.data[ifood_cancellation.KEY]
+    assert request["state"] == "superseded"
+    assert request["resolution"] == "order_concluded"
+    assert request["resolved_at"]
+    assert request["reason"] == "Sem estoque"
+    assert request["code"] == "501"
+    assert not order.data.get("ifood_cancelled")
+    payload = {"order_ref": order.ref, "cancellation_request_id": "req-1"}
+    assert not ifood_cancellation.should_send(payload)
+    # An in-flight cancellation response must not overwrite CON's resolution.
+    ifood_cancellation.record_result(payload, state="sent")
+    order.refresh_from_db()
+    assert order.data[ifood_cancellation.KEY]["state"] == "superseded"
+
+
+def test_failed_conclusion_rolls_back_pending_cancellation_resolution():
+    order = _order(Order.Status.DISPATCHED)
+    request = {"id": "req-1", "state": "sent", "reason": "Sem estoque"}
+    order.data[ifood_cancellation.KEY] = request
+    order.save(update_fields=["data"])
+    with (
+        patch.object(ifood_events, "acknowledge") as ack,
+        patch.object(operator_orders, "advance_order", side_effect=RuntimeError("retry")),
+    ):
+        assert ifood_events.process_events([_event()])["failed"] == 1
+    ack.assert_not_called()
+    order.refresh_from_db()
+    assert order.status == Order.Status.DISPATCHED
+    assert order.data[ifood_cancellation.KEY] == request
+    assert ifood_cancellation.is_pending(order)
+    assert _claim_status() == "failed"

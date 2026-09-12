@@ -283,6 +283,13 @@ def _process_cancellation(event_id: str, order_id: str) -> str:
             actor="system:ifood",
             extra_data={"ifood_cancelled": True},
         )
+        if not cancelled and order.status not in Order.TERMINAL_STATUSES:
+            logger.warning(
+                "ifood_events: CAN cannot reconcile active order %s (status %s); "
+                "leaving unacknowledged for operational review", order_id, order.status,
+            )
+            webhook_idempotency.mark_failed(claim)
+            return "failed"
         outcome = "ingested" if cancelled else "deduped"
     except Exception:
         logger.exception("ifood_events: failed to cancel order %s (event %s)", order_id, event_id)
@@ -313,9 +320,10 @@ def _process_conclusion(event_id: str, order_id: str) -> str:
         return "failed"
 
     from django.db import transaction
+    from django.utils import timezone
     from shopman.orderman.models import Order
 
-    from shopman.shop.services import operator_orders
+    from shopman.shop.services import ifood_cancellation, operator_orders
     from shopman.shop.services.order_helpers import get_fulfillment_type
 
     try:
@@ -341,6 +349,20 @@ def _process_conclusion(event_id: str, order_id: str) -> str:
                 logger.warning("ifood_events: CON awaiting local handoff for order %s (status %s)", order_id, order.status)
                 webhook_idempotency.mark_failed(claim)
                 return "failed"
+
+            if ifood_cancellation.is_pending(order):
+                # CON confirms fulfillment, not cancellation. Preserve the
+                # original request for audit but retire its operational guard
+                # in the same transaction as the canonical completion.
+                data = dict(order.data or {})
+                request = dict(data[ifood_cancellation.KEY])
+                request.update(
+                    state="superseded", resolution="order_concluded",
+                    resolved_at=timezone.now().isoformat(), retryable=False,
+                )
+                data[ifood_cancellation.KEY] = request
+                order.data = data
+                order.save(update_fields=["data", "updated_at"])
 
             if delivery and order.status == Order.Status.DISPATCHED:
                 operator_orders.confirm_received(order, actor="system:ifood")

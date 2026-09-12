@@ -7,9 +7,9 @@
 - Domínio público confirmado: `https://menu.nelsonboulangerie.com.br`. O backend continua em `https://api.boulangerie.com.br`; domínio da vitrine não equivale à rota de eventos.
 - Worktree de release: `django-shopman-ifood-release-20260912`, branch `codex/ifood-release-20260912`, criada de `origin/main` **160f0c5ad**. A worktree inicial estava antiga e não será usada para deploy.
 - Correções implementadas, ainda não publicadas: isolamento de merchant, CAN antes de PLC, conclusão remota conservadora, solicitação de cancelamento pendente até CAN, pagamento por evidência e resumo operacional de pagamento/troco.
-- Última rodada integrada local: **198 testes + 18 subtests passaram**, incluindo iFood e contratos/projeções operacionais. Frontend: **309 testes passaram**. Testes complementares e revisão ainda em execução.
+- Última rodada integrada local: **198 testes + 18 subtests passaram**, incluindo iFood e contratos/projeções operacionais. Frontend: **309 testes passaram**. Suíte completa shop: **4521 testes passaram**, 32 skips, 31 deselected e 15 subtests. A revisão adicional corrigiu CON concorrente com cancelamento pendente e CAN incompatível sem ACK (107 testes e 5 subtests).
 - Pendências para homologação: publicar versão validada; confirmar isolamento de efeitos reais dos pedidos de teste; gerar pedidos oficiais e coletar evidências; verificar estabilidade do polling que apresentou 403 intermitente; alinhar webhook antigo ainda habilitado com URL sem DNS.
-- **Não está comprovada prontidão de homologação.** Elegibilidade do aplicativo no portal não substitui os testes práticos. Nenhum pedido oficial foi gerado nesta sessão.
+- **Não está comprovada prontidão de homologação.** Elegibilidade do aplicativo no portal não substitui os testes práticos. Um pedido oficial foi gerado para ensaio de recebimento; evidências abaixo.
 
 As seções abaixo preservam a investigação anterior e suas correções históricas. Quando houver divergência temporal, prevalece o estado verificado acima.
 
@@ -136,3 +136,14 @@ Leitura somente, sem mudar configurações: canal iFood com confirmação manual
 Ainda há efeitos de estoque e KDS compartilhados: reserva desde ingestão e possível baixa/ticket ao aceitar. A flag is_test não constitui isolamento. Para ensaio completo, usar banco/instância isolados ou inventário e execução de teste explicitamente separados; não assumir que o nome da loja de teste elimina os efeitos locais.
 
 Validação adicional: 76 testes de projeção/fila e 13 subtests; frontend typecheck aprovado. ESLint dos arquivos envolvidos sem erros; lint global da superfície apresenta 11 erros anteriores de no-dynamic-delete em arquivos não modificados. Não foram alterados lockfiles ou dependências declaradas.
+
+## Ensaio real de recebimento, 12/09 às 23:34-23:36 UTC
+
+- Portal confirmou geração de **um** pedido FOOD na loja Teste - Nelson Boulangerie: `c3c5c7a4-96e1-40f8-8148-d5cd50a3df73`.
+- Evento PLC `261d28c3-2c92-4169-ae4c-32402b82738d` recebido às 23:34:44 UTC; GET de detalhes falhou HTTP 403. Sem ACK do evento nesse processamento.
+- Reentrega às 23:35:16 UTC persistiu `IFOOD-260912-L55`; o ACK dessa vez falhou 403.
+- Nova reentrega às 23:35:47 UTC deduplicou corretamente e ACK retornou sucesso. Portanto, recebimento, persistência, retry e dedupe foram exercitados no ambiente publicado, mas a instabilidade 403 permanece.
+- Gestor autenticado exibiu o pedido `new`, R$ 27,00, produtos oficiais nomeados NÃO ENTREGAR e observação de geração automática pelo Developer Portal. Consulta no banco confirmou `is_test=true` e SKUs `1953`/`1394`. Não foi acionado aceite/preparo/despacho/conclusão.
+- A versão publicada exibiu `Pago online · paid`, reproduzindo a deficiência de apresentação corrigida no PR.
+- Recusa do pedido de teste em acompanhamento. Não considerar o pedido encerrado até verificar estado remoto.
+- Correções abertas no draft PR #633. Nenhum merge/deploy realizado.

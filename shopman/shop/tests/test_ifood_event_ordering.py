@@ -9,6 +9,25 @@ from shopman.orderman.models import IdempotencyKey, Order
 from shopman.shop.services import cancellation, ifood_events, webhook_idempotency
 
 
+@pytest.mark.django_db
+@pytest.mark.parametrize("status", [Order.Status.READY, Order.Status.DISPATCHED, Order.Status.DELIVERED])
+def test_can_with_incompatible_active_status_stays_retryable_without_false_ack(status):
+    order = Order.objects.create(
+        ref="IFOOD-INCOMPATIBLE", channel_ref="ifood", external_ref="order-incompatible", status=status,
+        data={"fulfillment_type": "delivery"},
+    )
+    event = {"id": "can-incompatible", "code": "CAN", "orderId": order.external_ref}
+    with patch.object(ifood_events, "acknowledge") as ack:
+        for _ in range(2):
+            assert ifood_events.process_events([event])["failed"] == 1
+            assert _claim_record("can-incompatible").status == "failed"
+    ack.assert_not_called()
+    order.refresh_from_db()
+    assert order.status == status
+    assert not order.data.get("ifood_cancelled")
+    assert not order.events.exists()
+
+
 def _claim_record(event_id):
     return IdempotencyKey.objects.get(
         scope="webhook:ifood",
