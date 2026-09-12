@@ -5,6 +5,15 @@ from __future__ import annotations
 from django.db import models
 
 
+def operator_alert_type_choices():
+    """Choices are presentation metadata, not a database constraint.
+
+    Keeping the callable stable prevents a new no-op ``AlterField`` migration
+    every time the operational alert catalogue gains a type.
+    """
+    return OperatorAlert.TYPE_CHOICES
+
+
 class OperatorAlert(models.Model):
     """Alerta operacional — falhas, estoque baixo, pagamentos pendentes."""
 
@@ -68,6 +77,7 @@ class OperatorAlert(models.Model):
         # switch — e, por não ter dono, ficava invisível até um cliente reclamar.
         ("catalog_hidden_by_inactive_collection", "Produto fora do cardápio: categoria desativada"),
         ("stale_new_order", "Pedido parado aguardando confirmação"),
+        ("customer_cancellation_requested", "Cliente solicitou cancelamento"),
         ("checkout_convenience_pending", "Conveniência do checkout pendente"),
         # Pedido fechado sem dono: nesta loja o telefone É a identidade, e sem
         # o vínculo o cliente fica sem histórico, fidelidade e rastreio.
@@ -227,11 +237,12 @@ class OperatorAlert(models.Model):
         "marketplace_rejected_oos",
         "pos_rejected_unavailable",
         "stale_new_order",
+        "customer_cancellation_requested",
         "lifecycle_phase_stuck",
         "order_production_quality_risk",
     }
 
-    type = models.CharField("tipo", max_length=50, choices=TYPE_CHOICES)
+    type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)
     severity = models.CharField("severidade", max_length=10, choices=SEVERITY_CHOICES, default="warning")
     audience = models.CharField(
         "público operacional",

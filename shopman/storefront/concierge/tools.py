@@ -46,6 +46,8 @@ logger = logging.getLogger(__name__)
 
 MAX_LINE_QTY = 99
 MAX_MENU_ITEMS = 12
+MAX_PUBLIC_SEARCH_ITEMS = 3
+MAX_PUBLIC_SEARCH_ANSWERS = 2
 FULFILLMENT_TYPES = ("pickup", "delivery")
 WEB_DESTINATIONS = {
     "menu": "/menu",
@@ -72,6 +74,9 @@ class ToolContext:
     account: str = ""
     transport_channel: str = ""
     connection_key: str = ""
+    #: Texto humano deste turno, capturado pelo servidor. Uma consulta sugerida
+    #: pelo modelo pode refiná-lo, nunca apagar uma parte da pergunta original.
+    customer_text: str = ""
     extra_replies: list[str] = field(default_factory=list)
     handoff: bool = False
     handoff_reason: str = ""
@@ -383,117 +388,186 @@ def _error(code: str, message: str, **extra) -> dict:
 # ── Ferramentas ───────────────────────────────────────────────────────
 
 
-def browse_menu(
-    ctx: ToolContext, query: str = "", collection: str = "", available_only: bool = False
-) -> dict:
-    """O cardápio de agora: nome, preço e disponibilidade viva, do listing do canal.
+_PUBLIC_SEARCH_STOPWORDS = frozenset(
+    {
+        "algum",
+        "alguma",
+        "coisa",
+        "como",
+        "com",
+        "das",
+        "dos",
+        "ela",
+        "ele",
+        "eles",
+        "essa",
+        "esse",
+        "esta",
+        "este",
+        "isso",
+        "mais",
+        "meu",
+        "minha",
+        "nos",
+        "para",
+        "pela",
+        "pelo",
+        "por",
+        "pra",
+        "pro",
+        "qual",
+        "que",
+        "quero",
+        "queria",
+        "sua",
+        "tem",
+        "uma",
+        "vcs",
+        "voce",
+        "voces",
+        "vou",
+    }
+)
+_MENU_OVERVIEW_TERMS = frozenset(
+    {"cardapio", "disponivel", "disponiveis", "menu", "opcoes"}
+)
 
-    Sem ``query`` e sem ``collection`` devolve a VISÃO GERAL: cada coleção com
-    quantos itens tem disponíveis agora e até três exemplos. Uma fatia dos
-    primeiros doze itens do catálogo era o que fazia "o que tem hoje?" virar
-    lista de cafés (a ordem do catálogo começa nas bebidas).
 
-    ``collection`` aceita a ref ("paes") ou o rótulo ("Pães", "folhados"); o que não
-    casa com nada é ignorado, com aviso no resultado. ``available_only`` tira do
-    resultado o que não pode ser pedido agora. Itens disponíveis vêm primeiro.
+def _public_search_terms(query: str) -> tuple[str, ...]:
+    """Meaningful normalized words from a natural customer question."""
+    return tuple(
+        term
+        for term in re.findall(r"[a-z0-9]+", _fold(query))
+        if len(term) >= 3 and term not in _PUBLIC_SEARCH_STOPWORDS
+    )
+
+
+def search_storefront(ctx: ToolContext, query: str = "") -> dict:
+    """One public search across the live menu and the shared shop/FAQ projection.
+
+    A fala original vem no contexto imutável do turno. ``query`` é apenas um
+    refinamento opcional para elipses como "ela é vegana?"; nunca substitui o
+    que o cliente de fato escreveu. Assim uma frase composta tem uma única
+    porta de leitura, mesmo que o modelo tente consultar somente "entrega".
     """
+    from shopman.shop.models import Shop
     from shopman.storefront.presentation.catalog import build_catalog
+    from shopman.storefront.presentation.public_information import search_public_faq
 
+    search_text = " ".join(
+        dict.fromkeys(text.strip() for text in (ctx.customer_text, query) if text and text.strip())
+    )
+    needle = _fold(search_text).strip()
+    issues = []
+    catalog = None
     ref = _catalog_channel_ref(ctx.channel_ref)
     try:
         catalog = build_catalog(channel_ref=ref)
     except Exception:
-        logger.exception("concierge.browse_menu failed")
-        return _error("catalog_unavailable", "Não consegui ler o cardápio agora.")
+        logger.exception("concierge.search_storefront catalog failed")
+        issues.append({"source": "catalog", "code": "unavailable"})
 
-    items = list(catalog.items)
-    collection_note = ""
-    wanted = _fold(collection)
-    if wanted:
-        match = next(
-            (
-                cat
-                for cat in catalog.categories
-                if _fold(getattr(cat, "ref", "")) == wanted or _fold(getattr(cat, "label", "") or getattr(cat, "name", "")) == wanted
-            ),
-            None,
-        )
-        if match is not None:
-            match_ref = getattr(match, "ref", "")
-            items = [item for item in items if _fold(item.category or "") in (wanted, _fold(match_ref), _fold(getattr(match, "label", "") or ""))]
-        else:
-            collection_note = f"Coleção '{collection}' não existe; mostrando sem esse filtro."
-    needle = _fold(query)
-    if not needle and not wanted:
-        return _menu_overview(items, catalog, available_only=available_only)
-
-    if needle:
-        terms = [t for t in needle.split() if t]
-
-        def matches(item) -> bool:
+    items = list(catalog.items) if catalog is not None else []
+    if needle and items:
+        terms = _public_search_terms(needle)
+        ranked_items = []
+        for index, item in enumerate(items):
             haystack = _fold(
                 " ".join(
                     [item.name, item.short_description or "", item.category or "", " ".join(item.search_terms or ())]
                 )
             )
-            return all(term in haystack for term in terms)
-
-        items = [item for item in items if matches(item)]
-
-    if available_only:
-        items = [item for item in items if item.can_add_to_cart]
+            haystack_terms = set(re.findall(r"[a-z0-9]+", haystack))
+            score = sum(1 for term in terms if term in haystack_terms)
+            name = _fold(item.name)
+            score += 4 if name and name in needle else 0
+            if score:
+                ranked_items.append((-score, index, item))
+        ranked_items.sort(key=lambda row: (row[0], 0 if row[2].can_add_to_cart else 1, row[1]))
+        if ranked_items:
+            best_score = -ranked_items[0][0]
+            threshold = max(1, best_score - 1)
+            items = [item for score, _, item in ranked_items if -score >= threshold]
+        else:
+            items = []
     items.sort(key=lambda item: (0 if item.can_add_to_cart else 1))
+
+    try:
+        shop = Shop.load()
+        faq_query = " ".join(_public_search_terms(search_text))
+        answers = (
+            search_public_faq(
+                faq_query,
+                channel_ref=ctx.channel_ref,
+                shop=shop,
+                limit=MAX_PUBLIC_SEARCH_ANSWERS,
+            )
+            if faq_query and shop
+            else ()
+        )
+        if shop is None:
+            issues.append({"source": "shop", "code": "unavailable"})
+    except Exception:
+        logger.exception("concierge.search_storefront public information failed")
+        shop = None
+        answers = ()
+        issues.append({"source": "shop", "code": "unavailable"})
+    links = []
+    if shop and any(answer.ref == "location" for answer in answers) and shop.maps_url:
+        links.append({"label": "Como chegar", "url": shop.maps_url})
+
+    terms = set(_public_search_terms(needle))
+    if not items and not answers and catalog is not None and terms.intersection(_MENU_OVERVIEW_TERMS):
+        return {
+            **_menu_overview(list(catalog.items), catalog, available_only=True),
+            "answers": [],
+            "links": [],
+            "issues": issues,
+            "found": True,
+            "code": "catalog_overview",
+            "outcome": "partial" if issues else "read",
+        }
+    if catalog is None and shop is None:
+        return _error(
+            "public_information_unavailable",
+            "Não consegui consultar as informações públicas da loja agora.",
+            issues=issues,
+        )
+    if not items and not answers:
+        return {
+            "ok": True,
+            "code": "no_match",
+            "outcome": "read",
+            "found": False,
+            "count": 0,
+            "available_count": 0,
+            "items": [],
+            "answers": [],
+            "links": [],
+            "issues": issues,
+        }
 
     payload = {
         "ok": True,
         "count": len(items),
         "available_count": sum(1 for item in items if item.can_add_to_cart),
-        "items": [_item_payload(item) for item in items[:MAX_MENU_ITEMS]],
-        "truncated": len(items) > MAX_MENU_ITEMS,
+        "items": [_item_payload(item) for item in items[:MAX_PUBLIC_SEARCH_ITEMS]],
+        "truncated": len(items) > MAX_PUBLIC_SEARCH_ITEMS,
+        "answers": [
+            {"ref": answer.ref, "question": answer.question, "answer": answer.answer}
+            for answer in answers
+        ],
+        "links": links,
+        "issues": issues,
+        "found": True,
+        "code": "partial_results" if issues else "results",
+        "outcome": "partial" if issues else "read",
     }
-    if collection_note:
-        payload["note"] = collection_note
-    if catalog.happy_hour is not None:
+    if catalog is not None and catalog.happy_hour is not None:
         label = getattr(catalog.happy_hour, "label", "") or getattr(catalog.happy_hour, "message", "")
         if label:
             payload["happy_hour"] = str(label)
     return payload
-
-
-def store_info(ctx: ToolContext, topic: str, query: str = "") -> dict:
-    """Public shop information and FAQ answers from the storefront projection."""
-    from shopman.shop.models import Shop
-    from shopman.storefront.presentation.public_information import build_public_faq, search_public_faq
-
-    allowed_topics = {"delivery", "hours", "location", "contact", "faq"}
-    if topic not in allowed_topics:
-        return _error("invalid_topic", "Escolha entrega, horários, endereço, contato ou dúvidas frequentes.")
-    shop = Shop.load()
-    if shop is None:
-        return _error("shop_information_unavailable", "Não consegui consultar os dados públicos da loja agora.")
-    if topic == "faq":
-        if not query.strip():
-            return _error("faq_query_required", "Qual é a sua dúvida?")
-        answers = search_public_faq(query, channel_ref=ctx.channel_ref, shop=shop)
-    else:
-        answers = tuple(
-            answer for answer in build_public_faq(channel_ref=ctx.channel_ref, shop=shop)
-            if answer.ref == topic
-        )
-    if not answers:
-        return _error(
-            "public_answer_not_found",
-            "Não encontrei uma resposta pública para essa dúvida. Posso chamar a equipe.",
-        )
-    links = []
-    if topic == "location" and shop.maps_url:
-        links.append({"label": "Como chegar", "url": shop.maps_url})
-    return {
-        "ok": True,
-        "topic": topic,
-        "answers": [{"ref": answer.ref, "question": answer.question, "answer": answer.answer} for answer in answers],
-        "links": links,
-    }
 
 
 def _menu_overview(items: list, catalog, *, available_only: bool) -> dict:
@@ -527,7 +601,7 @@ def _menu_overview(items: list, catalog, *, available_only: bool) -> dict:
         "available_count": sum(1 for item in items if item.can_add_to_cart),
         "total_count": len(items),
         "collections": collections,
-        "hint": "Para listar itens, chame de novo com `collection` (ref ou rótulo) ou `query`.",
+        "hint": "Para listar itens, chame de novo com o nome ou a coleção em `query`.",
     }
 
 
@@ -1380,18 +1454,11 @@ def notify_when_available(ctx: ToolContext, sku: str) -> dict:
         "resource_ref": str(subscription.ref)}
 
 
-def handoff_to_human(ctx: ToolContext, reason: str = "") -> dict:
-    """Passa a conversa para a equipe; a casa sincroniza o transporte causal."""
-    ctx.handoff = True
-    ctx.handoff_reason = " ".join(str(reason or "").split()).strip()[:200] or "pedido do cliente"
-    return {"ok": True, "message": "Solicitação de atendimento registrada. A equipe continuará por aqui conforme a disponibilidade."}
-
-
 def _guard(handler):
     @wraps(handler)
     def guarded(ctx, *args, **kwargs):
         try:
-            _assert_authority(ctx, for_mutation=handler.__name__ not in {"browse_menu", "store_info", "view_cart", "last_order", "order_status", "list_fulfillment_slots"})
+            _assert_authority(ctx, for_mutation=handler.__name__ not in {"search_storefront", "view_cart", "last_order", "order_status", "list_fulfillment_slots"})
             if handler.__name__ in {"set_item", "review_order"}:
                 from shopman.orderman.models import Session
                 with transaction.atomic():
@@ -1411,7 +1478,7 @@ def _guard(handler):
     return guarded
 
 
-for _name in ("browse_menu", "store_info", "view_cart", "last_order", "order_status", "list_fulfillment_slots", "set_item", "set_fulfillment", "review_order", "place_order", "send_web_link", "notify_when_available"):
+for _name in ("search_storefront", "view_cart", "last_order", "order_status", "list_fulfillment_slots", "set_item", "set_fulfillment", "review_order", "place_order", "send_web_link", "notify_when_available"):
     globals()[_name] = _guard(globals()[_name])
 
 
@@ -1438,29 +1505,27 @@ def render_result(name: str, result: dict) -> str:
     if not result.get("ok"):
         return _display_text(result.get("message") or "Não consegui concluir. Suas escolhas estão preservadas.")
     if result.get("message") and (
-        name in {"notify_when_available", "handoff_to_human"}
+        name == "notify_when_available"
         or not any(result.get(key) for key in ("lines", "orders", "items", "collections", "payment", "url", "pickup_slots", "delivery_slots"))
     ):
         return _display_text(result["message"])
-    if name == "browse_menu":
+    if name == "search_storefront":
+        if result.get("found") is False:
+            return "Não encontrei essa informação no conteúdo público da loja. Posso chamar a equipe."
         if result.get("overview"):
             rows = [f"{_display_name(c['label'])}: {c['available_count']} disponíveis. " + "; ".join(f"{_display_name(i['name'])} — {i['price']}" for i in c['examples']) for c in result.get("collections", [])]
         else:
             rows = [f"{_display_name(i['name'])} — {i['price']}. {_display_text(i['availability_label'])}" for i in result.get("items", [])]
-        if not rows:
-            return "Não encontrei produtos para essa busca. Quer tentar outro nome ou ver o cardápio?"
-        if not result.get("overview") and len(rows) == 1 and result.get("items", [{}])[0].get("can_order"):
-            rows.append("Se quiser pedir, me diga a quantidade.")
-        elif not result.get("overview") and len(rows) > 1:
-            rows.append("Qual deles você prefere?")
-        return "\n".join(rows)
-    if name == "store_info":
-        rows = [_display_text(answer.get("answer")) for answer in result.get("answers", [])]
+        rows.extend(_display_text(answer.get("answer")) for answer in result.get("answers", []))
         for link in result.get("links", []):
             url = str(link.get("url") or "")
             if url.startswith("https://www.google.com/maps/"):
                 rows.append(f"{_display_text(link.get('label'))}: {url}")
-        return "\n".join(row for row in rows if row) or "Não encontrei uma resposta pública para essa dúvida."
+        if result.get("overview"):
+            rows.append("Qual dessas opções você quer ver?")
+        elif len(result.get("items", [])) > 1:
+            rows.append("Qual deles você prefere?")
+        return "\n".join(rows)
     if name in {"view_cart", "set_item", "set_fulfillment", "review_order"}:
         rows = [f"{i['qty']} × {_display_name(i['name'])} — {i['line_total']}" for i in result.get("lines", [])]
         if not rows:
@@ -1536,40 +1601,21 @@ def _schema(properties: dict, required: list[str]) -> dict:
 
 TOOL_SPECS: list[dict] = [
     {
-        "name": "browse_menu",
+        "name": "search_storefront",
         "description": (
-            "Lista o cardápio de agora com preço e disponibilidade reais. Use antes de falar de "
-            "qualquer produto, preço ou saldo. Sem argumentos devolve a visão geral por coleção "
-            "(quantos disponíveis e exemplos). `query` busca por nome/descrição; `collection` "
-            "filtra por uma coleção, pela ref ou pelo rótulo; `available_only` mostra só o que "
-            "pode ser pedido agora."
+            "Pesquisa de uma vez todo o conteúdo público canônico da loja: cardápio com preço e "
+            "disponibilidade atuais, entrega/retirada, horários, endereço, contato e FAQ. Use antes "
+            "de responder qualquer pergunta pública. A fala original deste turno é sempre incluída "
+            "pelo servidor; `query` apenas acrescenta contexto para uma referência como 'ela'."
         ),
         "input_schema": _schema(
             {
-                "query": {"type": "string", "description": "Termo de busca por nome ou descrição."},
-                "collection": {"type": "string", "description": "Ref ou rótulo da coleção."},
-                "available_only": {"type": "boolean", "description": "Só o que pode ser pedido agora."},
+                "query": {
+                    "type": "string",
+                    "description": "Refinamento opcional; não precisa repetir a fala do cliente.",
+                },
             },
             [],
-        ),
-    },
-    {
-        "name": "store_info",
-        "description": (
-            "Consulta informações públicas canônicas da loja e perguntas frequentes. Use para saber "
-            "se fazemos entrega ou retirada, horários, endereço, contato e políticas públicas. Em "
-            "`faq`, passe a dúvida do cliente em `query`. Para preço, disponibilidade ou descrição "
-            "de produto, use browse_menu."
-        ),
-        "input_schema": _schema(
-            {
-                "topic": {
-                    "type": "string",
-                    "enum": ["delivery", "hours", "location", "contact", "faq"],
-                },
-                "query": {"type": "string", "description": "Dúvida original para pesquisar na FAQ."},
-            },
-            ["topic"],
         ),
     },
     {
@@ -1581,7 +1627,7 @@ TOOL_SPECS: list[dict] = [
         "name": "set_item",
         "description": (
             "Define a quantidade ABSOLUTA de um produto na sacola (0 remove). Reserva o estoque; se não "
-            "houver, devolve o saldo real e substitutos. Use o SKU exato de browse_menu."
+            "houver, devolve o saldo real e substitutos. Use o SKU exato de search_storefront."
         ),
         "input_schema": _schema(
             {
@@ -1686,19 +1732,10 @@ TOOL_SPECS: list[dict] = [
         ),
         "input_schema": _schema({"sku": {"type": "string", "description": "SKU do produto."}}, ["sku"]),
     },
-    {
-        "name": "handoff_to_human",
-        "description": (
-            "Passa a conversa para a equipe da casa. Use quando o cliente pedir uma pessoa, reclamar, "
-            "ou quando você não consegue resolver com as outras ferramentas."
-        ),
-        "input_schema": _schema({"reason": {"type": "string", "description": "Motivo, em uma frase."}}, []),
-    },
 ]
 
 _HANDLERS = {
-    "browse_menu": browse_menu,
-    "store_info": store_info,
+    "search_storefront": search_storefront,
     "view_cart": view_cart,
     "set_item": set_item,
     "list_fulfillment_slots": list_fulfillment_slots,
@@ -1709,7 +1746,6 @@ _HANDLERS = {
     "last_order": last_order,
     "send_web_link": send_web_link,
     "notify_when_available": notify_when_available,
-    "handoff_to_human": handoff_to_human,
 }
 
 TOOL_NAMES = tuple(_HANDLERS)
@@ -1720,13 +1756,11 @@ TOOL_NAMES = tuple(_HANDLERS)
 # turno estiver fechada. Os guards abaixo continuam sendo a garantia primária.
 LIMITED_AUTHORITY_TOOL_NAMES = frozenset(
     {
-        "browse_menu",
-        "store_info",
+        "search_storefront",
         "view_cart",
         "list_fulfillment_slots",
         "order_status",
         "last_order",
-        "handoff_to_human",
     }
 )
 

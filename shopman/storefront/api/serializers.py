@@ -281,6 +281,23 @@ class PickupInfoSerializer(serializers.Serializer):
     directions_url = serializers.CharField(allow_null=True, required=False)
 
 
+class CancellationRequestProjectionSerializer(serializers.Serializer):
+    protocol = serializers.CharField()
+    requested_at_display = serializers.CharField()
+    title = serializers.CharField()
+    message = serializers.CharField()
+
+
+class CancellationRequestInputSerializer(serializers.Serializer):
+    reason = serializers.CharField(
+        allow_blank=True,
+        required=False,
+        default="",
+        max_length=500,
+        trim_whitespace=True,
+    )
+
+
 class OrderTrackingCopySerializer(serializers.Serializer):
     page_kicker = serializers.CharField()
     order_ref_label = serializers.CharField()
@@ -374,6 +391,7 @@ class OrderTrackingSerializer(serializers.Serializer):
     # Cancelamento pelo estabelecimento: motivo + estorno visíveis ao cliente.
     cancellation_note = serializers.CharField(allow_blank=True, required=False)
     refund_status_label = serializers.CharField(allow_null=True, required=False)
+    cancellation_request = CancellationRequestProjectionSerializer(allow_null=True, required=False)
     payment_expires_at = serializers.CharField(allow_null=True, required=False)
     # Fusão PAYMENT-TRACKING-MERGE: sem tela de pagamento à parte. O bloco é
     # inline; a captura simulada (DEBUG/staging) é sinalizada aqui.

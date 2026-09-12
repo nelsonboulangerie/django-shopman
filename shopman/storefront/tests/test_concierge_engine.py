@@ -38,6 +38,7 @@ from shopman.storefront.concierge.contracts import (
     TransportScope,
     WindowEvidence,
 )
+from shopman.storefront.concierge.handoff import classify_handoff_request
 from shopman.storefront.concierge.tools import ToolContext
 
 pytestmark = pytest.mark.django_db
@@ -389,8 +390,8 @@ class ScriptedClient:
 # ── Ferramentas ──────────────────────────────────────────────────────
 
 
-def test_browse_menu_reads_price_and_availability_from_the_listing(ctx):
-    result = tools.browse_menu(ctx, "pao", "")
+def test_search_storefront_reads_price_and_availability_from_the_listing(ctx):
+    result = tools.search_storefront(ctx, "pao")
     assert result["ok"] and result["count"] == 1
     item = result["items"][0]
     assert item["sku"] == SKU
@@ -399,22 +400,22 @@ def test_browse_menu_reads_price_and_availability_from_the_listing(ctx):
     assert item["available_qty"] == 10
 
 
-def test_browse_menu_without_arguments_is_an_overview_by_collection(ctx):
-    result = tools.browse_menu(ctx)
+def test_search_storefront_generic_menu_question_is_an_overview_by_collection(ctx):
+    result = tools.search_storefront(ctx, "o que tem disponível?")
     assert result["overview"] is True and result["available_count"] == 1
     assert [c["ref"] for c in result["collections"]] == ["paes"]
     assert result["collections"][0]["available_count"] == 1
     assert result["collections"][0]["examples"][0]["sku"] == SKU
 
 
-def test_browse_menu_accepts_the_collection_by_label_and_ignores_unknown_ones(ctx):
-    by_label = tools.browse_menu(ctx, "", "Pães")
-    assert by_label["count"] == 1 and "note" not in by_label
-    unknown = tools.browse_menu(ctx, "", "folhados")
-    assert unknown["count"] == 1 and "não existe" in unknown["note"]
+def test_search_storefront_finds_a_collection_and_does_not_dump_menu_on_no_match(ctx):
+    by_label = tools.search_storefront(ctx, "quais pães vocês têm?")
+    assert by_label["count"] == 1 and by_label["items"][0]["sku"] == SKU
+    unknown = tools.search_storefront(ctx, "vocês vendem bicicletas?")
+    assert unknown["code"] == "no_match" and unknown["items"] == []
 
 
-def test_store_info_uses_the_public_storefront_projection(ctx):
+def test_search_storefront_uses_the_public_storefront_projection(ctx):
     shop = Shop.load()
     shop.formatted_address = "Av. Madre Leônia Milito, 446 - Londrina - PR"
     shop.email = "oi@nelsonboulangerie.com.br"
@@ -426,9 +427,9 @@ def test_store_info_uses_the_public_storefront_projection(ctx):
         is_published=True,
     )
 
-    delivery = tools.store_info(ctx, "delivery")
-    location = tools.store_info(ctx, "location")
-    faq = tools.store_info(ctx, "faq", "plant based")
+    delivery = tools.search_storefront(ctx, "vocês entregam?")
+    location = tools.search_storefront(ctx, "onde vocês ficam?")
+    faq = tools.search_storefront(ctx, "plant based")
 
     assert delivery["ok"] and "Fazemos entrega" in delivery["answers"][0]["answer"]
     assert location["answers"][0]["answer"].endswith("Londrina - PR.")
@@ -442,9 +443,42 @@ def test_store_info_uses_the_public_storefront_projection(ctx):
     ]
 
 
-def test_store_info_requires_a_precise_topic_and_faq_question(ctx):
-    assert tools.execute("store_info", {}, ctx)["error"] == "invalid_input"
-    assert tools.store_info(ctx, "faq")["error"] == "faq_query_required"
+def test_search_storefront_is_the_only_public_read_contract(ctx):
+    names = set(tools.TOOL_NAMES)
+    assert "search_storefront" in names
+    assert not names.intersection({"browse_menu", "store_info"})
+    schema = next(spec["input_schema"] for spec in tools.TOOL_SPECS if spec["name"] == "search_storefront")
+    assert set(schema["properties"]) == {"query"}
+    assert schema["required"] == []
+
+
+def test_search_storefront_keeps_public_answers_when_catalog_is_unavailable(ctx, monkeypatch):
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("isolated catalog failure")
+
+    monkeypatch.setattr("shopman.storefront.presentation.catalog.build_catalog", unavailable)
+    result = tools.search_storefront(ctx, "vocês entregam?")
+
+    assert result["ok"] is True
+    assert result["code"] == "partial_results"
+    assert "Fazemos entrega" in result["answers"][0]["answer"]
+    assert result["items"] == []
+    assert result["issues"] == [{"source": "catalog", "code": "unavailable"}]
+
+
+def test_search_storefront_uses_the_channel_fulfillment_policy(ctx):
+    channel = Channel.objects.get(ref=CHANNEL)
+    channel.config = {
+        **channel.config,
+        "surface_policy": {"fulfillment_types": ["pickup"]},
+    }
+    channel.save()
+
+    result = tools.search_storefront(ctx, "vocês entregam?")
+
+    assert result["answers"][0]["ref"] == "delivery"
+    assert "retirada na loja" in result["answers"][0]["answer"]
+    assert "Fazemos entrega" not in result["answers"][0]["answer"]
 
 
 def test_fulfillment_tools_obey_the_canonical_channel_policy(ctx):
@@ -725,7 +759,7 @@ def test_run_agent_executes_tools_and_keeps_the_transcript_in_api_format(convers
     _create_inbound(conversation, "tem pão francês?", "agent-menu")
     conversation = _claim_conversation(conversation)
     client = ScriptedClient(
-        _response(_tool("browse_menu", {"query": "pão", "collection": ""}), stop_reason="tool_use"),
+        _response(_tool("search_storefront", {"query": "pão"}), stop_reason="tool_use"),
         _response(_text("Temos sim. Quantos você quer?"), stop_reason="end_turn"),
     )
     with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
@@ -738,7 +772,7 @@ def test_run_agent_executes_tools_and_keeps_the_transcript_in_api_format(convers
     tool_result = outcome.messages[1]["content"][0]
     assert tool_result["type"] == "tool_result" and tool_result["tool_use_id"] == "toolu_1"
     assert json.loads(tool_result["content"])["items"][0]["sku"] == SKU
-    assert outcome.tool_events == [{"name": "browse_menu", "input": {"query": "pão"}, "ok": True}]
+    assert outcome.tool_events == [{"name": "search_storefront", "input": {"query": "pão"}, "ok": True}]
     assert outcome.usage["input_tokens"] == 200 and outcome.usage["cache_read_input_tokens"] == 100
 
     first = client.requests[0]
@@ -752,8 +786,8 @@ def test_run_agent_executes_tools_and_keeps_the_transcript_in_api_format(convers
     # Sem `strict` e só o obrigatório em `required`: parâmetro que o modelo quer
     # omitir não pode virar string preenchida com sintaxe interna.
     assert all("strict" not in t for t in first["tools"])
-    browse = next(t for t in first["tools"] if t["name"] == "browse_menu")
-    assert browse["input_schema"]["required"] == []
+    search = next(t for t in first["tools"] if t["name"] == "search_storefront")
+    assert search["input_schema"]["required"] == []
     # A segunda ida leva a chamada e o resultado da ferramenta de volta.
     assert client.requests[1]["messages"][-1]["content"][0]["type"] == "tool_result"
 
@@ -789,9 +823,10 @@ def test_run_agent_answers_product_and_delivery_in_the_same_turn(conversation):
     conversation._limited_event_assurance = True
     conversation._commercial_authority = False
     client = ScriptedClient(
+        # Reproduz a falha live: o modelo reduziu a pergunta a "entrega".
+        # A fala original imutável no ToolContext preserva também Pain Perdu.
         _response(
-            _tool("browse_menu", {"query": "pain perdu"}, "toolu_product"),
-            _tool("store_info", {"topic": "delivery"}, "toolu_delivery"),
+            _tool("search_storefront", {"query": "entrega"}, "toolu_public"),
             stop_reason="tool_use",
         ),
         _response(_text("Temos sim. Quantos você quer?"), stop_reason="end_turn"),
@@ -807,8 +842,120 @@ def test_run_agent_answers_product_and_delivery_in_the_same_turn(conversation):
     assert "Pain Perdu" in outcome.reply_text
     assert "R$ 18,00" in outcome.reply_text
     assert "Fazemos entrega" in outcome.reply_text
-    assert [event["name"] for event in outcome.tool_events] == ["browse_menu", "store_info"]
+    assert outcome.tool_events == [
+        {"name": "search_storefront", "input": {"query": "entrega"}, "ok": True}
+    ]
     assert not Session.objects.exists()
+
+
+def test_run_agent_reconciles_public_facts_when_model_skips_tools(conversation):
+    product = Product.objects.create(
+        sku="PAIN-PERDU-FALLBACK",
+        name="Pain Perdu",
+        base_price_q=1800,
+        is_published=True,
+        is_sellable=True,
+    )
+    CollectionItem.objects.create(
+        collection=Collection.objects.get(ref="paes"),
+        product=product,
+        sort_order=2,
+    )
+    ListingItem.objects.create(
+        listing=Listing.objects.get(ref=CHANNEL),
+        product=product,
+        price_q=1800,
+        is_published=True,
+        is_sellable=True,
+    )
+    _seed_stock(product.sku, Decimal("4"))
+    _create_inbound(
+        conversation,
+        "vou querer um pain perdu, vcs entregam?",
+        "agent-public-reconciliation",
+    )
+    conversation = _claim_conversation(conversation)
+    conversation._limited_event_assurance = True
+    conversation._commercial_authority = False
+    client = ScriptedClient(
+        _response(_text("Claro!"), stop_reason="end_turn"),
+    )
+
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        outcome = agent_module.run_agent(
+            conversation=conversation,
+            history=agent_module.history_for(conversation),
+            client=client,
+        )
+
+    assert "Pain Perdu" in outcome.reply_text
+    assert "R$ 18,00" in outcome.reply_text
+    assert "Fazemos entrega" in outcome.reply_text
+    assert outcome.tool_events == [{"name": "search_storefront", "input": {}, "ok": True}]
+    assert not Session.objects.exists()
+
+
+def test_run_agent_refuses_unfounded_handoff_and_answers_public_facts(conversation):
+    """Outra consulta do modelo não pode apagar os fatos públicos da pergunta."""
+    product = Product.objects.create(
+        sku="PAIN-PERDU-HANDOFF", name="Pain Perdu", base_price_q=1800,
+        is_published=True, is_sellable=True,
+    )
+    CollectionItem.objects.create(
+        collection=Collection.objects.get(ref="paes"), product=product, sort_order=2,
+    )
+    ListingItem.objects.create(
+        listing=Listing.objects.get(ref=CHANNEL), product=product, price_q=1800,
+        is_published=True, is_sellable=True,
+    )
+    _seed_stock(product.sku, Decimal("4"))
+    _create_inbound(
+        conversation, "vou querer um pain perdu, vcs entregam?", "agent-unfounded-handoff",
+    )
+    conversation = _claim_conversation(conversation)
+    conversation._limited_event_assurance = True
+    conversation._commercial_authority = False
+    client = ScriptedClient(
+        _response(
+            _tool("view_cart", {}, "toolu_irrelevant_cart"),
+            stop_reason="tool_use",
+        ),
+        _response(_text("Vou verificar."), stop_reason="end_turn"),
+    )
+
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        outcome = agent_module.run_agent(
+            conversation=conversation, history=agent_module.history_for(conversation), client=client,
+        )
+
+    assert not outcome.handoff
+    assert "Pain Perdu" in outcome.reply_text
+    assert "R$ 18,00" in outcome.reply_text
+    assert "Fazemos entrega" in outcome.reply_text
+    assert [event["name"] for event in outcome.tool_events] == [
+        "view_cart", "search_storefront",
+    ]
+    assert not Session.objects.exists()
+
+
+@pytest.mark.parametrize(("text", "category"), [
+    ("quero falar com alguém da equipe", "customer_request"),
+    ("meu pedido veio queimado", "complaint"),
+    ("preciso de uma encomenda especial", "special_order"),
+    ("sou celíaca, tem glúten?", "allergy_review"),
+])
+def test_handoff_policy_classifies_supported_customer_intent(text, category):
+    assert classify_handoff_request(text) == category
+
+
+@pytest.mark.parametrize("text", [
+    "vou querer um pain perdu, vcs entregam?",
+    "quais ingredientes tem no Pain Perdu?",
+    "sem problema, quero um Pain Perdu",
+    "a equipe recomenda qual pão?",
+])
+def test_handoff_policy_does_not_infer_human_intent_from_public_questions(text):
+    assert classify_handoff_request(text) == ""
 
 
 def test_run_agent_only_sends_the_latest_cart_state(conversation):
@@ -843,7 +990,7 @@ def test_run_agent_preserves_ready_quote_across_later_read_only_tool(ctx):
     client = ScriptedClient(
         _response(
             _tool("review_order", {"payment_method": "pix"}, "toolu_review"),
-            _tool("store_info", {"topic": "delivery"}, "toolu_info"),
+            _tool("search_storefront", {"query": "entrega"}, "toolu_info"),
             stop_reason="tool_use",
         ),
         _response(_text("Confira e confirme."), stop_reason="end_turn"),
@@ -869,7 +1016,7 @@ def test_run_agent_keeps_language_intelligence_but_hides_mutations_without_autho
     conversation._limited_event_assurance = True
     conversation._commercial_authority = False
     client = ScriptedClient(
-        _response(_tool("browse_menu", {"query": "pão"}), stop_reason="tool_use"),
+        _response(_tool("search_storefront", {"query": "pão"}), stop_reason="tool_use"),
         _response(_text("Temos Pão Francês a R$ 0,90."), stop_reason="end_turn"),
     )
 
@@ -891,7 +1038,7 @@ def test_run_agent_keeps_language_intelligence_but_hides_mutations_without_autho
 
 
 LEAK_TAG = "<" + "/antml:parameter>"
-LEAK_NAME = 'name="browse_menu">'
+LEAK_NAME = 'name="search_storefront">'
 
 
 def test_history_replays_tool_calls_and_text_without_leaked_syntax(conversation):
@@ -901,7 +1048,7 @@ def test_history_replays_tool_calls_and_text_without_leaked_syntax(conversation)
         conversation=conversation,
         role="assistant",
         kind="tool_call",
-        content=[{"type": "tool_use", "id": "t1", "name": "browse_menu", "input": {"query": LEAK_TAG + "pao", "collection": ""}}],
+        content=[{"type": "tool_use", "id": "t1", "name": "search_storefront", "input": {"query": LEAK_TAG + "pao"}}],
     )
     ConversationMessage.objects.create(
         conversation=conversation, role="user", kind="tool_result",
@@ -916,7 +1063,7 @@ def test_history_summarizes_old_tool_results(conversation):
     _create_inbound(conversation, "oi", "history-summary")
     ConversationMessage.objects.create(
         conversation=conversation, role="assistant", kind="tool_call",
-        content=[{"type": "tool_use", "id": "t1", "name": "browse_menu", "input": {"query": "pao"}}],
+        content=[{"type": "tool_use", "id": "t1", "name": "search_storefront", "input": {"query": "pao"}}],
     )
     ConversationMessage.objects.create(
         conversation=conversation, role="user", kind="tool_result",
@@ -937,8 +1084,8 @@ def test_clean_text_and_arguments_drop_leaked_tool_syntax():
 def test_run_agent_stops_repeating_the_same_call(conversation):
     _create_inbound(conversation, "folhados?", "agent-repeat")
     conversation = _claim_conversation(conversation)
-    same = {"query": "", "collection": "folhados"}
-    script = [_response(_tool("browse_menu", same, f"toolu_{i}"), stop_reason="tool_use") for i in range(4)]
+    same = {"query": "folhados"}
+    script = [_response(_tool("search_storefront", same, f"toolu_{i}"), stop_reason="tool_use") for i in range(4)]
     script.append(_response(_text("Hoje não temos folhados."), stop_reason="end_turn"))
     client = ScriptedClient(*script)
     with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
@@ -947,7 +1094,8 @@ def test_run_agent_stops_repeating_the_same_call(conversation):
         )
     # As duas primeiras rodam; da terceira em diante a ferramenta devolve "já feito".
     assert [e["ok"] for e in outcome.tool_events] == [True, True, False, False]
-    assert "Pão Francês" in outcome.reply_text and "Hoje não temos folhados" not in outcome.reply_text
+    assert "Não encontrei essa informação" in outcome.reply_text
+    assert "Hoje não temos folhados" not in outcome.reply_text
 
 
 def test_run_agent_rejects_unfounded_preamble_and_uses_server_facts(conversation):
@@ -1079,7 +1227,7 @@ def test_run_turn_answers_everything_pending_and_persists_the_transcript(convers
     for i, text in enumerate(("oi", "tem pão?")):
         _receive(conversation, text, f"m{i}")
     client = ScriptedClient(
-        _response(_tool("browse_menu", {"query": "pão", "collection": ""}), stop_reason="tool_use"),
+        _response(_tool("search_storefront", {"query": "pão"}), stop_reason="tool_use"),
         _response(_text("Temos pão francês a R$ 0,90. Quantos?"), stop_reason="end_turn"),
     )
 
@@ -1130,15 +1278,13 @@ def test_run_turn_sends_the_pix_code_as_its_own_message(ctx, outbox, django_capt
 @override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS, AI_ASSIST_API_KEY="sk-teste")
 def test_run_turn_handoff_marks_the_conversation_and_flags_manychat(conversation, outbox):
     _receive(conversation, "quero falar com alguém", "m1")
-    client = ScriptedClient(
-        _response(_text("Claro."), _tool("handoff_to_human", {"reason": "pediu uma pessoa"}), stop_reason="tool_use"),
-    )
+    client = ScriptedClient()
     binding = _binding(conversation)
     result = service.run_turn(conversation.pk, binding.pk, client=client)
 
     conversation.refresh_from_db()
     assert result.handoff and conversation.state == Conversation.State.HANDOFF
-    assert conversation.handoff_reason == "pedido do cliente"
+    assert conversation.handoff_reason == "customer_request"
     assert outbox.flags == [True]
     assert len(outbox.sent) == 1 and "atendimento humano" in outbox.sent[0]
     from shopman.backstage.models import OperatorAlert

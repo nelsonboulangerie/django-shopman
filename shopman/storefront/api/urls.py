@@ -62,6 +62,7 @@ from .surface import (
 )
 from .telemetry import ClientErrorView
 from .tracking import (
+    OrderCancellationRequestView,
     OrderCancelView,
     OrderConfirmReceiptView,
     OrderRateView,
@@ -130,6 +131,11 @@ urlpatterns = [
     # deste endpoint — sem depender de CORS.
     path("tracking/<str:ref>/events/", order_events_view, name="api-tracking-events"),
     path("orders/<str:ref>/cancel/", OrderCancelView.as_view(), name="api-order-cancel"),
+    path(
+        "orders/<str:ref>/cancellation-request/",
+        OrderCancellationRequestView.as_view(),
+        name="api-order-cancellation-request",
+    ),
     path(
         "orders/<str:ref>/waitlist-confirm/",
         OrderWaitlistConfirmView.as_view(),
