@@ -69,11 +69,11 @@ em produção permanecem sujeitos a dry-run e gate humano separado.
 
 - fechar inventário de operadores/suboperadores, países e mecanismos de
   transferência internacional, incluindo os contratos vigentes;
-- decidir e implementar o recebimento eletrônico de cancelamento no próprio
-  acompanhamento quando o cancelamento automático já não estiver disponível;
-- validar com assessoria jurídica a redação final e uma tabela de retenção por
-  categoria; implementar o descarte/anonimização que ainda faltar para provas,
-  “Avise-me” e conversas;
+- o recebimento eletrônico de cancelamento no próprio acompanhamento foi
+  implementado e integrado pelo PR #629;
+- a tabela R01–R15 foi aprovada e ganhou dry-run único sem PII; implementar e
+  testar fora de produção as contrações restantes. Descarte legado e jobs em
+  produção exigem dry-run revisado e gate humano separado;
 - depois do deploy, confirmar externamente HTTP 200 e SHA-256 das duas cópias
   permanentes; a implementação do arquivo append-only e do snapshot está nesta
   revisão;
