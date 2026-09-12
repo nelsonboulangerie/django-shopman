@@ -85,6 +85,7 @@ def test_direct_close_preserves_mode_in_order(balcao, mode):  # noqa: F811
     result = _close(operator, _payload(shift, client_request_id=f"mode-{mode}", **extra))
     order = Order.objects.get(ref=result.order_ref)
     assert order.data["pos"]["sales_mode"] == mode
+    assert order.snapshot["data"]["pos"]["sales_mode"] == mode
     if mode == "order":
         assert order.data["customer"]["ref"] == "selected"
         assert order.data["delivery_date"] == timezone.localdate().isoformat()
