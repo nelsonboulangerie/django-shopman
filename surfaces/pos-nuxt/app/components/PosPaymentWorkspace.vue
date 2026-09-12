@@ -714,7 +714,7 @@ const ctaBlock = computed<{ message: string; hint?: string; action?: CheckoutAct
       hint: "Troque a linha por dinheiro ou cartão na maquininha, ou escolha Receber no caixa.",
     };
   }
-  if (!props.fulfillmentConfirmed) {
+  if (props.salesMode !== "counter" && !props.fulfillmentConfirmed) {
     return {
       message: "Como o cliente vai receber?",
       hint: "Escolher data ou cliente não define entrega ou retirada.",
@@ -929,8 +929,8 @@ function onMachineConfirmed() {
 defineExpose({
   validate: () => { if (!ctaDisabled.value) onCta(); },
   openCustomer: () => { customerSheetOpen.value = true; },
-  openFulfillment: () => { fulfillmentSheetOpen.value = true; },
-  openSchedule: () => { scheduleSheetOpen.value = true; },
+  openFulfillment: () => { if (props.salesMode !== "counter") fulfillmentSheetOpen.value = true; },
+  openSchedule: () => { if (props.salesMode !== "counter") scheduleSheetOpen.value = true; },
   openDiscount: () => { if (props.discountTypes.length) discountSheetOpen.value = true; },
   /** O irmão do desconto: os dois Ajustes da conta abrem pela mesma dupla de
    *  teclas. Recusa quando o botão recusa — uma tecla que abre o que o dedo não
@@ -1719,6 +1719,7 @@ defineExpose({
        agora REVÊ o que foi decidido no começo do atendimento, em vez de ser o
        único lugar onde a pergunta existe. -->
   <PosFulfillmentModal
+    v-if="salesMode !== 'counter'"
     v-model:open="fulfillmentSheetOpen"
     :fulfillment-options="fulfillmentOptions"
     :fulfillment-type="fulfillmentType"
@@ -1755,6 +1756,8 @@ defineExpose({
   <!-- QUANDO — a MESMA caixa que a tela de venda abre. O agendamento é decidido
        na abertura do atendimento; aqui ele é revisto, com as mesmas palavras. -->
   <PosScheduleModal
+    v-if="salesMode !== 'counter'"
+    :sales-mode="salesMode"
     v-model:open="scheduleSheetOpen"
     :today="scheduleToday"
     :delivery-date="deliveryDate"

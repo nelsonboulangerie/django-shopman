@@ -1470,3 +1470,13 @@ it("explica antecipação e cobrança pendente no modo encomendas", async () => 
   expect(w.text()).toContain("pendente até a confirmação automática");
   expect(w.text()).not.toContain("Cobrar na entrega");
 });
+
+it("balcão não abre entrega ou agenda pelos atalhos expostos", async () => {
+  const w = await mountSuspended(PosPaymentWorkspace, { props: props({ salesMode: "counter" }) });
+  const vm = (w.vm as unknown as { $: { exposed: { openFulfillment(): void; openSchedule(): void } } }).$.exposed;
+  vm.openFulfillment();
+  vm.openSchedule();
+  await nextTick();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(w.text()).not.toContain("Como o cliente vai receber?");
+});

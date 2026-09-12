@@ -22,6 +22,7 @@ import {
 } from "~/presentation/schedule";
 
 const props = defineProps<{
+  salesMode?: "counter" | "order";
   open: boolean;
   /** O hoje da LOJA (um tablet com fuso errado agendaria para ontem). */
   today: string;
@@ -75,7 +76,7 @@ const emptyMessage = computed(() => {
 
 /** Voltar para hoje é UM gesto, não "apagar a data e depois apagar a hora". */
 function backToToday() {
-  emit("update:deliveryDate", "");
+  emit("update:deliveryDate", props.salesMode === "order" ? props.today : "");
   emit("update:deliveryTimeSlot", "");
 }
 
@@ -119,7 +120,7 @@ function pickDate(iso: string) {
           <label class="grid gap-1 text-sm">
             <span class="text-xs text-muted-foreground">Outra data</span>
             <UiInput
-              :model-value="deliveryDateEffective"
+              :model-value="salesMode === 'order' ? deliveryDate : deliveryDateEffective"
               type="date"
               :min="today"
               :max="maxDate"
@@ -184,8 +185,8 @@ function pickDate(iso: string) {
       </div>
 
       <UiDialogFooter class="gap-2 sm:justify-between">
-        <UiButton v-if="fulfillmentType !== 'delivery'" variant="outline" @click="backToToday">Sem agendamento · levar agora</UiButton>
-        <UiButton class="sm:ml-auto" @click="isOpen = false">Concluir</UiButton>
+        <UiButton v-if="fulfillmentType !== 'delivery'" variant="outline" @click="backToToday">{{ salesMode === "order" ? "Hoje" : "Sem agendamento · levar agora" }}</UiButton>
+        <UiButton class="sm:ml-auto" :disabled="salesMode === 'order' && !deliveryDate" @click="isOpen = false">Concluir</UiButton>
       </UiDialogFooter>
     </UiDialogContent>
   </UiDialog>

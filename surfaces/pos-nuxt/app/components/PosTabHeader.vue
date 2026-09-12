@@ -8,6 +8,7 @@ import type { POSCustomerLookupProjection, POSCustomerSearchResult } from "~/typ
 import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
 
 const props = defineProps<{
+  salesMode?: "counter" | "order";
   tabDisplay: string;
   hasOpenTab: boolean;
   canRename: boolean;
@@ -51,6 +52,7 @@ const emit = defineEmits<{
   "update:customerPhone": [string];
   "update:customerTaxId": [string];
   "update:customerEmail": [string];
+  salesModeChange: ["counter" | "order"];
   rename: [string];
   clear: [];
   clearCustomer: [];
@@ -72,6 +74,7 @@ const emit = defineEmits<{
    *  pagamento — a dela carrega a parte fiscal. Dois modais de Cliente na mesma
    *  tela seria a duplicação que esta barra veio justamente desfazer. */
   openCustomer: [];
+  customerClosed: [];
 }>();
 
 const renaming = ref(false);
@@ -109,6 +112,7 @@ watch(customerSheetOpen, async (open) => {
   if (open || !import.meta.client) return;
   await nextTick();
   customerChipRef.value?.focus();
+  emit("customerClosed");
 });
 
 const confirmClear = ref(false);
@@ -120,6 +124,10 @@ function runClear() {
 
 <template>
   <div class="flex min-w-0 flex-wrap items-center gap-2">
+    <div v-if="!readOnly" class="flex shrink-0 items-center rounded-md border p-0.5" role="group" aria-label="Modo de atendimento">
+      <UiButton :variant="salesMode !== 'order' ? 'secondary' : 'ghost'" size="sm" :aria-pressed="salesMode !== 'order'" :disabled="loading" @click="$emit('salesModeChange', 'counter')">Balcão</UiButton>
+      <UiButton :variant="salesMode === 'order' ? 'secondary' : 'ghost'" size="sm" :aria-pressed="salesMode === 'order'" :disabled="loading" @click="$emit('salesModeChange', 'order')">Encomendas</UiButton>
+    </div>
     <!-- tab number (renameable) -->
     <div v-if="renaming" class="flex items-center gap-1">
       <UiInput
@@ -193,7 +201,7 @@ function runClear() {
          diante. Na barra eles são LEITURA com porta de saída; o lugar onde se
          decide é o começo do fluxo, não esta barra. -->
     <button
-      v-if="hasOpenTab"
+      v-if="hasOpenTab && salesMode !== 'counter'"
       type="button"
       class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
       :class="fulfillmentType === 'delivery' ? 'border-primary bg-primary/5' : 'border-border'"
@@ -212,7 +220,7 @@ function runClear() {
          encomenda por telefone e o balcão não tinha onde escrever isso.
          "Para hoje" é o padrão e é uma AFIRMAÇÃO, não um campo vazio. -->
     <button
-      v-if="hasOpenTab"
+      v-if="hasOpenTab && salesMode !== 'counter'"
       type="button"
       class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
       :class="scheduleConflict
