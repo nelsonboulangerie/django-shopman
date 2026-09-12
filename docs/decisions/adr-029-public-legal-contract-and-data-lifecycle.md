@@ -61,7 +61,11 @@ Também foi aprovada a regra conservadora para idade desconhecida: marketing
 direto exige declaração de maioridade; menores podem comprar quando assistidos
 por responsável, mas não entram em campanhas diretas sem um fluxo verificável
 de participação/autorização do responsável. Isso fecha as decisões de L3 e L4.
-L6 tem responsáveis nomeados, mas somente fecha após o exercício de incidente.
+L6 foi encerrado em 2026-09-12 após exercício de incidente com cenário
+sintético e confirmação humana registrada. A matriz R01–R15 de retenção também
+foi aprovada como política operacional inicial, exclusivamente para
+implementação e testes fora de produção. Descarte do legado e ativação de jobs
+em produção permanecem sujeitos a dry-run e gate humano separado.
 
 - fechar inventário de operadores/suboperadores, países e mecanismos de
   transferência internacional, incluindo os contratos vigentes;

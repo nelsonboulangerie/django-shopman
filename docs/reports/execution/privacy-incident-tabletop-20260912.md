@@ -1,7 +1,7 @@
 # Exercício de mesa L6 — incidente de privacidade
 
-**Estado:** cenário preparado; 19 testes de backend e 4 testes da interface
-passaram em 2026-09-12; decisão humana pendente.  
+**Estado:** exercício concluído e confirmado em 2026-09-12; 19 testes de backend
+e 4 testes da interface passaram.
 **Ambiente:** local, sintético, sem fornecedor, cliente ou escrita externa.  
 **Responsável:** Pablo Valentini. **Suplente:** Laís Kohatsu Kataoka.
 
@@ -41,10 +41,9 @@ da etapa de interface não encontrou as dependências locais da worktree; depois
 de instalar exatamente o lockfile, o teste passou. Essa falha de ambiente não é
 contada como evidência do produto.
 
-## Confirmação humana mínima preparada
+## Confirmação humana registrada
 
-Para concluir o exercício, basta o responsável confirmar esta frase, depois de
-ler o cenário:
+Depois de ler o cenário, o responsável confirmou:
 
 > Confirmo o exercício L6: diante desse alerta eu congelaria as entregas,
 > preservaria evidências, proibiria reenvio cego, registraria a avaliação de
@@ -53,3 +52,7 @@ ler o cenário:
 
 Uma resposta afirmativa registra a decisão do exercício; não autoriza disparo,
 comunicação à ANPD, contato com titulares nem alteração em produção.
+
+**Registro de 2026-09-12:** “Confirmo o exercício L6”. O exercício está
+encerrado. A confirmação não ampliou o escopo técnico nem autorizou qualquer
+ação em produção.
