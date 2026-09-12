@@ -100,6 +100,13 @@ class POSSaleReceiptTests(TestCase):
         self.assertIn("2a VIA", second_text)
 
     def test_danfe_reprint_is_also_server_decided(self) -> None:
+        from unittest.mock import patch
+
+        from shopman.shop.tests.danfe_fixtures import xml_for_key
+
+        source = patch("shopman.shop.services.danfe_xml.read_authorized_xml", side_effect=xml_for_key)
+        source.start()
+        self.addCleanup(source.stop)
         # A mesma regra vale para a DANFE em bobina: a heurística de tela
         # (venda completa + e-mail enviado) morreu com o carimbo do servidor.
         order = self._order("PDV-RC-3")

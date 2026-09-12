@@ -1819,3 +1819,6 @@ if not DEBUG:
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
+
+# PNG preto sobre branco para bobina; a marca de tela pode ser branca/dourada.
+SHOPMAN_PRINT_LOGO_PATH = os.environ.get("SHOPMAN_PRINT_LOGO_PATH", "")

@@ -8,6 +8,7 @@
 // seguem o FATO (a nota existe), nunca o toggle que o operador marcou na venda.
 import type { POSProjection } from "~/types/pos";
 import { toast } from "vue-sonner";
+import { fiscalRecoveryUrl } from "~/presentation/fiscalRecovery";
 
 interface RecentSale {
   order_ref: string;
@@ -91,7 +92,7 @@ async function printDanfe(sale: RecentSale) {
     if (outcome.status === "printed") toast.success(`DANFE de ${sale.order_ref} na impressora.`);
     else danfeFallbackToast(sale, outcome.detail || "impressão indisponível nesta estação");
   } catch (error) {
-    danfeFallbackToast(sale, messageOf(error));
+    danfeFallbackToast(sale, messageOf(error), fiscalRecoveryUrl(httpError(error).data));
   } finally {
     busyRef.value = "";
   }
@@ -99,7 +100,13 @@ async function printDanfe(sale: RecentSale) {
 
 // Falha nunca termina em "indisponível" seco: quem tem acesso ganha a nota na
 // tela como ação alternativa; quem não tem ganha o próximo passo.
-function danfeFallbackToast(sale: RecentSale, reason: string) {
+function danfeFallbackToast(sale: RecentSale, reason: string, authorizedUrl = "") {
+  if (authorizedUrl) {
+    toast.error(`A DANFE não saiu na bobina: ${reason}`, {
+      action: { label: "Abrir DANFE autorizada", onClick: () => window.open(authorizedUrl, "_blank", "noopener") },
+    });
+    return;
+  }
   if (props.pos?.danfe_screen_allowed && djangoOrigin.value) {
     toast.error(`A DANFE não saiu na bobina: ${reason}`, {
       action: {

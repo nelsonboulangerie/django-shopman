@@ -115,8 +115,12 @@ _TRANSLITERACAO = str.maketrans(
 )
 
 
+def _print_text(text: str) -> str:
+    return "".join(ch if ord(ch) >= 32 and ord(ch) != 127 else " " for ch in str(text)).translate(_TRANSLITERACAO)
+
+
 def _line(text: str) -> bytes:
-    return text.translate(_TRANSLITERACAO).encode(ENCODING, "replace") + b"\n"
+    return _print_text(text).encode(ENCODING, "replace") + b"\n"
 
 
 def _double(text: str, columns: int = COLUMNS) -> bytes:
@@ -126,13 +130,25 @@ def _double(text: str, columns: int = COLUMNS) -> bytes:
     duas. Volta a `0x00` na mesma função, senão o resto do papel sai gigante:
     o modo é de estado, não de escopo.
     """
-    recorte = text[: columns // 2]
-    margem = max(0, (columns // 2 - len(recorte)) // 2)
-    return bytes([GS, ord("!"), 0x11]) + _line(" " * margem + recorte) + bytes([GS, ord("!"), 0x00])
+    lines = _wrap(text, columns // 2)
+    return (
+        bytes([GS, ord("!"), 0x11])
+        + b"".join(_line(part.center(columns // 2)) for part in lines)
+        + bytes([GS, ord("!"), 0x00])
+    )
+
+
+def _emphasis(text: str, *, tall: bool = False) -> bytes:
+    """Negrito; corpo duplo com quebra completa para identificador e cobrança."""
+    return (
+        bytes([ESC, ord("E"), 1, GS, ord("!"), 0x11 if tall else 0])
+        + b"".join(_line(part) for part in _wrap(text, COLUMNS // 2 if tall else COLUMNS))
+        + bytes([GS, ord("!"), 0, ESC, ord("E"), 0])
+    )
 
 
 def _centered(text: str, columns: int = COLUMNS) -> bytes:
-    recorte = text[:columns]
+    recorte = _print_text(text)[:columns]
     margem = max(0, (columns - len(recorte)) // 2)
     return _line(" " * margem + recorte)
 
@@ -142,15 +158,19 @@ def _rule(columns: int = COLUMNS) -> bytes:
 
 
 def _pair(left: str, right: str, columns: int = COLUMNS) -> bytes:
-    espaco = max(1, columns - len(left) - len(right))
-    return _line(f"{left}{' ' * espaco}{right}"[:columns])
+    left, right = _print_text(left), _print_text(right)
+    if len(left) + len(right) + 1 > columns:
+        return b"".join(_line(part) for part in _wrap(left, columns)) + b"".join(
+            _line(part.rjust(columns)) for part in _wrap(right, columns)
+        )
+    return _line(f"{left}{' ' * (columns - len(left) - len(right))}{right}")
 
 
 def _wrap(text: str, width: int) -> list[str]:
     """Quebra por palavra; palavra maior que a linha é cortada, não sumida."""
     linhas: list[str] = []
     atual = ""
-    for palavra in str(text).split():
+    for palavra in _print_text(text).split():
         while len(palavra) > width:
             if atual:
                 linhas.append(atual)
@@ -386,181 +406,130 @@ def _commitment_headline(order) -> tuple[str, str]:
     return dia.upper(), janela
 
 
-def _headline_name(name: str, width: int) -> str:
-    """Nome que ainda se lê a três metros: encurta pelo MEIO, nunca pelo fim.
-
-    O corpo duplo cabe ``width`` caracteres. "Maria Aparecida da Silva Xavier"
-    cortado no fim vira "Maria Aparecida da Silv" — que é o nome de ninguém.
-    Primeiro-e-último ("Maria Xavier") é como a padaria chama a pessoa.
-    """
-    label = " ".join(str(name or "").split())
-    if len(label) <= width:
-        return label
-    partes = label.split(" ")
-    if len(partes) > 1:
-        curto = f"{partes[0]} {partes[-1]}"
-        if len(curto) <= width:
-            return curto
-    return label[:width]
-
-
 def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint: bool = False) -> bytes:
-    """Filipeta do pedido REMOTO — o comprovante que vai para o painel físico.
+    """Ficha operacional: compromisso, destino, cobrança e conferência em 80 mm.
 
-    Irmã do :func:`sale_receipt`, e o parentesco para aí: o recibo é a projeção
-    do que já foi VENDIDO e PAGO; a filipeta sai ANTES do pagamento, para
-    entrega, retirada ou encomenda agendada. É o papel que a padaria prega no
-    painel para enxergar a semana, e por isso ela é desenhada para ser lida de
-    longe: dia, janela, nome e recebimento saem em corpo duplo; o resto é corpo.
-
-    ⚠️ **Ela diz o que NÃO é.** Impressa antes do pagamento, um papel com o
-    total impresso passa facilmente por comprovante de pagamento — e o cliente
-    que a guarda tem toda razão em achar que quitou. Então o papel afirma as
-    duas coisas: não é documento fiscal e não comprova pagamento. Quando o
-    pedido está em aberto, ele grita isso mais uma vez, emoldurado.
-
-    ``tracking_url`` é o acompanhamento do pedido na loja — e, no pedido de
-    link em aberto, é a MESMA página onde se paga. Vazio quando o deployment
-    não configurou a base da loja: o papel sai sem QR em vez de com um QR mudo.
+    Lê o estado canônico de pagamento. Retirada combinada hoje continua uma
+    encomenda; somente ``pos.sales_mode=counter`` identifica balcão imediato.
     """
     from shopman.utils.monetary import format_money
 
-    from shopman.backstage.presentation.status import payment_method_label, payment_status_label
+    from shopman.backstage.presentation.status import payment_method_label
+    from shopman.backstage.services.print_branding import logo_bytes
     from shopman.shop.services import payment as payment_svc
     from shopman.shop.services.order_helpers import get_fulfillment_type
 
     data = order.data or {}
-    out = bytearray()
-    out += bytes([ESC, ord("@")])  # reset: não herda estado do job anterior
-    out += bytes([ESC, ord("t"), CODE_PAGE])
-
-    out += _centered((shop_name or "NELSON BOULANGERIE").upper())
-    out += _centered("Comprovante de pedido")
-    if reprint:
-        # Mesma regra do recibo e da DANFE: sem a marca, dois papéis idênticos
-        # circulam e a segunda via passa por original. Num painel de parede isso
-        # é o pedido aparecendo duas vezes e alguém preparando dobrado.
-        out += _centered("*** 2a VIA ***")
-    out += _rule()
-
-    # ── O bloco de longe ──────────────────────────────────────────────
-    # Quatro linhas em corpo duplo, e não mais: quando tudo é destaque, nada é.
-    dia, janela = _commitment_headline(order)
-    out += _line("")
-    out += _double(dia)
-    if janela:
-        out += _double(janela)
-    is_delivery = get_fulfillment_type(order) == "delivery"
-    out += _double("ENTREGA" if is_delivery else "RETIRADA")
-    customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
-    nome = str(customer.get("name") or "").strip()
-    if nome:
-        out += _double(_headline_name(nome, COLUMNS // 2))
-    out += _line("")
-    out += _rule()
-
-    # ── O corpo ───────────────────────────────────────────────────────
-    out += _pair(f"Pedido {order.ref}", f"feito {_local(order.created_at)}")
-    if nome:
-        for pedaco in _wrap(f"Cliente: {nome}", COLUMNS):
-            out += _line(pedaco)
-    telefone = str(customer.get("phone") or data.get("customer_phone") or "").strip()
-    if telefone:
-        out += _line(f"Telefone: {telefone}"[:COLUMNS])
-    out += _rule()
-
-    if is_delivery:
-        endereco, instrucoes = _delivery_lines(data)
-        out += _line("ENTREGAR EM:")
-        for pedaco in _wrap(endereco or "-", COLUMNS):
-            out += _line(pedaco)
-        if instrucoes:
-            for pedaco in _wrap(f"Referência: {instrucoes}", COLUMNS):
-                out += _line(pedaco)
-        out += _rule()
-
-    itens = list(order.items.all())
-    out += _line(f"ITENS ({len(itens)})")
-    for item in itens:
-        qty = item.qty.normalize() if hasattr(item.qty, "normalize") else item.qty
-        # Quantidade na FRENTE: quem separa a sacola lê "3 x" antes do nome, e
-        # o nome longo quebra sem empurrar o número para a linha de baixo.
-        #
-        # 14 colunas de goteira para o valor, não 12: "R$ 12.345,67" tem 12, e
-        # com o nome ocupando o resto o `_pair` cortaria a linha em 48 comendo o
-        # último dígito do PREÇO. Encomenda de festa chega nessa casa.
-        pedacos = _wrap(f"{qty} x {item.name}", COLUMNS - 14)
-        out += _pair(pedacos[0], f"R$ {format_money(int(item.line_total_q or 0))}")
-        for pedaco in pedacos[1:]:
-            out += _line(f"    {pedaco}"[:COLUMNS])
-    out += _rule()
-
-    # As duas notas são de DONOS diferentes (data-schemas) e por isso saem com
-    # nome: ``order_notes`` é a voz do cliente no checkout, ``kitchen_note`` é o
-    # recado do operador para dentro. Fundi-las apagaria quem pediu o quê.
-    nota_cliente = str(data.get("order_notes") or "").strip()
-    nota_cozinha = str(data.get("kitchen_note") or "").strip()
-    if nota_cliente or nota_cozinha:
-        if nota_cliente:
-            out += _line("Observação do cliente:")
-            for pedaco in _wrap(nota_cliente, COLUMNS):
-                out += _line(pedaco)
-        if nota_cozinha:
-            out += _line("Nota da cozinha:")
-            for pedaco in _wrap(nota_cozinha, COLUMNS):
-                out += _line(pedaco)
-        out += _rule()
-
-    out += _line("")
-    out += _double(f"TOTAL R$ {format_money(int(order.total_q or 0))}")
-    out += _line("")
-
     payment = data.get("payment") if isinstance(data.get("payment"), dict) else {}
-    metodo = str(payment.get("method") or "")
-    if metodo:
-        out += _pair("Pagamento", payment_method_label(metodo)[: COLUMNS // 2])
+    customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
+    method = str(payment.get("method") or "")
     status = payment_svc.get_payment_status(order) or ""
-    pago = status in {"captured", "paid"}
-    if pago:
-        out += _pair("Situação", payment_status_label(status)[: COLUMNS // 2])
-    else:
-        out += _line("")
-        out += _centered("*** PAGAMENTO PENDENTE ***")
-        out += _line("")
-    if is_delivery and payment.get("collection") == "on_delivery" and not pago and not payment.get("cod_settled_at"):
-        from shopman.shop.services.operator_orders import _change_for_q, change_out_suggested_q
+    paid = status in {"captured", "paid"}
+    is_delivery = get_fulfillment_type(order) == "delivery"
+    is_counter = (data.get("pos") or {}).get("sales_mode") == "counter"
+    collect = (
+        is_delivery
+        and payment.get("collection") == "on_delivery"
+        and status in {"", "pending", "created"}
+        and not payment.get("cod_settled_at")
+    )
 
-        out += _centered("COBRAR NA ENTREGA")
-        tenders = payment.get("tenders") or [{"method": metodo, "amount_q": order.total_q}]
-        for tender in tenders:
-            if tender.get("status") in {"received", "captured", "paid"}:
-                continue
-            if tender.get("collection", "on_delivery") != "on_delivery":
-                continue
-            out += _pair(
-                payment_method_label(str(tender.get("method") or "")),
-                f"R$ {format_money(int(tender.get('amount_q') or 0))}",
-            )
-        change_for_q = _change_for_q(order)
-        if metodo in {"cash", "mixed"}:
-            if change_for_q:
-                out += _pair("Troco para", f"R$ {format_money(change_for_q)}")
-                out += _pair("Levar de troco", f"R$ {format_money(change_out_suggested_q(order))}")
+    def money(value):
+        return f"R$ {format_money(int(value or 0))}"
+
+    def method_label(value):
+        return "Canal externo" if value == "external" and not paid else payment_method_label(value)
+
+    out = bytearray([ESC, ord("@"), ESC, ord("t"), CODE_PAGE])
+    out += logo_bytes() or _centered((shop_name or "NELSON BOULANGERIE").upper())
+    out += _emphasis(f"PEDIDO {order.ref}", tall=True)
+    if reprint:
+        out += _emphasis("*** 2a VIA ***")
+    day, window = _commitment_headline(order)
+    fulfillment = "BALCÃO IMEDIATO" if is_counter else "ENTREGA" if is_delivery else "RETIRADA"
+    commitment = fulfillment if is_counter else " | ".join(part for part in (fulfillment, day, window) if part)
+    out += _emphasis(commitment)
+    name = str(customer.get("name") or "").strip()
+    phone = str(customer.get("phone") or data.get("customer_phone") or "").strip()
+    if name and phone:
+        out += bytes([ESC, ord("E"), 1]) + _pair(name, phone) + bytes([ESC, ord("E"), 0])
+    elif name or phone:
+        out += _emphasis(name or f"Telefone: {phone}")
+    out += _rule()
+    if is_delivery:
+        address, instructions = _delivery_lines(data)
+        for part in _wrap(f"ENTREGAR EM: {address or 'confirmar endereço'}", COLUMNS):
+            out += _line(part)
+        if instructions:
+            for part in _wrap(f"Referência: {instructions}", COLUMNS):
+                out += _line(part)
+        out += _rule()
+
+    if paid:
+        out += _emphasis("PAGO - NÃO COBRAR")
+        out += _pair(method_label(method), money(order.total_q))
+    elif collect:
+        out += _emphasis("PAGAMENTO PENDENTE | COBRAR NA ENTREGA")
+        tenders = payment.get("tenders") or [{"method": method, "amount_q": order.total_q}]
+        pending = [
+            t
+            for t in tenders
+            if isinstance(t, dict)
+            and t.get("status") not in {"received", "captured", "paid"}
+            and t.get("collection", "on_delivery") == "on_delivery"
+        ]
+        due_q = sum(int(t.get("amount_q") or 0) for t in pending)
+        if due_q != int(order.total_q or 0):
+            out += _pair("Total do pedido", money(order.total_q))
+        out += _emphasis(f"A COBRAR {money(due_q)}", tall=True)
+        # Um método só divide a linha com o aviso; o valor já está no destaque.
+        if len(pending) == 1:
+            out += _line(method_label(str(pending[0].get("method") or "")))
+        else:
+            for tender in pending:
+                out += _pair(method_label(str(tender.get("method") or "")), money(tender.get("amount_q")))
+        if any(t.get("method") in {"card", "credit", "debit"} for t in pending):
+            out += _emphasis("LEVAR MAQUININHA")
+        cash_due = sum(int(t.get("amount_q") or 0) for t in pending if t.get("method") == "cash")
+        if cash_due:
+            from shopman.shop.services.operator_orders import _change_for_q
+
+            change_for = _change_for_q(order)
+            if change_for:
+                out += _emphasis(f"Troco para {money(change_for)}")
+                out += _emphasis(f"Levar de troco {money(max(0, change_for - cash_due))}")
             else:
                 out += _line("Troco: não informado; confirmar com cliente")
+    else:
+        out += _emphasis("*** PAGAMENTO PENDENTE ***")
+        out += _pair(method_label(method) if method else "Total do pedido", money(order.total_q))
+        if status == "unknown":
+            out += _emphasis("CONFIRMAR PAGAMENTO ANTES DE COBRAR")
     out += _rule()
-
-    # ⚠️ O que este papel NÃO é. Ele nasce antes do pagamento e traz um total
-    # impresso — sem estas duas linhas, é indistinguível de um comprovante.
+    notes = [("Observação do cliente:", data.get("order_notes")), ("Nota da cozinha:", data.get("kitchen_note"))]
+    for label, note in notes:
+        if str(note or "").strip():
+            out += _emphasis(label)
+            for part in _wrap(str(note), COLUMNS):
+                out += _line(part)
+    if any(str(note or "").strip() for _, note in notes):
+        out += _rule()
+    items = list(order.items.all())
+    out += _emphasis(f"ITENS ({len(items)})")
+    for item in items:
+        qty = item.qty.normalize() if hasattr(item.qty, "normalize") else item.qty
+        parts = _wrap(f"{qty} x {item.name}", COLUMNS - 14)
+        out += _pair(parts[0], money(item.line_total_q))
+        for part in parts[1:]:
+            out += _line(f"    {part}")
+    out += _rule()
+    out += _line(f"Pedido registrado em {_local(order.created_at)}")
     out += _centered("Este papel não é documento fiscal")
     out += _centered("e não comprova pagamento.")
-
     if tracking_url:
-        out += _centered("Pague e acompanhe pelo QR" if not pago else "Acompanhe o pedido pelo QR")
+        out += _centered("Acompanhe o pedido pelo QR" if paid or collect else "Pague e acompanhe pelo QR")
         out += _qr(tracking_url)
-
-    out += bytes([ESC, ord("d"), 4])
-    out += bytes([GS, ord("V"), 1])  # corte parcial — a filipeta seguinte começa limpa
+    out += bytes([ESC, ord("d"), 4, GS, ord("V"), 1])
     return bytes(out)
 
 
@@ -581,85 +550,108 @@ def _delivery_lines(data: dict) -> tuple[str, str]:
 
 
 def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
-    """DANFE NFC-e em bobina — a projeção IMPRESSA de ``DanfeDocument``.
+    """DANFE NFC-e de 80 mm, exclusivamente a partir do XML autorizado."""
+    if not doc.emitted or not doc.source_verified:
+        raise ValueError("DANFE exige XML autorizado validado.")
+    texts = [
+        doc.shop_legal_name,
+        doc.shop_name,
+        doc.shop_cnpj,
+        doc.shop_ie,
+        doc.shop_address,
+        doc.customer_name,
+        doc.customer_address,
+        doc.customer_tax_id_display,
+        doc.query_url,
+    ]
+    texts.extend(
+        text
+        for item in doc.items
+        for text in (item.sku, item.name, item.qty, item.unit, item.unit_price_display, item.total_display)
+    )
+    texts.extend(label for label, _ in doc.payments)
+    texts.extend(doc.additional_info)
+    try:
+        for text in texts:
+            text.translate(_TRANSLITERACAO).encode(ENCODING)
+    except UnicodeEncodeError as exc:
+        raise ValueError(
+            "A fonte residente não representa todos os caracteres fiscais. Use o DANFE do provedor."
+        ) from exc
+    out = bytearray([ESC, ord("@"), ESC, ord("t"), CODE_PAGE])
+    from shopman.backstage.services.print_branding import logo_bytes
 
-    ``doc`` vem de ``shopman.shop.views.fiscal_danfe.build_danfe`` (a MESMA
-    projeção do cupom web): um dado, duas superfícies, zero divergência de
-    leiaute entre a tela e o papel. Só compõe nota EMITIDA — quem chama guarda.
-
-    O leiaute segue o DANFE NFC-e simplificado: emitente, aviso de homologação
-    quando for o caso, itens, totais, chave de acesso em grupos, consumidor e o
-    QR da SEFAZ para conferência.
-    """
-    assert doc.emitted, "danfe_nfce só compõe nota emitida"
-
-    out = bytearray()
-    out += bytes([ESC, ord("@")])
-    out += bytes([ESC, ord("t"), CODE_PAGE])
-
-    out += _centered((doc.shop_name or "NELSON BOULANGERIE").upper())
-    if doc.shop_legal_name:
-        out += _centered(doc.shop_legal_name)
-    if doc.shop_cnpj:
-        out += _centered(f"CNPJ {doc.shop_cnpj}")
-    for pedaco in _wrap(doc.shop_address or "", COLUMNS):
-        if pedaco != "-":
-            out += _centered(pedaco)
-    out += _rule()
-
+    out += logo_bytes(centered=False)
+    out += _emphasis(doc.shop_legal_name)
+    if doc.shop_name and doc.shop_name != doc.shop_legal_name:
+        out += _line(doc.shop_name)
+    emit_id = "CPF" if len(doc.shop_cnpj) == 14 else "CNPJ"
+    out += _line(f"{emit_id} {doc.shop_cnpj}")
+    if doc.shop_ie:
+        out += _line(f"IE {doc.shop_ie}")
+    for part in _wrap(doc.shop_address, COLUMNS):
+        out += _line(part)
     out += _centered("DANFE NFC-e")
     out += _centered("Documento Auxiliar da Nota Fiscal")
-    out += _centered("de Consumidor Eletronica")
+    out += _centered("de Consumidor Eletrônica")
     if reprint:
-        out += _centered("*** 2a VIA ***")
-    if doc.is_homolog:
-        # Exigência da SEFAZ em homologação: o papel diz que não vale.
-        out += _rule()
-        out += _centered("*** EMITIDA EM HOMOLOGACAO ***")
-        out += _centered("*** SEM VALOR FISCAL ***")
-    out += _rule()
-
-    out += _pair(f"NFC-e n. {doc.number}", f"Serie {doc.series}")
-    out += _line(f"Pedido {doc.order_ref}")
-    out += _rule()
-
+        out += _emphasis("*** 2a VIA ***")
+    if doc.contingency:
+        out += _emphasis("EMITIDA EM CONTINGÊNCIA")
+    out += _line("")
+    out += _emphasis("CÓDIGO / DESCRIÇÃO")
+    out += _pair("QTD UN x VALOR UNITÁRIO", "VALOR TOTAL")
     for item in doc.items:
-        for pedaco in _wrap(f"{item.seq:>3} {item.name}", COLUMNS):
-            out += _line(pedaco)
-        out += _pair(f"    {item.qty} {item.unit} x {item.unit_price_display}", item.total_display)
-    out += _rule()
-
+        for part in _wrap(f"{item.sku} {item.name}", COLUMNS):
+            out += _line(part)
+        out += _pair(f"{item.qty} {item.unit} x {item.unit_price_display}", item.total_display)
+    out += _line("")
     out += _pair("QTD. TOTAL DE ITENS", str(doc.item_count))
-    out += _pair("FORMA DE PAGAMENTO", doc.payment_label[: COLUMNS // 2])
+    for label, amount in doc.totals:
+        out += _pair(label, amount)
+    out += _emphasis(f"VALOR A PAGAR {doc.total_display}", tall=True)
+    out += _pair("FORMA DE PAGAMENTO", "VALOR PAGO")
+    for label, amount in doc.payments:
+        out += _pair(label, amount)
     out += _line("")
-    out += _double(f"TOTAL {doc.total_display}")
-    out += _line("")
-    out += _rule()
-
-    out += _centered("Consulte pela Chave de Acesso em")
-    for pedaco in _wrap("www.fazenda.pr.gov.br/nfce/consulta", COLUMNS):
-        out += _centered(pedaco)
-    for pedaco in _wrap(doc.chave_grouped or doc.key, COLUMNS):
-        out += _centered(pedaco)
-    out += _rule()
-
-    # Quem identifica o consumidor na nota é o CPF, não o nome — e é ele a
-    # resposta para "o meu documento entrou?". Nome entra em seguida, e só
-    # quando é nome de gente (o apelido interno "Cliente Doc 6789" fica no CRM).
+    out += _line("Consulte pela Chave de Acesso em")
+    for part in _wrap(doc.query_url, COLUMNS):
+        out += _line(part)
+    for part in _wrap(doc.chave_grouped, COLUMNS):
+        out += _line(part)
     if doc.customer_tax_id_display:
-        out += _line(f"CONSUMIDOR CPF {doc.customer_tax_id_display}"[:COLUMNS])
-        if doc.customer_name:
-            out += _line(doc.customer_name[:COLUMNS])
+        for part in _wrap(f"CONSUMIDOR {doc.customer_tax_id_label} {doc.customer_tax_id_display}", COLUMNS):
+            out += _line(part)
+        for text in (doc.customer_name, doc.customer_address):
+            if text:
+                for part in _wrap(text, COLUMNS):
+                    out += _line(part)
     else:
-        out += _line("CONSUMIDOR NAO IDENTIFICADO")
-    out += _rule()
+        out += _line("CONSUMIDOR NÃO IDENTIFICADO")
+    out += _pair(f"NFC-e n. {doc.number}", f"Série {doc.series}")
+    out += _line(f"Emissão {doc.issued_at}")
+    out += _line(f"Protocolo de autorização {doc.protocol}")
+    out += _line(doc.authorized_at)
+    # Um módulo inteiro por ponto do cabeçote: preserva QR sem interpolação.
+    # Matriz >=25 mm (200 dots a 203 dpi), além da zona livre.
+    import math
 
-    out += _centered("Consulta via leitor de QR Code")
-    if doc.consult_url:
-        out += _qr(doc.consult_url)
-    if doc.protocol:
-        out += _centered(f"Protocolo {doc.protocol}")
+    import qrcode
 
-    out += bytes([ESC, ord("d"), 4])
-    out += bytes([GS, ord("V"), 1])
+    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M)
+    qr.add_data(doc.consult_url)
+    qr.make(fit=True)
+    module = max(4, math.ceil(200 / qr.modules_count))
+    if (qr.modules_count + 8) * module > 576:
+        raise ValueError("QR fiscal excede a área imprimível de 72 mm.")
+    out += _line("")
+    out += _qr(doc.consult_url, module=module)
+    out += _line("")
+    if doc.is_homolog:
+        out += _centered("EMITIDA EM AMBIENTE DE HOMOLOGAÇÃO")
+        out += _centered("SEM VALOR FISCAL")
+    for text in doc.additional_info:
+        for part in _wrap(text, COLUMNS):
+            out += _line(part)
+    out += bytes([ESC, ord("d"), 4, GS, ord("V"), 1])
     return bytes(out)

@@ -474,3 +474,7 @@ Configurados via Admin no model `Promotion` e `Coupon` (app `shop`):
 |-------|--------|-----------|
 | `Promotion` | `type` (percent\|fixed), `value`, `valid_from`, `valid_until`, `skus`, `collections`, `min_order_q` | Promoção automática ou por cupom |
 | `Coupon` | `code`, `promotion` (FK), `max_uses`, `uses_count` | Cupom que ativa uma promoção |
+
+### Marca da bobina
+
+`SHOPMAN_PRINT_LOGO_PATH` (env, default vazio): caminho local de um PNG preto sobre branco para ficha do pedido e DANFE NFC-e. Raster limitado a 24 × 8 mm nominais em 203 dpi; sem arquivo usa o nome em texto. Asset de exemplo do deployment: `media/branding/nelson-print.png`. Não use diretamente a marca branca/dourada de tela. Ver [validação dos impressos](../reports/PRINT-LAYOUTS-2026-09-12.md).

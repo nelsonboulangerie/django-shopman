@@ -205,7 +205,7 @@ for key in (
 | `nfce_cancellation_protocol` | `string` | NFCeCancelHandler | — | Protocolo de cancelamento |
 | `nfce_series` | `string` | `shop/handlers/fiscal.py` (FocusNFe) | — | Série do documento NFC-e emitido via FocusNFe |
 | `nfce_protocol` | `string` | `shop/handlers/fiscal.py` (FocusNFe) | — | Número do protocolo de autorização |
-| `nfce_xml_url` | `string` | `shop/handlers/fiscal.py` (FocusNFe) | — | URL do XML autorizado |
+| `nfce_xml_url` | `string` | `shop/handlers/fiscal.py` (FocusNFe) | `shop/services/danfe_xml`, `build_danfe` | URL do XML autorizado: fonte dos dados fiscais impressos. Ausência/falha impede composição da bobina; não recompõe valores a partir do pedido |
 | `nfce_status` | `string` | `shop/handlers/fiscal.py` (FocusNFe) | — | Status da emissão (ex.: `autorizado`, `erro`) |
 | `nfce_email_sent_at` | `string` | NFCeEmitHandler (`_send_receipt_email`) | NFCeEmitHandler (idempotência do envio) | ISO datetime de quando o Focus aceitou enviar a nota por e-mail. Só entra quando o provedor aceitou; reenvio manual (Últimas vendas do PDV) não depende dele |
 | `receipt_printed_at` | `string` | `POSSaleReceiptEscposView` (`_stamp_first_print`) | `POSSaleReceiptEscposView` (decisão de 2ª via) | ISO datetime da PRIMEIRA composição do recibo não fiscal (`receipt-escpos`). Presente ⇒ toda composição seguinte sai carimbada "2a VIA". Marca na composição, não na confirmação do papel |

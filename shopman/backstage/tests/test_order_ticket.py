@@ -34,7 +34,9 @@ def shop(db):
     return Shop.objects.create(name="Nelson Boulangerie")
 
 
-def _order(ref: str, *, status: str = "accepted", items=(("Pão de fermentação natural", 2, 1800),), **data_extra) -> Order:
+def _order(
+    ref: str, *, status: str = "accepted", items=(("Pão de fermentação natural", 2, 1800),), **data_extra
+) -> Order:
     data = {"customer": {"name": "Ana"}, "payment": {"method": "link"}}
     data.update(data_extra)
     order = Order.objects.create(
@@ -68,6 +70,9 @@ def _linhas(papel: bytes) -> list[str]:
     faria toda asserção sobre a linha de destaque procurar caracteres de
     controle junto com o texto.
     """
+    import re
+
+    papel = re.sub(rb"\x1bE[\x00\x01]|\x1d![\x00\x01\x11]", b"", papel)
     limpo = _texto(papel).replace("\x1d!\x11", "").replace("\x1d!\x00", "")
     return [linha.rstrip() for linha in limpo.split("\n")]
 
@@ -101,7 +106,7 @@ def test_pedido_PAGO_nao_grita_pendencia(shop):
     papel = _texto(order_ticket(pago))
 
     assert "PAGAMENTO PENDENTE" not in papel
-    assert "Pago" in papel
+    assert "PAGO - NÃO COBRAR" in papel
 
 
 # ── O bloco que se lê de longe ────────────────────────────────────────────
@@ -120,9 +125,7 @@ def test_o_papel_destaca_dia_janela_recebimento_e_nome(shop):
 
     destaque = [linha.strip() for linha in _linhas(order_ticket(order)) if "\x1d" not in linha]
 
-    assert "AMANHÃ" in destaque
-    assert "A PARTIR DAS 12H" in destaque
-    assert "ENTREGA" in destaque
+    assert "ENTREGA | AMANHÃ | A PARTIR DAS 12H" in destaque
     assert "Ana" in destaque
 
 
@@ -134,15 +137,13 @@ def test_retirada_e_entrega_nao_se_parecem_no_papel(shop):
     assert "ENTREGA" in _texto(order_ticket(entrega))
 
 
-def test_nome_comprido_encurta_pelo_MEIO_e_nao_pelo_fim(shop):
-    """"Maria Aparecida da Silva Xavier" cortado no fim é o nome de ninguém."""
+def test_nome_comprido_permanece_inteiro_sem_repeticao(shop):
+    """ "Maria Aparecida da Silva Xavier" cortado no fim é o nome de ninguém."""
     order = _order("ORD-T7", customer={"name": "Maria Aparecida da Silva Xavier"})
 
     papel = _texto(order_ticket(order))
 
-    assert "Maria Xavier" in papel
-    # O nome inteiro continua no corpo — o encurtamento é só do destaque.
-    assert "Cliente: Maria Aparecida da Silva Xavier" in papel
+    assert papel.count("Maria Aparecida da Silva Xavier") == 1
 
 
 # ── ⚠️ Os DOIS vocabulários de `delivery_time_slot` ───────────────────────
@@ -312,7 +313,6 @@ def test_intervalo_invertido_e_TROCADO_e_nao_recusado(shop):
 
 def test_data_ilegivel_cai_no_padrao_em_vez_de_estourar(shop):
     hoje = date(2026, 9, 4)
-
 
     date_from, date_to = tickets.parse_period("ontem", "2026-09-10", today=hoje)
 
@@ -509,9 +509,7 @@ def test_o_lote_sai_como_filipetas_CONSECUTIVAS_num_trabalho_so(logado, shop):
 def test_periodo_sem_pedido_devolve_lote_vazio(logado, shop):
     futuro = (timezone.localdate() + timedelta(days=400)).isoformat()
 
-    corpo = logado.get(
-        reverse("api-backstage-order-tickets-escpos"), {"date_from": futuro, "date_to": futuro}
-    ).json()
+    corpo = logado.get(reverse("api-backstage-order-tickets-escpos"), {"date_from": futuro, "date_to": futuro}).json()
 
     assert corpo["count"] == 0
     assert base64.b64decode(corpo["payload_b64"]) == b""
@@ -545,14 +543,27 @@ def test_a_rota_do_lote_nao_e_confundida_com_um_ref_de_pedido(logado, shop):
     assert "orders" in resposta.json()
 
 
-@pytest.mark.parametrize("method,tenders,cash_due", [
-    ("cash", [], 3600),
-    ("mixed", [{"method": "cash", "amount_q": 2000, "collection": "on_delivery", "status": "pending"},
-               {"method": "credit", "amount_q": 1600, "collection": "on_delivery", "status": "pending"}], 2000),
-])
+@pytest.mark.parametrize(
+    "method,tenders,cash_due",
+    [
+        ("cash", [], 3600),
+        (
+            "mixed",
+            [
+                {"method": "cash", "amount_q": 2000, "collection": "on_delivery", "status": "pending"},
+                {"method": "credit", "amount_q": 1600, "collection": "on_delivery", "status": "pending"},
+            ],
+            2000,
+        ),
+    ],
+)
 def test_delivery_ticket_states_cash_tender_and_correct_change(shop, method, tenders, cash_due):
-    order = _order("ORD-CHANGE", fulfillment_type="delivery", delivery_address="Rua Azul, 42",
-                   payment={"method": method, "collection": "on_delivery", "change_for_q": 5000, "tenders": tenders})
+    order = _order(
+        "ORD-CHANGE",
+        fulfillment_type="delivery",
+        delivery_address="Rua Azul, 42",
+        payment={"method": method, "collection": "on_delivery", "change_for_q": 5000, "tenders": tenders},
+    )
     lines = _linhas(order_ticket(order))
     paper = "\n".join(lines)
     from shopman.utils.monetary import format_money
@@ -567,17 +578,103 @@ def test_delivery_ticket_states_cash_tender_and_correct_change(shop, method, ten
 
 
 def test_paid_delivery_ticket_does_not_ask_courier_to_collect_again(shop):
-    order = _order("ORD-CHANGE-PAID", fulfillment_type="delivery", payment={
-        "method": "cash", "collection": "on_delivery", "status": "captured", "change_for_q": 5000,
-    })
+    order = _order(
+        "ORD-CHANGE-PAID",
+        fulfillment_type="delivery",
+        payment={
+            "method": "cash",
+            "collection": "on_delivery",
+            "status": "captured",
+            "change_for_q": 5000,
+        },
+    )
     paper = _texto(order_ticket(order))
     assert "COBRAR NA ENTREGA" not in paper
     assert "Levar de troco" not in paper
-    assert "Pago" in paper
+    assert "PAGO - NÃO COBRAR" in paper
 
 
 def test_delivery_ticket_without_change_amount_requests_confirmation(shop):
-    order = _order("ORD-NO-CHANGE", fulfillment_type="delivery", payment={"method": "cash", "collection": "on_delivery"})
+    order = _order(
+        "ORD-NO-CHANGE", fulfillment_type="delivery", payment={"method": "cash", "collection": "on_delivery"}
+    )
     paper = _texto(order_ticket(order))
     assert "Troco: não informado; confirmar com cliente" in paper
     assert "Levar de troco" not in paper
+
+
+def test_collection_precedes_long_items_and_paid_tenders_are_excluded(shop):
+    order = _order(
+        "ORD-LONG-COD",
+        fulfillment_type="delivery",
+        items=tuple(("Produto extenso para separar e conferir", 1, 1000) for _ in range(12)),
+        payment={
+            "method": "mixed",
+            "collection": "on_delivery",
+            "change_for_q": 5000,
+            "tenders": [
+                {"method": "pix", "amount_q": 10000, "status": "received"},
+                {"method": "cash", "amount_q": 2000, "status": "pending", "collection": "on_delivery"},
+            ],
+        },
+    )
+    text = _texto(order_ticket(order))
+    assert "A COBRAR R$ 20,00" in text
+    assert text.index("Levar de troco") < text.index("ITENS (")
+    assert text.index("PEDIDO ORD-LONG-COD") < text.index("ITENS (")
+
+
+def test_explicit_counter_is_not_scheduled_pickup_today(shop):
+    counter = _order("COUNTER", pos={"sales_mode": "counter"}, fulfillment_type="pickup")
+    scheduled = _order(
+        "TODAY", pos={"sales_mode": "order"}, fulfillment_type="pickup", delivery_date=timezone.localdate().isoformat()
+    )
+    assert "BALCÃO IMEDIATO" in _texto(order_ticket(counter))
+    assert "RETIRADA" not in _texto(order_ticket(counter))
+    assert "HOJE" in _texto(order_ticket(scheduled)) and "RETIRADA" in _texto(order_ticket(scheduled))
+
+
+def test_long_reference_and_notes_do_not_cut_or_inject_commands(shop):
+    ref = "ORD-" + "1234567890" * 5
+    order = _order(ref, order_notes="Embalar separado\x1dV\x01fim")
+    paper = order_ticket(order)
+    assert paper.count(b"\x1dV\x01") == 1
+    assert "1234567890" in paper.decode("cp860")
+    assert "fim" in paper.decode("cp860")
+
+
+def test_unknown_gateway_does_not_order_collection(shop):
+    order = _order(
+        "ORD-UNKNOWN",
+        fulfillment_type="delivery",
+        payment={"method": "cash", "status": "unknown", "collection": "on_delivery"},
+    )
+    paper = _texto(order_ticket(order))
+    assert "CONFIRMAR PAGAMENTO ANTES DE COBRAR" in paper
+    assert "COBRAR NA ENTREGA" not in paper
+    assert "Levar de troco" not in paper
+
+
+def test_external_method_alone_never_means_paid(shop):
+    paper = _texto(order_ticket(_order("ORD-EXTERNAL", payment={"method": "external"})))
+    assert "PAGAMENTO PENDENTE" in paper
+    assert "Pago online" not in paper
+
+
+def test_prepaid_cash_is_not_subtracted_from_courier_change(shop):
+    order = _order(
+        "ORD-PARTIAL-CASH",
+        fulfillment_type="delivery",
+        payment={
+            "method": "mixed",
+            "collection": "on_delivery",
+            "change_for_q": 10000,
+            "tenders": [
+                {"method": "cash", "amount_q": 1600, "status": "received"},
+                {"method": "cash", "amount_q": 2000, "status": "pending", "collection": "on_delivery"},
+            ],
+        },
+    )
+    paper = _texto(order_ticket(order))
+    assert "Troco para R$ 100,00" in paper
+    assert "Levar de troco R$ 80,00" in paper

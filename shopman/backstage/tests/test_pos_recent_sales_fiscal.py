@@ -167,6 +167,13 @@ class POSRecentSalesFiscalTests(TestCase):
         self.assertFalse(sales["PDV-RS-W4"]["can_cancel"])
 
     def test_danfe_escpos_returns_printable_bytes(self) -> None:
+        from unittest.mock import patch
+
+        from shopman.shop.tests.danfe_fixtures import xml_for_key
+
+        source = patch("shopman.shop.services.danfe_xml.read_authorized_xml", side_effect=xml_for_key)
+        source.start()
+        self.addCleanup(source.stop)
         self._order("PDV-RS-3", nfce=True)
 
         response = self.client.get("/api/v1/backstage/pos/orders/PDV-RS-3/danfe-escpos/")

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { toast } from "vue-sonner";
+import { fiscalRecoveryUrl } from "~/presentation/fiscalRecovery";
 
 import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
@@ -292,7 +293,12 @@ async function autoPrintDanfe(orderRef: string, tries = 0) {
       return;
     }
     danfeFallbackToast(orderRef, outcome.detail || "impressão indisponível nesta estação");
-  } catch {
+  } catch (error) {
+    const recovery = fiscalRecoveryUrl(httpError(error).data);
+    if (recovery) {
+      danfeFallbackToast(orderRef, httpErrorMessage(error, "Falha ao compor a DANFE."), recovery);
+      return;
+    }
     // 409 enquanto a SEFAZ não autoriza: tentar de novo é o comportamento certo.
     if (tries + 1 < AUTO_PRINT_TRIES) {
       autoPrintTimer = setTimeout(() => autoPrintDanfe(orderRef, tries + 1), AUTO_PRINT_INTERVAL_MS);
@@ -326,7 +332,7 @@ async function printDanfe() {
     danfeFallbackToast(orderRef, outcome.detail || "impressão indisponível nesta estação");
   } catch (error) {
     // 409 = a emissão é assíncrona e a nota ainda não autorizou.
-    danfeFallbackToast(orderRef, httpErrorMessage(error, "Falha ao compor a DANFE."));
+    danfeFallbackToast(orderRef, httpErrorMessage(error, "Falha ao compor a DANFE."), fiscalRecoveryUrl(httpError(error).data));
   } finally {
     printingDanfe.value = false;
   }
@@ -334,7 +340,13 @@ async function printDanfe() {
 
 // Falha nunca termina em "indisponível" seco: quem tem acesso ganha a nota na
 // tela como ação; quem não tem ganha o próximo passo.
-function danfeFallbackToast(orderRef: string, reason: string) {
+function danfeFallbackToast(orderRef: string, reason: string, authorizedUrl = "") {
+  if (authorizedUrl) {
+    toast.error(`A DANFE não saiu na bobina: ${reason}`, {
+      action: { label: "Abrir DANFE autorizada", onClick: () => window.open(authorizedUrl, "_blank", "noopener") },
+    });
+    return;
+  }
   if (pos.value?.danfe_screen_allowed && djangoOrigin.value) {
     toast.error(`A DANFE não saiu na bobina: ${reason}`, {
       action: {

@@ -2083,8 +2083,15 @@ class POSDanfeEscposView(APIView):
             return Response({"detail": "Pedido não encontrado."}, status=404)
         if not doc.emitted:
             return Response({"detail": "NFC-e ainda não autorizada para este pedido."}, status=409)
+        if not doc.source_verified:
+            return Response({"detail": doc.source_problem, "danfe_url": doc.danfe_url if doc.status != "cancelada" else ""}, status=409)
+        try:
+            payload = danfe_nfce(doc)
+        except ValueError:
+            return Response({"detail": "Não foi possível compor o DANFE para esta bobina. Abra a via no Focus.", "danfe_url": doc.danfe_url}, status=409)
         reprint = _stamp_first_print(ref, "danfe_printed_at")
-        payload = danfe_nfce(doc, reprint=reprint)
+        if reprint:
+            payload = danfe_nfce(doc, reprint=True)
         return Response(
             {
                 "ok": True,
