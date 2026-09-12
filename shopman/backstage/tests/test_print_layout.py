@@ -177,3 +177,50 @@ def test_long_content_preserved_inside_rounded_box():
     assert image.getpixel((574, 30)) == 0
     assert content in "\n".join(text for text, _ in layout.texts)
     assert decode_raster(layout.finish()).height == image.height
+
+
+def test_address_separates_destination_and_arrival_instructions():
+    layout = RasterLayout()
+    layout.delivery_address(
+        {
+            "delivery_address": "Avenida das Araucárias, 1234, Jardim das Flores, Curitiba - PR",
+            "delivery_address_structured": {
+                "complement": "Apartamento 702, bloco dos Ipês",
+                "delivery_instructions": "Entrada lateral; ligar ao chegar. Não deixar na portaria.",
+            },
+        }
+    )
+    lines = [text for text, _ in layout.texts]
+    assert "Avenida das Araucárias, 1234" in lines
+    assert "Apartamento 702, bloco dos Ipês" in lines
+    assert "Jardim das Flores, Curitiba - PR" in lines
+    assert lines[-4:] == ["NA CHEGADA", "Entrada lateral;", "ligar ao chegar.", "Não deixar na portaria."]
+
+
+def test_address_without_formatted_text_uses_all_structured_parts():
+    layout = RasterLayout()
+    layout.delivery_address(
+        {
+            "delivery_address_structured": {
+                "route": "Rua Exemplo",
+                "street_number": "42",
+                "complement": "Casa 2",
+                "neighborhood": "Centro",
+                "city": "Curitiba",
+                "state_code": "PR",
+                "postal_code": "80000-000",
+            }
+        }
+    )
+    text = content(layout)
+    for value in ["Rua Exemplo, 42", "Casa 2", "Centro", "Curitiba", "PR", "80000-000"]:
+        assert value in text
+
+
+@pytest.mark.parametrize("address", ["Estrada rural sem número, após a ponte", "Rua Exemplo, 42 - Casa 2"])
+def test_unusual_address_is_preserved_without_guessing_fields(address):
+    layout = RasterLayout()
+    layout.delivery_address({"delivery_address": address, "delivery_address_structured": {"complement": "Casa 2"}})
+    text = content(layout)
+    assert all(part in text for part in address.replace(" - ", ", ").split(", "))
+    assert text.count("Casa 2") == 1

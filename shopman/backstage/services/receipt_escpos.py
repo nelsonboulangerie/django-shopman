@@ -463,13 +463,16 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
             out += _emphasis(name or f"Telefone: {phone}")
     out += _rule()
     if is_delivery:
-        address, instructions = _delivery_lines(data)
-        for part in _wrap(f"ENTREGAR EM: {address or 'confirmar endereço'}", COLUMNS):
-            out += _line(part)
-        if instructions:
-            for part in _wrap(f"Referência: {instructions}", COLUMNS):
+        if layout:
+            layout.delivery_address(data)
+        else:
+            address, instructions = _delivery_lines(data)
+            for part in _wrap(f"ENTREGAR EM: {address or 'confirmar endereço'}", COLUMNS):
                 out += _line(part)
-        out += _rule()
+            if instructions:
+                for part in _wrap(f"Referência: {instructions}", COLUMNS):
+                    out += _line(part)
+            out += _rule()
 
     if layout:
         layout.begin_box()

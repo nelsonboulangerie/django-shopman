@@ -62,10 +62,10 @@ Imprimir a galeria em A4 a 100%, sem ajustar e sem cabeçalho/rodapé. Régua de
 | Cenário | Antes (mm) | Depois (mm) |
 |---|---:|---:|
 | Retirada curta | 127,5 | 84,8 |
-| Longo com endereço/observações | 225,0 | 175,1 |
-| Entrega paga | 142,5 | 101,5 |
-| Entrega com troco | 165,0 | 111,9 |
-| Entrega com pagamento misto | 168,8 | 129,0 |
+| Longo com endereço/observações | 225,0 | 197,9 |
+| Entrega paga | 142,5 | 124,2 |
+| Entrega com troco | 165,0 | 134,6 |
+| Entrega com pagamento misto | 168,8 | 151,8 |
 | Balcão imediato | 114,0 | 81,6 |
 
 São medidas nominais da simulação, incluindo avanço de corte. O DANFE de demonstração cresce porque passa a imprimir dados fiscais que faltavam (endereço do destinatário, pagamentos parciais, desconto/frete, horários e mensagens); não é lícito omiti-los para ganhar espaço.
@@ -173,3 +173,18 @@ da galeria, ocultando parte do segundo impresso. A comparação agora quebra em
 coluna e mostra o depois primeiro em telas estreitas; SVG limita-se ao contêiner.
 Verificado na mesma aba: as sete comparações têm scrollWidth = clientWidth = 557 px,
 e a ficha aparece inteira. A impressão mantém 80 mm e a composição RAW não mudou.
+
+
+## Endereço para leitura imediata
+
+A ficha raster separa rua/número (30 dots, bold), complemento (27 dots),
+bairro/cidade (24 dots) e instruções sob “NA CHEGADA” (26 dots, uma frase por
+linha), com maior entrelinha. A finalidade é encontrar o destino sem ler um
+parágrafo compacto; o exemplo com troco passa de 111,9 para 134,6 mm.
+
+Conserva o endereço cadastrado: só separa a primeira linha por vírgulas quando
+há número reconhecível na segunda parte; formatos incomuns permanecem completos.
+Complemento já presente não se duplica. Sem texto formatado, utiliza os campos
+estruturados existentes, inclusive CEP. Instruções mantêm texto e pontuação.
+O DANFE não mudou nesta revisão. Verificação visual na aba do usuário; testes
+cobrem partes do endereço, dados estruturados, complemento e formato incomum.

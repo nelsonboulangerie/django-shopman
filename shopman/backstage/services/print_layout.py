@@ -66,7 +66,7 @@ class RasterLayout:
             result.append(line.strip())
         return result or [""]
 
-    def text(self, text, *, size=24, bold=False, center=False, right="", inset=0):
+    def text(self, text, *, size=24, bold=False, center=False, right="", inset=0, leading=5):
         text, right = str(text), str(right)
         self.texts.append((text, right))
         face = font(size, bold)
@@ -77,7 +77,7 @@ class RasterLayout:
             self.text(text, size=size, bold=bold, inset=inset)
             return self.text(right, size=size, bold=bold, inset=inset)
         lines = self._lines(text, face, available - right_width - (16 if right else 0))
-        line_height = size + 5
+        line_height = size + leading
         block = Image.new("L", (WIDTH, len(lines) * line_height + 4), 255)
         draw = ImageDraw.Draw(block)
         for index, line in enumerate(lines):
@@ -179,6 +179,53 @@ class RasterLayout:
         self.blocks.append(block)
         self.end_box()
         self.text(name, right=phone, size=27, bold=True)
+        return b""
+
+    def delivery_address(self, data):
+        """Destino por partes, conservando integralmente o endereço cadastrado."""
+        import re
+
+        structured = data.get("delivery_address_structured")
+        structured = structured if isinstance(structured, dict) else {}
+        address = str(data.get("delivery_address") or structured.get("formatted_address") or "").strip()
+        complement = str(structured.get("complement") or "").strip()
+        # Um complemento já presente é destacado, sem aparecer duas vezes.
+        if complement and address.casefold().endswith(complement.casefold()):
+            address = address[: -len(complement)].rstrip(" ,-")
+        elif complement and complement.casefold() in address.casefold():
+            complement = ""
+        street, locality = address, ""
+        parts = [part.strip() for part in address.split(",")]
+        if len(parts) > 2 and re.fullmatch(r"\d+[\w /-]*", parts[1]):
+            street, locality = ", ".join(parts[:2]), ", ".join(parts[2:])
+        if not address:
+            street = ", ".join(
+                str(structured.get(key) or "").strip() for key in ("route", "street_number") if structured.get(key)
+            )
+            locality = " · ".join(
+                str(structured.get(key) or "").strip()
+                for key in ("neighborhood", "city", "state_code", "postal_code")
+                if structured.get(key)
+            )
+        self.text("ENDEREÇO DE ENTREGA", size=20, bold=True)
+        self.space(4)
+        self.text(street or "Confirmar endereço", size=30, bold=True, leading=8)
+        if complement:
+            self.space(2)
+            self.text(complement, size=27, leading=8)
+        if locality:
+            self.space(3)
+            self.text(locality, size=24, leading=8)
+        instructions = str(structured.get("delivery_instructions") or "").strip()
+        if instructions:
+            self.space(10)
+            start = len(self.blocks)
+            self.text("NA CHEGADA", size=20, bold=True, inset=14)
+            for sentence in re.split(r"(?<=[.;])\s+", instructions):
+                self.text(sentence, size=26, inset=14, leading=8)
+            for block in self.blocks[start:]:
+                ImageDraw.Draw(block).line((1, 0, 1, block.height - 1), fill=0, width=3)
+        self.space(8)
         return b""
 
     def cash_metrics(self, change, due):
