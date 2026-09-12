@@ -1,8 +1,9 @@
 # Evidência de QA visual do Admin — contrato v3
 
-Execução local em 12 de setembro de 2026, sobre o SHA base
-`cbda00f02e692fc7d1949a4e11024ace33245362`, na branch
-`codex/concierge-transport-bindings-20260912`.
+Execução local em 12 de setembro de 2026 na branch
+`codex/concierge-transport-bindings-20260912`. O código e o harness validados
+formam o SHA `4a11724125509ad37d7d849aa8bcbb5e55ad535a`; a seed visual foi executada
+durante sua preparação sobre a mesma árvore de trabalho.
 
 ## Escopo e isolamento
 

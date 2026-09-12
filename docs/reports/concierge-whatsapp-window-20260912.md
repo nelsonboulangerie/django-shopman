@@ -1,5 +1,11 @@
 # Janela do portão ManyChat existente — 2026-09-12
 
+> **Registro histórico.** As seções até “Validação final” documentam o
+> experimento v2 e o SHA citado, inclusive nomes de flags e estados que existiam
+> naquela implementação. Elas não descrevem o runtime final. A seção
+> “Atualização para o contrato v3” registra a decisão que a substituiu sem apagar
+> a evidência anterior.
+
 Base: ed9a0d6dc0b34fb1377de950167eb8eb45448ac9, worktree/branch exclusivos codex/concierge-whatsapp-window-20260912. Complemento C01/C03/WP01/WP03/G02 da publicação técnica anterior.
 
 O operador confirmou que provider_timestamp é o campo dinâmico da última interação do usuário no WhatsApp; fuso da conta (UTC-03:00) Brasilia Standard Time — Sao Paulo. Amostra:2026-09-11 11:29:01.391392 →2026-09-11T14:29:01.391392Z. Não é ID de evento nem prova de confirmação comercial.
@@ -17,3 +23,38 @@ Validação: primeiro ensaio SQLite35passed; revisão independente levou a reval
 Rollback: retirar CONCIERGE_WHATSAPP_INTERACTION_TIMEZONE (ou desligar legado). Mantém mensagens/receipts e histórico; não reenviar unknown nem alterar timestamps. Sem migração ou efeitos comerciais a reverter. Publicação e homologação são etapas distintas.
 
 Validação final:95passed/13,48s em PostgreSQL16 privadoUTF8 porta56439, sem skips/warnings, externos fake; Ruff integral/diffcheck aprovados. Novo módulo incluído no runnerPG estrito existente. Evidência: evidence/conversational/whatsapp-window/postgresql.txt. Nenhuma entrega real foi exercitada.
+
+## Atualização para o contrato v3 — 12/09/2026
+
+A prova de janela foi preservada, mas agora pertence ao adapter da connection
+`manychat-whatsapp-primary`. A entrada canônica é
+`POST /api/webhooks/concierge/manychat-whatsapp-primary/events/`. A rota escolhe
+connection, provider, conta e canal; o corpo de cinco campos não controla esse
+escopo.
+
+`provider_timestamp` continua significando somente a última interação do usuário
+no WhatsApp. O adapter o converte em `WindowEvidence` com source, policy,
+`observed_at`, `valid_until` e assurance. Ele não preenche `occurred_at`, não vira
+ID de evento e não participa da autoridade da confirmação comercial.
+
+O ingresso sem ID oficial agora é um caso de primeira classe do contrato:
+`event_identity_assurance=unavailable` e `input_assurance=at_least_once`. Cada
+POST autenticado recebe um recibo local. O turno correspondente fica somente
+leitura por assurance; não existe caminho runtime ou flag de “legado”. Hash de
+contato + timestamp continua descartado porque poderia apagar uma repetição
+legítima indistinguível de retry.
+
+A conversa lógica foi separada do transporte. O endereço ManyChat/WhatsApp vive
+em `ConversationBinding`, e cada saída conserva tentativas append-only em
+`OutboundAttempt`. Outros providers/canais, inclusive TikTok, usam outro adapter
+e outra connection sob o mesmo contrato; nenhuma regra de janela do WhatsApp é
+extrapolada automaticamente.
+
+A validação de 95 testes acima permanece evidência do experimento isolado da
+janela. A integração v3 foi depois validada no SHA
+`4a11724125509ad37d7d849aa8bcbb5e55ad535a` pela seleção runtime de 103 testes em
+PostgreSQL/Redis e pelo Storefront integral de 1710 testes em SQLite. Isso não
+certifica homologação no flow real, entrega no aparelho, piloto ou rollout. A
+migração v3 é forward-only; rollback operacional contém a connection/switches,
+preserva bindings, mensagens, attempts e receipts e corrige adiante, sem
+downgrade de schema ou reenvio de estado `unknown`.
