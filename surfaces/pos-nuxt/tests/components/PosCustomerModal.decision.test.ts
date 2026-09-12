@@ -367,3 +367,30 @@ describe("buscar existente e cadastrar novo são atos separados", () => {
     expect((document.querySelector('input[inputmode="tel"]') as HTMLInputElement).value).toBe("43999990022");
   });
 });
+
+
+describe("decisão do documento", () => {
+  it("prioriza só documento e pede confirmação para associar", async () => {
+    const wrapper = await mount({ customerDecision: {
+      ...CONFLICT, kind: "receipt_identity", field: "tax_id", typed: "52998224725", fromReceipt: true,
+    } });
+    expect(screenText()).toContain("52998224725");
+    expect(screenText()).toContain("Bruno Souza");
+    expect(buttonByText("unificar")).toBeUndefined();
+    buttonByText("Associar Bruno Souza à venda")!.click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
+    expect(screenText()).toContain("A venda é de Bruno Souza?");
+    buttonByText("Voltar")!.click();
+    await wrapper.vm.$nextTick();
+    buttonByText("Usar apenas nesta nota")!.click();
+    expect(wrapper.emitted("decisionCancel")).toHaveLength(1);
+  });
+  it("corrigir WhatsApp devolve foco ao campo sem apagar o rascunho", async () => {
+    const wrapper = await mount({ customerDecision: { ...CONFLICT, kind: "existing_customer", current: null } });
+    buttonByText("Corrigir WhatsApp")!.click();
+    await wrapper.vm.$nextTick();
+    expect(document.activeElement).toBe(document.querySelector('input[inputmode="tel"]'));
+    expect(wrapper.emitted("update:customerPhone")).toBeUndefined();
+  });
+});

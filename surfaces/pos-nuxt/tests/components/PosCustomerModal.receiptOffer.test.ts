@@ -66,9 +66,9 @@ describe("PosCustomerModal — o e-mail do comprovante também pergunta", () => 
     const panel = popover();
     expect(panel).not.toBeNull();
     expect(panel!.textContent).toContain("Salvar como cliente?");
-    // A consequência dita é a que acontece: o servidor procura antes de criar.
+    // O cadastro exige escolha explícita, mesmo sem cliente associado.
     expect(document.body.textContent).toContain(
-      "Marcado, fica salvo como cliente — ou vai para o cadastro que já o tem.",
+      "Marque somente se quiser cadastrar o cliente.",
     );
     expect(wrapper.html()).toBeTruthy();
   });

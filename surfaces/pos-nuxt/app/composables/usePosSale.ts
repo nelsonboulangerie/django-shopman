@@ -12,6 +12,7 @@ import type {
   POSCustomerSearchResponse,
   POSCustomerSearchResult,
   POSProductProjection,
+  POSReceiptIdentityChoice,
   POSProjection,
   POSSaleReviewProjection,
   POSScheduleResponse,
@@ -360,6 +361,7 @@ export function usePosSale(deps: PosSaleDeps) {
     clientRequestId: "",
   });
 
+  const receiptIdentityChoices = ref<POSReceiptIdentityChoice[]>([]);
   const orderSetupComplete = ref(false);
   const orderSetupIssue = computed<"customer" | "fulfillment" | "address" | "schedule" | "">(() => {
     if (cart.salesMode !== "order") return "";
@@ -996,6 +998,7 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   function resetCart() {
+    receiptIdentityChoices.value = [];
     cart.tabRef = "";
     cart.tabDisplay = "";
     cart.tabSessionKey = "";
@@ -1114,7 +1117,7 @@ export function usePosSale(deps: PosSaleDeps) {
       cart.managerUsername = "";
       cart.managerPin = "";
     }
-    cart.clientRequestId = "";
+    if (!sameTab || !receiptIdentityChoices.value.length) cart.clientRequestId = "";
     if (!cart.customerRef) customerLookup.value = null;
     else if (customerLookup.value?.ref !== cart.customerRef) {
       customerLookup.value = null;
@@ -1264,10 +1267,10 @@ export function usePosSale(deps: PosSaleDeps) {
         ? cart.paymentTenders.filter((t) => t.method === "cash").reduce((sum, t) => sum + t.amount_q, 0)
         : 0,
       receiptChannels: cart.receiptChannels,
-      receiptEmail: cart.receiptEmail || cart.customerEmail,
+      receiptEmail: cart.receiptChannels.includes("email") ? cart.receiptEmail || cart.customerEmail : "",
       // O padrão da oferta vale enquanto o operador não tocar — e a régua é o
       // cadastro que o lookup trouxe, a mesma que a tela usou para perguntar.
-      saveReceiptContact: receiptContactArmed(receiptOffers().email, cart.saveReceiptContact, true),
+      saveReceiptContact: cart.receiptChannels.includes("email") && receiptContactArmed(receiptOffers().email, cart.saveReceiptContact, true),
       // ⚠️ `receiptContactArmed` e não `receiptContactChecked`: no CPF divergente
       // a caixa marcada sem a reconfirmação não grava NADA. É aqui que a
       // fricção deixa de ser conversa de tela e vira consequência.
@@ -1279,6 +1282,7 @@ export function usePosSale(deps: PosSaleDeps) {
       // este caso é sobrescrita ou lacuna. A tela só passa adiante o que já
       // sabe — que o operador confirmou.
       saveReceiptTaxIdConfirmed: cart.confirmReceiptTaxId,
+      receiptIdentityChoices: receiptIdentityChoices.value,
       manualDiscount,
       managerApproval,
       clientRequestId: cart.clientRequestId || newClientRequestId(),
@@ -1392,6 +1396,62 @@ export function usePosSale(deps: PosSaleDeps) {
   // de outro cadastro) ou correção de contato (o do cliente associado vai
   // mudar). Enquanto ela existe, o modal fica aberto esperando a resposta.
   const customerDecision = ref<CustomerDecision | null>(null);
+  const pendingReceiptDecision = ref<{
+    field: "tax_id" | "email";
+    value: string;
+    customer_ref: string;
+    owner_ref: string;
+    client_request_id: string;
+    origin: "review" | "close";
+  } | null>(null);
+
+  function receiptIdentityValue(field: "tax_id" | "email") {
+    return field === "tax_id"
+      ? (cart.wantsCpfOnInvoice ? cart.invoiceTaxId.replace(/\D/g, "") : "")
+      : cart.receiptChannels.includes("email") ? (cart.receiptEmail || cart.customerEmail).trim().toLowerCase() : "";
+  }
+
+  watch(() => [receiptIdentityValue("tax_id"), receiptIdentityValue("email"), cart.customerRef, cart.tabSessionKey, cart.clientRequestId], () => {
+    receiptIdentityChoices.value = [];
+    pendingReceiptDecision.value = null;
+    if (customerDecision.value?.kind === "receipt_identity") customerDecision.value = null;
+  }, { flush: "sync" });
+
+  function receiptDecisionMatches() {
+    const pending = pendingReceiptDecision.value;
+    return Boolean(pending && receiptIdentityValue(pending.field) === pending.value
+      && cart.customerRef === pending.customer_ref && cart.clientRequestId === pending.client_request_id);
+  }
+
+  function handleReceiptIdentityFailure(error: unknown, origin: "review" | "close"): boolean {
+    const failure = (httpError(error).data as { error?: {
+      code?: string; field?: string; value?: string; customer_ref?: string; client_request_id?: string;
+      candidates?: ServerConflictCandidate[];
+    } } | null)?.error;
+    if (failure?.code !== "receipt_identity_conflict") return false;
+    const field = failure.field === "fiscal_tax_id" ? "tax_id" : "email";
+    const owner = failure.candidates?.find((candidate) => !candidate.is_current);
+    if (!owner || !failure.value || receiptIdentityValue(field) !== failure.value
+      || cart.customerRef !== (failure.customer_ref || "") || cart.clientRequestId !== failure.client_request_id) {
+      review.value = null;
+      serverError.value = "Os dados do documento mudaram. Revise a venda novamente.";
+      return true;
+    }
+    pendingReceiptDecision.value = {
+      field, value: failure.value, customer_ref: cart.customerRef, owner_ref: owner.ref,
+      client_request_id: cart.clientRequestId, origin,
+    };
+    customerDecision.value = {
+      kind: "receipt_identity", field, typed: failure.value,
+      current: cart.customerRef ? { ref: cart.customerRef, name: cart.customerName, value: "" } : null,
+      other: { ref: owner.ref, name: owner.name, value: failure.value },
+      candidates: failure.candidates,
+      fromReceipt: true,
+    };
+    customerFocusNonce.value += 1;
+    return true;
+  }
+
   /**
    * A recusa que abriu o painel interrompeu um FECHAMENTO (e não uma edição no
    * modal do cliente)?
@@ -1553,6 +1613,31 @@ export function usePosSale(deps: PosSaleDeps) {
   async function confirmCustomerDecision() {
     const decision = customerDecision.value;
     if (!decision) return;
+    if (decision.kind === "receipt_identity") {
+      if (!receiptDecisionMatches() || !decision.other) {
+        customerDecision.value = null;
+        return;
+      }
+      const invoiceTaxId = cart.invoiceTaxId;
+      const wantsCpfOnInvoice = cart.wantsCpfOnInvoice;
+      const receiptEmail = cart.receiptEmail;
+      const receiptChannels = [...cart.receiptChannels];
+      customerDecision.value = null;
+      pendingReceiptDecision.value = null;
+      pendingSaleAfterDecision.value = false;
+      await attendCustomer(decision.other.ref, decision.other.name);
+      // Associar cliente não muda o destino/documento que foi pedido para a nota.
+      cart.invoiceTaxId = invoiceTaxId;
+      cart.wantsCpfOnInvoice = wantsCpfOnInvoice;
+      cart.receiptEmail = receiptEmail;
+      cart.receiptChannels = receiptChannels;
+      cart.saveReceiptContact = false;
+      cart.saveReceiptTaxId = false;
+      cart.confirmReceiptTaxId = false;
+      review.value = null;
+      if (checkoutMode.value) await reviewCheckout();
+      return;
+    }
     // Trocar de cliente muda faixa de preço e restrições: a venda NÃO retoma
     // sozinha, o operador revisa o que passou a valer.
     pendingSaleAfterDecision.value = false;
@@ -1690,6 +1775,27 @@ export function usePosSale(deps: PosSaleDeps) {
    *  identidade, e descartá-lo significa voltar ao que o cadastro tem. */
   async function cancelCustomerDecision() {
     const decision = customerDecision.value;
+    if (decision?.kind === "receipt_identity") {
+      const pending = pendingReceiptDecision.value;
+      if (!pending || !receiptDecisionMatches()) {
+        customerDecision.value = null;
+        return;
+      }
+      receiptIdentityChoices.value = [
+        ...receiptIdentityChoices.value.filter((choice) => choice.field !== pending.field),
+        { field: pending.field, value: pending.value, customer_ref: pending.customer_ref,
+          owner_ref: pending.owner_ref, client_request_id: pending.client_request_id, choice: "receipt_only" },
+      ];
+      if (pending.field === "tax_id") {
+        cart.saveReceiptTaxId = false;
+        cart.confirmReceiptTaxId = false;
+      } else cart.saveReceiptContact = false;
+      customerDecision.value = null;
+      pendingReceiptDecision.value = null;
+      if (pending.origin === "close") await submitSale();
+      else await reviewCheckout();
+      return;
+    }
     customerDecision.value = null;
     const pendia = pendingSaleAfterDecision.value;
     pendingSaleAfterDecision.value = false;
@@ -1920,12 +2026,17 @@ export function usePosSale(deps: PosSaleDeps) {
     if (!cart.items.length) return null;
     const state = currentIntentState();
     cart.clientRequestId = state.clientRequestId;
-    const response = await action.call<POSSaleReviewResponse>(
-      actionHref(actions.value, "review_sale", "/api/v1/backstage/pos/sale/review/"),
-      { body: buildPosSaleIntent(state, checkoutContract.value?.intent_version) },
-    );
-    review.value = response.review;
-    return response.review;
+    try {
+      const response = await action.call<POSSaleReviewResponse>(
+        actionHref(actions.value, "review_sale", "/api/v1/backstage/pos/sale/review/"),
+        { body: buildPosSaleIntent(state, checkoutContract.value?.intent_version) },
+      );
+      review.value = response.review;
+      return response.review;
+    } catch (error) {
+      if (handleReceiptIdentityFailure(error, "review")) return null;
+      throw error;
+    }
   }
 
   async function prepareCheckout() {
@@ -1945,6 +2056,7 @@ export function usePosSale(deps: PosSaleDeps) {
       }
       await reviewSale();
     } catch (error) {
+      if (handleReceiptIdentityFailure(error, "review")) return;
       // O checkout não abriu de verdade: volta à venda com o motivo no toast.
       checkoutMode.value = false;
       serverError.value = httpErrorMessage(error, "Falha ao revisar checkout.");
@@ -2075,6 +2187,7 @@ export function usePosSale(deps: PosSaleDeps) {
         await refresh();
       }
     } catch (error) {
+      if (handleReceiptIdentityFailure(error, "close")) return;
       const failure = (httpError(error).data as {
         error?: {
           code?: string; message?: string; recovery?: string; focus?: string;

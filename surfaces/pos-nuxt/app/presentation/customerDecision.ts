@@ -42,6 +42,7 @@ export interface CustomerDecisionParty {
 // são a MESMA pessoa. Nem atender o outro, nem manter quem está — unificar.
 
 export type CustomerDecisionKind =
+  | "receipt_identity"
   | "existing_customer"
   | "contact_conflict"
   | "contact_change"
@@ -250,6 +251,25 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
   const keepLabel = current
     ? `Manter ${firstName(currentName) || currentName}`
     : `Descartar este ${label}`;
+
+  if (decision.kind === "receipt_identity") {
+    const ownerName = other?.name?.trim() || "o cliente encontrado";
+    const isTaxId = decision.field === "tax_id";
+    const inactive = decision.candidates?.some((candidate) => candidate.ref === other?.ref && candidate.owner_inactive);
+    return {
+      title: isTaxId ? "CPF da nota encontrado em um cadastro" : "E-mail do comprovante encontrado em um cadastro",
+      body: `${decision.typed} está no cadastro de ${ownerName}. `
+        + "Usar esse dado no documento não altera nem associa o cadastro à venda.",
+      confirmLabel: inactive ? "" : `Associar ${ownerName} à venda`,
+      confirmIcon: "lucide:user-round-check",
+      cancelLabel: isTaxId ? "Usar apenas nesta nota" : "Usar apenas neste comprovante",
+      cancelIcon: "lucide:receipt-text",
+      merge: null,
+      release: null,
+      requiresConfirmation: true,
+      confirmPrompt: `A venda é de ${ownerName}? Associar muda o cliente atendido e pode mudar preços e benefícios. O dado pedido no documento será mantido.`,
+    };
+  }
 
   if (decision.kind === "existing_customer") {
     const ownerName = other?.name?.trim() || "o cliente encontrado";

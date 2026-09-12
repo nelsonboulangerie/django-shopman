@@ -215,6 +215,7 @@ export function buildPosSaleIntent(
     // gêmea da fricção que a tela cobra antes de deixar a ordem sair daqui.
     if (state.saveReceiptTaxIdConfirmed) payload.save_receipt_tax_id_confirmed = true;
   }
+  if (state.receiptIdentityChoices?.length) payload.receipt_identity_choices = state.receiptIdentityChoices;
   if (state.manualDiscount) payload.manual_discount = state.manualDiscount;
   if (state.managerApproval) payload.manager_approval = state.managerApproval;
 

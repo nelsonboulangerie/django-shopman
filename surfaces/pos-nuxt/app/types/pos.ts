@@ -599,6 +599,15 @@ export interface POSPaymentResultProjection {
   error?: string;
 }
 
+export interface POSReceiptIdentityChoice {
+  field: "tax_id" | "email";
+  value: string;
+  customer_ref: string;
+  owner_ref: string;
+  client_request_id: string;
+  choice: "receipt_only";
+}
+
 export interface POSIntentCartState {
   salesMode?: "counter" | "order";
   tabRef: string;
@@ -644,6 +653,7 @@ export interface POSIntentCartState {
    *  ordem porque o servidor a exige por conta própria: trava que mora só na
    *  tela não é trava. */
   saveReceiptTaxIdConfirmed: boolean;
+  receiptIdentityChoices?: POSReceiptIdentityChoice[];
   manualDiscount: Record<string, unknown> | null;
   managerApproval: Record<string, unknown> | null;
   clientRequestId: string;

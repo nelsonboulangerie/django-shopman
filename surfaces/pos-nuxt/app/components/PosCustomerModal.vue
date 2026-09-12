@@ -231,6 +231,16 @@ function askConfirm() {
   confirmingAttend.value = true;
 }
 
+async function cancelDecision() {
+  const decision = props.customerDecision;
+  emit("decisionCancel");
+  if (decision?.kind !== "existing_customer") return;
+  customerPanel.value = "form";
+  await nextTick();
+  const input = decision.field === "phone" ? phoneInputRef : decision.field === "email" ? emailInputRef : taxIdInputRef;
+  input.value?.inputRef?.focus();
+}
+
 function onSelect(result: POSCustomerSearchResult) {
   customerPanel.value = "form";
   emit("selectResult", result);
@@ -264,6 +274,9 @@ function onCreateNameOnly(name: string) {
 // primeiro focável — "Remover cliente", o pior lugar para um Enter distraído.
 const searchRef = ref<{ focus: () => void; reset: () => void } | null>(null);
 const nameInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
+const phoneInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
+const emailInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
+const taxIdInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
 function onOpenAutoFocus(event: Event) {
   event.preventDefault();
   void nextTick(() => {
@@ -559,13 +572,15 @@ const newCustomerNote = computed(() => {
               <UiButton
                 v-if="decisionCopy.confirmLabel"
                 type="button"
+                :variant="customerDecision.kind === 'receipt_identity' ? 'outline' : 'default'"
                 class="h-11 justify-center gap-2"
+                :class="customerDecision.kind === 'receipt_identity' ? 'order-2' : ''"
                 @click="askConfirm()"
               >
                 <Icon :name="decisionCopy.confirmIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.confirmLabel }}</span>
               </UiButton>
-              <UiButton type="button" variant="outline" class="h-11 justify-center gap-2" @click="$emit('decisionCancel')">
+              <UiButton type="button" :variant="customerDecision.kind === 'receipt_identity' ? 'default' : 'outline'" class="h-11 justify-center gap-2" :class="customerDecision.kind === 'receipt_identity' ? 'order-1' : ''" @click="cancelDecision">
                 <Icon :name="decisionCopy.cancelIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.cancelLabel }}</span>
               </UiButton>
@@ -627,15 +642,15 @@ const newCustomerNote = computed(() => {
               </label>
               <label class="grid gap-1.5 text-sm">
                 <span class="font-medium text-muted-foreground">WhatsApp</span>
-                <UiInput :model-value="customerPhone" inputmode="tel" placeholder="(43) 99999-0000" @update:model-value="$emit('update:customerPhone', String($event || ''))" />
+                <UiInput ref="phoneInputRef" :model-value="customerPhone" inputmode="tel" placeholder="(43) 99999-0000" @update:model-value="$emit('update:customerPhone', String($event || ''))" />
               </label>
               <label class="grid gap-1.5 text-sm">
                 <span class="font-medium text-muted-foreground">CPF/CNPJ</span>
-                <UiInput :model-value="customerTaxId" inputmode="numeric" placeholder="Documento do cadastro" @update:model-value="$emit('update:customerTaxId', String($event || ''))" />
+                <UiInput ref="taxIdInputRef" :model-value="customerTaxId" inputmode="numeric" placeholder="Documento do cadastro" @update:model-value="$emit('update:customerTaxId', String($event || ''))" />
               </label>
               <label class="grid gap-1.5 text-sm">
                 <span class="font-medium text-muted-foreground">E-mail</span>
-                <UiInput :model-value="customerEmail" type="email" placeholder="cliente@email.com" @update:model-value="$emit('update:customerEmail', String($event || ''))" />
+                <UiInput ref="emailInputRef" :model-value="customerEmail" type="email" placeholder="cliente@email.com" @update:model-value="$emit('update:customerEmail', String($event || ''))" />
               </label>
             </div>
           </div>
