@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { resolveNelsonPublicShop } from '~/utils/nelsonFallback'
+
 // Termos públicos da loja. A redação preserva expressamente os direitos do CDC;
 // regra operacional nunca pode reduzir direito legal por ser alimento perecível.
 definePageMeta({
@@ -7,7 +9,7 @@ definePageMeta({
 })
 
 const session = useShopSession()
-const shop = computed(() => session.shop.value)
+const shop = computed(() => resolveNelsonPublicShop(session.shop.value))
 const addressLinesList = computed(() => addressLines(shop.value?.full_address))
 const openingHours = computed(() => session.openingHours.value)
 const policyVersion = '2026-09-11'

@@ -1,6 +1,6 @@
 # ADR-029 — Contrato público, privacidade e ciclo de vida dos dados
 
-**Status:** aceito tecnicamente; publicação condicionada aos gates humanos abaixo
+**Status:** aceito; publicação ainda condicionada aos gates documentais e técnicos abaixo
 **Data:** 2026-09-11
 
 ## Contexto
@@ -46,15 +46,22 @@ uso restrito dos dados do Google.
 
 ## Gates humanos antes de publicar esta revisão
 
-- validar razão social, CNPJ, endereço e canal de privacidade do estabelecimento;
+Em 2026-09-12, a empresa confirmou a controladora **N. H. K. Panificadora
+LTDA**, CNPJ **02.119.381/0001-58**, e o canal
+`nelson@boulangerie.com.br`. Pablo Valentini foi designado responsável
+operacional por privacidade e incidentes; Laís Kohatsu Kataoka, sócia-
+administradora, foi designada suplente e representante da administração.
+
+Também foi aprovada a regra conservadora para idade desconhecida: marketing
+direto exige declaração de maioridade; menores podem comprar quando assistidos
+por responsável, mas não entram em campanhas diretas sem um fluxo verificável
+de participação/autorização do responsável. Isso fecha as decisões de L3 e L4.
+L6 tem responsáveis nomeados, mas somente fecha após o exercício de incidente.
+
 - fechar inventário de operadores/suboperadores, países e mecanismos de
   transferência internacional, incluindo os contratos vigentes;
-- confirmar o enquadramento como agente de tratamento de pequeno porte e o
-  responsável interno por privacidade/incidentes;
 - decidir e implementar o recebimento eletrônico de cancelamento no próprio
   acompanhamento quando o cancelamento automático já não estiver disponível;
-- decidir o tratamento de idade desconhecida e a participação do responsável
-  para menores antes de qualquer campanha deliberadamente infantil;
 - validar com assessoria jurídica a redação final e uma tabela de retenção por
   categoria; implementar o descarte/anonimização que ainda faltar para provas,
   “Avise-me” e conversas;

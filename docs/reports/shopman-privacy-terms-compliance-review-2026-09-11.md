@@ -185,12 +185,25 @@ anônimos usam apenas telefone. O dono deve decidir se a loja:
 Até essa decisão, não criar campanha deliberadamente infantil nem segmentar
 menores; o bloqueio técnico atual deve permanecer.
 
+**Decisão de 2026-09-12:** marketing direto fica restrito a pessoas que declarem
+ter 18 anos ou mais. A compra por menor assistido por responsável permanece
+possível, mas não cria elegibilidade promocional. Um fluxo futuro de marketing
+para menores exigirá participação/autorização verificável do responsável e nova
+decisão. A execução técnica desta regra permanece necessária antes do release.
+
 ### Gate L4 — identidade e canal de privacidade
 
 Confirmar no banco vivo, sem copiar PII para evidência: razão social, CNPJ,
 endereço, telefone, e-mail que realmente recebe pedidos de titular e pessoa
 responsável. A dispensa de encarregado para agente de pequeno porte não elimina
 o dever de manter canal de comunicação e medidas de segurança.[^5]
+
+**Confirmado em 2026-09-12:** controladora **N. H. K. Panificadora LTDA**, CNPJ
+**02.119.381/0001-58**, nome fantasia **Nelson Boulangerie**, endereço **Av.
+Madre Leônia Milito, 446 - Bela Suíça, Londrina - PR, 86050-270**, telefone
+**(43) 3323-1997** e canal **nelson@boulangerie.com.br**. A projeção viva ainda
+tem `legal_name` vazio; o fallback público passa a manter a identificação
+completa, sem autorizar escrita corretiva no banco de produção.
 
 ### Gate L5 — versão reproduzível
 
@@ -206,6 +219,11 @@ Nomear responsável e suplente, cadastrar contatos de fornecedores, testar o
 runbook em exercício de mesa e registrar a decisão sobre notificação. A ANPD
 fixou três dias úteis para comunicação de incidente com risco ou dano relevante e
 cinco anos de retenção dos registros do incidente.[^4]
+
+**Responsáveis confirmados em 2026-09-12:** Pablo Valentini responde pela
+operação; Laís Kohatsu Kataoka é suplente e representante da administração.
+A nomeação não usa o título de encarregado/DPO e não elimina o exercício de
+mesa pendente.
 
 ### Gate L7 — tabela de retenção e descarte (bloqueante para promessa integral)
 

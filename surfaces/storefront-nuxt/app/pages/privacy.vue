@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { resolveNelsonPublicShop } from '~/utils/nelsonFallback'
+
 // Política pública única para a loja e para as integrações internas Shopman.
 // Toda afirmação abaixo precisa continuar verificável no código e na operação.
 // Mudança de fornecedor, finalidade, dado ou prazo exige atualizar este texto
@@ -9,7 +11,7 @@ definePageMeta({
 })
 
 const session = useShopSession()
-const shop = computed(() => session.shop.value)
+const shop = computed(() => resolveNelsonPublicShop(session.shop.value))
 const addressLinesList = computed(() => addressLines(shop.value?.full_address))
 const policyVersion = '2026-09-11'
 const updatedAt = '11 de setembro de 2026'

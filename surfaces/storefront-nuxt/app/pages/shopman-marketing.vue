@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { resolveNelsonPublicShop } from '~/utils/nelsonFallback'
+
 const session = useShopSession()
-const shop = computed(() => session.shop.value)
+const shop = computed(() => resolveNelsonPublicShop(session.shop.value))
 
 useSeoMeta({
   title: 'Shopman Marketing',

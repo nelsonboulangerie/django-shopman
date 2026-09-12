@@ -1,6 +1,10 @@
 # Marketing — incidente de consentimento ou privacidade
 
-**Owner:** DPO/Security. **Severidade:** crítica imediata.
+**Responsável operacional:** Pablo Valentini. **Suplente e representante da
+administração:** Laís Kohatsu Kataoka. **Canal:**
+`nelson@boulangerie.com.br`. **Severidade:** crítica imediata.
+
+Essas funções não usam o título de encarregado/DPO sem nomeação formal.
 **Invariante:** envio após opt-out/expiração = 0.
 
 ## Quando abrir
