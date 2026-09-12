@@ -2,7 +2,7 @@
 
 import pytest
 from django.core.exceptions import FieldDoesNotExist
-from django.db import IntegrityError, connections, router, transaction
+from django.db import IntegrityError, connection, connections, router, transaction
 from django.db.migrations.executor import MigrationExecutor
 
 from shopman.shop.models.concierge import (
@@ -143,6 +143,63 @@ def test_0051_moves_transport_without_losing_logical_conversation(tmp_path, djan
             isolated.close()
         connections.databases.pop(alias, None)
         database_access.__exit__(None, None, None)
+
+
+def test_0051_flushes_postgresql_deferred_fk_triggers():
+    """The backfill must settle FK triggers before building new indexes."""
+    if connection.vendor != "postgresql":
+        pytest.skip("PostgreSQL-only migration regression")
+
+    before = [("shop", "0050_concierge_admin_labels")]
+    after = [("shop", "0051_concierge_transport_bindings")]
+    executor = MigrationExecutor(connection)
+    latest = executor.loader.graph.leaf_nodes()
+    executor.migrate(before)
+
+    try:
+        old_apps = MigrationExecutor(connection).loader.project_state(before).apps
+        OldConversation = old_apps.get_model("shop", "Conversation")
+        OldMessage = old_apps.get_model("shop", "ConversationMessage")
+        conversation = OldConversation.objects.create(
+            subscriber_id="subject-postgresql-regression",
+            provider="manychat",
+            account="account-1",
+            transport_channel="whatsapp",
+            customer_ref="customer-1",
+            handoff_sync_state="accepted",
+        )
+        inbound = OldMessage.objects.create(
+            conversation=conversation,
+            role="user",
+            kind="inbound",
+            text="Quero pão",
+            external_id="event-postgresql-regression",
+        )
+        reply = OldMessage.objects.create(
+            conversation=conversation,
+            role="assistant",
+            kind="reply",
+            text="Claro.",
+            transport_state="accepted",
+            delivered=True,
+        )
+
+        MigrationExecutor(connection).migrate(after)
+        new_apps = MigrationExecutor(connection).loader.project_state(after).apps
+        Binding = new_apps.get_model("shop", "ConversationBinding")
+        Message = new_apps.get_model("shop", "ConversationMessage")
+        Attempt = new_apps.get_model("shop", "OutboundAttempt")
+        binding = Binding.objects.get(conversation_id=conversation.pk)
+
+        assert Message.objects.get(pk=inbound.pk).binding_id == binding.pk
+        assert Message.objects.get(pk=reply.pk).binding_id == binding.pk
+        assert Attempt.objects.get(message_id=reply.pk).state == "delivered"
+        with connection.cursor() as cursor:
+            constraints = connection.introspection.get_constraints(cursor, Message._meta.db_table)
+        assert "shop_cmsg_binding_event_unique" in constraints
+        assert "shop_cmsg_transport_binding_required" in constraints
+    finally:
+        MigrationExecutor(connection).migrate(latest)
 
 
 def test_transport_constraints_are_scoped_to_binding():
