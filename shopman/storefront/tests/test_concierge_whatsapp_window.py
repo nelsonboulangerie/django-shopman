@@ -141,9 +141,9 @@ def test_live_field_opens_intelligent_read_reply_without_identity_or_purchase(
 
     def read_only_agent(*, conversation, **_kwargs):
         ctx = tools.ToolContext(conversation, conversation.channel_ref)
-        menu = tools.browse_menu(ctx, query="Pão Francês", available_only=True)
+        menu = tools.search_storefront(ctx, query="Pão Francês")
         blocked["mutation"] = tools.set_item(ctx, "PAO-FRANCES", 2)
-        return agent.AgentOutcome(reply_text=tools.render_result("browse_menu", menu))
+        return agent.AgentOutcome(reply_text=tools.render_result("search_storefront", menu))
 
     monkeypatch.setattr(agent, "run_agent", read_only_agent)
     assert post(client, "2026-09-12 11:29:01.391392").json() == {

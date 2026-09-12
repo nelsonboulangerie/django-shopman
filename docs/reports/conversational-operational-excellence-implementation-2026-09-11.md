@@ -484,3 +484,68 @@ SHA. Homologação do roteamento real do modelo e aceitação ManyChat exigem o 
 controlado da coorte `4605528796186498`. Piloto comercial e rollout continuam
 fechados: `read_only=true`, ID de evento/receipts/identidade/transferência/retorno
 humano desativados e gates G02–G07 pendentes conforme a matriz principal.
+
+## Correção adversarial: busca pública única — 12/09/2026
+
+Base revalidada: merge `cad9066b4aa3767d06f0c56597184055a8834b8a`, em
+worktree e branch `codex/concierge-unified-public-search-20260912` exclusivos. O
+smoke controlado do deploy anterior reproduziu uma divergência que a regressão
+local não detectava. Para “vou querer um pain perdu, vcs entregam?”, o modelo
+chamou apenas `store_info(delivery)`; o ManyChat aceitou a resposta sobre entrega,
+mas o produto foi omitido. O teste anterior roteirizava duas chamadas e, por isso,
+provava a composição do renderer, não a preservação real da pergunta pelo agente.
+
+A decisão definitiva pré-go-live substitui `browse_menu` e `store_info` por uma
+única ferramenta pública, `search_storefront`. Não há alias ou caminho legado. O
+servidor injeta no contexto o texto exato de todos os ingressos cobertos pelo claim
+do turno; `query` do modelo pode acrescentar contexto, mas não substituir ou
+reduzir a pergunta original. A ferramenta pesquisa, no mesmo passo, o catálogo
+vivo canônico e a projeção compartilhada de informação operacional/FAQ. O
+`channel_ref` confiável continua vindo do binding causal, nunca do modelo.
+
+Se o modelo encerrar sem consultar, o servidor executa a mesma busca uma vez. Ele
+só assume uma resposta quando existe fato público encontrado. Saudação, assunto
+externo e busca sem correspondência não despejam cardápio nem fabricam resposta.
+Falha de catálogo preserva respostas públicas; falha de informação pública
+preserva produtos; falha simultânea fecha com erro explícito. Nenhuma dessas
+leituras cria Session, pedido, reserva, consentimento ou efeito comercial.
+
+| Achado | Classificação atualizada | Correção e evidência |
+|---|---|---|
+| pergunta composta dependia de o modelo lembrar duas ferramentas | defeito comprovado no smoke real | uma busca cobre a fala original inteira; regressão reproduz o modelo pedindo somente “entrega” e exige Pain Perdu, preço e entrega |
+| regressão anterior roteirizava o comportamento desejado | defeito de prova | novo teste não injeta as duas decisões; outro teste faz o modelo responder sem ferramenta e exige reconciliação canônica |
+| consulta desconhecida poderia virar lista genérica | risco comprovado por construção | `no_match` vazio e fallback seguro; visão geral só é aberta por termos explícitos de menu/disponibilidade |
+| indisponibilidade parcial de uma projeção apagaria a outra | defeito comprovado por injeção de falha | resultado parcial mantém a fonte saudável e registra `issues`; falha dupla fecha sem fato inventado |
+| modalidade poderia ignorar a política do canal | risco multicanal | regressão pickup-only exige resposta de retirada e proíbe afirmar entrega |
+| manter nomes antigos criaria contrato pré-go-live duplicado | decisão humana já autorizada | nomes antigos removidos de schema, registry, prompt e testes; somente `search_storefront` é pública |
+| acesso a “todo o storefront” poderia ser interpretado como cópia/índice paralelo | hipótese rejeitada | a busca lê as projeções canônicas em tempo real; FAQ editorial continua na única tabela e no mesmo payload da Home |
+
+| WP | Efeito desta correção |
+|---|---|
+| WP00 | incidente live, transcript e base registrados; defeito separado da hipótese sobre planejamento do modelo |
+| WP01–WP05 | contratos de ingresso, identidade, carrinho, estoque e confirmação preservados; autoridade limitada continua sem mutação |
+| WP06 | leitura pública consolidada em uma ferramenta sobre catálogo e FAQ/projeção operacional canônicos |
+| WP07 | fallback sem fato continua neutro e oferece equipe; nenhuma nova fila ou inbox |
+| WP08 | binding fornece canal/connection; ferramenta permanece agnóstica a ManyChat, WhatsApp, Instagram, Facebook ou TikTok |
+| WP09 | regressões do incidente, skip de tool, no-match, falha parcial e política pickup-only adicionadas |
+| WP10 | sem alteração de schema; rollback é somente de aplicação e preserva dados/receipts |
+
+Antes observado em produção: resposta aceita pelo ManyChat dizia apenas “Sim.
+Fazemos entrega...” e ignorava Pain Perdu. Depois comprovado localmente: uma única
+chamada com `query="entrega"` devolve “Pain Perdu — R$ 18,00”, disponibilidade e
+a resposta canônica de entrega; com nenhuma chamada do modelo, a reconciliação do
+servidor produz o mesmo resultado. A prova online dessa correção permanece gate de
+homologação até CI, deploy imutável e novo smoke da coorte autorizada.
+
+Validação local da correção: Storefront Django **1.741 passed, 35 skipped**;
+fatia Concierge em PostgreSQL 16.14 isolado **84 passed**; Ruff, compileall e
+`git diff --check` aprovados. Os skips são os mesmos gates/ambientes opcionais da
+suíte do storefront; nenhum mock comprova entrega do fornecedor. Não há migration
+nova. Rollback operacional volta a imagem anterior e mantém o switch/connection
+desligáveis; nenhuma limpeza ou downgrade de dados é necessário.
+
+Implementação testada localmente não equivale a homologação. A homologação exige
+CI, deploy do SHA e o transcript real com resposta aceita pelo ManyChat. Piloto e
+rollout continuam não iniciados e não autorizados; permanecem fechados os gates de
+ID oficial/receipt, identidade para mutações, transferência/retorno humano, SLA e
+medição das jornadas J01–J13.
