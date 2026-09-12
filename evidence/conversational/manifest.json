@@ -1,0 +1,635 @@
+{
+  "generated_at": "2026-09-11T21:23:01.466182+00:00",
+  "base_sha": "1138c95eee0862630330328cf3bfe2f0b6424796",
+  "candidate_head": "9a8bccbe58ffae1b05fa529407c2db9fc05e3dab",
+  "branch": "codex/conversational-excellence-implementation-20260911",
+  "worktree": "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911",
+  "dirty": false,
+  "files": [
+    {
+      "path": ".env.example",
+      "bytes": 17587,
+      "sha256": "497b50247437489755f7c9f72e8ec99c9af3bbaf3b715982f08d722410a8b5db"
+    },
+    {
+      "path": "config/settings.py",
+      "bytes": 94014,
+      "sha256": "e119698e716e044187a7db746d9b08280e570b498fe730d4a6334d56c9e6b028"
+    },
+    {
+      "path": "docs/plans/CONVERSATIONAL-SALES-OPERATIONAL-EXCELLENCE-PLAN-2026-09-11.md",
+      "bytes": 83078,
+      "sha256": "ae78ea28bdbc80eb485ba445d49745c6bf22a70ccdd788f97bfca956d8fc7c35"
+    },
+    {
+      "path": "docs/reference/data-schemas.md",
+      "bytes": 150709,
+      "sha256": "d9bb73298820dbe30800221364b1f5902a7f973850d04d5715ee8fcc01a6b5ca"
+    },
+    {
+      "path": "docs/reports/conversational-operational-excellence-implementation-2026-09-11.md",
+      "bytes": 42275,
+      "sha256": "a89415e747266d3b5d1684ead97ec82d7cee7343b0abd7655eae91a7396421b1"
+    },
+    {
+      "path": "evidence/conversational/INGRESS.md",
+      "bytes": 10922,
+      "sha256": "6c523fdb3e623967d0b86d4adae30c5010647938743b1726543956b967585ee7"
+    },
+    {
+      "path": "evidence/conversational/ISOLATED-RUNTIME.md",
+      "bytes": 2957,
+      "sha256": "84bfdbb5ce9a67a11a9cbccb4410ac945a4d1103560fbf3b392e3011d3e03093"
+    },
+    {
+      "path": "evidence/conversational/admin-concierge.txt",
+      "bytes": 2765,
+      "sha256": "e8d40f2664732846c4967c33c9360876164fb688304645d96fe4b7c48ae1dd53"
+    },
+    {
+      "path": "evidence/conversational/admin-contained-synthetic-admin-desktop.png",
+      "bytes": 134099,
+      "sha256": "61ea843bd19e3b1945a6196af69f109adc9af5bc102cfe8c78948a5954fac5d8"
+    },
+    {
+      "path": "evidence/conversational/admin-contained-synthetic-admin-mobile.png",
+      "bytes": 91151,
+      "sha256": "c4854a64c8dc04bafe178de5fdf98473f06954df343fc2aaf76e1dbed9ee0ab7"
+    },
+    {
+      "path": "evidence/conversational/admin-contained-synthetic-viewer-desktop.png",
+      "bytes": 108219,
+      "sha256": "1e2f4d03043ae8106c9900af94e8a49422ae3b2efe245a748f526827a8040f31"
+    },
+    {
+      "path": "evidence/conversational/admin-contained-synthetic-viewer-mobile.png",
+      "bytes": 91151,
+      "sha256": "c4854a64c8dc04bafe178de5fdf98473f06954df343fc2aaf76e1dbed9ee0ab7"
+    },
+    {
+      "path": "evidence/conversational/admin-inspect.png",
+      "bytes": 108219,
+      "sha256": "1e2f4d03043ae8106c9900af94e8a49422ae3b2efe245a748f526827a8040f31"
+    },
+    {
+      "path": "evidence/conversational/admin-inspect.txt",
+      "bytes": 974,
+      "sha256": "a13f5aaacde552309d69b6c775e09eb47e721597dd14f363cbe6e0ec6cf83e36"
+    },
+    {
+      "path": "evidence/conversational/admin-return-enabled-synthetic-admin-desktop.png",
+      "bytes": 134099,
+      "sha256": "61ea843bd19e3b1945a6196af69f109adc9af5bc102cfe8c78948a5954fac5d8"
+    },
+    {
+      "path": "evidence/conversational/admin-return-enabled-synthetic-admin-mobile.png",
+      "bytes": 91151,
+      "sha256": "c4854a64c8dc04bafe178de5fdf98473f06954df343fc2aaf76e1dbed9ee0ab7"
+    },
+    {
+      "path": "evidence/conversational/admin-return-enabled-synthetic-viewer-desktop.png",
+      "bytes": 108219,
+      "sha256": "1e2f4d03043ae8106c9900af94e8a49422ae3b2efe245a748f526827a8040f31"
+    },
+    {
+      "path": "evidence/conversational/admin-return-enabled-synthetic-viewer-mobile.png",
+      "bytes": 91151,
+      "sha256": "c4854a64c8dc04bafe178de5fdf98473f06954df343fc2aaf76e1dbed9ee0ab7"
+    },
+    {
+      "path": "evidence/conversational/admin-return-unconfirmed.png",
+      "bytes": 89836,
+      "sha256": "90fff114bb4065224d80bd574cf0e70c1c1a6163928c2a5088b1870120bf5af3"
+    },
+    {
+      "path": "evidence/conversational/adversarial-tests.txt",
+      "bytes": 400,
+      "sha256": "c320a9d60193574b0a9545c520d9a9e8265d6d86587983373cf279fe28cfb23e"
+    },
+    {
+      "path": "evidence/conversational/backup-restore.txt",
+      "bytes": 2273,
+      "sha256": "7227855d4d95f1bc8523703a5a5b9863fc328bb1d52a9a4377e3113593c8e4b2"
+    },
+    {
+      "path": "evidence/conversational/backup_rehearsal.py",
+      "bytes": 3060,
+      "sha256": "8aaf4fe131c4634b20bb69ab2a478331e773c7519464fa1c654a54a6c05f65f3"
+    },
+    {
+      "path": "evidence/conversational/baseline.txt",
+      "bytes": 400,
+      "sha256": "903903156a67fc760337fb741766be97a64ee67eb8e688be2f685800b3543c46"
+    },
+    {
+      "path": "evidence/conversational/boundary-races-before.txt",
+      "bytes": 6662,
+      "sha256": "f2a9417e9e6583f3f9b79436b1017d5f9b5785cea35129005dbbfebf01434ff3"
+    },
+    {
+      "path": "evidence/conversational/boundary-races-tests.txt",
+      "bytes": 480,
+      "sha256": "646e21d4d4feccd4bdb0dbda15771ba8a1c621e11f4341906104e6c5666cc2ed"
+    },
+    {
+      "path": "evidence/conversational/browser-contained.txt",
+      "bytes": 367,
+      "sha256": "62232c5b85202a8e5248540f3c75b9fbd4aa87a9420c555a558625aa8f927f75"
+    },
+    {
+      "path": "evidence/conversational/browser-return.txt",
+      "bytes": 376,
+      "sha256": "36dd795559f148e28a2c9bce0a0f93440dd8fe1789310fdd67183c88c8e3b19f"
+    },
+    {
+      "path": "evidence/conversational/browser-seed.txt",
+      "bytes": 2301,
+      "sha256": "6bcebeac0f56ef4c2510faa9e52fc24da8257765d5f51a0e47790eb79f811dc0"
+    },
+    {
+      "path": "evidence/conversational/browser-server-return.txt",
+      "bytes": 11512,
+      "sha256": "5f7ce78a85e74377c1eb5abc4dbb6da91d1e30f07588bc82eed945d54b107777"
+    },
+    {
+      "path": "evidence/conversational/browser-server.txt",
+      "bytes": 10973,
+      "sha256": "59b43708c2e5f5df84ee6612768a8d98f9a79aa79cd0dfdf08e0efb1a6493b44"
+    },
+    {
+      "path": "evidence/conversational/browser_admin.py",
+      "bytes": 3123,
+      "sha256": "4d990b4b6653ef64049e8b443edf941c2e2d778c82ec3f06ae06cde25710b388"
+    },
+    {
+      "path": "evidence/conversational/browser_server.py",
+      "bytes": 2596,
+      "sha256": "d29da04520f1186f94caa6272ae751ac28b5cd5ac0e7be79c36fc63866504164"
+    },
+    {
+      "path": "evidence/conversational/capabilities-tests.txt",
+      "bytes": 400,
+      "sha256": "76e362bafdee8a1a2ff7dd2ab2bac5941ea3af9d6c2144878018cf42b9b36622"
+    },
+    {
+      "path": "evidence/conversational/cart-consumers.txt",
+      "bytes": 399,
+      "sha256": "9c27704e23d52b87a3de9aa30efc17008a2054878246671d76e685d669588c7c"
+    },
+    {
+      "path": "evidence/conversational/cohort-before.txt",
+      "bytes": 1619,
+      "sha256": "6ea003a26ba014f6a012ae26f98514c634184cd70b9245f0c4469e6b6e1c38b4"
+    },
+    {
+      "path": "evidence/conversational/commercial-races-before.txt",
+      "bytes": 5455,
+      "sha256": "c6083c301cdd4aab15882b41adfc799b1107715d74fe22cfff9f99192dc477a6"
+    },
+    {
+      "path": "evidence/conversational/commercial-races-consumers-tests.txt",
+      "bytes": 1007,
+      "sha256": "ad144c96a8f399b45807e0c3c57aa529abb6a9c7a20f71d501695d334015fca4"
+    },
+    {
+      "path": "evidence/conversational/commercial-races-evidence.md",
+      "bytes": 3672,
+      "sha256": "ad29b961888b2db86142f764cf8dcb9b3d228b2e6b5a4b135f0b26711b314e23"
+    },
+    {
+      "path": "evidence/conversational/commercial-races-tests.txt",
+      "bytes": 399,
+      "sha256": "751abcd714aa56ebde18269ccc076806dab0bd77aa1e4a4405c7ee9a6855ff1d"
+    },
+    {
+      "path": "evidence/conversational/core-commit-final.txt",
+      "bytes": 399,
+      "sha256": "e6d33684b3287bd59ebff73d395041fd40d9ce8e2b1d315235e636295ba8a2a6"
+    },
+    {
+      "path": "evidence/conversational/diagnostics-baseline.py.txt",
+      "bytes": 7432,
+      "sha256": "7f90212db244d9e50c57062d1c25bf10f242f633d422e1fc643092d4ba59c1dc"
+    },
+    {
+      "path": "evidence/conversational/final-integration.txt",
+      "bytes": 801,
+      "sha256": "4773525665b53586b2a51da56e04f11153fce0642adf5e0d47929d9743329180"
+    },
+    {
+      "path": "evidence/conversational/final-selection.json",
+      "bytes": 2210,
+      "sha256": "580d4da5a0a073b2e53c6cc33b54851bb79a32d2ca18bd496b590bf4483ceb94"
+    },
+    {
+      "path": "evidence/conversational/flows/manychat-conversation-v2.json",
+      "bytes": 1922,
+      "sha256": "4a4f3bd53851c74e22145d119359776afc47d5bbf7edc0667f04d2fa4812065d"
+    },
+    {
+      "path": "evidence/conversational/h12-after.txt",
+      "bytes": 17956,
+      "sha256": "d545b1b04652f2f4101475f2653523b2b1790e52d91d77ac04033d8889907fe8"
+    },
+    {
+      "path": "evidence/conversational/h12-before.txt",
+      "bytes": 7886,
+      "sha256": "820e8a20b6b5897a6819bfab35518df7f93b186b9c86a4ea1f26adc113207126"
+    },
+    {
+      "path": "evidence/conversational/h12-mature-after.txt",
+      "bytes": 480,
+      "sha256": "8833549ce3715f8e67ec263c6e7355c856b66ce4db6e23ea3a31b680c95e48af"
+    },
+    {
+      "path": "evidence/conversational/ingress-tests.txt",
+      "bytes": 480,
+      "sha256": "adb294d2d26c8f9e721e76823df02e0823afd19353d3fe207af345f5213cd4b6"
+    },
+    {
+      "path": "evidence/conversational/integration-before-final-guards.txt",
+      "bytes": 1392,
+      "sha256": "2af3a49f8529a3e869bc1995387e8bdedc63202873fcd3b87b15515d6eb1ac3d"
+    },
+    {
+      "path": "evidence/conversational/integration-ff1c9bee3.txt",
+      "bytes": 801,
+      "sha256": "e2a299517afa7224f6a4c7ae1086eb66d88502d9b428d1a496bdc2373c7ab5d9"
+    },
+    {
+      "path": "evidence/conversational/integration-long-channel-regression.txt",
+      "bytes": 16315,
+      "sha256": "db39626374e5dd39da6a6706999118c6fde585dcfcd98241e362332c79bfb51c"
+    },
+    {
+      "path": "evidence/conversational/integration-mixed-registry-fixture.txt",
+      "bytes": 13527,
+      "sha256": "af52cd9cd13743d66b046dc6d14b63749b3530f9790da4d1744946521489cf03"
+    },
+    {
+      "path": "evidence/conversational/make-admin.txt",
+      "bytes": 765,
+      "sha256": "13ccd8767da5494e567e80a149dde7666a2039b00079276ee9823a15183aecf0"
+    },
+    {
+      "path": "evidence/conversational/mature-postgresql.txt",
+      "bytes": 1075,
+      "sha256": "0ec6fd5742bab27d92d47a182fcd88204883f7af220ef652ddf0e3a25dfbc3ad"
+    },
+    {
+      "path": "evidence/conversational/migration-runtime.txt",
+      "bytes": 399,
+      "sha256": "300378750025ff58a01abc3b11ad993848440ca5c67abd90da614a1a78b18591"
+    },
+    {
+      "path": "evidence/conversational/observability-consent-tests.txt",
+      "bytes": 398,
+      "sha256": "1c5950d7b5a10a26aaa5e63a41fd364f23f5770799cb8f677b3f493df6ea43ae"
+    },
+    {
+      "path": "evidence/conversational/observability-tests.txt",
+      "bytes": 1923,
+      "sha256": "bff823891c494cd4c6b4495353d549d78800573d1baae4a9d9dd35866fb15d7f"
+    },
+    {
+      "path": "evidence/conversational/payment-race-after.txt",
+      "bytes": 380,
+      "sha256": "c1f1b2e56524ee88e8d4c0aa24f63d5ece86210c934e3937e5d7a33e809d23a4"
+    },
+    {
+      "path": "evidence/conversational/payment-race-before.txt",
+      "bytes": 6853,
+      "sha256": "d280d6a1155cd0ac685e9b4ead152d32696ff45469a9c360effb97f5444fa871"
+    },
+    {
+      "path": "evidence/conversational/payment-race-consumers-final.txt",
+      "bytes": 479,
+      "sha256": "9077a4fcb8b26f128e9aed9705e1226f85beccf7fa174b82d0e7755cefdcc984"
+    },
+    {
+      "path": "evidence/conversational/payment-race-replay-before.txt",
+      "bytes": 6275,
+      "sha256": "7a46f40dad25f91d47cfab22afcfb274f7875031719a22834733587e800d6d3c"
+    },
+    {
+      "path": "evidence/conversational/ruff.txt",
+      "bytes": 65,
+      "sha256": "970d826c3471dcf23ac9ceae4f5e108a7023142ffc0237c257fc48959149f9a7"
+    },
+    {
+      "path": "evidence/conversational/run.py",
+      "bytes": 622,
+      "sha256": "61c6ca59045d8faee7c3422d68a6c95dd48ad8af8c1b179e352d2a186e33cf47"
+    },
+    {
+      "path": "evidence/conversational/runtime-final.txt",
+      "bytes": 400,
+      "sha256": "7b4d4f62493289c89fe5c0859a9a3be4fda70ed0390d38565070c47a6a55fea3"
+    },
+    {
+      "path": "evidence/conversational/runtime-load-final.txt",
+      "bytes": 16375,
+      "sha256": "3d87b9801e2b19263b11e5381d0d7c6c2e5b7def92a726174b1133f5c5d333c2"
+    },
+    {
+      "path": "evidence/conversational/runtime-load.txt",
+      "bytes": 2962,
+      "sha256": "7bc88859d0efbe5748e427e26ee570a7bfd974729da2671d34057da3101b86e0"
+    },
+    {
+      "path": "evidence/conversational/runtime-root.txt",
+      "bytes": 400,
+      "sha256": "758cf1b5fa24095e02f631337d2ab95d5a464f43f66ca486663ba56c049f874f"
+    },
+    {
+      "path": "evidence/conversational/runtime-shutdown.txt",
+      "bytes": 255,
+      "sha256": "8c70e692f9d22d15f9054ff095bfc48651d88557b4cdb380e0722c8494bd454e"
+    },
+    {
+      "path": "evidence/conversational/runtime-turns.txt",
+      "bytes": 398,
+      "sha256": "e549f5cab06f6948bab33d57fb26151cdb1e079cfbda26cef8dc88fbee1ff578"
+    },
+    {
+      "path": "evidence/conversational/runtime-vertical-final.txt",
+      "bytes": 398,
+      "sha256": "a1894da3514fcf5f4a4a04b7fc21877fffc376e3c9f2d6683b1fe81669054b97"
+    },
+    {
+      "path": "evidence/conversational/runtime-vertical.txt",
+      "bytes": 7934,
+      "sha256": "a1fcea30103abf500f82d7b992ae5434dfc9e8693afaee4317667b447d9c8673"
+    },
+    {
+      "path": "evidence/conversational/schema-check.txt",
+      "bytes": 4213,
+      "sha256": "2ff00ca7249aa9e56e1aee6b030e12965c42e8dd740945ffd7d77bc49dc90ab5"
+    },
+    {
+      "path": "evidence/conversational/tools-boundaries-tests.txt",
+      "bytes": 1002,
+      "sha256": "12e59165178acc39727b9d9ae0a9955a9bf0518a0e5b93e5daabcc08e4ddcdc1"
+    },
+    {
+      "path": "evidence/conversational/tools-notes-tests.txt",
+      "bytes": 414,
+      "sha256": "50ee14e986ffe1471a0fc029f3f930ddc962a42a9e8a509f84b495ddead352d4"
+    },
+    {
+      "path": "evidence/conversational/tools-tests.txt",
+      "bytes": 1045,
+      "sha256": "aa6d7f5ed595e2a8a4b9b17ab129327f28874591487d38424738926d175be1a7"
+    },
+    {
+      "path": "evidence/conversational/tools-wp-evidence.md",
+      "bytes": 7395,
+      "sha256": "403d5e34e1d072c04c7dcce1eb58042c0f6db4c80de07145ef381f7361c2baf1"
+    },
+    {
+      "path": "evidence/conversational/write_manifest.py",
+      "bytes": 1328,
+      "sha256": "414afea540c0570f6bab4c53816acf92b28ba799265520566cd44d00e511c618"
+    },
+    {
+      "path": "packages/guestman/shopman/guestman/contrib/manychat/service.py",
+      "bytes": 18208,
+      "sha256": "af2513b566ad12ac6f96c7b0099a530094cf766ad1eb21777eac834479f3befa"
+    },
+    {
+      "path": "packages/guestman/shopman/guestman/contrib/manychat/views.py",
+      "bytes": 3365,
+      "sha256": "4b1dd76fdabc9ee32e5a9d64526b76b0016e64f74818ddb31456097ee6401975"
+    },
+    {
+      "path": "packages/guestman/shopman/guestman/tests/test_manychat.py",
+      "bytes": 14138,
+      "sha256": "015d19ec7763ce3fc734a74e37d7516d054c43bbad4f00c7126ed010c06f2277"
+    },
+    {
+      "path": "packages/guestman/shopman/guestman/tests/test_manychat_ingress_regressions.py",
+      "bytes": 2816,
+      "sha256": "93b7249bdf8ee97df2f1afc902df0eae15f80567fadcebd06ed2d6e1f5aca3e4"
+    },
+    {
+      "path": "packages/orderman/shopman/orderman/services/commit.py",
+      "bytes": 21466,
+      "sha256": "e843ba6c0bd3222bec550aae45aa049da24a96ba569c7f8f2507b39f2a96f09c"
+    },
+    {
+      "path": "shopman/shop/adapters/notification_manychat.py",
+      "bytes": 22844,
+      "sha256": "24ffd5849364abc6ceea6d46b54b3d761468747b95b85cd1adfb2db751f80371"
+    },
+    {
+      "path": "shopman/shop/handlers/fulfillment.py",
+      "bytes": 6127,
+      "sha256": "520f6c826dc8f1dd287507f7876597fe83ea26b039e341f7096a9ad7cd2cb9b9"
+    },
+    {
+      "path": "shopman/shop/management/commands/maintenance_worker.py",
+      "bytes": 11954,
+      "sha256": "e7dfb7e0dffcf031c9641f07ec960ed2d0354bfa328664b2dcf12d6103dd6523"
+    },
+    {
+      "path": "shopman/shop/migrations/0048_concierge_event_envelope.py",
+      "bytes": 462,
+      "sha256": "124aef6fe61cc14d501738d89fb145ecc4b0de68d7826269e9b0211819b16e2c"
+    },
+    {
+      "path": "shopman/shop/migrations/0049_concierge_turn_delivery_identity.py",
+      "bytes": 2360,
+      "sha256": "58a479c544d6fdb828bae3d1c24e61ea36149eac372d9b631e767e72c355e988"
+    },
+    {
+      "path": "shopman/shop/models/concierge.py",
+      "bytes": 7421,
+      "sha256": "88c45c87c281a4eea3aea73fa0e2ba10fa1b75776996acc41853c435ae619c49"
+    },
+    {
+      "path": "shopman/shop/omotenashi/copy.py",
+      "bytes": 66017,
+      "sha256": "f9996811189797b7cfd8e6ecfaf1493b16f1f68ef719bbde221189fd1f453110"
+    },
+    {
+      "path": "shopman/shop/projections/cart.py",
+      "bytes": 30455,
+      "sha256": "796152a83198d208e51860e1504da32de8bb42c790f1795ee4b50c0f001471a2"
+    },
+    {
+      "path": "shopman/shop/services/cart.py",
+      "bytes": 18906,
+      "sha256": "7ee155327ec597234e4ed226eef72a7675e3ec895142bcf001cacf77920e205c"
+    },
+    {
+      "path": "shopman/shop/services/checkout.py",
+      "bytes": 18038,
+      "sha256": "849bc40e5cd300ef8caee0da8b411bf79264ffa71ba778b241c0370c081f2f76"
+    },
+    {
+      "path": "shopman/shop/services/fulfillment.py",
+      "bytes": 4692,
+      "sha256": "f802520c1279e707388f01337a0a2c084dfd35139dd5af43f6a438c22aec8bdd"
+    },
+    {
+      "path": "shopman/shop/services/pix_confirmation.py",
+      "bytes": 30396,
+      "sha256": "58d712eed0047f3113fe911f4c0788c2c8bea2922c6de1bb3e6e2135b203f92c"
+    },
+    {
+      "path": "shopman/storefront/admin/concierge.py",
+      "bytes": 11870,
+      "sha256": "66505e8988e385f7dc32767bc83563376495749370fc2bce2a7ec2ab5f8699e2"
+    },
+    {
+      "path": "shopman/storefront/concierge/agent.py",
+      "bytes": 15478,
+      "sha256": "4f95d9fae13760f31e9cb6471b5cf91d1bd4fbda861266f9ad22f4ca668231db"
+    },
+    {
+      "path": "shopman/storefront/concierge/handler.py",
+      "bytes": 3249,
+      "sha256": "6e5f62baf425b005cc42d270ffec1de417739deedd65dd80bd43f18a7a636fed"
+    },
+    {
+      "path": "shopman/storefront/concierge/prompt.py",
+      "bytes": 10297,
+      "sha256": "3bba140f2bd4a2119bf4fca48822113f47ee11c4046abdb4af7b15fa8ac7b01e"
+    },
+    {
+      "path": "shopman/storefront/concierge/service.py",
+      "bytes": 35112,
+      "sha256": "2d5df37097c44a395d7ecffababbabd300e92db42ffa601e822d85bce31e2c3b"
+    },
+    {
+      "path": "shopman/storefront/concierge/tools.py",
+      "bytes": 78444,
+      "sha256": "b0b1ce94f0935900d8b539fccdc4c34b65f56e0cac0cfcd1df30f8e3ab9c7843"
+    },
+    {
+      "path": "shopman/storefront/concierge/transport.py",
+      "bytes": 6828,
+      "sha256": "0142e99107499e29dc544e363e81463f816561ea532acba7ff55242bcbeee261"
+    },
+    {
+      "path": "shopman/storefront/concierge/webhook.py",
+      "bytes": 11135,
+      "sha256": "a2e2f6cd43a7cea9757084925a0844c2b88cea4a756ded149525ccd903221c4e"
+    },
+    {
+      "path": "shopman/storefront/management/commands/recover_concierge.py",
+      "bytes": 524,
+      "sha256": "819852ab0d3cfa56caaeacf1a948f5a650395c974f8cece6cd8ea90ac3b29364"
+    },
+    {
+      "path": "shopman/storefront/tests/support/concierge_fake.py",
+      "bytes": 667,
+      "sha256": "2363d7a565226179bf23b2d50357f9816e83fb240bd7940c9cf9cbd9c1eddbed"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_admin.py",
+      "bytes": 6303,
+      "sha256": "ac83058e5ff21be880c24f474ecfdff9674873e763c34b72642b7cf6596e31ca"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_adversarial_integration.py",
+      "bytes": 9198,
+      "sha256": "02ef21b5b07f47e652f87baa00c488a853d17867bbd520726f430766b7295216"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_authority.py",
+      "bytes": 17558,
+      "sha256": "e55968f8e43a67290d41e8a52641429dbeddb777ec207e6c42636bd9f6bcb042"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_boundary_races.py",
+      "bytes": 6946,
+      "sha256": "f9b2ddf8ea932ba2dd84d53066823ecf886222563268834413773f2d3d3833e3"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_capabilities.py",
+      "bytes": 8322,
+      "sha256": "ad53c50b090ab5ffcef16c3162dbedba4ce30bc5ad5d919dea1d1173b200c9c8"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_commercial_races.py",
+      "bytes": 10011,
+      "sha256": "48ec1e114c6c24928dee52c69f224b0dd255fe5357d0f8387d170336e8d281a5"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_consent_race.py",
+      "bytes": 1900,
+      "sha256": "c109e5a9590d1c2fec2415a03f80ccb9508e4f475f04a7d63be6be4f89676569"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_delivery_integrity.py",
+      "bytes": 8686,
+      "sha256": "8b50f36ed41363d851770b50f217774980790e30599c4cf73b47d6e319751c4a"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_engine.py",
+      "bytes": 38702,
+      "sha256": "ebe037aa2ea4508b3c2d391f607bcc9c7b6c815bbf3e12ddf7769420cab5081b"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_handler.py",
+      "bytes": 4138,
+      "sha256": "e2de3222e672aae882ea01d378e5564c74790102dd7e9b8fb7edacf57e6297e9"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_ingress_contract.py",
+      "bytes": 4642,
+      "sha256": "f9d37e71a4b5308bd4075291caff7c66cc7e852eb779637422bd9c59b1372590"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_observability.py",
+      "bytes": 2602,
+      "sha256": "de147d503db4fb7b9d371f178b9cb8308020dded3da3e1b160fc56e02c6cc138"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_payment_race.py",
+      "bytes": 5193,
+      "sha256": "b6ef4ad7ccf44a62977bb2767d08ac581ebb75f28a6f42ab2e1998fb816872fe"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_runtime_admin.py",
+      "bytes": 1643,
+      "sha256": "e2633e4f3b421cc99940d9f66cedb90d6a59fbe731c861305bbd452534019cb2"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_runtime_fulfillment.py",
+      "bytes": 6335,
+      "sha256": "b54b294f906e2e76d914d98eeb3ff9023b6389a17e7708b3f7097514aaa6eee3"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_runtime_load.py",
+      "bytes": 6099,
+      "sha256": "7d390f9b80e3b36e3e1c5e41a33eb3462cc7512f0e7fb0937268d8050fbb7a71"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_runtime_migration.py",
+      "bytes": 6284,
+      "sha256": "c0cda083169db3b7275653d74a433157fb6e2abe385c5a8e71d7112176ad1ded"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_runtime_turns.py",
+      "bytes": 10653,
+      "sha256": "65f1ef6d5bc74307e010835f8934928eb90e590d9d21a92d3b4900c14d12eedd"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_runtime_vertical.py",
+      "bytes": 8999,
+      "sha256": "ccb4c5f9aeac832ec2232ed007585eaece2c264b6ffe97c5a1e4aad441660ca9"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_transport.py",
+      "bytes": 3600,
+      "sha256": "5d53804e1d521b0d6748bda8c56fde08e1cb9317d6705bd81124aa2696162db9"
+    },
+    {
+      "path": "shopman/storefront/tests/test_concierge_webhook.py",
+      "bytes": 7977,
+      "sha256": "50fce5aa416ca1eba7c2e67aff058ce431a4d04e2f46e098387fa4c24551eff6"
+    }
+  ]
+}

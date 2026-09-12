@@ -8,17 +8,19 @@ worker. O ManyChat corta a chamada em 10 s, então NADA de trabalho aqui.
 
 Autenticação por chave S2S (``SHOPMAN_CONCIERGE["api_key"]``), em
 ``Authorization: Bearer`` ou ``X-Api-Key``, como no access link. Sem chave
-configurada fora de DEBUG, a porta falha FECHADA (503).
+configurada, a porta falha FECHADA (503).
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import secrets
 
 from django.conf import settings
 from django.http import HttpRequest, JsonResponse
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
@@ -29,7 +31,16 @@ from shopman.storefront.concierge import service
 logger = logging.getLogger(__name__)
 
 RATE_LIMIT_GROUP = "concierge_inbound"
-RATE_LIMIT_RATE = "120/m"
+RATE_LIMIT_RATE = "1200/m"
+MAX_DEPTH = 8
+
+
+def _depth_ok(value, level=0):
+    if level > MAX_DEPTH:
+        return False
+    children = value.values() if isinstance(value, dict) else value if isinstance(value, list) else ()
+    return all(_depth_ok(child, level + 1) for child in children)
+
 
 #: Chaves de perfil que o flow pode mandar junto e que ajudam a identificar o
 #: cliente sem uma ida extra ao ``getInfo``.
@@ -48,7 +59,7 @@ def _subscriber_id_from_payload(data: dict) -> str:
         or data.get("manychat_id")
         or data.get("subscriber_id")
     )
-    return str(value).strip() if value else ""
+    return str(value).strip() if isinstance(value, (str, int)) and not isinstance(value, bool) and value else ""
 
 
 #: Palavra-chave do piloto fechado no ManyChat: um gatilho de Keyword ("#c" no início)
@@ -62,7 +73,7 @@ def strip_pilot_prefix(text: str) -> str:
     lowered = stripped.lower()
     for prefix in _PILOT_PREFIXES:
         if lowered == prefix or lowered.startswith(prefix + " "):
-            return stripped[len(prefix):].strip()
+            return stripped[len(prefix) :].strip()
     return stripped
 
 
@@ -72,24 +83,11 @@ def _looks_unrendered(text: str) -> bool:
 
 
 def _text_from_payload(data: dict, subscriber_id: str) -> str:
-    """O texto da mensagem: do corpo, ou do ``getInfo`` quando o corpo não trouxe.
-
-    Pedir ao ManyChat tira do flow a obrigação de saber QUAL variável carrega a
-    mensagem (nome que muda por canal e por conta). Falha da API vira texto
-    vazio, e ``receive_inbound`` responde ``empty`` sem derrubar o flow.
-    """
-    text = str(data.get("text") or data.get("message") or data.get("last_input_text") or "").strip()
-    if text and not _looks_unrendered(text):
-        return strip_pilot_prefix(text)
-    if text:
-        logger.warning("concierge.webhook: variável não renderizada no corpo: %r", text[:60])
-    from shopman.guestman.adapters.auth import CustomerResolver
-
-    try:
-        return strip_pilot_prefix(str(CustomerResolver().manychat_last_input_text(subscriber_id) or ""))
-    except Exception:
-        logger.warning("concierge.webhook: getInfo falhou subscriber=%s", subscriber_id, exc_info=True)
+    """Somente o texto deste evento; getInfo não identifica mensagem."""
+    text = data.get("text") or data.get("message") or data.get("last_input_text") or ""
+    if not isinstance(text, str) or _looks_unrendered(text):
         return ""
+    return strip_pilot_prefix(text)
 
 
 def _profile_from_payload(data: dict) -> dict:
@@ -108,7 +106,7 @@ def _profile_from_payload(data: dict) -> dict:
 class ConciergeInboundView(View):
     """POST /api/webhooks/manychat/conversation/
 
-    Corpo (JSON), tudo além do assinante é opcional::
+    Corpo JSON v2 com identidade estável do evento e conta configurada::
 
         {"subscriber_id": "123", "text": "quero 2 baguetes", "message_id": "...",
          "first_name": "Ana", "whatsapp_phone": "+5543..."}
@@ -146,20 +144,80 @@ class ConciergeInboundView(View):
                 logger.error("concierge.webhook: concierge ligado mas inoperante (%s)", reason)
             return JsonResponse({"status": "disabled", "reason": reason}, status=200)
 
+        if request.content_type != "application/json":
+            return JsonResponse({"detail": "Content-Type precisa ser application/json"}, status=415)
+        if len(request.body) > 32768:
+            return JsonResponse({"detail": "Corpo muito grande"}, status=413)
         try:
             data = json.loads(request.body or b"{}")
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
             return JsonResponse({"detail": "JSON inválido"}, status=400)
         if not isinstance(data, dict):
             return JsonResponse({"detail": "Corpo precisa ser um objeto JSON"}, status=400)
+
+        if not _depth_ok(data):
+            return JsonResponse({"detail": "JSON profundo demais"}, status=400)
 
         subscriber_id = _subscriber_id_from_payload(data)
         if not subscriber_id or _looks_unrendered(subscriber_id):
             return JsonResponse({"detail": "subscriber_id obrigatório", "field": "subscriber_id"}, status=400)
 
+        account = str(_config().get("account_id") or "")
+        transport = str(_config().get("transport_channel") or "whatsapp")
+        if not account:
+            return JsonResponse({"detail": "Conta do canal não configurada"}, status=503)
+        if any(
+            data.get(key, expected) != expected
+            for key, expected in (("account_id", account), ("transport_channel", transport), ("provider", "manychat"))
+        ):
+            return JsonResponse({"detail": "Conta ou canal inválido"}, status=403)
+        for group, identity, rate in (
+            ("account", account, "1200/m"),
+            ("subject", account + ":" + transport + ":" + subscriber_id, "60/m"),
+        ):
+            opaque = hashlib.sha256(identity.encode()).hexdigest()
+            if is_ratelimited(
+                request=request,
+                group=RATE_LIMIT_GROUP + ":" + group,
+                key=lambda g, r: opaque,
+                rate=rate,
+                method="POST",
+                increment=True,
+            ):
+                return JsonResponse({"detail": "Muitas requisições. Tente de novo em instantes."}, status=429)
+        event_id = next((data[key] for key in ("event_id", "message_id", "external_id") if key in data), "")
+        if not isinstance(event_id, str) or len(event_id) > 4096:
+            return JsonResponse({"detail": "Identidade de evento inválida"}, status=400)
+        if len(subscriber_id) > 128 or any(
+            not isinstance(data[key], str) for key in ("text", "message", "last_input_text") if key in data
+        ):
+            return JsonResponse({"detail": "Conteúdo inválido"}, status=400)
+        if any(len(data.get(key, "")) > 16000 for key in ("text", "message", "last_input_text")):
+            return JsonResponse({"detail": "Texto muito grande"}, status=413)
+        if data.get("message_type", "text") not in ("text", "audio", "image", "video", "file"):
+            return JsonResponse({"detail": "Tipo de mensagem inválido"}, status=400)
+        for key in ("provider_timestamp", "correlation_ref"):
+            if key in data and (not isinstance(data[key], str) or len(data[key]) > 256):
+                return JsonResponse({"detail": "Metadado inválido", "field": key}, status=400)
+        envelope = {
+            "version": 2,
+            "provider": "manychat",
+            "account_id": account,
+            "transport_channel": transport,
+            "subject": subscriber_id,
+            "event_id": event_id,
+            "provider_timestamp": data.get("provider_timestamp", ""),
+            "received_at": timezone.now().isoformat(),
+            "message_type": data.get("message_type", "text"),
+            "correlation_ref": data.get("correlation_ref", ""),
+            "authentication": "api_key",
+            "payload_hash": hashlib.sha256(
+                json.dumps(data, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
+            ).hexdigest(),
+        }
         try:
             text = _text_from_payload(data, subscriber_id)
-            external_id = str(data.get("message_id") or data.get("external_id") or "").strip()
+            external_id = event_id.strip()
             if _looks_unrendered(external_id):
                 external_id = ""
             result = service.receive_inbound(
@@ -167,35 +225,36 @@ class ConciergeInboundView(View):
                 text=text,
                 external_id=external_id,
                 profile=_profile_from_payload(data),
+                envelope=envelope,
             )
         except Exception:
-            logger.exception("concierge.webhook: falha inesperada subscriber=%s", subscriber_id)
+            logger.exception("concierge.webhook: falha inesperada")
             return JsonResponse({"detail": "Erro interno"}, status=500)
 
         return JsonResponse(
             {
                 "status": result.reason,
-                "conversation_id": result.conversation_id,
                 "queued": bool(result.queued),
             },
-            status=202 if result.queued else 200,
+            status=409 if result.reason == "intent_conflict" else 200,
         )
 
     @staticmethod
     def _authenticate(request: HttpRequest) -> JsonResponse | None:
-        api_key = str(_config().get("api_key") or "")
-        if not api_key:
-            if settings.DEBUG:
-                return None
-            logger.error("concierge.webhook: CONCIERGE_API_KEY não configurada, recusando (falha fechada).")
+        keys = [str(_config().get("api_key") or ""), str(_config().get("api_key_previous") or "")]
+        keys = [key for key in keys if key]
+        if not keys:
+            logger.error("concierge.webhook: chave ausente; ingresso contido.")
             return JsonResponse({"detail": "Concierge não configurado"}, status=503)
-
         auth_header = request.META.get("HTTP_AUTHORIZATION", "")
-        provided = ""
-        if auth_header.startswith("Bearer "):
-            provided = auth_header[7:].strip()
-        elif request.META.get("HTTP_X_API_KEY"):
-            provided = str(request.META["HTTP_X_API_KEY"]).strip()
-        if not provided or not secrets.compare_digest(provided, api_key):
+        provided = (
+            auth_header[7:].strip()
+            if auth_header.startswith("Bearer ")
+            else str(request.META.get("HTTP_X_API_KEY", "")).strip()
+        )
+        valid = False
+        for key in keys:
+            valid |= secrets.compare_digest(provided.encode(), key.encode())
+        if not provided or not valid:
             return JsonResponse({"detail": "Não autorizado"}, status=401)
         return None

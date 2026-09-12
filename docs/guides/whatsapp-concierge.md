@@ -1,215 +1,200 @@
-# Concierge de WhatsApp (ManyChat + modelo de linguagem)
+# Concierge de WhatsApp — portão existente e contrato v2
 
-Guia de configuração e operação do concierge: o assistente que atende o WhatsApp
-da casa e fecha pedidos por conversa. Um flow só no ManyChat, um webhook, a
-resposta volta pela API. Arquitetura e decisões no
-[WHATSAPP-CONCIERGE-PLAN](../plans/WHATSAPP-CONCIERGE-PLAN.md) e na
-[ADR-026](../decisions/adr-026-concierge-lingua-do-modelo-dinheiro-do-codigo.md);
-o login por WhatsApp continua sendo o [access link](whatsapp-access-link.md), e os
-dois flows convivem no mesmo número.
+O candidato reutiliza a automação ManyChat **Concierge (piloto)**, identificador
+`content20260904134021_491685` (campo `ns` da API), e seu Keyword **#c**. A existência dessa automação
+e a conta **Nelson Boulangerie** (`764222643620409`) foram confirmadas por consultas
+somente leitura à API. Isso não comprova o conteúdo publicado dos nós nem a
+origem de um identificador estável de mensagem.
 
-## A ideia
+Não criar outro flow, trocar o Default Reply ou ampliar a coorte para adaptar o
+candidato. O access link existente continua com seu próprio gatilho. A entrada
+conversacional mantém o endpoint e a autenticação já usados; a diferença essencial
+é registrar o evento de forma durável antes de responder ao ManyChat.
 
-O cliente escreve como escreveria para uma pessoa. O ManyChat manda o texto para
-a casa e **não espera resposta**: a casa responde `202` na hora, processa o turno
-no worker de diretivas (modelo + ferramentas que só chamam services) e devolve a
-resposta pela API do ManyChat, dentro da janela de 24 h que o cliente acabou de
-abrir. O modelo escolhe as palavras; preço, estoque, prazo e Pix vêm do Shopman.
+## Corpo real confirmado e compatibilidade legada
 
-Quando o cliente pede uma pessoa, o concierge liga um campo no assinante
-(`concierge_handoff = "1"`), o flow para de chamar a casa e pausa as automações:
-a equipe atende no Live Chat do ManyChat. Devolver a conversa ao bot é uma ação
-no Admin.
+Em 11/09/2026, o operador confirmou o URL
+`https://api.boulangerie.com.br/api/webhooks/manychat/conversation/` e um corpo
+com `subscriber_id`, `text`, `first_name` e `last_name`, sem identidade de evento.
+O texto de exemplo era `#menu NB-…`; ele é preservado como texto, sem consumir
+código de acesso ou promover identidade. Não substituir o corpo dinâmico pelos
+valores fixos do exemplo.
 
-## Fluxo
+C01 permite reutilizar esse corpo para leitura e encaminhamento humano. O
+candidato acrescenta `CONCIERGE_LEGACY_READ_HANDOFF_ENABLED=false` por padrão.
+Com opt-in autorizado, versão 2, conta, coorte e demais requisitos configurados:
 
+- `#c cardápio`, `menu` ou `#menu NB-…` consultam o catálogo público canônico.
+- `#c atendente` preserva o contexto e aciona o handoff existente.
+- Texto de compra recebe orientação para consultar ou chamar a equipe, sem
+  alterar sacola, revisão, pedido, pagamento, link de acesso ou consentimento.
+
+Esse caminho é determinístico, sem modelo nem enriquecimento de identidade.
+Cada recebimento guarda `event_id` e `external_id` vazios e
+`input_assurance=legacy_unverified`, na mesma Conversation/Message/Directive.
+O PK identifica um recebimento local; retries podem produzir recebimentos e
+respostas públicas repetidos. Não há promessa de exatamente-uma-intenção.
+Um batch com entrada legada permanece inteiro em leitura; nem um “confirmo”
+legado já consumido vira autorização em turno posterior.
+
+Recebimento legado não renova `last_inbound_at`: não prova nova interação no
+WhatsApp. Sem janela previamente comprovada, a saída fica `not_applied` com
+`window_closed`; não preencher timestamps manualmente no ambiente real. A janela
+e a entrega ainda exigem homologação com ManyChat. A compatibilidade permanece
+local e desativada; o URL confirmado não comprova que o candidato está publicado.
+
+## Contrato da entrada
+
+- Trigger existente: `#c`; o backend também reconhece `#concierge` e remove apenas
+  esse prefixo inicial. `#c quero dois pães` vira `quero dois pães`.
+- Endpoint: `POST /api/webhooks/manychat/conversation/` no mesmo host de API já
+  configurado no flow, usando `Content-Type: application/json`.
+- Header existente: `X-Api-Key`. `Authorization: Bearer` também é aceito.
+  `CONCIERGE_API_KEY` continua usando `DOORMAN_ACCESS_LINK_API_KEY` como fallback.
+  Não copiar nem registrar o valor da chave em documentação ou logs.
+- Campo de handoff existente: `concierge_handoff`, texto `"1"` para equipe e `""`
+  para retorno confirmado. A posse local contém o bot; esse campo espelha o
+  roteamento no ManyChat Live Chat.
+
+O corpo mínimo abaixo é **ilustrativo**: cada valor dinâmico deve entrar pelo
+seletor real do ManyChat. Os rótulos não são nomes garantidos de variáveis:
+
+```json
+{
+  "subscriber_id": "<subject selecionado no flow existente>",
+  "text": "<texto desta mensagem selecionado no flow existente>",
+  "event_id": "<identificador estável desta mensagem, ainda a comprovar>"
+}
 ```
-1. Cliente escreve no WhatsApp da casa
-2. ManyChat (flow) → Condition: concierge_handoff == "1"?
-     sim → Pause all automations (equipe no Live Chat); fim
-     não → External Request POST /api/webhooks/manychat/conversation/
-             { subscriber_id, text, first_name, last_name }   X-Api-Key
-           ← 202 em < 1 s
-3. Django grava a mensagem, identifica o cliente e enfileira concierge.turn
-4. directive-worker roda o turno (modelo + ferramentas) e envia a resposta
-   pela API do ManyChat (sendContent, texto livre)
-5. Cliente recebe a resposta; o pedido, quando fechado, aparece no Gestor
-   (coluna WhatsApp) e no acompanhamento /pedido/<ref>/ da loja
-```
 
-## Variáveis de ambiente
+`message_id` e `external_id` também são aceitos como identidade do evento. Um
+retry precisa conservar o mesmo ID e payload; duas mensagens legítimas iguais
+precisam ter IDs diferentes. Não usar ID do assinante, texto+minuto, UUID gerado a
+cada retry ou contador compartilhado de perfil como substituto não comprovado.
+A consulta somente leitura aos campos personalizados confirmou `concierge_handoff`
+como texto e não encontrou campo personalizado de ID de evento/mensagem; isso
+não prova ausência de um campo sistêmico. A fonte do event ID permanece pendente
+de verificação no portão existente. Sem
+essa prova, a automação de mutações desse caminho fica contida.
+
+`first_name` e `last_name` são opcionais; não são requisitos de ingresso. Telefone
+ou perfil enviados no body não promovem identidade. Conta/provider/transporte
+vêm da configuração confiável; não é necessário acrescentá-los ao corpo. Se
+vierem, precisam corresponder à configuração. Texto vazio ou variável literal
+como `{{last_input_text}}` não é substituído pela última mensagem do perfil via
+`getInfo`: isso poderia processar outra mensagem e atrasar o ACK.
+
+## Recebimento e resposta ao cliente
+
+O ACK normal agora é **HTTP 200**, com `status` e `queued`, sem IDs internos. Ele
+confirma recebimento/trabalho local, não pedido, pagamento nem entrega de uma
+resposta ao aparelho. A transação grava Message e a Directive existente no tópico
+versionado `concierge.turn.v2`; o worker processa o turno depois. A saída usa o
+adapter ManyChat existente e revalida a janela antes do envio.
+
+O guia antigo orientava não mapear resposta síncrona em campos; essa orientação
+permanece. Se o flow real tratar status HTTP explicitamente, seu ramo deve ser
+conferido para 200. Não configurar uma mensagem estática de sucesso de compra com
+base no ACK.
+
+| Resposta | Significado e recuperação |
+|---|---|
+| `200 queued` | Evento e trabalho aceitos; resposta posterior pelo worker. |
+| `200 duplicate` | Mesmo evento/payload; consulta/reparo de trabalho sem duplicar mensagem. |
+| `200 handoff` | Contexto preservado para equipe; bot contido. |
+| `200 disabled` | Capacidade contida; `reason` informa versão, chave de modelo ou switch. |
+| `200 not_allowed` | Subject fora da lista explícita; nenhum ingresso automático. |
+| `200 legacy_read_only` | Recebimento sem ID, aceito apenas para catálogo/humano com opt-in; não autoriza compra. |
+| `200 event_id_required` | Falta identidade estável e compatibilidade legada está desligada; nenhum ingresso. |
+| `200 empty` | Falta texto útil deste evento. |
+| `409 intent_conflict` | Mesmo ID com payload diferente; triagem, sem gerar nova intenção. |
+| `401 / 503` | Autenticação ausente/incorreta ou configuração incompleta; conferir configuração sem expor segredo. |
+| `400 / 413 / 415 / 429` | Corpo inválido, tamanho, MIME ou frequência; corrigir origem/política e preservar identidade do evento. |
+| `500` ou timeout | Não presumir ausência de efeito; retry do mesmo ID/payload, nunca nova compra. |
+
+A adaptação exata dos ramos de erro e do caminho humano deve ser revista no flow
+existente. Esta documentação não publica nem altera a automação.
+
+## Teste controlado: contenção adicional
+
+A publicação autorizada para teste usa `CONCIERGE_READ_ONLY=true` junto da
+compatibilidade legada. Todo turno permanece em catálogo/humano, inclusive
+quando vier event_id; tools de compra continuam contidas após reload da conversa.
+Isso não substitui o gate da janela: o corpo de quatro campos, sozinho, não
+comprova interação recente do WhatsApp. Veja o relatório de release para o estado
+verificado da publicação, sem presumir que preparação de configuração é deploy.
+
+## Configuração do candidato
+
+Além das credenciais e do switch já existentes, o contrato v2 exige configuração
+explícita. O inventário de configuração não é autorização para ativação:
 
 ```env
-# Liga o concierge. false = o webhook responde "disabled" e nada roda (kill switch).
-SHOPMAN_CONCIERGE_ENABLED=true
-
-# Credencial da Anthropic (a mesma do assist de texto do Gestor).
-AI_ASSIST_API_KEY=<chave>
-
-# Chave que o External Request apresenta no header X-Api-Key. Sem ela, fora de
-# DEBUG, o endpoint falha FECHADO. Default: DOORMAN_ACCESS_LINK_API_KEY.
-CONCIERGE_API_KEY=<segredo forte>
-
-# API do ManyChat (já usada pelas notificações): é por ela que a resposta volta.
-MANYCHAT_API_TOKEN=<token>
-
-# Opcionais (defaults no config/settings.py, bloco SHOPMAN_CONCIERGE)
-CONCIERGE_MODEL=claude-sonnet-5          # claude-opus-5 é troca de env
-CONCIERGE_EFFORT=low
-CONCIERGE_MAX_TURNS_PER_DAY=80           # teto por conversa, por dia
-CONCIERGE_HANDOFF_FIELD=concierge_handoff  # nome do campo personalizado no ManyChat
-CONCIERGE_CHANNEL_REF=whatsapp           # Channel.ref dos pedidos do chat
+CONCIERGE_CONTRACT_VERSION=2
+CONCIERGE_ACCOUNT_ID=764222643620409
+CONCIERGE_ALLOWED_SUBSCRIBERS=<somente subjects de teste explicitamente autorizados>
 ```
 
-Lista completa: `config/settings.py`, bloco `SHOPMAN_CONCIERGE`.
+O inventário legado encontrou duas entradas de subject e duas entradas de telefone.
+Conservar a autorização dos contatos de teste não significa promover telefones a
+subjects: a lista v2 compara **subject ManyChat**. Resolver a correspondência pela
+fonte confiável já usada; não inferir identidade a partir do telefone recebido no
+body. Lista vazia contém o canal, nunca o abre a todos.
 
-## O canal de venda no banco vivo
+`SHOPMAN_CONCIERGE_ENABLED`, `AI_ASSIST_API_KEY` e a credencial ManyChat continuam
+sendo requisitos próprios. Tokens existentes devem ser reutilizados no ambiente
+autorizado, sem impressão ou cópia para fixtures. Configuração efetiva fica em
+`config/settings.py`, bloco `SHOPMAN_CONCIERGE`.
 
-Os pedidos do chat nascem no `Channel` ref `whatsapp` (Pix e cartão a
-`at_commit`, confirmação automática em 5 min, listing `whatsapp` espelhando a
-web). O seed já o cria; no banco vivo, sem reseed:
+Capacidades adicionais continuam desligadas até seus gates:
+`CONCIERGE_IDENTITY_LINK_ENABLED`, `CONCIERGE_HUMAN_RETURN_ENABLED`,
+`CONCIERGE_OUTPUT_RETRY_ENABLED` e `CONCIERGE_TRANSFER_ENABLED`. Não habilitar todas
+para fazer um teste de ingresso. A rotação de entrada permite
+`CONCIERGE_API_KEY_PREVIOUS` durante janela controlada; retirar a chave antiga é
+operação separada no ambiente autorizado.
 
-```bash
-.venv/bin/python manage.py bootstrap_whatsapp_channel
-```
+## Handoff, acompanhamento e recuperação
 
-Idempotente: cria o canal e o listing se faltarem, ativa se estiverem inativos,
-não toca no que já existe. Ver [commands.md](../reference/commands.md#bootstrap_whatsapp_channel).
+O escape textual para equipe funciona sem IA. Uma solicitação explícita recebe
+ACK determinístico, sem promessa de atendimento imediato; contexto, escolhas e
+refs permanecem na Conversation e nos owners canônicos. ManyChat Live Chat é a
+superfície de atendimento, não uma inbox nova no Admin.
 
-## Configuração do flow no ManyChat
+A ação de retorno no Admin exige capacidade própria e sincronização confirmada;
+uma falha remota conserva a posse humana. Pedido registrado, pagamento pendente
+e resultado desconhecido são estados distintos. A consulta retorna ao mesmo
+pedido/recibo; não é preciso reconstruir a sacola após resposta perdida.
 
-Os mesmos cuidados do access link valem aqui, e dois deles mordem: em contato de
-WhatsApp o campo sistêmico `phone` é **nulo** (o telefone é `whatsapp_phone`; a
-casa o busca pelo `getInfo`, você não precisa mandar), e **variável digitada à
-mão não renderiza**: toda variável entra pelo seletor do ManyChat.
+Saída distingue `prepared`, `executing`, `accepted`, `not_applied` e `unknown`.
+`accepted` não comprova entrega. Timeout após possível efeito não admite reenvio
+cego. Blocos dependentes, inclusive Pix, aguardam o bloco anterior; recuperação
+explícita exige não aplicação comprovada, contexto atual e gate autorizado.
 
-1. **Campo personalizado** (Settings → Fields → User Fields): crie
-   `concierge_handoff`, tipo **Text**. O nome tem de ser o mesmo de
-   `CONCIERGE_HANDOFF_FIELD` (default `concierge_handoff`). Não crie como
-   booleano: a casa grava `"1"` e `""`.
+Desligar o switch contém admissão, execução, ferramentas e saídas não autorizadas.
+Preservar pedidos, receipts e reconciliação; não apagar fila nem repetir histórico
+como recuperação. Não realizar reseed, bootstrap de canal ou migração de produção
+como parte automática da adaptação do teste.
 
-2. **Trigger.** Uma automação `Shopman - Concierge` com o trigger **Default
-   Reply** do WhatsApp (toda mensagem que não casa com outro keyword). Se
-   preferir abrir devagar, use um **Keyword** (`pedir`, `cardápio`) e migre para
-   Default Reply na F3. O `#menu` do access link continua com o flow dele; os
-   dois convivem porque o keyword ganha do Default Reply.
+## Verificação e limites da prova
 
-3. **Condition** (primeiro nó): `concierge_handoff` **is equal to** `1`.
-   - **Sim** → ação **Pause all automations** (o tempo que a casa usar; 24 h
-     serve) e, se quiser, "Mark conversation as open" + assign para a equipe.
-     Nada mais: a mensagem fica na transcrição da casa, o bot não responde.
-   - **Não** → segue para o External Request.
+`test_concierge_legacy_gateway.py` cobre o corpo de quatro campos, catálogo,
+handoff, bloqueio de compra e confirmação, batch misto e revogação.
 
-4. **External Request** (Dev Tools, plano Pro):
-   - Method: `POST`
-   - URL: `https://api.<seu-domínio>/api/webhooks/manychat/conversation/`
-   - Header: `X-Api-Key: <CONCIERGE_API_KEY>`
-   - Body (JSON), cada valor escolhido **pelo seletor de variáveis**:
-     ```json
-     {
-       "subscriber_id": "{{Subscriber ID}}",
-       "text": "{{Last Text Input}}",
-       "first_name": "{{First Name}}",
-       "last_name": "{{Last Name}}"
-     }
-     ```
-   - **Não mapeie a resposta** em campo nenhum. O corpo é `{"status": "queued"}`
-     (ou `duplicate`, `handoff`, `disabled`) e o código é `202`. A resposta ao
-     cliente chega depois, pela API. Mapear resposta síncrona foi o que entregava
-     a resposta do turno anterior quando a casa demorava.
-   - Teste com o botão **Test request** do ManyChat: espere `202`. `401` é chave;
-     `400` é corpo sem `subscriber_id`; `200` com `status: "empty"` é texto vazio
-     (a variável não veio e o `getInfo` também não trouxe nada); `200` com
-     `status: "disabled"` traz o motivo em `reason`: `switch_off` é
-     `SHOPMAN_CONCIERGE_ENABLED` desligada, `ai_key_missing` é `AI_ASSIST_API_KEY`
-     vazia no painel (a chave da Anthropic, em console.anthropic.com).
+`test_concierge_existing_gateway.py` exercita localmente o mesmo endpoint, Keyword,
+chave compartilhada de fixture e corpo mínimo; verifica replay, duas mensagens de
+texto igual com IDs distintos e falta de ID sem efeitos. Credenciais são falsas e
+nenhuma mensagem sai para o fornecedor. Isso prova compatibilidade técnica do
+contrato proposto; não comprova a fonte do event ID na conta real.
 
-5. **Depois do External Request:** nada. Sem mensagem de "aguarde", sem
-   typing. O worker responde em segundos.
+Antes de homologar o portão existente, conferir seus nós/seletores, fonte e
+estabilidade do event ID em retry, resposta 200, rota humana e janela. Registrar
+artefato/hash do flow autorizado antes de eventual publicação. Não confundir:
+implementação testada localmente, homologação controlada, piloto e rollout têm
+provas e autorizações distintas. Reutilizar o teste existente não autoriza envio a
+cliente real, publicação, deploy ou expansão.
 
-6. **Devolver ao bot.** No Admin, em **Conversas do concierge** (`/admin/shop/conversation/`), filtre
-   por estado "Com a equipe", selecione e rode a ação **Devolver ao concierge**.
-   A casa limpa o campo `concierge_handoff` no ManyChat e o bot volta a
-   responder na próxima mensagem. Se a automação ainda estiver pausada no
-   ManyChat, ela retoma sozinha ao fim do prazo da pausa, ou o atendente
-   despausa no Live Chat.
-
-## O que o cliente vive
-
-- Abertura curta, sem emoji, dizendo que é um assistente da casa e fazendo uma
-  pergunta (copy `CONCIERGE_GREETING`, editável no Admin).
-- Uma pergunta por vez, opções em texto (até 3).
-- Recap do pedido linha a linha, com total e prazo, e um "sim" explícito antes
-  de fechar. Sem "sim", não há pedido.
-- Pix em mensagem separada (só o código, para copiar e colar); cartão como link.
-- Confirmação com o número do pedido e o link de acompanhamento na loja.
-- "Falar com a equipe" sempre disponível; áudio e imagem recebem uma resposta
-  fixa pedindo texto (`CONCIERGE_MEDIA_UNSUPPORTED`).
-
-## Como ler as transcrições
-
-`/admin/shop/conversation/`. A lista mostra cliente, estado (Ativa / Com a
-equipe / Encerrada), última mensagem, turnos do dia, motivo do handoff e tokens
-(entrada / saída / cache). Busca por telefone, nome ou id do assinante.
-
-No detalhe, a aba **Transcrição** lista tudo em ordem: mensagem do cliente,
-chamada de ferramenta (nome e argumentos), resultado (primeiros 200
-caracteres), resposta enviada ("não entregue" quando o ManyChat recusou) e notas
-da casa (handoff, volta ao bot). A aba **Pedido em andamento** mostra a sacola e
-o orçamento vigente; **Consumo**, os contadores.
-
-Nada se edita ali. A única ação é devolver ao concierge.
-
-## Piloto fechado: testar sem nenhum cliente entrar
-
-Duas trancas, uma em cada ponta. Qualquer uma sozinha já segura; as duas juntas
-deixam o teste pleno sem estranheza para quem escreve à casa.
-
-1. **No ManyChat, a tag.** Crie a tag `concierge-piloto` e aplique só nos contatos
-   de teste (o seu, o da equipe). No flow, ANTES do External Request, uma Condition
-   "tem a tag concierge-piloto"; quem não tem segue pelo caminho de sempre do
-   Default Reply, como se o concierge não existisse. Para abrir ao público depois,
-   basta remover a Condition, sem mexer em mais nada.
-2. **Na casa, a lista.** `CONCIERGE_ALLOWED_SUBSCRIBERS` com os ids do ManyChat
-   e/ou telefones em E.164 (com `+`), separados por vírgula. Quem não está na lista
-   recebe `{"status": "not_allowed"}` e a casa não cria conversa, mensagem nem
-   cliente: mesmo que a Condition do flow falhe, ninguém "testa sem querer". Lista
-   vazia = aberto a todos.
-
-Teste também o handoff nesse piloto: peça "quero falar com alguém", confira o
-alerta no Admin e o campo `concierge_handoff` = "1" no seu contato, e devolva a
-conversa pela ação do Admin.
-
-## Kill switch
-
-`SHOPMAN_CONCIERGE_ENABLED=false` e redeploy: o webhook responde `202` com
-`disabled`, nenhuma diretiva é enfileirada, o modelo não é chamado. O flow do
-ManyChat pode ficar como está; para o cliente não ficar sem resposta, ligue no
-ManyChat uma mensagem fixa depois do External Request enquanto o concierge
-estiver desligado (a copy `CONCIERGE_UNAVAILABLE` serve de modelo).
-
-Sem chave da Anthropic (`AI_ASSIST_API_KEY` vazia) o efeito é o mesmo: o
-concierge se considera desligado.
-
-## Diagnóstico
-
-| Sintoma | Onde olhar | Causa provável |
-|---|---|---|
-| Cliente escreve e nada volta | log do `directive-worker`, filtre `concierge.` | worker parado; diretiva `concierge.turn` com falha (veja `Directive` no Admin); transporte inerte (`MANYCHAT_API_TOKEN` vazio) |
-| External Request devolve `401` | painel do ManyChat, Test request | `X-Api-Key` diferente de `CONCIERGE_API_KEY` (ou do fallback `DOORMAN_ACCESS_LINK_API_KEY`) |
-| External Request devolve `202` com `disabled` | idem | `SHOPMAN_CONCIERGE_ENABLED=false` ou `AI_ASSIST_API_KEY` vazia |
-| Resposta registrada como "não entregue"; log do adapter com erro `3011` | transcrição no Admin + log | janela de 24 h fechada ou canal do assinante não é WhatsApp (contato do Instagram) |
-| Handoff nunca volta ao bot | Admin mostra "Ativa" mas o ManyChat segue pausado | nome do campo no ManyChat difere de `CONCIERGE_HANDOFF_FIELD`; ou a automação ainda está dentro do prazo de "Pause all automations" |
-| Concierge responde a copy de "fora do ar" | `OperatorAlert` `concierge_unavailable` | três falhas seguidas do modelo nessa conversa: chave inválida, modelo indisponível, `CONCIERGE_MODEL` com nome errado |
-| Cliente não consegue fechar pedido, recebe `CONCIERGE_NO_PHONE` | detalhe da conversa, campo telefone vazio | contato sem `whatsapp_phone` (veio pelo Instagram); peça para entrar pelo site |
-| Mesmo cliente recebe resposta duplicada | transcrição: duas inbound iguais no mesmo minuto | reenvio do ManyChat sem id de mensagem; o dedupe por hash cobre o mesmo minuto, fora dele é insistência real |
-
-## Testes
-
-```bash
-make test-framework   # service, agente (cliente fake), ferramentas, webhook, admin
-```
-
-Admin: `shopman/storefront/tests/test_concierge_admin.py`. Receita de teste local com
-túnel: seção "Como testar localmente" do
-[plano](../plans/WHATSAPP-CONCIERGE-PLAN.md#como-testar-localmente).
+Referências: [plano de excelência operacional](../plans/CONVERSATIONAL-SALES-OPERATIONAL-EXCELLENCE-PLAN-2026-09-11.md),
+[contratos e evidências de ingresso](../../evidence/conversational/INGRESS.md),
+[plano original](../plans/WHATSAPP-CONCIERGE-PLAN.md) e
+[access link](whatsapp-access-link.md). O commit `d777be1cc` documenta a adoção do
+Keyword `#c` em 04/09/2026, posterior à orientação histórica de Default Reply.

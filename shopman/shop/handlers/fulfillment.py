@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 
+from django.db import transaction
 from shopman.orderman.exceptions import DirectiveTerminalError
 from shopman.orderman.models import Directive
 
@@ -64,6 +65,7 @@ class FulfillmentUpdateHandler:
 
     topic = FULFILLMENT_UPDATE
 
+    @transaction.atomic
     def handle(self, *, message: Directive, ctx: dict) -> None:
         from shopman.orderman.exceptions import InvalidTransition
         from shopman.orderman.models import Fulfillment, Order
@@ -86,12 +88,12 @@ class FulfillmentUpdateHandler:
             raise DirectiveTerminalError("missing new_status")
 
         try:
-            order = Order.objects.get(ref=order_ref)
+            order = Order.objects.select_for_update().get(ref=order_ref)
         except Order.DoesNotExist as exc:
             raise DirectiveTerminalError(f"Order not found: {order_ref}") from exc
 
         try:
-            fulfillment = Fulfillment.objects.get(pk=fulfillment_id, order=order)
+            fulfillment = Fulfillment.objects.select_for_update().get(pk=fulfillment_id, order=order)
         except Fulfillment.DoesNotExist as exc:
             raise DirectiveTerminalError(f"Fulfillment not found: {fulfillment_id}") from exc
 
@@ -119,6 +121,8 @@ class FulfillmentUpdateHandler:
             order_ref,
         )
 
+        # Estado, sync e agendamento de aviso são efeitos locais no mesmo commit.
+        # O dispatcher só alcança o fornecedor depois do commit.
         # Auto-sync com Order
         config = ChannelConfig.for_channel(order.channel_ref)
         if config.fulfillment.auto_sync:

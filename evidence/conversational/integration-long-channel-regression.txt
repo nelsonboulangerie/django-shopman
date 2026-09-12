@@ -1,0 +1,232 @@
+AUDIT_IMPORTS ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/orderman/shopman/orderman'] ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/guestman/shopman/guestman']
+...F.....F.....................................F........................ [ 19%]
+........................................................................ [ 38%]
+........................................................................ [ 57%]
+........................................................................ [ 77%]
+........................................................................ [ 96%]
+..............                                                           [100%]
+=================================== FAILURES ===================================
+________________ test_return_to_concierge_action_flips_handoff _________________
+
+admin_client = <django.test.client.Client object at 0x10f0dbcb0>
+conversation = <Conversation: Conversa 345 · Ana Souza>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f066f00>
+settings = <pytest_django.fixtures.SettingsWrapper object at 0x10f065220>
+
+    def test_return_to_concierge_action_flips_handoff(admin_client, conversation, monkeypatch, settings):
+        settings.SHOPMAN_CONCIERGE = {"enabled": True, "contract_version": 2, "account_id": "test-account", "human_return_enabled": True}
+        settings.AI_ASSIST_API_KEY = "test-only"
+        conversation.account = "test-account"
+        calls: list[tuple[str, bool]] = []
+        monkeypatch.setattr(
+            "shopman.storefront.concierge.transport.set_handoff",
+            lambda subscriber_id, on: calls.append((subscriber_id, on)) or True,
+        )
+        conversation.state = Conversation.State.HANDOFF
+        conversation.handoff_reason = "pediu uma pessoa"
+        conversation.save()
+        active = Conversation.objects.create(subscriber_id="sub-456", phone="+5543999990001")
+    
+        response = admin_client.post(
+            reverse("admin:shop_conversation_changelist"),
+            {"action": "return_to_concierge_selected", "_selected_action": [conversation.pk, active.pk]},
+            follow=True,
+        )
+        assert response.status_code == 200
+        conversation.refresh_from_db()
+>       assert conversation.state == Conversation.State.ACTIVE
+E       AssertionError: assert 'handoff' == Conversation.State.ACTIVE
+E         
+E         - active
+E         + handoff
+
+shopman/storefront/tests/test_concierge_admin.py:117: AssertionError
+___________ test_replay_of_rejected_intent_preserves_original_error ____________
+
+conversation = <Conversation: Conversa 350 · +5543999999999>
+
+    def test_replay_of_rejected_intent_preserves_original_error(conversation):
+        from shopman.shop.models import Channel
+        from shopman.shop.services import remote_mutations
+        from shopman.storefront.concierge import tools
+    
+        Channel.objects.create(ref="web", config={"payment": {"method": ["pix"]}})
+        conversation.phone = "+5543999999999"
+        conversation.save(update_fields=["phone"])
+        original = tools._error("revision_conflict", "A sacola mudou. Confira novamente.")
+        fingerprint = remote_mutations.mutation_fingerprint(
+            {
+                "customer_ref": "",
+                "phone": conversation.phone,
+                "revision": "quote-old",
+                "payment_method": "pix",
+                "notes": "",
+            }
+        )
+        remote_mutations.run_idempotent_mutation(
+            scope=f"concierge.purchase:{conversation.pk}:web",
+            key="quote-old",
+            fingerprint=fingerprint,
+            execute=lambda: (original, 409),
+        )
+        result = tools.place_order(tools.ToolContext(conversation, "web"), "quote-old", "pix")
+>       assert result == original
+E       AssertionError: assert {'code': 'quo...': False, ...} == {'code': 'rev...': False, ...}
+E         
+E         Omitting 2 identical items, use -vv to show
+E         Differing items:
+E         {'code': 'quote_stale'} != {'code': 'revision_conflict'}
+E         {'error': 'quote_stale'} != {'error': 'revision_conflict'}
+E         {'message': 'A revisão mudou. Confira a sacola antes de confirmar.'} != {'message': 'A sacola mudou. Confira novamente.'}
+E         Use -v to get more diff
+
+shopman/storefront/tests/test_concierge_adversarial_integration.py:93: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+INFO 2026-09-11 18:01:39,423 shopman.operational concierge.stage
+_________ test_purchase_receipt_scope_accepts_long_commercial_channel __________
+
+ctx = ToolContext(conversation=<Conversation: Conversa 388 · Ana>, channel_ref='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', extra_replies=[], handoff=False, handoff_reason='', order_ref='', rendered_results=[])
+
+    def test_purchase_receipt_scope_accepts_long_commercial_channel(ctx):
+        from shopman.offerman.models import Listing
+        from shopman.orderman.models import IdempotencyKey
+    
+        from shopman.shop.models import Channel, Conversation
+        channel_ref = "a" * 45
+        Channel.objects.filter(ref="whatsapp").update(ref=channel_ref)
+        Listing.objects.filter(ref="whatsapp").update(ref=channel_ref)
+        Conversation.objects.filter(pk=ctx.conversation.pk).update(channel_ref=channel_ref)
+        ctx.conversation.channel_ref = channel_ref
+        ctx.channel_ref = channel_ref
+        quote = _pickup_ready(ctx)
+        accept_review(ctx, quote)
+        result = tools.place_order(ctx, quote["quote_token"], "pix")
+>       assert result["ok"], result
+E       AssertionError: {'code': 'checkout_unavailable', 'error': 'checkout_unavailable', 'message': 'Não consegui concluir a confirmação. Consulte o resultado usando esta mesma confirmação.', 'ok': False, ...}
+E       assert False
+
+shopman/storefront/tests/test_concierge_authority.py:326: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+INFO 2026-09-11 18:01:43,449 shopman.stockman stock.receive
+----------------------------- Captured stderr call -----------------------------
+DEBUG 2026-09-11 18:01:43,471 shopman.shop.modifiers discount_modifier: no insight for customer=CUST-F3C371AC8564
+DEBUG 2026-09-11 18:01:43,479 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+INFO 2026-09-11 18:01:43,489 shopman.stockman stock.hold.created
+DEBUG 2026-09-11 18:01:43,495 shopman.shop.modifiers discount_modifier: no insight for customer=CUST-F3C371AC8564
+DEBUG 2026-09-11 18:01:43,514 shopman.shop.modifiers discount_modifier: no insight for customer=CUST-F3C371AC8564
+DEBUG 2026-09-11 18:01:43,519 shopman.shop.modifiers discount_modifier: no insight for customer=CUST-F3C371AC8564
+DEBUG 2026-09-11 18:01:43,536 shopman.shop.modifiers discount_modifier: no insight for customer=CUST-F3C371AC8564
+DEBUG 2026-09-11 18:01:43,571 shopman.shop.modifiers discount_modifier: no insight for customer=CUST-F3C371AC8564
+ERROR 2026-09-11 18:01:43,585 shopman.storefront.concierge.tools concierge.place_order refused conversation=388
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/orderman/shopman/orderman/services/commit.py", line 136, in _acquire_idempotency_lock
+    idem = IdempotencyKey.objects.select_for_update(nowait=False).get(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py", line 639, in get
+    raise self.model.DoesNotExist(
+shopman.orderman.models.idempotency.IdempotencyKey.DoesNotExist: IdempotencyKey matching query does not exist.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py", line 987, in get_or_create
+    return self.get(**kwargs), False
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py", line 639, in get
+    raise self.model.DoesNotExist(
+shopman.orderman.models.idempotency.IdempotencyKey.DoesNotExist: IdempotencyKey matching query does not exist.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/psycopg/cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.StringDataRightTruncation: value too long for type character varying(64)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/storefront/concierge/tools.py", line 986, in place_order
+    receipt = remote_mutations.run_idempotent_mutation(scope=scope, key=quote_token, fingerprint=fingerprint, execute=commit_local)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/services/remote_mutations.py", line 74, in run_idempotent_mutation
+    result = _run_local_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=execute)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/services/remote_mutations.py", line 186, in _run_local_mutation
+    body, code = execute()
+                 ^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/storefront/concierge/tools.py", line 976, in commit_local
+    result = checkout_service.process(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/services/checkout.py", line 56, in process
+    result = process_ops(
+             ^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/services/checkout.py", line 117, in process_ops
+    commit = sessions.commit_session(
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/services/sessions.py", line 99, in commit_session
+    return CommitService.commit(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/orderman/shopman/orderman/services/commit.py", line 87, in commit
+    idem = CommitService._acquire_idempotency_lock(idem_scope, idempotency_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/orderman/shopman/orderman/services/commit.py", line 161, in _acquire_idempotency_lock
+    idem, created = IdempotencyKey.objects.get_or_create(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py", line 994, in get_or_create
+    return self.create(**params), True
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py", line 669, in create
+    obj.save(force_insert=True, using=self.db)
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py", line 874, in save
+    self.save_base(
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py", line 966, in save_base
+    updated = self._save_table(
+              ^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py", line 1169, in _save_table
+    results = self._do_insert(
+              ^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py", line 1220, in _do_insert
+    return manager._insert(
+           ^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py", line 1918, in _insert
+    return query.get_compiler(using=using).execute_sql(returning_fields)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py", line 1925, in execute_sql
+    cursor.execute(sql, params)
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/utils.py", line 94, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/psycopg/cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+django.db.utils.DataError: value too long for type character varying(64)
+3 failed, 371 passed in 30.09s

@@ -1057,8 +1057,22 @@ SHOPMAN_MARKETING_AI_TIMEOUT_SECONDS = float(
 # (services do Shopman), nunca do texto gerado. Desligado por padrão: ligar é
 # `SHOPMAN_CONCIERGE_ENABLED=true` + credencial da Anthropic (`AI_ASSIST_API_KEY`)
 # + chave S2S que o ManyChat apresenta (`CONCIERGE_API_KEY`, ou a mesma do access
-# link). Sem chave S2S fora de DEBUG o endpoint falha FECHADO.
+# link). Sem chave S2S o endpoint falha FECHADO, inclusive em DEBUG.
+# O portão histórico #c continua no mesmo webhook; v2 exige conta e event_id estável.
 SHOPMAN_CONCIERGE = {
+    # Cada capacidade só recebe opt-in após os gates nominalmente aprovados.
+    # Versão 0 contém o worker novo mesmo se a flag legada estiver ligada.
+    "contract_version": int(os.environ.get("CONCIERGE_CONTRACT_VERSION", "0")),
+    "provider": "manychat",
+    "transport_channel": "whatsapp",
+    "account_id": os.environ.get("CONCIERGE_ACCOUNT_ID", ""),
+    "api_key_previous": os.environ.get("CONCIERGE_API_KEY_PREVIOUS", ""),
+    "read_only": _env_bool("CONCIERGE_READ_ONLY", False),
+    "legacy_read_handoff_enabled": _env_bool("CONCIERGE_LEGACY_READ_HANDOFF_ENABLED", False),
+    "identity_link_enabled": _env_bool("CONCIERGE_IDENTITY_LINK_ENABLED", False),
+    "human_return_enabled": _env_bool("CONCIERGE_HUMAN_RETURN_ENABLED", False),
+    "output_retry_enabled": _env_bool("CONCIERGE_OUTPUT_RETRY_ENABLED", False),
+    "transfer_enabled": _env_bool("CONCIERGE_TRANSFER_ENABLED", False),
     "enabled": _env_bool("SHOPMAN_CONCIERGE_ENABLED", False),
     # Chave que o External Request do ManyChat apresenta (X-Api-Key). Default: a
     # mesma do access link, que já é a chave "ManyChat → casa".
@@ -1092,10 +1106,8 @@ SHOPMAN_CONCIERGE = {
     # popularidade) e os pareamentos configuráveis de `suggestion.complement`.
     # Continua UMA por conversa — o `suggestion_offered` em `Conversation.flags`.
     "suggest_add_ons": _env_bool("CONCIERGE_SUGGEST_ADD_ONS", True),
-    # Piloto fechado: só estes assinantes (ids do ManyChat) ou telefones (E.164, com
-    # "+") recebem o concierge; todo o resto volta `not_allowed` sem tocar em nada.
-    # Vazio = aberto a todos. É a segunda tranca, além da tag no flow do ManyChat:
-    # um gatilho errado lá não vira cliente "testando" sem querer aqui.
+    # Coorte explícita por subject verificado. Lista vazia contém toda admissão;
+    # telefone do payload não autoriza entrada. Revalidada no worker e na saída.
     "allowed_subscribers": [
         v.strip() for v in os.environ.get("CONCIERGE_ALLOWED_SUBSCRIBERS", "").split(",") if v.strip()
     ],

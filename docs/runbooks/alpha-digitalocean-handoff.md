@@ -101,6 +101,12 @@ imutáveis `web-1de5f3496a2b4fe4f3c8f1862f316301cc70540e`,
 `production-c14cdb64781b82a7ed70453a8fc75aaf9e426465` e
 `purchase-587392a49280fadf6740ede27a8dfe67a5c34676`.
 
+Os merges posteriores #611 e #615 preservaram esta implementação. O deployment
+`239c5fd5-846f-4983-be70-9fb660654c73` publicou `web` no descendente
+`29e0737e99a806975df8810b5b03393af83e9f02`, reutilizou a imagem Storefront e
+terminou `ACTIVE` com 47/47 etapas; o smoke correlacionado passou. O merge
+documental #617 não publicou imagem nem iniciou novo deployment.
+
 ## Dominio da loja
 
 Configurar a loja em seu dominio definitivo:

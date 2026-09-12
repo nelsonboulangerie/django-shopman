@@ -48,6 +48,7 @@ def process(
     idempotency_key: str,
     ctx: dict | None = None,
     expected_total_q: int | None = None,
+    expected_grand_total_q: int | None = None,
     expected_revision: int | None = None,
 ) -> CheckoutResult:
     """Convert checkout data to session operations and commit."""
@@ -66,6 +67,7 @@ def process(
         idempotency_key=idempotency_key,
         ctx=ctx,
         expected_total_q=expected_total_q,
+        expected_grand_total_q=expected_grand_total_q,
         expected_revision=expected_revision,
     )
     pending = _apply_post_commit_side_effects(data, channel_ref, order_ref=result.order_ref)
@@ -81,6 +83,7 @@ def process_ops(
     idempotency_key: str,
     ctx: dict | None = None,
     expected_total_q: int | None = None,
+    expected_grand_total_q: int | None = None,
     expected_revision: int | None = None,
 ) -> CheckoutResult:
     """Apply already-built session operations and commit."""
@@ -93,6 +96,8 @@ def process_ops(
     channel = Channel.objects.get(ref=channel_ref)
     resolved_config = ChannelConfig.for_channel(channel).to_dict()
 
+    # Modificação, comparação e commit usam a mesma Session bloqueada. Os callbacks
+    # de lifecycle continuam em on_commit, fora desta transação local.
     if ops:
         sessions.modify_session(
             session_key=session_key,
@@ -110,6 +115,15 @@ def process_ops(
     # baseline sempre chega é da superfície (o app manda o total exibido).
     if expected_total_q is not None:
         _ensure_total_matches(session_key, channel_ref, int(expected_total_q))
+
+    if expected_grand_total_q is not None:
+        from shopman.orderman.exceptions import ValidationError
+
+        from shopman.shop.projections.cart import build_cart
+        total = build_cart(session_key, channel_ref).grand_total_q
+        if total != expected_grand_total_q:
+            raise ValidationError(code="total_changed", message="O total completo mudou. Confira uma nova revisão.",
+                context={"old_total_q": expected_grand_total_q, "new_total_q": total})
 
     commit = sessions.commit_session(
         session_key=session_key,

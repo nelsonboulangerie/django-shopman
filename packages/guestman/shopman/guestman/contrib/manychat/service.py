@@ -52,6 +52,8 @@ class ManychatService:
         Returns:
             Tuple of (Customer, created: bool)
         """
+        if not isinstance(subscriber_data, dict):
+            raise ValueError("Subscriber data must be an object")
         manychat_id = subscriber_data.get("id")
         if not manychat_id:
             raise ValueError("Subscriber data must contain 'id' field")
@@ -124,7 +126,13 @@ class ManychatService:
             value = subscriber_data.get(field)
             if value is None:
                 continue
-            opted_in = bool(value)
+            if type(value) is bool:
+                opted_in = value
+            elif isinstance(value, str) and value.strip().lower() in ("true", "false"):
+                opted_in = value.strip().lower() == "true"
+            else:
+                # Valor malformado não concede nem revoga por coerção Python.
+                continue
             try:
                 if opted_in:
                     ConsentService.grant_consent(customer.ref, channel, source="manychat")
@@ -177,7 +185,7 @@ class ManychatService:
                     identifier_value=phone,
                 )
                 return ident.customer if ident.customer.is_active else None
-            except CustomerIdentifier.DoesNotExist:
+            except CustomerIdentifier.DoesNotExist:  # silêncio-deliberado: identificador opcional ausente; tentar a próxima fonte canônica
                 pass
             customer = Customer.objects.filter(phone=phone, is_active=True).first()
             if customer:
@@ -196,7 +204,7 @@ class ManychatService:
                     identifier_value=email,
                 )
                 return ident.customer if ident.customer.is_active else None
-            except CustomerIdentifier.DoesNotExist:
+            except CustomerIdentifier.DoesNotExist:  # silêncio-deliberado: identificador opcional ausente; tentar a próxima fonte canônica
                 pass
             customer = Customer.objects.filter(email=email, is_active=True).first()
             if customer:
@@ -210,7 +218,7 @@ class ManychatService:
                     identifier_value=phone,
                 )
                 return ident.customer if ident.customer.is_active else None
-            except CustomerIdentifier.DoesNotExist:
+            except CustomerIdentifier.DoesNotExist:  # silêncio-deliberado: identificador opcional ausente; tentar a próxima fonte canônica
                 pass
             customer = Customer.objects.filter(phone=phone, is_active=True).first()
             if customer:

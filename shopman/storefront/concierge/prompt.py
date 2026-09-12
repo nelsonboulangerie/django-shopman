@@ -126,9 +126,11 @@ def dynamic_block(conversation: Conversation, *, is_first_turn: bool, cart_summa
         # vista, o modelo inventava um placeholder e o portão recusava, custando um
         # turno e uma confirmação a mais ao cliente (medido em 04/09, 15:36 e 15:54).
         lines.append(
-            f"Orçamento vigente apresentado e ainda não confirmado. quote_token: {token}. "
+            f"Revisão interna vigente. Sua apresentação/aceite são verificados pelo servidor. quote_token: {token}. "
             "Se a sacola ou a entrega mudarem, chame review_order de novo e use o token novo."
         )
+    if conversation.last_order_ref:
+        lines.append(f"Referência do pedido preservado: {conversation.last_order_ref}. Consulte order_status para fatos atuais; não recrie o pedido.")
     if is_first_turn:
         lines.append("Primeira mensagem desta conversa: apresente-se em uma linha e faça uma pergunta objetiva.")
         if greeting:

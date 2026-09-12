@@ -1,0 +1,9 @@
+AUDIT_IMPORTS ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/orderman/shopman/orderman'] ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/guestman/shopman/guestman']
+........................................................................ [ 70%]
+..............................                                           [100%]
+=============================== warnings summary ===============================
+shopman/shop/tests/test_manychat_marketing_safety.py::test_notification_exception_is_redacted_from_result_and_log
+  /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911:0: PytestWarning: Error when trying to teardown test databases: OperationalError('database "test_concierge_evidence" is being accessed by other users\nDETAIL:  There are 5 other sessions using the database.')
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+102 passed, 1 warning in 19.23s

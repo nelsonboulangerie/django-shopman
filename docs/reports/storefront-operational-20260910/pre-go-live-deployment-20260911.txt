@@ -51,3 +51,15 @@ apps update foi executado, portanto nada foi apagado. Este follow-up declara as
 mesmas chaves/valores no spec versionado, preservando o segredo HMAC sem valor.
 Produção comercial, providers reais, piloto humano e política definitiva de
 retenção continuam decisões/gates separados.
+
+Continuidade após merges de terceiros
+- PRs #611 e #615 entraram depois de #612, sem conflito com W00–W10.
+- Deploy Images 34652181568 publicou marketing e web no merge descendente
+  29e0737e99a806975df8810b5b03393af83e9f02.
+- web: sha256:2f15086150d45f9f086212cf04968e345ed4024fe021efdea2dadceef2778ef7
+- marketing: sha256:2ee183568abb8b2e323e4a7f80ea3fd3ce9cc31129f02c97cc27ddc64003e2e5
+- deployment 239c5fd5-846f-4983-be70-9fb660654c73: ACTIVE, 47/47 etapas.
+- Pre-go-live Smoke 34652347686 correlacionou o deployment e passou.
+- O PR documental #617 entrou como 7faf0259a855e8e4094010dd6bef3deb2c134f29.
+- Deploy Images 34652839163: build_result=skipped; components=[]; nenhum deploy.
+- Pre-go-live Smoke 34652900790: success no estado que permaneceu ativo.

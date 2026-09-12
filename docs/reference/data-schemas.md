@@ -27,7 +27,7 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 | `outside_business_hours` | `bool` | BusinessHoursRule (validation) | CheckoutView, CommitService | `True` se pedido feito fora do horário. Não bloqueia checkout — apenas flag informativa |
 | `delivery_address_structured` | `dict` | CheckoutView (`set_data`) | CommitService | Endereço estruturado do Google Places: `{route, street_number, complement, neighborhood, city, state_code, postal_code, place_id, formatted_address, delivery_instructions, is_verified, latitude, longitude}` |
 | `payment` | `dict` | CheckoutView (`set_data`), POS, API | CommitService, hooks, handlers | Dados de pagamento iniciais: `{method}` (+ `change_for_q` em centavos quando dinheiro **na entrega** e o cliente pediu troco). Enriquecido por handlers pós-commit (intent_ref, status, etc.) |
-| `delivery_fee_q` | `int` | DeliveryFeeModifier (via `session.save`) | CommitService, CartService, tracking view | Taxa de entrega efetiva em centavos. 0 = grátis (faixa/zona grátis ou subtotal ≥ `rules.free_delivery_above_q`). Resolvida por **faixa de distância** (`DeliveryDistanceBand`, motor) com **zona** (`DeliveryZone` modo `override`) como exceção. Só presente quando `fulfillment_type == "delivery"` e há cobertura. Reavaliada a cada passagem dos modifiers (depende do subtotal). Mapeável a `vFrete` na NF-e — **nunca** vira OrderItem |
+| `delivery_fee_q` | `int` | DeliveryFeeModifier (via `session.save`) | CommitService, CartService, tracking view | Taxa de entrega efetiva em centavos. 0 = grátis (faixa/zona grátis ou subtotal ≥ `rules.free_delivery_above_q`). Resolvida por **faixa de distância** (`DeliveryDistanceBand`, motor) com **zona** (`DeliveryZone` modo `override`) como exceção. Só presente quando `fulfillment_type == "delivery"` e há cobertura. Reavaliada a cada passagem dos modifiers (depende do subtotal). Mapeável a `vFrete` na NF-e; o modificador mantém a linha sintética `__DELIVERY_FEE__` para o total canônico de Order/Payman (projeções comerciais a separam dos produtos). Conferido no código atual; não somar a taxa novamente ao total |
 | `delivery_fee_override_q` | `int \| null` | POS (`build_session_ops`) | `pos._resolve_delivery_fee` | A **exceção** de taxa que o operador do balcão assumiu para esta entrega (combinado de porta, cortesia), em centavos. `null`/ausente = sem exceção, e a taxa é a que o motor resolve pelo endereço — nunca leia ausência como zero. Existe porque no PDV a taxa deixou de ser digitada: o campo livre era um segundo dono do preço, e duas vendas do mesmo endereço saíam diferentes conforme quem estava no caixa. Fica gravada ao lado da `delivery_fee_q` que ela produziu, para o rascunho retomado não voltar à tabela da loja em silêncio |
 | `delivery_zone_error` | `bool` | DeliveryFeeModifier (via `session.save`) | DeliveryZoneRule validator | `True` quando o endereço está fora da área: sem faixa de distância que o cubra, ou zona `exclude` casada. Bloqueia commit |
 | `delivery_distance_km` | `float` | DeliveryFeeModifier (via `session.save`) | checkout/tracking (transparência) | Distância loja→endereço em km (1 casa), quando calculável (lat/lng presentes). Exibida ao cliente p/ justificar a taxa. Ausente quando não há coordenada |
@@ -111,6 +111,37 @@ pelas ferramentas em `shopman/storefront/concierge/tools.py`:
 
 O `quote_token` que prende a confirmação ao orçamento vive em `Conversation.quote`, não
 na sessão: mudou a sacola, o token muda, e `place_order` recusa o antigo.
+
+Contrato conversacional v2 (ativação pendente de gates): Conversation identifica
+provider + account + transport_channel + subject opaco; account legado permanece
+`legacy_unverified`. `turn_fence`/`claim_until` são claim e posse; `last_order_ref`
+é referência ao owner Order; `handoff_sync_state` é evidência do espelho remoto.
+Message.envelope guarda version, event_id íntegro, account_id/provider/canal,
+subject, autenticação, timestamps, correlation_ref e payload_hash; saída guarda
+turn_fence, content_hash, quote_token/disclosure apresentados e code técnico.
+`consumed_by` liga entrada ao fence que persistiu seu resultado, sem inferir
+consumo por posição. `transport_state` distingue legacy/prepared/executing/accepted/
+not_applied/unknown; `delivered` legado não comprova receipt do fornecedor.
+A retenção continua sob G04; hashes não promovem identidade/consentimento.
+
+`Conversation.quote` v2 contém token, session_key, customer_ref/phone vinculados,
+snapshot factual, revision de Session, payment_method selecionado, total_q completo,
+lines_total_q, issued_at e validity=`session_open_and_current_policy`. Sem TTL comercial inventado: Session aberta, holds, preço, data/slot são revalidados; G05 decide eventual validade adicional. Não concede autorização: Message de revisão aceita pelo
+provider + nova entrada verificada são a evidência; replay usa IdempotencyKey.
+`Conversation.flags.web_transfer_key` referencia a Session de origem da última
+transferência para consultar o recibo canônico da mesma intenção. Não é outra sacola.
+Message de aceite de disponibilidade liga `subscription_ref` e
+`disclosure_message_id` à StockAlertSubscription canônica; disclosure contém SKU,
+texto, versão/token apresentados. Não replica estado de consentimento.
+Saídas em blocos registram `depends_on` (Message precedente), `inbound_max_id`,
+`purpose` (reply/handoff_ack), e eventual `previous_fence`/`explicit_retry`.
+A revisão/disclosure só é oferecida no último bloco aceito da cadeia completa;
+`preceding_block_pending` impede Pix/CTA sem contexto. Retry explícito é gate G03,
+proibido para unknown e para contexto/revisão alterados.
+
+Directive usa tópico versionado `concierge.turn.v2` na mesma fila Orderman e
+payload `{conversation_id, contract_version: 2}`. Worker anterior desconhece esse
+tópico e não executa envelope novo. Não publicar flow v2 em ingresso antigo.
 
 ---
 

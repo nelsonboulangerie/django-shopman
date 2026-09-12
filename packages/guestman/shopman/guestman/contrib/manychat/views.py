@@ -16,6 +16,7 @@ import json
 import logging
 
 from django.conf import settings
+from django.db import transaction
 from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
@@ -42,10 +43,7 @@ class ManychatWebhookView(View):
 
     def post(self, request):
         body = request.body
-        signature = (
-            request.headers.get("X-Hub-Signature-256", "")
-            or request.headers.get("X-Manychat-Signature", "")
-        )
+        signature = request.headers.get("X-Hub-Signature-256", "") or request.headers.get("X-Manychat-Signature", "")
 
         # G4: Authenticity. Sem secret configurada, aceita SÓ em DEBUG (dev); em
         # staging/prod falha fechado (rejeita payloads não assinados).
@@ -64,19 +62,21 @@ class ManychatWebhookView(View):
         except (json.JSONDecodeError, ValueError):
             return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-        # G5: Replay protection
-        nonce = data.get("id") or data.get("event_id", "")
-        if nonce:
-            try:
-                Gates.replay_protection(str(nonce), provider="manychat")
-            except GateError:
-                logger.debug("Manychat webhook: duplicate event %s", nonce)
-                return JsonResponse({"status": "duplicate"}, status=200)
-
-        # Sync subscriber
+        if not isinstance(data, dict) or not isinstance(data.get("subscriber", data), dict):
+            return JsonResponse({"error": "Expected subscriber object"}, status=400)
         subscriber = data.get("subscriber", data)
+        # ID do assinante não é ID de evento. Estado sem event_id pode ser
+        # reaplicado; nunca descartar atualização futura do mesmo assinante.
+        nonce = data.get("event_id", "")
+        if not isinstance(nonce, str) or len(nonce) > 220:
+            return JsonResponse({"error": "Invalid event_id"}, status=400)
         try:
-            customer, created = ManychatService.sync_subscriber(subscriber)
+            with transaction.atomic():
+                if nonce:
+                    Gates.replay_protection("manychat:" + nonce, provider="manychat")
+                customer, created = ManychatService.sync_subscriber(subscriber)
+        except GateError:
+            return JsonResponse({"status": "duplicate"}, status=200)
         except ValueError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
         except Exception:
