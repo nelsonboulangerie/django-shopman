@@ -225,6 +225,21 @@ def _cart_summary(conversation: Conversation, channel_ref: str) -> str:
         return ""
 
 
+def _current_customer_text(conversation: Conversation) -> str:
+    """Texto humano coberto pelo claim atual, sem depender do recorte do modelo."""
+    inbound_ids = tuple(getattr(conversation, "_inbound_ids", ()) or ())
+    if not inbound_ids:
+        return ""
+    return "\n".join(
+        conversation.messages.filter(
+            pk__in=inbound_ids,
+            kind=ConversationMessage.Kind.INBOUND,
+        )
+        .order_by("pk")
+        .values_list("text", flat=True)
+    ).strip()
+
+
 # ── O turno ───────────────────────────────────────────────────────────
 
 
@@ -248,6 +263,7 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
         account=str(getattr(binding, "account", "") or ""),
         transport_channel=str(getattr(binding, "transport_channel", "") or ""),
         connection_key=str(getattr(binding, "connection_key", "") or ""),
+        customer_text=_current_customer_text(conversation),
     )
 
     is_first_turn = not conversation.messages.filter(kind=ConversationMessage.Kind.REPLY).exists()
@@ -306,6 +322,49 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
         if stop != "tool_use" or not tool_uses:
             if stop == "max_tokens":
                 logger.warning("concierge.agent max_tokens conversation=%s", conversation.pk)
+            if not canonical_replies:
+                # O modelo pode encerrar sem consultar. A busca pública ainda é
+                # executada pelo mesmo contrato canônico e só assume a resposta
+                # quando encontra um fato; saudações e conversa sem match mantêm
+                # o fallback neutro.
+                arguments: dict = {}
+                result = tools_module.execute("search_storefront", arguments, ctx)
+                rendered = (
+                    tools_module.render_result("search_storefront", result)
+                    if result.get("ok") and result.get("found")
+                    else ""
+                )
+                if rendered:
+                    tool_use_id = f"server_search_{iteration}"
+                    outcome.messages.extend(
+                        [
+                            {
+                                "role": "assistant",
+                                "content": [
+                                    {
+                                        "type": "tool_use",
+                                        "id": tool_use_id,
+                                        "name": "search_storefront",
+                                        "input": arguments,
+                                    }
+                                ],
+                            },
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "tool_result",
+                                        "tool_use_id": tool_use_id,
+                                        "content": _tool_result_text(result),
+                                    }
+                                ],
+                            },
+                        ]
+                    )
+                    outcome.tool_events.append(
+                        {"name": "search_storefront", "input": arguments, "ok": True}
+                    )
+                    canonical_replies["search_storefront:{}"] = rendered
             outcome.reply_text = (
                 "\n\n".join(dict.fromkeys(canonical_replies.values()))
                 if canonical_replies

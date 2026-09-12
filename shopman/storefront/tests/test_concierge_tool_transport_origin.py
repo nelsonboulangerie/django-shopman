@@ -66,7 +66,7 @@ def test_agent_loads_causal_binding_into_tool_context(causal_conversation, monke
     monkeypatch.setattr(tools, "execute", execute)
     client = ScriptedClient(
         response(
-            SimpleNamespace(type="tool_use", id="tool-1", name="browse_menu", input={}),
+            SimpleNamespace(type="tool_use", id="tool-1", name="search_storefront", input={}),
             stop_reason="tool_use",
         ),
         response(SimpleNamespace(type="text", text="Pronto."), stop_reason="end_turn"),

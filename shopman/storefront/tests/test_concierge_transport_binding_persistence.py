@@ -81,7 +81,7 @@ def test_0051_moves_transport_without_losing_logical_conversation(tmp_path, djan
             conversation=conversation,
             role="assistant",
             kind="tool_call",
-            content=[{"type": "tool_use", "name": "browse_menu"}],
+            content=[{"type": "tool_use", "name": "search_storefront"}],
         )
 
         executor = MigrationExecutor(isolated)
