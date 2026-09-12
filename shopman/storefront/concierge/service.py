@@ -532,7 +532,8 @@ def _dispatch_reply(conversation, message):
     try:
         outcome = transport.send_for(current, message.text)
         outcome = transport.normalize_outcome(outcome)
-    except Exception:
+    except Exception as exc:
+        logger.warning("concierge.dispatch.acceptance_unconfirmed conversation=%s message=%s exception_type=%s", current.pk, message.pk, type(exc).__name__)
         outcome = transport.SendOutcome("unknown", "acceptance_unconfirmed")
     message.transport_state = outcome.state
     message.envelope = {**message.envelope, "code": outcome.code}
@@ -575,7 +576,8 @@ def mark_handoff(conversation: Conversation, reason: str, *, consumed_ids=()) ->
         )
     try:
         synced = transport.handoff_for(current, True) is True
-    except Exception:
+    except Exception as exc:
+        logger.warning("concierge.handoff.sync_unconfirmed conversation=%s exception_type=%s", current.pk, type(exc).__name__)
         synced = False
     Conversation.objects.filter(pk=current.pk, turn_fence=current.turn_fence).update(handoff_sync_state="accepted" if synced else "unknown")
     _alert(current, "concierge_handoff", "Atendimento solicitado; sincronização " + ("aceita." if synced else "incerta; verificar ManyChat."))
@@ -603,7 +605,8 @@ def return_to_concierge(conversation: Conversation) -> bool:
         current.save(update_fields=["handoff_sync_state", "updated_at"])
     try:
         synced = transport.handoff_for(current, False) is True
-    except Exception:
+    except Exception as exc:
+        logger.warning("concierge.resume.sync_unconfirmed conversation=%s exception_type=%s", current.pk, type(exc).__name__)
         synced = False
     with transaction.atomic():
         current = Conversation.objects.select_for_update().get(pk=conversation.pk)

@@ -43,7 +43,8 @@ def send_text(subscriber_id: str, text: str) -> SendOutcome:
 
     try:
         result = notification_manychat.send_text_result(subscriber_id, text)
-    except Exception:
+    except Exception as exc:
+        logger.warning("concierge.transport.acceptance_unconfirmed exception_type=%s", type(exc).__name__)
         return SendOutcome("unknown", "acceptance_unconfirmed")
     state = "accepted" if result.get("success") else "unknown" if result.get("outcome_unknown") else "not_applied"
     return SendOutcome(state, str(result.get("error") or ""))

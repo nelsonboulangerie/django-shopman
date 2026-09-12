@@ -114,7 +114,7 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),
     ),
     "CONCIERGE_LEGACY_READ_ONLY": (
-        ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: consulta pelo portão legado"),
+        ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),
     ),
     "CONCIERGE_MEDIA_UNSUPPORTED": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),

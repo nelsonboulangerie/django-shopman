@@ -28,13 +28,13 @@ class Conversation(models.Model):
 
     #: Subject opaco do transporte; só identifica em conjunto com conta/canal.
     subscriber_id = models.CharField("assinante ManyChat", max_length=512)
-    provider = models.CharField(max_length=40, default="manychat")
-    account = models.CharField(max_length=128, default="legacy_unverified")
-    transport_channel = models.CharField(max_length=40, default="whatsapp")
-    turn_fence = models.PositiveBigIntegerField(default=0)
-    claim_until = models.DateTimeField(null=True, blank=True)
-    last_order_ref = models.CharField(max_length=64, blank=True)
-    handoff_sync_state = models.CharField(max_length=24, default="legacy")
+    provider = models.CharField("provedor", max_length=40, default="manychat")
+    account = models.CharField("conta do provedor", max_length=128, default="legacy_unverified")
+    transport_channel = models.CharField("canal de comunicação", max_length=40, default="whatsapp")
+    turn_fence = models.PositiveBigIntegerField("versão de controle do turno", default=0)
+    claim_until = models.DateTimeField("posse do turno até", null=True, blank=True)
+    last_order_ref = models.CharField("referência do último pedido", max_length=64, blank=True)
+    handoff_sync_state = models.CharField("sincronização do atendimento humano", max_length=24, default="legacy")
     #: E.164 com "+", vindo do `getInfo` (campo `whatsapp_phone`). Vazio = contato
     #: sem telefone (chegou pelo Instagram): pode conversar, não pode pedir.
     phone = models.CharField("telefone", max_length=32, blank=True)
@@ -124,8 +124,8 @@ class ConversationMessage(models.Model):
     external_id = models.CharField("id externo", max_length=80, blank=True)
     #: Evidência legada sem receipt. Escrita v2 usa transport_state e deixa None.
     delivered = models.BooleanField("entregue", null=True, blank=True)
-    consumed_by = models.PositiveBigIntegerField(null=True, blank=True, db_index=True)
-    transport_state = models.CharField(max_length=24, default="legacy", db_index=True)
+    consumed_by = models.PositiveBigIntegerField("turno que processou a entrada", null=True, blank=True, db_index=True)
+    transport_state = models.CharField("estado do envio", max_length=24, default="legacy", db_index=True)
     envelope = models.JSONField("envelope de transporte", default=dict, blank=True)
     usage = models.JSONField("consumo", default=dict, blank=True)
     created_at = models.DateTimeField("criada em", auto_now_add=True, db_index=True)

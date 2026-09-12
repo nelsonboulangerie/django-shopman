@@ -34,3 +34,13 @@ Rollback funcional: manter read_onlytrue e desligar LEGACY_READ_HANDOFF_ENABLED 
 Quality identificou imports desorganizados no runner de evidências, corrigidos sem alterar isolamento. Gate da meia-correção exigiu declarar ausência de identificador opcional como fallback deliberado para a próxima fonte canônica (não é erro de negócio). Test-storefront roda SQLite: as provas PG são explicitamente marcadas e ligadas ao DEFAULT_RUNTIME_TEST_PATHS existente, cujo SkipCollector reprova qualquer skip. Nenhum novo workflow ou gate dispensado.
 
 A seleção adicionada ao runtime estrito passou com84testes/49,13s, zero skips/warnings (`ci-postgresql.txt`). A suíte comum dos4módulos marcou36passed/14skipped (`ci-sqlite.txt`), exclusivamente por exigir PostgreSQL; essa contagem não é prova de lock. Runner e contrato ManyChat/legado:30passed/1,74s (`ci-quality-regressions.txt`).
+
+## Ajustes encontrados pela segunda rodada de CI
+
+As suítes completas reportaram Shop4353passed/3failed e Backstage3697passed/2failed. Os cinco casos foram corrigidos: expectativa da manutenção inclui recover_concierge; snapshot de copy regenerado pela fonte canônica; quatro falhas de transporte/handoff registram evento e tipo da exceção sem PII, preservando unknown; campos têm rótulos explícitos; quatro tipos de OperatorAlert registrados. Sem relaxar baseline/checks.
+
+Migrações adicionais shop0050 e backstage0064 alteram apenas metadados de campos/choices, sem migração de dados. Backstage0064 depende de0062;0063 está reservado ao trabalho PDV ainda não integrado. Históricos deverão ser conciliados no merge desse outro trabalho.
+
+Provas locais desta correção:172passed/18,30s em PostgreSQL privado incluindo migração/histórico e rótulos/alertas;21passed/11,91s nas regressões Shop;11passed/0,24s em higiene/transporte. Ruff integral e drift de migrations passaram. A primeira invocação local de make admin usou pacote editable do checkout original e abortou no import; repetida com PYTHONPATH inteiro do worktree, sem tocar o checkout original.
+
+make admin integral: gate canônico aprovado e268passed/49,50s, sem escopo por URL (`ci-admin-final.txt`).
