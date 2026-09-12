@@ -272,3 +272,16 @@ def test_legacy_receipt_never_opens_or_renews_transport_window(client, gateway):
     service.run_turn(conversation.pk)
     assert gateway == []
     assert conversation.messages.filter(kind="reply", transport_state="not_applied", envelope__code="window_closed").exists()
+
+
+def test_read_only_release_contains_even_verified_event_and_reloaded_tool(client, settings, catalog, gateway):
+    settings.SHOPMAN_CONCIERGE = {**settings.SHOPMAN_CONCIERGE, "read_only": True}
+    post(client, "#c quero dois pães", event_id="stable-test-event")
+    conversation = Conversation.objects.get()
+    result = service.run_turn(conversation.pk)
+    assert result.processed_message_ids
+    assert gateway
+    reloaded = Conversation.objects.get(pk=conversation.pk)
+    command = tools.set_item(tools.ToolContext(reloaded, "web"), "PAO-FRANCES", 2)
+    assert not command["ok"]
+    assert not Session.objects.exists() and not Order.objects.exists()

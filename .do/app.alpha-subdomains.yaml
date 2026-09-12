@@ -434,10 +434,35 @@ envs:
   type: GENERAL
 # Mesma conta e mesmo portão #c do flow Concierge (piloto), conferidos por GET
 # getInfo/getFlows em 11/09/2026. Não recriar flow nem trocar sua chave X-Api-Key.
-# Versão 0 mantém o candidato contido até o Body real comprovar event_id estável.
+# Teste autorizado pelo operador: versão 2 SOMENTE leitura/humano.
+# Compra permanece contida mesmo com event_id; referência, não aplicar spec inteiro.
 - key: CONCIERGE_CONTRACT_VERSION
   scope: RUN_TIME
-  value: '0'
+  value: '2'
+  type: GENERAL
+- key: CONCIERGE_READ_ONLY
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: CONCIERGE_LEGACY_READ_HANDOFF_ENABLED
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: CONCIERGE_IDENTITY_LINK_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: CONCIERGE_HUMAN_RETURN_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: CONCIERGE_OUTPUT_RETRY_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: CONCIERGE_TRANSFER_ENABLED
+  scope: RUN_TIME
+  value: 'false'
   type: GENERAL
 - key: CONCIERGE_ACCOUNT_ID
   scope: RUN_TIME

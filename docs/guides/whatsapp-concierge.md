@@ -115,6 +115,15 @@ base no ACK.
 A adaptação exata dos ramos de erro e do caminho humano deve ser revista no flow
 existente. Esta documentação não publica nem altera a automação.
 
+## Teste controlado: contenção adicional
+
+A publicação autorizada para teste usa `CONCIERGE_READ_ONLY=true` junto da
+compatibilidade legada. Todo turno permanece em catálogo/humano, inclusive
+quando vier event_id; tools de compra continuam contidas após reload da conversa.
+Isso não substitui o gate da janela: o corpo de quatro campos, sozinho, não
+comprova interação recente do WhatsApp. Veja o relatório de release para o estado
+verificado da publicação, sem presumir que preparação de configuração é deploy.
+
 ## Configuração do candidato
 
 Além das credenciais e do switch já existentes, o contrato v2 exige configuração

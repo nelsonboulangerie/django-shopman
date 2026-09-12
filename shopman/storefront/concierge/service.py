@@ -311,6 +311,8 @@ def assert_turn_authority(conversation, *, for_mutation=True):
         raise TurnRevoked("identity_changed")
     if not is_enabled() or not is_allowed(current.subscriber_id) or current.state != Conversation.State.ACTIVE:
         raise TurnRevoked("contained")
+    if for_mutation and config().get("read_only"):
+        raise TurnRevoked("read_only")
     if getattr(conversation, "_legacy_read_only", False):
         if for_mutation or not config().get("legacy_read_handoff_enabled"):
             raise TurnRevoked("legacy_read_only")
@@ -351,7 +353,7 @@ def _claim(conversation_id):
         conversation._turn_fence = conversation.turn_fence
         conversation._inbound_max_id = inbound[-1].pk
         conversation._inbound_ids = [m.pk for m in inbound]
-        conversation._legacy_read_only = any(m.envelope.get("input_assurance") == "legacy_unverified" for m in inbound)
+        conversation._legacy_read_only = bool(config().get("read_only")) or any(m.envelope.get("input_assurance") == "legacy_unverified" for m in inbound)
         return conversation, inbound
 
 

@@ -1067,6 +1067,7 @@ SHOPMAN_CONCIERGE = {
     "transport_channel": "whatsapp",
     "account_id": os.environ.get("CONCIERGE_ACCOUNT_ID", ""),
     "api_key_previous": os.environ.get("CONCIERGE_API_KEY_PREVIOUS", ""),
+    "read_only": _env_bool("CONCIERGE_READ_ONLY", False),
     "legacy_read_handoff_enabled": _env_bool("CONCIERGE_LEGACY_READ_HANDOFF_ENABLED", False),
     "identity_link_enabled": _env_bool("CONCIERGE_IDENTITY_LINK_ENABLED", False),
     "human_return_enabled": _env_bool("CONCIERGE_HUMAN_RETURN_ENABLED", False),
