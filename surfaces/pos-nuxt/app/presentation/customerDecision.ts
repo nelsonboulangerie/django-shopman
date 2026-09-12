@@ -257,17 +257,16 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
     const isTaxId = decision.field === "tax_id";
     const inactive = decision.candidates?.some((candidate) => candidate.ref === other?.ref && candidate.owner_inactive);
     return {
-      title: isTaxId ? "CPF da nota encontrado em um cadastro" : "E-mail do comprovante encontrado em um cadastro",
-      body: `${decision.typed} está no cadastro de ${ownerName}. `
-        + "Usar esse dado no documento não altera nem associa o cadastro à venda.",
-      confirmLabel: inactive ? "" : `Associar ${ownerName} à venda`,
+      title: inactive ? "Cadastro inativo" : "Cadastro encontrado",
+      body: ownerName,
+      confirmLabel: inactive ? "" : "Associar cliente",
       confirmIcon: "lucide:user-round-check",
-      cancelLabel: isTaxId ? "Usar apenas nesta nota" : "Usar apenas neste comprovante",
+      cancelLabel: isTaxId ? "Só na nota" : "Só no comprovante",
       cancelIcon: "lucide:receipt-text",
       merge: null,
       release: null,
       requiresConfirmation: true,
-      confirmPrompt: `A venda é de ${ownerName}? Associar muda o cliente atendido e pode mudar preços e benefícios. O dado pedido no documento será mantido.`,
+      confirmPrompt: `Associar ${ownerName} à venda?`,
     };
   }
 

@@ -220,6 +220,44 @@ watch(() => props.customerDecision, () => {
   confirmingAttend.value = false;
 });
 
+const receiptPanelRef = ref<HTMLElement | null>(null);
+const receiptValue = computed(() => {
+  const value = props.customerDecision?.typed || "";
+  return props.customerDecision?.field === "tax_id" && /^\d{11}$/.test(value)
+    ? value.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4") : value;
+});
+function receiptButtons() {
+  return [...(receiptPanelRef.value?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") || [])];
+}
+watch(confirmingAttend, () => {
+  if (isReceiptDecision.value) void nextTick(() => receiptButtons()[0]?.focus());
+});
+function onReceiptKey(event: KeyboardEvent) {
+  if (!isReceiptDecision.value || event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
+  const key = event.key;
+  if (!["1", "2", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " ", "Escape"].includes(key)) return;
+  event.stopPropagation();
+  if (props.lookupBusy || event.repeat) { event.preventDefault(); return; }
+  if (key === "Escape") {
+    event.preventDefault();
+    if (confirmingAttend.value) confirmingAttend.value = false;
+    else emit("update:open", false);
+    return;
+  }
+  if (key.startsWith("Arrow")) {
+    event.preventDefault();
+    const buttons = receiptButtons();
+    const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const direction = key === "ArrowLeft" || key === "ArrowUp" ? -1 : 1;
+    buttons[(current + direction + buttons.length) % buttons.length]?.focus();
+  } else if (!confirmingAttend.value && (key === "1" || key === "2")) {
+    event.preventDefault();
+    if (key === "1") void cancelDecision();
+    else if (decisionCopy.value?.confirmLabel) askConfirm();
+  }
+  // Enter/Space usam o clique nativo do botão focado. Tab mantém a navegação do diálogo.
+}
+
 function askRelease(value: string) {
   if (!decisionCopy.value?.release?.prompt) {
     emit("decisionRelease", value);
@@ -308,7 +346,7 @@ const newCustomerNote = computed(() => {
          de 60rem, gerando faixas vazias dos dois lados. Três perguntas feitas na
          mesma sequência do balcão não podem chegar em três formatos diferentes:
          o operador reaprende a tela a cada uma. -->
-    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" @open-auto-focus="onOpenAutoFocus">
+    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" @open-auto-focus="onOpenAutoFocus" @keydown.capture="onReceiptKey">
       <UiDialogHeader>
         <UiDialogTitle>{{ isReceiptDecision ? (customerDecision?.field === "tax_id" ? "CPF na nota" : "E-mail do comprovante") : "Cliente" }}</UiDialogTitle>
         <UiDialogDescription v-if="!isReceiptDecision">
@@ -420,8 +458,36 @@ const newCustomerNote = computed(() => {
 
                Âmbar porque é ATENÇÃO, não destruição — a paleta do operador é
                neutra e cor aqui só existe por função. -->
+          <div v-if="isReceiptDecision && decisionCopy" ref="receiptPanelRef" class="grid gap-4" data-receipt-choice aria-live="polite">
+            <template v-if="!confirmingAttend">
+              <div class="grid gap-1">
+                <p class="font-mono text-sm break-all">{{ receiptValue }}</p>
+                <p class="text-sm text-muted-foreground">{{ decisionCopy.title }}: <strong class="text-foreground">{{ decisionCopy.body }}</strong></p>
+                <p v-if="customerDecision?.current" class="text-xs text-muted-foreground">Cliente da venda: {{ customerDecision.current.name }}</p>
+              </div>
+              <div class="grid gap-2 sm:grid-cols-2">
+                <UiButton ref="receiptActionRef" type="button" class="h-11 gap-2" :disabled="lookupBusy" aria-keyshortcuts="1" @click="cancelDecision">
+                  {{ decisionCopy.cancelLabel }} <kbd aria-hidden="true" class="text-xs opacity-70">1</kbd>
+                </UiButton>
+                <UiButton v-if="decisionCopy.confirmLabel" type="button" variant="outline" class="h-11 gap-2" :disabled="lookupBusy" aria-keyshortcuts="2" @click="askConfirm">
+                  {{ decisionCopy.confirmLabel }} <kbd aria-hidden="true" class="text-xs opacity-70">2</kbd>
+                </UiButton>
+              </div>
+            </template>
+            <template v-else>
+              <div class="grid gap-1">
+                <p class="text-sm font-medium">{{ decisionCopy.confirmPrompt }}</p>
+                <p class="text-xs text-muted-foreground">Preços e benefícios serão revisados.</p>
+              </div>
+              <div class="grid gap-2 sm:grid-cols-2">
+                <UiButton type="button" class="h-11" :disabled="lookupBusy" @click="$emit('decisionConfirm')">Confirmar cliente</UiButton>
+                <UiButton type="button" variant="outline" class="h-11" :disabled="lookupBusy" @click="confirmingAttend = false">Voltar</UiButton>
+              </div>
+            </template>
+            <p class="text-xs text-muted-foreground">Tab / ← → escolher · Enter confirmar · Esc voltar</p>
+          </div>
           <div
-            v-if="customerDecision && decisionCopy"
+            v-if="customerDecision && decisionCopy && !isReceiptDecision"
             class="grid gap-3 rounded-md border border-warning/60 bg-warning/10 p-4"
             role="alertdialog"
             aria-live="assertive"

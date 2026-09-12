@@ -379,19 +379,19 @@ describe("decisão do documento", () => {
     expect(buttonByText("Cadastrar novo")).toBeUndefined();
     expect(buttonByText("Concluir")).toBeUndefined();
     expect(document.querySelector('input')).toBeNull();
-    expect(document.activeElement).toBe(buttonByText("Usar apenas nesta nota"));
+    expect(document.activeElement).toBe(buttonByText("Só na nota"));
     const actions = Array.from(document.querySelectorAll('button'));
-    expect(actions.indexOf(buttonByText("Usar apenas nesta nota")!)).toBeLessThan(actions.indexOf(buttonByText("Associar Bruno Souza à venda")!));
-    expect(screenText()).toContain("52998224725");
+    expect(actions.indexOf(buttonByText("Só na nota")!)).toBeLessThan(actions.indexOf(buttonByText("Associar cliente")!));
+    expect(screenText()).toContain("529.982.247-25");
     expect(screenText()).toContain("Bruno Souza");
     expect(buttonByText("unificar")).toBeUndefined();
-    buttonByText("Associar Bruno Souza à venda")!.click();
+    buttonByText("Associar cliente")!.click();
     await wrapper.vm.$nextTick();
     expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
-    expect(screenText()).toContain("A venda é de Bruno Souza?");
+    expect(screenText()).toContain("Associar Bruno Souza à venda?");
     buttonByText("Voltar")!.click();
     await wrapper.vm.$nextTick();
-    buttonByText("Usar apenas nesta nota")!.click();
+    buttonByText("Só na nota")!.click();
     expect(wrapper.emitted("decisionCancel")).toHaveLength(1);
   });
   it("corrigir WhatsApp devolve foco ao campo sem apagar o rascunho", async () => {
@@ -400,5 +400,46 @@ describe("decisão do documento", () => {
     await wrapper.vm.$nextTick();
     expect(document.activeElement).toBe(document.querySelector('input[inputmode="tel"]'));
     expect(wrapper.emitted("update:customerPhone")).toBeUndefined();
+  });
+});
+
+
+describe("atalhos da decisão do documento", () => {
+  const decision = { ...CONFLICT, kind: "receipt_identity", field: "tax_id", typed: "52998224725", fromReceipt: true };
+  function key(value: string, options: KeyboardEventInit = {}) {
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true, ...options }));
+  }
+  it("setas navegam, 2 pede confirmação e Escape volta sem aceitar", async () => {
+    const wrapper = await mount({ customerDecision: decision });
+    key("ArrowRight");
+    expect(document.activeElement).toBe(buttonByText("Associar cliente"));
+    key("ArrowLeft");
+    expect(document.activeElement).toBe(buttonByText("Só na nota"));
+    key("2");
+    await wrapper.vm.$nextTick();
+    await wrapper.vm.$nextTick();
+    expect(document.activeElement).toBe(buttonByText("Confirmar cliente"));
+    expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
+    key("Escape");
+    await wrapper.vm.$nextTick();
+    await wrapper.vm.$nextTick();
+    expect(document.activeElement).toBe(buttonByText("Só na nota"));
+    key("Escape");
+    expect(wrapper.emitted("update:open")).toEqual([[false]]);
+    expect(wrapper.emitted("decisionCancel")).toBeUndefined();
+  });
+  it("1 aceita só o documento; modificadores, repetição e espera não aceitam", async () => {
+    const wrapper = await mount({ customerDecision: decision });
+    key("1", { ctrlKey: true });
+    key("1", { repeat: true });
+    expect(wrapper.emitted("decisionCancel")).toBeUndefined();
+    await wrapper.setProps({ lookupBusy: true });
+    document.querySelector("[data-receipt-choice]")?.dispatchEvent(new KeyboardEvent("keydown", { key: "1", bubbles: true }));
+    expect(wrapper.emitted("decisionCancel")).toBeUndefined();
+    await wrapper.setProps({ lookupBusy: false });
+    buttonByText("Só na nota")!.focus();
+    key("1");
+    expect(wrapper.emitted("decisionCancel")).toHaveLength(1);
+    expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
   });
 });
