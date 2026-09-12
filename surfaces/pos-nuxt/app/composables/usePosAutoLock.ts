@@ -1,56 +1,79 @@
-import { onBeforeUnmount, onMounted, type Ref } from "vue";
+import { onBeforeUnmount, onMounted, watch, type Ref } from "vue";
 
 import { isIdleBeyond } from "~/utils/operatorLock";
 
-/**
- * Auto-lock por ociosidade — específico do PDV (kiosk de balcão compartilhado): se
- * ninguém toca a tela por `autoLockSeconds`, o operador ativo é derrubado e a tela
- * de identificação sobe. Os demais apps de operador (KDS/Gestor/Produção) são estações
- * de um operador só e não auto-travam, por isso isto vive no PDV e não no kit.
- *
- * Fica separado do lock compartilhado (`useOperatorLock`): a identificação em si
- * (PIN/crachá) é a mesma dos outros apps; só o timer de kiosk é do PDV.
- */
+const ACTIVITY_KEY = "shopman:pos:last-activity";
+const LOCK_NAME = "shopman:pos:auto-lock";
+
+/** O timer pertence à estação: uma aba ociosa não derruba outra em atendimento. */
 export function usePosAutoLock(opts: {
   locked: Ref<boolean>;
   lock: () => void | Promise<void>;
   autoLockSeconds: () => number;
-  /**
-   * Adiamento ciente do PAGAMENTO: enquanto retorna true (checkout aberto,
-   * PIX aguardando confirmação), o relógio de ociosidade não anda — travar no
-   * meio do pagamento derrubava o operador com o cliente na frente.
-   */
+  /** Checkout ou Pix em curso renova a atividade compartilhada entre abas. */
   holdWhen?: () => boolean;
 }) {
   let lastActivity = Date.now();
+  let lastPublished = 0;
   let cleanup: (() => void) | null = null;
 
-  function markActivity() {
+  function sharedActivity(): number {
+    try {
+      const value = Number(window.localStorage.getItem(ACTIVITY_KEY));
+      // Relógio ajustado para trás não deve desativar o cadeado para sempre.
+      if (Number.isFinite(value) && value > 0 && value <= Date.now()) lastActivity = Math.max(lastActivity, value);
+    } catch { /* Storage indisponível: o timer local continua protegendo a estação. */ }
+    return lastActivity;
+  }
+
+  function markActivity(force = false) {
     lastActivity = Date.now();
+    // Pointermove pode disparar dezenas de vezes por segundo. Um segundo é
+    // suficiente para compartilhar atividade com o timer, que roda a cada cinco.
+    if (!force && lastActivity - lastPublished < 1000) return;
+    try {
+      window.localStorage.setItem(ACTIVITY_KEY, String(lastActivity));
+      lastPublished = lastActivity;
+    } catch { /* Navegação sem storage mantém o timer local. */ }
+  }
+
+  async function lockIfIdle() {
+    if (opts.locked.value || opts.holdWhen?.()) return;
+    if (!isIdleBeyond(sharedActivity(), Date.now(), opts.autoLockSeconds() ?? 60)) return;
+    // Reancora antes do POST: outra aba que adquirir a trava logo depois não
+    // repete o logout enquanto a leitura da sessão ainda está sendo renovada.
+    markActivity(true);
+    await opts.lock();
   }
 
   onMounted(() => {
-    // O PDV é desktop-first: rolar a grade de produtos com a rodinha do mouse é
-    // trabalho, não ociosidade. Com só `pointerdown`/`keydown`, o operador que
-    // procurava um item rolando a lista via a tela travar na cara dele no meio
-    // da venda. `wheel` e `pointermove` fecham esse buraco.
+    markActivity(true);
+    const onActivity = () => markActivity();
     const events: Array<keyof WindowEventMap> = ["pointerdown", "keydown", "wheel", "pointermove"];
-    events.forEach((e) => window.addEventListener(e, markActivity, { passive: true }));
+    events.forEach((event) => window.addEventListener(event, onActivity, { passive: true }));
+    const stopWatch = watch(opts.locked, (locked, wasLocked) => {
+      if (!locked && wasLocked) markActivity(true);
+    });
     const id = window.setInterval(() => {
       if (opts.holdWhen?.()) {
-        // Pagamento em curso: reancora a atividade — ao terminar, o operador
-        // ganha a janela inteira de novo em vez de travar no tick seguinte.
-        lastActivity = Date.now();
+        markActivity(true);
         return;
       }
-      if (!opts.locked.value && isIdleBeyond(lastActivity, Date.now(), opts.autoLockSeconds() ?? 60)) {
-        lastActivity = Date.now(); // evita reentrância enquanto o lock propaga
-        opts.lock();
+      if (opts.locked.value || !isIdleBeyond(sharedActivity(), Date.now(), opts.autoLockSeconds() ?? 60)) return;
+      // Web Locks serializa abas em processos diferentes. Sem a API, reler e
+      // publicar antes do POST ainda evita duplicações no caso habitual.
+      if (navigator.locks?.request) {
+        void navigator.locks.request(LOCK_NAME, { ifAvailable: true }, async (lock) => {
+          if (lock) await lockIfIdle();
+        }).catch(() => lockIfIdle());
+      } else {
+        void lockIfIdle();
       }
     }, 5000);
     cleanup = () => {
-      events.forEach((e) => window.removeEventListener(e, markActivity));
+      events.forEach((event) => window.removeEventListener(event, onActivity));
       window.clearInterval(id);
+      stopWatch();
     };
   });
 
