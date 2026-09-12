@@ -335,6 +335,7 @@ test.describe("listas operacionais", () => {
     await openScenario(page, "campaigns-dense", "/campaigns", V1440);
     await page.locator("main li").first().locator("button").nth(1).click();
     await expect(page.getByText("Este conteúdo também mudou em outra sessão.")).toBeVisible();
+    await waitForFaithfulPreview(page);
     await expectStableScreenshot(page, "campaign-form__conflict-diff", V1440, "light", { fullPage: false });
   });
 
