@@ -3684,8 +3684,13 @@ def _remember_fiscal_prefs(customer, payload: dict) -> None:
     lookup projection e pré-seta o toggle fiscal / o canal de e-mail.
     """
     # A preferência lembrada é sobre a NOTA, então lê o campo da nota.
-    wants_fiscal = bool(str(payload.get("fiscal_tax_id") or "").strip())
-    wants_email = "email" in (payload.get("receipt_channels") or [])
+    document_only = {
+        choice["field"] for choice in (payload.get("receipt_identity_choices") or [])
+        if choice.get("choice") == "receipt_only"
+    }
+    # Documento de terceiro não ensina preferências fiscais ao cliente atual.
+    wants_fiscal = "tax_id" not in document_only and bool(str(payload.get("fiscal_tax_id") or "").strip())
+    wants_email = "email" not in document_only and "email" in (payload.get("receipt_channels") or [])
     if not (wants_fiscal or wants_email):
         return
     metadata = dict(customer.metadata or {})

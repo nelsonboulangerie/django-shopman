@@ -136,3 +136,19 @@ def test_disabled_email_is_ignored_without_prompt_or_crm_write(owner):
     assert owner.email == "ana@example.org"
     ops = build_session_ops({**payload, "items": []}, "op")
     assert not any(op.get("path") == "receipt.email" and op["value"] == owner.email for op in ops)
+
+
+def test_document_only_does_not_teach_preferences_to_associated_customer(owner):
+    current = Customer.objects.create(ref="current", first_name="Bia")
+    original = dict(Customer.objects.values().get(pk=current.pk))
+    payload = {"customer_ref": current.ref, "fiscal_tax_id": owner.document, "receipt_email": owner.email,
+               "receipt_channels": ["email"], "client_request_id": "sale-1", "receipt_identity_choices": [
+                   choice("tax_id", owner.document, customer_ref=current.ref),
+                   choice("email", owner.email, customer_ref=current.ref),
+               ]}
+    assert _persist_customer_from_payload(payload, operator_username="op")["ref"] == current.ref
+    saved = dict(Customer.objects.values().get(pk=current.pk))
+    assert saved["metadata"].get("fiscal_prefs") == original["metadata"].get("fiscal_prefs")
+    # A trilha de atendimento (pos.last_operator/last_capture_at) continua normal.
+    for field in ("first_name", "last_name", "document", "email", "phone"):
+        assert saved[field] == original[field]
