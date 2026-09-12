@@ -493,7 +493,7 @@ def _refund_status_key(order) -> str | None:
 
 
 def _cancellation_request(order) -> TrackingCancellationRequestData | None:
-    from shopman.storefront.services import cancellation_requests
+    from shopman.shop.services import cancellation_requests
 
     request = cancellation_requests.current(order)
     if request is None:

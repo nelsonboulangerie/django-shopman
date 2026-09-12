@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def _resolve(order_ref: str, actor: str) -> None:
     from shopman.shop.adapters import alert as alert_adapter
-    from shopman.storefront.services.cancellation_requests import ALERT_TYPE
+    from shopman.shop.services.cancellation_requests import ALERT_TYPE
 
     try:
         alert_adapter.resolve(ALERT_TYPE, order_ref=order_ref, actor=actor)
