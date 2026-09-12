@@ -1372,7 +1372,7 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
     });
 
     expect(registryLines(w)).toEqual([
-      "O e-mail do cadastro de Ana será atualizado para este.",
+      "E-mail de Ana: ana@example.org → contador@example.org.",
     ]);
   });
 
@@ -1400,9 +1400,9 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
       }),
     });
 
-    expect(registryLines(w)).toEqual(["O CPF será salvo no cadastro de Ana."]);
+    expect(registryLines(w)).toEqual(["CPF de Ana: 52998224725."]);
     const fiscal = w.find('section[aria-label="Nota fiscal"]');
-    expect(fiscal.text()).toContain("Salvar este CPF no cadastro de Ana?");
+    expect(fiscal.text()).toContain("Salvar no cadastro de Ana");
   });
 });
 

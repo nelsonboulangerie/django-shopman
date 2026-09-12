@@ -43,7 +43,7 @@
     >
       <span class="grid min-w-0 gap-0.5">
         <span class="text-xs font-medium leading-tight">{{ offer.title }}</span>
-        <span class="text-xs text-muted-foreground">{{ offer.hint }}</span>
+        <span v-if="checked && !needsWord" class="text-xs text-muted-foreground">{{ offer.hint }}</span>
       </span>
       <UiSwitch
         :model-value="checked"
@@ -70,7 +70,7 @@
       <p v-if="!confirmed" class="text-xs font-medium leading-tight">{{ offer.confirmPrompt }}</p>
       <div v-if="!confirmed" class="flex flex-wrap items-center gap-2">
         <UiButton type="button" size="xs" @click="emit('update:confirmed', true)">
-          Sim, trocar o CPF do cadastro
+          Trocar CPF
         </UiButton>
         <UiButton
           type="button"
@@ -78,12 +78,12 @@
           variant="ghost"
           @click="emit('update:checked', false)"
         >
-          Não trocar
+          Manter CPF
         </UiButton>
       </div>
       <p v-else class="flex items-center gap-1.5 text-xs font-medium">
         <Icon name="lucide:check" class="size-3.5 shrink-0" />
-        Troca confirmada. Desmarque acima para desistir.
+        Troca confirmada.
       </p>
     </div>
   </div>

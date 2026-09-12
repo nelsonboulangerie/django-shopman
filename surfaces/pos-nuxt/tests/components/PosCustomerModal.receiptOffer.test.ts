@@ -58,7 +58,7 @@ describe("PosCustomerModal — o e-mail do comprovante também pergunta", () => 
     expect(document.querySelector('[role="switch"]')).not.toBeNull();
     // O cadastro exige escolha explícita, mesmo sem cliente associado.
     expect(document.body.textContent).toContain(
-      "Marque somente se quiser cadastrar o cliente.",
+      "Novo cadastro: novo@example.org.",
     );
     expect(wrapper.html()).toBeTruthy();
   });
@@ -81,8 +81,8 @@ describe("PosCustomerModal — o e-mail do comprovante também pergunta", () => 
       customerName: "Ana Prado",
     });
 
-    expect(document.body.textContent).toContain("Atualizar o e-mail do cadastro de Ana?");
-    expect(document.body.textContent).toContain("ana@example.org");
+    expect(document.body.textContent).toContain("Atualizar cadastro de Ana");
+    expect(document.body.textContent).not.toContain(ATUALIZAR.hint);
   });
 
   it("sem oferta (nada a perguntar) o campo continua editável, e mudo", async () => {

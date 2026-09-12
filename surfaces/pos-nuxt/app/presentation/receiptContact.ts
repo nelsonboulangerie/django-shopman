@@ -25,7 +25,7 @@ export interface ReceiptContactOffer {
   customerName: string;
   /** O padrão da caixa quando o operador ainda não tocou nela. */
   defaultChecked: boolean;
-  /** A pergunta do popover. */
+  /** Rótulo curto do opt-in. */
   title: string;
   /** A consequência, dita ANTES de acontecer. */
   hint: string;
@@ -85,23 +85,10 @@ function firstName(name: string): string {
   return String(name || "").trim().split(/\s+/)[0] || "";
 }
 
-/** Como o campo se chama na tela, e o que ele faz na nota. `cpf` fica em
- *  português: é nome próprio. */
-const FIELD_COPY: Record<ReceiptContactField, { noun: string; onInvoice: string }> = {
-  email: { noun: "e-mail", onInvoice: "recebe a nota" },
-  tax_id: { noun: "CPF", onInvoice: "sai na nota" },
+const FIELD_COPY: Record<ReceiptContactField, { noun: string }> = {
+  email: { noun: "E-mail" },
+  tax_id: { noun: "CPF" },
 };
-
-/**
- * A primeira frase de TODA oferta: o que acontece com a nota não depende da
- * caixa. Sem ela o operador lia "Salvar…?" e ficava sem saber se desmarcar
- * tirava o CPF da nota — ou se marcar trocava o cliente da comanda. A pergunta
- * é só sobre o cadastro; a nota já está decidida.
- */
-function invoiceInvariant(field: ReceiptContactField): string {
-  const copy = FIELD_COPY[field];
-  return `Este ${copy.noun} ${copy.onInvoice} de qualquer jeito.`;
-}
 
 const EMPTY: Omit<ReceiptContactOffer, "field" | "typed" | "onFile" | "customerName"> = {
   kind: "none",
@@ -141,10 +128,10 @@ export function receiptContactOffer(input: ReceiptContactInput): ReceiptContactO
       ...SEM_ATRITO,
       kind: "create",
       defaultChecked: false,
-      title: "Salvar como cliente?",
-      hint: `${invoiceInvariant(field)} Marque somente se quiser cadastrar o cliente. Se o dado já pertencer a um cadastro, você poderá conferir antes de associar.`,
-      confirmLabel: "Salvar como cliente",
-      summaryLine: `Cadastrar cliente com este ${copy.noun}; se já existir, conferir antes de associar.`,
+      title: "Salvar no cadastro",
+      hint: `Novo cadastro: ${typed}.`,
+      confirmLabel: "Salvar no cadastro",
+      summaryLine: `Novo cadastro: ${typed}.`,
     };
   }
 
@@ -161,14 +148,10 @@ export function receiptContactOffer(input: ReceiptContactInput): ReceiptContactO
       ...SEM_ATRITO,
       kind: "save",
       defaultChecked: false,
-      title: `Salvar este ${copy.noun} no cadastro de ${ownerName}?`,
-      // O cliente da comanda NÃO muda: a caixa só decide se o cadastro dele
-      // ganha o dado. Dito por inteiro, porque a dúvida no balcão era
-      // exatamente "vai trocar o cliente que eu indiquei?".
-      hint: `${invoiceInvariant(field)} Marcado, fica também no cadastro de ${ownerName}, `
-        + `que hoje não tem ${copy.noun}. Desmarcado, vale só nesta venda.`,
+      title: `Salvar no cadastro de ${ownerName}`,
+      hint: `${copy.noun}: ${typed}.`,
       confirmLabel: "Salvar no cadastro",
-      summaryLine: `O ${copy.noun} será salvo no cadastro de ${ownerName}.`,
+      summaryLine: `${copy.noun} de ${ownerName}: ${typed}.`,
     };
   }
 
@@ -179,11 +162,10 @@ export function receiptContactOffer(input: ReceiptContactInput): ReceiptContactO
     ...SEM_ATRITO,
     kind: "update" as const,
     defaultChecked: false,
-    title: `Atualizar o ${copy.noun} do cadastro de ${ownerName}?`,
-    hint: `${invoiceInvariant(field)} O cadastro de ${ownerName} tem ${onFile} e só muda `
-      + "se você mandar; desmarcado, vale só nesta venda.",
+    title: `Atualizar cadastro de ${ownerName}`,
+    hint: `${onFile} → ${typed}.`,
     confirmLabel: "Atualizar o cadastro",
-    summaryLine: `O ${copy.noun} do cadastro de ${ownerName} será atualizado para este.`,
+    summaryLine: `${copy.noun} de ${ownerName}: ${onFile} → ${typed}.`,
   };
 
   // ⚠️ O CPF divergente é o ÚNICO ponto da matriz com atrito, e é de propósito.
@@ -194,11 +176,9 @@ export function receiptContactOffer(input: ReceiptContactInput): ReceiptContactO
   return {
     ...base_update,
     requiresConfirmation: true,
-    warning: `Isto troca a identidade fiscal do cadastro de ${ownerName}: `
-      + `o CPF ${onFile} sai e o ${typed} entra, em todas as próximas notas. `
-      + "CPF não muda — se este é de outra pessoa, não atualize o cadastro.",
-    confirmPrompt: `Confirmar a troca do CPF de ${ownerName}?`,
-    summaryLine: `A identidade fiscal do cadastro de ${ownerName} passará de ${onFile} para ${typed}.`,
+    warning: `CPF de ${ownerName}: ${onFile} → ${typed}.`,
+    confirmPrompt: "Trocar CPF do cadastro?",
+    summaryLine: `CPF de ${ownerName}: ${onFile} → ${typed}.`,
   };
 }
 

@@ -21,12 +21,14 @@ describe("PosReceiptSaveOffer — escolha inline", () => {
     expect(document.activeElement).toBe(input);
     expect(wrapper.find('[role="switch"]').attributes("aria-checked")).toBe("false");
     expect(wrapper.emitted("update:checked")).toBeUndefined();
+    expect(wrapper.text()).not.toContain(offer.hint);
   });
   it("switch é a ação explícita para salvar; desmarcar continua disponível", async () => {
     wrapper = await mountSuspended(PosReceiptSaveOffer, { props: { offer: EMAIL, checked: false } });
     await wrapper.find('[role="switch"]').trigger("click");
     expect(wrapper.emitted("update:checked")?.at(-1)).toEqual([true]);
     await wrapper.setProps({ checked: true });
+    expect(wrapper.text()).toContain(EMAIL.hint);
     await wrapper.find('[role="switch"]').trigger("click");
     expect(wrapper.emitted("update:checked")?.at(-1)).toEqual([false]);
   });
@@ -37,7 +39,7 @@ describe("PosReceiptSaveOffer — escolha inline", () => {
     await wrapper.setProps({ checked: true });
     expect(wrapper.find('[role="alertdialog"]').text()).toContain(TAX.confirmPrompt);
     expect(wrapper.emitted("update:confirmed")).toBeUndefined();
-    const confirm = wrapper.findAll("button").find((button) => button.text().includes("Sim, trocar o CPF"))!;
+    const confirm = wrapper.findAll("button").find((button) => button.text() === "Trocar CPF")!;
     await confirm.trigger("click");
     expect(wrapper.emitted("update:confirmed")?.at(-1)).toEqual([true]);
     await wrapper.setProps({ confirmed: true });
