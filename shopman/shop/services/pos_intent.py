@@ -249,7 +249,10 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
             )
         payload["fiscal_tax_id"] = digits
     payload["receipt_channels"] = _receipt_channels(payload.get("receipt_channels"))
-    payload["receipt_email"] = _emailish(payload.get("receipt_email"), field="receipt_email")
+    payload["receipt_email"] = (
+        _emailish(payload.get("receipt_email"), field="receipt_email")
+        if "email" in payload["receipt_channels"] else ""
+    )
     if for_commit and "email" in payload["receipt_channels"] and not payload["receipt_email"]:
         raise PosIntentError(
             code="receipt_email_required",

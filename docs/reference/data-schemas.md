@@ -1884,3 +1884,7 @@ A decisão vale apenas para o mesmo valor, dono, cliente associado e venda; não
 exige `save_receipt_tax_id`/`save_receipt_contact` falso. Mesmo dono já associado
 por `customer_ref` dispensa pergunta. Revisão e escrita recusam a ausência de
 decisão com `receipt_identity_conflict`, campo fiscal/receipt, valor e candidato.
+
+Quando `receipt_channels` não inclui `email`, o intent zera `receipt_email` e
+`save_receipt_contact`. O e-mail oculto não dispara consulta/decisão nem escrita;
+`customer_email` permanece sendo o contato do cliente associado.

@@ -1738,6 +1738,9 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
             op["meta"] = meta
         ops.append(op)
 
+    from shopman.shop.services.pos_receipt_identity import receipt_payload_for_channels
+
+    payload = receipt_payload_for_channels(payload)
     customer_name = str(payload.get("customer_name", "") or "").strip()
     customer_phone = str(payload.get("customer_phone", "") or "").strip()
     customer_tax_id = str(payload.get("customer_tax_id", "") or "").strip()
@@ -3477,8 +3480,9 @@ def resolve_or_create_customer(
 
 def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> dict:
     """Resolve/create/update a Guestman customer from any POS customer data."""
-    from shopman.shop.services.pos_receipt_identity import require_receipt_identity_choice
+    from shopman.shop.services.pos_receipt_identity import receipt_payload_for_channels, require_receipt_identity_choice
 
+    payload = receipt_payload_for_channels(payload)
     require_receipt_identity_choice(payload)
     name = str(payload.get("customer_name") or "").strip()
     phone = _normalize_phone(str(payload.get("customer_phone") or "").strip())

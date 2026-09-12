@@ -47,10 +47,19 @@ def receipt_identity_choices(raw) -> list[dict]:
     return result
 
 
+def receipt_payload_for_channels(payload: dict) -> dict:
+    """Campo oculto de e-mail não consulta, envia nem grava cadastro."""
+    channels = payload.get("receipt_channels") or []
+    if isinstance(channels, (list, tuple)) and "email" in channels:
+        return payload
+    return {**payload, "receipt_email": "", "save_receipt_contact": False}
+
+
 def require_receipt_identity_choice(payload: dict) -> None:
     """ACK exato autoriza usar na nota, nunca associar ou modificar cadastro."""
     from shopman.shop.services.pos import _conflict_row, _contact_owner, _identifier_owner
 
+    payload = receipt_payload_for_channels(payload)
     customer_ref = str(payload.get("customer_ref") or "").strip()
     request_id = str(payload.get("client_request_id") or "").strip()
     choices = receipt_identity_choices(payload.get("receipt_identity_choices"))

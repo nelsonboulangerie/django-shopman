@@ -24,7 +24,7 @@ def choice(field, value, *, customer_ref="", owner_ref="owner", request_id="sale
 @pytest.mark.parametrize("field,value,api_field", [("tax_id", "529.982.247-25", "fiscal_tax_id"), ("email", "ANA@EXAMPLE.ORG ", "receipt_email")])
 def test_known_document_prompts_without_save_opt_in(owner, field, value, api_field):
     with pytest.raises(ReceiptIdentityConflict) as error:
-        _persist_customer_from_payload({api_field: value, "client_request_id": "sale-1"}, operator_username="op")
+        _persist_customer_from_payload({api_field: value, "client_request_id": "sale-1", "receipt_channels": ["email"]}, operator_username="op")
     data = error.value.as_dict()
     assert data["code"] == "receipt_identity_conflict"
     assert data["field"] == api_field
@@ -35,7 +35,7 @@ def test_known_document_prompts_without_save_opt_in(owner, field, value, api_fie
 
 
 def test_receipt_only_retries_do_not_associate_or_write(owner):
-    payload = {"fiscal_tax_id": "52998224725", "receipt_email": "ana@example.org", "client_request_id": "sale-1",
+    payload = {"receipt_channels": ["email"], "fiscal_tax_id": "52998224725", "receipt_email": "ana@example.org", "client_request_id": "sale-1",
                "receipt_identity_choices": [choice("tax_id", "52998224725"), choice("email", "ana@example.org")]}
     original = dict(Customer.objects.values().get(pk=owner.pk))
     for _ in range(3):
@@ -118,3 +118,21 @@ def test_review_and_close_require_same_decision_without_associating(owner, count
     assert not order.data.get("customer", {}).get("ref")
     assert "receipt_identity_choices" not in order.data
     assert Customer.objects.count() == 1
+
+
+def test_disabled_email_is_ignored_without_prompt_or_crm_write(owner):
+    other = Customer.objects.create(ref="associated", first_name="Bia", email="bia@example.org")
+    payload = {"customer_ref": other.ref, "receipt_channels": [], "receipt_email": owner.email,
+               "save_receipt_contact": True, "client_request_id": "hidden-email"}
+    normalized = parse_pos_sale_intent({**payload, "items": []}, for_commit=False).payload
+    assert normalized["receipt_email"] == ""
+    assert normalized["save_receipt_contact"] is False
+    resolved = _persist_customer_from_payload(payload, operator_username="op")
+    assert resolved["ref"] == other.ref
+    assert resolved["email"] == "bia@example.org"
+    other.refresh_from_db()
+    owner.refresh_from_db()
+    assert other.email == "bia@example.org"
+    assert owner.email == "ana@example.org"
+    ops = build_session_ops({**payload, "items": []}, "op")
+    assert not any(op.get("path") == "receipt.email" and op["value"] == owner.email for op in ops)
