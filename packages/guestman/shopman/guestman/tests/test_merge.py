@@ -291,6 +291,18 @@ class TestMergeOrders:
             },
         )
 
+        original_data = order.data
+        unrelated = Order.objects.create(
+            ref="ORD-MERGE-OTHER",
+            channel_ref="web",
+            session_key="sess-merge-other",
+            handle_type="phone",
+            handle_ref=target.phone,
+            status=Order.Status.ACCEPTED,
+            total_q=1000,
+            data={"customer_ref": target.ref},
+        )
+
         result = MergeService.merge(source, target, evidence, actor="test")
 
         order.refresh_from_db()
@@ -300,6 +312,20 @@ class TestMergeOrders:
         assert order.data["customer"]["uuid"] == str(target.uuid)
         assert order.data["customer"]["phone"] == target.phone
         assert order.handle_ref == target.phone
+        # This order matches several identity predicates, but must be migrated
+        # and recorded exactly once. Orders of another identity stay untouched.
+        audit = MergeAudit.objects.get(pk=result.audit_id)
+        assert [entry["pk"] for entry in audit.snapshot["orders"]] == [order.pk]
+        unrelated.refresh_from_db()
+        assert unrelated.data == {"customer_ref": target.ref}
+        assert unrelated.handle_ref == target.phone
+
+        MergeService.undo(result.audit_id, actor="test")
+        order.refresh_from_db()
+        assert order.data == original_data
+        assert order.handle_ref == source.phone
+        unrelated.refresh_from_db()
+        assert unrelated.data == {"customer_ref": target.ref}
 
 
 # ======================================================================
