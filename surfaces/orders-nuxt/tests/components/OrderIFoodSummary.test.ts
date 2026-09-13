@@ -5,6 +5,12 @@ import OrderIFoodSummary from "../../app/components/OrderIFoodSummary.vue";
 const pendingNotice = "Cancelamento solicitado ao iFood. Aguardando confirmação.";
 
 describe("OrderIFoodSummary", () => {
+  it("exibe responsável e horário do preparo mesmo sem resumo financeiro", () => {
+    const lines = ["Entrega por entregador iFood", "Início do preparo: 13/09/2026 às 18:30"];
+    const wrapper = mount(OrderIFoodSummary, { props: { operationSummary: lines } });
+    expect(wrapper.findAll("[data-ifood-operation]").map((line) => line.text())).toEqual(lines);
+    expect(wrapper.findAll("[data-ifood-payment]")).toHaveLength(0);
+  });
   it("mantém a solicitação como pendente sem afirmar cancelamento concluído", () => {
     const wrapper = mount(OrderIFoodSummary, { props: { cancellationNotice: pendingNotice } });
     expect(wrapper.get('[role="status"]').text()).toBe(pendingNotice);

@@ -219,6 +219,7 @@ class OrderCardProjection:
     waitlist_label: str = ""
     ifood_cancellation_notice: str = ""
     ifood_payment_summary: tuple[str, ...] = ()
+    ifood_operation_summary: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -386,6 +387,7 @@ class OperatorOrderProjection:
     payment_link_notice: str = ""
     ifood_cancellation_notice: str = ""
     ifood_payment_summary: tuple[str, ...] = ()
+    ifood_operation_summary: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -612,6 +614,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         payment_method_label="iFood" if order.channel_ref == "ifood" else payment_method_label,
         ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
         ifood_payment_summary=ifood_projection.payment_summary(order),
+        ifood_operation_summary=ifood_projection.operation_summary(order),
         payment_status=payment_status,
         payment_status_label=({"paid": "Pago online", "pending": "Pagamento pendente", "unknown": "Pagamento não informado"}.get(payment_status, "Pagamento não informado") if order.channel_ref == "ifood" else payment_status_label(payment_status)),
         can_confirm=not operator_orders.confirmation_block_reason(order),
@@ -1258,6 +1261,7 @@ def _build_card(
         payment_method_label="iFood" if order.channel_ref == "ifood" else payment_method_label,
         ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
         ifood_payment_summary=ifood_projection.payment_summary(order),
+        ifood_operation_summary=ifood_projection.operation_summary(order),
         payment_status=payment_status,
         payment_status_label=({"paid": "Pago online", "pending": "Pagamento pendente", "unknown": "Pagamento não informado"}.get(payment_status, "Pagamento não informado") if order.channel_ref == "ifood" else payment_status_label(payment_status)),
         payment_pending=_is_payment_pending(order, method, payment_status),
@@ -1512,6 +1516,9 @@ def _payment_tone(order: Order, method: str, payment_status: str, payment_data: 
 
 
 _ADVANCE_BLOCK_LABELS: dict[operator_orders.AdvanceBlock, str] = {
+    operator_orders.AdvanceBlock.IFOOD_SCHEDULE_BLOCKED: "Aguardando horário do iFood…",
+    operator_orders.AdvanceBlock.IFOOD_WAITING_PICKUP: "Aguardando entregador iFood…",
+    operator_orders.AdvanceBlock.IFOOD_DELIVERY_UNKNOWN: "Confira o responsável pela entrega",
     operator_orders.AdvanceBlock.IFOOD_CANCELLATION_PENDING: "Aguardando cancelamento pelo iFood…",
     operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED: "Aguardando pagamento…",
     operator_orders.AdvanceBlock.PREORDER_NOT_DUE: "Encomenda do dia…",

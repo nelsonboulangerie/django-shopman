@@ -64,6 +64,9 @@ class AdvanceBlock(StrEnum):
     NONE = ""
     NO_NEXT_STEP = "no_next_step"
     IFOOD_CANCELLATION_PENDING = "ifood_cancellation_pending"
+    IFOOD_SCHEDULE_BLOCKED = "ifood_schedule_blocked"
+    IFOOD_WAITING_PICKUP = "ifood_waiting_pickup"
+    IFOOD_DELIVERY_UNKNOWN = "ifood_delivery_unknown"
     PAYMENT_NOT_CAPTURED = "payment_not_captured"
     DEVICE_UNAVAILABLE = "device_unavailable"
     # Encomenda para data futura: não dá pra iniciar o preparo antes do dia
@@ -78,6 +81,9 @@ class AdvanceBlock(StrEnum):
 
 
 _ADVANCE_BLOCK_MESSAGES: dict[AdvanceBlock, str] = {
+    AdvanceBlock.IFOOD_SCHEDULE_BLOCKED: "O horário de preparo do iFood ainda não permite avançar. Confira o agendamento deste pedido.",
+    AdvanceBlock.IFOOD_WAITING_PICKUP: "Aguardando o iFood confirmar a retirada pelo entregador.",
+    AdvanceBlock.IFOOD_DELIVERY_UNKNOWN: "O iFood não informou o responsável pela entrega. Confira a integração antes de despachar.",
     AdvanceBlock.DEVICE_UNAVAILABLE: "Nenhuma maquininha está disponível. Aguarde a devolução para despachar esta entrega.",
     AdvanceBlock.IFOOD_CANCELLATION_PENDING: "Cancelamento solicitado ao iFood. Aguardando confirmação.",
     AdvanceBlock.NO_NEXT_STEP: "Pedido não possui próxima etapa",
@@ -260,6 +266,19 @@ def advance_block(order: Order, *, waitlist_state: str | None = None, payment_re
         order, current_status=order.status, target_status=next_status, payment_reads=payment_reads
     ):
         return AdvanceBlock.PAYMENT_NOT_CAPTURED
+    if order.channel_ref == "ifood":
+        from shopman.shop.services import ifood_schedule
+
+        if ifood_schedule.block_reason(order):
+            return AdvanceBlock.IFOOD_SCHEDULE_BLOCKED
+        if next_status == Order.Status.DISPATCHED and not str(order.external_ref or "").upper().startswith("IFOOD-SIM-"):
+            facts = (order.data or {}).get("ifood") or {}
+            if not facts.get("remote_dispatched"):
+                delivered_by = str(facts.get("delivered_by") or "").upper()
+                if delivered_by == "IFOOD":
+                    return AdvanceBlock.IFOOD_WAITING_PICKUP
+                if delivered_by != "MERCHANT":
+                    return AdvanceBlock.IFOOD_DELIVERY_UNKNOWN
     if next_status == Order.Status.DISPATCHED:
         from shopman.shop.adapters import delivery_devices
 
@@ -962,8 +981,11 @@ def _preorder_not_due(order: Order) -> bool:
     """True quando a encomenda é para uma data FUTURA — preparo abre só no dia."""
     from django.utils import timezone
 
+    from shopman.shop.services import ifood_schedule
     from shopman.shop.services.order_helpers import get_commitment_date
 
+    if ifood_schedule.is_scheduled(order):
+        return not ifood_schedule.is_due(order)
     target = get_commitment_date(order)
     return target is not None and target > timezone.localdate()
 

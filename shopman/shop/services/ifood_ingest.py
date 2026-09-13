@@ -48,8 +48,10 @@ Payload shape (canonical)
 
 from __future__ import annotations
 
+import json
 import logging
 from decimal import Decimal
+from uuid import NAMESPACE_URL, uuid5
 
 from django.db import transaction
 from shopman.orderman.ids import generate_order_ref
@@ -69,6 +71,12 @@ class IFoodIngestError(Exception):
         self.code = code
         self.message = message
         super().__init__(f"{code}: {message}")
+
+
+def session_key_for_order(merchant_id: str, order_code: str) -> str:
+    """Stable KDS identity for an external order, assigned before Order sealing."""
+    identity = json.dumps(["ifood", merchant_id or "", order_code], separators=(",", ":"))
+    return f"ifood:{uuid5(NAMESPACE_URL, identity).hex}"
 
 
 def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
@@ -122,6 +130,7 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
             "display_id": payload.get("display_id", ""),
             "is_test": bool(payload.get("is_test", False)),
             "order_timing": payload.get("order_timing", ""),
+            "schedule": payload.get("schedule") or {},
             "totals": payload.get("totals") or {},
             "payments": payload.get("payments") or {},
             "delivered_by": (payload.get("delivery") or {}).get("delivered_by", ""),
@@ -129,11 +138,18 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
         },
     }
 
+    if str(payload.get("order_timing") or "").upper() == "SCHEDULED":
+        from shopman.shop.services.ifood_schedule import delivery_date_from_payload
+
+        delivery_date = delivery_date_from_payload(payload.get("schedule") or {})
+        if delivery_date is not None:
+            order_data["delivery_date"] = delivery_date.isoformat()
+
     with transaction.atomic():
         order = Order.objects.create(
             ref=generate_order_ref(channel_ref=channel_ref),
             channel_ref=channel_ref,
-            session_key="",
+            session_key=session_key_for_order(payload.get("merchant_id", ""), order_code),
             external_ref=order_code,
             handle_type="ifood_order",
             handle_ref=order_code,

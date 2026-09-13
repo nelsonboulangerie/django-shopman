@@ -309,7 +309,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             </span>
           </p>
           <p class="flex items-center gap-2 text-muted-foreground"><Icon name="lucide:wallet" class="size-4" /> {{ order.payment_method_label || "—" }} · {{ order.payment_status_label || "—" }}</p>
-          <OrderIFoodSummary :cancellation-notice="order.ifood_cancellation_notice" :payment-summary="order.ifood_payment_summary" />
+          <OrderIFoodSummary :cancellation-notice="order.ifood_cancellation_notice" :payment-summary="order.ifood_payment_summary" :operation-summary="order.ifood_operation_summary" />
           <!-- Prova de envio do link de pagamento: "Enviando…", "Link enviado
                às 14h32" ou "falhou — reenvie". Lida da última Directive do
                aviso; sem aviso nenhum, a linha não existe. -->

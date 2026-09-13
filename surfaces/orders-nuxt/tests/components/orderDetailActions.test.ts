@@ -94,6 +94,7 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     payment_method_label: "Dinheiro",
     ifood_cancellation_notice: "",
     ifood_payment_summary: [],
+    ifood_operation_summary: [],
     payment_status: "pending",
     can_confirm: true,
     can_advance: false,

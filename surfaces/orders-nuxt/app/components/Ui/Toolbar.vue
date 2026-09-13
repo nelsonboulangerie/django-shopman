@@ -10,7 +10,7 @@
 <template>
   <div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b bg-card/60 px-4 py-2 print:hidden">
     <slot />
-    <div v-if="$slots.end" class="ml-auto flex items-center gap-1.5">
+    <div v-if="$slots.end" class="ml-auto flex flex-wrap items-center gap-1.5">
       <slot name="end" />
     </div>
   </div>

@@ -37,14 +37,25 @@ class IFoodStatusCallbackHandler:
         cancellation_request = bool(payload.get("cancellation_request_id"))
         if cancellation_request and not ifood_cancellation.should_send(payload):
             return
-        if not cancellation_request and (payload.get("order_ref") or status == "cancelled"):
-            # Directives already queued before CAN must obey the remote
-            # cancellation too; the signal guard only prevents new directives.
-            from shopman.orderman.models import Order
+        # Older directives contain only refs and status. Recover their workflow
+        # from the persisted order instead of assuming merchant delivery.
+        from shopman.orderman.models import Order
 
-            lookup = {"ref": payload["order_ref"]} if payload.get("order_ref") else {"external_ref": order_id}
-            order = Order.objects.filter(channel_ref=ifood_ingest.IFOOD_CHANNEL_REF, **lookup).first()
-            if order is not None and (order.data or {}).get("ifood_cancelled"):
+        lookup = {"ref": payload["order_ref"]} if payload.get("order_ref") else {"external_ref": order_id}
+        order = Order.objects.filter(channel_ref=ifood_ingest.IFOOD_CHANNEL_REF, **lookup).first()
+        context = {
+            "fulfillment_type": payload.get("fulfillment_type", ""),
+            "delivered_by": payload.get("delivered_by", ""),
+        }
+        if order is not None:
+            context = ifood_callbacks.workflow_context(order)
+            if status in {"accepted", "ready", "dispatched"} and order.status in Order.TERMINAL_STATUSES:
+                # A delayed progress callback cannot reopen a completed order.
+                # Keep legacy cancellation requests on their separate path.
+                return
+            # Persistent remote evidence also covers callbacks queued before
+            # CAN/CFM/DSP. Transitions reflected from iFood never echo back.
+            if (order.data or {}).get("ifood_cancelled") or ifood_callbacks.remote_status_observed(order, status):
                 return
 
         try:
@@ -53,6 +64,7 @@ class IFoodStatusCallbackHandler:
                 status,
                 cancellation_reason=payload.get("cancellation_reason", ""),
                 cancellation_code=payload.get("cancellation_code", ""),
+                **context,
             )
         except ifood_callbacks.IFoodCallbackError as exc:
             if cancellation_request:
@@ -81,10 +93,15 @@ def on_order_status_changed(sender, order, event_type, actor, **kwargs) -> None:
     # requestCancellation de volta para quem já cancelou.
     if (order.data or {}).get("ifood_cancelled"):
         return
-    if ifood_callbacks.action_for_status(order.status) is None:
+    if actor in {"system:ifood:CFM", "system:ifood:DSP"} or ifood_callbacks.remote_status_observed(order, order.status):
+        return
+    context = ifood_callbacks.workflow_context(order)
+    if ifood_callbacks.action_for_status(order.status, **context) is None:
         return
 
     ifood_order_id = order.external_ref or (order.data or {}).get("external_order_code", "")
+    if str(ifood_order_id).upper().startswith("IFOOD-SIM-"):
+        return
     if not ifood_order_id:
         logger.warning("ifood_status: order %s has no iFood order id — cannot call back", order.ref)
         return
@@ -105,6 +122,7 @@ def on_order_status_changed(sender, order, event_type, actor, **kwargs) -> None:
             "order_ref": order.ref,
             "ifood_order_id": ifood_order_id,
             "status": order.status,
+            **context,
             # cancellation.cancel writes these to order.data before the signal fires.
             # The operator's chosen iFood code (if any) overrides the default.
             "cancellation_reason": (order.data or {}).get("cancellation_reason", ""),
