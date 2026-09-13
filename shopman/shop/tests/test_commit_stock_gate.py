@@ -182,6 +182,30 @@ class CommitStockGateTests(TestCase):
         hold_ids = (order.data or {}).get("hold_ids", [])
         self.assertEqual([h.get("hold_id") for h in hold_ids], [reserved["hold_id"]])
 
+    def test_pausing_after_reservation_prevents_commit_without_consuming_hold(self):
+        from shopman.offerman.models import Product
+        from shopman.orderman.exceptions import ValidationError
+        from shopman.orderman.models import Order, Session
+        from shopman.stockman.models import Hold
+
+        from shopman.shop.adapters import get_adapter
+
+        _open_session(self.channel.ref, "GATE-PAUSED", self.SKU, qty=3)
+        reserved = get_adapter("stock").create_hold(
+            sku=self.SKU, qty=Decimal("3"), reference="GATE-PAUSED", channel_ref=self.channel.ref,
+        )
+        self.assertTrue(reserved["success"])
+        hold = Hold.objects.get(metadata__reference="GATE-PAUSED")
+        original_status, original_metadata = hold.status, hold.metadata.copy()
+        Product.objects.filter(sku=self.SKU).update(is_sellable=False)
+        with self.assertRaises(ValidationError) as caught:
+            _commit("GATE-PAUSED", self.channel.ref, "GATE-PAUSED-KEY")
+        self.assertEqual(caught.exception.context["error_code"], "SKU_PAUSED")
+        self.assertFalse(Order.objects.filter(session_key="GATE-PAUSED").exists())
+        self.assertEqual(Session.objects.get(session_key="GATE-PAUSED").state, "open")
+        hold.refresh_from_db()
+        self.assertEqual((hold.status, hold.metadata), (original_status, original_metadata))
+
     def test_untracked_sku_commits_without_hold(self) -> None:
         """SKU fora do Stockman (sem Quants) não exige reserva — commit passa."""
         from shopman.orderman.models import Order
