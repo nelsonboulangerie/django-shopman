@@ -185,6 +185,7 @@ class SurfaceCellProjection:
     sync_status: str = ""  # synced | pending | error | retracted | skipped | "" (nunca)
     sync_error: str = ""  # última mensagem de erro (quando status=error)
     synced_at: str = ""  # ISO do último push OK (synced/retracted)
+    pause_audit: str = ""
     action: Action | None = None
 
 
@@ -457,6 +458,7 @@ def _build_display_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]
         index[ch.ref] = {
             "members": members,
             "paused": {str(s) for s in (display.get("paused_skus") or [])},
+            "pause_audit": display.get("pause_audit") or {},
             "channel": ch,
         }
         is_target = get_projection_backend(ch.ref) is not None
@@ -489,6 +491,17 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None) -> CatalogMatri
     from shopman.offerman.models import Collection, Product
 
     surfaces, cells_index = _build_surfaces()
+    from django.db.models import Max, Subquery
+    from django.utils import timezone
+    from shopman.offerman.models import ListingItem
+
+    item_ids = [item.pk for cells in cells_index.values() for item in cells.values()]
+    latest = ListingItem.history.filter(id__in=item_ids).values("id").annotate(last=Max("history_id")).values("last")
+    pause_audit = {}
+    for entry in ListingItem.history.filter(history_id__in=Subquery(latest), is_sellable=False,
+            history_change_reason__endswith=":after").select_related("history_user"):
+        actor = entry.history_user.get_username() if entry.history_user else "sistema"
+        pause_audit[entry.id] = f"Pausado por {actor} em {timezone.localtime(entry.history_date):%d/%m/%Y %H:%M}"
     display_surfaces, display_index = _build_display_surfaces()
     surfaces = surfaces + display_surfaces
 
@@ -544,6 +557,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None) -> CatalogMatri
                         in_listing=in_feed,
                         is_published=in_feed,
                         is_sellable=in_feed and not paused_here,
+                        pause_audit=sc["pause_audit"].get(product.sku, "") if paused_here else "",
                         available=(
                             in_feed
                             and not paused_here
@@ -589,6 +603,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None) -> CatalogMatri
                     available=available,
                     price_q=item.price_q,
                     price_display=_money(item.price_q),
+                    pause_audit=pause_audit.get(item.pk, "") if not item.is_sellable else "",
                     action=cell_action(product.sku, surface.ref, user, item=item),
                     sync_status=sync_status,
                     sync_error=sync_error,
