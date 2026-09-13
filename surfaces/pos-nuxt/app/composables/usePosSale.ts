@@ -2284,6 +2284,7 @@ export function usePosSale(deps: PosSaleDeps) {
       const failure = (httpError(error).data as {
         error?: {
           code?: string; message?: string; recovery?: string; focus?: string;
+          order_ref?: string; order_created?: boolean;
           field?: string; candidates?: ServerConflictCandidate[];
         };
       } | null)?.error;
@@ -2324,8 +2325,10 @@ export function usePosSale(deps: PosSaleDeps) {
         // cliente): o toast diz o porquê e a tela abre a identificação.
         serverError.value = failure.recovery || failure.message || "Identifique o cliente para finalizar a venda.";
         customerFocusNonce.value += 1;
+      } else if (failure?.order_created && failure.order_ref) {
+        serverError.value = [failure.message || `Venda ${failure.order_ref} criada.`, failure.recovery].filter(Boolean).join(" ");
       } else {
-        serverError.value = httpErrorMessage(error, "Não foi possível finalizar a venda. O pedido não foi fechado; revise o pagamento e valide de novo.");
+        serverError.value = httpErrorMessage(error, "Não foi possível confirmar o resultado da venda. Mantenha esta tentativa e confira o pedido antes de reenviar.");
       }
     } finally {
       busy.value = false;

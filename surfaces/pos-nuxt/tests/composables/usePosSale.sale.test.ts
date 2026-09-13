@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mockNuxtImport } from "@nuxt/test-utils/runtime";
 import { toast } from "vue-sonner";
 import { nextTick } from "vue";
 
 import { makeProjection, makeSale, makeTabPayload } from "./_posSaleHarness";
 
 const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }));
-mockNuxtImport("$fetch", () => fetchMock);
+beforeEach(() => vi.stubGlobal("$fetch", fetchMock));
+afterEach(() => vi.unstubAllGlobals());
 vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 
 function freeCartProjection() {
@@ -113,6 +113,50 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith("Caixa fechado");
     expect(h.sale.cart.items).toHaveLength(1); // 1 linha (pão x2) — nada perdido
     expect(h.sale.cart.items[0]!.qty).toBe(2);
+    h.handles.dispose();
+  });
+
+  it("pedido criado com liquidação incompleta conserva a intenção e mostra recuperação", async () => {
+    const actionCall = vi.fn().mockImplementation(async (path: string) => {
+      if (String(path).includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
+      if (String(path).includes("/sale/close/")) throw { status: 409, data: {
+        detail: "Venda PED-42 criada; pagamento em consulta.",
+        error: { code: "sale_payment_outcome_unknown", order_created: true, order_ref: "PED-42",
+          message: "Venda PED-42 criada; pagamento em consulta.", recovery: "Não crie outra cobrança.", focus: "payment" },
+      } };
+      return {};
+    });
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    const originalKey = h.sale.cart.clientRequestId;
+    await h.sale.submitSale();
+    const message = vi.mocked(toast.error).mock.calls.at(-1)?.[0];
+    expect(message).toContain("PED-42");
+    expect(message).toContain("Não crie outra cobrança");
+    expect(message).not.toContain("não foi fechado");
+    expect(originalKey).toBeTruthy();
+    expect(h.sale.cart.clientRequestId).toBe(originalKey);
+    expect(h.sale.cart.items).toHaveLength(1);
+    expect(h.sale.result.value).toBeNull();
+    await h.sale.submitSale();
+    const attempts = actionCall.mock.calls.filter((call) => String(call[0]).includes("/sale/close/"));
+    expect(attempts).toHaveLength(2);
+    expect(attempts[1]![1].body.client_request_id).toBe(attempts[0]![1].body.client_request_id);
+    h.handles.dispose();
+  });
+
+  it("resposta perdida não afirma que o pedido deixou de ser criado", async () => {
+    const actionCall = vi.fn().mockImplementation(async (path: string) => {
+      if (String(path).includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
+      if (String(path).includes("/sale/close/")) throw new Error("network disconnected");
+      return {};
+    });
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith("Não foi possível confirmar o resultado da venda. Mantenha esta tentativa e confira o pedido antes de reenviar.");
+    expect(h.sale.cart.items).toHaveLength(1);
+    expect(h.sale.result.value).toBeNull();
     h.handles.dispose();
   });
 
