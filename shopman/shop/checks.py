@@ -24,6 +24,7 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E019  Configuração de produção da loja é inválida
   SHOPMAN_E020  WhatsApp Marketing ativo sem isolamento ManyChat comprovado
   SHOPMAN_E021  Allowlist de mídia Marketing contém host inseguro
+  SHOPMAN_E022  Provedor de produção aponta para ambiente ou credencial de teste
   SHOPMAN_E023  Google Maps exige credenciais de browser e servidor separadas em produção
 
 Warnings (non-blocking, logged at startup):
@@ -1140,6 +1141,26 @@ def check_production_configuration(app_configs, **kwargs):
             )
         ]
     return []
+
+
+@register(deploy=True)
+def check_production_provider_environments(app_configs, **kwargs):
+    """The release job already calls check --deploy; reuse canonical provider facts."""
+    if not is_production():
+        return []
+    from shopman.backstage.services.integration_readiness import build_provider_readiness
+
+    try:
+        facts = build_provider_readiness(mode="runtime")
+    except Exception:
+        return [Error("Não foi possível verificar os ambientes dos provedores.",
+                      hint="Execute production-readiness no ambiente alvo e corrija a leitura antes do deploy.",
+                      id="SHOPMAN_E022")]
+    return [Error(
+        f"Provedor {fact.label} incompatível com produção.",
+        hint="Corrija os requisitos de ambiente: " + ", ".join(fact.missing),
+        id="SHOPMAN_E022",
+    ) for fact in facts if fact.status == "error"]
 
 
 @register(deploy=True)
