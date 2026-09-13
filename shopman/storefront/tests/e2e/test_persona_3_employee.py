@@ -31,7 +31,7 @@ SKU = "PAO-STAFF"
 
 def _seed():
     J.seed_shop()
-    J.seed_web_channel()
+    J.seed_web_channel(allow_cash=True)
     collection = J.seed_collection()
     J.seed_product(SKU, "Pão", 1000, collection=collection, stock_qty=20)
 

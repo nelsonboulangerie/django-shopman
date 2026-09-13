@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from decimal import Decimal
 
 from django.utils import timezone
@@ -115,15 +116,28 @@ class CheckoutView(APIView):
     def post(self, request):
         from shopman.shop.services import remote_mutations
         from shopman.storefront.api.surface import _session_scope
+
+        customer = getattr(request, "customer", None)
+        if customer is None or not customer.is_active or not customer.phone:
+            return Response(
+                {"detail": "Entre por telefone para continuar.", "error_code": "authentication_required"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         key = remote_mutations.idempotency_key_from_request(request, fallback=session_service.new_idempotency_key())
-        serializer = CheckoutSerializer(data=request.data)
+        # A phone identifies the authenticated owner, not a browser-supplied
+        # recipient. Canonicalize before validation and idempotency hashing.
+        checkout_input = request.data
+        if isinstance(checkout_input, Mapping):
+            checkout_input = checkout_input.copy()
+            checkout_input["phone"] = customer.phone
+        serializer = CheckoutSerializer(data=checkout_input)
         serializer.is_valid(raise_exception=True)
         payload = dict(serializer.validated_data)
         payload.pop("idempotency_key", None)
         payload.pop("address_label", None)
         principal = str(getattr(getattr(request, "customer", None), "uuid", "") or "")
         def execute():
-            response = self._post(request, key=key)
+            response = self._post(request, key=key, validated_data=serializer.validated_data)
             return dict(response.data), response.status_code
         try:
             receipt = remote_mutations.run_idempotent_mutation(
@@ -140,12 +154,17 @@ class CheckoutView(APIView):
         logger.info("storefront.checkout result=%s", "recovered" if receipt.replayed else receipt.response_code)
         return Response(receipt.response_body, status=receipt.response_code)
 
-    def _post(self, request, *, key):
+    def _post(self, request, *, key, validated_data):
+        from shopman.shop.projections import checkout_context
+
+        if validated_data["payment_method"] not in checkout_context.payment_methods(CHANNEL_REF):
+            return Response(
+                {"detail": "Escolha uma forma de pagamento disponível neste canal.", "field": "payment_method"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         if self._rate_limited(request, increment=False):
             return self._rate_limited_response()
-
-        serializer = CheckoutSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
 
         # Check cart has items
         cart = _cart_data(request)
@@ -158,19 +177,19 @@ class CheckoutView(APIView):
         session_key = cart.session_key
         # O nome impresso no ticket do KDS: sanitiza controle/bidi (a serializer
         # ja limita o comprimento em 120) antes de gravar no pedido.
-        name = clean_name(serializer.validated_data["name"], max_length=120)
-        phone_raw = serializer.validated_data["phone"]
-        notes = serializer.validated_data.get("notes", "")
-        fulfillment_type = serializer.validated_data.get("fulfillment_type", "pickup")
-        delivery_address = serializer.validated_data.get("delivery_address", "")
-        saved_address_id = serializer.validated_data.get("saved_address_id")
-        delivery_address_structured = serializer.validated_data.get("delivery_address_structured") or {}
-        delivery_complement = serializer.validated_data.get("delivery_complement", "")
-        delivery_instructions = serializer.validated_data.get("delivery_instructions", "")
-        delivery_date = serializer.validated_data.get("delivery_date", "")
-        delivery_time_slot = serializer.validated_data.get("delivery_time_slot", "")
-        payment_method = serializer.validated_data.get("payment_method", "")
-        use_loyalty = serializer.validated_data.get("use_loyalty", False)
+        name = clean_name(validated_data["name"], max_length=120)
+        phone_raw = validated_data["phone"]
+        notes = validated_data.get("notes", "")
+        fulfillment_type = validated_data.get("fulfillment_type", "pickup")
+        delivery_address = validated_data.get("delivery_address", "")
+        saved_address_id = validated_data.get("saved_address_id")
+        delivery_address_structured = validated_data.get("delivery_address_structured") or {}
+        delivery_complement = validated_data.get("delivery_complement", "")
+        delivery_instructions = validated_data.get("delivery_instructions", "")
+        delivery_date = validated_data.get("delivery_date", "")
+        delivery_time_slot = validated_data.get("delivery_time_slot", "")
+        payment_method = validated_data.get("payment_method", "")
+        use_loyalty = validated_data.get("use_loyalty", False)
         idempotency_key = key
 
         if fulfillment_type != "delivery":
@@ -359,10 +378,10 @@ class CheckoutView(APIView):
         checkout_data = {
             "customer": {**_session_customer_identity(session_key), "name": name, "phone": phone},
             "fulfillment_type": fulfillment_type,
-            "address_label": serializer.validated_data.get("address_label") or {},
+            "address_label": validated_data.get("address_label") or {},
             # Omotenashi: lembrar escolhas é o default; toggle desmarcado → False.
             # (Endereço novo é salvo sempre, independente disto.)
-            "save_as_default": serializer.validated_data.get("save_as_default", True),
+            "save_as_default": validated_data.get("save_as_default", True),
         }
         if notes:
             checkout_data["order_notes"] = notes
@@ -390,7 +409,7 @@ class CheckoutView(APIView):
             from shopman.storefront.intents.checkout import parse_change_for
 
             payment_data = {"method": "cash"}
-            change_for_q = parse_change_for(serializer.validated_data.get("change_for", ""))
+            change_for_q = parse_change_for(validated_data.get("change_for", ""))
             if fulfillment_type == "delivery":
                 # Marca canônica do pagamento na porta (a mesma do PDV). Ver o
                 # comentário gêmeo em ``storefront/intents/checkout.py``.
@@ -403,12 +422,12 @@ class CheckoutView(APIView):
         from shopman.storefront.intents.gift import build_gift_data
 
         gift_data, gift_errors = build_gift_data(
-            is_gift=serializer.validated_data.get("is_gift", False),
+            is_gift=validated_data.get("is_gift", False),
             fulfillment_type=fulfillment_type,
-            recipient_name=clean_name(serializer.validated_data.get("recipient_name", ""), max_length=120),
-            recipient_phone=serializer.validated_data.get("recipient_phone", ""),
-            gift_message=serializer.validated_data.get("gift_message", ""),
-            hide_values=serializer.validated_data.get("gift_hide_values", False),
+            recipient_name=clean_name(validated_data.get("recipient_name", ""), max_length=120),
+            recipient_phone=validated_data.get("recipient_phone", ""),
+            gift_message=validated_data.get("gift_message", ""),
+            hide_values=validated_data.get("gift_hide_values", False),
         )
         if gift_errors:
             field, message = next(iter(gift_errors.items()))
@@ -447,8 +466,8 @@ class CheckoutView(APIView):
                 channel_ref=CHANNEL_REF,
                 data=checkout_data,
                 idempotency_key=idempotency_key,
-                expected_total_q=serializer.validated_data.get("expected_total_q"),
-                expected_revision=serializer.validated_data.get("expected_revision"),
+                expected_total_q=validated_data.get("expected_total_q"),
+                expected_revision=validated_data.get("expected_revision"),
             )
         except Exception as exc:
             logger.debug("views.post degraded; using fallback", exc_info=True)

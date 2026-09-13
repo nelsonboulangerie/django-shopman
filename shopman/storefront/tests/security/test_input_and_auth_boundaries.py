@@ -21,6 +21,8 @@ import json
 
 import pytest
 
+from shopman.storefront.tests._checkout_auth import authenticate_checkout
+
 from .conftest import login_as_customer
 
 pytestmark = pytest.mark.django_db
@@ -74,6 +76,7 @@ def test_html_js_in_name_stored_verbatim_no_500(attacker, customer):
 def test_oversized_name_rejected_not_crashed(client, cart_session):
     """A 10k-char name at checkout is rejected by the serializer (400), never a
     500 or an unbounded write."""
+    authenticate_checkout(cart_session)
     resp = cart_session.post(
         "/api/v1/checkout/",
         data=json.dumps({"name": "A" * 10_000, "phone": "+5543999990001", "fulfillment_type": "pickup"}),
