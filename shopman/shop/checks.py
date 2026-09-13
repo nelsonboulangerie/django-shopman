@@ -1160,3 +1160,17 @@ def check_production_provider_environments(app_configs, **kwargs):
         hint="Corrija os requisitos de ambiente: " + ", ".join(fact.missing),
         id="SHOPMAN_E022",
     ) for fact in facts if fact.status == "error"]
+
+
+@register(deploy=True)
+def check_google_maps_credential_boundary(app_configs, **kwargs):
+    if not is_production():
+        return []
+    browser = str(getattr(settings, "GOOGLE_MAPS_BROWSER_API_KEY", "") or "").strip()
+    server = str(getattr(settings, "GOOGLE_MAPS_SERVER_API_KEY", "") or "").strip()
+    legacy = str(getattr(settings, "GOOGLE_MAPS_API_KEY", "") or "").strip()
+    if legacy or (browser and browser == server):
+        return [Error("Google Maps ainda possui credencial compartilhada em produção.",
+                      hint="Remova GOOGLE_MAPS_API_KEY e provisione chaves distintas para browser (referrers) e servidor (Geocoding).",
+                      id="SHOPMAN_E023")]
+    return []
