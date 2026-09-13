@@ -300,3 +300,6 @@ Resultado esperado antes de trafego real: nenhum `failed` e nenhum
 `blocked_by_implementation`, o contrato ainda nao esta provado para pedidos
 conversacionais inbound; use ManyChat apenas para OTP/access-link ate esse
 smoke ser implementado.
+
+
+Em produção, o fallback de `GOOGLE_MAPS_API_KEY` é desabilitado e o check `SHOPMAN_E023` recusa a chave compartilhada. As chaves explícitas de browser e servidor também não podem ser iguais. Restrinja e rotacione as credenciais no Google Cloud antes do cutover; esta guarda local não verifica as restrições cadastradas no provedor.
