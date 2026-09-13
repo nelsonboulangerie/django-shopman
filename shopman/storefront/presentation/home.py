@@ -221,9 +221,9 @@ class HomeProjection:
 
 
 def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> HomeProjection:
+    from shopman.shop.google_maps_credentials import browser_api_key
     from shopman.shop.models import Shop
     from shopman.shop.omotenashi import OmotenashiContext
-    from shopman.shop.services.google_maps_credentials import browser_api_key
 
     omo = OmotenashiContext.from_request(request)
     omotenashi = OmotenashiProjection(

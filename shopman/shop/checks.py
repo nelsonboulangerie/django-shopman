@@ -24,6 +24,7 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E019  Configuração de produção da loja é inválida
   SHOPMAN_E020  WhatsApp Marketing ativo sem isolamento ManyChat comprovado
   SHOPMAN_E021  Allowlist de mídia Marketing contém host inseguro
+  SHOPMAN_E023  Google Maps exige credenciais de browser e servidor separadas em produção
 
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode

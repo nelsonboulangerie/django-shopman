@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass
 
 from django.core.cache import cache
 
-from shopman.shop.services.google_maps_credentials import server_api_key
+from shopman.shop.google_maps_credentials import server_api_key
 
 logger = logging.getLogger(__name__)
 

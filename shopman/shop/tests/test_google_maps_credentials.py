@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from shopman.shop.services.google_maps_credentials import browser_api_key, server_api_key
+from shopman.shop.google_maps_credentials import browser_api_key, server_api_key
 
 
 def test_split_credentials_take_precedence_over_legacy_key(settings) -> None:
