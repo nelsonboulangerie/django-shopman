@@ -542,6 +542,7 @@ export interface POSPaymentTenderDraft {
 }
 
 export interface POSTabPayload {
+  revision?: string;
   sales_mode?: "counter" | "order";
   session_key: string;
   tab_session_key: string;
@@ -609,6 +610,7 @@ export interface POSReceiptIdentityChoice {
 }
 
 export interface POSIntentCartState {
+  expectedRevision?: string;
   salesMode?: "counter" | "order";
   tabRef: string;
   tabSessionKey: string;
