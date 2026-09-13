@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 from importlib import import_module
 from types import SimpleNamespace
+from unittest.mock import MagicMock, Mock, call
 
 import pytest
 from django.db import connection
@@ -140,6 +141,26 @@ def test_backfill_preserves_an_explicit_historical_instagram_format():
     )
 
     assert migration._artifact_format(outbox, "story") == "feed"
+
+
+def test_delivery_identity_migration_sets_bounded_postgres_timeouts():
+    migration = import_module("shopman.shop.migrations.0053_marketing_delivery_identity")
+    cursor = MagicMock()
+    cursor_context = MagicMock()
+    cursor_context.__enter__.return_value = cursor
+    schema_editor = SimpleNamespace(
+        connection=SimpleNamespace(
+            vendor="postgresql",
+            cursor=Mock(return_value=cursor_context),
+        )
+    )
+
+    migration.set_migration_timeouts(None, schema_editor)
+
+    assert cursor.execute.call_args_list == [
+        call("SET LOCAL lock_timeout = '5s'"),
+        call("SET LOCAL statement_timeout = '30s'"),
+    ]
 
 
 @pytest.mark.django_db(transaction=True)

@@ -10,6 +10,16 @@ DESTINATIONS = {
 }
 
 
+def set_migration_timeouts(apps, schema_editor):
+    """Fail fast instead of leaving a production release waiting on DDL locks."""
+
+    if schema_editor.connection.vendor != "postgresql":
+        return
+    with schema_editor.connection.cursor() as cursor:
+        cursor.execute("SET LOCAL lock_timeout = '5s'")
+        cursor.execute("SET LOCAL statement_timeout = '30s'")
+
+
 def _artifact_format(outbox, fallback: str) -> str:
     payload = outbox.artifact.payload
     if not isinstance(payload, dict):
@@ -66,6 +76,10 @@ class Migration(migrations.Migration):
     dependencies = [("shop", "0052_faqentry_historicalfaqentry")]
 
     operations = [
+        migrations.RunPython(
+            set_migration_timeouts,
+            migrations.RunPython.noop,
+        ),
         migrations.AddField(
             model_name="marketingoutbox",
             name="delivery_kind",

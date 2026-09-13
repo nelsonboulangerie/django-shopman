@@ -74,7 +74,8 @@ restaurada. O teste executável é
    própria tem risco material de não passar na auditoria pública.
 3. **Canário:** conta exata, mídia, texto, disclosure e consequência mostrados ao
    humano antes de uma única publicação.
-4. **Dry-run de produção:** migration plan, contagens, locks, tempo e rollback.
+4. **Dry-run de produção:** concluído em modo somente leitura em 2026-09-13;
+   resultado e protocolo abaixo.
 5. **Ativação:** descarte da compatibilidade histórica e jobs de produção somente em
    gate separado, como determinado.
 
@@ -83,3 +84,62 @@ TikTok Shop permanece um projeto separado. O catálogo fresco/perecível da pada
 pré-embalados, não perecíveis e previamente qualificados justificaria um piloto.
 
 Pesquisa e fontes: [relatório TikTok completo](../../research/TIKTOK-INTEGRATION-DEEP-RESEARCH-2026-09-12.md).
+
+## Dry-run de produção — 2026-09-13
+
+Autorização limitada a leitura. Foram consultados o deployment ativo e o PostgreSQL
+gerenciado; nenhuma migration, job, deploy ou chamada a provider foi executada. O
+console foi encerrado após as consultas. Nenhum segredo, conteúdo de mensagem ou
+identificador de cliente foi capturado na evidência.
+
+Snapshot às 06:41 BRT:
+
+| Verificação | Resultado |
+|---|---|
+| Runtime | PostgreSQL 16.15; deployment ativo |
+| Migração atual | `shop.0052`; `0053` ainda não aplicada |
+| Outbox | 1 registro; 192 KiB incluindo índices |
+| Ledger de destinos | 1 registro; 192 KiB incluindo índices |
+| Identidade inferida | 1 × `instagram/publication/story`, artefato schema 3 |
+| Plataformas desconhecidas | 0 no outbox; 0 no ledger |
+| Colisões nas novas chaves | 0 no outbox; 0 no ledger |
+| Divergências alvo/outbox | 0 |
+| Locks aguardando | 0 |
+| Outras sessões não ociosas | 0 |
+| Timeouts do banco | `lock_timeout=0`; `statement_timeout=0` |
+
+### Análise de execução
+
+A `0053` adiciona quatro colunas, retropreenche o único par outbox/destino e troca
+duas constraints de unicidade por versões que incluem modalidade e formato. As
+tabelas são minúsculas e os dados atuais satisfazem o schema novo; não há trabalho
+de rede nem ativação do TikTok na migration. A operação ainda exige locks DDL, mesmo
+com uma linha.
+
+O timeout ilimitado observado em produção poderia deixar o release esperando por
+um lock. A candidata passou a definir, somente durante a transação PostgreSQL da
+migration, `lock_timeout=5s` e `statement_timeout=30s`. Em contenção, o deploy falha
+fechado e o PostgreSQL desfaz toda a transação; não permanece schema parcial. SQLite
+continua sem essa operação.
+
+### Protocolo proposto para o gate separado de deploy
+
+1. confirmar CI verde no head final e ausência de outro deploy/migration;
+2. obter snapshot/backup gerenciado vigente e registrar seu horário;
+3. implantar em janela tranquila, sem ativar consumidores ou flag TikTok;
+4. acompanhar a release; espera de lock acima de 5 segundos ou instrução SQL acima
+   de 30 segundos falha fechada e implica parar, sem repetição automática;
+5. conferir `0053` aplicada, 1/1 registros com identidade completa, zero colisões e
+   saúde HTTP; nenhuma publicação externa faz parte desse gate;
+6. em falha antes do commit, usar rollback transacional automático; depois do
+   commit, preferir rollback de código mantendo o schema expandido. Não executar
+   reverse migration após novas escritas schema 4 sem novo dry-run e autorização.
+
+Conclusão do dry-run: **compatível e de baixo volume**, com o risco de espera
+ilimitada corrigido na candidata. Merge/deploy, OAuth/revisão TikTok, canário real,
+ativação de jobs e descarte do legado permanecem gates humanos separados.
+
+Validação posterior ao endurecimento: 10 testes focados passaram em SQLite; o ciclo
+reversível `0052 → 0053 → folha` passou também em PostgreSQL 16.14 local e isolado;
+Ruff e `makemigrations --check --dry-run` passaram. O banco local descartável foi
+removido ao final.
