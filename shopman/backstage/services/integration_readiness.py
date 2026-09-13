@@ -245,6 +245,11 @@ def efi_pix_readiness(*, mode: ReadinessMode = "runtime") -> ProviderReadiness:
     certificate_path = str(config.get("certificate_path") or "").strip()
     if certificate_path and not Path(certificate_path).exists():
         missing.append("EFI_CERTIFICATE_PATH_exists")
+    elif certificate_path:
+        from shopman.backstage.services.certificate_readiness import certificate_issue
+        issue = certificate_issue(path=certificate_path)
+        if issue:
+            unsafe.append(f"EFI_CERTIFICATE_{issue}")
     if not str(webhook.get("webhook_token") or "").strip():
         missing.append("EFI_WEBHOOK_TOKEN")
 
@@ -415,8 +420,15 @@ def purchase_nfe_readiness(*, mode: ReadinessMode = "runtime") -> ProviderReadin
     if cert_path and not Path(cert_path).exists():
         missing.append("PURCHASE_NFE_CERTIFICATE_PATH_exists")
 
-    issues = tuple(missing)
-    status = _status(missing=missing, unsafe=[])
+    unsafe: list[str] = []
+    if cert_pfx or (cert_path and Path(cert_path).exists()):
+        from shopman.backstage.services.certificate_readiness import certificate_issue
+        issue = certificate_issue(path=cert_path, pfx_base64=cert_pfx,
+            password=str(config.get("certificate_password") or ""), pfx=True)
+        if issue:
+            unsafe.append(f"PURCHASE_NFE_CERTIFICATE_{issue}")
+    issues = tuple(missing + unsafe)
+    status = _status(missing=missing, unsafe=unsafe)
     return ProviderReadiness(
         provider="purchase_nfe",
         label="Compra NF-e / Distribuição DF-e",
