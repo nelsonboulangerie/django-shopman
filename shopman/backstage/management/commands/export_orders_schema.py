@@ -36,6 +36,7 @@ from shopman.backstage.projections.feeds import (
     FeedCollectionRef,
     FeedProjection,
 )
+from shopman.backstage.projections.ifood_handshake import IFoodNegotiationProjection
 from shopman.backstage.projections.order_queue import (
     AwaitingWorkOrderProjection,
     CustomerProfileProjection,
@@ -59,6 +60,7 @@ CONTRACT_DATACLASSES = (
     CatalogPublicationSkip,
     CatalogPublicationPreview,
     Action,
+    IFoodNegotiationProjection,
     FeedCollectionRef,
     FeedProjection,
     CollectionOptionProjection,

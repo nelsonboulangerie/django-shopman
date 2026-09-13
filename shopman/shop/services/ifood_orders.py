@@ -20,6 +20,8 @@ order prices are decimal currency values (e.g. ``12.5`` = R$ 12,50).
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 import requests
 from django.conf import settings
@@ -96,6 +98,7 @@ def map_order(order: dict) -> dict:
         "customer": _map_customer(order.get("customer") or {}),
         "delivery": _map_delivery(order),
         "items": _map_items(order.get("items") or []),
+        "benefits": _map_benefits(order.get("benefits") or []),
         "totals": _map_totals(order.get("total") or {}),
         "payments": _map_payments(order.get("payments") or {}),
         "notes": _order_notes(order),
@@ -116,6 +119,7 @@ def _map_customer(customer: dict) -> dict:
         "phone": number,
         "phone_localizer": localizer,
         "document": customer.get("documentNumber", ""),
+        "document_type": customer.get("documentType", ""),
     }
 
 
@@ -214,6 +218,41 @@ def _map_options(options: list[dict]) -> list[dict]:
                 }
                 for cst in (opt.get("customizations") or [])
             ],
+        })
+    return mapped
+
+
+def _benefit_amount(value) -> int | None:
+    try:
+        amount = Decimal(str(value))
+        if not amount.is_finite() or amount < 0:
+            return None
+        return int((amount * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+def _map_benefits(benefits: list) -> list[dict]:
+    """Preserve FOOD subsidy evidence; this projection never changes order pricing."""
+    if not isinstance(benefits, list):
+        return []
+    mapped = []
+    for raw in benefits:
+        if not isinstance(raw, dict):
+            mapped.append({"raw": deepcopy(raw)})
+            continue
+        sponsors = raw.get("sponsorshipValues")
+        mapped.append({
+            "value_q": _benefit_amount(raw.get("value")),
+            "target": raw.get("target", ""),
+            "target_id": raw.get("targetId"),
+            "sponsorships": [
+                {"sponsor": sponsor.get("name", ""),
+                 "value_q": _benefit_amount(sponsor.get("value")),
+                 "description": sponsor.get("description", ""), "raw": deepcopy(sponsor)}
+                for sponsor in (sponsors if isinstance(sponsors, list) else []) if isinstance(sponsor, dict)
+            ],
+            "raw": deepcopy(raw),
         })
     return mapped
 

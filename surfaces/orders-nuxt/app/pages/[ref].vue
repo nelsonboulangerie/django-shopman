@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import OrderIFoodNegotiations from "~/components/OrderIFoodNegotiations.vue";
 import OrderIFoodSummary from "~/components/OrderIFoodSummary.vue";
 // Order detail — the operator's full view of one order: items, timeline, kitchen
 // note, fiscal links, and the complete action set. Reads the expanded projection
@@ -95,7 +96,8 @@ async function saveKitchenNote() {
   }
 }
 const reasonDirty = ref(false);
-const hasUnsavedText = computed(() => notesDirty.value || Boolean(comment.value.trim()) || reasonDirty.value);
+const negotiationDirty = ref(false);
+const hasUnsavedText = computed(() => notesDirty.value || Boolean(comment.value.trim()) || reasonDirty.value || negotiationDirty.value);
 // Session-only drafts: leaving requires an explicit discard while text is dirty.
 onBeforeRouteLeave(() => {
   if (!hasUnsavedText.value) return true;
@@ -310,6 +312,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           </p>
           <p class="flex items-center gap-2 text-muted-foreground"><Icon name="lucide:wallet" class="size-4" /> {{ order.payment_method_label || "—" }} · {{ order.payment_status_label || "—" }}</p>
           <OrderIFoodSummary :cancellation-notice="order.ifood_cancellation_notice" :payment-summary="order.ifood_payment_summary" :operation-summary="order.ifood_operation_summary" />
+          <OrderIFoodNegotiations v-if="order.ifood_negotiations?.length" :order-ref="order.ref" :negotiations="order.ifood_negotiations" @refresh="refresh" @dirty-change="negotiationDirty = $event" />
           <!-- Prova de envio do link de pagamento: "Enviando…", "Link enviado
                às 14h32" ou "falhou — reenvie". Lida da última Directive do
                aviso; sem aviso nenhum, a linha não existe. -->
@@ -601,16 +604,16 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
     <!-- reject / cancel: marketplace-aware reason dialog (iFood coded reasons or
          store presets + free text) -->
     <OrderReasonDialog
-      @dirty-change="reasonDirty = $event"
       :open="dialog === 'reject' || dialog === 'cancel'"
       :mode="dialog === 'cancel' ? 'cancel' : 'reject'"
       :loading="reasonsLoading"
       :error="reasonsError"
       :marketplace="order?.channel_ref === 'ifood'"
-      @retry="loadReasons"
       :reasons="reasons"
       :presets="presets"
       :busy="busy"
+      @dirty-change="reasonDirty = $event"
+      @retry="loadReasons"
       @update:open="(v) => { if (!v) dialog = '' }"
       @confirm="submitReason"
     />

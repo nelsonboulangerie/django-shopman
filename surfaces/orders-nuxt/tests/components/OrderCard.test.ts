@@ -43,6 +43,7 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     ifood_cancellation_notice: "",
     ifood_payment_summary: [],
     ifood_operation_summary: [],
+    ifood_negotiations: [],
     payment_status: "pending",
     payment_pending: true,
     can_settle_delivery_cash: false,
@@ -215,4 +216,13 @@ describe("OrderCard iFood", () => {
     expect(blocked?.attributes("disabled")).toBeDefined();
     expect(w.findAll("button").some((button) => button.text().includes("Iniciar preparo"))).toBe(false);
   });
+});
+
+it("links negotiations on a completed order without batch or fulfillment actions", () => {
+  const order = card({ status: "completed", status_label: "Concluído", ifood_negotiations: [{ id: "dispute" }] as OrderCardProjection["ifood_negotiations"] });
+  const w = mount(OrderCard, { props: { card: order, negotiationOnly: true }, global: { stubs } });
+  expect(w.get("[data-ifood-negotiation-link]").attributes("to")).toBe(`/${order.ref}#ifood-negotiations`);
+  expect(w.find('[aria-label="Selecionar pedido"]').exists()).toBe(false);
+  expect(w.find('[aria-label="Atender este pedido"]').exists()).toBe(false);
+  expect(w.findAll("button")).toHaveLength(0);
 });

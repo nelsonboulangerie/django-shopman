@@ -1779,6 +1779,61 @@ class OrderRejectView(_OrderActionBase):
         return self._context_response(request, order, "reject", {"reason": reason, "cancellation_code": code}, execute, prepare=prepare)
 
 
+class OrderIFoodEvidenceView(OperationalObservationMixin, APIView):
+    """Download a registered negotiation attachment with server-held credentials."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request, ref: str):
+        from django.http import HttpResponse
+
+        from shopman.shop.services.ifood_evidence import EvidenceUnavailable, fetch_evidence
+
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        try:
+            index = int(request.query_params.get("index", ""))
+        except (ValueError, TypeError):
+            return Response({"detail": "Evidência inválida."}, status=400)
+        try:
+            content, mime = fetch_evidence(order, dispute_id=str(request.query_params.get("dispute_id") or ""), index=index)
+        except EvidenceUnavailable as exc:
+            return Response({"detail": str(exc)}, status=503)
+        extension = {"image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp", "application/pdf": "pdf"}.get(mime, "bin")
+        response = HttpResponse(content, content_type=mime)
+        response["Content-Disposition"] = f'attachment; filename="ifood-evidence-{index}.{extension}"'
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Cache-Control"] = "private, no-store"
+        return response
+
+
+class OrderIFoodHandshakeView(_OrderActionBase):
+    """Persist an explicit operator response; the worker contacts iFood later."""
+
+    intention_operation = "ifood-handshake"
+
+    def post(self, request, ref: str):
+        from shopman.shop.services import ifood_handshake
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        inputs = {key: str(request.data.get(key) or "").strip() for key in (
+            "dispute_id", "decision", "reason", "detail_reason",
+        )}
+
+        def execute(base):
+            try:
+                ifood_handshake.enqueue_response(order, **inputs, actor=_actor(request), expected_revision=base)
+            except ifood_handshake.HandshakeValidationError as exc:
+                raise OrderError(str(exc)) from exc
+            return {"response_queued": True}
+
+        return self._context_response(request, order, "ifood-handshake", inputs, execute)
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],

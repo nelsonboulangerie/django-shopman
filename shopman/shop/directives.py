@@ -91,6 +91,7 @@ CATALOG_PROJECT_SKU = "catalog.project_sku"
 
 # iFood status callback (push internal lifecycle → iFood order actions)
 IFOOD_STATUS_CALLBACK = "ifood.status_callback"
+IFOOD_HANDSHAKE_RESPONSE = "ifood.handshake_response"
 
 # Campanha (marketing operacional)
 # ANNOUNCEMENT_PUBLISH   — publica em plataforma externa (IG, Facebook, Google Business).
