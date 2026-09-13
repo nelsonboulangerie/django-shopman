@@ -1,4 +1,6 @@
-# Minuta de chamado iFood, ainda não enviada
+# Chamado iFood 33298264
+
+Enviado em 12/09/2026 às 21:18 BRT com autorização de Pablo. Portal confirmou sucesso e status Em análise. Categoria API - Problema gerais; subcategoria Erros 403 - Forbidden. Conteúdo enviado abaixo.
 
 Tipo: Incidente
 

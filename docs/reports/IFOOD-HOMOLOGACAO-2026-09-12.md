@@ -147,3 +147,9 @@ Validação adicional: 76 testes de projeção/fila e 13 subtests; frontend type
 - A versão publicada exibiu `Pago online · paid`, reproduzindo a deficiência de apresentação corrigida no PR.
 - Recusa executada no Gestor com motivo oficial Problemas de sistema na loja. Callback 20925 concluiu após duas tentativas: primeira 403, sucesso às 23:38:04 UTC. Evento CAN processado/ACKado às 23:38:17 UTC, receipt idempotente 6418 com already_cancelled. Pedido encerrado; não foi aceito, preparado, despachado ou concluído.
 - Correções abertas no draft PR #633. Nenhum merge/deploy realizado. O ensaio mostrou que 403 HTML precisa permanecer transitório também no novo fluxo de cancelamento; correção adicional validada com 65 testes e 8 subtests.
+
+## Chamado enviado e validação CI
+
+Chamado técnico **33298264** enviado com autorização de Pablo em 12/09 às 21:18 BRT. Status no portal: **Em análise**. Não é solicitação de homologação.
+
+Na revisão d328956b4, os gates de runtime PostgreSQL/Redis, Docker, qualidade, UI e suítes passaram; Backstage apresentou dois asserts legados de cancelamento imediato. Corrigida somente a expectativa para solicitação pendente e directive única em replay. Cinco testes do arquivo passaram. Nova execução CI precede merge/deploy.
