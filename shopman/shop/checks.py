@@ -1148,7 +1148,7 @@ def check_production_provider_environments(app_configs, **kwargs):
     """The release job already calls check --deploy; reuse canonical provider facts."""
     if not is_production():
         return []
-    from shopman.backstage.services.integration_readiness import build_provider_readiness
+    from shopman.shop.adapters.provider_readiness import build_provider_readiness
 
     try:
         facts = build_provider_readiness(mode="runtime")
