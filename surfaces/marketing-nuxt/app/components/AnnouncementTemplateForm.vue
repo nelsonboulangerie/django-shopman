@@ -53,7 +53,7 @@ const instagramFormats = computed(
     platformCapabilities.value.find(
       (capability) => capability.platform === "instagram",
     )?.formats ?? [
-      { ref: "story", label: "Story" },
+      { ref: "story", label: "Stories" },
       { ref: "feed", label: "Feed" },
     ],
 );

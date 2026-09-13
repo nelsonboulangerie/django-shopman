@@ -58,7 +58,7 @@ _DESTINATIONS = (
         formats=(
             MarketingFormatCapability(
                 ref="story",
-                label="Story",
+                label="Stories",
                 provider_fields=_PUBLICATION_FIELD,
                 required_provider_fields=_PUBLICATION_FIELD,
                 media_required=True,
