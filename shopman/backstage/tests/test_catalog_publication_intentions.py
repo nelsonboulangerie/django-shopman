@@ -184,6 +184,9 @@ def test_bulk_history_retains_actual_before_after_actor_and_tiers(client, operat
         assert [row.is_sellable for row in history] == [True, False]
         assert all(row.history_user_id == operator.pk for row in history)
         assert all(row.listing_id == item.listing_id and row.min_qty == item.min_qty for row in history)
+    from shopman.backstage.projections.catalog import build_catalog_matrix
+    row = next(row for row in build_catalog_matrix(user=operator).rows if row.sku == "PAO")
+    assert all(f"Pausado por {operator.username} em " in cell.pause_audit for cell in row.cells if cell.in_listing)
     before_count = tier.history.count()
     assert client.post(URL, intent(data, seen), content_type="application/json", HTTP_IDEMPOTENCY_KEY=key).status_code == 200
     assert tier.history.count() == before_count
@@ -201,3 +204,21 @@ def test_failed_bulk_does_not_leave_audit_or_mutation(operator, catalog, monkeyp
     item.refresh_from_db()
     assert item.is_sellable
     assert item.history.count() == before
+
+
+def test_feed_bulk_pause_keeps_actor_and_provenance(operator, catalog):
+    import json
+
+    from django.contrib.admin.models import LogEntry
+
+    from shopman.backstage.services import catalog as service
+    from shopman.shop.tests._display import display_channel
+
+    channel = display_channel("audit-feed", "Audit", collections=["doces"])
+    assert service.bulk_set(["BOLO"], channel.ref, is_sellable=False, actor=operator.username) == 1
+    entry = LogEntry.objects.get(user_id=operator.pk, object_id=str(channel.pk))
+    assert json.loads(entry.change_message)["after"] == ["BOLO"]
+    channel.refresh_from_db()
+    assert operator.username in channel.config["display"]["pause_audit"]["BOLO"]
+    assert service.bulk_set(["BOLO"], channel.ref, is_sellable=False, actor=operator.username) == 0
+    assert LogEntry.objects.filter(user_id=operator.pk, object_id=str(channel.pk)).count() == 1
