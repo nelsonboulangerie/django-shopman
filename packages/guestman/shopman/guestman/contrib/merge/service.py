@@ -668,7 +668,10 @@ class MergeService:
 
         moved: list[dict] = []
         migrated = 0
-        for order in Order.objects.select_for_update().filter(identity_query).distinct():
+        # Identity predicates use only Order columns/JSON, so each row appears
+        # once even when several predicates match. DISTINCT is unnecessary and
+        # PostgreSQL rejects it together with FOR UPDATE; keep the row lock.
+        for order in Order.objects.select_for_update().filter(identity_query):
             previous = {
                 "pk": order.pk,
                 "handle_type": order.handle_type,
