@@ -45,6 +45,8 @@ from shopman.shop.services import (
     customer,
     fiscal,
     fulfillment,
+    ifood_cancellation,
+    ifood_schedule,
     loyalty,
     notification,
     payment,
@@ -76,9 +78,8 @@ def ensure_confirmable(order, *, channel_config=None) -> None:
     """
     from shopman.orderman.exceptions import InvalidTransition
 
-    from shopman.shop.services import ifood_cancellation
 
-    if order.channel_ref == "ifood" and ifood_cancellation.is_pending(order):
+    if order.channel_ref == "ifood" and _ifood_cancellation_pending(order):
         raise InvalidTransition(
             code="ifood_cancellation_pending",
             message="Aguarde a confirmação do cancelamento pelo iFood antes de confirmar o pedido.",
@@ -283,13 +284,15 @@ def _on_commit(order, config: ChannelConfig) -> None:
     redeem loyalty, handle confirmation."""
     customer.ensure(order)
 
-    if config.stock.check_on_commit:
+    defer_hold = ifood_schedule.defer_stock_hold(order)
+    if config.stock.check_on_commit and not defer_hold:
         if not _check_availability(order, config):
             return  # order cancelled
 
-    stock.hold(order)
+    if not defer_hold:
+        stock.hold(order)
 
-    if config.stock.check_on_commit and (order.data or {}).get("hold_ids"):
+    if config.stock.check_on_commit and not defer_hold and (order.data or {}).get("hold_ids"):
         if not _verify_holds(order):
             return  # order cancelled
 
@@ -437,6 +440,9 @@ def _on_accepted(order, config: ChannelConfig) -> None:
         notification.send(order, "order_accepted")
         return
 
+    if ifood_schedule.is_scheduled(order) and "hold_ids" not in (order.data or {}):
+        stock.hold(order)
+
     # prep_start="operator": pago/aceito NÃO vai sozinho pra cozinha — espera o
     # operador dar "Iniciar preparo" no gestor (a transição para PREPARING é que
     # dispara o KDS, via _on_preparing). Honesto com o cliente remoto.
@@ -512,6 +518,8 @@ def _on_paid(order, config: ChannelConfig) -> None:
         _schedule_preorder_activation(order)
         notification.send(order, "payment_confirmed")
         return
+    if ifood_schedule.is_scheduled(order) and "hold_ids" not in (order.data or {}):
+        stock.hold(order)
     physical_work_dispatched = False
     if order.status == Order.Status.ACCEPTED and _prep_starts_automatically(config):
         physical_work_dispatched = _dispatch_physical_work(order)
@@ -530,6 +538,11 @@ def _on_preparing(order, config: ChannelConfig) -> None:
     criados no ``on_paid``/``on_accepted``; a chamada aqui é idempotente
     (``kds.dispatch`` só fira linhas ainda não firadas), então não duplica.
     """
+    if _ifood_cancellation_pending(order):
+        return
+    if not ifood_schedule.is_due(order):
+        _schedule_preorder_activation(order)
+        return
     _dispatch_physical_work(order)
     notification.send(order, "order_preparing")
 
@@ -778,7 +791,17 @@ def _payment_is_authorized(order) -> bool:
     return status == "authorized"
 
 
+def _ifood_cancellation_pending(order) -> bool:
+    return (
+        order.channel_ref == "ifood"
+        and bool((order.data or {}).get(ifood_cancellation.KEY))
+        and ifood_cancellation.is_pending(order)
+    )
+
+
 def _dispatch_physical_work(order) -> bool:
+    if _ifood_cancellation_pending(order) or not ifood_schedule.is_due(order):
+        return False
     try:
         from shopman.shop.services import kds
         tickets = kds.dispatch(order)
@@ -806,6 +829,8 @@ def _prep_starts_automatically(config: ChannelConfig) -> bool:
 
 def _stock_fulfill_allowed(order, config: ChannelConfig) -> bool:
     """Baixa de estoque liberada: pagamento no balcão ou já capturado."""
+    if _ifood_cancellation_pending(order) or not ifood_schedule.is_due(order):
+        return False
     payment_data = (order.data or {}).get("payment") or {}
     if (
         config.payment.timing == "external"
@@ -834,6 +859,8 @@ def _physical_work_deferred(order) -> bool:
     """True quando o pedido é para data FUTURA (encomenda): KDS e baixa esperam o dia."""
     from shopman.shop.services.order_helpers import get_commitment_date
 
+    if ifood_schedule.is_scheduled(order):
+        return not ifood_schedule.is_due(order)
     target = get_commitment_date(order)
     return target is not None and target > timezone.localdate()
 
@@ -851,10 +878,23 @@ def _schedule_preorder_activation(order) -> None:
     from shopman.shop.directives import PREORDER_ACTIVATE, create_deduped
     from shopman.shop.services.order_helpers import get_commitment_date
 
-    target = get_commitment_date(order)
-    if target is None:
-        return
-    available_at = timezone.make_aware(datetime.combine(target, time_type(0, 5)))
+    if ifood_schedule.is_scheduled(order):
+        available_at = ifood_schedule.preparation_start(order)
+        if available_at is None:
+            from shopman.shop.services.observability import create_operator_alert
+
+            create_operator_alert(
+                type="ifood_schedule_invalid", severity="critical",
+                message=ifood_schedule.block_reason(order), order_ref=order.ref,
+                dedupe_key=f"ifood_schedule_invalid:{order.ref}",
+            )
+            return
+        target = timezone.localtime(available_at).date()
+    else:
+        target = get_commitment_date(order)
+        if target is None:
+            return
+        available_at = timezone.make_aware(datetime.combine(target, time_type(0, 5)))
     create_deduped(
         PREORDER_ACTIVATE,
         payload={
@@ -887,7 +927,12 @@ def activate_preorder(order) -> None:
         logger.warning("lifecycle.activate_preorder: too early order=%s", order.ref)
         return
 
+    if _ifood_cancellation_pending(order):
+        return
+
     config = ChannelConfig.for_channel(order.channel_ref)
+    if ifood_schedule.is_scheduled(order) and "hold_ids" not in (order.data or {}):
+        stock.hold(order)
     # Encomenda NÃO PAGA não vai para a cozinha. O mesmo gate de _on_accepted:
     # sem ele, a via `holds_materialized` -> on_holds_materialized ->
     # activate_preorder levava o pedido a PREPARING (e, ao completar, a fiscal

@@ -42,6 +42,7 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     payment_method_label: "Dinheiro",
     ifood_cancellation_notice: "",
     ifood_payment_summary: [],
+    ifood_operation_summary: [],
     payment_status: "pending",
     payment_pending: true,
     can_settle_delivery_cash: false,

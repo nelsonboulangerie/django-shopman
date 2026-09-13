@@ -377,7 +377,7 @@ def test_process_events_in_progress_claim_is_not_acked(db, fake_headers):
 def test_process_events_ignores_non_placed_codes(db, fake_headers):
     from shopman.shop.services import ifood_events
 
-    events = [{"id": "evt-3", "fullCode": "CONFIRMED", "orderId": "o9"}]
+    events = [{"id": "evt-3", "fullCode": "RECOMMENDED_PREPARATION_START", "orderId": "o9"}]
     with patch("shopman.shop.services.ifood_events.acknowledge", return_value=True) as mock_ack:
         summary = ifood_events.process_events(events)
 
@@ -404,7 +404,7 @@ def test_process_events_failed_ingest_not_acked(db, fake_headers):
 
 @override_settings(SHOPMAN_IFOOD=IFOOD_CFG)
 def test_process_events_mixed_batch_acks_only_handled_ids(db, fake_headers, ifood_order):
-    """Lote real pode misturar lixo, evento ignoravel e pedido novo.
+    """Lote real pode misturar lixo, confirmação precoce e pedido novo.
 
     So ackamos o que foi tratado. Evento sem id e PLACED sem orderId precisam
     voltar pelo iFood, porque nao ha como provar que foram processados.
@@ -428,11 +428,11 @@ def test_process_events_mixed_batch_acks_only_handled_ids(db, fake_headers, ifoo
         "polled": 4,
         "ingested": 1,
         "deduped": 0,
-        "ignored": 1,
-        "failed": 2,
+        "ignored": 0,
+        "failed": 3,
         "acked": True,
     }
-    mock_ack.assert_called_once_with(["evt-confirmed", "evt-ok"])
+    mock_ack.assert_called_once_with(["evt-ok"])
 
 
 @override_settings(SHOPMAN_IFOOD=IFOOD_CFG)
@@ -624,7 +624,7 @@ def test_send_for_status_unmapped_returns_false():
     assert ifood_callbacks.send_for_status("o1", "preparing") is False
 
 
-def test_status_handler_raises_transient_on_callback_error():
+def test_status_handler_raises_transient_on_callback_error(db):
     from shopman.orderman.exceptions import DirectiveTransientError
 
     from shopman.shop.handlers.ifood_status import IFoodStatusCallbackHandler

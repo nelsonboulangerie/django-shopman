@@ -230,7 +230,7 @@ function buttonClass(priority: string): string {
       <span class="ml-auto text-sm font-bold tabular-nums">{{ card.total_display }}</span>
     </div>
 
-    <OrderIFoodSummary :cancellation-notice="card.ifood_cancellation_notice" :payment-summary="card.ifood_payment_summary" />
+    <OrderIFoodSummary :cancellation-notice="card.ifood_cancellation_notice" :payment-summary="card.ifood_payment_summary" :operation-summary="card.ifood_operation_summary" />
 
     <!-- awaiting production -->
     <div v-if="card.awaiting_work_orders.length" class="flex flex-col gap-1">

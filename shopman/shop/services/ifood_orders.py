@@ -83,6 +83,7 @@ def map_order(order: dict) -> dict:
     """
     order_id = order.get("id") or order.get("orderId") or ""
     merchant = order.get("merchant") or {}
+    from shopman.shop.services.ifood_schedule import map_schedule
 
     return {
         "order_code": str(order_id),
@@ -91,6 +92,7 @@ def map_order(order: dict) -> dict:
         "display_id": order.get("displayId", ""),
         "is_test": bool(order.get("isTest", False)),
         "order_timing": order.get("orderTiming", ""),
+        "schedule": map_schedule(order),
         "customer": _map_customer(order.get("customer") or {}),
         "delivery": _map_delivery(order),
         "items": _map_items(order.get("items") or []),
@@ -159,6 +161,7 @@ def _map_items(items: list[dict]) -> list[dict]:
         # totalPrice already includes optionsPrice + customizationPrice — critical
         # for combos, where unitPrice (base) undercounts the real line charge.
         line_total_q = _to_q(raw.get("totalPrice")) if raw.get("totalPrice") is not None else None
+        options = _map_options(raw.get("options") or [])
         mapped.append({
             "line_id": raw.get("id") or f"ifood-{idx}",
             "sku": raw.get("externalCode") or raw.get("id") or f"ifood-item-{idx}",
@@ -171,10 +174,26 @@ def _map_items(items: list[dict]) -> list[dict]:
             "meta": {
                 "observations": raw.get("observations", ""),
                 "item_type": raw.get("type", ""),
-                "options": _map_options(raw.get("options") or []),
+                "options": options,
+                "notes": _item_preparation_notes(raw.get("observations"), options),
             },
         })
     return mapped
+
+
+def _item_preparation_notes(observations, options: list[dict]) -> str:
+    """Project supplier instructions into the canonical KDS notes field."""
+    lines = [str(observations).strip()] if observations and str(observations).strip() else []
+
+    def describe(option: dict) -> str:
+        group = f"{option['group']}: " if option.get("group") else ""
+        return f"{group}{option.get('qty', 1)}× {option.get('name') or 'Complemento sem nome'}"
+
+    for option in options:
+        lines.append(describe(option))
+        for customization in option.get("customizations") or []:
+            lines.append(f"  ↳ {describe(customization)}")
+    return "\n".join(lines)
 
 
 def _map_options(options: list[dict]) -> list[dict]:

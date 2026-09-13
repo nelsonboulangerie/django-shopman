@@ -55,3 +55,35 @@ def payment_summary(order) -> tuple[str, ...]:
                 line += f", troco R$ {format_money(change_for - value)}"
         lines.append(line)
     return tuple(lines) or ("iFood: pagamento não informado.",)
+
+
+def operation_summary(order) -> tuple[str, ...]:
+    if order.channel_ref != "ifood":
+        return ()
+    from django.utils import timezone
+    from django.utils.dateparse import parse_datetime
+
+    from shopman.shop.services import ifood_schedule
+    from shopman.shop.services.order_helpers import get_fulfillment_type
+
+    facts = (order.data or {}).get("ifood") or {}
+    lines = []
+    if get_fulfillment_type(order) == "delivery":
+        provider = str(facts.get("delivered_by") or "").upper()
+        lines.append({"IFOOD": "Entrega por entregador iFood", "MERCHANT": "Entrega própria da loja"}.get(provider, "Responsável pela entrega não informado pelo iFood"))
+    if str(facts.get("order_timing") or "").upper() == "SCHEDULED":
+        lines.append("Pedido agendado no iFood")
+        raw_schedule = facts.get("schedule")
+        schedule = raw_schedule if isinstance(raw_schedule, dict) else {}
+        for key, label in (("preparation_start_at", "Início do preparo"), ("delivery_start_at", "Início da janela"), ("delivery_end_at", "Fim da janela")):
+            value = schedule.get(key)
+            try:
+                dt = parse_datetime(str(value)) if value else None
+            except (ValueError, TypeError):
+                dt = None
+            if dt is not None and timezone.is_aware(dt):
+                lines.append(f"{label}: {timezone.localtime(dt).strftime('%d/%m/%Y às %H:%M')}")
+        reason = ifood_schedule.block_reason(order)
+        if reason:
+            lines.append(reason)
+    return tuple(lines)
