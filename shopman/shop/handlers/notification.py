@@ -223,6 +223,10 @@ class NotificationSendHandler:
         """Handle system notifications (stock alerts, etc.) — routed to operator."""
         payload = message.payload
         event = payload.get("event", "system")
+        if event == "operator_critical":
+            from shopman.shop.services.critical_alerts import deliver
+
+            return deliver(message)
         context = payload.get("context", {})
 
         # Normalize event → template name (stock.alert.triggered → stock_alert)
