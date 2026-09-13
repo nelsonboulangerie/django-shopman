@@ -648,7 +648,7 @@ def review_sale(
     payment_collection = _payload_payment_collection(payload, fulfillment_type)
     subtotal_q = _payload_subtotal_q(payload)
     line_discount_q = _payload_line_discounts_q(payload)
-    order_discount_q = int(_payload_manual_discount(payload).get("discount_q", 0) or 0)
+    order_discount_q = _payload_applied_order_discount_q(payload)
     discount_q = order_discount_q + line_discount_q
     delivery = _resolve_delivery_fee(payload)
     delivery_fee_q = delivery.fee_q
@@ -2206,8 +2206,29 @@ def _ensure_resolved_prices(payload: dict) -> None:
 
 
 def _payload_discount_q(payload: dict) -> int:
-    order_discount_q = int(_payload_manual_discount(payload).get("discount_q", 0) or 0)
+    order_discount_q = _payload_applied_order_discount_q(payload)
     return order_discount_q + _payload_line_discounts_q(payload)
+
+
+
+def _payload_applied_order_discount_q(payload: dict) -> int:
+    """Preview the kernel's representable unit-price discount, keeping its ceiling."""
+    from shopman.shop.modifiers import _is_non_merchandise_line, _spread_order_discount
+
+    requested_q = int(_payload_manual_discount(payload).get("discount_q", 0) or 0)
+    if requested_q <= 0:
+        return 0
+    lines = []
+    for item in payload.get("items", []):
+        if _is_non_merchandise_line(item):
+            continue
+        qty = max(0, int(item.get("qty", 1)))
+        if not qty:
+            continue
+        line_gain_q = _payload_line_discounts_q({"items": [item]})
+        unit_q = max(0, int(item.get("unit_price_q", 0)) - line_gain_q // qty)
+        lines.append({"qty": qty, "unit_price_q": unit_q, "line_total_q": qty * unit_q})
+    return sum(amount for _line, _unit, amount in _spread_order_discount(lines, requested_q, at_least=False))
 
 
 def _normalize_line_discount(raw) -> dict:
