@@ -54,3 +54,15 @@ def test_deploy_check_refuses_shared_maps_credentials_without_leaking_them(setti
     errors = check_google_maps_credential_boundary(None)
     assert [error.id for error in errors] == ["SHOPMAN_E023"]
     assert "private-legacy-secret" not in str(errors)
+
+
+def test_deploy_check_requires_both_production_credentials(settings):
+    from shopman.shop.checks import check_google_maps_credential_boundary
+
+    settings.SHOPMAN_ENVIRONMENT = "production"
+    settings.GOOGLE_MAPS_API_KEY = ""
+    settings.GOOGLE_MAPS_BROWSER_API_KEY = "public-browser"
+    settings.GOOGLE_MAPS_SERVER_API_KEY = ""
+    assert [error.id for error in check_google_maps_credential_boundary(None)] == ["SHOPMAN_E023"]
+    settings.GOOGLE_MAPS_SERVER_API_KEY = "private-server"
+    assert check_google_maps_credential_boundary(None) == []
