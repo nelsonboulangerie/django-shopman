@@ -58,3 +58,19 @@ def test_checkout_projection_serializes_actions_without_policy_payload(cart_sess
     assert payload["actions"][0]["ref"] == "checkout"
     assert payload["actions"][0]["kind"] == "mutation"
     assert payload["actions"][0]["idempotency"] == "required"
+
+
+def test_checkout_retains_cart_block_when_channel_allows_checkout(db):
+    from types import SimpleNamespace
+
+    from shopman.storefront.presentation.checkout import _checkout_actions
+
+    cart = SimpleNamespace(is_empty=False, actions=[
+        SimpleNamespace(ref="checkout", enabled=False, reason="Revise itens indisponíveis antes de finalizar."),
+    ])
+    (action,) = _checkout_actions(
+        SimpleNamespace(can_checkout=True), cart=cart,
+        is_authenticated=True, requires_authentication=True,
+    )
+    assert not action.enabled
+    assert action.reason == cart.actions[0].reason
