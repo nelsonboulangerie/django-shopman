@@ -7,6 +7,7 @@ from shopman.orderman.models import Order, OrderItem
 
 from shopman.shop.services import remote_mutations
 from shopman.storefront.services.pickup_slots import get_slots
+from shopman.storefront.tests._checkout_auth import authenticate_checkout
 from shopman.storefront.tests._checkout_baseline import with_baseline
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
@@ -26,6 +27,7 @@ def test_legacy_x_header_is_accepted():
 
 
 def test_checkout_response_loss_recovers_same_order(client):
+    authenticate_checkout(client)
     _seed_surface()
     assert client.put("/api/v1/cart/skus/PAO-FRANCES/", {"qty": 1}, content_type="application/json").status_code == 200
     payload = with_baseline(
@@ -78,6 +80,7 @@ def test_new_reorder_intent_changes_real_cart(client):
 
 
 def test_post_commit_defaults_failure_is_recoverable(client):
+    authenticate_checkout(client)
     _seed_surface()
     assert client.put("/api/v1/cart/skus/PAO-FRANCES/", {"qty": 1}, content_type="application/json").status_code == 200
     payload = with_baseline(
@@ -146,6 +149,7 @@ def test_stock_notice_checks_global_optout():
 
 
 def test_edit_between_price_check_and_commit_cannot_change_confirmed_total(client):
+    authenticate_checkout(client)
     from shopman.shop.services import checkout
 
     _seed_surface()
@@ -177,6 +181,7 @@ def test_edit_between_price_check_and_commit_cannot_change_confirmed_total(clien
 
 
 def _checkout_payload(client, key="operational-test"):
+    authenticate_checkout(client)
     _seed_surface()
     assert client.put("/api/v1/cart/skus/PAO-FRANCES/", {"qty": 1}, content_type="application/json").status_code == 200
     return with_baseline(

@@ -13,6 +13,8 @@ import pytest
 from django.core.cache import cache
 from django.test import Client, override_settings
 
+from shopman.storefront.tests._checkout_auth import authenticate_checkout
+
 pytestmark = pytest.mark.django_db
 
 
@@ -86,6 +88,7 @@ def test_api_checkout_invalid_attempts_never_rate_limit(client: Client):
     """Tentativa INVÁLIDA (erro de formulário/carrinho vazio) não conta para o
     limite — cliente corrigindo o form não pode tomar 429 (audit pré-go-live).
     Só a tentativa que passa pelas validações e chega ao commit incrementa."""
+    authenticate_checkout(client)
     payload = {
         "name": "Test User",
         "phone": "+5511999990007",
@@ -93,12 +96,13 @@ def test_api_checkout_invalid_attempts_never_rate_limit(client: Client):
     }
     for _ in range(10):  # bem acima do limite de 3/min
         resp = client.post("/api/v1/checkout/", data=payload, content_type="application/json")
-        assert resp.status_code == 400, f"esperava 400 de carrinho vazio, veio {resp.status_code}"
+        assert resp.status_code == 400, f"esperava 400 de validação, veio {resp.status_code}"
 
 
 @override_settings(RATELIMIT_ENABLE=True)
 def test_api_checkout_normal_use_passes(client: Client):
     """Single API checkout POST is not rate-limited."""
+    authenticate_checkout(client)
     resp = client.post(
         "/api/v1/checkout/",
         data={"name": "Test", "phone": "+5511999990008", "fulfillment_type": "pickup"},

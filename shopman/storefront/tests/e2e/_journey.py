@@ -53,9 +53,12 @@ def seed_channel(ref: str = WEB_CHANNEL, name: str = "Loja Online", config: dict
     return Channel.objects.create(ref=ref, name=name, config=config or {})
 
 
-def seed_web_channel():
-    """Create the storefront ``web`` channel with the production remote config."""
-    return seed_channel(WEB_CHANNEL, "Loja online", config=dict(WEB_CHANNEL_CONFIG))
+def seed_web_channel(*, allow_cash=False):
+    """Create the remote web config, optionally enabling cash for cash journeys."""
+    config = {**WEB_CHANNEL_CONFIG, "payment": dict(WEB_CHANNEL_CONFIG["payment"])}
+    if allow_cash:
+        config["payment"]["method"] = ["pix", "card", "cash"]
+    return seed_channel(WEB_CHANNEL, "Loja online", config=config)
 
 
 def seed_listing(ref: str = WEB_CHANNEL, name: str = "Web"):
