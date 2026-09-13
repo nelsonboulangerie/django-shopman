@@ -112,8 +112,17 @@ jobs:
       - name: Constraints cover the deploy image
         run: make test-constraints
 
+      - name: Production provider and Maps guard contracts
+        run: >-
+          .venv/bin/python -m pytest -q
+          shopman/shop/tests/test_production_provider_deploy_gate.py
+          shopman/shop/tests/test_google_maps_credentials.py
+
       - name: Deploy checks
         env:
+          # This fixture has no live provider credentials. Production rejection
+          # is exercised explicitly by the guard contracts immediately above.
+          SHOPMAN_ENVIRONMENT: "staging"
           DJANGO_DEBUG: "false"
           DJANGO_SECRET_KEY: ci-runtime-gate-nonprod-aB3dE5gH7jK9mN2pQ4rS6tU8vW0xY1zC20260505
           DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
