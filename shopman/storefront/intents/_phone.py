@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 
-from shopman.utils.phone import normalize_phone
+from shopman.utils.phone import normalize_user_phone
 
 from ..constants import get_default_ddd
 
@@ -19,14 +19,11 @@ def normalize_phone_input(
     if not phone_raw:
         return ""
     try:
-        phone = normalize_phone(
-            phone_raw,
-            repair_brazilian_plus=not international,
-        )
+        phone = normalize_user_phone(phone_raw)
         if not phone and not international:
             digits = "".join(c for c in phone_raw if c.isdigit())
             if 8 <= len(digits) <= 9:
-                phone = normalize_phone(f"{get_default_ddd()}{digits}")
+                phone = normalize_user_phone(f"{get_default_ddd()}{digits}")
         return phone or ""
     except (ValueError, TypeError):
         logger.exception("phone_normalization_failed")
