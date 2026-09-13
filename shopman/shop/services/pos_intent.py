@@ -102,6 +102,17 @@ class PosIntentError(ValueError):
         }
 
 
+class PosCommittedSaleError(PosIntentError):
+    """A post-commit refusal always identifies the order that already exists."""
+
+    def __init__(self, *, order_ref: str, **kwargs):
+        super().__init__(**kwargs)
+        self.order_ref = order_ref
+
+    def as_dict(self) -> dict:
+        return {**super().as_dict(), "order_ref": self.order_ref, "order_created": True}
+
+
 @dataclass(frozen=True)
 class PosSaleIntent:
     """Normalized POS sale intent ready for the POS application service."""
