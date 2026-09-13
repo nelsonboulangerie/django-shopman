@@ -8,6 +8,7 @@ falls back to inline text templates.
 from __future__ import annotations
 
 import logging
+import smtplib
 from typing import Any
 
 from django.conf import settings
@@ -231,6 +232,13 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         )
         logger.info("Email result: template=%s accepted=%s", template, count == 1)
         return count == 1
+    except (smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused,
+            smtplib.SMTPDataError, smtplib.SMTPAuthenticationError,
+            smtplib.SMTPConnectError, smtplib.SMTPHeloError) as exc:
+        # These exceptions report refusal before SMTP accepted the message.
+        # A disconnect/timeout can occur after DATA acceptance and stays unknown.
+        logger.warning("Email rejected: template=%s error=%s", template, type(exc).__name__)
+        return False
     except Exception as exc:
         raise RuntimeError("acceptance_unconfirmed") from exc
 

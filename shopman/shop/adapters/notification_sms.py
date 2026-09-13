@@ -136,7 +136,11 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
                 raise RuntimeError("acceptance_unconfirmed")
             logger.warning("Comtele SMS rejected: template=%s", template)
             return False
-    except (HTTPError, URLError) as exc:
+    except HTTPError as exc:
+        if exc.code in {400, 401, 403, 404, 405, 413, 415, 422, 429}:
+            return False
+        raise RuntimeError("acceptance_unconfirmed") from exc
+    except URLError as exc:
         raise RuntimeError("acceptance_unconfirmed") from exc
     except Exception as exc:
         raise RuntimeError("acceptance_unconfirmed") from exc
