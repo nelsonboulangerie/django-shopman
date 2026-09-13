@@ -24,6 +24,7 @@ import pytest
 from django.utils import timezone
 from shopman.orderman.models import Session
 
+from shopman.storefront.tests._checkout_auth import authenticate_checkout
 from shopman.storefront.tests._checkout_baseline import with_baseline
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
@@ -63,11 +64,12 @@ def _seed_delivery_zone() -> None:
     )
 
 
-def _checkout(client):
-    return client.post(
-        "/api/v1/checkout/",
-        data=with_baseline(client, {
+def _checkout_payload(client):
+    return with_baseline(
+        client,
+        {
             "name": "Maria Santos",
+            "payment_method": "cash",
             "phone": "+5543991111111",
             "fulfillment_type": "delivery",
             "delivery_address": "Rua das Flores, 1",
@@ -81,13 +83,17 @@ def _checkout(client):
                 "neighborhood": "Centro",
             },
             "delivery_date": timezone.localdate().isoformat(),
-        }),
-        content_type="application/json",
+        },
     )
+
+
+def _checkout(client):
+    return client.post("/api/v1/checkout/", _checkout_payload(client), content_type="application/json")
 
 
 def test_checkout_preserves_customer_ref(client):
     """O commit mescla nome/telefone SEM derrubar o ``ref``."""
+    authenticate_checkout(client, phone="+5543991111111", ref="CLI-001")
     _seed_surface()
     _seed_delivery_zone()
     _add_item(client)
@@ -109,23 +115,17 @@ def test_checkout_preserves_customer_ref(client):
     assert customer.get("phone") == "+5543991111111"
 
 
-def test_checkout_without_prior_identity_still_works(client):
-    """Visitante sem identidade na sessão: o envio segue normal, sem chaves vazias."""
+def test_checkout_without_authenticated_identity_is_rejected(client):
+    """An anonymous cart cannot become an order using a submitted phone."""
     _seed_surface()
     _seed_delivery_zone()
     _add_item(client)
+    payload = _checkout_payload(client)
+    session = Session.objects.get(session_key=client.session["cart_session_key"])
+    before = (session.state, session.rev, session.data)
 
-    resp = _checkout(client)
-    assert resp.status_code in (200, 201), resp.content
-
-    session_key = client.session.get("cart_session_key")
-    if session_key is None:  # a sessão do carrinho é encerrada no commit
-        return
-    session = Session.objects.filter(session_key=session_key).first()
-    if session is None:
-        return
-    customer = (session.data or {}).get("customer") or {}
-    assert customer.get("name") == "Maria Santos"
-    # Nada de `ref`/`price_tier` inventados quando não havia identidade.
-    assert "ref" not in customer
-    assert "price_tier" not in customer
+    resp = client.post("/api/v1/checkout/", payload, content_type="application/json")
+    assert resp.status_code == 403, resp.content
+    assert resp.json()["error_code"] == "authentication_required"
+    session.refresh_from_db()
+    assert (session.state, session.rev, session.data) == before

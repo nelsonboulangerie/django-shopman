@@ -11,6 +11,7 @@ import pytest
 from shopman.orderman.models import Order
 
 from shopman.shop.models import DeliveryZone
+from shopman.storefront.tests._checkout_auth import authenticate_checkout
 from shopman.storefront.tests._checkout_baseline import with_baseline
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
@@ -44,6 +45,7 @@ def test_cash_checkout_records_method_and_change(client):
     from shopman.shop.models import Shop
 
     _seed_surface()
+    authenticate_checkout(client)
     DeliveryZone.objects.create(
         shop=Shop.objects.first(),
         name="Centro",

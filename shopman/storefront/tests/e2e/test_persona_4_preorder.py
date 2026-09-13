@@ -34,7 +34,7 @@ def _seed_shop(*, max_preorder_days=30, closed_dates=None):
     if closed_dates:
         defaults["closed_dates"] = [{"date": d, "label": "Feriado"} for d in closed_dates]
     J.seed_shop(opening_hours=hours, defaults=defaults)
-    J.seed_web_channel()
+    J.seed_web_channel(allow_cash=True)
 
 
 def _holds_for_order(order) -> list[Hold]:
