@@ -1980,7 +1980,7 @@ def _pending_change_requests(cash_shift) -> tuple[POSChangeRequestProjection, ..
 
 
 def _address_autocomplete_api_key() -> str:
-    from shopman.shop.services.google_maps_credentials import browser_api_key
+    from shopman.shop.google_maps_credentials import browser_api_key
 
     return browser_api_key()
 

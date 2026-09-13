@@ -126,6 +126,10 @@ jobs:
           IFOOD_WEBHOOK_TOKEN: ci-ifood-webhook-token
           MANYCHAT_API_TOKEN: ci-manychat-api-token
           MANYCHAT_WEBHOOK_SECRET: ci-manychat-webhook-secret
+          # Distinct synthetic keys exercise the production contract without network calls.
+          GOOGLE_MAPS_API_KEY: ""
+          GOOGLE_MAPS_BROWSER_API_KEY: ci-maps-browser-key
+          GOOGLE_MAPS_SERVER_API_KEY: ci-maps-server-key
           # CI has no real payment credentials. Use the mock adapters with the
           # explicit staging allowance the deploy check provides for exactly this
           # case — it downgrades the payment-adapter error to W006 (non-blocking)
