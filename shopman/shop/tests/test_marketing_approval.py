@@ -208,6 +208,21 @@ def test_approval_commits_one_connected_graph_without_provider_or_directive(acto
         "instagram",
         "google_business",
     }
+    assert {(entry.platform, entry.delivery_kind, entry.format) for entry in result.outbox} == {
+        ("instagram", "publication", "story"),
+        ("google_business", "publication", "standard"),
+    }
+    assert {
+        (
+            payload["platform"],
+            payload["delivery_kind"],
+            payload["format"],
+        )
+        for payload in result.artifact.payload["resolved_artifacts"].values()
+    } == {
+        ("instagram", "publication", "story"),
+        ("google_business", "publication", "standard"),
+    }
     assert all(entry.state == MarketingOutbox.State.PENDING for entry in result.outbox)
     assert all(entry.command_id == result.receipt.pk for entry in result.outbox)
     assert all(entry.artifact_id == result.artifact.pk for entry in result.outbox)

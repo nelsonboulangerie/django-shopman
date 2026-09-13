@@ -36,7 +36,7 @@ from shopman.shop.models import (
     Trigger,
 )
 from shopman.shop.services import marketing_time
-from shopman.shop.services.marketing_capabilities import platform_choices
+from shopman.shop.services.marketing_capabilities import DESTINATIONS, platform_choices
 
 #: Plataformas que uma regra pode alvejar, na ordem em que aparecem no formulário.
 PLATFORM_CHOICES: tuple[tuple[str, str], ...] = platform_choices()
@@ -247,6 +247,24 @@ class ChoiceProjection:
 
 
 @dataclass(frozen=True)
+class MarketingFormatCapabilityProjection:
+    ref: str
+    label: str
+    provider_fields: tuple[str, ...]
+    required_provider_fields: tuple[str, ...]
+    media_required: bool
+
+
+@dataclass(frozen=True)
+class MarketingPlatformCapabilityProjection:
+    platform: str
+    label: str
+    delivery_kind: str
+    formats: tuple[MarketingFormatCapabilityProjection, ...]
+    default_format: str
+
+
+@dataclass(frozen=True)
 class CampaignOptionsProjection:
     """O que o formulário de regra precisa saber sem hardcodar o domínio.
 
@@ -257,6 +275,7 @@ class CampaignOptionsProjection:
 
     triggers: tuple[ChoiceProjection, ...]
     platforms: tuple[ChoiceProjection, ...]
+    delivery_capabilities: tuple[MarketingPlatformCapabilityProjection, ...]
     templates: tuple[AnnouncementTemplateProjection, ...]
     variables: tuple[str, ...]
     #: As faixas de preço (`PriceTier`) — varejo, atacado, staff.
@@ -783,6 +802,25 @@ def build_options() -> CampaignOptionsProjection:
     return CampaignOptionsProjection(
         triggers=tuple(ChoiceProjection(value=value, label=label) for value, label in Trigger.choices),
         platforms=tuple(ChoiceProjection(value=value, label=label) for value, label in PLATFORM_CHOICES),
+        delivery_capabilities=tuple(
+            MarketingPlatformCapabilityProjection(
+                platform=destination.platform,
+                label=destination.label,
+                delivery_kind=destination.delivery_kind,
+                formats=tuple(
+                    MarketingFormatCapabilityProjection(
+                        ref=format_capability.ref,
+                        label=format_capability.label,
+                        provider_fields=tuple(sorted(format_capability.provider_fields)),
+                        required_provider_fields=tuple(sorted(format_capability.required_provider_fields)),
+                        media_required=format_capability.media_required,
+                    )
+                    for format_capability in destination.formats
+                ),
+                default_format=destination.default_format,
+            )
+            for destination in DESTINATIONS
+        ),
         templates=build_templates(),
         variables=available_variables(),
         price_tiers=_price_tier_choices(),

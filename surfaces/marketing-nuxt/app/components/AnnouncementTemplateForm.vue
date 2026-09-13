@@ -4,7 +4,10 @@
 // Apresentacional: o pai é dono do fetch e da escrita. O vocabulário de variáveis vem do
 // backend (`options.variables`), nunca hardcoded — variável nova no domínio aparece aqui
 // sem deploy de front, e a tela nunca oferece uma que o resolvedor não conhece.
-import type { AnnouncementTemplate } from "~/types/campaign";
+import type {
+  AnnouncementTemplate,
+  MarketingPlatformCapability,
+} from "~/types/campaign";
 import { useMarketingDraft } from "~/composables/useMarketingDraft";
 import type { MarketingDraftPayload } from "~/utils/marketingDraft";
 import { marketingVariableLabel } from "~/presentation/marketingVariables";
@@ -12,6 +15,7 @@ import { marketingVariableLabel } from "~/presentation/marketingVariables";
 const props = defineProps<{
   template: AnnouncementTemplate | null; // null = criando
   variables: string[];
+  deliveryCapabilities?: MarketingPlatformCapability[];
   /** Há credencial de IA no ambiente? Sem ela o bloco de IA não aparece. */
   aiAvailable?: boolean;
   busy?: boolean;
@@ -30,8 +34,29 @@ const useAi = ref(false);
 const aiPrompt = ref("");
 const isActive = ref(true);
 const platformVariants = ref<Record<string, Record<string, unknown>>>({});
-const instagramFormat = ref<"story" | "feed">("story");
+const instagramFormat = ref("story");
 const customImageUrl = ref("");
+
+const platformCapabilities = computed(() => props.deliveryCapabilities ?? []);
+const knownPlatforms = computed(() =>
+  platformCapabilities.value.length
+    ? platformCapabilities.value.map((capability) => capability.platform)
+    : ["instagram", "facebook", "google_business", "whatsapp"],
+);
+const publicationCapabilities = computed(() =>
+  platformCapabilities.value.filter(
+    (capability) => capability.delivery_kind === "publication",
+  ),
+);
+const instagramFormats = computed(
+  () =>
+    platformCapabilities.value.find(
+      (capability) => capability.platform === "instagram",
+    )?.formats ?? [
+      { ref: "story", label: "Story" },
+      { ref: "feed", label: "Feed" },
+    ],
+);
 
 const IMAGE_SOURCES = [
   { value: "product", label: "Foto do produto" },
@@ -65,12 +90,7 @@ function imageFromVariants(
 ): string {
   const legacy = (variants as Record<string, unknown>).image_url;
   if (typeof legacy === "string") return legacy;
-  for (const platform of [
-    "instagram",
-    "facebook",
-    "google_business",
-    "whatsapp",
-  ]) {
+  for (const platform of knownPlatforms.value) {
     const value = variants[platform]?.image_url;
     if (typeof value === "string" && value) return value;
   }
@@ -80,24 +100,37 @@ function imageFromVariants(
 function publicationVariants(): Record<string, Record<string, unknown>> {
   const variants = cloneVariants(platformVariants.value);
   Reflect.deleteProperty(variants as Record<string, unknown>, "image_url");
-  variants.instagram = {
-    ...(variants.instagram || {}),
-    publication_format: instagramFormat.value,
-  };
-  variants.facebook = {
-    ...(variants.facebook || {}),
-    publication_format: "feed",
-  };
-  variants.google_business = {
-    ...(variants.google_business || {}),
-    publication_format: "standard",
-  };
-  for (const platform of [
-    "instagram",
-    "facebook",
-    "google_business",
-    "whatsapp",
-  ]) {
+  // Compatibilidade durante rollout: o endpoint novo é a autoridade assim que
+  // chega; uma resposta antiga ainda preserva exatamente os quatro formatos já
+  // existentes, sem inventar uma plataforma nova no navegador.
+  if (!publicationCapabilities.value.length) {
+    variants.instagram = {
+      ...(variants.instagram || {}),
+      publication_format: instagramFormat.value,
+    };
+    variants.facebook = {
+      ...(variants.facebook || {}),
+      publication_format: "feed",
+    };
+    variants.google_business = {
+      ...(variants.google_business || {}),
+      publication_format: "standard",
+    };
+  }
+  for (const capability of publicationCapabilities.value) {
+    const variant = { ...(variants[capability.platform] || {}) };
+    const acceptsFormat = capability.formats.some((format) =>
+      format.provider_fields.includes("publication_format"),
+    );
+    if (acceptsFormat) {
+      variant.publication_format =
+        capability.platform === "instagram"
+          ? instagramFormat.value
+          : capability.default_format;
+    }
+    variants[capability.platform] = variant;
+  }
+  for (const platform of knownPlatforms.value) {
     const variant = { ...(variants[platform] || {}) };
     if (imageSource.value === "custom" && customImageUrl.value.trim())
       variant.image_url = customImageUrl.value.trim();
@@ -322,15 +355,15 @@ function submit() {
         v-else-if="imageSource === 'none' && instagramFormat === 'story'"
         class="mt-2 text-xs text-warning"
       >
-        Campanhas que incluírem Instagram ficarão bloqueadas: Stories exigem
-        uma imagem.
+        Campanhas que incluírem Instagram ficarão bloqueadas: Stories exigem uma
+        imagem.
       </p>
       <p
         v-else-if="imageSource === 'product' && instagramFormat === 'story'"
         class="mt-2 text-xs text-muted-foreground"
       >
-        O Story usará a foto do produto, que precisa estar em JPEG. Se o
-        produto estiver sem foto, a aprovação será bloqueada antes de qualquer
+        O Story usará a foto do produto, que precisa estar em JPEG. Se o produto
+        estiver sem foto, a aprovação será bloqueada antes de qualquer
         publicação.
       </p>
     </div>
@@ -341,9 +374,11 @@ function submit() {
       </legend>
       <div class="grid gap-2 sm:grid-cols-2">
         <label
+          v-for="format in instagramFormats"
+          :key="format.ref"
           class="flex cursor-pointer items-start gap-2 rounded-md border p-3"
           :class="
-            instagramFormat === 'story'
+            instagramFormat === format.ref
               ? 'border-primary bg-primary/5'
               : 'border-border'
           "
@@ -351,34 +386,25 @@ function submit() {
           <input
             v-model="instagramFormat"
             type="radio"
-            value="story"
+            :value="format.ref"
             class="mt-1"
           />
           <span class="text-sm">
-            <span class="block font-medium">Stories — recomendado</span>
-            <span class="block text-xs text-muted-foreground">
+            <span class="block font-medium">
+              {{ format.label
+              }}{{ format.ref === "story" ? " — recomendado" : "" }}
+            </span>
+            <span
+              v-if="format.ref === 'story'"
+              class="block text-xs text-muted-foreground"
+            >
               Efêmero e urgente: é o padrão para fornadas e oportunidades do
               momento.
             </span>
-          </span>
-        </label>
-        <label
-          class="flex cursor-pointer items-start gap-2 rounded-md border p-3"
-          :class="
-            instagramFormat === 'feed'
-              ? 'border-primary bg-primary/5'
-              : 'border-border'
-          "
-        >
-          <input
-            v-model="instagramFormat"
-            type="radio"
-            value="feed"
-            class="mt-1"
-          />
-          <span class="text-sm">
-            <span class="block font-medium">Feed</span>
-            <span class="block text-xs text-muted-foreground">
+            <span
+              v-else-if="format.ref === 'feed'"
+              class="block text-xs text-muted-foreground"
+            >
               Permanente. Só será usado quando você escolher esta opção.
             </span>
           </span>

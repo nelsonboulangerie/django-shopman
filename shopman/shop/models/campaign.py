@@ -1351,6 +1351,8 @@ class MarketingOutbox(models.Model):
         related_name="outbox_entries",
     )
     platform = models.CharField(max_length=32)
+    delivery_kind = models.CharField(max_length=24, blank=True)
+    format = models.CharField(max_length=32, blank=True)
     wave_key = models.CharField(max_length=64, blank=True)
     state = models.CharField(max_length=16, choices=State.choices, default=State.PENDING)
     available_at = models.DateTimeField(db_index=True)
@@ -1379,8 +1381,14 @@ class MarketingOutbox(models.Model):
         ordering = ["available_at", "pk"]
         constraints = [
             models.UniqueConstraint(
-                fields=["command", "platform", "wave_key"],
-                name="shop_marketing_outbox_command_lane_uq",
+                fields=[
+                    "command",
+                    "platform",
+                    "delivery_kind",
+                    "format",
+                    "wave_key",
+                ],
+                name="shop_marketing_outbox_command_dest_lane_uq",
             ),
             models.UniqueConstraint(
                 fields=["dispatch_ref"],
@@ -1427,6 +1435,16 @@ class MarketingOutbox(models.Model):
             models.CheckConstraint(
                 condition=models.Q(state__in=("pending", "claimed", "dispatched", "cancelled", "failed")),
                 name="shop_marketing_outbox_state_ck",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(delivery_kind="", format="")
+                    | models.Q(
+                        delivery_kind__in=("publication", "direct_message"),
+                        format__gt="",
+                    )
+                ),
+                name="shop_marketing_outbox_identity_ck",
             ),
         ]
         indexes = [models.Index(fields=["state", "available_at"])]
@@ -1477,6 +1495,8 @@ class DeliveryTarget(models.Model):
         blank=True,
     )
     platform = models.CharField(max_length=32)
+    delivery_kind = models.CharField(max_length=24, blank=True)
+    format = models.CharField(max_length=32, blank=True)
     wave_key = models.CharField(max_length=64, blank=True)
     target_fingerprint = models.CharField(max_length=64)
     fingerprint_key_version = models.PositiveSmallIntegerField()
@@ -1504,8 +1524,14 @@ class DeliveryTarget(models.Model):
         ordering = ["next_attempt_at", "pk"]
         constraints = [
             models.UniqueConstraint(
-                fields=["snapshot", "platform", "target_fingerprint"],
-                name="shop_delivery_target_snapshot_platform_fp_uq",
+                fields=[
+                    "snapshot",
+                    "platform",
+                    "delivery_kind",
+                    "format",
+                    "target_fingerprint",
+                ],
+                name="shop_delivery_target_snapshot_dest_fp_uq",
             ),
             models.CheckConstraint(
                 condition=models.Q(fingerprint_key_version__gt=0),
@@ -1543,6 +1569,16 @@ class DeliveryTarget(models.Model):
                     )
                 ),
                 name="shop_delivery_target_state_ck",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(delivery_kind="", format="")
+                    | models.Q(
+                        delivery_kind__in=("publication", "direct_message"),
+                        format__gt="",
+                    )
+                ),
+                name="shop_delivery_target_identity_ck",
             ),
         ]
         indexes = [

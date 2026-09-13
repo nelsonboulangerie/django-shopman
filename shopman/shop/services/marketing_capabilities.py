@@ -17,7 +17,10 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Literal
 
+from shopman.shop.services.marketing_contracts import MarketingContractError
+
 DeliveryKind = Literal["publication", "direct_message"]
+CAPABILITY_IDENTITY_SCHEMA_VERSION = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,9 +137,7 @@ def platform_labels() -> Mapping[str, str]:
 
 
 def publication_platform_refs() -> tuple[str, ...]:
-    return tuple(
-        item.platform for item in DESTINATIONS if item.delivery_kind == "publication"
-    )
+    return tuple(item.platform for item in DESTINATIONS if item.delivery_kind == "publication")
 
 
 def platform_kind(platform: str) -> DeliveryKind | None:
@@ -169,3 +170,59 @@ def default_format_capability(platform: str) -> MarketingFormatCapability | None
     if destination is None:
         return None
     return destination.format(destination.default_format)
+
+
+def resolve_identity(
+    platform: str,
+    *,
+    delivery_kind: str = "",
+    format_ref: str = "",
+    allow_legacy_missing: bool = False,
+) -> tuple[DeliveryKind, str]:
+    """Validate or complete one persisted destination identity.
+
+    Missing dimensions are accepted only for rows/artifacts explicitly known to
+    predate MKT-CAP-01.  New writes must carry all three dimensions.
+    """
+
+    normalized_platform = str(platform or "").strip()
+    destination = DESTINATIONS_BY_PLATFORM.get(normalized_platform)
+    if destination is None:
+        raise MarketingContractError(
+            code="unknown_platform",
+            detail="A plataforma da entrega não é reconhecida.",
+        )
+    normalized_kind = str(delivery_kind or "").strip()
+    normalized_format = str(format_ref or "").strip().lower()
+    if not normalized_kind or not normalized_format:
+        if not allow_legacy_missing:
+            raise MarketingContractError(
+                code="delivery_identity_missing",
+                detail="A modalidade ou o formato da entrega não foi registrado.",
+            )
+        normalized_kind = normalized_kind or destination.delivery_kind
+        normalized_format = normalized_format or destination.default_format
+    if normalized_kind != destination.delivery_kind:
+        raise MarketingContractError(
+            code="delivery_kind_mismatch",
+            detail="A modalidade não corresponde à plataforma escolhida.",
+        )
+    if destination.format(normalized_format) is None:
+        raise MarketingContractError(
+            code="delivery_format_mismatch",
+            detail="O formato não corresponde à plataforma escolhida.",
+        )
+    return destination.delivery_kind, normalized_format
+
+
+def persisted_identity(row: object) -> tuple[DeliveryKind, str]:
+    """Read a row identity, permitting omission only on legacy artifacts."""
+
+    artifact = getattr(row, "artifact", None)
+    schema_version = int(getattr(artifact, "schema_version", 0) or 0)
+    return resolve_identity(
+        str(getattr(row, "platform", "") or ""),
+        delivery_kind=str(getattr(row, "delivery_kind", "") or ""),
+        format_ref=str(getattr(row, "format", "") or ""),
+        allow_legacy_missing=schema_version < CAPABILITY_IDENTITY_SCHEMA_VERSION,
+    )

@@ -7,6 +7,7 @@ import hmac
 import math
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -17,7 +18,7 @@ from shopman.shop.services.marketing_contracts import (
     ResolvedDispatchArtifact,
 )
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = marketing_capabilities.CAPABILITY_IDENTITY_SCHEMA_VERSION
 RESOLVED_ARTIFACT_SCHEMA_VERSION = 2
 SUPPORTED_PLATFORMS = frozenset(marketing_capabilities.platform_refs())
 PUBLICATION_FORMATS: dict[str, frozenset[str]] = {
@@ -169,9 +170,19 @@ def resolve_dispatch_artifact(
         provider_fields=dict(provider_fields),
         image_url=image_url,
     )
+    delivery_kind, delivery_format = marketing_capabilities.resolve_identity(
+        normalized_platform,
+        delivery_kind=marketing_capabilities.platform_kind(normalized_platform) or "",
+        format_ref=str(
+            dict(provider_fields).get("publication_format")
+            or marketing_capabilities.default_format(normalized_platform)
+        ),
+    )
     return ResolvedDispatchArtifact(
         platform=normalized_platform,
         body=body,
+        delivery_kind=delivery_kind,
+        format=delivery_format,
         hashtags=hashtags,
         link=link,
         image_url=image_url,
@@ -381,7 +392,11 @@ def resolve_approved_dispatch_artifact(
 
     if artifact.schema_version >= RESOLVED_ARTIFACT_SCHEMA_VERSION:
         stored = _mapping(payload.get("resolved_artifacts"), field="resolved_artifacts")
-        resolved = _resolved_from_payload(stored.get(platform), platform=platform)
+        resolved = _resolved_from_payload(
+            stored.get(platform),
+            platform=platform,
+            require_identity=artifact.schema_version >= SCHEMA_VERSION,
+        )
         if resolved.content_version != artifact.version:
             raise MarketingContractError(
                 code="artifact_version_mismatch",
@@ -391,7 +406,7 @@ def resolve_approved_dispatch_artifact(
 
     # Compatibility window for approvals created before schema v2. New
     # approvals always persist ``resolved_artifacts`` and never re-render here.
-    return resolve_dispatch_artifact(
+    legacy = resolve_dispatch_artifact(
         platform=platform,
         content=_mapping(payload.get("content"), field="content"),
         platform_content=_mapping(
@@ -401,6 +416,7 @@ def resolve_approved_dispatch_artifact(
         content_version=artifact.version,
         facts_hash=str(payload.get("facts_hash") or ""),
     )
+    return replace(legacy, delivery_kind="", format="")
 
 
 def resolve_target_dispatch_artifact(target: DeliveryTarget) -> ResolvedDispatchArtifact:
@@ -409,18 +425,34 @@ def resolve_target_dispatch_artifact(target: DeliveryTarget) -> ResolvedDispatch
             code="delivery_artifact_mismatch",
             detail="O target não aponta para um artefato e plataforma válidos.",
         )
-    return resolve_approved_dispatch_artifact(
+    resolved = resolve_approved_dispatch_artifact(
         target.artifact,
         platform=target.platform,
     )
+    delivery_kind, delivery_format = marketing_capabilities.persisted_identity(target)
+    if (resolved.delivery_kind or resolved.format) and (
+        resolved.delivery_kind != delivery_kind or resolved.format != delivery_format
+    ):
+        raise MarketingContractError(
+            code="delivery_identity_mismatch",
+            detail="O destino não corresponde à modalidade aprovada.",
+        )
+    return resolved
 
 
-def _resolved_from_payload(value: object, *, platform: str) -> ResolvedDispatchArtifact:
+def _resolved_from_payload(
+    value: object,
+    *,
+    platform: str,
+    require_identity: bool = False,
+) -> ResolvedDispatchArtifact:
     payload = _mapping(value, field=f"resolved_artifacts.{platform}")
     try:
         resolved = ResolvedDispatchArtifact(
             platform=str(payload.get("platform") or ""),
             body=str(payload.get("body") or ""),
+            delivery_kind=str(payload.get("delivery_kind") or ""),
+            format=str(payload.get("format") or ""),
             hashtags=_hashtags(payload.get("hashtags")),
             link=str(payload.get("link") or ""),
             image_url=str(payload.get("image_url") or ""),
@@ -447,9 +479,15 @@ def _resolved_from_payload(value: object, *, platform: str) -> ResolvedDispatchA
             code="artifact_platform_mismatch",
             detail="A plataforma resolvida diverge da evidência aprovada.",
         )
+    marketing_capabilities.resolve_identity(
+        resolved.platform,
+        delivery_kind=resolved.delivery_kind,
+        format_ref=resolved.format,
+        allow_legacy_missing=not require_identity,
+    )
     # Round-trip through the pure resolver applies the same invariants used by
     # preview and approval without inheriting any later mutable model state.
-    return resolve_dispatch_artifact(
+    checked = resolve_dispatch_artifact(
         platform=resolved.platform,
         content={
             "body": resolved.body,
@@ -465,6 +503,9 @@ def _resolved_from_payload(value: object, *, platform: str) -> ResolvedDispatchA
         flow_version=resolved.flow_version,
         flow_catalog_hash=resolved.flow_catalog_hash,
     )
+    if not require_identity and not resolved.delivery_kind and not resolved.format:
+        return replace(checked, delivery_kind="", format="")
+    return checked
 
 
 def _flow_binding(
