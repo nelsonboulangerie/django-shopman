@@ -241,13 +241,23 @@ def bulk_set(
         ).order_by("listing_id", "product_id", "min_qty", "pk"))
         if len(items) > MAX_BULK_PRICE_CELLS:
             raise CatalogError(f"Selecione no máximo {MAX_BULK_PRICE_CELLS} células somando os canais e faixas.")
+        from django.contrib.auth import get_user_model
+        from simple_history.utils import bulk_update_with_history
+
+        audit_user = get_user_model().objects.filter(username=actor).first() if actor else None
+        # Capture the locked before-state even when a previous bulk update did
+        # not produce history. Each row retains SKU, listing and quantity tier.
+        audit_reason = f"catalog.bulk_set:{actor or 'system'}"[:90]
+        bulk_update_with_history(items, ListingItem, [], default_user=audit_user,
+                                 default_change_reason=f"{audit_reason}:before")
         for item in items:
             item.product = by_product[item.product_id]
             item.listing = by_listing[item.listing_id]
             for field, value in updates.items():
                 setattr(item, field, value)
             validate_listing_item_publication(item)
-        count = ListingItem.objects.filter(pk__in=[item.pk for item in items]).update(**updates)
+        count = bulk_update_with_history(items, ListingItem, list(updates), default_user=audit_user,
+                                         default_change_reason=f"{audit_reason}:after")
         from shopman.offerman.conf import get_projection_backend
 
         from shopman.shop.handlers.catalog_projection import enqueue_project
