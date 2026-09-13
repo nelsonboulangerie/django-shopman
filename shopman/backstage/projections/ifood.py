@@ -31,7 +31,7 @@ def payment_summary(order) -> tuple[str, ...]:
         return ()
     payments = ((order.data or {}).get("ifood") or {}).get("payments") or {}
     if not payments:
-        return ("iFood: pagamento não informado.",)
+        return ("iFood: pagamento não informado.",) + benefits_summary(order)
     prepaid = _amount(payments.get("prepaid_q"))
     pending = _amount(payments.get("pending_q"))
     lines = []
@@ -54,7 +54,41 @@ def payment_summary(order) -> tuple[str, ...]:
             if change_for >= value:
                 line += f", troco R$ {format_money(change_for - value)}"
         lines.append(line)
-    return tuple(lines) or ("iFood: pagamento não informado.",)
+    return (tuple(lines) or ("iFood: pagamento não informado.",)) + benefits_summary(order)
+
+
+def benefits_summary(order) -> tuple[str, ...]:
+    if order.channel_ref != "ifood":
+        return ()
+    facts = (order.data or {}).get("ifood") or {}
+    benefits = facts.get("benefits") or []
+    lines = []
+    targets = {"CART": "carrinho", "DELIVERY_FEE": "entrega", "ITEM": "item", "PROGRESSIVE_DISCOUNT_ITEM": "item (progressivo)"}
+    sponsors = {"IFOOD": "iFood", "MERCHANT": "Loja", "EXTERNAL": "Parceiro externo", "CHAIN": "Rede"}
+    for benefit in benefits:
+        if not isinstance(benefit, dict):
+            continue
+        target = str(benefit.get("target") or "destino não informado")
+        label = targets.get(target, target)
+        if benefit.get("target_id") is not None:
+            label += f" #{benefit['target_id']}"
+        amount = benefit.get("value_q")
+        value = f"R$ {format_money(_amount(amount))}" if amount is not None else "valor não informado"
+        shares = []
+        for share in benefit.get("sponsorships") or []:
+            if not isinstance(share, dict):
+                continue
+            sponsor = str(share.get("sponsor") or "Responsável não informado")
+            sponsor_label = sponsors.get(sponsor, sponsor)
+            amount = share.get("value_q")
+            contribution = f"R$ {format_money(_amount(amount))}" if amount is not None else "valor não informado"
+            shares.append(f"{sponsor_label}: {contribution}")
+        lines.append(f"Desconto ({label}): {value}; " + ("; ".join(shares) or "responsável não informado pelo iFood"))
+    if not benefits:
+        total = _amount((facts.get("totals") or {}).get("benefits_q"))
+        if total:
+            lines.append(f"Desconto: R$ {format_money(total)}; responsável não informado pelo iFood")
+    return tuple(lines)
 
 
 def operation_summary(order) -> tuple[str, ...]:
@@ -68,6 +102,9 @@ def operation_summary(order) -> tuple[str, ...]:
 
     facts = (order.data or {}).get("ifood") or {}
     lines = []
+    pickup_code = str(facts.get("pickup_code") or "").strip()
+    if pickup_code:
+        lines.append(f"Código de retirada: {pickup_code}")
     if get_fulfillment_type(order) == "delivery":
         provider = str(facts.get("delivered_by") or "").upper()
         lines.append({"IFOOD": "Entrega por entregador iFood", "MERCHANT": "Entrega própria da loja"}.get(provider, "Responsável pela entrega não informado pelo iFood"))

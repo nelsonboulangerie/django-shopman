@@ -1093,7 +1093,7 @@ def operational_revision(order: Order, *, field: str = "advance") -> str:
             "data": {key: data.get(key) for key in (
                 "payment", "availability_decision", "waitlist", "fulfillment_type",
                 "delivery_method", "delivery_date", "commitment_date", "dispatch",
-                "ifood_cancellation_request",
+                "ifood_cancellation_request", "ifood",
             )},
         }
     else:

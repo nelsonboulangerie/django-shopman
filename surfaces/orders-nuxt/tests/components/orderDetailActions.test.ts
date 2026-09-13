@@ -95,6 +95,7 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     ifood_cancellation_notice: "",
     ifood_payment_summary: [],
     ifood_operation_summary: [],
+    ifood_negotiations: [],
     payment_status: "pending",
     can_confirm: true,
     can_advance: false,

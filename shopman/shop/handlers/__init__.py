@@ -117,6 +117,9 @@ def register_all() -> None:
     _register_catalog_projection_handler()
     _register_catalog_signals()
     _register_ifood_status_callbacks()
+    from shopman.shop.handlers.ifood_handshake import IFoodHandshakeResponseHandler
+
+    registry.register_directive_handler(IFoodHandshakeResponseHandler())
     _register_campaign()
 
 

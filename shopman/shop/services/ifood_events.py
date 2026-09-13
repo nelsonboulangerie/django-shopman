@@ -44,6 +44,7 @@ _CANCELLATION_CODES = {"CAN", "CANCELLED"}
 _CONCLUSION_CODES = {"CON", "CONCLUDED"}
 _CONFIRMATION_CODES = {"CFM", "CONFIRMED"}
 _DISPATCH_CODES = {"DSP", "DISPATCHED"}
+_HANDSHAKE_CODES = {"HSD", "HANDSHAKE_DISPUTE", "HSS", "HANDSHAKE_SETTLEMENT"}
 _ACK_BATCH = 100  # iFood acknowledges in batches.
 
 
@@ -149,8 +150,10 @@ def process_events(events: list[dict]) -> dict:
             continue
 
         # Remote state changes reconcile only after the order exists.
-        if code in _CANCELLATION_CODES | _CONCLUSION_CODES | _CONFIRMATION_CODES | _DISPATCH_CODES:
-            if code in _CANCELLATION_CODES:
+        if code in _CANCELLATION_CODES | _CONCLUSION_CODES | _CONFIRMATION_CODES | _DISPATCH_CODES | _HANDSHAKE_CODES:
+            if code in _HANDSHAKE_CODES:
+                outcome = _process_handshake(event, settlement=code in {"HSS", "HANDSHAKE_SETTLEMENT"})
+            elif code in _CANCELLATION_CODES:
                 outcome = _process_cancellation(event_id, order_id)
             elif code in _CONCLUSION_CODES:
                 outcome = _process_conclusion(event_id, order_id)
@@ -473,3 +476,30 @@ def run_once() -> dict:
 
 
 __all__ = ["poll", "acknowledge", "process_events", "run_once"]
+
+
+def _process_handshake(event: dict, *, settlement: bool) -> str:
+    from django.db import transaction
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import ifood_handshake
+
+    if not event.get("orderId"):
+        return "failed"
+    claim = webhook_idempotency.claim(
+        _IDEMPOTENCY_SCOPE, f"event:{webhook_idempotency.stable_webhook_key(event['id'])}",
+    )
+    if claim.replayed:
+        return "deduped"
+    if claim.in_progress:
+        return "failed"
+    try:
+        with transaction.atomic():
+            order = Order.objects.select_for_update().get(channel_ref="ifood", external_ref=event["orderId"])
+            changed = ifood_handshake.persist_event(order, event, settlement=settlement)
+            webhook_idempotency.mark_done(claim, response_body={"status": "persisted", "order_ref": order.ref})
+        return "ingested" if changed else "deduped"
+    except Exception:
+        logger.exception("ifood_events: handshake persistence failed for event %s", event["id"])
+        webhook_idempotency.mark_failed(claim)
+        return "failed"

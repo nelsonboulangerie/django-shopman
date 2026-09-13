@@ -595,10 +595,10 @@ def _on_cancelled(order, config: ChannelConfig) -> None:
     # justo se a venda existiu.
     loyalty.restore(order, reason="cancelled")
 
-    # Rejections already queued `order_rejected` (with the reason) in reject_order;
-    # firing `order_cancelled` too would double-notify the customer. All the
-    # side-effects above still run either way — only the redundant message is skipped.
-    if (order.data or {}).get("rejected_by"):
+    # Local rejections already queued order_rejected. An iFood rejection stays
+    # pending without notifying until CAN, so its now-confirmed cancellation
+    # must still send the final notification even though rejected_by is retained.
+    if (order.data or {}).get("rejected_by") and not (order.data or {}).get("ifood_cancelled"):
         return
 
     # Only an operator-authored, customer-facing note reaches the customer. Machine

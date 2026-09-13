@@ -40,6 +40,7 @@ const CARD = {
     ifood_cancellation_notice: "",
     ifood_payment_summary: [],
     ifood_operation_summary: [],
+    ifood_negotiations: [],
   payment_status: "pending",
   payment_pending: true,
   can_settle_delivery_cash: false,
@@ -100,6 +101,7 @@ const QUEUE = {
     expedition_delivery_count: 0,
     expedition_count: 0,
     total_count: 3,
+    ifood_negotiation_orders: [],
   },
 };
 

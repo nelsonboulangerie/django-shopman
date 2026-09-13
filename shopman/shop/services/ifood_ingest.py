@@ -133,10 +133,21 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
             "schedule": payload.get("schedule") or {},
             "totals": payload.get("totals") or {},
             "payments": payload.get("payments") or {},
+            "benefits": payload.get("benefits") or [],
             "delivered_by": (payload.get("delivery") or {}).get("delivered_by", ""),
             "pickup_code": (payload.get("delivery") or {}).get("pickup_code", ""),
         },
     }
+
+    # iFood's optional customer.documentNumber is supplied for this order's
+    # tax document, unlike a document fetched from our CRM. Bridge it to the
+    # existing fiscal request contract; the fiscal adapter retains validation.
+    # Explicit foreign IDs are preserved in customer, never relabelled CPF/CNPJ.
+    customer = order_data["customer"]
+    document = str(customer.get("document") or "").strip()
+    document_type = str(customer.get("document_type") or "").strip().upper()
+    if document and document_type in {"", "CPF", "CNPJ"}:
+        order_data["fiscal"] = {"tax_id": document}
 
     if str(payload.get("order_timing") or "").upper() == "SCHEDULED":
         from shopman.shop.services.ifood_schedule import delivery_date_from_payload
