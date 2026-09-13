@@ -53,7 +53,9 @@ def gerente(db):
 
 
 @pytest.fixture
-def turno_aberto(db, operador):
+def turno_aberto(db, operador, client):
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, "balcao")
     Terminal.objects.get_or_create(ref="balcao", defaults={"label": "Balcão"})
     from shopman.backstage.services import pos as pos_service
 
@@ -106,18 +108,10 @@ def test_chaves_diferentes_lancam_duas_vezes(client, operador, gerente, turno_ab
 
 
 @pytest.mark.django_db
-def test_sem_chave_cada_envio_e_uma_operacao(client, operador, gerente, turno_aberto):
-    """Mesma régua do submit da venda: sem chave não há o que travar.
-
-    A tela sempre manda uma; quem chama a API crua sem chave está dizendo que cada
-    envio é uma operação. O teste fixa isso para ninguém achar que a trava é mágica.
-    """
+def test_sem_chave_nao_lanca_dinheiro(client, operador, gerente, turno_aberto):
     client.force_login(operador)
-
-    assert _movimento(client, chave=None, gerente=gerente).status_code == 200
-    assert _movimento(client, chave=None, gerente=gerente).status_code == 200
-
-    assert Entry.objects.filter(shift=turno_aberto, kind=Entry.Kind.CASH_OUT).count() == 2
+    assert _movimento(client, chave=None, gerente=gerente).status_code == 422
+    assert not Entry.objects.filter(shift=turno_aberto, kind=Entry.Kind.CASH_OUT).exists()
 
 
 @pytest.mark.django_db
@@ -134,4 +128,35 @@ def test_uma_recusa_NAO_e_guardada_para_replay(client, operador, gerente, turno_
     corrigida = _movimento(client, chave=CHAVE, valor="200,00", gerente=gerente)
 
     assert corrigida.status_code == 200, corrigida.content
+    assert Entry.objects.filter(shift=turno_aberto, kind=Entry.Kind.CASH_OUT).count() == 1
+
+
+@pytest.mark.django_db
+def test_mesma_chave_com_outro_valor_nao_reaproveita_recibo(client, operador, gerente, turno_aberto):
+    client.force_login(operador)
+    assert _movimento(client, chave=CHAVE, gerente=gerente).status_code == 200
+    response = _movimento(client, chave=CHAVE, valor="100,00", gerente=gerente)
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "idempotency_conflict"
+    assert Entry.objects.filter(shift=turno_aberto, kind=Entry.Kind.CASH_OUT).count() == 1
+
+
+@pytest.mark.django_db
+def test_falha_ao_gravar_recibo_reverte_movimento(client, operador, gerente, turno_aberto):
+    from unittest.mock import patch
+
+    from shopman.orderman.models import IdempotencyKey
+
+    client.force_login(operador)
+    original_save = IdempotencyKey.save
+
+    def fail_done(instance, *args, **kwargs):
+        if instance.status == "done":
+            raise RuntimeError("local receipt unavailable")
+        return original_save(instance, *args, **kwargs)
+
+    with patch.object(IdempotencyKey, "save", fail_done), pytest.raises(RuntimeError):
+        _movimento(client, chave=CHAVE, gerente=gerente)
+    assert not Entry.objects.filter(shift=turno_aberto, kind=Entry.Kind.CASH_OUT).exists()
+    assert _movimento(client, chave=CHAVE, gerente=gerente).status_code == 200
     assert Entry.objects.filter(shift=turno_aberto, kind=Entry.Kind.CASH_OUT).count() == 1

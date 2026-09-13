@@ -63,7 +63,8 @@ def test_um_computador_pode_ser_DUAS_estacoes(client):
     _provisiona(client, "balcao")
     _provisiona(client, "totem")
 
-    assert station_trust.station_ref(_req(client)) in {"balcao", "totem"}
+    # Ambos os vínculos existem; nenhum escolhe implicitamente a gaveta.
+    assert station_trust.station_ref(_req(client)) == ""
     from shopman.doorman.services.device_trust import DeviceTrustService
 
     assert DeviceTrustService.check(_req(client), SubjectType.STATION, "balcao")

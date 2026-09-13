@@ -514,6 +514,8 @@ def _cash_shift_result(shift) -> dict:
 def _pos_payload_with_runtime(request, body: dict) -> dict:
     """Attach the active POS runtime context that browser surfaces should not invent."""
     payload = dict(body or {})
+    payload.pop("cash_shift_id", None)
+    payload.pop("pos_terminal_ref", None)
     cash_shift = _open_cash_shift_for_request(request)
     if cash_shift:
         # O servidor CONHECE o turno do operador — o browser nunca decide a
@@ -524,12 +526,8 @@ def _pos_payload_with_runtime(request, body: dict) -> dict:
 
 
 def _open_cash_shift_for_request(request):
-    """O turno ABERTO do operador no ``cashman`` — é o pk dele que vai em ``cash_shift_id``."""
-    try:
-        return pos_service.current_shift()
-    except Exception:
-        logger.debug("pos_runtime_payload_enrichment_failed user=%s", _actor(request), exc_info=True)
-        return None
+    """Resolve o turno exclusivamente pela estação desta requisição."""
+    return pos_service.current_shift(_terminal_do_pedido(request), strict=True)
 
 
 def _cash_shift_required_response() -> Response:
@@ -3271,58 +3269,55 @@ def _falha_do_caixa(exc, padrao: str) -> Response:
     uma gaveta ativa e ninguém disse qual. O operador não tem o que corrigir no que
     mandou, então a resposta é 409, com o campo que falta nomeado.
     """
+    from rest_framework.exceptions import APIException
+
+    if isinstance(exc, APIException):
+        return Response(exc.detail, status=exc.status_code)
     if isinstance(exc, POSTerminalAmbiguous):
         return Response({"detail": str(exc), "field": "terminal_ref"}, status=409)
     return Response({"detail": str(exc) or padrao}, status=400)
 
 
 def _cash_idempotent(request, *, acao: str, executar):
-    """Roda uma mutação de dinheiro UMA vez por `client_request_id`.
-
-    ⚠️ As oito mutações de dinheiro do caixa declaravam `idempotency="none"` e não
-    tinham trava nenhuma. O operador lança uma sangria de R$ 200, a rede do salão
-    oscila (é a mesma do kiosk e do KDS), o botão não responde, ele toca de novo —
-    e o livro-caixa aceita as duas linhas. O livro é IMUTÁVEL de propósito, então o
-    conserto não é apagar: é um ajuste, com o gerente, no fechamento, com o dono
-    perguntando por que faltam R$ 200.
-
-    E não havia segunda linha de defesa: as `UniqueConstraint` que o cashman
-    acrescentou depois de um TOCTOU real cobrem só os `kind` que têm `order_ref`.
-    Sangria, suprimento, fundo de troco, devolução e acerto de conta são exatamente
-    os que não têm. A trava de banco que salvou a venda não alcançava o caixa.
-
-    **Replay é SILENCIOSO aqui, e a diferença com o recibo de Compras é o que a
-    chave significa.** Lá a chave é a NOTA — estável para sempre —, então um envio
-    repetido meses depois merece ser contado ao operador. Aqui a chave é ESTE GESTO:
-    a tela a descarta no sucesso, então um segundo envio com a mesma chave só pode
-    ser retry da mesma sangria. Responder o mesmo resultado é a leitura certa dele.
-
-    Sem chave não há o que travar — mesma régua do submit da venda. A tela sempre
-    manda uma; quem chama a API crua sem chave está dizendo que cada envio é uma
-    operação.
-    """
+    """Efeito interno e recibo compartilham a transação e o conteúdo da tentativa."""
     from shopman.shop.services.remote_mutations import (
+        RemoteMutationConflict,
         RemoteMutationInProgress,
+        mutation_fingerprint,
         run_idempotent_mutation,
     )
 
+    terminal_ref = _terminal_do_pedido(request)
     chave = str(request.data.get("client_request_id") or "").strip()
-    if not chave:
-        return executar()
+    if not chave or len(chave) > 128:
+        return Response({"detail": "Identifique a tentativa antes de registrar.",
+            "error": {"code": "client_request_id_required"}}, status=422)
+    payload = {k: v for k, v in request.data.items() if k not in {"client_request_id", "manager_approval"}}
+    fingerprint = mutation_fingerprint({"actor": request.user.pk, "terminal": terminal_ref,
+        "path": request.path, "payload": payload})
+
+    class CashMutationRejected(Exception):
+        def __init__(self, response):
+            self.response = response
 
     def _executar_para_o_claim():
         resposta = executar()
+        if resposta.status_code >= 300:
+            raise CashMutationRejected(resposta)
         return ({"status": resposta.status_code, "data": resposta.data}, resposta.status_code)
 
     try:
         resultado = run_idempotent_mutation(
             scope=f"{CASH_IDEMPOTENCY_SCOPE}.{acao}",
             key=chave,
+            fingerprint=fingerprint,
             execute=_executar_para_o_claim,
-            # Só a resposta BEM-SUCEDIDA vira replay. Guardar um 400 faria o
-            # operador que corrigiu o valor receber o erro antigo de volta.
-            cache_response=lambda corpo, codigo: codigo < 300,
         )
+    except CashMutationRejected as exc:
+        return exc.response
+    except RemoteMutationConflict:
+        return Response({"detail": "Esta tentativa pertence a outro conteúdo ou operador. Confira o resultado.",
+            "error": {"code": "idempotency_conflict"}}, status=409)
     except RemoteMutationInProgress:
         return Response(
             {
@@ -3360,7 +3355,7 @@ class POSCashOpenView(APIView):
                 session = pos_service.open_cash_shift(
                     operator=request.user,
                     opening_amount_raw=str(amount),
-                    terminal_ref=str(request.data.get("terminal_ref") or ""),
+                    terminal_ref=_terminal_do_pedido(request),
                 )
             except POSError as exc:
                 message = str(exc) or "Falha ao abrir caixa."
@@ -3413,7 +3408,7 @@ class POSCashCloseView(APIView):
                     actor_user=request.user,
                     closing_amount_raw=str(amount),
                     notes=notes,
-                    terminal_ref=str(request.data.get("terminal_ref") or ""),
+                    terminal_ref=_terminal_do_pedido(request),
                 )
             except POSPermissionError as exc:
                 # Fechar o caixa é da gerência (decisão de 21/08). O balcão precisa
@@ -3517,7 +3512,7 @@ class POSCashReceiptView(APIView):
                 entry_id=entry_id,
                 status=(request.data.get("status") or "").strip(),
                 detail=request.data.get("detail") or "",
-                terminal_ref=str(request.data.get("terminal_ref") or ""),
+                terminal_ref=_terminal_do_pedido(request),
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
@@ -3740,16 +3735,24 @@ class POSCashDrawerUnlockView(APIView):
 
 
 def _terminal_do_pedido(request) -> str:
-    """Em qual gaveta esta mutação acontece.
+    """O corpo pode confirmar a estação, nunca selecionar outra gaveta."""
+    from rest_framework.exceptions import APIException
+    from shopman.cashman.models import Terminal
 
-    O corpo tem prioridade porque é AFIRMAÇÃO de quem chama; o cookie da estação é o
-    contexto ambiente do dispositivo. Com uma gaveta só — o caso de hoje — os dois
-    caminham juntos. Com duas, é isto que impede o operador do balcão 1 de lançar
-    sangria na gaveta do balcão 2 sem erro nenhum.
-    """
-    corpo = request.data if hasattr(request, "data") else {}
-    do_corpo = str((corpo or {}).get("terminal_ref") or "").strip()
-    return do_corpo or station_trust.station_ref(request)
+    ref = station_trust.station_ref(request)
+    body = getattr(request, "data", {}) or {}
+    asserted = str(body.get("terminal_ref") or body.get("pos_terminal_ref") or "").strip()
+    code = "pos_station_required"
+    message = "Vincule este dispositivo a um único terminal ativo antes de operar."
+    if ref and asserted and asserted != ref:
+        code = "pos_terminal_mismatch"
+        message = "O caixa informado não corresponde a este dispositivo. Atualize o balcão."
+    elif ref and Terminal.objects.filter(ref=ref, is_active=True).exists():
+        return ref
+    exc = APIException({"detail": message, "field": "terminal_ref", "error": {"code": code, "message": message,
+        "field": "terminal_ref", "focus": "cash", "recovery": message}})
+    exc.status_code = 409
+    raise exc
 
 
 @extend_schema_view(
