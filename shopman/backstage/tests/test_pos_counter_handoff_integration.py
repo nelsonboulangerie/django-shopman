@@ -75,7 +75,7 @@ class CounterHandoffIntegrationTests(TestCase):
         fiscal_pool.reset()
         self.addCleanup(fiscal_pool.reset)
 
-    def _close(self, *, payment_method="card", request_id="counter-1"):
+    def _close(self, *, payment_method="credit", request_id="counter-1"):
         # O lifecycle dispara via transaction.on_commit — dentro de TestCase a
         # transação nunca commita, então capturamos e executamos os callbacks,
         # que é exatamente o que produção faz no fim do request.
@@ -104,7 +104,7 @@ class CounterHandoffIntegrationTests(TestCase):
         ),
     )
     def test_counter_sale_closes_completed_with_one_fiscal_directive(self) -> None:
-        result = self._close(payment_method="card", request_id="counter-fiscal")
+        result = self._close(payment_method="credit", request_id="counter-fiscal")
 
         order = Order.objects.get(ref=result.order_ref)
         # O evento já ocorreu: a venda fecha COMPLETED no mesmo request…

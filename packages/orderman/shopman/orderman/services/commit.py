@@ -327,7 +327,7 @@ class CommitService:
             "customer", "customer_ref", "fulfillment_type", "delivery_address", "save_as_default", "saved_address_id", "address_label",
             "delivery_address_structured", "delivery_date",
             "delivery_time_slot", "order_notes",
-            "origin_channel", "payment", "loyalty",
+            "origin_channel", "payment", "loyalty", "fiscal", "receipt",
             "delivery_fee_q", "delivery_distance_km",
             "is_gift", "recipient", "gift_message", "gift_hide_values",
         ):
