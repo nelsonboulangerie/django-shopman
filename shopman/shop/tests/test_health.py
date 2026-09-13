@@ -262,3 +262,34 @@ def test_ready_error_never_leaks_stacktrace_or_reason(client, db):
     assert "OperationalError" not in body
     assert "secret-host.internal" not in body
     assert set(json.loads(body)) == {"status", "checks"}
+
+
+def test_missing_required_workers_fail_even_without_backlog(client, db, settings):
+    settings.SHOPMAN_REQUIRED_WORKERS = ("process_directives", "maintenance_worker")
+    settings.SHOPMAN_WORKER_STARTUP_GRACE_SECONDS = 0
+    with patch("shopman.orderman.worker_heartbeat.last_beat", return_value=None):
+        assert client.get("/health/ready/").status_code == 503
+        assert client.get("/health/live/").status_code == 200
+
+
+def test_stale_maintenance_fails_even_with_live_dispatcher_and_empty_queue(client, db, settings):
+    settings.SHOPMAN_REQUIRED_WORKERS = ("process_directives", "maintenance_worker")
+    now = timezone.now()
+    beats = {"process_directives": now, "maintenance_worker": now - timedelta(hours=1)}
+    with patch("shopman.orderman.worker_heartbeat.last_beat", side_effect=beats.get):
+        response = client.get("/health/ready/")
+    assert response.status_code == 503
+    assert "maintenance_worker" not in response.content.decode()
+
+
+def test_worker_startup_grace_expires_and_fresh_beats_recover(db, settings):
+    from shopman.shop.views import health
+
+    settings.SHOPMAN_REQUIRED_WORKERS = ("process_directives", "maintenance_worker")
+    settings.SHOPMAN_WORKER_STARTUP_GRACE_SECONDS = 180
+    started = health._WORKER_PROBE_STARTED_AT
+    with patch("shopman.orderman.worker_heartbeat.last_beat", return_value=None):
+        assert health._check_required_workers(started + timedelta(seconds=179)) == ("ok", None)
+        assert health._check_required_workers(started + timedelta(seconds=180)) == ("fail", "worker_missing")
+    with patch("shopman.orderman.worker_heartbeat.last_beat", return_value=started + timedelta(seconds=180)):
+        assert health._check_required_workers(started + timedelta(seconds=181)) == ("ok", None)
