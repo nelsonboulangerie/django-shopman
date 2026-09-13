@@ -247,3 +247,20 @@ def test_intermediate_alternative_stays_visible_and_late_replay_never_reopens_fi
     ingest(alternative)
     assert record(order)["state"] == "settled"
     assert order.data["ifood"]["handshake_pending"] is False
+
+
+@pytest.mark.parametrize("failure", ["timeout", "invalid_json", "http_error", "no_auth"])
+def test_send_failures_are_observable_without_exposing_provider_content(order, caplog, failure):
+    payload = queued(order)
+    response = Mock(status_code=500 if failure == "http_error" else 201)
+    response.json.side_effect = ValueError("sensitive provider response")
+    with patch.object(hs.logger, "handlers", [caplog.handler]), patch.object(hs.ifood_auth, "authorized_headers", return_value={} if failure == "no_auth" else {"Authorization": "private-token"}), patch.object(
+        hs.requests, "post", return_value=response,
+        side_effect=requests.Timeout("private-token in exception") if failure == "timeout" else None,
+    ):
+        hs.deliver_response(payload)
+    assert "ifood_handshake:" in caplog.text
+    assert "dispute-1" in caplog.text
+    assert "private-token" not in caplog.text
+    assert "sensitive provider response" not in caplog.text
+    assert record(order)["state"] == ("sent" if failure == "invalid_json" else "unknown")

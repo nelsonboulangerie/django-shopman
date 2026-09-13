@@ -3,6 +3,7 @@
 HSS records a negotiation outcome; only CAN changes order cancellation state.
 Ambiguous delivery never retries a financial decision automatically.
 """
+import logging
 from copy import deepcopy
 from urllib.parse import quote, urlparse
 from uuid import uuid4
@@ -16,6 +17,8 @@ from shopman.orderman.models import Order
 
 from shopman.shop.directives import IFOOD_HANDSHAKE_RESPONSE, create_deduped
 from shopman.shop.services import ifood_auth
+
+logger = logging.getLogger(__name__)
 
 REJECT_REASONS = (
     "HIGH_STORE_DEMAND", "UNKNOWN_ISSUE", "CUSTOMER_SATISFACTION", "INVENTORY_CHECK",
@@ -95,7 +98,7 @@ def _evidence_urls(raw):
                 parsed = urlparse(value)
                 if parsed.scheme == "https" and parsed.hostname and not parsed.username and not parsed.password:
                     urls.append(value)
-            except ValueError:
+            except ValueError:  # silêncio-deliberado: URL malformada é excluída do filtro, sem expor seu conteúdo
                 pass
     return urls
 
@@ -240,9 +243,13 @@ def deliver_response(payload):
                 try:
                     result = http.json()
                 except ValueError:
-                    pass
+                    logger.error("ifood_handshake: HTTP 201 com JSON inválido; aguardando HSS para disputa %s", payload["dispute_id"])
+            else:
+                logger.error("ifood_handshake: HTTP %s na disputa %s; resultado incerto, sem reenvio automático", http.status_code, payload["dispute_id"])
+        else:
+            logger.error("ifood_handshake: autorização indisponível para disputa %s; resposta não enviada", payload["dispute_id"])
     except requests.RequestException:
-        pass
+        logger.error("ifood_handshake: falha de transporte na disputa %s; resultado incerto, sem reenvio automático", payload["dispute_id"])
     with transaction.atomic():
         order = Order.objects.select_for_update().get(pk=order.pk)
         records = deepcopy(_records(order))
