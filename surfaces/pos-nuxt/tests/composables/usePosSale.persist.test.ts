@@ -25,6 +25,7 @@ function saleWithOpenTab(actionCall = vi.fn().mockResolvedValue({})) {
   h.sale.cart.tabRef = "M1";
   h.sale.cart.tabDisplay = "M1";
   h.sale.cart.tabSessionKey = "sess-1";
+  h.sale.cart.expectedRevision = "v1:initial";
   return h;
 }
 
@@ -45,6 +46,47 @@ describe("usePosSale — autosave debounced (auto-persist estilo Odoo)", () => {
     expect(String(actionCall.mock.calls[0]![0])).toContain("/tabs/save/");
     expect(h.handles.refresh).not.toHaveBeenCalled(); // quiet: sem refresh de projeção
     expect(h.sale.unsaved.value).toBe(false);
+    h.handles.dispose();
+  });
+
+  it("reutiliza a revisão retornada no próximo save", async () => {
+    const actionCall = vi.fn().mockResolvedValue({ revision: "v1:next" });
+    const h = saleWithOpenTab(actionCall);
+    await h.sale.saveTab();
+    await h.sale.saveTab();
+    expect(actionCall.mock.calls[0]?.[1].body.expected_revision).toBe("v1:initial");
+    expect(actionCall.mock.calls[1]?.[1].body.expected_revision).toBe("v1:next");
+    h.handles.dispose();
+  });
+
+  it("conflito preserva o rascunho e não repete autosave até escolha explícita", async () => {
+    const actionCall = vi.fn().mockRejectedValue({ status: 409, data: { detail: "Outra estação alterou a comanda." } });
+    const h = saleWithOpenTab(actionCall);
+    h.sale.addProduct(h.handles.posValue.value!.products[0]!);
+    await nextTick();
+    await vi.advanceTimersByTimeAsync(1200);
+    expect(h.sale.tabConflict.value).toBe(true);
+    expect(h.sale.cart.items).toHaveLength(1);
+    expect(h.sale.cart.expectedRevision).toBe("v1:initial");
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(actionCall).toHaveBeenCalledTimes(1);
+    h.handles.dispose();
+  });
+
+  it("atualiza somente a comanda original após descarte explícito", async () => {
+    const actionCall = vi.fn().mockResolvedValue(makeTabPayload({ revision: "v1:remote" }));
+    const h = saleWithOpenTab(actionCall);
+    h.sale.tabConflict.value = true;
+    await h.sale.reloadConflictingTab();
+    expect(actionCall.mock.calls[0]?.[1].method).toBe("GET");
+    expect(h.sale.cart.expectedRevision).toBe("v1:remote");
+    expect(h.sale.tabConflict.value).toBe(false);
+    h.sale.tabConflict.value = true;
+    actionCall.mockResolvedValue(makeTabPayload({ session_key: "replacement", revision: "v1:other" }));
+    await h.sale.reloadConflictingTab();
+    expect(h.sale.cart.tabSessionKey).toBe("sess-1");
+    expect(h.sale.cart.expectedRevision).toBe("v1:remote");
+    expect(h.sale.tabConflict.value).toBe(true);
     h.handles.dispose();
   });
 

@@ -55,6 +55,7 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "client_request_id",
     "tab_ref",
     "tab_session_key",
+    "expected_revision",
     "manual_discount",
     "manager_approval",
     "cash_shift_id",
@@ -607,3 +608,8 @@ __all__ = [
     "PosSaleIntent",
     "parse_pos_sale_intent",
 ]
+
+
+def pos_session_revision(session) -> str:
+    """Opaque observed version; clients return it without deriving one."""
+    return f"v1:{session.rev}:{session.updated_at.isoformat()}"
