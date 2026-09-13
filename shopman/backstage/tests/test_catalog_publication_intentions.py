@@ -194,7 +194,7 @@ def test_failed_bulk_does_not_leave_audit_or_mutation(operator, catalog, monkeyp
 
     item = ListingItem.objects.get(product__sku="PAO", listing__ref="web")
     before = item.history.count()
-    monkeypatch.setattr("shopman.shop.fiscal_catalog.validate_listing_item_publication",
+    monkeypatch.setattr("shopman.shop.services.fiscal_catalog.validate_listing_item_publication",
                         lambda _item: (_ for _ in ()).throw(RuntimeError("publication denied")))
     with pytest.raises(RuntimeError, match="publication denied"):
         service.bulk_set(["PAO"], "web", is_sellable=False, actor=operator.username)
