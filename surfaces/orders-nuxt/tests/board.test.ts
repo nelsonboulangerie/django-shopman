@@ -61,6 +61,8 @@ const card = (over: Partial<OrderCardProjection> = {}): OrderCardProjection => (
   next_action_label: "Iniciar preparo",
   payment_method: "cash",
   payment_method_label: "Dinheiro",
+    ifood_cancellation_notice: "",
+    ifood_payment_summary: [],
   payment_status: "pending",
   payment_pending: true,
   can_settle_delivery_cash: false,

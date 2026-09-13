@@ -14,11 +14,11 @@ from __future__ import annotations
 
 import logging
 
-from shopman.orderman.exceptions import DirectiveTransientError
+from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
 from shopman.orderman.models import Directive
 
 from shopman.shop.directives import IFOOD_STATUS_CALLBACK
-from shopman.shop.services import ifood_callbacks, ifood_ingest
+from shopman.shop.services import ifood_callbacks, ifood_cancellation, ifood_ingest
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,19 @@ class IFoodStatusCallbackHandler:
             logger.warning("ifood_status: directive without ifood_order_id: %s", payload)
             return
 
+        cancellation_request = bool(payload.get("cancellation_request_id"))
+        if cancellation_request and not ifood_cancellation.should_send(payload):
+            return
+        if not cancellation_request and (payload.get("order_ref") or status == "cancelled"):
+            # Directives already queued before CAN must obey the remote
+            # cancellation too; the signal guard only prevents new directives.
+            from shopman.orderman.models import Order
+
+            lookup = {"ref": payload["order_ref"]} if payload.get("order_ref") else {"external_ref": order_id}
+            order = Order.objects.filter(channel_ref=ifood_ingest.IFOOD_CHANNEL_REF, **lookup).first()
+            if order is not None and (order.data or {}).get("ifood_cancelled"):
+                return
+
         try:
             sent = ifood_callbacks.send_for_status(
                 order_id,
@@ -42,7 +55,14 @@ class IFoodStatusCallbackHandler:
                 cancellation_code=payload.get("cancellation_code", ""),
             )
         except ifood_callbacks.IFoodCallbackError as exc:
+            if cancellation_request:
+                ifood_cancellation.record_result(payload, state="error", retryable=exc.retryable)
+                error = DirectiveTransientError if exc.retryable else DirectiveTerminalError
+                raise error("Falha no envio da solicitação de cancelamento ao iFood.") from exc
             raise DirectiveTransientError(str(exc)) from exc
+
+        if cancellation_request and sent:
+            ifood_cancellation.record_result(payload, state="sent")
 
         if not sent:
             logger.info("ifood_status: no iFood action for status=%s (order %s)", status, order_id)

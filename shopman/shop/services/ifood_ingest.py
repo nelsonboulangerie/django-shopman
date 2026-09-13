@@ -113,7 +113,7 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
         "payment": {
             "method": "external",
             "gateway": "ifood",
-            "status": "paid",  # marketplace is always pre-paid
+            "status": payment_status_from_payload(payload.get("payments") or {}, total_q),
         },
         "ifood": {
             "order_code": order_code,
@@ -124,6 +124,7 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
             "order_timing": payload.get("order_timing", ""),
             "totals": payload.get("totals") or {},
             "payments": payload.get("payments") or {},
+            "delivered_by": (payload.get("delivery") or {}).get("delivered_by", ""),
             "pickup_code": (payload.get("delivery") or {}).get("pickup_code", ""),
         },
     }
@@ -183,6 +184,27 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
 
 
 # ── helpers ───────────────────────────────────────────────────────────
+
+
+def payment_status_from_payload(payments: dict, total_q: int) -> str:
+    """Report iFood's settlement evidence without initiating a local charge.
+
+    Delivery responsibility is not proof of payment: both merchant and iFood
+    delivery can carry amounts still to collect. Keep those orders pending,
+    including mixed payments, and do not label missing/partial evidence paid.
+    """
+    prepaid_q = int(payments.get("prepaid_q") or 0)
+    pending_q = int(payments.get("pending_q") or 0)
+    methods = payments.get("methods") or []
+    if pending_q > 0 or any(
+        int(method.get("value_q") or 0) > 0
+        and (method.get("type") == "OFFLINE" or method.get("prepaid") is False)
+        for method in methods
+    ):
+        return "pending"
+    if pending_q == 0 and total_q > 0 and prepaid_q >= total_q:
+        return "paid"
+    return "unknown"
 
 
 def _validate_payload(payload: dict) -> None:

@@ -70,11 +70,20 @@ def has_availability_approval(order) -> bool:
 def ensure_confirmable(order, *, channel_config=None) -> None:
     """Enforce the operational precondition for moving an order into CONFIRMED.
 
-    This checks availability only. Payment capture is guarded separately by
+    This checks cancellation requests and availability. Payment capture is guarded separately by
     :func:`ensure_payment_captured` on every path that can move an order into
     ``CONFIRMED``.
     """
     from shopman.orderman.exceptions import InvalidTransition
+
+    from shopman.shop.services import ifood_cancellation
+
+    if order.channel_ref == "ifood" and ifood_cancellation.is_pending(order):
+        raise InvalidTransition(
+            code="ifood_cancellation_pending",
+            message="Aguarde a confirmação do cancelamento pelo iFood antes de confirmar o pedido.",
+            context={"order_ref": order.ref, "status": order.status},
+        )
 
     if has_availability_approval(order):
         return
@@ -797,6 +806,17 @@ def _prep_starts_automatically(config: ChannelConfig) -> bool:
 
 def _stock_fulfill_allowed(order, config: ChannelConfig) -> bool:
     """Baixa de estoque liberada: pagamento no balcão ou já capturado."""
+    payment_data = (order.data or {}).get("payment") or {}
+    if (
+        config.payment.timing == "external"
+        and order.channel_ref == "ifood"
+        and payment_data.get("method") == "external"
+        and payment_data.get("gateway") == "ifood"
+    ):
+        # iFood authorizes the operational order, including payment on delivery.
+        # Acceptance must consume stock without pretending those funds were
+        # captured or initiating a second charge through Payman.
+        return True
     if (
         config.payment.timing == "external"
         and config.payment.method != "external"

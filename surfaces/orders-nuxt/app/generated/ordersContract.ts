@@ -226,6 +226,8 @@ export interface OrderCardProjection {
   waitlist_state: string;
   waitlist_deadline_iso: string;
   waitlist_label: string;
+  ifood_cancellation_notice: string;
+  ifood_payment_summary: string[];
 }
 
 /** Expanded detail for a single order (operator side-panel). */
@@ -291,6 +293,8 @@ export interface OperatorOrderProjection {
   equipment_back_pending: boolean;
   can_resend_payment_link: boolean;
   payment_link_notice: string;
+  ifood_cancellation_notice: string;
+  ifood_payment_summary: string[];
 }
 
 /** Top-level read model for the operator order queue. */

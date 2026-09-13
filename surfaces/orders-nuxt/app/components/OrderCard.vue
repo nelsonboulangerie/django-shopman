@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import OrderIFoodSummary from "~/components/OrderIFoodSummary.vue";
 // One order card in the board. Glanceable: ref + timer up top, customer + items in
 // the middle, payment/total, then the pre-resolved affordances as buttons. Status
 // color is functional; chrome neutral. Tapping the ref opens the detail page.
@@ -228,6 +229,8 @@ function buttonClass(priority: string): string {
       </span>
       <span class="ml-auto text-sm font-bold tabular-nums">{{ card.total_display }}</span>
     </div>
+
+    <OrderIFoodSummary :cancellation-notice="card.ifood_cancellation_notice" :payment-summary="card.ifood_payment_summary" />
 
     <!-- awaiting production -->
     <div v-if="card.awaiting_work_orders.length" class="flex flex-col gap-1">
