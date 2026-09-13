@@ -30,6 +30,9 @@
 
 ## 2. Credenciais e segredos de produção (Pablo)
 
+- [ ] Declarar `SHOPMAN_ENVIRONMENT=production` no ambiente de destino e executar `make production-readiness` com evidência de QA. Remover `SHOPMAN_EXPOSE_MOCK_CAPTURE`, `SHOPMAN_EXPOSE_DEBUG_OTP`, `SHOPMAN_MOCK_PIX_AUTO_CONFIRM`, `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS` e `SHOPMAN_STAGING_AUTOPILOT`.
+- [ ] Configurar `SENTRY_DSN` e comprovar o recebimento de um alerta sintético no procedimento autorizado de cutover. A presença da variável sozinha não comprova entrega.
+
 - [ ] `DJANGO_SECRET_KEY` forte (não o default) · `DJANGO_DEBUG=false` · `DJANGO_ALLOWED_HOSTS` explícito (sem `*`).
 - [ ] Banco de produção (Postgres) + Redis/Valkey provisionados; `DATABASE_URL`/cache configurados.
 - [ ] **Gateways em modo PRODUÇÃO**: EFI (Pix) cert+creds de prod, Stripe live keys, iFood prod. (Hoje staging = sandbox/test.)
@@ -61,7 +64,7 @@
 
 - [ ] **Backup** do banco de prod (se já houver dado) ANTES de tudo.
 - [ ] `git tag go-live-v1` no commit de release; a partir daqui valem as regras pós-prod do ADR-015 (migrations append-only, aliases só em janela explícita).
-- [ ] Deploy de prod (mesmo padrão do staging, app/contexto de PROD): `doctl apps create-deployment <APP_ID_PROD> --wait`. O release job roda `check --deploy` + `migrate`.
+- [ ] Deploy de prod (mesmo padrão do staging, app/contexto de PROD): `doctl apps create-deployment <APP_ID_PROD> --wait`. O release job roda `check --deploy` + `migrate`; `SHOPMAN_E022` inclui os ambientes dos provedores. Isso não substitui o perfil completo `production-readiness` nem a QA externa.
    - ⚠️ Lembrar do gotcha: **todo pacote `packages/*` precisa estar no Dockerfile + pyproject** (mordeu com o buyman). Já corrigido; conferir se algum novo entrou.
 - [ ] Validar ao vivo: `/ready/` (db/cache/migrations ok), `/health/`, loja, login do operador (cookie na zona certa), um **pedido ponta-a-ponta** com pagamento real de teste.
 
@@ -75,6 +78,6 @@
 ## Notas de operação aprendidas (staging)
 
 - **Contexto doctl** de deploy = `shopman-alpha-deploy` (único vivo; os outros foram removidos). Prod terá o seu — gerar token e `doctl auth init`.
-- **Autodeploy OFF**: push no `main` NÃO deploya; é sempre `create-deployment` manual.
-- **Reseed via job**: console/exec dá 403; reseed roda armando `seed --flush` no job `bootstrap-staging` (POST_DEPLOY) e revertendo o spec depois. Em prod, seed é evento único de bootstrap, não rotina.
-- **Preservar os secrets `EV[...]`** ao editar o spec (usar `apps spec get` como base, nunca o `.do/app.yaml` cru).
+- **Autodeploy**: confira `deploy_on_push` por componente no spec do ambiente alvo antes do push. O spec de alpha versionado contém autodeploy ativo; não presuma deploy exclusivamente manual.
+- **Bootstrap/reseed**: inventarie os jobs existentes no spec alvo. Não há contrato de um job chamado `bootstrap-staging`; não arme `seed --flush` no release como rotina. Em produção, bootstrap exige procedimento e autorização próprios.
+- **Preservar os secrets `EV[...]`** ao editar o spec (usar `apps spec get` como base, nunca um spec local sem os valores atuais).

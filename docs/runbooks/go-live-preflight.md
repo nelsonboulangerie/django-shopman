@@ -20,6 +20,8 @@ fail-closed). Adapters reais, `DJANGO_DEBUG=false`. **Único gap de pagamento/fi
 
 ## A virar ANTES DE PRODUCAO (pagamento real)
 
+- [ ] Declarar `SHOPMAN_ENVIRONMENT=production` no destino; remover exposição de OTP/captura simulada e executar `make production-readiness` com evidência de QA.
+
 - [ ] **Focus NFe ligada** — `SHOPMAN_FISCAL_ADAPTER` + `FOCUS_NFE_TOKEN` (homolog→**producao**) +
       `FOCUS_NFE_ENVIRONMENT=producao`. CNPJ vem de `Shop.document` (Admin). Ver
       [ativar-focus-nfe](ativar-focus-nfe.md). *(contador OK; falta conta+token)*
@@ -27,7 +29,7 @@ fail-closed). Adapters reais, `DJANGO_DEBUG=false`. **Único gap de pagamento/fi
       Stripe `pk_live_`/`sk_live_` + webhook secret de prod · Efi `EFI_SANDBOX=false` + cert/creds prod.
 - [ ] **Remover `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS`** do env DO (hoje `=true`; vira warning W006).
 - [ ] **Confirmar `Shop.document` (CNPJ) preenchido** no ambiente real (emitente da NFC-e).
-- [ ] **Decidir `STRIPE_CAPTURE_METHOD`** — staging usa `automatic`; `.env` local usa `manual`. Alinhar.
+- [ ] **Conferir `STRIPE_CAPTURE_METHOD`** no ambiente alvo. O laudo de 12/09 registrou `manual` no staging; não presuma `automatic`. Qualquer mudança exige validar autorização, captura, estorno e entrega no fluxo de pagamento.
 - [ ] **Apagar endpoint Stripe morto** (`we_1Sv6lG…`, ngrok antigo) — limpeza, não bloqueia.
 - [ ] **Canário-de-um**: Pablo faz 1–2 compras reais (PIX+cartão) com NFC-e saindo + 1 estorno,
       ANTES de convidar qualquer amigo do alpha.
