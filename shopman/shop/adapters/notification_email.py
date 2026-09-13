@@ -18,6 +18,7 @@ from django.template.loader import render_to_string
 logger = logging.getLogger(__name__)
 
 SUBJECT_TEMPLATES: dict[str, str] = {
+    "operator_critical": "Alerta crítico operacional — {alert_type}",
     "order_received": "Recebemos seu pedido {order_ref}",
     "order_accepted": "Pedido {order_ref} confirmado",
     "order_preparing": "Pedido {order_ref} em preparo",
@@ -42,6 +43,7 @@ SUBJECT_TEMPLATES: dict[str, str] = {
 }
 
 BODY_TEMPLATES: dict[str, str] = {
+    "operator_critical": "O alerta {alert_type} exige atenção no Gestor. Referência: {order_ref}. Confira os alertas operacionais antes de repetir a operação.",
     "order_received": (
         "Olá{customer_name_greeting}!\n\n"
         "Recebemos seu pedido {order_ref}.\n\n"
