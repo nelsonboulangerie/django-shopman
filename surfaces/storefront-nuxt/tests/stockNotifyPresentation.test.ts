@@ -1,6 +1,5 @@
 // "Avise-me": o número que a casa vai usar precisa voltar formatado para a tela
-// ANTES do envio — a normalização repara o que foi digitado, e reparo invisível
-// já mandou a mensagem para outra pessoa.
+// ANTES do envio, sem inventar um dígito que pode identificar outra pessoa.
 import { describe, expect, it } from 'vitest'
 import { notifyConfirmationMessage, notifyPhoneTarget } from '~/presentation/stockNotify'
 
@@ -15,14 +14,13 @@ describe('notifyPhoneTarget', () => {
     expect(notifyPhoneTarget('(43) 99840-4900', '43')).toBe('+55 (43) 99840-4900')
   })
 
-  // O caso do defeito: 8 dígitos sem DDD ganham o DDD da loja, viram 10 dígitos
-  // e o reparo insere o nono. Quem digitou tem que VER isso.
-  it('revela o DDD da loja e o nono dígito que o normalizador insere', () => {
-    expect(notifyPhoneTarget('9840-4900', '43')).toBe('+55 (43) 99840-4900')
+  it('revela o DDD da loja para um celular completo', () => {
+    expect(notifyPhoneTarget('99840-4900', '43')).toBe('+55 (43) 99840-4900')
   })
 
-  it('revela o nono dígito inserido num número de 10 dígitos com DDD', () => {
-    expect(notifyPhoneTarget('(43) 9840-4900', '')).toBe('+55 (43) 99840-4900')
+  it('recusa celular incompleto sem inventar o nono dígito', () => {
+    expect(notifyPhoneTarget('(43) 9840-4900', '')).toBe('')
+    expect(notifyPhoneTarget('9840-4900', '43')).toBe('')
   })
 
   it('fixo de 10 dígitos aparece como foi digitado, sem reparo', () => {
