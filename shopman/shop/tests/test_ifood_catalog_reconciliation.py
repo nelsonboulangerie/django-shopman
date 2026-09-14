@@ -82,6 +82,7 @@ def test_duplicate_remote_identity_is_not_collapsed(inventory):
     rows = [r for r in reconcile(inventory).items if r.item_id == "item-baguette"]
     assert len(rows) == 2
     assert {r.status for r in rows} == {"duplicate_identity"}
+    assert all(row.candidate_skus == () for row in rows)
 
 
 @pytest.mark.parametrize("field", ["id", "productId"])
@@ -89,6 +90,7 @@ def test_missing_identity_never_suggests(inventory, field):
     inventory[0]["items"][0].pop(field)
     result = reconcile(inventory)
     assert result.items[0].status == "invalid_identity"
+    assert result.items[0].candidate_skus == ()
     assert result.summary.invalid_identity == 1
 
 

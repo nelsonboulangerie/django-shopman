@@ -149,6 +149,8 @@ def reconcile_ifood_inventory(
             status, notice = "suggested", "Código exato e único; confirme o vínculo explicitamente."
         else:
             status, notice = "unmatched_code", "Código sem SKU correspondente; selecione o produto canônico."
+        if status in {"invalid_identity", "duplicate_identity"}:
+            candidates = ()
         result.append(ReconciliationItem(
             merchant_id=merchant_id, catalog_id=catalog_id, context=context,
             item_id=item_id, product_id=product_id, category_id=category_id,
