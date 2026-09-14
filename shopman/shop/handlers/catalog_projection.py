@@ -8,9 +8,9 @@ CatalogProjectHandler — processes ``catalog.project_sku`` directives:
   - Handles 429 rate limiting (honoring Retry-After).
   - Uses DirectiveTransientError for retryable failures.
 
-Signal receivers (on_product_created, on_price_changed) enqueue directives
-with SHA-256-based dedupe keys so the same event is never processed twice
-while a directive is still queued or running.
+Os receivers agrupam sinais equivalentes enquanto a diretiva correspondente
+ainda está na fila. Alterações durante um envio recebem outra ocorrência;
+o mutex por SKU/canal serializa os envios.
 """
 
 from __future__ import annotations
@@ -18,9 +18,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from contextlib import contextmanager
 from datetime import timedelta
+from threading import Lock
+from uuid import uuid4
+from weakref import WeakValueDictionary
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
 from shopman.offerman.protocols.projection import ProjectedItem
 from shopman.orderman.exceptions import DirectiveTransientError
@@ -62,13 +66,32 @@ class CatalogProjectHandler:
         if not _channel_or_feed_active(listing_ref):
             return
 
+        failure = None
+        with _sender_lock(sku, listing_ref) as acquired:
+            if not acquired:
+                # Contenção não é falha do provedor. Preserva o trabalho na fila
+                # e libera o worker sem aguardar o HTTP de outra execução.
+                message.status = "queued"
+                message.attempts = max(0, message.attempts - 1)
+                message.available_at = timezone.now() + timedelta(seconds=2)
+                message.save(update_fields=["status", "attempts", "available_at", "updated_at"])
+                return
+            try:
+                self._handle_locked(message, backend, sku, listing_ref)
+            except DirectiveTransientError as exc:
+                # Confirma o resultado registrado antes do retry do dispatcher.
+                failure = exc
+        if failure is not None:
+            raise failure
+
+    def _handle_locked(self, message, backend, sku, listing_ref):
         from shopman.shop.adapters.catalog_projection_ifood import IFoodRateLimitError
 
         # Retract-aware: read the SKU's CURRENT state and either upsert it (when
         # published + sellable) or retract it (paused, unpublished, or dropped
         # from the listing). Reading state at handle time makes the directive
         # idempotent to the final state, so rapid pause→resume converges.
-        from shopman.shop.services import catalog_sync, social_publish_rules
+        from shopman.shop.services import social_publish_rules
 
         item = _get_projected_item(sku, listing_ref)
         retracting = not (item is not None and item.is_published and item.is_sellable)
@@ -80,7 +103,7 @@ class CatalogProjectHandler:
             gate = social_publish_rules.projection_gate(item, listing_ref)
             if gate is not None:
                 status, reason = gate
-                catalog_sync.record_sync(sku, listing_ref, status=status, error=reason)
+                _record_outcome(item, sku, listing_ref, status=status, error=reason)
                 return
 
         try:
@@ -90,7 +113,7 @@ class CatalogProjectHandler:
                 result = backend.retract([sku], channel=listing_ref)
         except IFoodRateLimitError as exc:
             # Rate limit: defer with Retry-After from API response.
-            catalog_sync.record_sync(sku, listing_ref, status="pending", error="rate limited")
+            _record_outcome(item, sku, listing_ref, status="pending", error="rate limited")
             message.status = "queued"
             message.available_at = timezone.now() + timedelta(seconds=exc.retry_after)
             message.save(update_fields=["status", "available_at", "updated_at"])
@@ -101,16 +124,68 @@ class CatalogProjectHandler:
             return
 
         if result.success:
-            catalog_sync.record_sync(
-                sku, listing_ref, status="retracted" if retracting else "synced",
-            )
+            _record_outcome(item, sku, listing_ref, status="retracted" if retracting else "synced")
             return
 
-        catalog_sync.record_sync(sku, listing_ref, status="error", error="; ".join(result.errors))
+        _record_outcome(item, sku, listing_ref, status="error", error="; ".join(result.errors))
         raise DirectiveTransientError("; ".join(result.errors))
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+_local_locks = WeakValueDictionary()
+_local_locks_guard = Lock()
+
+
+@contextmanager
+def _sender_lock(sku: str, listing_ref: str):
+    """Serializa este handler sem bloquear as linhas editadas pelo operador.
+
+    O advisory lock transacional mantém o backend PostgreSQL reservado mesmo
+    com pooler transacional e não expira quando o reaper recupera a diretiva.
+    SQLite usa mutex local ao processo, somente para desenvolvimento; a prova
+    de concorrência roda em PostgreSQL. Chamadas diretas ao CatalogService ou
+    ao CLI de sincronização não usam este mutex. Uma conexão perdida pode
+    liberar o lock sem desfazer uma requisição já recebida pelo provedor.
+    """
+    key = int.from_bytes(hashlib.sha256(
+        json.dumps([CATALOG_PROJECT_SKU, listing_ref, sku]).encode(),
+    ).digest()[:8], "big", signed=True)
+    if connection.vendor == "postgresql":
+        with transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_try_advisory_xact_lock(%s)", [key])
+                acquired = cursor.fetchone()[0]
+            yield acquired
+        return
+    with _local_locks_guard:
+        lock = _local_locks.get(key)
+        if lock is None:
+            lock = Lock()
+            _local_locks[key] = lock
+    acquired = lock.acquire(blocking=False)
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            lock.release()
+
+
+@transaction.atomic
+def _record_outcome(snapshot: ProjectedItem | None, sku: str, listing_ref: str, *, status: str, error: str = "") -> None:
+    from shopman.shop.models import CatalogSyncState
+    from shopman.shop.services import catalog_sync
+
+    state, _ = CatalogSyncState.objects.get_or_create(sku=sku, channel_ref=listing_ref)
+    CatalogSyncState.objects.select_for_update().get(pk=state.pk)
+    # O operador pode confirmar uma edição durante o HTTP. Sob este lock curto,
+    # compara o snapshot atual antes de declarar sincronização. Uma diretiva
+    # irmã ainda running pode já ter finalizado seu HTTP; não invalida o resultado.
+    # Leituras de domínio usam apenas MVCC: preserva a ordem domínio→sync.
+    if _get_projected_item(sku, listing_ref) != snapshot:
+        status, error = "pending", ""
+    catalog_sync.record_sync(sku, listing_ref, status=status, error=error)
 
 
 def _channel_or_feed_active(listing_ref: str) -> bool:
@@ -197,13 +272,22 @@ def enqueue_project(sku: str, listing_ref: str, *, trigger: str = "manual_resync
 
 @transaction.atomic
 def _enqueue_project(sku: str, listing_ref: str, trigger: str, extra: dict) -> Directive | None:
-    fingerprint_data = json.dumps({"trigger": trigger, **extra}, sort_keys=True)
-    fingerprint = hashlib.sha256(fingerprint_data.encode()).hexdigest()[:16]
-    dedupe_key = f"{CATALOG_PROJECT_SKU}:{listing_ref}:{sku}:{fingerprint}"
+    from shopman.shop.services import catalog_sync
 
+    # A mutação do chamador e o indicador pendente confirmam juntos. Ordem dos
+    # locks igual à operação: linhas de domínio, estado de sync e depois outbox.
+    catalog_sync.record_sync(sku, listing_ref, status="pending")
+    fingerprint_data = json.dumps({"listing_ref": listing_ref, "sku": sku, "trigger": trigger, **extra}, sort_keys=True)
+    fingerprint = hashlib.sha256(fingerprint_data.encode()).hexdigest()
+    dedupe_key = f"{CATALOG_PROJECT_SKU}:{listing_ref}:{sku}:{fingerprint[:16]}"
+    if len(dedupe_key) > 95:  # Reserva espaço para o sufixo da ocorrência nos 128 caracteres.
+        dedupe_key = f"{CATALOG_PROJECT_SKU}:{fingerprint[:48]}"
+
+    # Agrupa apenas trabalho não iniciado. O envio em execução já leu o snapshot
+    # e não pode representar uma edição recebida durante sua requisição HTTP.
     existing = Directive.objects.select_for_update().filter(
-        dedupe_key=dedupe_key,
-        status__in=("queued", "running"),
+        dedupe_key__startswith=f"{dedupe_key}:",
+        status="queued",
     ).first()
     if existing is not None:
         return existing
@@ -213,11 +297,9 @@ def _enqueue_project(sku: str, listing_ref: str, trigger: str, extra: dict) -> D
     created = create_deduped(
         CATALOG_PROJECT_SKU,
         payload={"sku": sku, "listing_ref": listing_ref},
-        dedupe_key=dedupe_key,
+        dedupe_key=f"{dedupe_key}:{uuid4().hex}",
     )
     if created is None:
-        return Directive.objects.select_for_update().filter(
-            topic=CATALOG_PROJECT_SKU, dedupe_key=dedupe_key, status__in=("queued", "running"),
-        ).first()
+        raise RuntimeError("Falha ao registrar a sincronização do catálogo; alteração revertida.")
     logger.debug("catalog_projection: enqueued %s for %s/%s", trigger, listing_ref, sku)
     return created
