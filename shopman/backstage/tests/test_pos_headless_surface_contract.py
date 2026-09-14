@@ -1216,6 +1216,35 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(ana.phone, "+5543988887777")
         self.assertEqual(corrigido.json()["customer"]["phone"], "+5543988887777")
 
+    def test_api_customer_resolve_corrects_name_only_when_told(self) -> None:
+        ana = Customer.objects.create(
+            ref="CUST-FIX-NAME", first_name="Ana", last_name="Prado",
+            phone="+5543999990011",
+        )
+
+        quieto = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {"customer_ref": ana.ref, "customer_name": "Ana Corrigida"},
+            content_type="application/json",
+        )
+        self.assertEqual(quieto.status_code, 200)
+        ana.refresh_from_db()
+        self.assertEqual(ana.name, "Ana Prado")
+
+        corrigido = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {
+                "customer_ref": ana.ref,
+                "customer_name": "Ana Corrigida",
+                "customer_name_correction": True,
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(corrigido.status_code, 200)
+        ana.refresh_from_db()
+        self.assertEqual(ana.name, "Ana Corrigida")
+        self.assertEqual(corrigido.json()["customer"]["name"], "Ana Corrigida")
+
     def test_api_customer_resolve_refuses_correcting_into_someone_elses_number(self) -> None:
         # Corrigir não é roubar: o número novo já é de terceiro → mesma recusa.
         ana = Customer.objects.create(
