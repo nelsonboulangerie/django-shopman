@@ -142,10 +142,14 @@ def test_unpaid_pix_timeout_still_cancels_and_releases(close_counter):
 
 
 def test_gateway_failure_does_not_release_goods_or_emit(close_counter):
+    from shopman.shop.services.pos_intent import PosCommittedSaleError
+
     with patch.object(payment, "initiate", side_effect=TimeoutError("gateway unavailable")):
-        order, result = close_counter("pix")
+        with pytest.raises(PosCommittedSaleError) as caught:
+            close_counter("pix")
+    order = Order.objects.get(ref=caught.value.order_ref)
     assert_waiting_for_payment(order)
-    assert result.payment["status"] == "error"
+    assert caught.value.code == "sale_payment_outcome_unknown"
     assert not PaymentIntent.objects.filter(order_ref=order.ref).exists()
 
 
