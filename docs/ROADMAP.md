@@ -82,6 +82,9 @@
   Étienne (compras) e Anaïs (financeiro consultivo). Persona é dado do tenant; o
   kernel é agnóstico. Decisões de 2026-09-14 na memória de sessão
   (`project_mecanismo_de_interacao_agentica`); WP só depois do go-live.
+- **PWA de verdade nas surfaces** (notificação ativa com tela desligada, instalável,
+  kiosk) — [`plans/WP-PWA-CONFORMIDADE.md`](plans/WP-PWA-CONFORMIDADE.md). Torna o
+  Telegram escolha, não necessidade, para o proativo dos agentes.
 
 ## Critério Para Produção Real
 
