@@ -50,6 +50,7 @@ Warnings (non-blocking, logged at startup):
 
 from __future__ import annotations
 
+import logging
 import os
 from urllib.parse import urlparse
 
@@ -811,7 +812,7 @@ def check_listing_channel_parity(app_configs, **kwargs):
                 )
             )
     except (OperationalError, ProgrammingError, ImportError):
-        pass  # tables not ready or offerman not installed
+        logging.getLogger(__name__).warning("listing_channel_check_unavailable_before_schema_or_optional_app_ready")
 
     return warnings
 
@@ -1153,6 +1154,7 @@ def check_production_provider_environments(app_configs, **kwargs):
     try:
         facts = build_provider_readiness(mode="runtime")
     except Exception:
+        logging.getLogger(__name__).warning("production_provider_readiness_unavailable")
         return [Error("Não foi possível verificar os ambientes dos provedores.",
                       hint="Execute production-readiness no ambiente alvo e corrija a leitura antes do deploy.",
                       id="SHOPMAN_E022")]
