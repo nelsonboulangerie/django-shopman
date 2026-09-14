@@ -91,14 +91,10 @@ def customer_holds_the_goods(order) -> bool:
     cada um respondia por conta própria, uma regra nova entrava num e faltava
     no outro.
 
-    Sim quando: PDV, retirada, fora de Encomendas e sem data futura —
-    e pagamento que NÃO é link.
-    O link é o pedido REMOTO anotado no balcão: o cliente não está na loja,
-    paga depois pelo celular e vem buscar. A sacola não está na mão dele; há
-    trajeto pela frente por definição. Sem esta linha a venda de link fechava
-    COMPLETED sem um centavo capturado, e o vencimento do link não alcançava
-    mais o pedido. Encomenda agendada e entrega ficam de fora pelo mesmo
-    motivo: têm trabalho e trajeto pela frente, e a esteira existe para elas.
+    PDV, retirada, fora de Encomendas e sem data futura. Pix e cartão de
+    gateway só representam entrega após captura suficiente; o link continua
+    remoto mesmo depois de pago. Crédito/débito de maquininha e dinheiro
+    preservam o fluxo presencial atestado pelo operador.
     """
     data = order.data or {}
     # O snapshot já contém o contexto da sessão ao nascer o pedido. O carimbo
@@ -113,8 +109,14 @@ def customer_holds_the_goods(order) -> bool:
     if (data.get("fulfillment_type") or "pickup") != "pickup":
         return False
     payment = data.get("payment") or {}
-    if str(payment.get("method") or "").strip().lower() == "link":
+    method = str(payment.get("method") or "").strip().lower()
+    if method == "link":
         return False
+    if method in {"pix", "card"}:
+        from shopman.shop.services.payment_gate import payment_is_captured
+
+        if not payment_is_captured(order):
+            return False
     commitment = get_commitment_date(order)
     return not (commitment and commitment > timezone.localdate())
 

@@ -73,6 +73,7 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     # ``FOR UPDATE``; this regression only exists on the real database.
     "shopman/shop/tests/test_marketing_delivery_postgres.py",
     "shopman/backstage/tests/test_gateway_smoke.py",
+    "shopman/backstage/tests/test_pos_tab_revision_boundary.py",
     "shopman/backstage/tests/test_planning_idempotency_race.py",
     "shopman/shop/tests/test_deploy_checks.py",
     "shopman/shop/tests/test_health.py",

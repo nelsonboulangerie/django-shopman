@@ -295,6 +295,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+                "expected_revision": tab["revision"],
             "items": [
                 {
                     "sku": "POS-HEADLESS-ITEM",
@@ -336,7 +337,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "shopman.shop.fiscal_resolvers.eletronic_payment"
         ),
     )
-    def test_close_reports_fiscal_expected_for_card_sale_without_the_toggle(self) -> None:
+    def test_close_reports_fiscal_expected_for_terminal_credit_without_the_toggle(self) -> None:
         """Venda eletrônica emite sem o operador marcar nada — e o balcão precisa saber.
 
         O botão da DANFE seguia o toggle do operador (a intenção). Com o
@@ -344,7 +345,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         nasce sem ninguém marcar nada, e o balcão não tinha como chegar nela.
         Agora quem responde é a mesma regra que decide emitir.
         """
-        closed = self._close_sale_for_fiscal(payment_method="card")
+        closed = self._close_sale_for_fiscal(payment_method="credit")
 
         self.assertTrue(closed["fiscal_expected"])
 
@@ -682,6 +683,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+                "expected_revision": tab["revision"],
             "items": [
                 {
                     "sku": "POS-HEADLESS-ITEM",
@@ -798,6 +800,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+                "expected_revision": tab["revision"],
             "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
             "fulfillment_type": "delivery",
             "payment_method": "cash",
@@ -821,6 +824,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+                "expected_revision": tab["revision"],
             "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
             "fulfillment_type": "pickup",
             "payment_method": "mixed",
@@ -882,6 +886,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+                "expected_revision": tab["revision"],
             "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
             "fulfillment_type": "pickup",
             "payment_method": "mixed",
@@ -1261,6 +1266,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
                 "intent_version": POS_SALE_INTENT_VERSION,
                 "tab_ref": tab["tab_ref"],
                 "tab_session_key": tab["tab_session_key"],
+                "expected_revision": tab["revision"],
                 "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
                 "payment_method": "cash",
                 "payment_collection": "terminal",
