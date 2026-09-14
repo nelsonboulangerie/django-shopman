@@ -26,6 +26,8 @@ concurrency:
 
 env:
   DJANGO_DEBUG: "true"
+  # These runners reach Django directly, without the production ingress.
+  SHOPMAN_ADMIN_LOGIN_IP_SOURCE: direct
   DJANGO_SECRET_KEY: ci-omotenashi-gate-local-secret-key
   DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
   PYTHONUNBUFFERED: "1"

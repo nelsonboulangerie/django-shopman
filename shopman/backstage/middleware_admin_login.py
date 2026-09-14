@@ -8,6 +8,8 @@ from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.deprecation import MiddlewareMixin
 
+from shopman.backstage.services.admin_login_ip import admin_login_ip
+
 logger = logging.getLogger(__name__)
 
 
@@ -16,7 +18,11 @@ class AdminLoginRateLimitMiddleware(MiddlewareMixin):
         if request.method != "POST" or request.path != reverse("admin:login"):
             return None
         window = max(1, int(getattr(settings, "SHOPMAN_ADMIN_LOGIN_WINDOW_SECONDS", 300)))
-        address = str(request.META.get("REMOTE_ADDR") or "unknown")
+        try:
+            address = admin_login_ip(request)
+        except ValueError:
+            logger.warning("admin_login_client_ip_unavailable")
+            return self._response(503, 30, "Não foi possível verificar o acesso agora. Tente novamente em instantes.")
         username = str(request.POST.get("username") or "").strip().casefold()
         buckets = [(address, int(getattr(settings, "SHOPMAN_ADMIN_LOGIN_IP_LIMIT", 20))),
                    (address + "\0" + username, int(getattr(settings, "SHOPMAN_ADMIN_LOGIN_ACCOUNT_IP_LIMIT", 5)))]

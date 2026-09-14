@@ -287,6 +287,9 @@ INSTALLED_APPS = [
     *SHOPMAN_INSTANCE_APPS,
 ]
 
+# Explicit deployment contract; no proxy trust is inferred from a header.
+SHOPMAN_ADMIN_LOGIN_IP_SOURCE = os.environ.get("SHOPMAN_ADMIN_LOGIN_IP_SOURCE", "").strip().lower()
+
 MIDDLEWARE = [
     "shopman.shop.middleware.AppPlatformHealthCheckHostMiddleware",
     "shopman.shop.middleware.BackupSheetDomainMiddleware",

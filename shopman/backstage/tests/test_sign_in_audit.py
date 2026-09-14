@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from shopman.doorman.models import PinCredential
 
@@ -111,6 +111,7 @@ class SignInAuditTests(TestCase):
         self.assertEqual(evento.method, SignInMethod.PASSWORD)
         self.assertEqual(evento.outcome, SignInOutcome.SUCCESS)
 
+    @override_settings(SHOPMAN_ADMIN_LOGIN_IP_SOURCE="direct")
     def test_login_no_admin_django_tambem_entra_na_trilha(self):
         """A porta que NÃO foi instrumentada à mão.
 

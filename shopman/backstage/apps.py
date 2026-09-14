@@ -12,9 +12,11 @@ class BackstageConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self) -> None:
+        # Register the deploy check before accepting a proxy IP trust contract.
         from django.db.models.signals import pre_save
         from shopman.orderman.models import Fulfillment, Order
 
+        from shopman.backstage.services import admin_login_ip  # noqa: F401
         from shopman.backstage.services.delivery_devices import guard_dispatch
 
         for model in (Order, Fulfillment):
