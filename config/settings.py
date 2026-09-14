@@ -288,6 +288,10 @@ INSTALLED_APPS = [
 ]
 
 # Explicit deployment contract; no proxy trust is inferred from a header.
+# Temporary staging instrumentation; delete after the ingress experiment.
+SHOPMAN_ADMIN_IP_PROBE_TOKEN = os.environ.get("SHOPMAN_ADMIN_IP_PROBE_TOKEN", "")
+SHOPMAN_ADMIN_IP_PROBE_UNTIL = os.environ.get("SHOPMAN_ADMIN_IP_PROBE_UNTIL", "0")
+
 SHOPMAN_ADMIN_LOGIN_IP_SOURCE = os.environ.get("SHOPMAN_ADMIN_LOGIN_IP_SOURCE", "").strip().lower()
 
 MIDDLEWARE = [

@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 
 class AdminLoginRateLimitMiddleware(MiddlewareMixin):
     def process_view(self, request, view_func, view_args, view_kwargs):
+        # Temporary staging probe: a separate, removable review patch.
+        from shopman.backstage.services.admin_ip_probe import observe_admin_ip_probe
+
+        observe_admin_ip_probe(request)
         if request.method != "POST" or request.path != reverse("admin:login"):
             return None
         window = max(1, int(getattr(settings, "SHOPMAN_ADMIN_LOGIN_WINDOW_SECONDS", 300)))
