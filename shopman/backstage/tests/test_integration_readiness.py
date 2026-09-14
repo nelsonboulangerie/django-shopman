@@ -70,7 +70,8 @@ def test_focus_nfe_readiness_uses_shop_document_as_emitente_fallback():
 
 def test_efi_and_stripe_staging_readiness_accepts_sandbox_adapters(tmp_path):
     certificate = tmp_path / "efi.pem"
-    certificate.write_text("dummy cert")
+    from shopman.backstage.tests.certificate_fixtures import synthetic_certificate
+    certificate.write_bytes(synthetic_certificate())
 
     with override_settings(
         SHOPMAN_PAYMENT_ADAPTERS={
@@ -119,7 +120,8 @@ def test_purchase_nfe_readiness_reports_missing_reader_and_certificate():
 
 def test_purchase_nfe_readiness_accepts_xml_reader_configuration(tmp_path):
     certificate = tmp_path / "nelson-a1.pfx"
-    certificate.write_text("dummy pfx")
+    from shopman.backstage.tests.certificate_fixtures import synthetic_certificate
+    certificate.write_bytes(synthetic_certificate(pfx=True))
 
     with override_settings(
         SHOPMAN_PURCHASE_INVOICE_READER="shopman.shop.adapters.purchase_invoice_nfe.read_invoice",
