@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -25,6 +26,7 @@ def certificate_issue(*, path: str = "", pfx_base64: str = "", password: str = "
         if now >= certificate.not_valid_after_utc:
             return "expired"
     except Exception:
+        logging.getLogger(__name__).warning("certificate_readiness_invalid")
         # Includes unavailable parser, unreadable files, bad password and malformed data.
         return "invalid"
     return ""
