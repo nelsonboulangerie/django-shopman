@@ -2,7 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
 import pytest
-from django.db import connections
+from django.db import connection, connections
 from django.test import Client
 from django.urls import reverse
 from shopman.orderman.models import Order
@@ -40,6 +40,7 @@ def test_stale_save_does_not_overwrite_other_device(client, tab):
     assert current.json()["revision"] == first.json()["revision"]
 
 
+@pytest.mark.skipif(connection.vendor != "postgresql", reason="Requires PostgreSQL row locks across connections")
 def test_two_connections_cannot_save_same_revision(tab):
     counter, session, body = tab
     clients = [Client(), Client()]
