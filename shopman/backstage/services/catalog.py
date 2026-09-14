@@ -16,6 +16,7 @@ Superfície = Channel; célula = ListingItem da listing de mesmo ref.
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 from math import isfinite
 
@@ -214,9 +215,35 @@ def bulk_set(
         # Feed: bulk só pausa/ativa (is_sellable). Sem preço/publicação.
         if is_sellable is None:
             raise CatalogError("Feed aceita apenas pausar/ativar (is_sellable).")
+        from django.contrib.admin.models import CHANGE, LogEntry
+        from django.contrib.auth import get_user_model
+        from django.utils import timezone
+
         from shopman.backstage.services import feeds as display_service
 
-        return display_service.set_items_paused(surface_ref, skus, paused=not is_sellable)
+        with transaction.atomic():
+            channel = Channel.objects.select_for_update().get(ref=surface_ref)
+            before = sorted(((channel.config or {}).get("display") or {}).get("paused_skus") or [])
+            count = display_service.set_items_paused(surface_ref, skus, paused=not is_sellable)
+            if count:
+                channel.refresh_from_db()
+                after = sorted(((channel.config or {}).get("display") or {}).get("paused_skus") or [])
+                audit_user = get_user_model().objects.filter(username=actor).first() if actor else None
+                if audit_user:
+                    LogEntry.objects.log_actions(user_id=audit_user.pk, queryset=[channel], action_flag=CHANGE,
+                        change_message=json.dumps({"action": "catalog.bulk_set", "surface_ref": surface_ref,
+                            "skus": sorted(skus), "before": before, "after": after}))
+                display = dict((channel.config or {}).get("display") or {})
+                provenance = dict(display.get("pause_audit") or {})
+                for sku in set(before) ^ set(after):
+                    if sku in after:
+                        provenance[sku] = f"Pausado por {actor or 'sistema'} em {timezone.localtime():%d/%m/%Y %H:%M}"
+                    else:
+                        provenance.pop(sku, None)
+                display["pause_audit"] = provenance
+                channel.config = {**(channel.config or {}), "display": display}
+                channel.save(update_fields=["config"])
+            return count
     updates: dict[str, bool] = {}
     if is_published is not None:
         updates["is_published"] = is_published
@@ -241,13 +268,23 @@ def bulk_set(
         ).order_by("listing_id", "product_id", "min_qty", "pk"))
         if len(items) > MAX_BULK_PRICE_CELLS:
             raise CatalogError(f"Selecione no máximo {MAX_BULK_PRICE_CELLS} células somando os canais e faixas.")
+        from django.contrib.auth import get_user_model
+        from simple_history.utils import bulk_update_with_history
+
+        audit_user = get_user_model().objects.filter(username=actor).first() if actor else None
+        # Capture the locked before-state even when a previous bulk update did
+        # not produce history. Each row retains SKU, listing and quantity tier.
+        audit_reason = f"catalog.bulk_set:{actor or 'system'}"[:90]
+        bulk_update_with_history(items, ListingItem, [], default_user=audit_user,
+                                 default_change_reason=f"{audit_reason}:before")
         for item in items:
             item.product = by_product[item.product_id]
             item.listing = by_listing[item.listing_id]
             for field, value in updates.items():
                 setattr(item, field, value)
             validate_listing_item_publication(item)
-        count = ListingItem.objects.filter(pk__in=[item.pk for item in items]).update(**updates)
+        count = bulk_update_with_history(items, ListingItem, list(updates), default_user=audit_user,
+                                         default_change_reason=f"{audit_reason}:after")
         from shopman.offerman.conf import get_projection_backend
 
         from shopman.shop.handlers.catalog_projection import enqueue_project
@@ -1296,7 +1333,9 @@ def apply_bulk_publication_intention(data: dict, *, actor_id: int) -> dict:
     targets = sorted({cell["surface_ref"] for cell in preview["cells"]})
     for ref in targets:
         skus = sorted({cell["sku"] for cell in preview["cells"] if cell["surface_ref"] == ref})
-        bulk_set(skus, ref, **patch)
+        from django.contrib.auth import get_user_model
+        actor = get_user_model().objects.get(pk=actor_id).get_username()
+        bulk_set(skus, ref, actor=actor, **patch)
     changed = sum(cell["before"] != cell["after"] for cell in preview["cells"])
     return {"ok": True, "outcome": "applied", "count": changed, "cells": preview["cells"], "skipped": preview["skipped"]}
 

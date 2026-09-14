@@ -168,3 +168,57 @@ def test_other_person_cannot_apply_preview_or_read_receipt(client, operator, cat
     client.force_login(other)
     assert client.get(URL, {"idempotency_key": key}).status_code == 202
     assert client.post(URL, intent(data, seen), content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4())).status_code == 409
+
+
+def test_bulk_history_retains_actual_before_after_actor_and_tiers(client, operator, catalog):
+    first = ListingItem.objects.get(product__sku="PAO", listing__ref="web")
+    tier = ListingItem.objects.create(product=first.product, listing=first.listing, min_qty=10, price_q=400)
+    selected = list(ListingItem.objects.filter(product__sku="PAO"))
+    data, seen = preview(client, operator)
+    key = str(uuid4())
+    response = client.post(URL, intent(data, seen), content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+    assert response.status_code == 200
+    for item in selected:
+        history = list(item.history.filter(history_change_reason__startswith="catalog.bulk_set:").order_by("history_id"))
+        assert len(history) == 2
+        assert [row.is_sellable for row in history] == [True, False]
+        assert all(row.history_user_id == operator.pk for row in history)
+        assert all(row.listing_id == item.listing_id and row.min_qty == item.min_qty for row in history)
+    from shopman.backstage.projections.catalog import build_catalog_matrix
+    row = next(row for row in build_catalog_matrix(user=operator).rows if row.sku == "PAO")
+    assert all(f"Pausado por {operator.username} em " in cell.pause_audit for cell in row.cells if cell.in_listing)
+    before_count = tier.history.count()
+    assert client.post(URL, intent(data, seen), content_type="application/json", HTTP_IDEMPOTENCY_KEY=key).status_code == 200
+    assert tier.history.count() == before_count
+
+
+def test_failed_bulk_does_not_leave_audit_or_mutation(operator, catalog, monkeypatch):
+    from shopman.backstage.services import catalog as service
+
+    item = ListingItem.objects.get(product__sku="PAO", listing__ref="web")
+    before = item.history.count()
+    monkeypatch.setattr("shopman.shop.services.fiscal_catalog.validate_listing_item_publication",
+                        lambda _item: (_ for _ in ()).throw(RuntimeError("publication denied")))
+    with pytest.raises(RuntimeError, match="publication denied"):
+        service.bulk_set(["PAO"], "web", is_sellable=False, actor=operator.username)
+    item.refresh_from_db()
+    assert item.is_sellable
+    assert item.history.count() == before
+
+
+def test_feed_bulk_pause_keeps_actor_and_provenance(operator, catalog):
+    import json
+
+    from django.contrib.admin.models import LogEntry
+
+    from shopman.backstage.services import catalog as service
+    from shopman.shop.tests._display import display_channel
+
+    channel = display_channel("audit-feed", "Audit", collections=["doces"])
+    assert service.bulk_set(["BOLO"], channel.ref, is_sellable=False, actor=operator.username) == 1
+    entry = LogEntry.objects.get(user_id=operator.pk, object_id=str(channel.pk))
+    assert json.loads(entry.change_message)["after"] == ["BOLO"]
+    channel.refresh_from_db()
+    assert operator.username in channel.config["display"]["pause_audit"]["BOLO"]
+    assert service.bulk_set(["BOLO"], channel.ref, is_sellable=False, actor=operator.username) == 0
+    assert LogEntry.objects.filter(user_id=operator.pk, object_id=str(channel.pk)).count() == 1
