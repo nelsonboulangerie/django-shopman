@@ -39,6 +39,8 @@ class _FakeResponse:
 @pytest.fixture(autouse=True)
 def _api_key(settings):
     settings.GOOGLE_MAPS_API_KEY = "test-key"
+    settings.GOOGLE_MAPS_BROWSER_API_KEY = ""
+    settings.GOOGLE_MAPS_SERVER_API_KEY = ""
 
 
 @pytest.fixture(autouse=True)
@@ -53,6 +55,31 @@ def _urlopen_patch(payload: dict):
         "shopman.shop.services.geocoding.urllib.request.urlopen",
         return_value=_FakeResponse(payload),
     )
+
+
+@pytest.mark.django_db
+def test_reverse_geocode_uses_server_key_not_browser_key(settings) -> None:
+    settings.GOOGLE_MAPS_API_KEY = "legacy-key"
+    settings.GOOGLE_MAPS_BROWSER_API_KEY = "browser-key"
+    settings.GOOGLE_MAPS_SERVER_API_KEY = "server-key"
+    payload = {
+        "status": "OK",
+        "results": [
+            {
+                "formatted_address": "Rua Teste, 1",
+                "address_components": [],
+                "geometry": {"location": {"lat": -23.31, "lng": -51.16}},
+            }
+        ],
+    }
+
+    with _urlopen_patch(payload) as mocked:
+        reverse_geocode(-23.31, -51.16)
+
+    request = mocked.call_args.args[0]
+    assert "key=server-key" in request.full_url
+    assert "browser-key" not in request.full_url
+    assert "legacy-key" not in request.full_url
 
 
 @pytest.mark.django_db

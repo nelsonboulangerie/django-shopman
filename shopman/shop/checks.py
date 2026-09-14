@@ -24,6 +24,8 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E019  Configuração de produção da loja é inválida
   SHOPMAN_E020  WhatsApp Marketing ativo sem isolamento ManyChat comprovado
   SHOPMAN_E021  Allowlist de mídia Marketing contém host inseguro
+  SHOPMAN_E022  Provedor de produção aponta para ambiente ou credencial de teste
+  SHOPMAN_E023  Google Maps exige credenciais de browser e servidor separadas em produção
 
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode
@@ -48,6 +50,7 @@ Warnings (non-blocking, logged at startup):
 
 from __future__ import annotations
 
+import logging
 import os
 from urllib.parse import urlparse
 
@@ -809,7 +812,7 @@ def check_listing_channel_parity(app_configs, **kwargs):
                 )
             )
     except (OperationalError, ProgrammingError, ImportError):
-        pass  # tables not ready or offerman not installed
+        logging.getLogger(__name__).warning("listing_channel_check_unavailable_before_schema_or_optional_app_ready")
 
     return warnings
 
@@ -1138,4 +1141,39 @@ def check_production_configuration(app_configs, **kwargs):
                 id="SHOPMAN_E019",
             )
         ]
+    return []
+
+
+@register(deploy=True)
+def check_production_provider_environments(app_configs, **kwargs):
+    """The release job already calls check --deploy; reuse canonical provider facts."""
+    if not is_production():
+        return []
+    from shopman.shop.adapters.provider_readiness import build_provider_readiness
+
+    try:
+        facts = build_provider_readiness(mode="runtime")
+    except Exception:
+        logging.getLogger(__name__).warning("production_provider_readiness_unavailable")
+        return [Error("Não foi possível verificar os ambientes dos provedores.",
+                      hint="Execute production-readiness no ambiente alvo e corrija a leitura antes do deploy.",
+                      id="SHOPMAN_E022")]
+    return [Error(
+        f"Provedor {fact.label} incompatível com produção.",
+        hint="Corrija os requisitos de ambiente: " + ", ".join(fact.missing),
+        id="SHOPMAN_E022",
+    ) for fact in facts if fact.status == "error"]
+
+
+@register(deploy=True)
+def check_google_maps_credential_boundary(app_configs, **kwargs):
+    if not is_production():
+        return []
+    browser = str(getattr(settings, "GOOGLE_MAPS_BROWSER_API_KEY", "") or "").strip()
+    server = str(getattr(settings, "GOOGLE_MAPS_SERVER_API_KEY", "") or "").strip()
+    legacy = str(getattr(settings, "GOOGLE_MAPS_API_KEY", "") or "").strip()
+    if legacy or not browser or not server or browser == server:
+        return [Error("Google Maps exige credenciais separadas e completas em produção.",
+                      hint="Remova GOOGLE_MAPS_API_KEY e provisione chaves distintas para browser (referrers) e servidor (Geocoding).",
+                      id="SHOPMAN_E023")]
     return []

@@ -112,8 +112,17 @@ jobs:
       - name: Constraints cover the deploy image
         run: make test-constraints
 
+      - name: Production provider and Maps guard contracts
+        run: >-
+          .venv/bin/python -m pytest -q
+          shopman/shop/tests/test_production_provider_deploy_gate.py
+          shopman/shop/tests/test_google_maps_credentials.py
+
       - name: Deploy checks
         env:
+          # This fixture has no live provider credentials. Production rejection
+          # is exercised explicitly by the guard contracts immediately above.
+          SHOPMAN_ENVIRONMENT: "staging"
           DJANGO_DEBUG: "false"
           DJANGO_SECRET_KEY: ci-runtime-gate-nonprod-aB3dE5gH7jK9mN2pQ4rS6tU8vW0xY1zC20260505
           DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
@@ -126,6 +135,10 @@ jobs:
           IFOOD_WEBHOOK_TOKEN: ci-ifood-webhook-token
           MANYCHAT_API_TOKEN: ci-manychat-api-token
           MANYCHAT_WEBHOOK_SECRET: ci-manychat-webhook-secret
+          # Distinct synthetic keys exercise the production contract without network calls.
+          GOOGLE_MAPS_API_KEY: ""
+          GOOGLE_MAPS_BROWSER_API_KEY: ci-maps-browser-key
+          GOOGLE_MAPS_SERVER_API_KEY: ci-maps-server-key
           # CI has no real payment credentials. Use the mock adapters with the
           # explicit staging allowance the deploy check provides for exactly this
           # case — it downgrades the payment-adapter error to W006 (non-blocking)

@@ -61,6 +61,19 @@ DJANGO_SECRET_KEY=<strong random secret>
 DOORMAN_ACCESS_LINK_API_KEY=<strong random server-to-server key>
 ```
 
+### Google Maps: duas credenciais, dois perímetros
+
+Nunca reutilize uma chave entre navegador e servidor:
+
+```env
+GOOGLE_MAPS_BROWSER_API_KEY=<restrita por referer e às APIs Maps JavaScript/Places>
+GOOGLE_MAPS_SERVER_API_KEY=<restrita à Geocoding API e, se possível, ao IP de saída>
+```
+
+`GOOGLE_MAPS_API_KEY` existe apenas como fallback de migração. Depois de
+configurar e validar as duas novas variáveis, remova a antiga do ambiente. A
+chave de servidor não pode aparecer em `home.public_config`, HTML ou bundle.
+
 Use `python - <<'PY'` localmente para gerar valores quando o provedor nao gerar:
 
 ```bash
@@ -287,3 +300,6 @@ Resultado esperado antes de trafego real: nenhum `failed` e nenhum
 `blocked_by_implementation`, o contrato ainda nao esta provado para pedidos
 conversacionais inbound; use ManyChat apenas para OTP/access-link ate esse
 smoke ser implementado.
+
+
+Em produção, o fallback de `GOOGLE_MAPS_API_KEY` é desabilitado e o check `SHOPMAN_E023` recusa a chave compartilhada. As chaves explícitas de browser e servidor também não podem ser iguais. Restrinja e rotacione as credenciais no Google Cloud antes do cutover; esta guarda local não verifica as restrições cadastradas no provedor.
