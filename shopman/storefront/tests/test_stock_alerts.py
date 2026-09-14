@@ -528,21 +528,12 @@ def test_session_management_link_cannot_be_recovered_by_ref_or_wrong_owner(clien
     assert other_device.get(f"/api/v1/availability/{product.sku}/notify/").status_code == 404
 
 
-def test_endpoint_repairs_legacy_mobile_and_persists_pending_session_marker(client):
+def test_endpoint_rejects_ambiguous_mobile_without_creating_subscription(client):
     p = _publish(sku="SKU-LEGACY-PHONE")
     resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {"phone": "(43) 9840-4900"})
-    assert resp.status_code == 200
-    sub = StockAlertSubscription.objects.get(sku=p.sku)
-    assert sub.contact_phone == "+5543998404900"
-    assert client.session.get("stock_alert_subscriptions") == [
-        {
-            "ref": str(sub.ref),
-            "sku": p.sku,
-            "alert_type": StockAlertSubscription.AlertType.STOCK_BACK,
-            "contact_phone": "+5543998404900",
-        }
-    ]
-    assert "stock_alert_skus" not in client.session
+    assert resp.status_code == 400
+    assert not StockAlertSubscription.objects.filter(sku=p.sku).exists()
+    assert not client.session.get("stock_alert_subscriptions")
 
 
 def test_endpoint_requires_phone_when_anonymous(client):

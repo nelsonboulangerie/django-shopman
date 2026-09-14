@@ -187,6 +187,13 @@ test.describe("painel", () => {
 
   test("SSE desconectado fica explícito na caixa de alertas", async ({ page }) => {
     await openScenario(page, "notifications-dedupe", "/", V1440);
+    // O painel e as opções de entrega chegam por requisições independentes.
+    // Fotografar depois de só uma delas tornava o baseline dependente da corrida
+    // entre as respostas no runner, ocultando temporariamente as plataformas.
+    await waitForFaithfulPreview(page);
+    await expect(
+      page.getByRole("checkbox", { name: "Instagram" }),
+    ).toBeVisible();
     await page.getByRole("button", { name: /^Alertas:/ }).click();
     await expect(page.getByRole("dialog", { name: "Alertas pessoais" })).toContainText("reconectando");
     await expectStableScreenshot(page, "panel__sse-disconnected", V1440);

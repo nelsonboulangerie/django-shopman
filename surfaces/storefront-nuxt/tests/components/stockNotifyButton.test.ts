@@ -101,7 +101,7 @@ describe('StockNotifyButton', () => {
     expect(wrapper.get('button').attributes('aria-label')).toBe('Ativar avisos recorrentes quando Pão voltar')
   })
 
-  it('anonymous submit uses the shop default DDD and repairs legacy mobile input', async () => {
+  it('anonymous submit uses the shop default DDD for a complete mobile number', async () => {
     await setAuthenticated(false)
     await setDefaultDdd('43')
     fetchMock.mockResolvedValueOnce({ ok: true }).mockRejectedValueOnce(new Error('not owned'))
@@ -115,7 +115,7 @@ describe('StockNotifyButton', () => {
     const form = document.body.querySelector<HTMLFormElement>('form')
     expect(input).not.toBeNull()
     expect(form).not.toBeNull()
-    await new DOMWrapper(input!).setValue('9840-4900')
+    await new DOMWrapper(input!).setValue('99840-4900')
     await new DOMWrapper(form!).trigger('submit')
     await new Promise(r => setTimeout(r, 0))
 
@@ -131,6 +131,25 @@ describe('StockNotifyButton', () => {
     await nextTick()
     expect(wrapper.text()).toContain('Conferir aviso')
     expect(wrapper.get('a').attributes('href')).toBe('/entrar?next=%2Fconta%2Fpreferencias%23avisos-produtos')
+  })
+
+  it.each(['9840-4900', '(43) 9840-4900'])('refuses ambiguous mobile %s without sending a request', async (phone) => {
+    await setAuthenticated(false)
+    await setDefaultDdd('43')
+    const wrapper = await mountSuspended(StockNotifyButton, {
+      props: { sku: 'PAO', name: 'Pão', subscribed: false }
+    })
+    await wrapper.get('button').trigger('click')
+    await nextTick()
+    const input = document.body.querySelector<HTMLInputElement>('input[aria-label="Telefone para aviso"]')
+    const form = document.body.querySelector<HTMLFormElement>('form')
+    await new DOMWrapper(input!).setValue(phone)
+    await new DOMWrapper(form!).trigger('submit')
+    await nextTick()
+    expect(fetchMock).not.toHaveBeenCalled()
+    const sheetText = document.body.querySelector<HTMLElement>('[data-stock-notify-sheet]')?.textContent ?? ''
+    expect(sheetText).toContain('Informe um telefone com DDD.')
+    expect(sheetText).not.toContain('+55 (43) 99840-4900')
   })
 
   it('anonymous first subscribe recovers the capability bound to its session', async () => {
@@ -157,8 +176,7 @@ describe('StockNotifyButton', () => {
     expect(wrapper.get('a').attributes('href')).toBe('/gerenciar-aviso#owned-capability')
   })
 
-  // O reparo do normalizador (DDD da loja + nono dígito) tem que ficar VISÍVEL
-  // antes do envio: quem digitou às cegas assinou com o telefone de outra pessoa.
+  // O DDD da loja precisa ficar visível antes do envio.
   it('anonymous sheet shows back the phone the shop will actually message', async () => {
     await setAuthenticated(false)
     await setDefaultDdd('43')
@@ -170,7 +188,7 @@ describe('StockNotifyButton', () => {
     await nextTick()
     const input = document.body.querySelector<HTMLInputElement>('input[aria-label="Telefone para aviso"]')
     expect(input).not.toBeNull()
-    await new DOMWrapper(input!).setValue('9840-4900')
+    await new DOMWrapper(input!).setValue('99840-4900')
     await nextTick()
 
     const sheetText = document.body.querySelector<HTMLElement>('[data-stock-notify-sheet]')?.textContent ?? ''
