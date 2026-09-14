@@ -60,16 +60,25 @@ describe("usePosSale — reenviar o link de pagamento", () => {
     return h;
   }
 
-  it("posta em /pos/orders/{ref}/resend-payment-link/ e tosta sucesso", async () => {
+  it("posta ação no endpoint genérico e preserva a evidência de entrega", async () => {
     const actionCall = saleRouter(linkPayment);
     const h = await closedLinkSale(actionCall);
+    actionCall.mockImplementationOnce(async () => ({
+      payment_delivery: {
+        status: "accepted",
+        notice: "Envio aceito pelo WhatsApp. Leitura não confirmada.",
+        channel: "whatsapp",
+      },
+    }));
 
     expect(await h.sale.resendPaymentLink()).toBe(true);
 
-    const resend = actionCall.mock.calls.filter((c) => String(c[0]).includes("/resend-payment-link/"));
+    const resend = actionCall.mock.calls.filter((c) => String(c[0]).includes("/send-payment-notice/"));
     expect(resend).toHaveLength(1);
-    expect(String(resend[0]![0])).toBe("/api/v1/backstage/pos/orders/PED-1/resend-payment-link/");
-    expect(vi.mocked(toast.success)).toHaveBeenCalledWith("Reenvio do link solicitado.");
+    expect(String(resend[0]![0])).toBe("/api/v1/backstage/pos/orders/PED-1/send-payment-notice/");
+    expect(resend[0]![1]).toEqual({ body: { action: "resend" } });
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith("Envio aceito pelo WhatsApp. Leitura não confirmada.");
+    expect(h.sale.result.value?.paymentDelivery?.channel).toBe("whatsapp");
     expect(h.sale.resendingLink.value).toBe(false);
     h.handles.dispose();
   });
@@ -99,7 +108,7 @@ describe("usePosSale — reenviar o link de pagamento", () => {
     expect(await h.sale.resendPaymentLink()).toBe(false);
     release();
     expect(await first).toBe(true);
-    expect(actionCall.mock.calls.filter((c) => String(c[0]).includes("/resend-payment-link/"))).toHaveLength(1);
+    expect(actionCall.mock.calls.filter((c) => String(c[0]).includes("/send-payment-notice/"))).toHaveLength(1);
 
     h.sale.dismissResult();
     expect(await h.sale.resendPaymentLink()).toBe(false);

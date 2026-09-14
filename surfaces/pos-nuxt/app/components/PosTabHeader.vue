@@ -57,7 +57,7 @@ const emit = defineEmits<{
   clear: [];
   clearCustomer: [];
   lookupCustomer: [];
-  resolveCustomer: [];
+  resolveCustomer: [done: (saved: boolean) => void];
   decisionConfirm: [ownerRef?: string];
   decisionCancel: [];
   decisionMerge: [];
@@ -275,7 +275,7 @@ function runClear() {
       @search="$emit('search', $event)"
       @select-result="$emit('selectResult', $event)"
       @clear="$emit('clearCustomer')"
-      @resolve-customer="$emit('resolveCustomer')"
+      @resolve-customer="$emit('resolveCustomer', $event)"
       @decision-confirm="$emit('decisionConfirm', $event)"
       @decision-cancel="$emit('decisionCancel')"
       @decision-merge="$emit('decisionMerge')"

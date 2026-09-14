@@ -224,6 +224,17 @@ describe("PosPaymentWorkspace — gate do Validar", () => {
     expect(wrapper.emitted("submit")).toHaveLength(1);
   });
 
+  it("salvamento do cliente em voo trava clique e atalho de Validar", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        paymentTenders: [tender], paymentCovered: true, paymentRemainingQ: 0, lookupBusy: true,
+      }),
+    });
+    expect(cta(wrapper)!.attributes("disabled")).toBeDefined();
+    await cta(wrapper)!.trigger("click");
+    expect(wrapper.emitted("submit")).toBeUndefined();
+  });
+
   it("review sem total (stale) mostra 'Atualizando…' e mantém desabilitado", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: props({ review: null, paymentCovered: true }),

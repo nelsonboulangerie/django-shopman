@@ -50,6 +50,9 @@ class POSPaymentStatusTests(TestCase):
         # O contrato que o POS consome para saber se o PIX confirmou.
         for key in ("is_paid", "is_cancelled", "is_terminal"):
             self.assertIn(key, body)
+        self.assertEqual(body["payment_delivery"]["template"], "payment_requested")
+        self.assertEqual(body["payment_delivery"]["status"], "not_sent")
+        self.assertEqual(body["payment_delivery"]["reason_code"], "payment_pix_unavailable")
         self.assertFalse(body["is_paid"])  # pedido novo, PIX pendente
 
     def test_requires_operate_pos_permission(self):

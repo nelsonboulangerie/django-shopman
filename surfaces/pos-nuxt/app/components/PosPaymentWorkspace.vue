@@ -214,7 +214,7 @@ const emit = defineEmits<{
   back: [];
   submit: [];
   lookupCustomer: [];
-  resolveCustomer: [];
+  resolveCustomer: [done: (saved: boolean) => void];
   decisionConfirm: [ownerRef?: string];
   decisionCancel: [];
   decisionMerge: [];
@@ -881,7 +881,9 @@ const notices = computed<CheckoutNotice[]>(() => {
 // O botão está travado sempre que HÁ motivo — não há segunda lista de regras.
 // Era assim que o excedente em cartão escapava: ele avisava, e deixava passar.
 const ctaDisabled = computed(() => {
-  if (!props.items.length || props.loading) return true;
+  // Salvar/editar cliente é parte do fechamento: enquanto o resolve está em
+  // voo, nem o clique nem o atalho Enter podem concluir com o cadastro antigo.
+  if (!props.items.length || props.loading || props.lookupBusy) return true;
   // Com a revisão falhada o botão VOLTA a clicar: ele é o retry.
   if (props.reviewFailed) return false;
   if (needsReview.value) return true;
@@ -1789,7 +1791,7 @@ defineExpose({
     @search="$emit('search', $event)"
     @select-result="onSelectResult"
     @clear="$emit('clearCustomer')"
-    @resolve-customer="$emit('resolveCustomer')"
+    @resolve-customer="$emit('resolveCustomer', $event)"
     @decision-confirm="$emit('decisionConfirm', $event)"
     @decision-cancel="$emit('decisionCancel')"
     @decision-merge="$emit('decisionMerge')"

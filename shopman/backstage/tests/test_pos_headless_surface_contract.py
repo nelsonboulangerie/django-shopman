@@ -323,6 +323,8 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(closed.status_code, 200)
         body = closed.json()
         self.assertTrue(body["ok"])
+        self.assertIn("payment_delivery", body)
+        self.assertEqual(body["payment_delivery"]["template"], "")
         order = Order.objects.get(ref=body["order_ref"])
         self.assertEqual(order.channel_ref, "pdv")
         self.assertEqual(order.total_q, 2600)
@@ -625,6 +627,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
                 }
             ],
             "customer_name": "Cliente PIX",
+            "customer_phone": "(43) 99999-0001",
             "fulfillment_type": "pickup",
             "payment_method": "pix",
             "payment_collection": "terminal",
@@ -645,9 +648,19 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertTrue(body["payment"]["intent_ref"].startswith("PAY-"))
         self.assertIn("000201", body["payment"]["copy_paste"])
         self.assertTrue(body["payment"]["qr_code"].startswith("data:image/png;base64,"))
+        self.assertEqual(body["payment_delivery"]["template"], "payment_requested")
+        self.assertEqual(body["payment_delivery"]["status"], "queued")
         order = Order.objects.get(ref=body["order_ref"])
         self.assertEqual(order.data["payment"]["method"], "pix")
         self.assertEqual(order.data["payment"]["intent_ref"], body["payment"]["intent_ref"])
+        self.assertEqual(
+            Directive.objects.filter(
+                topic="notification.send",
+                payload__order_ref=order.ref,
+                payload__template="payment_requested",
+            ).count(),
+            1,
+        )
 
     def test_api_headless_pos_review_requires_open_cash_shift(self) -> None:
         self.shift.delete()

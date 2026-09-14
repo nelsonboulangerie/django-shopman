@@ -173,7 +173,7 @@ const {
   submitSale,
   dismissResult,
   resendingLink,
-  resendPaymentLink,
+  sendPaymentNotice,
   onExternalSaleCancelled,
   clearCurrentTab,
   openMoveDialog,
@@ -835,7 +835,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           @clear="clearCurrentTab"
           @clear-customer="clearCustomer"
           @lookup-customer="lookupCustomer"
-          @resolve-customer="resolveCustomer"
+          @resolve-customer="(done) => { void resolveCustomer().then(done) }"
           @decision-confirm="confirmCustomerDecision"
           @decision-cancel="cancelCustomerDecision"
           @decision-merge="mergeConflictCustomers"
@@ -904,7 +904,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           @print-receipt="printReceipt"
           @print-danfe="printDanfe"
           @cancel-sale="openCancelSaleDialog"
-          @resend-link="resendPaymentLink"
+          @payment-notice="sendPaymentNotice"
         />
       </div>
 
@@ -1003,7 +1003,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         @tender-add="tenderAdd"
         @tender-exact="tenderExact"
         @lookup-customer="lookupCustomer"
-        @resolve-customer="resolveCustomer"
+        @resolve-customer="(done) => { void resolveCustomer().then(done) }"
         @decision-confirm="confirmCustomerDecision"
         @decision-cancel="cancelCustomerDecision"
         @decision-merge="mergeConflictCustomers"
