@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 
+from django.db import transaction
 from shopman.doorman.models import SubjectType
 
 logger = logging.getLogger("shopman.backstage.station_trust")
@@ -72,18 +73,53 @@ def station_ref(request) -> str:
     Só devolve uma identidade inequívoca. Dois vínculos válidos exigem reparar
     o provisionamento; a ordem dos cookies nunca escolhe a gaveta.
     """
+    refs = {
+        device.subject_id
+        for nome, device in _present_station_bindings(request)
+        if nome == station_cookie_name(device.subject_id)
+    }
+    return next(iter(refs)) if len(refs) == 1 else ""
+
+
+def _station_cookie_names(request) -> list[str]:
+    """Cookies que se apresentam como estação, válidos ou não.
+
+    A resposta de reparo precisa apagar também lixo expirado/corrompido. O nome
+    sozinho nunca autentica nada; ele serve apenas para limitar a limpeza ao
+    namespace de estação, sem tocar em cliente ou quadro.
+    """
     from shopman.doorman.conf import doorman_settings
-    from shopman.doorman.services.device_trust import DeviceTrustService
 
     base = doorman_settings.DEVICE_TRUST_STATION_COOKIE_NAME
-    refs = set()
-    for nome in request.COOKIES:
-        if not nome.startswith(f"{base}_"):
+    return sorted(nome for nome in request.COOKIES if nome.startswith(f"{base}_"))
+
+
+def _present_station_bindings(request):
+    """Vínculos válidos cujos tokens ESTE navegador apresentou.
+
+    O ``subject_id`` vem da linha autenticada no banco, nunca do sufixo do cookie.
+    Isso evita escolher terminal por ordem de cookies e também lida corretamente
+    com refs sanitizados no nome (espaço/acento). Tokens de outros tipos são
+    ignorados: um cookie renomeado não transforma cliente ou quadro em estação.
+    """
+    from shopman.doorman.conf import doorman_settings
+    from shopman.doorman.models import TrustedDevice
+
+    if not doorman_settings.DEVICE_TRUST_ENABLED:
+        return []
+
+    verified = {}
+    bindings = []
+    for nome in _station_cookie_names(request):
+        token = request.COOKIES.get(nome)
+        if not token:
             continue
-        ref = nome[len(base) + 1:]
-        if DeviceTrustService.check(request, SubjectType.STATION, ref):
-            refs.add(ref)
-    return next(iter(refs)) if len(refs) == 1 else ""
+        if token not in verified:
+            verified[token] = TrustedDevice.verify_token(token)
+        device = verified[token]
+        if device is not None and device.subject_type == SubjectType.STATION:
+            bindings.append((nome, device))
+    return bindings
 
 
 def is_trusted_station(request) -> bool:
@@ -157,6 +193,7 @@ def station_operator(request):
     return conta
 
 
+@transaction.atomic
 def provision(request, response, terminal_ref: str):
     """Torna ESTE dispositivo uma estação confiável para ``terminal_ref``.
 
@@ -167,14 +204,60 @@ def provision(request, response, terminal_ref: str):
 
     Idempotente: não grava uma segunda linha de ``TrustedDevice`` se a confiança
     daquele terminal já existe naquele navegador.
+
+    Também é a reparação explícita do caso legado em que o navegador acumulou
+    dois vínculos. Só os tokens apresentados por ESTE request são revogados; os
+    demais dispositivos do mesmo terminal continuam ativos. A escolha vem do
+    ``terminal_ref`` validado pela view autorizada — nunca da ordem dos cookies.
     """
+    from shopman.doorman.conf import doorman_settings
+    from shopman.doorman.models import TrustedDevice
     from shopman.doorman.services.device_trust import DeviceTrustService
 
     ref = str(terminal_ref or "").strip()
     if not ref:
         raise ValueError("estação precisa de um terminal")
-    if DeviceTrustService.check(request, SubjectType.STATION, ref):
+
+    if not doorman_settings.DEVICE_TRUST_ENABLED:
         return response
+
+    canonical_name = station_cookie_name(ref)
+    bindings = _present_station_bindings(request)
+    kept = next(
+        (
+            device
+            for nome, device in bindings
+            if nome == canonical_name and device.subject_id == ref
+        ),
+        None,
+    )
+
+    presented_ids = {device.pk for _nome, device in bindings}
+    if presented_ids:
+        # O lock faz revogação + criação/retensão uma única troca observável no
+        # banco. O filtro pelos PKs apresentados é o limite de escopo do aparelho.
+        locked = {
+            device.pk: device
+            for device in TrustedDevice.objects.select_for_update().filter(
+                pk__in=presented_ids
+            )
+        }
+        if kept is not None:
+            kept = locked.get(kept.pk)
+            if kept is not None and not kept.is_valid:
+                kept = None
+        revoke_ids = presented_ids - ({kept.pk} if kept is not None else set())
+        TrustedDevice.objects.filter(pk__in=revoke_ids, is_active=True).update(
+            is_active=False,
+        )
+
+    for nome in _station_cookie_names(request):
+        if kept is None or nome != canonical_name:
+            response.delete_cookie(nome)
+
+    if kept is not None:
+        return response
+
     DeviceTrustService.trust(
         response=response,
         subject_type=SubjectType.STATION,
@@ -184,6 +267,7 @@ def provision(request, response, terminal_ref: str):
     return response
 
 
+@transaction.atomic
 def revoke(request, response, terminal_ref: str):
     """Tira a confiança DESTE dispositivo para aquele terminal.
 
@@ -198,7 +282,11 @@ def revoke(request, response, terminal_ref: str):
     token = request.COOKIES.get(nome)
     if token:
         dispositivo = TrustedDevice.verify_token(token)
-        if dispositivo is not None:
+        if (
+            dispositivo is not None
+            and dispositivo.subject_type == SubjectType.STATION
+            and dispositivo.subject_id == ref
+        ):
             dispositivo.revoke()
     response.delete_cookie(nome)
     return response
