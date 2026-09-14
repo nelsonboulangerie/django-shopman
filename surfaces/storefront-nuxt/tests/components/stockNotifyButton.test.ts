@@ -75,7 +75,7 @@ describe('StockNotifyButton', () => {
     expect(wrapper.get('a').attributes('href')).toBe('/gerenciar-aviso#recovered-capability')
   })
 
-  it('authenticated one-click subscribe hits the notify endpoint and confirms', async () => {
+  it('authenticated subscribe records the adult declaration and confirms', async () => {
     await setAuthenticated(true)
     fetchMock.mockResolvedValue({ management_url: '/gerenciar-aviso#opaque-capability' })
     const wrapper = await mountSuspended(StockNotifyButton, {
@@ -83,11 +83,18 @@ describe('StockNotifyButton', () => {
     })
 
     await wrapper.get('button').trigger('click')
+    await nextTick()
+    const declaration = document.body.querySelector<HTMLElement>('[aria-label="Confirmar maioridade"]')
+    const form = document.body.querySelector<HTMLFormElement>('form')
+    expect(declaration).not.toBeNull()
+    await new DOMWrapper(declaration!).trigger('click')
+    await new DOMWrapper(form!).trigger('submit')
     await new Promise(r => setTimeout(r, 0))
     await nextTick()
 
     expect(fetchMock).toHaveBeenCalledOnce()
     expect(fetchMock.mock.calls[0]?.[0]).toContain('/availability/PAO/notify/')
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toEqual({ adult_declared: true })
     expect(wrapper.text()).toContain('Aviso ativo') // virou estado confirmado
     expect(wrapper.text()).toContain('Gerenciar este aviso')
     expect(wrapper.get('a').attributes('href')).toBe('/gerenciar-aviso#opaque-capability')
@@ -113,14 +120,20 @@ describe('StockNotifyButton', () => {
     await nextTick()
     const input = document.body.querySelector<HTMLInputElement>('input[aria-label="Telefone para aviso"]')
     const form = document.body.querySelector<HTMLFormElement>('form')
+    const declaration = document.body.querySelector<HTMLElement>('[aria-label="Confirmar maioridade"]')
     expect(input).not.toBeNull()
     expect(form).not.toBeNull()
+    expect(declaration).not.toBeNull()
     await new DOMWrapper(input!).setValue('9840-4900')
+    await new DOMWrapper(declaration!).trigger('click')
     await new DOMWrapper(form!).trigger('submit')
     await new Promise(r => setTimeout(r, 0))
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(fetchMock.mock.calls[0]?.[1]?.body).toEqual({ phone: '+5543998404900' })
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toEqual({
+      phone: '+5543998404900',
+      adult_declared: true
+    })
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'GET', credentials: 'include' })
     expect(wrapper.text()).toContain('Pedido recebido. Entre com este WhatsApp para conferir se o aviso está ativo ou reativá-lo.')
     expect(wrapper.text()).toContain('Entrar para conferir')
@@ -147,7 +160,9 @@ describe('StockNotifyButton', () => {
     await nextTick()
     const input = document.body.querySelector<HTMLInputElement>('input[aria-label="Telefone para aviso"]')
     const form = document.body.querySelector<HTMLFormElement>('form')
+    const declaration = document.body.querySelector<HTMLElement>('[aria-label="Confirmar maioridade"]')
     await new DOMWrapper(input!).setValue('(43) 99840-4900')
+    await new DOMWrapper(declaration!).trigger('click')
     await new DOMWrapper(form!).trigger('submit')
     await new Promise(r => setTimeout(r, 0))
     await nextTick()
@@ -178,6 +193,26 @@ describe('StockNotifyButton', () => {
     // é o que prova que o número não colou na palavra anterior.
     expect(sheetText).toContain('Mandaremos a mensagem para +55 (43) 99840-4900.')
     expect(sheetText).toContain('continua ativo até você pausar ou cancelar')
+    expect(sheetText).toContain('Declaro ter 18 anos ou mais')
     expect(sheetText).not.toContain('30 dias')
+  })
+
+  it('does not submit before the adult declaration is confirmed', async () => {
+    await setAuthenticated(false)
+    await setDefaultDdd('43')
+    const wrapper = await mountSuspended(StockNotifyButton, {
+      props: { sku: 'PAO', name: 'Pão', subscribed: false }
+    })
+
+    await wrapper.get('button').trigger('click')
+    await nextTick()
+    const input = document.body.querySelector<HTMLInputElement>('input[aria-label="Telefone para aviso"]')
+    const form = document.body.querySelector<HTMLFormElement>('form')
+    await new DOMWrapper(input!).setValue('(43) 99840-4900')
+    await new DOMWrapper(form!).trigger('submit')
+    await nextTick()
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('Confirme que você tem 18 anos ou mais.')
   })
 })

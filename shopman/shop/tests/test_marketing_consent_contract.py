@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 from shopman.guestman import ConsentService
 from shopman.guestman.contrib.consent import service as consent_service
 from shopman.guestman.contrib.consent.models import (
@@ -142,8 +143,16 @@ def test_audience_source_outage_is_degraded_not_an_authoritative_zero() -> None:
 
 def test_audience_normalizes_and_deduplicates_before_hashing() -> None:
     found = [
-        audience.Recipient(phone="(43) 99999-0001", customer_ref="CLI-A"),
-        audience.Recipient(phone="+55 43 99999-0001", customer_ref="CLI-A"),
+        audience.Recipient(
+            phone="(43) 99999-0001",
+            customer_ref="CLI-A",
+            has_adult_declaration=True,
+        ),
+        audience.Recipient(
+            phone="+55 43 99999-0001",
+            customer_ref="CLI-A",
+            has_adult_declaration=True,
+        ),
     ]
     instant = datetime(2026, 9, 8, 12, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
     with (
@@ -167,9 +176,9 @@ def test_audience_normalizes_and_deduplicates_before_hashing() -> None:
 
 def test_audience_exclusion_counts_close_for_consent_precedence() -> None:
     found = [
-        audience.Recipient(phone="+5543999001011", customer_ref="CLI-1"),
-        audience.Recipient(phone="+5543999001012", customer_ref="CLI-2"),
-        audience.Recipient(phone="+5543999001013", customer_ref="CLI-3"),
+        audience.Recipient(phone="+5543999001011", customer_ref="CLI-1", has_adult_declaration=True),
+        audience.Recipient(phone="+5543999001012", customer_ref="CLI-2", has_adult_declaration=True),
+        audience.Recipient(phone="+5543999001013", customer_ref="CLI-3", has_adult_declaration=True),
     ]
     with (
         patch.object(audience, "_chosen_customers", return_value=found),
@@ -190,7 +199,13 @@ def test_audience_exclusion_counts_close_for_consent_precedence() -> None:
 
 
 def test_consent_outage_fails_closed_and_explains_the_exclusion() -> None:
-    found = [audience.Recipient(phone="+5543999001021", customer_ref="CLI-1")]
+    found = [
+        audience.Recipient(
+            phone="+5543999001021",
+            customer_ref="CLI-1",
+            has_adult_declaration=True,
+        )
+    ]
     with (
         patch.object(audience, "_chosen_customers", return_value=found),
         patch.object(audience, "_consent_statuses", return_value=None),
@@ -210,6 +225,9 @@ def test_large_chosen_cohort_has_constant_query_budget(django_assert_num_queries
             ref=ref,
             first_name="Pessoa",
             phone=f"+5543988{index:06d}",
+            birthday=timezone.localdate().replace(
+                year=timezone.localdate().year - 30
+            ),
         )
         ConsentService.grant_consent(ref, "whatsapp", source="query-budget")
         refs.append(customer.ref)
@@ -231,6 +249,9 @@ def test_large_cohort_batches_profile_and_consent_parameters(
             ref=ref,
             first_name="Pessoa",
             phone=f"+55439770000{index}",
+            birthday=timezone.localdate().replace(
+                year=timezone.localdate().year - 30
+            ),
         )
         ConsentService.grant_consent(ref, "whatsapp", source="batch-budget")
         refs.append(customer.ref)

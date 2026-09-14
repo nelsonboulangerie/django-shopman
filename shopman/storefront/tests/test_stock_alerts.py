@@ -97,6 +97,7 @@ def test_subscribe_dedupes_phone_formats_and_keeps_verifiable_evidence():
     assert first.pk == second.pk
     assert first.contact_phone == "+5543999990001"
     assert first.proof_status == "verified"
+    assert first.adult_declared is True
     assert first.disclosure_version == stock_alerts.STOCK_ALERT_DISCLOSURE_VERSION
     assert len(first.disclosure_hash) == 64
     assert len(first.evidence_hash) == 64
@@ -126,6 +127,11 @@ def test_subscribe_requires_a_contact():
     assert stock_alerts.subscribe("SKU-1") is None
 
 
+def test_subscribe_requires_an_adult_declaration():
+    assert stock_alerts.subscribe("SKU-ADULT", phone=PHONE, adult_declared=False) is None
+    assert not StockAlertSubscription.objects.filter(sku="SKU-ADULT").exists()
+
+
 def test_subscribe_reconfirms_legacy_row_without_consent_evidence():
     legacy = StockAlertSubscription.objects.create(
         sku="SKU-LEGACY",
@@ -145,6 +151,59 @@ def test_subscribe_reconfirms_legacy_row_without_consent_evidence():
     assert current.pk != legacy.pk
     assert current.proof_status == "verified"
     assert current.is_active
+
+
+def test_subscribe_reconfirms_verified_row_without_adult_declaration():
+    legacy = StockAlertSubscription.objects.create(
+        sku="SKU-LEGACY-AGE",
+        alert_type="stock_back",
+        channel_ref="web",
+        contact_phone=PHONE,
+        target_key=stock_alerts._target_key(customer_ref="", phone=PHONE),
+        disclosure_text="Texto antigo.",
+        disclosure_version="stock-availability-pt-BR-v3",
+        disclosure_hash="a" * 64,
+        evidence_hash="b" * 64,
+        proof_status="verified",
+        adult_declared=False,
+    )
+
+    current = stock_alerts.subscribe(
+        "SKU-LEGACY-AGE",
+        phone=PHONE,
+        alert_type="stock_back",
+    )
+
+    legacy.refresh_from_db()
+    assert legacy.revoked_at is not None
+    assert current.pk != legacy.pk
+    assert current.adult_declared is True
+    assert current.is_active
+
+
+def test_legacy_row_cannot_resume_without_a_fresh_adult_declaration():
+    legacy = StockAlertSubscription.objects.create(
+        sku="SKU-LEGACY-RESUME",
+        alert_type="stock_back",
+        channel_ref="web",
+        contact_phone=PHONE,
+        target_key=stock_alerts._target_key(customer_ref="", phone=PHONE),
+        evidence_hash="e" * 64,
+        proof_status="verified",
+        adult_declared=False,
+        paused_at=timezone.now(),
+    )
+
+    resumed = stock_alerts.set_paused(
+        legacy.ref,
+        paused=False,
+        sku=legacy.sku,
+        phone=PHONE,
+    )
+
+    assert resumed is False
+    legacy.refresh_from_db()
+    assert legacy.paused_at is not None
 
 
 # ── notify ──────────────────────────────────────────────────────────
@@ -398,7 +457,7 @@ def test_global_optout_is_rechecked_immediately_before_stock_alert_send():
 def test_endpoint_anonymous_subscribes(client):
     p = _publish()
     path = f"/api/v1/availability/{p.sku}/notify/"
-    resp = client.post(path, {"phone": PHONE})
+    resp = client.post(path, {"phone": PHONE, "adult_declared": True})
     assert resp.status_code == 200
     assert resp.json() == {"ok": True}
     assert resp["Cache-Control"] == "private, no-store, max-age=0"
@@ -413,8 +472,8 @@ def test_endpoint_retry_after_lost_response_recovers_same_session_capability(cli
     product = _publish(sku="SKU-SUBSCRIBE-LOST-RESPONSE")
     path = f"/api/v1/availability/{product.sku}/notify/"
 
-    first = client.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.200")
-    repeated = client.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.200")
+    first = client.post(path, {"phone": PHONE, "adult_declared": True}, REMOTE_ADDR="203.0.113.200")
+    repeated = client.post(path, {"phone": PHONE, "adult_declared": True}, REMOTE_ADDR="203.0.113.200")
 
     assert first.status_code == repeated.status_code == 200
     assert first.json() == repeated.json() == {"ok": True}
@@ -427,11 +486,11 @@ def test_anonymous_repeat_from_other_session_cannot_take_over_existing_subscript
 
     product = _publish(sku="SKU-SUBSCRIBE-CROSS-SESSION")
     path = f"/api/v1/availability/{product.sku}/notify/"
-    first = client.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.210")
+    first = client.post(path, {"phone": PHONE, "adult_declared": True}, REMOTE_ADDR="203.0.113.210")
     sub = StockAlertSubscription.objects.get(sku=product.sku)
     other_session = Client()
 
-    repeated = other_session.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.211")
+    repeated = other_session.post(path, {"phone": PHONE, "adult_declared": True}, REMOTE_ADDR="203.0.113.211")
 
     assert repeated.status_code == 200
     assert first.json() == repeated.json() == {"ok": True}
@@ -459,7 +518,7 @@ def test_anonymous_repeat_from_other_session_does_not_resume_paused_subscription
 
     product = _publish(sku="SKU-SUBSCRIBE-CROSS-SESSION-PAUSED")
     path = f"/api/v1/availability/{product.sku}/notify/"
-    client.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.212")
+    client.post(path, {"phone": PHONE, "adult_declared": True}, REMOTE_ADDR="203.0.113.212")
     sub = StockAlertSubscription.objects.get(sku=product.sku)
     assert client.patch(
         path,
@@ -468,7 +527,7 @@ def test_anonymous_repeat_from_other_session_does_not_resume_paused_subscription
     ).status_code == 200
 
     other_session = Client()
-    repeated = other_session.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.213")
+    repeated = other_session.post(path, {"phone": PHONE, "adult_declared": True}, REMOTE_ADDR="203.0.113.213")
 
     assert repeated.status_code == 200
     assert repeated.json() == {"ok": True}
@@ -479,7 +538,7 @@ def test_anonymous_repeat_from_other_session_does_not_resume_paused_subscription
 def test_anonymous_reload_recovers_exact_session_management_link(client):
     product = _publish(sku="SKU-MANAGE-SESSION")
     path = f"/api/v1/availability/{product.sku}/notify/"
-    client.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.201")
+    client.post(path, {"phone": PHONE, "adult_declared": True}, REMOTE_ADDR="203.0.113.201")
     sub = StockAlertSubscription.objects.get(sku=product.sku)
 
     recovered = client.get(path)
@@ -500,7 +559,7 @@ def test_session_management_link_cannot_be_recovered_by_ref_or_wrong_owner(clien
     product = _publish(sku="SKU-MANAGE-SESSION-IDOR")
     client.post(
         f"/api/v1/availability/{product.sku}/notify/",
-        {"phone": PHONE},
+        {"phone": PHONE, "adult_declared": True},
         REMOTE_ADDR="203.0.113.202",
     )
     sub = StockAlertSubscription.objects.get(sku=product.sku)
@@ -530,7 +589,10 @@ def test_session_management_link_cannot_be_recovered_by_ref_or_wrong_owner(clien
 
 def test_endpoint_repairs_legacy_mobile_and_persists_pending_session_marker(client):
     p = _publish(sku="SKU-LEGACY-PHONE")
-    resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {"phone": "(43) 9840-4900"})
+    resp = client.post(
+        f"/api/v1/availability/{p.sku}/notify/",
+        {"phone": "(43) 9840-4900", "adult_declared": True},
+    )
     assert resp.status_code == 200
     sub = StockAlertSubscription.objects.get(sku=p.sku)
     assert sub.contact_phone == "+5543998404900"
@@ -547,8 +609,28 @@ def test_endpoint_repairs_legacy_mobile_and_persists_pending_session_marker(clie
 
 def test_endpoint_requires_phone_when_anonymous(client):
     p = _publish()
-    resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {})
+    resp = client.post(
+        f"/api/v1/availability/{p.sku}/notify/",
+        {"adult_declared": True},
+    )
     assert resp.status_code == 400
+
+
+def test_endpoint_requires_explicit_adult_declaration(client):
+    p = _publish(sku="SKU-ADULT-DECLARATION")
+
+    response = client.post(
+        f"/api/v1/availability/{p.sku}/notify/",
+        {"phone": PHONE},
+        REMOTE_ADDR="203.0.113.214",
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Confirme que você tem 18 anos ou mais para receber este aviso.",
+        "field": "adult_declared",
+    }
+    assert not StockAlertSubscription.objects.filter(sku=p.sku).exists()
 
 
 def test_authenticated_subscribe_uses_canonical_account_phone_not_request_body(client):
@@ -569,7 +651,7 @@ def test_authenticated_subscribe_uses_canonical_account_phone_not_request_body(c
 
     response = client.post(
         f"/api/v1/availability/{product.sku}/notify/",
-        {"phone": "+5543999990099"},
+        {"phone": "+5543999990099", "adult_declared": True},
     )
 
     assert response.status_code == 200
@@ -583,7 +665,7 @@ def test_endpoint_anonymous_can_cancel_only_its_session_subscription(client):
     product = _publish(sku="SKU-CANCEL")
     client.post(
         f"/api/v1/availability/{product.sku}/notify/",
-        {"phone": PHONE},
+        {"phone": PHONE, "adult_declared": True},
     )
     subscription_ref = client.session["stock_alert_subscriptions"][0]["ref"]
 
@@ -802,7 +884,7 @@ def test_endpoint_accepts_the_bake_alert_type(client):
     p = _publish(sku="SKU-BAKE-API")
     resp = client.post(
         f"/api/v1/availability/{p.sku}/notify/",
-        {"phone": PHONE, "alert_type": "production_ready"},
+        {"phone": PHONE, "alert_type": "production_ready", "adult_declared": True},
     )
     assert resp.status_code == 200
     sub = StockAlertSubscription.objects.get(sku=p.sku)
@@ -813,7 +895,7 @@ def test_endpoint_rejects_an_unknown_alert_type(client):
     p = _publish(sku="SKU-BAD-TYPE")
     resp = client.post(
         f"/api/v1/availability/{p.sku}/notify/",
-        {"phone": PHONE, "alert_type": "telepatia"},
+        {"phone": PHONE, "alert_type": "telepatia", "adult_declared": True},
     )
     assert resp.status_code == 400
     assert resp.json()["field"] == "alert_type"
@@ -875,7 +957,10 @@ def test_explicit_alert_type_still_wins():
 def test_endpoint_derives_the_oven_axis_without_the_front_asking(client):
     """A tela continua dizendo só "avise-me sobre este produto"."""
     p = _publish(sku="BF-API", is_batch_produced=True)
-    resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {"phone": PHONE})
+    resp = client.post(
+        f"/api/v1/availability/{p.sku}/notify/",
+        {"phone": PHONE, "adult_declared": True},
+    )
     assert resp.status_code == 200
     assert StockAlertSubscription.objects.get(sku=p.sku).alert_type == "production_ready"
     assert client.session["stock_alert_subscriptions"][0]["alert_type"] == "production_ready"
@@ -1192,7 +1277,10 @@ def test_partial_failure_keeps_independent_receipts_and_same_occurrence():
 
 def test_anonymous_can_pause_and_resume_the_exact_session_subscription(client):
     product = _publish(sku="SKU-PAUSE-API")
-    client.post(f"/api/v1/availability/{product.sku}/notify/", {"phone": PHONE})
+    client.post(
+        f"/api/v1/availability/{product.sku}/notify/",
+        {"phone": PHONE, "adult_declared": True},
+    )
     subscription_ref = client.session["stock_alert_subscriptions"][0]["ref"]
     path = f"/api/v1/availability/{product.sku}/notify/"
 
@@ -1214,7 +1302,10 @@ def test_anonymous_can_pause_and_resume_the_exact_session_subscription(client):
 
 def test_former_expiry_does_not_disable_or_prevent_resuming(client):
     product = _publish(sku="SKU-EXPIRED-API")
-    client.post(f"/api/v1/availability/{product.sku}/notify/", {"phone": PHONE})
+    client.post(
+        f"/api/v1/availability/{product.sku}/notify/",
+        {"phone": PHONE, "adult_declared": True},
+    )
     subscription_ref = client.session["stock_alert_subscriptions"][0]["ref"]
     StockAlertSubscription.objects.filter(ref=subscription_ref).update(
         paused_at=timezone.now(),

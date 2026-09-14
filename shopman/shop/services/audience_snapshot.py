@@ -169,10 +169,13 @@ def materialize_active_recipients(
             exclude("customer_inactive")
             continue
         if customer is not None:
-            from shopman.shop.services.audience import _is_known_minor
+            from shopman.shop.services.audience import _is_known_adult, _is_known_minor
 
             if _is_known_minor(customer.birthday):
                 exclude("known_minor")
+                continue
+            if subscription is None and not _is_known_adult(customer.birthday):
+                exclude("age_not_declared")
                 continue
         customer_ref = customer.ref if customer is not None else ""
         status = statuses.get(customer_ref, "")
@@ -199,6 +202,11 @@ def materialize_active_recipients(
             first_name=(getattr(customer, "first_name", "") or "").strip() if customer else "",
             reasons=reasons,
             is_vip=member.is_vip,
+            has_adult_declaration=(
+                subscription.adult_declared
+                if subscription is not None
+                else _is_known_adult(customer.birthday)
+            ),
             preferred_hour=member.preferred_hour,
             source_subscription_ref=str(member.subscription_ref or ""),
         )

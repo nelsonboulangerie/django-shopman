@@ -26,6 +26,7 @@ class StockAlertSubscriptionQuerySet(models.QuerySet):
             revoked_at__isnull=True,
             paused_at__isnull=True,
             proof_status="verified",
+            adult_declared=True,
         )
 
 
@@ -64,6 +65,11 @@ class StockAlertSubscription(models.Model):
         max_length=24,
         choices=[("verified", "verificada"), ("legacy_unverified", "legado sem prova completa")],
         default="legacy_unverified",
+    )
+    adult_declared = models.BooleanField(
+        verbose_name="declarou ter 18 anos ou mais",
+        default=False,
+        db_default=False,
     )
     subscribed_at = models.DateTimeField(verbose_name="pedido em", auto_now_add=True)
     dispatch_claimed_at = models.DateTimeField(verbose_name="envio assumido em", null=True, blank=True)
@@ -105,6 +111,7 @@ class StockAlertSubscription(models.Model):
             self.revoked_at is None
             and self.paused_at is None
             and self.proof_status == "verified"
+            and self.adult_declared
         )
 
     @property

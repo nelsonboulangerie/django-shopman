@@ -18,7 +18,13 @@ pytestmark = pytest.mark.django_db
 
 
 def _customer(ref: str, phone: str, *, opted_in: bool) -> Customer:
-    customer = Customer.objects.create(ref=ref, first_name="Ana", phone=phone)
+    today = timezone.localdate()
+    customer = Customer.objects.create(
+        ref=ref,
+        first_name="Ana",
+        phone=phone,
+        birthday=today.replace(year=today.year - 30),
+    )
     if opted_in:
         ConsentService.grant_consent(ref, "whatsapp", source="snapshot-test")
     return customer
@@ -93,6 +99,18 @@ def test_known_minor_is_subtracted_if_birthday_changes_after_snapshot() -> None:
 
     assert materialized.recipients == ()
     assert materialized.excluded_by_reason == {"known_minor": 1}
+
+
+def test_removed_birthday_is_subtracted_as_age_not_declared() -> None:
+    customer = _customer("CLI-SNAP-UNKNOWN", "+5543999002097", opted_in=True)
+    rules = {"customer_refs": [customer.ref]}
+    snapshot = audience_snapshot.create_snapshot(audience.resolve(rules), rules=rules)
+    Customer.objects.filter(pk=customer.pk).update(birthday=None)
+
+    materialized = audience_snapshot.materialize_active_recipients(snapshot)
+
+    assert materialized.recipients == ()
+    assert materialized.excluded_by_reason == {"age_not_declared": 1}
 
 
 def test_anonymous_subscription_is_late_bound_and_revocable() -> None:

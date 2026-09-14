@@ -257,6 +257,9 @@ useSeoMeta({ title: 'Perfil' })
               <!-- appearance-none evita o estouro de largura do controle nativo de
                    data no iOS (largura intrínseca que ignora w-full). -->
               <UiInput id="account-birthday" v-model="profileForm.birthday" type="date" class="w-full max-w-full appearance-none" />
+              <UiFieldDescription>
+                Necessário para receber novidades e ofertas. Menores podem comprar com a participação do responsável.
+              </UiFieldDescription>
             </UiField>
           </div>
 

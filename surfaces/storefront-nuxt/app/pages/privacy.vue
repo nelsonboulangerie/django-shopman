@@ -152,11 +152,13 @@ useHead({
       <section class="space-y-2">
         <h2 class="shop-heading">Crianças e adolescentes</h2>
         <p class="text-sm leading-6">
-          A loja não direciona mensagens promocionais a uma pessoa que a data de nascimento
-          cadastrada identifique como menor de 18 anos. Menores devem usar a loja com a participação
-          do responsável legal. Se você souber que dados de uma criança ou adolescente foram
-          cadastrados sem essa participação, avise pelo canal de privacidade para bloquearmos o uso
-          promocional e avaliarmos a exclusão.
+          A loja só direciona mensagens promocionais a quem declarou ter 18 anos ou mais. Essa
+          confirmação pode vir da data de nascimento cadastrada ou, no “Avise-me”, do aceite
+          específico apresentado antes da inscrição. Idade não informada e idade inferior a 18 anos
+          não geram elegibilidade promocional. Menores podem comprar com a participação do
+          responsável legal. Se você souber que dados de uma criança ou adolescente foram cadastrados
+          sem essa participação, avise pelo canal de privacidade para bloquearmos o uso promocional e
+          avaliarmos a exclusão.
         </p>
       </section>
 

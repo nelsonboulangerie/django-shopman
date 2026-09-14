@@ -3,10 +3,10 @@ import { maskPhoneInput, normalizeAuthPhone } from '~/utils/authPhone'
 import { notifyConfirmationMessage, notifyPhoneTarget } from '~/presentation/stockNotify'
 
 // "Me avise quando disponível" (WP-3). Esgotado honesto (is_notifiable) ganha um
-// caminho acolhedor em vez de um "+" morto: logado assina com 1 clique (usa o
-// telefone da conta); anônimo informa só o telefone num bottom-sheet canônico
-// (mesmo figurino dos demais overlays, dismiss explícito). Omotenashi: oferecer,
-// nunca bloquear seco. O estado "inscrito" PERSISTE: vem da projeção (prop subscribed).
+// caminho acolhedor em vez de um "+" morto. O bottom-sheet mostra o contato
+// quando necessário e recolhe a declaração 18+ junto do aceite específico.
+// Omotenashi: oferecer, explicar e permitir recuar sem perder contexto. O estado
+// "inscrito" PERSISTE: vem da projeção (prop subscribed).
 const props = defineProps<{
   sku: string
   // Nome do produto — usado em aria-label/tooltip (acessibilidade entre muitos cards).
@@ -39,6 +39,8 @@ const managementUrl = ref('')
 const sheetOpen = ref(false)
 const phoneInput = ref('')
 const phoneError = ref('')
+const adultDeclared = ref(false)
+const declarationError = ref('')
 
 const phone = computed({
   get: () => phoneInput.value,
@@ -59,13 +61,16 @@ async function subscribe (phoneValue: string) {
       method: 'POST',
       headers: await csrfHeaders(),
       credentials: 'include',
-      body: phoneValue ? { phone: phoneValue } : {}
+      body: phoneValue
+        ? { phone: phoneValue, adult_declared: true }
+        : { adult_declared: true }
     })
     managementUrl.value = String(result?.management_url || '')
     if (!isAuthenticated.value && !managementUrl.value) await recoverManagementLink(true)
     isSubscribed.value = isAuthenticated.value || !!managementUrl.value
     requestReceived.value = !isSubscribed.value
     sheetOpen.value = false
+    adultDeclared.value = false
     if (import.meta.client) useSonner.success(notifyConfirmationMessage(phoneValue))
   } catch (e) {
     const { data } = httpError(e)
@@ -78,10 +83,19 @@ async function subscribe (phoneValue: string) {
 }
 
 function onAuthenticatedClick () {
-  subscribe('')
+  sheetOpen.value = true
 }
 
-function onAnonymousSubmit () {
+function onSubmit () {
+  declarationError.value = ''
+  if (!adultDeclared.value) {
+    declarationError.value = 'Confirme que você tem 18 anos ou mais.'
+    return
+  }
+  if (isAuthenticated.value) {
+    subscribe('')
+    return
+  }
   const normalized = normalizeAuthPhone(phoneInput.value, 'BR', defaultDdd.value)
   if (!normalized) {
     phoneError.value = 'Informe um telefone com DDD.'
@@ -170,7 +184,7 @@ const managementHref = computed(() => managementUrl.value || (isAuthenticated.va
     </div>
   </template>
 
-  <!-- Logado: um clique assina com o telefone da conta. -->
+  <!-- Logado: usa o telefone da conta e só pede a confirmação 18+. -->
   <template v-else-if="isAuthenticated">
     <UiButton
       v-if="pill"
@@ -200,7 +214,7 @@ const managementHref = computed(() => managementUrl.value || (isAuthenticated.va
     </UiButton>
   </template>
 
-  <!-- Anônimo: bottom-sheet pede só o telefone (mesmo figurino dos demais overlays). -->
+  <!-- Anônimo: bottom-sheet pede telefone e confirmação 18+. -->
   <template v-else>
     <UiButton
       v-if="pill"
@@ -226,40 +240,47 @@ const managementHref = computed(() => managementUrl.value || (isAuthenticated.va
     >
       Me avise sempre
     </UiButton>
-    <BottomSheet
-      v-model:open="sheetOpen"
-      max-width="sm"
-      title="Avisamos quando estiver disponível"
-      description="Deixe seu WhatsApp para receber um aviso a cada nova ocorrência elegível deste produto. O aviso continua ativo até você pausar ou cancelar."
-      data-stock-notify-sheet
-    >
-      <form class="shop-stack-block px-4 py-4" @submit.prevent="onAnonymousSubmit">
-        <UiInput
-          v-model="phone"
-          type="tel"
-          inputmode="tel"
-          autocomplete="tel"
-          placeholder="(43) 99999-0000"
-          aria-label="Telefone para aviso"
-          class="bg-background"
-        />
-        <p v-if="phoneError" class="shop-meta text-destructive">{{ phoneError }}</p>
-        <p v-else-if="notifyTarget" class="shop-meta text-muted-foreground">
-          Mandaremos a mensagem para <span class="font-semibold text-foreground">{{ notifyTarget }}</span>. Se não for esse o número, é só corrigir aqui.
-        </p>
-        <UiButton type="submit" size="lg" class="w-full" :loading="submitting" icon="lucide:bell">
-          Avise-me
-        </UiButton>
-        <UiButton
-          type="button"
-          variant="ghost"
-          size="sm"
-          class="-ml-2 self-start text-muted-foreground hover:text-foreground"
-          @click="sheetOpen = false"
-        >
-          Agora não
-        </UiButton>
-      </form>
-    </BottomSheet>
   </template>
+
+  <BottomSheet
+    v-model:open="sheetOpen"
+    max-width="sm"
+    title="Avisamos quando estiver disponível"
+    description="Receba no WhatsApp um aviso a cada nova ocorrência elegível deste produto. O aviso continua ativo até você pausar ou cancelar."
+    data-stock-notify-sheet
+  >
+    <form class="shop-stack-block px-4 py-4" @submit.prevent="onSubmit">
+      <UiInput
+        v-if="!isAuthenticated"
+        v-model="phone"
+        type="tel"
+        inputmode="tel"
+        autocomplete="tel"
+        placeholder="(43) 99999-0000"
+        aria-label="Telefone para aviso"
+        class="bg-background"
+      />
+      <p v-if="phoneError" class="shop-meta text-destructive">{{ phoneError }}</p>
+      <p v-else-if="!isAuthenticated && notifyTarget" class="shop-meta text-muted-foreground">
+        Mandaremos a mensagem para <span class="font-semibold text-foreground">{{ notifyTarget }}</span>. Se não for esse o número, é só corrigir aqui.
+      </p>
+      <label class="flex items-start gap-3 text-sm leading-5">
+        <UiCheckbox v-model="adultDeclared" aria-label="Confirmar maioridade" class="mt-0.5" />
+        <span>Declaro ter 18 anos ou mais e quero receber estes avisos.</span>
+      </label>
+      <p v-if="declarationError" class="shop-meta text-destructive">{{ declarationError }}</p>
+      <UiButton type="submit" size="lg" class="w-full" :loading="submitting" icon="lucide:bell">
+        Confirmar aviso
+      </UiButton>
+      <UiButton
+        type="button"
+        variant="ghost"
+        size="sm"
+        class="-ml-2 self-start text-muted-foreground hover:text-foreground"
+        @click="sheetOpen = false"
+      >
+        Agora não
+      </UiButton>
+    </form>
+  </BottomSheet>
 </template>

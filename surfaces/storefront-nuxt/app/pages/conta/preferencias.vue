@@ -157,11 +157,25 @@ useSeoMeta({ title: 'Preferências' })
               <UiFieldContent>
                 <UiFieldLabel>{{ subscription.product_name }}</UiFieldLabel>
                 <UiFieldDescription>
-                  {{ subscription.event_label }} · {{ subscription.active ? 'Ativo' : 'Pausado' }}
+                  <template v-if="subscription.requires_adult_confirmation">
+                    Confirme sua maioridade novamente para voltar a receber este aviso.
+                  </template>
+                  <template v-else>
+                    {{ subscription.event_label }} · {{ subscription.active ? 'Ativo' : 'Pausado' }}
+                  </template>
                 </UiFieldDescription>
               </UiFieldContent>
               <div class="flex flex-wrap justify-end gap-2">
                 <UiButton
+                  v-if="subscription.requires_adult_confirmation"
+                  :to="`/produto/${encodeURIComponent(subscription.sku)}`"
+                  variant="outline"
+                  size="sm"
+                >
+                  Confirmar novamente
+                </UiButton>
+                <UiButton
+                  v-else
                   variant="outline"
                   size="sm"
                   :loading="!!preferencePending[subscription.ref]"

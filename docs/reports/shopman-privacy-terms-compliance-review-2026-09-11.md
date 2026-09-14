@@ -6,7 +6,7 @@ Esta revisão encontrou e corrigiu inconformidades técnicas reais: política
 desatualizada, identidade incompleta da loja, retenção indefinida de IP em provas
 de consentimento, exportação truncada, exclusão de conta que deixava dados em
 extensões, falha parcial reportada como sucesso, ausência de versão legal no
-pedido e marketing direto para menores conhecidos.
+pedido e marketing direto sem prova de maioridade.
 
 O resultado reduz materialmente o risco e torna as promessas públicas
 verificáveis no código. **Ele não permite afirmar que “nenhuma prática do
@@ -49,7 +49,7 @@ regulação de pagamentos. Elas exigem frentes e especialistas próprios.
 | Transparência e finalidade | Informação clara sobre controlador, dados, finalidades, bases, compartilhamento, retenção e direitos (LGPD arts. 6º e 9º) | `privacy.vue` agora identifica a empresa por dados do `Shop`, enumera categorias, bases, fornecedores e direitos | **Corrigido no código; cadastro real precisa de validação humana** |
 | Necessidade e minimização | Limitar tratamento ao necessário (LGPD art. 6º III) | OAuth pede apenas `business.manage`; IP bruto de consentimento passa a expirar; conteúdo da IA é delimitado | **Parcialmente atendido; inventário contratual pendente** |
 | Consentimento | Prova, finalidade específica e revogação fácil (LGPD art. 8º) | `CommunicationConsent` mantém texto/hash/origem/instante; preferências permitem revogar por canal; audiência falha fechada sem opt-in | **Atendido tecnicamente para Marketing** |
-| Crianças e adolescentes | Melhor interesse e requisitos próprios de consentimento/informação (LGPD art. 14) | Audiência promocional exclui idade conhecida menor que 18; política e termos informam participação do responsável | **Decisão conservadora confirmada; execução para idade desconhecida pendente** |
+| Crianças e adolescentes | Melhor interesse e requisitos próprios de consentimento/informação (LGPD art. 14) | Audiência promocional exige prova de 18+ por cadastro ou aceite específico do “Avise-me”; política e termos informam participação do responsável | **Decisão conservadora executada no código; rollout pendente** |
 | Acesso, correção e eliminação | Direitos do titular (LGPD art. 18) | Autoatendimento exporta perfil, contatos, pedidos, consentimentos/histórico, preferências, loyalty, favoritos, alertas e conversas; exclusão alcança extensões e denuncia falha parcial | **Corrigido; auditoria de completude deve acompanhar novos modelos** |
 | Retenção | Encerrar/eliminar ao fim do tratamento, salvo hipóteses legais (LGPD arts. 15–16) | Matriz R01–R15 aprovada; dry-run único conta candidatos sem PII; IP auxiliar é limitado a 90 dias; “Avise-me” persiste até pausa/cancelamento | **Política aprovada e observável; contrações e ativação produtiva continuam bloqueadas** |
 | Segurança e privacy by design | Medidas desde a concepção (LGPD arts. 46 e 49) | Segredos no servidor, redaction do Sentry, trilhas append-only, permissões, confirmação humana e bloqueios de audiência | **Controles presentes; pentest e governança organizacional fora deste recorte** |
@@ -99,13 +99,13 @@ Arquivos centrais: `packages/guestman/shopman/guestman/contrib/consent/service.p
 `shopman/shop/services/account.py`, `shopman/storefront/services/account_privacy.py`
 e `shopman/storefront/api/account.py`.
 
-### Marketing de menores conhecidos
+### Maioridade no marketing direto
 
 O consentimento de WhatsApp não é tratado como autorização suficiente para
-marketing dirigido a menor. Antes do filtro de opt-in, a audiência exclui qualquer
-cliente cuja data cadastrada indique menos de 18 anos e registra
-`known_minor` no resumo sem expor PII. A idade desconhecida não é adivinhada;
-ela permanece como lacuna de governança a decidir.
+marketing dirigido a menor. Antes do filtro de opt-in, a audiência exige prova
+de 18+: data cadastrada compatível com maioridade ou declaração específica no
+“Avise-me”. Menor conhecido registra `known_minor`; idade desconhecida registra
+`age_not_declared`. Ambos os motivos ficam apenas em contagens sem PII.
 
 Arquivo central: `shopman/shop/services/audience.py`.
 
@@ -185,7 +185,15 @@ menores; o bloqueio técnico atual deve permanecer.
 ter 18 anos ou mais. A compra por menor assistido por responsável permanece
 possível, mas não cria elegibilidade promocional. Um fluxo futuro de marketing
 para menores exigirá participação/autorização verificável do responsável e nova
-decisão. A execução técnica desta regra permanece necessária antes do release.
+decisão.
+
+**Execução técnica preparada em 2026-09-13 no PR #614:** audiências gerais
+passam a exigir data de nascimento que comprove 18 anos e registram
+`age_not_declared`, sem PII, quando a idade é desconhecida. O “Avise-me” recolhe
+uma declaração 18+ explícita no mesmo aceite específico, persiste essa prova e a
+inclui no hash de evidência. Assinaturas anteriores permanecem preservadas no
+banco, mas falham fechadas para novas entregas até serem reconfirmadas; a
+reconfirmação encerra a prova antiga e cria uma nova, sem sobrescrever histórico.
 
 ### Gate L4 — identidade e canal de privacidade
 

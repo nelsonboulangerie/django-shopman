@@ -126,6 +126,7 @@ class AvailabilityResponseSerializer(serializers.Serializer):
 
 class StockAlertSubscribeRequestSerializer(serializers.Serializer):
     phone = serializers.CharField(required=False, allow_blank=True, max_length=32)
+    adult_declared = serializers.BooleanField(required=True)
     alert_type = serializers.ChoiceField(
         choices=["stock_back", "production_ready"],
         required=False,

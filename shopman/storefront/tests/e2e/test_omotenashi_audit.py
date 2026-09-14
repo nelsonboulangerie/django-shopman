@@ -177,7 +177,7 @@ def test_06c_soldout_409_remembers_who_already_asked(client):
     _seed(stock_qty=2)
     resp = client.post(
         f"/api/v1/availability/{SKU}/notify/",
-        data=json.dumps({"phone": "43999997777"}),
+        data=json.dumps({"phone": "43999997777", "adult_declared": True}),
         content_type="application/json",
     )
     assert resp.status_code == 200
@@ -415,7 +415,7 @@ def test_13_mutation_success_shape_is_consistent(client):
     # Stock-alert subscribe.
     resp = client.post(
         f"/api/v1/availability/{SKU}/notify/",
-        data=json.dumps({"phone": "43999998888"}),
+        data=json.dumps({"phone": "43999998888", "adult_declared": True}),
         content_type="application/json",
     )
     assert resp.status_code == 200
@@ -579,7 +579,7 @@ def test_18_unavailable_product_exposes_notify_affordance(client):
     # And the back-in-stock subscription round-trips.
     resp = client.post(
         f"/api/v1/availability/{SKU}/notify/",
-        data=json.dumps({"phone": "43999997777"}),
+        data=json.dumps({"phone": "43999997777", "adult_declared": True}),
         content_type="application/json",
     )
     assert resp.status_code == 200

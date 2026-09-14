@@ -136,7 +136,7 @@ class StockAlertSubscribeView(APIView):
             if sub is not None:
                 return _no_store_response(
                     {
-                        "active": sub.paused_at is None,
+                        "active": sub.is_active,
                         "management_url": stock_alerts.management_url(sub),
                     },
                     status_code=status.HTTP_200_OK,
@@ -174,6 +174,16 @@ class StockAlertSubscribeView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        adult_declaration = str(request.data.get("adult_declared") or "").strip().lower()
+        if adult_declaration not in {"true", "1"}:
+            return Response(
+                {
+                    "detail": "Confirme que você tem 18 anos ou mais para receber este aviso.",
+                    "field": "adult_declared",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         customer = get_authenticated_customer(request)
         phone = normalize_phone_input(str(request.data.get("phone") or "")) or ""
         if customer is None and not phone:
@@ -194,6 +204,7 @@ class StockAlertSubscribeView(APIView):
             customer=customer,
             phone=phone,
             alert_type=alert_type,
+            adult_declared=True,
             resume_existing=False,
         )
         sub = outcome.subscription
