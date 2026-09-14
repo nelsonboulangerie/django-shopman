@@ -22,14 +22,10 @@ docs/plans/CATALOG-FEEDS-GOOGLE-META.md.
 
 from __future__ import annotations
 
-import logging
-
 from django.conf import settings
 from django.http import Http404, HttpResponse
 from django.shortcuts import render
 from django.views import View
-
-logger = logging.getLogger(__name__)
 
 # availability diverge por plataforma (verificado): Google underscore, Meta espaço.
 _AVAILABILITY = {
@@ -129,14 +125,11 @@ class ProductFeedView(View):
         except ProductFeedError as exc:
             raise Http404(str(exc)) from exc
 
-        brand = ""
-        try:
-            from shopman.shop.models import Shop
+        from shopman.shop.models import Shop
 
-            shop = Shop.objects.only("name").first()
-            brand = shop.name if shop else ""
-        except Exception:
-            logger.debug("product_feed.brand_lookup_failed", exc_info=True)
+        # Loja ausente usa a referência no título; erro de banco não vira feed válido.
+        shop = Shop.objects.only("name").first()
+        brand = shop.name if shop else ""
 
         content = render(
             request,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
 from xml.etree import ElementTree as ET
 
 import pytest
@@ -83,6 +84,14 @@ def test_feed_preserves_condition(client, feed, condition):
     product.save()
     item = _items(client.get("/feed/google.xml").content)[0]
     assert item.find(f"{G}condition").text == condition
+
+
+def test_feed_does_not_hide_shop_database_failure(client, feed):
+    from django.db import OperationalError
+
+    with patch.object(Shop.objects, "only", side_effect=OperationalError("indisponível")):
+        with pytest.raises(OperationalError):
+            client.get("/feed/google.xml")
 
 
 def test_meta_kind_uses_spaced_availability(client, feed):
