@@ -51,3 +51,56 @@ Contrato consultado em 14/09/2026:
 - [Contextos do catálogo](https://developer.ifood.com.br/en-US/docs/food/guides/modules/catalog/workflow).
 
 A identidade exigida pelo validador é uma condição local para revisão segura. Alguns IDs não constam de `required` na OpenAPI; isso não justifica confirmar recursos sem identidade.
+
+## Captura somente leitura pela API
+
+`capture_ifood_catalog` produz diretamente o envelope aceito acima, com
+`source="api_capture"`. Execute somente no runtime autorizado, com configuração do
+merchant conferida, destino novo e diretório privado já existente (modo 0700):
+
+```bash
+.venv/bin/python manage.py capture_ifood_catalog \
+  --merchant-id UUID-EXPLICITO --catalog-id UUID-EXPLICITO --context DEFAULT \
+  --output /diretorio/privado/nova-captura.json
+```
+
+O comando exige UUIDs canônicos, igualdade exata com `SHOPMAN_IFOOD.merchant_id` e
+`api_base` igual a `https://merchant-api.ifood.com.br` (barra final opcional), antes
+do OAuth canônico. Força token novo para evitar reutilizar o cache global de outro
+cliente/base. Autenticação usa POST OAuth; todas as chamadas de catálogo usam
+somente GET. Ambos rejeitam redirects; erros não expõem corpo remoto ou credenciais.
+Não há polling, ACK, escrita de catálogo, criação de diretiva ou consulta/escrita de
+modelos pelo coletor.
+
+A captura verifica `catalogId` e participação do contexto no array `context` de
+GET catalogs, lê categorias com `includeItems=true` e as respostas completas de
+itens, inclusive categorias vazias. Os três endpoints não documentam paginação.
+Repete cada leitura completa de itens e a leitura de categorias/catálogo no final;
+divergência rejeita a captura. Isso detecta mudanças observadas, não oferece snapshot
+atômico nem comprova que nada mudou e voltou ao valor anterior entre chamadas.
+
+`provenance` conserva `completed`, `rechecked`, `atomic_snapshot=false` e uma lista
+`responses`: método, URL oficial sem headers, status, horário de recebimento,
+`raw_body` UTF-8 integral e SHA-256 desses bytes. Números continuam números JSON no
+snapshot, inclusive decimais de alta precisão; não se tornam códigos textuais. O
+relatório de revisão continua sem atestar autenticidade de arquivo modificado.
+
+Limites: 100 categorias, 5 MiB por resposta, 8 MiB somados nas respostas e 20 MiB no
+arquivo final; orçamento de leitura 180 segundos, conexões até 5 segundos e leitura
+por socket até 15 segundos. O timeout configurado do OAuth deve estar entre 1 e 30
+segundos. Timeouts de socket não são um prazo absoluto para resolução DNS ou toda a
+execução. Limite excedido, erro, cobertura divergente ou resposta parcial não produz
+arquivo final. Não há retry automático: recapture deliberadamente em novo caminho.
+
+A saída final é publicada somente após validação e gravação completas, com modo
+0600 e criação exclusiva; arquivo existente ou symlink não é sobrescrito. As
+respostas podem conter dados comerciais sensíveis: mantenha captura e relatório em
+armazenamento privado. Este comando não habilita escrita nem concede autorização
+para usar catálogo de exemplo em loja real.
+
+Contrato GET catalogs confirmado na [referência oficial de endpoints](https://developer.ifood.com.br/en-US/docs/food/guides/modules/catalog/endpoints):
+`catalogId` e `context` (array). Categorias e detalhes conforme OpenAPI citada acima.
+
+Uma captura bem-sucedida não é evidência de homologação nem comprova autorização
+para outra loja. Credenciais que acessam somente um merchant de teste continuam
+restritas àquele escopo; o relatório não demonstra acesso ao catálogo de produção.

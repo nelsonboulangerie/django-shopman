@@ -33,8 +33,8 @@ def validate_review_snapshot(snapshot):
         raise ValueError("Snapshot exige schema_version 1.")
     if any(not _identity(snapshot.get(key)) for key in ("merchant_id", "catalog_id", "context")):
         raise ValueError("Informe loja, catálogo e contexto de origem.")
-    if snapshot.get("source") != "imported_file":
-        raise ValueError("A origem desta revisão deve ser imported_file.")
+    if snapshot.get("source") not in ("imported_file", "api_capture"):
+        raise ValueError("Origem de snapshot desconhecida.")
     try:
         captured = datetime.fromisoformat(snapshot["captured_at"].replace("Z", "+00:00"))
         if captured.tzinfo is None:
