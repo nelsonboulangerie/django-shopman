@@ -69,22 +69,21 @@ def station_cookie_name(terminal_ref: str) -> str:
 def station_ref(request) -> str:
     """O ``Terminal.ref`` da estação confiável desta requisição, ou ``""``.
 
-    Percorre os cookies de estação presentes no navegador e devolve o primeiro
-    cuja confiança o ``doorman`` valida. São vários porque um mesmo computador
-    pode ser provisionado como balcão E como totem — o nome do cookie carrega o
-    ``ref``, exatamente como o do quadro.
+    Só devolve uma identidade inequívoca. Dois vínculos válidos exigem reparar
+    o provisionamento; a ordem dos cookies nunca escolhe a gaveta.
     """
     from shopman.doorman.conf import doorman_settings
     from shopman.doorman.services.device_trust import DeviceTrustService
 
     base = doorman_settings.DEVICE_TRUST_STATION_COOKIE_NAME
+    refs = set()
     for nome in request.COOKIES:
         if not nome.startswith(f"{base}_"):
             continue
         ref = nome[len(base) + 1:]
         if DeviceTrustService.check(request, SubjectType.STATION, ref):
-            return ref
-    return ""
+            refs.add(ref)
+    return next(iter(refs)) if len(refs) == 1 else ""
 
 
 def is_trusted_station(request) -> bool:

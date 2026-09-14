@@ -71,6 +71,10 @@ def test_o_lookup_diz_quem_tem_conta_e_quanto_deve(counter):
 
 def test_acerto_pela_api_em_dinheiro_e_em_pix(client, counter):
     client.force_login(counter["operator"])
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
     _sell_on_account(counter, customer_ref="CLI-ANA", ref="c-1", qty=1)   # 12
     _sell_on_account(counter, customer_ref="CLI-ANA", ref="c-2", qty=2)   # 24
 
@@ -88,7 +92,7 @@ def test_acerto_pela_api_em_dinheiro_e_em_pix(client, counter):
     # R$ 12 em dinheiro: captura a venda mais antiga; entra na gaveta.
     response = client.post(
         reverse("api-backstage-pos-account-settle", args=["CLI-ANA"]),
-        {"amount": "12,00", "method": "cash"},
+        {"client_request_id": "test-house_account-94", "amount": "12,00", "method": "cash"},
         content_type="application/json",
     )
     assert response.status_code == 200, response.json()
@@ -100,7 +104,7 @@ def test_acerto_pela_api_em_dinheiro_e_em_pix(client, counter):
     # Valor que não cobre a próxima venda inteira: recusa e nada muda.
     response = client.post(
         reverse("api-backstage-pos-account-settle", args=["CLI-ANA"]),
-        {"amount": "10,00", "method": "cash"},
+        {"client_request_id": "test-house_account-106", "amount": "10,00", "method": "cash"},
         content_type="application/json",
     )
     assert response.status_code == 400
@@ -109,7 +113,7 @@ def test_acerto_pela_api_em_dinheiro_e_em_pix(client, counter):
     # O resto por pix, atestado no balcão: nada na gaveta, saldo zera.
     response = client.post(
         reverse("api-backstage-pos-account-settle", args=["CLI-ANA"]),
-        {"amount": "24,00", "method": "pix"},
+        {"client_request_id": "test-house_account-115", "amount": "24,00", "method": "pix"},
         content_type="application/json",
     )
     assert response.status_code == 200
@@ -123,9 +127,13 @@ def test_acerto_em_dinheiro_exige_turno_aberto(client, counter):
     _sell_on_account(counter, customer_ref="CLI-ANA", ref="c-1")
     cash.close_shift(counter["shift"], counted_q=10000, actor=counter["operator"])
     client.force_login(counter["operator"])
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
     response = client.post(
         reverse("api-backstage-pos-account-settle", args=["CLI-ANA"]),
-        {"amount": "12,00", "method": "cash"},
+        {"client_request_id": "test-house_account-134", "amount": "12,00", "method": "cash"},
         content_type="application/json",
     )
     assert response.status_code == 400
