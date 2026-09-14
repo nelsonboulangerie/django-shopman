@@ -37,7 +37,8 @@ fica em [`_quarantine/`](_quarantine/).
 | [`OMOTENASHI-FIRST-FULLNESS-PLAN.md`](OMOTENASHI-FIRST-FULLNESS-PLAN.md) | Algumas rodadas entregues; maioria dos WP-OF-* não executados. |
 | [`EXCELLENCE-AUDIT-2026-07.md`](EXCELLENCE-AUDIT-2026-07.md) | Auditoria-mãe (16 lentes); Onda 0 executada; Ondas 1–3 abertas. |
 | [`POS-FIRST-CLASS-PLAN.md`](POS-FIRST-CLASS-PLAN.md) | WP-0..8 entregues; WP-9+ (offline-first, analytics) roadmap; campos fiscais por produto pendentes. |
-| [`WP-PWA-CONFORMIDADE.md`](WP-PWA-CONFORMIDADE.md) | Proposto (2026-09-14): surfaces instaláveis, Web Push (tela desligada) como segunda perna do `UserNotification`, kiosk (fullscreen, Wake Lock), gate `make pwa`. Piloto no Hub. Sem código antes do go-live. |
+| [`WP-PWA-CONFORMIDADE.md`](WP-PWA-CONFORMIDADE.md) | Proposto (2026-09-14): surfaces instaláveis, Web Push (tela desligada) como segunda perna do `UserNotification`, kiosk (fullscreen, Wake Lock), gate `make pwa`. Piloto no **Storefront**, depois PDV e backstage. |
+| [`WP-PWA-EXECUCAO.md`](WP-PWA-EXECUCAO.md) | Brief executável para agente externo (F0 Storefront → F1 kit+PDV → F2 backstage → F3 Web Push), com regras da casa, decisões fechadas, aceite por tarefa e Anexo A de materiais do dono. Aguarda apreciação e os materiais. |
 | [`POS-FASE-C-REVISION.md`](POS-FASE-C-REVISION.md) | Auditoria do POS; achados abertos cruzam gate fiscal/go-live (DANFE NFC-e no PDV). |
 | [`POS-REDESIGN-PLAN.md`](POS-REDESIGN-PLAN.md) | Padronização A/B entregue; seção C (captura de crachá no POS) parcial. |
 | [`GESTOR-CATALOG-STOCK-AWARE.md`](GESTOR-CATALOG-STOCK-AWARE.md) | Matriz produto×canal com estado de estoque (Esgotado); aprovado, execução aberta. |

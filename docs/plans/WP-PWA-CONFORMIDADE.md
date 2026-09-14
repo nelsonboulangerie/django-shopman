@@ -18,7 +18,7 @@
 > | 4 | Notificação ativa? | **Web Push com VAPID**, segundo canal do `UserNotification` que já existe. Nada de Firebase, OneSignal ou app nativo |
 > | 5 | Quem envia? | O Django, por Directive `notification.push` no worker existente ([ADR-003](../decisions/adr-003-directives-sem-celery.md)): retry, idempotência pela `dedupe_key`, poda de assinaturas mortas |
 > | 6 | Cliente recebe push? | **Não neste WP.** O canal do cliente é o WhatsApp ([ADR-009](../decisions/adr-009-whatsapp-via-manychat.md)). O Storefront fica instalável, sem push |
-> | 7 | Piloto | **Hub** (Central de Apps): é onde o gestor vive, onde a Anaïs vai morar e onde já existe o feed de notificações pessoais |
+> | 7 | Piloto | **Storefront** (decisão do dono, 14/09): é a superfície que mais exige de PWA (marca, instalação pelo cliente, splash, fotos offline). Depois **PDV**, depois **todo o backstage**, com o Hub recebendo o Web Push primeiro. Execução: [WP-PWA-EXECUCAO.md](WP-PWA-EXECUCAO.md) |
 > | 8 | Gate | `make pwa`: gate próprio da casa (o Lighthouse aposentou a categoria PWA em 2024; não há auditor externo em que se apoiar) |
 
 ## Estado medido (2026-09-14)
@@ -138,13 +138,16 @@ uma pessoa da casa e registrado no runbook.
 
 ## Fases
 
+Ordem decidida pelo dono em 14/09: Storefront → PDV → backstage. O detalhe
+executável de cada fase está em [WP-PWA-EXECUCAO.md](WP-PWA-EXECUCAO.md).
+
 | Fase | Entrega | Gate |
 |---|---|---|
-| **F0 — capability do kit** | `@vite-pwa/nuxt` como capability opt-in; manifesto por app a partir de um builder (nome, `id`, cores do tema, ícones, atalhos, display); ícones maskable 192/512, apple-touch-icon 180, monocromático, splash iOS gerados por comando a partir do SVG da marca; SW de casco + `offline.html`; instalação guiada (botão "Instalar" no Android via `beforeinstallprompt`; passo a passo "Adicionar à Tela de Início" no iOS, detectado por `display-mode`); atualização controlada. **Hub liga primeiro.** | `make pwa` verde no hub; testes do kit; envelope de segurança intacto (`securityHeaders.test.ts`) |
-| **F1 — Web Push** | `PushSubscription` em `shop/models`; VAPID nos segredos; API de assinar/remover/listar em `/api/v1/backstage/notifications/push/`; Directive `notification.push` + handler; segunda perna em `push_user_notification`; poda; preferências por categoria; SW: `push`, `notificationclick`, `pushsubscriptionchange`; badge. | chave em [data-schemas](../reference/data-schemas.md); testes de service com `pywebpush` falso (410 desativa, TTL/Urgency por categoria, zero PII em categoria financeira); prova no aparelho: Android e iPhone com tela desligada, registrada no runbook |
-| **F2 — surfaces de operador** | Liga em orders, pos, kds, production, marketing, purchase, bi conforme a tabela; Wake Lock nos kiosks; `fullscreen`; recarga automática de kiosk em ociosidade; Gestor troca a notificação de aba pelo push. | `make pwa` por app; `make admin` intacto; teste do kit para Wake Lock com API ausente (não quebra no Safari velho) |
-| **F3 — Storefront instalável** | Manifesto e ícones da marca, splash, SW de casco com `offline.html` na voz da casa; sem push. | `make pwa` no storefront; suíte do storefront com node@22 |
-| **F4 — agentes** | A Anaïs e os alertas dos agentes usam o canal como qualquer `UserNotification`; nada específico aqui. | depende do WP dos agentes (`project_mecanismo_de_interacao_agentica`) |
+| **F0 — Storefront (piloto)** | Manifesto servido por rota Nitro a partir do `Shop` (nome, `short_name`, descrição) com cores da marca e ícones estáticos; SW de casco (`@vite-pwa/nuxt`, sem manifesto do módulo): precache do build, `offline.html` na voz da casa, fotos de produto e fontes em cache por serem imutáveis por convenção, **nada de API nem HTML**; instalação guiada (Android: botão; iOS: passo a passo); atualização controlada; ícones, favicon, apple-touch-icon e splash gerados do SVG da marca. Sem push. | `make pwa` no storefront; vitest/typecheck/lint/build/e2e verdes com node@22 |
+| **F1 — capability do kit + PDV** | O que o Storefront provou vira capability opt-in do `operator-kit` (manifesto por app, SW de casco, instalação, atualização, Wake Lock, `fullscreen`); PDV liga primeiro (`standalone`, Wake Lock). | `make pwa` no pos; testes do kit; envelope de segurança intacto |
+| **F2 — backstage inteiro** | hub, orders, kds, production, marketing, purchase, bi ligam conforme a tabela "Por surface"; kiosks em `fullscreen` com recarga ociosa. | `make pwa` por app; CI `surfaces-gate` verde |
+| **F3 — Web Push** | `PushSubscription` em `shop/models`; VAPID; API de assinar/remover/listar; Directive `notification.push` + handler; segunda perna em `push_user_notification`; poda; preferências por categoria no Hub; SW: `push`, `notificationclick`, `pushsubscriptionchange`; badge. Hub e Gestor primeiro, depois produção e PDV crítico. | chave em [data-schemas](../reference/data-schemas.md); testes de service; prova no aparelho (Android e iPhone, tela desligada) no runbook |
+| **F4 — agentes** | A Anaïs e os alertas dos agentes usam o canal como qualquer `UserNotification`. | depende do WP dos agentes |
 
 ## Gate `make pwa`
 
