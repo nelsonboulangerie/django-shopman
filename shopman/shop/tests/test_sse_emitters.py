@@ -220,6 +220,75 @@ def test_payment_change_emits_order_and_backstage_updates(
     )
 
 
+@pytest.mark.django_db
+@patch("django_eventstream.send_event")
+def test_pos_counter_created_updates_tracking_but_not_manager(
+    mock_send, pdv_channel, django_capture_on_commit_callbacks,
+):
+    from shopman.shop.handlers._sse_emitters import _on_order_changed
+
+    order = Order.objects.create(
+        ref="PDV-COUNTER-SSE",
+        channel_ref=pdv_channel.ref,
+        status=Order.Status.NEW,
+        total_q=1000,
+        data={"origin_channel": "pos"},
+        snapshot={"data": {"origin_channel": "pos", "pos": {"sales_mode": "counter"}}},
+    )
+
+    with django_capture_on_commit_callbacks(execute=True):
+        _on_order_changed(sender=None, order=order, event_type="created", actor="operator")
+
+    assert any(call.args[0] == f"order-{order.ref}" for call in mock_send.call_args_list)
+    assert not any(call.args[0].startswith("backstage-orders-") for call in mock_send.call_args_list)
+
+
+@pytest.mark.django_db
+@patch("django_eventstream.send_event")
+def test_pos_counter_payment_update_does_not_announce_manager(
+    mock_send, pdv_channel, django_capture_on_commit_callbacks,
+):
+    from shopman.shop.handlers._sse_emitters import _on_payment_changed
+
+    order = Order.objects.create(
+        ref="PDV-COUNTER-PAYMENT-SSE",
+        channel_ref=pdv_channel.ref,
+        status=Order.Status.ACCEPTED,
+        total_q=1000,
+        data={"origin_channel": "pos", "pos": {"sales_mode": "counter"}},
+    )
+
+    class Intent:
+        status = "captured"
+
+    with django_capture_on_commit_callbacks(execute=True):
+        _on_payment_changed(sender=None, intent=Intent(), order_ref=order.ref)
+
+    assert any(call.args[0] == f"order-{order.ref}" for call in mock_send.call_args_list)
+    assert not any(call.args[0].startswith("backstage-orders-") for call in mock_send.call_args_list)
+
+
+@pytest.mark.django_db
+@patch("django_eventstream.send_event")
+def test_pos_order_mode_still_announces_manager(
+    mock_send, pdv_channel, django_capture_on_commit_callbacks,
+):
+    from shopman.shop.handlers._sse_emitters import _on_order_changed
+
+    order = Order.objects.create(
+        ref="PDV-ORDER-SSE",
+        channel_ref=pdv_channel.ref,
+        status=Order.Status.NEW,
+        total_q=1000,
+        data={"origin_channel": "pos", "pos": {"sales_mode": "order"}},
+    )
+
+    with django_capture_on_commit_callbacks(execute=True):
+        _on_order_changed(sender=None, order=order, event_type="created", actor="operator")
+
+    assert any(call.args[0] == "backstage-orders-main" for call in mock_send.call_args_list)
+
+
 # ── Signal-driven emits ─────────────────────────────────────────────
 
 

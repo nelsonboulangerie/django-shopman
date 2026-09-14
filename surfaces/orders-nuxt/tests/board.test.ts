@@ -19,7 +19,8 @@ import {
   matchesChannel,
   matchesFulfillment,
   matchesQuery,
-  newOrderPush,
+  newlyTreatableOrderRefs,
+  treatableOrderRefs,
   nextSort,
   preorderGroups,
   resolveShortcut,
@@ -466,24 +467,37 @@ describe("realtimeIndicator — honestidade do tempo-real", () => {
   });
 });
 
-describe("newOrderPush — só pedido NOVO dispara o aviso", () => {
-  it("kind 'created' devolve o ref do pedido", () => {
-    expect(newOrderPush(JSON.stringify({ ref: "WEB-9", status: "new", kind: "created" }))).toBe("WEB-9");
+describe("aviso de pedido tratável — nasce da projection canônica", () => {
+  const queue = (cards: OrderCardProjection[]): TwoZoneQueueProjection => ({
+    intake: cards,
+    preparing_count: 0,
+    prep: [],
+    expedition_pickup: [],
+    expedition_delivery: [],
+    expedition_delivery_transit: [],
+    expedition_delivery_count: 0,
+    expedition_count: 0,
+    total_count: cards.length,
+    preorders: [],
+    preorders_count: 0,
+    ifood_negotiation_orders: [],
   });
 
-  it("'created' sem ref ainda é pedido novo (ref vazio, aviso genérico)", () => {
-    expect(newOrderPush(JSON.stringify({ kind: "created" }))).toBe("");
+  it("pedido bloqueado por pagamento não é tratável", () => {
+    const waiting = card({ ref: "PIX-1", can_confirm: false, can_advance: false, payment_pending: true });
+    expect([...treatableOrderRefs(queue([waiting]))]).toEqual([]);
   });
 
-  it("mudança de status NÃO é pedido novo — o som não pode gritar em transição", () => {
-    expect(newOrderPush(JSON.stringify({ ref: "WEB-9", status: "ready", kind: "status_changed" }))).toBeNull();
+  it("avisa quando o refresh mostra que o pagamento liberou a ação", () => {
+    const before = queue([card({ ref: "PIX-1", can_confirm: false, can_advance: false })]);
+    const after = queue([card({ ref: "PIX-1", can_confirm: false, can_advance: true })]);
+    expect(newlyTreatableOrderRefs(before, after)).toEqual(["PIX-1"]);
   });
 
-  it("payload imparseável/vazio degrada em silêncio (null)", () => {
-    expect(newOrderPush("not-json")).toBeNull();
-    expect(newOrderPush(undefined)).toBeNull();
-    expect(newOrderPush("")).toBeNull();
-    expect(newOrderPush(JSON.stringify({ ref: "WEB-9" }))).toBeNull();
+  it("created sem mudança real de tratabilidade não produz aviso", () => {
+    const before = queue([card({ ref: "PIX-1", can_confirm: false, can_advance: false })]);
+    const after = queue([card({ ref: "PIX-1", can_confirm: false, can_advance: false })]);
+    expect(newlyTreatableOrderRefs(before, after)).toEqual([]);
   });
 });
 
