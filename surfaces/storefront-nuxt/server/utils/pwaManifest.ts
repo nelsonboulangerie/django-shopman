@@ -57,6 +57,11 @@ export function buildStorefrontManifest (shop: PwaShopSource = {}) {
       { name: 'Sacola', short_name: 'Sacola', url: '/sacola', icons: [{ src: '/pwa/pwa-192x192.png', sizes: '192x192' }] },
       { name: 'Meus pedidos', short_name: 'Pedidos', url: '/conta', icons: [{ src: '/pwa/pwa-192x192.png', sizes: '192x192' }] }
     ],
+    screenshots: [
+      { src: '/pwa/screenshots/home-narrow.png', sizes: '1080x1920', type: 'image/png', form_factor: 'narrow', label: 'Início da Nelson Boulangerie' },
+      { src: '/pwa/screenshots/menu-narrow.png', sizes: '1080x1920', type: 'image/png', form_factor: 'narrow', label: 'Cardápio da Nelson Boulangerie' },
+      { src: '/pwa/screenshots/home-wide.png', sizes: '1280x720', type: 'image/png', form_factor: 'wide', label: 'Início da Nelson Boulangerie em tela ampla' }
+    ],
     categories: ['food', 'shopping']
   }
 }

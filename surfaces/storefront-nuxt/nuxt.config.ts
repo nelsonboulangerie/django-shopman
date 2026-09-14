@@ -1,5 +1,34 @@
 import tailwindcss from "@tailwindcss/vite";
 
+const appleStartupImages = [
+  [2048, 2732, 2, 'portrait'], [2732, 2048, 2, 'landscape'],
+  [1668, 2388, 2, 'portrait'], [2388, 1668, 2, 'landscape'],
+  [1536, 2048, 2, 'portrait'], [2048, 1536, 2, 'landscape'],
+  [1640, 2360, 2, 'portrait'], [2360, 1640, 2, 'landscape'],
+  [1668, 2224, 2, 'portrait'], [2224, 1668, 2, 'landscape'],
+  [1620, 2160, 2, 'portrait'], [2160, 1620, 2, 'landscape'],
+  [1488, 2266, 2, 'portrait'], [2266, 1488, 2, 'landscape'],
+  [1320, 2868, 3, 'portrait'], [2868, 1320, 3, 'landscape'],
+  [1206, 2622, 3, 'portrait'], [2622, 1206, 3, 'landscape'],
+  [1260, 2736, 3, 'portrait'], [2736, 1260, 3, 'landscape'],
+  [1290, 2796, 3, 'portrait'], [2796, 1290, 3, 'landscape'],
+  [1179, 2556, 3, 'portrait'], [2556, 1179, 3, 'landscape'],
+  [1170, 2532, 3, 'portrait'], [2532, 1170, 3, 'landscape'],
+  [1284, 2778, 3, 'portrait'], [2778, 1284, 3, 'landscape'],
+  [1125, 2436, 3, 'portrait'], [2436, 1125, 3, 'landscape'],
+  [1242, 2688, 3, 'portrait'], [2688, 1242, 3, 'landscape'],
+  [828, 1792, 2, 'portrait'], [1792, 828, 2, 'landscape'],
+  [1242, 2208, 3, 'portrait'], [2208, 1242, 3, 'landscape'],
+  [750, 1334, 2, 'portrait'], [1334, 750, 2, 'landscape'],
+  [640, 1136, 2, 'portrait'], [1136, 640, 2, 'landscape']
+] as const
+
+const appleStartupLinks = appleStartupImages.map(([width, height, scale, orientation]) => ({
+  rel: 'apple-touch-startup-image' as const,
+  href: `/pwa/apple-splash-${width}-${height}.png`,
+  media: `(device-width: ${width / scale}px) and (device-height: ${height / scale}px) and (-webkit-device-pixel-ratio: ${scale}) and (orientation: ${orientation})`
+}))
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   compatibilityDate: '2026-05-16',
@@ -46,7 +75,10 @@ export default defineNuxtConfig({
       ],
       link: [
         { rel: 'manifest', href: '/manifest.webmanifest' },
-        { rel: 'apple-touch-icon', href: '/pwa/apple-touch-icon-180x180.png' }
+        { rel: 'icon', href: '/pwa/favicon.svg', type: 'image/svg+xml' },
+        { rel: 'icon', href: '/pwa/favicon.ico', sizes: 'any' },
+        { rel: 'apple-touch-icon', href: '/pwa/apple-touch-icon-180x180.png' },
+        ...appleStartupLinks
       ]
     }
   },
@@ -81,6 +113,7 @@ export default defineNuxtConfig({
       clientsClaim: false,
       skipWaiting: false,
       globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+      globIgnores: ['pwa/screenshots/**'],
       manifestTransforms: [async entries => ({ manifest: entries, warnings: [] })],
       runtimeCaching: [
         {

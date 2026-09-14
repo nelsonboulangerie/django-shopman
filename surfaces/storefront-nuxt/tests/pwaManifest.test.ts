@@ -24,6 +24,10 @@ describe('storefront PWA manifest', () => {
       expect.objectContaining({ sizes: '512x512', purpose: 'any' }),
       expect.objectContaining({ sizes: '512x512', purpose: 'maskable' })
     ]))
+    expect(manifest.screenshots).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sizes: '1080x1920', form_factor: 'narrow' }),
+      expect.objectContaining({ sizes: '1280x720', form_factor: 'wide' })
+    ]))
   })
 
   it('truncates brand_name to twelve characters when short_name is absent', () => {
