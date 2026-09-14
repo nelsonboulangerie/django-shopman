@@ -13,7 +13,7 @@ const section = computed(() =>
 const tabs = [
   { to: "/", key: "orders", label: "Pedidos", icon: "lucide:clipboard-list" },
   { to: "/catalog", key: "catalog", label: "Catálogo", icon: "lucide:book-open" },
-  { to: "/feeds", key: "feeds", label: "Feeds", icon: "lucide:monitor-play" },
+  { to: "/feeds", key: "feeds", label: "Canais", icon: "lucide:monitor-play" },
 ] as const;
 
 // Porta para o cadastro de clientes. Fica FORA do segmented control de propósito:

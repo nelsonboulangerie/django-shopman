@@ -31,6 +31,7 @@ from shopman.backstage.projections.catalog import (
     CatalogPublicationSkip,
 )
 from shopman.backstage.projections.feeds import (
+    CatalogChannelProjection,
     CollectionOptionProjection,
     FeedBoardProjection,
     FeedCollectionRef,
@@ -63,6 +64,7 @@ CONTRACT_DATACLASSES = (
     IFoodNegotiationProjection,
     FeedCollectionRef,
     FeedProjection,
+    CatalogChannelProjection,
     CollectionOptionProjection,
     FeedBoardProjection,
     OrderItemProjection,
