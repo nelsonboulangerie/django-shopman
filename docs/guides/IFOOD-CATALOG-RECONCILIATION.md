@@ -3,7 +3,7 @@
 O comando compara um inventário já obtido com os produtos canônicos do banco configurado. Não chama a API iFood, não consulta credenciais iFood, não publica anúncios nem grava vínculos, produtos, listings ou diretivas.
 
 ```sh
-python manage.py reconcile_ifood_catalog \
+.venv/bin/python manage.py reconcile_ifood_catalog \
   --inventory /caminho/inventario-categorias.json \
   --merchant-id UUID-DA-LOJA \
   --catalog-id UUID-DO-CATALOGO \

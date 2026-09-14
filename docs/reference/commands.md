@@ -31,6 +31,7 @@
 | [`diagnose_marketing`](#diagnose_marketing) | shop | Diagnóstico | Resume outbox/ledger/alertas sem PII, escrita ou provider |
 | [`process_marketing_outbox`](#process_marketing_outbox) | shop | Worker | Reconcilia e entrega intents commitadas à fila durável |
 | [`process_marketing_delivery`](#process_marketing_delivery) | shop | Worker | Processa destinos com leases, outcomes e reconciliação segura |
+| [`reconcile_ifood_catalog`](#reconcile_ifood_catalog) | shop | Diagnóstico | Compara inventário local iFood com SKUs, sem HTTP ou gravações |
 | [`inject_ifood_order`](#inject_ifood_order) | shop | Dev | Injeta pedido iFood simulado pela ingestão canônica (apenas DEBUG) |
 | [`reconcile_financial_day`](#reconcile_financial_day) | backstage | Operação | Reconcilia pedido, intent, transação e fechamento diário |
 | [`smoke_gateways`](#smoke_gateways) | backstage | Operação | Estressa webhooks/gateways com fixtures locais e matriz sandbox |
@@ -635,6 +636,33 @@ python manage.py diagnose_remote_order ORDER-REF
 ```
 
 **Veja também:** [runbook de pedido remoto preso](../runbooks/pedido-remoto-preso.md).
+
+---
+
+### reconcile_ifood_catalog
+
+**App:** shop · **Categoria:** Diagnóstico iFood, somente leitura
+**Arquivo:** `shopman/shop/management/commands/reconcile_ifood_catalog.py`
+
+Recebe snapshot JSON UTF-8 de categorias com itens e compara códigos efetivos
+no contexto indicado com os SKUs canônicos do banco configurado. Imprime JSON
+com ocorrências, sugestões e pendências; não confirma vínculos, não grava
+Product/Listing/Directive, não consulta credenciais nem faz chamadas HTTP.
+
+```bash
+.venv/bin/python manage.py reconcile_ifood_catalog \
+  --inventory /caminho/inventario-categorias.json \
+  --merchant-id UUID-DA-LOJA \
+  --catalog-id UUID-DO-CATALOGO \
+  --context DEFAULT
+```
+
+Todos os argumentos são obrigatórios. O arquivo deve conter a lista retornada
+por `categories?includeItems=true` de um único escopo. O comando valida formato,
+mas a origem e completude do snapshot dependem de quem o forneceu. Erros de
+arquivo, formato, escopo e banco usam `CommandError` sem conteúdo sensível.
+
+Veja [regras e interpretação da saída](../guides/IFOOD-CATALOG-RECONCILIATION.md).
 
 ---
 
