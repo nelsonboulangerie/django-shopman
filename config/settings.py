@@ -1406,7 +1406,7 @@ SHOPMAN_ACCOUNTING_BACKEND = None
 
 # Operator email for backend notifications (order alerts, etc.).
 # Falls back to DEFAULT_FROM_EMAIL if None.
-SHOPMAN_OPERATOR_EMAIL = None
+SHOPMAN_OPERATOR_EMAIL = os.environ.get("SHOPMAN_OPERATOR_EMAIL", "").strip() or None
 
 # Retenção da trilha de acessos de operador (SignInEvent), em dias.
 # 180 dias: longo o bastante para investigar "mês passado", curto o bastante para
