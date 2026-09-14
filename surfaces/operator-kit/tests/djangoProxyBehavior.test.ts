@@ -98,12 +98,67 @@ describe("proxyDjangoPath — conditional Marketing metadata", () => {
     await proxyDjangoPath(safe.event, "/api/v1/backstage/marketing/v2");
     expect(safe.res.getHeader("location")).toBe("/admin/login/?next=%2Fcampaigns%2F");
     expect(safe.res.getHeader("set-cookie")).toBe(
-      "sessionid=abc.def=ghi==; Path=/; Secure; HttpOnly; SameSite=Lax",
+      "shopman_operator_sessionid=abc.def=ghi==; Path=/; Secure; HttpOnly; SameSite=Lax",
     );
 
     const unsafe = makeEvent({});
     await proxyDjangoPath(unsafe.event, "/api/v1/backstage/marketing/v2");
     expect(unsafe.res.getHeader("location")).toBeUndefined();
     expect(unsafe.res.getHeader("set-cookie")).toBeUndefined();
+  });
+
+  it("envia somente a sessão de operador ao Django e mantém cookies de estação", async () => {
+    const raw = vi.fn((url: string, options: RawCall["options"]) => {
+      calls.push({ url, options });
+      return Promise.resolve(upstream(200, {}, {}));
+    });
+    vi.stubGlobal("$fetch", Object.assign(vi.fn(), { raw }));
+    const { event } = makeEvent({
+      cookie: [
+        "sessionid=admin-session",
+        "csrftoken=admin-csrf",
+        "shopman_station_trust_pdv=station-1",
+        "shopman_operator_sessionid=operator-session",
+        "shopman_operator_csrftoken=operator-csrf",
+      ].join("; "),
+    });
+
+    await proxyDjangoPath(event, "/api/v1/backstage/marketing/v2");
+
+    expect(calls[0]?.options.headers.cookie).toBe(
+      "shopman_station_trust_pdv=station-1; sessionid=operator-session; csrftoken=operator-csrf",
+    );
+    expect(calls[0]?.options.headers.cookie).not.toContain("admin-session");
+    expect(calls[0]?.options.headers.cookie).not.toContain("admin-csrf");
+  });
+
+  it("chega sem autenticação de operador quando o browser tem apenas a sessão do Admin", async () => {
+    const raw = vi.fn((url: string, options: RawCall["options"]) => {
+      calls.push({ url, options });
+      return Promise.resolve(upstream(403, {}, {}));
+    });
+    vi.stubGlobal("$fetch", Object.assign(vi.fn(), { raw }));
+    const { event } = makeEvent({ cookie: "sessionid=admin-session; csrftoken=admin-csrf" });
+
+    await proxyDjangoPath(event, "/api/v1/backstage/marketing/v2");
+
+    expect(calls[0]?.options.headers.cookie).toBeUndefined();
+  });
+
+  it("reescreve o delete do logout sem apagar o cookie direto do Admin", async () => {
+    const raw = vi.fn().mockResolvedValue(upstream(200, {}, {
+      "set-cookie": "sessionid=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Domain=.boulangerie.com.br; Path=/; Secure; HttpOnly; SameSite=Lax",
+    }));
+    vi.stubGlobal("$fetch", Object.assign(vi.fn(), { raw }));
+    const { event, res } = makeEvent({
+      cookie: "sessionid=admin-session; shopman_operator_sessionid=operator-session",
+    });
+
+    await proxyDjangoPath(event, "/api/v1/backstage/operator/lock");
+
+    expect(raw.mock.calls[0]?.[1].headers.cookie).toBe("sessionid=operator-session");
+    expect(res.getHeader("set-cookie")).toBe(
+      "shopman_operator_sessionid=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Domain=.boulangerie.com.br; Path=/; Secure; HttpOnly; SameSite=Lax",
+    );
   });
 });

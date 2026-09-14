@@ -30,10 +30,16 @@ it("roundtrips authenticated evidence bytes through the canonical BFF as a priva
   const app = createApp();
   app.use(eventHandler(event => proxyDjangoPath(event, "/api/v1/backstage/orders/IFOOD-1/ifood-handshake-evidence/")));
   const bff = await listen(createServer(toNodeListener(app)));
-  const response = await fetch(`${bff}/?dispute_id=dispute-1&index=0`, { headers: { cookie: "sessionid=isolated-test", accept: "text/html" } });
+  const response = await fetch(`${bff}/?dispute_id=dispute-1&index=0`, {
+    headers: {
+      cookie: "sessionid=admin-direct; shopman_station_trust_pdv=station-1; shopman_operator_sessionid=isolated-test",
+      accept: "text/html",
+    },
+  });
   expect(response.status).toBe(200);
   expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes);
-  expect(cookie).toBe("sessionid=isolated-test");
+  expect(cookie).toBe("shopman_station_trust_pdv=station-1; sessionid=isolated-test");
+  expect(cookie).not.toContain("admin-direct");
   expect(response.headers.get("content-type")).toBe("image/png");
   expect(response.headers.get("content-disposition")).toBe('attachment; filename="ifood-evidence.png"');
   expect(response.headers.get("cache-control")).toBe("private, no-store, max-age=0");

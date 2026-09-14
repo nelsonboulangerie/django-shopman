@@ -5,6 +5,7 @@ import {
   type H3Event,
 } from "h3";
 import { resolveDjangoBaseUrl } from "./djangoBaseUrl";
+import { operatorCookieHeaderForDjango } from "./operatorCookies";
 import { applyOperatorSecurityHeaders } from "./securityHeaders";
 
 // Proxy SSE same-origin compartilhado das superfícies de operador (layer). O
@@ -38,7 +39,7 @@ export async function proxyEventStream(
   const target = `${djangoBaseUrl}${upstreamPath}`;
   const headers: Record<string, string> = { accept: "text/event-stream" };
 
-  const cookie = getRequestHeader(event, "cookie");
+  const cookie = operatorCookieHeaderForDjango(getRequestHeader(event, "cookie"));
   if (cookie) headers.cookie = cookie;
 
   // Resume após reconexão do EventSource, quando o canal é reliable.
