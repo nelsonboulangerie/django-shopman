@@ -31,6 +31,7 @@
 | [`diagnose_marketing`](#diagnose_marketing) | shop | Diagnóstico | Resume outbox/ledger/alertas sem PII, escrita ou provider |
 | [`process_marketing_outbox`](#process_marketing_outbox) | shop | Worker | Reconcilia e entrega intents commitadas à fila durável |
 | [`process_marketing_delivery`](#process_marketing_delivery) | shop | Worker | Processa destinos com leases, outcomes e reconciliação segura |
+| [`prepare_ifood_catalog_review`](#prepare_ifood_catalog_review) | shop | Diagnóstico | Prepara revisão de snapshot completo, sem HTTP ou gravações |
 | [`reconcile_ifood_catalog`](#reconcile_ifood_catalog) | shop | Diagnóstico | Compara inventário local iFood com SKUs, sem HTTP ou gravações |
 | [`inject_ifood_order`](#inject_ifood_order) | shop | Dev | Injeta pedido iFood simulado pela ingestão canônica (apenas DEBUG) |
 | [`reconcile_financial_day`](#reconcile_financial_day) | backstage | Operação | Reconcilia pedido, intent, transação e fechamento diário |
@@ -1329,3 +1330,10 @@ própria: ele herda a dos componentes.
 O `seed` chama este comando no fim, depois do catálogo e das coleções. **Num
 deployment já no ar, ele precisa ser rodado à mão** — sem ele o registro fica
 vazio e os pareamentos de `suggestion.complement` não casam com nada.
+
+### prepare_ifood_catalog_review
+
+**App:** shop
+**Arquivo:** `shopman/shop/management/commands/prepare_ifood_catalog_review.py`
+
+Produz relatório JSON local com snapshot remoto completo e candidatos canônicos ainda não revisados. Exige `--snapshot` (arquivo local) e `--channel` (ref local); somente SELECT, sem HTTP ou alterações. Não confirma vínculos nem autoriza publicação. Contrato e limites: [guia de revisão](../guides/IFOOD-CATALOG-REVIEW.md).
