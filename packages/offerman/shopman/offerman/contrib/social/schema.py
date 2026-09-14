@@ -124,7 +124,7 @@ class ProductSocialAttributes:
         if self.gtin and not _gtin_is_valid(self.gtin):
             problems.append(
                 "GTIN inválido: use 8, 12, 13 ou 14 dígitos com dígito verificador correto "
-                "(ou deixe vazio para 'sem código de barras')."
+                "(ou deixe vazio quando não informado)."
             )
         if self.condition not in _CONDITION_VALUES:
             problems.append(f"Condição inválida: use uma de {sorted(_CONDITION_VALUES)}.")
