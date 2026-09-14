@@ -12,9 +12,11 @@
 <g:image_link>{{ item.image_link }}</g:image_link>
 <g:availability>{{ item.availability }}</g:availability>
 <g:price>{{ item.price }}</g:price>
-<g:condition>new</g:condition>
-{% if brand %}<g:brand>{{ brand }}</g:brand>
-{% endif %}<g:identifier_exists>no</g:identifier_exists>
+<g:condition>{{ item.condition }}</g:condition>
+{% if item.brand %}<g:brand>{{ item.brand }}</g:brand>{% endif %}
+{% if item.gtin %}<g:gtin>{{ item.gtin }}</g:gtin>{% endif %}
+{% if item.mpn %}<g:mpn>{{ item.mpn }}</g:mpn>{% endif %}
+{% if item.google_product_category %}<g:google_product_category>{{ item.google_product_category }}</g:google_product_category>{% endif %}
 <g:product_type>{{ item.product_type }}</g:product_type>
 <g:custom_label_0>{{ item.custom_label_0 }}</g:custom_label_0>
 </item>

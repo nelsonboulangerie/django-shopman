@@ -54,9 +54,8 @@ def _norm_hashtags(raw) -> list[str]:
 class ProductSocialAttributes:
     """Per-product social/commerce catalog attributes.
 
-    All fields optional with sensible defaults — the operator only fills what
-    matters (``brand`` empty resolves to the shop name at projection time;
-    ``condition`` defaults to "new"; empty ``gtin`` means "no identifier").
+    Campos opcionais; condição assume "new". Marca e GTIN vazios representam
+    dados não informados, sem afirmar fabricante ou ausência de identificadores.
     """
 
     brand: str = ""

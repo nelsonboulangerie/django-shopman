@@ -64,6 +64,7 @@ def _storefront_base(request) -> str:
 
 def build_feed_items(ref: str, request) -> list[dict]:
     """Itens do feed a partir das coleções do canal. Formatação = camada de view."""
+    from shopman.offerman import get_social_attributes
     from shopman.offerman.models import Collection
 
     from shopman.shop.services.display_prices import resolve_prices
@@ -98,6 +99,7 @@ def build_feed_items(ref: str, request) -> list[dict]:
                 # imagem é omitido (image_link é obrigatório — seria reprovado).
                 continue
             seen.add(product.sku)
+            attributes = get_social_attributes(product)
             available = product.is_published and product.is_sellable and product.sku not in paused
             items.append({
                 "id": product.sku,
@@ -105,6 +107,11 @@ def build_feed_items(ref: str, request) -> list[dict]:
                 "description": (product.long_description or product.short_description or product.name)[:5000],
                 "link": f"{base}/produto/{product.sku}",
                 "image_link": product.image_url,
+                "brand": attributes.brand,
+                "gtin": attributes.gtin,
+                "mpn": attributes.mpn,
+                "condition": attributes.condition,
+                "google_product_category": attributes.google_product_category,
                 "availability": avail[available],
                 "price": f"{prices.get(product.sku, product.base_price_q) / 100:.2f} BRL",
                 "product_type": coll.name,
