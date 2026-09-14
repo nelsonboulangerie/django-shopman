@@ -420,8 +420,12 @@ def close_sale(
         # Gestor, com o pedido no nome, para alguém reemitir.
         try:
             from shopman.shop.services import fiscal as fiscal_service
+            from shopman.shop.services.payment_gate import payment_is_captured, requires_captured_payment
 
-            fiscal_service.emit(order)
+            # Criar uma cobrança não é receber: o callback de captura emitirá
+            # depois. Métodos físicos e pagamento na porta mantêm sua política.
+            if not requires_captured_payment(order) or payment_is_captured(order):
+                fiscal_service.emit(order)
         except Exception as exc:
             logger.warning("pos_close_fiscal_emit_failed order=%s", result.order_ref, exc_info=True)
             _alert_fiscal_emit_failed(result.order_ref, exc)
