@@ -149,6 +149,24 @@ class AuthCopyProjection:
 
 
 @dataclass(frozen=True)
+class PwaCopyProjection:
+    offline_title: CopyEntryProjection
+    offline_message: CopyEntryProjection
+    offline_retry_cta: CopyEntryProjection
+    install_title: CopyEntryProjection
+    install_message: CopyEntryProjection
+    install_cta: CopyEntryProjection
+    install_dismiss_cta: CopyEntryProjection
+    ios_title: CopyEntryProjection
+    ios_message: CopyEntryProjection
+    ios_share_step: CopyEntryProjection
+    ios_add_step: CopyEntryProjection
+    ios_done_cta: CopyEntryProjection
+    update_title: CopyEntryProjection
+    update_cta: CopyEntryProjection
+
+
+@dataclass(frozen=True)
 class LastOrderItemProjection:
     sku: str
     name: str
@@ -207,6 +225,7 @@ class HomeProjection:
     hero_copy: HomeHeroCopyProjection
     sections_copy: HomeSectionsCopyProjection
     auth_copy: AuthCopyProjection
+    pwa_copy: PwaCopyProjection
     shop: ShopProjection
     shop_status: ShopStatusProjection
     notices: tuple[HomeNoticeProjection, ...]
@@ -297,6 +316,7 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         hero_copy=_home_hero_copy(omotenashi),
         sections_copy=_home_sections_copy(omotenashi, default_city=shop_proj.default_city),
         auth_copy=_auth_copy(omotenashi),
+        pwa_copy=_pwa_copy(omotenashi),
         shop=shop_proj,
         shop_status=shop_status,
         notices=notices,
@@ -450,6 +470,25 @@ def _home_hero_copy(omotenashi: OmotenashiProjection) -> HomeHeroCopyProjection:
     )
 
 
+def _pwa_copy(omotenashi: OmotenashiProjection) -> PwaCopyProjection:
+    return PwaCopyProjection(
+        offline_title=_copy_entry("PWA_OFFLINE_TITLE", omotenashi=omotenashi),
+        offline_message=_copy_entry("PWA_OFFLINE_MESSAGE", omotenashi=omotenashi),
+        offline_retry_cta=_copy_entry("PWA_OFFLINE_RETRY_CTA", omotenashi=omotenashi),
+        install_title=_copy_entry("PWA_INSTALL_TITLE", omotenashi=omotenashi),
+        install_message=_copy_entry("PWA_INSTALL_MESSAGE", omotenashi=omotenashi),
+        install_cta=_copy_entry("PWA_INSTALL_CTA", omotenashi=omotenashi),
+        install_dismiss_cta=_copy_entry("PWA_INSTALL_DISMISS_CTA", omotenashi=omotenashi),
+        ios_title=_copy_entry("PWA_IOS_TITLE", omotenashi=omotenashi),
+        ios_message=_copy_entry("PWA_IOS_MESSAGE", omotenashi=omotenashi),
+        ios_share_step=_copy_entry("PWA_IOS_SHARE_STEP", omotenashi=omotenashi),
+        ios_add_step=_copy_entry("PWA_IOS_ADD_STEP", omotenashi=omotenashi),
+        ios_done_cta=_copy_entry("PWA_IOS_DONE_CTA", omotenashi=omotenashi),
+        update_title=_copy_entry("PWA_UPDATE_TITLE", omotenashi=omotenashi),
+        update_cta=_copy_entry("PWA_UPDATE_CTA", omotenashi=omotenashi),
+    )
+
+
 def _home_sections_copy(
     omotenashi: OmotenashiProjection, *, default_city: str = ""
 ) -> HomeSectionsCopyProjection:
@@ -579,6 +618,7 @@ def _reorder_context(request: HttpRequest) -> tuple[str | None, tuple[LastOrderI
 def _empty_shop() -> ShopProjection:
     return ShopProjection(
         brand_name="",
+        short_name="",
         tagline="",
         description="",
         description_html="",

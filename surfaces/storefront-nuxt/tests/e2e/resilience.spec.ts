@@ -32,3 +32,16 @@ test('o banner offline aparece ao perder conexão e some ao voltar', async ({ pa
   await context.setOffline(false)
   await expect(banner).toBeHidden()
 })
+
+test('uma navegação sem rede recebe o casco offline estático', async ({ page, context }) => {
+  await page.goto('/')
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready
+  })
+
+  await context.setOffline(true)
+  await page.goto('/menu')
+
+  await expect(page.getByRole('heading', { name: 'A loja ficou sem conexão' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Tentar de novo' })).toBeVisible()
+})
