@@ -6,6 +6,8 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 
 def certificate_issue(*, path: str = "", pfx_base64: str = "", password: str = "", pfx: bool = False) -> str:
     """An empty result means parseable and currently valid, not remotely trusted."""
@@ -26,7 +28,7 @@ def certificate_issue(*, path: str = "", pfx_base64: str = "", password: str = "
         if now >= certificate.not_valid_after_utc:
             return "expired"
     except Exception:
-        logging.getLogger(__name__).warning("certificate_readiness_invalid")
+        logger.warning("certificate_readiness_invalid")
         # Includes unavailable parser, unreadable files, bad password and malformed data.
         return "invalid"
     return ""
