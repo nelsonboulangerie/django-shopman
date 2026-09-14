@@ -24,6 +24,7 @@ import pytest
 from shopman.orderman.models import Order
 
 from shopman.shop.models import DeliveryZone
+from shopman.storefront.tests._checkout_auth import authenticate_checkout
 from shopman.storefront.tests._checkout_baseline import with_baseline
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
@@ -43,6 +44,9 @@ def test_card_checkout_on_web_commits_and_initiates_payment(client):
     from shopman.shop.models import Shop
 
     _seed_surface(stock_qty=Decimal("10"))
+    authenticate_checkout(client)
+    from shopman.shop.models import Channel
+    Channel.objects.filter(ref="web").update(config={"payment": {"method": ["pix", "card"]}})
     DeliveryZone.objects.create(
         shop=Shop.objects.first(),
         name="Centro",
