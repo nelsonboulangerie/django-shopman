@@ -48,6 +48,27 @@ editable installs apontando para a árvore principal, então rodar teste no work
 `PYTHONPATH` e `PYTHON` explícitos.
 
 
+### Coordenação entre sessões e agentes (Claude, Codex, DeepSeek Harness, quem for)
+
+Este repositório é operado por várias sessões e por agentes de fornecedores
+diferentes ao mesmo tempo. As regras valem para todos, humanos incluídos:
+
+- **Saiba o que está em voo antes de agir.** `git worktree list`, `git branch -r`,
+  `gh pr list` e `gh pr view <N> --json mergeable` dizem quem está mexendo em quê.
+  Trabalho de agente externo costuma morar solto numa worktree, sem PR: liste os
+  arquivos dele antes de dividir frentes. O checkout principal pode estar centenas
+  de commits atrás do `main`; pergunte ao **ref**, não ao arquivo.
+- **Lance quantos worktrees, branches, sessões ou subagentes o objetivo pedir.**
+  Paralelismo é bem-vindo; o que não é bem-vindo é dois trabalhos no mesmo branch.
+  Uma frente = um branch = um PR. Organize a melhor forma de realizar o trabalho e
+  diga no relatório como dividiu.
+- **Trabalhe de forma segura para evitar conflito e retrabalho.** Verifique se o
+  `main` já resolveu o problema antes de resolver; conflito se resolve no seu
+  branch, nunca no principal; branch na fila de merge recusa push (ajuste = PR de
+  seguimento).
+- **Relate o que é fato.** Contagem de testes não é evidência; saída de comando é.
+  O que ficou de fora se diz com nome e motivo.
+
 ## Estrutura do Projeto
 
 ```
