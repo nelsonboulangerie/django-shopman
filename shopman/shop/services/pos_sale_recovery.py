@@ -162,6 +162,7 @@ def settle(order_ref: str) -> dict:
                             intents={method: intent_ref},
                         )
                 except Exception as exc:
+                    logger.warning("pos_settlement_receipt_failed order=%s", order_ref)
                     failure = _as_error(order_ref, exc)
                 else:
                     _save(context, "done")
@@ -175,6 +176,7 @@ def settle(order_ref: str) -> dict:
                 # closed-drawer note/reconciliation path when it raises.
                 pos._settle_pos_sale(order, shift=shift, operator_username=operator_username)
             except Exception as exc:
+                logger.warning("pos_settlement_local_failed order=%s", order_ref)
                 failure = _as_error(order_ref, exc)
                 _save(context, "failed")
             else:

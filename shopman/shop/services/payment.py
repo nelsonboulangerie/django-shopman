@@ -187,6 +187,7 @@ def restore_existing_intent(order) -> bool:
         try:
             intent = PaymentService.get(payment_data["intent_ref"])
         except Exception:
+            logger.warning("payment.restore_existing_intent_failed order=%s", order.ref)
             return False
         return intent.order_ref == order.ref and intent.method == method and intent.amount_q == order.total_q
     existing = _existing_active_intent(order, method=method, amount_q=order.total_q)

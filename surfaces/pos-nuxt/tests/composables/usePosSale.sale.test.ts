@@ -1,3 +1,4 @@
+import { mockNuxtImport } from "@nuxt/test-utils/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "vue-sonner";
 import { nextTick } from "vue";
@@ -5,7 +6,7 @@ import { nextTick } from "vue";
 import { makeProjection, makeSale, makeTabPayload } from "./_posSaleHarness";
 
 const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }));
-beforeEach(() => vi.stubGlobal("$fetch", fetchMock));
+mockNuxtImport("$fetch", () => fetchMock);
 afterEach(() => vi.unstubAllGlobals());
 vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 
