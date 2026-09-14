@@ -272,11 +272,13 @@
        bottom-nav, pra fundir embaixo. O TOPO é outra superfície (o header escuro que
        estica), por isso topo e base podem ter cores diferentes. */
     background-color: var(--shop-bottomnav);
-    overscroll-behavior: none;
+    /* Mantém o shell contido na horizontal sem bloquear o gesto nativo de
+       puxar para atualizar no eixo vertical. */
+    overscroll-behavior-x: none;
   }
   body {
     @apply text-foreground;
-    overscroll-behavior: none;
+    overscroll-behavior-x: none;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     overflow-x: clip;
   }
