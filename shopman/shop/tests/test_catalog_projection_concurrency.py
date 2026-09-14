@@ -17,6 +17,14 @@ from shopman.shop.models import CatalogSyncState, Channel
 from shopman.shop.services import ifood_auth
 
 
+@pytest.fixture(autouse=True)
+def isolated_catalog_write_policy(settings):
+    settings.SHOPMAN_IFOOD_CATALOG_WRITE_POLICY = {
+        "environment": "test",
+        "merchant_allowlist": ["00000000-0000-4000-8000-000000000001"],
+    }
+
+
 @pytest.mark.django_db
 def test_pause_during_remote_upsert_leaves_durable_followup(settings):
     Channel.objects.create(ref="ifood", name="Local audit", is_active=True)
@@ -40,7 +48,7 @@ def test_pause_during_remote_upsert_leaves_durable_followup(settings):
 
     with override_settings(
         OFFERMAN={**settings.OFFERMAN, "PROJECTION_BACKENDS": backend_map},
-        SHOPMAN_IFOOD={"merchant_id": "isolated-audit", "api_base": "https://ifood.invalid", "catalog_default_category": "isolated-category"},
+        SHOPMAN_IFOOD={"merchant_id": "00000000-0000-4000-8000-000000000001", "api_base": "https://ifood.invalid", "catalog_default_category": "isolated-category"},
     ), patch.dict(registry._registry._directive_handlers, {CATALOG_PROJECT_SKU: CatalogProjectHandler()}, clear=True), patch.object(ifood_auth, "get_access_token", return_value="local-audit-token"), patch("requests.sessions.Session.request", new=http):
         reset_projection_backends()
         availability_changed.connect(on_availability_changed, dispatch_uid="temporary-catalog-race-audit", weak=False)
@@ -154,7 +162,7 @@ def test_postgres_serializes_http_reaper_and_atomic_operator_edit(settings, reap
 
     with override_settings(
         OFFERMAN={**settings.OFFERMAN, "PROJECTION_BACKENDS": {"ifood": "shopman.shop.adapters.catalog_projection_ifood.IFoodCatalogProjection"}},
-        SHOPMAN_IFOOD={"merchant_id": "isolated-audit", "api_base": "https://ifood.invalid", "catalog_default_category": "isolated-category"},
+        SHOPMAN_IFOOD={"merchant_id": "00000000-0000-4000-8000-000000000001", "api_base": "https://ifood.invalid", "catalog_default_category": "isolated-category"},
     ), patch.dict(registry._registry._directive_handlers, {CATALOG_PROJECT_SKU: CatalogProjectHandler()}, clear=True), patch.object(ifood_auth, "get_access_token", return_value="local-audit-token"), patch("requests.sessions.Session.request", new=http):
         reset_projection_backends()
         availability_changed.connect(on_availability_changed, dispatch_uid="postgres-catalog-race-audit", weak=False)
@@ -220,7 +228,7 @@ def test_new_sender_finishes_before_old_dispatcher_marks_done(settings):
 
     with override_settings(
         OFFERMAN={**settings.OFFERMAN, "PROJECTION_BACKENDS": {"ifood": "shopman.shop.adapters.catalog_projection_ifood.IFoodCatalogProjection"}},
-        SHOPMAN_IFOOD={"merchant_id": "isolated-audit", "api_base": "https://ifood.invalid", "catalog_default_category": "isolated-category"},
+        SHOPMAN_IFOOD={"merchant_id": "00000000-0000-4000-8000-000000000001", "api_base": "https://ifood.invalid", "catalog_default_category": "isolated-category"},
     ), patch.dict(registry._registry._directive_handlers, {CATALOG_PROJECT_SKU: handler}, clear=True), patch.object(ifood_auth, "get_access_token", return_value="local-audit-token"), patch("requests.sessions.Session.request", new=http):
         reset_projection_backends()
         try:

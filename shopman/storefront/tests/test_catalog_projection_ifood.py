@@ -40,6 +40,14 @@ _OFFERMAN_NONE = {**_OFFERMAN_BASE, "PROJECTION_BACKENDS": {}}
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def isolated_catalog_write_policy(settings):
+    settings.SHOPMAN_IFOOD_CATALOG_WRITE_POLICY = {
+        "environment": "test",
+        "merchant_allowlist": ["00000000-0000-4000-8000-000000000001"],
+    }
+
+
 @pytest.fixture
 def ifood_item():
     return ProjectedItem(
@@ -59,7 +67,7 @@ def ifood_item():
 def ifood_settings():
     return {
         "webhook_token": "wh-tok",
-        "merchant_id": "merchant-abc",
+        "merchant_id": "00000000-0000-4000-8000-000000000001",
         "api_base": "https://mock-ifood.test",
         "catalog_category_map": {"paes": "cat-paes-uuid"},
         "catalog_default_category": "cat-default-uuid",
@@ -111,7 +119,7 @@ def test_adapter_builds_correct_ifood_payload(ifood_item):
     """_item_payload builds a valid FullItemDto with price in BRL float."""
     from shopman.shop.adapters.catalog_projection_ifood import _item_payload
 
-    payload = _item_payload(ifood_item, merchant_id="merchant-abc", category_id="cat-uuid")
+    payload = _item_payload(ifood_item, merchant_id="00000000-0000-4000-8000-000000000001", category_id="cat-uuid")
 
     item = payload["item"]
     product = payload["products"][0]
@@ -188,7 +196,7 @@ def test_adapter_project_calls_ifood_put(ifood_item, ifood_settings, fake_oauth)
     assert result.errors == []
     mock_put.assert_called_once()
     url, kwargs = mock_put.call_args[0][0], mock_put.call_args[1]
-    assert url == "https://mock-ifood.test/catalog/v2.0/merchants/merchant-abc/items"
+    assert url == "https://mock-ifood.test/catalog/v2.0/merchants/00000000-0000-4000-8000-000000000001/items"
     assert kwargs["json"]["item"]["externalCode"] == "PAO-FRANCES"
     # "paes" is mapped in catalog_category_map.
     assert kwargs["json"]["item"]["categoryId"] == "cat-paes-uuid"
@@ -217,7 +225,7 @@ def test_adapter_project_errors_when_no_category(fake_oauth):
     """No mapped collection and no default → per-item error, no PUT."""
     from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
 
-    cfg = {"merchant_id": "m", "catalog_category_map": {}, "catalog_default_category": ""}
+    cfg = {"merchant_id": "00000000-0000-4000-8000-000000000001", "catalog_category_map": {}, "catalog_default_category": ""}
     item = ProjectedItem(
         sku="Z", name="Z", description="", unit="un",
         price_q=100, is_published=True, is_sellable=True, category="unknown",
@@ -231,10 +239,11 @@ def test_adapter_project_errors_when_no_category(fake_oauth):
     assert "category" in result.errors[0].lower()
 
 
-def test_adapter_project_returns_failure_without_oauth(ifood_item):
+def test_adapter_project_returns_failure_without_oauth(ifood_item, settings):
     """No OAuth credentials → authorized_headers() is None → loud failure, no PUT."""
     from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
 
+    settings.SHOPMAN_IFOOD = {"merchant_id": "00000000-0000-4000-8000-000000000001"}
     with patch("shopman.shop.services.ifood_auth.get_access_token", return_value=None):
         with patch("requests.put") as mock_put:
             result = IFoodCatalogProjection().project([ifood_item], channel="ifood")
@@ -256,7 +265,7 @@ def test_adapter_retract_patches_item_status(ifood_settings, fake_oauth):
 
     assert result.success is True
     url, kwargs = mock_patch.call_args[0][0], mock_patch.call_args[1]
-    assert url == "https://mock-ifood.test/catalog/v2.0/merchants/merchant-abc/items/status"
+    assert url == "https://mock-ifood.test/catalog/v2.0/merchants/00000000-0000-4000-8000-000000000001/items/status"
     assert kwargs["json"]["status"] == "UNAVAILABLE"
     uuid.UUID(kwargs["json"]["itemId"])
 
@@ -598,7 +607,8 @@ def test_sync_catalog_ifood_incremental_retracts(db, ifood_settings, fake_oauth,
 
 
 @override_settings(OFFERMAN=_OFFERMAN_NONE)
-def test_sync_catalog_ifood_backend_not_configured(db, reset_projection_registry):
+def test_sync_catalog_ifood_backend_not_configured(db, reset_projection_registry, settings):
+    settings.SHOPMAN_IFOOD = {"merchant_id": "00000000-0000-4000-8000-000000000001"}
     """No projection backend configured → clear CommandError, no API calls."""
     from django.core.management import call_command
     from django.core.management.base import CommandError
