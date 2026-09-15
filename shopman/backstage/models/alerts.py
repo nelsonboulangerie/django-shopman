@@ -104,6 +104,7 @@ class OperatorAlert(models.Model):
         # e-mail não saiu; cancelamento que falhou (nota válida em pé para venda
         # cancelada é passivo); e devolução parcial com a nota inteira de pé.
         # Nenhum desses se resolve com retry — todos terminam em alguém.
+        ("fiscal_emit_failed", "Emissão da NFC-e falhou após tentativas"),
         ("fiscal_receipt_promised", "Nota prometida ao cliente e não emitida"),
         ("fiscal_payment_mismatch", "NFC-e barrada: pagamento abaixo do total"),
         ("fiscal_email_failed", "NFC-e autorizada mas o e-mail não saiu"),
