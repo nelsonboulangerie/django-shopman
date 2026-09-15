@@ -22,12 +22,12 @@ export default defineConfig({
     },
     apple: {
       ...minimal2023Preset.apple,
-      padding: 0.18,
-      resizeOptions: { fit: 'contain', background: '#FCF7EE' }
+      padding: 0,
+      resizeOptions: { fit: 'contain', background: 'transparent' }
     },
     assetName: (type, size) => {
       if (type === 'maskable') return `${output}maskable-${size.width}x${size.height}.png`
-      if (type === 'apple') return `${output}apple-touch-icon-${size.width}x${size.height}.png`
+      if (type === 'apple') return `${output}apple-touch-icon-transparent-${size.width}x${size.height}.png`
       return `${output}pwa-${size.width}x${size.height}.png`
     }
   }
