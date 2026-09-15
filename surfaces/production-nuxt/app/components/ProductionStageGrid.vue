@@ -86,15 +86,6 @@ const tomorrowISO = isoForOffset(1);
 const isCustomDate = computed(
   () => selectedDate.value !== todayISO && selectedDate.value !== tomorrowISO,
 );
-const customDateInput = ref<HTMLInputElement | null>(null);
-function openCustomDate() {
-  const input = customDateInput.value;
-  if (!input) return;
-  if (typeof input.showPicker === "function") input.showPicker();
-  else input.click();
-  input.focus();
-}
-
 // ── Filtro por ficha-base (higiene visual por grupo de massa) ───────────────
 const baseFilter = ref("");
 const baseOptions = computed(() => board.value?.base_recipes ?? []);
@@ -589,29 +580,24 @@ const headerCount = computed(() => {
           >
             Amanhã
           </button>
-          <div class="relative">
-            <button
-              type="button"
-              class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
-              :class="
-                isCustomDate
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-              "
-              :aria-pressed="isCustomDate"
-              @click="openCustomDate()"
-            >
+          <label
+            class="relative inline-flex min-h-11 cursor-pointer items-center rounded-md px-2.5 py-1.5 text-sm font-medium transition focus-within:ring-[3px] focus-within:ring-ring/50"
+            :class="
+              isCustomDate
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+            "
+          >
+            <span aria-hidden="true">
               {{ isCustomDate ? weekdayLabel(selectedDate) : "Outra data" }}
-            </button>
+            </span>
             <input
-              ref="customDateInput"
               v-model="selectedDate"
               type="date"
-              class="pointer-events-none absolute inset-0 opacity-0"
+              class="absolute inset-0 cursor-pointer opacity-0"
               aria-label="Escolher outra data"
-              tabindex="-1"
             />
-          </div>
+          </label>
         </div>
         <span class="text-sm text-muted-foreground">{{
           fullDateLabel(selectedDate)
@@ -649,7 +635,7 @@ const headerCount = computed(() => {
         <p class="text-sm">Estamos tentando reconectar sozinhos.</p>
         <UiButton
           type="button"
-          class="mt-1"
+          class="mt-1 min-h-11"
           variant="outline"
           size="sm"
           @click="refresh()"

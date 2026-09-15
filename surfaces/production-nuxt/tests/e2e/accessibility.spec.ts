@@ -51,7 +51,15 @@ async function expectTouchTargets(page: Page, context: string) {
       elements.flatMap((element) => {
         const node = element as HTMLElement;
         const style = getComputedStyle(node);
-        const rect = node.getBoundingClientRect();
+        // Checkbox/radio may be visually compact while its associated label is
+        // the actual pointer target. Measure that explicit native hit area.
+        const target =
+          node instanceof HTMLInputElement &&
+          ["checkbox", "radio"].includes(node.type) &&
+          node.closest("label")
+            ? node.closest("label")!
+            : node;
+        const rect = target.getBoundingClientRect();
         if (
           style.display === "none" ||
           style.visibility === "hidden" ||
@@ -107,6 +115,67 @@ test("superfície autenticada passa AA, reflow e alvos aplicáveis", async ({
   if (testInfo.project.metadata.touchTargets) {
     await expectTouchTargets(page, `${route} ${testInfo.project.name}`);
   }
+
+  await testInfo.attach(`estado-default-${testInfo.project.name}`, {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: "image/png",
+  });
+});
+
+const criticalRoutes = [
+  { path: "/plan", audience: "floor" },
+  { path: "/mise-en-place", audience: "floor" },
+  { path: "/expedite", audience: "floor" },
+  { path: "/reports", audience: "manager" },
+  { path: "/recipes", audience: "manager" },
+] as const;
+
+for (const route of criticalRoutes) {
+  test(`${route.path} passa smoke acessível no estado vazio`, async ({
+    context,
+    page,
+  }, testInfo) => {
+    const project = testInfo.project.name;
+    const isTv = Boolean(testInfo.project.metadata.board);
+    const isMobile = project === "chromium-mobile-manager";
+    test.skip(isTv || (isMobile && route.audience === "floor"));
+
+    await context.addCookies([authed]);
+    await page.goto(route.path);
+    await expect(page.locator("main")).toBeVisible();
+    await expectNoAxeViolations(page, `${route.path} ${project}`);
+    await expectNoPageOverflow(page, `${route.path} ${project}`);
+    if (testInfo.project.metadata.touchTargets) {
+      await expectTouchTargets(page, `${route.path} ${project}`);
+    }
+    await testInfo.attach(
+      `estado-vazio-${route.path.slice(1).replaceAll("/", "-")}-${project}`,
+      {
+        body: await page.screenshot({ fullPage: true }),
+        contentType: "image/png",
+      },
+    );
+  });
+}
+
+test("Expedição abre a revisão de QC mantendo contexto", async ({ context, page }, testInfo) => {
+  test.skip(
+    Boolean(testInfo.project.metadata.board) ||
+      testInfo.project.name === "chromium-mobile-manager",
+  );
+  await context.addCookies([authed]);
+  await page.goto("/expedite");
+  await page
+    .getByRole("button", { name: "Confirmar conclusão da fornada de Pão francês" })
+    .click();
+  await expect(page.getByText("Pão francês", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("40 produzidos", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Voltar" })).toBeVisible();
+  await expectNoAxeViolations(page, `QC aberto ${testInfo.project.name}`);
+  await testInfo.attach(`qc-aberto-${testInfo.project.name}`, {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: "image/png",
+  });
 });
 
 test("reduced motion torna as palhetas instantâneas", async ({ context, page }) => {
@@ -119,57 +188,93 @@ test("reduced motion torna as palhetas instantâneas", async ({ context, page })
       () => matchMedia("(prefers-reduced-motion: reduce)").matches,
     ),
   ).toBe(true);
-  const movingCells = await page.locator(".flap-cell").evaluateAll((cells) =>
-    cells.filter((cell) => {
-      const style = getComputedStyle(cell);
-      return (
-        Number.parseFloat(style.animationDuration) > 0 ||
-        Number.parseFloat(style.transitionDuration) > 0
-      );
-    }).length,
-  );
-  expect(movingCells).toBe(0);
+  await page.waitForTimeout(1_100); // cobre ao menos um tick/pulso do relógio
+  await expect
+    .poll(() =>
+      page.locator(".flap-word").evaluateAll((words) =>
+        words.flatMap((word) => {
+          const label = word.getAttribute("aria-label")?.trim().toUpperCase() ?? "";
+          const settled = [...word.querySelectorAll(".flap-cell")]
+            .map((cell) => cell.textContent ?? "")
+            .join("")
+            .trim()
+            .toUpperCase();
+          return label && settled === label ? [] : [{ label, settled }];
+        }),
+      ),
+    )
+    .toEqual([]);
+  expect(
+    await page.locator(".flap-cell").evaluateAll((cells) =>
+      cells.filter((cell) => {
+        const style = getComputedStyle(cell);
+        return (
+          cell.classList.contains("flap-cell--flipping") ||
+          Number.parseFloat(style.animationDuration) > 0 ||
+          Number.parseFloat(style.transitionDuration) > 0
+        );
+      }).length,
+    ),
+  ).toBe(0);
 });
 
-for (const { route, trigger } of [
-  { route: "/", trigger: "Outra data" },
-  { route: "/board", trigger: "Outra" },
+for (const { route, label, endpoint } of [
+  { route: "/", label: "Escolher outra data", endpoint: "/production/?" },
+  {
+    route: "/board",
+    label: "Escolher outra data",
+    endpoint: "/production/forecast/?",
+  },
+  {
+    route: "/expedite",
+    label: "Escolher a data das fornadas",
+    endpoint: "/production/qc/?",
+  },
 ]) {
-  test(`${route} abre o seletor de data quando showPicker não existe`, async ({
+  test(`${route} usa o controle nativo de data sem depender de showPicker`, async ({
     context,
     page,
   }) => {
     await page.addInitScript(() => {
       Object.defineProperty(HTMLInputElement.prototype, "showPicker", {
         configurable: true,
-        value: undefined,
+        value() {
+          window.__showPickerCalls += 1;
+          throw new DOMException("showPicker indisponível", "NotSupportedError");
+        },
       });
-      const nativeClick = HTMLInputElement.prototype.click;
-      HTMLInputElement.prototype.click = function click() {
-        if (this.type === "date") {
-          this.dataset.e2eFallbackClick = "true";
-          return;
-        }
-        nativeClick.call(this);
-      };
+      window.__showPickerCalls = 0;
     });
     await context.addCookies([authed]);
     await page.goto(route);
 
-    const input = page.getByLabel("Escolher outra data");
-    await page.getByRole("button", { name: trigger, exact: true }).click();
-    await expect(input).toHaveAttribute("data-e2e-fallback-click", "true");
+    const input = page.getByLabel(label);
+    await input.click();
     await expect(input).toBeFocused();
+    expect(await page.evaluate(() => window.__showPickerCalls)).toBe(0);
+    const changedRequest = page.waitForRequest(
+      (request) =>
+        request.url().includes(endpoint) && request.url().includes("date=2026-09-17"),
+    );
+    await input.evaluate((node: HTMLInputElement) => {
+      node.value = "2026-09-17";
+      node.dispatchEvent(new Event("input", { bubbles: true }));
+      node.dispatchEvent(new Event("change", { bubbles: true }));
+      node.dataset.e2eChangeObserved = "true";
+    });
+    await expect(input).toHaveValue("2026-09-17");
+    await expect(input).toHaveAttribute("data-e2e-change-observed", "true");
+    await changedRequest;
   });
 }
 
-test("copy longa e números grandes permanecem legíveis em zoom 200%", async ({
+test("copy longa e números grandes passam reflow equivalente a 200%", async ({
   context,
   page,
 }, testInfo) => {
   test.skip(
     testInfo.project.name !== "chromium-tablet-landscape",
-    "Cenário determinístico de zoom roda uma vez na viewport primária",
+    "Cenário determinístico de reflow roda uma vez na viewport primária",
   );
   await context.addCookies([
     authed,
@@ -185,9 +290,8 @@ test("copy longa e números grandes permanecem legíveis em zoom 200%", async ({
     page.getByText("Pão de fermentação natural com castanhas brasileiras"),
   ).toBeVisible();
   await expect(page.getByText("12345,75", { exact: false }).first()).toBeVisible();
-  // Browser zoom at 200% halves the available CSS viewport. Playwright does
-  // not expose a cross-engine zoom API, so use the deterministic reflow
-  // equivalent of the primary 1024×768 tablet viewport.
+  // Isso cobre a geometria/reflow equivalente, não prova zoom real nem revisão
+  // visual: Playwright não expõe uma API de zoom interoperável entre engines.
   await page.setViewportSize({ width: 512, height: 384 });
   await expectNoPageOverflow(page, "produção com copy longa em zoom 200%");
   await expectNoAxeViolations(page, "produção com copy longa em zoom 200%");
@@ -210,5 +314,6 @@ test("foco permanece distinguível em contraste forçado", async ({ page }, test
 declare global {
   interface Window {
     axe: typeof axe;
+    __showPickerCalls: number;
   }
 }

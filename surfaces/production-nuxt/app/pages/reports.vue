@@ -128,7 +128,7 @@ function refreshAll() {
             v-for="chip in dateChips"
             :key="chip.iso"
             type="button"
-            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
               selectedDate === chip.iso
                 ? 'bg-primary text-primary-foreground'
@@ -267,7 +267,7 @@ function refreshAll() {
             v-for="entry in REPORT_KINDS"
             :key="entry.kind"
             type="button"
-            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
               kind === entry.kind
                 ? 'bg-primary text-primary-foreground'
@@ -282,7 +282,7 @@ function refreshAll() {
         <a
           :href="csvUrl"
           download
-          class="ml-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition hover:bg-accent"
+          class="ml-auto inline-flex min-h-11 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition hover:bg-accent"
         >
           <Icon name="lucide:download" class="size-4" /> Baixar CSV
         </a>

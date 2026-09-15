@@ -10,6 +10,8 @@ const authed = {
   path: "/",
 };
 
+const locked = { ...authed, value: "locked" };
+
 test.describe("Produção — gate de operador", () => {
   test("device não autenticado → tela de login (sem sessão)", async ({
     page,
@@ -38,6 +40,55 @@ test.describe("Produção — gate de operador", () => {
       page.locator('aside[aria-label="Barra do app Produção"]'),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: /barra/i })).toBeVisible();
+  });
+
+  test("lock bloqueia atalhos da superfície subjacente", async ({
+    page,
+    context,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "chromium-desktop");
+    await context.addCookies([locked]);
+    await page.goto("/");
+    await expect(
+      page.getByRole("heading", { name: "Identifique-se para operar" }),
+    ).toBeVisible();
+    await page.keyboard.press("Alt+2");
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.locator("[data-operator-lock]")).toBeVisible();
+  });
+
+  test("sessão expirada retorna ao gate sem manter ação interativa", async ({
+    page,
+    context,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "chromium-desktop");
+    await context.addCookies([authed]);
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: "Produção" })).toBeVisible();
+    await context.clearCookies();
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "Entre para operar" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Usuário")).toBeFocused();
+  });
+
+  test("atalhos percorrem as quatro etapas sem mouse", async ({
+    page,
+    context,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "chromium-desktop");
+    await context.addCookies([authed]);
+    await page.goto("/");
+    for (const [shortcut, path] of [
+      ["Alt+1", "/plan"],
+      ["Alt+2", "/mise-en-place"],
+      ["Alt+4", "/expedite"],
+      ["Alt+3", "/"],
+    ] as const) {
+      await page.keyboard.press(shortcut);
+      await expect(page).toHaveURL(new RegExp(`${path === "/" ? "\\/$" : `${path}$`}`));
+    }
   });
 });
 

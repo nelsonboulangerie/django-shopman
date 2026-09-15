@@ -21,6 +21,13 @@ const SESSION_AUTHED = {
   pin_must_change: false,
 };
 
+const SESSION_LOCKED = {
+  station: "balcao",
+  operator: null,
+  locked: true,
+  pin_must_change: false,
+};
+
 const ACCESS = {
   can_view_suggested: true,
   can_view_planned: true,
@@ -84,6 +91,53 @@ const FORECAST = { forecast: { selected_date: "2026-07-06", selected_date_displa
 const KDS = { kds: { cards: [], total_count: 0, late_count: 0 } };
 const MISE = { mise_en_place: { selected_date: "2026-07-06", lines: [] } };
 const ALERTS = { alerts: [], counts: { active: 0, critical: 0 } };
+const QC = {
+  qc: {
+    selected_date: "2026-07-06",
+    selected_date_display: "domingo, 6 de julho",
+    orders: [
+      {
+        pk: 42,
+        ref: "WO-0042",
+        rev: 3,
+        recipe_name: "Pão francês",
+        output_sku: "PAO-FRANCES",
+        position_ref: "forno-1",
+        status: "started",
+        planned_qty: "40",
+        started_qty: "40",
+        started_at_display: "06:30",
+        elapsed_minutes: 20,
+        can_close: true,
+        closed: false,
+        can_correct: false,
+        quality_reviewed: false,
+        partition: [],
+        correction_count: 0,
+        last_correction_at_display: "",
+        committed_qty: "12",
+        full_price_qty: "0",
+        discounted_qty: "0",
+        loss_qty: "0",
+      },
+    ],
+    closed_count: 0,
+    total_count: 1,
+    grades: [
+      { ref: "standard", label: "Normal", rank: 30, markdown_percent: 0, is_default: true },
+    ],
+    defects: [],
+    recipes: [],
+    previous_open_count: 0,
+    previous_open_date: "",
+    access: ACCESS,
+    actions: [{ ref: "finish:42", enabled: true, expected_rev: 3, proof: "finish-proof" }],
+    generated_at: "2099-01-01T11:59:00Z",
+    source_revision: "qc:1",
+    fresh_until: "2099-01-01T12:01:00Z",
+    contract_version: 1,
+  },
+};
 
 function json(res, status, body) {
   res.statusCode = status;
@@ -97,22 +151,27 @@ const server = createServer((req, res) => {
   res.setHeader("vary", "Accept-Language");
   res.setHeader("cache-control", "public, max-age=3600");
   const url = req.url || "";
-  const authed = (req.headers.cookie || "").includes("e2e_session=authed");
+  const cookie = req.headers.cookie || "";
+  const authed = cookie.includes("e2e_session=authed");
+  const locked = cookie.includes("e2e_session=locked");
   const longCopy = (req.headers.cookie || "").includes("e2e_scenario=long-copy");
 
   if (/\/storefront\//.test(url)) return json(res, 404, { detail: "Storefront fora do Produção." });
 
   // Sessão do dispositivo: 403 = device não autenticado → o gate de login aparece.
   if (/\/operator\/session\/?(\?|$)/.test(url)) {
-    return authed ? json(res, 200, SESSION_AUTHED) : json(res, 403, { detail: "Autenticação necessária." });
+    if (authed) return json(res, 200, SESSION_AUTHED);
+    if (locked) return json(res, 200, SESSION_LOCKED);
+    return json(res, 403, { detail: "Autenticação necessária." });
   }
 
   // Demais endpoints de operador exigem a sessão autenticada.
-  if (!authed) return json(res, 403, { detail: "Autenticação necessária." });
+  if (!authed && !locked) return json(res, 403, { detail: "Autenticação necessária." });
 
   if (/\/operator\/eligible\/?(\?|$)/.test(url)) return json(res, 200, { operators: [] });
   if (/\/production\/forecast\/?(\?|$)/.test(url)) return json(res, 200, FORECAST);
   if (/\/production\/kds\/?(\?|$)/.test(url)) return json(res, 200, KDS);
+  if (/\/production\/qc\/?(\?|$)/.test(url)) return json(res, 200, QC);
   if (/\/production\/mise-en-place\/?(\?|$)/.test(url)) return json(res, 200, MISE);
   if (/\/production\/?(\?|$)/.test(url)) return json(res, 200, longCopy ? LONG_COPY_BOARD : BOARD);
   if (/\/alerts\/?(\?|$)/.test(url)) return json(res, 200, ALERTS);

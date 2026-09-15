@@ -45,6 +45,15 @@ export default defineConfig({
       },
     },
     {
+      name: "chromium-tablet-portrait",
+      metadata: { touchTargets: true },
+      use: {
+        ...devices["Desktop Chrome"],
+        hasTouch: true,
+        viewport: { width: 768, height: 1024 },
+      },
+    },
+    {
       name: "chromium-desktop",
       use: {
         ...devices["Desktop Chrome"],

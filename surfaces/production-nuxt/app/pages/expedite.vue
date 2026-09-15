@@ -59,12 +59,6 @@ watch(
 
 // ── Data: Hoje · Outra data (a fornada esquecida de ontem fecha por aqui) ───
 const isCustomDate = computed(() => selectedDate.value !== "");
-const customDateInput = ref<HTMLInputElement | null>(null);
-function openCustomDate() {
-  customDateInput.value?.showPicker?.();
-  customDateInput.value?.focus();
-}
-
 // Menu ⋯ do painel — a exceção mora aqui, fora de evidência.
 const menuOpen = ref(false);
 
@@ -476,7 +470,7 @@ function onTimerKeydown(event: KeyboardEvent) {
           <!-- Data em segmento compacto: duas escolhas e o calendário ocupam um único controle. -->
           <button
             type="button"
-            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
               !isCustomDate
                 ? 'bg-primary text-primary-foreground'
@@ -486,26 +480,22 @@ function onTimerKeydown(event: KeyboardEvent) {
           >
             Hoje
           </button>
-          <button
-            type="button"
-            class="relative rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+          <label
+            class="relative inline-flex min-h-11 cursor-pointer items-center rounded-md px-2.5 py-1.5 text-sm font-medium transition focus-within:ring-[3px] focus-within:ring-ring/50"
             :class="
               isCustomDate
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:bg-accent hover:text-foreground'
             "
-            @click="openCustomDate"
           >
-            {{ isCustomDate ? kiosk?.selected_date_display : "Outra data" }}
+            <span aria-hidden="true">{{ isCustomDate ? kiosk?.selected_date_display : "Outra data" }}</span>
             <input
-              ref="customDateInput"
               v-model="selectedDate"
               type="date"
               class="absolute inset-0 cursor-pointer opacity-0"
               aria-label="Escolher a data das fornadas"
-              tabindex="-1"
             />
-          </button>
+          </label>
         </div>
 
         <UiPopover

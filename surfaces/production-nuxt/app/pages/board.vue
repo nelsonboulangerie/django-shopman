@@ -51,16 +51,6 @@ const isCustomDate = computed(
     selectedDate.value !== todayISO.value &&
     selectedDate.value !== tomorrowISO.value,
 );
-const customDateInput = ref<HTMLInputElement | null>(null);
-function openCustomDate() {
-  sound.unlock();
-  const input = customDateInput.value;
-  if (!input) return;
-  if (typeof input.showPicker === "function") input.showPicker();
-  else input.click();
-  input.focus();
-}
-
 // ── Relógio vivo ────────────────────────────────────────────────────────────
 const clock = ref("--:--");
 let clockTimer: ReturnType<typeof setInterval> | null = null;
@@ -163,25 +153,21 @@ const STATUS_CHARS = 10; // CONFIRMADO
           >
             Amanhã
           </button>
-          <div class="relative">
-            <button
-              type="button"
-              class="board-datekey"
-              :class="{ 'board-datekey--active': isCustomDate }"
-              :aria-pressed="isCustomDate"
-              @click="openCustomDate()"
-            >
+          <label
+            class="board-datekey relative cursor-pointer focus-within:outline focus-within:outline-2 focus-within:outline-offset-4 focus-within:outline-current"
+            :class="{ 'board-datekey--active': isCustomDate }"
+          >
+            <span aria-hidden="true">
               {{ isCustomDate ? weekdayLabel(selectedDate) : "Outra" }}
-            </button>
+            </span>
             <input
-              ref="customDateInput"
               v-model="selectedDate"
               type="date"
-              class="pointer-events-none absolute inset-0 opacity-0"
+              class="absolute inset-0 cursor-pointer opacity-0"
               aria-label="Escolher outra data"
-              tabindex="-1"
+              @click="sound.unlock()"
             />
-          </div>
+          </label>
         </div>
         <div class="ml-auto flex items-center gap-2.5">
           <!-- Controles de som/tela cheia são teclas do kiosk, não botões do shell operador. -->

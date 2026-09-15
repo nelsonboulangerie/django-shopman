@@ -12,29 +12,33 @@ npm run test:e2e
 
 ## O que cobre
 
-- **guards.spec** — telas de operador atrás do gate; `/menuboard` aposentado sem consulta
-  ao storefront; headers defensivos, cache privado, `Vary` e cookie do BFF.
+- **guards.spec** — telas de operador atrás do gate; lock, expiração de sessão e
+  atalhos das quatro etapas; `/menuboard` aposentado sem consulta ao storefront;
+  headers defensivos, cache privado, `Vary` e cookie do BFF.
 - **resilience.spec** — `OfflineBanner` aparece quando o contexto vai offline.
-- **accessibility.spec** — axe/WCAG AA, foco inicial, reflow, alvos de toque,
-  reduced motion, contraste forçado, copy longa e zoom 200% na matriz canônica.
+- **accessibility.spec** — axe/WCAG AA nas rotas críticas e no QC aberto, foco,
+  reflow, alvos de toque, reduced motion, contraste forçado e copy longa. A
+  viewport reduzida cobre apenas o **reflow equivalente** a zoom 200%, não o
+  zoom real. Screenshots determinísticos são anexados como artefatos para revisão.
 
-O gate executa Chromium nas viewports 1024×768, 1440×900, 1920×1080,
-1366×768 e 390×844, além de WebKit em 768×1024. A matriz cobre geometria e
-engines reais de browser; não representa tablet, TV, leitor de tela ou toque
-físicos.
+O gate executa Chromium nas viewports 1024×768, 768×1024, 1440×900,
+1920×1080, 1366×768 e 390×844, além de WebKit em 768×1024. A matriz cobre
+geometria e engines reais de browser; screenshots não são baselines aprovadas e
+não substituem revisão humana, zoom real, tablet, TV, leitor de tela ou toque físicos.
 
 ## O que fica para o reviewer local (Django real)
 
-Login efetivo, lock (Opção C), troca de operador, planejar/iniciar/concluir com dados
-reais, e o rollover de meia-noite do painel exigem a stack completa + gateway. Rodam contra
-o Django real. D4 também exige as refs/credenciais reais das TVs e a janela de corte.
+Login efetivo, desbloqueio/troca de operador, planejar/iniciar/concluir contra
+persistência real e o rollover de meia-noite exigem a stack completa + gateway.
+D4 também exige refs/credenciais reais das TVs e a janela de corte.
 
 ## Como funciona a sessão (mock ramificado por cookie)
 
 O `mockBackend.mjs` ramifica pelo cookie `e2e_session` que o BFF encaminha ao Django:
 sem cookie → 403 nos endpoints de operador (aparece o gate de login); com
-`e2e_session=authed` → sessão autenticada + boards vazios. O mock não oferece fixture
-de storefront: chamadas acidentais a `/storefront/` retornam 404.
+`e2e_session=authed` → sessão autenticada + estados vazios e uma WO sintética
+isolada para abrir o QC; `e2e_session=locked` → lock sem autenticar ninguém. O
+mock não oferece fixture de storefront: chamadas acidentais a `/storefront/` retornam 404.
 
 ## Portas
 
