@@ -74,6 +74,36 @@ def _get_config(channel: str = "ifood") -> dict:
     return getattr(settings, "SHOPMAN_IFOOD", {})
 
 
+class IFoodCatalogWriteBlocked(Exception):
+    """Escrita não autorizada para um merchant explicitamente de teste."""
+
+
+def ensure_catalog_write_allowed(cfg: dict | None = None) -> None:
+    """Nega por padrão, sem OAuth/HTTP ou inferência do tipo de loja."""
+    from django.conf import settings
+
+    policy = getattr(settings, "SHOPMAN_IFOOD_CATALOG_WRITE_POLICY", None)
+    cfg = _get_config() if cfg is None else cfg
+    message = ("Escrita de catálogo iFood bloqueada. Requer política explícita de teste "
+               "SHOPMAN_IFOOD_CATALOG_WRITE_POLICY e merchant autorizado na allowlist.")
+    if not isinstance(policy, dict) or policy.get("environment") != "test" or not isinstance(cfg, dict):
+        raise IFoodCatalogWriteBlocked(message)
+    merchants = policy.get("merchant_allowlist")
+    if not isinstance(merchants, list) or not merchants:
+        raise IFoodCatalogWriteBlocked(message)
+    for merchant in merchants:
+        if not isinstance(merchant, str):
+            raise IFoodCatalogWriteBlocked(message)
+        try:
+            canonical = str(uuid.UUID(merchant))
+        except (ValueError, AttributeError) as exc:
+            raise IFoodCatalogWriteBlocked(message) from exc
+        if canonical != merchant:
+            raise IFoodCatalogWriteBlocked(message)
+    if cfg.get("merchant_id") not in merchants:
+        raise IFoodCatalogWriteBlocked(message)
+
+
 def _base_url(cfg: dict) -> str:
     return str(cfg.get("api_base") or "https://merchant-api.ifood.com.br").rstrip("/")
 
@@ -144,10 +174,12 @@ def _check_rate_limit(resp: requests.Response) -> None:
 
 def _headers(cfg: dict) -> dict | None:
     """OAuth Bearer + own User-Agent, or None when iFood auth is not configured."""
+    ensure_catalog_write_allowed(cfg)
     return ifood_auth.authorized_headers({"Content-Type": "application/json"})
 
 
 def _upsert_item(item: ProjectedItem, cfg: dict, headers: dict) -> None:
+    ensure_catalog_write_allowed(cfg)
     merchant_id = cfg["merchant_id"]
     category_id = _resolve_category_id(item, cfg)
     url = f"{_base_url(cfg)}/catalog/v2.0/merchants/{merchant_id}/items"
@@ -162,6 +194,7 @@ def _upsert_item(item: ProjectedItem, cfg: dict, headers: dict) -> None:
 
 
 def _set_item_status(sku: str, status: str, cfg: dict, headers: dict) -> None:
+    ensure_catalog_write_allowed(cfg)
     merchant_id = cfg["merchant_id"]
     url = f"{_base_url(cfg)}/catalog/v2.0/merchants/{merchant_id}/items/status"
     resp = requests.patch(
@@ -185,6 +218,10 @@ class IFoodCatalogProjection:
         full_sync: bool = False,
     ) -> ProjectionResult:
         cfg = _get_config(channel)
+        try:
+            ensure_catalog_write_allowed(cfg)
+        except IFoodCatalogWriteBlocked as exc:
+            return ProjectionResult(success=False, errors=[str(exc)], channel=channel)
         headers = _headers(cfg)
         if not headers:
             return ProjectionResult(
@@ -214,6 +251,10 @@ class IFoodCatalogProjection:
 
     def retract(self, skus: list[str], *, channel: str) -> ProjectionResult:
         cfg = _get_config(channel)
+        try:
+            ensure_catalog_write_allowed(cfg)
+        except IFoodCatalogWriteBlocked as exc:
+            return ProjectionResult(success=False, errors=[str(exc)], channel=channel)
         headers = _headers(cfg)
         if not headers:
             return ProjectionResult(
