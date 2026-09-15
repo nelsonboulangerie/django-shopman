@@ -18,6 +18,7 @@ from rest_framework.views import APIView
 from shopman.shop.services import availability as avail_service
 from shopman.storefront.api.serializers import (
     AvailabilityResponseSerializer,
+    StockAlertAuthRequiredResponseSerializer,
     StockAlertManagementActionSerializer,
     StockAlertManagementStateSerializer,
     StockAlertSessionStateSerializer,
@@ -94,8 +95,10 @@ class AvailabilityView(APIView):
 class StockAlertSubscribeView(APIView):
     """POST /api/v1/availability/<sku>/notify/ — "Me avise quando…".
 
-    Aberto a cliente logado (usa o telefone da conta) ou anônimo (telefone no
-    corpo). Registra uma assinatura persistente.
+    A assinatura persistente só é criada para cliente autenticado e usa o
+    telefone da identidade canônica. Uma sessão anônima recebe a próxima ação,
+    mas não cria opt-in: digitar um número não prova que ele pertence a quem
+    está navegando.
 
     O corpo PODE escolher o gatilho via ``alert_type`` (``stock_back`` ou
     ``production_ready``), mas a loja não escolhe: ela manda só o telefone, e
@@ -150,7 +153,10 @@ class StockAlertSubscribeView(APIView):
         tags=["availability"],
         summary="Subscribe to a persistent product alert",
         request=StockAlertSubscribeRequestSerializer,
-        responses={200: StockAlertSubscribeResponseSerializer},
+        responses={
+            200: StockAlertSubscribeResponseSerializer,
+            401: StockAlertAuthRequiredResponseSerializer,
+        },
     )
     def post(self, request, sku):
         if getattr(request, "limited", False):
@@ -163,7 +169,6 @@ class StockAlertSubscribeView(APIView):
 
         from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
         from shopman.storefront.identity import get_authenticated_customer
-        from shopman.storefront.intents._phone import normalize_phone_input
         from shopman.storefront.models import StockAlertSubscription
         from shopman.storefront.services import stock_alerts
 
@@ -172,6 +177,19 @@ class StockAlertSubscribeView(APIView):
             return Response(
                 {"detail": "Tipo de aviso desconhecido.", "field": "alert_type"},
                 status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        customer = get_authenticated_customer(request)
+        if customer is None:
+            # Nenhuma linha é criada e qualquer telefone enviado pelo cliente é
+            # deliberadamente ignorado: texto livre não comprova posse.
+            return _no_store_response(
+                {
+                    "detail": "Entre para confirmar seu WhatsApp e ativar este aviso.",
+                    "field": "auth",
+                    "auth_required": True,
+                },
+                status_code=status.HTTP_401_UNAUTHORIZED,
             )
 
         adult_declaration = str(request.data.get("adult_declared") or "").strip().lower()
@@ -184,25 +202,15 @@ class StockAlertSubscribeView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        customer = get_authenticated_customer(request)
-        phone = normalize_phone_input(str(request.data.get("phone") or "")) or ""
-        if customer is None and not phone:
-            return Response(
-                {"detail": "Informe um telefone para avisarmos quando voltar.", "field": "phone"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         channel_ref = request.GET.get("channel") or STOREFRONT_CHANNEL_REF
-        if customer is not None:
-            # A sessão autenticada usa sempre o contato da identidade canônica;
-            # um telefone no corpo não pode redirecionar o aviso.
-            phone = ""
+        # A sessão autenticada usa sempre o contato da identidade canônica;
+        # um telefone no corpo não pode redirecionar o aviso.
 
         outcome = stock_alerts.subscribe_with_outcome(
             sku,
             channel_ref=channel_ref,
             customer=customer,
-            phone=phone,
+            phone="",
             alert_type=alert_type,
             adult_declared=True,
             resume_existing=False,
@@ -213,31 +221,28 @@ class StockAlertSubscribeView(APIView):
                 {"detail": "Não foi possível registrar o aviso."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        # Persiste o estado do sino p/ anônimo com contato + SKU. O marcador
-        # legado guardava só o SKU e ficava preso depois que o aviso era enviado.
+        # Mantém o marcador de sessão compatível com capacidades já emitidas; a
+        # identidade autenticada continua sendo a autoridade para esta criação.
         session = getattr(request, "session", None)
         marked: list[dict] = []
         if session is not None:
             session.pop("stock_alert_skus", None)
             marked = session.get("stock_alert_subscriptions")
             marked = list(marked) if isinstance(marked, (list, tuple)) else []
-        owned_marker = _marker_for_subscription(marked, sub)
-        may_manage = customer is not None or outcome.created or owned_marker is not None
 
         # subscribe_with_outcome deliberately leaves an existing paused row
-        # untouched. Only its authenticated customer or the browser session
-        # that created it may explicitly repeat the opt-in and resume it.
-        if may_manage and sub.paused_at is not None:
+        # untouched. This explicit repeat opt-in belongs to its authenticated
+        # customer and may resume it for future occurrences.
+        if sub.paused_at is not None:
             stock_alerts.set_paused(
                 sub.ref,
                 paused=False,
                 sku=sub.sku,
                 customer=customer,
-                phone=str(owned_marker.get("contact_phone") or "") if owned_marker else "",
             )
             sub.refresh_from_db()
 
-        if session is not None and may_manage:
+        if session is not None:
             marker = {
                 "ref": str(sub.ref),
                 "sku": sub.sku,
@@ -248,12 +253,6 @@ class StockAlertSubscribeView(APIView):
                 marked.append(marker)
                 session["stock_alert_subscriptions"] = marked
 
-        # Anonymous POSTs are deliberately indistinguishable. A new row is
-        # bound to this server-side session and its capability is recovered by
-        # the subsequent GET; a different session repeating phone + SKU gets
-        # the same acknowledgement without learning or controlling the row.
-        if customer is None:
-            return _no_store_response({"ok": True}, status_code=status.HTTP_200_OK)
         return _no_store_response(
             {
                 "ok": True,

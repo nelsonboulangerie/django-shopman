@@ -60,6 +60,25 @@ export interface Action {
   confirmation: Record<string, unknown>;
 }
 
+/** IFoodNegotiationProjection(id: str, type: str, action: str, message: str, expires_at: str, timeout_action: str, state: str, can_respond: bool, response_notice: str, items: tuple[str, ...], evidence_urls: tuple[str, ...], accept_reasons: tuple[str, ...], reject_reasons: tuple[str, ...], alternatives_available: bool, actions: tuple[shopman.shop.projections.types.Action, ...]) */
+export interface IFoodNegotiationProjection {
+  id: string;
+  type: string;
+  action: string;
+  message: string;
+  expires_at: string;
+  timeout_action: string;
+  state: string;
+  can_respond: boolean;
+  response_notice: string;
+  items: string[];
+  evidence_urls: string[];
+  accept_reasons: string[];
+  reject_reasons: string[];
+  alternatives_available: boolean;
+  actions: Action[];
+}
+
 /** FeedCollectionRef(ref: 'str', name: 'str', exists: 'bool') */
 export interface FeedCollectionRef {
   ref: string;
@@ -226,6 +245,10 @@ export interface OrderCardProjection {
   waitlist_state: string;
   waitlist_deadline_iso: string;
   waitlist_label: string;
+  ifood_cancellation_notice: string;
+  ifood_payment_summary: string[];
+  ifood_operation_summary: string[];
+  ifood_negotiations: IFoodNegotiationProjection[];
 }
 
 /** Expanded detail for a single order (operator side-panel). */
@@ -291,6 +314,10 @@ export interface OperatorOrderProjection {
   equipment_back_pending: boolean;
   can_resend_payment_link: boolean;
   payment_link_notice: string;
+  ifood_cancellation_notice: string;
+  ifood_payment_summary: string[];
+  ifood_operation_summary: string[];
+  ifood_negotiations: IFoodNegotiationProjection[];
 }
 
 /** Top-level read model for the operator order queue. */
@@ -315,4 +342,5 @@ export interface TwoZoneQueueProjection {
   preorders_count: number;
   equipment_out: EquipmentOutProjection[];
   equipment_available: EquipmentOptionProjection[];
+  ifood_negotiation_orders: OrderCardProjection[];
 }

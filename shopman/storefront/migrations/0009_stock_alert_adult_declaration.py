@@ -3,7 +3,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("storefront", "0007_stock_alerts_persist_until_cancelled"),
+        ("storefront", "0008_quarantine_unverified_web_alerts"),
     ]
 
     operations = [

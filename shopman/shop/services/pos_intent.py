@@ -55,6 +55,7 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "client_request_id",
     "tab_ref",
     "tab_session_key",
+    "expected_revision",
     "manual_discount",
     "manager_approval",
     "cash_shift_id",
@@ -100,6 +101,17 @@ class PosIntentError(ValueError):
             "focus": self.focus,
             "recovery": self.recovery,
         }
+
+
+class PosCommittedSaleError(PosIntentError):
+    """A post-commit refusal always identifies the order that already exists."""
+
+    def __init__(self, *, order_ref: str, **kwargs):
+        super().__init__(**kwargs)
+        self.order_ref = order_ref
+
+    def as_dict(self) -> dict:
+        return {**super().as_dict(), "order_ref": self.order_ref, "order_created": True}
 
 
 @dataclass(frozen=True)
@@ -596,3 +608,8 @@ __all__ = [
     "PosSaleIntent",
     "parse_pos_sale_intent",
 ]
+
+
+def pos_session_revision(session) -> str:
+    """Opaque observed version; clients return it without deriving one."""
+    return f"v1:{session.rev}:{session.updated_at.isoformat()}"

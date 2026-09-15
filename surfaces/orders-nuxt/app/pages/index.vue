@@ -87,6 +87,7 @@ onMounted(scheduleRestore);
 onBeforeUnmount(() => cancelAnimationFrame(restoreFrame));
 watch(() => Boolean(queue.value), (available) => { if (available) scheduleRestore(); });
 
+const negotiationCards = computed(() => (queue.value?.ifood_negotiation_orders ?? []) as OrderCardProjection[]);
 const allCards = computed<OrderCardProjection[]>(() => zones.value.flatMap((z) => z.cards));
 const channels = computed(() => channelOptions(allCards.value));
 const fulfillment_ = computed(() => fulfillmentCounts(allCards.value));
@@ -541,6 +542,13 @@ function printQueue() {
       </p>
 
       <template v-if="queue">
+        <section v-if="negotiationCards.length" class="mb-6 space-y-3" data-ifood-negotiation-orders>
+          <h2 class="text-sm font-bold uppercase tracking-wide">Negociações iFood pendentes</h2>
+          <p class="text-sm text-muted-foreground">Confira solicitações e prazos, inclusive de pedidos já encerrados.</p>
+          <div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            <OrderCard v-for="card in negotiationCards" :key="`negotiation-${card.ref}`" :card="card" negotiation-only />
+          </div>
+        </section>
         <!-- no results across all zones for the active filters -->
         <p v-if="hasFilter && !visibleCount" class="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
           Nenhum pedido para os filtros atuais.

@@ -10,6 +10,74 @@ from django.utils import timezone
 
 
 @pytest.mark.django_db(transaction=True)
+def test_web_phone_only_alerts_are_quarantined_without_touching_verified_channels_or_history():
+    executor = MigrationExecutor(connection)
+    latest = executor.loader.graph.leaf_nodes()
+    previous = [("storefront", "0007_stock_alerts_persist_until_cancelled")]
+    executor.migrate(previous)
+    try:
+        apps = executor.loader.project_state(previous).apps
+        LegacySub = apps.get_model("storefront", "StockAlertSubscription")
+        LegacyOccurrence = apps.get_model("storefront", "StockAlertOccurrence")
+        LegacyDelivery = apps.get_model("storefront", "StockAlertDelivery")
+
+        def make(*, evidence, channel="web", customer_ref="", revoked=False):
+            return LegacySub.objects.create(
+                ref=uuid.uuid4(),
+                sku=f"PHONE-PROOF-{evidence}",
+                channel_ref=channel,
+                customer_ref=customer_ref,
+                contact_phone=f"+55439999{evidence[-4:]}",
+                evidence_hash=evidence,
+                target_key=f"target-{evidence}",
+                proof_status="verified",
+                revoked_at=timezone.now() if revoked else None,
+            )
+
+        typed_web = make(evidence="typed-web-0001")
+        account_web = make(evidence="account-web-0002", customer_ref="CUS-PROVEN")
+        trusted_channel = make(evidence="whatsapp-0003", channel="whatsapp")
+        historical = make(evidence="revoked-web-0004", revoked=True)
+        occurrence = LegacyOccurrence.objects.create(
+            sku=typed_web.sku,
+            event_type="stock_back",
+            semantic_key="phone-proof-preserved-occurrence",
+            status="closed",
+            closed_at=timezone.now(),
+        )
+        receipt = LegacyDelivery.objects.create(
+            subscription_id=typed_web.pk,
+            occurrence_id=occurrence.pk,
+            status="accepted",
+            provider_receipt_ref="synthetic-preserved-receipt",
+        )
+
+        MigrationExecutor(connection).migrate(latest)
+        from shopman.storefront.models import StockAlertSubscription
+
+        current_typed_web = StockAlertSubscription.objects.get(pk=typed_web.pk)
+        current_account_web = StockAlertSubscription.objects.get(pk=account_web.pk)
+        current_trusted_channel = StockAlertSubscription.objects.get(pk=trusted_channel.pk)
+        current_historical = StockAlertSubscription.objects.get(pk=historical.pk)
+        assert current_typed_web.proof_status == "legacy_unverified"
+        assert current_account_web.proof_status == "verified"
+        assert current_trusted_channel.proof_status == "verified"
+        assert current_historical.proof_status == "verified"
+        # Expansion never fabricates an age declaration. Even identity-verified
+        # rows stay inactive until a new explicit confirmation is recorded.
+        assert current_typed_web.adult_declared is False
+        assert current_account_web.adult_declared is False
+        assert current_trusted_channel.adult_declared is False
+        assert current_historical.adult_declared is False
+        assert current_typed_web.is_active is False
+        assert current_account_web.is_active is False
+        assert current_trusted_channel.is_active is False
+        assert StockAlertSubscription.objects.get(pk=typed_web.pk).deliveries.get(pk=receipt.pk).status == "accepted"
+    finally:
+        MigrationExecutor(connection).migrate(latest)
+
+
+@pytest.mark.django_db(transaction=True)
 def test_additive_migrations_preserve_legacy_unknown_receipts_and_subscriptions():
     executor = MigrationExecutor(connection)
     latest = executor.loader.graph.leaf_nodes()
@@ -135,6 +203,9 @@ def test_additive_migrations_preserve_legacy_unknown_receipts_and_subscriptions(
         assert current_unverified_only.expires_at is not None
         assert current_cancelled.revoked_at is not None
         assert current_cancelled.expires_at == cancelled_expiry
-        assert StockAlertSubscription.objects.get(evidence_hash="mixed-worker-evidence").pause_reason == ""
+        mixed_worker = StockAlertSubscription.objects.get(evidence_hash="mixed-worker-evidence")
+        assert mixed_worker.pause_reason == ""
+        assert mixed_worker.adult_declared is False
+        assert mixed_worker.is_active is False
     finally:
         MigrationExecutor(connection).migrate(latest)

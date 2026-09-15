@@ -45,6 +45,8 @@ from shopman.shop.services import (
     customer,
     fiscal,
     fulfillment,
+    ifood_cancellation,
+    ifood_schedule,
     loyalty,
     notification,
     payment,
@@ -70,11 +72,19 @@ def has_availability_approval(order) -> bool:
 def ensure_confirmable(order, *, channel_config=None) -> None:
     """Enforce the operational precondition for moving an order into CONFIRMED.
 
-    This checks availability only. Payment capture is guarded separately by
+    This checks cancellation requests and availability. Payment capture is guarded separately by
     :func:`ensure_payment_captured` on every path that can move an order into
     ``CONFIRMED``.
     """
     from shopman.orderman.exceptions import InvalidTransition
+
+
+    if order.channel_ref == "ifood" and _ifood_cancellation_pending(order):
+        raise InvalidTransition(
+            code="ifood_cancellation_pending",
+            message="Aguarde a confirmação do cancelamento pelo iFood antes de confirmar o pedido.",
+            context={"order_ref": order.ref, "status": order.status},
+        )
 
     if has_availability_approval(order):
         return
@@ -274,13 +284,15 @@ def _on_commit(order, config: ChannelConfig) -> None:
     redeem loyalty, handle confirmation."""
     customer.ensure(order)
 
-    if config.stock.check_on_commit:
+    defer_hold = ifood_schedule.defer_stock_hold(order)
+    if config.stock.check_on_commit and not defer_hold:
         if not _check_availability(order, config):
             return  # order cancelled
 
-    stock.hold(order)
+    if not defer_hold:
+        stock.hold(order)
 
-    if config.stock.check_on_commit and (order.data or {}).get("hold_ids"):
+    if config.stock.check_on_commit and not defer_hold and (order.data or {}).get("hold_ids"):
         if not _verify_holds(order):
             return  # order cancelled
 
@@ -428,6 +440,9 @@ def _on_accepted(order, config: ChannelConfig) -> None:
         notification.send(order, "order_accepted")
         return
 
+    if ifood_schedule.is_scheduled(order) and "hold_ids" not in (order.data or {}):
+        stock.hold(order)
+
     # prep_start="operator": pago/aceito NÃO vai sozinho pra cozinha — espera o
     # operador dar "Iniciar preparo" no gestor (a transição para PREPARING é que
     # dispara o KDS, via _on_preparing). Honesto com o cliente remoto.
@@ -463,8 +478,8 @@ def _on_accepted(order, config: ChannelConfig) -> None:
 def _counter_handoff(order) -> bool:
     """A mercadoria já está na mão do cliente quando a venda fecha?
 
-    Balcão presencial (PDV, retirada, sem data futura, pagamento que não é
-    link): a venda documenta um fato passado. Encomenda agendada, entrega e o
+    Balcão presencial (PDV, retirada, sem data futura, pagamento recebido):
+    a venda documenta a entrega. Encomenda agendada, entrega e o
     pedido de LINK ficam de fora — esses têm trabalho e trajeto pela frente, e
     a esteira existe para eles. A pergunta é a mesma que o KDS faz para não
     criar ticket de separação (``order_helpers.customer_holds_the_goods``).
@@ -487,6 +502,10 @@ def _on_paid(order, config: ChannelConfig) -> None:
         payment.refund(order)
         _create_alert(order, "payment_after_cancel")
         return
+    if (order.data or {}).get("origin_channel") == "pos" and _payment_is_captured(order):
+        # A cobrança digital acabou de se liquidar. A nota também deve nascer
+        # quando a retirada/entrega estiver agendada para outro dia.
+        fiscal.emit(order)
     if order.status == Order.Status.NEW:
         _create_alert(order, "payment_awaiting_confirmation")
         if config.confirmation.mode in ("auto_confirm", "auto_cancel"):
@@ -503,6 +522,8 @@ def _on_paid(order, config: ChannelConfig) -> None:
         _schedule_preorder_activation(order)
         notification.send(order, "payment_confirmed")
         return
+    if ifood_schedule.is_scheduled(order) and "hold_ids" not in (order.data or {}):
+        stock.hold(order)
     physical_work_dispatched = False
     if order.status == Order.Status.ACCEPTED and _prep_starts_automatically(config):
         physical_work_dispatched = _dispatch_physical_work(order)
@@ -510,6 +531,12 @@ def _on_paid(order, config: ChannelConfig) -> None:
     notification.send(order, "payment_confirmed")
     if physical_work_dispatched:
         _mark_preparing_after_physical_work_dispatch(order)
+    elif (
+        order.status == Order.Status.ACCEPTED
+        and _counter_handoff(order)
+        and order.can_transition_to(Order.Status.COMPLETED)
+    ):
+        order.transition_status(Order.Status.COMPLETED, actor="system:counter_handoff")
 
 
 def _on_preparing(order, config: ChannelConfig) -> None:
@@ -521,6 +548,11 @@ def _on_preparing(order, config: ChannelConfig) -> None:
     criados no ``on_paid``/``on_accepted``; a chamada aqui é idempotente
     (``kds.dispatch`` só fira linhas ainda não firadas), então não duplica.
     """
+    if _ifood_cancellation_pending(order):
+        return
+    if not ifood_schedule.is_due(order):
+        _schedule_preorder_activation(order)
+        return
     _dispatch_physical_work(order)
     notification.send(order, "order_preparing")
 
@@ -573,10 +605,10 @@ def _on_cancelled(order, config: ChannelConfig) -> None:
     # justo se a venda existiu.
     loyalty.restore(order, reason="cancelled")
 
-    # Rejections already queued `order_rejected` (with the reason) in reject_order;
-    # firing `order_cancelled` too would double-notify the customer. All the
-    # side-effects above still run either way — only the redundant message is skipped.
-    if (order.data or {}).get("rejected_by"):
+    # Local rejections already queued order_rejected. An iFood rejection stays
+    # pending without notifying until CAN, so its now-confirmed cancellation
+    # must still send the final notification even though rejected_by is retained.
+    if (order.data or {}).get("rejected_by") and not (order.data or {}).get("ifood_cancelled"):
         return
 
     # Only an operator-authored, customer-facing note reaches the customer. Machine
@@ -745,19 +777,9 @@ def _requires_captured_payment_before_confirmation(order, config: ChannelConfig)
 
 
 def _requires_payment_before_physical_work(order, config: ChannelConfig) -> bool:
-    method = _payment_method(order, config)
-    # O LINK é cobrança REMOTA: o dinheiro ainda não entrou, seja qual for o
-    # `timing` do canal. "external" descreve o balcão recebendo na hora
-    # (dinheiro, maquininha) — e o link existe justamente para o pedido que
-    # NÃO está no balcão. Sem esta linha a venda de link do PDV ia para a
-    # cozinha, baixava o estoque e fechava como entregue sem um centavo
-    # capturado; e, uma vez além de ACCEPTED, o vencimento do link não a
-    # alcançava mais.
-    if method == "link":
-        return True
-    if config.payment.timing == "external":
-        return False
-    return method in _UPFRONT_DIGITAL_PAYMENT_METHODS
+    # O método determina se há gateway. O timing externo do balcão não
+    # transforma Pix/card/link em dinheiro recebido pela maquininha.
+    return _payment_method(order, config) in _UPFRONT_DIGITAL_PAYMENT_METHODS
 
 
 def _payment_is_authorized(order) -> bool:
@@ -769,7 +791,17 @@ def _payment_is_authorized(order) -> bool:
     return status == "authorized"
 
 
+def _ifood_cancellation_pending(order) -> bool:
+    return (
+        order.channel_ref == "ifood"
+        and bool((order.data or {}).get(ifood_cancellation.KEY))
+        and ifood_cancellation.is_pending(order)
+    )
+
+
 def _dispatch_physical_work(order) -> bool:
+    if _ifood_cancellation_pending(order) or not ifood_schedule.is_due(order):
+        return False
     try:
         from shopman.shop.services import kds
         tickets = kds.dispatch(order)
@@ -797,13 +829,26 @@ def _prep_starts_automatically(config: ChannelConfig) -> bool:
 
 def _stock_fulfill_allowed(order, config: ChannelConfig) -> bool:
     """Baixa de estoque liberada: pagamento no balcão ou já capturado."""
+    if _ifood_cancellation_pending(order) or not ifood_schedule.is_due(order):
+        return False
+    payment_data = (order.data or {}).get("payment") or {}
+    if (
+        config.payment.timing == "external"
+        and order.channel_ref == "ifood"
+        and payment_data.get("method") == "external"
+        and payment_data.get("gateway") == "ifood"
+    ):
+        # iFood authorizes the operational order, including payment on delivery.
+        # Acceptance must consume stock without pretending those funds were
+        # captured or initiating a second charge through Payman.
+        return True
     if (
         config.payment.timing == "external"
         and config.payment.method != "external"
-        and _payment_method(order, config) != "link"
+        and not _requires_payment_before_physical_work(order, config)
     ):
         # Counter payment — no digital payment step, fulfill immediately.
-        # (O link não é pagamento de balcão: baixa só depois de capturado.)
+        # Gateway (Pix/card/link) só baixa depois de captura suficiente.
         return True
     # Payment may have arrived while the order was still NEW. In that case
     # the paid hook deliberately waited for operational confirmation.
@@ -814,6 +859,8 @@ def _physical_work_deferred(order) -> bool:
     """True quando o pedido é para data FUTURA (encomenda): KDS e baixa esperam o dia."""
     from shopman.shop.services.order_helpers import get_commitment_date
 
+    if ifood_schedule.is_scheduled(order):
+        return not ifood_schedule.is_due(order)
     target = get_commitment_date(order)
     return target is not None and target > timezone.localdate()
 
@@ -831,10 +878,23 @@ def _schedule_preorder_activation(order) -> None:
     from shopman.shop.directives import PREORDER_ACTIVATE, create_deduped
     from shopman.shop.services.order_helpers import get_commitment_date
 
-    target = get_commitment_date(order)
-    if target is None:
-        return
-    available_at = timezone.make_aware(datetime.combine(target, time_type(0, 5)))
+    if ifood_schedule.is_scheduled(order):
+        available_at = ifood_schedule.preparation_start(order)
+        if available_at is None:
+            from shopman.shop.services.observability import create_operator_alert
+
+            create_operator_alert(
+                type="ifood_schedule_invalid", severity="critical",
+                message=ifood_schedule.block_reason(order), order_ref=order.ref,
+                dedupe_key=f"ifood_schedule_invalid:{order.ref}",
+            )
+            return
+        target = timezone.localtime(available_at).date()
+    else:
+        target = get_commitment_date(order)
+        if target is None:
+            return
+        available_at = timezone.make_aware(datetime.combine(target, time_type(0, 5)))
     create_deduped(
         PREORDER_ACTIVATE,
         payload={
@@ -867,7 +927,12 @@ def activate_preorder(order) -> None:
         logger.warning("lifecycle.activate_preorder: too early order=%s", order.ref)
         return
 
+    if _ifood_cancellation_pending(order):
+        return
+
     config = ChannelConfig.for_channel(order.channel_ref)
+    if ifood_schedule.is_scheduled(order) and "hold_ids" not in (order.data or {}):
+        stock.hold(order)
     # Encomenda NÃO PAGA não vai para a cozinha. O mesmo gate de _on_accepted:
     # sem ele, a via `holds_materialized` -> on_holds_materialized ->
     # activate_preorder levava o pedido a PREPARING (e, ao completar, a fiscal

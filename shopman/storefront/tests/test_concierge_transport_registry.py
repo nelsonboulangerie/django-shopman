@@ -196,6 +196,22 @@ def test_handoff_is_structured_and_false_is_unknown(monkeypatch):
     assert transport.handoff_for(current, True) == HandoffOutcome("unknown", "acceptance_unconfirmed")
 
 
+@pytest.mark.parametrize(("on", "field_value"), [(True, "1"), (False, "0")])
+def test_manychat_handoff_uses_explicit_text_state(monkeypatch, on, field_value):
+    from shopman.shop.adapters import notification_manychat
+
+    calls = []
+    monkeypatch.setattr(
+        notification_manychat,
+        "set_custom_field",
+        lambda subject, field_name, value: calls.append((subject, field_name, value)) or True,
+    )
+    current = binding("manychat-wa", "manychat", "mc-account", "whatsapp", "123")
+
+    assert transport.handoff_for(current, on) == HandoffOutcome("accepted")
+    assert calls == [("123", "concierge_handoff", field_value)]
+
+
 def test_unsupported_handoff_is_definitive():
     current = binding("opaque-primary", "opaque-test", "opaque-account", "text-only-test")
     assert transport.handoff_for(current, True) == HandoffOutcome(

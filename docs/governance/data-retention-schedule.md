@@ -3,7 +3,7 @@
 **Estado:** política operacional inicial aprovada em 2026-09-12 para
 implementação e testes fora de produção. Descarte do legado e ativação de jobs
 em produção permanecem bloqueados até dry-run e gate humano separado.
-**Responsável operacional:** Pablo Valentini. **Suplente:** Laís Kohatsu Kataoka.  
+**Responsável operacional:** Pablo Valentini. **Suplente:** Laís Kohatsu Kataoka.
 **Revisão mínima:** anual e sempre que mudar finalidade, fornecedor, país,
 categoria de dado ou obrigação legal.
 

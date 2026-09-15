@@ -26,6 +26,7 @@ const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 export const DJANGO_CONDITIONAL_REQUEST_HEADERS = ["if-none-match", "x-request-id"] as const;
 export const DJANGO_OPERATIONAL_RESPONSE_HEADERS = [
+  "content-disposition",
   "retry-after",
   "idempotency-key",
   "x-correlation-id",

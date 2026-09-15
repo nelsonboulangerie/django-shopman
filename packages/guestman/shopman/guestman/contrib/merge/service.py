@@ -211,7 +211,7 @@ class MergeService:
                         customer=source,
                     )
                 except ImportError:
-                    pass
+                    logger.warning("Merge optional component unavailable: identifiers; related operation was not performed")
 
             # Revert addresses
             addr_pks = snapshot.get("addresses", [])
@@ -230,7 +230,7 @@ class MergeService:
                         customer=source,
                     )
                 except ImportError:
-                    pass
+                    logger.warning("Merge optional component unavailable: preferences; related operation was not performed")
 
             # Revert consents (only non-conflicting ones that were moved)
             consent_pks = snapshot.get("consents_moved", [])
@@ -242,7 +242,7 @@ class MergeService:
                         customer=source,
                     )
                 except ImportError:
-                    pass
+                    logger.warning("Merge optional component unavailable: consent; related operation was not performed")
 
             # Revert timeline events
             te_pks = snapshot.get("timeline_events", [])
@@ -254,7 +254,7 @@ class MergeService:
                         customer=source,
                     )
                 except ImportError:
-                    pass
+                    logger.warning("Merge optional component unavailable: timeline; related operation was not performed")
 
             # Revert order identity links
             order_snapshots = snapshot.get("orders", [])
@@ -269,7 +269,7 @@ class MergeService:
                             data=order_snapshot.get("data") or {},
                         )
                 except ImportError:
-                    pass
+                    logger.warning("Merge optional component unavailable: orderman; related operation was not performed")
 
             # NOTE: Loyalty is NOT reverted automatically — too complex.
             # Manual adjustment via LoyaltyService if needed.
@@ -668,7 +668,10 @@ class MergeService:
 
         moved: list[dict] = []
         migrated = 0
-        for order in Order.objects.select_for_update().filter(identity_query).distinct():
+        # Identity predicates use only Order columns/JSON, so each row appears
+        # once even when several predicates match. DISTINCT is unnecessary and
+        # PostgreSQL rejects it together with FOR UPDATE; keep the row lock.
+        for order in Order.objects.select_for_update().filter(identity_query):
             previous = {
                 "pk": order.pk,
                 "handle_type": order.handle_type,
@@ -824,7 +827,7 @@ class MergeService:
 
             InsightService.recalculate(target.ref)
         except ImportError:
-            pass
+            logger.warning("Merge optional component unavailable: insights; related operation was not performed")
         except Exception as exc:
             # Non-fatal — insights can be recalculated later
             logger.warning(
@@ -863,7 +866,7 @@ class MergeService:
                 created_by=actor,
             )
         except ImportError:
-            pass
+            logger.warning("Merge optional component unavailable: timeline; related operation was not performed")
 
     @classmethod
     def _log_undo_event(
@@ -889,4 +892,4 @@ class MergeService:
                 created_by=actor,
             )
         except ImportError:
-            pass
+            logger.warning("Merge optional component unavailable: timeline; related operation was not performed")

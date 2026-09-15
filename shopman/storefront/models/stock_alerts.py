@@ -1,7 +1,7 @@
 """Persistent customer alert subscriptions, occurrences and delivery receipts.
 
-Customer-facing: a shopper (logged-in OR anonymous with just a phone) asks to be
-notified about a SKU. Dois gatilhos, um modelo:
+Customer-facing: a shopper with channel-appropriate verified identity asks to
+be notified about a SKU. Dois gatilhos, um modelo:
 
 - ``stock_back``      — o SKU esgotado voltou ao estoque
 - ``production_ready`` — saiu uma fornada nova (F9 do FOMO-MARKETING-SPECS)
@@ -33,9 +33,10 @@ class StockAlertSubscriptionQuerySet(models.QuerySet):
 class StockAlertSubscription(models.Model):
     """Persistent "notify me" opt-in for one SKU, event and contact.
 
-    Anonymous subscribers carry only ``contact_phone``; authenticated ones carry
-    ``customer_ref`` (and usually a phone too). ``notified_at`` is retained as a
-    compatibility/last-delivery timestamp; it never consumes the subscription.
+    Web subscribers carry ``customer_ref`` and the canonical account phone.
+    Other verified channels may carry only ``contact_phone`` when the inbound
+    transport itself supplies identity assurance. ``notified_at`` is retained
+    as a compatibility/last-delivery timestamp; it never consumes the subscription.
     """
 
     class AlertType(models.TextChoices):

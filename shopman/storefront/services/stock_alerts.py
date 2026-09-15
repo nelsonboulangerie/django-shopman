@@ -1,7 +1,8 @@
 """Persistent stock/bake alerts with occurrence-scoped delivery.
 
-Subscribe is open to anonymous shoppers (phone only) and logged-in customers.
-The opt-in stays active until pause or revocation.  Each real occurrence
+The service accepts identities already verified by their calling channel. The
+public web endpoint only calls it for authenticated customers. The opt-in stays
+active until pause or revocation. Each real occurrence
 gets a semantic identity and one durable delivery receipt per subscription.
 """
 
@@ -156,8 +157,9 @@ def subscribe(
     dois de propósito — quem faz isso é um pedido explícito, ou uma linha
     antiga; ``_notify`` garante que ainda assim sai UMA mensagem por pessoa.
 
-    ``customer`` is a Guestman Customer (or None for anonymous); ``phone`` is
-    the anonymous contact.
+    ``customer`` is a Guestman Customer when the account is the identity proof;
+    trusted channel adapters may instead pass the contact in ``phone`` after
+    their own verified inbound event.
     """
     return subscribe_with_outcome(
         sku,
@@ -186,10 +188,9 @@ def subscribe_with_outcome(
 ) -> SubscribeOutcome:
     """Subscribe and report whether this transaction created the row.
 
-    Public anonymous endpoints set ``resume_existing=False`` until the caller
-    proves ownership through authenticated identity or trusted server-side
-    session state. Merely knowing a phone number must not resume or take over a
-    subscription created in another browser session.
+    Callers set ``resume_existing=False`` when an explicit repeat opt-in is
+    required. Identity assurance belongs to the calling channel; merely knowing
+    a phone number must never be treated as proof by a public endpoint.
     """
     from shopman.storefront.models import StockAlertSubscription
 
@@ -271,7 +272,12 @@ def subscribe_with_outcome(
     except IntegrityError:
         # The database unique is the race winner. A simultaneous equivalent click
         # receives that same subscription instead of surfacing a transient 500.
-        return SubscribeOutcome(StockAlertSubscription.objects.active().get(**selector), False)
+        # A rolling old writer can still win with the database-safe defaults
+        # (legacy_unverified/adult_declared=False).  That row is deliberately not
+        # promoted here: absence of evidence must fail closed and a later explicit
+        # confirmation may create a fresh, evidenced subscription.
+        winner = StockAlertSubscription.objects.active().filter(**selector).first()
+        return SubscribeOutcome(winner, False)
 
 
 @transaction.atomic

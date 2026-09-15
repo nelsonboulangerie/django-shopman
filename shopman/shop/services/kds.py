@@ -135,11 +135,17 @@ def fire_lines(*, session_key: str, lines: list[dict], prep_only: bool = False) 
 
     # Serializa fires concorrentes da mesma comanda (double-tap, dois devices,
     # on_accepted × on_paid): o dedupe por line_id é check-then-create — sem
-    # o lock na Session, dois fires leem o ledger vazio e a cozinha produz 2×.
+    # o lock na fonte, dois fires leem o ledger vazio e a cozinha produz 2×.
+    # Pedidos externos têm chave própria e nenhum checkout Session: nesse
+    # caso o próprio Order é a fonte estável que serializa a criação.
     with transaction.atomic():
         from shopman.orderman.models import Session
 
-        Session.objects.select_for_update().filter(session_key=session_key).first()
+        source = Session.objects.select_for_update().filter(session_key=session_key).first()
+        if source is None:
+            source = Order.objects.select_for_update().filter(session_key=session_key).first()
+        if source is None:
+            raise ValueError("Pedido ou comanda de origem não encontrado para enviar à cozinha.")
 
         return _fire_lines_locked(
             session_key=session_key,
@@ -602,6 +608,12 @@ def expedition_block_reason(order, *, action: str) -> str:
     target = EXPEDITION_TRANSITIONS.get(action)
     if not target:
         return ""
+    if order.channel_ref == "ifood":
+        # The expedition is another operator entry point: the same pending
+        # cancellation, preparation-window and delivery-owner guards apply.
+        blocked = operator_orders.advance_block_reason(order)
+        if blocked:
+            return blocked
     if payment_gate.payment_blocks_transition(
         order, current_status=order.status, target_status=target
     ):

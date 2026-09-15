@@ -134,11 +134,17 @@ permanece.
 
 ## Outros canais e providers
 
-Instagram DM ou TikTok entram como novas connections com adapter próprio. Cada
-adapter normaliza seu payload para os mesmos contratos e declara capacidades de
-limite de texto, janela, saída, receipts e handoff. Nenhuma regra comercial ou
-fila é copiada. Mídia só entra no contrato quando um adapter real e o núcleo
-tiverem comportamento verificável para ela.
+TikTok, Instagram e Facebook Messenger possuem conversa direta e APIs oficiais
+de mensageria empresarial. Telegram oferece conversa privada com bots pela Bot
+API. A existência de uma caixa de DM não basta para ativar a Concierge: cada
+connection precisa comprovar ingresso, identidade de evento, janela, saída,
+receipt e tomada humana com a conta real daquele canal.
+
+Cada integração entra como uma nova connection com adapter próprio. O adapter
+normaliza o payload para os mesmos contratos e declara capacidades de limite de
+texto, janela, saída, receipts e handoff. Nenhuma regra comercial, busca, fila,
+FAQ ou conversa lógica é copiada. Mídia só entra no contrato quando um adapter
+real e o núcleo tiverem comportamento verificável para ela.
 
 O gateway ManyChat atual usa credenciais globais do provider e, por isso, aceita
 somente uma conta ativa por classe de adapter. Uma segunda conta falha fechada
@@ -150,6 +156,71 @@ separados por connection. Um fuso ou campo confirmado no WhatsApp não é
 extrapolado para Instagram/TikTok. Meta direta pode coexistir como provider em
 outro binding; a migração de provider exige roteamento explícito e nunca muda o
 significado da conversa lógica.
+
+### Roadmap multicanal
+
+| Ordem | Connection planejada | Entrada recomendada | Por que vem aqui | Gate específico antes de implementar/ativar |
+|---|---|---|---|---|
+| 1 | `manychat-instagram-primary` | Instagram profissional via ManyChat | reutiliza o portão e a inbox já conhecidos para homologar o segundo canal com o menor trabalho operacional | conta profissional conectada, payload real, ID de mensagem, janela, retorno humano e coorte de teste separados do WhatsApp |
+| 2 | `manychat-messenger-primary` | Facebook Messenger via ManyChat | preserva a mesma inbox humana e acrescenta outra superfície Meta sem criar operação paralela | Facebook Page conectada, payload real, ID, PSID, janela de 24 horas, permissão e coorte próprios |
+| 3 | `manychat-tiktok-primary` | TikTok Business via ManyChat | ManyChat já oferece trigger de DM e inbox; valida o canal antes do custo de uma integração direta | Business Account elegível na região, payload/ID reais, limite de dez mensagens por 48 horas, links sem clique, handoff e coorte próprios |
+| 4 | `manychat-telegram-primary` | bot Telegram conectado ao ManyChat | mantém a inbox humana atual; a Bot API direta continua disponível se houver motivo para retirar o intermediário | bot criado pelo BotFather, payload/ID preservados pelo gateway, usuário inicia a conversa, retorno humano e coorte próprios |
+| 5 | `webchat-storefront-primary` | widget próprio no storefront | canal sob controle integral, sem aprovação de terceiros | UX, consentimento, proteção contra abuso, sessão anônima e encaminhamento para uma inbox humana existente |
+| 6 | `rcs-primary` | RCS for Business por parceiro aprovado | amplia o alcance da mensageria do aparelho e oferece rich cards/receipts | demanda comprovada, parceiro/brand verification, custo e cobertura por operadora, opt-in/opt-out, fallback e dispositivo de teste |
+
+Instagram e Messenger diretos pela API da Meta ficam como troca de provider, não
+como outros canais lógicos. Depois de homologar as connections ManyChat, versões
+`meta-instagram-primary` e `meta-messenger-primary` podem coexistir desligadas,
+receber tráfego de uma coorte e substituir o gateway sem alterar `Conversation`,
+ferramentas ou fatos públicos. O mesmo princípio vale para migrar WhatsApp de
+ManyChat para Cloud API.
+
+TikTok direto pela Business Messaging API segue a mesma estratégia. A versão
+`tiktok-business-primary` só deve ser construída quando acesso, revisão e
+capabilities da conta justificarem substituir o gateway ManyChat. Data
+Portability API não é transporte conversacional e não deve ser usada para isso.
+
+O destino canônico continua sendo um adapter de protocolo, não uma dependência do
+ManyChat no domínio. Telegram pode migrar depois para a Bot API direta; enquanto
+o atendimento humano morar no ManyChat, manter o gateway reduz superfícies e
+esforço do operador.
+
+Não planejar agora adapters para toda rede que possui chat. Apple Messages for
+Business, SMS, LINE, Zalo, marketplaces e caixas de e-mail entram somente quando
+houver demanda observada, API/contrato acessível e owner operacional. Google
+Business Messages não entra no roadmap. RCS é a alternativa atual do ecossistema
+Google para mensageria empresarial.
+
+### Contrato mínimo de uma nova connection
+
+1. Preservar o ID oficial de update/mensagem e seu escopo de conta; se o provider
+   não oferecer ID homologável, manter a connection somente leitura.
+2. Mapear remetente e thread como identificadores opacos do provider. Nunca unir
+   contatos de canais diferentes por nome, username ou telefone não verificado.
+3. Separar horário do evento, evidência da janela e horário de recebimento local.
+4. Declarar capabilities reais: texto, tamanho, mídia, reply window, aceitação,
+   entrega, leitura e handoff. Ausência é `unsupported`, não sucesso presumido.
+   Limites são medidos na unidade do provider, inclusive bytes UTF-8 e orçamento
+   de mensagens por janela, antes de segmentar uma resposta.
+5. Persistir Message e Directive antes do ACK e OutboundAttempt antes da rede,
+   reutilizando fence, fila, busca pública, ferramentas e receipts existentes.
+6. Homologar UTF-8, ordem, replay, mensagens iguais, atraso, timeout, perda de
+   ACK, saída `unknown`, posse humana e retorno com uma coorte isolada.
+7. Ativar primeiro somente consulta pública. Identidade e ferramentas comerciais
+   exigem gates próprios e uma vinculação explícita ao Customer canônico.
+8. Resolver `commercial_channel_ref` pela connection confiável quando catálogo ou
+   modalidade variarem. Nunca aceitar esse escopo do webhook ou do modelo.
+
+### Decisão de prioridade
+
+Instagram DM é a próxima integração recomendada. Ela testa imediatamente a
+promessa multicanal usando ManyChat e preserva a mesma inbox do operador.
+Messenger vem em seguida pelo mesmo motivo. TikTok já fica especificado, mas seu
+primeiro teste também usa ManyChat, sujeito à elegibilidade da Business Account;
+o adapter direto só começa após acesso à Business Messaging API. Webchat é a
+opção de maior controle e só entra quando puder encaminhar para uma inbox humana
+já existente. Telegram e RCS ficam no backlog guiado por demanda; não justificam
+credenciais, operação e monitoramento antes de existir uso real.
 
 ## Homologação necessária
 
@@ -177,6 +248,16 @@ responsáveis aprovados, e rollout exige os gates G01–G07 do plano.
 - [System Fields](https://help.manychat.com/hc/en-us/articles/14281292522652-System-Fields)
 - [Response Reference](https://help.manychat.com/hc/en-us/articles/26673580447900-Response-Reference-for-Instagram-WhatsApp-and-Telegram-Automation)
 - [Understanding messaging windows](https://help.manychat.com/hc/en-us/articles/23358636027932-Understanding-messaging-windows)
+- [Instagram no ManyChat](https://help.manychat.com/hc/en-us/articles/14281290924444-How-to-connect-Instagram-to-Manychat)
+- [Facebook Messenger no ManyChat](https://help.manychat.com/hc/en-us/articles/14281086119068-How-to-connect-Facebook-to-Manychat)
+- [TikTok no ManyChat](https://help.manychat.com/hc/en-us/articles/17928990909084-How-to-connect-TikTok-to-Manychat)
+- [Trigger e limites de mensagens TikTok no ManyChat](https://help.manychat.com/hc/en-us/articles/17508399106844-Set-up-your-first-TikTok-automation-in-Manychat-User-sends-a-message)
+- [Instagram API oficial: Send API e requisitos de mensagens](https://www.postman.com/meta/instagram/documentation/6yqw8pt/instagram-api)
+- [Messenger Platform API oficial: Send API e janela](https://www.postman.com/meta/messenger-platform-api/documentation/iyp204x/messenger-platform-api)
+- [TikTok API for Business: Business Messaging](https://business-api.tiktok.com/gateway/docs/index?doc_id=1739585600931842&identify_key=c0138ffadd90a955c1f0670a56fe348d1d40680b3c89461e09f78ed26785164b&language=ENGLISH)
+- [Telegram Bot API](https://core.telegram.org/bots/api)
+- [RCS for Business](https://developers.google.com/business-communications/rcs-business-messaging)
+- [Encerramento do chat do Google Business Profile](https://support.google.com/business/answer/14919056?hl=pt)
 
 A auditoria histórica da documentação pública está preservada em
 `evidence/conversational/whatsapp-window/message-identity-audit.json`. Ela

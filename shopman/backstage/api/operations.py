@@ -81,6 +81,7 @@ from shopman.backstage.api._production_mutations import (
     ProductionVoidMutationSerializer,
     validated_body,
 )
+from shopman.backstage.api.pos_concurrency import tab_command
 from shopman.backstage.api.production_freshness import (
     override_attempt_digest,
     override_shortage_snapshot,
@@ -1777,6 +1778,61 @@ class OrderRejectView(_OrderActionBase):
                 prepared_identity=prepared["identity"])
 
         return self._context_response(request, order, "reject", {"reason": reason, "cancellation_code": code}, execute, prepare=prepare)
+
+
+class OrderIFoodEvidenceView(OperationalObservationMixin, APIView):
+    """Download a registered negotiation attachment with server-held credentials."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request, ref: str):
+        from django.http import HttpResponse
+
+        from shopman.shop.services.ifood_evidence import EvidenceUnavailable, fetch_evidence
+
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        try:
+            index = int(request.query_params.get("index", ""))
+        except (ValueError, TypeError):
+            return Response({"detail": "Evidência inválida."}, status=400)
+        try:
+            content, mime = fetch_evidence(order, dispute_id=str(request.query_params.get("dispute_id") or ""), index=index)
+        except EvidenceUnavailable as exc:
+            return Response({"detail": str(exc)}, status=503)
+        extension = {"image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp", "application/pdf": "pdf"}.get(mime, "bin")
+        response = HttpResponse(content, content_type=mime)
+        response["Content-Disposition"] = f'attachment; filename="ifood-evidence-{index}.{extension}"'
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Cache-Control"] = "private, no-store"
+        return response
+
+
+class OrderIFoodHandshakeView(_OrderActionBase):
+    """Persist an explicit operator response; the worker contacts iFood later."""
+
+    intention_operation = "ifood-handshake"
+
+    def post(self, request, ref: str):
+        from shopman.shop.services import ifood_handshake
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        inputs = {key: str(request.data.get(key) or "").strip() for key in (
+            "dispute_id", "decision", "reason", "detail_reason",
+        )}
+
+        def execute(base):
+            try:
+                ifood_handshake.enqueue_response(order, **inputs, actor=_actor(request), expected_revision=base)
+            except ifood_handshake.HandshakeValidationError as exc:
+                raise OrderError(str(exc)) from exc
+            return {"response_queued": True}
+
+        return self._context_response(request, order, "ifood-handshake", inputs, execute)
 
 
 @extend_schema_view(
@@ -4021,6 +4077,15 @@ class POSTabOpenView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    def get(self, request, tab_ref: str):
+        from shopman.orderman.models import Session
+
+        session = Session.objects.filter(channel_ref=POS_CHANNEL_REF, state="open",
+            handle_ref=pos_tabs_service.normalize_tab_ref(tab_ref)).first()
+        if session is None:
+            return Response({"detail": "Esta comanda já foi encerrada.", "error": {"code": "tab_closed"}}, status=409)
+        return Response(build_open_tab(session))
+
     def post(self, request, tab_ref: str):
         try:
             session = pos_tabs_service.open_pos_tab(
@@ -4046,6 +4111,7 @@ class POSTabSaveView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -4083,6 +4149,7 @@ class POSTabClearView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def delete(self, request, session_key: str):
         try:
             cleared = pos_tabs_service.clear_pos_tab(
@@ -4109,6 +4176,7 @@ class POSTabMoveLinesView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -4141,6 +4209,7 @@ class POSTabRenameView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -4163,6 +4232,7 @@ class POSTabFireView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -4193,6 +4263,7 @@ class POSTabUnfireView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -4543,6 +4614,9 @@ class POSCloseSaleView(APIView):
     required_permission = "cashman.operate_pos"
 
     def post(self, request):
+        if (request.data.get("tab_session_key") or request.data.get("tab_ref")) and not request.data.get("expected_revision"):
+            return Response({"detail": "Atualize a comanda antes de finalizar.",
+                             "error": {"code": "tab_revision_required"}}, status=422)
         body = request.data if hasattr(request, "data") else {}
         if _open_cash_shift_for_request(request) is None:
             return _cash_shift_required_response()

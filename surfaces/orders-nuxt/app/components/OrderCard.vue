@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import OrderIFoodSummary from "~/components/OrderIFoodSummary.vue";
 // One order card in the board. Glanceable: ref + timer up top, customer + items in
 // the middle, payment/total, then the pre-resolved affordances as buttons. Status
 // color is functional; chrome neutral. Tapping the ref opens the detail page.
@@ -17,14 +18,14 @@ import {
   type Tone,
 } from "~/presentation/board";
 
-const props = defineProps<{ card: OrderCardProjection; busy?: boolean; error?: string; selected?: boolean }>();
+const props = defineProps<{ card: OrderCardProjection; busy?: boolean; error?: string; selected?: boolean; negotiationOnly?: boolean }>();
 const emit = defineEmits<{
   (e: "action", ref: AffordanceRef): void;
   (e: "dismiss-error" | "toggle-select" | "toggle-assign"): void;
 }>();
 
 const code = computed(() => splitRef(props.card.ref));
-const affordances = computed(() => cardAffordances(props.card));
+const affordances = computed(() => props.negotiationOnly ? [] : cardAffordances(props.card));
 // Tom do pagamento vem da projeção, não de dedução na tela: dinheiro não é
 // "pago" nem "devendo" — é cobrança fora do site, e verde ali diria que entrou
 // dinheiro que não entrou. O fundo esmaecido reusa `toneBadge`, o mesmo do pill
@@ -77,6 +78,7 @@ function buttonClass(priority: string): string {
     <!-- ref + timer -->
     <div class="flex items-start gap-2">
       <button
+        v-if="!negotiationOnly"
         type="button"
         class="mt-0.5 grid size-control shrink-0 place-items-center rounded transition hover:bg-accent"
         :aria-label="selected ? 'Desmarcar pedido' : 'Selecionar pedido'"
@@ -95,6 +97,7 @@ function buttonClass(priority: string): string {
         <span class="block truncate text-lg font-bold leading-tight tabular-nums group-hover:underline">{{ code.code }}</span>
       </NuxtLink>
       <button
+        v-if="!negotiationOnly"
         type="button"
         class="ml-auto inline-flex min-h-control min-w-control shrink-0 items-center justify-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium transition"
         :class="card.assigned_operator ? 'border-primary/40 bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent'"
@@ -228,6 +231,11 @@ function buttonClass(priority: string): string {
       </span>
       <span class="ml-auto text-sm font-bold tabular-nums">{{ card.total_display }}</span>
     </div>
+
+    <NuxtLink v-if="card.ifood_negotiations?.length" :to="`/${card.ref}#ifood-negotiations`" class="min-h-control block rounded-md border border-warning/40 bg-warning/10 p-2 text-sm" data-ifood-negotiation-link>
+      Negociação iFood · abrir solicitação e conferir prazo
+    </NuxtLink>
+    <OrderIFoodSummary :cancellation-notice="card.ifood_cancellation_notice" :payment-summary="card.ifood_payment_summary" :operation-summary="card.ifood_operation_summary" />
 
     <!-- awaiting production -->
     <div v-if="card.awaiting_work_orders.length" class="flex flex-col gap-1">

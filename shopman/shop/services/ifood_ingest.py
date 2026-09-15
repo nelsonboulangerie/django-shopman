@@ -48,8 +48,10 @@ Payload shape (canonical)
 
 from __future__ import annotations
 
+import json
 import logging
 from decimal import Decimal
+from uuid import NAMESPACE_URL, uuid5
 
 from django.db import transaction
 from shopman.orderman.ids import generate_order_ref
@@ -69,6 +71,12 @@ class IFoodIngestError(Exception):
         self.code = code
         self.message = message
         super().__init__(f"{code}: {message}")
+
+
+def session_key_for_order(merchant_id: str, order_code: str) -> str:
+    """Stable KDS identity for an external order, assigned before Order sealing."""
+    identity = json.dumps(["ifood", merchant_id or "", order_code], separators=(",", ":"))
+    return f"ifood:{uuid5(NAMESPACE_URL, identity).hex}"
 
 
 def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
@@ -113,7 +121,7 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
         "payment": {
             "method": "external",
             "gateway": "ifood",
-            "status": "paid",  # marketplace is always pre-paid
+            "status": payment_status_from_payload(payload.get("payments") or {}, total_q),
         },
         "ifood": {
             "order_code": order_code,
@@ -122,17 +130,37 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
             "display_id": payload.get("display_id", ""),
             "is_test": bool(payload.get("is_test", False)),
             "order_timing": payload.get("order_timing", ""),
+            "schedule": payload.get("schedule") or {},
             "totals": payload.get("totals") or {},
             "payments": payload.get("payments") or {},
+            "benefits": payload.get("benefits") or [],
+            "delivered_by": (payload.get("delivery") or {}).get("delivered_by", ""),
             "pickup_code": (payload.get("delivery") or {}).get("pickup_code", ""),
         },
     }
+
+    # iFood's optional customer.documentNumber is supplied for this order's
+    # tax document, unlike a document fetched from our CRM. Bridge it to the
+    # existing fiscal request contract; the fiscal adapter retains validation.
+    # Explicit foreign IDs are preserved in customer, never relabelled CPF/CNPJ.
+    customer = order_data["customer"]
+    document = str(customer.get("document") or "").strip()
+    document_type = str(customer.get("document_type") or "").strip().upper()
+    if document and document_type in {"", "CPF", "CNPJ"}:
+        order_data["fiscal"] = {"tax_id": document}
+
+    if str(payload.get("order_timing") or "").upper() == "SCHEDULED":
+        from shopman.shop.services.ifood_schedule import delivery_date_from_payload
+
+        delivery_date = delivery_date_from_payload(payload.get("schedule") or {})
+        if delivery_date is not None:
+            order_data["delivery_date"] = delivery_date.isoformat()
 
     with transaction.atomic():
         order = Order.objects.create(
             ref=generate_order_ref(channel_ref=channel_ref),
             channel_ref=channel_ref,
-            session_key="",
+            session_key=session_key_for_order(payload.get("merchant_id", ""), order_code),
             external_ref=order_code,
             handle_type="ifood_order",
             handle_ref=order_code,
@@ -183,6 +211,27 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
 
 
 # ── helpers ───────────────────────────────────────────────────────────
+
+
+def payment_status_from_payload(payments: dict, total_q: int) -> str:
+    """Report iFood's settlement evidence without initiating a local charge.
+
+    Delivery responsibility is not proof of payment: both merchant and iFood
+    delivery can carry amounts still to collect. Keep those orders pending,
+    including mixed payments, and do not label missing/partial evidence paid.
+    """
+    prepaid_q = int(payments.get("prepaid_q") or 0)
+    pending_q = int(payments.get("pending_q") or 0)
+    methods = payments.get("methods") or []
+    if pending_q > 0 or any(
+        int(method.get("value_q") or 0) > 0
+        and (method.get("type") == "OFFLINE" or method.get("prepaid") is False)
+        for method in methods
+    ):
+        return "pending"
+    if pending_q == 0 and total_q > 0 and prepaid_q >= total_q:
+        return "paid"
+    return "unknown"
 
 
 def _validate_payload(payload: dict) -> None:

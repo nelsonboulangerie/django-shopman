@@ -177,6 +177,26 @@ def initiate(order) -> None:
     )
 
 
+def restore_existing_intent(order) -> bool:
+    """Restore a persisted Payman intent to Order data without contacting a provider."""
+    payment_data = dict((order.data or {}).get("payment") or {})
+    method = payment_data.get("method")
+    if payment_data.get("intent_ref"):
+        from shopman.payman import PaymentService
+
+        try:
+            intent = PaymentService.get(payment_data["intent_ref"])
+        except Exception:
+            logger.warning("payment.restore_existing_intent_failed order=%s", order.ref)
+            return False
+        return intent.order_ref == order.ref and intent.method == method and intent.amount_q == order.total_q
+    existing = _existing_active_intent(order, method=method, amount_q=order.total_q)
+    if existing is None:
+        return False
+    _persist_intent(order, payment_data=payment_data, method=method, amount_q=order.total_q, intent=existing)
+    return True
+
+
 def _persist_intent(
     order,
     *,

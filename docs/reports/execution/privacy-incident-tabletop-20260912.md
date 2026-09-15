@@ -2,7 +2,7 @@
 
 **Estado:** exercício concluído e confirmado em 2026-09-12; 19 testes de backend
 e 4 testes da interface passaram.
-**Ambiente:** local, sintético, sem fornecedor, cliente ou escrita externa.  
+**Ambiente:** local, sintético, sem fornecedor, cliente ou escrita externa.
 **Responsável:** Pablo Valentini. **Suplente:** Laís Kohatsu Kataoka.
 
 ## Cenário único

@@ -20,6 +20,8 @@ order prices are decimal currency values (e.g. ``12.5`` = R$ 12,50).
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 import requests
 from django.conf import settings
@@ -83,6 +85,7 @@ def map_order(order: dict) -> dict:
     """
     order_id = order.get("id") or order.get("orderId") or ""
     merchant = order.get("merchant") or {}
+    from shopman.shop.services.ifood_schedule import map_schedule
 
     return {
         "order_code": str(order_id),
@@ -91,9 +94,11 @@ def map_order(order: dict) -> dict:
         "display_id": order.get("displayId", ""),
         "is_test": bool(order.get("isTest", False)),
         "order_timing": order.get("orderTiming", ""),
+        "schedule": map_schedule(order),
         "customer": _map_customer(order.get("customer") or {}),
         "delivery": _map_delivery(order),
         "items": _map_items(order.get("items") or []),
+        "benefits": _map_benefits(order.get("benefits") or []),
         "totals": _map_totals(order.get("total") or {}),
         "payments": _map_payments(order.get("payments") or {}),
         "notes": _order_notes(order),
@@ -114,6 +119,7 @@ def _map_customer(customer: dict) -> dict:
         "phone": number,
         "phone_localizer": localizer,
         "document": customer.get("documentNumber", ""),
+        "document_type": customer.get("documentType", ""),
     }
 
 
@@ -159,6 +165,7 @@ def _map_items(items: list[dict]) -> list[dict]:
         # totalPrice already includes optionsPrice + customizationPrice — critical
         # for combos, where unitPrice (base) undercounts the real line charge.
         line_total_q = _to_q(raw.get("totalPrice")) if raw.get("totalPrice") is not None else None
+        options = _map_options(raw.get("options") or [])
         mapped.append({
             "line_id": raw.get("id") or f"ifood-{idx}",
             "sku": raw.get("externalCode") or raw.get("id") or f"ifood-item-{idx}",
@@ -171,10 +178,26 @@ def _map_items(items: list[dict]) -> list[dict]:
             "meta": {
                 "observations": raw.get("observations", ""),
                 "item_type": raw.get("type", ""),
-                "options": _map_options(raw.get("options") or []),
+                "options": options,
+                "notes": _item_preparation_notes(raw.get("observations"), options),
             },
         })
     return mapped
+
+
+def _item_preparation_notes(observations, options: list[dict]) -> str:
+    """Project supplier instructions into the canonical KDS notes field."""
+    lines = [str(observations).strip()] if observations and str(observations).strip() else []
+
+    def describe(option: dict) -> str:
+        group = f"{option['group']}: " if option.get("group") else ""
+        return f"{group}{option.get('qty', 1)}× {option.get('name') or 'Complemento sem nome'}"
+
+    for option in options:
+        lines.append(describe(option))
+        for customization in option.get("customizations") or []:
+            lines.append(f"  ↳ {describe(customization)}")
+    return "\n".join(lines)
 
 
 def _map_options(options: list[dict]) -> list[dict]:
@@ -195,6 +218,41 @@ def _map_options(options: list[dict]) -> list[dict]:
                 }
                 for cst in (opt.get("customizations") or [])
             ],
+        })
+    return mapped
+
+
+def _benefit_amount(value) -> int | None:
+    try:
+        amount = Decimal(str(value))
+        if not amount.is_finite() or amount < 0:
+            return None
+        return int((amount * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+def _map_benefits(benefits: list) -> list[dict]:
+    """Preserve FOOD subsidy evidence; this projection never changes order pricing."""
+    if not isinstance(benefits, list):
+        return []
+    mapped = []
+    for raw in benefits:
+        if not isinstance(raw, dict):
+            mapped.append({"raw": deepcopy(raw)})
+            continue
+        sponsors = raw.get("sponsorshipValues")
+        mapped.append({
+            "value_q": _benefit_amount(raw.get("value")),
+            "target": raw.get("target", ""),
+            "target_id": raw.get("targetId"),
+            "sponsorships": [
+                {"sponsor": sponsor.get("name", ""),
+                 "value_q": _benefit_amount(sponsor.get("value")),
+                 "description": sponsor.get("description", ""), "raw": deepcopy(sponsor)}
+                for sponsor in (sponsors if isinstance(sponsors, list) else []) if isinstance(sponsor, dict)
+            ],
+            "raw": deepcopy(raw),
         })
     return mapped
 
@@ -220,9 +278,10 @@ def _map_payments(payments: dict) -> dict:
             {
                 "method": m.get("method", ""),
                 "type": m.get("type", ""),
-                "prepaid": bool(m.get("prepaid", False)),
+                "prepaid": m.get("prepaid"),
                 "value_q": _to_q(m.get("value", 0)),
                 "brand": (m.get("card") or {}).get("brand", ""),
+                "change_for_q": _to_q((m.get("cash") or {}).get("changeFor", 0)),
             }
             for m in methods
         ],

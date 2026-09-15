@@ -900,6 +900,10 @@ describe('surface UX guardrails', () => {
     expect(prefs).toContain('@click="stockAlertCancelTarget = subscription"')
     expect(prefs).toContain('<UiAlertDialogTitle>Cancelar este aviso?</UiAlertDialogTitle>')
     expect(prefs).toContain("@click=\"changeStockAlert(stockAlertCancelTarget, 'cancel')\"")
+    expect(prefs).toContain('@click="askStockAlertConfirmation(subscription)"')
+    expect(prefs).toContain("body: { adult_declared: true, alert_type: subscription.event_type }")
+    expect(prefs).toContain('Confirmar e ativar')
+    expect(prefs).not.toContain(':to="`/produto/${encodeURIComponent(subscription.sku)}`"')
 
     const security = read('app/pages/conta/seguranca.vue')
     expect(security).toContain("apiPath('/api/v1/account/devices/')")

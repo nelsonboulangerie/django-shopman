@@ -527,7 +527,10 @@ class ManyChatWhatsAppAdapter:
         if not field_name:
             return HandoffOutcome("not_applied", "handoff_not_configured")
         try:
-            accepted = notification_manychat.set_custom_field(subject, field_name, "1" if on else "")
+            # O campo do flow e textual: valores explícitos evitam depender de
+            # "limpar" um Custom Field, operação que setCustomFieldByName não
+            # confirma para texto. O flow testa igualdade com "1".
+            accepted = notification_manychat.set_custom_field(subject, field_name, "1" if on else "0")
         except Exception as exc:
             logger.warning("concierge.transport.handoff_unconfirmed exception_type=%s", type(exc).__name__)
             return HandoffOutcome("unknown", "acceptance_unconfirmed")

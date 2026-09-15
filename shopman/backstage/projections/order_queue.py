@@ -14,6 +14,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from django.db.models import Q
 from django.utils import timezone
 from shopman.orderman.models import Order, OrderItem
 from shopman.utils.monetary import format_money
@@ -25,6 +26,8 @@ from shopman.backstage.presentation.status import (
     payment_status_label,
     status_color,
 )
+from shopman.backstage.projections import ifood as ifood_projection
+from shopman.backstage.projections.ifood_handshake import IFoodNegotiationProjection, negotiations
 from shopman.shop.projections.types import (
     Action,
     OrderItemProjection,
@@ -216,6 +219,10 @@ class OrderCardProjection:
     waitlist_state: str = ""
     waitlist_deadline_iso: str = ""
     waitlist_label: str = ""
+    ifood_cancellation_notice: str = ""
+    ifood_payment_summary: tuple[str, ...] = ()
+    ifood_operation_summary: tuple[str, ...] = ()
+    ifood_negotiations: tuple[IFoodNegotiationProjection, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -381,6 +388,10 @@ class OperatorOrderProjection:
     # aviso: "Enviando…", "Link enviado às 14h32" ou "falhou — reenvie".
     can_resend_payment_link: bool = False
     payment_link_notice: str = ""
+    ifood_cancellation_notice: str = ""
+    ifood_payment_summary: tuple[str, ...] = ()
+    ifood_operation_summary: tuple[str, ...] = ()
+    ifood_negotiations: tuple[IFoodNegotiationProjection, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -418,6 +429,8 @@ class TwoZoneQueueProjection:
     # responder "onde está a maquininha" sem procurar card por card.
     equipment_out: tuple[EquipmentOutProjection, ...] = ()
     equipment_available: tuple[EquipmentOptionProjection, ...] = ()
+
+    ifood_negotiation_orders: tuple[OrderCardProjection, ...] = ()
 
 
 # ── Builders ───────────────────────────────────────────────────────────
@@ -474,7 +487,10 @@ def _cancel_capability(order: Order, user) -> dict:
     devolveria o botão mentiroso pela porta dos fundos.
     """
     from shopman.shop.services import cancellation as cancellation_service
+    from shopman.shop.services.ifood_cancellation import is_pending
 
+    if is_pending(order):
+        return {"can_cancel": False, "cancel_requires_approval": False, "cancel_block_label": "Aguardando confirmação de cancelamento do iFood."}
     policy = cancellation_service.operator_cancel_policy(order)
     if not policy.allowed:
         return {
@@ -601,9 +617,13 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         kitchen_note=order.data.get("kitchen_note", ""),
         customer_note=str(order.data.get("order_notes", "") or ""),
         payment_method=method,
-        payment_method_label=payment_method_label,
+        payment_method_label="iFood" if order.channel_ref == "ifood" else payment_method_label,
+        ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
+        ifood_payment_summary=ifood_projection.payment_summary(order),
+        ifood_operation_summary=ifood_projection.operation_summary(order),
+        ifood_negotiations=negotiations(order, user=user),
         payment_status=payment_status,
-        payment_status_label=payment_status_label(payment_status),
+        payment_status_label=({"paid": "Pago online", "pending": "Pagamento pendente", "unknown": "Pagamento não informado"}.get(payment_status, "Pagamento não informado") if order.channel_ref == "ifood" else payment_status_label(payment_status)),
         can_confirm=not operator_orders.confirmation_block_reason(order),
         can_advance=bool(next_status),
         **cancel_capability,
@@ -972,7 +992,7 @@ def build_order_card(order: Order, *, user=None) -> OrderCardProjection:
 def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     """Build the operator queue grouped by the next physical action."""
     all_orders = list(
-        Order.objects.filter(status__in=ACTIVE_STATUSES)
+        Order.objects.filter(Q(status__in=ACTIVE_STATUSES) | Q(channel_ref="ifood", data__ifood__handshake_pending=True))
         .order_by("created_at")
     )
 
@@ -1044,6 +1064,10 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         equipment_out=_equipment_out(user=user, devices=devices),
         equipment_available=tuple(EquipmentOptionProjection(ref=PREFIX + str(device.ref), label=device.label)
                                   for device in devices if device.active and device.current_order_id is None),
+        ifood_negotiation_orders=tuple(
+            _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, user=user)
+            for o in all_orders if o.channel_ref == "ifood" and ((o.data or {}).get("ifood") or {}).get("handshake_pending")
+        ),
         intake=intake,
         preparing_count=preparing_count,
         prep=prep,
@@ -1199,7 +1223,7 @@ def _build_card(
 
     payment_data = order.data.get("payment", {})
     method = payment_data.get("method", "")
-    payment_status = (payment_svc.get_payment_status(order, payment_reads=payment_reads) or "")
+    payment_status = (_payment_status(order) if order.channel_ref == "ifood" else (payment_svc.get_payment_status(order, payment_reads=payment_reads) or ""))
     payment_method_label = _payment_method_label(method, payment_data, labels=method_labels)
     fiscal_status, fiscal_status_label, _fiscal_links = _fiscal_status(
         order, directive_status=fiscal_states.get(order.ref, "") if fiscal_states is not None else None,
@@ -1245,9 +1269,13 @@ def _build_card(
         next_status=next_status,
         next_action_label=next_label,
         payment_method=method,
-        payment_method_label=payment_method_label,
+        payment_method_label="iFood" if order.channel_ref == "ifood" else payment_method_label,
+        ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
+        ifood_payment_summary=ifood_projection.payment_summary(order),
+        ifood_operation_summary=ifood_projection.operation_summary(order),
+        ifood_negotiations=negotiations(order, user=user),
         payment_status=payment_status,
-        payment_status_label=payment_status_label(payment_status),
+        payment_status_label=({"paid": "Pago online", "pending": "Pagamento pendente", "unknown": "Pagamento não informado"}.get(payment_status, "Pagamento não informado") if order.channel_ref == "ifood" else payment_status_label(payment_status)),
         payment_pending=_is_payment_pending(order, method, payment_status),
         payment_tone=_payment_tone(order, method, payment_status, payment_data),
         advance_block_label=advance_block_label(bloqueio),
@@ -1472,6 +1500,8 @@ def _payment_tone(order: Order, method: str, payment_status: str, payment_data: 
     (reason ``payment_timeout``) e sai do board (``cancelled`` ∉ ``ACTIVE_STATUSES``),
     então ``danger`` no card seria alarme para um pedido que, se falhar, some sozinho.
     """
+    if order.channel_ref == "ifood" and method == "external":
+        return "success" if payment_status in _PAYMENT_COMPLETE else "neutral" if payment_status == "pending" else "warning"
     # Pago é pago, em qualquer canal ou meio: verde primeiro. Uma captura
     # registrada (pix/cartão) vale para qualquer canal (web, whatsapp, pdv).
     if payment_status in _PAYMENT_COMPLETE:
@@ -1498,6 +1528,10 @@ def _payment_tone(order: Order, method: str, payment_status: str, payment_data: 
 
 
 _ADVANCE_BLOCK_LABELS: dict[operator_orders.AdvanceBlock, str] = {
+    operator_orders.AdvanceBlock.IFOOD_SCHEDULE_BLOCKED: "Aguardando horário do iFood…",
+    operator_orders.AdvanceBlock.IFOOD_WAITING_PICKUP: "Aguardando entregador iFood…",
+    operator_orders.AdvanceBlock.IFOOD_DELIVERY_UNKNOWN: "Confira o responsável pela entrega",
+    operator_orders.AdvanceBlock.IFOOD_CANCELLATION_PENDING: "Aguardando cancelamento pelo iFood…",
     operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED: "Aguardando pagamento…",
     operator_orders.AdvanceBlock.PREORDER_NOT_DUE: "Encomenda do dia…",
     operator_orders.AdvanceBlock.WAITLIST_FERMATA: "Esperando a fornada…",
@@ -1516,6 +1550,10 @@ def advance_block_label(bloqueio: operator_orders.AdvanceBlock) -> str:
 
 def _payment_status(order: Order) -> str:
     """Return the operator-facing payment status without duplicating Payman."""
+    if order.channel_ref == "ifood":
+        from shopman.shop.services.ifood_ingest import payment_status_from_payload
+
+        return payment_status_from_payload(((order.data or {}).get("ifood") or {}).get("payments") or {}, order.total_q)
     return payment_svc.get_payment_status(order) or ""
 
 

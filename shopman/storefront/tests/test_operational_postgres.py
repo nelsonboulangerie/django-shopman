@@ -118,20 +118,21 @@ def test_concurrent_stock_moves_create_one_occurrence_and_one_delivery():
     assert StockAlertDelivery.objects.filter(occurrence__sku="PG-STOCK-CYCLE").count() == 1
 
 
-def test_concurrent_anonymous_subscribe_grants_new_browser_ownership_once():
+def test_concurrent_authenticated_subscribe_creates_one_customer_alert():
     from shopman.shop.models import Channel
     from shopman.storefront.models import StockAlertSubscription
     from shopman.storefront.services import stock_alerts
 
     Channel.objects.get_or_create(ref="web", defaults={"name": "Web", "is_active": True})
     barrier = Barrier(2)
+    customer = SimpleNamespace(ref="CUS-PG-SUBSCRIBE", phone="+5543999990087")
 
     def run():
         try:
             barrier.wait(timeout=10)
             return stock_alerts.subscribe_with_outcome(
                 "PG-SUBSCRIBE-OWNERSHIP",
-                phone="+5543999990087",
+                customer=customer,
                 resume_existing=False,
             )
         finally:
