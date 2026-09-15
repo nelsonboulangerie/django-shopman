@@ -76,6 +76,14 @@ def _process_directive(directive) -> None:
 
     from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
 
+    retry_delays = getattr(handler, "retry_delays_seconds", None)
+    if isinstance(retry_delays, (tuple, list)) and retry_delays:
+        max_attempts = len(retry_delays) + 1
+        retry_delay = int(retry_delays[min(directive.attempts - 1, len(retry_delays) - 1)])
+    else:
+        max_attempts = MAX_ATTEMPTS
+        retry_delay = _backoff_seconds(directive.attempts)
+
     _local.dispatching = True
     try:
         handler.handle(message=directive, ctx={"actor": "signal_dispatch"})
@@ -96,32 +104,39 @@ def _process_directive(directive) -> None:
     except DirectiveTransientError as exc:
         logger.warning(
             "Directive %s #%s transient failure (attempt %d/%d): %s",
-            directive.topic, directive.pk, directive.attempts, MAX_ATTEMPTS, exc,
+            directive.topic, directive.pk, directive.attempts, max_attempts, exc,
         )
-        if directive.attempts >= MAX_ATTEMPTS:
+        if directive.attempts >= max_attempts:
             directive.status = "failed"
             directive.error_code = "terminal"
         else:
             directive.status = "queued"
             directive.error_code = "transient"
-            directive.available_at = now + timedelta(seconds=_backoff_seconds(directive.attempts))
+            directive.available_at = now + timedelta(seconds=retry_delay)
         directive.last_error = str(exc)[:500]
         directive.save(update_fields=["status", "error_code", "available_at", "last_error", "updated_at"])
     except Exception as exc:
         logger.exception(
             "Directive %s #%s failed (attempt %d/%d)",
-            directive.topic, directive.pk, directive.attempts, MAX_ATTEMPTS,
+            directive.topic, directive.pk, directive.attempts, max_attempts,
         )
-        if directive.attempts >= MAX_ATTEMPTS:
+        if directive.attempts >= max_attempts:
             directive.status = "failed"
             directive.error_code = "terminal"
         else:
             directive.status = "queued"
             directive.error_code = "transient"
-            directive.available_at = now + timedelta(seconds=_backoff_seconds(directive.attempts))
+            directive.available_at = now + timedelta(seconds=retry_delay)
         directive.last_error = str(exc)[:500]
         directive.save(update_fields=["status", "error_code", "available_at", "last_error", "updated_at"])
     finally:
+        if directive.status == "failed":
+            terminal_hook = getattr(handler, "on_terminal_failure", None)
+            if callable(terminal_hook):
+                try:
+                    terminal_hook(message=directive)
+                except Exception:
+                    logger.exception("Directive terminal failure observer failed for #%s", directive.pk)
         _local.dispatching = False
 
 

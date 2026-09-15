@@ -42,6 +42,19 @@ class NFCeEmitHandler:
     """Directive handler para emissão de NFC-e. Topic: fiscal.emit_nfce"""
 
     topic = FISCAL_EMIT_NFCE
+    # A transient fiscal outage gets a bounded recovery window (~64 minutes),
+    # always querying the same reference before another emission attempt.
+    retry_delays_seconds = (30, 60, 120, 300, 600, 900, 1800)
+
+    def on_terminal_failure(self, *, message: Directive) -> None:
+        from shopman.shop.services.observability import create_operator_alert
+
+        order_ref = str((message.payload or {}).get("order_ref") or "")
+        create_operator_alert(
+            type="fiscal_emit_failed", severity="critical", order_ref=order_ref,
+            message=f"NFC-e do pedido {order_ref} sem emissão confirmada após {message.attempts} tentativa(s). Confira a fila fiscal e consulte a referência antes de reenviar.",
+            dedupe_key=f"fiscal_emit_failed:{order_ref}",
+        )
 
     def __init__(self, backend: FiscalBackend):
         self.backend = backend

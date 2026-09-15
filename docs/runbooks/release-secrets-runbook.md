@@ -61,6 +61,19 @@ DJANGO_SECRET_KEY=<strong random secret>
 DOORMAN_ACCESS_LINK_API_KEY=<strong random server-to-server key>
 ```
 
+### Google Maps: duas credenciais, dois perímetros
+
+Nunca reutilize uma chave entre navegador e servidor:
+
+```env
+GOOGLE_MAPS_BROWSER_API_KEY=<restrita por referer e às APIs Maps JavaScript/Places>
+GOOGLE_MAPS_SERVER_API_KEY=<restrita à Geocoding API e, se possível, ao IP de saída>
+```
+
+`GOOGLE_MAPS_API_KEY` existe apenas como fallback de migração. Depois de
+configurar e validar as duas novas variáveis, remova a antiga do ambiente. A
+chave de servidor não pode aparecer em `home.public_config`, HTML ou bundle.
+
 Use `python - <<'PY'` localmente para gerar valores quando o provedor nao gerar:
 
 ```bash
@@ -78,7 +91,7 @@ Obtenha na Conta Efi:
 EFI_SANDBOX=true
 EFI_CLIENT_ID=<homologacao client id>
 EFI_CLIENT_SECRET=<homologacao client secret>
-EFI_CERTIFICATE_PATH=/app/secrets/efi-homologacao.p12
+EFI_CERTIFICATE_PATH=/app/secrets/efi-homologacao.pem
 EFI_PIX_KEY=<chave pix de homologacao/producao>
 EFI_WEBHOOK_TOKEN=<shared secret definido para o webhook>
 EFI_MTLS_HEADER=HTTP_X_SSL_CLIENT_VERIFY
@@ -185,10 +198,14 @@ opcional:
 2. rotacionar o `EFI_WEBHOOK_TOKEN` significa **recadastrar a URL na Efí**, já
    que o segredo é parte dela.
 
-O certificado precisa existir no filesystem do container no caminho de
-`EFI_CERTIFICATE_PATH`. Se o provedor de deploy nao monta arquivo secreto,
-converta isso em etapa de build/runtime segura antes de habilitar `payment_efi`.
-Nao commite `.p12`, `.pem` ou dumps base64 do certificado.
+O arquivo no caminho de `EFI_CERTIFICATE_PATH` precisa ser PEM e conter o
+certificado **e a chave privada correspondente**, pois o runtime Efí o carrega
+com `SSLContext.load_cert_chain`. Se a Efí fornecer `.p12`/`.pfx`, converta-o
+para esse PEM combinado fora do repositório, preserve a senha durante a
+conversão e valide o arquivo resultante com `make production-readiness`. Se o
+provedor de deploy não monta arquivo secreto, transforme essa conversão em uma
+etapa segura de build/runtime antes de habilitar `payment_efi`. Não commite
+`.p12`, `.pfx`, `.pem` ou dumps base64 do certificado.
 
 ## 5. Stripe
 
@@ -287,3 +304,6 @@ Resultado esperado antes de trafego real: nenhum `failed` e nenhum
 `blocked_by_implementation`, o contrato ainda nao esta provado para pedidos
 conversacionais inbound; use ManyChat apenas para OTP/access-link ate esse
 smoke ser implementado.
+
+
+Em produção, o fallback de `GOOGLE_MAPS_API_KEY` é desabilitado e o check `SHOPMAN_E023` recusa a chave compartilhada. As chaves explícitas de browser e servidor também não podem ser iguais. Restrinja e rotacione as credenciais no Google Cloud antes do cutover; esta guarda local não verifica as restrições cadastradas no provedor.

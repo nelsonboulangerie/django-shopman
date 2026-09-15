@@ -108,9 +108,9 @@ def test_refund_handler_retries_then_alerts_on_exhaustion(paid_order):
                 handler.handle(message=NS(payload=payload, attempts=1), ctx={})
         early.assert_not_called()
 
-        # Última tentativa (attempts=5 == MAX): alerta antes de propagar.
+        # Última tentativa da janela de recuperação: alerta antes de propagar.
         with patch("shopman.shop.services.observability.create_operator_alert") as last:
             with pytest.raises(DirectiveTransientError):
-                handler.handle(message=NS(payload=payload, attempts=5), ctx={})
+                handler.handle(message=NS(payload=payload, attempts=len(handler.retry_delays_seconds) + 1), ctx={})
         last.assert_called_once()
         assert last.call_args.kwargs["type"] == "payment_refund_failed"
