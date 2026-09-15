@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 
 from django.contrib import admin, messages
+from django.db.models import BooleanField, Exists, OuterRef, Prefetch, Value
 from django.utils.html import format_html, format_html_join
 from django.utils.translation import gettext_lazy as _
 from shopman.utils import unfold_badge, unfold_component
@@ -115,6 +116,18 @@ def transport_badge(message):
     return unfold_badge(label, color)
 
 
+def processing_badge(message):
+    """Distingue captura passiva de uma entrada que aguarda a Concierge."""
+    if message.automation_eligible:
+        return ""
+    retention = (
+        message.retention_until.strftime("%d/%m/%Y")
+        if message.retention_until
+        else "prazo indisponível"
+    )
+    return unfold_badge(f"Observação · descarte {retention}", "base")
+
+
 _HANDOFF_SYNC_LABELS = {
     "executing": "Sincronização em andamento",
     "accepted": "Sincronização aceita pelo provedor",
@@ -184,6 +197,7 @@ class ConversationAdmin(ModelAdmin):
     list_display = (
         "who_display",
         "state_badge",
+        "usage_badge",
         "bindings_display",
         "last_inbound_at",
         "turns_today",
@@ -269,8 +283,8 @@ class ConversationAdmin(ModelAdmin):
         return False
 
     def has_delete_permission(self, request, obj=None):
-        # A transcrição é registro de atendimento (LGPD: qualidade do serviço);
-        # apagar é rotina de retenção, não gesto de tela.
+        # A transcrição é registro de atendimento; observações expiram pela
+        # rotina de retenção, não por um gesto destrutivo nesta tela.
         return False
 
     def has_change_permission(self, request, obj=None):
@@ -278,7 +292,40 @@ class ConversationAdmin(ModelAdmin):
         return False
 
     def get_queryset(self, request):
-        return super().get_queryset(request).prefetch_related("transport_bindings")
+        observed = ConversationMessage.objects.filter(
+            conversation_id=OuterRef("pk"),
+            automation_eligible=False,
+        )
+        eligible = ConversationMessage.objects.filter(
+            conversation_id=OuterRef("pk"),
+            automation_eligible=True,
+        )
+        can_review_observations = request.user.has_perm(
+            "shop.review_conversation_observations"
+        )
+        queryset = super().get_queryset(request)
+        visible_messages = ConversationMessage.objects.order_by("id")
+        if can_review_observations:
+            queryset = queryset.annotate(
+                _has_observed=Exists(observed),
+                _has_eligible=Exists(eligible),
+            )
+        else:
+            # Uma permissão ampla de leitura da conversa não concede acesso ao
+            # corpus observado. Conversas só de observação desaparecem; em uma
+            # conversa mista, a transcrição operacional continua disponível.
+            # Conversas vazias já existiam como estado operacional e continuam
+            # diagnosticáveis. Escondemos apenas a conversa que contém
+            # observação e não contém nenhuma mensagem operacional.
+            queryset = queryset.filter(~Exists(observed) | Exists(eligible)).annotate(
+                _has_observed=Value(False, output_field=BooleanField()),
+                _has_eligible=Exists(eligible),
+            )
+            visible_messages = visible_messages.filter(automation_eligible=True)
+        return queryset.prefetch_related(
+            "transport_bindings",
+            Prefetch("messages", queryset=visible_messages, to_attr="_visible_messages"),
+        )
 
     # ── Colunas ────────────────────────────────────────────────────────
 
@@ -294,6 +341,19 @@ class ConversationAdmin(ModelAdmin):
     )
     def state_badge(self, obj):
         return _STATE_LABEL.get(obj.state, obj.state)
+
+    @display(
+        description="uso",
+        label={"Atendimento": "success", "Observação": "info", "Misto": "warning"},
+    )
+    def usage_badge(self, obj):
+        observed = bool(getattr(obj, "_has_observed", False))
+        eligible = bool(getattr(obj, "_has_eligible", False))
+        if observed and eligible:
+            return "Misto"
+        if observed:
+            return "Observação"
+        return "Atendimento"
 
     @display(description="tokens (in / out / cache)")
     def tokens_display(self, obj):
@@ -329,7 +389,11 @@ class ConversationAdmin(ModelAdmin):
     def transcript_display(self, obj):
         if obj.pk is None:
             return "—"
-        rows = list(obj.messages.order_by("id"))
+        # Objetos vindos do Admin carregam `_visible_messages` conforme a
+        # permissão do request. O fallback é deliberadamente restrito.
+        rows = getattr(obj, "_visible_messages", None)
+        if rows is None:
+            rows = list(obj.messages.filter(automation_eligible=True).order_by("id"))
         if not rows:
             return unfold_component(
                 "unfold/components/text.html",
@@ -349,7 +413,7 @@ class ConversationAdmin(ModelAdmin):
                     m.created_at.strftime("%d/%m %H:%M:%S") if m.created_at else "—",
                     unfold_badge(m.get_kind_display(), _KIND_COLOR.get(m.kind, "base")),
                     message_summary(m),
-                    transport_badge(m),
+                    format_html("{}{}", processing_badge(m), transport_badge(m)),
                 )
                 for m in rows
             ),
