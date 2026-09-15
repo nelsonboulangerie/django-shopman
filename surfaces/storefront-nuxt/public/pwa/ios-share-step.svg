@@ -4,7 +4,7 @@
   <rect width="320" height="240" rx="28" fill="#fcf7ee"/>
   <rect x="34" y="38" width="252" height="164" rx="22" fill="#fff" stroke="#dec9bb" stroke-width="4"/>
   <rect x="54" y="58" width="212" height="88" rx="12" fill="#f5e7dd"/>
-  <rect x="54" y="162" width="212" height="24" rx="12" fill="#f5e7dd"/>
-  <circle cx="160" cy="174" r="22" fill="#7c3a40"/>
-  <path d="M160 178v-38m0 0-12 12m12-12 12 12M145 167h-8v26h46v-26h-8" fill="none" stroke="#fcf7ee" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="54" y="158" width="212" height="32" rx="16" fill="#f5e7dd"/>
+  <circle cx="160" cy="174" r="15" fill="#7c3a40"/>
+  <path d="M160 175v-14m0 0-6 6m6-6 6 6M153 172h-3v13h20v-13h-3" fill="none" stroke="#fcf7ee" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
