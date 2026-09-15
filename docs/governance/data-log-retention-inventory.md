@@ -39,6 +39,15 @@ desenvolvimento. A barreira reduz exposição acidental; ela **não** torna corr
 registrar corpo, erro bruto ou dado pessoal desnecessário. Hotspots devem ser
 corrigidos na origem conforme forem tocados.
 
+### Emissores locais de autenticação
+
+`ConsoleSender` e `LogSender` confirmam apenas que o caminho técnico local foi
+alcançado. Eles não registram o código nem o destino e não comprovam entrega ao
+usuário. Um fluxo interativo de desenvolvimento só pode depender deles quando a
+resposta protegida de debug estiver deliberadamente habilitada; fora disso, a
+cadeia precisa de SMS, e-mail ou outro canal real. O startup de produção recusa
+esses emissores quando aparecem no caminho efetivo de entrega.
+
 ## Critérios ainda bloqueantes para R12
 
 1. Confirmar e guardar evidência dos TTLs e acessos de DigitalOcean e Sentry.

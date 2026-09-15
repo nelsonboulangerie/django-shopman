@@ -761,9 +761,11 @@ SHOPMAN_WHATSAPP_ALLOW_IN_DEBUG = _env_bool("SHOPMAN_WHATSAPP_ALLOW_IN_DEBUG", F
 SHOPMAN_MACHINE_ALLOW_IN_DEBUG = _env_bool("SHOPMAN_MACHINE_ALLOW_IN_DEBUG", False)
 
 # ── OTP Delivery Chain ───────────────────────────────────────────────
-# SMS primário (Twilio), email como fallback. WhatsApp fica mapeado mas FORA da cadeia
+# SMS primário (Comtele), email como fallback. WhatsApp fica mapeado mas FORA da cadeia
 # (ManyChat não emite template de Authentication). Em debug, o código só volta
 # pela resposta protegida de `_debug_otp_allowed`; logs/console não o exibem.
+# `console` é somente um ACK técnico local: ele não entrega o código ao usuário e
+# só é útil quando essa resposta protegida está deliberadamente disponível.
 DOORMAN["DELIVERY_SENDERS"] = {
     "sms": "shopman.shop.adapters.otp_sms_comtele.ComteleSMSSender",
     "email": "shopman.doorman.senders.EmailSender",
