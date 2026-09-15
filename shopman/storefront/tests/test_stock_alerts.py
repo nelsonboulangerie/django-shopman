@@ -1,7 +1,8 @@
 """WP-3 — "Me avise quando disponível" (stock-back alerts).
 
-Cobre: subscribe (anônimo/dedup/sem contato), notify idempotente (dispara só
-quando disponível, marca uma vez, não marca em falha de envio) e o endpoint.
+Cobre: subscribe (canal verificado/dedup/sem contato), endpoint web autenticado,
+notify idempotente (dispara só quando disponível, marca uma vez, não marca em
+falha de envio) e compatibilidade das capacidades de sessão legadas.
 """
 
 from __future__ import annotations
@@ -71,6 +72,37 @@ def _move(
 def _deliver_queued():
     for delivery in StockAlertDelivery.objects.filter(status="queued").order_by("pk"):
         StockAlertDeliveryHandler().handle(message=MagicMock(payload={"delivery_id": delivery.pk}), ctx={})
+
+
+def _authenticate(client, *, ref="CUS-AUTH-NOTIFY", phone=PHONE):
+    from shopman.doorman.protocols.customer import AuthCustomerInfo
+    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+
+    customer = Customer.objects.create(ref=ref, first_name="Ana", phone=phone)
+    info = AuthCustomerInfo(
+        uuid=customer.uuid,
+        name=customer.name,
+        phone=customer.phone,
+        email=None,
+        is_active=True,
+    )
+    user, _created = get_or_create_user_for_customer(info)
+    client.force_login(user, backend="shopman.doorman.backends.PhoneOTPBackend")
+    return customer
+
+
+def _mark_legacy_session(client, sub):
+    """Reproduz uma capacidade anônima emitida antes da exigência de login."""
+    session = client.session
+    session["stock_alert_subscriptions"] = [
+        {
+            "ref": str(sub.ref),
+            "sku": sub.sku,
+            "alert_type": sub.alert_type,
+            "contact_phone": sub.contact_phone,
+        }
+    ]
+    session.save()
 
 
 # ── subscribe ───────────────────────────────────────────────────────
@@ -395,29 +427,32 @@ def test_global_optout_is_rechecked_immediately_before_stock_alert_send():
 # ── endpoint ────────────────────────────────────────────────────────
 
 
-def test_endpoint_anonymous_subscribes(client):
+def test_endpoint_anonymous_requires_verified_identity_and_ignores_typed_phone(client):
     p = _publish()
     path = f"/api/v1/availability/{p.sku}/notify/"
     resp = client.post(path, {"phone": PHONE})
-    assert resp.status_code == 200
-    assert resp.json() == {"ok": True}
+    assert resp.status_code == 401
+    assert resp.json() == {
+        "detail": "Entre para confirmar seu WhatsApp e ativar este aviso.",
+        "field": "auth",
+        "auth_required": True,
+    }
     assert resp["Cache-Control"] == "private, no-store, max-age=0"
-    assert StockAlertSubscription.objects.filter(sku=p.sku, notified_at__isnull=True).exists()
-    recovered = client.get(path)
-    assert urlsplit(recovered.json()["management_url"]).path == "/gerenciar-aviso"
-    assert urlsplit(recovered.json()["management_url"]).fragment
-    assert "?" not in recovered.json()["management_url"]
+    assert not StockAlertSubscription.objects.filter(sku=p.sku).exists()
+    assert client.session.get("stock_alert_subscriptions") in (None, [])
+    assert client.get(path).status_code == 404
 
 
 def test_endpoint_retry_after_lost_response_recovers_same_session_capability(client):
     product = _publish(sku="SKU-SUBSCRIBE-LOST-RESPONSE")
     path = f"/api/v1/availability/{product.sku}/notify/"
+    _authenticate(client, ref="CUS-SUBSCRIBE-LOST-RESPONSE")
 
-    first = client.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.200")
-    repeated = client.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.200")
+    first = client.post(path, {}, REMOTE_ADDR="203.0.113.200")
+    repeated = client.post(path, {}, REMOTE_ADDR="203.0.113.200")
 
     assert first.status_code == repeated.status_code == 200
-    assert first.json() == repeated.json() == {"ok": True}
+    assert first.json()["management_url"] == repeated.json()["management_url"]
     assert StockAlertSubscription.objects.filter(sku=product.sku).count() == 1
     assert client.get(path).status_code == 200
 
@@ -427,14 +462,13 @@ def test_anonymous_repeat_from_other_session_cannot_take_over_existing_subscript
 
     product = _publish(sku="SKU-SUBSCRIBE-CROSS-SESSION")
     path = f"/api/v1/availability/{product.sku}/notify/"
-    first = client.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.210")
-    sub = StockAlertSubscription.objects.get(sku=product.sku)
+    sub = stock_alerts.subscribe(product.sku, phone=PHONE)
     other_session = Client()
 
     repeated = other_session.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.211")
 
-    assert repeated.status_code == 200
-    assert first.json() == repeated.json() == {"ok": True}
+    assert repeated.status_code == 401
+    assert repeated.json()["auth_required"] is True
     assert other_session.session.get("stock_alert_subscriptions") in (None, [])
     assert other_session.get(path).status_code == 404
 
@@ -459,19 +493,14 @@ def test_anonymous_repeat_from_other_session_does_not_resume_paused_subscription
 
     product = _publish(sku="SKU-SUBSCRIBE-CROSS-SESSION-PAUSED")
     path = f"/api/v1/availability/{product.sku}/notify/"
-    client.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.212")
-    sub = StockAlertSubscription.objects.get(sku=product.sku)
-    assert client.patch(
-        path,
-        data={"subscription_ref": str(sub.ref), "action": "pause"},
-        content_type="application/json",
-    ).status_code == 200
+    sub = stock_alerts.subscribe(product.sku, phone=PHONE)
+    assert stock_alerts.set_paused(sub.ref, paused=True, sku=sub.sku, phone=PHONE)
 
     other_session = Client()
     repeated = other_session.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.213")
 
-    assert repeated.status_code == 200
-    assert repeated.json() == {"ok": True}
+    assert repeated.status_code == 401
+    assert repeated.json()["auth_required"] is True
     sub.refresh_from_db()
     assert sub.paused_at is not None
 
@@ -479,8 +508,8 @@ def test_anonymous_repeat_from_other_session_does_not_resume_paused_subscription
 def test_anonymous_reload_recovers_exact_session_management_link(client):
     product = _publish(sku="SKU-MANAGE-SESSION")
     path = f"/api/v1/availability/{product.sku}/notify/"
-    client.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.201")
-    sub = StockAlertSubscription.objects.get(sku=product.sku)
+    sub = stock_alerts.subscribe(product.sku, phone=PHONE)
+    _mark_legacy_session(client, sub)
 
     recovered = client.get(path)
 
@@ -498,12 +527,7 @@ def test_session_management_link_cannot_be_recovered_by_ref_or_wrong_owner(clien
     from django.test import Client
 
     product = _publish(sku="SKU-MANAGE-SESSION-IDOR")
-    client.post(
-        f"/api/v1/availability/{product.sku}/notify/",
-        {"phone": PHONE},
-        REMOTE_ADDR="203.0.113.202",
-    )
-    sub = StockAlertSubscription.objects.get(sku=product.sku)
+    sub = stock_alerts.subscribe(product.sku, phone=PHONE)
     other_device = Client()
     session = other_device.session
     session["stock_alert_subscriptions"] = [
@@ -528,44 +552,27 @@ def test_session_management_link_cannot_be_recovered_by_ref_or_wrong_owner(clien
     assert other_device.get(f"/api/v1/availability/{product.sku}/notify/").status_code == 404
 
 
-def test_endpoint_repairs_legacy_mobile_and_persists_pending_session_marker(client):
+def test_endpoint_anonymous_does_not_normalize_or_persist_typed_phone(client):
     p = _publish(sku="SKU-LEGACY-PHONE")
     resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {"phone": "(43) 9840-4900"})
-    assert resp.status_code == 200
-    sub = StockAlertSubscription.objects.get(sku=p.sku)
-    assert sub.contact_phone == "+5543998404900"
-    assert client.session.get("stock_alert_subscriptions") == [
-        {
-            "ref": str(sub.ref),
-            "sku": p.sku,
-            "alert_type": StockAlertSubscription.AlertType.STOCK_BACK,
-            "contact_phone": "+5543998404900",
-        }
-    ]
+    assert resp.status_code == 401
+    assert resp.json()["auth_required"] is True
+    assert not StockAlertSubscription.objects.filter(sku=p.sku).exists()
+    assert client.session.get("stock_alert_subscriptions") in (None, [])
     assert "stock_alert_skus" not in client.session
 
 
-def test_endpoint_requires_phone_when_anonymous(client):
+def test_endpoint_anonymous_without_phone_also_routes_to_auth(client):
     p = _publish()
     resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {})
-    assert resp.status_code == 400
+    assert resp.status_code == 401
+    assert resp.json()["auth_required"] is True
+    assert not StockAlertSubscription.objects.filter(sku=p.sku).exists()
 
 
 def test_authenticated_subscribe_uses_canonical_account_phone_not_request_body(client):
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
-
     product = _publish(sku="SKU-AUTH-CANONICAL-PHONE")
-    customer = Customer.objects.create(ref="CUS-AUTH-NOTIFY", first_name="Ana", phone=PHONE)
-    info = AuthCustomerInfo(
-        uuid=customer.uuid,
-        name=customer.name,
-        phone=customer.phone,
-        email=None,
-        is_active=True,
-    )
-    user, _created = get_or_create_user_for_customer(info)
-    client.force_login(user, backend="shopman.doorman.backends.PhoneOTPBackend")
+    customer = _authenticate(client)
 
     response = client.post(
         f"/api/v1/availability/{product.sku}/notify/",
@@ -581,11 +588,9 @@ def test_authenticated_subscribe_uses_canonical_account_phone_not_request_body(c
 
 def test_endpoint_anonymous_can_cancel_only_its_session_subscription(client):
     product = _publish(sku="SKU-CANCEL")
-    client.post(
-        f"/api/v1/availability/{product.sku}/notify/",
-        {"phone": PHONE},
-    )
-    subscription_ref = client.session["stock_alert_subscriptions"][0]["ref"]
+    sub = stock_alerts.subscribe(product.sku, phone=PHONE)
+    _mark_legacy_session(client, sub)
+    subscription_ref = str(sub.ref)
 
     response = client.delete(
         f"/api/v1/availability/{product.sku}/notify/",
@@ -800,9 +805,10 @@ def test_both_alert_types_coexist_for_the_same_shopper():
 
 def test_endpoint_accepts_the_bake_alert_type(client):
     p = _publish(sku="SKU-BAKE-API")
+    _authenticate(client, ref="CUS-BAKE-API")
     resp = client.post(
         f"/api/v1/availability/{p.sku}/notify/",
-        {"phone": PHONE, "alert_type": "production_ready"},
+        {"alert_type": "production_ready"},
     )
     assert resp.status_code == 200
     sub = StockAlertSubscription.objects.get(sku=p.sku)
@@ -875,7 +881,8 @@ def test_explicit_alert_type_still_wins():
 def test_endpoint_derives_the_oven_axis_without_the_front_asking(client):
     """A tela continua dizendo só "avise-me sobre este produto"."""
     p = _publish(sku="BF-API", is_batch_produced=True)
-    resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {"phone": PHONE})
+    _authenticate(client, ref="CUS-OVEN-API")
+    resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {})
     assert resp.status_code == 200
     assert StockAlertSubscription.objects.get(sku=p.sku).alert_type == "production_ready"
     assert client.session["stock_alert_subscriptions"][0]["alert_type"] == "production_ready"
@@ -1192,8 +1199,9 @@ def test_partial_failure_keeps_independent_receipts_and_same_occurrence():
 
 def test_anonymous_can_pause_and_resume_the_exact_session_subscription(client):
     product = _publish(sku="SKU-PAUSE-API")
-    client.post(f"/api/v1/availability/{product.sku}/notify/", {"phone": PHONE})
-    subscription_ref = client.session["stock_alert_subscriptions"][0]["ref"]
+    sub = stock_alerts.subscribe(product.sku, phone=PHONE)
+    _mark_legacy_session(client, sub)
+    subscription_ref = str(sub.ref)
     path = f"/api/v1/availability/{product.sku}/notify/"
 
     paused = client.patch(
@@ -1214,8 +1222,9 @@ def test_anonymous_can_pause_and_resume_the_exact_session_subscription(client):
 
 def test_former_expiry_does_not_disable_or_prevent_resuming(client):
     product = _publish(sku="SKU-EXPIRED-API")
-    client.post(f"/api/v1/availability/{product.sku}/notify/", {"phone": PHONE})
-    subscription_ref = client.session["stock_alert_subscriptions"][0]["ref"]
+    sub = stock_alerts.subscribe(product.sku, phone=PHONE)
+    _mark_legacy_session(client, sub)
+    subscription_ref = str(sub.ref)
     StockAlertSubscription.objects.filter(ref=subscription_ref).update(
         paused_at=timezone.now(),
         expires_at=timezone.now() - timedelta(seconds=1),

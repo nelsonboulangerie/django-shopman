@@ -10,6 +10,62 @@ from django.utils import timezone
 
 
 @pytest.mark.django_db(transaction=True)
+def test_web_phone_only_alerts_are_quarantined_without_touching_verified_channels_or_history():
+    executor = MigrationExecutor(connection)
+    latest = executor.loader.graph.leaf_nodes()
+    previous = [("storefront", "0007_stock_alerts_persist_until_cancelled")]
+    executor.migrate(previous)
+    try:
+        apps = executor.loader.project_state(previous).apps
+        LegacySub = apps.get_model("storefront", "StockAlertSubscription")
+        LegacyOccurrence = apps.get_model("storefront", "StockAlertOccurrence")
+        LegacyDelivery = apps.get_model("storefront", "StockAlertDelivery")
+
+        def make(*, evidence, channel="web", customer_ref="", revoked=False):
+            return LegacySub.objects.create(
+                ref=uuid.uuid4(),
+                sku=f"PHONE-PROOF-{evidence}",
+                channel_ref=channel,
+                customer_ref=customer_ref,
+                contact_phone=f"+55439999{evidence[-4:]}",
+                evidence_hash=evidence,
+                target_key=f"target-{evidence}",
+                proof_status="verified",
+                revoked_at=timezone.now() if revoked else None,
+            )
+
+        typed_web = make(evidence="typed-web-0001")
+        account_web = make(evidence="account-web-0002", customer_ref="CUS-PROVEN")
+        trusted_channel = make(evidence="whatsapp-0003", channel="whatsapp")
+        historical = make(evidence="revoked-web-0004", revoked=True)
+        occurrence = LegacyOccurrence.objects.create(
+            sku=typed_web.sku,
+            event_type="stock_back",
+            semantic_key="phone-proof-preserved-occurrence",
+            status="closed",
+            closed_at=timezone.now(),
+        )
+        receipt = LegacyDelivery.objects.create(
+            subscription_id=typed_web.pk,
+            occurrence_id=occurrence.pk,
+            status="accepted",
+            provider_receipt_ref="synthetic-preserved-receipt",
+        )
+
+        MigrationExecutor(connection).migrate(latest)
+        from shopman.storefront.models import StockAlertSubscription
+
+        assert StockAlertSubscription.objects.get(pk=typed_web.pk).proof_status == "legacy_unverified"
+        assert StockAlertSubscription.objects.get(pk=account_web.pk).proof_status == "verified"
+        assert StockAlertSubscription.objects.get(pk=trusted_channel.pk).proof_status == "verified"
+        assert StockAlertSubscription.objects.get(pk=historical.pk).proof_status == "verified"
+        assert StockAlertSubscription.objects.get(pk=typed_web.pk).is_active is False
+        assert StockAlertSubscription.objects.get(pk=typed_web.pk).deliveries.get(pk=receipt.pk).status == "accepted"
+    finally:
+        MigrationExecutor(connection).migrate(latest)
+
+
+@pytest.mark.django_db(transaction=True)
 def test_additive_migrations_preserve_legacy_unknown_receipts_and_subscriptions():
     executor = MigrationExecutor(connection)
     latest = executor.loader.graph.leaf_nodes()

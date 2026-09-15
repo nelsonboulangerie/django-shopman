@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { maskPhoneInput, normalizeAuthPhone } from '~/utils/authPhone'
-import { notifyConfirmationMessage, notifyPhoneTarget } from '~/presentation/stockNotify'
+import { notifyConfirmationMessage } from '~/presentation/stockNotify'
 
 // "Me avise quando disponível" (WP-3). Esgotado honesto (is_notifiable) ganha um
-// caminho acolhedor em vez de um "+" morto: logado assina com 1 clique (usa o
-// telefone da conta); anônimo informa só o telefone num bottom-sheet canônico
-// (mesmo figurino dos demais overlays, dismiss explícito). Omotenashi: oferecer,
-// nunca bloquear seco. O estado "inscrito" PERSISTE: vem da projeção (prop subscribed).
+// caminho acolhedor em vez de um "+" morto. O opt-in exige o telefone confirmado
+// pela identidade canônica: anônimo entra preservando página + SKU e volta para
+// uma confirmação explícita, sem redigitar o número nem confiar em texto livre.
+// O estado "inscrito" PERSISTE: vem da projeção (prop subscribed).
 const props = defineProps<{
   sku: string
   // Nome do produto — usado em aria-label/tooltip (acessibilidade entre muitos cards).
@@ -24,74 +23,67 @@ const props = defineProps<{
 
 const label = computed(() => props.name ? `Ativar avisos recorrentes quando ${props.name} voltar` : 'Ativar avisos recorrentes quando voltar')
 const subscribedLabel = computed(() => props.name ? `Aviso recorrente ativo para ${props.name}` : 'Aviso recorrente ativo')
-const requestReceivedLabel = 'Pedido recebido. Entre com este WhatsApp para conferir ou reativar seus avisos.'
-const requestReceivedHref = '/entrar?next=%2Fconta%2Fpreferencias%23avisos-produtos'
+const confirmationLabel = computed(() => props.name ? `Confirmar aviso recorrente para ${props.name}` : 'Confirmar aviso recorrente')
+const anonymousLabel = computed(() => props.name ? `Entrar para ativar avisos recorrentes quando ${props.name} voltar` : 'Entrar para ativar avisos recorrentes')
 
 const apiPath = useShopmanApiPath()
 const csrfHeaders = useShopmanCsrfHeaders()
-const { isAuthenticated, publicConfig } = useShopSession()
-const defaultDdd = computed(() => publicConfig.value?.default_ddd || '')
+const { isAuthenticated } = useShopSession()
+const route = useRoute()
+const router = useRouter()
 
 const submitting = ref(false)
 const isSubscribed = ref(!!props.subscribed)
-const requestReceived = ref(false)
 const managementUrl = ref('')
-const sheetOpen = ref(false)
-const phoneInput = ref('')
-const phoneError = ref('')
-
-const phone = computed({
-  get: () => phoneInput.value,
-  set: (value: string) => { phoneInput.value = maskPhoneInput(value, 'BR') }
+const intendedSku = computed(() => {
+  const value = route.query.aviso
+  return Array.isArray(value) ? String(value[0] || '') : String(value || '')
 })
+const needsConfirmation = computed(() => isAuthenticated.value && intendedSku.value === props.sku && !isSubscribed.value)
 
-// O número que a casa vai usar, de volta na tela antes do envio. A normalização
-// completa o DDD e repara celular antigo de 10 dígitos — quem digitou não vê
-// isso acontecer, e um palpite errado manda a mensagem para outra pessoa.
-const notifyTarget = computed(() => notifyPhoneTarget(phoneInput.value, defaultDdd.value))
-
-async function subscribe (phoneValue: string) {
-  if (submitting.value) return
+async function subscribe () {
+  if (submitting.value) return false
   submitting.value = true
-  phoneError.value = ''
   try {
     const result = await $fetch<{ management_url?: string }>(apiPath(`/api/v1/availability/${encodeURIComponent(props.sku)}/notify/`), {
       method: 'POST',
       headers: await csrfHeaders(),
       credentials: 'include',
-      body: phoneValue ? { phone: phoneValue } : {}
+      body: {}
     })
     managementUrl.value = String(result?.management_url || '')
-    if (!isAuthenticated.value && !managementUrl.value) await recoverManagementLink(true)
-    isSubscribed.value = isAuthenticated.value || !!managementUrl.value
-    requestReceived.value = !isSubscribed.value
-    sheetOpen.value = false
-    if (import.meta.client) useSonner.success(notifyConfirmationMessage(phoneValue))
+    isSubscribed.value = true
+    if (import.meta.client) useSonner.success(notifyConfirmationMessage())
+    return true
   } catch (e) {
-    const { data } = httpError(e)
     const detail = errorDetail(e, 'Não foi possível registrar o aviso. Tente de novo.')
-    if (data?.field === 'phone') phoneError.value = detail
-    else if (import.meta.client) useSonner.error(detail)
+    if (import.meta.client) useSonner.error(detail)
+    return false
   } finally {
     submitting.value = false
   }
 }
 
-function onAuthenticatedClick () {
-  subscribe('')
+async function clearIntention () {
+  if (intendedSku.value !== props.sku) return
+  const query = { ...route.query }
+  delete query.aviso
+  await router.replace({ path: route.path, query, hash: route.hash })
 }
 
-function onAnonymousSubmit () {
-  const normalized = normalizeAuthPhone(phoneInput.value, 'BR', defaultDdd.value)
-  if (!normalized) {
-    phoneError.value = 'Informe um telefone com DDD.'
-    return
-  }
-  subscribe(normalized)
+async function onAuthenticatedClick () {
+  if (await subscribe()) await clearIntention()
 }
 
-async function recoverManagementLink (force = false) {
-  if ((!force && !props.subscribed) || isAuthenticated.value || managementUrl.value) return false
+async function onAnonymousClick () {
+  const query = { ...route.query, aviso: props.sku }
+  const next = router.resolve({ path: route.path, query, hash: route.hash }).fullPath
+  if (import.meta.client) useSonner('Entre para confirmar seu WhatsApp. O produto fica guardado para a volta.')
+  await navigateTo(`/entrar?next=${encodeURIComponent(next)}`)
+}
+
+async function recoverManagementLink () {
+  if (!props.subscribed || isAuthenticated.value || managementUrl.value) return false
   try {
     const result = await $fetch<{ active: boolean, management_url: string }>(apiPath(`/api/v1/availability/${encodeURIComponent(props.sku)}/notify/`), {
       method: 'GET',
@@ -149,29 +141,11 @@ const managementHref = computed(() => managementUrl.value || (isAuthenticated.va
     </UiButton>
   </template>
 
-  <!-- Repetição anônima em outra sessão recebe confirmação neutra: telefone +
-       SKU não concedem nem revelam a capacidade de uma assinatura existente. -->
-  <template v-else-if="requestReceived">
-    <div :class="['w-full', compact || pill ? '' : 'shop-stack-block']" role="status">
-      <p v-if="!compact && !pill" class="shop-meta text-muted-foreground">
-        Pedido recebido. Entre com este WhatsApp para conferir se o aviso está ativo ou reativá-lo.
-      </p>
-      <UiButton
-        :to="requestReceivedHref"
-        :size="compact || pill ? 'sm' : 'lg'"
-        variant="outline"
-        icon="lucide:log-in"
-        class="w-full"
-        :aria-label="requestReceivedLabel"
-        :title="requestReceivedLabel"
-      >
-        {{ compact || pill ? 'Conferir aviso' : 'Entrar para conferir' }}
-      </UiButton>
-    </div>
-  </template>
-
   <!-- Logado: um clique assina com o telefone da conta. -->
   <template v-else-if="isAuthenticated">
+    <p v-if="needsConfirmation && !compact && !pill" class="shop-meta text-muted-foreground" role="status">
+      WhatsApp confirmado. Confirme para ativar este aviso.
+    </p>
     <UiButton
       v-if="pill"
       variant="default"
@@ -179,11 +153,12 @@ const managementHref = computed(() => managementUrl.value || (isAuthenticated.va
       icon="lucide:bell"
       :loading="submitting"
       class="h-10 w-full justify-center gap-1 rounded-full px-3 text-sm tracking-tight shadow-sm"
-      :aria-label="label"
-      :title="label"
+      :aria-label="needsConfirmation ? confirmationLabel : label"
+      :title="needsConfirmation ? confirmationLabel : label"
+      :autofocus="needsConfirmation"
       @click="onAuthenticatedClick"
     >
-      Me avise
+      {{ needsConfirmation ? 'Confirmar aviso' : 'Me avise' }}
     </UiButton>
     <UiButton
       v-else
@@ -192,15 +167,16 @@ const managementHref = computed(() => managementUrl.value || (isAuthenticated.va
       icon="lucide:bell"
       :loading="submitting"
       :class="[compact ? '' : 'w-full', inverted ? 'shop-action-inverted' : '']"
-      :aria-label="label"
-      :title="label"
+      :aria-label="needsConfirmation ? confirmationLabel : label"
+      :title="needsConfirmation ? confirmationLabel : label"
+      :autofocus="needsConfirmation"
       @click="onAuthenticatedClick"
     >
-      Me avise sempre
+      {{ needsConfirmation ? 'Confirmar aviso' : 'Me avise sempre' }}
     </UiButton>
   </template>
 
-  <!-- Anônimo: bottom-sheet pede só o telefone (mesmo figurino dos demais overlays). -->
+  <!-- Anônimo: entra pela identidade canônica e volta ao mesmo produto. -->
   <template v-else>
     <UiButton
       v-if="pill"
@@ -208,9 +184,9 @@ const managementHref = computed(() => managementUrl.value || (isAuthenticated.va
       size="sm"
       icon="lucide:bell"
       class="h-10 w-full justify-center gap-1 rounded-full px-3 text-sm tracking-tight shadow-sm"
-      :aria-label="label"
-      :title="label"
-      @click="sheetOpen = true"
+      :aria-label="anonymousLabel"
+      :title="anonymousLabel"
+      @click="onAnonymousClick"
     >
       Me avise
     </UiButton>
@@ -220,46 +196,11 @@ const managementHref = computed(() => managementUrl.value || (isAuthenticated.va
       variant="default"
       icon="lucide:bell"
       :class="[compact ? '' : 'w-full', inverted ? 'shop-action-inverted' : '']"
-      :aria-label="label"
-      :title="label"
-      @click="sheetOpen = true"
+      :aria-label="anonymousLabel"
+      :title="anonymousLabel"
+      @click="onAnonymousClick"
     >
-      Me avise sempre
+      Entrar para ser avisado
     </UiButton>
-    <BottomSheet
-      v-model:open="sheetOpen"
-      max-width="sm"
-      title="Avisamos quando estiver disponível"
-      description="Deixe seu WhatsApp para receber um aviso a cada nova ocorrência elegível deste produto. O aviso continua ativo até você pausar ou cancelar."
-      data-stock-notify-sheet
-    >
-      <form class="shop-stack-block px-4 py-4" @submit.prevent="onAnonymousSubmit">
-        <UiInput
-          v-model="phone"
-          type="tel"
-          inputmode="tel"
-          autocomplete="tel"
-          placeholder="(43) 99999-0000"
-          aria-label="Telefone para aviso"
-          class="bg-background"
-        />
-        <p v-if="phoneError" class="shop-meta text-destructive">{{ phoneError }}</p>
-        <p v-else-if="notifyTarget" class="shop-meta text-muted-foreground">
-          Mandaremos a mensagem para <span class="font-semibold text-foreground">{{ notifyTarget }}</span>. Se não for esse o número, é só corrigir aqui.
-        </p>
-        <UiButton type="submit" size="lg" class="w-full" :loading="submitting" icon="lucide:bell">
-          Avise-me
-        </UiButton>
-        <UiButton
-          type="button"
-          variant="ghost"
-          size="sm"
-          class="-ml-2 self-start text-muted-foreground hover:text-foreground"
-          @click="sheetOpen = false"
-        >
-          Agora não
-        </UiButton>
-      </form>
-    </BottomSheet>
   </template>
 </template>

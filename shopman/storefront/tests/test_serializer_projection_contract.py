@@ -93,6 +93,7 @@ NON_MIRROR = {
     # Respostas montadas como dict ad-hoc no view (não há dataclass fonte).
     "CheckoutResponseSerializer",
     "AvailabilityResponseSerializer",
+    "StockAlertAuthRequiredResponseSerializer",
     "StockAlertSubscribeResponseSerializer",
     "StockAlertSessionStateSerializer",
     "StockAlertSubscriptionControlResponseSerializer",
