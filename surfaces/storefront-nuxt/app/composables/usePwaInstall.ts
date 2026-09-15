@@ -32,14 +32,24 @@ export function usePwaInstall (options: { now?: () => number } = {}) {
       || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
     isStandalone.value = window.matchMedia('(display-mode: standalone)').matches
       || Boolean((navigator as NavigatorWithStandalone).standalone)
-    const stored = Number.parseInt(localStorage.getItem(DISMISS_STORAGE_KEY) || '', 10)
-    dismissedUntil.value = Number.isFinite(stored) ? stored : null
+    try {
+      const stored = Number.parseInt(localStorage.getItem(DISMISS_STORAGE_KEY) || '', 10)
+      dismissedUntil.value = Number.isFinite(stored) ? stored : null
+    } catch {
+      // Storage can be denied by browser/privacy policy. The invite stays usable
+      // with in-memory state for the lifetime of this page.
+      dismissedUntil.value = null
+    }
   }
 
   function suppressForSevenDays () {
     const until = now() + DISMISS_DAYS * 24 * 60 * 60 * 1000
     dismissedUntil.value = until
-    localStorage.setItem(DISMISS_STORAGE_KEY, String(until))
+    try {
+      localStorage.setItem(DISMISS_STORAGE_KEY, String(until))
+    } catch {
+      // Keep the in-memory suppression even when persistence is unavailable.
+    }
   }
 
   function onBeforeInstallPrompt (event: Event) {

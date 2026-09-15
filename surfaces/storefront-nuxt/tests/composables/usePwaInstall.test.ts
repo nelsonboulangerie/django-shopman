@@ -47,6 +47,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
@@ -98,6 +99,23 @@ describe('usePwaInstall', () => {
     expect(state.dismissedUntil.value).toBe(NOW + 7 * 24 * 60 * 60 * 1000)
     expect(state.isDismissed.value).toBe(true)
     expect(localStorage.getItem('storefront-pwa-install-dismissed-until')).toBe(String(state.dismissedUntil.value))
+    wrapper.unmount()
+  })
+
+  it('keeps working in memory when browser storage is denied', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('blocked by browser policy', 'SecurityError')
+    })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('blocked by browser policy', 'SecurityError')
+    })
+
+    const { state, wrapper } = await mountInstall()
+    expect(state.dismissedUntil.value).toBeNull()
+
+    expect(() => state.markShown()).not.toThrow()
+    expect(state.dismissedUntil.value).toBe(NOW + 7 * 24 * 60 * 60 * 1000)
+    expect(state.isDismissed.value).toBe(true)
     wrapper.unmount()
   })
 
