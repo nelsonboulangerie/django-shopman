@@ -92,13 +92,13 @@ function persistCloseOutcomeUncertain(clientRequestId: string): void {
       client_request_id: clientRequestId,
       recorded_at: new Date().toISOString(),
     }));
-  } catch { /* A ref em memória continua bloqueando a estação atual. */ }
+  } catch { /* silêncio-deliberado: a ref em memória continua bloqueando a estação atual. */ }
 }
 
 function clearPersistedCloseOutcomeUncertain(): void {
   try {
     globalThis.localStorage?.removeItem(CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY);
-  } catch { /* A confirmação ainda libera a instância atual. */ }
+  } catch { /* silêncio-deliberado: a confirmação ainda libera a instância atual. */ }
 }
 
 interface PosSaleDeps {
