@@ -3,8 +3,9 @@
 **Escopo:** classificação por equivalência de conteúdo, e não apenas por SHA,
 dos worktrees locais relacionados ao plano de excelência do Marketing.
 **Base verificada:** `origin/main` em `ae52f96b7`, depois dos merges #634, #674
-e #675. Nenhum worktree foi apagado e nenhum branch deste inventário foi
-publicado, rebaseado ou usado para disparar CI.
+e #675. Nenhum worktree foi apagado ou rebaseado. A única publicação posterior
+foi o PR enxuto #683, contendo a correção determinística do gate e este registro;
+nenhum componente de runtime, deploy ou provider foi alterado.
 
 ## Classificação
 
@@ -21,7 +22,7 @@ publicado, rebaseado ou usado para disparar CI.
 | `codex/marketing-controls-triage-20260911-v2` / `5c2f1ce21` | Publicado | PR #601, já contido em `main` | Nenhuma ação | — |
 | `codex/marketing-controls-triage-20260911` / `d4c5086c1` + 16 arquivos modificados | Experimento obsoleto/superado | A base está em `main`; primitivos e tokens úteis já aparecem no #601 e a `main` atual contém contratos posteriores de modalidade/formato, Stories e reparo acionável | Não aplicar o diff de 2.174 linhas nem sobrescrever a UI atual; preservar o worktree para auditoria pontual | O diff foi produzido antes das mudanças posteriores e removeria comportamento atual se aplicado cegamente |
 | `codex/legal-cancellation-request-20260912` / `525c9c215` | Publicado | PR #629, já contido em `main` | Não republicar | A alteração local de `.nuxtrc` para `@nuxt/test-utils=4.3.2` é alheia ao PR; preservar para o respectivo owner decidir |
-| `codex/marketing-local-inventory-20260915` / base `ae52f96b7` | Pronto somente local | Correção do gate de capacidade que dependia da hora real + este inventário | Reexecutar o gate 2× completo, registrar evidência e só então abrir PR enxuto | Nenhum deploy; G-H08 ainda exige baseline real, thresholds, paging, runbooks e on-call |
+| `codex/marketing-local-inventory-20260915` / `f93447dd6` | Publicado em PR, não integrado no momento deste registro | PR #683: correção do gate de capacidade que dependia da hora real + este inventário | Integrar somente pela merge queue e após toda a CI obrigatória ficar verde | Nenhum deploy manual; G-H08 ainda exige baseline real, thresholds, paging, runbooks e on-call |
 
 ## Evidência técnica nova
 
@@ -37,6 +38,12 @@ isso como capacidade zero. A reprodução isolada confirmou 0/0 leases. Depois
 de congelar somente esse teste ao meio-dia de São Paulo, ele confirmou 100/100
 leases distintos, seis queries por worker e no máximo 0,0738 s por claim. Nenhum
 limite, consumer, adapter ou regra de horário do runtime foi alterado.
+
+Uma segunda execução integral independente também passou: audiência p95 de
+1,7189 s, seis queries, 82,6 MiB, fan-out de 20 mil em 8,2924 s e claims
+distintos de 100/100 em no máximo 0,1257 s. Assim, o aceite local do teste não
+depende de uma amostra única; o baseline temporal e operacional real continua
+deliberadamente fora desta evidência.
 
 O diagnóstico shadow teve 7/7 testes focados aprovados. Isso valida o instrumento
 e seus estados de divergência; não substitui os 7–14 dias ou volume acordado de
