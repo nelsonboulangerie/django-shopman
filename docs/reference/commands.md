@@ -1199,8 +1199,15 @@ python manage.py export_marketing_client --check  # CI/revisão
 **App:** `shopman.shop`
 **Arquivo:** `shopman/shop/management/commands/diagnose_marketing.py`
 
-Snapshot read-only de comprovante, outbox, destinos, tentativas, reconciliação e alertas.
-Não serializa conteúdo, recipient ou PII e não chama provider.
+Snapshot read-only de comprovante, outbox, destinos, tentativas, reconciliação e
+alertas. O bloco `shadow` confere vínculos do grafo, hashes, directives e
+agregados e inventaria o legado ainda existente. Não serializa conteúdo,
+destinatário ou PII, não chama provider e não altera estado.
+
+`shadow.status=GO` significa apenas que nenhuma divergência foi encontrada no
+recorte consultado. Ele não autoriza rollout, não substitui o período observado
+de 7–14 dias (ou volume acordado) e não libera o descarte do legado. Para esse
+último, consulte separadamente `shadow.inventory.legacy.cleanup_status`.
 
 | Flag | Default | Descrição |
 |---|---|---|
