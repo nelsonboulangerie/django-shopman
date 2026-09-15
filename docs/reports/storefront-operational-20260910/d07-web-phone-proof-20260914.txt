@@ -1,0 +1,68 @@
+D07 follow-up — web phone possession / canonical identity
+Date: 2026-09-14 (America/Sao_Paulo)
+Candidate branch: codex/storefront-phone-proof-20260914
+Baseline: 84e07c01d04eba4ed0deabdae0d2df18dde77c53
+Rebased current main: 2aff555a538126d88e1e263864b751607012f50c; no changes to the endpoint, component, or baseline test between these revisions.
+Environment: isolated worktrees; SQLite and disposable local PostgreSQL 16; Nuxt dependencies from package-lock.json. No production DB write, OTP, provider, payment, order, message, or external transaction.
+
+PROVEN DEFECT — BEFORE
+Command, detached baseline worktree:
+  python scripts/run_storefront_operational_tests.py shopman/storefront/tests/test_stock_alerts.py::test_endpoint_anonymous_subscribes
+Result:
+  1 passed in 230.60s
+Oracle in the baseline test: an unauthenticated POST containing arbitrary phone text returned 200 and persisted an active subscription; the same anonymous session recovered its management capability. The pass reproduces the undesired behavior.
+
+AFTER — PUBLIC BOUNDARY AND LOST RESPONSE
+Command:
+  python scripts/run_storefront_operational_tests.py shopman/storefront/tests/test_stock_alerts.py shopman/storefront/tests/test_operational_migrations.py shopman/storefront/tests/test_serializer_projection_contract.py
+Result:
+  79 passed in 37.05s
+Oracles include:
+- anonymous POST with and without arbitrary phone returns 401/auth_required;
+- no subscription or session marker is created and subsequent GET is 404;
+- authenticated POST ignores request-body phone and uses the account's canonical phone;
+- retry after a lost response returns the same capability and leaves exactly one row;
+- old exact-session capabilities retain code compatibility before quarantine;
+- cross-session ref/contact attempts cannot recover, pause, resume, or cancel;
+- migration quarantines only non-revoked web rows lacking customer_ref;
+- web rows tied to a customer, other verified channels, revoked history, occurrences, and accepted receipts are preserved.
+
+POSTGRESQL 16 — MIGRATION AND CONCURRENCY
+Command (disposable local DB):
+  python scripts/run_storefront_operational_tests.py --postgres-url postgresql://localhost/<DISPOSABLE> shopman/storefront/tests/test_operational_migrations.py shopman/storefront/tests/test_operational_postgres.py::test_concurrent_authenticated_subscribe_creates_one_customer_alert
+Result:
+  3 passed in 34.57s
+Concurrency oracle: two independent connections cross one barrier; one creates, one deduplicates, both receive the same subscription ref, and the database contains one row.
+An earlier broad seven-test repetition reached 7 passed but its teardown TRUNCATE failed with local PostgreSQL DiskFull while unrelated concurrent tasks were running. It is not counted as a product pass; the scoped disposable rerun above completed cleanly.
+
+FRONTEND — CONTEXT, EXPLICIT CONFIRMATION, PARTIAL FAILURE
+Command:
+  npm test -- --project component tests/components/stockNotifyButton.test.ts --project unit tests/stockNotifyPresentation.test.ts
+Result:
+  8 passed / 2 files
+Oracles include:
+- anonymous click performs no POST and sends the canonical login a same-page next URL preserving existing query, hash, and intended SKU;
+- authenticated return exposes an explicit Confirmar aviso action;
+- success posts an empty body, retains the management link, and removes only aviso;
+- failure keeps aviso and the confirmation action for retry;
+- ordinary authenticated use remains one click and accessible names identify the product.
+
+BROAD REGRESSION
+- Storefront backend: 1,761 passed, 35 skipped (declared environment-specific cases), 675.07s.
+- Omotenashi API audit: 30 passed, 16.23s.
+- Stock alert service: 75 passed, 15.41s.
+- Nuxt unit: 484 passed / 44 files.
+- Nuxt component: 69 passed / 17 files.
+- Nuxt typecheck: passed.
+- Nuxt production build: passed.
+- Nuxt lint: 0 errors; 5 pre-existing attribute-order warnings in WhatsappVerifyPanel.vue.
+- Migration gate: clean graph, clean fresh build, migrate --check clean; the pre-go-live expand-contract and production baseline replay slots remain explicitly skipped.
+
+EXISTING FAILURE/UNCERTAINTY ORACLES PRESERVED
+The broad suite retains explicit coverage for partial provider failure (independent accepted/retryable receipts under one occurrence), indeterminate/lost provider response (no blind retry), late opt-out, availability/QC change at the provider boundary, pause/cancel races, semantic deduplication, and persistent subscription behavior.
+
+HYPOTHESIS / LIMIT
+The existing schema does not retain enough provenance to reconstruct which historical web phone-only row came from typed public input versus any older trusted caller. No claim of abuse is made. The pre-go-live migration therefore preserves the row and receipts but conservatively marks each non-revoked web row without customer_ref legacy_unverified. A fresh authenticated opt-in is required.
+
+ROLLBACK
+Frontend may be rolled back independently while this backend returns an honest 401. Do not roll the web component back below this identity boundary; that would restore anonymous phone creation. The data reverse is intentionally a no-op because legacy_unverified cannot be promoted without new proof. Roll forward a backend image retaining this boundary if another backend change must be reverted.
