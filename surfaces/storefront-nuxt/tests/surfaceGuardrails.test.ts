@@ -1138,17 +1138,22 @@ describe('surface UX guardrails', () => {
     expect(css).toContain('--font-sans: "Instrument Sans", ui-sans-serif, system-ui')
     expect(css).not.toContain('"Inter"')
     // O body NÃO pinta bg-background (fica transparente p/ o overscroll revelar o
-    // <html> bicolor do plugin); a base neutra vem do .shop-shell (min-h-dvh).
+    // canvas escuro do <html>); a base neutra vem do .shop-shell (min-h-dvh).
     expect(css).toMatch(/body \{[\s\S]*?@apply text-foreground;/)
     expect(css).toContain('@apply min-h-dvh min-w-0 bg-background text-foreground')
   })
 
   it('keeps native pull-to-refresh available without horizontal overscroll', () => {
     const css = read('app/assets/css/tailwind.css')
+    const app = read('app/app.vue')
+    const nuxtConfig = read('nuxt.config.ts')
 
     expect(css).toContain('overscroll-behavior-x: none')
     expect(css).not.toContain('overscroll-behavior: none')
     expect(css).not.toContain('overscroll-behavior-y: none')
+    expect(css).toMatch(/html \{[\s\S]*?background-color: var\(--shop-ink\)/)
+    expect(app).toContain("return '#531D22'")
+    expect(nuxtConfig).toContain("{ name: 'theme-color', content: '#531D22' }")
   })
 
   it('dresses the brand as a reversible override of the neutral base', () => {

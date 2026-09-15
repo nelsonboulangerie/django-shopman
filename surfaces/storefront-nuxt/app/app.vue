@@ -42,14 +42,14 @@ watch(authShellRoute, (isAuthRoute, wasAuthRoute) => {
 
 useShopTheme(session.shop)
 
-// theme-color (tint da barra do iOS/Safari no topo) = burgundy escuro (tom do header e
-// da status bar), pra o topo ficar consistente. A BASE é preta (canvas do <html>).
+// theme-color também pinta a área nativa de pull-to-refresh no Safari. Usa o mesmo
+// Dark Burgundy (ink) da barra superior, não o Burgundy 500 mais claro da marca.
 // ?theme=neutral mantém o preview neutro.
 const themeColor = computed(() => {
   const value = route.query.theme
   const previewNeutral = (Array.isArray(value) ? value[0] : value) === 'neutral'
   if (previewNeutral) return '#85786c'
-  return session.shop.value?.theme_color || '#7C3A40'
+  return '#531D22'
 })
 
 // Footer global (âncora de contato/info) em todas as páginas, EXCETO o checkout —
