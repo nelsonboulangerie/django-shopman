@@ -29,24 +29,21 @@ class MessageSenderProtocol(Protocol):
 
 
 class ConsoleSender:
-    """Sender for development - prints to console."""
+    """Ack local sem expor segredo; requer uma superfície de debug protegida."""
 
     def send_code(self, target: str, code: str, method: str) -> bool:
-        print(f"\n{'='*50}")
-        print("DOORMAN - Verification Code")
-        print(f"   Target: {target}")
-        print(f"   Method: {method}")
-        print(f"   Code: {code}")
-        print(f"{'='*50}\n")
-        logger.info(f"[DEV] Code for {target}: {code}")
+        # O código de desenvolvimento é recuperado apenas pela interface de
+        # debug autenticada. stdout costuma ser coletado e retido externamente.
+        print(f"Código de teste gerado pelo Doorman ({method}); consulte a interface de debug.")
+        logger.info("Código de teste gerado", extra={"method": method})
         return True
 
 
 class LogSender:
-    """Sender that only logs - for testing."""
+    """Ack de teste sem entrega; não deve ser usado por endpoint interativo genérico."""
 
     def send_code(self, target: str, code: str, method: str) -> bool:
-        logger.info(f"Code for {target} via {method}: {code}")
+        logger.info("Código de teste aceito", extra={"method": method})
         return True
 
 

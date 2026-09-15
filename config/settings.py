@@ -768,7 +768,8 @@ SHOPMAN_MACHINE_ALLOW_IN_DEBUG = _env_bool("SHOPMAN_MACHINE_ALLOW_IN_DEBUG", Fal
 
 # ── OTP Delivery Chain ───────────────────────────────────────────────
 # SMS primário (Twilio), email como fallback. WhatsApp fica mapeado mas FORA da cadeia
-# (ManyChat não emite template de Authentication). Debug usa console para ver o código.
+# (ManyChat não emite template de Authentication). Em debug, o código só volta
+# pela resposta protegida de `_debug_otp_allowed`; logs/console não o exibem.
 DOORMAN["DELIVERY_SENDERS"] = {
     "sms": "shopman.shop.adapters.otp_sms_comtele.ComteleSMSSender",
     "email": "shopman.doorman.senders.EmailSender",
@@ -1708,6 +1709,7 @@ LOGGING = {
     "disable_existing_loggers": False,
     "formatters": {
         "verbose": {
+            "()": "shopman.shop.logging.PrivacySafeFormatter",
             "format": "{levelname} {asctime} {name} {message}",
             "style": "{",
         },
@@ -1762,15 +1764,16 @@ if SENTRY_DSN:
         def _strip_query_string(event, hint):
             """Aplica a barreira única de privacidade antes do evento sair daqui.
 
-            `send_default_pii=False` NÃO remove query string. E o webhook da
+            `send_default_pii=False` NÃO remove URL livre. E o webhook da
             Efí autentica por `?token=` — não por escolha nossa: a Efí não
             envia cabeçalho customizado, o mecanismo dela é hash no fim da URL
             registrada. Sem este corte, qualquer erro naquele endpoint manda o
             segredo de autenticação em texto puro para um serviço externo, e
             fica lá guardado.
 
-            Vale para TODA URL, não só a da Efí: query string é onde token de
-            acesso, chave de assinatura e telefone de cliente costumam viajar.
+            Vale para TODA URL, não só a da Efí: userinfo, path, query e fragmento
+            podem carregar credencial, chave, contato ou identificador pessoal.
+            Preservamos só a origem; a rota técnica vem do transaction template.
             """
             from shopman.shop.telemetry_redaction import scrub_sentry_event
 
