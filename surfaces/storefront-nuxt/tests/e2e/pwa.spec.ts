@@ -96,6 +96,29 @@ test('barra inferior permanece ancorada fora da rolagem no PWA instalado', async
   await expect(viewport).toHaveCSS('overflow-y', 'auto')
   await expect(bottomNav).toHaveCSS('position', 'relative')
 
+  const shellColors = await page.evaluate(() => {
+    const viewport = document.querySelector<HTMLElement>('[data-shop-scroll-viewport]')!
+    const main = document.querySelector<HTMLElement>('#main-content')!
+    const probe = document.createElement('div')
+    probe.style.backgroundColor = 'var(--shop-ink)'
+    document.body.appendChild(probe)
+    const ink = getComputedStyle(probe).backgroundColor
+    probe.style.backgroundColor = 'var(--background)'
+    const canvas = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return {
+      canvas,
+      ink,
+      main: getComputedStyle(main).backgroundColor,
+      shell: getComputedStyle(document.querySelector<HTMLElement>('.shop-shell')!).backgroundColor,
+      viewport: getComputedStyle(viewport).backgroundColor
+    }
+  })
+  expect(shellColors.ink).not.toBe(shellColors.canvas)
+  expect(shellColors.shell).toBe(shellColors.ink)
+  expect(shellColors.viewport).toBe(shellColors.ink)
+  expect(shellColors.main).toBe(shellColors.canvas)
+
   const contentFlow = await page.evaluate(() => {
     const main = document.querySelector<HTMLElement>('#main-content')!
     const filler = document.querySelector<HTMLElement>('[data-test-scroll-filler]')!
