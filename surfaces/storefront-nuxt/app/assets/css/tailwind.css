@@ -268,10 +268,9 @@
   }
   html {
     @apply antialiased;
-    /* Canvas = área de overscroll da BASE → faubourg (--shop-bottomnav), igual à
-       bottom-nav, pra fundir embaixo. O TOPO é outra superfície (o header escuro que
-       estica), por isso topo e base podem ter cores diferentes. */
-    background-color: var(--shop-bottomnav);
+    /* Canvas exposto pelo pull-to-refresh. O shell pinta todo o conteúdo e a bottom-nav
+       pinta sua própria superfície; o root fica no Dark Burgundy da barra superior. */
+    background-color: var(--shop-ink);
     /* Mantém o shell contido na horizontal sem bloquear o gesto nativo de
        puxar para atualizar no eixo vertical. */
     overscroll-behavior-x: none;

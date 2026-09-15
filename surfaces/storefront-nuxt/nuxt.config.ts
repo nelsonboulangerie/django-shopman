@@ -63,7 +63,8 @@ export default defineNuxtConfig({
       // tenant — e nuxt.config só aceita string, então aqui ele não tem vez.
       meta: [
         { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
-        { name: 'theme-color', content: '#7C3A40' },
+        // Primeiro paint e overscroll nativo antes da hidratação: Dark Burgundy/ink.
+        { name: 'theme-color', content: '#531D22' },
         { name: 'apple-mobile-web-app-capable', content: 'yes' },
         { name: 'apple-mobile-web-app-status-bar-style', content: 'default' }
       ],
