@@ -33,4 +33,9 @@ describe('storefront security headers', () => {
     expect(headers.Pragma).toBe('no-cache')
     expect(headers['Referrer-Policy']).toBe('no-referrer')
   })
+
+  it('never lets an old service worker become immutable', () => {
+    expect(storefrontResponseHeaders(true, '/sw.js')['Cache-Control'])
+      .toBe('no-cache, no-store, must-revalidate')
+  })
 })

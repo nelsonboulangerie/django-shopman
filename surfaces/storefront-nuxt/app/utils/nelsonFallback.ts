@@ -2,13 +2,14 @@ import type { ShopProjection } from '~/types/shopman'
 
 export const NELSON_FALLBACK_SHOP: ShopProjection = {
   brand_name: 'Nelson Boulangerie',
+  short_name: 'Nelson',
   tagline: 'Padaria artesanal',
   description: 'Padaria artesanal brasileira inspirada na panificação francesa.',
   description_html: '',
   logo_url: '',
   color_mode: 'light',
   theme_color: '#7c3a40',
-  background_color: '#f5e9c2',
+  background_color: '#fcf7ee',
   whatsapp_url: '',
   phone: '',
   phone_display: '',
