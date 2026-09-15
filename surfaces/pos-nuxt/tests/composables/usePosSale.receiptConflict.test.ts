@@ -83,6 +83,7 @@ function routerRefusingReceiptSave(options: {
       bodies.push(body);
       if (options.refuses(body)) {
         throw {
+          status: 409,
           data: {
             detail: "Este contato já é de outro cadastro.",
             error: {

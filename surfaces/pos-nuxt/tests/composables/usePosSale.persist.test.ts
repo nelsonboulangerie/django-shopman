@@ -73,6 +73,49 @@ describe("usePosSale — autosave debounced (auto-persist estilo Odoo)", () => {
     h.handles.dispose();
   });
 
+  it("duas telas convergem somente após descarte explícito e salvam sobre a revisão atual", async () => {
+    const remoteItem = {
+      line_id: "L-shared",
+      sku: "PAO",
+      name: "Pão",
+      qty: 3,
+      unit_price_q: 500,
+      notes: "",
+    };
+    const actionCall = vi
+      .fn()
+      .mockRejectedValueOnce({
+        status: 409,
+        data: { detail: "Outra estação alterou a comanda." },
+      })
+      .mockResolvedValueOnce(
+        makeTabPayload({ revision: "v1:remote", items: [remoteItem] }),
+      )
+      .mockResolvedValueOnce({ revision: "v1:merged" });
+    const h = saleWithOpenTab(actionCall);
+    h.sale.addProduct(h.handles.posValue.value!.products[0]!);
+    const localLineId = h.sale.cart.items[0]?.line_id;
+
+    await h.sale.saveTab();
+    expect(h.sale.tabConflict.value).toBe(true);
+    expect(h.sale.cart.items[0]?.line_id).toBe(localLineId);
+    expect(h.sale.cart.expectedRevision).toBe("v1:initial");
+
+    await h.sale.reloadConflictingTab();
+    expect(actionCall.mock.calls[1]?.[1]?.method).toBe("GET");
+    expect(h.sale.tabConflict.value).toBe(false);
+    expect(h.sale.cart.items[0]?.qty).toBe(3);
+    expect(h.sale.cart.expectedRevision).toBe("v1:remote");
+
+    h.sale.cart.items[0]!.qty = 4;
+    await h.sale.saveTab();
+    expect(actionCall.mock.calls[2]?.[1]?.body.expected_revision).toBe(
+      "v1:remote",
+    );
+    expect(h.sale.cart.expectedRevision).toBe("v1:merged");
+    h.handles.dispose();
+  });
+
   it("atualiza somente a comanda original após descarte explícito", async () => {
     const actionCall = vi.fn().mockResolvedValue(makeTabPayload({ revision: "v1:remote" }));
     const h = saleWithOpenTab(actionCall);

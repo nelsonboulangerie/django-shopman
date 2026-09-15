@@ -2,8 +2,10 @@
 .output
 .data
 .nuxt
+.nuxt-e2e-*
 .nuxtrc
 .nitro
+.output-e2e-*
 .cache
 dist
 

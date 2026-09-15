@@ -7,6 +7,15 @@ export default defineNuxtConfig({
 
   compatibilityDate: "2026-05-16",
   devtools: { enabled: false },
+  // O Playwright injeta diretórios por execução para duas suítes no mesmo
+  // checkout nunca disputarem `.nuxt`/`.output`. Sem env, produção e dev
+  // preservam exatamente os caminhos canônicos do Nuxt.
+  buildDir: process.env.NUXT_BUILD_DIR || ".nuxt",
+  nitro: {
+    output: {
+      dir: process.env.NITRO_OUTPUT_DIR || ".output",
+    },
+  },
 
   runtimeConfig: {
     djangoBaseUrl: process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
