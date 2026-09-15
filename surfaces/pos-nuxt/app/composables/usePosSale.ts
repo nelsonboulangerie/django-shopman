@@ -181,31 +181,44 @@ export function usePosSale(deps: PosSaleDeps) {
   const pendingPixOrderRef = ref("");
   let pixPollTimer: ReturnType<typeof setInterval> | null = null;
   let deliveryPollTimer: ReturnType<typeof setInterval> | null = null;
-  function applyPaymentDelivery(delivery?: POSPaymentDeliveryProjection | null) {
-    if (result.value && delivery) result.value.paymentDelivery = delivery;
+  let pixPollGeneration = 0;
+  let deliveryPollGeneration = 0;
+  function applyPaymentDelivery(orderRef: string, delivery?: POSPaymentDeliveryProjection | null) {
+    if (result.value?.orderRef === orderRef && delivery) result.value.paymentDelivery = delivery;
   }
-  function stopDeliveryPolling() {
+  function stopDeliveryPolling(expectedGeneration?: number) {
+    if (expectedGeneration !== undefined && expectedGeneration !== deliveryPollGeneration) return;
+    deliveryPollGeneration += 1;
     if (deliveryPollTimer) { clearInterval(deliveryPollTimer); deliveryPollTimer = null; }
   }
   function startDeliveryPolling(orderRef: string) {
     stopDeliveryPolling();
     let attempts = 0;
+    let inFlight = false;
+    const generation = deliveryPollGeneration;
     deliveryPollTimer = setInterval(async () => {
+      if (generation !== deliveryPollGeneration) return;
+      if (attempts >= 24 || result.value?.orderRef !== orderRef) return stopDeliveryPolling(generation);
+      if (inFlight) return;
       attempts += 1;
-      if (attempts > 24 || result.value?.orderRef !== orderRef) return stopDeliveryPolling();
+      inFlight = true;
       try {
         const response = await $fetch<{ payment_delivery?: POSPaymentDeliveryProjection }>(
           apiPath(`/api/v1/backstage/pos/payment/${encodeURIComponent(orderRef)}/status/`),
           { credentials: "include" },
         );
-        applyPaymentDelivery(response.payment_delivery);
+        if (generation !== deliveryPollGeneration || result.value?.orderRef !== orderRef) return;
+        applyPaymentDelivery(orderRef, response.payment_delivery);
         if (!response.payment_delivery || !["queued", "sending"].includes(response.payment_delivery.status)) {
-          stopDeliveryPolling();
+          stopDeliveryPolling(generation);
         }
       } catch { /* silêncio-deliberado: o estado continua honesto; a próxima tentativa pode recuperar */ }
+      finally { inFlight = false; }
     }, 2500);
   }
-  function stopPixPolling() {
+  function stopPixPolling(expectedGeneration?: number) {
+    if (expectedGeneration !== undefined && expectedGeneration !== pixPollGeneration) return;
+    pixPollGeneration += 1;
     if (pixPollTimer) { clearInterval(pixPollTimer); pixPollTimer = null; }
   }
   function startPixPolling(orderRef: string) {
@@ -213,20 +226,27 @@ export function usePosSale(deps: PosSaleDeps) {
     pixOrderRef.value = orderRef;
     pixStatus.value = "polling";
     let attempts = 0;
+    let inFlight = false;
+    const generation = pixPollGeneration;
     pixPollTimer = setInterval(async () => {
+      if (generation !== pixPollGeneration) return;
+      if (attempts >= 240) { pixStatus.value = "expired"; return stopPixPolling(generation); } // ~10 min a 2,5s → desiste
+      if (inFlight) return;
       attempts += 1;
-      if (attempts > 240) { pixStatus.value = "expired"; return stopPixPolling(); } // ~10 min a 2,5s → desiste
+      inFlight = true;
       try {
         const status = await $fetch<{ is_paid?: boolean; is_terminal?: boolean; payment_delivery?: POSPaymentDeliveryProjection }>(
           apiPath(`/api/v1/backstage/pos/payment/${encodeURIComponent(orderRef)}/status/`),
           { credentials: "include" },
         );
-        applyPaymentDelivery(status.payment_delivery);
-        if (status?.is_paid) { pixStatus.value = "paid"; stopPixPolling(); }
-        else if (status?.is_terminal) { pixStatus.value = "expired"; stopPixPolling(); } // cancelado/expirado
+        if (generation !== pixPollGeneration || pixOrderRef.value !== orderRef) return;
+        applyPaymentDelivery(orderRef, status.payment_delivery);
+        if (status?.is_paid) { pixStatus.value = "paid"; stopPixPolling(generation); }
+        else if (status?.is_terminal) { pixStatus.value = "expired"; stopPixPolling(generation); } // cancelado/expirado
       // A desistência é que fala alto: 240 tentativas → `pixStatus = "expired"`
       // e o toast do watcher. A tentativa isolada, não.
       } catch { /* silêncio-deliberado: falha transiente de rede — segue tentando */ }
+      finally { inFlight = false; }
     }, 2500);
   }
 
@@ -279,7 +299,7 @@ export function usePosSale(deps: PosSaleDeps) {
         `/api/v1/backstage/pos/orders/${encodeURIComponent(orderRef)}/send-payment-notice/`,
         { body: { action: requested } },
       );
-      applyPaymentDelivery(response?.payment_delivery);
+      applyPaymentDelivery(orderRef, response?.payment_delivery);
       const notice = response?.payment_delivery?.notice || (requested === "resend" ? "Reenvio colocado na fila." : "Envio colocado na fila.");
       toast.success(notice);
       if (response?.payment_delivery && ["queued", "sending"].includes(response.payment_delivery.status)) {
@@ -288,7 +308,7 @@ export function usePosSale(deps: PosSaleDeps) {
       return true;
     } catch (error) {
       const delivery = (httpError(error).data as { payment_delivery?: POSPaymentDeliveryProjection } | null)?.payment_delivery;
-      applyPaymentDelivery(delivery);
+      applyPaymentDelivery(orderRef, delivery);
       toast.error(httpErrorMessage(error, "Não foi possível enviar a cobrança. Copie e mande você."));
       return false;
     } finally {
