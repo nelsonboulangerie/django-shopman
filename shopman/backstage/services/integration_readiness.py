@@ -232,8 +232,21 @@ def efi_pix_readiness(*, mode: ReadinessMode = "runtime") -> ProviderReadiness:
     missing: list[str] = []
     unsafe: list[str] = []
 
-    if not _payment_adapter_contains(payment_adapters, "pix", "shopman.shop.adapters.payment_efi"):
-        missing.append("SHOPMAN_PIX_ADAPTER")
+    from shopman.shop.adapters import get_adapter
+
+    configured_for_efi = _payment_adapter_contains(
+        payment_adapters, "pix", "shopman.shop.adapters.payment_efi",
+    )
+    effective_adapter = get_adapter("payment", method="pix")
+    effective_path = str(getattr(effective_adapter, "__name__", "") or "")
+    if effective_path != "shopman.shop.adapters.payment_efi":
+        # Settings alone are not the runtime truth: Shop.integrations has higher
+        # precedence.  Make an Admin override a deployment gate, not a green
+        # readiness card followed by mock charges.
+        if configured_for_efi:
+            unsafe.append("SHOP_INTEGRATIONS_payment_pix_efi")
+        else:
+            missing.append("SHOPMAN_PIX_ADAPTER")
     for name, env_name in (
         ("client_id", "EFI_CLIENT_ID"),
         ("client_secret", "EFI_CLIENT_SECRET"),

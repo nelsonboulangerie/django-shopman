@@ -245,6 +245,19 @@ class POSCashReportTests(TestCase):
         by_method = {row["method"]: row for row in x["sales_by_method"]}
         self.assertEqual(by_method["cash"]["amount_q"], 1500)
 
+    def test_provider_simulated_pix_is_not_revenue_and_does_not_fall_back_to_cash(self) -> None:
+        shift = self._open_shift()
+        sale = self._sale("POS-X-SIM", shift=shift, tenders=[("pix", 900)])
+        intent = PaymentIntent.objects.get(ref=sale.payment_ref)
+        intent.gateway_data = {"confirmation_mode": "provider_simulated"}
+        intent.save(update_fields=["gateway_data"])
+
+        x = self.client.get(REPORT_URL).json()["report"]["x_reading"]
+
+        self.assertEqual(x["sales_count"], 1)
+        self.assertEqual(x["sales_total_q"], 0)
+        self.assertEqual(x["sales_by_method"], [])
+
     def test_x_reading_never_exposes_expected_drawer_amount(self) -> None:
         """BLIND COUNT: nenhuma chave de esperado/variância na resposta."""
         shift = self._open_shift(opening="100,00")

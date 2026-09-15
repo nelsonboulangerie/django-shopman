@@ -169,12 +169,24 @@ def run_gateway_smoke(
 
 
 def _run_local_fixtures(*, rollback: bool) -> tuple[GatewaySmokeCheck, ...]:
+    from shopman.shop.adapters import payment_mock
+
     checks: list[GatewaySmokeCheck] = []
-    with override_settings(
-        SHOPMAN_EFI_WEBHOOK=_LOCAL_EFI_WEBHOOK,
-        SHOPMAN_IFOOD=_LOCAL_IFOOD,
-        SHOPMAN_PAYMENT_ADAPTERS=_LOCAL_PAYMENT_ADAPTERS,
-        SHOPMAN_STRIPE=_LOCAL_STRIPE,
+    with (
+        override_settings(
+            # The local fixture models Efí homologation regardless of the
+            # process configuration.  This keeps release-readiness hermetic
+            # even when the real runtime is configured for production.
+            SHOPMAN_EFI={"sandbox": True},
+            SHOPMAN_EFI_WEBHOOK=_LOCAL_EFI_WEBHOOK,
+            SHOPMAN_IFOOD=_LOCAL_IFOOD,
+            SHOPMAN_PAYMENT_ADAPTERS=_LOCAL_PAYMENT_ADAPTERS,
+            SHOPMAN_STRIPE=_LOCAL_STRIPE,
+        ),
+        # Persisted routing correctly identifies the synthetic webhook intent
+        # as Efí.  Keep this local smoke hermetic by replacing only the remote
+        # refund call with Payman's explicit test adapter.
+        patch("shopman.shop.adapters.payment_efi.refund", side_effect=payment_mock.refund),
     ):
         with transaction.atomic():
             _ensure_channels()
@@ -470,7 +482,14 @@ def _create_pix_intent(order: Order, *, gateway_id: str):
         method="pix",
         gateway="efi",
         gateway_id=gateway_id,
-        gateway_data={"smoke": True},
+        # This fixture emulates an Efí sandbox charge.  Persist the same route
+        # provenance as the real adapter so refund/cancel safety guards can
+        # prove which provider environment owns the synthetic intent.
+        gateway_data={
+            "smoke": True,
+            "provider_environment": "sandbox",
+            "confirmation_mode": "provider_simulated",
+        },
     )
     _link_intent(order, intent.ref)
     return intent

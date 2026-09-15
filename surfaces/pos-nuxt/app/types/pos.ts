@@ -39,6 +39,18 @@ export interface POSPaymentMethodProjection {
   label: string;
 }
 
+export interface POSPaymentConstraintProjection {
+  provider: string;
+  environment: string;
+  mode: string;
+  is_test: boolean;
+  max_amount_q: number;
+  max_amount_display: string;
+  message: string;
+}
+
+export type POSPaymentConstraintsProjection = Partial<Record<string, POSPaymentConstraintProjection>>;
+
 export interface POSFulfillmentOptionProjection {
   ref: "pickup" | "delivery";
   label: string;
@@ -400,6 +412,7 @@ export interface POSProjection {
   products: POSProductProjection[];
   collections: POSCollectionProjection[];
   payment_methods: POSPaymentMethodProjection[];
+  payment_constraints?: POSPaymentConstraintsProjection;
   fulfillment_options: POSFulfillmentOptionProjection[];
   payment_collections: POSPaymentCollectionProjection[];
   checkout: POSCheckoutContractProjection;

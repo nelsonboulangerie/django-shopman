@@ -314,6 +314,7 @@ class PaymentInitiateFailureTests(TestCase):
         )
         PaymentService.authorize(intent.ref, gateway_id="mock-existing")
         adapter = MagicMock()
+        adapter.__name__ = "shopman.shop.adapters.payment_mock"
         adapter.create_intent.side_effect = AssertionError("adapter should not be called")
 
         with patch("shopman.shop.services.payment.get_adapter", return_value=adapter):
@@ -365,6 +366,7 @@ class PaymentInitiateFailureTests(TestCase):
             raise OperationalError("database is locked")
 
         mock_adapter = MagicMock()
+        mock_adapter.__name__ = "shopman.shop.adapters.payment_mock"
         mock_adapter.create_intent.side_effect = create_then_fail
 
         with patch("shopman.shop.services.payment.get_adapter", return_value=mock_adapter):

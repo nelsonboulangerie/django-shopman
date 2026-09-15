@@ -125,6 +125,25 @@ def process_ops(
             raise ValidationError(code="total_changed", message="O total completo mudou. Confira uma nova revisão.",
                 context={"old_total_q": expected_grand_total_q, "new_total_q": total})
 
+    # A trava de homologação usa o estado AUTORITATIVO depois de todos os
+    # modifiers: itens reprecificados, desconto/fidelidade e taxa de entrega.
+    # Ela mora antes do commit para que um POST direto não consiga criar Order,
+    # adotar holds ou disparar qualquer efeito de pagamento.
+    locked.refresh_from_db(fields=["data"])
+    payment = (locked.data or {}).get("payment") or {}
+    if str(payment.get("method") or "").strip().lower() == "pix":
+        from shopman.shop.projections.cart import build_cart
+        from shopman.shop.services.pix_policy import PixPaymentPolicyError, enforce_pix_test_amount_limit
+
+        try:
+            enforce_pix_test_amount_limit(build_cart(session_key, channel_ref).grand_total_q)
+        except PixPaymentPolicyError as exc:
+            raise OrderingValidationError(
+                code=exc.code,
+                message=exc.message,
+                context=exc.context,
+            ) from exc
+
     commit = sessions.commit_session(
         session_key=session_key,
         channel_ref=channel_ref,
@@ -179,7 +198,7 @@ def map_checkout_error(exc: Exception) -> dict[str, str] | None:
         # ``total_changed`` carrega contexto estruturado (novo/antigo total) para a
         # tela reexibir old→new. Deixa passar para ``map_order_error``, que preserva
         # ``error_code`` + ``context`` — o mapeamento de form-field os descartaria.
-        if exc.code in {"total_changed", "revision_changed"}:
+        if exc.code in {"total_changed", "revision_changed", "pix_test_amount_limit"}:
             return None
         address_codes = {"delivery_zone_not_covered", "delivery_zone_unverified"}
         field = "delivery_address" if exc.code in address_codes else "checkout"
@@ -199,7 +218,8 @@ def map_order_error(exc: Exception) -> CheckoutDomainError | None:
 
     code = getattr(exc, "code", "checkout_error")
     conflict_codes = {"revision_changed", "in_progress", "blocking_issues", "stale_checks", "hold_expired"}
-    http_status = 409 if code in conflict_codes else 400
+    unprocessable_codes = {"pix_test_amount_limit"}
+    http_status = 409 if code in conflict_codes else (422 if code in unprocessable_codes else 400)
     return CheckoutDomainError(
         detail=getattr(exc, "message", str(exc)),
         error_code=code,

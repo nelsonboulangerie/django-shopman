@@ -459,10 +459,14 @@ def _payment_method_totals(closing_date: date) -> dict:
     from shopman.orderman.models import Order
     from shopman.payman.models import PaymentIntent, PaymentTransaction
 
+    from shopman.shop.services.payment_provenance import exclude_provider_simulated
+
     from .payments import iter_order_payments
 
     settled = (PaymentIntent.Status.CAPTURED, PaymentIntent.Status.REFUNDED)
-    day_intents = PaymentIntent.objects.filter(status__in=settled, captured_at__date=closing_date)
+    day_intents = exclude_provider_simulated(
+        PaymentIntent.objects.filter(status__in=settled, captured_at__date=closing_date)
+    )
     captured = day_intents.values("method").annotate(total=Sum("amount_q"))
     refunded = (
         PaymentTransaction.objects.filter(intent__in=day_intents, type=PaymentTransaction.Type.REFUND)

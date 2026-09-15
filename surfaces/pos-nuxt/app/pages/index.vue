@@ -1014,6 +1014,7 @@ onBeforeUnmount(() => {
         :has-open-tab="hasOpenTab"
         :fulfillment-options="pos?.fulfillment_options || []"
         :payment-methods="pos?.payment_methods || []"
+        :payment-constraints="pos?.payment_constraints || {}"
         :payment-collections="pos?.payment_collections || []"
         :checkout-contract="checkoutContract"
         :address-autocomplete="addressAutocomplete"

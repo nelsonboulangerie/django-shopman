@@ -362,6 +362,7 @@ class POSProjection:
     products: tuple[POSProductProjection, ...]
     collections: tuple[POSCollectionProjection, ...]
     payment_methods: tuple[POSPaymentMethodProjection, ...]
+    payment_constraints: dict
     fulfillment_options: tuple[POSFulfillmentOptionProjection, ...]
     payment_collections: tuple[POSPaymentCollectionProjection, ...]
     checkout: POSCheckoutContractProjection
@@ -521,6 +522,7 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
         products=tuple(products),
         collections=collections,
         payment_methods=_payment_methods(),
+        payment_constraints=_payment_constraints(),
         fulfillment_options=_fulfillment_options(policy.fulfillment_types),
         payment_collections=_PAYMENT_COLLECTIONS,
         checkout=_checkout_contract(
@@ -980,6 +982,13 @@ def _payment_methods() -> tuple[POSPaymentMethodProjection, ...]:
         for ref in _POS_PAYMENT_METHOD_REFS
         if ref != "link" or _link_payment_available()
     )
+
+
+def _payment_constraints() -> dict:
+    """Provider-test capabilities resolved from the effective runtime adapter."""
+    from shopman.shop.projections.payment_constraints import payment_constraints_payload
+
+    return payment_constraints_payload()
 
 
 def _fulfillment_options(fulfillment_types: tuple[str, ...]) -> tuple[POSFulfillmentOptionProjection, ...]:

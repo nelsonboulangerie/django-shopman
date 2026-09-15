@@ -152,6 +152,7 @@ def test_customer_cancel_gate_preserves_payment_specific_refusal(order_with_paym
         order_ref=order_with_payment.ref,
         amount_q=order_with_payment.total_q,
         method="pix",
+        gateway="mock",
     )
     order_with_payment.data["payment"]["intent_ref"] = intent.ref
     order_with_payment.save(update_fields=["data"])
@@ -178,6 +179,7 @@ def test_customer_cancel_cancels_pending_payment_intent(order_with_payment, djan
         order_ref=order_with_payment.ref,
         amount_q=order_with_payment.total_q,
         method="pix",
+        gateway="mock",
     )
     order_with_payment.data["payment"]["intent_ref"] = intent.ref
     order_with_payment.save(update_fields=["data"])

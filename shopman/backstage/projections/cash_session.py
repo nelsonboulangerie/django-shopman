@@ -270,6 +270,7 @@ def _shift_sales(entries) -> tuple[int, int, dict[str, dict]]:
         all_refs.update(refs)
 
     intents = _intents_by_ref(all_refs)
+    simulated_refs = _provider_simulated_intent_refs(all_refs)
 
     by_method: dict[str, dict] = {}
     seen_refs: set[str] = set()
@@ -285,6 +286,11 @@ def _shift_sales(entries) -> tuple[int, int, dict[str, dict]]:
                 seen_refs.add(ref)
                 method, amount_q = intents[ref]
                 _tally(by_method, method, amount_q)
+            continue
+        # A linha de caixa continua sendo evidência operacional da venda, mas
+        # uma confirmação ``provider_simulated`` não pode cair no fallback de
+        # dinheiro e reaparecer como receita real da gaveta.
+        if any(ref in simulated_refs for ref in refs_by_entry[entry.pk]):
             continue
         if entry.amount_q != 0:
             _tally(by_method, "cash", int(entry.amount_q))
@@ -314,7 +320,11 @@ def _intents_by_ref(refs: set[str]) -> dict[str, tuple[str, int]]:
     from shopman.payman.models import PaymentIntent, PaymentTransaction
 
     settled = (PaymentIntent.Status.CAPTURED, PaymentIntent.Status.REFUNDED)
-    intents = PaymentIntent.objects.filter(ref__in=refs, status__in=settled).values_list("ref", "method", "amount_q")
+    from shopman.shop.services.payment_provenance import exclude_provider_simulated
+
+    intents = exclude_provider_simulated(
+        PaymentIntent.objects.filter(ref__in=refs, status__in=settled)
+    ).values_list("ref", "method", "amount_q")
     refunded = dict(
         PaymentTransaction.objects.filter(intent__ref__in=refs, type=PaymentTransaction.Type.REFUND)
         .values("intent__ref")
@@ -325,6 +335,21 @@ def _intents_by_ref(refs: set[str]) -> dict[str, tuple[str, int]]:
         ref: (str(method or "").strip().lower() or "external", int(amount_q or 0) - int(refunded.get(ref) or 0))
         for ref, method, amount_q in intents
     }
+
+
+def _provider_simulated_intent_refs(refs: set[str]) -> set[str]:
+    if not refs:
+        return set()
+    from shopman.payman.models import PaymentIntent
+
+    from shopman.shop.services.payment_provenance import PROVIDER_SIMULATED_CONFIRMATION_MODE
+
+    return set(
+        PaymentIntent.objects.filter(
+            ref__in=refs,
+            gateway_data__confirmation_mode=PROVIDER_SIMULATED_CONFIRMATION_MODE,
+        ).values_list("ref", flat=True)
+    )
 
 
 def _tally(by_method: dict[str, dict], method: str, amount_q: int) -> None:

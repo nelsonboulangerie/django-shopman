@@ -322,6 +322,7 @@ def close_sale(
         payment_method=_normalize_payment_method(payload.get("payment_method") or "cash"),
         tenders=[t for t in (payload.get("payment_tenders") or []) if isinstance(t, dict)],
     )
+    _enforce_pix_payment_policy(payload)
     # A partir daqui é uma transação só, e ela existe por causa de um defeito:
     # ``client_request_id`` era conferido com um SELECT solto e os ops eram
     # montados de um estado lido antes. Duas requests com a MESMA chave passavam
@@ -753,6 +754,15 @@ def review_sale(
             "field": "payment_tenders",
             "message": "Os pagamentos informados não cobrem o total da venda.",
         })
+
+    pix_warning = _pix_payment_policy_warning(
+        payload,
+        total_q=total_q,
+        payment_method=payment_method,
+        tenders=tenders,
+    )
+    if pix_warning is not None:
+        warnings.append(pix_warning)
 
     approval_reasons = _approval_reasons(discount_q=discount_q, threshold_q=threshold_q)
 
@@ -2180,6 +2190,84 @@ def _payload_payment_collection(payload: dict, fulfillment_type: str) -> str:
 
 def _payload_total_q(payload: dict) -> int:
     return max(0, _payload_subtotal_q(payload) - _payload_discount_q(payload) + _payload_delivery_fee_q(payload))
+
+
+def _pix_payment_policy_error(payload: dict, *, total_q: int | None = None):
+    """Return a structured provider-test refusal for this normalized POS intent."""
+    from shopman.shop.services.pix_policy import (
+        PixPaymentPolicyError,
+        enforce_pix_test_amount_limit,
+        pix_payment_constraint,
+        reject_pix_in_mixed_payment,
+    )
+
+    if pix_payment_constraint() is None:
+        return None
+
+    current_total_q = _payload_total_q(payload) if total_q is None else int(total_q)
+    requested = _normalize_payment_method(payload.get("payment_method") or "cash")
+    raw_tenders = [
+        tender
+        for tender in (payload.get("payment_tenders") or [])
+        if isinstance(tender, dict) and _int_q(tender.get("amount_q")) > 0
+    ]
+    contains_pix = requested == "pix" or any(
+        _normalize_payment_method(tender.get("method")) == "pix" for tender in raw_tenders
+    )
+    mixed_pix = contains_pix and (
+        requested == "mixed"
+        or len(raw_tenders) > 1
+        or (raw_tenders and any(_normalize_payment_method(t.get("method")) != "pix" for t in raw_tenders))
+    )
+    try:
+        if mixed_pix:
+            reject_pix_in_mixed_payment(current_amount_q=current_total_q)
+        if contains_pix:
+            enforce_pix_test_amount_limit(current_total_q)
+    except PixPaymentPolicyError as exc:
+        return exc
+    return None
+
+
+def _enforce_pix_payment_policy(payload: dict) -> None:
+    exc = _pix_payment_policy_error(payload)
+    if exc is None:
+        return
+    raise PosIntentError(
+        code=exc.code,
+        message=exc.message,
+        field="payment_tenders" if exc.code == "pix_test_mixed_payment_unsupported" else "payment_method",
+        focus="payment",
+        status=422,
+        recovery=(
+            "Use Pix para o total inteiro ou remova Pix das formas combinadas."
+            if exc.code == "pix_test_mixed_payment_unsupported"
+            else "Troque a forma de pagamento ou ajuste os itens do pedido."
+        ),
+        context=exc.context,
+    )
+
+
+def _pix_payment_policy_warning(
+    payload: dict,
+    *,
+    total_q: int,
+    payment_method: str,
+    tenders: list[dict],
+) -> dict | None:
+    # ``payment_method``/``tenders`` document that this warning is based on the
+    # same normalized review the operator sees.  The policy helper deliberately
+    # rechecks the raw intent too, closing alternate API spellings.
+    del payment_method, tenders
+    exc = _pix_payment_policy_error(payload, total_q=total_q)
+    if exc is None:
+        return None
+    return {
+        "code": exc.code,
+        "field": "payment_tenders" if exc.code == "pix_test_mixed_payment_unsupported" else "payment_method",
+        "message": exc.message,
+        "context": exc.context,
+    }
 
 
 def _payload_subtotal_q(payload: dict) -> int:

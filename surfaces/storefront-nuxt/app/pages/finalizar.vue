@@ -3,6 +3,7 @@ import { navigateTo } from '#app'
 import type { CartProjection, CartResponse, CheckoutMutationResponse, CheckoutResponse } from '~/types/shopman'
 import type { AddressSelection, AddressLabelKey } from '~/presentation/address'
 import { reviewWaitlist } from '~/presentation/cart'
+import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentation/paymentConstraints'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
 import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
 import { buildCheckoutPayload, createCheckoutAttemptKey, type CheckoutFormState } from '~/utils/checkoutPayload'
@@ -314,7 +315,6 @@ function onCouponToggle (on: boolean) {
 }
 const action = computed(() => checkout.value?.actions.find(candidate => candidate.ref === 'checkout') || null)
 const checkoutActionLabel = computed(() => action.value?.label || 'Confirmar pedido')
-const submitDisabled = computed(() => !action.value?.enabled || !!cart.value?.is_empty || submitting.value)
 // Sacola vazia é um beco sem saída se o CTA só fica desabilitado — omotenashi
 // pede um caminho de volta. Neste estado o botão vira "Adicionar itens" (ativo,
 // leva ao cardápio) em vez de "Revisar pedido" morto + "Sacola vazia.".
@@ -337,6 +337,18 @@ const deliveryBelowMinimum = computed(() =>
 )
 const savedAddresses = computed(() => checkout.value?.saved_addresses || [])
 const paymentMethods = computed(() => checkout.value?.payment_methods || [])
+const pixProviderTest = computed(() => pixProviderTestConstraint(checkout.value?.payment_constraints))
+const pixProviderTestSelected = computed(() => state.payment_method === 'pix' && !!pixProviderTest.value)
+const pixProviderTestExceeded = computed(() =>
+  pixProviderTestSelected.value && exceedsPaymentConstraint(cart.value?.grand_total_q, pixProviderTest.value)
+)
+const pixProviderTestMessage = computed(() => pixProviderTest.value?.message || (
+  'Ambiente de testes: a Efí simula a confirmação de Pix de até R$ 10,00. ' +
+  'Para continuar, troque a forma de pagamento ou ajuste os itens do pedido.'
+))
+const submitDisabled = computed(() =>
+  !action.value?.enabled || !!cart.value?.is_empty || submitting.value || pixProviderTestExceeded.value
+)
 const slots = computed(() => checkout.value?.pickup_slots || [])
 const selectedSlot = computed(() => selectedPickupSlot(slots.value, state.delivery_time_slot))
 const paymentMethodLabel = computed(() => resolvePaymentMethodLabel(checkout.value, state.payment_method))
@@ -801,6 +813,7 @@ function validatePaymentStep (): boolean {
   delete errors.recipient_name
   delete errors.recipient_phone
   if (!state.payment_method) errors.payment_method = 'Escolha o pagamento.'
+  else if (pixProviderTestExceeded.value) errors.payment_method = pixProviderTestMessage.value
   // Presente em ENTREGA exige destinatário — validado JÁ aqui (no "Revisar
   // pedido"), não no commit. Espelha intents.gift.build_gift_data.
   if (state.is_gift && state.fulfillment_type === 'delivery') {
@@ -941,6 +954,22 @@ async function finishAfterCheckout () {
 
 async function goToMenu () {
   await navigateTo('/menu')
+}
+
+async function changeFromPix () {
+  const alternative = paymentMethods.value.find(method => method.ref !== 'pix')
+  state.payment_method = ''
+  clearFieldError('payment_method')
+  await nextTick()
+  const target = alternative
+    ? document.getElementById(`checkout-payment-${alternative.ref}`)
+    : document.querySelector<HTMLElement>('[data-checkout-payment-option]')
+  target?.focus()
+  target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+
+async function adjustCartForPix () {
+  await navigateTo('/sacola')
 }
 
 async function goToAuthRoute () {
@@ -1515,7 +1544,11 @@ useSeoMeta({
               <UiRadioGroup v-model="state.payment_method" class="grid gap-2 sm:grid-cols-2">
                 <UiFieldLabel v-for="method in paymentMethods" :key="method.ref" :for="`checkout-payment-${method.ref}`" class="bg-card has-data-[state=checked]:bg-card has-data-[state=checked]:ring-1 has-data-[state=checked]:ring-primary">
                   <UiField orientation="horizontal">
-                    <UiRadioGroupItem :id="`checkout-payment-${method.ref}`" :value="method.ref" />
+                    <UiRadioGroupItem
+                      :id="`checkout-payment-${method.ref}`"
+                      :value="method.ref"
+                      data-checkout-payment-option
+                    />
                     <UiFieldContent class="gap-1">
                       <UiFieldTitle>
                         <Icon :name="paymentIcon(method.ref)" class="size-4" />
@@ -1527,6 +1560,30 @@ useSeoMeta({
                 </UiFieldLabel>
               </UiRadioGroup>
               <UiFieldError v-if="fieldErrors.payment_method" :errors="fieldErrors.payment_method" />
+
+              <UiAlert
+                v-if="pixProviderTestSelected"
+                variant="warning"
+                icon="lucide:flask-conical"
+                :role="pixProviderTestExceeded ? 'alert' : 'status'"
+                :aria-live="pixProviderTestExceeded ? 'assertive' : 'polite'"
+                aria-atomic="true"
+                data-pix-provider-test
+              >
+                <UiAlertTitle>{{ pixProviderTestExceeded ? 'Pix indisponível para este total' : 'Pix em período de testes' }}</UiAlertTitle>
+                <UiAlertDescription class="shop-stack-tight">
+                  <p>{{ pixProviderTestMessage }}</p>
+                  <p v-if="!pixProviderTestExceeded">Este pedido está dentro do limite temporário.</p>
+                  <div v-if="pixProviderTestExceeded" class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                    <UiButton type="button" variant="outline" class="w-full sm:w-auto" @click="changeFromPix">
+                      Trocar forma de pagamento
+                    </UiButton>
+                    <UiButton type="button" variant="outline" class="w-full sm:w-auto" @click="adjustCartForPix">
+                      Ajustar itens
+                    </UiButton>
+                  </div>
+                </UiAlertDescription>
+              </UiAlert>
 
               <!-- Cartões de teste do Stripe. A lista chega VAZIA quando a chave
                    não é de teste, então em produção este bloco não existe nem no
