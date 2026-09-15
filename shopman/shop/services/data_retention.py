@@ -16,12 +16,12 @@ from django.utils import timezone
 
 from shopman.shop.adapters.data_retention import external_retention_counts
 from shopman.shop.models import (
-    AudienceSnapshotMember,
     Conversation,
     DeliveryAttempt,
     DeliveryReconciliation,
     DeliveryTarget,
     MarketingSecurityEvent,
+    OutboundAttempt,
 )
 
 
@@ -52,6 +52,7 @@ def build_retention_dry_run(*, now: datetime | None = None) -> tuple[RetentionDr
     clock = now or timezone.now()
     external = external_retention_counts(now=clock)
     ninety_days_ago = clock - timedelta(days=90)
+    one_hundred_eighty_days_ago = clock - timedelta(days=180)
     thirty_days_ago = clock - timedelta(days=30)
 
     unsettled_states = (
@@ -62,21 +63,34 @@ def build_retention_dry_run(*, now: datetime | None = None) -> tuple[RetentionDr
         DeliveryTarget.State.FAILED_RETRYABLE,
         DeliveryTarget.State.UNKNOWN,
     )
-    expired_identity_members = AudienceSnapshotMember.objects.filter(
-        delivery_targets__identity_retention_until__lte=clock,
-    ).exclude(
-        delivery_targets__state__in=unsettled_states,
-    ).distinct().count()
+    expired_identity_links = DeliveryTarget.objects.filter(
+        member__isnull=False,
+        identity_retention_until__lte=clock,
+    ).exclude(state__in=unsettled_states).count()
 
     provider_refs = DeliveryTarget.objects.filter(
         provider_ref_retention_until__lte=clock,
+    ).exclude(
+        state__in=unsettled_states,
     ).exclude(provider_receipt_ref="").count()
     attempt_refs = DeliveryAttempt.objects.filter(
-        retention_until__lte=clock,
+        state=DeliveryAttempt.State.COMPLETED,
+        completed_at__lte=one_hundred_eighty_days_ago,
+    ).exclude(
+        target__state__in=unsettled_states,
     ).exclude(provider_receipt_ref="").count()
     reconciliation_refs = DeliveryReconciliation.objects.filter(
-        retention_until__lte=clock,
         state=DeliveryReconciliation.State.COMPLETED,
+        completed_at__lte=one_hundred_eighty_days_ago,
+    ).exclude(provider_receipt_ref="").count()
+    concierge_refs = OutboundAttempt.objects.filter(
+        state__in=(
+            OutboundAttempt.State.ACCEPTED,
+            OutboundAttempt.State.NOT_APPLIED,
+            OutboundAttempt.State.DELIVERED,
+            OutboundAttempt.State.READ,
+        ),
+        completed_at__lte=one_hundred_eighty_days_ago,
     ).exclude(provider_receipt_ref="").count()
 
     closed_conversations = Conversation.objects.filter(
@@ -102,13 +116,19 @@ def build_retention_dry_run(*, now: datetime | None = None) -> tuple[RetentionDr
         _row("R02", status="legal_hold_obrigatorio", registros_vencidos=incident_records),
         _row("R03", status="prova_minima_revisao_obrigatoria", **external["R03"]),
         _row("R04", status="tombstone_revisao_obrigatoria", **external["R04"]),
-        _row("R05", status="contracao_a_implementar", vinculos_pessoais=expired_identity_members),
+        _row(
+            "R05",
+            status="marco_temporal_e_contracao_a_implementar",
+            vinculos_pessoais=expired_identity_links,
+        ),
         _row(
             "R06",
             status="contracao_a_implementar",
             recibos_de_destino=provider_refs,
             recibos_de_tentativa=attempt_refs,
             recibos_de_reconciliacao=reconciliation_refs,
+            recibos_do_concierge=concierge_refs,
+            **external["R06"],
         ),
         _row("R07", status="contracao_a_implementar", **external["R07"]),
         _row(
