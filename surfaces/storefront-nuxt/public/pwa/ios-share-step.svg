@@ -2,9 +2,8 @@
   <title id="title">Botão Compartilhar do Safari</title>
   <desc id="desc">Barra inferior do Safari com o botão Compartilhar destacado.</desc>
   <rect width="320" height="240" rx="28" fill="#fcf7ee"/>
-  <rect x="34" y="38" width="252" height="164" rx="22" fill="#fff" stroke="#dec9bb" stroke-width="4"/>
-  <rect x="54" y="58" width="212" height="88" rx="12" fill="#f5e7dd"/>
-  <rect x="54" y="158" width="212" height="32" rx="16" fill="#f5e7dd"/>
-  <circle cx="160" cy="174" r="15" fill="#7c3a40"/>
-  <path d="M160 175v-8m0 0-4 4m4-4 4 4M156 173h-2v8h12v-8h-2" fill="none" stroke="#fcf7ee" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="34" y="26" width="252" height="188" rx="22" fill="#fff" stroke="#dec9bb" stroke-width="4"/>
+  <rect x="52" y="48" width="216" height="88" rx="12" fill="#f5e7dd"/>
+  <rect x="52" y="148" width="216" height="48" rx="12" fill="#7c3a40"/>
+  <path d="M160 176v-20m0 0-8 8m8-8 8 8M149 174v13h22v-13" fill="none" stroke="#fcf7ee" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
