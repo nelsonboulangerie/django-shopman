@@ -1,10 +1,22 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from shopman.shop.checks import check_production_provider_environments
 
 pytestmark = pytest.mark.django_db
+
+
+def test_runtime_workflow_executes_integrated_deploy_check_as_production():
+    workflow_path = Path(__file__).resolve().parents[3] / ".github" / "workflows" / "runtime-gate.yml"
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["quality"]["steps"]
+    deploy_step = next(step for step in steps if step.get("name") == "Deploy checks (production fixture)")
+
+    assert deploy_step["run"] == ".venv/bin/python manage.py check --deploy"
+    assert deploy_step["env"]["SHOPMAN_ENVIRONMENT"] == "production"
 
 
 def test_production_deploy_checks_use_runtime_provider_safety(settings, monkeypatch):
