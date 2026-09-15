@@ -7,6 +7,7 @@ falha de envio) e compatibilidade das capacidades de sessão legadas.
 
 from __future__ import annotations
 
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import timedelta
 from decimal import Decimal
 from io import StringIO
@@ -1392,9 +1393,23 @@ def test_logged_in_account_cannot_control_another_customers_alert(client):
     assert sub.revoked_at is None
 
 
-def test_capability_never_appears_in_application_logs(client, caplog):
+@pytest.mark.parametrize(
+    "subscription_ref",
+    [
+        pytest.param("00000000-0000-0000-0000-000000000028", id="token-ending-A"),
+        pytest.param("00000000-0000-0000-0000-000000000033", id="token-ending-Z"),
+    ],
+)
+def test_capability_never_appears_in_application_logs(client, caplog, settings, subscription_ref):
+    settings.SECRET_KEY = "stock-alert-log-test-only"
     sub = stock_alerts.subscribe("SKU-MANAGE-LOG", phone=PHONE)
+    sub.ref = subscription_ref
+    sub.save(update_fields=["ref"])
     token = _management_token(sub)
+    # Flip a signature byte, then re-encode: always different and still canonical.
+    altered = bytearray(urlsafe_b64decode(token))
+    altered[-1] ^= 1
+    altered_token = urlsafe_b64encode(altered).decode("ascii")
 
     assert client.get(
         "/api/v1/stock-alert/manage/",
@@ -1402,7 +1417,7 @@ def test_capability_never_appears_in_application_logs(client, caplog):
     ).status_code == 200
     assert client.get(
         "/api/v1/stock-alert/manage/",
-        HTTP_X_STOCK_ALERT_CAPABILITY=f"{token[:-1]}Z",
+        HTTP_X_STOCK_ALERT_CAPABILITY=altered_token,
     ).status_code == 404
 
     assert token not in caplog.text
