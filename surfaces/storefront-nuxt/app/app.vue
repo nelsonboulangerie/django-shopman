@@ -40,6 +40,22 @@ watch(authShellRoute, (isAuthRoute, wasAuthRoute) => {
   if (!isAuthRoute && wasAuthRoute) void refreshShellHome()
 })
 
+// O Nuxt restaura a rolagem do document, mas no PWA iOS o viewport rolável é
+// interno para manter a bottom-nav fora do bug de position:fixed do WebKit.
+// Mudança real de página começa no topo; query local (filtros) não é zerada.
+watch(() => [route.path, route.hash] as const, async ([path, hash], [oldPath, oldHash]) => {
+  if (!import.meta.client || (path === oldPath && hash === oldHash)) return
+  await nextTick()
+  const viewport = shopScrollViewport()
+  if (!viewport || getComputedStyle(viewport).overflowY !== 'auto') return
+  if (hash) {
+    const id = decodeURIComponent(hash.slice(1))
+    document.getElementById(id)?.scrollIntoView({ behavior: 'auto', block: 'start' })
+    return
+  }
+  viewport.scrollTo({ top: 0, behavior: 'auto' })
+})
+
 useShopTheme(session.shop)
 
 // theme-color também pinta a área nativa de pull-to-refresh no Safari. Usa o mesmo
@@ -103,19 +119,24 @@ useSeoMeta({
 
 <template>
   <div class="shop-shell flex min-h-dvh flex-col">
-    <NuxtRouteAnnouncer />
-    <a
-      href="#main-content"
-      class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground"
-      @click="focusMainContent"
-    >
-      Pular para o conteúdo
-    </a>
-    <ShopHeader />
-    <div id="main-content" tabindex="-1" class="flex-1 min-h-[calc(100svh-4rem)]">
-      <NuxtPage />
+    <!-- No PWA instalado este é o único viewport rolável. A bottom-nav fica fora
+         dele, em fluxo normal, para não depender do position:fixed que deriva no
+         WebKit/iOS 26. No navegador comum o wrapper continua transparente ao layout. -->
+    <div data-shop-scroll-viewport class="shop-scroll-viewport flex min-h-0 flex-1 flex-col">
+      <NuxtRouteAnnouncer />
+      <a
+        href="#main-content"
+        class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground"
+        @click="focusMainContent"
+      >
+        Pular para o conteúdo
+      </a>
+      <ShopHeader />
+      <div id="main-content" tabindex="-1" class="flex-1 min-h-[calc(100svh-4rem)]">
+        <NuxtPage />
+      </div>
+      <ShopFooter v-if="!hideFooter" />
     </div>
-    <ShopFooter v-if="!hideFooter" />
     <AppBottomNav />
     <ClientOnly>
       <SearchOverlay />

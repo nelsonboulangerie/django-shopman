@@ -312,6 +312,40 @@
     overflow-x: clip;
   }
 
+  /* WebKit/iOS 26 pode pintar position:fixed fora da posição durante a rolagem
+     de um PWA standalone. Só nesse modo o casco vira uma coluna de altura fixa:
+     o conteúdo rola dentro dela e a bottom-nav permanece em fluxo normal. */
+  @media (max-width: 767px) {
+    html.shop-ios-standalone,
+    html.shop-ios-standalone body,
+    html.shop-ios-standalone #__nuxt {
+      height: 100%;
+      overflow: hidden;
+    }
+
+    html.shop-ios-standalone .shop-shell.shop-shell {
+      height: 100dvh;
+      min-height: 100dvh;
+      overflow: hidden;
+    }
+
+    html.shop-ios-standalone .shop-scroll-viewport {
+      min-height: 0;
+      overflow-x: clip;
+      overflow-y: auto;
+      overscroll-behavior-x: none;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    html.shop-ios-standalone .shop-bottomnav-bar.shop-bottomnav-bar {
+      flex: none;
+    }
+
+    html.shop-ios-standalone .shop-scroll-viewport .shop-bottom-safe {
+      padding-bottom: 1.5rem;
+    }
+  }
+
   /* ── Sistema tipográfico (fonte única) ──────────────────────────────────────
    * Espelha o que `.shop-stack-*` fez pelo espaço: papéis semânticos que amarram
    * size + weight + leading + tracking juntos; as TELAS consomem o papel, não
@@ -612,5 +646,20 @@
   scrollbar-width: none;
   &::-webkit-scrollbar {
     display: none;
+  }
+}
+
+/* Fora das cascade layers de Tailwind de propósito: precisa vencer as utilities
+   `fixed`, `bottom-0` e `inset-x-0` presentes no markup do modo navegador. */
+@media (max-width: 767px) {
+  html.shop-ios-standalone .shop-bottomnav-bar.shop-bottomnav-bar {
+    position: relative;
+    inset: auto;
+  }
+
+  /* Dentro da coluna de altura fixa, `flex-1` encolheria o main e faria seu
+     conteúdo transbordar por baixo do footer. Em fluxo auto ele cresce inteiro. */
+  html.shop-ios-standalone #main-content {
+    flex: none;
   }
 }
