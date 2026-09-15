@@ -145,6 +145,8 @@ ativação de jobs e descarte do legado permanecem gates humanos separados.
 
 Validação posterior ao endurecimento: 10 testes focados passaram em SQLite; o ciclo
 reversível agora exercita `0052 → 0053 → 0052 → 0053 → folha`, incluindo insert do
-writer histórico contra o schema expandido. A prova PostgreSQL precisa ser repetida
-no head corrigido antes do gate de deploy; Ruff e `makemigrations --check --dry-run`
-passaram localmente. Nenhum banco ou ambiente de produção foi alterado.
+writer histórico contra o schema expandido. O teste foi incluído explicitamente no
+gate obrigatório `PostgreSQL + Redis runtime stress gate`; somente o check verde do
+head corrigido fecha essa prova antes do deploy. Ruff e
+`makemigrations --check --dry-run` passaram localmente. Nenhum banco ou ambiente de
+produção foi alterado.
