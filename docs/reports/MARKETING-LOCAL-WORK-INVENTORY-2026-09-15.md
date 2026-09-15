@@ -49,6 +49,21 @@ O diagnóstico shadow teve 7/7 testes focados aprovados. Isso valida o instrumen
 e seus estados de divergência; não substitui os 7–14 dias ou volume acordado de
 observação exigidos para MKT-051.
 
+## Oportunidade de eficiência do CI/deploy
+
+Depois do merge #683, o workflow `Deploy Images` classificou a alteração de
+`shopman/shop/tests/test_marketing_capacity.py` pelo padrão amplo `shopman/**`.
+Por isso reconstruiu e publicou a imagem `web`, apesar de o diff funcional estar
+restrito a teste e documentação. O deploy automático e o smoke vivo passaram,
+mas houve consumo e espera evitáveis sem mudança de runtime.
+
+Uma correção futura pode distinguir mudanças exclusivas em testes/documentação
+das mudanças que afetam a imagem. Ela não deve ser feita pontualmente neste
+branch: exige revisão completa dos paths copiados pelo `Dockerfile`, dos casos
+em que testes ou fixtures são necessários no artefato e dos testes contratuais
+do manifesto/smoke. Até essa revisão, preservar o CI e o deploy obrigatórios é
+mais seguro que introduzir uma exclusão ampla e silenciosa.
+
 ## Estado máximo defensável
 
 A implementação técnica principal continua concluída, mas o plano inteiro não.
