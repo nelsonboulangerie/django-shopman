@@ -32,6 +32,7 @@ from .campaign import (
     MarketingTestReceipt,
     Trigger,
 )
+from .catalog_binding import CatalogBinding, CatalogSnapshot
 from .catalog_sync import CatalogSyncState, SyncStatus
 from .channel import Channel
 from .concierge import (
@@ -87,6 +88,8 @@ __all__ = [
     "DeliveryZone",
     "DeliveryDistanceBand",
     "FAQEntry",
+    "CatalogBinding",
+    "CatalogSnapshot",
     "CatalogSyncState",
     "SyncStatus",
     "NotificationTemplate",

@@ -273,6 +273,7 @@ useHead({ title: "Canais · Gestor" });
               {{ channel.synced }} sincronizados · {{ channel.pending }} pendentes · {{ channel.errors }} com erro · {{ channel.retracted }} retirados · {{ channel.skipped }} não enviados
             </p>
             <p v-else class="text-xs text-muted-foreground">Ainda sem registros de envio de produtos.</p>
+            <NuxtLink :to="`/channels/${encodeURIComponent(channel.ref)}/catalog`" class="mr-2 inline-flex min-h-control items-center rounded-md border px-3 text-sm hover:bg-accent">Revisar vínculos</NuxtLink>
             <NuxtLink :to="channel.catalog_path" class="inline-flex min-h-control items-center rounded-md border px-3 text-sm hover:bg-accent">Ver produtos no Catálogo</NuxtLink>
           </article>
         </div>

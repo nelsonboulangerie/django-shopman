@@ -6,7 +6,7 @@
 const route = useRoute();
 const section = computed(() =>
   route.path.startsWith("/catalog") ? "catalog"
-  : route.path.startsWith("/feeds") ? "feeds"
+  : (route.path.startsWith("/feeds") || route.path.startsWith("/channels/")) ? "feeds"
   : "orders",
 );
 
