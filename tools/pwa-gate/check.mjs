@@ -69,7 +69,7 @@ const requiredAssets = [
   ['pwa-192x192.png', 192, 192],
   ['pwa-512x512.png', 512, 512],
   ['maskable-512x512.png', 512, 512],
-  ['apple-touch-icon-180x180.png', 180, 180],
+  ['apple-touch-icon-transparent-180x180.png', 180, 180],
   ['monochrome-512x512.png', 512, 512],
   ['screenshots/home-narrow.png', 1080, 1920],
   ['screenshots/menu-narrow.png', 1080, 1920],
