@@ -77,6 +77,9 @@ const {
   managerApprovalError,
   customerFocusNonce,
   result,
+  closeOutcomeUncertain,
+  restoreUncertainClose,
+  acknowledgeUncertainClose,
   pendingPixOrderRef,
   pixStatus,
   checkoutMode,
@@ -189,6 +192,17 @@ const {
 } = usePosSale({ pos, tabs, actions, refresh, action, apiPath, requestHeaders, ordersUrl });
 
 const confirmCounterMode = ref(false);
+const uncertainCloseRecoveryOpen = ref(false);
+const uncertainCloseReviewed = ref(false);
+function openUncertainCloseRecovery() {
+  uncertainCloseReviewed.value = false;
+  uncertainCloseRecoveryOpen.value = true;
+}
+function confirmUncertainCloseRecovery() {
+  if (!uncertainCloseReviewed.value) return;
+  acknowledgeUncertainClose();
+  uncertainCloseRecoveryOpen.value = false;
+}
 function requestSalesMode(mode: "counter" | "order") {
   if (mode === (cart.salesMode || "counter")) return;
   if (mode === "counter") { confirmCounterMode.value = true; return; }
@@ -749,8 +763,18 @@ function onGlobalKeydown(event: KeyboardEvent) {
   }
 }
 
-onMounted(() => window.addEventListener("keydown", onGlobalKeydown));
-onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
+function restoreUncertainCloseFromStorage() {
+  restoreUncertainClose();
+}
+onMounted(() => {
+  restoreUncertainClose();
+  window.addEventListener("storage", restoreUncertainCloseFromStorage);
+  window.addEventListener("keydown", onGlobalKeydown);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener("storage", restoreUncertainCloseFromStorage);
+  window.removeEventListener("keydown", onGlobalKeydown);
+});
 </script>
 
 <template>
@@ -882,6 +906,23 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           <Icon name="lucide:history" class="size-5" />
         </UiButton>
       </header>
+
+      <UiAlert
+        v-if="closeOutcomeUncertain"
+        variant="destructive"
+        icon="lucide:triangle-alert"
+        class="mx-4 mt-3 shrink-0"
+        role="alert"
+      >
+        <UiAlertTitle>Resultado da cobrança não confirmado</UiAlertTitle>
+        <UiAlertDescription class="gap-3">
+          <p>Antes de cobrar novamente, confira em Últimas vendas ou no Gestor se o pedido e o pagamento foram criados. Este bloqueio permanece mesmo se a página for recarregada.</p>
+          <div class="flex flex-wrap gap-2">
+            <UiButton variant="outline" size="sm" @click="recentSalesOpen = true">Conferir últimas vendas</UiButton>
+            <UiButton size="sm" @click="openUncertainCloseRecovery">Já conferi · liberar tentativa</UiButton>
+          </div>
+        </UiAlertDescription>
+      </UiAlert>
 
       <div class="flex min-h-0 w-full flex-1 flex-col gap-3 px-4 py-3 md:min-h-0 md:overflow-hidden">
       <div class="flex-1 md:min-h-0 md:overflow-hidden">
@@ -1176,6 +1217,23 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         <UiDialogFooter class="gap-2">
           <UiButton variant="outline" @click="confirmCounterMode = false">Continuar encomenda</UiButton>
           <UiButton :disabled="busy" @click="convertToCounter">Converter para balcão</UiButton>
+        </UiDialogFooter>
+      </UiDialogContent>
+    </UiDialog>
+
+    <UiDialog v-model:open="uncertainCloseRecoveryOpen">
+      <UiDialogContent class="sm:max-w-md">
+        <UiDialogHeader>
+          <UiDialogTitle>Você conferiu pedido e pagamento?</UiDialogTitle>
+          <UiDialogDescription>Verifique primeiro em Últimas vendas ou no Gestor. Liberar sem conferir pode repetir uma cobrança cujo resultado não chegou a esta tela.</UiDialogDescription>
+        </UiDialogHeader>
+        <label class="flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm">
+          <UiSwitch v-model="uncertainCloseReviewed" class="mt-0.5" />
+          <span>Conferi o pedido e o pagamento e sei se esta venda precisa ser tentada novamente.</span>
+        </label>
+        <UiDialogFooter class="gap-2">
+          <UiButton variant="outline" @click="uncertainCloseRecoveryOpen = false">Voltar e conferir</UiButton>
+          <UiButton :disabled="!uncertainCloseReviewed" @click="confirmUncertainCloseRecovery">Liberar tentativa</UiButton>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>

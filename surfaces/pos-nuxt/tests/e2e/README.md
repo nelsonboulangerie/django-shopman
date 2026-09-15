@@ -11,10 +11,14 @@ npm run test:e2e -- --ui  # modo interativo
 POS_E2E_PORT=33002 POS_E2E_MOCK_PORT=38798 npm run test:e2e
 ```
 
-O `playwright.config.ts` faz `nuxt build && node .output/server/index.mjs` com
+O `playwright.config.ts` faz `nuxt build` e serve o Nitro a partir do
+`.output-e2e-<porta>/server/index.mjs`, com
 `NUXT_APP_BASE_URL=/` (produção usa `/pos/`) e aponta o BFF ao mock via
 `NUXT_DJANGO_BASE_URL`. Cada execução sobe e encerra servidores próprios; as
-variáveis `POS_E2E_PORT` e `POS_E2E_MOCK_PORT` isolam execuções concorrentes.
+variáveis `POS_E2E_PORT` e `POS_E2E_MOCK_PORT` isolam portas e também os
+diretórios ignorados `.nuxt-e2e-<porta>` e `.output-e2e-<porta>`. Duas suítes
+com pares de portas distintos podem rodar no mesmo checkout sem compartilhar
+artefatos de build.
 
 ## Coberto aqui
 

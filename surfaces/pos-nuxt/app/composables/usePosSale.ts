@@ -74,6 +74,32 @@ import { toast } from "vue-sonner";
 
 type FulfillmentType = "pickup" | "delivery";
 type PaymentCollection = "terminal" | "on_delivery";
+const CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY = "shopman:pos:close-outcome-uncertain";
+
+function readCloseOutcomeUncertain(): boolean {
+  try {
+    return Boolean(globalThis.localStorage?.getItem(CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY));
+  } catch {
+    // Storage indisponível não enfraquece a trava da sessão atual; apenas não
+    // consegue carregá-la de uma navegação anterior.
+    return false;
+  }
+}
+
+function persistCloseOutcomeUncertain(clientRequestId: string): void {
+  try {
+    globalThis.localStorage?.setItem(CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY, JSON.stringify({
+      client_request_id: clientRequestId,
+      recorded_at: new Date().toISOString(),
+    }));
+  } catch { /* A ref em memória continua bloqueando a estação atual. */ }
+}
+
+function clearPersistedCloseOutcomeUncertain(): void {
+  try {
+    globalThis.localStorage?.removeItem(CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY);
+  } catch { /* A confirmação ainda libera a instância atual. */ }
+}
 
 interface PosSaleDeps {
   /** Read-side slices of the terminal Projection (from usePosTerminal). */
@@ -168,10 +194,30 @@ export function usePosSale(deps: PosSaleDeps) {
   // o palco do operador e a tela do cliente.
   const result = ref<PosSaleResultSnapshot | null>(null);
   // O Django respondeu ao close, mas sem a prova mínima (`ok + order_ref`).
-  // Repetir o mesmo gesto no escuro pode cobrar duas vezes; só um reset
-  // explícito da venda abre uma nova tentativa.
+  // Repetir o mesmo gesto no escuro pode cobrar duas vezes; só a confirmação
+  // explícita de que pedido e pagamento foram conferidos libera nova tentativa.
+  // Começa falso também durante hydration; a página restaura localStorage no
+  // mounted para o HTML do servidor não divergir do primeiro render do cliente.
   const closeOutcomeUncertain = ref(false);
   const closeOutcomeUncertainMessage = "Não foi possível confirmar o resultado desta venda. Confira o pedido e o pagamento antes de qualquer nova cobrança. Não repita esta venda.";
+
+  function restoreUncertainClose() {
+    closeOutcomeUncertain.value = readCloseOutcomeUncertain();
+  }
+
+  function markCloseOutcomeUncertain() {
+    closeOutcomeUncertain.value = true;
+    persistCloseOutcomeUncertain(cart.clientRequestId);
+  }
+
+  // Única saída da trava: o operador confirma, numa ação persistente da UI,
+  // que reconciliou pedido e pagamento. Se o rascunho ainda existe, a mesma
+  // chave idempotente é preservada para uma eventual repetição segura.
+  function acknowledgeUncertainClose() {
+    closeOutcomeUncertain.value = false;
+    clearPersistedCloseOutcomeUncertain();
+    serverError.value = "";
+  }
 
   // PIX no PDV: o proof mostra o QR e "aguarde confirmação", mas sem polling o
   // operador nunca via a confirmação chegar (tinha de ir ao gestor). Aqui pollamos
@@ -1123,7 +1169,6 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.managerUsername = "";
     cart.managerPin = "";
     cart.clientRequestId = "";
-    closeOutcomeUncertain.value = false;
     customerLookup.value = null;
     checkoutMode.value = false;
     review.value = null;
@@ -2325,13 +2370,20 @@ export function usePosSale(deps: PosSaleDeps) {
     result.value = null;
     busy.value = true;
     try {
-      const response = await action.call<POSCloseSaleResponse>(
+      const rawResponse = await action.call<unknown>(
         actionHref(actions.value, "close_sale", "/api/v1/backstage/pos/sale/close/"),
         { body: buildCurrentIntent() },
       );
-      if (response.ok && response.order_ref) {
-        const orderRef = response.order_ref;
-        // Freeze a receipt snapshot before the cart resets (spec §D3): the
+      const response = rawResponse && typeof rawResponse === "object"
+        ? rawResponse as Partial<POSCloseSaleResponse>
+        : null;
+      const orderRef = typeof response?.order_ref === "string" ? response.order_ref.trim() : "";
+      if (!response || response.ok !== true || !orderRef) {
+        markCloseOutcomeUncertain();
+        serverError.value = closeOutcomeUncertainMessage;
+        return;
+      }
+      // Freeze a receipt snapshot before the cart resets (spec §D3): the
         // printed receipt is a record of what was sold, not live state.
         const receipt: PosReceiptSnapshot = {
           orderRef,
@@ -2407,10 +2459,6 @@ export function usePosSale(deps: PosSaleDeps) {
           // no catch do close como se o resultado da venda fosse desconhecido.
           toast.warning(`Pedido ${orderRef} registrado. A atualização do balcão falhou; os dados podem estar desatualizados. Não repita esta venda.`);
         }
-      } else {
-        closeOutcomeUncertain.value = true;
-        serverError.value = closeOutcomeUncertainMessage;
-      }
     } catch (error) {
       if (handleReceiptIdentityFailure(error, "close")) return;
       const failure = (httpError(error).data as {
@@ -2770,6 +2818,9 @@ export function usePosSale(deps: PosSaleDeps) {
     managerApprovalError,
     customerFocusNonce,
     result,
+    closeOutcomeUncertain,
+    restoreUncertainClose,
+    acknowledgeUncertainClose,
     pendingPixOrderRef,
     checkoutMode,
     showTabs,

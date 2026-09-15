@@ -162,12 +162,12 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
     h.handles.dispose();
   });
 
-  it("resposta 200 sem prova do pedido alerta e bloqueia repetição do fechamento", async () => {
+  it.each([{ ok: true }, null, undefined])("resposta 200 incompleta (%s) alerta e bloqueia repetição do fechamento", async (incompleteResponse) => {
     const actionCall = saleRouter();
     const h = saleReadyForCheckout(actionCall);
     await h.sale.submitSale(); // prepara e fixa a intenção idempotente
     const requestId = h.sale.cart.clientRequestId;
-    actionCall.mockResolvedValueOnce({ ok: true }); // contrato incompleto: faltou order_ref
+    actionCall.mockResolvedValueOnce(incompleteResponse); // contrato incompleto: faltou a prova ok + order_ref
 
     await h.sale.submitSale();
     await h.sale.submitSale(); // novo toque/Enter não atravessa a trava local
@@ -180,7 +180,46 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
     expect(vi.mocked(toast.error)).toHaveBeenLastCalledWith(
       "Não foi possível confirmar o resultado desta venda. Confira o pedido e o pagamento antes de qualquer nova cobrança. Não repita esta venda.",
     );
+    h.sale.acknowledgeUncertainClose();
+    await h.sale.submitSale();
+    const retriedCloseCalls = actionCall.mock.calls.filter((call) => String(call[0]).includes("/sale/close/"));
+    expect(retriedCloseCalls).toHaveLength(2);
+    expect(retriedCloseCalls[1]![1].body.client_request_id).toBe(requestId);
     h.handles.dispose();
+  });
+
+  it("mantém a trava após recarregar e só a conferência explícita libera outra tentativa", async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    });
+
+    const firstAction = saleRouter();
+    const first = saleReadyForCheckout(firstAction);
+    await first.sale.submitSale();
+    firstAction.mockResolvedValueOnce(null);
+    await first.sale.submitSale();
+    expect(first.sale.closeOutcomeUncertain.value).toBe(true);
+    expect(values.size).toBe(1);
+    first.handles.dispose();
+
+    const afterReloadAction = saleRouter();
+    const afterReload = saleReadyForCheckout(afterReloadAction);
+    afterReload.sale.restoreUncertainClose();
+    expect(afterReload.sale.closeOutcomeUncertain.value).toBe(true);
+    await afterReload.sale.submitSale();
+    expect(afterReloadAction).not.toHaveBeenCalled();
+
+    afterReload.sale.acknowledgeUncertainClose();
+    expect(afterReload.sale.closeOutcomeUncertain.value).toBe(false);
+    expect(values.size).toBe(0);
+    await afterReload.sale.submitSale();
+    await afterReload.sale.submitSale();
+    const closeCalls = afterReloadAction.mock.calls.filter((call) => String(call[0]).includes("/sale/close/"));
+    expect(closeCalls).toHaveLength(1);
+    afterReload.handles.dispose();
   });
 
   it("falha de refresh depois do close preserva pedido e recibo e impede nova venda", async () => {
