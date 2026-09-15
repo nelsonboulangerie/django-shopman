@@ -46,12 +46,13 @@ from shopman.shop.models import (
 from shopman.shop.services import audience as audience_service
 from shopman.shop.services import campaign_schedule
 from shopman.shop.services.availability_copy import availability_phrase
+from shopman.shop.services.marketing_capabilities import publication_platform_refs
 from shopman.shop.services.marketing_contracts import MarketingContractError
 
 logger = logging.getLogger(__name__)
 
 #: Plataformas que publicam conteúdo (vs. notificar audiência direta).
-POSTING_PLATFORMS = ("instagram", "facebook", "google_business")
+POSTING_PLATFORMS = publication_platform_refs()
 
 _REVERSIBLE_ANNOUNCEMENT_STATUSES = frozenset(
     {

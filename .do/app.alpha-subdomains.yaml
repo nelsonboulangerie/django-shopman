@@ -343,9 +343,10 @@ envs:
   scope: RUN_TIME
   value: '8932087'
   type: GENERAL
-# Espelho do estado vivo medido em 11/09/2026. Os consumers globais seguem
-# desligados; o canário unitário e o adapter do Instagram foram habilitados em
-# janela própria. O segredo HMAC permanece somente no App Platform.
+# Os consumers globais e a via unitária de publicação permanecem desligados.
+# Canários reais exigem janela aprovada e configuração temporária no App
+# Platform; o blueprint versionado nunca deve deixá-los pré-armados. O segredo
+# HMAC permanece somente no App Platform.
 - key: SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED
   scope: RUN_TIME
   value: 'false'
@@ -356,11 +357,11 @@ envs:
   type: GENERAL
 - key: SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED
   scope: RUN_TIME
-  value: 'true'
+  value: 'false'
   type: GENERAL
 - key: SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED
   scope: RUN_TIME
-  value: 'true'
+  value: 'false'
   type: GENERAL
 - key: SHOPMAN_MARKETING_MEDIA_HOSTS
   scope: RUN_TIME

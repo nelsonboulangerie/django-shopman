@@ -27,7 +27,12 @@ from shopman.shop.models import (
     MarketingOutbox,
 )
 from shopman.shop.services import audience as audience_service
-from shopman.shop.services import audience_snapshot, marketing_artifacts, marketing_time
+from shopman.shop.services import (
+    audience_snapshot,
+    marketing_artifacts,
+    marketing_capabilities,
+    marketing_time,
+)
 from shopman.shop.services.marketing_commands import (
     CommandExecution,
     RejectCommand,
@@ -41,13 +46,8 @@ PUBLISH_MODES = frozenset({PUBLISH_NOW, PUBLISH_SCHEDULED})
 APPROVAL_RECORD_RETENTION = timedelta(days=365 * 5)
 MIN_GENERAL_COHORT = 10
 MAX_ARTIFACT_BYTES = 64 * 1024
-_PLATFORMS = frozenset({"instagram", "facebook", "google_business", "whatsapp"})
-_PLATFORM_LABELS = {
-    "instagram": "Instagram",
-    "facebook": "Facebook",
-    "google_business": "Google Meu Negócio",
-    "whatsapp": "WhatsApp",
-}
+_PLATFORMS = frozenset(marketing_capabilities.platform_refs())
+_PLATFORM_LABELS = marketing_capabilities.platform_labels()
 
 
 @dataclass(frozen=True, slots=True)
@@ -346,7 +346,7 @@ def approve_command(
             announcement=announcement,
             snapshot=snapshot,
             artifact=artifact,
-            platforms=safe_platforms,
+            resolved_artifacts=resolved_artifacts,
             resolution=resolution,
             available_at=available_at,
             now=now,
@@ -368,7 +368,7 @@ def approve_command(
         quiet_rows = [
             row
             for row in outbox
-            if row.platform == "whatsapp"
+            if row.delivery_kind == "direct_message"
             and not marketing_time.delivery_window(
                 row.available_at,
                 timezone_name=effective_timezone,
@@ -518,14 +518,15 @@ def _create_outbox(
     announcement: Announcement,
     snapshot: AudienceSnapshot,
     artifact: MarketingContentArtifact,
-    platforms: list[str],
+    resolved_artifacts: tuple[marketing_artifacts.ResolvedDispatchArtifact, ...],
     resolution,
     available_at: datetime,
     now: datetime,
 ) -> tuple[MarketingOutbox, ...]:
     entries: list[MarketingOutbox] = []
-    for platform in platforms:
-        waves = resolution.waves(now=timezone.localtime(now)) if platform == "whatsapp" else ()
+    for resolved in resolved_artifacts:
+        platform = resolved.platform
+        waves = resolution.waves(now=timezone.localtime(now)) if resolved.delivery_kind == "direct_message" else ()
         if not waves:
             entries.append(
                 MarketingOutbox(
@@ -534,6 +535,8 @@ def _create_outbox(
                     snapshot=snapshot,
                     artifact=artifact,
                     platform=platform,
+                    delivery_kind=resolved.delivery_kind,
+                    format=resolved.format,
                     available_at=available_at,
                 )
             )
@@ -546,6 +549,8 @@ def _create_outbox(
                     snapshot=snapshot,
                     artifact=artifact,
                     platform=platform,
+                    delivery_kind=resolved.delivery_kind,
+                    format=resolved.format,
                     wave_key=wave.key,
                     available_at=available_at + timedelta(minutes=wave.delay_minutes),
                 )
