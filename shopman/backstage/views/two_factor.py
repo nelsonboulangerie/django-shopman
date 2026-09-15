@@ -88,7 +88,10 @@ def admin_2fa_verify(request):
     if _verified(request):
         return HttpResponseRedirect(next_url)
     devices = [(d, "App autenticador: " + d.name) for d in TOTPDevice.objects.filter(user=request.user, confirmed=True)]
-    devices += [(d, "Código de recuperação") for d in StaticDevice.objects.filter(user=request.user, confirmed=True, name=RECOVERY_NAME)]
+    recovery_devices = StaticDevice.objects.filter(
+        user=request.user, confirmed=True, name=RECOVERY_NAME, token_set__isnull=False,
+    ).distinct()
+    devices += [(d, "Código de recuperação") for d in recovery_devices]
     data = request.POST.copy() if request.method == "POST" else None
     if data is not None and not data.get("device") and devices:
         data["device"] = devices[0][0].persistent_id
@@ -100,10 +103,19 @@ def admin_2fa_verify(request):
             request.session.cycle_key()
             return HttpResponseRedirect(next_url)
         form.add_error("token", "Código inválido ou temporariamente bloqueado. Aguarde e tente novamente.")
+    enrolled = AdminTwoFactorEnrollment.objects.filter(user=request.user).exists()
+    if devices:
+        note = "Use seu app autenticador ou um código de recuperação guardado."
+    elif enrolled:
+        note = ("Sua conta continua protegida por 2FA, mas não há fator disponível. "
+                "Procure a operação para recuperação supervisionada. "
+                "A inscrição não pode ser reiniciada apenas com a senha.")
+    else:
+        note = "Inscrição ainda não concluída. A operação deve preparar sua conta com setup_admin_totp."
     return _page(request, form=form if devices else None, heading="Verificação em duas etapas",
-                 note="Use seu app autenticador ou um código de recuperação guardado." if devices else
-                      "Inscrição ainda não concluída. A operação deve preparar sua conta com setup_admin_totp.",
-                 enroll_url=reverse("admin_2fa_enroll") if not devices else None, button="Entrar")
+                 note=note, enroll_url=reverse("admin_2fa_enroll") if not devices and not enrolled else None,
+                 button="Entrar")
+
 
 
 @never_cache

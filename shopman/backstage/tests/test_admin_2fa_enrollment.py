@@ -197,6 +197,9 @@ def test_exhaustion_or_removal_of_recovery_never_disables_policy(client, staff):
     assert reverse('admin_2fa_verify') in client.get('/admin/')['Location']
     recovery.delete()
     TOTPDevice.objects.filter(user=staff).delete()
+    blocked = client.get(reverse('admin_2fa_verify'))
+    assert 'recuperação supervisionada' in blocked.content.decode()
+    assert blocked.context['enroll_url'] is None
     assert reverse('admin_2fa_verify') in client.get('/admin/')['Location']
     authorize_enrollment(staff, replace=True)
     assert reverse('admin_2fa_verify') in client.get(reverse('admin_2fa_enroll'))['Location']
