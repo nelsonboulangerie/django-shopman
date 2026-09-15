@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test'
 
 test('manifesto, service worker e metadados iOS são servidos pelo build', async ({ page, request }) => {
-  const manifestResponse = await request.get('/manifest.webmanifest')
+  const manifestResponse = await request.get('/manifest.webmanifest?v=3')
   expect(manifestResponse.ok()).toBe(true)
   expect(manifestResponse.headers()['content-type']).toContain('application/manifest+json')
-  expect(manifestResponse.headers()['cache-control']).toBe('public, max-age=3600')
+  expect(manifestResponse.headers()['cache-control']).toBe('private, no-store')
 
   const manifest = await manifestResponse.json()
   expect(manifest.icons).toEqual(expect.arrayContaining([
@@ -18,7 +18,7 @@ test('manifesto, service worker e metadados iOS são servidos pelo build', async
   expect(workerResponse.headers()['cache-control']).toBe('no-cache, no-store, must-revalidate')
 
   await page.goto('/')
-  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/manifest.webmanifest')
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/manifest.webmanifest?v=3')
   await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute('href', '/pwa/apple-touch-icon-180x180.png')
   await expect(page.locator('link[rel="apple-touch-startup-image"]')).toHaveCount(40)
 })

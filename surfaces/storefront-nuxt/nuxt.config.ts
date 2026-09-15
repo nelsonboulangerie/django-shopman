@@ -69,7 +69,7 @@ export default defineNuxtConfig({
         { name: 'apple-mobile-web-app-status-bar-style', content: 'default' }
       ],
       link: [
-        { rel: 'manifest', href: '/manifest.webmanifest' },
+        { rel: 'manifest', href: '/manifest.webmanifest?v=3' },
         { rel: 'icon', href: '/pwa/favicon.svg', type: 'image/svg+xml' },
         { rel: 'icon', href: '/pwa/favicon.ico', sizes: 'any' },
         { rel: 'apple-touch-icon', href: '/pwa/apple-touch-icon-180x180.png' },
