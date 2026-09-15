@@ -662,3 +662,18 @@ def test_auth_request_code_falls_back_to_remote_addr_without_proxy(monkeypatch, 
 
     assert response.status_code == 200
     assert sent["ip_address"] == "127.0.0.1"
+
+
+def test_auth_request_code_does_not_send_to_invented_mobile(monkeypatch, client):
+    from unittest.mock import Mock
+
+    from shopman.storefront.api import auth as auth_api
+
+    send = Mock()
+    monkeypatch.setattr(auth_api, "HAS_AUTH", True)
+    monkeypatch.setattr(auth_api.auth_service, "request_code", send)
+    response = client.post("/api/v1/auth/request-code/", {
+        "target": "(43) 9840-4900", "delivery_method": "whatsapp",
+    }, content_type="application/json")
+    assert response.status_code == 400
+    send.assert_not_called()

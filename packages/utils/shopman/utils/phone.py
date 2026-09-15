@@ -112,6 +112,28 @@ def _prepare_phone_digits_for_parse(
     return digits, has_plus
 
 
+
+def normalize_user_phone(value: str, default_region: str = "BR") -> str:
+    """Normalize explicit user input without inventing a missing mobile digit.
+
+    Legacy repairs remain available to known integration/import callers through
+    normalize_phone. An ambiguous phone typed by a person must be corrected by
+    that person before it becomes an authentication or notification identity.
+    """
+    raw = (value or "").strip()
+    digits = re.sub(r"[^\d]", "", raw)
+    brazilian = default_region == "BR" and (not raw.startswith("+") or raw.startswith("+55"))
+    if brazilian:
+        national = digits[2:] if digits.startswith("55") and len(digits) > 11 else digits
+        if national.startswith("0") and len(national) in (11, 12):
+            national = national[1:]
+        if _is_legacy_brazilian_mobile_national(national):
+            return ""
+        if len(national) not in (10, 11):
+            return ""
+    return normalize_phone(raw, default_region=default_region, repair_brazilian_plus=False)
+
+
 def normalize_phone(
     value: str,
     default_region: str = "BR",

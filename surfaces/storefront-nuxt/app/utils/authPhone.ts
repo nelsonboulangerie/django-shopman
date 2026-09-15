@@ -18,13 +18,6 @@ function normalizeInternationalPhone (value: string): string {
   return digits ? `+${digits}` : ''
 }
 
-function repairLegacyBrazilianMobile (digits: string): string {
-  if (digits.length !== 10) return digits
-  const ddd = Number(digits.slice(0, 2))
-  if (ddd < 11) return digits
-  return digits[2] === '9' ? `${digits.slice(0, 2)}9${digits.slice(2)}` : digits
-}
-
 export function normalizeAuthPhone (value: string, region: AuthPhoneRegion, defaultDdd = ''): string {
   const trimmed = value.trim()
   if (!trimmed) return ''
@@ -50,8 +43,9 @@ export function normalizeAuthPhone (value: string, region: AuthPhoneRegion, defa
     digits = `${ddd}${digits}`
   }
 
-  digits = repairLegacyBrazilianMobile(digits)
-  digits = digits.slice(0, 11)
+  // An incomplete mobile identifies no verified recipient. Ask for correction.
+  if (digits.length === 10 && digits[2] === '9') return ''
+  if (digits.length > 11) return ''
   return digits ? `+55${digits}` : ''
 }
 
