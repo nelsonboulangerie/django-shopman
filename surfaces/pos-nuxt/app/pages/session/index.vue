@@ -421,14 +421,15 @@ async function confirmClose() {
              propósito — é gesto de preparação da estação, não de venda. -->
         <UiButton
           variant="ghost"
-          size="icon-sm"
-          class="shrink-0"
+          size="sm"
+          class="shrink-0 gap-2"
           :class="pos ? '' : 'ml-auto'"
           aria-label="Abrir tela do cliente"
           title="Tela do cliente: segundo monitor da mesma máquina e navegador (não conecta outro tablet)"
           @click="openCustomerDisplay"
         >
           <Icon name="lucide:monitor" class="size-5" />
+          <span class="hidden sm:inline">Tela do cliente</span>
         </UiButton>
       </header>
 

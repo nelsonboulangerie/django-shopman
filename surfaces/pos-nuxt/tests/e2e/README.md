@@ -7,11 +7,14 @@ dependem de dados de negócio**.
 ```bash
 npm run test:e2e          # sobe mock + build + serve + roda os specs
 npm run test:e2e -- --ui  # modo interativo
+# Para rodar em paralelo com outra sessão local:
+POS_E2E_PORT=33002 POS_E2E_MOCK_PORT=38798 npm run test:e2e
 ```
 
 O `playwright.config.ts` faz `nuxt build && node .output/server/index.mjs` com
 `NUXT_APP_BASE_URL=/` (produção usa `/pos/`) e aponta o BFF ao mock via
-`NUXT_DJANGO_BASE_URL`. `reuseExistingServer` evita rebuild a cada corrida local.
+`NUXT_DJANGO_BASE_URL`. Cada execução sobe e encerra servidores próprios; as
+variáveis `POS_E2E_PORT` e `POS_E2E_MOCK_PORT` isolam execuções concorrentes.
 
 ## Coberto aqui
 
@@ -20,6 +23,8 @@ O `playwright.config.ts` faz `nuxt build && node .output/server/index.mjs` com
   desabilitado até preencher.
 - **`resilience.spec.ts`** — banner offline: `<OfflineBanner>` (global, do operator-kit)
   aparece ao cair a rede e some ao voltar.
+- **`customer-display.spec.ts`** — transporte real por `BroadcastChannel` entre
+  duas janelas e renderização das fases venda/resultado sem gate de operador.
 
 ## Fora daqui (precisa de Django real — reviewer local)
 
