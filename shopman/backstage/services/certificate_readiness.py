@@ -10,18 +10,37 @@ logger = logging.getLogger(__name__)
 
 
 def certificate_issue(*, path: str = "", pfx_base64: str = "", password: str = "", pfx: bool = False) -> str:
-    """An empty result means parseable and currently valid, not remotely trusted."""
+    """An empty result means locally usable and currently valid, not remotely trusted."""
     try:
         from cryptography import x509
+        from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.serialization import pkcs12
 
         data = Path(path).read_bytes() if path else base64.b64decode(pfx_base64, validate=True)
         if pfx:
-            key, certificate, _ = pkcs12.load_key_and_certificates(data, password.encode() if password else None)
-            if key is None or certificate is None:
+            private_key, certificate, _ = pkcs12.load_key_and_certificates(
+                data,
+                password.encode() if password else None,
+            )
+            if private_key is None:
+                return "missing_private_key"
+            if certificate is None:
                 return "invalid"
         else:
             certificate = x509.load_pem_x509_certificate(data)
+            if b"PRIVATE KEY-----" not in data:
+                return "missing_private_key"
+            private_key = serialization.load_pem_private_key(data, password=None)
+        certificate_public_key = certificate.public_key().public_bytes(
+            serialization.Encoding.DER,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        private_public_key = private_key.public_key().public_bytes(
+            serialization.Encoding.DER,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        if certificate_public_key != private_public_key:
+            return "private_key_mismatch"
         now = datetime.now(UTC)
         if now < certificate.not_valid_before_utc:
             return "not_yet_valid"

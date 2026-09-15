@@ -91,7 +91,7 @@ Obtenha na Conta Efi:
 EFI_SANDBOX=true
 EFI_CLIENT_ID=<homologacao client id>
 EFI_CLIENT_SECRET=<homologacao client secret>
-EFI_CERTIFICATE_PATH=/app/secrets/efi-homologacao.p12
+EFI_CERTIFICATE_PATH=/app/secrets/efi-homologacao.pem
 EFI_PIX_KEY=<chave pix de homologacao/producao>
 EFI_WEBHOOK_TOKEN=<shared secret definido para o webhook>
 EFI_MTLS_HEADER=HTTP_X_SSL_CLIENT_VERIFY
@@ -198,10 +198,14 @@ opcional:
 2. rotacionar o `EFI_WEBHOOK_TOKEN` significa **recadastrar a URL na Efí**, já
    que o segredo é parte dela.
 
-O certificado precisa existir no filesystem do container no caminho de
-`EFI_CERTIFICATE_PATH`. Se o provedor de deploy nao monta arquivo secreto,
-converta isso em etapa de build/runtime segura antes de habilitar `payment_efi`.
-Nao commite `.p12`, `.pem` ou dumps base64 do certificado.
+O arquivo no caminho de `EFI_CERTIFICATE_PATH` precisa ser PEM e conter o
+certificado **e a chave privada correspondente**, pois o runtime Efí o carrega
+com `SSLContext.load_cert_chain`. Se a Efí fornecer `.p12`/`.pfx`, converta-o
+para esse PEM combinado fora do repositório, preserve a senha durante a
+conversão e valide o arquivo resultante com `make production-readiness`. Se o
+provedor de deploy não monta arquivo secreto, transforme essa conversão em uma
+etapa segura de build/runtime antes de habilitar `payment_efi`. Não commite
+`.p12`, `.pfx`, `.pem` ou dumps base64 do certificado.
 
 ## 5. Stripe
 

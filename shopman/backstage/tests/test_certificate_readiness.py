@@ -1,6 +1,8 @@
 import base64
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import serialization
 from django.test import override_settings
 
 from shopman.backstage.services.certificate_readiness import certificate_issue
@@ -24,6 +26,28 @@ def test_invalid_file_and_password_are_sanitized(tmp_path):
     data = base64.b64encode(synthetic_certificate(pfx=True, password=b"test-secret")).decode()
     assert certificate_issue(pfx_base64=data, pfx=True, password="wrong") == "invalid"
     assert certificate_issue(pfx_base64=data, pfx=True, password="test-secret") == ""
+
+
+@pytest.mark.parametrize("pfx", [False, True])
+def test_certificate_without_private_key_is_rejected(tmp_path, pfx):
+    path = tmp_path / "certificate"
+    path.write_bytes(synthetic_certificate(pfx=pfx, include_private_key=False))
+    assert certificate_issue(path=str(path), pfx=pfx) == "missing_private_key"
+
+
+def test_pem_private_key_must_match_certificate(tmp_path):
+    certificate_bundle = synthetic_certificate()
+    other_bundle = synthetic_certificate()
+    certificate = x509.load_pem_x509_certificate(certificate_bundle)
+    other_key = serialization.load_pem_private_key(other_bundle, password=None)
+    mismatched_bundle = certificate.public_bytes(serialization.Encoding.PEM) + other_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption(),
+    )
+    path = tmp_path / "mismatched.pem"
+    path.write_bytes(mismatched_bundle)
+    assert certificate_issue(path=str(path)) == "private_key_mismatch"
 
 
 def test_expired_certificates_make_readiness_unsafe(tmp_path):
