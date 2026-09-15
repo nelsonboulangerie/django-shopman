@@ -822,7 +822,7 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
     cell = row["cells"][0]
     assert set(cell) == {
         "surface_ref", "in_listing", "is_published", "is_sellable", "available",
-        "price_q", "price_display", "sync_status", "sync_error", "synced_at", "action",
+        "price_q", "price_display", "sync_status", "sync_error", "synced_at", "action", "pause_audit",
     }
 
     assert set(row["social"]) == {

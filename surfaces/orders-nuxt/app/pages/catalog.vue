@@ -763,6 +763,8 @@ useHead({ title: "Catálogo · Gestor" });
                   </span>
                 </button>
 
+                <span v-if="cell.pause_audit" class="max-w-40 text-xs text-muted-foreground">{{ cell.pause_audit }}</span>
+
                 <!-- Feed não vende: sem divisória nem preço — só a pausa por item. -->
                 <template v-if="isCellTransactional(cell)">
                 <!-- divisória: deixa claro que toggle e preço são controles distintos -->
