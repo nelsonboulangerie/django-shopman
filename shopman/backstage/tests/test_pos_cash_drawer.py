@@ -232,10 +232,14 @@ def test_abrir_sem_venda_nao_mexe_no_dinheiro_esperado(operator):
 def test_endpoint_exige_permissao_de_operar_pdv(client):
     user = get_user_model().objects.create_user(username="curioso", password="x")
     client.force_login(user)
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
 
     response = client.post(
         reverse("api-backstage-pos-cash-drawer-open"),
-        data={"reason": "quero ver"},
+        data={"client_request_id": "test-cash_drawer-218", "reason": "quero ver"},
         content_type="application/json",
     )
     assert response.status_code in (401, 403)
@@ -244,11 +248,15 @@ def test_endpoint_exige_permissao_de_operar_pdv(client):
 def test_endpoint_registra_e_devolve_ok(client, operator):
     _grant_pos_perm(operator)
     client.force_login(operator)
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
 
 
     response = client.post(
         reverse("api-backstage-pos-cash-drawer-open"),
-        data={"reason": "Troco"},
+        data={"client_request_id": "test-cash_drawer-234", "reason": "Troco"},
         content_type="application/json",
     )
 
