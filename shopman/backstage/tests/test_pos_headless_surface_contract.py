@@ -90,6 +90,8 @@ class POSHeadlessSurfaceContractTests(TestCase):
         _grant_pos_perm(self.operator)
         self.client.force_login(self.operator)
         self.terminal = Terminal.default()
+        from shopman.backstage.tests.pos_test_runtime import bind_station
+        bind_station(self.client, self.terminal.ref)
         self.shift = cash.open_shift(operator=self.operator, terminal=self.terminal, float_q=0)
 
     def test_products_expose_sold_out_from_stock_scope(self) -> None:
@@ -278,7 +280,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         """
         response = self.client.post(
             "/api/v1/backstage/pos/cash/open/",
-            {"opening_amount": "0,00", "terminal_ref": self.terminal.ref},
+            {"opening_amount": "0,00", "terminal_ref": self.terminal.ref, "client_request_id": "opening-test"},
             content_type="application/json",
         )
 

@@ -55,6 +55,33 @@
 
 ## Detalhes
 
+### Gate PWA do Storefront
+
+Valida o PWA instalável do Storefront com Node 22. O alvo faz o build, verifica o
+manifesto Nitro e seus assets, inspeciona o service worker e roda o smoke
+Playwright de registro, fallback offline e ausência do convite no checkout.
+
+```bash
+make pwa app=storefront
+```
+
+Falha se o precache contiver `/api/`, `/events/` ou `/admin/`, se houver HTML
+além de `offline.html`, se o cache de runtime não estiver restrito a imagens de
+produto e fontes, se o `/sw.js` perder `no-cache`, se os metadados iOS estiverem
+incompletos ou se os assets obrigatórios estiverem ausentes.
+
+Para regenerar os assets antes do gate:
+
+```bash
+cd surfaces/storefront-nuxt
+npm run pwa:assets
+```
+
+O comando usa `brand/nelson-mark.svg` como fonte única dos ícones e o wordmark
+horizontal de `brand/nelson-logo.svg` apenas na composição dos splash screens.
+O splash aprovado usa kraft virgem claro `#D0A66E`, tinta marrom `#54321F` e
+uma granulação sutil de papel; as cores do manifesto continuam vindo da Loja.
+
 ### release_expired_holds
 
 **App:** `shopman.stockman`

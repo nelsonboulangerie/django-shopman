@@ -49,7 +49,7 @@ const themeColor = computed(() => {
   const value = route.query.theme
   const previewNeutral = (Array.isArray(value) ? value[0] : value) === 'neutral'
   if (previewNeutral) return '#85786c'
-  return '#531d22'
+  return session.shop.value?.theme_color || '#7C3A40'
 })
 
 // Footer global (âncora de contato/info) em todas as páginas, EXCETO o checkout —
@@ -59,9 +59,11 @@ const hideFooter = computed(() => route.path.startsWith('/finalizar'))
 // SEO global: nome do site = marca server-driven (tenant-neutral, não theming).
 // titleTemplate evita duplicar a marca na home (onde o título JÁ é a marca).
 const brandName = computed(() => session.shop.value?.brand_name || NELSON_FALLBACK_SHOP.brand_name)
-useHead({
-  titleTemplate: title => (title && title !== brandName.value ? `${title} | ${brandName.value}` : brandName.value)
-})
+const shortName = computed(() => session.shop.value?.short_name || NELSON_FALLBACK_SHOP.short_name)
+useHead(() => ({
+  titleTemplate: title => (title && title !== brandName.value ? `${title} | ${brandName.value}` : brandName.value),
+  meta: [{ name: 'apple-mobile-web-app-title', content: shortName.value }]
+}))
 // PREVIEW DO LINK — todo link que a casa manda vira CARTÃO, não URL crua.
 //
 // Só a home declarava og:title/description/image. Todo o resto — o `/a` do login,
@@ -119,6 +121,8 @@ useSeoMeta({
       <SearchOverlay />
       <SubstituteSheet />
       <OfflineBanner />
+      <PwaInstallInvite :copy="shellHome?.home?.pwa_copy" />
+      <PwaUpdateToast :copy="shellHome?.home?.pwa_copy" />
     </ClientOnly>
     <!-- Fita de ambiente: FLUTUA no canto (fixed), então mora aqui com os
          overlays e não no fluxo. Some sozinha em produção — o servidor devolve

@@ -326,6 +326,7 @@ export interface ShopDesignTokensProjection {
 export interface ShopProjection {
   brand_name: string
   legal_name: string
+  short_name: string
   tagline: string
   description: string
   description_html: string
@@ -428,6 +429,23 @@ export interface HomeSectionsCopyProjection {
   faq_heading: CopyEntryProjection
 }
 
+export interface PwaCopyProjection {
+  offline_title: CopyEntryProjection
+  offline_message: CopyEntryProjection
+  offline_retry_cta: CopyEntryProjection
+  install_title: CopyEntryProjection
+  install_message: CopyEntryProjection
+  install_cta: CopyEntryProjection
+  install_dismiss_cta: CopyEntryProjection
+  ios_title: CopyEntryProjection
+  ios_message: CopyEntryProjection
+  ios_share_step: CopyEntryProjection
+  ios_add_step: CopyEntryProjection
+  ios_done_cta: CopyEntryProjection
+  update_title: CopyEntryProjection
+  update_cta: CopyEntryProjection
+}
+
 export interface FAQItemProjection {
   ref: string
   question: string
@@ -489,6 +507,7 @@ export interface HomeProjection {
   hero_copy: HomeHeroCopyProjection
   sections_copy: HomeSectionsCopyProjection
   auth_copy: AuthCopyProjection
+  pwa_copy: PwaCopyProjection
   shop: ShopProjection
   shop_status: ShopStatusProjection
   notices: HomeNoticeProjection[]

@@ -38,6 +38,10 @@ def test_home_projection_keeps_operational_status_single_sourced(rf):
 
     assert {"is_open", "opens_at", "closes_at"}.isdisjoint(payload["omotenashi"])
     assert set(payload["shop_status"]) == {"is_open", "label", "message", "opens_at", "closes_at"}
+    assert payload["shop"]["short_name"] == shop.short_name
+    assert payload["shop"]["legal_name"] == (shop.legal_name or shop.name)
+    assert payload["pwa_copy"]["install_cta"]["title"] == "Instalar"
+    assert payload["pwa_copy"]["offline_message"]["message"].startswith("Sem conexão agora")
     assert "notices" in payload
     faq_by_ref = {item["ref"]: item for item in payload["faq"]}
     assert {"delivery", "hours", "curated-posso-encomendar-para-amanha"} <= faq_by_ref.keys()

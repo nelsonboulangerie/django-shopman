@@ -21,6 +21,7 @@ class SocialLinkProjection:
 class ShopProjection:
     brand_name: str
     legal_name: str
+    short_name: str
     tagline: str
     description: str
     description_html: str
@@ -78,6 +79,7 @@ def build_shop_projection(shop: Shop) -> ShopProjection:
     return ShopProjection(
         brand_name=shop.brand_name or shop.name,
         legal_name=shop.legal_name or shop.name,
+        short_name=shop.short_name,
         tagline=shop.tagline,
         description=shop.description,
         description_html=shop.description_html,
