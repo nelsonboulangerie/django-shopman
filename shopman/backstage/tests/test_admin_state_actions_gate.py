@@ -265,48 +265,24 @@ def test_exportar_e_ler(client):
 
 
 @pytest.mark.django_db
-def test_a_chave_do_TOTP_nao_aparece_na_tela_do_dispositivo():
-    """`OTP_ADMIN_HIDE_SENSITIVE_DATA` era `False` — o default da django-otp.
-
-    Quem lê a chave de outro usuário gera os códigos dele, o que ANULA o step-up de
-    2FA como controle de segurança: o segundo fator vira o primeiro, para quem já
-    está dentro. Hoje só superusuário alcança a tela, mas o hub de configurações já
-    oferece o card — a intenção é abrir.
-    """
+def test_otp_devices_have_no_model_admin_bypass():
     from django.contrib import admin as django_admin
+    from django_otp.plugins.otp_static.models import StaticDevice
     from django_otp.plugins.otp_totp.models import TOTPDevice
 
-    dono = User.objects.create_superuser("totp-dono", "t@test.com", "pw")
-    dispositivo = TOTPDevice.objects.create(user=dono, name="celular", confirmed=True)
-    model_admin = django_admin.site._registry[TOTPDevice]
-
-    campos = {
-        campo
-        for _titulo, opcoes in model_admin.get_fieldsets(None, dispositivo)
-        for campo in opcoes["fields"]
-    }
-
-    assert "key" not in campos, "o segredo TOTP está na tela"
-    assert "qrcode_link" not in campos, "o QR de enrollment está na tela"
+    assert not django_admin.site.is_registered(TOTPDevice)
+    assert not django_admin.site.is_registered(StaticDevice)
 
 
 @pytest.mark.django_db
-def test_os_titulos_do_TOTP_estao_em_portugues():
-    """A tradução vive num `get_fieldsets`, e não num atributo `fieldsets`.
+def test_settings_links_to_owner_enrollment_instead_of_device_crud():
+    from django.urls import reverse
 
-    O `TOTPDeviceAdmin` do django_otp sobrescreve `get_fieldsets()` e ignora
-    `self.fieldsets` — então o atributo que existia aqui era código morto, e a tela
-    seguiu em inglês desde sempre. Ninguém percebeu porque a tela é superusuário-only.
-    """
-    from django.contrib import admin as django_admin
-    from django_otp.plugins.otp_totp.models import TOTPDevice
+    from shopman.backstage.projections.settings_hub import build_settings_hub
 
-    model_admin = django_admin.site._registry[TOTPDevice]
-
-    titulos = [titulo for titulo, _opcoes in model_admin.get_fieldsets(None, None)]
-
-    assert "Identificação" in titulos
-    assert "Identity" not in titulos
+    cards = [card for group in build_settings_hub()["groups"] for card in group["cards"]]
+    otp = next(card for card in cards if card["label"] == "Verificação em duas etapas")
+    assert otp["url"] == reverse("admin_2fa_enroll")
 
 
 # ── Recado para a onda 4 ─────────────────────────────────────────────────────

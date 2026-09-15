@@ -110,16 +110,20 @@ def test_verify_rejects_open_redirect(client, admin_user):
 
 
 @pytest.mark.django_db
-def test_setup_admin_totp_command_enrolls_and_is_idempotent(admin_user):
-    call_command("setup_admin_totp", "admin2fa")
-    assert TOTPDevice.objects.filter(user=admin_user, confirmed=True).count() == 1
+def test_setup_admin_totp_command_prepares_without_secrets_or_revocation(admin_user):
+    from io import StringIO
 
-    # without --force, refuses to duplicate
     from django.core.management.base import CommandError
-
+    output = StringIO()
+    call_command("setup_admin_totp", "admin2fa", stdout=output)
+    pending = TOTPDevice.objects.get(user=admin_user)
+    assert not pending.confirmed
+    assert pending.key not in output.getvalue()
+    assert "otpauth" not in output.getvalue()
+    pending.confirmed = True
+    pending.save()
     with pytest.raises(CommandError):
-        call_command("setup_admin_totp", "admin2fa")
-
-    # --force replaces (still exactly one)
-    call_command("setup_admin_totp", "admin2fa", "--force")
-    assert TOTPDevice.objects.filter(user=admin_user, confirmed=True).count() == 1
+        call_command("setup_admin_totp", "admin2fa", stdout=output)
+    call_command("setup_admin_totp", "admin2fa", "--force", stdout=output)
+    assert TOTPDevice.objects.filter(pk=pending.pk, confirmed=True).exists()
+    assert TOTPDevice.objects.filter(user=admin_user, confirmed=False).count() == 1

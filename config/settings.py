@@ -242,6 +242,7 @@ INSTALLED_APPS = [
     # 2FA (django-otp) — TOTP devices for admin step-up (gated by SHOPMAN_ADMIN_REQUIRE_2FA)
     "django_otp",
     "django_otp.plugins.otp_totp",
+    "django_otp.plugins.otp_static",
     # Shopman core apps
     "shopman.refs",
     "shopman.utils",
@@ -1664,9 +1665,9 @@ SHOPMAN_SURFACE_URLS = {
 SHOPMAN_MENUBOARD_PUBLIC = os.environ.get("SHOPMAN_MENUBOARD_PUBLIC", "false").strip().lower() == "true"
 
 # 2FA obrigatório no Admin (django-otp/TOTP) — gated por env. Default OFF para não
-# trancar fora antes do enrollment; ligar (env="true") só depois de cada superuser
-# ter um TOTPDevice confirmado (management command `setup_admin_totp`). Em PROD,
-# combinar com IP allowlist no ingress do admin. (OPERATOR-APPS-PLAN Fase 3 · WP-A1.)
+# trancar fora antes da inscrição. `setup_admin_totp` apenas prepara a conta;
+# ligar só após prova no navegador do autenticador e da recuperação de TODOS os
+# staff ativos e `check_admin_2fa_ready` verde. Nenhuma ativação automática.
 SHOPMAN_ADMIN_REQUIRE_2FA = (os.environ.get("SHOPMAN_ADMIN_REQUIRE_2FA", "") or "").strip().lower() in {
     "1",
     "true",

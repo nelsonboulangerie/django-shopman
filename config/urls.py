@@ -17,7 +17,7 @@ from shopman.backstage.admin_console.pos_counter_agent import (
     pos_counter_agent_view,
 )
 from shopman.backstage.admin_console.settings_hub import settings_hub_view
-from shopman.backstage.views.two_factor import admin_2fa_verify
+from shopman.backstage.views.two_factor import admin_2fa_enroll, admin_2fa_verify
 from shopman.shop.views.admin_host import admin_host_root
 from shopman.shop.views.health import HealthCheckView, ReadyCheckView
 
@@ -100,6 +100,7 @@ urlpatterns = [
         name="admin_console_settings_scope",
     ),
     path("admin/2fa/verify/", admin_2fa_verify, name="admin_2fa_verify"),
+    path("admin/2fa/enroll/", admin_2fa_enroll, name="admin_2fa_enroll"),
     path("admin/", admin.site.urls),
     # OpenAPI
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
