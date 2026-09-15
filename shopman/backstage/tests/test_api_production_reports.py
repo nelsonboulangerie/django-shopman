@@ -141,10 +141,21 @@ def test_reports_payload_shape(client, manager, report_data):
     assert finished_row["qty_loss"] == "2"
     assert finished_row["yield_rate"] == "90%"
 
-    assert [row["operator_ref"] for row in reports["operator_rows"]] == ["ana"]
-    assert reports["waste_rows"][0]["recipe_ref"] == "report-api-pao"
+    assert reports["operator_rows"] == []
+    assert reports["waste_rows"] == []
     assert {recipe["ref"] for recipe in reports["available_recipes"]} == {"report-api-pao"}
     assert {position["ref"] for position in reports["available_positions"]} == {"forno"}
+
+    productivity = client.get(
+        reverse("api-backstage-production-reports"),
+        {
+            "date_from": report_data["today"].isoformat(),
+            "date_to": report_data["today"].isoformat(),
+            "report_kind": "operator_productivity",
+        },
+    ).json()["reports"]
+    assert [row["operator_ref"] for row in productivity["operator_rows"]] == ["ana"]
+    assert productivity["history_rows"] == []
 
 
 @pytest.mark.django_db
@@ -160,6 +171,37 @@ def test_reports_filters_reduce_history(client, manager, report_data):
     )
     rows = response.json()["reports"]["history_rows"]
     assert [row["ref"] for row in rows] == [report_data["planned"].ref]
+
+
+@pytest.mark.django_db
+def test_reports_paginate_with_filter_bound_cursor_and_server_sort(client, manager, report_data):
+    client.force_login(manager)
+    url = reverse("api-backstage-production-reports")
+    query = {
+        "date_from": report_data["today"].isoformat(),
+        "date_to": report_data["today"].isoformat(),
+        "report_kind": "history",
+        "sort": "quantity_desc",
+        "page_size": 1,
+    }
+
+    first = client.get(url, query)
+    assert first.status_code == 200
+    payload = first.json()
+    assert payload["pagination"]["total"] == 2
+    assert payload["reports"]["history_rows"][0]["ref"] == report_data["planned"].ref
+    assert payload["reports"]["operator_rows"] == []
+    cursor = payload["pagination"]["next_cursor"]
+
+    second = client.get(url, {**query, "cursor": cursor})
+    assert second.status_code == 200
+    assert second.json()["reports"]["history_rows"][0]["ref"] == report_data["finished"].ref
+    assert second.json()["pagination"]["previous_cursor"]
+
+    tampered = client.get(url, {**query, "cursor": f"{cursor}x"})
+    assert tampered.status_code == 400
+    mismatched = client.get(url, {**query, "operator_ref": "ana", "cursor": cursor})
+    assert mismatched.status_code == 400
 
 
 @pytest.mark.django_db
@@ -215,7 +257,8 @@ def test_reports_csv_download(client, manager, report_data):
     assert response["Content-Type"] == "text/csv; charset=utf-8"
     disposition = response["Content-Disposition"]
     assert disposition.startswith('attachment; filename="producao_history_')
-    text = response.content.decode("utf-8-sig")
+    assert response.streaming
+    text = b"".join(response.streaming_content).decode("utf-8-sig")
     assert "Qtd planejada" in text
     assert report_data["finished"].ref in text
 

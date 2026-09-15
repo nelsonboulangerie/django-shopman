@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from decimal import ROUND_CEILING, Decimal
 from typing import Literal
@@ -2216,6 +2216,64 @@ def build_production_reports(
     )
 
 
+_REPORT_ROWS_FIELD = {
+    "history": "history_rows",
+    "operator_productivity": "operator_rows",
+    "recipe_waste": "waste_rows",
+    "quality": "quality_rows",
+}
+
+
+def sort_production_reports(
+    reports: ProductionReportsProjection,
+    sort: str,
+) -> ProductionReportsProjection:
+    """Sort only the selected operational report with stable row tie-breakers."""
+
+    field = _REPORT_ROWS_FIELD[reports.filters.report_kind]
+    rows = getattr(reports, field)
+    if sort == "default":
+        return reports
+
+    descending = sort.endswith("_desc")
+
+    def row_key(row):
+        if sort.startswith("date_"):
+            primary = row.date
+        elif sort.startswith("name_"):
+            primary = getattr(row, "operator_name", getattr(row, "recipe_name", ""))
+            primary = primary.casefold()
+        elif reports.filters.report_kind == "history":
+            primary = Decimal(row.qty_planned or "0")
+        elif reports.filters.report_kind == "operator_productivity":
+            primary = Decimal(row.qty_total or "0")
+        elif reports.filters.report_kind == "recipe_waste":
+            primary = Decimal(row.loss_total or "0")
+        else:
+            primary = Decimal(row.quantity or "0")
+        return primary, repr(row)
+
+    return replace(reports, **{field: tuple(sorted(rows, key=row_key, reverse=descending))})
+
+
+def paginate_production_reports(
+    reports: ProductionReportsProjection,
+    *,
+    sort: str,
+    offset: int,
+    page_size: int,
+) -> tuple[ProductionReportsProjection, int]:
+    """Return one bounded page; inactive row collections keep their typed empty shape."""
+
+    reports = sort_production_reports(reports, sort)
+    field = _REPORT_ROWS_FIELD[reports.filters.report_kind]
+    rows = getattr(reports, field)
+    page = rows[offset : offset + page_size]
+    page_rows = dict.fromkeys(_REPORT_ROWS_FIELD.values(), ())
+    page_rows[field] = page
+    return replace(reports, **page_rows), len(rows)
+
+
 # ── Internals ──────────────────────────────────────────────────────────
 
 
@@ -2789,7 +2847,7 @@ def _recipe_waste_rows(work_orders: list[WorkOrder]) -> tuple[RecipeWasteRow, ..
         )
         for recipe_ref, data in grouped.items()
     ]
-    return tuple(sorted(rows, key=lambda row: Decimal(row.loss_total or "0"), reverse=True)[:10])
+    return tuple(sorted(rows, key=lambda row: Decimal(row.loss_total or "0"), reverse=True))
 
 
 def _capacity_utilization(data: dict) -> str:

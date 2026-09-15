@@ -45,6 +45,7 @@ from decimal import Decimal
 from django.contrib.auth import login, logout
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError
+from django.http import StreamingHttpResponse
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
@@ -64,6 +65,7 @@ from shopman.backstage.api._production_filters import (
     ProductionManagementQuerySerializer,
     ProductionMiseEnPlaceQuerySerializer,
     ProductionWeighingQuerySerializer,
+    encode_report_cursor,
     report_filters,
     validated_query,
 )
@@ -113,6 +115,7 @@ from shopman.backstage.projections.production import (
     build_production_reports,
     build_production_weighing,
     build_qc_kiosk,
+    paginate_production_reports,
     resolve_production_access,
 )
 from shopman.backstage.services import (
@@ -1351,15 +1354,39 @@ class ProductionReportsView(APIView):
             selected_date=filters["date_to"],
         )
         if request.accepted_renderer.format == "csv":
-            csv_bytes = production_service.export_reports_csv(filters["report_kind"], filters)
             filename = f"producao_{filters['report_kind']}_{filters['date_from']}_{filters['date_to']}.csv"
-            return Response(
-                csv_bytes,
+            return StreamingHttpResponse(
+                production_service.iter_reports_csv(filters["report_kind"], filters),
                 content_type="text/csv; charset=utf-8",
                 headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )
         reports = build_production_reports(filters, access=access)
-        return Response({"reports": projection_data(reports)})
+        page_size = filters["page_size"]
+        page_offset = filters["page_offset"]
+        reports, total = paginate_production_reports(
+            reports,
+            sort=filters["sort"],
+            offset=page_offset,
+            page_size=page_size,
+        )
+        next_offset = page_offset + page_size
+        previous_offset = max(0, page_offset - page_size)
+        return Response(
+            {
+                "reports": projection_data(reports),
+                "pagination": {
+                    "total": total,
+                    "page_size": page_size,
+                    "sort": filters["sort"],
+                    "next_cursor": (
+                        encode_report_cursor(filters, next_offset) if next_offset < total else ""
+                    ),
+                    "previous_cursor": (
+                        encode_report_cursor(filters, previous_offset) if page_offset else ""
+                    ),
+                },
+            }
+        )
 
 
 @extend_schema_view(

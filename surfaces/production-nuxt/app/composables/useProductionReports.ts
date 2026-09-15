@@ -24,11 +24,14 @@ export function useProductionReports(filters: Ref<ReportFiltersQuery>) {
   );
 
   const reports = computed(() => data.value?.reports ?? null);
+  const pagination = computed(() => data.value?.pagination ?? null);
   const historyRows = computed(() => reports.value?.history_rows ?? []);
   const operatorRows = computed(() => reports.value?.operator_rows ?? []);
   const wasteRows = computed(() => reports.value?.waste_rows ?? []);
   const qualityRows = computed(() => reports.value?.quality_rows ?? []);
-  const availableRecipes = computed(() => reports.value?.available_recipes ?? []);
+  const availableRecipes = computed(
+    () => reports.value?.available_recipes ?? [],
+  );
   const availablePositions = computed(
     () => reports.value?.available_positions ?? [],
   );
@@ -37,6 +40,7 @@ export function useProductionReports(filters: Ref<ReportFiltersQuery>) {
 
   return {
     reports,
+    pagination,
     historyRows,
     operatorRows,
     wasteRows,

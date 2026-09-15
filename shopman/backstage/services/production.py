@@ -13,7 +13,6 @@ import logging
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
-from io import StringIO
 
 from django.utils import timezone
 from shopman.utils.spreadsheet import escape_cell
@@ -3173,18 +3172,24 @@ def _csv_safe(value) -> str:
     return escape_cell("" if value is None else str(value))
 
 
-def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
-    """Export a production report as UTF-8 BOM CSV for spreadsheet tools."""
-    from shopman.backstage.projections.production import build_production_reports
+class _StreamingCSVBuffer:
+    def write(self, value: str) -> str:
+        return value
+
+
+def iter_reports_csv(report_kind: str, filters: dict | None = None):
+    """Yield bounded CSV rows without buffering the complete download in memory."""
+    from shopman.backstage.projections.production import build_production_reports, sort_production_reports
 
     requested = dict(filters or {})
     requested["report_kind"] = report_kind
     reports = build_production_reports(requested)
-    output = StringIO()
-    writer = csv.writer(output)
+    reports = sort_production_reports(reports, str(requested.get("sort") or "default"))
+    writer = csv.writer(_StreamingCSVBuffer())
+    yield "\ufeff"
 
     if reports.filters.report_kind == "operator_productivity":
-        writer.writerow(
+        yield writer.writerow(
             [
                 "Operador",
                 "Nome",
@@ -3195,7 +3200,7 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
             ]
         )
         for row in reports.operator_rows:
-            writer.writerow(
+            yield writer.writerow(
                 [
                     _csv_safe(row.operator_ref),
                     _csv_safe(row.operator_name),
@@ -3208,7 +3213,7 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
     elif reports.filters.report_kind == "quality":
         # Sem este ramo o "quality" caía no else e exportava o HISTÓRICO —
         # o gestor baixava a tabela errada com o nome certo.
-        writer.writerow(
+        yield writer.writerow(
             [
                 "Receita",
                 "Nome",
@@ -3219,7 +3224,7 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
             ]
         )
         for row in reports.quality_rows:
-            writer.writerow(
+            yield writer.writerow(
                 [
                     _csv_safe(row.recipe_ref),
                     _csv_safe(row.recipe_name),
@@ -3230,7 +3235,7 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
                 ]
             )
     elif reports.filters.report_kind == "recipe_waste":
-        writer.writerow(
+        yield writer.writerow(
             [
                 "Receita",
                 "Nome",
@@ -3241,7 +3246,7 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
             ]
         )
         for row in reports.waste_rows:
-            writer.writerow(
+            yield writer.writerow(
                 [
                     _csv_safe(row.recipe_ref),
                     _csv_safe(row.recipe_name),
@@ -3252,7 +3257,7 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
                 ]
             )
     else:
-        writer.writerow(
+        yield writer.writerow(
             [
                 "Ref",
                 "Data",
@@ -3271,7 +3276,7 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
             ]
         )
         for row in reports.history_rows:
-            writer.writerow(
+            yield writer.writerow(
                 [
                     _csv_safe(row.ref),
                     _csv_safe(row.date),
@@ -3290,7 +3295,11 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
                 ]
             )
 
-    return ("\ufeff" + output.getvalue()).encode("utf-8")
+
+def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
+    """Compatibility helper for callers that explicitly require CSV bytes."""
+
+    return "".join(iter_reports_csv(report_kind, filters)).encode("utf-8")
 
 
 def _check_linked_order_coverage(

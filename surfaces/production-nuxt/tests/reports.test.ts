@@ -15,6 +15,9 @@ const FILTERS: ReportFiltersQuery = {
   recipe_ref: "",
   position_ref: "forno",
   operator_ref: "",
+  sort: "quantity_desc",
+  page_size: 50,
+  cursor: "next-page",
 };
 
 describe("reportKindLabel", () => {
@@ -42,6 +45,9 @@ describe("reportsQuery", () => {
       date_from: "2026-07-10",
       date_to: "2026-07-17",
       position_ref: "forno",
+      sort: "quantity_desc",
+      page_size: 50,
+      cursor: "next-page",
     });
   });
 });
@@ -56,6 +62,9 @@ describe("reportsCsvUrl", () => {
     expect(params.get("date_from")).toBe("2026-07-10");
     expect(params.get("position_ref")).toBe("forno");
     expect(params.get("recipe_ref")).toBeNull();
+    expect(params.get("sort")).toBe("quantity_desc");
+    expect(params.get("cursor")).toBeNull();
+    expect(params.get("page_size")).toBeNull();
   });
 });
 

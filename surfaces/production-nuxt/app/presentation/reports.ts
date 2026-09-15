@@ -4,7 +4,16 @@
 // linhas já chegam prontas de tela (qty_*, yield_rate, duration pré-formatados)
 // — esta camada só deriva rótulos, a query dos filtros e o link do CSV.
 
-export type ReportKind = "history" | "operator_productivity" | "recipe_waste" | "quality";
+export type ReportKind =
+  "history" | "operator_productivity" | "recipe_waste" | "quality";
+export type ReportSort =
+  | "default"
+  | "date_asc"
+  | "date_desc"
+  | "name_asc"
+  | "name_desc"
+  | "quantity_asc"
+  | "quantity_desc";
 
 export const REPORT_KINDS: readonly { kind: ReportKind; label: string }[] = [
   { kind: "history", label: "Histórico" },
@@ -16,7 +25,9 @@ export const REPORT_KINDS: readonly { kind: ReportKind; label: string }[] = [
 ] as const;
 
 export function reportKindLabel(kind: ReportKind): string {
-  return REPORT_KINDS.find((entry) => entry.kind === kind)?.label ?? "Histórico";
+  return (
+    REPORT_KINDS.find((entry) => entry.kind === kind)?.label ?? "Histórico"
+  );
 }
 
 /** Filtros da página de relatórios — espelham os query params da API. */
@@ -27,13 +38,16 @@ export interface ReportFiltersQuery {
   recipe_ref: string;
   position_ref: string;
   operator_ref: string;
+  sort: ReportSort;
+  page_size: number;
+  cursor: string;
 }
 
 /** Query object da API de relatórios — omite filtros vazios (URLs limpas). */
 export function reportsQuery(
   filters: ReportFiltersQuery,
-): Record<string, string> {
-  const query: Record<string, string> = {};
+): Record<string, string | number> {
+  const query: Record<string, string | number> = {};
   for (const [key, value] of Object.entries(filters)) {
     if (value) query[key] = value;
   }
@@ -43,8 +57,27 @@ export function reportsQuery(
 /** Link direto do download CSV (mesmo endpoint, `format=csv`). O clique é um
  *  `<a href>` comum: o navegador baixa via BFF com a sessão do operador. */
 export function reportsCsvUrl(filters: ReportFiltersQuery): string {
-  const params = new URLSearchParams({ ...reportsQuery(filters), format: "csv" });
+  const query = reportsQuery(filters);
+  delete query.cursor;
+  delete query.page_size;
+  const params = new URLSearchParams(
+    Object.entries({ ...query, format: "csv" }).map(([key, value]) => [
+      key,
+      String(value),
+    ]),
+  );
   return `/api/v1/backstage/production/reports/?${params.toString()}`;
+}
+
+export function reportDateError(dateFrom: string, dateTo: string): string {
+  if (!dateFrom || !dateTo) return "Informe as duas datas do período.";
+  const start = Date.parse(`${dateFrom}T00:00:00Z`);
+  const end = Date.parse(`${dateTo}T00:00:00Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(end))
+    return "Informe datas válidas.";
+  if (start > end) return "A data final não pode ser anterior à data inicial.";
+  const days = Math.floor((end - start) / 86_400_000) + 1;
+  return days > 93 ? "O período máximo para relatórios é de 93 dias." : "";
 }
 
 /** Capacidade do dia em rótulo calmo: null = sem capacidade configurada. */
