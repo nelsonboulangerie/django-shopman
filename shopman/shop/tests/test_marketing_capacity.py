@@ -12,7 +12,7 @@ import json
 import os
 import time
 import tracemalloc
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from django.db import connection
@@ -183,8 +183,16 @@ def test_audience_sustains_agreed_peak_with_2x_candidate_margin():
 
 
 @full_capacity
-def test_fanout_and_two_workers_sustain_20k_targets_without_cap_bypass():
+def test_fanout_and_two_workers_sustain_20k_targets_without_cap_bypass(monkeypatch):
     """Use four legal 5k lanes; never raise the per-command safety cap."""
+
+    # Capacity is not a quiet-hours policy test.  A wall-clock-dependent run
+    # used to defer every target when CI happened to execute between 20:00 and
+    # 08:00 in the shop timezone, reporting zero worker claims.  Freeze the
+    # whole graph at noon in America/Sao_Paulo so this gate measures fan-out and
+    # leasing only; the quiet-hours contract has its own focused suite.
+    fixed_now = datetime(2026, 9, 15, 15, 0, tzinfo=UTC)
+    monkeypatch.setattr(timezone, "now", lambda: fixed_now)
 
     assert MAX_TARGETS_PER_COMMAND == 5_000
     queue_started = time.perf_counter()
