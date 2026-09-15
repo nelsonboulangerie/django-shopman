@@ -64,13 +64,14 @@ def get_access_token(*, force: bool = False) -> str | None:
                     "User-Agent": USER_AGENT,
                 },
                 timeout=int(cfg.get("timeout") or 30),
+                allow_redirects=False,
             )
         except requests.RequestException as exc:
-            logger.warning("iFood OAuth: request falhou: %s", exc)
+            logger.warning("iFood OAuth: request falhou (%s)", type(exc).__name__)
             return None
 
         if resp.status_code != 200:
-            logger.warning("iFood OAuth: HTTP %s: %s", resp.status_code, resp.text[:300])
+            logger.warning("iFood OAuth: HTTP %s", resp.status_code)
             return None
 
         try:
@@ -82,7 +83,7 @@ def get_access_token(*, force: bool = False) -> str | None:
         token = body.get("accessToken") or body.get("access_token")
         expires_in = int(body.get("expiresIn") or body.get("expires_in") or 0)
         if not token:
-            logger.warning("iFood OAuth: resposta sem accessToken: %s", str(body)[:200])
+            logger.warning("iFood OAuth: resposta sem accessToken")
             return None
 
         _cache["token"] = token

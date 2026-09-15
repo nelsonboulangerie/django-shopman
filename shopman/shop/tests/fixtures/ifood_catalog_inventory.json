@@ -1,0 +1,12 @@
+[
+  {"id":"category-bread","name":"Pães","items":[
+    {"id":"item-baguette","productId":"product-baguette","name":"Baguete no iFood","externalCode":"BG-1"},
+    {"id":"item-croissant-unit","productId":"product-croissant","name":"Croissant unidade","externalCode":"CR-1"},
+    {"id":"item-without-code","productId":"product-other","name":"Baguete","externalCode":""}
+  ]},
+  {"id":"category-breakfast","name":"Café da manhã","items":[
+    {"id":"item-croissant-breakfast","productId":"product-croissant","name":"Croissant café","externalCode":"CR-1"},
+    {"id":"item-unknown","productId":"product-unknown","name":"Baguete","externalCode":"OTHER"}
+  ]},
+  {"id":"category-empty","name":"Categoria vazia","items":[]}
+]

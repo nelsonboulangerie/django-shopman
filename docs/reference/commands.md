@@ -31,6 +31,9 @@
 | [`diagnose_marketing`](#diagnose_marketing) | shop | Diagnóstico | Resume outbox/ledger/alertas sem PII, escrita ou provider |
 | [`process_marketing_outbox`](#process_marketing_outbox) | shop | Worker | Reconcilia e entrega intents commitadas à fila durável |
 | [`process_marketing_delivery`](#process_marketing_delivery) | shop | Worker | Processa destinos com leases, outcomes e reconciliação segura |
+| [`capture_ifood_catalog`](#capture_ifood_catalog) | shop | Diagnóstico | Captura catálogo por GET em arquivo privado, sem escrita remota |
+| [`prepare_ifood_catalog_review`](#prepare_ifood_catalog_review) | shop | Diagnóstico | Prepara revisão de snapshot completo, sem HTTP ou gravações |
+| [`reconcile_ifood_catalog`](#reconcile_ifood_catalog) | shop | Diagnóstico | Compara inventário local iFood com SKUs, sem HTTP ou gravações |
 | [`inject_ifood_order`](#inject_ifood_order) | shop | Dev | Injeta pedido iFood simulado pela ingestão canônica (apenas DEBUG) |
 | [`reconcile_financial_day`](#reconcile_financial_day) | backstage | Operação | Reconcilia pedido, intent, transação e fechamento diário |
 | [`smoke_gateways`](#smoke_gateways) | backstage | Operação | Estressa webhooks/gateways com fixtures locais e matriz sandbox |
@@ -662,6 +665,33 @@ python manage.py diagnose_remote_order ORDER-REF
 ```
 
 **Veja também:** [runbook de pedido remoto preso](../runbooks/pedido-remoto-preso.md).
+
+---
+
+### reconcile_ifood_catalog
+
+**App:** shop · **Categoria:** Diagnóstico iFood, somente leitura
+**Arquivo:** `shopman/shop/management/commands/reconcile_ifood_catalog.py`
+
+Recebe snapshot JSON UTF-8 de categorias com itens e compara códigos efetivos
+no contexto indicado com os SKUs canônicos do banco configurado. Imprime JSON
+com ocorrências, sugestões e pendências; não confirma vínculos, não grava
+Product/Listing/Directive, não consulta credenciais nem faz chamadas HTTP.
+
+```bash
+.venv/bin/python manage.py reconcile_ifood_catalog \
+  --inventory /caminho/inventario-categorias.json \
+  --merchant-id UUID-DA-LOJA \
+  --catalog-id UUID-DO-CATALOGO \
+  --context DEFAULT
+```
+
+Todos os argumentos são obrigatórios. O arquivo deve conter a lista retornada
+por `categories?includeItems=true` de um único escopo. O comando valida formato,
+mas a origem e completude do snapshot dependem de quem o forneceu. Erros de
+arquivo, formato, escopo e banco usam `CommandError` sem conteúdo sensível.
+
+Veja [regras e interpretação da saída](../guides/IFOOD-CATALOG-RECONCILIATION.md).
 
 ---
 
@@ -1335,3 +1365,17 @@ própria: ele herda a dos componentes.
 O `seed` chama este comando no fim, depois do catálogo e das coleções. **Num
 deployment já no ar, ele precisa ser rodado à mão** — sem ele o registro fica
 vazio e os pareamentos de `suggestion.complement` não casam com nada.
+
+### prepare_ifood_catalog_review
+
+**App:** shop
+**Arquivo:** `shopman/shop/management/commands/prepare_ifood_catalog_review.py`
+
+Produz relatório JSON local com snapshot remoto completo e candidatos canônicos ainda não revisados. Exige `--snapshot` (arquivo local) e `--channel` (ref local); somente SELECT, sem HTTP ou alterações. Não confirma vínculos nem autoriza publicação. Contrato e limites: [guia de revisão](../guides/IFOOD-CATALOG-REVIEW.md).
+
+### capture_ifood_catalog
+
+**App:** shop
+**Arquivo:** `shopman/shop/management/commands/capture_ifood_catalog.py`
+
+Captura respostas completas e releituras do catálogo em arquivo novo privado. Exige `--merchant-id`, `--catalog-id`, `--context` e `--output`; merchant deve coincidir com a configuração. Usa OAuth canônico e somente GET de catálogo na origem oficial, sem DB ou diretivas. [Contrato, limites e fluxo de revisão](../guides/IFOOD-CATALOG-REVIEW.md).
