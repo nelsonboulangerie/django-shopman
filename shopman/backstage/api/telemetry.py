@@ -4,8 +4,8 @@ Espelha a filosofia do Sentry já configurado em ``config.settings``: opt-in e �
 de ausência. As superfícies de operador headless (BFF/cliente) reportam erros
 não-tratados para um único ponto que os LOGA em nível ``error`` — com ``SENTRY_DSN``
 setado, a LoggingIntegration transforma isso em evento; sem DSN, vira log estruturado.
-Nada de PII: o payload é sanitizado (e-mail/telefone redigidos, query da URL
-descartada, campos truncados e allow-listed) antes de tocar o logger.
+Nada de PII: o payload é sanitizado (e-mail/telefone redigidos, URL reduzida à
+origem, campos truncados e allow-listed) antes de tocar o logger.
 
 Gêmeo operador do endpoint do storefront: o ``operator-kit`` (Nuxt layer) posta aqui
 via ``reportClientError`` → ``/api/v1/backstage/client-error/``.
@@ -46,7 +46,7 @@ def _redact(text: str) -> str:
 
 
 def _strip_query(url: str) -> str:
-    # Guarda só caminho + host: query/fragment podem carregar tokens ou dados.
+    # Guarda só a origem. Path/query/fragment podem carregar identificadores ou segredos.
     return strip_url_query(url)
 
 
