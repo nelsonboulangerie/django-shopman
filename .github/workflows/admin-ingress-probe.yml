@@ -7,6 +7,17 @@ on:
       - 'shopman/backstage/services/admin_ip_probe.py'
       - 'shopman/backstage/tests/test_admin_ip_probe.py'
   workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [preflight, probe, build]
+        default: preflight
+      app_id:
+        type: string
+        default: ''
+      default_host:
+        type: string
+        default: ''
 permissions:
   contents: read
 concurrency:
@@ -14,6 +25,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   isolated-image:
+    if: github.event_name != 'workflow_dispatch' || inputs.mode == 'build'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -58,3 +70,36 @@ jobs:
         run: |
           docker rm -f admin-probe 2>/dev/null || true
           docker buildx rm isolated-admin-probe 2>/dev/null || true
+  preflight:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'preflight'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: echo 'Dispatch available; no network probe or build executed.'
+  probe:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'probe'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Twenty-one anonymous GETs to the approved isolated app
+        env:
+          SHOPMAN_ADMIN_IP_PROBE_TOKEN: ${{ secrets.ADMIN_INGRESS_PROBE_20260915_A }}
+          PROBE_APP_ID: ${{ inputs.app_id }}
+          PROBE_DEFAULT_HOST: ${{ inputs.default_host }}
+        run: |
+          python - <<'PY'
+          import os, re, subprocess, uuid
+          app_id = str(uuid.UUID(os.environ['PROBE_APP_ID']))
+          assert app_id != '40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f'
+          default = os.environ['PROBE_DEFAULT_HOST']
+          assert re.fullmatch(r'shopman-admin-ip-probe-20260915-a-[a-z0-9]+\.ondigitalocean\.app', default)
+          for host in ['admin-ip-probe-20260915-a.boulangerie.com.br',
+                       'api-ip-probe-20260915-a.boulangerie.com.br', default]:
+              print('PROBE_HOST=' + host, flush=True)
+              subprocess.run(['python', 'scripts/probe_admin_ingress.py', '--app-id', app_id,
+                  '--url', 'https://' + host + '/admin/login/', '--staging-host', host,
+                  '--omit-synthetic-fingerprints'], check=True)
+          PY
