@@ -34,6 +34,7 @@ export default defineConfig({
           name: "component",
           environment: "nuxt",
           globals: true,
+          setupFiles: ["./tests/support/componentSetup.ts"],
           include: [
             "tests/components/**/*.test.ts",
             "tests/composables/**/*.test.ts",

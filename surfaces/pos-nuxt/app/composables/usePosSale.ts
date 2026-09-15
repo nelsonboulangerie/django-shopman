@@ -75,30 +75,83 @@ import { toast } from "vue-sonner";
 type FulfillmentType = "pickup" | "delivery";
 type PaymentCollection = "terminal" | "on_delivery";
 const CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY = "shopman:pos:close-outcome-uncertain";
+const CLOSE_GUARD_LOCK_NAME = "shopman:pos:close-sale";
 
-function readCloseOutcomeUncertain(): boolean {
+type CloseGuardState = "pending" | "uncertain";
+
+interface CloseGuardMarker {
+  client_request_id: string;
+  owner_id: string;
+  state: CloseGuardState;
+  recorded_at: string;
+}
+
+interface CloseGuardRead {
+  marker: CloseGuardMarker | null;
+  storageAvailable: boolean;
+}
+
+function readCloseOutcomeUncertain(): CloseGuardRead {
   try {
-    return Boolean(globalThis.localStorage?.getItem(CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY));
+    const storage = globalThis.localStorage;
+    if (!storage) return { marker: null, storageAvailable: false };
+    const raw = storage.getItem(CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY);
+    if (!raw) return { marker: null, storageAvailable: true };
+    const parsed = JSON.parse(raw) as Partial<CloseGuardMarker>;
+    // Marcadores da primeira versão não tinham state/owner. Eles continuam
+    // bloqueando como outcome incerto e só saem por reconciliação explícita.
+    const marker: CloseGuardMarker = {
+      client_request_id: typeof parsed.client_request_id === "string" ? parsed.client_request_id : "",
+      owner_id: typeof parsed.owner_id === "string" ? parsed.owner_id : "",
+      state: parsed.state === "pending" ? "pending" : "uncertain",
+      recorded_at: typeof parsed.recorded_at === "string" ? parsed.recorded_at : "",
+    };
+    return { marker, storageAvailable: true };
   } catch {
-    // Storage indisponível não enfraquece a trava da sessão atual; apenas não
-    // consegue carregá-la de uma navegação anterior.
+    // Falha fechada: sem conseguir ler o marcador, não há prova de que uma
+    // cobrança anterior terminou. A estação só volta após reconciliação.
+    return { marker: null, storageAvailable: false };
+  }
+}
+
+function persistCloseGuard(marker: CloseGuardMarker): boolean {
+  try {
+    const storage = globalThis.localStorage;
+    if (!storage) return false;
+    const encoded = JSON.stringify(marker);
+    storage.setItem(CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY, encoded);
+    // setItem pode ser interceptado por storage degradado. Só há garantia se a
+    // mesma prova for lida de volta antes de qualquer chamada de fechamento.
+    return storage.getItem(CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY) === encoded;
+  } catch {
     return false;
   }
 }
 
-function persistCloseOutcomeUncertain(clientRequestId: string): void {
-  try {
-    globalThis.localStorage?.setItem(CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY, JSON.stringify({
-      client_request_id: clientRequestId,
-      recorded_at: new Date().toISOString(),
-    }));
-  } catch { /* silêncio-deliberado: a ref em memória continua bloqueando a estação atual. */ }
+function sameCloseGuardOwner(marker: CloseGuardMarker | null, expected: CloseGuardMarker): boolean {
+  return marker?.owner_id === expected.owner_id
+    && marker.client_request_id === expected.client_request_id;
 }
 
-function clearPersistedCloseOutcomeUncertain(): void {
+function transitionOwnedCloseGuard(expected: CloseGuardMarker, state: CloseGuardState): boolean {
+  const current = readCloseOutcomeUncertain();
+  if (!current.storageAvailable || !sameCloseGuardOwner(current.marker, expected)) return false;
+  return persistCloseGuard({ ...expected, state, recorded_at: new Date().toISOString() });
+}
+
+function clearPersistedCloseOutcomeUncertain(expected?: CloseGuardMarker): boolean {
   try {
-    globalThis.localStorage?.removeItem(CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY);
-  } catch { /* silêncio-deliberado: a confirmação ainda libera a instância atual. */ }
+    const storage = globalThis.localStorage;
+    if (!storage) return false;
+    if (expected) {
+      const current = readCloseOutcomeUncertain();
+      if (!current.storageAvailable || !sameCloseGuardOwner(current.marker, expected)) return false;
+    }
+    storage.removeItem(CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY);
+    return storage.getItem(CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY) === null;
+  } catch {
+    return false;
+  }
 }
 
 interface PosSaleDeps {
@@ -199,24 +252,103 @@ export function usePosSale(deps: PosSaleDeps) {
   // Começa falso também durante hydration; a página restaura localStorage no
   // mounted para o HTML do servidor não divergir do primeiro render do cliente.
   const closeOutcomeUncertain = ref(false);
+  const closeGuardPending = ref(false);
+  const closeGuardFailureMessage = ref("");
   const closeOutcomeUncertainMessage = "Não foi possível confirmar o resultado desta venda. Confira o pedido e o pagamento antes de qualquer nova cobrança. Não repita esta venda.";
+  const closeGuardUnavailableMessage = "Este navegador não conseguiu ativar a proteção contra cobrança duplicada. Nenhuma cobrança foi iniciada. Confira o armazenamento do navegador e reconcilie a venda antes de tentar novamente.";
+  const closeGuardCoordinationUnavailableMessage = "Este navegador não oferece a coordenação segura entre abas exigida para cobrar. Nenhuma cobrança foi iniciada. Atualize o navegador ou use uma estação compatível.";
+  const closeGuardActiveMessage = "Há uma cobrança sendo processada nesta estação. Aguarde o resultado antes de reconciliar ou tentar novamente.";
+  const closeGuardReconciliationFailedMessage = "Não foi possível registrar a reconciliação porque o armazenamento do navegador está indisponível. A proteção continua ativa e nenhuma nova cobrança será iniciada.";
 
   function restoreUncertainClose() {
-    closeOutcomeUncertain.value = readCloseOutcomeUncertain();
+    const guard = readCloseOutcomeUncertain();
+    closeOutcomeUncertain.value = !guard.storageAvailable || Boolean(guard.marker);
+    closeGuardPending.value = guard.marker?.state === "pending";
+    closeGuardFailureMessage.value = guard.storageAvailable ? "" : closeGuardUnavailableMessage;
+    if (!guard.storageAvailable) serverError.value = closeGuardUnavailableMessage;
   }
 
-  function markCloseOutcomeUncertain() {
+  function establishCloseGuard(): CloseGuardMarker | null {
+    const marker: CloseGuardMarker = {
+      client_request_id: cart.clientRequestId,
+      owner_id: newClientRequestId(),
+      state: "pending",
+      recorded_at: new Date().toISOString(),
+    };
     closeOutcomeUncertain.value = true;
-    persistCloseOutcomeUncertain(cart.clientRequestId);
+    closeGuardPending.value = true;
+    if (persistCloseGuard(marker)) {
+      closeGuardFailureMessage.value = "";
+      return marker;
+    }
+    closeGuardPending.value = false;
+    closeGuardFailureMessage.value = closeGuardUnavailableMessage;
+    serverError.value = closeGuardUnavailableMessage;
+    return null;
   }
 
-  // Única saída da trava: o operador confirma, numa ação persistente da UI,
-  // que reconciliou pedido e pagamento. Se o rascunho ainda existe, a mesma
-  // chave idempotente é preservada para uma eventual repetição segura.
-  function acknowledgeUncertainClose() {
+  function releaseOwnedCloseGuard(marker: CloseGuardMarker, failureMessage = closeGuardUnavailableMessage): boolean {
+    if (!clearPersistedCloseOutcomeUncertain(marker)) {
+      closeOutcomeUncertain.value = true;
+      closeGuardPending.value = false;
+      closeGuardFailureMessage.value = failureMessage;
+      serverError.value = failureMessage;
+      return false;
+    }
     closeOutcomeUncertain.value = false;
-    clearPersistedCloseOutcomeUncertain();
-    serverError.value = "";
+    closeGuardPending.value = false;
+    closeGuardFailureMessage.value = "";
+    return true;
+  }
+
+  function markOwnedCloseGuardUncertain(marker: CloseGuardMarker) {
+    transitionOwnedCloseGuard(marker, "uncertain");
+    closeOutcomeUncertain.value = true;
+    closeGuardPending.value = false;
+    closeGuardFailureMessage.value = "";
+  }
+
+  async function acknowledgeUncertainClose(): Promise<boolean> {
+    const lockManager = globalThis.navigator?.locks;
+    if (!lockManager?.request) {
+      closeOutcomeUncertain.value = true;
+      closeGuardFailureMessage.value = closeGuardCoordinationUnavailableMessage;
+      serverError.value = closeGuardCoordinationUnavailableMessage;
+      return false;
+    }
+    try {
+      return await lockManager.request(CLOSE_GUARD_LOCK_NAME, { ifAvailable: true }, (lock) => {
+        if (!lock) {
+          serverError.value = closeGuardActiveMessage;
+          return false;
+        }
+        const current = readCloseOutcomeUncertain();
+        if (!current.storageAvailable) {
+          closeOutcomeUncertain.value = true;
+          closeGuardPending.value = false;
+          closeGuardFailureMessage.value = closeGuardReconciliationFailedMessage;
+          serverError.value = closeGuardReconciliationFailedMessage;
+          return false;
+        }
+        if (current.marker && !clearPersistedCloseOutcomeUncertain()) {
+          closeOutcomeUncertain.value = true;
+          closeGuardPending.value = false;
+          closeGuardFailureMessage.value = closeGuardReconciliationFailedMessage;
+          serverError.value = closeGuardReconciliationFailedMessage;
+          return false;
+        }
+        closeOutcomeUncertain.value = false;
+        closeGuardPending.value = false;
+        closeGuardFailureMessage.value = "";
+        serverError.value = "";
+        return true;
+      });
+    } catch {
+      closeOutcomeUncertain.value = true;
+      closeGuardFailureMessage.value = closeGuardCoordinationUnavailableMessage;
+      serverError.value = closeGuardCoordinationUnavailableMessage;
+      return false;
+    }
   }
 
   // PIX no PDV: o proof mostra o QR e "aguarde confirmação", mas sem polling o
@@ -2341,13 +2473,98 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
+  type GuardedCloseResult =
+    | { kind: "ok"; response: Partial<POSCloseSaleResponse>; orderRef: string }
+    | { kind: "error"; error: unknown }
+    | { kind: "invalid" }
+    | { kind: "blocked" };
+
+  async function requestCloseUnderGuard(): Promise<GuardedCloseResult> {
+    const lockManager = globalThis.navigator?.locks;
+    if (!lockManager?.request) {
+      closeOutcomeUncertain.value = true;
+      closeGuardPending.value = false;
+      closeGuardFailureMessage.value = closeGuardCoordinationUnavailableMessage;
+      serverError.value = closeGuardCoordinationUnavailableMessage;
+      return { kind: "blocked" };
+    }
+    try {
+      // O lock cobre check + PENDING + POST + transição/clear. Assim nenhuma
+      // aba pode iniciar nem reconciliar enquanto o resultado ainda está em voo.
+      return await lockManager.request(CLOSE_GUARD_LOCK_NAME, { ifAvailable: true }, async (lock) => {
+        if (!lock) {
+          const current = readCloseOutcomeUncertain();
+          closeOutcomeUncertain.value = true;
+          closeGuardPending.value = current.marker?.state === "pending";
+          closeGuardFailureMessage.value = closeGuardActiveMessage;
+          serverError.value = closeGuardActiveMessage;
+          return { kind: "blocked" };
+        }
+        const current = readCloseOutcomeUncertain();
+        if (!current.storageAvailable || current.marker) {
+          closeOutcomeUncertain.value = true;
+          closeGuardPending.value = current.marker?.state === "pending";
+          closeGuardFailureMessage.value = current.storageAvailable ? "" : closeGuardUnavailableMessage;
+          serverError.value = current.storageAvailable
+            ? closeOutcomeUncertainMessage
+            : closeGuardUnavailableMessage;
+          return { kind: "blocked" };
+        }
+        const marker = establishCloseGuard();
+        if (!marker) return { kind: "blocked" };
+        try {
+          const rawResponse = await action.call<unknown>(
+            actionHref(actions.value, "close_sale", "/api/v1/backstage/pos/sale/close/"),
+            { body: buildCurrentIntent() },
+          );
+          const response = rawResponse && typeof rawResponse === "object"
+            ? rawResponse as Partial<POSCloseSaleResponse>
+            : null;
+          const orderRef = typeof response?.order_ref === "string" ? response.order_ref.trim() : "";
+          if (!response || response.ok !== true || !orderRef) {
+            markOwnedCloseGuardUncertain(marker);
+            return { kind: "invalid" };
+          }
+          closeOutcomeUncertain.value = false;
+          closeGuardPending.value = false;
+          closeGuardFailureMessage.value = "";
+          if (!clearPersistedCloseOutcomeUncertain(marker)) {
+            toast.warning(`Pedido ${orderRef} confirmado, mas o navegador não conseguiu liberar a proteção local. A próxima cobrança ficará bloqueada até o armazenamento ser corrigido.`);
+          }
+          return { kind: "ok", response, orderRef };
+        } catch (error) {
+          const errorInfo = httpError(error);
+          const failure = (errorInfo.data as {
+            error?: { code?: string; order_created?: boolean };
+          } | null)?.error;
+          const outcomeUnknown = Boolean(failure?.order_created)
+            || failure?.code === "sale_payment_outcome_unknown";
+          // Só 4xx sem sinal de outcome incerto prova rejeição pré-commit. Status
+          // 0 e TODO 5xx retêm o marcador, mesmo quando trazem error.code.
+          if (errorInfo.status >= 400 && errorInfo.status < 500 && !outcomeUnknown) {
+            releaseOwnedCloseGuard(marker);
+          } else {
+            markOwnedCloseGuardUncertain(marker);
+          }
+          return { kind: "error", error };
+        }
+      });
+    } catch {
+      closeOutcomeUncertain.value = true;
+      closeGuardPending.value = false;
+      closeGuardFailureMessage.value = closeGuardCoordinationUnavailableMessage;
+      serverError.value = closeGuardCoordinationUnavailableMessage;
+      return { kind: "blocked" };
+    }
+  }
+
   async function submitSale() {
     if (busy.value) return; // guarda de reentrância: duplo-toque não dispara 2 close_sale
     if (closeOutcomeUncertain.value) {
       // A primeira resposta não provou se o servidor concluiu a operação. O
       // botão pode voltar a ser acionado (mouse, toque ou Enter), mas nunca
       // dispara outro close até a venda ser explicitamente reiniciada.
-      serverError.value = closeOutcomeUncertainMessage;
+      serverError.value = closeGuardFailureMessage.value || closeOutcomeUncertainMessage;
       return;
     }
     if (!cart.items.length || requireCustomerDraftDecision()) return;
@@ -2370,19 +2587,14 @@ export function usePosSale(deps: PosSaleDeps) {
     result.value = null;
     busy.value = true;
     try {
-      const rawResponse = await action.call<unknown>(
-        actionHref(actions.value, "close_sale", "/api/v1/backstage/pos/sale/close/"),
-        { body: buildCurrentIntent() },
-      );
-      const response = rawResponse && typeof rawResponse === "object"
-        ? rawResponse as Partial<POSCloseSaleResponse>
-        : null;
-      const orderRef = typeof response?.order_ref === "string" ? response.order_ref.trim() : "";
-      if (!response || response.ok !== true || !orderRef) {
-        markCloseOutcomeUncertain();
+      const guarded = await requestCloseUnderGuard();
+      if (guarded.kind === "blocked") return;
+      if (guarded.kind === "invalid") {
         serverError.value = closeOutcomeUncertainMessage;
         return;
       }
+      if (guarded.kind === "error") throw guarded.error;
+      const { response, orderRef } = guarded;
       // Freeze a receipt snapshot before the cart resets (spec §D3): the
         // printed receipt is a record of what was sold, not live state.
         const receipt: PosReceiptSnapshot = {
@@ -2460,14 +2672,15 @@ export function usePosSale(deps: PosSaleDeps) {
           toast.warning(`Pedido ${orderRef} registrado. A atualização do balcão falhou; os dados podem estar desatualizados. Não repita esta venda.`);
         }
     } catch (error) {
-      if (handleReceiptIdentityFailure(error, "close")) return;
-      const failure = (httpError(error).data as {
+      const errorInfo = httpError(error);
+      const failure = (errorInfo.data as {
         error?: {
           code?: string; message?: string; recovery?: string; focus?: string;
           order_ref?: string; order_created?: boolean;
           field?: string; candidates?: ServerConflictCandidate[];
         };
       } | null)?.error;
+      if (handleReceiptIdentityFailure(error, "close")) return;
       // ⚠️ O conflito de cliente também recusa no FECHAMENTO, e ali a saída
       // nunca chegava: a view achatava a recusa rica num `except ValueError`, e
       // aqui o catch nem procurava por ela. O operador lia um toast que sumia,
@@ -2819,6 +3032,7 @@ export function usePosSale(deps: PosSaleDeps) {
     customerFocusNonce,
     result,
     closeOutcomeUncertain,
+    closeGuardPending,
     restoreUncertainClose,
     acknowledgeUncertainClose,
     pendingPixOrderRef,

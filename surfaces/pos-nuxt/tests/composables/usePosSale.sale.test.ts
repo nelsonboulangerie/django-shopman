@@ -10,6 +10,18 @@ mockNuxtImport("$fetch", () => fetchMock);
 afterEach(() => vi.unstubAllGlobals());
 vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 
+let storageValues: Map<string, string>;
+
+function stubWorkingStorage() {
+  storageValues = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => storageValues.get(key) ?? null,
+    setItem: (key: string, value: string) => storageValues.set(key, value),
+    removeItem: (key: string) => storageValues.delete(key),
+  });
+}
+beforeEach(stubWorkingStorage);
+
 function freeCartProjection() {
   return makeProjection({
     checkout: {
@@ -140,10 +152,15 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
     expect(h.sale.cart.clientRequestId).toBe(originalKey);
     expect(h.sale.cart.items).toHaveLength(1);
     expect(h.sale.result.value).toBeNull();
-    await h.sale.submitSale();
+    await h.sale.submitSale(); // nova tentativa sem reconciliação não atravessa
     const attempts = actionCall.mock.calls.filter((call) => String(call[0]).includes("/sale/close/"));
-    expect(attempts).toHaveLength(2);
-    expect(attempts[1]![1].body.client_request_id).toBe(attempts[0]![1].body.client_request_id);
+    expect(attempts).toHaveLength(1);
+    expect(h.sale.closeOutcomeUncertain.value).toBe(true);
+    expect(await h.sale.acknowledgeUncertainClose()).toBe(true);
+    await h.sale.submitSale();
+    const reconciledAttempts = actionCall.mock.calls.filter((call) => String(call[0]).includes("/sale/close/"));
+    expect(reconciledAttempts).toHaveLength(2);
+    expect(reconciledAttempts[1]![1].body.client_request_id).toBe(reconciledAttempts[0]![1].body.client_request_id);
     h.handles.dispose();
   });
 
@@ -180,7 +197,7 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
     expect(vi.mocked(toast.error)).toHaveBeenLastCalledWith(
       "Não foi possível confirmar o resultado desta venda. Confira o pedido e o pagamento antes de qualquer nova cobrança. Não repita esta venda.",
     );
-    h.sale.acknowledgeUncertainClose();
+    await h.sale.acknowledgeUncertainClose();
     await h.sale.submitSale();
     const retriedCloseCalls = actionCall.mock.calls.filter((call) => String(call[0]).includes("/sale/close/"));
     expect(retriedCloseCalls).toHaveLength(2);
@@ -212,7 +229,7 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
     await afterReload.sale.submitSale();
     expect(afterReloadAction).not.toHaveBeenCalled();
 
-    afterReload.sale.acknowledgeUncertainClose();
+    await afterReload.sale.acknowledgeUncertainClose();
     expect(afterReload.sale.closeOutcomeUncertain.value).toBe(false);
     expect(values.size).toBe(0);
     await afterReload.sale.submitSale();
@@ -220,6 +237,256 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
     const closeCalls = afterReloadAction.mock.calls.filter((call) => String(call[0]).includes("/sale/close/"));
     expect(closeCalls).toHaveLength(1);
     afterReload.handles.dispose();
+  });
+
+  it("grava e verifica o PENDING antes do POST e o remove após resposta confirmada", async () => {
+    const actionCall = vi.fn().mockImplementation(async (path: string) => {
+      if (String(path).includes("/sale/review/")) {
+        return { review: { total_q: 1000, total_display: "R$ 10,00", subtotal_q: 1000 } };
+      }
+      if (String(path).includes("/sale/close/")) {
+        expect(JSON.parse([...storageValues.values()][0]!)).toMatchObject({
+          client_request_id: expect.any(String),
+          owner_id: expect.any(String),
+          state: "pending",
+        });
+        return { ok: true, order_ref: "PED-GUARD", payment: null };
+      }
+      return {};
+    });
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+
+    expect(h.sale.result.value?.orderRef).toBe("PED-GUARD");
+    expect(storageValues.size).toBe(0);
+    expect(h.sale.closeOutcomeUncertain.value).toBe(false);
+    h.handles.dispose();
+  });
+
+  it("não inicia cobrança quando não consegue persistir e verificar a trava", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => null,
+      setItem: () => { throw new DOMException("blocked", "SecurityError"); },
+      removeItem: () => undefined,
+    });
+    const actionCall = saleRouter();
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+
+    const closeCalls = actionCall.mock.calls.filter((call) => String(call[0]).includes("/sale/close/"));
+    expect(closeCalls).toHaveLength(0);
+    expect(h.sale.closeOutcomeUncertain.value).toBe(true);
+    expect(vi.mocked(toast.error).mock.calls.some(([message]) => String(message).includes("Nenhuma cobrança foi iniciada"))).toBe(true);
+    h.handles.dispose();
+  });
+
+  it("não inicia cobrança quando setItem não conserva o marcador", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    });
+    const actionCall = saleRouter();
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+
+    const closeCalls = actionCall.mock.calls.filter((call) => String(call[0]).includes("/sale/close/"));
+    expect(closeCalls).toHaveLength(0);
+    expect(h.sale.closeOutcomeUncertain.value).toBe(true);
+    h.handles.dispose();
+  });
+
+  it("não inicia cobrança sem coordenação segura entre abas", async () => {
+    const actionCall = saleRouter();
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    vi.stubGlobal("navigator", {});
+    await h.sale.submitSale();
+
+    const closeCalls = actionCall.mock.calls.filter((call) => String(call[0]).includes("/sale/close/"));
+    expect(closeCalls).toHaveLength(0);
+    expect(h.sale.closeOutcomeUncertain.value).toBe(true);
+    expect(vi.mocked(toast.error)).toHaveBeenLastCalledWith(expect.stringContaining("coordenação segura entre abas"));
+    h.handles.dispose();
+  });
+
+  it("falha fechado quando a leitura do storage lança durante o restore", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => { throw new DOMException("blocked", "SecurityError"); },
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    });
+    const actionCall = saleRouter();
+    const h = saleReadyForCheckout(actionCall);
+    h.sale.restoreUncertainClose();
+    await nextTick();
+    await h.sale.submitSale();
+
+    expect(h.sale.closeOutcomeUncertain.value).toBe(true);
+    expect(actionCall).not.toHaveBeenCalled();
+    expect(vi.mocked(toast.error).mock.calls.some(([message]) => String(message).includes("proteção contra cobrança duplicada"))).toBe(true);
+    h.handles.dispose();
+  });
+
+  it("não libera a estação se a confirmação não conseguir remover o marcador", async () => {
+    const actionCall = saleRouter();
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    actionCall.mockResolvedValueOnce(null);
+    await h.sale.submitSale();
+    expect(storageValues.size).toBe(1);
+
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => storageValues.get(key) ?? null,
+      setItem: (key: string, value: string) => storageValues.set(key, value),
+      removeItem: () => { throw new DOMException("blocked", "SecurityError"); },
+    });
+    expect(await h.sale.acknowledgeUncertainClose()).toBe(false);
+    await h.sale.submitSale();
+
+    const closeCalls = actionCall.mock.calls.filter((call) => String(call[0]).includes("/sale/close/"));
+    expect(closeCalls).toHaveLength(1);
+    expect(storageValues.size).toBe(1);
+    expect(h.sale.closeOutcomeUncertain.value).toBe(true);
+    h.handles.dispose();
+  });
+
+  it("preserva o bloqueio para o próximo reload se a limpeza pós-sucesso falhar", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => storageValues.get(key) ?? null,
+      setItem: (key: string, value: string) => storageValues.set(key, value),
+      removeItem: () => { throw new DOMException("blocked", "SecurityError"); },
+    });
+    const firstAction = saleRouter();
+    const first = saleReadyForCheckout(firstAction);
+    await first.sale.submitSale();
+    await first.sale.submitSale();
+    expect(first.sale.result.value?.orderRef).toBe("PED-1");
+    expect(storageValues.size).toBe(1);
+    first.handles.dispose();
+
+    const afterReloadAction = saleRouter();
+    const afterReload = saleReadyForCheckout(afterReloadAction);
+    afterReload.sale.restoreUncertainClose();
+    await afterReload.sale.submitSale();
+    expect(afterReload.sale.closeOutcomeUncertain.value).toBe(true);
+    expect(afterReloadAction).not.toHaveBeenCalled();
+    afterReload.handles.dispose();
+  });
+
+  it("uma resposta não remove marcador que pertença a outro owner", async () => {
+    const actionCall = vi.fn().mockImplementation(async (path: string) => {
+      if (String(path).includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
+      if (String(path).includes("/sale/close/")) {
+        const [key, encoded] = [...storageValues.entries()][0]!;
+        const marker = JSON.parse(encoded);
+        storageValues.set(key, JSON.stringify({ ...marker, owner_id: "other-owner" }));
+        return { ok: true, order_ref: "PED-OWNER", payment: null };
+      }
+      return {};
+    });
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+
+    expect(h.sale.result.value?.orderRef).toBe("PED-OWNER");
+    expect(JSON.parse([...storageValues.values()][0]!).owner_id).toBe("other-owner");
+    h.handles.dispose();
+  });
+
+  it("mantém a trava para outcome_unknown mesmo se o servidor omitir order_created", async () => {
+    const actionCall = vi.fn().mockImplementation(async (path: string) => {
+      if (String(path).includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
+      if (String(path).includes("/sale/close/")) throw {
+        status: 409,
+        data: { error: { code: "sale_payment_outcome_unknown", message: "Pagamento em consulta." } },
+      };
+      return {};
+    });
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+
+    const closeCalls = actionCall.mock.calls.filter((call) => String(call[0]).includes("/sale/close/"));
+    expect(closeCalls).toHaveLength(1);
+    expect(h.sale.closeOutcomeUncertain.value).toBe(true);
+    h.handles.dispose();
+  });
+
+  it.each([0, 500, 503])("retém PENDING em status %s mesmo com error.code", async (status) => {
+    const actionCall = vi.fn().mockImplementation(async (path: string) => {
+      if (String(path).includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
+      if (String(path).includes("/sale/close/")) throw {
+        status,
+        data: { error: { code: "customer_conflict", message: "Envelope parcial." } },
+      };
+      return {};
+    });
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+
+    const closeCalls = actionCall.mock.calls.filter((call) => String(call[0]).includes("/sale/close/"));
+    expect(closeCalls).toHaveLength(1);
+    expect(h.sale.closeOutcomeUncertain.value).toBe(true);
+    expect(storageValues.size).toBe(1);
+    h.handles.dispose();
+  });
+
+  it("limpa automaticamente só uma rejeição 4xx sem outcome incerto", async () => {
+    const actionCall = vi.fn().mockImplementation(async (path: string) => {
+      if (String(path).includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
+      if (String(path).includes("/sale/close/")) throw {
+        status: 422,
+        data: { error: { code: "customer_required_for_scheduled", message: "Identifique o cliente." } },
+      };
+      return {};
+    });
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+
+    expect(h.sale.closeOutcomeUncertain.value).toBe(false);
+    expect(storageValues.size).toBe(0);
+    h.handles.dispose();
+  });
+
+  it("bloqueia uma segunda aba enquanto a primeira ainda fecha a venda", async () => {
+    let resolveFirstClose!: (value: unknown) => void;
+    const firstAction = vi.fn().mockImplementation(async (path: string) => {
+      if (String(path).includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
+      if (String(path).includes("/sale/close/")) return new Promise((resolve) => { resolveFirstClose = resolve; });
+      return {};
+    });
+    const secondAction = saleRouter();
+    const first = saleReadyForCheckout(firstAction);
+    const second = saleReadyForCheckout(secondAction);
+    await first.sale.submitSale();
+    await second.sale.submitSale();
+
+    const firstClose = first.sale.submitSale();
+    await second.sale.submitSale();
+    const secondCloseCalls = secondAction.mock.calls.filter((call) => String(call[0]).includes("/sale/close/"));
+    expect(secondCloseCalls).toHaveLength(0);
+    expect(second.sale.closeOutcomeUncertain.value).toBe(true);
+    expect(JSON.parse([...storageValues.values()][0]!).state).toBe("pending");
+    expect(await second.sale.acknowledgeUncertainClose()).toBe(false);
+    expect(storageValues.size).toBe(1);
+
+    resolveFirstClose(null);
+    await firstClose;
+    expect(first.sale.result.value).toBeNull();
+    expect(JSON.parse([...storageValues.values()][0]!).state).toBe("uncertain");
+    expect(await second.sale.acknowledgeUncertainClose()).toBe(true);
+    expect(storageValues.size).toBe(0);
+    first.handles.dispose();
+    second.handles.dispose();
   });
 
   it("falha de refresh depois do close preserva pedido e recibo e impede nova venda", async () => {

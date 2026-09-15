@@ -78,6 +78,7 @@ const {
   customerFocusNonce,
   result,
   closeOutcomeUncertain,
+  closeGuardPending,
   restoreUncertainClose,
   acknowledgeUncertainClose,
   pendingPixOrderRef,
@@ -194,14 +195,20 @@ const {
 const confirmCounterMode = ref(false);
 const uncertainCloseRecoveryOpen = ref(false);
 const uncertainCloseReviewed = ref(false);
+const uncertainCloseRecoveryBusy = ref(false);
 function openUncertainCloseRecovery() {
   uncertainCloseReviewed.value = false;
   uncertainCloseRecoveryOpen.value = true;
 }
-function confirmUncertainCloseRecovery() {
-  if (!uncertainCloseReviewed.value) return;
-  acknowledgeUncertainClose();
-  uncertainCloseRecoveryOpen.value = false;
+async function confirmUncertainCloseRecovery() {
+  if (!uncertainCloseReviewed.value || uncertainCloseRecoveryBusy.value) return;
+  uncertainCloseRecoveryBusy.value = true;
+  try {
+    if (await acknowledgeUncertainClose()) uncertainCloseRecoveryOpen.value = false;
+    else uncertainCloseReviewed.value = false;
+  } finally {
+    uncertainCloseRecoveryBusy.value = false;
+  }
 }
 function requestSalesMode(mode: "counter" | "order") {
   if (mode === (cart.salesMode || "counter")) return;
@@ -914,9 +921,9 @@ onBeforeUnmount(() => {
         class="mx-4 mt-3 shrink-0"
         role="alert"
       >
-        <UiAlertTitle>Resultado da cobrança não confirmado</UiAlertTitle>
+        <UiAlertTitle>{{ closeGuardPending ? 'Cobrança em processamento ou interrompida' : 'Resultado da cobrança não confirmado' }}</UiAlertTitle>
         <UiAlertDescription class="gap-3">
-          <p>Antes de cobrar novamente, confira em Últimas vendas ou no Gestor se o pedido e o pagamento foram criados. Este bloqueio permanece mesmo se a página for recarregada.</p>
+          <p>{{ closeGuardPending ? 'Não libere enquanto a cobrança estiver processando. Se a aba anterior caiu, confira pedido e pagamento antes de reconciliar.' : 'Antes de cobrar novamente, confira em Últimas vendas ou no Gestor se o pedido e o pagamento foram criados.' }} Este bloqueio permanece mesmo se a página for recarregada.</p>
           <div class="flex flex-wrap gap-2">
             <UiButton variant="outline" size="sm" @click="recentSalesOpen = true">Conferir últimas vendas</UiButton>
             <UiButton size="sm" @click="openUncertainCloseRecovery">Já conferi · liberar tentativa</UiButton>
@@ -1233,7 +1240,7 @@ onBeforeUnmount(() => {
         </label>
         <UiDialogFooter class="gap-2">
           <UiButton variant="outline" @click="uncertainCloseRecoveryOpen = false">Voltar e conferir</UiButton>
-          <UiButton :disabled="!uncertainCloseReviewed" @click="confirmUncertainCloseRecovery">Liberar tentativa</UiButton>
+          <UiButton :disabled="!uncertainCloseReviewed || uncertainCloseRecoveryBusy" @click="confirmUncertainCloseRecovery">{{ uncertainCloseRecoveryBusy ? 'Verificando…' : 'Liberar tentativa' }}</UiButton>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>

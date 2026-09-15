@@ -12,7 +12,7 @@ const owner = { ref: "CUST-B", name: "Bia Nunes", phone: "", email: EMAIL, tax_i
 type Body = Record<string, any>;
 let instances: ReturnType<typeof makeSale>[] = [];
 function identityError(body: Body, field: "tax_id" | "email") {
-  return { data: { detail: "Escolha como usar este dado", error: {
+  return { status: 409, data: { detail: "Escolha como usar este dado", error: {
     code: "receipt_identity_conflict", field: field === "tax_id" ? "fiscal_tax_id" : "receipt_email",
     value: field === "tax_id" ? CPF : EMAIL, customer_ref: body.customer_ref || "",
     client_request_id: body.client_request_id, candidates: [owner],
@@ -37,7 +37,7 @@ function setup(checkAt: "review" | "close" = "review", batch = false, emailOwner
           conflicts.push({ field: field === "tax_id" ? "fiscal_tax_id" : "receipt_email", value, candidates: [fieldOwner] });
         }
       }
-      if (conflicts.length) throw { data: { error: { ...identityError(body, "tax_id").data.error, ...conflicts[0], conflicts } } };
+      if (conflicts.length) throw { status: 409, data: { error: { ...identityError(body, "tax_id").data.error, ...conflicts[0], conflicts } } };
     }
     if (path.includes("/sale/close/")) return { ok: true, order_ref: "PED-1", payment: null };
     return { review: { total_q: 500, subtotal_q: 500, total_display: "R$ 5,00" } };
