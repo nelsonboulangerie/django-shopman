@@ -1,3 +1,64 @@
+> **Registro histórico — reconciliação em 15/09/2026.** O laudo abaixo descreve
+> exclusivamente a base `786f3cc0a`, auditada em 12/09. Seus números, linhas e
+> afirmações sobre o ambiente não representam o estado atual. O texto original
+> foi preservado integralmente após esta nota; esta matriz registra o tratamento
+> posterior, sem transformar merge de código em prova de configuração externa.
+
+## Reconciliação dos achados em 15/09/2026
+
+| Itens originais | Tratamento posterior | Estado e limite da conclusão |
+|---|---|---|
+| A1, B1 — captura antes da entrega; dados fiscais no nascimento | [#642](https://github.com/nelsonboulangerie/django-shopman/pull/642), continuidade em [#680](https://github.com/nelsonboulangerie/django-shopman/pull/680)/[#684](https://github.com/nelsonboulangerie/django-shopman/pull/684) | Correções integradas. A preparação Efí [#690](https://github.com/nelsonboulangerie/django-shopman/pull/690) é passiva: flip do adapter e validação OAuth/GET continuam pendentes; não houve ativação de cobrança real por esse PR. |
+| A2, B6 — identidade e meios de pagamento do checkout | [#641](https://github.com/nelsonboulangerie/django-shopman/pull/641) | Correções integradas; o diagnóstico histórico de checkout anônimo não deve ser apresentado como estado atual. |
+| A3 — credenciais Maps | [#686](https://github.com/nelsonboulangerie/django-shopman/pull/686), incorporando #613/#656 | Separação e guardas de código integradas. A restrição efetiva de credenciais no provedor exige evidência operacional própria; esta reconciliação não repete a sonda histórica nem declara o provedor validado. |
+| A4 — Admin/2FA/limite de login | [#689](https://github.com/nelsonboulangerie/django-shopman/pull/689); [#655](https://github.com/nelsonboulangerie/django-shopman/pull/655) | Piloto individual de 2FA publicado, **inscrição ainda pendente**; não equivale a todo o Admin protegido. #655 permanece **retido**: `REMOTE_ADDR` produz bucket coletivo atrás do proxy, e o helper de XFF não autentica a origem. Experimento [#671](https://github.com/nelsonboulangerie/django-shopman/pull/671) continua interrompido, sem novas sondas. |
+| B2 — desconto da prévia | [#644](https://github.com/nelsonboulangerie/django-shopman/pull/644) | Correção integrada. |
+| B3 — recuperação da venda já criada | [#643](https://github.com/nelsonboulangerie/django-shopman/pull/643), continuidade #680/#684 | Correção integrada; fluxo posterior preserva recuperação e fechamento incerto. |
+| B4 — revisão das comandas | [#645](https://github.com/nelsonboulangerie/django-shopman/pull/645) | Correção integrada. |
+| B5 — pausa ao adotar reservas | [#646](https://github.com/nelsonboulangerie/django-shopman/pull/646) | Correção integrada. |
+| B7 — autoria da pausa em massa | [#649](https://github.com/nelsonboulangerie/django-shopman/pull/649) | Correção integrada; não reconstrói autoria desconhecida de eventos anteriores. |
+| B8 — telefone humano ambíguo | [#687](https://github.com/nelsonboulangerie/django-shopman/pull/687), continuidade de #650; [#673](https://github.com/nelsonboulangerie/django-shopman/pull/673) | Recusa de entrada ambígua e identidade verificada dos alertas integradas. |
+| B9 — recuperação fiscal/estorno | [#686](https://github.com/nelsonboulangerie/django-shopman/pull/686), incorporando #651 | Janela de recuperação integrada. |
+| B10 — fallback após recusa explícita | #686, incorporando #652 | Classificação de recusa e fallback integrados; resultado incerto continua sem repetição automática. |
+| B11 — alerta crítico externo | #686, incorporando #653 | E-mail durável com debounce integrado; entrega depende de configuração operacional. Ativação de Sentry não é comprovada por esta nota. |
+| B12 — heartbeat dos workers | #686, incorporando #654 | Readiness dos dois workers integrada, com grace de startup. |
+| B13, B14 — guardas de ambiente e runbooks | #686, incorporando #656/#657 | Guardas e documentação integradas. Isso não prova conversão do ambiente para produção nem autoriza aplicar o spec versionado sobre o vivo. |
+| B15 — smoke e catálogo canônico | [#648](https://github.com/nelsonboulangerie/django-shopman/pull/648) | Correção integrada; smoke posterior ao #689 passou. |
+| Latentes — estação/caixa; validade de certificado | [#647](https://github.com/nelsonboulangerie/django-shopman/pull/647), [#670](https://github.com/nelsonboulangerie/django-shopman/pull/670); #686 incorporando #657 | Correções integradas. Validação local de validade não equivale a credencial aceita pelo provedor. |
+
+### Decisões da seção C e evidência de publicação
+
+- **C1:** o titular autorizou o piloto individual implementado em #689. Global OFF:
+  a coordenação confirmou ausência de `SHOPMAN_ADMIN_REQUIRE_2FA` no spec global e
+  dos serviços, correlacionada ao default `False` do código; não houve consulta
+  por execução no runtime. Antes da inscrição, um operador com console autorizado
+  deve executar `python manage.py setup_admin_totp <usuario-confirmado>`.
+  A tentativa de console retornou 403; a identidade genérica `admin` não comprova
+  vínculo com Pablo. Só depois da preparação o titular conclui
+  [o assistente privado](https://admin.boulangerie.com.br/admin/2fa/enroll/),
+  guardando e testando a recuperação, sem compartilhar QR, senha ou códigos.
+- **C2:** resolvida pela [decisão registrada em 15/09](https://github.com/nelsonboulangerie/django-shopman/pull/638#issuecomment-5677842084):
+  manter confirmação explícita para CPF/e-mail novos, com “Cadastrar e vincular”
+  ou “Usar dados só neste pedido”. Não restaurar salvamento pré-marcado.
+- **C3:** não encerrada por este documento. Nome do ambiente, configuração de
+  produção e flip Pix são decisões/configurações distintas da integração dos PRs.
+
+O #689 entrou em `main` no commit `1f447506bfaf90d157f1e00795c86007a98d117c`:
+[build 34992175799](https://github.com/nelsonboulangerie/django-shopman/actions/runs/34992175799)
+e [smoke 34992417428](https://github.com/nelsonboulangerie/django-shopman/actions/runs/34992417428)
+concluíram com sucesso. O smoke confirmou o deployment
+`723cf37c-1cf2-46ba-a722-474702e8272e` ACTIVE com a imagem publicada.
+A coordenação confirmou nos logs de release `backstage.0068` e
+`otp_static.0001/0002/0003` aplicadas. O
+[roteiro do piloto](2026-09-15-admin-2fa-pilot.md) detalha inscrição e recuperação.
+
+A seção E abaixo permanece como pedido histórico de apreciação, atendido pelas
+frentes e PRs discriminados nesta matriz; não é uma nova ordem de execução.
+As ressalvas operacionais acima continuam abertas. Nenhuma alteração de código,
+credenciais, spec, seed ou infraestrutura faz parte desta reconciliação.
+
+---
+
 # Laudo adversarial de go-live — achados confirmados e pedido de apreciação
 
 **Para:** Codex (agente externo)
