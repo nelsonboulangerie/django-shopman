@@ -162,16 +162,20 @@ def test_endpoint_de_devolucao(client, counter, django_capture_on_commit_callbac
     with django_capture_on_commit_callbacks(execute=True):
         operator_orders.cancel_order(order, reason="customer_requested", actor="gestor:pablo")
     client.force_login(counter["operator"])
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
 
     response = client.post(
-        reverse("api-backstage-pos-cash-refund", args=[order.ref]), data={}, content_type="application/json"
+        reverse("api-backstage-pos-cash-refund", args=[order.ref]), data={"client_request_id": "test-cash_refund-170", }, content_type="application/json"
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "manager_approval_required"
 
     response = client.post(
         reverse("api-backstage-pos-cash-refund", args=[order.ref]),
-        data={"manager_approval": _approval()},
+        data={"client_request_id": "test-cash_refund-177", "manager_approval": _approval()},
         content_type="application/json",
     )
     assert response.status_code == 200
@@ -181,9 +185,13 @@ def test_endpoint_de_devolucao(client, counter, django_capture_on_commit_callbac
 def test_endpoint_exige_permissao_de_operar_pdv(client, counter):
     curious = get_user_model().objects.create_user(username="curioso", password="x")
     client.force_login(curious)
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
     response = client.post(
         reverse("api-backstage-pos-cash-refund", args=["X"]),
-        data={"manager_approval": _approval()},
+        data={"client_request_id": "test-cash_refund-192", "manager_approval": _approval()},
         content_type="application/json",
     )
     assert response.status_code in (401, 403)
@@ -195,11 +203,15 @@ def test_endpoint_exige_permissao_de_operar_pdv(client, counter):
 def test_cancel_no_pdv_devolve_na_hora_e_assina_o_gerente(client, counter, django_capture_on_commit_callbacks):
     order = _sell(counter, "r7")
     client.force_login(counter["operator"])
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
 
     with django_capture_on_commit_callbacks(execute=True):
         response = client.post(
             reverse("api-backstage-pos-cancel-recent-sale"),
-            data={"order_ref": order.ref, "manager_approval": _approval()},
+            data={"client_request_id": "test-cash_refund-211", "order_ref": order.ref, "manager_approval": _approval()},
             content_type="application/json",
         )
 

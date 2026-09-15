@@ -99,7 +99,7 @@ def test_o_turno_nasce_no_nome_de_quem_se_identificou(client, balcao, joyce, ter
 
     resposta = client.post(
         reverse("api-backstage-pos-cash-open"),
-        {"opening_amount": "100,00", "terminal_ref": terminal.ref},
+        {"opening_amount": "100,00", "terminal_ref": terminal.ref, "client_request_id": "identity-open"},
         content_type="application/json",
     )
 
@@ -116,13 +116,14 @@ def test_a_sangria_sai_com_quem_fez_e_com_quem_autorizou(client, balcao, joyce, 
     _identifica(client, joyce)
     client.post(
         reverse("api-backstage-pos-cash-open"),
-        {"opening_amount": "100,00", "terminal_ref": terminal.ref},
+        {"opening_amount": "100,00", "terminal_ref": terminal.ref, "client_request_id": "identity-open"},
         content_type="application/json",
     )
 
     resposta = client.post(
         reverse("api-backstage-pos-cash-movement"),
         {
+            "client_request_id": "identity-sangria",
             "kind": "sangria",
             "amount": "30,00",
             "reason": "Depósito no cofre",
@@ -154,7 +155,7 @@ def test_o_balcao_se_reveza_DENTRO_do_mesmo_turno(client, balcao, joyce, termina
     _identifica(client, joyce)
     abertura = client.post(
         reverse("api-backstage-pos-cash-open"),
-        {"opening_amount": "100,00", "terminal_ref": terminal.ref},
+        {"opening_amount": "100,00", "terminal_ref": terminal.ref, "client_request_id": "identity-open"},
         content_type="application/json",
     )
     assert abertura.status_code == 200, abertura.content
@@ -164,7 +165,7 @@ def test_o_balcao_se_reveza_DENTRO_do_mesmo_turno(client, balcao, joyce, termina
     _identifica(client, fran)
     sangria = client.post(
         reverse("api-backstage-pos-cash-movement"),
-        {"kind": "suprimento", "amount": "50,00", "reason": "troco"},
+        {"kind": "suprimento", "amount": "50,00", "reason": "troco", "client_request_id": "identity-suprimento"},
         content_type="application/json",
     )
     assert sangria.status_code == 200, sangria.content
@@ -182,7 +183,7 @@ def test_o_balcao_se_reveza_DENTRO_do_mesmo_turno(client, balcao, joyce, termina
     assert entrada.operator == fran
 
 
-def test_quem_entra_com_SENHA_tambem_assina_o_proprio_nome(client, joyce, terminal):
+def test_quem_entra_com_SENHA_tambem_assina_o_proprio_nome(client, balcao, joyce, terminal):
     """A estação pessoal — o PC do gestor — não tem PIN nem crachá, e não precisa.
 
     Entrar com usuário e senha é identificar-se do mesmo jeito: a sessão é da
@@ -193,7 +194,7 @@ def test_quem_entra_com_SENHA_tambem_assina_o_proprio_nome(client, joyce, termin
 
     resposta = client.post(
         reverse("api-backstage-pos-cash-open"),
-        {"opening_amount": "100,00", "terminal_ref": terminal.ref},
+        {"opening_amount": "100,00", "terminal_ref": terminal.ref, "client_request_id": "identity-open"},
         content_type="application/json",
     )
 

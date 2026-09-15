@@ -17,7 +17,8 @@ class CheckoutSerializer(serializers.Serializer):
     address_label = CheckoutAddressLabelSerializer(required=False)
     idempotency_key = serializers.CharField(required=False, default="", allow_blank=True, max_length=120)
     name = serializers.CharField(max_length=120)
-    phone = serializers.CharField(max_length=32)
+    # Compatibility input only: checkout uses the authenticated customer phone.
+    phone = serializers.CharField(required=False, allow_blank=True, max_length=32)
     notes = serializers.CharField(required=False, default="", allow_blank=True, max_length=500)
     fulfillment_type = serializers.ChoiceField(
         choices=["pickup", "delivery"],
@@ -31,7 +32,7 @@ class CheckoutSerializer(serializers.Serializer):
     delivery_instructions = serializers.CharField(required=False, default="", allow_blank=True, max_length=500)
     delivery_date = serializers.CharField(required=False, default="", allow_blank=True, max_length=32)
     delivery_time_slot = serializers.CharField(required=False, default="", allow_blank=True, max_length=32)
-    payment_method = serializers.CharField(required=False, default="", allow_blank=True, max_length=32)
+    payment_method = serializers.CharField(max_length=32)
     # Troco para entrega em dinheiro ("50", "50,00") — o entregador precisa saber.
     change_for = serializers.CharField(required=False, default="", allow_blank=True, max_length=32)
     use_loyalty = serializers.BooleanField(required=False, default=False)
@@ -125,7 +126,6 @@ class AvailabilityResponseSerializer(serializers.Serializer):
 
 
 class StockAlertSubscribeRequestSerializer(serializers.Serializer):
-    phone = serializers.CharField(required=False, allow_blank=True, max_length=32)
     alert_type = serializers.ChoiceField(
         choices=["stock_back", "production_ready"],
         required=False,
@@ -139,6 +139,12 @@ class StockAlertSubscribeResponseSerializer(serializers.Serializer):
     active = serializers.BooleanField(required=False)
     expires_at = serializers.DateTimeField(allow_null=True, required=False)
     management_url = serializers.URLField(required=False)
+
+
+class StockAlertAuthRequiredResponseSerializer(serializers.Serializer):
+    detail = serializers.CharField()
+    field = serializers.ChoiceField(choices=["auth"])
+    auth_required = serializers.BooleanField()
 
 
 class StockAlertSessionStateSerializer(serializers.Serializer):

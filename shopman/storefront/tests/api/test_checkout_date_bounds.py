@@ -16,6 +16,7 @@ import pytest
 from django.utils import timezone
 
 from shopman.shop.services.business_calendar import BusinessCalendarState
+from shopman.storefront.tests._checkout_auth import authenticate_checkout
 from shopman.storefront.tests._checkout_baseline import with_baseline
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
@@ -36,6 +37,7 @@ def _checkout(client, delivery_date: str):
         "/api/v1/checkout/",
         data=with_baseline(client, {
             "name": "Ana",
+            "payment_method": "cash",
             "phone": "+5543999990001",
             "fulfillment_type": "pickup",
             "delivery_date": delivery_date,
@@ -46,6 +48,7 @@ def _checkout(client, delivery_date: str):
 
 
 def test_past_delivery_date_is_rejected(client):
+    authenticate_checkout(client)
     _seed_surface()
     _add_item(client)
 
@@ -59,6 +62,7 @@ def test_past_delivery_date_is_rejected(client):
 
 
 def test_delivery_date_beyond_preorder_window_is_rejected(client):
+    authenticate_checkout(client)
     _seed_surface()
     _add_item(client)
 
@@ -77,6 +81,7 @@ def test_today_after_close_is_rejected(client):
     vira pedido impossível. is_open_on é cego à hora — o gate confia no
     ``after_close`` do current_business_state.
     """
+    authenticate_checkout(client)
     _seed_surface()
     _add_item(client)
 

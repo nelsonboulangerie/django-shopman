@@ -54,6 +54,9 @@ export function storefrontResponseHeaders(secure: boolean, pathname = ''): Recor
     headers.Pragma = 'no-cache'
     headers['Referrer-Policy'] = 'no-referrer'
   }
+  if (pathname === '/sw.js') {
+    headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+  }
   return headers
 }
 

@@ -7,6 +7,7 @@ import type { WeighingTicketProjection } from "../../app/types/production";
 import { UiButtonStub } from "../support/nativeUiStubs";
 
 const tickets = ref<WeighingTicketProjection[]>([]);
+const miseLines = ref<Array<Record<string, unknown>>>([]);
 const printSpy = vi.fn();
 const weighingProjection = ref({
   selected_date: "2026-09-10",
@@ -67,9 +68,10 @@ function installGlobals() {
   vi.stubGlobal("ref", ref);
   vi.stubGlobal("watch", watch);
   vi.stubGlobal("useRoute", () => ({ query: {} }));
+  vi.stubGlobal("useOperatorLock", () => ({ stationRef: ref("prep-a") }));
   vi.stubGlobal("useMiseEnPlace", () => ({
-    projection: ref(null),
-    lines: ref([]),
+    projection: ref({ work_order_count: 1 }),
+    lines: miseLines,
     expand: ref(false),
     pending: ref(false),
     error: ref(null),
@@ -77,6 +79,7 @@ function installGlobals() {
     isChecked: () => false,
     toggleChecked: vi.fn(),
     checkedCount: ref(0),
+    checklistRevisionChanged: ref(false),
   }));
   vi.stubGlobal("useWeighing", () => ({
     projection: weighingProjection,
@@ -123,6 +126,7 @@ const stubs = {
 beforeEach(() => {
   installGlobals();
   printSpy.mockReset();
+  miseLines.value = [];
   tickets.value = [
     ticket("massa-base", "Massa Croissant", "D8", "ticket-croissant"),
     ticket("massa-base", "Massa Forma", "S5", "ticket-forma"),
@@ -143,6 +147,33 @@ describe("Preparação — preview e identificação", () => {
     ]);
     expect(buttons[0]?.attributes("aria-pressed")).toBe("true");
     expect(wrapper.find("article").exists()).toBe(true);
+  });
+
+  it("declara que o checklist da estação é apoio local, não auditoria", async () => {
+    miseLines.value = [
+      {
+        sku: "FARINHA",
+        name: "Farinha",
+        quantity_display: "1.000 g",
+        unit: "g",
+        is_subrecipe: false,
+        available_display: "",
+        is_short: false,
+        breakdown: [],
+        annotation: "",
+        margin_display: "",
+        margin_reason: "",
+      },
+    ];
+    const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("Por insumo"))!
+      .trigger("click");
+
+    expect(wrapper.text()).toContain(
+      "Checklist local desta estação · não é registro de auditoria",
+    );
   });
 
   it("mostra Nome e, na última linha do cabeçalho, SKU · peso total em gramas", () => {

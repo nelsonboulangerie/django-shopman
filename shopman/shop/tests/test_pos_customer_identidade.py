@@ -303,3 +303,40 @@ def test_stale_selection_never_falls_back_to_another_customer(_pdv):
     with pytest.raises(ValueError, match="cadastro selecionado não está disponível"):
         resolve_or_create_customer(ref="missing", phone=existing.phone, operator_username="op")
     assert Customer.objects.count() == 1
+
+
+def test_nome_preenchido_nao_muda_por_merge_passivo(_pdv):
+    customer = _customer("Ana", "Prado", "+5543999990011")
+
+    resolve_or_create_customer(
+        ref=customer.ref, name="Ana Corrigida", operator_username="op",
+    )
+
+    customer.refresh_from_db()
+    assert customer.name == "Ana Prado"
+
+
+def test_nome_muda_somente_com_correcao_explicita(_pdv):
+    customer = _customer("Ana", "Prado", "+5543999990011")
+
+    resolve_or_create_customer(
+        ref=customer.ref,
+        name="Ana Corrigida",
+        name_correction=True,
+        operator_username="op",
+    )
+
+    customer.refresh_from_db()
+    assert customer.name == "Ana Corrigida"
+
+
+def test_correcao_para_nome_simples_remove_sobrenome_antigo(_pdv):
+    customer = _customer("Ana", "Prado", "+5543999990011")
+
+    resolve_or_create_customer(
+        ref=customer.ref, name="Aninha", name_correction=True, operator_username="op",
+    )
+
+    customer.refresh_from_db()
+    assert customer.first_name == "Aninha"
+    assert customer.last_name == ""

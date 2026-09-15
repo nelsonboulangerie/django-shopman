@@ -424,11 +424,12 @@ def _on_accepted(order, config: ChannelConfig) -> None:
             payment.initiate(order)
 
         if not _payment_is_captured(order):
-            # A venda de LINK do balcão avisa o cliente onde a URL nasce — no
-            # fechamento da venda, com a copy do balcão ("anotamos seu pedido").
-            # `payment_requested` é a copy da loja online ("conferimos a
-            # disponibilidade…"); mandar as duas é a casa falando duas vezes.
-            if not _counter_link_sale(order, config):
+            # No PDV o comprovante (QR/copia-e-cola/checkout_url) só existe ao
+            # final de close_sale. O próprio writer enfileira a mensagem depois
+            # de persistir esse payload; antecipá-la aqui cria uma corrida e pode
+            # enviar uma cobrança sem meio de pagamento. Canais remotos seguem
+            # usando o lifecycle como dono do pedido de pagamento.
+            if (order.data or {}).get("origin_channel") != "pos":
                 notification.send(order, "payment_requested")
             return
 
@@ -478,18 +479,13 @@ def _on_accepted(order, config: ChannelConfig) -> None:
 def _counter_handoff(order) -> bool:
     """A mercadoria já está na mão do cliente quando a venda fecha?
 
-    Balcão presencial (PDV, retirada, sem data futura, pagamento que não é
-    link): a venda documenta um fato passado. Encomenda agendada, entrega e o
+    Balcão presencial (PDV, retirada, sem data futura, pagamento recebido):
+    a venda documenta a entrega. Encomenda agendada, entrega e o
     pedido de LINK ficam de fora — esses têm trabalho e trajeto pela frente, e
     a esteira existe para eles. A pergunta é a mesma que o KDS faz para não
     criar ticket de separação (``order_helpers.customer_holds_the_goods``).
     """
     return customer_holds_the_goods(order)
-
-
-def _counter_link_sale(order, config: ChannelConfig) -> bool:
-    """Venda de LINK anotada no PDV: o pedido remoto que o balcão registrou."""
-    return (order.data or {}).get("origin_channel") == "pos" and _payment_method(order, config) == "link"
 
 
 def _on_paid(order, config: ChannelConfig) -> None:
@@ -502,6 +498,10 @@ def _on_paid(order, config: ChannelConfig) -> None:
         payment.refund(order)
         _create_alert(order, "payment_after_cancel")
         return
+    if (order.data or {}).get("origin_channel") == "pos" and _payment_is_captured(order):
+        # A cobrança digital acabou de se liquidar. A nota também deve nascer
+        # quando a retirada/entrega estiver agendada para outro dia.
+        fiscal.emit(order)
     if order.status == Order.Status.NEW:
         _create_alert(order, "payment_awaiting_confirmation")
         if config.confirmation.mode in ("auto_confirm", "auto_cancel"):
@@ -527,6 +527,12 @@ def _on_paid(order, config: ChannelConfig) -> None:
     notification.send(order, "payment_confirmed")
     if physical_work_dispatched:
         _mark_preparing_after_physical_work_dispatch(order)
+    elif (
+        order.status == Order.Status.ACCEPTED
+        and _counter_handoff(order)
+        and order.can_transition_to(Order.Status.COMPLETED)
+    ):
+        order.transition_status(Order.Status.COMPLETED, actor="system:counter_handoff")
 
 
 def _on_preparing(order, config: ChannelConfig) -> None:
@@ -673,6 +679,15 @@ def _handle_confirmation(order, config: ChannelConfig) -> None:
       explicitly confirms or cancels. No timeout.
     """
     mode = config.confirmation.mode
+    if mode == "immediate":
+        from shopman.shop.services.pos_sales_mode import is_pos_order_mode
+
+        # O canal PDV compartilha dois contratos: Balcão documenta uma entrega
+        # imediata; Encomenda registra uma solicitação que ainda precisa do aceite
+        # humano. A marca está no snapshot desde o commit, então a distinção não
+        # depende da escrita operacional posterior em Order.data.
+        if is_pos_order_mode(order):
+            mode = "manual"
 
     if mode == "immediate":
         ensure_confirmable(order)
@@ -767,19 +782,9 @@ def _requires_captured_payment_before_confirmation(order, config: ChannelConfig)
 
 
 def _requires_payment_before_physical_work(order, config: ChannelConfig) -> bool:
-    method = _payment_method(order, config)
-    # O LINK é cobrança REMOTA: o dinheiro ainda não entrou, seja qual for o
-    # `timing` do canal. "external" descreve o balcão recebendo na hora
-    # (dinheiro, maquininha) — e o link existe justamente para o pedido que
-    # NÃO está no balcão. Sem esta linha a venda de link do PDV ia para a
-    # cozinha, baixava o estoque e fechava como entregue sem um centavo
-    # capturado; e, uma vez além de ACCEPTED, o vencimento do link não a
-    # alcançava mais.
-    if method == "link":
-        return True
-    if config.payment.timing == "external":
-        return False
-    return method in _UPFRONT_DIGITAL_PAYMENT_METHODS
+    # O método determina se há gateway. O timing externo do balcão não
+    # transforma Pix/card/link em dinheiro recebido pela maquininha.
+    return _payment_method(order, config) in _UPFRONT_DIGITAL_PAYMENT_METHODS
 
 
 def _payment_is_authorized(order) -> bool:
@@ -845,10 +850,10 @@ def _stock_fulfill_allowed(order, config: ChannelConfig) -> bool:
     if (
         config.payment.timing == "external"
         and config.payment.method != "external"
-        and _payment_method(order, config) != "link"
+        and not _requires_payment_before_physical_work(order, config)
     ):
         # Counter payment — no digital payment step, fulfill immediately.
-        # (O link não é pagamento de balcão: baixa só depois de capturado.)
+        # Gateway (Pix/card/link) só baixa depois de captura suficiente.
         return True
     # Payment may have arrived while the order was still NEW. In that case
     # the paid hook deliberately waited for operational confirmation.

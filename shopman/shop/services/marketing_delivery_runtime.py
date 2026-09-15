@@ -6,13 +6,14 @@ import logging
 from dataclasses import dataclass
 
 from shopman.shop.models import MarketingOutbox
+from shopman.shop.services.marketing_capabilities import platform_refs
 from shopman.shop.services.marketing_contracts import MarketingContractError
 from shopman.shop.services.marketing_delivery_worker import (
     fanout_in_chunks,
     queue_materialized_targets,
 )
 
-SUPPORTED_PLATFORMS = ("instagram", "facebook", "google_business", "whatsapp")
+SUPPORTED_PLATFORMS = platform_refs()
 logger = logging.getLogger(__name__)
 
 

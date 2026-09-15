@@ -406,8 +406,8 @@ class Shop(models.Model):
 
     @property
     def background_color(self) -> str:
-        """Hex background color (derived from OKLCH neutral scale). Used by PWA manifest."""
-        return self.design_tokens.get("background_hex", "#F5F0EB")
+        """Cor de fundo editável da loja, usada pelo manifesto PWA."""
+        return self.neutral_color or "#F5F0EB"
 
     @property
     def default_city(self) -> str:

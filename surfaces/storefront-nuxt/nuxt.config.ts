@@ -1,4 +1,27 @@
 import tailwindcss from "@tailwindcss/vite";
+import splashScreens from './pwa-splash-screens.json'
+
+type AppleStartupImage = readonly [number, number, number, 'portrait' | 'landscape']
+
+const appleStartupImages: readonly AppleStartupImage[] = splashScreens.map((screen) => {
+  const [width, height, scale, orientation] = screen
+  if (
+    screen.length !== 4
+    || typeof width !== 'number'
+    || typeof height !== 'number'
+    || typeof scale !== 'number'
+    || (orientation !== 'portrait' && orientation !== 'landscape')
+  ) {
+    throw new TypeError('Configuração inválida em pwa-splash-screens.json')
+  }
+  return [width, height, scale, orientation]
+})
+
+const appleStartupLinks = appleStartupImages.map(([width, height, scale, orientation]) => ({
+  rel: 'apple-touch-startup-image' as const,
+  href: `/pwa/apple-splash-${width}-${height}.png`,
+  media: `(device-width: ${width / scale}px) and (device-height: ${height / scale}px) and (-webkit-device-pixel-ratio: ${scale}) and (orientation: ${orientation})`
+}))
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
@@ -26,6 +49,9 @@ export default defineNuxtConfig({
   routeRules: {
     '/img/products/**': {
       headers: { 'cache-control': 'public, max-age=31536000, immutable' }
+    },
+    '/sw.js': {
+      headers: { 'cache-control': 'no-cache, no-store, must-revalidate' }
     }
   },
 
@@ -37,9 +63,16 @@ export default defineNuxtConfig({
       // tenant — e nuxt.config só aceita string, então aqui ele não tem vez.
       meta: [
         { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
-        { name: 'theme-color', content: '#85786c' },
+        { name: 'theme-color', content: '#7C3A40' },
         { name: 'apple-mobile-web-app-capable', content: 'yes' },
         { name: 'apple-mobile-web-app-status-bar-style', content: 'default' }
+      ],
+      link: [
+        { rel: 'manifest', href: '/manifest.webmanifest' },
+        { rel: 'icon', href: '/pwa/favicon.svg', type: 'image/svg+xml' },
+        { rel: 'icon', href: '/pwa/favicon.ico', sizes: 'any' },
+        { rel: 'apple-touch-icon', href: '/pwa/apple-touch-icon-transparent-180x180.png' },
+        ...appleStartupLinks
       ]
     }
   },
@@ -50,11 +83,60 @@ export default defineNuxtConfig({
     '@vueuse/nuxt',
     '@nuxt/icon',
     '@nuxt/fonts',
+    '@vite-pwa/nuxt',
     "@yuta-inoue-ph/nuxt-vcalendar",
     "vue-sonner/nuxt",
     '@nuxt/eslint',
     '@nuxt/test-utils/module'
   ],
+
+  pwa: {
+    manifest: false,
+    strategies: 'generateSW',
+    registerType: 'prompt',
+    injectRegister: false,
+    client: {
+      registerPlugin: false,
+      installPrompt: false,
+      periodicSyncForUpdates: 0
+    },
+    workbox: {
+      navigateFallback: null,
+      navigationPreload: false,
+      cleanupOutdatedCaches: true,
+      clientsClaim: false,
+      skipWaiting: false,
+      globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+      globIgnores: ['pwa/screenshots/**'],
+      manifestTransforms: [async entries => ({ manifest: entries, warnings: [] })],
+      runtimeCaching: [
+        {
+          urlPattern: ({ request }) => request.mode === 'navigate',
+          handler: 'NetworkOnly',
+          options: {
+            precacheFallback: { fallbackURL: '/offline.html' }
+          }
+        },
+        {
+          urlPattern: ({ url }) => url.origin === self.location.origin && url.pathname.startsWith('/img/products/'),
+          handler: 'CacheFirst',
+          options: {
+            cacheName: 'storefront-product-images'
+          }
+        },
+        {
+          urlPattern: ({ url }) => url.origin === self.location.origin && url.pathname.startsWith('/fonts/'),
+          handler: 'CacheFirst',
+          options: {
+            cacheName: 'storefront-fonts'
+          }
+        }
+      ]
+    },
+    devOptions: {
+      enabled: false
+    }
+  },
 
   // ESLint com o flat config gerado pelo Nuxt (stylistic OFF; Prettier cuida do estilo).
   eslint: {

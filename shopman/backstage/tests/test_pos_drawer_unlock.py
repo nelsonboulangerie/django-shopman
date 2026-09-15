@@ -102,9 +102,13 @@ def test_o_destrave_esta_no_contrato_de_acoes(operator):
 def test_endpoint_exige_permissao_de_operar_pdv(client):
     user = get_user_model().objects.create_user(username="curioso", password="x")
     client.force_login(user)
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
     response = client.post(
         reverse("api-backstage-pos-cash-drawer-unlock"),
-        data={"manager_approval": _approval()},
+        data={"client_request_id": "test-drawer_unlock-110", "manager_approval": _approval()},
         content_type="application/json",
     )
     assert response.status_code in (401, 403)
@@ -114,7 +118,11 @@ def test_endpoint_sem_pin_devolve_o_codigo_do_desafio(client, operator):
     """A tela precisa do CÓDIGO para abrir o diálogo de PIN, não de um toast mudo."""
     _grant(operator, "operate_pos")
     client.force_login(operator)
-    response = client.post(reverse("api-backstage-pos-cash-drawer-unlock"), data={}, content_type="application/json")
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
+    response = client.post(reverse("api-backstage-pos-cash-drawer-unlock"), data={"client_request_id": "test-drawer_unlock-123", }, content_type="application/json")
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "manager_approval_required"
 
@@ -122,9 +130,13 @@ def test_endpoint_sem_pin_devolve_o_codigo_do_desafio(client, operator):
 def test_endpoint_com_pin_registra_e_devolve_ok(client, operator, manager):
     _grant(operator, "operate_pos")
     client.force_login(operator)
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
     response = client.post(
         reverse("api-backstage-pos-cash-drawer-unlock"),
-        data={"manager_approval": _approval(), "drawer_raw": "0x12"},
+        data={"client_request_id": "test-drawer_unlock-136", "manager_approval": _approval(), "drawer_raw": "0x12"},
         content_type="application/json",
     )
     assert response.status_code == 200
@@ -199,9 +211,13 @@ def test_sem_detalhe_o_aviso_ainda_sai(operator):
 
 def test_endpoint_do_aviso_exige_permissao_de_operar_pdv(client, operator):
     client.force_login(operator)
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
     response = client.post(
         reverse("api-backstage-pos-cash-drawer-blind"),
-        data={"reason": "cabo"},
+        data={"client_request_id": "test-drawer_unlock-216", "reason": "cabo"},
         content_type="application/json",
     )
     assert response.status_code == 403
@@ -211,9 +227,13 @@ def test_endpoint_do_aviso_exige_permissao_de_operar_pdv(client, operator):
 def test_endpoint_registra_e_devolve_ok(client, operator):
     _grant(operator, "operate_pos")
     client.force_login(operator)
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
     response = client.post(
         reverse("api-backstage-pos-cash-drawer-blind"),
-        data={"reason": "impressora não respondeu"},
+        data={"client_request_id": "test-drawer_unlock-231", "reason": "impressora não respondeu"},
         content_type="application/json",
     )
     assert response.status_code == 200 and response.json()["ok"] is True
@@ -299,9 +319,13 @@ def test_duracao_absurda_tem_teto(operator):
 def test_endpoint_do_bloqueio_registra(client, operator):
     _grant(operator, "operate_pos")
     client.force_login(operator)
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
     response = client.post(
         reverse("api-backstage-pos-cash-drawer-block"),
-        data={"duration_ms": 1500, "outcome": "closed"},
+        data={"client_request_id": "test-drawer_unlock-322", "duration_ms": 1500, "outcome": "closed"},
         content_type="application/json",
     )
 
@@ -332,9 +356,13 @@ def test_gaveta_esquecida_aberta_vira_alerta_e_linha(operator):
 
 def test_endpoint_da_gaveta_esquecida_exige_operar_pdv(client, operator):
     client.force_login(operator)
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
     response = client.post(
         reverse("api-backstage-pos-cash-drawer-left-open"),
-        data={"minutes": 5},
+        data={"client_request_id": "test-drawer_unlock-358", "minutes": 5},
         content_type="application/json",
     )
 

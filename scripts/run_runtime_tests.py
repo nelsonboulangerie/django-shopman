@@ -72,8 +72,16 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     # hydrated ``member__customer`` path as an OUTER JOIN and rejects a broad
     # ``FOR UPDATE``; this regression only exists on the real database.
     "shopman/shop/tests/test_marketing_delivery_postgres.py",
+    # O ciclo expand/rollback/reapply da 0053 precisa rodar no PostgreSQL real:
+    # SQLite não prova compatibilidade do writer 0052 com defaults/constraints
+    # do schema expandido nem a reversão transacional do banco de produção.
+    "shopman/shop/tests/test_marketing_capabilities.py",
     "shopman/backstage/tests/test_gateway_smoke.py",
+    "shopman/backstage/tests/test_pos_tab_revision_boundary.py",
     "shopman/backstage/tests/test_planning_idempotency_race.py",
+    # Dois relays da mesma estação não podem capturar/imprimir a mesma etiqueta.
+    # A garantia depende de SELECT FOR UPDATE SKIP LOCKED no PostgreSQL real.
+    "shopman/backstage/tests/test_production_print_jobs_postgresql.py",
     "shopman/shop/tests/test_deploy_checks.py",
     "shopman/shop/tests/test_health.py",
 )

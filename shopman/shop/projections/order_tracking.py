@@ -1068,7 +1068,7 @@ def _build_promise(
     # Encomenda agendada (WP-D): entre a confirmação e a data combinada o pedido
     # está garantido para a data. A presentation compõe "pedido para sábado, a
     # partir das 09h" com ``commitment_date``/``commitment_slot_ref``.
-    if is_preorder and order.status in {"new", "accepted"}:
+    if is_preorder and order.status == "accepted":
         return promise(state="preorder_scheduled", tone="success" if payment_confirmed else "info")
 
     if payment_confirmed and order.status in {"new", "accepted"}:

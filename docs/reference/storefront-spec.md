@@ -196,7 +196,7 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
 - **WP-1 — Checkout persiste endereço/cliente/defaults.** Os 3 efeitos pós-commit
   (`ensure_customer`/`persist_new_address`/`save_defaults`) entraram em `checkout.process()` (fonte única).
 - **WP-2 — Disponibilidade: pausado ≠ esgotado.** Flags `is_paused`/`is_notifiable` nas projeções + UX.
-- **WP-3 — "Me avise quando voltar".** `StockAlertSubscription` + `StockNotifyButton` (anônimo só-telefone).
+- **WP-3 — "Me avise quando voltar".** `StockAlertSubscription` + `StockNotifyButton`; no web, o cadastro usa a identidade autenticada e o telefone canônico da conta. A tela preserva página e produto durante a entrada e pede confirmação explícita ao voltar.
 - **WP-4 — Favoritos.** `CustomerFavorite` + coração (PDP) + coleção "Seus favoritos".
 - **WP-5 — Preferência alimentar.** Aviso dietético (badge) + filtro "só compatível"; conservador.
 - **WP-6 — "Talvez você também goste".** cross_sell via `related_skus` (já existia).

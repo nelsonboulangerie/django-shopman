@@ -1,11 +1,14 @@
 // Reenvio do link de pagamento — o gesto "não chegou" da tela de resultado.
 // Arquivo próprio (e não no sale.test.ts) porque o harness `makeSale` injeta o
 // transporte `action.call`: aqui não há `$fetch` a mockar.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mockNuxtImport } from "@nuxt/test-utils/runtime";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "vue-sonner";
 
 import { makeProjection, makeSale } from "./_posSaleHarness";
 
+const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }));
+mockNuxtImport("$fetch", () => fetchMock);
 vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 
 function freeCartProjection() {
@@ -51,6 +54,7 @@ describe("usePosSale — reenviar o link de pagamento", () => {
     vi.mocked(toast.error).mockClear();
     vi.mocked(toast.success).mockClear();
   });
+  afterEach(() => vi.useRealTimers());
 
   async function closedLinkSale(actionCall: ReturnType<typeof vi.fn>) {
     const h = saleReadyForCheckout(actionCall);
@@ -60,16 +64,25 @@ describe("usePosSale — reenviar o link de pagamento", () => {
     return h;
   }
 
-  it("posta em /pos/orders/{ref}/resend-payment-link/ e tosta sucesso", async () => {
+  it("posta ação no endpoint genérico e preserva a evidência de entrega", async () => {
     const actionCall = saleRouter(linkPayment);
     const h = await closedLinkSale(actionCall);
+    actionCall.mockImplementationOnce(async () => ({
+      payment_delivery: {
+        status: "accepted",
+        notice: "Envio aceito pelo WhatsApp. Leitura não confirmada.",
+        channel: "whatsapp",
+      },
+    }));
 
     expect(await h.sale.resendPaymentLink()).toBe(true);
 
-    const resend = actionCall.mock.calls.filter((c) => String(c[0]).includes("/resend-payment-link/"));
+    const resend = actionCall.mock.calls.filter((c) => String(c[0]).includes("/send-payment-notice/"));
     expect(resend).toHaveLength(1);
-    expect(String(resend[0]![0])).toBe("/api/v1/backstage/pos/orders/PED-1/resend-payment-link/");
-    expect(vi.mocked(toast.success)).toHaveBeenCalledWith("Reenvio do link solicitado.");
+    expect(String(resend[0]![0])).toBe("/api/v1/backstage/pos/orders/PED-1/send-payment-notice/");
+    expect(resend[0]![1]).toEqual({ body: { action: "resend" } });
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith("Envio aceito pelo WhatsApp. Leitura não confirmada.");
+    expect(h.sale.result.value?.paymentDelivery?.channel).toBe("whatsapp");
     expect(h.sale.resendingLink.value).toBe(false);
     h.handles.dispose();
   });
@@ -99,10 +112,40 @@ describe("usePosSale — reenviar o link de pagamento", () => {
     expect(await h.sale.resendPaymentLink()).toBe(false);
     release();
     expect(await first).toBe(true);
-    expect(actionCall.mock.calls.filter((c) => String(c[0]).includes("/resend-payment-link/"))).toHaveLength(1);
+    expect(actionCall.mock.calls.filter((c) => String(c[0]).includes("/send-payment-notice/"))).toHaveLength(1);
 
     h.sale.dismissResult();
     expect(await h.sale.resendPaymentLink()).toBe(false);
+    h.handles.dispose();
+  });
+
+  it("polling não sobrepõe requests nem aplica resposta tardia em outra venda", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockReset();
+    let release!: (value: unknown) => void;
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const actionCall = saleRouter(linkPayment);
+    const h = await closedLinkSale(actionCall);
+    actionCall.mockImplementationOnce(async () => ({
+      payment_delivery: { status: "queued", channel: "whatsapp" },
+    }));
+    expect(await h.sale.resendPaymentLink()).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(7500);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    h.sale.result.value = {
+      ...h.sale.result.value!,
+      orderRef: "PED-2",
+      paymentDelivery: { status: "accepted", channel: "email", notice: "Venda nova" },
+    };
+    release({ payment_delivery: { status: "accepted", channel: "whatsapp", notice: "Venda antiga" } });
+    await vi.runAllTicks();
+
+    expect(h.sale.result.value.paymentDelivery?.channel).toBe("email");
+    expect(h.sale.result.value.paymentDelivery?.notice).toBe("Venda nova");
     h.handles.dispose();
   });
 });

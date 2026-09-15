@@ -122,12 +122,19 @@ def hold(order, *, require_all: bool = False) -> None:
         sku = item["sku"]
         qty = Decimal(str(item["qty"]))
 
+        # Existing reservations secure quantity, not permission to sell. Recheck
+        # the current offering before adopting them (including the bundle root).
+        if require_all:
+            _require_current_sellability(adapter, item, sku, qty)
+
         # Expand bundles into components
         components = _expand_if_bundle(sku, qty)
 
         for comp in components:
             comp_sku = comp["sku"]
             comp_qty = Decimal(str(comp["qty"]))
+            if require_all and comp_sku != sku:
+                _require_current_sellability(adapter, item, comp_sku, comp_qty)
 
             # SKUs not tracked by Stockman need no hold — skip silently.
             # Exceção (canal gated): SKU fora do CATÁLOGO não pode virar
@@ -420,6 +427,13 @@ def _sku_known_to_catalog(sku: str) -> bool:
             exc_info=True,
         )
         return False
+
+
+
+def _require_current_sellability(adapter, item: dict, sku: str, qty) -> None:
+    # Unknown SKUs retain the channel's explicit allow_untracked policy below.
+    if _sku_known_to_catalog(sku) and adapter.get_availability(sku).get("is_paused") is True:
+        raise _insufficient_stock_error(item, sku, qty, "SKU_PAUSED")
 
 
 def _insufficient_stock_error(item: dict, comp_sku: str, qty, error_code):

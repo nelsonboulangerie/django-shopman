@@ -6,6 +6,7 @@ import { mountSuspended } from "@nuxt/test-utils/runtime";
 
 import PosPaymentResult from "~/components/PosPaymentResult.vue";
 import type { PaymentProofView } from "~/presentation/payment";
+import type { POSPaymentDeliveryProjection } from "~/types/pos";
 
 function linkProof(overrides: Partial<PaymentProofView> = {}): PaymentProofView {
   return {
@@ -23,6 +24,22 @@ function linkProof(overrides: Partial<PaymentProofView> = {}): PaymentProofView 
     isLink: true,
     hasProof: true,
     expiresDisplay: "amanhã às 9h",
+    ...overrides,
+  };
+}
+
+function delivery(overrides: Partial<POSPaymentDeliveryProjection> = {}): POSPaymentDeliveryProjection {
+  return {
+    template: "payment_link",
+    status: "accepted",
+    channel: "whatsapp",
+    channel_label: "WhatsApp",
+    notice: "Envio aceito pelo WhatsApp. Leitura não confirmada.",
+    reason_code: "",
+    can_send: false,
+    can_resend: true,
+    action: "resend",
+    action_label: "Reenviar cobrança",
     ...overrides,
   };
 }
@@ -60,36 +77,62 @@ describe("PosPaymentResult — o prazo do link", () => {
   });
 });
 
-describe("PosPaymentResult — reenviar o link", () => {
-  it("o botão fica ao lado de Copiar link e emite resendLink", async () => {
-    const wrapper = await mountSuspended(PosPaymentResult, { props: { proof: linkProof(), status: "idle" } });
+describe("PosPaymentResult — entrega da cobrança", () => {
+  it("mostra o canal realmente aceito e emite a ação do servidor", async () => {
+    const wrapper = await mountSuspended(PosPaymentResult, {
+      props: { proof: linkProof(), status: "idle", delivery: delivery() },
+    });
 
-    const botao = wrapper.find('[data-action="resend-link"]');
+    const botao = wrapper.find('[data-action="send-payment-notice"]');
     expect(botao.exists()).toBe(true);
-    expect(botao.text()).toContain("Reenviar");
+    expect(botao.text()).toContain("Reenviar cobrança");
     expect(wrapper.text()).toContain("Copiar link");
+    expect(wrapper.text()).toContain("Envio aceito pelo WhatsApp. Leitura não confirmada.");
     await botao.trigger("click");
-    expect(wrapper.emitted("resendLink")).toHaveLength(1);
+    expect(wrapper.emitted("paymentNotice")).toEqual([["resend"]]);
   });
 
   it("em voo, o botão trava — clique duplo não vira dois reenvios", async () => {
     const wrapper = await mountSuspended(PosPaymentResult, {
-      props: { proof: linkProof(), status: "idle", resending: true },
+      props: { proof: linkProof(), status: "idle", delivery: delivery(), resending: true },
     });
 
-    const botao = wrapper.find('[data-action="resend-link"]');
+    const botao = wrapper.find('[data-action="send-payment-notice"]');
     expect(botao.attributes("disabled")).toBeDefined();
     await botao.trigger("click");
-    expect(wrapper.emitted("resendLink")).toBeUndefined();
+    expect(wrapper.emitted("paymentNotice")).toBeUndefined();
   });
 
-  it("o Pix não tem o que reenviar — o QR está na tela", async () => {
+  it("o Pix pode ser enviado quando o servidor expõe a ação", async () => {
     const wrapper = await mountSuspended(PosPaymentResult, {
       props: {
         proof: linkProof({ method: "pix", isPix: true, isLink: false, checkoutUrl: "", copyPaste: "000201..." }),
         status: "polling",
+        delivery: delivery({
+          template: "payment_requested",
+          status: "not_sent",
+          channel: "",
+          channel_label: "",
+          notice: "Cobrança pronta para envio.",
+          can_send: true,
+          can_resend: false,
+          action: "send",
+          action_label: "Enviar PIX ao cliente",
+        }),
       },
     });
-    expect(wrapper.find('[data-action="resend-link"]').exists()).toBe(false);
+    const botao = wrapper.find('[data-action="send-payment-notice"]');
+    expect(botao.text()).toContain("Enviar PIX ao cliente");
+    await botao.trigger("click");
+    expect(wrapper.emitted("paymentNotice")).toEqual([["send"]]);
+  });
+
+  it("não inventa ação ou canal quando o servidor não os informou", async () => {
+    const wrapper = await mountSuspended(PosPaymentResult, {
+      props: { proof: linkProof(), status: "idle", delivery: delivery({ status: "queued", channel: "", channel_label: "", action: "", action_label: "", notice: "Envio na fila." }) },
+    });
+    expect(wrapper.text()).toContain("Envio na fila.");
+    expect(wrapper.text()).not.toContain("WhatsApp");
+    expect(wrapper.find('[data-action="send-payment-notice"]').exists()).toBe(false);
   });
 });

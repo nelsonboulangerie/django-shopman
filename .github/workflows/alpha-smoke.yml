@@ -221,44 +221,25 @@ jobs:
           curl -s --max-time 30 -H 'Accept: application/json' \
             https://api.boulangerie.com.br/api/v1/storefront/menu/ \
             -o menu.json
-          python3 - <<'EOF'
-          import json
-          import os
-
-          def walk(node):
-              if isinstance(node, dict):
-                  yield node
-                  for value in node.values():
-                      yield from walk(value)
-              elif isinstance(node, list):
-                  for value in node:
-                      yield from walk(value)
-
-          data = json.load(open("menu.json"))
-          products = [n for n in walk(data) if isinstance(n, dict) and "sku" in n]
-          skus = {p["sku"] for p in products}
-          sellable = {
-              p["sku"] for p in products
-              if p.get("availability") in ("available", "low_stock", "planned_ok")
-          }
-          print(f"skus no cardápio: {len(skus)}; com disponibilidade: {len(sellable)}")
-          # Cardápio raso ou tudo esgotado é exatamente o sintoma que este
-          # smoke existe para acusar — antes do cliente.
-          minimo = int(os.environ.get("MENU_MIN_SKUS", "30"))
-          assert len(skus) >= minimo, f"cardápio raso: {len(skus)} skus (piso {minimo})"
-          assert len(sellable) >= 10, f"quase tudo esgotado: {len(sellable)} vendáveis"
-          EOF
+          python3 scripts/check_menu_smoke.py menu.json
 
       - name: O checkout está alcançável pelo BFF
         run: |
-          # POST vazio não cria nada: 400 (validação do Django) = caminho vivo;
-          # 404 = allowlist do BFF engoliu a rota raiz — a regressão de 22-26/08
-          # que deixou a loja 4 dias sem conseguir criar pedido.
-          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+          # POST vazio e anônimo não cria nada: o gate de identidade deve responder
+          # 403 com o código canônico. Isso também prova que a allowlist do BFF não
+          # engoliu a rota raiz (regressão de 22-26/08), sem aceitar 5xx como verde.
+          code=$(curl -sS -o checkout-smoke.json -w '%{http_code}' --max-time 20 \
             -X POST -H 'Content-Type: application/json' -d '{}' \
             $STOREFRONT_URL/api/v1/checkout/)
           echo "POST /api/v1/checkout/ => $code"
-          test "$code" != "404"
+          test "$code" = "403"
+          python3 - <<'PY'
+          import json
+
+          with open("checkout-smoke.json", encoding="utf-8") as response:
+              body = json.load(response)
+          assert body.get("error_code") == "authentication_required", body
+          PY
 
       - name: A loja renderiza (SSR)
         run: |

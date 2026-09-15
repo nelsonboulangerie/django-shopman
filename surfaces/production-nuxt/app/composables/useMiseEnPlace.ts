@@ -3,11 +3,71 @@
 //   - expand=false (default): immediate ingredients with per-recipe breakdown;
 //   - expand=true: sub-recipes exploded down to raw materials.
 // The "separado" checkmark is shift-local state (localStorage), never persisted
-// server-side — zero migrations, resets naturally when the list changes date.
+// server-side. It is scoped to station + date + projection digest so a changed
+// plan cannot inherit marks from the list the operator actually checked.
 import type { Ref } from "vue";
 import type { MiseEnPlaceLineProjection, MiseEnPlaceResponse } from "~/types/production";
 
-export function useMiseEnPlace(selectedDate: Ref<string>) {
+interface ChecklistStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
+interface ChecklistScope {
+  stationRef: string;
+  selectedDate: string;
+  sourceRevision: string;
+}
+
+interface LoadedChecklist {
+  checked: Set<string>;
+  revisionChanged: boolean;
+}
+
+function revisionDigest(sourceRevision: string): string {
+  const match = /^sha256:([0-9a-f]{16,64}):/.exec(sourceRevision);
+  return match?.[1] ?? "";
+}
+
+export function checklistStorageKeys(scope: ChecklistScope) {
+  const digest = revisionDigest(scope.sourceRevision);
+  if (!scope.selectedDate || !digest) return null;
+  const station = encodeURIComponent(scope.stationRef.trim() || "unprovisioned-device");
+  const base = `preparacao:v2:${station}:${scope.selectedDate}`;
+  return {
+    activeRevision: `${base}:active-revision`,
+    items: `${base}:items:${digest}`,
+    digest,
+    base,
+  };
+}
+
+export function loadChecklist(storage: ChecklistStorage, scope: ChecklistScope): LoadedChecklist {
+  const keys = checklistStorageKeys(scope);
+  if (!keys) return { checked: new Set(), revisionChanged: false };
+
+  const previousDigest = storage.getItem(keys.activeRevision);
+  const revisionChanged = Boolean(previousDigest && previousDigest !== keys.digest);
+  if (revisionChanged) storage.removeItem(`${keys.base}:items:${previousDigest}`);
+  storage.setItem(keys.activeRevision, keys.digest);
+
+  try {
+    const parsed = JSON.parse(storage.getItem(keys.items) ?? "[]");
+    return {
+      checked: new Set(
+        Array.isArray(parsed)
+          ? parsed.filter((value): value is string => typeof value === "string")
+          : [],
+      ),
+      revisionChanged,
+    };
+  } catch {
+    return { checked: new Set(), revisionChanged };
+  }
+}
+
+export function useMiseEnPlace(selectedDate: Ref<string>, stationRef: Ref<string>) {
   const expand = ref(false);
 
   const { data, pending, error, refresh } = useFetch<MiseEnPlaceResponse>(
@@ -24,15 +84,25 @@ export function useMiseEnPlace(selectedDate: Ref<string>) {
 
   useAdaptivePoll(refresh, () => 60_000);
 
-  // "Separado" por turno: chaveado por data — virou o dia, lista limpa.
-  const checkedKey = computed(() => `preparacao:${projection.value?.selected_date ?? ""}`);
+  const checklistScope = computed<ChecklistScope>(() => ({
+    stationRef: stationRef.value,
+    selectedDate: projection.value?.selected_date ?? "",
+    sourceRevision: projection.value?.source_revision ?? "",
+  }));
+  const checkedKey = computed(() => checklistStorageKeys(checklistScope.value)?.items ?? "");
   const checked = ref<Set<string>>(new Set());
+  const checklistRevisionChanged = ref(false);
 
   function loadChecked() {
-    if (!import.meta.client || !projection.value) return;
+    checklistRevisionChanged.value = false;
+    if (!import.meta.client || !projection.value || !checkedKey.value) {
+      checked.value = new Set();
+      return;
+    }
     try {
-      const raw = localStorage.getItem(checkedKey.value);
-      checked.value = new Set(raw ? (JSON.parse(raw) as string[]) : []);
+      const loaded = loadChecklist(localStorage, checklistScope.value);
+      checked.value = loaded.checked;
+      checklistRevisionChanged.value = loaded.revisionChanged;
     } catch {
       checked.value = new Set();
     }
@@ -44,7 +114,7 @@ export function useMiseEnPlace(selectedDate: Ref<string>) {
     if (next.has(sku)) next.delete(sku);
     else next.add(sku);
     checked.value = next;
-    if (import.meta.client) {
+    if (import.meta.client && checkedKey.value) {
       try {
         localStorage.setItem(checkedKey.value, JSON.stringify([...next]));
       } catch {
@@ -67,5 +137,6 @@ export function useMiseEnPlace(selectedDate: Ref<string>) {
     isChecked,
     toggleChecked,
     checkedCount,
+    checklistRevisionChanged,
   };
 }

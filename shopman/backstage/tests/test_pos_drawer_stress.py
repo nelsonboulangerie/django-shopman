@@ -401,9 +401,13 @@ def test_desistencia_e_um_desfecho_aceito_pelo_servidor(caixa):
 def test_endpoint_aceita_a_desistencia(client, caixa):
     _grant(caixa, "operate_pos")
     client.force_login(caixa)
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
     response = client.post(
         reverse("api-backstage-pos-cash-drawer-block"),
-        data={"duration_ms": 2000, "outcome": "dismissed"},
+        data={"client_request_id": "test-drawer_stress-409", "duration_ms": 2000, "outcome": "dismissed"},
         content_type="application/json",
     )
 

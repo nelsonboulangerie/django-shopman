@@ -23,7 +23,7 @@ MUFFIN = "MUFFIN"
 
 def _seed(*, croissant_stock=20, mini_stock=20):
     J.seed_shop()
-    J.seed_web_channel()
+    J.seed_web_channel(allow_cash=True)
     collection = J.seed_collection()
     listing = J.seed_listing()
     crois = J.seed_product(CROISSANT, "Croissant", 700, listing=listing, collection=collection, stock_qty=croissant_stock)
