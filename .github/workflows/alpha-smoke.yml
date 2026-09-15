@@ -221,33 +221,7 @@ jobs:
           curl -s --max-time 30 -H 'Accept: application/json' \
             https://api.boulangerie.com.br/api/v1/storefront/menu/ \
             -o menu.json
-          python3 - <<'EOF'
-          import json
-          import os
-
-          def walk(node):
-              if isinstance(node, dict):
-                  yield node
-                  for value in node.values():
-                      yield from walk(value)
-              elif isinstance(node, list):
-                  for value in node:
-                      yield from walk(value)
-
-          data = json.load(open("menu.json"))
-          products = [n for n in walk(data) if isinstance(n, dict) and "sku" in n]
-          skus = {p["sku"] for p in products}
-          sellable = {
-              p["sku"] for p in products
-              if p.get("availability") in ("available", "low_stock", "planned_ok")
-          }
-          print(f"skus no cardápio: {len(skus)}; com disponibilidade: {len(sellable)}")
-          # Cardápio raso ou tudo esgotado é exatamente o sintoma que este
-          # smoke existe para acusar — antes do cliente.
-          minimo = int(os.environ.get("MENU_MIN_SKUS", "30"))
-          assert len(skus) >= minimo, f"cardápio raso: {len(skus)} skus (piso {minimo})"
-          assert len(sellable) >= 10, f"quase tudo esgotado: {len(sellable)} vendáveis"
-          EOF
+          python3 scripts/check_menu_smoke.py menu.json
 
       - name: O checkout está alcançável pelo BFF
         run: |

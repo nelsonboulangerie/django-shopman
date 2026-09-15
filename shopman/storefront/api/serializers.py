@@ -125,7 +125,6 @@ class AvailabilityResponseSerializer(serializers.Serializer):
 
 
 class StockAlertSubscribeRequestSerializer(serializers.Serializer):
-    phone = serializers.CharField(required=False, allow_blank=True, max_length=32)
     alert_type = serializers.ChoiceField(
         choices=["stock_back", "production_ready"],
         required=False,
@@ -139,6 +138,12 @@ class StockAlertSubscribeResponseSerializer(serializers.Serializer):
     active = serializers.BooleanField(required=False)
     expires_at = serializers.DateTimeField(allow_null=True, required=False)
     management_url = serializers.URLField(required=False)
+
+
+class StockAlertAuthRequiredResponseSerializer(serializers.Serializer):
+    detail = serializers.CharField()
+    field = serializers.ChoiceField(choices=["auth"])
+    auth_required = serializers.BooleanField()
 
 
 class StockAlertSessionStateSerializer(serializers.Serializer):

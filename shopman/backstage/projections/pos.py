@@ -1026,6 +1026,9 @@ def _pos_actions() -> tuple[Action, ...]:
             payload_schema={"path": {"tab_ref": "string"}},
             idempotency="none",
         ),
+        Action(ref="read_tab", kind="navigation", label="Atualizar comanda", priority="quiet",
+               method="GET", href="/api/v1/backstage/pos/tabs/{tab_ref}/open/",
+               payload_schema={"path": {"tab_ref": "string"}}, idempotency="none"),
         Action(
             ref="save_tab",
             kind="mutation",
@@ -1034,7 +1037,7 @@ def _pos_actions() -> tuple[Action, ...]:
             method="POST",
             href="/api/v1/backstage/pos/tabs/save/",
             payload_schema={
-                "required": ["tab_session_key", "items"],
+                "required": ["tab_session_key", "expected_revision", "items"],
                 "optional": ["customer_name", "customer_phone", "fulfillment_type", "payment_method"],
             },
             idempotency="none",
@@ -2429,6 +2432,7 @@ def build_open_tab(session: Session) -> dict:
     The stored ``tab_ref``/``tab_display`` are already normalized at open time,
     so they are read back verbatim (no re-normalization).
     """
+    from shopman.shop.services.pos_intent import pos_session_revision
     from shopman.shop.services.pos_sales_mode import sales_mode
 
     data = session.data or {}
@@ -2471,6 +2475,7 @@ def build_open_tab(session: Session) -> dict:
     return {
         "session_key": session.session_key,
         "tab_session_key": session.session_key,
+        "revision": pos_session_revision(session),
         "tab_ref": tab_ref,
         "tab_display": tab_display,
         "items": items,

@@ -46,6 +46,8 @@ class POSCashClosePolicyTests(TestCase):
     def _client(self, user):
         c = APIClient()
         c.force_authenticate(user)
+        from shopman.backstage.tests.pos_test_runtime import bind_station
+        bind_station(c, self.shift.terminal.ref)
         return c
 
     def _gerente(self, username="marina"):
@@ -58,7 +60,7 @@ class POSCashClosePolicyTests(TestCase):
 
     def test_a_gerencia_fecha_a_gaveta_que_outra_pessoa_abriu(self):
         """O caso NORMAL: a Joyce abriu de manhã, a gerente fecha no fim do dia."""
-        resp = self._client(self._gerente()).post(URL, {"closing_amount": "50,00"}, format="json")
+        resp = self._client(self._gerente()).post(URL, {"closing_amount": "50,00", "client_request_id": "close-first"}, format="json")
 
         self.assertEqual(resp.status_code, 200, resp.content)
         self.shift.refresh_from_db()
@@ -74,7 +76,7 @@ class POSCashClosePolicyTests(TestCase):
         Antes a Joyce fechava o próprio turno; agora a gaveta não é dela, e a
         regra é uma só — fechar é da gerência.
         """
-        resp = self._client(self.joyce).post(URL, {"closing_amount": "50,00"}, format="json")
+        resp = self._client(self.joyce).post(URL, {"closing_amount": "50,00", "client_request_id": "close-first"}, format="json")
 
         self.assertEqual(resp.status_code, 403, resp.content)
         self.assertEqual(resp.json()["error"]["code"], "cash_close_forbidden")
@@ -86,7 +88,7 @@ class POSCashClosePolicyTests(TestCase):
             User.objects.create_user("comum", password="x", is_staff=True), Shift, "operate_pos"
         )
 
-        resp = self._client(estranho).post(URL, {"closing_amount": "50,00"}, format="json")
+        resp = self._client(estranho).post(URL, {"closing_amount": "50,00", "client_request_id": "close-first"}, format="json")
 
         self.assertEqual(resp.status_code, 403, resp.content)
         self.shift.refresh_from_db()
@@ -94,8 +96,8 @@ class POSCashClosePolicyTests(TestCase):
 
     def test_sem_gaveta_aberta_o_fechamento_recusa(self):
         gerente = self._gerente()
-        self._client(gerente).post(URL, {"closing_amount": "50,00"}, format="json")
+        self._client(gerente).post(URL, {"closing_amount": "50,00", "client_request_id": "close-first"}, format="json")
 
-        resp = self._client(gerente).post(URL, {"closing_amount": "0"}, format="json")
+        resp = self._client(gerente).post(URL, {"closing_amount": "0", "client_request_id": "close-after-closed"}, format="json")
 
         self.assertEqual(resp.status_code, 400, resp.content)
