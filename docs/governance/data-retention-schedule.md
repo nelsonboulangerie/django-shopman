@@ -34,9 +34,9 @@ descartes ocorridos desde a cópia.
 | R07 | Inscrição “Avise-me” | pausa ou cancelamento pelo cliente | ativa até pausa/cancelamento; depois 90 dias para dado operacional e 5 anos para prova mínima | apagar contato/capacidade operacional aos 90 dias; apagar prova ao fim de 5 anos | vigência ativa e contagem dry-run implementadas; contração pós-cancelamento pendente |
 | R08 | Conversa e transcrição do concierge | encerramento; conversa sem atividade encerra após 30 dias | 90 dias após encerramento | eliminar transcrição, vínculos e IDs; exceção somente para disputa/incident legal hold | exclusão de conta apaga a árvore; dry-run conta fechamento/expurgo; mutações pendentes |
 | R09 | Conta, endereços, preferências, favoritos, tags e perfil de compra | exclusão da conta ou fim da finalidade | enquanto a conta estiver ativa | apagar imediatamente; pedidos seguem R01 já pseudonimizados | autoatendimento abrangente implementado, com alerta se houver falha parcial |
-| R10 | Código de verificação, link de acesso e aparelho confiável | expiração individual | expiração + 7 dias | eliminar | `auth_cleanup` já implementado; falta comprovar agendamento e alerta de falha |
+| R10 | Código de verificação, link de acesso e aparelho confiável | expiração individual | expiração + 7 dias | eliminar | `auth_cleanup` fixa os 7 dias, isola falhas e tem testes de limite/dry-run sem PII; falta comprovar agendamento e alerta de falha |
 | R11 | IP bruto auxiliar de consentimento | coleta | máximo 90 dias | redigir o IP, preservando a prova sem IP | `purge_consent_ip` implementado; falta comprovar agendamento e alerta de falha |
-| R12 | Logs técnicos com identificador pessoal que não viraram incidente | criação | 180 dias | eliminar ou anonimizar | inventário e job unificado pendentes; logs sem PII podem seguir política operacional própria |
+| R12 | Logs técnicos com identificador pessoal que não viraram incidente | criação | 180 dias | eliminar ou anonimizar | inventário inicial e barreira única de redação testada; TTL externo, classificação dos registros persistidos e job continuam pendentes; logs sem PII podem seguir política operacional própria |
 | R13 | Perfil analítico individual/RFM | exclusão da conta ou fim da finalidade | enquanto necessário à conta ativa | eliminar; métricas realmente agregadas e não reidentificáveis podem permanecer | exclusão de conta já remove o perfil individual |
 | R14 | Cópias públicas de termos e privacidade | publicação da versão | permanente | não apagar nem sobrescrever | arquivo append-only, URL e SHA-256 implementados; não contém PII de cliente |
 | R15 | Backups transacionais | criação do backup | 7 dias na infraestrutura atual | expiração automática; restore reaplica descartes posteriores | retenção documentada; prova periódica de backup/restore continua operacional |
@@ -69,6 +69,14 @@ recibos de Avise-me e do concierge. A saída continua sem identificadores e sem
 mutação. O apply continua bloqueado porque o marco pós-encerramento de R05, o
 legal hold, a separação prova/operação de R07 e o `closed_at` de R08 exigem
 schema e testes antes de qualquer descarte.
+
+Em 2026-09-14, R10 passou a recusar qualquer janela diferente dos sete dias
+aprovados, isolou suas três limpezas e ganhou saída em português sem detalhes sensíveis.
+R12 recebeu um inventário inicial de superfícies e a mesma barreira de redação
+para logs JSON, logs legíveis e Sentry. Isso reduz exposição acidental, mas não
+substitui a confirmação de TTLs externos, a classificação das tabelas nem o job
+monitorado. O contrato e os bloqueios estão detalhados em
+`data-log-retention-inventory.md` e `data-retention-l7-technical-contract.md`.
 
 ## Decisão humana registrada em 2026-09-12
 

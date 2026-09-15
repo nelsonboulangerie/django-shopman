@@ -8,6 +8,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from django.test import override_settings
+from shopman.doorman.apps import configured_local_only_senders
+from shopman.doorman.conf import DoormanSettings
 from shopman.doorman.senders import (
     ConsoleSender,
     EmailSender,
@@ -49,8 +51,8 @@ class TestConsoleSender:
         sender = ConsoleSender()
         sender.send_code("+5541999999999", "123456", "whatsapp")
         output = capsys.readouterr().out
-        assert "123456" in output
-        assert "+5541999999999" in output
+        assert "123456" not in output
+        assert "+5541999999999" not in output
         assert "whatsapp" in output
 
 
@@ -61,11 +63,42 @@ class TestLogSender:
         sender = LogSender()
         assert sender.send_code("+5541999999999", "654321", "sms") is True
 
-    def test_send_code_logs_message(self, caplog):
+    def test_send_code_logs_without_target_or_code(self, caplog):
         sender = LogSender()
         with _capture_senders(caplog, logging.INFO):
             sender.send_code("+5541999999999", "654321", "sms")
-        assert "+5541999999999" in caplog.text
+        assert caplog.text
+        assert "+5541999999999" not in caplog.text
+        assert "654321" not in caplog.text
+
+
+def test_production_sender_guard_checks_only_the_effective_delivery_path():
+    chained = DoormanSettings(
+        MESSAGE_SENDER_CLASS="shopman.doorman.senders.ConsoleSender",
+        DELIVERY_CHAIN=["sms", "email"],
+        DELIVERY_SENDERS={
+            "sms": "shopman.shop.adapters.otp_sms_comtele.ComteleSMSSender",
+            "email": "shopman.doorman.senders.EmailSender",
+        },
+    )
+    unsafe_chain = DoormanSettings(
+        DELIVERY_CHAIN=["sms", "console"],
+        DELIVERY_SENDERS={
+            "sms": "shopman.shop.adapters.otp_sms_comtele.ComteleSMSSender",
+            "console": "shopman.doorman.senders.ConsoleSender",
+        },
+    )
+    unsafe_fallback = DoormanSettings(
+        MESSAGE_SENDER_CLASS="shopman.doorman.senders.LogSender",
+    )
+
+    assert configured_local_only_senders(chained) == ()
+    assert configured_local_only_senders(unsafe_chain) == (
+        "shopman.doorman.senders.ConsoleSender",
+    )
+    assert configured_local_only_senders(unsafe_fallback) == (
+        "shopman.doorman.senders.LogSender",
+    )
 
 
 class TestSMSSender:

@@ -5,6 +5,24 @@ from django.utils.translation import gettext_lazy as _
 
 logger = logging.getLogger("shopman.doorman")
 
+_LOCAL_ONLY_SENDERS = frozenset({
+    "shopman.doorman.senders.ConsoleSender",
+    "shopman.doorman.senders.LogSender",
+})
+
+
+def configured_local_only_senders(doorman_settings) -> tuple[str, ...]:
+    """Return local-only sender classes that production would actually execute."""
+
+    if doorman_settings.DELIVERY_CHAIN:
+        configured = {
+            doorman_settings.DELIVERY_SENDERS.get(method, "")
+            for method in doorman_settings.DELIVERY_CHAIN
+        }
+    else:
+        configured = {doorman_settings.MESSAGE_SENDER_CLASS}
+    return tuple(sorted(configured & _LOCAL_ONLY_SENDERS))
+
 
 class DoormanConfig(AppConfig):
     name = "shopman.doorman"
@@ -33,16 +51,12 @@ class DoormanConfig(AppConfig):
                     "to any non-empty value."
                 )
 
-            # ConsoleSender must not be used in production
-            if (
-                ds.MESSAGE_SENDER_CLASS == "shopman.doorman.senders.ConsoleSender"
-                and not ds.DELIVERY_CHAIN
-            ):
+            unsafe_senders = configured_local_only_senders(ds)
+            if unsafe_senders:
                 raise ImproperlyConfigured(
-                    "DOORMAN['MESSAGE_SENDER_CLASS'] is set to ConsoleSender. "
-                    "This prints OTP codes to stdout and must NOT be used in "
-                    "production. Configure a real sender (WhatsApp, SMS, Email) "
-                    "or set DOORMAN['DELIVERY_CHAIN']."
+                    "Emissor local do Doorman selecionado em produção: "
+                    + ", ".join(unsafe_senders)
+                    + ". Configure um emissor real (WhatsApp, SMS ou e-mail)."
                 )
 
             # DEFAULT_DOMAIN must not be localhost
