@@ -84,11 +84,11 @@
       },
       size: {
         xs: "h-7 gap-1 px-2.5 text-xs has-[>svg]:px-2",
-        sm: "h-9 gap-1.5 px-3 has-[>svg]:px-2.5",
+        sm: "h-11 gap-1.5 px-3 has-[>svg]:px-2.5",
         default: "h-11 px-4 py-2 has-[>svg]:px-3",
         lg: "h-14 px-6 has-[>svg]:px-4",
         "icon-xs": "size-7",
-        "icon-sm": "size-9",
+        "icon-sm": "size-11",
         icon: "size-11",
         "icon-lg": "size-14",
       },

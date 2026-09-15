@@ -15,6 +15,13 @@ npm run test:e2e
 - **guards.spec** — telas de operador atrás do gate; `/menuboard` aposentado sem consulta
   ao storefront; headers defensivos, cache privado, `Vary` e cookie do BFF.
 - **resilience.spec** — `OfflineBanner` aparece quando o contexto vai offline.
+- **accessibility.spec** — axe/WCAG AA, foco inicial, reflow, alvos de toque,
+  reduced motion, contraste forçado, copy longa e zoom 200% na matriz canônica.
+
+O gate executa Chromium nas viewports 1024×768, 1440×900, 1920×1080,
+1366×768 e 390×844, além de WebKit em 768×1024. A matriz cobre geometria e
+engines reais de browser; não representa tablet, TV, leitor de tela ou toque
+físicos.
 
 ## O que fica para o reviewer local (Django real)
 

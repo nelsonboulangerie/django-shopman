@@ -43,6 +43,43 @@ const BOARD = {
   },
 };
 
+const LONG_COPY_BOARD = {
+  board: {
+    ...BOARD.board,
+    matrix_rows: [
+      {
+        recipe_pk: 91,
+        output_sku: "PAO-FERMENTACAO-NATURAL-12345",
+        recipe_name: "Pão de fermentação natural com castanhas brasileiras",
+        base_usages: [],
+        suggestion: {
+          recipe_pk: 91,
+          recipe_ref: "pao-fermentacao-natural-castanhas",
+          recipe_name: "Pão de fermentação natural com castanhas brasileiras",
+          base_usages: [],
+          output_sku: "PAO-FERMENTACAO-NATURAL-12345",
+          quantity: "12345,75",
+          committed: "9876,5",
+          avg_demand: "12000,25",
+          confidence: "Alta",
+          sample_size: 30,
+          high_demand_applied: true,
+          explanation_parts: [
+            "Demanda comprometida de 9.876,5 unidades para encomendas confirmadas",
+          ],
+        },
+        planned_orders: [],
+        started_orders: [],
+        finished_orders: [],
+        planned_qty: "12345,75",
+        started_qty: "0",
+        finished_qty: "0",
+        loss_qty: "0",
+      },
+    ],
+  },
+};
+
 const FORECAST = { forecast: { selected_date: "2026-07-06", selected_date_display: "domingo, 6 de julho", rows: [] } };
 const KDS = { kds: { cards: [], total_count: 0, late_count: 0 } };
 const MISE = { mise_en_place: { selected_date: "2026-07-06", lines: [] } };
@@ -61,6 +98,7 @@ const server = createServer((req, res) => {
   res.setHeader("cache-control", "public, max-age=3600");
   const url = req.url || "";
   const authed = (req.headers.cookie || "").includes("e2e_session=authed");
+  const longCopy = (req.headers.cookie || "").includes("e2e_scenario=long-copy");
 
   if (/\/storefront\//.test(url)) return json(res, 404, { detail: "Storefront fora do Produção." });
 
@@ -76,7 +114,7 @@ const server = createServer((req, res) => {
   if (/\/production\/forecast\/?(\?|$)/.test(url)) return json(res, 200, FORECAST);
   if (/\/production\/kds\/?(\?|$)/.test(url)) return json(res, 200, KDS);
   if (/\/production\/mise-en-place\/?(\?|$)/.test(url)) return json(res, 200, MISE);
-  if (/\/production\/?(\?|$)/.test(url)) return json(res, 200, BOARD);
+  if (/\/production\/?(\?|$)/.test(url)) return json(res, 200, longCopy ? LONG_COPY_BOARD : BOARD);
   if (/\/alerts\/?(\?|$)/.test(url)) return json(res, 200, ALERTS);
   return json(res, 200, {});
 });

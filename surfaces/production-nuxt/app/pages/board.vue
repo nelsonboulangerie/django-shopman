@@ -160,23 +160,25 @@ const STATUS_CHARS = 10; // CONFIRMADO
           >
             Amanhã
           </button>
-          <button
-            type="button"
-            class="board-datekey relative"
-            :class="{ 'board-datekey--active': isCustomDate }"
-            :aria-pressed="isCustomDate"
-            @click="openCustomDate()"
-          >
-            {{ isCustomDate ? weekdayLabel(selectedDate) : "Outra" }}
+          <div class="relative">
+            <button
+              type="button"
+              class="board-datekey"
+              :class="{ 'board-datekey--active': isCustomDate }"
+              :aria-pressed="isCustomDate"
+              @click="openCustomDate()"
+            >
+              {{ isCustomDate ? weekdayLabel(selectedDate) : "Outra" }}
+            </button>
             <input
               ref="customDateInput"
               v-model="selectedDate"
               type="date"
-              class="absolute inset-0 cursor-pointer opacity-0"
+              class="pointer-events-none absolute inset-0 opacity-0"
               aria-label="Escolher outra data"
               tabindex="-1"
             />
-          </button>
+          </div>
         </div>
         <div class="ml-auto flex items-center gap-2.5">
           <!-- Controles de som/tela cheia são teclas do kiosk, não botões do shell operador. -->

@@ -120,7 +120,7 @@ function isActive(to: string): boolean {
         :to="tab.to"
         :aria-keyshortcuts="tab.shortcut"
         :title="`${tab.label} · ${tab.shortcut}`"
-        class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+        class="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
         :class="
           isActive(tab.to)
             ? 'bg-primary text-primary-foreground'
@@ -131,7 +131,7 @@ function isActive(to: string): boolean {
         <span class="hidden sm:inline">{{ tab.label }}</span>
         <OperatorKbd
           variant="inverse"
-          class="hidden xl:inline-flex"
+          class="hidden opacity-100 xl:inline-flex"
           aria-hidden="true"
           >{{ tab.shortcut }}</OperatorKbd>
       </NuxtLink>

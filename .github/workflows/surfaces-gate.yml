@@ -173,3 +173,47 @@ jobs:
           path: surfaces/marketing-nuxt/test-results
           if-no-files-found: ignore
           retention-days: 14
+
+  production-browser:
+    name: Produção — matriz Playwright AA
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: surfaces/production-nuxt
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            surfaces/production-nuxt/package-lock.json
+            surfaces/operator-kit/package-lock.json
+
+      - name: Install operator-kit layer dependencies
+        working-directory: surfaces/operator-kit
+        run: npm ci
+
+      - name: Install deterministic Produção dependencies
+        run: npm ci
+
+      - name: Install pinned browser engines
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Browser, accessibility and viewport matrix
+        run: npm run test:e2e
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-browser-gates
+          path: surfaces/production-nuxt/test-results
+          if-no-files-found: ignore
+          retention-days: 14

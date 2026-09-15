@@ -562,7 +562,7 @@ const headerCount = computed(() => {
           <!-- Seletor segmentado de data; mantém três escolhas no mesmo gesto compacto. -->
           <button
             type="button"
-            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
               selectedDate === todayISO
                 ? 'bg-primary text-primary-foreground'
@@ -575,7 +575,7 @@ const headerCount = computed(() => {
           </button>
           <button
             type="button"
-            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
               selectedDate === tomorrowISO
                 ? 'bg-primary text-primary-foreground'
@@ -586,27 +586,29 @@ const headerCount = computed(() => {
           >
             Amanhã
           </button>
-          <button
-            type="button"
-            class="relative rounded-md px-2.5 py-1.5 text-sm font-medium transition"
-            :class="
-              isCustomDate
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-            "
-            :aria-pressed="isCustomDate"
-            @click="openCustomDate()"
-          >
-            {{ isCustomDate ? weekdayLabel(selectedDate) : "Outra data" }}
+          <div class="relative">
+            <button
+              type="button"
+              class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+              :class="
+                isCustomDate
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+              "
+              :aria-pressed="isCustomDate"
+              @click="openCustomDate()"
+            >
+              {{ isCustomDate ? weekdayLabel(selectedDate) : "Outra data" }}
+            </button>
             <input
               ref="customDateInput"
               v-model="selectedDate"
               type="date"
-              class="absolute inset-0 cursor-pointer opacity-0"
+              class="pointer-events-none absolute inset-0 opacity-0"
               aria-label="Escolher outra data"
               tabindex="-1"
             />
-          </button>
+          </div>
         </div>
         <span class="text-sm text-muted-foreground">{{
           fullDateLabel(selectedDate)
@@ -674,7 +676,7 @@ const headerCount = computed(() => {
           <NuxtLink
             v-if="emptyCopy.to"
             :to="emptyCopy.to"
-            class="text-sm text-primary underline-offset-2 hover:underline"
+            class="inline-flex min-h-11 items-center text-sm text-primary underline-offset-2 hover:underline"
           >
             {{ emptyCopy.cta }}
           </NuxtLink>

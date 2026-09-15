@@ -8,18 +8,75 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests/e2e",
   testMatch: "**/*.spec.ts",
+  outputDir: "./test-results/browser",
   timeout: 30_000,
   expect: { timeout: 8_000 },
   fullyParallel: false,
+  forbidOnly: true,
   retries: 0,
   reporter: [["list"]],
   use: {
     // Porta de e2e dedicada (3105), distinta do dev server (3005) — o build de produção do
     // e2e sobe aqui e aponta ao mock, sem colidir/reusar um dev server aberto em :3005.
     baseURL: "http://127.0.0.1:3105",
+    bypassCSP: true,
+    colorScheme: "light",
+    locale: "pt-BR",
+    screenshot: "only-on-failure",
+    timezoneId: "America/Sao_Paulo",
     trace: "retain-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    {
+      name: "chromium-tablet-landscape",
+      metadata: { touchTargets: true },
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1024, height: 768 },
+      },
+    },
+    {
+      name: "webkit-tablet-portrait",
+      metadata: { touchTargets: true },
+      use: {
+        browserName: "webkit",
+        hasTouch: true,
+        viewport: { width: 768, height: 1024 },
+      },
+    },
+    {
+      name: "chromium-desktop",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1440, height: 900 },
+      },
+    },
+    {
+      name: "chromium-tv-full-hd",
+      metadata: { board: true },
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1920, height: 1080 },
+      },
+    },
+    {
+      name: "chromium-tv-1366",
+      metadata: { board: true },
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1366, height: 768 },
+      },
+    },
+    {
+      name: "chromium-mobile-manager",
+      metadata: { touchTargets: true },
+      use: {
+        ...devices["Desktop Chrome"],
+        hasTouch: true,
+        viewport: { width: 390, height: 844 },
+      },
+    },
+  ],
   webServer: [
     {
       command: "node tests/e2e/mockBackend.mjs",
