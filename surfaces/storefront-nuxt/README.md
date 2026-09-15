@@ -93,6 +93,13 @@ SVG: todo o símbolo precisa continuar dentro da zona segura central de 80%. A
 saída é versionada; o comando deve ser executado e o diff conferido antes do
 commit.
 
+Os ícones `any` usam o selo circular sem margem adicional e com transparência.
+No Mac, o manifesto omite `maskable` para o Chrome selecionar esse selo; a
+resposta varia por `User-Agent`. O ícone Apple é opaco, amarelo `#FFD25C`, com
+98% de ocupação. O adaptativo Android usa o mesmo amarelo com 80% de ocupação,
+preservando a zona segura contra recortes do launcher. Ícones já instalados
+precisam receber a atualização do navegador; validar também uma instalação nova.
+
 O gate completo da fase parte da raiz do repositório:
 
 ```bash

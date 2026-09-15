@@ -30,6 +30,15 @@ describe('storefront PWA manifest', () => {
     ]))
   })
 
+  it('offers transparent icons on Mac without removing Android adaptive icons', () => {
+    const mac = buildStorefrontManifest({}, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/153.0.0.0 Safari/537.36')
+    expect(mac.icons.some(icon => icon.purpose === 'maskable')).toBe(false)
+    expect(mac.icons.some(icon => icon.purpose === 'any' && icon.sizes === '512x512')).toBe(true)
+    for (const ua of ['Mozilla/5.0 (Linux; Android 15)', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile/15E148', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) Mobile/15E148']) {
+      expect(buildStorefrontManifest({}, ua).icons.some(icon => icon.purpose === 'maskable')).toBe(true)
+    }
+  })
+
   it('truncates brand_name to twelve characters when short_name is absent', () => {
     const manifest = buildStorefrontManifest({
       brand_name: 'Boulangerie de Quartier',
