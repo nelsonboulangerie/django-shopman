@@ -9,43 +9,16 @@
 
 ## 1. 2FA (TOTP) no Admin
 
-O gate já existe e é testado (`shopman/backstage/tests/test_admin_2fa.py`, 8
-testes verdes):
+O Admin oferece adesão individual com `django_otp`, `otp_totp` e recuperação `otp_static`. O [roteiro completo do piloto](../reports/2026-09-15-admin-2fa-pilot.md) descreve inscrição, limites e recuperação.
 
-- `django_otp` + `otp_totp` instalados.
-- [`AdminTwoFactorMiddleware`](../../shopman/backstage/middleware_2fa.py) — força
-  verificação OTP em `/admin/` para usuário staff autenticado. **No-op enquanto
-  `SHOPMAN_ADMIN_REQUIRE_2FA` está desligado**, para não trancar ninguém antes do
-  enrollment.
-- View `admin_2fa_verify` ([`views/two_factor.py`](../../shopman/backstage/views/two_factor.py)).
-- Comando de enrollment `setup_admin_totp` (cria TOTPDevice confirmado + imprime
-  `otpauth://` e QR ASCII).
+1. Após publicação coordenada e migrações, a operação prepara `python manage.py setup_admin_totp <username>` em console privado. O comando não imprime segredo e não confirma o fator.
+2. O titular entra em `/admin/2fa/enroll/`, confirma a senha, escaneia o QR, valida o TOTP, guarda a lista de recuperação e consome um código para concluir. Não enviar códigos ou QR para logs, chat ou CI.
+3. Somente essa conclusão ativa a exigência individual no Admin. O marcador durável permanece mesmo se acabarem ou forem apagados os códigos/dispositivos. Outros staff e o PDV não aderem automaticamente.
+4. Manter `SHOPMAN_ADMIN_REQUIRE_2FA` OFF durante o piloto. Um rollout global futuro exige inscrição e recuperação confirmadas de todos os staff ativos, `check_admin_2fa_ready` verde e decisão coordenada de configuração.
 
-### Procedimento de ativação (ordem importa)
+Para substituir um autenticador perdido, entrar usando senha e um código de recuperação guardado. A operação prepara `setup_admin_totp <username> --force`; o titular confirma o substituto na sessão verificada. Os fatores antigos só são revogados ao concluir autenticador e recuperação novos.
 
-A ordem é crítica: **enrolar todos antes de ligar a flag**, senão o gate tranca
-quem ainda não tem device.
-
-1. Para **cada** superuser/staff com acesso ao admin:
-   ```bash
-   python manage.py setup_admin_totp <username>
-   # escanear o QR / colar o otpauth:// num app autenticador (Google Auth, 1Password, etc.)
-   ```
-   Em produção, rodar no console/release job do ambiente real (não local).
-2. Confirmar que todos têm device confirmado.
-3. Só então ligar o gate:
-   ```
-   SHOPMAN_ADMIN_REQUIRE_2FA=true
-   ```
-   (env do deployment — DigitalOcean App Platform / `.env` self-hosted).
-4. Validar: logar no admin → deve redirecionar para `admin_2fa_verify` e exigir
-   o código TOTP. Sem device confirmado + flag ligada = bloqueio (esperado).
-
-### Recuperação (operador perdeu o device)
-
-Outro superuser roda `setup_admin_totp <username> --force` para emitir novo
-device. Se ninguém mais tem acesso, desligar a flag temporariamente via env do
-deployment, reenrolar e religar.
+Perder todos os fatores/códigos exige recuperação operacional supervisionada e identidade verificada; não existe reset remoto baseado só em senha. **Desligar a flag global não desativa uma adesão individual.** Não apagar o marcador nem reverter sua migração para contornar o gate.
 
 ---
 
@@ -94,8 +67,8 @@ fallback, não o alvo.
 
 ## Checklist de go-live (operador)
 
-- [ ] Todos os superusers/staff com TOTP device confirmado.
-- [ ] `SHOPMAN_ADMIN_REQUIRE_2FA=true` no ambiente real.
+- [ ] Piloto: titular concluiu autenticador e recuperação; proteção individual verificada em nova sessão.
+- [ ] Antes de expansão global: todos os staff ativos inscritos e `check_admin_2fa_ready` verde; ativação coordenada.
 - [ ] Superusers triviais de staging (`admin/admin`) **removidos** em prod
       (prod usa `bootstrap_admin` env-driven — ver [OPERATOR-AUTH-PLAN](../plans/completed/OPERATOR-AUTH-PLAN.md)).
 - [ ] Cloudflare Access/WAF restringindo `admin.`/`pos.`/`kds.`/`gestor.`/`prod.`.

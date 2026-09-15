@@ -39,7 +39,7 @@ fail-closed). Adapters reais, `DJANGO_DEBUG=false`. **Único gap de pagamento/fi
 
 ## A virar ANTES DE PRODUÇÃO/OFICIAL (hardening — Lote C + WP-GAP-07)
 
-- [ ] **2FA**: `SHOPMAN_ADMIN_REQUIRE_2FA=true` + enrollar operadores (`setup_admin_totp`).
+- [ ] **2FA**: [inscrição individual](../reports/2026-09-15-admin-2fa-pilot.md) confirmada com recuperação; não ligar a flag global antes de `check_admin_2fa_ready` verde para todos os staff ativos.
 - [ ] **IP allowlist** no ingress (Cloudflare/WAF) — faixas de IP do Pablo.
 - [ ] **`bootstrap_admin`** rodado com secrets de prod (matar `admin/admin`).
 - [ ] **Domínio/cookie de prod**: `SHOPMAN_DOMAIN` / `SHOPMAN_OPERATOR_COOKIE_DOMAIN` / `AUTH_DEFAULT_DOMAIN`.

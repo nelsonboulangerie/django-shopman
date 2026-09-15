@@ -38,6 +38,9 @@ class OnboardingMiddleware:
         if any(path.startswith(p) for p in self.SKIP_PREFIXES):
             return self.get_response(request)
 
+        if path in {"/admin/2fa/verify/", "/admin/2fa/enroll/", "/admin/login/", "/admin/logout/"}:
+            return self.get_response(request)
+
         if path.startswith(self.SETUP_PATH):
             return self.get_response(request)
 

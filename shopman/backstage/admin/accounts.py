@@ -102,3 +102,12 @@ def register_totp_admin() -> None:
                 (self.TITULOS.get(titulo, titulo), opcoes)
                 for titulo, opcoes in super().get_fieldsets(request, obj)
             ]
+
+
+# Recovery codes are displayed once to their owner; never expose the token inline in Admin.
+from django_otp.plugins.otp_static.models import StaticDevice
+
+try:
+    admin.site.unregister(StaticDevice)
+except admin.sites.NotRegistered:
+    pass
