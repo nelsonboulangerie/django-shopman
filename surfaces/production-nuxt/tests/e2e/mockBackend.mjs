@@ -87,7 +87,28 @@ const LONG_COPY_BOARD = {
   },
 };
 
-const FORECAST = { forecast: { selected_date: "2026-07-06", selected_date_display: "domingo, 6 de julho", rows: [] } };
+const FORECAST = {
+  forecast: {
+    selected_date: "2026-07-06",
+    selected_date_display: "domingo, 6 de julho",
+    generated_at_display: "12:00",
+    rows: [
+      {
+        ref: "WO-ATRASADA",
+        output_sku: "PAO-FRANCES",
+        recipe_name: "Pão francês",
+        qty: "40",
+        eta_display: "06:30",
+        eta_is_actual: false,
+        status: "delayed",
+        status_label: "ATRASADO",
+        history_days: 30,
+      },
+    ],
+    access: ACCESS,
+    actions: [],
+  },
+};
 const KDS = { kds: { cards: [], total_count: 0, late_count: 0 } };
 const MISE = { mise_en_place: { selected_date: "2026-07-06", lines: [] } };
 const ALERTS = { alerts: [], counts: { active: 0, critical: 0 } };
@@ -168,7 +189,16 @@ const server = createServer((req, res) => {
   // Demais endpoints de operador exigem a sessão autenticada.
   if (!authed && !locked) return json(res, 403, { detail: "Autenticação necessária." });
 
+  // A lista mínima para o diálogo de identificação continua disponível. Todo
+  // dado operacional — leitura OU mutação — é negado enquanto a estação está
+  // travada, como no permission boundary real.
   if (/\/operator\/eligible\/?(\?|$)/.test(url)) return json(res, 200, { operators: [] });
+  if (locked) {
+    return json(res, 403, {
+      detail: "Estação travada.",
+      error: { code: "station_locked" },
+    });
+  }
   if (/\/production\/forecast\/?(\?|$)/.test(url)) return json(res, 200, FORECAST);
   if (/\/production\/kds\/?(\?|$)/.test(url)) return json(res, 200, KDS);
   if (/\/production\/qc\/?(\?|$)/.test(url)) return json(res, 200, QC);

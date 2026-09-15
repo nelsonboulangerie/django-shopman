@@ -181,6 +181,7 @@ test("Expedição abre a revisão de QC mantendo contexto", async ({ context, pa
 test("reduced motion torna as palhetas instantâneas", async ({ context, page }) => {
   await context.addCookies([authed]);
   await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.clock.install({ time: new Date("2026-09-14T12:00:00-03:00") });
   await page.goto("/board");
   await expect(page.getByRole("heading", { name: "Fornadas" })).toBeVisible();
   expect(
@@ -188,22 +189,29 @@ test("reduced motion torna as palhetas instantâneas", async ({ context, page })
       () => matchMedia("(prefers-reduced-motion: reduce)").matches,
     ),
   ).toBe(true);
-  await page.waitForTimeout(1_100); // cobre ao menos um tick/pulso do relógio
-  await expect
-    .poll(() =>
-      page.locator(".flap-word").evaluateAll((words) =>
-        words.flatMap((word) => {
-          const label = word.getAttribute("aria-label")?.trim().toUpperCase() ?? "";
-          const settled = [...word.querySelectorAll(".flap-cell")]
-            .map((cell) => cell.textContent ?? "")
-            .join("")
-            .trim()
-            .toUpperCase();
-          return label && settled === label ? [] : [{ label, settled }];
-        }),
-      ),
-    )
-    .toEqual([]);
+  const words = page.locator(".flap-word");
+  await expect(words).not.toHaveCount(0);
+  const delayedStatus = page.locator('.flap-word[aria-label="ATRASADO"]');
+  await expect(delayedStatus).toHaveCount(1);
+  await expect(delayedStatus).toHaveAttribute("data-pulse", "0");
+
+  // Avança deterministicamente o relógio da página até o pulso mecânico. Em
+  // reduced-motion o prop muda, mas nenhuma rotação intermediária é criada.
+  await page.clock.runFor(25_000);
+  await expect(delayedStatus).toHaveAttribute("data-pulse", "1");
+  expect(
+    await words.evaluateAll((renderedWords) =>
+      renderedWords.flatMap((word) => {
+        const label = word.getAttribute("aria-label")?.trim().toUpperCase() ?? "";
+        const settled = [...word.querySelectorAll(".flap-cell")]
+          .map((cell) => cell.textContent ?? "")
+          .join("")
+          .trim()
+          .toUpperCase();
+        return label && settled === label ? [] : [{ label, settled }];
+      }),
+    ),
+  ).toEqual([]);
   expect(
     await page.locator(".flap-cell").evaluateAll((cells) =>
       cells.filter((cell) => {
@@ -297,7 +305,7 @@ test("copy longa e números grandes passam reflow equivalente a 200%", async ({
   await expectNoAxeViolations(page, "produção com copy longa em zoom 200%");
 });
 
-test("foco permanece distinguível em contraste forçado", async ({ page }, testInfo) => {
+test("foco permanece distinguível em contraste forçado", async ({ context, page }, testInfo) => {
   test.skip(
     testInfo.project.name !== "chromium-desktop",
     "forced-colors é coberto no Chromium desktop",
@@ -309,6 +317,30 @@ test("foco permanece distinguível em contraste forçado", async ({ page }, test
   expect(await username.evaluate((node) => getComputedStyle(node).outlineStyle)).not.toBe(
     "none",
   );
+
+  await context.addCookies([authed]);
+  for (const { route, label } of [
+    { route: "/", label: "Escolher outra data" },
+    { route: "/board", label: "Escolher outra data" },
+    { route: "/expedite", label: "Escolher a data das fornadas" },
+  ]) {
+    await page.goto(route);
+    const dateInput = page.getByLabel(label);
+    await dateInput.focus();
+    await expect(dateInput).toBeFocused();
+    const visibleTarget = dateInput.locator("..");
+    const outline = await visibleTarget.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return {
+        style: style.outlineStyle,
+        width: Number.parseFloat(style.outlineWidth),
+      };
+    });
+    expect(outline.style, `${route}: foco sem contorno em forced-colors`).not.toBe(
+      "none",
+    );
+    expect(outline.width, `${route}: contorno de foco muito fino`).toBeGreaterThanOrEqual(2);
+  }
 });
 
 declare global {

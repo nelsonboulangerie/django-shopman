@@ -127,7 +127,13 @@ if (!import.meta.client) {
 </script>
 
 <template>
-  <span class="flap-word" role="status" aria-live="polite" :aria-label="value">
+  <span
+    class="flap-word"
+    role="status"
+    aria-live="polite"
+    :aria-label="value"
+    :data-pulse="pulse"
+  >
     <span
       v-for="(cell, index) in cells"
       :key="index"

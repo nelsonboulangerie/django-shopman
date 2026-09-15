@@ -481,7 +481,7 @@ function onTimerKeydown(event: KeyboardEvent) {
             Hoje
           </button>
           <label
-            class="relative inline-flex min-h-11 cursor-pointer items-center rounded-md px-2.5 py-1.5 text-sm font-medium transition focus-within:ring-[3px] focus-within:ring-ring/50"
+            class="date-input-hit-area relative inline-flex min-h-11 cursor-pointer items-center rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
               isCustomDate
                 ? 'bg-primary text-primary-foreground'

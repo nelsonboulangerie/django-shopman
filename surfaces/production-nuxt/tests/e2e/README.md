@@ -12,12 +12,13 @@ npm run test:e2e
 
 ## O que cobre
 
-- **guards.spec** — telas de operador atrás do gate; lock, expiração de sessão e
+- **guards.spec** — telas de operador atrás do gate; lock, perda do cookie de sessão e
   atalhos das quatro etapas; `/menuboard` aposentado sem consulta ao storefront;
   headers defensivos, cache privado, `Vary` e cookie do BFF.
 - **resilience.spec** — `OfflineBanner` aparece quando o contexto vai offline.
 - **accessibility.spec** — axe/WCAG AA nas rotas críticas e no QC aberto, foco,
-  reflow, alvos de toque, reduced motion, contraste forçado e copy longa. A
+  reflow e alvos de toque nos estados que o mock renderiza, reduced motion,
+  contraste forçado e copy longa. A
   viewport reduzida cobre apenas o **reflow equivalente** a zoom 200%, não o
   zoom real. Screenshots determinísticos são anexados como artefatos para revisão.
 

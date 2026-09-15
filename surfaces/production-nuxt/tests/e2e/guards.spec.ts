@@ -48,6 +48,29 @@ test.describe("Produção — gate de operador", () => {
   }, testInfo) => {
     test.skip(testInfo.project.name !== "chromium-desktop");
     await context.addCookies([locked]);
+
+    const session = await context.request.get(
+      "/api/v1/backstage/operator/session/",
+    );
+    expect(session.status()).toBe(200);
+    expect((await session.json()).locked).toBe(true);
+    const eligible = await context.request.get(
+      "/api/v1/backstage/operator/eligible/",
+    );
+    expect(eligible.status()).toBe(200);
+
+    const deniedRead = await context.request.get(
+      "/api/v1/backstage/production/",
+    );
+    expect(deniedRead.status()).toBe(403);
+    expect((await deniedRead.json()).error.code).toBe("station_locked");
+    const deniedMutation = await context.request.post(
+      "/api/v1/backstage/production/plan/",
+      { data: { recipe_pk: 91, quantity: "40" } },
+    );
+    expect(deniedMutation.status()).toBe(403);
+    expect((await deniedMutation.json()).error.code).toBe("station_locked");
+
     await page.goto("/");
     await expect(
       page.getByRole("heading", { name: "Identifique-se para operar" }),
@@ -55,9 +78,10 @@ test.describe("Produção — gate de operador", () => {
     await page.keyboard.press("Alt+2");
     await expect(page).toHaveURL(/\/$/);
     await expect(page.locator("[data-operator-lock]")).toBeVisible();
+    await expect(page.getByText("Nada planejado para produzir")).toHaveCount(0);
   });
 
-  test("sessão expirada retorna ao gate sem manter ação interativa", async ({
+  test("reload sem cookie de sessão retorna ao gate sem manter ação interativa", async ({
     page,
     context,
   }, testInfo) => {

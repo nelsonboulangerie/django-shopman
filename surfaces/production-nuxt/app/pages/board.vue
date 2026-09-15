@@ -154,7 +154,7 @@ const STATUS_CHARS = 10; // CONFIRMADO
             Amanhã
           </button>
           <label
-            class="board-datekey relative cursor-pointer focus-within:outline focus-within:outline-2 focus-within:outline-offset-4 focus-within:outline-current"
+            class="date-input-hit-area board-datekey relative cursor-pointer"
             :class="{ 'board-datekey--active': isCustomDate }"
           >
             <span aria-hidden="true">
