@@ -7,6 +7,22 @@ import pytest
 pytestmark = pytest.mark.django_db
 
 
+def test_home_projection_exposes_browser_key_but_never_server_key(rf, settings):
+    from shopman.shop.models import Shop
+    from shopman.storefront.api.projections import projection_data
+    from shopman.storefront.presentation.home import build_home
+
+    Shop.load() or Shop.objects.create(name="Test Padaria")
+    settings.GOOGLE_MAPS_API_KEY = "legacy-key"
+    settings.GOOGLE_MAPS_BROWSER_API_KEY = "browser-key"
+    settings.GOOGLE_MAPS_SERVER_API_KEY = "server-secret-key"
+
+    payload = projection_data(build_home(rf.get("/api/v1/storefront/home/")))
+
+    assert payload["public_config"]["google_maps_api_key"] == "browser-key"
+    assert "server-secret-key" not in repr(payload)
+
+
 def test_home_projection_keeps_operational_status_single_sourced(rf):
     from shopman.shop.models import FAQEntry, Shop
     from shopman.storefront.api.projections import projection_data
