@@ -48,6 +48,21 @@ test('convite de instalação não aparece no checkout', async ({ page }) => {
   await expect(page.getByTestId('pwa-install-invite')).toBeHidden()
 })
 
+test('overlays travam e restauram o body no navegador comum', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/menu')
+
+  const body = page.locator('body')
+  const viewport = page.locator('[data-shop-scroll-viewport]')
+  await page.getByRole('button', { name: 'Abrir menu' }).click()
+
+  await expect.poll(() => body.evaluate(element => element.style.overflow)).toBe('hidden')
+  expect(await viewport.evaluate(element => element.style.overflow)).not.toBe('hidden')
+
+  await page.getByRole('button', { name: 'Fechar menu' }).click()
+  await expect.poll(() => body.evaluate(element => element.style.overflow)).toBe('')
+})
+
 test('barra inferior permanece ancorada fora da rolagem no PWA instalado', async ({ page }) => {
   await page.addInitScript(() => {
     const nativeMatchMedia = window.matchMedia.bind(window)
@@ -109,4 +124,12 @@ test('barra inferior permanece ancorada fora da rolagem no PWA instalado', async
   await bottomNav.getByRole('link', { name: 'Início' }).click()
   await expect(page).toHaveURL('/')
   await expect.poll(() => viewport.evaluate(element => element.scrollTop)).toBe(0)
+
+  const body = page.locator('body')
+  await page.getByRole('button', { name: 'Abrir menu' }).click()
+  await expect.poll(() => viewport.evaluate(element => element.style.overflow)).toBe('hidden')
+  expect(await body.evaluate(element => element.style.overflow)).not.toBe('hidden')
+
+  await page.getByRole('button', { name: 'Fechar menu' }).click()
+  await expect.poll(() => viewport.evaluate(element => element.style.overflow)).toBe('')
 })

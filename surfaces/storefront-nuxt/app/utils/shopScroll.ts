@@ -6,6 +6,18 @@ export function shopScrollViewport (): HTMLElement | null {
 }
 
 /**
+ * Overlays lock the element that actually owns vertical scrolling. The internal
+ * viewport only becomes that owner in the installed iOS shell; everywhere else
+ * the document body remains the scroll-lock target.
+ */
+export function shopOverlayScrollTarget (): HTMLElement | null {
+  if (!import.meta.client) return null
+  const viewport = shopScrollViewport()
+  if (document.documentElement.classList.contains('shop-ios-standalone') && viewport) return viewport
+  return document.body
+}
+
+/**
  * O documento rola no navegador comum. No PWA mobile instalado, o casco tem
  * altura fixa e este viewport interno rola para manter a bottom-nav em fluxo
  * normal (sem depender do position:fixed instável do WebKit/iOS 26).
