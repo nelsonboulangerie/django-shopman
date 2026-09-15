@@ -47,7 +47,10 @@ const repository = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 const surface = join(repository, 'surfaces/storefront-nuxt')
 const output = join(surface, '.output')
 const packageJson = JSON.parse(await readFile(join(surface, 'package.json'), 'utf8'))
+const splashScreens = JSON.parse(await readFile(join(surface, 'pwa-splash-screens.json'), 'utf8'))
 check(packageJson.dependencies['@vite-pwa/nuxt'] === '1.1.1', '@vite-pwa/nuxt usa versão fixa 1.1.1')
+check(splashScreens.length === 40, 'matriz canônica contém 40 splash screens iOS')
+check(new Set(splashScreens.map(([width, height]) => `${width}x${height}`)).size === 40, 'dimensões de splash screen não se repetem')
 
 const swPath = join(output, 'public/sw.js')
 await stat(swPath)
@@ -82,6 +85,12 @@ for (const [name, width, height] of requiredAssets) {
 await Promise.all(['favicon.ico', 'favicon.svg', 'nelson-logo.svg'].map(name => stat(join(surface, 'public/pwa', name))))
 const splashFiles = precache.filter(url => url.startsWith('pwa/apple-splash-') && url.endsWith('.png'))
 check(splashFiles.length === 40, '40 splash screens iOS estão no precache')
+for (const [width, height] of splashScreens) {
+  const name = `apple-splash-${width}-${height}.png`
+  const actual = await pngSize(join(surface, 'public/pwa', name))
+  check(actual[0] === width && actual[1] === height, `${name} mede ${width}x${height}`)
+  check(splashFiles.includes(`pwa/${name}`), `${name} está no precache`)
+}
 
 const port = await freePort()
 const baseUrl = `http://127.0.0.1:${port}`
