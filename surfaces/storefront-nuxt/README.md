@@ -95,7 +95,9 @@ commit.
 
 Os ícones `any` usam o selo circular sem margem adicional e com transparência.
 No Mac, o manifesto omite `maskable` para o Chrome selecionar esse selo; a
-resposta varia por `User-Agent`. O ícone Apple é opaco, amarelo `#FFD25C`, com
+resposta varia por `User-Agent` e usa `private, no-store`, pois a borda pode
+ignorar `Vary` ao formar a chave de cache. O link versionado do manifesto evita
+reutilizar a resposta pública anterior; `id`, `scope` e `start_url` não mudam. O ícone Apple é opaco, amarelo `#FFD25C`, com
 98% de ocupação. O adaptativo Android usa o mesmo amarelo com 80% de ocupação,
 preservando a zona segura contra recortes do launcher. Ícones já instalados
 precisam receber a atualização do navegador; validar também uma instalação nova.

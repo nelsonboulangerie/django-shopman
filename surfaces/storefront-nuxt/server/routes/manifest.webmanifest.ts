@@ -27,7 +27,8 @@ async function publicShop (event: H3Event): Promise<PwaShopSource> {
 export default defineEventHandler(async (event) => {
   setResponseHeaders(event, {
     vary: 'User-Agent',
-    'cache-control': 'public, max-age=3600',
+    // Shared CDNs may ignore Vary: User-Agent; never share this variant.
+    'cache-control': 'private, no-store',
     'content-type': 'application/manifest+json; charset=utf-8'
   })
   return buildStorefrontManifest(await publicShop(event), getRequestHeader(event, 'user-agent'))

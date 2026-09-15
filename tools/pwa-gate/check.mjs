@@ -72,7 +72,7 @@ const requiredAssets = [
   ['pwa-192x192.png', 192, 192],
   ['pwa-512x512.png', 512, 512],
   ['maskable-512x512.png', 512, 512],
-  ['apple-touch-icon-transparent-180x180.png', 180, 180],
+  ['apple-touch-icon-180x180.png', 180, 180],
   ['monochrome-512x512.png', 512, 512],
   ['screenshots/home-narrow.png', 1080, 1920],
   ['screenshots/menu-narrow.png', 1080, 1920],
@@ -110,10 +110,11 @@ preview.stderr.on('data', chunk => { logs += chunk })
 
 try {
   await waitForServer(`${baseUrl}/offline.html`, preview)
-  const manifestResponse = await fetch(`${baseUrl}/manifest.webmanifest`)
+  const manifestResponse = await fetch(`${baseUrl}/manifest.webmanifest?v=3`)
   check(manifestResponse.ok, 'manifesto responde 200 mesmo sem Django')
   check(manifestResponse.headers.get('content-type')?.startsWith('application/manifest+json'), 'manifesto usa application/manifest+json')
-  check(manifestResponse.headers.get('cache-control') === 'public, max-age=3600', 'manifesto usa cache público de uma hora')
+  check(manifestResponse.headers.get('cache-control') === 'private, no-store', 'manifesto por dispositivo não usa cache compartilhado')
+  check(manifestResponse.headers.get('vary') === 'User-Agent', 'manifesto declara variação por dispositivo')
   const manifest = await manifestResponse.json()
   for (const field of ['id', 'name', 'short_name', 'description', 'lang', 'dir', 'start_url', 'scope', 'display', 'display_override', 'orientation', 'theme_color', 'background_color', 'icons', 'shortcuts', 'categories', 'screenshots']) {
     check(field in manifest, `manifesto contém ${field}`)
@@ -131,6 +132,7 @@ try {
   const document = await documentResponse.text()
   const csp = documentResponse.headers.get('content-security-policy') || ''
   check(csp.includes("worker-src 'self' blob:") && csp.includes("manifest-src 'self'"), 'CSP existente libera worker e manifesto locais')
+  check(document.includes('href="/manifest.webmanifest?v=3"'), 'HTML usa manifesto versionado sem reutilizar cache anterior')
   check(document.includes('rel="manifest"') && document.includes('name="theme-color"'), 'HTML contém manifesto e theme-color')
   check(document.includes('apple-mobile-web-app-capable') && document.includes('apple-mobile-web-app-status-bar-style'), 'HTML contém metas iOS')
   check((document.match(/rel="apple-touch-startup-image"/g) || []).length === 40, 'HTML contém 40 links apple-touch-startup-image')
