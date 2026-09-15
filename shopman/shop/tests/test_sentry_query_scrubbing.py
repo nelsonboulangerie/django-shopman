@@ -44,7 +44,7 @@ def test_the_efi_token_never_leaves_inside_the_url(scrub):
     cleaned = scrub(event, None)
 
     assert "SEGREDO-DA-EFI" not in str(cleaned)
-    assert cleaned["request"]["url"] == "https://api.exemplo.test/api/webhooks/efi/pix/"
+    assert cleaned["request"]["url"] == "https://api.exemplo.test"
     assert "query_string" not in cleaned["request"]
 
 
@@ -55,10 +55,25 @@ def test_scrubbing_is_not_limited_to_the_efi_route(scrub):
     assert "43999998888" not in str(scrub(event, None))
 
 
-def test_url_without_query_survives_intact(scrub):
+def test_url_without_query_keeps_only_the_origin(scrub):
     event = {"request": {"url": "https://api.exemplo.test/health/"}}
 
-    assert scrub(event, None)["request"]["url"] == "https://api.exemplo.test/health/"
+    assert scrub(event, None)["request"]["url"] == "https://api.exemplo.test"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://user:password@api.exemplo.test/customer/CUS-PRIVATE/",
+        "https://api.exemplo.test/customer/pablo%40example.test/",
+        "https://api.exemplo.test/session/session-private/",
+        "https://api.exemplo.test/device/550e8400-e29b-41d4-a716-446655440000/",
+    ],
+)
+def test_url_never_exports_userinfo_or_free_form_path(scrub, url):
+    assert scrub({"request": {"url": url}}, None)["request"]["url"] == (
+        "https://api.exemplo.test"
+    )
 
 
 def test_request_headers_body_cookies_and_user_never_leave(scrub):
@@ -86,7 +101,7 @@ def test_request_headers_body_cookies_and_user_never_leave(scrub):
     assert "cookie-secreto" not in serialized
     assert "user" not in cleaned
     assert cleaned["request"] == {
-        "url": "https://api.exemplo.test/api/v1/marketing/",
+        "url": "https://api.exemplo.test",
         "headers": {
             "content-type": "application/json",
             "x-request-id": "request-safe-123",

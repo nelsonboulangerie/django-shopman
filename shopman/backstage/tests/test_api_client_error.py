@@ -67,9 +67,9 @@ class TestSanitize:
         assert "99999-8888" not in report["message"]
         assert "[email]" in report["message"] and "[phone]" in report["message"]
 
-    def test_strips_url_query_and_fragment(self):
+    def test_keeps_only_url_origin(self):
         report = sanitize_client_report({"message": "x", "url": "https://pos/venda?token=abc#y"})
-        assert report["url"] == "https://pos/venda"
+        assert report["url"] == "https://pos"
 
     def test_drops_unknown_fields_and_non_str(self):
         report = sanitize_client_report({"message": "x", "evil": {"a": 1}, "stack": 123})
