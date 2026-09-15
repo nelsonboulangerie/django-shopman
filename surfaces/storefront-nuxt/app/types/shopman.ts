@@ -630,6 +630,18 @@ export interface PaymentMethodProjection {
   is_default: boolean
 }
 
+export interface PaymentConstraintProjection {
+  provider: string
+  environment: string
+  mode: string
+  is_test: boolean
+  max_amount_q: number
+  max_amount_display: string
+  message: string
+}
+
+export type PaymentConstraintsProjection = Partial<Record<string, PaymentConstraintProjection>>
+
 export interface PickupSlotProjection {
   ref: string
   label: string
@@ -708,6 +720,7 @@ export interface CheckoutProjection {
   saved_addresses: SavedAddressProjection[]
   preselected_address_id: number | null
   payment_methods: PaymentMethodProjection[]
+  payment_constraints?: PaymentConstraintsProjection
   default_payment_method: string
   actions: Action[]
   fulfillment_options: Array<'pickup' | 'delivery' | string>

@@ -7,18 +7,22 @@ Docs: https://dev.efipay.com.br/docs/api-pix
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import ssl
+import time
 import uuid
 from base64 import b64encode
 from datetime import timedelta
-from urllib.error import HTTPError
+from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from django.conf import settings
 from django.core.cache import cache
+from django.db import transaction
 from django.utils import timezone
 
 from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult
@@ -28,8 +32,11 @@ logger = logging.getLogger(__name__)
 SANDBOX_URL = "https://pix-h.api.efipay.com.br"
 PRODUCTION_URL = "https://pix.api.efipay.com.br"
 
-_EFI_TOKEN_CACHE_KEY = "efi_access_token"
+_EFI_TOKEN_CACHE_KEY_PREFIX = "efi_access_token"
 _EFI_TOKEN_TTL = 3300  # 55 min — EFI tokens last 1h
+_EFI_TOKEN_LOCK_TTL = 35
+_EFI_TOKEN_LOCK_WAIT_SECONDS = 31.0
+_EFI_TOKEN_LOCK_POLL_SECONDS = 0.05
 
 
 def _brl_to_q(amount: str | float) -> int:
@@ -44,9 +51,12 @@ def _get_config() -> dict:
     return getattr(settings, "SHOPMAN_EFI", {})
 
 
-def _get_base_url() -> str:
-    config = _get_config()
+def _base_url(config: dict) -> str:
     return SANDBOX_URL if config.get("sandbox", True) else PRODUCTION_URL
+
+
+def _get_base_url() -> str:
+    return _base_url(_get_config())
 
 
 class EfiNotConfigured(RuntimeError):
@@ -72,13 +82,38 @@ def _require_credentials(config: dict) -> tuple[str, str]:
     return client_id, client_secret
 
 
-def _get_access_token() -> str:
-    """Obtain or renew access token. Token is cached — thread-safe across workers."""
-    token = cache.get(_EFI_TOKEN_CACHE_KEY)
-    if token:
-        return token
+def _certificate_identity(certificate_path: str) -> str:
+    """Stable, non-secret identity for the certificate used by this client.
 
-    config = _get_config()
+    The DigitalOcean runtime materializes an inline certificate at the same path
+    after every rotation.  Hashing the file contents means a rotated certificate
+    cannot accidentally reuse the old token, while neither the private key nor
+    its filesystem path becomes part of the cache key.
+    """
+    try:
+        certificate = Path(certificate_path).read_bytes()
+    except OSError:
+        # ``load_cert_chain`` remains the owner of the actionable certificate
+        # error.  The fallback only keeps construction of the cache key total.
+        certificate = certificate_path.encode("utf-8")
+    return hashlib.sha256(certificate).hexdigest()
+
+
+def _token_cache_key(config: dict) -> str:
+    client_id, _ = _require_credentials(config)
+    identity = "\0".join(
+        (
+            _base_url(config),
+            client_id,
+            _certificate_identity(str(config.get("certificate_path") or "")),
+        )
+    )
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+    return f"{_EFI_TOKEN_CACHE_KEY_PREFIX}:{digest}"
+
+
+def _request_access_token(config: dict) -> str:
+    """Obtain one token from Efí; caching and single-flight live above."""
     client_id, client_secret = _require_credentials(config)
     certificate_path = config["certificate_path"]
 
@@ -88,7 +123,7 @@ def _get_access_token() -> str:
     data = urlencode({"grant_type": "client_credentials"}).encode()
 
     request = Request(
-        f"{_get_base_url()}/oauth/token",
+        f"{_base_url(config)}/oauth/token",
         data=data,
         headers={
             "Authorization": f"Basic {auth}",
@@ -99,9 +134,53 @@ def _get_access_token() -> str:
 
     with urlopen(request, context=context, timeout=30) as response:
         result = json.loads(response.read().decode())
-        token = result["access_token"]
-        cache.set(_EFI_TOKEN_CACHE_KEY, token, timeout=_EFI_TOKEN_TTL)
+        return result["access_token"]
+
+
+def _get_access_token() -> str:
+    """Obtain or renew an environment-scoped access token.
+
+    The cache key is bound to the base URL, client id and certificate identity,
+    so a sandbox/production flip or credential rotation never reuses a token
+    issued for the previous context.  ``cache.add`` is an atomic, cross-worker
+    best-effort single-flight on the production Redis backend; waiters reuse the
+    winner's token instead of stampeding the OAuth endpoint.
+    """
+    config = _get_config()
+    cache_key = _token_cache_key(config)
+    token = cache.get(cache_key)
+    if token:
         return token
+
+    lock_key = f"{cache_key}:lock"
+    lock_owner = uuid.uuid4().hex
+    acquired = cache.add(lock_key, lock_owner, timeout=_EFI_TOKEN_LOCK_TTL)
+    if not acquired:
+        deadline = time.monotonic() + _EFI_TOKEN_LOCK_WAIT_SECONDS
+        while time.monotonic() < deadline:
+            time.sleep(_EFI_TOKEN_LOCK_POLL_SECONDS)
+            token = cache.get(cache_key)
+            if token:
+                return token
+            if cache.add(lock_key, lock_owner, timeout=_EFI_TOKEN_LOCK_TTL):
+                acquired = True
+                break
+        if not acquired:
+            raise RuntimeError("Efí OAuth token renewal is already in progress")
+
+    try:
+        # The token may have appeared between the first read and lock acquisition.
+        token = cache.get(cache_key)
+        if token:
+            return token
+        token = _request_access_token(config)
+        cache.set(cache_key, token, timeout=_EFI_TOKEN_TTL)
+        return token
+    finally:
+        # The TTL is longer than the network timeout.  The owner check prevents a
+        # delayed worker from deleting a successor's lock after an expiry.
+        if cache.get(lock_key) == lock_owner:
+            cache.delete(lock_key)
 
 
 def _request(method: str, path: str, payload: dict | None = None) -> dict:
@@ -129,8 +208,94 @@ def _request(method: str, path: str, payload: dict | None = None) -> dict:
             return json.loads(response.read().decode())
     except HTTPError as e:
         error_body = e.read().decode() if e.fp else ""
+        # Keep the structured provider body available to recovery policy. Efí
+        # reports an absent cobrança as HTTP 400, so status code alone cannot
+        # distinguish safe same-txid recreation from a fail-closed 400.
+        e.efi_error_body = error_body
         logger.error("Efi API error: %s - %s", e.code, error_body)
         raise
+
+
+def _merge_intent_gateway_state(
+    db_intent,
+    *,
+    updates: dict,
+    gateway_id: str = "",
+    remove_keys: tuple[str, ...] = (),
+) -> dict:
+    """Merge remote progress without erasing a concurrent webhook update.
+
+    Efí may deliver the paid callback immediately after the Cob ``PUT``.  Every
+    later QR/recovery write therefore takes the same Payman row lock used by
+    authorize/capture and merges the current database value instead of saving a
+    stale model snapshot.
+    """
+
+    def apply(target) -> dict:
+        merged = {**(target.gateway_data or {}), **updates}
+        for key in remove_keys:
+            merged.pop(key, None)
+        target.gateway_data = merged
+        update_fields = ["gateway_data"]
+        if gateway_id and target.gateway_id != gateway_id:
+            target.gateway_id = gateway_id
+            update_fields.append("gateway_id")
+        target.save(update_fields=update_fields)
+        return merged
+
+    # Adapter unit tests use a lightweight intent double.  Production Payman
+    # models always have ``pk`` and take the locked branch.
+    if getattr(db_intent, "pk", None) is None:
+        return apply(db_intent)
+
+    with transaction.atomic():
+        locked = type(db_intent).objects.select_for_update().get(pk=db_intent.pk)
+        merged = apply(locked)
+    db_intent.refresh_from_db()
+    return merged
+
+
+def _charge_definitively_not_created(exc: Exception, *, stage: str, remote_charge_created: bool) -> bool:
+    """Whether retry may safely burn this attempt and use a new txid.
+
+    Timeouts and 5xx responses around the Cob PUT are ambiguous, so they keep
+    the intent pending for a same-txid retry.  Local credential/certificate
+    failures and explicit 4xx rejections happen before a charge can exist.
+    """
+    if remote_charge_created or stage != "charge_create":
+        return False
+    if isinstance(exc, (EfiNotConfigured, KeyError, FileNotFoundError, ssl.SSLError)):
+        return True
+    # 408/429 are transport/back-pressure outcomes: the request may have been
+    # accepted before the response was lost or throttled.  Just like 409, they
+    # must retain the same txid and be reconciled before any new charge exists.
+    return isinstance(exc, HTTPError) and 400 <= int(exc.code) < 500 and int(exc.code) not in {408, 409, 429}
+
+
+def _charge_location(response: dict) -> tuple[object | None, str]:
+    loc = response.get("loc") or {}
+    location_id = loc.get("id") if isinstance(loc, dict) else loc
+    return location_id, str(response.get("location") or "")
+
+
+def _charge_definitively_absent(exc: HTTPError) -> bool:
+    if int(exc.code) == 404:
+        return True
+    if int(exc.code) != 400:
+        return False
+    body = str(getattr(exc, "efi_error_body", "") or "")
+    if not body and getattr(exc, "fp", None):
+        try:
+            raw = exc.read()
+            body = raw.decode() if isinstance(raw, bytes) else str(raw or "")
+        except Exception:
+            logger.debug("Efi charge lookup error body could not be read", exc_info=True)
+            body = ""
+    try:
+        parsed = json.loads(body)
+    except (TypeError, ValueError):
+        parsed = {}
+    return str(parsed.get("nome") or "").strip().lower() == "cobranca_nao_encontrada"
 
 
 def create_intent(
@@ -143,10 +308,17 @@ def create_intent(
     **config,
 ) -> PaymentIntent:
     """Create a PIX charge via Efi gateway + persist via PaymentService."""
-    from shopman.payman import PaymentService
-
     if method != "pix":
         raise ValueError("EFI adapter only supports PIX")
+
+    from shopman.shop.services.pix_policy import enforce_pix_test_amount_limit
+
+    # Homologação Efí confirma automaticamente apenas até R$ 10,00.  Recusar
+    # aqui, antes do livro e antes da rede, impede uma cobrança > R$ 10,00 de
+    # ficar ATIVA para sempre sem webhook.
+    enforce_pix_test_amount_limit(amount_q, adapter_path=__name__)
+
+    from shopman.payman import PaymentService
 
     metadata = metadata or {}
     idempotency_key = config.get("idempotency_key") or metadata.get("idempotency_key", "")
@@ -158,19 +330,63 @@ def create_intent(
         pix_expiry_seconds = getattr(settings, "SHOPMAN_PIX_EXPIRY_SECONDS", 3600)
     expires_at = timezone.now() + timedelta(seconds=pix_expiry_seconds)
 
+    candidate_txid = (
+        uuid.uuid5(uuid.NAMESPACE_URL, f"shopman-efi:{idempotency_key}").hex
+        if idempotency_key
+        else uuid.uuid4().hex[:35]
+    )
+    provider_environment = "sandbox" if efi_config.get("sandbox", True) else "production"
+    confirmation_mode = "provider_simulated" if provider_environment == "sandbox" else "provider_live"
+    gateway_metadata = {
+        **metadata,
+        "txid": candidate_txid,
+        "provider_environment": provider_environment,
+        "confirmation_mode": confirmation_mode,
+        "efi_creation_phase": "intent_persisted",
+    }
     db_intent = PaymentService.create_intent(
         order_ref=order_ref,
         amount_q=amount_q,
         method="pix",
         gateway="efi",
-        gateway_data=metadata,
+        gateway_id=candidate_txid,
+        gateway_data=gateway_metadata,
         expires_at=expires_at,
         idempotency_key=idempotency_key,
     )
+    persisted_environment = str(
+        (db_intent.gateway_data or {}).get("provider_environment") or ""
+    ).strip().lower()
+    if persisted_environment != provider_environment:
+        raise RuntimeError(
+            "Cobrança Pix pertence a outro ambiente Efí; reconcilie no ambiente de origem."
+        )
+    # Idempotent retries inherit the original commercial deadline. Extending
+    # it on every QR fetch would keep an old charge apparently payable forever.
+    expires_at = db_intent.expires_at or expires_at
     if db_intent.gateway_id and db_intent.gateway_data.get("client_secret"):
         return _intent_from_db(db_intent, currency=currency)
 
-    txid = uuid.uuid5(uuid.NAMESPACE_URL, f"shopman-efi:{idempotency_key}").hex if idempotency_key else uuid.uuid4().hex[:35]
+    # ``create_intent`` can return a legacy or partially-created row for the same
+    # idempotency key.  Remote progress wins over fresh caller metadata: it is
+    # the durable resume cursor after a timeout or process restart.
+    txid = db_intent.gateway_id or candidate_txid
+    gateway_data = {
+        **gateway_metadata,
+        **(db_intent.gateway_data or {}),
+        "txid": txid,
+        "provider_environment": provider_environment,
+        "confirmation_mode": confirmation_mode,
+    }
+    if db_intent.gateway_id != txid or db_intent.gateway_data != gateway_data:
+        gateway_data = _merge_intent_gateway_state(
+            db_intent,
+            updates=gateway_data,
+            gateway_id=txid,
+        )
+
+    # The txid is durable before the PUT.  Efí may deliver a paid webhook as
+    # soon as the charge is created, before the QR request returns.
     # A chave "valor" é do contrato da EFI; a variável é nossa.
     amount = f"{amount_q / 100:.2f}"
 
@@ -183,27 +399,92 @@ def create_intent(
         ],
     }
 
+    stage = "charge_create"
+    remote_charge_created = bool(gateway_data.get("efi_location_id"))
     try:
-        response = _request("PUT", f"/v2/cob/{txid}", payload)
-        qr_response = _request("GET", f"/v2/loc/{response['loc']['id']}/qrcode")
+        location_id = gateway_data.get("efi_location_id")
+        if location_id:
+            response = {"location": gateway_data.get("location", "")}
+        else:
+            response = {}
+            # A timeout around PUT is ambiguous: before issuing any second PUT,
+            # ask Efí by the durable txid. If it exists, recover its location
+            # and continue directly to the QR GET.
+            if gateway_data.get("efi_remote_state") == "unknown":
+                stage = "charge_recovery"
+                try:
+                    response = _request("GET", f"/v2/cob/{txid}")
+                except HTTPError as probe_error:
+                    if not _charge_definitively_absent(probe_error):
+                        raise
+                    response = {}
+                if response:
+                    remote_charge_created = True
+                    location_id, _location = _charge_location(response)
+                    if not location_id:
+                        raise RuntimeError("Cobrança Efí encontrada sem localização para recuperar QR.")
 
-        client_secret = json.dumps({
-            "qrcode": qr_response.get("qrcode", ""),
-            "imagemQrcode": qr_response.get("imagemQrcode", ""),
-            "txid": txid,
-        })
+            if not location_id:
+                stage = "charge_create"
+                try:
+                    response = _request("PUT", f"/v2/cob/{txid}", payload)
+                except HTTPError as put_error:
+                    if int(put_error.code) != 409:
+                        raise
+                    # txid already in use means 'possibly created', never
+                    # 'definitively not created'. Resolve that exact txid.
+                    remote_charge_created = True
+                    stage = "charge_recovery"
+                    response = _request("GET", f"/v2/cob/{txid}")
+                location_id, _location = _charge_location(response)
+                if not location_id:
+                    raise RuntimeError("Resposta Efí sem localização da cobrança Pix.")
+            remote_charge_created = True
+            gateway_data = {
+                **gateway_data,
+                "location": response.get("location", "") or gateway_data.get("location", ""),
+                "efi_location_id": location_id,
+                "efi_creation_phase": "charge_created",
+                "efi_remote_state": "created",
+            }
+            # This save is deliberately before the QR request.  If that request
+            # fails, retry resumes from the persisted loc id and never PUTs a
+            # second charge.
+            gateway_data = _merge_intent_gateway_state(
+                db_intent,
+                updates=gateway_data,
+                remove_keys=("efi_last_error_stage", "efi_last_error_type"),
+            )
+
+        stage = "qr_fetch"
+        qr_response = _request("GET", f"/v2/loc/{location_id}/qrcode")
+
+        client_secret = json.dumps(
+            {
+                "qrcode": qr_response.get("qrcode", ""),
+                "imagemQrcode": qr_response.get("imagemQrcode", ""),
+                "txid": txid,
+            }
+        )
 
         db_intent.gateway_id = txid
-        db_intent.gateway_data = {
-            **metadata,
-            "location": response.get("location", ""),
+        gateway_data = {
+            **gateway_data,
+            "location": response.get("location", "") or gateway_data.get("location", ""),
             "client_secret": client_secret,
+            "efi_creation_phase": "qr_ready",
+            "efi_remote_state": "created",
         }
-        db_intent.save(update_fields=["gateway_id", "gateway_data"])
+        gateway_data = _merge_intent_gateway_state(
+            db_intent,
+            updates=gateway_data,
+            gateway_id=txid,
+            remove_keys=("efi_last_error_stage", "efi_last_error_type"),
+        )
 
         return PaymentIntent(
             intent_ref=db_intent.ref,
-            status="pending",
+            status=db_intent.status,
             amount_q=amount_q,
             currency=currency,
             client_secret=client_secret,
@@ -213,19 +494,46 @@ def create_intent(
                 "qrcode": qr_response.get("qrcode", ""),
                 "imagemQrcode": qr_response.get("imagemQrcode", ""),
                 "txid": txid,
+                "provider_environment": provider_environment,
+                "confirmation_mode": confirmation_mode,
             },
         )
-    except Exception:
-        logger.debug("payment_efi.create_intent degraded; using fallback", exc_info=True)
+    except Exception as exc:
+        logger.debug("Efi create_intent entered recovery for order %s", order_ref, exc_info=True)
+        # A timeout can happen after Efí accepted the PUT.  Marking FAILED here
+        # would lie about a still-payable charge and let a caller generate a new
+        # one.  Keep the intent pending, persist only non-sensitive diagnostics,
+        # and let the same idempotency key/txid resume safely.
+        not_created = _charge_definitively_not_created(
+            exc,
+            stage=stage,
+            remote_charge_created=remote_charge_created,
+        )
+        gateway_data = {
+            **gateway_data,
+            "efi_last_error_stage": stage,
+            "efi_last_error_type": type(exc).__name__,
+            "efi_remote_state": (
+                "created" if remote_charge_created else ("not_created" if not_created else "unknown")
+            ),
+        }
         try:
-            PaymentService.fail(
-                db_intent.ref,
-                error_code="gateway_error",
-                message="Falha na criação da cobrança Efi",
+            gateway_data = _merge_intent_gateway_state(
+                db_intent,
+                updates=gateway_data,
             )
+            if not_created:
+                PaymentService.fail(
+                    db_intent.ref,
+                    error_code="gateway_error",
+                    message="A Efí recusou a criação da cobrança antes de gerar o Pix.",
+                )
         except Exception:
-            logger.warning("Efi create_intent: could not mark intent as failed for order %s", order_ref, exc_info=True)
-        logger.exception("Efi create_intent error for order %s", order_ref)
+            logger.warning("Efi create_intent: could not persist recovery state for order %s", order_ref, exc_info=True)
+        if not_created:
+            logger.exception("Efi create_intent failed before remote charge for order %s", order_ref)
+        else:
+            logger.exception("Efi create_intent remote state uncertain for order %s", order_ref)
         raise
 
 
@@ -443,11 +751,23 @@ def refund(
         )
     except Exception as e:
         logger.exception("Efi refund error for intent %s", intent_ref)
+        # A timeout/transport error or 5xx around the idempotent PUT is
+        # ambiguous: Efí may already have accepted the refund. Propagate so the
+        # orchestration retry presents the exact same deterministic dev_id.
+        # Explicit 4xx responses remain terminal adapter failures.
+        if _refund_error_is_transient(e):
+            raise
         return PaymentResult(
             success=False,
             error_code="error",
             message=str(e),
         )
+
+
+def _refund_error_is_transient(exc: Exception) -> bool:
+    if isinstance(exc, HTTPError):
+        return int(exc.code) >= 500 or int(exc.code) in {408, 429}
+    return isinstance(exc, (TimeoutError, ConnectionError, URLError))
 
 
 def _record_cancel_drift(intent_ref: str, exc, *, txid: str) -> None:

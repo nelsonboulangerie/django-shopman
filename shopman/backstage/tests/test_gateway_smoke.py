@@ -38,6 +38,7 @@ def test_gateway_smoke_local_fixtures_pass_and_rollback():
 
 @pytest.mark.django_db
 @override_settings(
+    SHOPMAN_EFI={"sandbox": False},
     SHOPMAN_PAYMENT_ADAPTERS={
         "pix": "shopman.shop.adapters.payment_efi",
         "card": "shopman.shop.adapters.payment_stripe",

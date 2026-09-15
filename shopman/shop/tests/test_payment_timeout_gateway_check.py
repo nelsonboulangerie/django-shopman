@@ -78,7 +78,7 @@ def _stub_adapter(gateway_state, capture_result=None):
 def test_gateway_paid_blocks_cancel_and_promotes_order(overdue_pix_order):
     paid = SimpleNamespace(success=True, transaction_id="txid-1", amount_q=5000, error_code="")
     adapter = _stub_adapter("captured", paid)
-    with patch.object(payment_service, "get_adapter", return_value=adapter):
+    with patch.object(payment_service, "_adapter_for_persisted_intent", return_value=adapter):
         cancelled = resolve_payment_timeout_if_due(overdue_pix_order)
 
     assert cancelled is False
@@ -87,9 +87,54 @@ def test_gateway_paid_blocks_cancel_and_promotes_order(overdue_pix_order):
     assert overdue_pix_order.data["payment"]["captured_at"]
 
 
+def test_polling_capture_propagates_persisted_sandbox_provenance_and_excludes_revenue(
+    overdue_pix_order,
+):
+    from shopman.payman import PaymentService
+    from shopman.payman.models import PaymentIntent
+
+    from shopman.backstage.projections.bi_explore import build_bi_explore
+    from shopman.backstage.services.closing import _payment_method_totals
+
+    intent = PaymentIntent.objects.get(ref="INT-PIX-1")
+    intent.gateway_data = {
+        "provider_environment": "sandbox",
+        "confirmation_mode": "provider_simulated",
+    }
+    intent.save(update_fields=["gateway_data"])
+
+    def reconcile(intent_ref):
+        PaymentService.authorize(intent_ref, gateway_id="txid-polling")
+        PaymentService.capture(intent_ref, gateway_id="txid-polling")
+        return SimpleNamespace(
+            success=True,
+            transaction_id="txid-polling",
+            amount_q=5000,
+            error_code="",
+        )
+
+    adapter = SimpleNamespace(
+        check_gateway_status=lambda intent_ref: "captured",
+        capture=reconcile,
+    )
+    with (
+        patch.object(payment_service, "_adapter_for_persisted_intent", return_value=adapter),
+        patch("shopman.shop.lifecycle.dispatch"),
+    ):
+        assert payment_service.settle_from_gateway(overdue_pix_order) == "paid"
+
+    overdue_pix_order.refresh_from_db()
+    persisted = overdue_pix_order.data["payment"]
+    assert persisted["confirmation_mode"] == "provider_simulated"
+    assert persisted["provider_environment"] == "sandbox"
+    assert persisted["is_test_confirmation"] is True
+    assert build_bi_explore(metric="payment_received", by="payment_method").rows == ()
+    assert _payment_method_totals(timezone.localdate()).get("pix", 0) == 0
+
+
 def test_gateway_unreachable_defers_cancel(overdue_pix_order):
     adapter = _stub_adapter("error")
-    with patch.object(payment_service, "get_adapter", return_value=adapter):
+    with patch.object(payment_service, "_adapter_for_persisted_intent", return_value=adapter):
         cancelled = resolve_payment_timeout_if_due(overdue_pix_order)
 
     assert cancelled is False
@@ -99,7 +144,7 @@ def test_gateway_unreachable_defers_cancel(overdue_pix_order):
 
 def test_gateway_confirms_unpaid_allows_cancel(overdue_pix_order):
     adapter = _stub_adapter("pending")
-    with patch.object(payment_service, "get_adapter", return_value=adapter):
+    with patch.object(payment_service, "_adapter_for_persisted_intent", return_value=adapter):
         cancelled = resolve_payment_timeout_if_due(overdue_pix_order)
 
     assert cancelled is True
@@ -115,7 +160,7 @@ def test_intent_that_never_existed_is_unpaid_not_uncertain(overdue_pix_order):
     handler de timeout tentar para sempre um pedido que nunca teve cobrança.
     """
     adapter = _stub_adapter("not_found")
-    with patch.object(payment_service, "get_adapter", return_value=adapter):
+    with patch.object(payment_service, "_adapter_for_persisted_intent", return_value=adapter):
         state = payment_service.settle_from_gateway(overdue_pix_order)
 
     assert state == "unpaid"
@@ -127,7 +172,7 @@ def test_paid_promotion_dispatches_on_paid_once_under_double_resolve(overdue_pix
     paid = SimpleNamespace(success=True, transaction_id="txid-1", amount_q=5000, error_code="")
     adapter = _stub_adapter("captured", paid)
     calls = []
-    with patch.object(payment_service, "get_adapter", return_value=adapter), \
+    with patch.object(payment_service, "_adapter_for_persisted_intent", return_value=adapter), \
          patch("shopman.shop.lifecycle.dispatch", side_effect=lambda o, p: calls.append(p)):
         s1 = payment_service.settle_from_gateway(overdue_pix_order)
         # Segundo resolver, mesmo pedido, já promovido.
@@ -148,7 +193,7 @@ def test_adapter_without_read_verb_never_invents_payment(overdue_pix_order):
     exploded = SimpleNamespace(
         capture=lambda intent_ref: pytest.fail("capture() não pode ser chamado para PERGUNTAR")
     )
-    with patch.object(payment_service, "get_adapter", return_value=exploded):
+    with patch.object(payment_service, "_adapter_for_persisted_intent", return_value=exploded):
         state = payment_service.settle_from_gateway(overdue_pix_order)
 
     assert state == "indeterminate"
@@ -167,10 +212,10 @@ def test_mock_adapter_unpaid_pix_is_not_promoted_to_paid(overdue_pix_order):
 
     Era o caminho que o próprio cliente disparava recarregando o acompanhamento.
     """
-    from shopman.shop.adapters import payment_mock
+    from shopman.payman.models import PaymentIntent
 
-    with patch.object(payment_service, "get_adapter", return_value=payment_mock), \
-         patch("shopman.shop.lifecycle.dispatch") as dispatched:
+    PaymentIntent.objects.filter(ref="INT-PIX-1").update(gateway="mock")
+    with patch("shopman.shop.lifecycle.dispatch") as dispatched:
         state = payment_service.settle_from_gateway(overdue_pix_order)
 
     assert state == "unpaid"
@@ -196,14 +241,13 @@ def test_mock_adapter_paid_pix_is_still_promoted(overdue_pix_order):
     captura existente é reconhecida em vez de refeita.
     """
     from shopman.payman import PaymentService
+    from shopman.payman.models import PaymentIntent
 
-    from shopman.shop.adapters import payment_mock
-
+    PaymentIntent.objects.filter(ref="INT-PIX-1").update(gateway="mock")
     PaymentService.authorize("INT-PIX-1", gateway_id="mock-txid")
     PaymentService.capture("INT-PIX-1")
 
-    with patch.object(payment_service, "get_adapter", return_value=payment_mock), \
-         patch("shopman.shop.lifecycle.dispatch") as dispatched:
+    with patch("shopman.shop.lifecycle.dispatch") as dispatched:
         state = payment_service.settle_from_gateway(overdue_pix_order)
 
     assert state == "paid"

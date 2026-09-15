@@ -76,7 +76,10 @@ def _create_pix_intent(order: Order) -> object:
         amount_q=order.total_q,
         method="pix",
         gateway="efi",
-        gateway_data={},
+        gateway_data={
+            "provider_environment": "sandbox",
+            "confirmation_mode": "provider_simulated",
+        },
     )
     intent.gateway_id = "txid_test_abc123"
     intent.save(update_fields=["gateway_id"])
@@ -809,7 +812,10 @@ class EfiPixWebhookTests(WebhookTestBase):
             amount_q=order_2.total_q,
             method="pix",
             gateway="efi",
-            gateway_data={},
+            gateway_data={
+                "provider_environment": "sandbox",
+                "confirmation_mode": "provider_simulated",
+            },
         )
         intent_2.gateway_id = "txid_second_order"
         intent_2.save(update_fields=["gateway_id"])
@@ -881,8 +887,18 @@ class EfiPixWebhookTests(WebhookTestBase):
                 }
             ]
         }
-        resp = self._post(payload)
+        # O roteamento usa o gateway EFÍ persistido mesmo quando a configuração
+        # corrente mudou. O teste não chama provider: substitui somente o verbo
+        # Efí por uma liquidação local e afirma que essa rota foi escolhida.
+        from shopman.shop.adapters import payment_mock
+
+        with patch(
+            "shopman.shop.adapters.payment_efi.refund",
+            side_effect=payment_mock.refund,
+        ) as efi_refund:
+            resp = self._post(payload)
         self.assertEqual(resp.status_code, 200)
+        efi_refund.assert_called_once()
 
         self.assertEqual(PaymentService.captured_total(intent.ref), 1000)
         self.assertEqual(PaymentService.refunded_total(intent.ref), 1000)
@@ -1217,17 +1233,42 @@ class PixCaptureSufficiencyTests(WebhookTestBase):
         self.assertTrue(any("R$ 8,00 de R$ 10,00" in m for m in messages))
 
     def test_full_pix_dispatches_on_paid_and_records_captured_at(self) -> None:
+        from shopman.shop import lifecycle
         from shopman.shop.services.pix_confirmation import confirm_pix
 
         order = _create_order_with_payment("web", "pix")
         intent = _create_pix_intent(order)
+        intent.gateway_data = {
+            **(intent.gateway_data or {}),
+            "provider_environment": "sandbox",
+            "confirmation_mode": "provider_simulated",
+        }
+        intent.save(update_fields=["gateway_data"])
 
-        with patch("shopman.shop.lifecycle.dispatch") as mock_dispatch:
+        # Executa o lifecycle de verdade: mockar dispatch aqui só provaria o
+        # hand-off, mas não que os writers de on_paid preservam a procedência
+        # financeira gravada imediatamente antes dele.
+        with patch("shopman.shop.lifecycle.dispatch", wraps=lifecycle.dispatch) as mock_dispatch:
             confirm_pix(txid=intent.gateway_id, e2e_id="E_FULL", amount="10.00")
 
         mock_dispatch.assert_called_once_with(order, "on_paid")
         order.refresh_from_db()
-        self.assertIn("captured_at", order.data["payment"])
+        payment_data = order.data["payment"]
+        self.assertIn("captured_at", payment_data)
+        self.assertEqual(payment_data["provider_environment"], "sandbox")
+        self.assertEqual(payment_data["confirmation_mode"], "provider_simulated")
+        self.assertIs(payment_data["is_test_confirmation"], True)
+        self.assertEqual(
+            payment_data["pix_receipt_sources"]["E_FULL"],
+            {
+                "provider_environment": "sandbox",
+                "confirmation_mode": "provider_simulated",
+                "is_test_confirmation": True,
+            },
+        )
+        intent.refresh_from_db()
+        self.assertEqual(intent.gateway_data["confirmation_mode"], "provider_simulated")
+        self.assertEqual(order.data["lifecycle"]["on_paid"], "done")
         self.assertFalse(
             OperatorAlert.objects.filter(
                 type="payment_insufficient", order_ref=order.ref,
@@ -1463,14 +1504,29 @@ class EfiPixWebhookMoneyTests(WebhookTestBase):
         intent = _create_pix_intent(order)
         PaymentService.authorize(intent.ref, gateway_id=intent.gateway_id)
 
-        payment_service.cancel(order, reason="order_cancelled")
-        order.transition_status("cancelled", actor="test")
-        intent.refresh_from_db()
-        self.assertEqual(intent.status, "cancelled")
+        from shopman.shop.adapters import payment_mock
 
-        resp = self._post_pix(
-            txid=intent.gateway_id, endToEndId="E_WH_AFTER_CANCEL", valor="10.00",
-        )
+        with (
+            patch(
+                "shopman.shop.adapters.payment_efi.cancel",
+                side_effect=payment_mock.cancel,
+            ) as efi_cancel,
+            patch(
+                "shopman.shop.adapters.payment_efi.refund",
+                side_effect=payment_mock.refund,
+            ) as efi_refund,
+        ):
+            payment_service.cancel(order, reason="order_cancelled")
+            order.transition_status("cancelled", actor="test")
+            intent.refresh_from_db()
+            self.assertEqual(intent.status, "cancelled")
+
+            resp = self._post_pix(
+                txid=intent.gateway_id, endToEndId="E_WH_AFTER_CANCEL", valor="10.00",
+            )
+
+        efi_cancel.assert_called_once()
+        efi_refund.assert_called_once()
 
         self.assertEqual(resp.status_code, 200, resp.data)
 

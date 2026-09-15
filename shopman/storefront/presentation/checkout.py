@@ -102,6 +102,7 @@ class CheckoutProjection:
     # Payment methods available on this channel
     payment_methods: tuple[PaymentMethodOptionProjection, ...]
     default_payment_method: str
+    payment_constraints: dict
 
     # Resolved options/actions for the surface
     actions: tuple[Action, ...]
@@ -222,6 +223,7 @@ def build_checkout(
         preselected_address_id=preselected_address_id,
         payment_methods=payment_methods,
         default_payment_method=payment_methods[0].ref if payment_methods else "cash",
+        payment_constraints=_payment_constraints(),
         actions=_checkout_actions(
             policy,
             cart=cart,
@@ -388,6 +390,13 @@ def _payment_methods(channel_ref: str) -> tuple[PaymentMethodOptionProjection, .
         )
         for i, m in enumerate(methods)
     )
+
+
+def _payment_constraints() -> dict:
+    """Provider-test capabilities resolved from the effective runtime adapter."""
+    from shopman.shop.projections.payment_constraints import payment_constraints_payload
+
+    return payment_constraints_payload()
 
 
 def _checkout_actions(

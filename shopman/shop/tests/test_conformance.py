@@ -66,6 +66,7 @@ _PATCHES = [
     "shopman.shop.services.payment.capture",
     "shopman.shop.services.payment.get_payment_status",
     "shopman.shop.services.payment.has_sufficient_captured_payment",
+    "shopman.shop.services.payment.settle_from_gateway",
     "shopman.shop.services.customer.ensure",
     "shopman.shop.services.loyalty.redeem",
     "shopman.shop.services.loyalty.earn",
@@ -81,6 +82,7 @@ _DEFAULT_RETURN = {
     "shopman.shop.services.availability.decide": _AVAIL_OK,
     "shopman.shop.services.payment.get_payment_status": None,
     "shopman.shop.services.payment.has_sufficient_captured_payment": False,
+    "shopman.shop.services.payment.settle_from_gateway": "unpaid",
 }
 
 

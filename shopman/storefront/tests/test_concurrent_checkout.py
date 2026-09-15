@@ -313,7 +313,7 @@ class ConcurrentPaymentCaptureTests(TransactionTestCase):
                 return_value=False,
             ),
             patch(
-                "shopman.shop.services.payment.get_adapter",
+                "shopman.shop.services.payment._adapter_for_persisted_intent",
                 return_value=mock_adapter,
             ),
         ):

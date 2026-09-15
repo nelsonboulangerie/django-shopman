@@ -28,6 +28,7 @@ def _paid_order(
     status=Order.Status.COMPLETED,
     total_q=1200,
     intent_status=PaymentIntent.Status.CAPTURED,
+    confirmation_mode="",
 ):
     intent_ref = f"PAY-{ref}"
     order = Order.objects.create(
@@ -45,6 +46,7 @@ def _paid_order(
         amount_q=total_q,
         gateway="efi",
         gateway_id=f"gw-{ref}",
+        gateway_data={"confirmation_mode": confirmation_mode} if confirmation_mode else {},
     )
     PaymentTransaction.objects.create(
         intent=intent,
@@ -53,6 +55,21 @@ def _paid_order(
         gateway_id=f"gw-{ref}",
     )
     return order, intent
+
+
+@pytest.mark.django_db
+def test_provider_simulated_confirmation_is_audited_but_not_counted_as_real_revenue():
+    today = timezone.localdate()
+    _paid_order(ref="FIN-SIMULATED", total_q=900, confirmation_mode="provider_simulated")
+    _paid_order(ref="FIN-LIVE", total_q=1300, confirmation_mode="provider_live")
+    _paid_order(ref="FIN-LEGACY", total_q=700)
+    DayClosing.objects.create(date=today, closed_by=_user(), data={"items": []})
+
+    report = build_financial_reconciliation(reconciliation_date=today, require_closing=True)
+
+    assert report.intent_count == 3
+    assert report.captured_q == 2000
+    assert report.net_q == 2000
 
 
 @pytest.mark.django_db

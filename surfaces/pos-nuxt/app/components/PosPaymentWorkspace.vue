@@ -23,6 +23,7 @@ import type {
   POSFulfillmentOptionProjection,
   POSManagerProjection,
   POSPaymentCollectionProjection,
+  POSPaymentConstraintsProjection,
   POSPaymentMethodProjection,
   POSPaymentTenderDraft,
   POSSaleReviewProjection,
@@ -30,6 +31,7 @@ import type {
   StructuredAddressProjection,
 } from "~/types/pos";
 import { formatBRL, moneyInputToQ } from "~/utils/posIntent";
+import { exceedsPaymentConstraint, pixProviderTestConstraint } from "~/presentation/paymentConstraints";
 import {
   cashNotesQ as contractCashNotesQ,
   cashNoteLabel,
@@ -69,6 +71,7 @@ const props = defineProps<{
   hasOpenTab: boolean;
   fulfillmentOptions: POSFulfillmentOptionProjection[];
   paymentMethods: POSPaymentMethodProjection[];
+  paymentConstraints?: POSPaymentConstraintsProjection;
   paymentCollections: POSPaymentCollectionProjection[];
   checkoutContract: POSCheckoutContractProjection | null;
   addressAutocomplete: POSAddressAutocompleteProjection | null;
@@ -603,11 +606,28 @@ const machineConfirmOpen = ref(false);
 
 const hasLinkTender = computed(() => props.paymentTenders.some((tender) => tender.method === "link"));
 const hasNonLinkTender = computed(() => props.paymentTenders.some((tender) => tender.method !== "link"));
+const pixProviderTest = computed(() => pixProviderTestConstraint(props.paymentConstraints));
+const hasPixProviderTestTender = computed(() =>
+  !!pixProviderTest.value && props.paymentTenders.some((tender) => tender.method === "pix"),
+);
+const hasNonPixTender = computed(() => props.paymentTenders.some((tender) => tender.method !== "pix"));
+const pixProviderTestExceeded = computed(() =>
+  hasPixProviderTestTender.value && exceedsPaymentConstraint(props.paymentTotalQ, pixProviderTest.value),
+);
+const pixProviderTestMixed = computed(() =>
+  hasPixProviderTestTender.value && (splitActive.value || hasNonPixTender.value),
+);
+const pixProviderTestMessage = computed(() => pixProviderTest.value?.message || (
+  "Ambiente de testes: a Efí simula a confirmação de Pix de até R$ 10,00. "
+  + "Para continuar, troque a forma de pagamento ou ajuste os itens do pedido."
+));
 /** Dá para dividir a conta AGORA? O link cobra a venda inteira, então ele fecha
  *  a porta — a não ser que a divisão já esteja armada, e aí o modal é por onde
  *  se desfaz. UMA verdade só: o botão e a tecla F10 leem daqui, senão o teclado
  *  abriria um modal que o dedo não consegue abrir. */
-const splitAvailable = computed(() => !(hasLinkTender.value && !splitActive.value));
+const splitAvailable = computed(() =>
+  !(hasLinkTender.value && !splitActive.value) && !hasPixProviderTestTender.value,
+);
 // No modal de dividir, o NÚMERO do botão é a própria tecla. Escolher o número já
 // é a decisão inteira, então a tecla escolhe E fecha, como o toque. Não disputa
 // com ninguém: o diálogo prende o foco em si e o shell cala os atalhos globais
@@ -624,7 +644,7 @@ function onSplitKeydown(event: KeyboardEvent) {
   if (event.altKey || event.ctrlKey || event.metaKey || event.repeat) return;
   const n = splitCountFromKey(event.key);
   if (n === null) return;
-  if (n === 0 ? !splitActive.value : hasLinkTender.value) return;
+  if (n === 0 ? !splitActive.value : hasLinkTender.value || hasPixProviderTestTender.value) return;
   event.preventDefault();
   emit("setSplitCount", n);
   splitSheetOpen.value = false;
@@ -634,11 +654,28 @@ function blockedByLink(ref: string): boolean {
   return ref === "link" ? hasNonLinkTender.value : hasLinkTender.value;
 }
 
+function blockedByPixProviderTest(ref: string): boolean {
+  if (!pixProviderTest.value) return false;
+  if (ref === "pix") return splitActive.value || hasNonPixTender.value;
+  return hasPixProviderTestTender.value;
+}
+
 const onDelivery = computed(
   () => props.fulfillmentType === "delivery" && props.paymentCollection === "on_delivery",
 );
 function blockedForDelivery(method: string): boolean {
   return onDelivery.value && !["cash", "credit", "debit"].includes(method);
+}
+
+function paymentMethodBlockedReason(ref: string): string | undefined {
+  if (blockedForDelivery(ref)) {
+    return "PIX Efí e pagamentos online precisam da confirmação automática antes da entrega. Escolha o recebimento antecipado.";
+  }
+  if (blockedByLink(ref)) return "O link de pagamento cobra a venda inteira";
+  if (blockedByPixProviderTest(ref)) {
+    return "Durante os testes da Efí, Pix não pode ser combinado ou dividido. Remova o Pix para trocar a forma.";
+  }
+  return undefined;
 }
 
 // Validar (Odoo's Validate): NO "pay it all" shortcut — the button stays disabled
@@ -685,12 +722,36 @@ function focusByAriaLabel(label: string) {
 }
 
 type CheckoutAction = { label: string; run: () => void };
+function removePixAndFocusAlternative() {
+  const pixIndexes = props.paymentTenders
+    .map((tender, index) => tender.method === "pix" ? index : -1)
+    .filter((index) => index >= 0)
+    .reverse();
+  pixIndexes.forEach((index) => emit("removeTender", index));
+  void nextTick(() => {
+    const alternative = document.querySelector<HTMLElement>(
+      '[data-payment-method]:not([data-payment-method="pix"]):not(:disabled)',
+    );
+    alternative?.focus();
+    alternative?.scrollIntoView({ block: "center", behavior: "auto" });
+  });
+}
+
+function returnToCart() {
+  emit("back");
+}
+
 // TODA RECUSA DO COMMIT TEM QUE TER GÊMEA AQUI. O servidor recusa a venda em
 // sete portões; a tela apresenta a mesma recusa e o caminho para resolvê-la.
 //
 // A ordem é a da conversa do balcão: quem é o cliente, o que foi prometido, o
 // que sai na nota, e só então o dinheiro.
-const ctaBlock = computed<{ message: string; hint?: string; action?: CheckoutAction } | null>(() => {
+const ctaBlock = computed<{
+  message: string;
+  hint?: string;
+  action?: CheckoutAction;
+  actions?: CheckoutAction[];
+} | null>(() => {
   if (!props.items.length) {
     return {
       message: "Comanda vazia.",
@@ -709,6 +770,28 @@ const ctaBlock = computed<{ message: string; hint?: string; action?: CheckoutAct
     return {
       message: "Esta forma exige pagamento antecipado.",
       hint: "Troque a linha por dinheiro ou cartão na maquininha, ou escolha Receber no caixa.",
+    };
+  }
+  // A Efí de homologação não confirma valores maiores nem Pix misto. Vem cedo
+  // porque é uma limitação do instrumento já escolhido, independente dos
+  // demais dados do pedido — o aviso precisa estar presente enquanto o Pix está.
+  if (pixProviderTestMixed.value) {
+    return {
+      message: "Pix não pode ser combinado nem dividido durante os testes da Efí.",
+      hint: "Remova o Pix e escolha outra forma para esta divisão.",
+      actions: [
+        { label: "Trocar forma de pagamento", run: removePixAndFocusAlternative },
+        { label: "Ajustar itens", run: returnToCart },
+      ],
+    };
+  }
+  if (pixProviderTestExceeded.value) {
+    return {
+      message: pixProviderTestMessage.value,
+      actions: [
+        { label: "Trocar forma de pagamento", run: removePixAndFocusAlternative },
+        { label: "Ajustar itens", run: returnToCart },
+      ],
     };
   }
   if (props.salesMode !== "counter" && !props.fulfillmentConfirmed) {
@@ -799,7 +882,12 @@ type CheckoutNotice = {
    *  resolve. `warn` é ressalva da review. Sem tom, é consequência. */
   tone?: "block" | "warn";
   action?: CheckoutAction;
+  actions?: CheckoutAction[];
 };
+
+function noticeActions(note: CheckoutNotice): CheckoutAction[] {
+  return note.actions || (note.action ? [note.action] : []);
+}
 
 // AVISOS — o bloqueio primeiro, depois as consequências, depois as ressalvas.
 // Só entra o que MUDA de venda para venda: uma linha que aparece em toda venda
@@ -829,6 +917,15 @@ const notices = computed<CheckoutNotice[]>(() => {
   // fala em voz alta, e ela some sozinha quando a conta fecha.
   else if (props.splitNote) {
     notes.push({ key: "split", tone: "block", icon: "lucide:users", message: props.splitNote });
+  }
+  if (hasPixProviderTestTender.value && !pixProviderTestMixed.value && !pixProviderTestExceeded.value) {
+    notes.push({
+      key: "pix-provider-test",
+      tone: "warn",
+      icon: "lucide:flask-conical",
+      message: pixProviderTestMessage.value,
+      hint: `Este pedido de ${formatBRL(props.paymentTotalQ)} está dentro do limite.`,
+    });
   }
   // A COZINHA PREPAROU MAIS DO QUE A CONTA COBRA. Fica ao lado do Validar
   // porque é ali que a diferença vira prejuízo: o operador está prestes a cobrar
@@ -960,7 +1057,7 @@ defineExpose({
   pressMethodKey: (letter: string) => {
     const ref = Object.keys(methodKeys.value).find((key) => methodKeys.value[key] === letter);
     if (!ref) return false;
-    if (blockedForDelivery(ref) || blockedByLink(ref)) return true;
+    if (blockedForDelivery(ref) || blockedByLink(ref) || blockedByPixProviderTest(ref)) return true;
     emit("addTender", ref);
     return true;
   },
@@ -1099,7 +1196,11 @@ defineExpose({
                 splitActive ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground',
               ]"
               :disabled="!splitAvailable"
-              :title="hasLinkTender ? 'O link de pagamento cobra a venda inteira' : undefined"
+              :title="hasLinkTender
+                ? 'O link de pagamento cobra a venda inteira'
+                : hasPixProviderTestTender
+                  ? 'Durante os testes da Efí, Pix não pode ser dividido'
+                  : undefined"
               :aria-pressed="splitActive"
               :aria-label="splitActive
                 ? `Conta dividida em ${splitCount}, ${splitPaidCount} de ${splitCount} lançadas. Abrir para alterar`
@@ -1139,6 +1240,13 @@ defineExpose({
         <section class="grid gap-1.5" aria-label="Forma de pagamento">
           <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{{ salesMode === "order" ? "Pagamento da encomenda" : "Forma de pagamento" }}</h3>
           <p v-if="paymentGuidance" class="px-1 text-sm text-muted-foreground" role="status">{{ paymentGuidance }}</p>
+          <p
+            v-if="pixProviderTest && !hasPixProviderTestTender && (splitActive || hasNonPixTender)"
+            class="rounded-md border border-warning/60 bg-warning/10 px-3 py-2 text-sm text-warning"
+            role="status"
+          >
+            Durante os testes da Efí, Pix precisa pagar o total sozinho. Remova as outras formas ou desfaça a divisão para usar Pix.
+          </p>
 
           <div class="flex flex-col gap-1.5">
             <!-- Tocar aqui ADICIONA uma linha; não escolhe "a forma" da venda.
@@ -1155,13 +1263,10 @@ defineExpose({
               v-for="method in injectableMethods"
               :key="method.ref"
               type="button"
+              :data-payment-method="method.ref"
               class="flex h-11 items-center gap-3 rounded-md border bg-card px-3 text-left text-sm font-medium transition hover:border-primary/50 hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
-              :disabled="blockedForDelivery(method.ref) || blockedByLink(method.ref)"
-              :title="blockedForDelivery(method.ref)
-                ? 'PIX Efí e pagamentos online precisam da confirmação automática antes da entrega. Escolha o recebimento antecipado.'
-                : blockedByLink(method.ref)
-                  ? 'O link de pagamento cobra a venda inteira'
-                  : undefined"
+              :disabled="!!paymentMethodBlockedReason(method.ref)"
+              :title="paymentMethodBlockedReason(method.ref)"
               @click="$emit('addTender', method.ref)"
             >
               <Icon :name="paymentIcon(method.ref)" class="size-5 shrink-0 text-muted-foreground" />
@@ -1305,7 +1410,7 @@ defineExpose({
           <li
             v-for="note in notices"
             :key="note.key"
-            class="flex items-center gap-3 rounded-md border p-3"
+            class="flex flex-wrap items-center gap-3 rounded-md border p-3"
             :class="note.tone === 'block'
               ? 'border-warning bg-warning/10 text-warning'
               : note.tone === 'warn'
@@ -1324,15 +1429,21 @@ defineExpose({
               >{{ note.message }}</span>
               <span v-if="note.hint" class="mt-0.5 block text-sm leading-snug opacity-80">{{ note.hint }}</span>
             </span>
-            <UiButton
-              v-if="note.action"
-              size="lg"
-              variant="outline"
-              class="h-11 shrink-0"
-              @click="note.action.run()"
+            <div
+              v-if="noticeActions(note).length"
+              class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap"
             >
-              {{ note.action.label }}
-            </UiButton>
+              <UiButton
+                v-for="action in noticeActions(note)"
+                :key="action.label"
+                size="lg"
+                variant="outline"
+                class="h-11 w-full shrink-0 sm:w-auto"
+                @click="action.run()"
+              >
+                {{ action.label }}
+              </UiButton>
+            </div>
           </li>
         </ul>
 

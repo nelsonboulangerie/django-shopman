@@ -512,7 +512,17 @@ def ensure_payment_intent(order) -> bool:
     if method not in {"pix", "card"}:
         return False
     if payment.get("intent_ref"):
-        return True
+        if method != "pix" or payment.get("copy_paste") or payment.get("qr_code"):
+            return True
+        # Efí persists the intent/txid before fetching the QR. A reload is the
+        # recovery trigger for that partial creation; an intent_ref by itself
+        # is not a payable artifact and must not be reported as ready.
+        payment_service.initiate(order)
+        refreshed = (order.data or {}).get("payment") or {}
+        return bool(
+            refreshed.get("intent_ref")
+            and (refreshed.get("copy_paste") or refreshed.get("qr_code"))
+        )
     if method == "pix" and not _payment_can_start(order):
         return False
 

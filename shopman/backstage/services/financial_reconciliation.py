@@ -239,6 +239,11 @@ def build_financial_reconciliation(
         .values("intent_id", "type")
         .annotate(total=Sum("amount_q"))
     )
+    from shopman.shop.services.payment_provenance import is_provider_simulated_intent
+
+    real_money_intent_ids = {
+        intent.id for intent in intents if not is_provider_simulated_intent(intent)
+    }
 
     issues: list[FinancialReconciliationIssue] = []
     closing = DayClosing.objects.filter(date=reconciliation_date).first()
@@ -287,9 +292,18 @@ def build_financial_reconciliation(
     # livro-caixa em ``_check_cash_ledger``.
     by_gateway = Counter(intent.gateway or "-" for intent in intents)
 
-    captured_q = sum(row["capture"] for row in daily_totals.values())
-    refunded_q = sum(row["refund"] for row in daily_totals.values())
-    chargeback_q = sum(row["chargeback"] for row in daily_totals.values())
+    captured_q = sum(
+        row["capture"] for intent_id, row in daily_totals.items()
+        if intent_id in real_money_intent_ids
+    )
+    refunded_q = sum(
+        row["refund"] for intent_id, row in daily_totals.items()
+        if intent_id in real_money_intent_ids
+    )
+    chargeback_q = sum(
+        row["chargeback"] for intent_id, row in daily_totals.items()
+        if intent_id in real_money_intent_ids
+    )
 
     return FinancialReconciliationReport(
         date=reconciliation_date,

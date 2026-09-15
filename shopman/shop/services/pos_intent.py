@@ -89,18 +89,22 @@ class PosIntentError(ValueError):
     focus: str = ""
     status: int = 422
     recovery: str = ""
+    context: dict | None = None
 
     def __str__(self) -> str:
         return self.message
 
     def as_dict(self) -> dict:
-        return {
+        payload = {
             "code": self.code,
             "message": self.message,
             "field": self.field,
             "focus": self.focus,
             "recovery": self.recovery,
         }
+        if self.context:
+            payload["context"] = self.context
+        return payload
 
 
 class PosCommittedSaleError(PosIntentError):
