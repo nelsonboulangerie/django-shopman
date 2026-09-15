@@ -1,10 +1,18 @@
 # WP-PWA-EXECUCAO — Plano de execução para agente externo: Storefront → PDV → backstage → Web Push
 
-> Estado: **pronto para apreciação do dono (2026-09-14).** Este documento é o brief
-> executável do [WP-PWA-CONFORMIDADE](WP-PWA-CONFORMIDADE.md): o "o quê e por quê"
-> está lá; aqui está o "como, onde e com que prova". Quem executa é um agente
-> externo, uma fase por PR, na ordem abaixo. Nenhuma fase começa sem os materiais
-> do dono listados no Anexo A.
+> Estado atual (2026-09-15): **registro histórico; não executar como brief.** A F0
+> do Storefront foi entregue e publicada por [#668](https://github.com/nelsonboulangerie/django-shopman/pull/668),
+> com ajustes em [#691](https://github.com/nelsonboulangerie/django-shopman/pull/691),
+> [#693](https://github.com/nelsonboulangerie/django-shopman/pull/693) e
+> [#694](https://github.com/nelsonboulangerie/django-shopman/pull/694). Falta a
+> validação no iPhone físico da barra inferior, pull-to-refresh e teclado; essa
+> prova pendente não desfaz a publicação. F1–F3 continuam futuras e precisam de
+> autorização e brief atualizados contra `main`.
+>
+> Contexto original (2026-09-14): este era o brief executável do
+> [WP-PWA-CONFORMIDADE](WP-PWA-CONFORMIDADE.md), uma fase por PR e na ordem abaixo.
+> As tarefas preservadas registram a intenção da proposta; não são instruções
+> atuais para repetir a F0 publicada.
 >
 > Quando executar em relação ao go-live é decisão do dono; o plano não assume data.
 
@@ -60,7 +68,7 @@ Lidas de [CLAUDE.md](../../CLAUDE.md) e das ADRs. Violar qualquer uma reprova o 
 | A4 | **`/sw.js` com `cache-control: no-cache`**; assets do build seguem imutáveis. | Atualização precisa chegar |
 | A5 | **Atualização**: o app detecta SW em espera e oferece "Atualizar" (Storefront e apps de mesa); kiosks (kds, production) aplicam sozinhos quando ociosos por 60 s. | Operador não pode rodar versão velha por dias |
 | A6 | **Instalação**: Android por `beforeinstallprompt` capturado e botão próprio; iOS por tela guiada quando `display-mode: browser` e UA iOS, com "agora não" que silencia por 7 dias (localStorage). A permissão de notificação (F3) só por toque. | O que cada plataforma permite |
-| A7 | **Ícones gerados de um único SVG mestre** por comando versionado (`npm run pwa:assets`), saída commitada em `public/`: `pwa-64`, `pwa-192`, `pwa-512`, `maskable-512` (zona segura 80 %), `apple-touch-icon-180` (fundo sólido), `favicon.ico` + `favicon.svg`, `monochrome-512` (badge/ícone temático Android). Splash iOS por `pwa-asset-generator` (`apple-touch-startup-image`, todos os tamanhos vigentes), commitados. | Uma fonte, saída reproduzível |
+| A7 | **Ícones gerados de um único SVG mestre** por comando versionado (`npm run pwa:assets`), com saída commitada em `public/pwa/`. A implementação publicada usa `@vite-pwa/assets-generator` e scripts Node locais com `sharp` fixado para compor os splash screens descritos em `pwa-splash-screens.json`; a dependência separada `pwa-asset-generator` foi removida. Fonte e procedimento atuais: [`README.md`](../../surfaces/storefront-nuxt/README.md#pwa), [`pwa-assets.config.ts`](../../surfaces/storefront-nuxt/pwa-assets.config.ts) e [`scripts/finalize-pwa-assets.mjs`](../../surfaces/storefront-nuxt/scripts/finalize-pwa-assets.mjs). | Uma fonte, saída reproduzível e dependências auditáveis |
 | A8 | **Capability do kit nasce na F1 por extração** do que o Storefront provou, não antes. | ADR-001: seam com dois consumidores reais |
 | A9 | **Web Push** (F3): `PushSubscription` em `shop/models`, VAPID nos segredos, envio por Directive `notification.push` no worker, payload é ponteiro (`id`, `category`, `title`, `body` curto, `action_url`), categorias financeiras só título. | [WP-PWA-CONFORMIDADE](WP-PWA-CONFORMIDADE.md), seção Arquitetura |
 | A10 | **Gate `make pwa`** próprio (script Node em `tools/pwa-gate/`), sem Lighthouse. | O Lighthouse aposentou a categoria PWA |
@@ -79,11 +87,16 @@ Lidas de [CLAUDE.md](../../CLAUDE.md) e das ADRs. Violar qualquer uma reprova o 
 | F0.4 | `offline.html` estático, na voz da casa: título, uma frase honesta ("sem conexão agora"), botão "tentar de novo", fundo `background_color`, ícone. Nada de link externo: sem rede, nenhum link funciona. Copy via chave `OmotenashiCopy` `PWA_OFFLINE_*` resolvida no build da página (ou fallback fixo se a copy não existir). | `public/offline.html` + chaves em `shopman/shop/omotenashi/copy.py` | Playwright: com rede cortada, navegação para `/menu` mostra `offline.html`; `test_omotenashi_copy_keys` verde |
 | F0.5 | Composable `usePwaInstall()`: captura `beforeinstallprompt`, expõe `canInstall`, `install()`, `isStandalone` (`display-mode`), `isIos`, `dismissedUntil`. Componente `PwaInstallInvite.vue` discreto (bottom sheet no padrão da loja), exibido no máximo uma vez por 7 dias, nunca no checkout nem no acompanhamento de pedido. Tela guiada iOS com dois passos em imagem (Anexo A item 7). Copy em `OmotenashiCopy` (`PWA_INSTALL_*`). | `app/composables/usePwaInstall.ts`, `app/components/PwaInstallInvite.vue`, `app/components/PwaIosGuide.vue` | vitest de composable (env do harness próprio do storefront): estados Android/iOS/standalone/dismissed; componente não renderiza em `/finalizar` e `/pedido/*` |
 | F0.6 | Composable `usePwaUpdate()`: usa `useRegisterSW` do módulo; expõe `needRefresh`, `update()`. Toast "Nova versão disponível · Atualizar" no padrão da loja. `skipWaiting` só no toque. | `app/composables/usePwaUpdate.ts`, `app/app.vue` | vitest: `needRefresh` dispara o toast; `update()` chama `updateServiceWorker(true)` |
-| F0.7 | Geração de ícones e splash: `npm run pwa:assets` (`@vite-pwa/assets-generator` com preset `minimal-2023` + `pwa-asset-generator` para splash), entrada `brand/nelson-mark.svg` (Anexo A item 1), saída em `public/pwa/`. Commitar a saída; script documentado no README da surface. | `surfaces/storefront-nuxt/package.json`, `public/pwa/` | os arquivos listados em A7 existem; `maskable-512` respeita zona segura (checagem visual no PR com a imagem anexada) |
+| F0.7 | Geração publicada de ícones e splash: `npm run pwa:assets` usa `@vite-pwa/assets-generator` para os ícones e scripts Node locais com `sharp` fixado para os splash screens versionados em `pwa-splash-screens.json`; entrada `brand/nelson-mark.svg`/`brand/nelson-logo.svg`, saída em `public/pwa/`. O procedimento reproduzível está no README da surface; não reintroduzir `pwa-asset-generator`. | `surfaces/storefront-nuxt/package.json`, `pwa-assets.config.ts`, `scripts/prepare-pwa-assets.mjs`, `scripts/finalize-pwa-assets.mjs`, `public/pwa/` | os arquivos listados em A7 existem; `maskable-512` respeita zona segura (checagem visual no PR com a imagem anexada) |
 | F0.8 | Gate `make pwa` (Node, sem dependência de navegador para os itens 1–4; Playwright para 5): manifesto válido e completo; `/sw.js` `no-cache`; precache sem caminhos proibidos; CSP com `worker-src`/`manifest-src`; meta iOS presentes; e2e: registro do SW conclui, `offline.html` com rede cortada, convite de instalação não aparece no checkout. Alvo `pwa` no Makefile com `app=storefront`. | `tools/pwa-gate/`, `Makefile` | `make pwa app=storefront` verde; documentado em [commands.md](../reference/commands.md) |
 | F0.9 | Documentação: seção "PWA" no README do storefront (como gerar assets, como testar instalação no iPhone, como forçar atualização), entrada no [runbook de release](../runbooks/release-secrets-runbook.md) se algo virar env (não deve). | docs | revisão |
 
 ### Prova humana da F0 (registrada no PR)
+
+> Situação em 2026-09-15: a F0 e os ajustes estão online, mas não há prova
+> no iPhone físico para a barra inferior, pull-to-refresh e teclado. Os itens abaixo
+> permanecem como roteiro histórico de QA; não devem ser apresentados como prova
+> já obtida.
 
 - Android (Chrome): botão "Instalar" aparece, instala, abre `standalone` com cor da
   barra da marca, atalhos funcionam, `offline.html` com modo avião.

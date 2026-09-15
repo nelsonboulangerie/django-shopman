@@ -1,9 +1,18 @@
 # WP-PWA — Conformidade PWA das surfaces: instalável, notificação ativa, kiosk
 
-> Estado: **proposto (2026-09-14), a pedido do dono. Nenhum código antes do go-live.**
-> Nasceu na discussão dos agentes de operador: o aviso proativo da Anaïs ("o
+> Estado atual (2026-09-15): **registro histórico; não executar como brief.** A F0
+> do Storefront foi entregue e publicada por [#668](https://github.com/nelsonboulangerie/django-shopman/pull/668),
+> com ajustes em [#691](https://github.com/nelsonboulangerie/django-shopman/pull/691),
+> [#693](https://github.com/nelsonboulangerie/django-shopman/pull/693) e
+> [#694](https://github.com/nelsonboulangerie/django-shopman/pull/694). Falta a
+> validação no iPhone físico da barra inferior, pull-to-refresh e teclado; essa
+> prova pendente não desfaz a publicação. F1–F3 continuam futuras e exigem brief
+> atualizado a partir de `main` antes de qualquer execução.
+>
+> Contexto da proposta (2026-09-14), a pedido do dono: nasceu na discussão dos
+> agentes de operador. O aviso proativo da Anaïs ("o
 > fechamento de ontem está pronto") só faz sentido se chega com a tela do celular
-> desligada. Medido o estado atual, a resposta é que **nenhuma surface é PWA hoje**
+> desligada. Medido o estado de 14/09, a resposta era que **nenhuma surface era PWA**
 > e que a casa já tem a metade difícil pronta (alerta pessoal com ciclo de vida,
 > SSE por usuário, envelope de segurança que já libera worker e manifesto).
 >
@@ -97,11 +106,13 @@ do navegador, não da página. Chaves VAPID são segredo de ambiente na DO
 ver armadilha do nome de env do Nuxt). Permissão de notificação só por toque
 ("Ativar avisos"), nunca no carregamento.
 
-**Cache do SW.** Precache: casco do app (`/`, `/_nuxt/*`, ícones, fontes,
-`offline.html`). Runtime: **nada** para `/api/`, `/events/`, `/admin/`, e nada para
-HTML de página (é `no-store` por contrato). Navegação sem rede cai em
-`offline.html`. Isso é deliberado: um SW que responde API do cache mostra o caixa
-de ontem para o operador de hoje.
+**Cache do SW.** Precache: assets versionados do build (`/_nuxt/*`), ícones,
+fontes e o casco estático `offline.html`; **não** inclui `/` nem outra resposta de
+navegação. Runtime: **nada** para `/api/`, `/events/`, `/admin/` ou HTML; somente
+`/img/products/**` e `/fonts/**`, imutáveis por convenção. Navegação é sempre de
+rede e, quando ela falha, recebe o fallback estático `offline.html`. Isso é
+deliberado: um SW que responde API ou página viva do cache pode mostrar o estado
+de ontem para o usuário de hoje.
 
 ## iPhone: o mínimo que a Apple permite, e como chegar nele
 

@@ -1,8 +1,17 @@
 # Prompt de execução — WP-PWA fase F0 (Storefront)
 
-> Copiar o bloco abaixo para o agente externo. Preencher os `<<…>>` com os materiais
-> do Anexo A antes de enviar. Uma fase por sessão, um PR por fase. As regras da casa
-> não estão repetidas aqui de propósito: moram em `CLAUDE.md` e no brief.
+> Estado atual (2026-09-15): **arquivado; não copiar nem executar.** A F0 foi
+> entregue e publicada por [#668](https://github.com/nelsonboulangerie/django-shopman/pull/668),
+> com ajustes em [#691](https://github.com/nelsonboulangerie/django-shopman/pull/691),
+> [#693](https://github.com/nelsonboulangerie/django-shopman/pull/693) e
+> [#694](https://github.com/nelsonboulangerie/django-shopman/pull/694). Falta a
+> validação no iPhone físico da barra inferior, pull-to-refresh e teclado; essa
+> prova pendente não desfaz a publicação. F1–F3 continuam futuras e exigem um
+> prompt novo, autorizado e baseado no estado corrente de `main`.
+>
+> O bloco abaixo é preservado somente como registro do prompt enviado para a F0;
+> placeholders, dependências e critérios não devem ser reutilizados como instrução
+> atual.
 
 ```text
 Execute a fase F0 (Storefront) de docs/plans/WP-PWA-EXECUCAO.md no repositório
