@@ -76,8 +76,7 @@ A migração `0055_catalog_snapshot_binding` depende da
 `0054_disable_remote_auto_confirmation` real da PR 680, que sucede
 `0053_marketing_delivery_identity` da PR 634. Ela cria somente as tabelas,
 índice e restrição de identidade; não importa dados nem habilita integração.
-A fatia Concierge deve seguir como 0056, e L7 como 0057. Esta entrega não pode ser ativada num
-banco sem as tabelas correspondentes.
+Esta entrega exige as tabelas correspondentes antes de servir os novos endpoints.
 
 ## Gestor e validação desta etapa
 
@@ -94,33 +93,28 @@ captura exige leitura correspondente antes de permitir gravação; rascunhos exi
 confirmação de descarte. Conteúdo externo é texto, inclusive caminho de imagem,
 sem requisições implícitas a URLs do arquivo importado.
 
-Validação em 15/09/2026 UTC:
+## Evidências de validação
 
-- 21 testes backend em PostgreSQL 16 privado: disputa pelo mesmo anúncio resulta
-  em um sucesso e um 409, sem duplicação; o mesmo SKU pode vincular dois anúncios.
+Validações locais em 15/09/2026, com integrações externas bloqueadas:
+
+- 21 testes backend em PostgreSQL 16 privado com migrações reais. Disputa pelo
+  mesmo anúncio produz um sucesso e um 409, sem duplicação; o mesmo SKU pode
+  vincular dois anúncios.
 - 17 testes da interface, incluindo recibo após resposta perdida, preservação de
   seleção, troca de captura, conteúdo externo e confirmação explícita.
-- Fluxo de API em SQLite privado com views e autenticação reais: importar,
-  confirmar, reler, repetir a mesma intenção e importar recaptura simulada.
-  Product, ListingItem e Directive permaneceram inalterados e HTTP externo estava
-  bloqueado. A recaptura foi simulada localmente, não obtida de nova consulta iFood.
-- Inspeção inicial da tela no Chrome realizada; a revisão visual final ficou
-  pendente após perda da conexão com a extensão. Não é evidência de homologação.
+- Verificação de tipos, contrato gerado, Ruff e `make admin` completo aprovados.
+- Fluxo de API com autenticação real em SQLite privado: importar, confirmar,
+  reler, repetir a mesma intenção e importar uma recaptura simulada. Product,
+  ListingItem e Directive permaneceram inalterados.
+- Fluxo no navegador interno: busca, escolha explícita de SKU, prévia,
+  confirmação local e releitura após recarga. A interface foi conferida em
+  desktop e em largura de 390 px. O ensaio usa somente o banco privado de QA.
+- Atualização PostgreSQL 16 da 0054 para a 0055 com fixtures preexistentes de
+  Product e Channel: os registros foram preservados integralmente, as tabelas
+  novas nasceram vazias e a restrição `unique_catalog_remote_resource` foi
+  instalada. Esta prova não simula volume ou concorrência de DDL de produção.
+- `makemigrations --check --dry-run` não detectou alterações pendentes. A migração
+  integral também foi verificada em bancos privados SQLite e PostgreSQL.
 
-Não incluir capturas privadas no Git. O delta desta etapa permanece em commit
-local separado, sobre composição de desenvolvimento das PRs 662 e 669. Extrair
-somente esse delta e o commit separado da migração 0055 depois da integração
-das dependências. Não publicar toda a composição como uma alteração nova.
-
-A composição com `main fe3eaab431` e PR 634 `dce671568` validou a migração
-completa do zero em SQLite e PostgreSQL 16 UTF-8, incluindo presença da migração
-aplicada e da restrição `unique_catalog_remote_resource`. A regressão de vínculos
-com migrações reais passou: 21 testes no PostgreSQL, 19 e dois skips específicos
-de concorrência no SQLite. `makemigrations --check --dry-run` para todos os apps
-não apontou mudanças. Os 17 testes da interface e a verificação de tipos também
-passaram novamente nesta composição. Essas provas são locais, sem envio iFood.
-
-A renumeração após a composição com o head real da PR 680 (`55155f7a45`)
-foi validada novamente com `makemigrations --check` de todos os apps e migração
-integral em SQLite privado: 0053 → 0054 de confirmação remota → 0055 de catálogo.
-Os modelos e as operações de criação da migração de catálogo não mudaram.
+As capturas e os dados de ensaio permanecem privados, fora do Git. Nenhum teste
+acima constitui homologação iFood ou revisão dos dados comerciais da loja real.

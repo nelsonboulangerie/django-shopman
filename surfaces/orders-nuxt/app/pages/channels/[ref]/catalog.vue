@@ -76,7 +76,7 @@ useHead({ title: "Revisão de vínculos · Gestor" });
       <label v-if="board.snapshots.length" class="block max-w-xl text-sm">
         <span class="mb-1 block font-medium">Inventário em revisão</span>
         <select :value="board.selected_snapshot?.id || ''" :disabled="busy || Boolean(error)" class="min-h-11 w-full rounded-md border bg-background px-2" @change="selectSnapshot">
-          <option v-for="snapshot in board.snapshots" :key="snapshot.id" :value="snapshot.id">{{ snapshot.captured_at }} · {{ snapshot.context }} · {{ snapshot.item_count }} anúncios</option>
+          <option v-for="snapshot in board.snapshots" :key="snapshot.id" :value="snapshot.id">Captura #{{ snapshot.id }} · {{ snapshot.captured_at }} · {{ snapshot.context }} · {{ snapshot.item_count }} anúncios</option>
         </select>
       </label>
       <details v-if="board.selected_snapshot" class="rounded-lg border p-3 text-sm">
