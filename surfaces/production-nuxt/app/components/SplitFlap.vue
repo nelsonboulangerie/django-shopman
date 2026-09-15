@@ -25,6 +25,7 @@ interface Cell {
 }
 
 const { clack } = useFlapClack();
+const prefersReducedMotion = usePreferredReducedMotion();
 const cells = ref<Cell[]>([]);
 const timers = new Set<ReturnType<typeof setTimeout>>();
 let mounted = false;
@@ -76,6 +77,11 @@ function applyValue(hops: number) {
   target.forEach((char, index) => {
     const cell = cells.value[index]!;
     if (cell.shown === char) return;
+    if (prefersReducedMotion.value === "reduce") {
+      cell.shown = char;
+      cell.flipping = false;
+      return;
+    }
     spin(index, char, char === " " ? 0 : hops, index * 28);
   });
 }
@@ -100,12 +106,19 @@ watch(
 watch(
   () => props.pulse,
   () => {
-    if (!mounted) return;
+    if (!mounted || prefersReducedMotion.value === "reduce") return;
     cells.value.forEach((cell, index) => {
       if (cell.shown !== " ") spin(index, cell.shown, 1, index * 28);
     });
   },
 );
+
+watch(prefersReducedMotion, (preference) => {
+  if (!mounted || preference !== "reduce") return;
+  for (const id of timers) clearTimeout(id);
+  timers.clear();
+  applyValue(0);
+});
 
 // SSR: células em branco na largura certa (o giro acontece no cliente).
 if (!import.meta.client) {
@@ -114,7 +127,13 @@ if (!import.meta.client) {
 </script>
 
 <template>
-  <span class="flap-word" aria-live="polite" :aria-label="value">
+  <span
+    class="flap-word"
+    role="status"
+    aria-live="polite"
+    :aria-label="value"
+    :data-pulse="pulse"
+  >
     <span
       v-for="(cell, index) in cells"
       :key="index"
@@ -158,5 +177,10 @@ if (!import.meta.client) {
 }
 .flap-cell--blank {
   background: linear-gradient(180deg, #1a1d21 0%, #14161a 48%, #0e1013 52%, #16181c 100%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .flap-cell {
+    transition: none;
+  }
 }
 </style>

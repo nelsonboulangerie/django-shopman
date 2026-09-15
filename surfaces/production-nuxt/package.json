@@ -44,6 +44,7 @@
     "@nuxt/test-utils": "^4.0.3",
     "@playwright/test": "^1.61.1",
     "@vue/test-utils": "^2.4.11",
+    "axe-core": "^4.13.0",
     "eslint": "^10.6.0",
     "eslint-config-prettier": "^10.1.8",
     "happy-dom": "^20.10.6",

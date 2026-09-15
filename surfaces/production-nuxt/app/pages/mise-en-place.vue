@@ -179,7 +179,7 @@ function refreshAll() {
             v-for="chip in dateChips"
             :key="chip.iso"
             type="button"
-            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
               selectedDate === chip.iso
                 ? 'bg-primary text-primary-foreground'
@@ -200,7 +200,7 @@ function refreshAll() {
           <!-- Modo em segmento compacto: alterna duas visões da mesma preparação. -->
           <button
             type="button"
-            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
               mode === 'preparos'
                 ? 'bg-primary text-primary-foreground'
@@ -213,7 +213,7 @@ function refreshAll() {
           </button>
           <button
             type="button"
-            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
               mode === 'insumos'
                 ? 'bg-primary text-primary-foreground'
@@ -316,7 +316,7 @@ function refreshAll() {
           <p class="text-base font-medium">Nada para separar nesta data.</p>
           <NuxtLink
             to="/plan"
-            class="text-sm text-primary underline-offset-2 hover:underline"
+            class="inline-flex min-h-11 items-center text-sm text-primary underline-offset-2 hover:underline"
             >Planejar produção</NuxtLink
           >
         </div>
@@ -557,7 +557,7 @@ function refreshAll() {
           </p>
           <NuxtLink
             to="/plan"
-            class="text-sm text-primary underline-offset-2 hover:underline"
+            class="inline-flex min-h-11 items-center text-sm text-primary underline-offset-2 hover:underline"
             >Planejar produção</NuxtLink
           >
         </div>

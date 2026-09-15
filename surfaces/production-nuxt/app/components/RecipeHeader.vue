@@ -71,6 +71,7 @@ const query = defineModel<string>("query", { default: "" });
         type="button"
         variant="outline"
         size="icon-sm"
+        class="min-h-11 min-w-11"
         aria-label="Atualizar"
         title="Atualizar"
         @click="emit('refresh')"

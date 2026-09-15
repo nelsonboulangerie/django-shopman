@@ -10,6 +10,8 @@ const authed = {
   path: "/",
 };
 
+const locked = { ...authed, value: "locked" };
+
 test.describe("Produção — gate de operador", () => {
   test("device não autenticado → tela de login (sem sessão)", async ({
     page,
@@ -38,6 +40,79 @@ test.describe("Produção — gate de operador", () => {
       page.locator('aside[aria-label="Barra do app Produção"]'),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: /barra/i })).toBeVisible();
+  });
+
+  test("lock bloqueia atalhos da superfície subjacente", async ({
+    page,
+    context,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "chromium-desktop");
+    await context.addCookies([locked]);
+
+    const session = await context.request.get(
+      "/api/v1/backstage/operator/session/",
+    );
+    expect(session.status()).toBe(200);
+    expect((await session.json()).locked).toBe(true);
+    const eligible = await context.request.get(
+      "/api/v1/backstage/operator/eligible/",
+    );
+    expect(eligible.status()).toBe(200);
+
+    const deniedRead = await context.request.get(
+      "/api/v1/backstage/production/",
+    );
+    expect(deniedRead.status()).toBe(403);
+    expect((await deniedRead.json()).error.code).toBe("station_locked");
+    const deniedMutation = await context.request.post(
+      "/api/v1/backstage/production/plan/",
+      { data: { recipe_pk: 91, quantity: "40" } },
+    );
+    expect(deniedMutation.status()).toBe(403);
+    expect((await deniedMutation.json()).error.code).toBe("station_locked");
+
+    await page.goto("/");
+    await expect(
+      page.getByRole("heading", { name: "Identifique-se para operar" }),
+    ).toBeVisible();
+    await page.keyboard.press("Alt+2");
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.locator("[data-operator-lock]")).toBeVisible();
+    await expect(page.getByText("Nada planejado para produzir")).toHaveCount(0);
+  });
+
+  test("reload sem cookie de sessão retorna ao gate sem manter ação interativa", async ({
+    page,
+    context,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "chromium-desktop");
+    await context.addCookies([authed]);
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: "Produção" })).toBeVisible();
+    await context.clearCookies();
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "Entre para operar" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Usuário")).toBeFocused();
+  });
+
+  test("atalhos percorrem as quatro etapas sem mouse", async ({
+    page,
+    context,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "chromium-desktop");
+    await context.addCookies([authed]);
+    await page.goto("/");
+    for (const [shortcut, path] of [
+      ["Alt+1", "/plan"],
+      ["Alt+2", "/mise-en-place"],
+      ["Alt+4", "/expedite"],
+      ["Alt+3", "/"],
+    ] as const) {
+      await page.keyboard.press(shortcut);
+      await expect(page).toHaveURL(new RegExp(`${path === "/" ? "\\/$" : `${path}$`}`));
+    }
   });
 });
 
