@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 from django.utils import timezone
 
+from shopman.storefront.tests._checkout_auth import authenticate_checkout
 from shopman.storefront.tests._checkout_baseline import with_baseline
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
@@ -39,6 +40,7 @@ def _checkout(client):
         "/api/v1/checkout/",
         data=with_baseline(client, {
             "name": "Ana",
+            "payment_method": "cash",
             "phone": "+5543999990001",
             "fulfillment_type": "delivery",
             "delivery_address": "Rua das Flores, 1",
@@ -58,6 +60,7 @@ def _checkout(client):
 
 
 def test_next_url_points_at_the_customer_tracking_route(client):
+    authenticate_checkout(client)
     from shopman.shop.models import DeliveryZone, Shop
 
     _seed_surface()

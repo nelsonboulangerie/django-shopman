@@ -33,7 +33,7 @@ SKU_B = "CROISSANT"
 
 def _seed(stock_qty=10):
     J.seed_shop()
-    J.seed_web_channel()
+    J.seed_web_channel(allow_cash=True)
     collection = J.seed_collection()
     J.seed_product(SKU, "Pão Francês", 500, collection=collection, stock_qty=stock_qty)
     return collection
@@ -122,7 +122,7 @@ def test_04_empty_favorites_offers_guidance(client):
 def test_05_empty_catalog_and_search_offer_guidance(client):
     """✅ Empty catalogue and fruitless search both carry a configurable empty-state block."""
     J.seed_shop()
-    J.seed_web_channel()  # no products
+    J.seed_web_channel(allow_cash=True)  # no products
     status, body = J.get_json(client, "/api/v1/storefront/menu/")
     assert status == 200
     catalog = body["catalog"]
@@ -199,6 +199,7 @@ def test_06c_soldout_409_remembers_who_already_asked(client):
 def test_07_checkout_rejected_date_is_actionable(client):
     """✅ A checkout for a date we cannot serve returns a field-routed, pt-BR error."""
     _seed()
+    assert J.otp_login(client)["status"] == 200
     J.set_cart_qty(client, SKU, 1)
     status, body = J.checkout(
         client,
@@ -222,6 +223,7 @@ def test_07b_checkout_closed_day_surfaces_reopening_and_preorder(client):
     from shopman.shop.models import Shop
 
     _seed()
+    assert J.otp_login(client)["status"] == 200
     # Shop open every day except the target weekday, so a specific future date is
     # deterministically closed (weekly closure), not just "in the past".
     shop = Shop.objects.first()
@@ -351,6 +353,7 @@ def test_10b_delivery_zone_error_enables_pickup_swap(client):
 def test_11_customer_facing_errors_are_pt_br(client):
     """✅ Framework error paths speak pt-BR (DRF locale is pt_BR — no 'Not found.'/'required')."""
     _seed()
+    assert J.otp_login(client)["status"] == 200
     # Unknown SKU → DRF Http404, localised.
     status, body = J.get_json(client, "/api/v1/availability/GHOST-SKU/")
     assert status == 404
@@ -626,6 +629,7 @@ def test_20_error_responses_are_json_across_status_codes(client):
     r404 = client.get("/api/v1/tracking/DOES-NOT-EXIST/")
     # 401 — protected account endpoint, anonymous.
     r401 = client.get("/api/v1/account/summary/")
+    assert J.otp_login(client)["status"] == 200
     # 400 — empty checkout body (serializer).
     r400 = client.post("/api/v1/checkout/", data=json.dumps({}), content_type="application/json")
     # 409 — oversell.
@@ -661,6 +665,7 @@ def test_21_internal_failure_degrades_not_crashes(client):
 def test_22_optional_fields_are_truly_optional(client):
     """✅ A bare product (no nutrition/allergen/etc.) and a minimal pickup checkout don't explode."""
     _seed(stock_qty=5)
+    assert J.otp_login(client)["status"] == 200
     # Minimal product detail — optional panels collapse, no crash.
     status, detail = J.get_json(client, f"/api/v1/catalog/products/{SKU}/")
     assert status == 200, detail

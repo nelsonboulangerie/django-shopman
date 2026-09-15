@@ -12,6 +12,8 @@ import json
 
 import pytest
 
+from shopman.storefront.tests._checkout_auth import authenticate_checkout
+
 pytestmark = pytest.mark.django_db
 
 
@@ -23,17 +25,19 @@ def _post_checkout(client, payload: dict):
     )
 
 
-def test_checkout_missing_phone_speaks_error_dialect(client):
+def test_checkout_missing_payment_method_speaks_error_dialect(client):
+    authenticate_checkout(client)
     resp = _post_checkout(client, {"name": "Ana"})
 
     assert resp.status_code == 400
     body = resp.json()
-    assert body["field"] == "phone"
+    assert body["field"] == "payment_method"
     assert body["detail"] == "Este campo é obrigatório."
-    assert body["errors"]["phone"] == ["Este campo é obrigatório."]
+    assert body["errors"]["payment_method"] == ["Este campo é obrigatório."]
 
 
 def test_checkout_oversized_field_message_is_pt_br(client):
+    authenticate_checkout(client)
     resp = _post_checkout(client, {"name": "A" * 500, "phone": "43999990000"})
 
     assert resp.status_code == 400
