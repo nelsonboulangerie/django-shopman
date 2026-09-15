@@ -1,0 +1,65 @@
+D07 follow-up — web phone proof deployment
+Observed: 2026-09-15T01:25:03Z
+Environment: pre-go-live app shopman-nelson (DigitalOcean App Platform)
+
+MERGE AND INTEGRATION GATES
+- PR: https://github.com/nelsonboulangerie/django-shopman/pull/673
+- Candidate commit: 1897a1ad9c8fec0d5fd390b590c84b54a83dec8b
+- Merge commit: 4a33805847403b3fb18b80524124c102eb7f70f1
+- Merged at: 2026-09-15T01:14:16Z
+- PR head: 26/26 checks completed successfully.
+- Exact merge-group commit gates:
+  - Surfaces Gate: https://github.com/nelsonboulangerie/django-shopman/actions/runs/34915229896 — success
+  - Omotenashi Gate: https://github.com/nelsonboulangerie/django-shopman/actions/runs/34915229897 — success
+  - Runtime Gate: https://github.com/nelsonboulangerie/django-shopman/actions/runs/34915229899 — success
+
+SELECTIVE IMAGE PUBLICATION
+- Deploy Images: https://github.com/nelsonboulangerie/django-shopman/actions/runs/34916461687 — success
+- Only the changed components were published:
+  - storefront-nuxt: storefront-4a33805847403b3fb18b80524124c102eb7f70f1
+    sha256:f895efc392a14f60033050591311242c82191212df2d6d1338d5d876708af0ef
+  - web: web-4a33805847403b3fb18b80524124c102eb7f70f1
+    sha256:8b5087d58695854b9d96d0fabbfa237c3ac3a68148c6942ec463617b089d9363
+- Deploy Images ran after the immediately preceding merge by the existing
+  non-canceling deploy-images concurrency group. No app-spec update was made.
+
+DIGITALOCEAN RELEASE
+- App ID: 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f
+- Deployment: 1e182ae0-a1b2-4cca-a5b8-99c29a5d69b9
+- Cause: deploy-on-push for the storefront digest above.
+- Created: 2026-09-15T01:18:05Z
+- ACTIVE: 2026-09-15T01:21:07Z
+- Progress: 47/47 successful steps; zero pending or error steps.
+- The release job ran the canonical deploy check and migration command and logged:
+  Applying storefront.0008_quarantine_unverified_web_alerts... OK
+- The web digest push first opened deployment 1f5d3a13-5994-413d-9a3c-f602e39798a7.
+  DigitalOcean canceled it when the later storefront push created the final
+  deployment. The final deployment ran the new web release job, applied 0008,
+  and activated after both immutable images had been published. The app then
+  reported this deployment as ActiveDeployment and no InProgressDeployment.
+
+CORRELATED POST-DEPLOY SMOKE
+- Pre-go-live Smoke: https://github.com/nelsonboulangerie/django-shopman/actions/runs/34916758675 — success
+- The workflow downloaded Deploy Images run 34916461687 and waited by exact
+  storefront digest until deployment 1e182ae0 became ACTIVE.
+- /ready/ => 200.
+- Menu contract => 42 unique SKUs, 7 available.
+- Empty checkout request => 400, the expected validation result proving the
+  BFF route is reachable without creating an order.
+- Storefront SSR => 200 and 122190 bytes.
+
+ADDITIONAL READ-ONLY CHECK
+- https://menu.nelsonboulangerie.com.br/ => 200, 122190 bytes.
+- https://api.boulangerie.com.br/health/ => 200; process ok.
+- https://api.boulangerie.com.br/ready/ => 200; database, cache, migrations,
+  and queue ok.
+- https://api.boulangerie.com.br/api/v1/storefront/menu/ => 200.
+- https://menu.nelsonboulangerie.com.br/produto/FE => 200, 107927 bytes; the
+  anonymous SSR contains the accessible label "Entrar para ativar avisos
+  recorrentes quando Fendu voltar".
+
+No stock-alert POST, login, OTP, provider call, order, payment, real message, or
+external transaction was performed by the additional check. These results prove
+technical publication and public reachability. They do not measure human benefit,
+close TalkBack or the remaining structured journeys, decide historical-data
+retention, or authorize a commercial pilot or rollout.
