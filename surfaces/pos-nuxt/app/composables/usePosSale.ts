@@ -167,6 +167,11 @@ export function usePosSale(deps: PosSaleDeps) {
   // reseta logo depois e o troco computado voltaria a zero): uma fonte só para
   // o palco do operador e a tela do cliente.
   const result = ref<PosSaleResultSnapshot | null>(null);
+  // O Django respondeu ao close, mas sem a prova mínima (`ok + order_ref`).
+  // Repetir o mesmo gesto no escuro pode cobrar duas vezes; só um reset
+  // explícito da venda abre uma nova tentativa.
+  const closeOutcomeUncertain = ref(false);
+  const closeOutcomeUncertainMessage = "Não foi possível confirmar o resultado desta venda. Confira o pedido e o pagamento antes de qualquer nova cobrança. Não repita esta venda.";
 
   // PIX no PDV: o proof mostra o QR e "aguarde confirmação", mas sem polling o
   // operador nunca via a confirmação chegar (tinha de ir ao gestor). Aqui pollamos
@@ -1118,6 +1123,7 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.managerUsername = "";
     cart.managerPin = "";
     cart.clientRequestId = "";
+    closeOutcomeUncertain.value = false;
     customerLookup.value = null;
     checkoutMode.value = false;
     review.value = null;
@@ -2292,6 +2298,13 @@ export function usePosSale(deps: PosSaleDeps) {
 
   async function submitSale() {
     if (busy.value) return; // guarda de reentrância: duplo-toque não dispara 2 close_sale
+    if (closeOutcomeUncertain.value) {
+      // A primeira resposta não provou se o servidor concluiu a operação. O
+      // botão pode voltar a ser acionado (mouse, toque ou Enter), mas nunca
+      // dispara outro close até a venda ser explicitamente reiniciada.
+      serverError.value = closeOutcomeUncertainMessage;
+      return;
+    }
     if (!cart.items.length || requireCustomerDraftDecision()) return;
     if (!checkoutMode.value) {
       await prepareCheckout();
@@ -2386,7 +2399,17 @@ export function usePosSale(deps: PosSaleDeps) {
           void drawer.kick("cash_sale");
         }
         resetCart();
-        await refresh();
+        try {
+          await refresh();
+        } catch {
+          // `ok + order_ref` já confirmou o fechamento. Refresh é só leitura:
+          // sua falha não desfaz pedido, recibo nem pagamento, e não pode cair
+          // no catch do close como se o resultado da venda fosse desconhecido.
+          toast.warning(`Pedido ${orderRef} registrado. A atualização do balcão falhou; os dados podem estar desatualizados. Não repita esta venda.`);
+        }
+      } else {
+        closeOutcomeUncertain.value = true;
+        serverError.value = closeOutcomeUncertainMessage;
       }
     } catch (error) {
       if (handleReceiptIdentityFailure(error, "close")) return;

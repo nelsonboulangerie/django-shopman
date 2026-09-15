@@ -44,6 +44,7 @@ function saleReadyForCheckout(actionCall: ReturnType<typeof vi.fn>) {
 describe("usePosSale — submitSale (fluxo em etapas)", () => {
   beforeEach(() => {
     vi.mocked(toast.error).mockClear();
+    vi.mocked(toast.warning).mockClear();
   });
 
   it("guarda de reentrância: não dispara nada enquanto busy", async () => {
@@ -158,6 +159,48 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith("Não foi possível confirmar o resultado da venda. Mantenha esta tentativa e confira o pedido antes de reenviar.");
     expect(h.sale.cart.items).toHaveLength(1);
     expect(h.sale.result.value).toBeNull();
+    h.handles.dispose();
+  });
+
+  it("resposta 200 sem prova do pedido alerta e bloqueia repetição do fechamento", async () => {
+    const actionCall = saleRouter();
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale(); // prepara e fixa a intenção idempotente
+    const requestId = h.sale.cart.clientRequestId;
+    actionCall.mockResolvedValueOnce({ ok: true }); // contrato incompleto: faltou order_ref
+
+    await h.sale.submitSale();
+    await h.sale.submitSale(); // novo toque/Enter não atravessa a trava local
+
+    const closeCalls = actionCall.mock.calls.filter((call) => String(call[0]).includes("/sale/close/"));
+    expect(closeCalls).toHaveLength(1);
+    expect(h.sale.cart.clientRequestId).toBe(requestId);
+    expect(h.sale.cart.items[0]!.qty).toBe(2);
+    expect(h.sale.result.value).toBeNull();
+    expect(vi.mocked(toast.error)).toHaveBeenLastCalledWith(
+      "Não foi possível confirmar o resultado desta venda. Confira o pedido e o pagamento antes de qualquer nova cobrança. Não repita esta venda.",
+    );
+    h.handles.dispose();
+  });
+
+  it("falha de refresh depois do close preserva pedido e recibo e impede nova venda", async () => {
+    const actionCall = saleRouter();
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    h.handles.refresh.mockRejectedValueOnce(new Error("projection unavailable"));
+
+    await h.sale.submitSale();
+    await h.sale.submitSale(); // carrinho resetado: não há segundo close
+
+    const closeCalls = actionCall.mock.calls.filter((call) => String(call[0]).includes("/sale/close/"));
+    expect(closeCalls).toHaveLength(1);
+    expect(h.sale.result.value?.orderRef).toBe("PED-1");
+    expect(h.sale.result.value?.receipt.items[0]).toMatchObject({ qty: 2, price_q: 500 });
+    expect(h.sale.cart.items).toHaveLength(0);
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+    expect(vi.mocked(toast.warning)).toHaveBeenCalledWith(
+      "Pedido PED-1 registrado. A atualização do balcão falhou; os dados podem estar desatualizados. Não repita esta venda.",
+    );
     h.handles.dispose();
   });
 
