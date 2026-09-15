@@ -324,12 +324,20 @@
     }
 
     html.shop-ios-standalone .shop-shell.shop-shell {
+      /* Backing do scrollport: se o WebKit compuser o rubber-band através da
+         transparência do scroller, ainda encontra Bordeaux — nunca o creme. */
+      background-color: var(--shop-ink);
       height: 100dvh;
       min-height: 100dvh;
       overflow: hidden;
     }
 
     html.shop-ios-standalone .shop-scroll-viewport {
+      /* Este elemento passou a ser o viewport vertical no PWA instalado. O
+         rubber-band do pull-to-refresh revela o canvas do próprio scroller,
+         não mais o `html`; portanto ele precisa carregar o mesmo Bordeaux
+         escuro reservado ao overscroll da barra superior. */
+      background-color: var(--shop-ink);
       min-height: 0;
       overflow-x: clip;
       overflow-y: auto;
@@ -660,6 +668,9 @@
   /* Dentro da coluna de altura fixa, `flex-1` encolheria o main e faria seu
      conteúdo transbordar por baixo do footer. Em fluxo auto ele cresce inteiro. */
   html.shop-ios-standalone #main-content {
+    /* Mantém o conteúdo da loja no canvas claro; o Bordeaux do scrollport só
+       aparece quando o WebKit estica além do topo durante o pull-to-refresh. */
+    background-color: var(--background);
     flex: none;
   }
 }
