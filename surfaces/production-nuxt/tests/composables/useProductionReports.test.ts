@@ -114,9 +114,15 @@ describe("useProductionReports", () => {
     env.fetchMock.mockImplementation(
       (_url, options: { signal: AbortSignal }) =>
         new Promise((_resolve, reject) => {
-          options.signal.addEventListener("abort", () =>
-            reject(Object.assign(new Error("cancelled"), { name: "AbortError" })),
-          );
+          options.signal.addEventListener("abort", () => {
+            const abort = Object.assign(new Error("cancelled"), {
+              name: "AbortError",
+            });
+            reject(Object.assign(new Error("Fetch failed: signal is aborted"), {
+              name: "FetchError",
+              cause: abort,
+            }));
+          });
         }),
     );
     const state = useProductionReports(ref(filters()), ref(true));
@@ -126,6 +132,7 @@ describe("useProductionReports", () => {
     dispose();
     expect(await result).toBe(false);
     expect(state.exportStatus.value).toBe("cancelled");
+    expect(state.exportMessage.value).toBe("Exportação cancelada.");
   });
 
   it("distinguishes session expiry from an ordinary export failure", async () => {

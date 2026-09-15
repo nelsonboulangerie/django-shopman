@@ -118,7 +118,14 @@ export function useProductionReports(
       exportMessage.value = "Relatório baixado.";
       return true;
     } catch (caught) {
-      if ((caught as { name?: string }).name === "AbortError") {
+      // ofetch envolve o AbortError nativo em FetchError. O signal é a
+      // autoridade para distinguir cancelamento solicitado pelo operador de
+      // uma falha de rede, independentemente do formato do wrapper.
+      const aborted =
+        exportController.signal.aborted ||
+        (caught as { name?: string }).name === "AbortError" ||
+        (caught as { cause?: { name?: string } }).cause?.name === "AbortError";
+      if (aborted) {
         exportStatus.value = "cancelled";
         exportMessage.value = "Exportação cancelada.";
       } else {
