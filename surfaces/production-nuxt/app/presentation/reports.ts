@@ -32,6 +32,7 @@ export function reportKindLabel(kind: ReportKind): string {
 
 /** Filtros da página de relatórios — espelham os query params da API. */
 export interface ReportFiltersQuery {
+  selected_only: true;
   report_kind: ReportKind;
   date_from: string;
   date_to: string;
@@ -46,8 +47,8 @@ export interface ReportFiltersQuery {
 /** Query object da API de relatórios — omite filtros vazios (URLs limpas). */
 export function reportsQuery(
   filters: ReportFiltersQuery,
-): Record<string, string | number> {
-  const query: Record<string, string | number> = {};
+): Record<string, string | number | boolean> {
+  const query: Record<string, string | number | boolean> = {};
   for (const [key, value] of Object.entries(filters)) {
     if (value) query[key] = value;
   }

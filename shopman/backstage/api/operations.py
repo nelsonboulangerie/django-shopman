@@ -113,9 +113,11 @@ from shopman.backstage.projections.production import (
     build_production_kds,
     build_production_mise_en_place,
     build_production_report_page,
+    build_production_reports,
     build_production_weighing,
     build_qc_kiosk,
     resolve_production_access,
+    sort_production_reports,
 )
 from shopman.backstage.services import (
     closing as closing_service,
@@ -1358,6 +1360,32 @@ class ProductionReportsView(APIView):
                 production_service.iter_reports_csv(filters["report_kind"], filters),
                 content_type="text/csv; charset=utf-8",
                 headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        if not filters["selected_only"]:
+            reports = sort_production_reports(
+                build_production_reports(filters, access=access),
+                filters["sort"],
+            )
+            field = {
+                "history": "history_rows",
+                "operator_productivity": "operator_rows",
+                "recipe_waste": "waste_rows",
+                "quality": "quality_rows",
+            }[filters["report_kind"]]
+            total = len(getattr(reports, field))
+            return Response(
+                {
+                    "reports": projection_data(reports),
+                    "pagination": {
+                        "total": total,
+                        "page_size": total,
+                        "from": 1 if total else 0,
+                        "to": total,
+                        "sort": filters["sort"],
+                        "next_cursor": "",
+                        "previous_cursor": "",
+                    },
+                }
             )
         page_size = filters["page_size"]
         page_offset = filters["page_offset"]

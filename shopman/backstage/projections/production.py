@@ -2243,7 +2243,7 @@ def _report_dataset_revision(qs, report_kind: str) -> str:
             count=Count("pk"), max_pk=Max("pk")
         )
         quality_catalog = (
-            tuple(QualityGrade.objects.order_by("pk").values_list("pk", "ref", "label")),
+            tuple(QualityGrade.objects.order_by("pk").values_list("pk", "ref", "label", "is_default")),
             tuple(QualityDefect.objects.order_by("pk").values_list("pk", "ref", "label")),
         )
     payload = {
@@ -2268,39 +2268,55 @@ def _history_ordering(sort: str) -> tuple[str, ...]:
 
 
 def _quality_report_rows_queryset(qs) -> tuple[QualityReportRow, ...]:
-    from shopman.craftsman.models import WorkOrderItem
-
     from shopman.shop.models import QualityDefect, QualityGrade
     from shopman.shop.services import quality as quality_service
 
     grade_labels = dict(QualityGrade.objects.values_list("ref", "label"))
     defect_labels = dict(QualityDefect.objects.values_list("ref", "label"))
-    default_ref = quality_service.default_grade_ref()
-    lines = (
-        WorkOrderItem.objects.filter(
-            work_order__in=qs.filter(status=WorkOrder.Status.FINISHED),
-            kind__in=(WorkOrderItem.Kind.OUTPUT, WorkOrderItem.Kind.WASTE),
-        )
-        .values_list(
-            "work_order__recipe__ref",
-            "work_order__recipe__name",
-            "kind",
-            "quality_grade_ref",
-            "quality_defect_ref",
-            "quantity",
-        )
-        .iterator(chunk_size=500)
-    )
     grouped: dict[tuple[str, str, str], dict[str, object]] = {}
     recipe_totals: dict[str, Decimal] = {}
-    for recipe_ref, recipe_name, kind, grade_ref, defect_ref, quantity in lines:
-        grade = (grade_ref or default_ref) if kind == WorkOrderItem.Kind.OUTPUT else ""
-        if kind == WorkOrderItem.Kind.WASTE and not defect_ref:
-            continue
-        key = (recipe_ref, grade, defect_ref)
-        bucket = grouped.setdefault(key, {"name": recipe_name or recipe_ref, "qty": Decimal("0")})
-        bucket["qty"] = bucket["qty"] + quantity
-        recipe_totals[recipe_ref] = recipe_totals.get(recipe_ref, Decimal("0")) + quantity
+    batch = []
+    work_orders = qs.filter(status=WorkOrder.Status.FINISHED).prefetch_related(None).iterator(chunk_size=200)
+    for work_order in work_orders:
+        batch.append(work_order)
+        if len(batch) == 200:
+            _accumulate_effective_quality(
+                batch,
+                quality_service.effective_partitions(batch),
+                grouped,
+                recipe_totals,
+            )
+            batch = []
+    if batch:
+        _accumulate_effective_quality(
+            batch,
+            quality_service.effective_partitions(batch),
+            grouped,
+            recipe_totals,
+        )
+    return _finalize_quality_rows(grouped, recipe_totals, grade_labels, defect_labels)
+
+
+def _accumulate_effective_quality(work_orders, partitions, grouped, recipe_totals) -> None:
+    """Fold canonical effective QC partitions into report groups."""
+
+    for work_order in work_orders:
+        recipe_ref = work_order.recipe.ref
+        recipe_name = work_order.recipe.name or recipe_ref
+        for group in partitions.get(work_order.pk, ()):
+            loss = bool(group.get("loss"))
+            defect_ref = str(group.get("quality_defect_ref") or "")
+            if loss and not defect_ref:
+                continue
+            grade_ref = "" if loss else str(group.get("quality_grade_ref") or "")
+            quantity = Decimal(str(group.get("quantity") or "0"))
+            key = (recipe_ref, grade_ref, defect_ref)
+            bucket = grouped.setdefault(key, {"name": recipe_name, "qty": Decimal("0")})
+            bucket["qty"] = bucket["qty"] + quantity
+            recipe_totals[recipe_ref] = recipe_totals.get(recipe_ref, Decimal("0")) + quantity
+
+
+def _finalize_quality_rows(grouped, recipe_totals, grade_labels, defect_labels) -> tuple[QualityReportRow, ...]:
     return tuple(
         QualityReportRow(
             recipe_ref=recipe_ref,
@@ -2374,33 +2390,40 @@ def build_production_report_page(
 
 
 def iter_production_report_rows(filters: dict, *, sort: str):
-    """Iterate only the selected report; history stays DB-streamed and aggregates stay bounded."""
+    """Iterate one report and fail the stream if its source revision changes."""
 
     normalized = _normalize_report_filters(filters)
     qs = _report_queryset(normalized)
+    revision = _report_dataset_revision(qs, normalized.report_kind)
     if normalized.report_kind == "history":
         for work_order in qs.order_by(*_history_ordering(sort)).iterator(chunk_size=200):
             yield _work_order_report_row(work_order)
-        return
-    if normalized.report_kind == "quality":
-        rows = _quality_report_rows_queryset(qs)
-    elif normalized.report_kind == "operator_productivity":
-        rows = _operator_productivity_rows(qs.iterator(chunk_size=200))
     else:
-        rows = _recipe_waste_rows(qs.iterator(chunk_size=200))
-    shell = ProductionReportsProjection(
-        filters=normalized,
-        history_rows=(),
-        operator_rows=(),
-        waste_rows=(),
-        quality_rows=(),
-        available_recipes=(),
-        available_positions=(),
-        access=_full_access(),
-    )
-    field = _REPORT_ROWS_FIELD[normalized.report_kind]
-    shell = replace(shell, **{field: rows})
-    yield from getattr(sort_production_reports(shell, sort), field)
+        if normalized.report_kind == "quality":
+            rows = _quality_report_rows_queryset(qs)
+        elif normalized.report_kind == "operator_productivity":
+            rows = _operator_productivity_rows(qs.iterator(chunk_size=200))
+        else:
+            rows = _recipe_waste_rows(qs.iterator(chunk_size=200))
+        shell = ProductionReportsProjection(
+            filters=normalized,
+            history_rows=(),
+            operator_rows=(),
+            waste_rows=(),
+            quality_rows=(),
+            available_recipes=(),
+            available_positions=(),
+            access=_full_access(),
+        )
+        field = _REPORT_ROWS_FIELD[normalized.report_kind]
+        shell = replace(shell, **{field: rows})
+        yield from getattr(sort_production_reports(shell, sort), field)
+    if revision != _report_dataset_revision(qs, normalized.report_kind):
+        raise ProductionReportChangedDuringExport
+
+
+class ProductionReportChangedDuringExport(RuntimeError):
+    """The streamed CSV crossed source revisions and must be discarded."""
 
 
 _REPORT_ROWS_FIELD = {
@@ -2897,85 +2920,61 @@ def _operator_productivity_rows(work_orders: list[WorkOrder]) -> tuple[OperatorP
         if wo.status != WorkOrder.Status.FINISHED:
             continue
         operator = wo.operator_ref or "sem-operador"
-        bucket = grouped.setdefault(operator, {"count": 0, "qty": Decimal("0"), "yield": [], "duration": []})
+        bucket = grouped.setdefault(
+            operator,
+            {
+                "count": 0,
+                "qty": Decimal("0"),
+                "yield": _OnlineAverage(),
+                "duration": _OnlineAverage(),
+            },
+        )
         bucket["count"] = int(bucket["count"]) + 1
         bucket["qty"] = bucket["qty"] + (wo.finished or Decimal("0"))
         base = _wo_started_qty(wo) or wo.quantity
         if base:
-            bucket["yield"].append((wo.finished or Decimal("0")) / base)
+            bucket["yield"].add((wo.finished or Decimal("0")) / base)
         duration = _duration_minutes(wo.started_at, wo.finished_at)
         if duration is not None:
-            bucket["duration"].append(duration)
+            bucket["duration"].add(duration)
     return tuple(
         OperatorProductivityRow(
             operator_ref=operator,
             operator_name=operator.replace("chef:", "").replace("production:", "") or "Sem operador",
             wo_count=int(data["count"]),
             qty_total=_qty(data["qty"]),
-            yield_avg=_percent_avg(data["yield"]),
-            duration_avg_minutes=_int_avg_display(data["duration"]),
+            yield_avg=data["yield"].percent_display(),
+            duration_avg_minutes=data["duration"].integer_display(),
         )
         for operator, data in sorted(grouped.items(), key=lambda item: item[0])
     )
 
 
 def _quality_report_rows(work_orders: list[WorkOrder]) -> tuple[QualityReportRow, ...]:
-    """GROUP BY receita × grau × defeito sobre as linhas de OUTPUT/WASTE.
+    """GROUP BY receita × grau × defeito sobre a partição efetiva do QC.
 
-    Linha sem grau (finish escalar antigo) conta no grau padrão; WASTE com
-    defeito entra com grau vazio — perda vetada é qualidade também, e é o que
-    o relatório precisa para dizer "o forno 2 está queimando".
+    A autoridade canônica aplica a última QUALITY_CORRECTED sobre as linhas
+    físicas originais. Perda com defeito entra com grau vazio — perda vetada é
+    qualidade também, e é o que diz se o forno está queimando.
     """
-    from shopman.craftsman.models import WorkOrderItem
-
     from shopman.shop.models import QualityDefect, QualityGrade
     from shopman.shop.services import quality as quality_service
 
-    finished = {wo.pk: wo for wo in work_orders if wo.status == WorkOrder.Status.FINISHED}
+    finished = [wo for wo in work_orders if wo.status == WorkOrder.Status.FINISHED]
     if not finished:
         return ()
 
     grade_labels = dict(QualityGrade.objects.values_list("ref", "label"))
     defect_labels = dict(QualityDefect.objects.values_list("ref", "label"))
-    default_ref = quality_service.default_grade_ref()
-
-    lines = WorkOrderItem.objects.filter(
-        work_order_id__in=finished,
-        kind__in=(WorkOrderItem.Kind.OUTPUT, WorkOrderItem.Kind.WASTE),
-    ).values_list("work_order_id", "kind", "quality_grade_ref", "quality_defect_ref", "quantity")
-
     grouped: dict[tuple[str, str, str], dict[str, object]] = {}
     recipe_totals: dict[str, Decimal] = {}
-    for wo_id, kind, grade_ref, defect_ref, quantity in lines:
-        wo = finished[wo_id]
-        if kind == WorkOrderItem.Kind.OUTPUT:
-            grade = grade_ref or default_ref
-        else:
-            if not defect_ref:
-                continue  # perda sem defeito é rendimento, não qualidade
-            grade = ""
-        key = (wo.recipe.ref, grade, defect_ref)
-        bucket = grouped.setdefault(key, {"name": wo.recipe.name or wo.recipe.ref, "qty": Decimal("0")})
-        bucket["qty"] = bucket["qty"] + quantity
-        recipe_totals[wo.recipe.ref] = recipe_totals.get(wo.recipe.ref, Decimal("0")) + quantity
-
-    rows = []
-    for (recipe_ref, grade_ref, defect_ref), data in sorted(grouped.items()):
-        total = recipe_totals.get(recipe_ref) or Decimal("0")
-        share = int(Decimal(data["qty"]) * 100 / total) if total else 0
-        rows.append(
-            QualityReportRow(
-                recipe_ref=recipe_ref,
-                recipe_name=str(data["name"]),
-                grade_ref=grade_ref,
-                grade_label=grade_labels.get(grade_ref, grade_ref) if grade_ref else "Descarte",
-                defect_ref=defect_ref,
-                defect_label=defect_labels.get(defect_ref, defect_ref),
-                quantity=_qty(Decimal(data["qty"])),
-                share=f"{share}%",
-            )
-        )
-    return tuple(rows)
+    _accumulate_effective_quality(
+        finished,
+        quality_service.effective_partitions(finished),
+        grouped,
+        recipe_totals,
+    )
+    return _finalize_quality_rows(grouped, recipe_totals, grade_labels, defect_labels)
 
 
 def _recipe_waste_rows(work_orders: list[WorkOrder]) -> tuple[RecipeWasteRow, ...]:
@@ -2989,7 +2988,7 @@ def _recipe_waste_rows(work_orders: list[WorkOrder]) -> tuple[RecipeWasteRow, ..
                 "name": wo.recipe.name or wo.recipe.ref,
                 "count": 0,
                 "loss": Decimal("0"),
-                "yield": [],
+                "yield": _OnlineAverage(),
                 "planned": Decimal("0"),
                 "capacity": Decimal("0"),
                 "dates": set(),
@@ -3004,14 +3003,14 @@ def _recipe_waste_rows(work_orders: list[WorkOrder]) -> tuple[RecipeWasteRow, ..
         if wo.target_date:
             bucket["dates"].add(wo.target_date)
         if started:
-            bucket["yield"].append(finished / started)
+            bucket["yield"].add(finished / started)
     rows = [
         RecipeWasteRow(
             recipe_ref=recipe_ref,
             recipe_name=str(data["name"]),
             wo_count=int(data["count"]),
             loss_total=_qty(data["loss"]),
-            yield_avg=_percent_avg(data["yield"]),
+            yield_avg=data["yield"].percent_display(),
             capacity_utilization=_capacity_utilization(data),
         )
         for recipe_ref, data in grouped.items()
@@ -3040,16 +3039,22 @@ def _duration_minutes(started_at, finished_at) -> int | None:
     return max(0, int((finished_at - started_at).total_seconds() // 60))
 
 
-def _percent_avg(values: list[Decimal]) -> str:
-    if not values:
-        return ""
-    return f"{int((sum(values) / Decimal(len(values))) * 100)}%"
+@dataclass(slots=True)
+class _OnlineAverage:
+    """Exact running mean with constant memory, regardless of source row count."""
 
+    total: Decimal = Decimal("0")
+    count: int = 0
 
-def _int_avg_display(values: list[int]) -> str:
-    if not values:
-        return ""
-    return str(int(sum(values) / len(values)))
+    def add(self, value: Decimal | int) -> None:
+        self.total += Decimal(value)
+        self.count += 1
+
+    def percent_display(self) -> str:
+        return f"{int((self.total / Decimal(self.count)) * 100)}%" if self.count else ""
+
+    def integer_display(self) -> str:
+        return str(int(self.total / Decimal(self.count))) if self.count else ""
 
 
 def _is_late_started(wo: WorkOrder) -> bool:

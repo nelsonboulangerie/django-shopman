@@ -9,6 +9,7 @@ import {
 } from "~/presentation/reports";
 
 const FILTERS: ReportFiltersQuery = {
+  selected_only: true,
   report_kind: "history",
   date_from: "2026-07-10",
   date_to: "2026-07-17",
@@ -41,6 +42,7 @@ describe("reportKindLabel", () => {
 describe("reportsQuery", () => {
   it("keeps only non-empty filters", () => {
     expect(reportsQuery(FILTERS)).toEqual({
+      selected_only: true,
       report_kind: "history",
       date_from: "2026-07-10",
       date_to: "2026-07-17",
@@ -58,6 +60,7 @@ describe("reportsCsvUrl", () => {
     expect(url.startsWith("/api/v1/backstage/production/reports/?")).toBe(true);
     const params = new URLSearchParams(url.split("?")[1]);
     expect(params.get("format")).toBe("csv");
+    expect(params.get("selected_only")).toBe("true");
     expect(params.get("report_kind")).toBe("history");
     expect(params.get("date_from")).toBe("2026-07-10");
     expect(params.get("position_ref")).toBe("forno");

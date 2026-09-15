@@ -79,6 +79,23 @@ def test_operator_productivity_aggregates_finished_only(report_data):
     assert report.operator_rows[0].qty_total == "36"
 
 
+def test_report_averages_keep_constant_memory_and_exact_display():
+    from shopman.backstage.projections.production import _OnlineAverage
+
+    average = _OnlineAverage()
+    for index in range(10_000):
+        average.add(Decimal("0.9") if index % 2 else Decimal("0.8"))
+
+    assert not hasattr(average, "__dict__")
+    assert average.count == 10_000
+    assert average.percent_display() == "85%"
+
+    durations = _OnlineAverage()
+    durations.add(10)
+    durations.add(11)
+    assert durations.integer_display() == "10"
+
+
 @pytest.mark.django_db
 def test_recipe_waste_returns_top_waste_rows(report_data):
     report = build_production_reports(
@@ -176,6 +193,29 @@ def test_csv_stream_emits_bom_and_header_before_querying_rows(report_data, djang
         assert next(stream) == "\ufeff"
         assert "Ref,Data,Receita" in next(stream)
     assert report_data["finished"].ref in "".join(stream)
+
+
+@pytest.mark.django_db
+def test_csv_stream_fails_if_dataset_revision_changes(report_data, monkeypatch):
+    from shopman.backstage.projections import production as production_projection
+    from shopman.backstage.projections.production import ProductionReportChangedDuringExport
+    from shopman.backstage.services.production import iter_reports_csv
+
+    revisions = iter(("before", "after"))
+    monkeypatch.setattr(
+        production_projection,
+        "_report_dataset_revision",
+        lambda qs, kind: next(revisions),
+    )
+    stream = iter_reports_csv(
+        "history",
+        {"date_from": report_data["today"], "date_to": report_data["today"]},
+    )
+    assert next(stream) == "\ufeff"
+    assert "Ref,Data,Receita" in next(stream)
+
+    with pytest.raises(ProductionReportChangedDuringExport):
+        list(stream)
 
 
 @pytest.mark.django_db

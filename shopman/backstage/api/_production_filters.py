@@ -89,6 +89,9 @@ class ProductionReportsQuerySerializer(StrictQuerySerializer):
     )
     sort = serializers.ChoiceField(choices=VALID_REPORT_SORTS, required=False, default="default")
     page_size = serializers.IntegerField(required=False, min_value=1, max_value=100, default=50)
+    # v1 historically returned every sibling rowset. The bounded single-kind
+    # contract is explicit so existing integrations do not silently lose data.
+    selected_only = serializers.BooleanField(required=False, default=False)
     cursor = serializers.CharField(required=False, allow_blank=True, default="", max_length=512, trim_whitespace=True)
     # DRF consumes this for renderer negotiation, but it remains part of the
     # public query contract and must be declared for strict checking.

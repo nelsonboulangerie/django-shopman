@@ -1,5 +1,5 @@
 import { ref } from "vue";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
 import { useProductionReports } from "~/composables/useProductionReports";
 import type { ReportFiltersQuery } from "~/presentation/reports";
@@ -10,6 +10,7 @@ function filters(
   overrides: Partial<ReportFiltersQuery> = {},
 ): ReportFiltersQuery {
   return {
+    selected_only: true,
     report_kind: "history",
     date_from: "2026-07-10",
     date_to: "2026-07-17",
@@ -58,7 +59,7 @@ describe("useProductionReports", () => {
       availableRecipes,
       availablePositions,
       forbidden,
-    } = useProductionReports(ref(filters()));
+    } = useProductionReports(ref(filters()), ref(true));
 
     expect(historyRows.value).toHaveLength(2);
     expect(pagination.value?.total).toBe(2);
@@ -69,21 +70,64 @@ describe("useProductionReports", () => {
     expect(forbidden.value).toBe(false);
   });
 
-  it("builds the CSV link from the active filters (direct download, format=csv)", () => {
-    env.fetchData.value = null;
-    const { csvUrl } = useProductionReports(
+  it("downloads CSV through an explicit successful lifecycle", async () => {
+    const click = vi.fn();
+    vi.stubGlobal("document", {
+      createElement: () => ({ href: "", download: "", click }),
+    });
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:report");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    env.fetchMock.mockResolvedValue(new Blob(["report"]));
+    const state = useProductionReports(
       ref(filters({ report_kind: "recipe_waste", recipe_ref: "pao" })),
+      ref(true),
     );
-    const params = new URLSearchParams(csvUrl.value.split("?")[1]);
-    expect(params.get("format")).toBe("csv");
-    expect(params.get("report_kind")).toBe("recipe_waste");
-    expect(params.get("recipe_ref")).toBe("pao");
+
+    expect(await state.downloadCsv()).toBe(true);
+    expect(state.exportStatus.value).toBe("success");
+    expect(click).toHaveBeenCalledOnce();
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("format=csv"),
+      expect.objectContaining({ responseType: "blob" }),
+    );
+  });
+
+  it("cancels an in-flight CSV export without reporting failure", async () => {
+    env.fetchMock.mockImplementation(
+      (_url, options: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener("abort", () =>
+            reject(Object.assign(new Error("cancelled"), { name: "AbortError" })),
+          );
+        }),
+    );
+    const state = useProductionReports(ref(filters()), ref(true));
+
+    const result = state.downloadCsv();
+    expect(state.exportStatus.value).toBe("pending");
+    state.cancelExport();
+    expect(await result).toBe(false);
+    expect(state.exportStatus.value).toBe("cancelled");
+  });
+
+  it("distinguishes session expiry from an ordinary export failure", async () => {
+    const state = useProductionReports(ref(filters()), ref(true));
+    env.fetchMock.mockRejectedValueOnce({
+      status: 403,
+      data: { error: { code: "not_authenticated" } },
+    });
+    await state.downloadCsv();
+    expect(state.exportStatus.value).toBe("session_expired");
+
+    env.fetchMock.mockRejectedValueOnce({ status: 500 });
+    await state.downloadCsv();
+    expect(state.exportStatus.value).toBe("failure");
   });
 
   it("degrades to empty rows when the payload is null", () => {
     env.fetchData.value = null;
     const { reports, historyRows, operatorRows, wasteRows } =
-      useProductionReports(ref(filters()));
+      useProductionReports(ref(filters()), ref(true));
     expect(reports.value).toBeNull();
     expect(historyRows.value).toEqual([]);
     expect(operatorRows.value).toEqual([]);
@@ -96,10 +140,12 @@ describe("useProductionReports", () => {
       data: { error: { code: "stale_report_cursor" } },
     };
 
-    const { cursorStale } = useProductionReports(
+    const { cursorStale, canExport } = useProductionReports(
       ref(filters({ cursor: "page-2" })),
+      ref(true),
     );
 
     expect(cursorStale.value).toBe(true);
+    expect(canExport.value).toBe(false);
   });
 });

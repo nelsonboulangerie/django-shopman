@@ -20,9 +20,11 @@ from decimal import Decimal
 import pytest
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from shopman.craftsman import craft
-from shopman.craftsman.models import Recipe
+from shopman.craftsman.models import Recipe, WorkOrderEvent
 from shopman.stockman import Position
 
 from shopman.backstage.models import DayClosing
@@ -141,8 +143,8 @@ def test_reports_payload_shape(client, manager, report_data):
     assert finished_row["qty_loss"] == "2"
     assert finished_row["yield_rate"] == "90%"
 
-    assert reports["operator_rows"] == []
-    assert reports["waste_rows"] == []
+    assert [row["operator_ref"] for row in reports["operator_rows"]] == ["ana"]
+    assert [row["recipe_ref"] for row in reports["waste_rows"]] == ["report-api-pao"]
     assert {recipe["ref"] for recipe in reports["available_recipes"]} == {"report-api-pao"}
     assert {position["ref"] for position in reports["available_positions"]} == {"forno"}
 
@@ -152,6 +154,7 @@ def test_reports_payload_shape(client, manager, report_data):
             "date_from": report_data["today"].isoformat(),
             "date_to": report_data["today"].isoformat(),
             "report_kind": "operator_productivity",
+            "selected_only": True,
         },
     ).json()["reports"]
     assert [row["operator_ref"] for row in productivity["operator_rows"]] == ["ana"]
@@ -181,6 +184,7 @@ def test_reports_paginate_with_filter_bound_cursor_and_server_sort(client, manag
         "date_from": report_data["today"].isoformat(),
         "date_to": report_data["today"].isoformat(),
         "report_kind": "history",
+        "selected_only": True,
         "sort": "quantity_desc",
         "page_size": 1,
     }
@@ -193,10 +197,17 @@ def test_reports_paginate_with_filter_bound_cursor_and_server_sort(client, manag
     assert payload["reports"]["operator_rows"] == []
     cursor = payload["pagination"]["next_cursor"]
 
-    second = client.get(url, {**query, "cursor": cursor})
+    with CaptureQueriesContext(connection) as captured:
+        second = client.get(url, {**query, "cursor": cursor})
     assert second.status_code == 200
     assert second.json()["reports"]["history_rows"][0]["ref"] == report_data["finished"].ref
     assert second.json()["pagination"]["previous_cursor"]
+    assert len(captured) <= 20
+    assert any(
+        'FROM "crafting_work_order"' in query["sql"]
+        and "LIMIT 1 OFFSET 1" in query["sql"].upper()
+        for query in captured.captured_queries
+    )
 
     tampered = client.get(url, {**query, "cursor": f"{cursor}x"})
     assert tampered.status_code == 400
@@ -242,6 +253,7 @@ def test_history_page_does_not_build_unselected_aggregates(client, manager, repo
             "date_from": report_data["today"].isoformat(),
             "date_to": report_data["today"].isoformat(),
             "page_size": 1,
+            "selected_only": True,
         },
     )
 
@@ -263,11 +275,98 @@ def test_reports_reject_a_dataset_that_changes_while_page_is_built(client, manag
         {
             "date_from": report_data["today"].isoformat(),
             "date_to": report_data["today"].isoformat(),
+            "selected_only": True,
         },
     )
 
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "stale_report_cursor"
+
+
+@pytest.mark.django_db
+def test_quality_page_and_csv_use_latest_correction_and_invalidate_older_cursor(
+    client,
+    manager,
+    report_data,
+):
+    work_order = report_data["finished"]
+    first_correction = [
+        {
+            "quantity": "10",
+            "quality_grade_ref": "fair",
+            "quality_defect_ref": "misshapen",
+            "loss": False,
+            "batch_ref": "",
+        },
+        {
+            "quantity": "8",
+            "quality_grade_ref": "standard",
+            "quality_defect_ref": "",
+            "loss": False,
+            "batch_ref": "",
+        },
+    ]
+    WorkOrderEvent.objects.create(
+        work_order=work_order,
+        seq=work_order.events.order_by("-seq").values_list("seq", flat=True).first() + 1,
+        kind=WorkOrderEvent.Kind.QUALITY_CORRECTED,
+        actor="manager:test",
+        payload={"schema_version": 1, "after_partition": first_correction},
+    )
+    client.force_login(manager)
+    url = reverse("api-backstage-production-reports")
+    query = {
+        "date_from": report_data["today"].isoformat(),
+        "date_to": report_data["today"].isoformat(),
+        "report_kind": "quality",
+        "selected_only": True,
+        "page_size": 1,
+    }
+
+    first = client.get(url, query)
+    assert first.status_code == 200
+    assert first.json()["pagination"]["total"] == 2
+    assert first.json()["reports"]["quality_rows"] == [
+        {
+            "recipe_ref": "report-api-pao",
+            "recipe_name": "Pão de Relatório",
+            "grade_ref": "fair",
+            "grade_label": "Razoável",
+            "defect_ref": "misshapen",
+            "defect_label": "Deformado",
+            "quantity": "10",
+            "share": "55%",
+        }
+    ]
+    cursor = first.json()["pagination"]["next_cursor"]
+
+    csv_response = client.get(url, {**query, "format": "csv"})
+    csv_text = b"".join(csv_response.streaming_content).decode("utf-8-sig")
+    assert "report-api-pao,Pão de Relatório,Razoável,Deformado,10,55%" in csv_text
+
+    WorkOrderEvent.objects.create(
+        work_order=work_order,
+        seq=work_order.events.order_by("-seq").values_list("seq", flat=True).first() + 1,
+        kind=WorkOrderEvent.Kind.QUALITY_CORRECTED,
+        actor="manager:test",
+        payload={
+            "schema_version": 1,
+            "after_partition": [
+                {
+                    "quantity": "18",
+                    "quality_grade_ref": "minimal",
+                    "quality_defect_ref": "underproofed",
+                    "loss": False,
+                    "batch_ref": "",
+                }
+            ],
+        },
+    )
+
+    stale = client.get(url, {**query, "cursor": cursor})
+    assert stale.status_code == 409
+    fresh = client.get(url, query)
+    assert fresh.json()["reports"]["quality_rows"][0]["grade_ref"] == "minimal"
 
 
 @pytest.mark.django_db

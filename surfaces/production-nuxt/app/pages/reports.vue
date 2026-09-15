@@ -29,6 +29,7 @@ const blindMap = useBlindMap(selectedDate);
 
 // ── Relatórios por período ─────────────────────────────────────────────────
 const initialFilters: ReportFiltersQuery = {
+  selected_only: true,
   report_kind: "history",
   date_from: isoForOffset(-6),
   date_to: isoForOffset(0),
@@ -49,6 +50,9 @@ const {
   openCursor,
 } = useReportFilters(initialFilters);
 const activeKind = computed(() => filters.value.report_kind);
+const exportEligible = computed(
+  () => !filtersDirty.value && !filterError.value,
+);
 
 const {
   reports,
@@ -61,11 +65,15 @@ const {
   availablePositions,
   forbidden: reportsForbidden,
   cursorStale,
-  csvUrl,
+  canExport,
+  exportStatus,
+  exportMessage,
+  downloadCsv,
+  cancelExport,
   pending,
   error,
   refresh,
-} = useProductionReports(filters);
+} = useProductionReports(filters, exportEligible);
 
 // 403 em qualquer bloco = mesma causa (sem a perm fina) → mensagem única e calma.
 const forbidden = computed(
@@ -82,10 +90,6 @@ const hasRows = computed(() => {
 const stale = computed(() =>
   isStale({ error: !!error.value, hasData: !!reports.value }),
 );
-const canExport = computed(
-  () => !filtersDirty.value && !filterError.value && !cursorStale.value,
-);
-
 function changeReportKind(reportKind: (typeof REPORT_KINDS)[number]["kind"]) {
   selectKind(reportKind);
   applyFilters();
@@ -291,22 +295,45 @@ function refreshAll() {
             {{ entry.label }}
           </button>
         </div>
-        <a
-          :href="canExport ? csvUrl : undefined"
-          download
-          :aria-disabled="!canExport"
+        <UiButton
+          type="button"
+          variant="outline"
+          size="sm"
+          class="ml-auto"
+          :disabled="!canExport"
           :title="
-            canExport
-              ? undefined
-              : 'Aplique os filtros válidos antes de baixar.'
+            exportStatus === 'pending'
+              ? 'Exportação em andamento.'
+              : canExport
+                ? undefined
+                : 'Aplique os filtros válidos antes de baixar.'
           "
-          class="ml-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition"
-          :class="
-            canExport ? 'hover:bg-accent' : 'cursor-not-allowed opacity-50'
-          "
+          @click="downloadCsv()"
         >
-          <Icon name="lucide:download" class="size-4" /> Baixar CSV
-        </a>
+          <Icon name="lucide:download" class="size-4" />
+          {{ exportStatus === "pending" ? "Exportando…" : "Baixar CSV" }}
+        </UiButton>
+        <UiButton
+          v-if="exportStatus === 'pending'"
+          type="button"
+          variant="ghost"
+          size="sm"
+          @click="cancelExport()"
+        >
+          Cancelar
+        </UiButton>
+        <p
+          v-if="exportMessage"
+          class="basis-full text-right text-xs text-muted-foreground"
+          :class="{
+            'text-destructive':
+              exportStatus === 'failure' || exportStatus === 'session_expired',
+          }"
+          role="status"
+          aria-live="polite"
+        >
+          {{ exportMessage }}
+        </p>
       </div>
 
       <div
@@ -440,11 +467,20 @@ function refreshAll() {
         <span>Sem atualizar — mostrando a última página aplicada.</span>
       </div>
 
-      <p v-if="pending && !reports" class="text-sm text-muted-foreground">
+      <div
+        v-if="cursorStale"
+        class="grid place-items-center rounded-md border border-dashed border-warning/40 py-12 text-center text-sm text-muted-foreground"
+      >
+        Navegação bloqueada até reconciliar o relatório.
+      </div>
+      <p
+        v-else-if="pending && !reports"
+        class="text-sm text-muted-foreground"
+      >
         Carregando…
       </p>
       <div
-        v-else-if="error && !reports && !cursorStale"
+        v-else-if="error && !reports"
         class="grid place-items-center gap-2 rounded-md border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
       >
         <Icon name="lucide:cloud-off" class="size-8 text-destructive/70" />
@@ -463,7 +499,7 @@ function refreshAll() {
         </UiButton>
       </div>
       <div
-        v-else-if="!hasRows && !cursorStale"
+        v-else-if="!hasRows"
         class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center text-muted-foreground"
       >
         <Icon name="lucide:table-2" class="size-8" />
@@ -645,7 +681,7 @@ function refreshAll() {
       </div>
 
       <nav
-        v-if="pagination && pagination.total"
+        v-if="pagination && pagination.total && !cursorStale"
         class="mt-3 flex items-center justify-between gap-3 text-sm"
         aria-label="Paginação do relatório"
       >

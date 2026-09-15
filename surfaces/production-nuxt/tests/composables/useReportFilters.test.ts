@@ -3,6 +3,7 @@ import { useReportFilters } from "~/composables/useReportFilters";
 import type { ReportFiltersQuery } from "~/presentation/reports";
 
 const INITIAL: ReportFiltersQuery = {
+  selected_only: true,
   report_kind: "history",
   date_from: "2026-09-01",
   date_to: "2026-09-07",
