@@ -11,6 +11,7 @@ import type {
   POSCustomerMergeResponse,
   POSCustomerSearchResponse,
   POSCustomerSearchResult,
+  POSPaymentDeliveryProjection,
   POSProductProjection,
   POSReceiptIdentityChoice,
   POSProjection,
@@ -179,7 +180,45 @@ export function usePosSale(deps: PosSaleDeps) {
   // o pedido vira um chip compacto no header e o polling segue até resolver.
   const pendingPixOrderRef = ref("");
   let pixPollTimer: ReturnType<typeof setInterval> | null = null;
-  function stopPixPolling() {
+  let deliveryPollTimer: ReturnType<typeof setInterval> | null = null;
+  let pixPollGeneration = 0;
+  let deliveryPollGeneration = 0;
+  function applyPaymentDelivery(orderRef: string, delivery?: POSPaymentDeliveryProjection | null) {
+    if (result.value?.orderRef === orderRef && delivery) result.value.paymentDelivery = delivery;
+  }
+  function stopDeliveryPolling(expectedGeneration?: number) {
+    if (expectedGeneration !== undefined && expectedGeneration !== deliveryPollGeneration) return;
+    deliveryPollGeneration += 1;
+    if (deliveryPollTimer) { clearInterval(deliveryPollTimer); deliveryPollTimer = null; }
+  }
+  function startDeliveryPolling(orderRef: string) {
+    stopDeliveryPolling();
+    let attempts = 0;
+    let inFlight = false;
+    const generation = deliveryPollGeneration;
+    deliveryPollTimer = setInterval(async () => {
+      if (generation !== deliveryPollGeneration) return;
+      if (attempts >= 24 || result.value?.orderRef !== orderRef) return stopDeliveryPolling(generation);
+      if (inFlight) return;
+      attempts += 1;
+      inFlight = true;
+      try {
+        const response = await $fetch<{ payment_delivery?: POSPaymentDeliveryProjection }>(
+          apiPath(`/api/v1/backstage/pos/payment/${encodeURIComponent(orderRef)}/status/`),
+          { credentials: "include" },
+        );
+        if (generation !== deliveryPollGeneration || result.value?.orderRef !== orderRef) return;
+        applyPaymentDelivery(orderRef, response.payment_delivery);
+        if (!response.payment_delivery || !["queued", "sending"].includes(response.payment_delivery.status)) {
+          stopDeliveryPolling(generation);
+        }
+      } catch { /* silêncio-deliberado: o estado continua honesto; a próxima tentativa pode recuperar */ }
+      finally { inFlight = false; }
+    }, 2500);
+  }
+  function stopPixPolling(expectedGeneration?: number) {
+    if (expectedGeneration !== undefined && expectedGeneration !== pixPollGeneration) return;
+    pixPollGeneration += 1;
     if (pixPollTimer) { clearInterval(pixPollTimer); pixPollTimer = null; }
   }
   function startPixPolling(orderRef: string) {
@@ -187,19 +226,27 @@ export function usePosSale(deps: PosSaleDeps) {
     pixOrderRef.value = orderRef;
     pixStatus.value = "polling";
     let attempts = 0;
+    let inFlight = false;
+    const generation = pixPollGeneration;
     pixPollTimer = setInterval(async () => {
+      if (generation !== pixPollGeneration) return;
+      if (attempts >= 240) { pixStatus.value = "expired"; return stopPixPolling(generation); } // ~10 min a 2,5s → desiste
+      if (inFlight) return;
       attempts += 1;
-      if (attempts > 240) { pixStatus.value = "expired"; return stopPixPolling(); } // ~10 min a 2,5s → desiste
+      inFlight = true;
       try {
-        const status = await $fetch<{ is_paid?: boolean; is_terminal?: boolean }>(
+        const status = await $fetch<{ is_paid?: boolean; is_terminal?: boolean; payment_delivery?: POSPaymentDeliveryProjection }>(
           apiPath(`/api/v1/backstage/pos/payment/${encodeURIComponent(orderRef)}/status/`),
           { credentials: "include" },
         );
-        if (status?.is_paid) { pixStatus.value = "paid"; stopPixPolling(); }
-        else if (status?.is_terminal) { pixStatus.value = "expired"; stopPixPolling(); } // cancelado/expirado
+        if (generation !== pixPollGeneration || pixOrderRef.value !== orderRef) return;
+        applyPaymentDelivery(orderRef, status.payment_delivery);
+        if (status?.is_paid) { pixStatus.value = "paid"; stopPixPolling(generation); }
+        else if (status?.is_terminal) { pixStatus.value = "expired"; stopPixPolling(generation); } // cancelado/expirado
       // A desistência é que fala alto: 240 tentativas → `pixStatus = "expired"`
       // e o toast do watcher. A tentativa isolada, não.
       } catch { /* silêncio-deliberado: falha transiente de rede — segue tentando */ }
+      finally { inFlight = false; }
     }, 2500);
   }
 
@@ -224,6 +271,7 @@ export function usePosSale(deps: PosSaleDeps) {
    */
   function dismissResult() {
     if (!result.value) return;
+    stopDeliveryPolling();
     const proof = result.value.payment;
     const pixStillPending = Boolean(proof?.isPix && proof?.hasProof) && pixStatus.value === "polling";
     if (pixStillPending) {
@@ -241,20 +289,34 @@ export function usePosSale(deps: PosSaleDeps) {
   // ainda em andamento, clique cedo demais. A recusa é toast com o `detail`
   // do servidor; o botão não some, porque o motivo muda com o tempo.
   const resendingLink = ref(false);
-  async function resendPaymentLink(): Promise<boolean> {
+  async function sendPaymentNotice(requestedAction?: "send" | "resend"): Promise<boolean> {
     const orderRef = result.value?.orderRef;
     if (!orderRef || resendingLink.value) return false;
+    const requested = requestedAction || result.value?.paymentDelivery?.action || "send";
     resendingLink.value = true;
     try {
-      await action.call(`/api/v1/backstage/pos/orders/${encodeURIComponent(orderRef)}/resend-payment-link/`);
-      toast.success("Reenvio do link solicitado.");
+      const response = await action.call<{ payment_delivery?: POSPaymentDeliveryProjection }>(
+        `/api/v1/backstage/pos/orders/${encodeURIComponent(orderRef)}/send-payment-notice/`,
+        { body: { action: requested } },
+      );
+      applyPaymentDelivery(orderRef, response?.payment_delivery);
+      const notice = response?.payment_delivery?.notice || (requested === "resend" ? "Reenvio colocado na fila." : "Envio colocado na fila.");
+      toast.success(notice);
+      if (response?.payment_delivery && ["queued", "sending"].includes(response.payment_delivery.status)) {
+        if (!result.value?.payment?.isPix) startDeliveryPolling(orderRef);
+      }
       return true;
     } catch (error) {
-      toast.error(httpErrorMessage(error, "Não foi possível reenviar o link. Copie e mande você."));
+      const delivery = (httpError(error).data as { payment_delivery?: POSPaymentDeliveryProjection } | null)?.payment_delivery;
+      applyPaymentDelivery(orderRef, delivery);
+      toast.error(httpErrorMessage(error, "Não foi possível enviar a cobrança. Copie e mande você."));
       return false;
     } finally {
       resendingLink.value = false;
     }
+  }
+  async function resendPaymentLink(): Promise<boolean> {
+    return sendPaymentNotice("resend");
   }
 
   /**
@@ -1528,13 +1590,13 @@ export function usePosSale(deps: PosSaleDeps) {
     });
   }
 
-  async function resolveCustomer(options: { contactCorrection?: boolean } = {}) {
+  async function resolveCustomer(options: { contactCorrection?: boolean } = {}): Promise<boolean> {
     const customerRef = cart.customerRef.trim();
     const name = cart.customerName.trim();
     const phone = cart.customerPhone.trim();
     const taxId = cart.customerTaxId.trim();
     const email = cart.customerEmail.trim();
-    if (!customerRef && !name && !phone && !taxId && !email) return;
+    if (!customerRef && !name && !phone && !taxId && !email) return false;
 
     // CORRIGIR o contato do cliente associado é mudar a identidade de contato
     // de um cadastro — o número por onde ele recebe aviso de pronto. Isso é dito
@@ -1551,7 +1613,7 @@ export function usePosSale(deps: PosSaleDeps) {
       });
       if (change) {
         customerDecision.value = change;
-        return;
+        return false;
       }
     }
 
@@ -1571,10 +1633,11 @@ export function usePosSale(deps: PosSaleDeps) {
           customer_tax_id: taxId,
           customer_email: email,
           ...(options.contactCorrection ? { customer_contact_correction: true } : {}),
+          ...(customerRef ? { customer_name_correction: true } : {}),
         },
       });
       customerDecision.value = null;
-      if (!response.customer) return;
+      if (!response.customer) return false;
       // "Criei agora" ≠ "achei": a confirmação visual do modal distingue.
       customerResolvedNew.value = !!response.created;
       customerLookup.value = response.customer;
@@ -1611,6 +1674,8 @@ export function usePosSale(deps: PosSaleDeps) {
       if (cart.fulfillmentType === "delivery" && response.customer.default_address && !cart.deliveryAddress.trim()) {
         applySavedAddress(response.customer.default_address);
       }
+      toast.success(response.created ? "Cliente cadastrado." : "Cadastro do cliente salvo.");
+      return true;
     } catch (error) {
       const data = (httpError(error).data || {}) as { error?: { field?: string; candidates?: ServerConflictCandidate[] } };
       if (httpErrorCode(error) === "customer_conflict") {
@@ -1622,10 +1687,11 @@ export function usePosSale(deps: PosSaleDeps) {
         });
         if (decision) {
           customerDecision.value = decision;
-          return;
+          return false;
         }
       }
       serverError.value = httpErrorMessage(error, "Falha ao salvar o cliente.");
+      return false;
     } finally {
       lookupBusy.value = false;
     }
@@ -2281,6 +2347,7 @@ export function usePosSale(deps: PosSaleDeps) {
           orderRef,
           nextUrl: `${ordersUrl.value.replace(/\/+$/, "")}/${encodeURIComponent(orderRef)}`,
           payment: proof,
+          paymentDelivery: response.payment_delivery || null,
           receipt,
           // O botão da DANFE segue a REGRA fiscal, não o toggle: cartão e pix
           // emitem por forma de pagamento, sem o operador marcar nada.
@@ -2302,6 +2369,9 @@ export function usePosSale(deps: PosSaleDeps) {
             pendingPixOrderRef.value = "";
           }
           startPixPolling(orderRef);
+        } else if (proof?.isLink && response.payment_delivery
+          && ["queued", "sending"].includes(response.payment_delivery.status)) {
+          startDeliveryPolling(orderRef);
         } else if (!pendingPixOrderRef.value) {
           // Sem prova nova e sem chip pendente: nada a pollar. (Com chip, o
           // polling da venda anterior segue vivo até resolver/expirar.)
@@ -2646,7 +2716,10 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
-  onScopeDispose(() => stopPixPolling());
+  onScopeDispose(() => {
+    stopPixPolling();
+    stopDeliveryPolling();
+  });
 
   return {
     orderSetupPending,
@@ -2784,6 +2857,7 @@ export function usePosSale(deps: PosSaleDeps) {
     submitSale,
     dismissResult,
     resendingLink,
+    sendPaymentNotice,
     resendPaymentLink,
     onExternalSaleCancelled,
     clearCurrentTab,

@@ -1295,6 +1295,8 @@ def _pos_actions() -> tuple[Action, ...]:
                 "customer_email",
                 # Palavra explícita do operador para CORRIGIR o contato.
                 "customer_contact_correction",
+                # Palavra explícita do botão "Salvar cadastro" para corrigir nome.
+                "customer_name_correction",
             ]},
             idempotency="required",
         ),
@@ -2650,6 +2652,7 @@ def build_pos_recent_sales(*, limit: int = 20) -> dict:
     from shopman.orderman.models import Order
 
     from shopman.backstage.projections.order_queue import _fiscal_status
+    from shopman.backstage.projections.pos_payment_delivery import build_pos_payment_delivery
     from shopman.shop.services.pos import recent_sale_cancellable
 
     since = timezone.now() - timezone.timedelta(hours=24)
@@ -2691,5 +2694,6 @@ def build_pos_recent_sales(*, limit: int = 20) -> dict:
             # o desfazer para a venda ainda DENTRO da janela — o mesmo predicado
             # que o cancel impõe (`recent_sale_cancellable`).
             "can_cancel": recent_sale_cancellable(order),
+            "payment_delivery": build_pos_payment_delivery(order),
         })
     return {"sales": sales}

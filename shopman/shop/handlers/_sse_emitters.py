@@ -32,6 +32,13 @@ from shopman.shop.handlers._resilient import resilient_receiver
 logger = logging.getLogger(__name__)
 
 
+def _is_pos_counter_order(order) -> bool:
+    """Balcão não pertence ao Gestor; tracking e KDS continuam independentes."""
+    from shopman.shop.services.pos_sales_mode import is_pos_counter_order
+
+    return is_pos_counter_order(order)
+
+
 # ── Channel resolution ──────────────────────────────────────────────
 
 
@@ -281,7 +288,8 @@ def _on_order_context_event(sender, instance, created, **kwargs):
         return
     order = instance.order
     # Operational context is private: no customer tracking channel or note text.
-    _emit_backstage("orders", "backstage-orders-update", {"ref": order.ref, "kind": instance.type}, scope=_scope_for_order(order))
+    if not _is_pos_counter_order(order):
+        _emit_backstage("orders", "backstage-orders-update", {"ref": order.ref, "kind": instance.type}, scope=_scope_for_order(order))
 
 
 def _on_order_changed(sender, order, event_type, actor, **kwargs):
@@ -292,6 +300,8 @@ def _on_order_changed(sender, order, event_type, actor, **kwargs):
         event_type="order-update",
         payload={"ref": order.ref, "status": order.status, "kind": event_type},
     )
+    if _is_pos_counter_order(order):
+        return
     _emit_backstage(
         "orders",
         "backstage-orders-update",
@@ -317,6 +327,8 @@ def emit_courier_update(order, payload: dict) -> None:
     """
     body = {"ref": order.ref, "kind": "courier_changed", **payload}
     _emit_for_order(order.ref, event_type="order-update", payload=body)
+    if _is_pos_counter_order(order):
+        return
     _emit_backstage(
         "orders",
         "backstage-orders-update",
@@ -343,6 +355,9 @@ def _on_payment_changed(sender, intent=None, order_ref=None, **kwargs):
         order = Order.objects.get(ref=order_ref)
     except Exception:
         logger.debug("_sse_emitters._on_payment_changed degraded; using fallback", exc_info=True)
+        return
+
+    if _is_pos_counter_order(order):
         return
 
     _emit_backstage(

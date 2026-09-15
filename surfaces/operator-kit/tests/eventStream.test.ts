@@ -55,7 +55,13 @@ describe("proxyEventStream — BFF SSE das superfícies de operador", () => {
 
   it("faz streaming do eventstream do Django com cookie e headers de SSE", async () => {
     const { event, res } = makeEvent({
-      cookie: "sessionid=s1; csrftoken=t",
+      cookie: [
+        "sessionid=admin-session",
+        "csrftoken=admin-csrf",
+        "shopman_station_trust_pdv=station-1",
+        "shopman_operator_sessionid=s1",
+        "shopman_operator_csrftoken=t",
+      ].join("; "),
       "last-event-id": "evt-9",
     });
 
@@ -65,7 +71,11 @@ describe("proxyEventStream — BFF SSE das superfícies de operador", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toBe(`${DJANGO}/events/orders/`);
     // Cookie de sessão e Last-Event-ID (resume) repassados; Accept de SSE.
-    expect(calls[0]!.options.headers.cookie).toBe("sessionid=s1; csrftoken=t");
+    expect(calls[0]!.options.headers.cookie).toBe(
+      "shopman_station_trust_pdv=station-1; sessionid=s1; csrftoken=t",
+    );
+    expect(calls[0]!.options.headers.cookie).not.toContain("admin-session");
+    expect(calls[0]!.options.headers.cookie).not.toContain("admin-csrf");
     expect(calls[0]!.options.headers["last-event-id"]).toBe("evt-9");
     expect(calls[0]!.options.headers.accept).toBe("text/event-stream");
     // Corpo é o ReadableStream do upstream (não bufferizado).
@@ -83,6 +93,12 @@ describe("proxyEventStream — BFF SSE das superfícies de operador", () => {
     await proxyEventStream(event, "/events/orders/");
     expect(calls[0]!.options.headers.cookie).toBeUndefined();
     expect(calls[0]!.options.headers["last-event-id"]).toBeUndefined();
+  });
+
+  it("não usa a sessão direta do Admin quando ainda não existe sessão de operador", async () => {
+    const { event } = makeEvent({ cookie: "sessionid=admin-session; csrftoken=admin-csrf" });
+    await proxyEventStream(event, "/events/orders/");
+    expect(calls[0]!.options.headers.cookie).toBeUndefined();
   });
 
   it("não repassa last-event-id \"error\" (resume envenenado → 400 do django-eventstream)", async () => {

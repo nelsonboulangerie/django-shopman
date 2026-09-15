@@ -104,6 +104,7 @@ from shopman.backstage.projections.pos import (
     build_pos_shift_summary,
     build_pos_tabs,
 )
+from shopman.backstage.projections.pos_payment_delivery import build_pos_payment_delivery
 from shopman.backstage.projections.production import (
     build_production_blind_map,
     build_production_board,
@@ -659,7 +660,9 @@ class POSPaymentStatusView(APIView):
         except Exception:
             logger.warning("pos.payment_status: resolve_timeouts falhou order=%s", ref, exc_info=True)
 
-        return Response(projection_data(build_payment_status(order)))
+        payload = projection_data(build_payment_status(order))
+        payload["payment_delivery"] = build_pos_payment_delivery(order)
+        return Response(payload)
 
 
 # ── Generic operator identification (PIN / badge) — shared by all surfaces ──
@@ -2027,6 +2030,7 @@ def _resend_payment_link_response(order) -> Response:
             "ref": order.ref,
             "detail": "Reenvio do link solicitado.",
             "payment_link_notice": payment_link_notice(order),
+            "payment_delivery": build_pos_payment_delivery(order),
         }
     )
 
@@ -2491,6 +2495,38 @@ class POSResendPaymentLinkView(APIView):
         if order is None:
             return Response({"detail": "Pedido não encontrado."}, status=404)
         return _resend_payment_link_response(order)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"], summary="Send or resend a pending PIX/payment-link notice from the POS",
+        responses={200: OpenApiResponse(description="Current delivery evidence."),
+                   400: OpenApiResponse(description="Invalid action."),
+                   409: OpenApiResponse(description="Payment or delivery state refuses the action.")},
+    ),
+)
+class POSSendPaymentNoticeView(APIView):
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request, ref: str):
+        from shopman.orderman.models import Order
+
+        order = Order.objects.filter(ref=ref, channel_ref=POS_CHANNEL_REF).first()
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        action = str((request.data or {}).get("action") or "send").strip().lower()
+        try:
+            notification_service.send_or_resend_payment_notice(order, action=action)
+        except notification_service.NotificationResendRefused as exc:
+            order.refresh_from_db()
+            return Response(
+                {"detail": exc.message, "error": {"code": exc.code, "message": exc.message},
+                 "payment_delivery": build_pos_payment_delivery(order)}, status=exc.status,
+            )
+        order.refresh_from_db()
+        return Response({"ok": True, "order_ref": order.ref,
+                         "payment_delivery": build_pos_payment_delivery(order)})
 
 
 @extend_schema_view(
@@ -4433,6 +4469,7 @@ class POSCustomerResolveView(APIView):
                 tax_id=str(body.get("customer_tax_id") or "").strip(),
                 email=str(body.get("customer_email") or "").strip(),
                 contact_correction=as_bool(body, "customer_contact_correction", default=False),
+                name_correction=as_bool(body, "customer_name_correction", default=False),
                 receipt_identity_action=body.get("receipt_identity_action"),
                 operator_username=_username(request),
             )
@@ -4645,12 +4682,16 @@ class POSCloseSaleView(APIView):
         except ValueError as exc:
             return Response({"detail": str(exc) or "Falha ao finalizar venda."}, status=422)
         order_ref = getattr(result, "order_ref", None)
+        from shopman.orderman.models import Order
+
+        closed_order = Order.objects.filter(ref=order_ref).first() if order_ref else None
         return Response(
             {
                 "ok": True,
                 "order_ref": order_ref,
                 "tab_ref": getattr(result, "tab_ref", None),
                 "payment": getattr(result, "payment", None) or {},
+                "payment_delivery": build_pos_payment_delivery(closed_order) if closed_order else {},
                 "fiscal_expected": _fiscal_expected(order_ref),
             }
         )

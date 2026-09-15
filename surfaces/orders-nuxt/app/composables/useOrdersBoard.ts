@@ -10,11 +10,11 @@ import { useOrderIntention } from "./useOrderIntention";
 // Writes go through the django proxy (CSRF handled there) and reconcile via refresh.
 // SSE/poll are client-only (EventSource is a browser API).
 import type { CancellationReason, OrderQueueResponse, TwoZoneQueueProjection } from "~/types/orders";
-import { newOrderPush, preorderGroups, zonesView, type PreorderGroup, type ZoneView } from "~/presentation/board";
+import { newlyTreatableOrderRefs, preorderGroups, zonesView, type PreorderGroup, type ZoneView } from "~/presentation/board";
 
 export type { CancellationReason };
 
-// ── pedido novo: som (mutável) + aviso mesmo com a aba oculta ─────────────
+// ── pedido tratável: som (mutável) + aviso mesmo com a aba oculta ─────────
 // ⚠️ Este bloco é DECISÃO DO DONO, tomada ouvindo os candidatos lado a lado
 // por cima de um ruído de salão sintetizado. Não é achismo, e não se mexe
 // nele sem passar pelo mesmo teste — o que soa bem no fone não sobrevive ao
@@ -32,7 +32,7 @@ export type { CancellationReason };
 //     mais que qualquer nota, que o ouvido reconhece como "anúncio".
 //
 // O KDS NÃO usa isto: fica com a tríade padrão do kit, de propósito, para o
-// operador distinguir "pedido novo" de "ticket novo" só pelo ouvido.
+// operador distinguir "pedido tratável" de "ticket novo" só pelo ouvido.
 export const GESTOR_ALERT = {
   volume: 0.6,
   wave: "sine" as const,
@@ -56,7 +56,7 @@ export const GESTOR_ALERT = {
 };
 
 // O beep/mute é o do kit (mesmo do KDS), com chave própria do Gestor. O push
-// SSE de `kind === "created"` dispara o aviso; mudança de status não grita.
+// O SSE só dispara o refetch; a mudança da projection para ação liberada avisa.
 //
 // Aqui o aviso INSISTE (`startAlert`), diferente do KDS: no KDS o operador
 // está de frente para a tela; no Gestor o pedido chega enquanto a loja toca
@@ -154,17 +154,17 @@ export function useOrdersBoard() {
     let flip = false;
     titleTimer = setInterval(() => {
       flip = !flip;
-      document.title = flip ? `● Pedido novo${ref_ ? ` ${ref_}` : ""}` : baseTitle;
+      document.title = flip ? `● Pedido para tratar${ref_ ? ` ${ref_}` : ""}` : baseTitle;
     }, 1_500);
   }
 
-  function notifyNewOrder(ref_: string) {
+  function notifyTreatableOrder(ref_: string) {
     // Silenciosamente degradável: sem API ou sem permissão, som e título cobrem.
     try {
       if (!("Notification" in window) || Notification.permission !== "granted") return;
-      const n = new Notification(`Pedido novo${ref_ ? ` ${ref_}` : ""}`, {
-        body: "Chegou um pedido novo no quadro.",
-        tag: "gestor-new-order",
+      const n = new Notification(`Pedido para tratar${ref_ ? ` ${ref_}` : ""}`, {
+        body: "Há um pedido que já pode ser tratado no quadro.",
+        tag: "gestor-treatable-order",
       });
       n.onclick = () => { window.focus(); n.close(); };
     } catch {
@@ -172,10 +172,10 @@ export function useOrdersBoard() {
     }
   }
 
-  function announceNewOrder(ref_: string) {
+  function announceTreatableOrder(ref_: string) {
     startAlert();
     if (document.visibilityState !== "visible") {
-      notifyNewOrder(ref_);
+      notifyTreatableOrder(ref_);
       startTitleAlert(ref_);
     }
   }
@@ -188,11 +188,31 @@ export function useOrdersBoard() {
     try {
       realtime.value = "connecting";
       source = new EventSource(url, { withCredentials: true });
-      // Todo push refaz o fetch canônico; só o de pedido NOVO também avisa.
-      const onPush = (ev: Event) => {
-        refresh();
-        const created = newOrderPush((ev as MessageEvent).data);
-        if (created !== null) announceNewOrder(created);
+      // SSE é somente um sinal. O som nasce da diferença entre as projections
+      // canônicas antes/depois do refresh: espera de PIX/data não incomoda, mas
+      // o pagamento que libera uma ação passa a avisar naquele instante.
+      let attentionRefresh: Promise<void> | null = null;
+      let attentionQueued = false;
+      const onPush = () => {
+        attentionQueued = true;
+        if (attentionRefresh) return;
+        const before = queue.value;
+        attentionRefresh = (async () => {
+          do {
+            attentionQueued = false;
+            await refresh();
+          } while (attentionQueued);
+          if (!error.value) {
+            const [ref_] = newlyTreatableOrderRefs(before, queue.value);
+            if (ref_) announceTreatableOrder(ref_);
+          }
+        })()
+          .catch(() => {})
+          .finally(() => {
+            attentionRefresh = null;
+            // Evento chegado na última microjanela não fica órfão.
+            if (attentionQueued) onPush();
+          });
       };
       ["message", "backstage-orders-update"].forEach((name) => source!.addEventListener(name, onPush));
       source.onopen = () => { realtime.value = "live"; refresh(); };

@@ -52,3 +52,61 @@ def test_pending_link_still_uses_existing_delivery_and_receipt():
         directive.refresh_from_db()
         NotificationSendHandler().handle(message=directive, ctx={})
         assert deliver.call_count == 1
+
+
+@pytest.mark.parametrize("change", ["capture", "cancel", "expire"])
+def test_invalidated_pix_is_skipped_as_not_pending_before_any_backend(change):
+    order = Order.objects.create(
+        ref=f"QUEUED-PIX-{change}",
+        status="accepted",
+        total_q=1200,
+        data={"payment": {"method": "pix", "copy_paste": "000201-synthetic"}},
+    )
+    intent = PaymentService.create_intent(order.ref, 1200, "pix")
+    order.data["payment"]["intent_ref"] = intent.ref
+    order.save(update_fields=["data"])
+    notification.send(order, notification.PAYMENT_PIX_TEMPLATE)
+    directive = Directive.objects.get(topic=notification.TOPIC, payload__order_ref=order.ref)
+
+    if change == "capture":
+        PaymentService.authorize(intent.ref)
+        PaymentService.capture(intent.ref)
+    elif change == "cancel":
+        order.status = "cancelled"
+        order.save(update_fields=["status"])
+    else:
+        order.data["payment"]["expires_at"] = (timezone.now() - timedelta(seconds=1)).isoformat()
+        order.save(update_fields=["data"])
+
+    with patch.object(notification, "deliver_order_notification", return_value=(True, None)) as deliver:
+        NotificationSendHandler().handle(message=directive, ctx={})
+        deliver.assert_not_called()
+
+    directive.refresh_from_db()
+    assert directive.payload["notification_delivery"] == {
+        "status": "skipped",
+        "reason": "payment_not_pending",
+        "recorded_at": directive.payload["notification_delivery"]["recorded_at"],
+    }
+
+
+def test_pending_pix_still_reaches_delivery_backend():
+    order = Order.objects.create(
+        ref="QUEUED-PIX-PENDING",
+        status="accepted",
+        total_q=1200,
+        data={"payment": {"method": "pix", "copy_paste": "000201-synthetic"}},
+    )
+    intent = PaymentService.create_intent(order.ref, 1200, "pix")
+    order.data["payment"]["intent_ref"] = intent.ref
+    order.save(update_fields=["data"])
+    notification.send(order, notification.PAYMENT_PIX_TEMPLATE)
+    directive = Directive.objects.get(topic=notification.TOPIC, payload__order_ref=order.ref)
+
+    def accepted(_order, _template, payload):
+        payload["notification_delivery"] = {"status": "accepted", "recorded_at": timezone.now().isoformat()}
+        return True, None
+
+    with patch.object(notification, "deliver_order_notification", side_effect=accepted) as deliver:
+        NotificationSendHandler().handle(message=directive, ctx={})
+        deliver.assert_called_once()

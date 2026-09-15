@@ -82,7 +82,7 @@ const emit = defineEmits<{
   search: [string];
   selectResult: [POSCustomerSearchResult];
   clear: [];
-  resolveCustomer: [];
+  resolveCustomer: [done: (saved: boolean) => void];
   /** O operador assumiu a mudança (trocar de cliente / trocar o contato). */
   decisionConfirm: [ownerRef?: string];
   /** LIBERAR o contato preso num cadastro desativado — o valor a soltar viaja
@@ -160,7 +160,6 @@ watch(() => props.open, (open) => {
   if (open) customerPanel.value = initialCustomerPanel();
 });
 function openNewCustomer() {
-  if (props.customerLookup?.ref) emit("clear");
   customerPanel.value = "form";
 }
 watch(() => props.customerLookup?.ref, (ref) => {
@@ -329,11 +328,19 @@ function onSelect(result: POSCustomerSearchResult) {
   customerPanel.value = "form";
   emit("selectResult", result);
 }
+const concludePending = ref(false);
 function onConclude() {
   // Uma pergunta aberta na tela não se responde fechando a tela.
-  if (props.customerDecision || props.lookupBusy) return;
-  if (customerPanel.value === "form") emit("resolveCustomer");
-  emit("update:open", false);
+  if (props.customerDecision || props.lookupBusy || concludePending.value) return;
+  if (customerPanel.value !== "form") {
+    emit("update:open", false);
+    return;
+  }
+  concludePending.value = true;
+  emit("resolveCustomer", (saved) => {
+    concludePending.value = false;
+    if (saved) emit("update:open", false);
+  });
 }
 
 // ── Atos NOMEADOS vindos do PosCustomerSearch ───────────────────────────────
@@ -730,12 +737,12 @@ const newCustomerNote = computed(() => {
 
           <!-- 2 · the picker: prominent search + rich results list.
                Enter decide (seleciona / cria por CPF / transfere / cadastra). -->
-          <div v-if="!isReceiptDecision" class="grid grid-cols-2 gap-2" aria-label="Escolher como identificar cliente">
-            <UiButton type="button" :variant="customerPanel === 'search' ? 'default' : 'outline'" @click="customerPanel = 'search'">
+          <div v-if="!isReceiptDecision" class="grid grid-cols-2 gap-1 rounded-md border bg-background p-1" role="tablist" aria-label="Escolher como identificar cliente">
+            <UiButton type="button" role="tab" :aria-selected="customerPanel === 'search'" :variant="customerPanel === 'search' ? 'default' : 'ghost'" @click="customerPanel = 'search'">
               Buscar existente
             </UiButton>
-            <UiButton type="button" :variant="customerPanel === 'form' ? 'default' : 'outline'" @click="openNewCustomer">
-              Cadastrar novo
+            <UiButton type="button" role="tab" :aria-selected="customerPanel === 'form'" :variant="customerPanel === 'form' ? 'default' : 'ghost'" @click="openNewCustomer">
+              {{ customerLookup?.ref ? "Editar cadastro" : "Cadastrar novo" }}
             </UiButton>
           </div>
           <PosCustomerSearch
@@ -817,7 +824,8 @@ const newCustomerNote = computed(() => {
       </div>
 
       <UiDialogFooter v-if="!isReceiptDecision">
-        <UiButton class="h-14 w-full" :disabled="Boolean(customerDecision) || lookupBusy" @click="onConclude">
+        <UiButton class="h-14 w-full" :disabled="Boolean(customerDecision) || lookupBusy || concludePending" @click="onConclude">
+          <Icon v-if="concludePending" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" />
           {{ customerPanel === "form" ? (customerLookup?.ref ? "Salvar cadastro" : "Cadastrar cliente") : "Concluir" }}
         </UiButton>
       </UiDialogFooter>

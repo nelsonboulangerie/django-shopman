@@ -36,7 +36,7 @@ const emit = defineEmits<{
   printReceipt: [];
   printDanfe: [];
   cancelSale: [];
-  resendLink: [];
+  paymentNotice: ["send" | "resend"];
 }>();
 
 const title = computed(() => props.result.salesMode === "order"
@@ -151,9 +151,10 @@ function onNewSale() {
       :proof="result.payment"
       :status="pixStatus"
       :resending="resendingLink"
+      :delivery="result.paymentDelivery"
       large
       class="w-full max-w-md text-left"
-      @resend-link="emit('resendLink')"
+      @payment-notice="emit('paymentNotice', $event)"
     />
 
     <!-- Hierarquia única de ações (mesma disciplina do checkout): UM CTA
@@ -189,7 +190,7 @@ function onNewSale() {
           <Icon name="lucide:printer" class="size-4" />
           Imprimir DANFE
         </UiButton>
-        <UiButton variant="outline" size="sm" class="gap-1.5" :href="result.nextUrl">
+        <UiButton v-if="result.salesMode === 'order'" variant="outline" size="sm" class="gap-1.5" :href="result.nextUrl">
           <Icon name="lucide:external-link" class="size-4" />
           Abrir no gestor
         </UiButton>

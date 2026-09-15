@@ -307,7 +307,10 @@ RUNTIME_BACKSTAGE_SURFACES: tuple[Surface, ...] = (
         id="runtime-pos",
         kind="registered-runtime-backstage",
         templates=(ROOT / "shopman/backstage/templates/pos",),
-        projections=(ROOT / "shopman/backstage/projections/pos.py",),
+        projections=(
+            ROOT / "shopman/backstage/projections/pos.py",
+            ROOT / "shopman/backstage/projections/pos_payment_delivery.py",
+        ),
         replacement="POS is registered runtime UI; management screens must use Admin/Unfold.",
     ),
     # KDS station + customer board migraram p/ o app Nuxt dedicado (kds-nuxt)

@@ -10,19 +10,30 @@ from shopman.backstage.presentation.status import order_status_label
 from shopman.backstage.projections.order_queue import build_order_card, build_two_zone_queue
 
 
-def _order(ref: str, status: str, fulfillment_type: str = "pickup") -> Order:
+def _order(
+    ref: str,
+    status: str,
+    fulfillment_type: str = "pickup",
+    *,
+    channel_ref: str = "web",
+    data_extra: dict | None = None,
+    snapshot: dict | None = None,
+) -> Order:
+    data = {
+        "customer": {"name": f"Cliente {ref}"},
+        "fulfillment_type": fulfillment_type,
+        "payment": {"method": "cash"},
+        "availability_decision": {"approved": True, "decisions": []},
+    }
+    data.update(data_extra or {})
     order = Order.objects.create(
         ref=ref,
-        channel_ref="web",
+        channel_ref=channel_ref,
         session_key=f"session-{ref}",
         status=status,
         total_q=1500,
-        data={
-            "customer": {"name": f"Cliente {ref}"},
-            "fulfillment_type": fulfillment_type,
-            "payment": {"method": "cash"},
-            "availability_decision": {"approved": True, "decisions": []},
-        },
+        data=data,
+        snapshot=snapshot or {},
     )
     OrderItem.objects.create(
         order=order,
@@ -66,6 +77,53 @@ class OrderQueueSurfaceTests(TestCase):
         self.assertEqual([o.ref for o in queue.expedition_delivery_transit], ["Q-DISP", "Q-DELIV"])
         self.assertEqual(queue.expedition_delivery_count, 2)
         self.assertEqual(queue.total_count, 6)
+
+    def test_pos_counter_orders_never_enter_manager_but_order_mode_does(self) -> None:
+        for status in ("new", "accepted", "preparing", "ready", "dispatched", "delivered"):
+            _order(
+                f"PDV-COUNTER-{status}",
+                status,
+                "delivery" if status in {"dispatched", "delivered"} else "pickup",
+                channel_ref="pdv",
+                data_extra={"origin_channel": "pos", "pos": {"sales_mode": "counter"}},
+            )
+
+        _order(
+            "PDV-ORDER-MODE",
+            "new",
+            channel_ref="pdv",
+            data_extra={"origin_channel": "pos", "pos": {"sales_mode": "order"}},
+        )
+
+        queue = build_two_zone_queue()
+        visible = {
+            card.ref
+            for card in (
+                queue.intake
+                + queue.prep
+                + queue.preorders
+                + queue.expedition_pickup
+                + queue.expedition_delivery
+                + queue.expedition_delivery_transit
+            )
+        }
+
+        self.assertEqual(visible, {"PDV-ORDER-MODE"})
+        self.assertEqual(queue.total_count, 1)
+
+    def test_pos_counter_mode_is_read_from_snapshot_during_commit(self) -> None:
+        _order(
+            "PDV-COUNTER-SNAPSHOT",
+            "new",
+            channel_ref="pdv",
+            data_extra={"origin_channel": "pos"},
+            snapshot={"data": {"origin_channel": "pos", "pos": {"sales_mode": "counter"}}},
+        )
+
+        queue = build_two_zone_queue()
+
+        self.assertEqual(queue.total_count, 0)
+        self.assertEqual(queue.intake, ())
 
     def test_future_preorder_leaves_the_day_columns_for_the_preorders_group(self) -> None:
         """WP-D: encomenda para data futura sai das colunas do dia e vive no grupo

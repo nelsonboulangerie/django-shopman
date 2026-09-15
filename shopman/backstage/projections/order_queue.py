@@ -991,10 +991,18 @@ def build_order_card(order: Order, *, user=None) -> OrderCardProjection:
 
 def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     """Build the operator queue grouped by the next physical action."""
-    all_orders = list(
-        Order.objects.filter(Q(status__in=ACTIVE_STATUSES) | Q(channel_ref="ifood", data__ifood__handshake_pending=True))
-        .order_by("created_at")
-    )
+    from shopman.shop.services.pos_sales_mode import is_pos_counter_order
+
+    # Balcão é propriedade do PDV/KDS: nunca cria trabalho para o Gestor. O
+    # filtro em Python alcança também o pequeno intervalo do commit em que o
+    # modo já está no snapshot, mas ainda não foi carimbado em Order.data.
+    all_orders = [
+        order
+        for order in Order.objects.filter(
+            Q(status__in=ACTIVE_STATUSES) | Q(channel_ref="ifood", data__ifood__handshake_pending=True)
+        ).order_by("created_at")
+        if not is_pos_counter_order(order)
+    ]
 
     # The queue only reads quantity/name/SKU; no full item models or metadata needed.
     items_by_order = defaultdict(list)

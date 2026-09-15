@@ -50,7 +50,7 @@ describe("useOrdersBoard — derivação da fila", () => {
     expect(useOrdersBoard().realtime.value).toBe("polling");
   });
 
-  it("expõe o som de pedido novo (kit): nasce ligado e o toggle alterna", () => {
+  it("expõe o som de pedido tratável (kit): nasce ligado e o toggle alterna", () => {
     env.fetchData.value = { queue: emptyZone() };
     const board = useOrdersBoard();
     expect(board.soundOn.value).toBe(true);
@@ -307,6 +307,72 @@ it("SSE aguarda recuperação do primeiro GET mesmo após transições com erro"
     expect(source).toHaveBeenCalledTimes(1);
   } finally {
     unmount?.();
+    vi.useRealTimers();
+  }
+});
+
+it("SSE só toca depois do refresh tornar o pedido tratável", async () => {
+  env.reset();
+  vi.useFakeTimers();
+  const data = ref({
+    queue: {
+      ...emptyZone(),
+      intake: [{ ref: "PIX-1", can_confirm: false, can_advance: false } as never],
+    },
+  });
+  let releasePayment = false;
+  const refresh = vi.fn(async () => {
+    data.value = {
+      queue: {
+        ...emptyZone(),
+        intake: [{ ref: "PIX-1", can_confirm: false, can_advance: releasePayment } as never],
+      },
+    };
+  });
+  let mounted!: () => void;
+  let unmount!: () => void;
+  const pushHandlers = new Map<string, () => void>();
+  const listeners = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
+  const close = vi.fn();
+  const source = vi.fn(function () {
+    return {
+      addEventListener: vi.fn((name: string, handler: () => void) => pushHandlers.set(name, handler)),
+      close,
+    };
+  });
+  const startAlert = vi.fn();
+  const prior = {
+    useFetch: globalThis.useFetch,
+    useAlertSound: globalThis.useAlertSound,
+    onMounted: globalThis.onMounted,
+    onBeforeUnmount: globalThis.onBeforeUnmount,
+  };
+  vi.stubGlobal("useFetch", () => ({ data, pending: ref(false), error: ref(null), refresh }));
+  vi.stubGlobal("useAlertSound", () => ({
+    soundOn: ref(true), soundBlocked: ref(false), toggleSound: vi.fn(), startAlert,
+  }));
+  vi.stubGlobal("onMounted", (callback: () => void) => { mounted = callback; });
+  vi.stubGlobal("onBeforeUnmount", (callback: () => void) => { unmount = callback; });
+  vi.stubGlobal("document", { ...listeners, title: "Pedidos", visibilityState: "visible" });
+  vi.stubGlobal("window", listeners);
+  vi.stubGlobal("EventSource", source);
+  vi.stubGlobal("ssePath", (await import("../../../operator-kit/app/utils/ssePath")).ssePath);
+  try {
+    useOrdersBoard();
+    mounted();
+    pushHandlers.get("backstage-orders-update")!();
+    await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    expect(startAlert).not.toHaveBeenCalled();
+
+    releasePayment = true;
+    pushHandlers.get("backstage-orders-update")!();
+    await vi.waitFor(() => expect(startAlert).toHaveBeenCalledTimes(1));
+  } finally {
+    unmount?.();
+    vi.stubGlobal("useFetch", prior.useFetch);
+    vi.stubGlobal("useAlertSound", prior.useAlertSound);
+    vi.stubGlobal("onMounted", prior.onMounted);
+    vi.stubGlobal("onBeforeUnmount", prior.onBeforeUnmount);
     vi.useRealTimers();
   }
 });

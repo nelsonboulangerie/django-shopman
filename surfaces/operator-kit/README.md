@@ -30,7 +30,8 @@ O layer contribui, via auto-import do Nuxt:
 | `app/utils/clientErrorReport.ts` | `reportClientError`, `buildClientErrorReport` | telemetria → `backstage/client-error/` |
 | `app/utils/tw-helper.ts` | `tw` | identidade para strings de classes Tailwind (DX/lint) |
 | `app/utils/translucent.ts` | `getTranslucentFloatingPanelClasses`, … | classes canônicas de painel flutuante translúcido |
-| `server/utils/djangoProxy.ts` | `proxyDjangoApi`, `proxyDjangoPath` | proxy BFF → Django (cookie, CSRF, redirects, X-API-Version) |
+| `server/utils/djangoProxy.ts` | `proxyDjangoApi`, `proxyDjangoPath` | proxy BFF → Django (sessão de operador isolada, CSRF, redirects, X-API-Version) |
+| `server/utils/operatorCookies.ts` | `operatorCookieHeaderForDjango`, `operatorSetCookieHeaderForBrowser` | fronteira de cookies entre browser e Django |
 | `server/utils/djangoBaseUrl.ts` | `configuredDjangoBaseUrl`, `resolveDjangoBaseUrl` | fail-fast de upstream ausente/local/inseguro em produção |
 | `server/plugins/upstream-guard.ts` | — | repete no boot o fail-fast dos apps opt-in, sem confiar no valor embutido no build |
 | `server/middleware/operator-security.ts` | — | CSP/frame/nosniff/referrer/permissões, HSTS em HTTPS e cache privado |
@@ -51,6 +52,14 @@ Os testes também têm harness compartilhado: `tests/support/composableEnv.ts`
 (`installNuxtGlobals()`, env `node` com Vue real + fronteira de dados mockada) é importado
 pelos testes de composables que o adotam — os projetos `unit` desses apps
 declaram `resolve.dedupe: ["vue"]` para garantir instância única do Vue.
+
+As superfícies de operador compartilham SSO pelo domínio-pai usando
+`shopman_operator_sessionid` e `shopman_operator_csrftoken`. O BFF traduz esses
+nomes para `sessionid`/`csrftoken` somente na conexão interna com o Django e
+descarta os cookies homônimos diretos do browser, que pertencem ao Admin. Assim,
+unlock/lock troca ou encerra a sessão compartilhada dos apps de operador sem
+invalidar uma sessão aberta no Admin; cookies de estação e demais cookies não
+conflitantes continuam sendo repassados.
 
 Apps que ativam `runtimeConfig.operatorSecurityHeaders` recebem documentos e APIs
 privados (`private, no-store`, `Vary: Cookie`). Assets compilados mantêm o cache do

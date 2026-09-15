@@ -424,11 +424,12 @@ def _on_accepted(order, config: ChannelConfig) -> None:
             payment.initiate(order)
 
         if not _payment_is_captured(order):
-            # A venda de LINK do balcão avisa o cliente onde a URL nasce — no
-            # fechamento da venda, com a copy do balcão ("anotamos seu pedido").
-            # `payment_requested` é a copy da loja online ("conferimos a
-            # disponibilidade…"); mandar as duas é a casa falando duas vezes.
-            if not _counter_link_sale(order, config):
+            # No PDV o comprovante (QR/copia-e-cola/checkout_url) só existe ao
+            # final de close_sale. O próprio writer enfileira a mensagem depois
+            # de persistir esse payload; antecipá-la aqui cria uma corrida e pode
+            # enviar uma cobrança sem meio de pagamento. Canais remotos seguem
+            # usando o lifecycle como dono do pedido de pagamento.
+            if (order.data or {}).get("origin_channel") != "pos":
                 notification.send(order, "payment_requested")
             return
 
@@ -485,11 +486,6 @@ def _counter_handoff(order) -> bool:
     criar ticket de separação (``order_helpers.customer_holds_the_goods``).
     """
     return customer_holds_the_goods(order)
-
-
-def _counter_link_sale(order, config: ChannelConfig) -> bool:
-    """Venda de LINK anotada no PDV: o pedido remoto que o balcão registrou."""
-    return (order.data or {}).get("origin_channel") == "pos" and _payment_method(order, config) == "link"
 
 
 def _on_paid(order, config: ChannelConfig) -> None:
@@ -683,6 +679,15 @@ def _handle_confirmation(order, config: ChannelConfig) -> None:
       explicitly confirms or cancels. No timeout.
     """
     mode = config.confirmation.mode
+    if mode == "immediate":
+        from shopman.shop.services.pos_sales_mode import is_pos_order_mode
+
+        # O canal PDV compartilha dois contratos: Balcão documenta uma entrega
+        # imediata; Encomenda registra uma solicitação que ainda precisa do aceite
+        # humano. A marca está no snapshot desde o commit, então a distinção não
+        # depende da escrita operacional posterior em Order.data.
+        if is_pos_order_mode(order):
+            mode = "manual"
 
     if mode == "immediate":
         ensure_confirmable(order)

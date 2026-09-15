@@ -323,6 +323,8 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(closed.status_code, 200)
         body = closed.json()
         self.assertTrue(body["ok"])
+        self.assertIn("payment_delivery", body)
+        self.assertEqual(body["payment_delivery"]["template"], "")
         order = Order.objects.get(ref=body["order_ref"])
         self.assertEqual(order.channel_ref, "pdv")
         self.assertEqual(order.total_q, 2600)
@@ -625,6 +627,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
                 }
             ],
             "customer_name": "Cliente PIX",
+            "customer_phone": "(43) 99999-0001",
             "fulfillment_type": "pickup",
             "payment_method": "pix",
             "payment_collection": "terminal",
@@ -645,9 +648,19 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertTrue(body["payment"]["intent_ref"].startswith("PAY-"))
         self.assertIn("000201", body["payment"]["copy_paste"])
         self.assertTrue(body["payment"]["qr_code"].startswith("data:image/png;base64,"))
+        self.assertEqual(body["payment_delivery"]["template"], "payment_requested")
+        self.assertEqual(body["payment_delivery"]["status"], "queued")
         order = Order.objects.get(ref=body["order_ref"])
         self.assertEqual(order.data["payment"]["method"], "pix")
         self.assertEqual(order.data["payment"]["intent_ref"], body["payment"]["intent_ref"])
+        self.assertEqual(
+            Directive.objects.filter(
+                topic="notification.send",
+                payload__order_ref=order.ref,
+                payload__template="payment_requested",
+            ).count(),
+            1,
+        )
 
     def test_api_headless_pos_review_requires_open_cash_shift(self) -> None:
         self.shift.delete()
@@ -1202,6 +1215,35 @@ class POSHeadlessSurfaceContractTests(TestCase):
         ana.refresh_from_db()
         self.assertEqual(ana.phone, "+5543988887777")
         self.assertEqual(corrigido.json()["customer"]["phone"], "+5543988887777")
+
+    def test_api_customer_resolve_corrects_name_only_when_told(self) -> None:
+        ana = Customer.objects.create(
+            ref="CUST-FIX-NAME", first_name="Ana", last_name="Prado",
+            phone="+5543999990011",
+        )
+
+        quieto = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {"customer_ref": ana.ref, "customer_name": "Ana Corrigida"},
+            content_type="application/json",
+        )
+        self.assertEqual(quieto.status_code, 200)
+        ana.refresh_from_db()
+        self.assertEqual(ana.name, "Ana Prado")
+
+        corrigido = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {
+                "customer_ref": ana.ref,
+                "customer_name": "Ana Corrigida",
+                "customer_name_correction": True,
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(corrigido.status_code, 200)
+        ana.refresh_from_db()
+        self.assertEqual(ana.name, "Ana Corrigida")
+        self.assertEqual(corrigido.json()["customer"]["name"], "Ana Corrigida")
 
     def test_api_customer_resolve_refuses_correcting_into_someone_elses_number(self) -> None:
         # Corrigir não é roubar: o número novo já é de terceiro → mesma recusa.

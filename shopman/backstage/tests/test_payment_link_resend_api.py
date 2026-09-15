@@ -24,6 +24,7 @@ from shopman.shop.models import Channel, Shop
 from shopman.shop.services import notification as notification_svc
 
 POS_URL = "/api/v1/backstage/pos/orders/{ref}/resend-payment-link/"
+POS_NOTICE_URL = "/api/v1/backstage/pos/orders/{ref}/send-payment-notice/"
 GESTOR_URL = "/api/v1/backstage/orders/{ref}/resend-payment-link/"
 CHECKOUT_URL = "https://checkout.stripe.com/c/pay/cs_test_api"
 
@@ -156,6 +157,53 @@ class POSResendPaymentLinkTests(_ResendContract, TestCase):
 
     def perm_object(self) -> Permission:
         return _operate_pos_perm()
+
+    def test_envio_generico_de_pix_devolve_evidencia_sem_pii(self) -> None:
+        order = Order.objects.create(
+            ref="PIX-NOTICE-1", channel_ref="pdv", session_key="pix-notice-1",
+            status=Order.Status.ACCEPTED, total_q=1500,
+            data={
+                "customer": {"name": "Ana", "phone": "+5543999990002", "email": "ana@example.org"},
+                "fulfillment_type": "pickup",
+                "payment": {"method": "pix", "amount_q": 1500, "copy_paste": "000201010212..."},
+            },
+        )
+
+        response = self.client.post(
+            POS_NOTICE_URL.format(ref=order.ref), data={"action": "send"}, content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        delivery = response.json()["payment_delivery"]
+        self.assertEqual(delivery["template"], "payment_requested")
+        self.assertEqual(delivery["status"], "queued")
+        self.assertEqual(delivery["channel"], "")
+        self.assertNotIn("+5543999990002", str(delivery))
+        self.assertNotIn("ana@example.org", str(delivery))
+        self.assertEqual(
+            Directive.objects.filter(
+                topic=notification_svc.TOPIC,
+                payload__template="payment_requested",
+                payload__order_ref=order.ref,
+            ).count(),
+            1,
+        )
+
+    def test_envio_generico_recusa_pix_sem_codigo_com_motivo(self) -> None:
+        order = Order.objects.create(
+            ref="PIX-NOTICE-2", channel_ref="pdv", session_key="pix-notice-2",
+            status=Order.Status.ACCEPTED, total_q=1500,
+            data={"customer": {"phone": "+5543999990002"}, "payment": {"method": "pix"}},
+        )
+
+        response = self.client.post(
+            POS_NOTICE_URL.format(ref=order.ref), data={"action": "send"}, content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        body = response.json()
+        self.assertEqual(body["error"]["code"], "payment_pix_unavailable")
+        self.assertEqual(body["payment_delivery"]["reason_code"], "payment_pix_unavailable")
 
 
 class GestorResendPaymentLinkTests(_ResendContract, TestCase):
