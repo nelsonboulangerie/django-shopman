@@ -72,15 +72,19 @@ vínculo local nem captura validada autorizam publicação dos produtos de exemp
 
 ## Migração coordenada
 
-A migração final ainda precisa ser gerada na dependência acordada pela coordenação.
-O número 0054 foi reservado, mas não se deve inventar dependência em 0053 de outra
-frente antes da composição. Testes provisórios usam `--nomigrations`; esta entrega
-não pode ser ativada num banco sem as tabelas correspondentes.
+A migração `0055_catalog_snapshot_binding` depende da
+`0054_disable_remote_auto_confirmation` real da PR 680, que sucede
+`0053_marketing_delivery_identity` da PR 634. Ela cria somente as tabelas,
+índice e restrição de identidade; não importa dados nem habilita integração.
+A fatia Concierge deve seguir como 0056, e L7 como 0057. Esta entrega não pode ser ativada num
+banco sem as tabelas correspondentes.
 
 ## Gestor e validação desta etapa
 
 O acesso fica em Canais, ação **Revisar vínculos**, rota
-`/channels/<ref>/catalog`. A tela importa uma captura completa e oferece seleção
+`/channels/<ref>/catalog`. A projeção `catalog_bindings.py` está registrada na
+superfície existente `headless-operator-api` do Unfold Canonical Gate, junto ao
+catálogo e aos feeds do Gestor; o registro identifica a API e a página consumidora. A tela importa uma captura completa e oferece seleção
 explícita de SKU, prévia e confirmação local. Exibe a evidência externa preservada;
 não duplica os editores canônicos de preço, pausa ou cadastro. A identidade futura
 pode ser exposta no produto sem criar outro mecanismo de sincronização.
@@ -105,5 +109,18 @@ Validação em 15/09/2026 UTC:
 
 Não incluir capturas privadas no Git. O delta desta etapa permanece em commit
 local separado, sobre composição de desenvolvimento das PRs 662 e 669. Extrair
-somente esse delta depois da integração das dependências, gerar a migração 0054
-na sequência coordenada e validar migração real antes de abrir a entrega final.
+somente esse delta e o commit separado da migração 0055 depois da integração
+das dependências. Não publicar toda a composição como uma alteração nova.
+
+A composição com `main fe3eaab431` e PR 634 `dce671568` validou a migração
+completa do zero em SQLite e PostgreSQL 16 UTF-8, incluindo presença da migração
+aplicada e da restrição `unique_catalog_remote_resource`. A regressão de vínculos
+com migrações reais passou: 21 testes no PostgreSQL, 19 e dois skips específicos
+de concorrência no SQLite. `makemigrations --check --dry-run` para todos os apps
+não apontou mudanças. Os 17 testes da interface e a verificação de tipos também
+passaram novamente nesta composição. Essas provas são locais, sem envio iFood.
+
+A renumeração após a composição com o head real da PR 680 (`55155f7a45`)
+foi validada novamente com `makemigrations --check` de todos os apps e migração
+integral em SQLite privado: 0053 → 0054 de confirmação remota → 0055 de catálogo.
+Os modelos e as operações de criação da migração de catálogo não mudaram.
