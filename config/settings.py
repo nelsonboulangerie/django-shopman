@@ -314,6 +314,7 @@ MIDDLEWARE = [
     "shopman.backstage.middleware.OnboardingMiddleware",
     # Admin 2FA gate (no-op unless SHOPMAN_ADMIN_REQUIRE_2FA) — after OTPMiddleware.
     "shopman.backstage.middleware_2fa.AdminTwoFactorMiddleware",
+    "shopman.backstage.middleware_admin_login.AdminLoginRateLimitMiddleware",
     "shopman.shop.middleware.APIVersionHeaderMiddleware",
 ]
 
