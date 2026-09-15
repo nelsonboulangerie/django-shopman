@@ -15,15 +15,14 @@ from typing import Literal
 from django.conf import settings
 from django.utils import timezone
 
+from shopman.shop.services.marketing_capabilities import DESTINATIONS, platform_kind
+
 PUBLICATION = "publication"
 DIRECT_MESSAGE = "direct_message"
 logger = logging.getLogger(__name__)
 
 PLATFORM_KIND: dict[str, str] = {
-    "instagram": PUBLICATION,
-    "facebook": PUBLICATION,
-    "google_business": PUBLICATION,
-    "whatsapp": DIRECT_MESSAGE,
+    destination.platform: destination.delivery_kind for destination in DESTINATIONS
 }
 ReadinessState = Literal["ready", "degraded", "blocked", "unknown"]
 
@@ -60,7 +59,7 @@ def readiness_for(
     clock = _aware_now(now)
     out = []
     for platform in platforms or []:
-        kind = PLATFORM_KIND.get(platform)
+        kind = platform_kind(platform)
         if kind is None:
             out.append(
                 PlatformReadiness(

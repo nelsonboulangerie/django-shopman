@@ -198,6 +198,8 @@ class ResolvedDispatchArtifact:
 
     platform: str
     body: str
+    delivery_kind: str = ""
+    format: str = ""
     hashtags: tuple[str, ...] = ()
     link: str = ""
     image_url: str = ""
@@ -224,6 +226,13 @@ class ResolvedDispatchArtifact:
             "facts_as_of": self.facts_as_of,
             "facts_hash": self.facts_hash,
         }
+        # Schema-v4 approvals always include the complete destination identity.
+        # Omission remains possible only for byte-compatible historical fixtures.
+        if self.delivery_kind or self.format:
+            payload.update({
+                "delivery_kind": self.delivery_kind,
+                "format": self.format,
+            })
         # Old sealed artifacts did not have a flow binding.  Omitting an absent
         # binding preserves their canonical bytes and keeps schema-v2 readable.
         if self.flow_ref or self.flow_version or self.flow_catalog_hash:

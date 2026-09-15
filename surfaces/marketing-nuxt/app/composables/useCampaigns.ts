@@ -33,6 +33,9 @@ export function useCampaigns() {
   const templates = computed(() => options.value?.templates ?? []);
   const triggers = computed(() => options.value?.triggers ?? []);
   const platforms = computed(() => options.value?.platforms ?? []);
+  const deliveryCapabilities = computed(
+    () => options.value?.delivery_capabilities ?? [],
+  );
   const variables = computed(() => options.value?.variables ?? []);
   const priceTiers = computed(() => options.value?.price_tiers ?? []);
   const tags = computed(() => options.value?.tags ?? []);
@@ -108,6 +111,7 @@ export function useCampaigns() {
     templates,
     triggers,
     platforms,
+    deliveryCapabilities,
     platformLabels,
     variables,
     priceTiers,

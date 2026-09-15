@@ -148,6 +148,8 @@ def test_database_unique_prevents_duplicate_logical_target():
                 artifact=outbox.artifact,
                 member=members[0],
                 platform=outbox.platform,
+                delivery_kind=target.delivery_kind,
+                format=target.format,
                 wave_key=outbox.wave_key,
                 target_fingerprint=target.target_fingerprint,
                 fingerprint_key_version=target.fingerprint_key_version,
@@ -197,6 +199,12 @@ def test_public_platform_has_one_non_recipient_target():
     assert first[0].pk == replay[0].pk
     assert first[0].member_id is None
     assert first[0].platform == "instagram"
+    # A fixture schema-v1 is readable without rewriting its historical outbox;
+    # the newly materialized target receives the explicit canonical identity.
+    assert (first[0].delivery_kind, first[0].format) == (
+        "publication",
+        "story",
+    )
 
 
 def test_member_from_another_snapshot_is_rejected():
