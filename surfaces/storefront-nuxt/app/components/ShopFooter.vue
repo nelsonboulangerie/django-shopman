@@ -46,10 +46,10 @@ const year = new Date().getFullYear()
              eles: a varredura de 20/08 não achou "Privacidade", "Termos", "LGPD" nem
              "CNPJ" em lugar nenhum do site. É exigência do art. 9º da LGPD e do Decreto
              7.962/2013, e o rodapé é o único lugar que aparece em toda tela. -->
-        <NuxtLink to="/privacy" class="block text-sm opacity-75 underline-offset-2 hover:underline hover:opacity-100">
+        <NuxtLink to="/privacidade" class="block text-sm opacity-75 underline-offset-2 hover:underline hover:opacity-100">
           Privacidade
         </NuxtLink>
-        <NuxtLink to="/terms" class="block text-sm opacity-75 underline-offset-2 hover:underline hover:opacity-100">
+        <NuxtLink to="/termos" class="block text-sm opacity-75 underline-offset-2 hover:underline hover:opacity-100">
           Termos de uso
         </NuxtLink>
       </section>

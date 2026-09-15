@@ -4,8 +4,8 @@ import { notifyConfirmationMessage } from '~/presentation/stockNotify'
 // "Me avise quando disponível" (WP-3). Esgotado honesto (is_notifiable) ganha um
 // caminho acolhedor em vez de um "+" morto. O opt-in exige o telefone confirmado
 // pela identidade canônica: anônimo entra preservando página + SKU e volta para
-// uma confirmação explícita, sem redigitar o número nem confiar em texto livre.
-// O estado "inscrito" PERSISTE: vem da projeção (prop subscribed).
+// confirmar explicitamente o aviso e a maioridade, sem redigitar o número nem
+// confiar em texto livre. O estado "inscrito" PERSISTE: vem da projeção.
 const props = defineProps<{
   sku: string
   // Nome do produto — usado em aria-label/tooltip (acessibilidade entre muitos cards).
@@ -35,6 +35,9 @@ const router = useRouter()
 const submitting = ref(false)
 const isSubscribed = ref(!!props.subscribed)
 const managementUrl = ref('')
+const sheetOpen = ref(false)
+const adultDeclared = ref(false)
+const declarationError = ref('')
 const intendedSku = computed(() => {
   const value = route.query.aviso
   return Array.isArray(value) ? String(value[0] || '') : String(value || '')
@@ -49,7 +52,7 @@ async function subscribe () {
       method: 'POST',
       headers: await csrfHeaders(),
       credentials: 'include',
-      body: {}
+      body: { adult_declared: true }
     })
     managementUrl.value = String(result?.management_url || '')
     isSubscribed.value = true
@@ -71,8 +74,21 @@ async function clearIntention () {
   await router.replace({ path: route.path, query, hash: route.hash })
 }
 
-async function onAuthenticatedClick () {
-  if (await subscribe()) await clearIntention()
+function onAuthenticatedClick () {
+  declarationError.value = ''
+  sheetOpen.value = true
+}
+
+async function onSubmit () {
+  declarationError.value = ''
+  if (!adultDeclared.value) {
+    declarationError.value = 'Confirme que você tem 18 anos ou mais.'
+    return
+  }
+  if (!await subscribe()) return
+  sheetOpen.value = false
+  adultDeclared.value = false
+  await clearIntention()
 }
 
 async function onAnonymousClick () {
@@ -141,7 +157,7 @@ const managementHref = computed(() => managementUrl.value || (isAuthenticated.va
     </UiButton>
   </template>
 
-  <!-- Logado: um clique assina com o telefone da conta. -->
+  <!-- Logado: usa o telefone canônico da conta e pede a confirmação 18+. -->
   <template v-else-if="isAuthenticated">
     <p v-if="needsConfirmation && !compact && !pill" class="shop-meta text-muted-foreground" role="status">
       WhatsApp confirmado. Confirme para ativar este aviso.
@@ -203,4 +219,33 @@ const managementHref = computed(() => managementUrl.value || (isAuthenticated.va
       Entrar para ser avisado
     </UiButton>
   </template>
+
+  <BottomSheet
+    v-if="isAuthenticated"
+    v-model:open="sheetOpen"
+    max-width="sm"
+    title="Confirme seu aviso"
+    description="Usaremos o WhatsApp confirmado na sua conta. O aviso continua ativo até você pausar ou cancelar."
+    data-stock-notify-sheet
+  >
+    <form class="shop-stack-block px-4 py-4" @submit.prevent="onSubmit">
+      <label class="flex items-start gap-3 text-sm leading-5">
+        <UiCheckbox v-model="adultDeclared" aria-label="Confirmar maioridade" class="mt-0.5" />
+        <span>Declaro ter 18 anos ou mais e quero receber estes avisos.</span>
+      </label>
+      <p v-if="declarationError" class="shop-meta text-destructive" role="alert">{{ declarationError }}</p>
+      <UiButton type="submit" size="lg" class="w-full" :loading="submitting" icon="lucide:bell">
+        Ativar aviso
+      </UiButton>
+      <UiButton
+        type="button"
+        variant="ghost"
+        size="sm"
+        class="-ml-2 self-start text-muted-foreground hover:text-foreground"
+        @click="sheetOpen = false"
+      >
+        Agora não
+      </UiButton>
+    </form>
+  </BottomSheet>
 </template>

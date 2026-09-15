@@ -1,27 +1,29 @@
 <script setup lang="ts">
-// Termos de uso e de venda.
-//
-// O Decreto 7.962/2013 (comércio eletrônico) pede identificação do fornecedor
-// em local de destaque, condições da oferta e canal de atendimento. Nada disso
-// existia na loja antes desta página.
-//
-// ⚠️ ESTE TEXTO PRECISA DO AVAL DO DONO antes do go-live. O que está aqui
-// descreve o comportamento real do sistema (prazo de confirmação, cancelamento,
-// pagamento, retirada e entrega vieram do código), mas três pontos são decisão
-// dele, e o texto hoje diz o mínimo enquanto ele não decide:
-//   1. a política de troca e devolução de alimento, e como o art. 49 do CDC
-//      (arrependimento em 7 dias) se aplica a produto perecível;
-//   2. o prazo e a forma do estorno quando o pedido é cancelado depois de pago;
-//   3. razão social e horário oficial de atendimento.
+import { resolveNelsonPublicShop } from '~/utils/nelsonFallback'
+
+// Termos públicos da loja. A redação preserva expressamente os direitos do CDC;
+// regra operacional nunca pode reduzir direito legal por ser alimento perecível.
+definePageMeta({
+  path: '/termos',
+  alias: ['/terms']
+})
+
 const session = useShopSession()
-const shop = computed(() => session.shop.value)
+const shop = computed(() => resolveNelsonPublicShop(session.shop.value))
 const addressLinesList = computed(() => addressLines(shop.value?.full_address))
 const openingHours = computed(() => session.openingHours.value)
-const updatedAt = '20 de agosto de 2026'
+const policyVersion = '2026-09-12'
+const updatedAt = '12 de setembro de 2026'
+const archivedVersionUrl = '/documentos-legais/termos/2026-09-12.html'
 
 useSeoMeta({
   title: 'Termos de uso',
   description: 'Quem somos, como o pedido funciona, e o que vale em pagamento, retirada, entrega e cancelamento.'
+})
+
+useHead({
+  link: [{ rel: 'canonical', href: '/termos' }],
+  meta: [{ name: 'terms-version', content: policyVersion }]
 })
 </script>
 
@@ -37,12 +39,15 @@ useSeoMeta({
       <div>
         <h1 class="shop-title">Termos de uso</h1>
         <p class="shop-muted">Atualizados em {{ updatedAt }}.</p>
+        <NuxtLink :to="archivedVersionUrl" target="_blank" class="mt-2 inline-block text-sm underline underline-offset-2">
+          Abrir cópia permanente desta versão
+        </NuxtLink>
       </div>
 
       <section class="space-y-2">
         <h2 class="shop-heading">Quem vende</h2>
         <p class="text-sm leading-6">
-          {{ shop?.brand_name || 'A loja' }}<template v-if="shop?.document_display">, CNPJ {{ shop.document_display }}</template>.
+          <strong>{{ shop?.legal_name || shop?.brand_name || 'A loja' }}</strong><template v-if="shop?.brand_name && shop.brand_name !== shop.legal_name">, nome fantasia {{ shop.brand_name }}</template><template v-if="shop?.document_display">, CNPJ {{ shop.document_display }}</template>.
         </p>
         <p v-if="addressLinesList.length" class="text-sm leading-6">
           <span v-for="line in addressLinesList" :key="line" class="block">{{ line }}</span>
@@ -80,6 +85,20 @@ useSeoMeta({
           a própria tela do pedido informa o tempo e a consequência. Enquanto o cancelamento estiver
           disponível, ele aparece como ação no acompanhamento.
         </p>
+        <p class="text-sm leading-6">
+          Antes da confirmação, a revisão mostra itens, valores, forma de pagamento, entrega ou
+          retirada e os links destes termos e da política de privacidade. O pedido registra a
+          versão aplicável desses documentos; você pode abrir e guardar uma cópia pelos links.
+        </p>
+      </section>
+
+      <section class="space-y-2">
+        <h2 class="shop-heading">Pedidos para outra pessoa</h2>
+        <p class="text-sm leading-6">
+          Ao informar nome, telefone, endereço ou recado de um destinatário, você declara que pode
+          fornecer esses dados para a entrega ou presente. A loja usa essas informações somente
+          para cumprir o pedido e prestar o atendimento relacionado.
+        </p>
       </section>
 
       <section class="space-y-2">
@@ -104,12 +123,20 @@ useSeoMeta({
       <section class="space-y-2">
         <h2 class="shop-heading">Cancelamento, troca e devolução</h2>
         <p class="text-sm leading-6">
-          Você cancela pelo acompanhamento enquanto o pedido não entrou em preparo. Depois disso,
-          fale com a gente: alimento em preparo ou já assado não volta para a prateleira.
+          Em compra feita pela internet, você pode exercer o direito de arrependimento no prazo
+          legal de sete dias, contado da contratação ou do recebimento. Enquanto o botão
+          <strong>Cancelar pedido</strong> estiver disponível, ele resolve imediatamente. Depois
+          disso, <strong>Solicitar cancelamento</strong> registra o pedido no próprio acompanhamento,
+          confirma o recebimento com um protocolo e encaminha a análise à equipe. A solicitação não
+          promete cancelamento automático quando preparo ou entrega já começaram, mas não limita os
+          direitos previstos no Código de Defesa do Consumidor.
         </p>
         <p class="text-sm leading-6">
-          Se algo chegar errado ou fora do padrão, avise no mesmo dia e a gente resolve: troca o
-          item ou devolve o valor pago, você escolhe.
+          Se houver pagamento, o estorno será solicitado pelo mesmo meio de pagamento; o prazo para
+          o crédito aparecer pode depender do banco ou do gateway. Alimento devolvido não volta à
+          venda por segurança sanitária. Se algo chegar errado, impróprio ou diferente da oferta,
+          avise assim que perceber: os direitos de troca, abatimento ou restituição previstos em lei
+          continuam preservados.
         </p>
       </section>
 
@@ -123,7 +150,21 @@ useSeoMeta({
         </p>
         <p class="text-sm leading-6">
           O tratamento dos seus dados está descrito na
-          <NuxtLink to="/privacy" class="underline underline-offset-2">política de privacidade</NuxtLink>.
+          <NuxtLink to="/privacidade" class="underline underline-offset-2">política de privacidade</NuxtLink>.
+        </p>
+        <p class="text-sm leading-6">
+          Menores de 18 anos devem usar a loja com a participação de seu responsável legal. A loja
+          não direciona mensagens promocionais a quem não tenha declarado ser maior de idade.
+        </p>
+      </section>
+
+      <section class="space-y-2">
+        <h2 class="shop-heading">Uso interno do Shopman</h2>
+        <p class="text-sm leading-6">
+          O Shopman é a ferramenta interna usada pela empresa para operar pedidos, produção,
+          pagamentos, atendimento e postagens nos canais oficiais. O acesso é restrito a pessoas
+          autorizadas; cada ação sensível respeita as permissões, confirmações e registros de
+          auditoria do sistema. A ferramenta não é oferecida ao público como serviço independente.
         </p>
       </section>
     </div>

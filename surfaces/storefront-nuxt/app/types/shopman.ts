@@ -325,6 +325,7 @@ export interface ShopDesignTokensProjection {
 
 export interface ShopProjection {
   brand_name: string
+  legal_name: string
   short_name: string
   tagline: string
   description: string
@@ -1015,6 +1016,7 @@ export interface AccountStockAlertSubscription {
   event_type: 'stock_back' | 'production_ready'
   event_label: string
   active: boolean
+  requires_adult_confirmation: boolean
   expires_at: string | null
 }
 

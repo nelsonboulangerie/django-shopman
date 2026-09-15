@@ -7,10 +7,10 @@ import hmac
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from django.conf import settings
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 from shopman.guestman.contrib.consent.models import (
     CommunicationConsent,
@@ -292,6 +292,39 @@ class ConsentService:
                 customer__is_active=True,
             )
         )
+
+    @classmethod
+    @transaction.atomic
+    def redact_expired_ip(cls, *, days: int | None = None) -> dict[str, int]:
+        """Remove IP bruto vencido sem apagar a prova imutável do consentimento.
+
+        Finalidade, texto apresentado, hashes, estado e instante continuam
+        append-only. A única mutação admitida aqui é a minimização programada
+        do identificador auxiliar, limitada a no máximo 90 dias.
+        """
+
+        configured = (
+            days
+            if days is not None
+            else getattr(settings, "SHOPMAN_CONSENT_IP_RETENTION_DAYS", 90)
+        )
+        retention_days = min(90, max(1, int(configured)))
+        cutoff = timezone.now() - timedelta(days=retention_days)
+
+        current = CommunicationConsent.objects.filter(
+            ip_address__isnull=False,
+            updated_at__lt=cutoff,
+        )
+        current_count = current.update(ip_address=None)
+
+        events = CommunicationConsentEvent.objects.filter(
+            ip_address__isnull=False,
+            occurred_at__lt=cutoff,
+        )
+        # O QuerySet público recusa update para proteger a trilha. A chamada à
+        # implementação base existe só neste boundary purpose-bound de retenção.
+        event_count = models.QuerySet.update(events, ip_address=None)
+        return {"current": current_count, "events": event_count}
 
     @classmethod
     def get_opted_in_channels(

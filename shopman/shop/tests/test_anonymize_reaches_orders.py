@@ -221,6 +221,64 @@ def test_o_perfil_de_rfm_nao_sobrevive():
     assert not CustomerInsight.objects.filter(customer=customer).exists()
 
 
+def test_personalizacao_e_conversa_nao_sobrevivem():
+    """Conta apagada não deixa CRM nem transcrição ligados ao pseudônimo."""
+    from shopman.guestman import LoyaltyService, PreferenceService, TimelineService
+    from shopman.guestman.contrib.loyalty.models import LoyaltyAccount
+
+    from shopman.shop.models import (
+        Conversation,
+        ConversationBinding,
+        ConversationMessage,
+        OutboundAttempt,
+    )
+
+    customer = _customer()
+    PreferenceService.set_preference(customer.ref, "dietary", "sem_lactose", True)
+    TimelineService.log_event(customer.ref, "contact", "Perguntou sobre alergia")
+    LoyaltyService.enroll(customer.ref)
+    customer.tags.add("vizinho")
+    conversation = Conversation.objects.create(
+        phone=PHONE,
+        customer_ref=customer.ref,
+        customer_name=FIRST_NAME,
+    )
+    binding = ConversationBinding.objects.create(
+        conversation=conversation,
+        provider="manychat",
+        account="nelson-boulangerie",
+        transport_channel="whatsapp",
+        subject="manychat-marina",
+        connection_key="manychat-whatsapp",
+        status=ConversationBinding.Status.ACTIVE,
+        identity_assurance=ConversationBinding.IdentityAssurance.TRANSPORT_SUBJECT,
+    )
+    message = ConversationMessage.objects.create(
+        conversation=conversation,
+        binding=binding,
+        role="assistant",
+        kind="reply",
+        text="Consigo orientar sobre os ingredientes.",
+        transport_state="accepted",
+    )
+    OutboundAttempt.objects.create(
+        message=message,
+        binding=binding,
+        attempt_no=1,
+        state=OutboundAttempt.State.ACCEPTED,
+        provider_receipt_ref="receipt-anon-marina",
+        payload_hash="a" * 64,
+    )
+
+    anonymize_customer(customer)
+
+    assert not customer.preferences.exists()
+    assert not customer.timeline_events.exists()
+    assert not LoyaltyAccount.objects.filter(customer=customer).exists()
+    assert not customer.tags.exists()
+    assert not Conversation.objects.filter(pk=conversation.pk).exists()
+
+
 def test_a_loja_apaga_o_que_e_dela():
     """Favoritos e aviso de reposição vivem em `storefront` e ficavam para trás."""
     from shopman.storefront.models import CustomerFavorite, StockAlertSubscription
@@ -263,12 +321,53 @@ def test_a_exportacao_mostra_o_que_a_exclusao_apaga():
     Order.objects.filter(pk=orphan.pk).update(data=data)
 
     exported = export_customer_data(customer)
-    refs = {row["ref"] for row in exported["orders"]}
+    rows = {row["ref"]: row for row in exported["orders"]}
+    refs = set(rows)
     assert {order.ref, orphan.ref} <= refs
+    assert rows[orphan.ref]["personal_data"]["customer"]["phone"] == PHONE
     assert exported["customer"]["phone"] == PHONE
 
     anonymize_customer(customer)
     assert _sweep((PHONE,)) == []
+
+
+def test_exportacao_nao_trunca_pedidos_ou_fidelidade():
+    from shopman.guestman import LoyaltyService
+    from shopman.guestman.contrib.loyalty.models import LoyaltyTransaction
+
+    from shopman.shop.services.account import export_customer_data
+
+    customer = _customer()
+    orders = [
+        Order(
+            ref=f"EXPORT-{index:03d}",
+            channel_ref="web",
+            session_key=f"export-session-{index:03d}",
+            handle_type="phone",
+            handle_ref=PHONE,
+            data={"customer_ref": customer.ref},
+        )
+        for index in range(201)
+    ]
+    Order.objects.bulk_create(orders)
+    account = LoyaltyService.enroll(customer.ref)
+    LoyaltyTransaction.objects.bulk_create(
+        [
+            LoyaltyTransaction(
+                account=account,
+                transaction_type="earn",
+                points=1,
+                balance_after=index + 1,
+                description=f"Movimento {index}",
+            )
+            for index in range(101)
+        ]
+    )
+
+    exported = export_customer_data(customer)
+
+    assert len(exported["orders"]) == 201
+    assert len(exported["loyalty"]["transactions"]) == 101
 
 
 def test_o_lado_do_login_tambem_esquece_o_telefone():

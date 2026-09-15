@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
+import threading
+import time
 from urllib.parse import quote, urlsplit
 
 from django.conf import settings
@@ -10,6 +13,7 @@ from django.conf import settings
 from shopman.shop.adapters.marketing_delivery_http import (
     HTTPFailure,
     TransportFailure,
+    request_form_json,
     request_json,
 )
 from shopman.shop.services.marketing_contracts import (
@@ -19,6 +23,9 @@ from shopman.shop.services.marketing_contracts import (
 )
 
 _POST_ID = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
+_TOKEN_CACHE: dict[str, tuple[str, float]] = {}
+_TOKEN_LOCK = threading.Lock()
+_TOKEN_EXPIRY_MARGIN_SECONDS = 60
 
 
 def is_available() -> bool:
@@ -26,7 +33,7 @@ def is_available() -> bool:
     return bool(
         _external_allowed()
         and getattr(settings, "SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED", False)
-        and config["access_token"]
+        and _has_credentials(config)
         and config["account_id"]
         and config["location_id"]
     )
@@ -43,6 +50,7 @@ def send(*, artifact, target_key: str, idempotency_token: str) -> ProviderOutcom
     if artifact.image_url and not _public_media_url(artifact.image_url):
         _not_attempted("google_media_url_not_public")
     config = _config()
+    access_token = _access_token(config)
     payload: dict = {
         "languageCode": "pt-BR",
         "summary": _summary(artifact),
@@ -57,7 +65,7 @@ def send(*, artifact, target_key: str, idempotency_token: str) -> ProviderOutcom
         result = request_json(
             method="POST",
             url=_posts_url(config),
-            access_token=config["access_token"],
+            access_token=access_token,
             timeout=config["timeout"],
             payload=payload,
         )
@@ -90,11 +98,12 @@ def lookup(
     if not is_available() or not post_id:
         _not_attempted("google_lookup_unavailable")
     config = _config()
+    access_token = _access_token(config)
     try:
         result = request_json(
             method="GET",
             url=f"{_posts_url(config)}/{quote(post_id, safe='')}",
-            access_token=config["access_token"],
+            access_token=access_token,
             timeout=config["timeout"],
         )
     except HTTPFailure as exc:
@@ -136,10 +145,95 @@ def _config() -> dict:
         "api_base": str(raw.get("api_base") or "https://mybusiness.googleapis.com").rstrip("/"),
         "api_version": str(raw.get("api_version") or "v4").strip("/"),
         "access_token": str(raw.get("access_token") or ""),
+        "client_id": str(raw.get("client_id") or ""),
+        "client_secret": str(raw.get("client_secret") or ""),
+        "refresh_token": str(raw.get("refresh_token") or ""),
+        "token_url": str(raw.get("token_url") or "https://oauth2.googleapis.com/token"),
         "account_id": str(raw.get("account_id") or ""),
         "location_id": str(raw.get("location_id") or ""),
         "timeout": max(1, int(raw.get("timeout") or 30)),
     }
+
+
+def _has_credentials(config: dict) -> bool:
+    return bool(
+        config["access_token"]
+        or (
+            config["client_id"]
+            and config["client_secret"]
+            and config["refresh_token"]
+        )
+    )
+
+
+def _access_token(config: dict) -> str:
+    """Return a renewable bearer token, with static-token canary fallback."""
+
+    if not (config["client_id"] and config["client_secret"] and config["refresh_token"]):
+        return config["access_token"]
+
+    cache_key = _token_cache_key(config)
+    now = time.monotonic()
+    cached = _TOKEN_CACHE.get(cache_key)
+    if cached and cached[1] > now:
+        return cached[0]
+
+    with _TOKEN_LOCK:
+        now = time.monotonic()
+        cached = _TOKEN_CACHE.get(cache_key)
+        if cached and cached[1] > now:
+            return cached[0]
+        try:
+            response = request_form_json(
+                url=config["token_url"],
+                timeout=config["timeout"],
+                payload={
+                    "client_id": config["client_id"],
+                    "client_secret": config["client_secret"],
+                    "refresh_token": config["refresh_token"],
+                    "grant_type": "refresh_token",
+                },
+            )
+        except HTTPFailure as exc:
+            kind = (
+                ProviderOutcomeKind.FAILED_RETRYABLE
+                if exc.status == 429 or 500 <= exc.status <= 599
+                else ProviderOutcomeKind.FAILED_FINAL
+            )
+            raise ProviderCallFailure(
+                kind,
+                "google_oauth_refresh_unavailable"
+                if kind == ProviderOutcomeKind.FAILED_RETRYABLE
+                else "google_oauth_refresh_rejected",
+                exc.retry_after_seconds,
+            ) from None
+        except TransportFailure:
+            raise ProviderCallFailure(
+                ProviderOutcomeKind.FAILED_RETRYABLE,
+                "google_oauth_refresh_unavailable",
+            ) from None
+
+        token = str(response.get("access_token") or "").strip()
+        token_type = str(response.get("token_type") or "Bearer").strip().lower()
+        if not token or token_type != "bearer":
+            raise ProviderCallFailure(
+                ProviderOutcomeKind.FAILED_FINAL,
+                "google_oauth_refresh_response_invalid",
+            )
+        try:
+            expires_in = max(1, int(response.get("expires_in") or 300))
+        except (TypeError, ValueError):
+            expires_in = 300
+        usable_for = max(1, expires_in - _TOKEN_EXPIRY_MARGIN_SECONDS)
+        _TOKEN_CACHE[cache_key] = (token, now + usable_for)
+        return token
+
+
+def _token_cache_key(config: dict) -> str:
+    material = "\0".join(
+        (config["token_url"], config["client_id"], config["refresh_token"])
+    ).encode("utf-8")
+    return hashlib.sha256(material).hexdigest()
 
 
 def _posts_url(config: dict) -> str:

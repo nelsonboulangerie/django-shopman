@@ -25,9 +25,10 @@ from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 
 logger = logging.getLogger(__name__)
 
-STOCK_ALERT_DISCLOSURE_VERSION = "stock-availability-pt-BR-v3"
+STOCK_ALERT_DISCLOSURE_VERSION = "stock-availability-pt-BR-v4"
 STOCK_ALERT_DISCLOSURE = (
-    "Quero receber avisos por WhatsApp sobre novas ocorrências deste produto. "
+    "Declaro ter 18 anos ou mais e quero receber avisos por WhatsApp sobre "
+    "novas ocorrências deste produto. "
     "O aviso continua ativo até eu pausar ou cancelar."
 )
 
@@ -143,6 +144,7 @@ def subscribe(
     alert_type: str = "",
     disclosure_text: str = STOCK_ALERT_DISCLOSURE,
     disclosure_version: str = STOCK_ALERT_DISCLOSURE_VERSION,
+    adult_declared: bool = True,
 ):
     """Register or resume a persistent alert. Returns it or ``None``.
 
@@ -167,6 +169,7 @@ def subscribe(
         alert_type=alert_type,
         disclosure_text=disclosure_text,
         disclosure_version=disclosure_version,
+        adult_declared=adult_declared,
     ).subscription
 
 
@@ -180,6 +183,7 @@ def subscribe_with_outcome(
     alert_type: str = "",
     disclosure_text: str = STOCK_ALERT_DISCLOSURE,
     disclosure_version: str = STOCK_ALERT_DISCLOSURE_VERSION,
+    adult_declared: bool = True,
     resume_existing: bool = True,
 ) -> SubscribeOutcome:
     """Subscribe and report whether this transaction created the row.
@@ -195,7 +199,7 @@ def subscribe_with_outcome(
     contact = normalize_phone(phone or getattr(customer, "phone", "") or "")
     disclosure_text = (disclosure_text or "").strip()
     disclosure_version = (disclosure_version or "").strip()
-    if not contact or not disclosure_text or not disclosure_version:
+    if not contact or not disclosure_text or not disclosure_version or adult_declared is not True:
         return SubscribeOutcome(None, False)
 
     channel_ref = channel_ref or "web"
@@ -211,6 +215,7 @@ def subscribe_with_outcome(
     existing = StockAlertSubscription.objects.filter(
         **selector,
         proof_status="verified",
+        adult_declared=True,
     ).first()
     if existing:
         if resume_existing and existing.paused_at is not None:
@@ -240,6 +245,7 @@ def subscribe_with_outcome(
         target_key=target_key,
         disclosure_hash=disclosure_hash,
         disclosure_version=disclosure_version,
+        adult_declared=adult_declared,
         occurred_at=now,
     )
     try:
@@ -259,13 +265,19 @@ def subscribe_with_outcome(
                 disclosure_hash=disclosure_hash,
                 evidence_hash=evidence_hash,
                 proof_status="verified",
+                adult_declared=adult_declared,
                 expires_at=None,
             )
             return SubscribeOutcome(created, True)
     except IntegrityError:
         # The database unique is the race winner. A simultaneous equivalent click
         # receives that same subscription instead of surfacing a transient 500.
-        return SubscribeOutcome(StockAlertSubscription.objects.active().get(**selector), False)
+        # A rolling old writer can still win with the database-safe defaults
+        # (legacy_unverified/adult_declared=False).  That row is deliberately not
+        # promoted here: absence of evidence must fail closed and a later explicit
+        # confirmation may create a fresh, evidenced subscription.
+        winner = StockAlertSubscription.objects.active().filter(**selector).first()
+        return SubscribeOutcome(winner, False)
 
 
 @transaction.atomic
@@ -332,6 +344,8 @@ def set_paused(
         qs = qs.filter(sku=sku)
     sub = qs.first()
     if sub is None or not _owned_by(sub, customer=customer, phone=phone):
+        return False
+    if not paused and not sub.adult_declared:
         return False
     sub.paused_at = timezone.now() if paused else None
     sub.pause_reason = (reason or "customer_request")[:100] if paused else ""
@@ -992,6 +1006,7 @@ def _subscription_evidence_hash(
     target_key: str,
     disclosure_hash: str,
     disclosure_version: str,
+    adult_declared: bool,
     occurred_at,
 ) -> str:
     evidence = json.dumps(
@@ -1005,6 +1020,7 @@ def _subscription_evidence_hash(
             "target_key": target_key,
             "disclosure_hash": disclosure_hash,
             "disclosure_version": disclosure_version,
+            "adult_declared": adult_declared,
             "occurred_at": occurred_at.isoformat(),
         },
         ensure_ascii=False,

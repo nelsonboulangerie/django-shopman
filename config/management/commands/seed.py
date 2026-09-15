@@ -1016,6 +1016,13 @@ class Command(BaseCommand):
 
         tier = PriceTier.objects.get(ref="varejo")
         tag = CustomerTag.resolve(["QA Marketing E2E"])[0]
+        today = timezone.localdate()
+        try:
+            adult_birthday = today.replace(year=today.year - 30)
+        except ValueError:
+            # 29/02 não existe em todo ano; 28/02 mantém o perfil inequivocamente
+            # adulto sem tornar o seed dependente do calendário da execução.
+            adult_birthday = today.replace(year=today.year - 30, day=28)
         for index in range(1, 13):
             ref = f"QA-MKT-{index:03d}"
             phone = f"+554390000{index:04d}"
@@ -1027,7 +1034,7 @@ class Command(BaseCommand):
                     "customer_type": "individual",
                     "price_tier": tier,
                     "phone": phone,
-                    "birthday": timezone.localdate(),
+                    "birthday": adult_birthday,
                     "is_active": True,
                 },
             )

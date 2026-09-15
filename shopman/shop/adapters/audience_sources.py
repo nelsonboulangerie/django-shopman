@@ -19,6 +19,7 @@ from datetime import datetime
 class ActiveAlertSubscription:
     ref: object
     contact_phone: str
+    adult_declared: bool
 
 
 def favorite_customer_refs(sku: str) -> list[str]:
@@ -68,14 +69,14 @@ def notified_alert_count(sku: str) -> int:
     )
 
 
-def pending_alert_contacts(sku: str) -> list[tuple[str, str, object]]:
-    """``(phone, customer_ref, ref)`` for each active SKU opt-in."""
+def pending_alert_contacts(sku: str) -> list[tuple[str, str, object, bool]]:
+    """Contact plus ref and 18+ declaration for each active SKU opt-in."""
     from shopman.storefront.models import StockAlertSubscription
 
     return list(
         StockAlertSubscription.objects.active()
         .filter(sku=sku)
-        .values_list("contact_phone", "customer_ref", "ref")
+        .values_list("contact_phone", "customer_ref", "ref", "adult_declared")
     )
 
 
@@ -89,11 +90,15 @@ def active_alert_subscriptions(
     rows = (
         StockAlertSubscription.objects.active(now=now)
         .filter(ref__in=tuple(refs))
-        .values_list("ref", "contact_phone")
+        .values_list("ref", "contact_phone", "adult_declared")
     )
     return tuple(
-        ActiveAlertSubscription(ref=ref, contact_phone=phone)
-        for ref, phone in rows
+        ActiveAlertSubscription(
+            ref=ref,
+            contact_phone=phone,
+            adult_declared=adult_declared,
+        )
+        for ref, phone, adult_declared in rows
     )
 
 

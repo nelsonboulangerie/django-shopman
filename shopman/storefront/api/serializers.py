@@ -126,6 +126,7 @@ class AvailabilityResponseSerializer(serializers.Serializer):
 
 
 class StockAlertSubscribeRequestSerializer(serializers.Serializer):
+    adult_declared = serializers.BooleanField(required=True)
     alert_type = serializers.ChoiceField(
         choices=["stock_back", "production_ready"],
         required=False,

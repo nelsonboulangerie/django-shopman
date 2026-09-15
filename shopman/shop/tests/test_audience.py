@@ -7,7 +7,7 @@ canal de entrega, ninguém entra na audiência. Todo o resto é otimização.
 from __future__ import annotations
 
 import types
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 from django.utils import timezone
@@ -22,18 +22,30 @@ from shopman.storefront.models import CustomerFavorite, StockAlertSubscription
 pytestmark = pytest.mark.django_db
 
 SKU = "croissant-trad"
+_DEFAULT_BIRTHDAY = object()
 
 
 def _customer(
-    phone: str, *, first_name: str = "Ana", opted_in: bool | None = True, ref: str = ""
+    phone: str,
+    *,
+    first_name: str = "Ana",
+    opted_in: bool | None = True,
+    ref: str = "",
+    birthday: date | None | object = _DEFAULT_BIRTHDAY,
 ) -> Customer:
     """Cliente com consentimento no canal de entrega.
 
     ``opted_in=True`` concede, ``False`` revoga, ``None`` não cria registro
     nenhum — e ausência de registro é opt-out, igual a revogação.
     """
+    if birthday is _DEFAULT_BIRTHDAY:
+        today = timezone.localdate()
+        birthday = today.replace(year=today.year - 30)
     customer = Customer.objects.create(
-        ref=ref or f"CLI-{phone[-4:]}", first_name=first_name, phone=phone
+        ref=ref or f"CLI-{phone[-4:]}",
+        first_name=first_name,
+        phone=phone,
+        birthday=birthday,
     )
     if opted_in is True:
         ConsentService.grant_consent(
@@ -111,6 +123,38 @@ class TestConsent:
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
 
         assert audience.resolve({"favorites": True}, sku=SKU).total == 0
+
+    def test_known_minor_is_excluded_even_with_channel_consent(self):
+        today = timezone.localdate()
+        minor = _customer(
+            "+5543999990099",
+            birthday=today.replace(year=today.year - 17),
+        )
+        CustomerFavorite.objects.create(customer_ref=minor.ref, sku=SKU)
+
+        result = audience.resolve({"favorites": True}, sku=SKU)
+
+        assert result.total == 0
+        assert result.excluded_by_reason["known_minor"] == 1
+
+    def test_customer_who_is_exactly_18_remains_eligible(self):
+        today = timezone.localdate()
+        adult = _customer(
+            "+5543999990098",
+            birthday=today.replace(year=today.year - 18),
+        )
+        CustomerFavorite.objects.create(customer_ref=adult.ref, sku=SKU)
+
+        assert audience.resolve({"favorites": True}, sku=SKU).total == 1
+
+    def test_unknown_age_is_excluded_even_with_channel_consent(self):
+        customer = _customer("+5543999990097", birthday=None)
+        CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
+
+        result = audience.resolve({"favorites": True}, sku=SKU)
+
+        assert result.total == 0
+        assert result.excluded_by_reason == {"age_not_declared": 1}
 
 
 # ── Alertas por SKU (F9) ─────────────────────────────────────────────

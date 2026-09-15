@@ -129,6 +129,7 @@ def test_subscribe_dedupes_phone_formats_and_keeps_verifiable_evidence():
     assert first.pk == second.pk
     assert first.contact_phone == "+5543999990001"
     assert first.proof_status == "verified"
+    assert first.adult_declared is True
     assert first.disclosure_version == stock_alerts.STOCK_ALERT_DISCLOSURE_VERSION
     assert len(first.disclosure_hash) == 64
     assert len(first.evidence_hash) == 64
@@ -158,6 +159,23 @@ def test_subscribe_requires_a_contact():
     assert stock_alerts.subscribe("SKU-1") is None
 
 
+def test_subscribe_requires_an_adult_declaration():
+    assert stock_alerts.subscribe("SKU-ADULT", phone=PHONE, adult_declared=False) is None
+    assert not StockAlertSubscription.objects.filter(sku="SKU-ADULT").exists()
+
+
+def test_subscribe_race_with_ineligible_old_writer_fails_closed_without_500():
+    with patch.object(StockAlertSubscription.objects, "create", side_effect=IntegrityError):
+        outcome = stock_alerts.subscribe_with_outcome(
+            "SKU-OLD-WRITER-RACE",
+            phone=PHONE,
+            adult_declared=True,
+        )
+
+    assert outcome.subscription is None
+    assert outcome.created is False
+
+
 def test_subscribe_reconfirms_legacy_row_without_consent_evidence():
     legacy = StockAlertSubscription.objects.create(
         sku="SKU-LEGACY",
@@ -165,7 +183,7 @@ def test_subscribe_reconfirms_legacy_row_without_consent_evidence():
         channel_ref="web",
         contact_phone=PHONE,
         target_key=stock_alerts._target_key(customer_ref="", phone=PHONE),
-        proof_status="unverified",
+        proof_status="legacy_unverified",
     )
 
     current = stock_alerts.subscribe("SKU-LEGACY", phone=PHONE, alert_type="stock_back")
@@ -177,6 +195,55 @@ def test_subscribe_reconfirms_legacy_row_without_consent_evidence():
     assert current.pk != legacy.pk
     assert current.proof_status == "verified"
     assert current.is_active
+
+
+def test_subscribe_reconfirms_verified_row_without_adult_declaration():
+    legacy = StockAlertSubscription.objects.create(
+        sku="SKU-LEGACY-AGE",
+        alert_type="stock_back",
+        channel_ref="web",
+        contact_phone=PHONE,
+        target_key=stock_alerts._target_key(customer_ref="", phone=PHONE),
+        disclosure_text="Texto antigo.",
+        disclosure_version="stock-availability-pt-BR-v3",
+        disclosure_hash="a" * 64,
+        evidence_hash="b" * 64,
+        proof_status="verified",
+        adult_declared=False,
+    )
+
+    current = stock_alerts.subscribe("SKU-LEGACY-AGE", phone=PHONE, alert_type="stock_back")
+
+    legacy.refresh_from_db()
+    assert legacy.revoked_at is not None
+    assert current.pk != legacy.pk
+    assert current.adult_declared is True
+    assert current.is_active
+
+
+def test_legacy_row_cannot_resume_without_a_fresh_adult_declaration():
+    legacy = StockAlertSubscription.objects.create(
+        sku="SKU-LEGACY-RESUME",
+        alert_type="stock_back",
+        channel_ref="web",
+        contact_phone=PHONE,
+        target_key=stock_alerts._target_key(customer_ref="", phone=PHONE),
+        evidence_hash="e" * 64,
+        proof_status="verified",
+        adult_declared=False,
+        paused_at=timezone.now(),
+    )
+
+    resumed = stock_alerts.set_paused(
+        legacy.ref,
+        paused=False,
+        sku=legacy.sku,
+        phone=PHONE,
+    )
+
+    assert resumed is False
+    legacy.refresh_from_db()
+    assert legacy.paused_at is not None
 
 
 # ── notify ──────────────────────────────────────────────────────────
@@ -430,7 +497,7 @@ def test_global_optout_is_rechecked_immediately_before_stock_alert_send():
 def test_endpoint_anonymous_requires_verified_identity_and_ignores_typed_phone(client):
     p = _publish()
     path = f"/api/v1/availability/{p.sku}/notify/"
-    resp = client.post(path, {"phone": PHONE})
+    resp = client.post(path, {"phone": PHONE, "adult_declared": True})
     assert resp.status_code == 401
     assert resp.json() == {
         "detail": "Entre para confirmar seu WhatsApp e ativar este aviso.",
@@ -448,8 +515,8 @@ def test_endpoint_retry_after_lost_response_recovers_same_session_capability(cli
     path = f"/api/v1/availability/{product.sku}/notify/"
     _authenticate(client, ref="CUS-SUBSCRIBE-LOST-RESPONSE")
 
-    first = client.post(path, {}, REMOTE_ADDR="203.0.113.200")
-    repeated = client.post(path, {}, REMOTE_ADDR="203.0.113.200")
+    first = client.post(path, {"adult_declared": True}, REMOTE_ADDR="203.0.113.200")
+    repeated = client.post(path, {"adult_declared": True}, REMOTE_ADDR="203.0.113.200")
 
     assert first.status_code == repeated.status_code == 200
     assert first.json()["management_url"] == repeated.json()["management_url"]
@@ -564,7 +631,7 @@ def test_endpoint_anonymous_does_not_normalize_or_persist_typed_phone(client):
 
 def test_endpoint_anonymous_without_phone_also_routes_to_auth(client):
     p = _publish()
-    resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {})
+    resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {"adult_declared": True})
     assert resp.status_code == 401
     assert resp.json()["auth_required"] is True
     assert not StockAlertSubscription.objects.filter(sku=p.sku).exists()
@@ -576,7 +643,7 @@ def test_authenticated_subscribe_uses_canonical_account_phone_not_request_body(c
 
     response = client.post(
         f"/api/v1/availability/{product.sku}/notify/",
-        {"phone": "+5543999990099"},
+        {"phone": "+5543999990099", "adult_declared": True},
     )
 
     assert response.status_code == 200
@@ -584,6 +651,20 @@ def test_authenticated_subscribe_uses_canonical_account_phone_not_request_body(c
     sub = StockAlertSubscription.objects.get(sku=product.sku)
     assert sub.customer_ref == customer.ref
     assert sub.contact_phone == PHONE
+
+
+def test_authenticated_subscribe_requires_explicit_adult_declaration(client):
+    product = _publish(sku="SKU-ADULT-DECLARATION")
+    _authenticate(client, ref="CUS-ADULT-DECLARATION")
+
+    response = client.post(f"/api/v1/availability/{product.sku}/notify/", {})
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Confirme que você tem 18 anos ou mais para receber este aviso.",
+        "field": "adult_declared",
+    }
+    assert not StockAlertSubscription.objects.filter(sku=product.sku).exists()
 
 
 def test_endpoint_anonymous_can_cancel_only_its_session_subscription(client):
@@ -809,7 +890,7 @@ def test_endpoint_accepts_the_bake_alert_type(client):
     _authenticate(client, ref="CUS-BAKE-API")
     resp = client.post(
         f"/api/v1/availability/{p.sku}/notify/",
-        {"alert_type": "production_ready"},
+        {"alert_type": "production_ready", "adult_declared": True},
     )
     assert resp.status_code == 200
     sub = StockAlertSubscription.objects.get(sku=p.sku)
@@ -883,7 +964,10 @@ def test_endpoint_derives_the_oven_axis_without_the_front_asking(client):
     """A tela continua dizendo só "avise-me sobre este produto"."""
     p = _publish(sku="BF-API", is_batch_produced=True)
     _authenticate(client, ref="CUS-OVEN-API")
-    resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {})
+    resp = client.post(
+        f"/api/v1/availability/{p.sku}/notify/",
+        {"adult_declared": True},
+    )
     assert resp.status_code == 200
     assert StockAlertSubscription.objects.get(sku=p.sku).alert_type == "production_ready"
     assert client.session["stock_alert_subscriptions"][0]["alert_type"] == "production_ready"

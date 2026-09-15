@@ -267,6 +267,7 @@ Settings flat no `settings.py` do Django (sem dict wrapper).
 | `SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q` | int | `500` | Padrão do deploy para o teto de aprovação de desconto no PDV, em centavos. `0` **desativa** o teto (nenhum desconto passa a exigir gerente por valor; D-1 e preço alterado seguem exigindo). A loja sobrepõe em `Shop.defaults["pos"]["discount_approval_threshold_q"]` pelo Admin; quem lê os dois é `shop.services.pos.discount_approval_threshold_q` |
 | `SHOPMAN_ACCOUNTING_BACKEND` | str | *(sem default)* | Backend de contabilidade. Se ausente, handler de accounting não é registrado |
 | `SHOPMAN_NOTIFICATIONS` | str | `"console"` | Backend padrão de notificações |
+| `SHOPMAN_CONSENT_IP_RETENTION_DAYS` | int | `90` | Retenção do IP bruto auxiliar nas provas de consentimento. Aceita 1–90 dias; o comando `purge_consent_ip` remove o IP vencido sem apagar finalidade, texto, hashes, estado ou instante da prova |
 
 Para staging/homologação de POS, `make smoke-gateways-sandbox` exige Focus NFe
 em homologação, Efí sandbox e Stripe test. Configurações live/producao nesses
