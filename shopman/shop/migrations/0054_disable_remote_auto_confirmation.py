@@ -25,6 +25,6 @@ def forwards(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-    dependencies = [("shop", "0052_faqentry_historicalfaqentry")]
+    dependencies = [("shop", "0053_marketing_delivery_identity")]
 
     operations = [migrations.RunPython(forwards, migrations.RunPython.noop)]

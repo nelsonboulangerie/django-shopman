@@ -48,7 +48,7 @@ def test_migration_only_changes_explicit_remote_auto_confirm():
         config={"confirmation": {"mode": "auto_confirm", "timeout_minutes": 2}},
     )
 
-    migration = importlib.import_module("shopman.shop.migrations.0053_disable_remote_auto_confirmation")
+    migration = importlib.import_module("shopman.shop.migrations.0054_disable_remote_auto_confirmation")
     migration.forwards(apps, None)
 
     web.refresh_from_db()
