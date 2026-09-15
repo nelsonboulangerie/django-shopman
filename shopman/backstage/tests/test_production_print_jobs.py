@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
@@ -618,6 +619,9 @@ def test_browser_api_create_uses_projected_proof_and_uniform_job_contract(
     }
     assert created.json()["print_job"]["status"] == "prepared"
     assert created.json()["print_job"]["target_label"] == "Este dispositivo"
+    persisted = PrintJob.objects.get(ref=created.json()["print_job"]["ref"])
+    assert persisted.source_revision == projection["source_revision"]
+    assert persisted.document_sha256 == hashlib.sha256(print_jobs._canonical(persisted.document)).hexdigest()
 
 
 def test_operator_job_is_visible_only_to_requester_same_station_or_manager(weighing, actor):
