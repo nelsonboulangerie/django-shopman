@@ -102,6 +102,9 @@ MAINTENANCE_COMMANDS = (
     "sweep_waitlist_windows",
     # Por último: as checagens veem o estado PÓS-remediação do ciclo (menos flap).
     "recover_concierge",
+    # A retenção é executada automaticamente; o comando só toca mensagens
+    # inelegíveis cujo prazo aprovado já venceu.
+    "cleanup_concierge_observations",
     "check_directive_health",
     # Produto que sumiu do cardápio porque a coleção dele foi desativada. É
     # checagem de ESTADO, não de evento: o que importa não é o instante em que

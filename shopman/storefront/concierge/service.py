@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
 from functools import wraps
@@ -71,6 +72,11 @@ def config() -> dict:
     return getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}
 
 
+def operation_mode() -> str:
+    """Modo exclusivo do núcleo; o request nunca escolhe se haverá resposta."""
+    return str(config().get("operation_mode") or "assist").strip().casefold()
+
+
 def disabled_reason() -> str:
     """Por que o concierge não atende, ou vazio quando atende.
 
@@ -80,6 +86,11 @@ def disabled_reason() -> str:
     """
     if config().get("contract_version") != 3:
         return "contract_gate"
+    mode = operation_mode()
+    if mode == "observe":
+        return "observation_only"
+    if mode != "assist":
+        return "operation_mode_gate"
     if not config().get("enabled"):
         return "switch_off"
     if not (getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip():
@@ -139,13 +150,182 @@ class IntakeResult:
     conversation_id: int | None
     message_id: int | None
     queued: bool
-    reason: str  # queued | duplicate | handoff | disabled | not_allowed | empty
+    reason: str  # queued | observed | duplicate | handoff | disabled | not_allowed | empty
 
 
 def _external_id(external_id: str) -> str:
     # O digest cabe no índice, sem truncar a identidade do fornecedor.
     # O envelope conserva o valor integral para auditoria e conflito.
     return "e:" + hashlib.sha256(str(external_id).encode()).hexdigest() if external_id else ""
+
+
+def _observation_envelope(event: InboundEvent, *, verified_event: bool, policy: Mapping) -> dict:
+    """Metadados mínimos para curadoria, sem duplicar identificadores do binding."""
+    return {
+        "version": 3,
+        "message_type": event.message_type,
+        "authentication": event.authentication_assurance,
+        "input_assurance": "provider_event" if verified_event else "at_least_once",
+        "processing_mode": "observe",
+        "author_type": "customer",
+        "observation_policy": dict(policy),
+    }
+
+
+def _observation_policy(connection, subject: str) -> tuple[Mapping, str]:
+    """Valida a autorização escopada para captura passiva.
+
+    ``allow_all_subjects`` é um gesto separado de ``enabled`` para impedir que
+    uma lista vazia transforme sem querer um ensaio individual em coleta geral.
+    """
+    if operation_mode() != "observe":
+        return {}, "operation_mode_gate"
+    policy = connection.options.get("observation")
+    if not isinstance(policy, Mapping) or policy.get("enabled") is not True:
+        return {}, "switch_off"
+    if config().get("contract_version") != 3:
+        return {}, "contract_gate"
+    if policy.get("privacy_approved") is not True:
+        return {}, "privacy_gate"
+    notice_version = str(policy.get("notice_version") or "").strip()
+    if not notice_version or len(notice_version) > 80:
+        return {}, "notice_gate"
+    try:
+        retention_days = int(policy.get("retention_days"))
+    except (TypeError, ValueError):
+        return {}, "retention_gate"
+    if not 1 <= retention_days <= 30:
+        return {}, "retention_gate"
+    values = policy.get("allowed_subjects")
+    allowed = (
+        {str(value).strip() for value in values if str(value).strip()}
+        if isinstance(values, (list, tuple, set, frozenset))
+        else set()
+    )
+    if policy.get("allow_all_subjects") is not True and subject not in allowed:
+        return {}, "not_selected"
+    return {
+        "notice_version": notice_version,
+        "retention_days": retention_days,
+    }, ""
+
+
+@_observed("observation")
+def observe_inbound(event: InboundEvent) -> IntakeResult:
+    """Guarda uma pergunta para curadoria sem responder nem criar trabalho.
+
+    O evento continua na transcrição canônica, porém ``automation_eligible`` é
+    falso de forma persistente. Assim uma alteração futura da allowlist não
+    converte observações antigas em turnos do Concierge.
+    """
+    if not isinstance(event, InboundEvent):
+        return IntakeResult(None, None, False, "invalid_input")
+    subject = event.scope.subject.strip()
+    text = event.text.strip()
+    if not subject or not text:
+        return IntakeResult(None, None, False, "empty")
+    if len(event.event_id) > 4096 or len(text) > 16000 or len(subject) > 512:
+        return IntakeResult(None, None, False, "invalid_input")
+    from . import transport
+
+    connection = transport.connection_for_key(event.scope.connection_key)
+    if connection is None or (
+        event.scope.provider,
+        event.scope.account,
+        event.scope.channel,
+    ) != (connection.provider, connection.account, connection.channel):
+        return IntakeResult(None, None, False, "scope_conflict")
+    policy, reason = _observation_policy(connection, subject)
+    if reason:
+        return IntakeResult(None, None, False, "observation_disabled")
+
+    from .observation_privacy import redact_observation_text
+
+    verified_event = event.event_identity_assurance == "verified" and bool(event.event_id)
+    redacted = redact_observation_text(text)
+    envelope = _observation_envelope(event, verified_event=verified_event, policy=policy)
+    envelope["redactions"] = list(redacted.categories)
+    ext = _external_id(event.event_id) if verified_event else ""
+    retention_until = event.received_at + timedelta(days=policy["retention_days"])
+    with transaction.atomic():
+        binding = _get_or_create_binding(event)
+        if binding.connection_key != event.scope.connection_key:
+            return IntakeResult(binding.conversation_id, None, False, "scope_conflict")
+        conversation = Conversation.objects.select_for_update().get(pk=binding.conversation_id)
+        values = {
+            "role": ConversationMessage.Role.USER,
+            "kind": ConversationMessage.Kind.INBOUND,
+            "text": redacted.text,
+            # A captura nunca entra no replay do modelo; duplicar o texto em
+            # content ampliaria exposição sem consumidor.
+            "content": [],
+            "envelope": envelope,
+            "binding": binding,
+            "automation_eligible": False,
+            "retention_until": retention_until,
+        }
+        if verified_event:
+            message, created = ConversationMessage.objects.get_or_create(
+                binding=binding,
+                external_id=ext,
+                defaults={"conversation": conversation, **values},
+            )
+        else:
+            # Sem identidade oficial de mensagem, preservar receipts at-least-once.
+            message = ConversationMessage.objects.create(
+                conversation=conversation,
+                external_id="",
+                **values,
+            )
+            created = True
+        if not created and (
+            message.text != redacted.text
+            or message.automation_eligible
+        ):
+            return IntakeResult(conversation.pk, message.pk, False, "intent_conflict")
+    return IntakeResult(conversation.pk, message.pk, False, "observed" if created else "duplicate")
+
+
+def purge_observations(*, now=None, connection_key: str = "", subject: str = "") -> dict[str, int]:
+    """Apaga conteúdo observado vencido ou o subject indicado, sem export cru.
+
+    O descarte pontual existe para atender o titular. A limpeza normal considera
+    apenas ``retention_until`` vencido. Bindings e conversas que ficaram vazios
+    também saem para que identificadores do transporte não sobrevivam ao texto.
+    """
+    clock = now or timezone.now()
+    messages = ConversationMessage.objects.filter(
+        automation_eligible=False,
+        envelope__processing_mode="observe",
+    )
+    if connection_key:
+        messages = messages.filter(binding__connection_key=connection_key)
+    if subject:
+        messages = messages.filter(binding__subject=subject)
+    else:
+        messages = messages.filter(retention_until__isnull=False, retention_until__lte=clock)
+
+    with transaction.atomic():
+        binding_ids = set(messages.values_list("binding_id", flat=True))
+        conversation_ids = set(messages.values_list("conversation_id", flat=True))
+        _deleted, by_model = messages.delete()
+        deleted_messages = by_model.get("shop.ConversationMessage", 0)
+        empty_bindings = ConversationBinding.objects.filter(pk__in=binding_ids).filter(
+            messages__isnull=True
+        )
+        deleted_bindings = empty_bindings.count()
+        empty_bindings.delete()
+        empty_conversations = Conversation.objects.filter(pk__in=conversation_ids).filter(
+            messages__isnull=True,
+            transport_bindings__isnull=True,
+        )
+        deleted_conversations = empty_conversations.count()
+        empty_conversations.delete()
+    return {
+        "messages": deleted_messages,
+        "bindings": deleted_bindings,
+        "conversations": deleted_conversations,
+    }
 
 
 @_observed("intake")
@@ -206,6 +386,9 @@ def receive_inbound(event: InboundEvent) -> IntakeResult:
                 external_id=ext,
                 defaults={"conversation": conversation, **values},
             )
+        # Uma observação permanece inelegível após qualquer troca de fase.
+        if not created and not message.automation_eligible:
+            return IntakeResult(conversation.pk, message.pk, False, "intent_conflict")
         if not created and (message.text != text or message.envelope.get("event_id") != event.event_id or message.envelope.get("payload_hash") != envelope.get("payload_hash")):
             return IntakeResult(conversation.pk, message.pk, False, "intent_conflict")
         if created:
@@ -506,6 +689,7 @@ def unanswered_inbound(
         conversation.messages.filter(
             binding=binding,
             kind=ConversationMessage.Kind.INBOUND,
+            automation_eligible=True,
             consumed_by__isnull=True,
             envelope__version=3,
         ).order_by("id")
@@ -833,13 +1017,19 @@ def _dispatch_reply(conversation, message):
         purpose = message.envelope.get("purpose") or "reply"
         handoff_ack = purpose == "handoff_ack" and current.state == Conversation.State.HANDOFF
         enabled = (
-            bool(config().get("enabled") and config().get("contract_version") == 3)
+            bool(
+                config().get("enabled")
+                and config().get("contract_version") == 3
+                and operation_mode() == "assist"
+            )
             if handoff_ack
             else is_enabled()
         )
         predecessor = message.envelope.get("depends_on")
         code = ""
-        if predecessor and not current.messages.filter(
+        if operation_mode() == "observe":
+            code = "observation_mode_cancelled"
+        elif predecessor and not current.messages.filter(
             pk=predecessor, transport_state="accepted"
         ).exists():
             code = "preceding_block_pending"
@@ -879,11 +1069,14 @@ def _dispatch_reply(conversation, message):
         message.envelope = {**message.envelope, "code": code, "attempt_no": attempt.attempt_no}
         message.save(update_fields=["transport_state", "envelope"])
     if attempt.state != OutboundAttempt.State.EXECUTING:
-        _alert(
-            current,
-            "concierge_output_blocked",
-            "Resposta preparada e contida; verificar próxima ação de atendimento.",
-        )
+        # Entrar em observação é uma contenção deliberada. Não cria mensagem,
+        # alerta ou tarefa para o operador e a saída cancelada não será revivida.
+        if code != "observation_mode_cancelled":
+            _alert(
+                current,
+                "concierge_output_blocked",
+                "Resposta preparada e contida; verificar próxima ação de atendimento.",
+            )
         return message
     try:
         outcome = transport.send_for(binding, message.text)
@@ -1180,6 +1373,7 @@ def recover_pending(*, limit=100):
     pending = ConversationMessage.objects.filter(conversation_id=OuterRef("pk")).filter(
         Q(
             kind=ConversationMessage.Kind.INBOUND,
+            automation_eligible=True,
             envelope__version=3,
             consumed_by__isnull=True,
         )
@@ -1263,7 +1457,9 @@ def recover_pending(*, limit=100):
                 envelope = message.envelope
                 max_id = envelope.get("inbound_max_id")
                 unchanged = bool(max_id) and not conversation.messages.filter(
-                    kind=ConversationMessage.Kind.INBOUND, pk__gt=max_id
+                    kind=ConversationMessage.Kind.INBOUND,
+                    automation_eligible=True,
+                    pk__gt=max_id,
                 ).exists()
                 quote_token = envelope.get("quote_token")
                 if quote_token and quote_token != (conversation.quote or {}).get("token"):
@@ -1301,6 +1497,7 @@ def retry_not_applied(conversation_id, message_id):
         ).first()
         if (
             message.transport_state != "not_applied"
+            or message.envelope.get("code") == "observation_mode_cancelled"
             or binding is None
             or conversation.state != Conversation.State.ACTIVE
             or not is_enabled()
@@ -1312,7 +1509,9 @@ def retry_not_applied(conversation_id, message_id):
             return False
         max_id = message.envelope.get("inbound_max_id")
         if not max_id or conversation.messages.filter(
-            kind=ConversationMessage.Kind.INBOUND, pk__gt=max_id
+            kind=ConversationMessage.Kind.INBOUND,
+            automation_eligible=True,
+            pk__gt=max_id,
         ).exists():
             return False
         quote_token = message.envelope.get("quote_token")

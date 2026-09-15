@@ -76,6 +76,9 @@ class Conversation(models.Model):
     class Meta:
         verbose_name = "conversa do concierge"
         verbose_name_plural = "conversas do concierge"
+        permissions = [
+            ("review_conversation_observations", "Pode revisar observações da concierge"),
+        ]
         ordering = ("-last_inbound_at", "-id")
         indexes = [
             models.Index(fields=["state", "last_inbound_at"], name="shop_conv_state_inbound_idx"),
@@ -195,12 +198,19 @@ class ConversationMessage(models.Model):
     content = models.JSONField("conteúdo", default=list, blank=True)
     #: Digest estável do ID externo íntegro guardado no envelope v3.
     external_id = models.CharField("id externo", max_length=80, blank=True)
+    #: Mensagens observadas pertencem à transcrição, mas nunca podem acordar o
+    #: worker nem entrar no contexto do modelo, agora ou depois de uma mudança
+    #: de allowlist. O default preserva o comportamento das mensagens existentes.
+    automation_eligible = models.BooleanField("elegível para automação", default=True, db_index=True)
     consumed_by = models.PositiveBigIntegerField("turno que processou a entrada", null=True, blank=True, db_index=True)
     #: Projeção operacional atual. A evidência de cada execução é append-only em
     #: ``OutboundAttempt``; receipt do fornecedor nunca é sobrescrito aqui.
     transport_state = models.CharField("estado do envio", max_length=24, default="not_applicable", db_index=True)
     envelope = models.JSONField("envelope de transporte", default=dict, blank=True)
     usage = models.JSONField("consumo", default=dict, blank=True)
+    #: Nulo para o histórico operacional cuja política já existia. Toda captura
+    #: passiva nova recebe um prazo explícito e é removida pela rotina dedicada.
+    retention_until = models.DateTimeField("reter até", null=True, blank=True, db_index=True)
     created_at = models.DateTimeField("criada em", auto_now_add=True, db_index=True)
 
     class Meta:
@@ -208,6 +218,10 @@ class ConversationMessage(models.Model):
         verbose_name_plural = "mensagens do concierge"
         ordering = ("id",)
         constraints = [
+            models.CheckConstraint(
+                condition=(Q(automation_eligible=True) | Q(retention_until__isnull=False)),
+                name="shop_cmsg_observation_retention",
+            ),
             models.UniqueConstraint(
                 fields=["binding", "external_id"],
                 condition=~Q(external_id=""),

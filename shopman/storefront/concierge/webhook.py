@@ -85,6 +85,23 @@ class ConciergeEventView(View):
         ):
             return JsonResponse({"detail": "Muitas requisições. Tente de novo em instantes."}, status=429)
 
+        processing_mode = str(request.META.get("HTTP_X_CONCIERGE_MODE") or "assist").strip().casefold()
+        if processing_mode not in {"assist", "observe"}:
+            return JsonResponse(
+                {"detail": "Modo de processamento inválido", "code": "invalid_processing_mode"},
+                status=400,
+            )
+        if processing_mode == "observe":
+            try:
+                result = service.observe_inbound(event)
+            except Exception:
+                logger.exception("concierge.webhook: falha inesperada na observação")
+                return JsonResponse({"detail": "Erro interno"}, status=500)
+            return JsonResponse(
+                {"status": result.reason, "queued": False},
+                status=409 if result.reason in {"intent_conflict", "scope_conflict"} else 200,
+            )
+
         reason = service.disabled_reason()
         if reason:
             if reason != "switch_off":

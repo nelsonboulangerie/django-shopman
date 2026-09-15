@@ -1087,6 +1087,9 @@ SHOPMAN_MARKETING_AI_TIMEOUT_SECONDS = float(
 SHOPMAN_CONCIERGE = {
     # Contrato do núcleo. Transportes existem somente no registry explícito abaixo.
     "contract_version": int(os.environ.get("CONCIERGE_CONTRACT_VERSION", "0")),
+    # Um modo por vez. Em ``observe`` nenhuma entrada chega ao modelo, à fila
+    # de turnos ou ao fornecedor, mesmo se uma automação antiga chamar o endpoint.
+    "operation_mode": os.environ.get("CONCIERGE_OPERATION_MODE", "assist"),
     "read_only": _env_bool("CONCIERGE_READ_ONLY", False),
     "human_return_enabled": _env_bool("CONCIERGE_HUMAN_RETURN_ENABLED", False),
     "output_retry_enabled": _env_bool("CONCIERGE_OUTPUT_RETRY_ENABLED", False),
@@ -1152,6 +1155,33 @@ SHOPMAN_CONCIERGE = {
                 "handoff_field": os.environ.get("CONCIERGE_HANDOFF_FIELD", "concierge_handoff"),
                 "pilot_prefixes": ["#concierge", "#c"],
                 "pilot_entry_text": "oi",
+                # Captura passiva usa o mesmo ingresso autenticado, mas nunca
+                # chama modelo/worker. Quatro gates independentes evitam coleta
+                # geral por uma lista vazia ou por uma única flag equivocada.
+                "observation": {
+                    "enabled": _env_bool("CONCIERGE_OBSERVATION_ENABLED", False),
+                    "privacy_approved": _env_bool(
+                        "CONCIERGE_OBSERVATION_PRIVACY_APPROVED", False
+                    ),
+                    "notice_version": os.environ.get(
+                        "CONCIERGE_OBSERVATION_NOTICE_VERSION", ""
+                    ),
+                    # O service converte e valida. Preservar o valor cru faz um
+                    # typo falhar fechado em vez de virar silenciosamente 7 dias.
+                    "retention_days": os.environ.get(
+                        "CONCIERGE_OBSERVATION_RETENTION_DAYS", "7"
+                    ),
+                    "allow_all_subjects": _env_bool(
+                        "CONCIERGE_OBSERVATION_ALLOW_ALL_SUBJECTS", False
+                    ),
+                    "allowed_subjects": [
+                        value.strip()
+                        for value in os.environ.get(
+                            "CONCIERGE_OBSERVATION_ALLOWED_SUBSCRIBERS", ""
+                        ).split(",")
+                        if value.strip()
+                    ],
+                },
                 "response_window": {
                     "policy": "manychat-whatsapp-customer-care-24h-v1",
                     "source": "manychat_whatsapp_last_interaction",

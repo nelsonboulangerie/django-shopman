@@ -119,6 +119,8 @@ nem adicionar uma mensagem estática de sucesso no flow.
 | `200 handoff` | Contexto preservado; a conversa continua sob posse humana. |
 | `200 disabled` | Núcleo contido. Verificar `reason`, contrato, switch e credencial do modelo. |
 | `200 not_allowed` | Subject fora da coorte explícita. Nenhum turno automático. |
+| `200 observed` | Pergunta preservada em modo passivo; nenhuma fila, IA ou resposta. |
+| `200 observation_disabled` | Um gate de observação está fechado; nada foi persistido. O flow normal deve continuar. |
 | `200 empty` | O texto dinâmico chegou vazio ou não renderizado; corrigir o campo `text`. |
 | `409 intent_conflict` | ID verificado repetido com payload diferente. Triar sem inventar nova intenção. |
 | `409 scope_conflict` | Binding persistido diverge da connection autenticada. Manter contido e corrigir configuração. |
@@ -215,5 +217,6 @@ continuam fechados até seus gates próprios.
 
 Referências: [plano de excelência operacional](../plans/CONVERSATIONAL-SALES-OPERATIONAL-EXCELLENCE-PLAN-2026-09-11.md),
 [fluxo canônico ManyChat](../plans/CONCIERGE-MANYCHAT-CANONICAL-FLOW-2026-09-12.md),
+[melhoria supervisionada por conversas](concierge-supervised-improvement.md),
 [relatório da janela](../reports/concierge-whatsapp-window-20260912.md) e
 [evidências de ingresso](../../evidence/conversational/INGRESS.md).

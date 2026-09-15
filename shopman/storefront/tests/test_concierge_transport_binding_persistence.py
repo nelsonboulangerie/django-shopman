@@ -202,6 +202,75 @@ def test_0051_flushes_postgresql_deferred_fk_triggers():
         MigrationExecutor(connection).migrate(latest)
 
 
+def test_0056_marks_every_existing_message_as_automation_eligible(
+    tmp_path,
+    django_db_blocker,
+):
+    before = [("shop", "0055_catalog_snapshot_binding")]
+    after = [("shop", "0056_concierge_message_observation_controls")]
+    alias = "observation_migration"
+    database_access = django_db_blocker.unblock()
+    database_access.__enter__()
+    isolated = None
+    alias_router = _MigrationAliasRouter(alias)
+
+    try:
+        connections.databases[alias] = {
+            **connections.databases["default"],
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": str(tmp_path / "observation-migration.sqlite3"),
+            "OPTIONS": {},
+            "TEST": {
+                "CHARSET": None,
+                "COLLATION": None,
+                "MIGRATE": True,
+                "MIRROR": None,
+                "NAME": None,
+            },
+        }
+        router.routers.insert(0, alias_router)
+        isolated = connections[alias]
+        executor = MigrationExecutor(isolated)
+        executor.migrate(before)
+        old_apps = executor.loader.project_state(before).apps
+        OldConversation = old_apps.get_model("shop", "Conversation")
+        OldBinding = old_apps.get_model("shop", "ConversationBinding")
+        OldMessage = old_apps.get_model("shop", "ConversationMessage")
+        conversation = OldConversation.objects.using(alias).create(
+            customer_name="Legado"
+        )
+        binding = OldBinding.objects.using(alias).create(
+            conversation=conversation,
+            provider="manychat",
+            account="account-1",
+            transport_channel="whatsapp",
+            subject="legacy-subject",
+            connection_key="manychat-whatsapp-primary",
+        )
+        message = OldMessage.objects.using(alias).create(
+            conversation=conversation,
+            binding=binding,
+            role="user",
+            kind="inbound",
+            text="mensagem preservada",
+            envelope={"processing_mode": "observe"},
+        )
+
+        MigrationExecutor(isolated).migrate(after)
+        new_apps = MigrationExecutor(isolated).loader.project_state(after).apps
+        NewMessage = new_apps.get_model("shop", "ConversationMessage")
+        migrated = NewMessage.objects.using(alias).get(pk=message.pk)
+
+        assert migrated.automation_eligible is True
+        assert migrated.retention_until is None
+    finally:
+        router.routers.remove(alias_router)
+        if isolated is not None:
+            isolated.close()
+        connections.databases.pop(alias, None)
+        database_access.__exit__(None, None, None)
+
+
 def test_transport_constraints_are_scoped_to_binding():
     first = Conversation.objects.create(customer_ref="customer-1")
     second = Conversation.objects.create(customer_ref="customer-2")

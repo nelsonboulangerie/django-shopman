@@ -108,7 +108,8 @@ def history_for(conversation: Conversation) -> list[dict]:
     """
     window = int(_config().get("window_messages") or 40)
     rows = list(
-        conversation.messages.exclude(kind=ConversationMessage.Kind.NOTE)
+        conversation.messages.filter(automation_eligible=True)
+        .exclude(kind=ConversationMessage.Kind.NOTE)
         .filter(id__lte=getattr(conversation, "_inbound_max_id", 2**63 - 1))
         .order_by("-id")[:window]
     )
@@ -116,7 +117,7 @@ def history_for(conversation: Conversation) -> list[dict]:
     # A janela de linguagem pode cortar contexto antigo, nunca a entrada que o
     # claim declarará consumida. Claims são limitados para justiça entre clientes.
     required = set(getattr(conversation, "_inbound_ids", ())) - included
-    rows.extend(conversation.messages.filter(pk__in=required))
+    rows.extend(conversation.messages.filter(pk__in=required, automation_eligible=True))
     rows.sort(key=lambda row: row.pk)
     while rows and rows[0].kind != ConversationMessage.Kind.INBOUND:
         rows.pop(0)
