@@ -87,6 +87,6 @@ it("mostra integração sem switch de loja e preserva controles da TV", () => {
   expect(integration.text()).toContain("1 sincronizados · 1 pendentes · 1 com erro");
   expect(integration.text()).toContain("2 retirados · 3 não enviados");
   expect(integration.find('[role="switch"]').exists()).toBe(false);
-  expect(integration.get("nuxtlink").attributes("to")).toBe("/catalog");
+  expect(integration.findAll("nuxtlink").map(link => link.attributes("to"))).toEqual(["/channels/ifood/catalog", "/catalog"]);
   expect(wrapper.findAll('[role="switch"]')).toHaveLength(1);
 });

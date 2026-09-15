@@ -79,6 +79,73 @@ export interface IFoodNegotiationProjection {
   actions: Action[];
 }
 
+/** CatalogSnapshotSummary(id: int, account_ref: str, catalog_ref: str, context: str, captured_at: str, imported_at: str, sha256: str, source: str, item_count: int) */
+export interface CatalogSnapshotSummary {
+  id: number;
+  account_ref: string;
+  catalog_ref: string;
+  context: string;
+  captured_at: string;
+  imported_at: string;
+  sha256: string;
+  source: string;
+  item_count: number;
+}
+
+/** CatalogProductOption(sku: str, name: str) */
+export interface CatalogProductOption {
+  sku: string;
+  name: string;
+}
+
+/** CatalogCurrentBinding(sku: str, name: str, actor: str, confirmed_at: str, revision: int, snapshot_id: int) */
+export interface CatalogCurrentBinding {
+  sku: string;
+  name: string;
+  actor: string;
+  confirmed_at: string;
+  revision: number;
+  snapshot_id: number;
+}
+
+/** CatalogReviewItem(item_id: str, product_ref: str, category_ref: str, category_name: str, item_context_ref: str, name: str, description: str, image_path: str, status: str, price: str, external_code: str, diagnostic: str, notice: str, candidates: tuple[shopman.backstage.projections.catalog_bindings.CatalogProductOption, ...], binding: shopman.backstage.projections.catalog_bindings.CatalogCurrentBinding | None, base_revision: str, can_bind: bool, needs_review: bool, blocked_reason: str, binding_action: shopman.shop.projections.types.Action) */
+export interface CatalogReviewItem {
+  item_id: string;
+  product_ref: string;
+  category_ref: string;
+  category_name: string;
+  item_context_ref: string;
+  name: string;
+  description: string;
+  image_path: string;
+  status: string;
+  price: string;
+  external_code: string;
+  diagnostic: string;
+  notice: string;
+  candidates: CatalogProductOption[];
+  binding: CatalogCurrentBinding | null;
+  base_revision: string;
+  can_bind: boolean;
+  needs_review: boolean;
+  blocked_reason: string;
+  binding_action: Action;
+}
+
+/** CatalogBindingReviewProjection(channel_ref: str, channel_name: str, provider: str, snapshots: tuple[shopman.backstage.projections.catalog_bindings.CatalogSnapshotSummary, ...], selected_snapshot: shopman.backstage.projections.catalog_bindings.CatalogSnapshotSummary | None, products: tuple[shopman.backstage.projections.catalog_bindings.CatalogProductOption, ...], items: tuple[shopman.backstage.projections.catalog_bindings.CatalogReviewItem, ...], expected_actor_id: int | None, notice: str, import_action: shopman.shop.projections.types.Action) */
+export interface CatalogBindingReviewProjection {
+  channel_ref: string;
+  channel_name: string;
+  provider: string;
+  snapshots: CatalogSnapshotSummary[];
+  selected_snapshot: CatalogSnapshotSummary | null;
+  products: CatalogProductOption[];
+  items: CatalogReviewItem[];
+  expected_actor_id: number | null;
+  notice: string;
+  import_action: Action;
+}
+
 /** FeedCollectionRef(ref: 'str', name: 'str', exists: 'bool') */
 export interface FeedCollectionRef {
   ref: string;

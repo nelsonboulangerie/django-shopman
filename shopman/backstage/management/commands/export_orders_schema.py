@@ -30,6 +30,13 @@ from shopman.backstage.projections.catalog import (
     CatalogPublicationPreview,
     CatalogPublicationSkip,
 )
+from shopman.backstage.projections.catalog_bindings import (
+    CatalogBindingReviewProjection,
+    CatalogCurrentBinding,
+    CatalogProductOption,
+    CatalogReviewItem,
+    CatalogSnapshotSummary,
+)
 from shopman.backstage.projections.feeds import (
     CatalogChannelProjection,
     CollectionOptionProjection,
@@ -62,6 +69,11 @@ CONTRACT_DATACLASSES = (
     CatalogPublicationPreview,
     Action,
     IFoodNegotiationProjection,
+    CatalogSnapshotSummary,
+    CatalogProductOption,
+    CatalogCurrentBinding,
+    CatalogReviewItem,
+    CatalogBindingReviewProjection,
     FeedCollectionRef,
     FeedProjection,
     CatalogChannelProjection,

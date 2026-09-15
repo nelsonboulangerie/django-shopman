@@ -33,6 +33,7 @@ from .catalog import (
     CatalogSocialView,
     CatalogSyncStatusView,
 )
+from .catalog_bindings import CatalogBindingConfirmView, CatalogBindingReviewView, CatalogSnapshotImportView
 from .feeds import (
     FeedActiveView,
     FeedBoardView,
@@ -423,6 +424,9 @@ urlpatterns = [
     ),
     path("orders/", OrderQueueView.as_view(), name="api-backstage-orders"),
     # Catalog matrix (produto × superfície)
+    path("catalog/channels/<str:ref>/review/", CatalogBindingReviewView.as_view(), name="api-backstage-catalog-binding-review"),
+    path("catalog/channels/<str:ref>/snapshots/", CatalogSnapshotImportView.as_view(), name="api-backstage-catalog-snapshot-import"),
+    path("catalog/channels/<str:ref>/bindings/", CatalogBindingConfirmView.as_view(), name="api-backstage-catalog-binding-confirm"),
     path("catalog/", CatalogMatrixView.as_view(), name="api-backstage-catalog"),
     path("catalog/cell/", CatalogCellView.as_view(), name="api-backstage-catalog-cell"),
     path("catalog/product/", CatalogProductView.as_view(), name="api-backstage-catalog-product"),
