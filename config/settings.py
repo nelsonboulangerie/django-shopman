@@ -291,6 +291,11 @@ INSTALLED_APPS = [
     *SHOPMAN_INSTANCE_APPS,
 ]
 
+# Temporary staging-only Admin ingress observation; remove after proof.
+SHOPMAN_ADMIN_IP_PROBE_HOSTS = [host.strip().lower() for host in os.environ.get("SHOPMAN_ADMIN_IP_PROBE_HOSTS", "").split(",") if host.strip()]
+SHOPMAN_ADMIN_IP_PROBE_TOKEN = os.environ.get("SHOPMAN_ADMIN_IP_PROBE_TOKEN", "")
+SHOPMAN_ADMIN_IP_PROBE_UNTIL = os.environ.get("SHOPMAN_ADMIN_IP_PROBE_UNTIL", "0")
+
 MIDDLEWARE = [
     "shopman.shop.middleware.AppPlatformHealthCheckHostMiddleware",
     "shopman.shop.middleware.BackupSheetDomainMiddleware",
@@ -305,6 +310,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "shopman.backstage.services.admin_ip_probe.AdminIngressProbeMiddleware",
     # OTP verification state (request.user.is_verified()) — must follow auth.
     "django_otp.middleware.OTPMiddleware",
     "shopman.doorman.middleware.AuthCustomerMiddleware",
