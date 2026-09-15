@@ -27,8 +27,9 @@ formato explícito é `feed`, seu outbox e seu destino. Em seguida:
 
 1. aplica `0053_marketing_delivery_identity`;
 2. comprova `publication/feed` no outbox e no destino, sem cair no default `story`;
-3. valida as constraints novas;
-4. retorna ao estado anterior e reaplica até a folha atual do grafo.
+3. valida as constraints novas sem remover as antigas durante a fase expand;
+4. comprova que o writer histórico ainda cria outbox/destino contra o schema novo;
+5. retorna de fato a `0052`, verifica que os registros sobrevivem e reaplica `0053`.
 
 Aceite: nenhum erro de migração, formato histórico preservado e árvore de migrations
 restaurada. O teste executável é
@@ -110,11 +111,14 @@ Snapshot às 06:41 BRT:
 
 ### Análise de execução
 
-A `0053` adiciona quatro colunas, retropreenche o único par outbox/destino e troca
-duas constraints de unicidade por versões que incluem modalidade e formato. As
-tabelas são minúsculas e os dados atuais satisfazem o schema novo; não há trabalho
-de rede nem ativação do TikTok na migration. A operação ainda exige locks DDL, mesmo
-com uma linha.
+A `0053` adiciona quatro colunas com default persistente vazio, retropreenche o único
+par outbox/destino e acrescenta versões das constraints de unicidade que incluem
+modalidade e formato. As constraints antigas permanecem durante a fase expand: isso
+mantém compatibilidade com instâncias do código anterior e também preserva o escopo
+atual de uma modalidade por plataforma. A remoção de defaults/constraints antigas é
+uma futura etapa contract, com uso zero e gate próprio. As tabelas são minúsculas e
+os dados atuais satisfazem o schema novo; não há trabalho de rede nem ativação do
+TikTok na migration. A operação ainda exige locks DDL, mesmo com uma linha.
 
 O timeout ilimitado observado em produção poderia deixar o release esperando por
 um lock. A candidata passou a definir, somente durante a transação PostgreSQL da
@@ -140,6 +144,7 @@ ilimitada corrigido na candidata. Merge/deploy, OAuth/revisão TikTok, canário 
 ativação de jobs e descarte do legado permanecem gates humanos separados.
 
 Validação posterior ao endurecimento: 10 testes focados passaram em SQLite; o ciclo
-reversível `0052 → 0053 → folha` passou também em PostgreSQL 16.14 local e isolado;
-Ruff e `makemigrations --check --dry-run` passaram. O banco local descartável foi
-removido ao final.
+reversível agora exercita `0052 → 0053 → 0052 → 0053 → folha`, incluindo insert do
+writer histórico contra o schema expandido. A prova PostgreSQL precisa ser repetida
+no head corrigido antes do gate de deploy; Ruff e `makemigrations --check --dry-run`
+passaram localmente. Nenhum banco ou ambiente de produção foi alterado.

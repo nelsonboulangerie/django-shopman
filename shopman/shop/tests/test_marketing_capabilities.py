@@ -246,6 +246,14 @@ def test_delivery_identity_migration_reverses_and_reapplies_cleanly():
     new_target = new_apps.get_model("shop", "DeliveryTarget")
     assert {"delivery_kind", "format"} <= {field.name for field in new_outbox._meta.concrete_fields}
     assert {"delivery_kind", "format"} <= {field.name for field in new_target._meta.concrete_fields}
+    assert {
+        "shop_marketing_outbox_command_lane_uq",
+        "shop_marketing_outbox_command_dest_lane_uq",
+    } <= {constraint.name for constraint in new_outbox._meta.constraints}
+    assert {
+        "shop_delivery_target_snapshot_platform_fp_uq",
+        "shop_delivery_target_snapshot_dest_fp_uq",
+    } <= {constraint.name for constraint in new_target._meta.constraints}
     migrated_outbox = new_outbox.objects.get(pk=outbox.pk)
     migrated_target = new_target.objects.get(pk=target.pk)
     assert (migrated_outbox.delivery_kind, migrated_outbox.format) == (
@@ -255,6 +263,97 @@ def test_delivery_identity_migration_reverses_and_reapplies_cleanly():
     assert (migrated_target.delivery_kind, migrated_target.format) == (
         "publication",
         "feed",
+    )
+
+    # Expand/contract means an application rollback may run the 0052 model
+    # against the 0053 database for a whole release window.  The historical
+    # writer omits the four new columns; database defaults must keep it alive.
+    rollback_announcement = Announcement.objects.create(
+        content={"body": "Criado pela versão anterior"},
+        platforms=["instagram"],
+    )
+    rollback_artifact = Artifact.objects.create(
+        announcement=rollback_announcement,
+        version=1,
+        schema_version=3,
+        payload={"resolved_artifacts": {"instagram": {}}},
+        artifact_hash="1" * 64,
+        retention_until=retention,
+    )
+    rollback_snapshot = Snapshot.objects.create(
+        announcement=rollback_announcement,
+        version=1,
+        summary={},
+        rule_summary={},
+        rule_hash="2" * 64,
+        cohort_hash="3" * 64,
+        policy_version="test-v1",
+        calculated_at=now,
+        expires_at=retention,
+        retention_until=retention,
+    )
+    rollback_receipt = Receipt.objects.create(
+        kind="approve",
+        state="completed",
+        announcement=rollback_announcement,
+        resource_ref=f"announcement:{rollback_announcement.pk}",
+        actor_ref="system:rollback-test",
+        idempotency_key_hash="4" * 64,
+        payload_hash="5" * 64,
+        base_version=1,
+        resulting_version=2,
+        retention_until=retention,
+    )
+    rollback_outbox = Outbox.objects.create(
+        command=rollback_receipt,
+        announcement=rollback_announcement,
+        snapshot=rollback_snapshot,
+        artifact=rollback_artifact,
+        platform="instagram",
+        available_at=now,
+    )
+    rollback_target = Target.objects.create(
+        outbox=rollback_outbox,
+        announcement=rollback_announcement,
+        snapshot=rollback_snapshot,
+        artifact=rollback_artifact,
+        platform="instagram",
+        target_fingerprint="6" * 64,
+        fingerprint_key_version=1,
+        next_attempt_at=now,
+        identity_retention_until=retention,
+        record_retention_until=retention,
+    )
+    assert (
+        new_outbox.objects.get(pk=rollback_outbox.pk).delivery_kind,
+        new_outbox.objects.get(pk=rollback_outbox.pk).format,
+    ) == ("", "")
+    assert (
+        new_target.objects.get(pk=rollback_target.pk).delivery_kind,
+        new_target.objects.get(pk=rollback_target.pk).format,
+    ) == ("", "")
+
+    executor = MigrationExecutor(connection)
+    executor.migrate(before)
+    rolled_back_apps = executor.loader.project_state(before).apps
+    assert rolled_back_apps.get_model("shop", "MarketingOutbox").objects.filter(
+        pk=rollback_outbox.pk,
+    ).exists()
+
+    executor = MigrationExecutor(connection)
+    executor.migrate(after)
+    reapplied_apps = executor.loader.project_state(after).apps
+    assert (
+        reapplied_apps.get_model("shop", "MarketingOutbox")
+        .objects.get(pk=rollback_outbox.pk)
+        .delivery_kind
+        == "publication"
+    )
+    assert (
+        reapplied_apps.get_model("shop", "DeliveryTarget")
+        .objects.get(pk=rollback_target.pk)
+        .format
+        == "story"
     )
 
     executor = MigrationExecutor(connection)

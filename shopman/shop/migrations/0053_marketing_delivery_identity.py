@@ -83,28 +83,24 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="marketingoutbox",
             name="delivery_kind",
-            field=models.CharField(blank=True, max_length=24),
+            field=models.CharField(blank=True, db_default="", max_length=24),
         ),
         migrations.AddField(
             model_name="marketingoutbox",
             name="format",
-            field=models.CharField(blank=True, max_length=32),
+            field=models.CharField(blank=True, db_default="", max_length=32),
         ),
         migrations.AddField(
             model_name="deliverytarget",
             name="delivery_kind",
-            field=models.CharField(blank=True, max_length=24),
+            field=models.CharField(blank=True, db_default="", max_length=24),
         ),
         migrations.AddField(
             model_name="deliverytarget",
             name="format",
-            field=models.CharField(blank=True, max_length=32),
+            field=models.CharField(blank=True, db_default="", max_length=32),
         ),
         migrations.RunPython(populate_identity, clear_identity),
-        migrations.RemoveConstraint(
-            model_name="marketingoutbox",
-            name="shop_marketing_outbox_command_lane_uq",
-        ),
         migrations.AddConstraint(
             model_name="marketingoutbox",
             constraint=models.UniqueConstraint(
@@ -130,10 +126,6 @@ class Migration(migrations.Migration):
                 ),
                 name="shop_marketing_outbox_identity_ck",
             ),
-        ),
-        migrations.RemoveConstraint(
-            model_name="deliverytarget",
-            name="shop_delivery_target_snapshot_platform_fp_uq",
         ),
         migrations.AddConstraint(
             model_name="deliverytarget",
