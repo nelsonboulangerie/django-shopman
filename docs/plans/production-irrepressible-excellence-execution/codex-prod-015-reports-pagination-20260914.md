@@ -26,6 +26,7 @@
 - Histórico aplica ordenação e `LIMIT/OFFSET` no queryset antes de materializar linhas. Produtividade e desperdício percorrem somente sua fonte em chunks e calculam médias com acumuladores exatos de memória constante; qualidade deriva da autoridade canônica `effective_partitions`, portanto a última `QUALITY_CORRECTED` substitui a partição física original.
 - O CSV respeita os filtros e sort aplicados e ignora cursor/tamanho de página. Antes de qualquer header HTTP, ele é preparado em `SpooledTemporaryFile` (memória limitada com rollover para disco), limitado por `SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_ROWS` (50.000) e `SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_BYTES` (20 MiB), e validado contra a revisão do conjunto antes/depois. Limite excedido retorna 413 acionável; mutação concorrente retorna 409; nunca há 200 parcial inconsistente. A proteção compartilhada contra CSV formula injection e o helper legado de bytes foram preservados.
 - O download deixou de ser um anchor direto: o composable controla pending/success/failure/session-expiry, cancelamento por `AbortController` e bloqueio enquanto filtros estão sujos/inválidos ou o cursor está stale.
+- O cancelamento é client-side: interrompe a espera/download do navegador, mas o servidor pode concluir a preparação já iniciada até os caps. Os caps limitam linhas, bytes e memória do spool; não limitam CPU da agregação nem a cardinalidade dos grupos antes do serializer. SLO, carga e ajuste dos caps continuam sendo gate externo de observabilidade/load.
 - A aba aplicada, tabela e CSV permanecem coerentes; troca de relatório aplica imediatamente e normaliza sort incompatível, enquanto qualquer outro rascunho desabilita o download até `Aplicar`.
 - Erros de data usam `aria-invalid`, descrição associada e região viva; a faixa atual e reconciliação de cursor também são anunciadas. Um 409 entra em estado dedicado bloqueado/recovery-only e não renderiza uma tabela vazia enganosa.
 
@@ -42,5 +43,8 @@
 
 ## Observações de execução
 
-- `origin/main` avançou para `2aff555a538126d88e1e263864b751607012f50c` depois da criação da worktree. O patch permanece deliberadamente sobre o SHA-base registrado, sem merge/rebase/push.
+- Base histórica da worktree: `84e07c01d04eba4ed0deabdae0d2df18dde77c53`.
+- `main` usado na verificação de compatibilidade anterior: `2aff555a538126d88e1e263864b751607012f50c`.
+- `origin/main` no polish final: `4a33805847403b3fb18b80524124c102eb7f70f1`.
+- A verificação final com `git merge-tree --write-tree HEAD origin/main` concluiu sem conflitos; o patch permanece deliberadamente sem merge/rebase/push.
 - Nenhum provider, deploy, PR ou merge foi executado.
