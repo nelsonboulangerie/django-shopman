@@ -1,33 +1,77 @@
 <script setup lang="ts">
 import type { PwaCopyProjection } from '~/types/shopman'
 
-defineProps<{ copy: PwaCopyProjection }>()
+const props = defineProps<{
+  copy: PwaCopyProjection
+  step: 0 | 1
+}>()
+
+const emit = defineEmits<{ 'update:step': [step: 0 | 1] }>()
+
+const steps = computed(() => [
+  {
+    image: '/pwa/ios-share-step.svg',
+    message: props.copy.ios_share_step.message
+  },
+  {
+    image: '/pwa/ios-add-step.svg',
+    message: props.copy.ios_add_step.message
+  }
+])
 </script>
 
 <template>
-  <div class="space-y-4 p-4">
-    <p class="text-sm text-muted-foreground">{{ copy.ios_message.message }}</p>
-    <ol class="grid gap-3 sm:grid-cols-2">
-      <li class="rounded-lg border bg-muted/40 p-4">
-        <img
-          src="/pwa/ios-share-step.svg"
-          :alt="copy.ios_share_step.message"
-          class="mx-auto aspect-[4/3] w-full max-w-56"
-          width="320"
-          height="240"
+  <div class="px-4 pt-4 pb-2">
+    <div class="mb-4 flex items-center justify-between gap-4">
+      <p class="text-xs font-bold tracking-[0.12em] text-primary uppercase">
+        Passo {{ step + 1 }} de {{ steps.length }}
+      </p>
+      <div class="flex flex-1 gap-2" role="tablist" aria-label="Etapas da instalação">
+        <button
+          v-for="(_, index) in steps"
+          :key="index"
+          type="button"
+          role="tab"
+          :aria-selected="step === index"
+          :aria-label="`Ir para o passo ${index + 1}`"
+          :aria-controls="`ios-install-step-${index + 1}`"
+          class="h-2 flex-1 rounded-full transition-colors"
+          :class="index <= step ? 'bg-primary' : 'bg-primary/15'"
+          @click="emit('update:step', index as 0 | 1)"
+        />
+      </div>
+    </div>
+
+    <div class="overflow-hidden">
+      <div
+        class="flex w-full transition-transform duration-300 ease-out motion-reduce:transition-none"
+        :style="{ transform: `translateX(-${step * 100}%)` }"
+        aria-live="polite"
+      >
+        <section
+          v-for="(item, index) in steps"
+          :key="item.image"
+          :id="`ios-install-step-${index + 1}`"
+          class="min-w-full"
+          role="tabpanel"
+          :aria-hidden="step !== index"
+          :inert="step !== index"
+          :data-testid="`ios-step-${index + 1}`"
         >
-        <p class="mt-2 text-sm font-semibold">1. {{ copy.ios_share_step.message }}</p>
-      </li>
-      <li class="rounded-lg border bg-muted/40 p-4">
-        <img
-          src="/pwa/ios-add-step.svg"
-          :alt="copy.ios_add_step.message"
-          class="mx-auto aspect-[4/3] w-full max-w-56"
-          width="320"
-          height="240"
-        >
-        <p class="mt-2 text-sm font-semibold">2. {{ copy.ios_add_step.message }}</p>
-      </li>
-    </ol>
+          <div class="rounded-2xl border border-primary/15 bg-[#fcf7ee] px-4 py-3 shadow-sm">
+            <img
+              :src="item.image"
+              alt=""
+              class="mx-auto h-[min(31dvh,240px)] min-h-44 w-full object-contain"
+              width="320"
+              height="240"
+            >
+          </div>
+          <p class="mx-auto mt-4 max-w-sm text-center text-base leading-snug font-semibold text-foreground">
+            {{ item.message }}
+          </p>
+        </section>
+      </div>
+    </div>
   </div>
 </template>
