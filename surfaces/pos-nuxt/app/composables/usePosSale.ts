@@ -202,7 +202,7 @@ export function usePosSale(deps: PosSaleDeps) {
         if (!response.payment_delivery || !["queued", "sending"].includes(response.payment_delivery.status)) {
           stopDeliveryPolling();
         }
-      } catch { /* o estado continua honesto; a próxima tentativa pode recuperar */ }
+      } catch { /* silêncio-deliberado: o estado continua honesto; a próxima tentativa pode recuperar */ }
     }, 2500);
   }
   function stopPixPolling() {
