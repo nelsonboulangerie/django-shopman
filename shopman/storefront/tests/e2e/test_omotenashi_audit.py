@@ -175,9 +175,11 @@ def test_06c_soldout_409_remembers_who_already_asked(client):
     e a PDP mostravam "Anotado" para o mesmo SKU no mesmo instante.
     """
     _seed(stock_qty=2)
+    customer = J.make_customer()
+    J.authenticate(client, customer)
     resp = client.post(
         f"/api/v1/availability/{SKU}/notify/",
-        data=json.dumps({"phone": "43999997777"}),
+        data=json.dumps({}),
         content_type="application/json",
     )
     assert resp.status_code == 200
@@ -412,15 +414,18 @@ def test_12b_profile_update_error_does_not_leak_exception(client):
 def test_13_mutation_success_shape_is_consistent(client):
     """✅ Mutations acknowledge success; owned recovery returns its opaque handle."""
     _seed(stock_qty=5)
+    customer = J.make_customer()
+    J.authenticate(client, customer)
     # Stock-alert subscribe.
     resp = client.post(
         f"/api/v1/availability/{SKU}/notify/",
-        data=json.dumps({"phone": "43999998888"}),
+        data=json.dumps({}),
         content_type="application/json",
     )
     assert resp.status_code == 200
     subscription = resp.json()
-    assert subscription == {"ok": True}
+    assert subscription["ok"] is True
+    assert subscription["management_url"].startswith("/gerenciar-aviso#")
     recovered = client.get(f"/api/v1/availability/{SKU}/notify/")
     assert recovered.status_code == 200
     assert recovered.json()["management_url"].startswith("/gerenciar-aviso#")
@@ -571,6 +576,8 @@ def test_17_anonymous_cart_survives_login(client):
 def test_18_unavailable_product_exposes_notify_affordance(client):
     """✅ Catalogue cards carry the 'Me avise' plumbing and the subscribe endpoint works."""
     _seed(stock_qty=5)
+    customer = J.make_customer()
+    J.authenticate(client, customer)
     status, menu = J.get_json(client, "/api/v1/storefront/menu/")
     card = next(c for c in menu["catalog"]["items"] if c["sku"] == SKU)
     # The affordance keys exist on every card (flip to True when UNAVAILABLE + sellable).
@@ -579,12 +586,13 @@ def test_18_unavailable_product_exposes_notify_affordance(client):
     # And the back-in-stock subscription round-trips.
     resp = client.post(
         f"/api/v1/availability/{SKU}/notify/",
-        data=json.dumps({"phone": "43999997777"}),
+        data=json.dumps({}),
         content_type="application/json",
     )
     assert resp.status_code == 200
     subscription = resp.json()
-    assert subscription == {"ok": True}
+    assert subscription["ok"] is True
+    assert subscription["management_url"].startswith("/gerenciar-aviso#")
     recovered = client.get(f"/api/v1/availability/{SKU}/notify/")
     assert recovered.status_code == 200
     assert recovered.json()["management_url"].startswith("/gerenciar-aviso#")
