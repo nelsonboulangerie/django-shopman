@@ -17,6 +17,7 @@ const doc = {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  vi.spyOn(Math, "random").mockReturnValue(0);
   mountedCb = null;
   unmountCb = null;
   visibilityListener = null;
@@ -81,6 +82,54 @@ describe("useAdaptivePoll", () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
+  it("jitters each scheduled poll to avoid synchronized tablets", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    useAdaptivePoll(refresh, () => 30_000);
+    mountedCb!();
+
+    await vi.advanceTimersByTimeAsync(32_999);
+    expect(refresh).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("backs off after failures and resets the cadence after recovery", async () => {
+    const refresh = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockRejectedValueOnce(new Error("still offline"))
+      .mockResolvedValue(undefined);
+    useAdaptivePoll(refresh, () => 30_000);
+    mountedCb!();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(refresh).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(refresh).toHaveBeenCalledTimes(4);
+  });
+
+  it("handles a rejected visibility refresh and retries with backoff", async () => {
+    const refresh = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue(undefined);
+    useAdaptivePoll(refresh, () => 30_000);
+    mountedCb!();
+
+    visibilityListener!();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
   it("stops polling after unmount (no leaked timer)", async () => {
     const refresh = vi.fn().mockResolvedValue(undefined);
     useAdaptivePoll(refresh, () => 30_000);
@@ -88,5 +137,24 @@ describe("useAdaptivePoll", () => {
     unmountCb!();
     await vi.advanceTimersByTimeAsync(60_000);
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not rearm after unmount while a refresh is still in flight", async () => {
+    let finishRefresh!: () => void;
+    const refresh = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRefresh = resolve;
+        }),
+    );
+    useAdaptivePoll(refresh, () => 30_000);
+    mountedCb!();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    unmountCb!();
+    finishRefresh();
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 });
