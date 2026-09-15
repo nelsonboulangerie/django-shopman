@@ -13,10 +13,25 @@ Estado observado em 12/09/2026 BRT: projeção iFood desligada no runtime, crede
 | Concorrência de envio | Alteração durante envio permanece pendente e converge à última revisão; dois workers não deixam um envio antigo prevalecer | Regressões de pausa/retomada/preço durante HTTP, retry e dois workers; conferir payload final e ausência de falso sucesso |
 | Identidade e contexto | Vínculo por merchant, catálogo, contexto e SKU; ambiguidades bloqueiam escrita | Inventário lido da API comparado ao catálogo local, sem recriar IDs preexistentes |
 | Preço e disponibilidade | Alteração pontual preserva imagem, complementos, horários e contextos alheios | PATCH específico seguido de leitura do item; repetir a mesma intenção não duplica recursos |
-| Categorias | Criar, renomear, mover e ordenar conforme coleção canônica; mostrar pendência/erro | Alteração local e leitura remota com identidade e ordem preservadas; corpo de atualização validado na loja de teste |
+| Categorias | Criar, renomear, mover e ordenar conforme mapeamento explícito das coleções selecionadas para o canal; mostrar pendência/erro | Alteração local e leitura remota com identidade e ordem preservadas; corpo de atualização validado na loja de teste |
 | Informações do produto | Nome/descrição/imagem e complementos aplicáveis preservados | Upload e leitura da imagem; comparação integral antes/depois sem apagar estrutura fora do escopo |
 | Operação no celular | Distinguir mudança local, envio pendente, falha e resultado confirmado | Erro legível por toque; nenhuma indicação de sincronizado antes da convergência |
 | Ensaio oficial | Ações pelo Gestor reproduzidas na loja de teste | Gravação com data/hora e leituras remotas; estados anteriores registrados e restauração conferida |
+
+## Decisão de catálogo e canais
+
+As coleções internas não devem ser espelhadas automaticamente 1:1 nas categorias
+iFood. A seleção para o canal é estratégica e explícita: uma coleção pode continuar
+no cadastro sem participar do iFood. Categorias remotas existentes precisam ser
+reconciliadas e mapeadas antes de qualquer mudança. Todo anúncio incluído na
+operação gerenciada deve encontrar um produto canônico; ausência de vínculo é
+pendência de revisão, não autorização para publicação ou exclusão.
+
+A revisão de vínculos adiciona evidência e identidade local. Ela não conclui o
+mapeamento de categorias nem autoriza sincronização. Preço, pausa e cadastro
+continuam nos caminhos canônicos do Gestor. Os produtos locais ainda são exemplos;
+qualquer atualização do iFood real depende da revisão dos dados e aprovação de
+Pablo.
 
 ## Matriz de regressão da fila
 
@@ -54,6 +69,23 @@ Fonte: [referência oficial](https://developer.ifood.com.br/en-US/docs/reference
 - Alterar status da categoria pode afetar seus itens. Renomear envia somente `name`; reordenar envia somente `index`.
 
 Contrato documental confirmado; criação/edição ainda precisam ser exercitadas no merchant de teste antes de ativar o espelhamento.
+
+## Critério de homologação revalidado em 15/09/2026
+
+A [política oficial de categorias de aplicações](https://developer.ifood.com.br/en-US/docs/getting-started/homologation/categories)
+não admite aplicações exclusivamente de leitura para módulos operacionais; as
+exceções citadas são Financial e Analytics. Portanto captura e vínculos locais
+não bastam para homologar Catalog.
+
+O [processo oficial de Catalog](https://developer.ifood.com.br/en-US/docs/food/guides/modules/catalog/homologation)
+exige demonstração das operações aplicáveis pela interface, evidências em vídeo
+com data/hora e conferência com os logs da API pelo time iFood. O checklist recebido
+pelo chamado e a aprovação formal continuam sendo marcos externos. A autoavaliação
+de Order/Events não substitui esse processo.
+
+O próximo ensaio deve usar exclusivamente a loja de teste identificada, com o
+escopo permitido restrito ao item/contexto de teste. A entrega somente leitura e
+seus testes locais não constituem esse ensaio e não habilitam escrita no runtime.
 
 ## Coordenação
 
