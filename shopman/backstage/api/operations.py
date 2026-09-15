@@ -81,6 +81,7 @@ from shopman.backstage.api._production_mutations import (
     ProductionVoidMutationSerializer,
     validated_body,
 )
+from shopman.backstage.api.pos_concurrency import tab_command
 from shopman.backstage.api.production_freshness import (
     override_attempt_digest,
     override_shortage_snapshot,
@@ -4076,6 +4077,15 @@ class POSTabOpenView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    def get(self, request, tab_ref: str):
+        from shopman.orderman.models import Session
+
+        session = Session.objects.filter(channel_ref=POS_CHANNEL_REF, state="open",
+            handle_ref=pos_tabs_service.normalize_tab_ref(tab_ref)).first()
+        if session is None:
+            return Response({"detail": "Esta comanda já foi encerrada.", "error": {"code": "tab_closed"}}, status=409)
+        return Response(build_open_tab(session))
+
     def post(self, request, tab_ref: str):
         try:
             session = pos_tabs_service.open_pos_tab(
@@ -4101,6 +4111,7 @@ class POSTabSaveView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -4138,6 +4149,7 @@ class POSTabClearView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def delete(self, request, session_key: str):
         try:
             cleared = pos_tabs_service.clear_pos_tab(
@@ -4164,6 +4176,7 @@ class POSTabMoveLinesView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -4196,6 +4209,7 @@ class POSTabRenameView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -4218,6 +4232,7 @@ class POSTabFireView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -4248,6 +4263,7 @@ class POSTabUnfireView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -4598,6 +4614,9 @@ class POSCloseSaleView(APIView):
     required_permission = "cashman.operate_pos"
 
     def post(self, request):
+        if (request.data.get("tab_session_key") or request.data.get("tab_ref")) and not request.data.get("expected_revision"):
+            return Response({"detail": "Atualize a comanda antes de finalizar.",
+                             "error": {"code": "tab_revision_required"}}, status=422)
         body = request.data if hasattr(request, "data") else {}
         if _open_cash_shift_for_request(request) is None:
             return _cash_shift_required_response()

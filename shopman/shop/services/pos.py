@@ -363,6 +363,11 @@ def close_sale(
                 # A comanda é relida SOB LOCK: os ops de troca (remove_line dos itens
                 # atuais + add_line dos novos) só valem para o estado que travamos.
                 session = _locked_session(session)
+                from shopman.shop.services.pos_intent import pos_session_revision
+
+                if session.state != "open" or ("expected_revision" in payload and payload["expected_revision"] != pos_session_revision(session)):
+                    raise PosIntentError(code="tab_revision_conflict", status=409,
+                        message="Esta comanda mudou. Confira a versão atual antes de finalizar.")
                 direct_checkout = False
 
             result, session, tab_ref = _commit_sale_session(

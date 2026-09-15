@@ -295,6 +295,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+                "expected_revision": tab["revision"],
             "items": [
                 {
                     "sku": "POS-HEADLESS-ITEM",
@@ -682,6 +683,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+                "expected_revision": tab["revision"],
             "items": [
                 {
                     "sku": "POS-HEADLESS-ITEM",
@@ -798,6 +800,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+                "expected_revision": tab["revision"],
             "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
             "fulfillment_type": "delivery",
             "payment_method": "cash",
@@ -821,6 +824,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+                "expected_revision": tab["revision"],
             "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
             "fulfillment_type": "pickup",
             "payment_method": "mixed",
@@ -882,6 +886,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+                "expected_revision": tab["revision"],
             "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
             "fulfillment_type": "pickup",
             "payment_method": "mixed",
@@ -1261,6 +1266,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
                 "intent_version": POS_SALE_INTENT_VERSION,
                 "tab_ref": tab["tab_ref"],
                 "tab_session_key": tab["tab_session_key"],
+                "expected_revision": tab["revision"],
                 "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
                 "payment_method": "cash",
                 "payment_collection": "terminal",
