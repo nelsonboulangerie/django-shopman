@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
-from shopman.utils.phone import normalize_phone
+from shopman.utils.phone import normalize_user_phone
 
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 
@@ -192,7 +192,7 @@ def subscribe_with_outcome(
 
     alert_type = alert_type or default_alert_type(sku)
     customer_ref = (getattr(customer, "ref", "") or "").strip()
-    contact = normalize_phone(phone or getattr(customer, "phone", "") or "")
+    contact = normalize_user_phone(phone or getattr(customer, "phone", "") or "")
     disclosure_text = (disclosure_text or "").strip()
     disclosure_version = (disclosure_version or "").strip()
     if not contact or not disclosure_text or not disclosure_version:
@@ -837,7 +837,7 @@ def _globally_opted_out(sub) -> bool:
 
 def _owned_by(sub, *, customer=None, phone: str = "") -> bool:
     customer_ref = (getattr(customer, "ref", "") or "").strip()
-    contact = normalize_phone(phone or getattr(customer, "phone", "") or "")
+    contact = normalize_user_phone(phone or getattr(customer, "phone", "") or "")
     return bool((customer_ref and sub.customer_ref == customer_ref) or (contact and sub.contact_phone == contact))
 
 

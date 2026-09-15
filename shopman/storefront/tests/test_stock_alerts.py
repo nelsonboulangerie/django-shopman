@@ -158,6 +158,11 @@ def test_subscribe_requires_a_contact():
     assert stock_alerts.subscribe("SKU-1") is None
 
 
+def test_subscribe_rejects_ambiguous_mobile_without_creating_subscription():
+    assert stock_alerts.subscribe("SKU-AMBIGUOUS", phone="(43) 9840-4900") is None
+    assert not StockAlertSubscription.objects.filter(sku="SKU-AMBIGUOUS").exists()
+
+
 def test_subscribe_reconfirms_legacy_row_without_consent_evidence():
     legacy = StockAlertSubscription.objects.create(
         sku="SKU-LEGACY",
