@@ -26,3 +26,8 @@ Estimativa para uma instância, até uma hora: aproximadamente US$0,0074 de comp
 Um serviço mínimo em domínio padrão prova apenas a entrada DO desse app, região e imagem naquele momento. Não prova configuração Cloudflare de domínios personalizados, DNS/proxy da loja, authority routing do app online, acesso direto a componentes, passagem por Nitro, cookies, autenticação ou atomicidade Redis. Também não demonstra ausência de bypass de outra rota.
 
 Para liberar `do` no #655 ainda é necessário comparar a topologia real e comprovar as entradas permitidas do Admin/API/backup/domínio padrão/BFF, ou apresentar regras verificadas que bloqueiem as alternativas. Se a configuração CF/custom domain for diferente, um ensaio representativo exige domínio isolado e configuração equivalente sob nova revisão central; não alterar DNS da operação para conseguir equivalência. Resultado positivo no app mínimo reduz incerteza, mas não será promovido a “produção comprovada”.
+
+
+## Preparação concreta da imagem
+
+`tools/admin_ingress_probe/` agora contém Dockerfile e serviço Django mínimo independente do Shopman. O contexto é uma allowlist de cinco arquivos e a base linux/amd64 está fixada por digest verificado na API Docker Registry. O teste HTTP/WSGI nativo passou. Como esta máquina não tem runtime de containers, o build e o teste Linux foram preparados em `.github/workflows/admin-ingress-probe.yml`, no executor GitHub já disponível, sem registry, secrets ou deploy. A imagem OCI, hashes do contexto e verificação do manifesto ficam em artifact com retenção de um dia. O digest da imagem final continua pendente até a execução concluir; não confundir com o digest da base nem com image ID/config digest.

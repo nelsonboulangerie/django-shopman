@@ -1,0 +1,60 @@
+name: Isolated Admin ingress probe image
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/admin-ingress-probe.yml'
+      - 'tools/admin_ingress_probe/**'
+      - 'shopman/backstage/services/admin_ip_probe.py'
+      - 'shopman/backstage/tests/test_admin_ip_probe.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: admin-ingress-probe-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  isolated-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Prepare allowlisted context
+        run: |
+          mkdir -p "$RUNNER_TEMP/probe-artifacts"
+          python tools/admin_ingress_probe/prepare_context.py "$RUNNER_TEMP/probe-context" > "$RUNNER_TEMP/probe-artifacts/context-sha256.json"
+      - name: Build locally on runner; never push a registry
+        run: |
+          docker buildx create --name isolated-admin-probe --driver docker-container --use
+          docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
+            --tag admin-ingress-probe:test \
+            --output type=oci,dest="$RUNNER_TEMP/probe-artifacts/probe.oci.tar" \
+            --output type=docker \
+            "$RUNNER_TEMP/probe-context"
+      - name: Exercise container without external networking
+        run: |
+          docker run -d --name admin-probe --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            -e SHOPMAN_ENVIRONMENT=staging -e SHOPMAN_ADMIN_IP_PROBE_HOSTS=127.0.0.1 \
+            -e SHOPMAN_ADMIN_IP_PROBE_TOKEN=ci-synthetic-probe-token-no-real-secret \
+            -e SHOPMAN_ADMIN_IP_PROBE_UNTIL="$(( $(date +%s) + 600 ))" \
+            admin-ingress-probe:test
+          docker exec -i admin-probe python < tools/admin_ingress_probe/container_smoke.py
+          docker logs admin-probe > "$RUNNER_TEMP/probe-artifacts/container.log" 2>&1
+          image_id="$(docker image inspect admin-ingress-probe:test --format '{{.Id}}')"
+          python tools/admin_ingress_probe/verify_oci.py \
+            "$RUNNER_TEMP/probe-artifacts/probe.oci.tar" "$image_id" \
+            "$RUNNER_TEMP/probe-artifacts/container.log" > "$RUNNER_TEMP/probe-artifacts/verification.json"
+          cat "$RUNNER_TEMP/probe-artifacts/verification.json"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: isolated-admin-ingress-probe-oci
+          path: ${{ runner.temp }}/probe-artifacts/
+          retention-days: 1
+          if-no-files-found: error
+      - name: Clean runner resources
+        if: always()
+        run: |
+          docker rm -f admin-probe 2>/dev/null || true
+          docker buildx rm isolated-admin-probe 2>/dev/null || true
