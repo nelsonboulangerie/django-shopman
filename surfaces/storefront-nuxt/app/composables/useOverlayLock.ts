@@ -28,7 +28,8 @@ const FOCUSABLE =
  * Concentra a lógica que antes vivia duplicada em cada overlay.
  */
 export function useOverlayLock (isOpen: Ref<boolean>, options: OverlayLockOptions = {}) {
-  const isLocked = useScrollLock(import.meta.client ? document.body : null)
+  const scrollTarget = computed(() => import.meta.client ? shopScrollViewport() || document.body : null)
+  const isLocked = useScrollLock(scrollTarget)
   let lastActive: HTMLElement | null = null
   const inertEls: HTMLElement[] = []
 
