@@ -53,11 +53,16 @@ async function expectStableScreenshot(
   name: string,
   viewport: Viewport,
   theme: Theme = "light",
-  options: { fullPage?: boolean } = {},
+  options: { fullPage?: boolean; maxDiffPixels?: number } = {},
 ) {
   await expect(page).toHaveScreenshot(
     [`${name}__${viewport.label}__${theme}.png`],
-    { fullPage: options.fullPage ?? true },
+    {
+      fullPage: options.fullPage ?? true,
+      ...(options.maxDiffPixels === undefined
+        ? {}
+        : { maxDiffPixels: options.maxDiffPixels }),
+    },
   );
   const width = await page.evaluate(() => ({
     client: document.documentElement.clientWidth,
@@ -181,7 +186,35 @@ test.describe("painel", () => {
       await expect(page.getByRole("heading", { level: 1, name: "Painel" })).toBeVisible();
       if (scenario !== "board-empty" && scenario !== "board-normal")
         await waitForFaithfulPreview(page);
-      await expectStableScreenshot(page, `panel__${state}`, viewport);
+      if (scenario === "board-pending") {
+        await expect(
+          page.getByRole("group", { name: "Entregar por" }),
+        ).toBeVisible();
+        await expect(
+          page.getByRole("button", { name: "Entregar agora" }),
+        ).toBeVisible();
+        await expect(
+          page.getByText("entregar agora é uma decisão separada", {
+            exact: false,
+          }),
+        ).toBeVisible();
+        await expect(
+          page.getByText("Publicar em", { exact: true }),
+        ).toHaveCount(0);
+      }
+      await expectStableScreenshot(
+        page,
+        `panel__${state}`,
+        viewport,
+        "light",
+        scenario === "board-pending"
+          ? {
+              // A mesma árvore macOS/Chromium variou 112 pixels nos ícones.
+              // 128 preserva essa margem sem esconder a copy (659 pixels).
+              maxDiffPixels: 128,
+            }
+          : {},
+      );
     });
   }
 
