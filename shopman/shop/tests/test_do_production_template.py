@@ -32,6 +32,16 @@ PAYMENT_BYPASS_KEYS = (
     "SHOPMAN_EXPOSE_MOCK_CAPTURE",
 )
 
+# Uma credencial ou um teste anterior não pode deixar uma via de publicação
+# pública armada no próximo deploy. A janela real é configuração operacional
+# temporária e volta a false ao terminar.
+MARKETING_PUBLICATION_CANARY_KEYS = (
+    "SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED",
+    "SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED",
+    "SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED",
+    "SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED",
+)
+
 
 class UniqueKeyLoader(yaml.SafeLoader):
     pass
@@ -102,3 +112,18 @@ def test_production_template_never_auto_confirms_payment():
         "template de PRODUÇÃO com bypass de pagamento ligado: "
         + ", ".join(sorted(offenders))
     )
+
+
+def test_deploy_templates_never_prearm_publication_canary():
+    for path in DEPLOY_SPECS:
+        spec = _load_spec(path)
+        offenders = [
+            key
+            for key, value in _envs(spec)
+            if key in MARKETING_PUBLICATION_CANARY_KEYS
+            and str(value).strip().lower() == "true"
+        ]
+        assert not offenders, (
+            f"{path.name}: via pública de canário pré-armada: "
+            + ", ".join(sorted(offenders))
+        )
