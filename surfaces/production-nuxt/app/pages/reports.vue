@@ -9,11 +9,7 @@
 //     mostram (etiquetas circulam só com o código) — aqui é a visão de gestor.
 // Sem gráficos: tabelas caladas e números pré-formatados pelas projections.
 import { isStale, isoForOffset } from "~/presentation/production";
-import {
-  REPORT_KINDS,
-  type ReportFiltersQuery,
-  type ReportKind,
-} from "~/presentation/reports";
+import { REPORT_KINDS, type ReportFiltersQuery } from "~/presentation/reports";
 
 // ── Gestão do dia (KPIs + atrasos + mapa cego) ─────────────────────────────
 const selectedDate = ref(isoForOffset(0));
@@ -32,24 +28,35 @@ const {
 const blindMap = useBlindMap(selectedDate);
 
 // ── Relatórios por período ─────────────────────────────────────────────────
-const kind = ref<ReportKind>("history");
-const dateFrom = ref(isoForOffset(-6));
-const dateTo = ref(isoForOffset(0));
-const recipeRef = ref("");
-const positionRef = ref("");
-const operatorRef = ref("");
-
-const filters = computed<ReportFiltersQuery>(() => ({
-  report_kind: kind.value,
-  date_from: dateFrom.value,
-  date_to: dateTo.value,
-  recipe_ref: recipeRef.value,
-  position_ref: positionRef.value,
-  operator_ref: operatorRef.value.trim(),
-}));
+const initialFilters: ReportFiltersQuery = {
+  selected_only: true,
+  report_kind: "history",
+  date_from: isoForOffset(-6),
+  date_to: isoForOffset(0),
+  recipe_ref: "",
+  position_ref: "",
+  operator_ref: "",
+  sort: "default",
+  page_size: 50,
+  cursor: "",
+};
+const {
+  draft: filterDraft,
+  applied: filters,
+  validationError: filterError,
+  isDirty: filtersDirty,
+  selectKind,
+  apply: applyFilters,
+  openCursor,
+} = useReportFilters(initialFilters);
+const activeKind = computed(() => filters.value.report_kind);
+const exportEligible = computed(
+  () => !filtersDirty.value && !filterError.value,
+);
 
 const {
   reports,
+  pagination,
   historyRows,
   operatorRows,
   wasteRows,
@@ -57,11 +64,16 @@ const {
   availableRecipes,
   availablePositions,
   forbidden: reportsForbidden,
-  csvUrl,
+  cursorStale,
+  canExport,
+  exportStatus,
+  exportMessage,
+  downloadCsv,
+  cancelExport,
   pending,
   error,
   refresh,
-} = useProductionReports(filters);
+} = useProductionReports(filters, exportEligible);
 
 // 403 em qualquer bloco = mesma causa (sem a perm fina) → mensagem única e calma.
 const forbidden = computed(
@@ -69,15 +81,19 @@ const forbidden = computed(
 );
 
 const hasRows = computed(() => {
-  if (kind.value === "operator_productivity")
+  if (activeKind.value === "operator_productivity")
     return operatorRows.value.length > 0;
-  if (kind.value === "recipe_waste") return wasteRows.value.length > 0;
-  if (kind.value === "quality") return qualityRows.value.length > 0;
+  if (activeKind.value === "recipe_waste") return wasteRows.value.length > 0;
+  if (activeKind.value === "quality") return qualityRows.value.length > 0;
   return historyRows.value.length > 0;
 });
 const stale = computed(() =>
   isStale({ error: !!error.value, hasData: !!reports.value }),
 );
+function changeReportKind(reportKind: (typeof REPORT_KINDS)[number]["kind"]) {
+  selectKind(reportKind);
+  applyFilters();
+}
 
 function refreshAll() {
   refresh();
@@ -269,23 +285,55 @@ function refreshAll() {
             type="button"
             class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
-              kind === entry.kind
+              activeKind === entry.kind
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:bg-accent hover:text-foreground'
             "
-            :aria-pressed="kind === entry.kind"
-            @click="kind = entry.kind"
+            :aria-pressed="activeKind === entry.kind"
+            @click="changeReportKind(entry.kind)"
           >
             {{ entry.label }}
           </button>
         </div>
-        <a
-          :href="csvUrl"
-          download
-          class="ml-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition hover:bg-accent"
+        <UiButton
+          type="button"
+          variant="outline"
+          size="sm"
+          class="ml-auto"
+          :disabled="!canExport"
+          :title="
+            exportStatus === 'pending'
+              ? 'Exportação em andamento.'
+              : canExport
+                ? undefined
+                : 'Aplique os filtros válidos antes de baixar.'
+          "
+          @click="downloadCsv()"
         >
-          <Icon name="lucide:download" class="size-4" /> Baixar CSV
-        </a>
+          <Icon name="lucide:download" class="size-4" />
+          {{ exportStatus === "pending" ? "Exportando…" : "Baixar CSV" }}
+        </UiButton>
+        <UiButton
+          v-if="exportStatus === 'pending'"
+          type="button"
+          variant="ghost"
+          size="sm"
+          @click="cancelExport()"
+        >
+          Cancelar
+        </UiButton>
+        <p
+          v-if="exportMessage"
+          class="basis-full text-right text-xs text-muted-foreground"
+          :class="{
+            'text-destructive':
+              exportStatus === 'failure' || exportStatus === 'session_expired',
+          }"
+          role="status"
+          aria-live="polite"
+        >
+          {{ exportMessage }}
+        </p>
       </div>
 
       <div
@@ -294,25 +342,26 @@ function refreshAll() {
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">
           De
           <UiInput
-            v-model="dateFrom"
+            v-model="filterDraft.date_from"
             type="date"
             class="w-auto"
+            :aria-invalid="!!filterError"
+            aria-describedby="report-date-help"
           />
         </label>
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">
           Até
           <UiInput
-            v-model="dateTo"
+            v-model="filterDraft.date_to"
             type="date"
             class="w-auto"
+            :aria-invalid="!!filterError"
+            aria-describedby="report-date-help"
           />
         </label>
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">
           Ficha técnica
-          <UiNativeSelect
-            v-model="recipeRef"
-            class="w-auto"
-          >
+          <UiNativeSelect v-model="filterDraft.recipe_ref" class="w-auto">
             <option value="">Todas</option>
             <option
               v-for="recipe in availableRecipes"
@@ -325,10 +374,7 @@ function refreshAll() {
         </label>
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">
           Posto
-          <UiNativeSelect
-            v-model="positionRef"
-            class="w-auto"
-          >
+          <UiNativeSelect v-model="filterDraft.position_ref" class="w-auto">
             <option value="">Todos</option>
             <option
               v-for="position in availablePositions"
@@ -342,25 +388,95 @@ function refreshAll() {
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">
           Operador
           <UiInput
-            v-model="operatorRef"
+            v-model="filterDraft.operator_ref"
             type="text"
             placeholder="Nome ou usuário"
             class="w-auto"
           />
         </label>
+        <label class="grid gap-1 text-xs font-medium text-muted-foreground">
+          Ordenar
+          <UiNativeSelect v-model="filterDraft.sort" class="w-auto">
+            <option value="default">Padrão</option>
+            <option
+              v-if="filterDraft.report_kind === 'history'"
+              value="date_desc"
+            >
+              Data mais recente
+            </option>
+            <option
+              v-if="filterDraft.report_kind === 'history'"
+              value="date_asc"
+            >
+              Data mais antiga
+            </option>
+            <option value="name_asc">Nome A–Z</option>
+            <option value="name_desc">Nome Z–A</option>
+            <option value="quantity_desc">Maior quantidade</option>
+            <option value="quantity_asc">Menor quantidade</option>
+          </UiNativeSelect>
+        </label>
+        <UiButton
+          type="button"
+          size="sm"
+          :disabled="!!filterError"
+          @click="applyFilters()"
+        >
+          Aplicar
+        </UiButton>
+        <p
+          id="report-date-help"
+          role="status"
+          aria-live="polite"
+          class="basis-full text-xs"
+          :class="filterError ? 'text-destructive' : 'text-muted-foreground'"
+        >
+          {{
+            filterError ||
+            "Período máximo: 93 dias. Os filtros só mudam ao aplicar."
+          }}
+        </p>
       </div>
 
       <div
-        v-if="stale"
+        v-if="cursorStale"
+        role="alert"
+        aria-live="assertive"
+        class="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
+      >
+        <Icon name="lucide:refresh-cw" class="size-4 shrink-0" />
+        <span>O relatório mudou enquanto você navegava.</span>
+        <UiButton
+          type="button"
+          size="sm"
+          variant="outline"
+          class="ml-auto"
+          @click="applyFilters()"
+        >
+          Reconciliar relatório
+        </UiButton>
+      </div>
+
+      <div
+        v-if="stale && !cursorStale"
         role="status"
         aria-live="polite"
         class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
       >
         <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
-        <span>Sem atualizar — mostrando o último relatório carregado.</span>
+        <span>Sem atualizar — mostrando a última página aplicada.</span>
       </div>
 
-      <p v-if="pending && !reports" class="text-sm text-muted-foreground">
+      <div
+        v-if="cursorStale"
+        class="grid place-items-center rounded-md border border-dashed border-warning/40 py-12 text-center text-sm text-muted-foreground"
+      >
+        Navegação bloqueada até reconciliar o relatório.
+      </div>
+      <p
+        v-else-if="pending && !reports"
+        class="text-sm text-muted-foreground"
+      >
         Carregando…
       </p>
       <div
@@ -378,7 +494,8 @@ function refreshAll() {
           size="sm"
           @click="refresh()"
         >
-          <Icon name="lucide:refresh-cw" class="size-4" /> Tentar de novo
+          <Icon name="lucide:refresh-cw" class="size-4" />
+          Tentar de novo
         </UiButton>
       </div>
       <div
@@ -392,7 +509,7 @@ function refreshAll() {
 
       <!-- Histórico por OP -->
       <div
-        v-else-if="kind === 'history'"
+        v-else-if="activeKind === 'history'"
         class="overflow-x-auto rounded-md border"
       >
         <table class="w-full min-w-[64rem] text-sm">
@@ -449,7 +566,7 @@ function refreshAll() {
 
       <!-- Produtividade por operador -->
       <div
-        v-else-if="kind === 'operator_productivity'"
+        v-else-if="activeKind === 'operator_productivity'"
         class="overflow-x-auto rounded-md border"
       >
         <table class="w-full text-sm">
@@ -494,7 +611,7 @@ function refreshAll() {
 
       <!-- Qualidade: a partição do QC por receita × grau × defeito -->
       <div
-        v-else-if="kind === 'quality'"
+        v-else-if="activeKind === 'quality'"
         class="overflow-x-auto rounded-md border"
       >
         <table class="w-full text-sm">
@@ -562,6 +679,39 @@ function refreshAll() {
           </tbody>
         </table>
       </div>
+
+      <nav
+        v-if="pagination && pagination.total && !cursorStale"
+        class="mt-3 flex items-center justify-between gap-3 text-sm"
+        aria-label="Paginação do relatório"
+      >
+        <span class="text-muted-foreground" role="status" aria-live="polite">
+          Exibindo {{ pagination.from }}–{{ pagination.to }} de
+          {{ pagination.total }} resultado{{
+            pagination.total === 1 ? "" : "s"
+          }}
+        </span>
+        <div class="flex gap-2">
+          <UiButton
+            type="button"
+            size="sm"
+            variant="outline"
+            :disabled="!pagination.previous_cursor || pending"
+            @click="openCursor(pagination.previous_cursor)"
+          >
+            Anterior
+          </UiButton>
+          <UiButton
+            type="button"
+            size="sm"
+            variant="outline"
+            :disabled="!pagination.next_cursor || pending"
+            @click="openCursor(pagination.next_cursor)"
+          >
+            Próxima
+          </UiButton>
+        </div>
+      </nav>
 
       <!-- ── Mapa código-cego ↔ preparo (visão de gestor) ──────────────── -->
       <div class="mt-6">

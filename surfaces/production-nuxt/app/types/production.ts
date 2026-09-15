@@ -181,6 +181,15 @@ export interface WeighingResponse {
 
 export interface ProductionReportsResponse {
   reports: ProductionReportsProjection;
+  pagination: {
+    total: number;
+    page_size: number;
+    from: number;
+    to: number;
+    sort: string;
+    next_cursor: string;
+    previous_cursor: string;
+  };
 }
 
 export interface ProductionManagementResponse {

@@ -1547,6 +1547,15 @@ SHOPMAN_KDS_BASE_URL = (os.environ.get("SHOPMAN_KDS_BASE_URL") or "").strip().rs
 # (surfaces/production-nuxt). Vazio ⇒ o item "Produção ao vivo" some do nav
 # do Admin (sem link morto), e o operador acessa direto pelo subdomínio (prod.).
 SHOPMAN_PRODUCTION_BASE_URL = (os.environ.get("SHOPMAN_PRODUCTION_BASE_URL") or "").strip().rstrip("/")
+SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_ROWS = int(
+    os.environ.get("SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_ROWS", "50000")
+)
+SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_BYTES = int(
+    os.environ.get("SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_BYTES", str(20 * 1024 * 1024))
+)
+SHOPMAN_PRODUCTION_REPORT_EXPORT_SPOOL_BYTES = int(
+    os.environ.get("SHOPMAN_PRODUCTION_REPORT_EXPORT_SPOOL_BYTES", str(1024 * 1024))
+)
 
 # Base URL pública do Marketing (surfaces/marketing-nuxt) — app Nuxt dedicado,
 # publicado em `mkt.` (staging: mkt.boulangerie.com.br). Vazio ⇒ o tile
