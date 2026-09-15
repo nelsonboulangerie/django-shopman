@@ -7,7 +7,10 @@
 **Commit funcional:** `9d3eebb67`
 
 **Base composta:** `943f437de`, reconciliada sem conflito com `origin/main`
-`fb0b37990` pelo merge local `8e9078491`
+`6f66f3754` pelos merges locais `8e9078491`, `747fbef17` e `372e9fd34`.
+As atualizações posteriores à primeira validação trouxeram somente o reparo do
+ícone PWA do Storefront e o gate de capacidade determinístico já aprovado no
+PR #683; não sobrepuseram os arquivos funcionais de R10/R12.
 
 **Efeito externo:** nenhum
 
