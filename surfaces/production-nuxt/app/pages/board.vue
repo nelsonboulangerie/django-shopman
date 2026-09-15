@@ -54,8 +54,11 @@ const isCustomDate = computed(
 const customDateInput = ref<HTMLInputElement | null>(null);
 function openCustomDate() {
   sound.unlock();
-  customDateInput.value?.showPicker?.();
-  customDateInput.value?.focus();
+  const input = customDateInput.value;
+  if (!input) return;
+  if (typeof input.showPicker === "function") input.showPicker();
+  else input.click();
+  input.focus();
 }
 
 // ── Relógio vivo ────────────────────────────────────────────────────────────

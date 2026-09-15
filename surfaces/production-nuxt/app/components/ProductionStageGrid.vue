@@ -88,8 +88,11 @@ const isCustomDate = computed(
 );
 const customDateInput = ref<HTMLInputElement | null>(null);
 function openCustomDate() {
-  customDateInput.value?.showPicker?.();
-  customDateInput.value?.focus();
+  const input = customDateInput.value;
+  if (!input) return;
+  if (typeof input.showPicker === "function") input.showPicker();
+  else input.click();
+  input.focus();
 }
 
 // ── Filtro por ficha-base (higiene visual por grupo de massa) ───────────────

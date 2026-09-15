@@ -131,6 +131,38 @@ test("reduced motion torna as palhetas instantâneas", async ({ context, page })
   expect(movingCells).toBe(0);
 });
 
+for (const { route, trigger } of [
+  { route: "/", trigger: "Outra data" },
+  { route: "/board", trigger: "Outra" },
+]) {
+  test(`${route} abre o seletor de data quando showPicker não existe`, async ({
+    context,
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(HTMLInputElement.prototype, "showPicker", {
+        configurable: true,
+        value: undefined,
+      });
+      const nativeClick = HTMLInputElement.prototype.click;
+      HTMLInputElement.prototype.click = function click() {
+        if (this.type === "date") {
+          this.dataset.e2eFallbackClick = "true";
+          return;
+        }
+        nativeClick.call(this);
+      };
+    });
+    await context.addCookies([authed]);
+    await page.goto(route);
+
+    const input = page.getByLabel("Escolher outra data");
+    await page.getByRole("button", { name: trigger, exact: true }).click();
+    await expect(input).toHaveAttribute("data-e2e-fallback-click", "true");
+    await expect(input).toBeFocused();
+  });
+}
+
 test("copy longa e números grandes permanecem legíveis em zoom 200%", async ({
   context,
   page,
