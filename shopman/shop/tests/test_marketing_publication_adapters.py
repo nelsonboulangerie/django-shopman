@@ -12,6 +12,7 @@ from django.test import override_settings
 from shopman.shop.adapters import marketing_delivery_google as google
 from shopman.shop.adapters import marketing_delivery_http as http
 from shopman.shop.adapters import marketing_delivery_meta as meta
+from shopman.shop.adapters import marketing_delivery_tiktok as tiktok
 from shopman.shop.adapters.marketing_delivery_http import HTTPFailure, TransportFailure
 from shopman.shop.services.marketing_contracts import (
     ProviderCallFailure,
@@ -43,11 +44,18 @@ GOOGLE_OAUTH = {
     "refresh_token": "secret-refresh",
     "token_url": "https://oauth.example.test/token",
 }
+TIKTOK = {
+    "api_base": "https://open.tiktokapis.example.test",
+    "access_token": "secret-tiktok-token",
+    "timeout": 9,
+}
 
 
 def artifact(platform: str, publication_format: str, *, image=True):
     return ResolvedDispatchArtifact(
         platform=platform,
+        delivery_kind="publication",
+        format=publication_format,
         body="Madeleines quentinhas",
         hashtags=("fornada",),
         link="https://loja.example.test/produto/mad",
@@ -434,3 +442,160 @@ def test_google_business_oauth_refresh_failures_to_retry_without_leaking_secrets
 )
 def test_external_publication_is_closed_in_debug_without_independent_opt_in():
     assert meta.instagram_available() is False
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED=True,
+    SHOPMAN_MARKETING_TIKTOK=TIKTOK,
+)
+def test_tiktok_photo_direct_post_queries_creator_and_preserves_explicit_choices(
+    monkeypatch,
+):
+    request = Mock(
+        side_effect=[
+            {
+                "data": {
+                    "privacy_level_options": ["PUBLIC_TO_EVERYONE", "SELF_ONLY"],
+                    "comment_disabled": False,
+                },
+                "error": {"code": "ok"},
+            },
+            {
+                "data": {"publish_id": "publish-v2-1"},
+                "error": {"code": "ok"},
+            },
+        ]
+    )
+    monkeypatch.setattr(tiktok, "request_json", request)
+    photo = ResolvedDispatchArtifact(
+        platform="tiktok",
+        delivery_kind="publication",
+        format="photo",
+        body="Lá vem a primavera...",
+        hashtags=("primavera",),
+        image_url="https://cdn.example.test/hibisco.jpg",
+        provider_fields=(
+            ("title", "Primavera"),
+            ("privacy_level", "PUBLIC_TO_EVERYONE"),
+            ("disable_comment", False),
+            ("auto_add_music", False),
+            ("commercial_content", True),
+            ("brand_organic_toggle", True),
+            ("brand_content_toggle", False),
+            ("consent_confirmed", True),
+        ),
+    )
+
+    outcome = tiktok.send(
+        artifact=photo,
+        target_key="public",
+        idempotency_token="idem",
+    )
+
+    assert outcome.kind == ProviderOutcomeKind.ACCEPTED_UNCONFIRMED
+    assert outcome.provider_receipt_ref == "tt:publish-v2-1"
+    assert request.call_args_list[0].kwargs["url"].endswith("/v2/post/publish/creator_info/query/")
+    publish = request.call_args_list[1].kwargs
+    assert publish["payload"] == {
+        "post_info": {
+            "title": "Primavera",
+            "description": "Lá vem a primavera...\n\n#primavera",
+            "disable_comment": False,
+            "privacy_level": "PUBLIC_TO_EVERYONE",
+            "auto_add_music": False,
+            "brand_content_toggle": False,
+            "brand_organic_toggle": True,
+        },
+        "source_info": {
+            "source": "PULL_FROM_URL",
+            "photo_cover_index": 0,
+            "photo_images": ["https://cdn.example.test/hibisco.jpg"],
+        },
+        "post_mode": "DIRECT_POST",
+        "media_type": "PHOTO",
+    }
+    assert "secret-tiktok-token" not in publish["url"]
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED=True,
+    SHOPMAN_MARKETING_TIKTOK=TIKTOK,
+)
+def test_tiktok_never_invents_required_operator_choices(monkeypatch):
+    request = Mock()
+    monkeypatch.setattr(tiktok, "request_json", request)
+
+    with pytest.raises(ProviderCallFailure) as caught:
+        tiktok.send(
+            artifact=ResolvedDispatchArtifact(
+                platform="tiktok",
+                delivery_kind="publication",
+                format="photo",
+                body="Sem escolhas explícitas",
+                image_url="https://cdn.example.test/hibisco.jpg",
+            ),
+            target_key="public",
+            idempotency_token="idem",
+        )
+
+    assert caught.value.kind == ProviderOutcomeKind.NOT_ATTEMPTED
+    assert request.call_count == 0
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED=True,
+    SHOPMAN_MARKETING_TIKTOK=TIKTOK,
+)
+def test_tiktok_lost_publish_response_is_unknown_and_not_retried(monkeypatch):
+    request = Mock(
+        side_effect=[
+            {
+                "data": {
+                    "privacy_level_options": ["SELF_ONLY"],
+                    "comment_disabled": False,
+                },
+                "error": {"code": "ok"},
+            },
+            TransportFailure(),
+        ]
+    )
+    monkeypatch.setattr(tiktok, "request_json", request)
+    photo = ResolvedDispatchArtifact(
+        platform="tiktok",
+        delivery_kind="publication",
+        format="photo",
+        body="Teste privado",
+        image_url="https://cdn.example.test/hibisco.jpg",
+        provider_fields=(
+            ("privacy_level", "SELF_ONLY"),
+            ("disable_comment", False),
+            ("auto_add_music", False),
+            ("commercial_content", False),
+            ("brand_organic_toggle", False),
+            ("brand_content_toggle", False),
+            ("consent_confirmed", True),
+        ),
+    )
+
+    with pytest.raises(ProviderCallFailure) as caught:
+        tiktok.send(
+            artifact=photo,
+            target_key="public",
+            idempotency_token="idem",
+        )
+
+    assert caught.value.kind == ProviderOutcomeKind.UNKNOWN
+    assert request.call_count == 2
+
+
+@override_settings(
+    DEBUG=True,
+    SHOPMAN_ALLOW_EXTERNAL_IN_DEBUG=False,
+    SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED=True,
+    SHOPMAN_MARKETING_TIKTOK=TIKTOK,
+)
+def test_tiktok_is_closed_in_debug_without_independent_external_opt_in():
+    assert tiktok.is_available() is False

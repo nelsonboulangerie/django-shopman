@@ -281,7 +281,7 @@ def reschedule_command(
                 },
             )
         if any(
-            row.platform == "whatsapp"
+            row.delivery_kind == "direct_message"
             and not marketing_time.delivery_window(
                 moment,
                 timezone_name=effective_timezone,
