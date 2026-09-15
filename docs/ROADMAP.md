@@ -71,6 +71,20 @@
 - **Mudar número de telefone** ([`plans/CHANGE-PHONE-NUMBER-PLAN.md`](plans/CHANGE-PHONE-NUMBER-PLAN.md))
   — telefone é identidade; só se valer a pena.
 - **SEO como capítulo próprio** — [`plans/SEO-PLAN.md`](plans/SEO-PLAN.md).
+- **Gastos recorrentes do operador (carimbo 2026-09-14, dono: Pablo)** — aluguel,
+  folha, contas fixas: lançamento em poucos toques, recorrência, vencimento,
+  comprovante anexado, lembrete. Benchmark: Organizze. A fonte de verdade contábil
+  é o Conta Azul, operado por BPO financeiro; o sistema só ALIMENTA (vendas por
+  meio de pagamento, movimentos de caixa, notas de compra e estes lançamentos) por
+  Directive + adapter, no padrão do fiscal. Não bloqueia o go-live; tem que estar
+  previsto no desenho do `finance.sync` desde o primeiro envio.
+- **Agentes de operador sobre o kernel da Concierge v3** — Pierre (produção),
+  Étienne (compras) e Anaïs (financeiro consultivo). Persona é dado do tenant; o
+  kernel é agnóstico. Decisões de 2026-09-14 na memória de sessão
+  (`project_mecanismo_de_interacao_agentica`); WP só depois do go-live.
+- **PWA de verdade nas surfaces** (notificação ativa com tela desligada, instalável,
+  kiosk) — [`plans/WP-PWA-CONFORMIDADE.md`](plans/WP-PWA-CONFORMIDADE.md). Torna o
+  Telegram escolha, não necessidade, para o proativo dos agentes.
 
 ## Critério Para Produção Real
 
