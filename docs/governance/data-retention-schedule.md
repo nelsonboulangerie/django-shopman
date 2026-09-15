@@ -29,8 +29,8 @@ descartes ocorridos desde a cópia.
 | R02 | Registro de incidente de segurança | data do registro | mínimo de 5 anos | eliminar ou anonimizar, salvo obrigação adicional | prazo e runbook documentados; exercício e rotina de arquivo pendentes |
 | R03 | Evento de consentimento e revogação | último evento da finalidade/canal | 5 anos | eliminar; preservar apenas tombstone R04 quando necessário | evento existe; IP bruto já é removido em até 90 dias |
 | R04 | Bloqueio de contato/opt-out mínimo | remoção do contato ou última revogação | enquanto o contato existir e 5 anos depois | eliminar | modelo deve conservar só identificador protegido, finalidade e prova mínima; implementação pendente |
-| R05 | Membro de público e vínculo pessoal de destino de Marketing | `settled`, `cancelled` ou `expired` | 90 dias; `unknown` até 180 dias | apagar FK/vínculo pessoal; manter apenas contagens, estado, horários e hashes não reversíveis | dry-run conta vínculos vencidos sem entrega pendente; contração pendente |
-| R06 | ID do provedor e recibo detalhado de entrega | encerramento/reconciliação | 180 dias | remover ID/PII; manter resultado técnico agregado | dry-run conta referências vencidas; contração pendente; `unknown` sem solução exige legal hold ou anonimização |
+| R05 | Membro de público e vínculo pessoal de destino de Marketing | `settled`, `cancelled` ou `expired` | 90 dias; `unknown` até 180 dias | apagar FK/vínculo pessoal; manter apenas contagens, estado, horários e hashes não reversíveis | dry-run conta cada vínculo vencido sem entrega pendente; o relógio ainda nasce antes do encerramento e precisa ser corrigido junto da contração |
+| R06 | ID do provedor e recibo detalhado de entrega | encerramento/reconciliação | 180 dias | remover ID/PII; manter resultado técnico agregado | dry-run usa 180 dias e inventaria Marketing, Avise-me e concierge; contração pendente; `unknown` sem solução exige legal hold ou anonimização |
 | R07 | Inscrição “Avise-me” | pausa ou cancelamento pelo cliente | ativa até pausa/cancelamento; depois 90 dias para dado operacional e 5 anos para prova mínima | apagar contato/capacidade operacional aos 90 dias; apagar prova ao fim de 5 anos | vigência ativa e contagem dry-run implementadas; contração pós-cancelamento pendente |
 | R08 | Conversa e transcrição do concierge | encerramento; conversa sem atividade encerra após 30 dias | 90 dias após encerramento | eliminar transcrição, vínculos e IDs; exceção somente para disputa/incident legal hold | exclusão de conta apaga a árvore; dry-run conta fechamento/expurgo; mutações pendentes |
 | R09 | Conta, endereços, preferências, favoritos, tags e perfil de compra | exclusão da conta ou fim da finalidade | enquanto a conta estiver ativa | apagar imediatamente; pedidos seguem R01 já pseudonimizados | autoatendimento abrangente implementado, com alerta se houver falha parcial |
@@ -60,6 +60,15 @@ emite somente contagens. `--json` produz evidência estável para o gate. A saí
 declara `pii=false` e `mutations=0`; `--apply` está implementado apenas como
 trava e recusa a operação com mensagem explícita. Portanto, esta etapa não
 apaga dados nem cria/agrega job ao worker de produção.
+
+Revalidação de 2026-09-14 corrigiu duas superestimações da primeira leitura:
+R05 agora conta vínculos de destino, não membros distintos que poderiam ter
+outro destino ainda dentro do prazo; R06 usa a janela própria de 180 dias para
+o recibo mesmo quando o registro técnico permanece por cinco anos, e inclui os
+recibos de Avise-me e do concierge. A saída continua sem identificadores e sem
+mutação. O apply continua bloqueado porque o marco pós-encerramento de R05, o
+legal hold, a separação prova/operação de R07 e o `closed_at` de R08 exigem
+schema e testes antes de qualquer descarte.
 
 ## Decisão humana registrada em 2026-09-12
 

@@ -255,7 +255,11 @@ e gate humano separado.
 contagens sem PII para as 15 regras, por padrão sem mutação; `--apply` recusa
 explicitamente enquanto não houver a implementação destrutiva revisada e o gate
 separado. Os testes cobrem a matriz completa, a preservação de um registro
-vencido no dry-run e a recusa do apply.
+vencido no dry-run e a recusa do apply. Em 2026-09-14, a leitura foi revalidada:
+R05 passou a contar cada vínculo pessoal vencido sem confundir membros
+multiplataforma, e R06 passou a aplicar 180 dias ao recibo detalhado mesmo
+quando o registro técnico permanece por prazo maior, incluindo Marketing,
+Avise-me e concierge. Nenhum descarte ou job produtivo foi habilitado.
 
 ### Gate L8 — alertas de dependência nas demais superfícies
 

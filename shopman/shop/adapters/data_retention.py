@@ -23,9 +23,11 @@ def external_retention_counts(*, now: datetime) -> dict[str, dict[str, int]]:
     verification_code = apps.get_model("doorman", "VerificationCode")
     trusted_device = apps.get_model("doorman", "TrustedDevice")
     stock_alert = apps.get_model("storefront", "StockAlertSubscription")
+    stock_alert_delivery = apps.get_model("storefront", "StockAlertDelivery")
 
     five_years_ago = now - timedelta(days=365 * 5)
     ninety_days_ago = now - timedelta(days=90)
+    one_hundred_eighty_days_ago = now - timedelta(days=180)
     seven_days_ago = now - timedelta(days=7)
 
     return {
@@ -46,11 +48,21 @@ def external_retention_counts(*, now: datetime) -> dict[str, dict[str, int]]:
                 revoked_at__lte=five_years_ago,
             ).count(),
         },
+        "R06": {
+            "recibos_de_avise_me": stock_alert_delivery.objects.filter(
+                status__in=("accepted", "suppressed"),
+                updated_at__lte=one_hundred_eighty_days_ago,
+            ).exclude(provider_receipt_ref="").count(),
+        },
         "R07": {
             "inscricoes_inativas_apos_prazo": stock_alert.objects.filter(
                 Q(revoked_at__lte=ninety_days_ago)
                 | Q(paused_at__lte=ninety_days_ago)
-            ).count(),
+            ).exclude(
+                deliveries__status__in=("queued", "claimed", "retryable", "indeterminate"),
+            ).filter(
+                Q(customer_ref__gt="") | Q(contact_phone__gt=""),
+            ).distinct().count(),
         },
         "R09": {
             "contas_inativas": customer.objects.filter(is_active=False).count(),
