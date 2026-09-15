@@ -95,7 +95,7 @@ jobs:
           app_id = str(uuid.UUID(os.environ['PROBE_APP_ID']))
           assert app_id != '40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f'
           default = os.environ['PROBE_DEFAULT_HOST']
-          assert re.fullmatch(r'shopman-admin-ip-probe-20260915-a-[a-z0-9]+\.ondigitalocean\.app', default)
+          assert re.fullmatch(r'shopman-ip-probe-20260915-a-[a-z0-9]+\.ondigitalocean\.app', default)
           for host in ['admin-ip-probe-20260915-a.boulangerie.com.br',
                        'api-ip-probe-20260915-a.boulangerie.com.br', default]:
               print('PROBE_HOST=' + host, flush=True)
