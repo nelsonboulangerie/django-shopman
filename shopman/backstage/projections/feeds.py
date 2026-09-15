@@ -1,17 +1,20 @@
 """
-Projeção dos canais de EXIBIÇÃO para o Gestor — o lado display do cardápio.
+Projeção dos canais de venda e exibição para o Gestor.
 
 Um Feed exibe um recorte de coleções para fora (📺 menuboard / 🛰 Google/Meta) sem
 transacionar. Esta projeção lista os feeds + a saída (URL para abrir/prever) +
 as coleções disponíveis (para o operador escolher quais cada um mostra). A ordem de
 exibição das coleções é global (``Collection.sort_order``), reordenável no catálogo.
 
-Read-only. Frozen dataclasses convertidos por ``backstage.api.projections``.
+Canais de venda mostram apenas configuração de envio e registros locais de sync.
+Dataclasses imutáveis convertidas por ``backstage.api.projections``.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+from django.db.models import Count, Q
 
 from shopman.shop.projections.types import Action
 
@@ -73,9 +76,25 @@ class CollectionOptionProjection:
 
 
 @dataclass(frozen=True)
+class CatalogChannelProjection:
+    ref: str
+    name: str
+    projection_enabled: bool
+    diagnostic: str
+    synced: int
+    pending: int
+    errors: int
+    retracted: int
+    skipped: int
+    observed: int
+    catalog_path: str = "/catalog"
+
+
+@dataclass(frozen=True)
 class FeedBoardProjection:
     feeds: tuple[FeedProjection, ...]
     all_collections: tuple[CollectionOptionProjection, ...]  # opções p/ o picker (ordem global)
+    catalog_channels: tuple[CatalogChannelProjection, ...] = ()
 
 
 def build_feed_board(*, user=None) -> FeedBoardProjection:
@@ -135,4 +154,36 @@ def build_feed_board(*, user=None) -> FeedBoardProjection:
         CollectionOptionProjection(ref=c.ref, name=c.name, product_count=c.product_queryset().count())
         for c in collections
     )
-    return FeedBoardProjection(feeds=tuple(feeds), all_collections=options)
+    from shopman.offerman.conf import get_projection_backend_channels
+
+    from shopman.shop.models.catalog_sync import CatalogSyncState
+
+    configured = set(get_projection_backend_channels())
+    # Não instanciamos adapters nem consultamos a API para montar esta leitura.
+    external = list(Channel.objects.filter(
+        commerce_policy=Channel.CommercePolicy.ORDER,
+    ).order_by("name", "ref"))
+    counts = {row["channel_ref"]: row for row in CatalogSyncState.objects.filter(
+        channel_ref__in=[channel.ref for channel in external],
+    ).values("channel_ref").annotate(
+        observed=Count("pk"), synced=Count("pk", filter=Q(status="synced")),
+        pending=Count("pk", filter=Q(status="pending")),
+        errors=Count("pk", filter=Q(status="error")),
+        retracted=Count("pk", filter=Q(status="retracted")),
+        skipped=Count("pk", filter=Q(status="skipped")),
+    )}
+    catalog_channels = []
+    for channel in external:
+        enabled = channel.ref in configured
+        count = counts.get(channel.ref, {})
+        diagnostic = ("Sem envio externo de catálogo configurado." if not enabled else
+                      "Canal inativo nesta instalação; confira a configuração antes de publicar." if not channel.is_active else
+                      "Envio configurado. Consulte o resultado por produto no Catálogo.")
+        catalog_channels.append(CatalogChannelProjection(
+            ref=channel.ref, name=channel.name or channel.ref, projection_enabled=enabled,
+            diagnostic=diagnostic, synced=count.get("synced", 0), pending=count.get("pending", 0),
+            errors=count.get("errors", 0), retracted=count.get("retracted", 0),
+            skipped=count.get("skipped", 0), observed=count.get("observed", 0),
+        ))
+    return FeedBoardProjection(feeds=tuple(feeds), all_collections=options,
+                              catalog_channels=tuple(catalog_channels))

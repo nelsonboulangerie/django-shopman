@@ -102,6 +102,21 @@ export interface FeedProjection {
   actions: Action[];
 }
 
+/** CatalogChannelProjection(ref: 'str', name: 'str', projection_enabled: 'bool', diagnostic: 'str', synced: 'int', pending: 'int', errors: 'int', retracted: 'int', skipped: 'int', observed: 'int', catalog_path: 'str' = '/catalog') */
+export interface CatalogChannelProjection {
+  ref: string;
+  name: string;
+  projection_enabled: boolean;
+  diagnostic: string;
+  synced: number;
+  pending: number;
+  errors: number;
+  retracted: number;
+  skipped: number;
+  observed: number;
+  catalog_path: string;
+}
+
 /** CollectionOptionProjection(ref: 'str', name: 'str', product_count: 'int') */
 export interface CollectionOptionProjection {
   ref: string;
@@ -109,10 +124,11 @@ export interface CollectionOptionProjection {
   product_count: number;
 }
 
-/** FeedBoardProjection(feeds: 'tuple[FeedProjection, ...]', all_collections: 'tuple[CollectionOptionProjection, ...]') */
+/** FeedBoardProjection(feeds: 'tuple[FeedProjection, ...]', all_collections: 'tuple[CollectionOptionProjection, ...]', catalog_channels: 'tuple[CatalogChannelProjection, ...]' = ()) */
 export interface FeedBoardProjection {
   feeds: FeedProjection[];
   all_collections: CollectionOptionProjection[];
+  catalog_channels: CatalogChannelProjection[];
 }
 
 /** One line item as displayed on order tracking or confirmation. */
