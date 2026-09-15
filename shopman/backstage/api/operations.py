@@ -45,7 +45,7 @@ from decimal import Decimal
 from django.contrib.auth import login, logout
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError
-from django.http import StreamingHttpResponse
+from django.http import FileResponse
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
@@ -153,6 +153,7 @@ from shopman.shop.services.pos import (
     PosTaxIdOverwriteError,
 )
 from shopman.shop.services.pos_intent import PosIntentError
+from shopman.shop.services.quality import EffectiveQualityPartitionError
 
 from .permissions import (
     HasBackstagePermission,
@@ -1332,6 +1333,16 @@ class ProductionReportsCSVRenderer(BaseRenderer):
         return json.dumps(data).encode("utf-8")
 
 
+def _quality_report_unavailable_response() -> Response:
+    return Response(
+        {
+            "detail": "Não foi possível confirmar a qualidade efetiva. Tente novamente sem usar dados parciais.",
+            "error": {"code": "quality_projection_unavailable", "recovery": "retry"},
+        },
+        status=503,
+    )
+
+
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
@@ -1356,16 +1367,45 @@ class ProductionReportsView(APIView):
         )
         if request.accepted_renderer.format == "csv":
             filename = f"producao_{filters['report_kind']}_{filters['date_from']}_{filters['date_to']}.csv"
-            return StreamingHttpResponse(
-                production_service.iter_reports_csv(filters["report_kind"], filters),
+            try:
+                prepared = production_service.prepare_reports_csv(filters["report_kind"], filters)
+            except production_service.ProductionReportExportLimitExceeded as exc:
+                return Response(
+                    {
+                        "detail": "O relatório é grande demais para exportação síncrona. Reduza o período ou os filtros.",
+                        "error": {
+                            "code": "report_export_too_large",
+                            "recovery": "narrow_filters",
+                            "limit": exc.limit,
+                            "maximum": exc.maximum,
+                        },
+                    },
+                    status=413,
+                )
+            except production_service.ProductionReportChangedDuringExport:
+                return Response(
+                    {
+                        "detail": "O relatório mudou durante a preparação. Aplique os filtros e tente novamente.",
+                        "error": {"code": "stale_report_export", "recovery": "apply_filters"},
+                    },
+                    status=409,
+                )
+            except EffectiveQualityPartitionError:
+                return _quality_report_unavailable_response()
+            return FileResponse(
+                prepared,
+                as_attachment=True,
+                filename=filename,
                 content_type="text/csv; charset=utf-8",
-                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )
         if not filters["selected_only"]:
-            reports = sort_production_reports(
-                build_production_reports(filters, access=access),
-                filters["sort"],
-            )
+            try:
+                reports = sort_production_reports(
+                    build_production_reports(filters, access=access),
+                    filters["sort"],
+                )
+            except EffectiveQualityPartitionError:
+                return _quality_report_unavailable_response()
             field = {
                 "history": "history_rows",
                 "operator_productivity": "operator_rows",
@@ -1389,13 +1429,16 @@ class ProductionReportsView(APIView):
             )
         page_size = filters["page_size"]
         page_offset = filters["page_offset"]
-        reports, total, revision, stable = build_production_report_page(
-            filters,
-            sort=filters["sort"],
-            offset=page_offset,
-            page_size=page_size,
-            access=access,
-        )
+        try:
+            reports, total, revision, stable = build_production_report_page(
+                filters,
+                sort=filters["sort"],
+                offset=page_offset,
+                page_size=page_size,
+                access=access,
+            )
+        except EffectiveQualityPartitionError:
+            return _quality_report_unavailable_response()
         if not stable or (filters["cursor_revision"] and filters["cursor_revision"] != revision):
             return Response(
                 {

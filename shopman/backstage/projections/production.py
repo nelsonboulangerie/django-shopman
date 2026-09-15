@@ -2282,7 +2282,7 @@ def _quality_report_rows_queryset(qs) -> tuple[QualityReportRow, ...]:
         if len(batch) == 200:
             _accumulate_effective_quality(
                 batch,
-                quality_service.effective_partitions(batch),
+                quality_service.effective_partitions(batch, strict=True),
                 grouped,
                 recipe_totals,
             )
@@ -2290,7 +2290,7 @@ def _quality_report_rows_queryset(qs) -> tuple[QualityReportRow, ...]:
     if batch:
         _accumulate_effective_quality(
             batch,
-            quality_service.effective_partitions(batch),
+            quality_service.effective_partitions(batch, strict=True),
             grouped,
             recipe_totals,
         )
@@ -2390,11 +2390,10 @@ def build_production_report_page(
 
 
 def iter_production_report_rows(filters: dict, *, sort: str):
-    """Iterate one report and fail the stream if its source revision changes."""
+    """Iterate one selected report without materializing source work orders."""
 
     normalized = _normalize_report_filters(filters)
     qs = _report_queryset(normalized)
-    revision = _report_dataset_revision(qs, normalized.report_kind)
     if normalized.report_kind == "history":
         for work_order in qs.order_by(*_history_ordering(sort)).iterator(chunk_size=200):
             yield _work_order_report_row(work_order)
@@ -2418,12 +2417,13 @@ def iter_production_report_rows(filters: dict, *, sort: str):
         field = _REPORT_ROWS_FIELD[normalized.report_kind]
         shell = replace(shell, **{field: rows})
         yield from getattr(sort_production_reports(shell, sort), field)
-    if revision != _report_dataset_revision(qs, normalized.report_kind):
-        raise ProductionReportChangedDuringExport
 
 
-class ProductionReportChangedDuringExport(RuntimeError):
-    """The streamed CSV crossed source revisions and must be discarded."""
+def production_report_revision(filters: dict) -> str:
+    """Return the revision stamp used by paging and prepared exports."""
+
+    normalized = _normalize_report_filters(filters)
+    return _report_dataset_revision(_report_queryset(normalized), normalized.report_kind)
 
 
 _REPORT_ROWS_FIELD = {
@@ -2970,7 +2970,7 @@ def _quality_report_rows(work_orders: list[WorkOrder]) -> tuple[QualityReportRow
     recipe_totals: dict[str, Decimal] = {}
     _accumulate_effective_quality(
         finished,
-        quality_service.effective_partitions(finished),
+        quality_service.effective_partitions(finished, strict=True),
         grouped,
         recipe_totals,
     )

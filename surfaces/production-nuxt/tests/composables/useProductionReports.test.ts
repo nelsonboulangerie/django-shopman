@@ -1,4 +1,5 @@
 import { ref } from "vue";
+import { FetchError } from "ofetch";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
 import { useProductionReports } from "~/composables/useProductionReports";
@@ -25,7 +26,11 @@ function filters(
 }
 
 describe("useProductionReports", () => {
-  beforeEach(() => env.reset());
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+    env.reset();
+  });
 
   it("derives the three row sets and the filter options", () => {
     env.fetchData.value = {
@@ -72,9 +77,13 @@ describe("useProductionReports", () => {
 
   it("downloads CSV through an explicit successful lifecycle", async () => {
     const click = vi.fn();
+    const remove = vi.fn();
+    const appendChild = vi.fn();
     vi.stubGlobal("document", {
-      createElement: () => ({ href: "", download: "", click }),
+      body: { appendChild },
+      createElement: () => ({ href: "", download: "", click, remove }),
     });
+    vi.useFakeTimers();
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:report");
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
     env.fetchMock.mockResolvedValue(new Blob(["report"]));
@@ -85,7 +94,12 @@ describe("useProductionReports", () => {
 
     expect(await state.downloadCsv()).toBe(true);
     expect(state.exportStatus.value).toBe("success");
+    expect(appendChild).toHaveBeenCalledOnce();
     expect(click).toHaveBeenCalledOnce();
+    expect(remove).toHaveBeenCalledOnce();
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+    vi.runAllTimers();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:report");
     expect(env.fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("format=csv"),
       expect.objectContaining({ responseType: "blob" }),
@@ -93,6 +107,10 @@ describe("useProductionReports", () => {
   });
 
   it("cancels an in-flight CSV export without reporting failure", async () => {
+    let dispose = () => {};
+    vi.stubGlobal("onScopeDispose", (callback: () => void) => {
+      dispose = callback;
+    });
     env.fetchMock.mockImplementation(
       (_url, options: { signal: AbortSignal }) =>
         new Promise((_resolve, reject) => {
@@ -105,23 +123,31 @@ describe("useProductionReports", () => {
 
     const result = state.downloadCsv();
     expect(state.exportStatus.value).toBe("pending");
-    state.cancelExport();
+    dispose();
     expect(await result).toBe(false);
     expect(state.exportStatus.value).toBe("cancelled");
   });
 
   it("distinguishes session expiry from an ordinary export failure", async () => {
     const state = useProductionReports(ref(filters()), ref(true));
-    env.fetchMock.mockRejectedValueOnce({
-      status: 403,
-      data: { error: { code: "not_authenticated" } },
-    });
+    env.fetchMock.mockRejectedValueOnce(
+      blobFetchError(403, {
+        detail: "Identifique-se novamente.",
+        error: { code: "not_authenticated" },
+      }),
+    );
     await state.downloadCsv();
     expect(state.exportStatus.value).toBe("session_expired");
 
-    env.fetchMock.mockRejectedValueOnce({ status: 500 });
+    env.fetchMock.mockRejectedValueOnce(
+      blobFetchError(403, {
+        detail: "Estação bloqueada pelo gestor.",
+        error: { code: "station_locked" },
+      }),
+    );
     await state.downloadCsv();
     expect(state.exportStatus.value).toBe("failure");
+    expect(state.exportMessage.value).toBe("Estação bloqueada pelo gestor.");
   });
 
   it("degrades to empty rows when the payload is null", () => {
@@ -149,3 +175,12 @@ describe("useProductionReports", () => {
     expect(canExport.value).toBe(false);
   });
 });
+
+function blobFetchError(status: number, payload: object): FetchError<Blob> {
+  const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+  const response = new Response(blob, { status });
+  Object.defineProperty(response, "_data", { value: blob });
+  const error = new FetchError<Blob>(`report export failed: ${status}`);
+  Object.defineProperty(error, "response", { value: response });
+  return error;
+}

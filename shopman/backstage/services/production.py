@@ -10,10 +10,12 @@ from __future__ import annotations
 import csv
 import hashlib
 import logging
+import tempfile
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.utils import timezone
 from shopman.utils.spreadsheet import escape_cell
 
@@ -3177,8 +3179,26 @@ class _StreamingCSVBuffer:
         return value
 
 
+class ProductionReportExportLimitExceeded(RuntimeError):
+    """The requested synchronous export exceeds its configured safe bound."""
+
+    def __init__(self, *, limit: str, maximum: int):
+        self.limit = limit
+        self.maximum = maximum
+        super().__init__(f"production report export exceeds {limit} limit ({maximum})")
+
+
+class ProductionReportChangedDuringExport(RuntimeError):
+    """The report changed while its temporary export file was prepared."""
+
+
+def _report_export_limit(setting_name: str, default: int) -> int:
+    value = int(getattr(settings, setting_name, default))
+    return value if value > 0 else default
+
+
 def iter_reports_csv(report_kind: str, filters: dict | None = None):
-    """Yield bounded CSV rows without buffering the complete download in memory."""
+    """Yield CSV chunks for the bounded, pre-response preparation step."""
     from shopman.backstage.projections.production import iter_production_report_rows
 
     requested = dict(filters or {})
@@ -3296,10 +3316,51 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
             )
 
 
+def prepare_reports_csv(report_kind: str, filters: dict | None = None):
+    """Build a bounded, revision-consistent file before response headers exist."""
+
+    from shopman.backstage.projections.production import production_report_revision
+
+    requested = dict(filters or {})
+    requested["report_kind"] = report_kind
+    max_rows = _report_export_limit("SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_ROWS", 50_000)
+    max_bytes = _report_export_limit("SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_BYTES", 20 * 1024 * 1024)
+    spool_bytes = min(
+        max_bytes,
+        _report_export_limit("SHOPMAN_PRODUCTION_REPORT_EXPORT_SPOOL_BYTES", 1024 * 1024),
+    )
+    revision = production_report_revision(requested)
+    prepared = tempfile.SpooledTemporaryFile(max_size=spool_bytes, mode="w+b")
+    byte_count = 0
+    row_count = 0
+    try:
+        for index, chunk in enumerate(iter_reports_csv(report_kind, requested)):
+            encoded = chunk.encode("utf-8")
+            byte_count += len(encoded)
+            if byte_count > max_bytes:
+                raise ProductionReportExportLimitExceeded(limit="bytes", maximum=max_bytes)
+            if index >= 2:
+                row_count += 1
+                if row_count > max_rows:
+                    raise ProductionReportExportLimitExceeded(limit="rows", maximum=max_rows)
+            prepared.write(encoded)
+        if revision != production_report_revision(requested):
+            raise ProductionReportChangedDuringExport
+        prepared.seek(0)
+        return prepared
+    except Exception:
+        prepared.close()
+        raise
+
+
 def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
     """Compatibility helper for callers that explicitly require CSV bytes."""
 
-    return "".join(iter_reports_csv(report_kind, filters)).encode("utf-8")
+    prepared = prepare_reports_csv(report_kind, filters)
+    try:
+        return prepared.read()
+    finally:
+        prepared.close()
 
 
 def _check_linked_order_coverage(

@@ -14,6 +14,7 @@ Reuses ``build_production_reports``/``build_production_dashboard``/
 
 from __future__ import annotations
 
+import json
 from datetime import date
 from decimal import Decimal
 
@@ -21,6 +22,7 @@ import pytest
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
 from django.db import connection
+from django.http import FileResponse
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from shopman.craftsman import craft
@@ -341,6 +343,8 @@ def test_quality_page_and_csv_use_latest_correction_and_invalidate_older_cursor(
     cursor = first.json()["pagination"]["next_cursor"]
 
     csv_response = client.get(url, {**query, "format": "csv"})
+    assert isinstance(csv_response, FileResponse)
+    assert int(csv_response["Content-Length"]) > 0
     csv_text = b"".join(csv_response.streaming_content).decode("utf-8-sig")
     assert "report-api-pao,Pão de Relatório,Razoável,Deformado,10,55%" in csv_text
 
@@ -367,6 +371,62 @@ def test_quality_page_and_csv_use_latest_correction_and_invalidate_older_cursor(
     assert stale.status_code == 409
     fresh = client.get(url, query)
     assert fresh.json()["reports"]["quality_rows"][0]["grade_ref"] == "minimal"
+
+
+@pytest.mark.django_db
+def test_quality_report_and_export_fail_closed_when_effective_partition_is_unavailable(
+    client,
+    manager,
+    report_data,
+    monkeypatch,
+):
+    from shopman.shop.services import quality as quality_service
+
+    def unavailable(*args, **kwargs):
+        raise quality_service.EffectiveQualityPartitionError
+
+    monkeypatch.setattr(quality_service, "effective_partitions", unavailable)
+    client.force_login(manager)
+    url = reverse("api-backstage-production-reports")
+    query = {
+        "date_from": report_data["today"].isoformat(),
+        "date_to": report_data["today"].isoformat(),
+        "report_kind": "quality",
+        "selected_only": True,
+    }
+
+    response = client.get(url, query)
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "quality_projection_unavailable"
+
+    exported = client.get(url, {**query, "format": "csv"})
+    assert exported.status_code == 503
+    assert json.loads(exported.content)["error"]["code"] == "quality_projection_unavailable"
+
+
+@pytest.mark.django_db
+def test_csv_limit_returns_actionable_error_before_file_response(client, manager, report_data, settings):
+    settings.SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_ROWS = 1
+    client.force_login(manager)
+    response = client.get(
+        reverse("api-backstage-production-reports"),
+        {
+            "date_from": report_data["today"].isoformat(),
+            "date_to": report_data["today"].isoformat(),
+            "report_kind": "history",
+            "selected_only": True,
+            "format": "csv",
+        },
+    )
+
+    assert response.status_code == 413
+    payload = json.loads(response.content)
+    assert payload["error"] == {
+        "code": "report_export_too_large",
+        "recovery": "narrow_filters",
+        "limit": "rows",
+        "maximum": 1,
+    }
 
 
 @pytest.mark.django_db

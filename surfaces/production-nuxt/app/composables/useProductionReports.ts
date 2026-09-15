@@ -20,6 +20,38 @@ export type ReportExportStatus =
   | "session_expired"
   | "cancelled";
 
+type ReportExportError = { status: number; code: string; message: string };
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+async function reportExportError(error: unknown): Promise<ReportExportError> {
+  const base = httpError(error);
+  let payload = base.data;
+  if (
+    typeof Blob !== "undefined" &&
+    payload instanceof Blob &&
+    payload.size <= 64 * 1024
+  ) {
+    try {
+      payload = JSON.parse(await payload.text());
+    } catch {
+      payload = null;
+    }
+  }
+  const envelope = record(payload);
+  const nested = record(envelope?.error);
+  return {
+    status: base.status,
+    code: typeof nested?.code === "string" ? nested.code : "",
+    message:
+      typeof envelope?.detail === "string" ? envelope.detail : base.message,
+  };
+}
+
 export function useProductionReports(
   filters: Ref<ReportFiltersQuery>,
   exportEligible: Ref<boolean>,
@@ -75,8 +107,13 @@ export function useProductionReports(
       const link = document.createElement("a");
       link.href = objectUrl;
       link.download = `producao_${filters.value.report_kind}_${filters.value.date_from}_${filters.value.date_to}.csv`;
-      link.click();
-      URL.revokeObjectURL(objectUrl);
+      document.body.appendChild(link);
+      try {
+        link.click();
+      } finally {
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      }
       exportStatus.value = "success";
       exportMessage.value = "Relatório baixado.";
       return true;
@@ -85,17 +122,20 @@ export function useProductionReports(
         exportStatus.value = "cancelled";
         exportMessage.value = "Exportação cancelada.";
       } else {
-        const status = httpError(caught).status;
+        const parsed = await reportExportError(caught);
+        const status = parsed.status;
         const sessionExpired =
           status === 401 ||
-          (status === 403 && httpErrorCode(caught) === "not_authenticated");
+          (status === 403 && parsed.code === "not_authenticated");
         if (sessionExpired) {
           operatorSessionOnError({ response: { status } });
           exportStatus.value = "session_expired";
           exportMessage.value = "Sua sessão expirou. Identifique-se novamente para exportar.";
         } else {
           exportStatus.value = "failure";
-          exportMessage.value = "Não foi possível baixar o relatório. Tente novamente.";
+          exportMessage.value =
+            parsed.message ||
+            "Não foi possível baixar o relatório. Tente novamente.";
         }
       }
       return false;
@@ -107,6 +147,8 @@ export function useProductionReports(
   function cancelExport(): void {
     exportController?.abort();
   }
+
+  onScopeDispose(cancelExport);
 
   watch(
     filters,
