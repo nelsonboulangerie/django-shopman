@@ -110,6 +110,7 @@ export function buildPosSaleIntent(
     intent_version: intentVersion || POS_SALE_INTENT_VERSION,
     tab_ref: state.tabRef,
     tab_session_key: state.tabSessionKey,
+    expected_revision: state.expectedRevision,
     items: state.items.map((item) => ({
       // A identidade viaja SEMPRE. Sem ela o servidor gerava um id novo a cada
       // save e perdia o vínculo com o ticket de KDS já disparado — era por isso

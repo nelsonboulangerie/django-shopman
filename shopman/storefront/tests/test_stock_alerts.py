@@ -674,14 +674,15 @@ def test_move_receiver_skips_when_no_pending_subscription():
 
 
 @pytest.mark.parametrize(
-    "move",
-    [
-        _move("SKU-SYNTHETIC", metadata={"suppress_notifications": True}),
-        _move("SKU-FUTURE", target_date=timezone.localdate() + timedelta(days=1)),
-    ],
+    "kind",
+    ["synthetic", "future"],
 )
-def test_move_receiver_skips_synthetic_refresh_and_future_planning(move):
+def test_move_receiver_skips_synthetic_refresh_and_future_planning(kind):
     from shopman.storefront import handlers
+
+    # Compute tomorrow at execution: collection can happen before local midnight.
+    move = (_move("SKU-SYNTHETIC", metadata={"suppress_notifications": True}) if kind == "synthetic"
+            else _move("SKU-FUTURE", target_date=timezone.localdate() + timedelta(days=1)))
 
     stock_alerts.subscribe(move.quant.sku, phone=PHONE)
     with (

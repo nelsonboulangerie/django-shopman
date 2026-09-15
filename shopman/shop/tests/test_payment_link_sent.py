@@ -44,6 +44,7 @@ from shopman.shop.services import notification as notification_svc
 from shopman.shop.services import pos as pos_service
 from shopman.shop.services.business_calendar import format_deadline
 from shopman.shop.services.notification import _build_context
+from shopman.shop.services.pos_intent import PosCommittedSaleError
 
 CHECKOUT_URL = "https://checkout.stripe.com/c/pay/cs_test_a1b2c3"
 
@@ -451,10 +452,12 @@ def test_o_retry_do_pdv_nao_manda_o_link_duas_vezes(counter):
 def test_gateway_que_falhou_nao_manda_link_nenhum(counter):
     """Sem `checkout_url` não há o que mandar — e mandar seria prometer cobrança que não existe."""
     with patch.object(pos_service.payment_service, "initiate", side_effect=RuntimeError("gateway down")):
-        result = counter.close(client_request_id="link-3")
+        with pytest.raises(PosCommittedSaleError) as caught:
+            counter.close(client_request_id="link-3")
 
-    assert result.payment.get("status") == "error"
-    assert not _link_directives(result.order_ref).exists()
+    assert caught.value.code == "sale_payment_outcome_unknown"
+    assert Order.objects.filter(ref=caught.value.order_ref).exists()
+    assert not _link_directives(caught.value.order_ref).exists()
 
 
 @_LINK_ADAPTERS

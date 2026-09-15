@@ -576,6 +576,7 @@ def _close_shift_in_another_connection(shift_pk: int, operator_pk: int, counted_
         connections.close_all()
 
 
+@requires_postgres
 @pytest.mark.django_db(transaction=True)
 def test_venda_que_chega_depois_do_fechamento_grita_em_vez_de_evaporar(monkeypatch):
     import threading

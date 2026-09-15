@@ -344,44 +344,50 @@ def close_sale(
             channel_ref=channel.ref, payload=payload
         )
         if existing is not None:
-            # Vale com comanda também: ``client_request_id`` identifica ESTE
-            # envio, e o segundo envio do mesmo é replay, não venda nova.
-            # Reancora a resposta: se a trava anterior expirou e esta é nova, ela
-            # nasce sabendo qual venda responde por esta chave.
             _answer_sale_claim(claim, order_ref=existing.ref)
-            return PosSaleResult(
-                order_ref=existing.ref, total_q=existing.total_q, fiscal_hint=_sale_fiscal_hint(existing)
-            )
-        # A venda do terminal acontece DENTRO de um turno de caixa: é no livro dele
-        # que a linha `sale` vai nascer. Sem turno aberto não há onde registrar, e
-        # a recusa tem de vir ANTES do commit do pedido, não depois.
-        shift = _require_open_shift(payload)
-        if session is None:
-            if _payload_has_tab_identity(payload):
-                raise ValueError("Abra um POS tab antes de finalizar.")
-            session = _create_direct_checkout_session(
-                channel_ref=channel.ref,
-                payload=payload,
-                operator_username=operator_username,
-            )
-            direct_checkout = True
         else:
-            # A comanda é relida SOB LOCK: os ops de troca (remove_line dos itens
-            # atuais + add_line dos novos) só valem para o estado que travamos.
-            session = _locked_session(session)
-            direct_checkout = False
+            # A venda do terminal acontece DENTRO de um turno de caixa: é no livro dele
+            # que a linha `sale` vai nascer. Sem turno aberto não há onde registrar, e
+            # a recusa tem de vir ANTES do commit do pedido, não depois.
+            shift = _require_open_shift(payload)
+            if session is None:
+                if _payload_has_tab_identity(payload):
+                    raise ValueError("Abra um POS tab antes de finalizar.")
+                session = _create_direct_checkout_session(
+                    channel_ref=channel.ref,
+                    payload=payload,
+                    operator_username=operator_username,
+                )
+                direct_checkout = True
+            else:
+                # A comanda é relida SOB LOCK: os ops de troca (remove_line dos itens
+                # atuais + add_line dos novos) só valem para o estado que travamos.
+                session = _locked_session(session)
+                from shopman.shop.services.pos_intent import pos_session_revision
 
-        result, session, tab_ref = _commit_sale_session(
-            session=session,
-            channel=channel,
-            config=config,
-            payload=payload,
-            actor=actor,
-            operator_username=operator_username,
-            direct_checkout=direct_checkout,
-            approved_by=approved_by,
-        )
-        _answer_sale_claim(claim, order_ref=result.order_ref)
+                if session.state != "open" or ("expected_revision" in payload and payload["expected_revision"] != pos_session_revision(session)):
+                    raise PosIntentError(code="tab_revision_conflict", status=409,
+                        message="Esta comanda mudou. Confira a versão atual antes de finalizar.")
+                direct_checkout = False
+
+            result, session, tab_ref = _commit_sale_session(
+                session=session,
+                channel=channel,
+                config=config,
+                payload=payload,
+                actor=actor,
+                operator_username=operator_username,
+                direct_checkout=direct_checkout,
+                approved_by=approved_by,
+            )
+            _answer_sale_claim(claim, order_ref=result.order_ref)
+
+            from shopman.shop.services.pos_sale_recovery import prepare
+
+            prepare(result.order_ref, shift_id=shift.pk, operator_username=operator_username)
+
+    if existing is not None:
+        return _resume_committed_sale(existing.ref)
 
     # Fora da transação, e a ordem importa: os callbacks de ``on_commit`` do
     # lifecycle já rodaram e já reescreveram ``order.data``. Escrever o carimbo
@@ -389,45 +395,48 @@ def close_sale(
     # sem essa chave o replay do mesmo envio não encontra a venda — cria a
     # segunda. Medido: no ``main`` o pedido sai com a chave; com o carimbo dentro
     # da transação, sai sem.
-    _mark_tab_committed(
-        order_ref=result.order_ref,
-        tab_ref=tab_ref,
-        operator_username=operator_username,
-        session_data=session.data,
-    )
-    # Marcador de transição na trilha da sessão; o mesmo ``session_key`` agora
-    # resolve para o Order, cujo lifecycle é auditado pelo OrderEvent.
-    session.emit_event("sale_committed", actor=operator_username, payload={
-        "order_ref": result.order_ref, "total_q": int(result.total_q),
-    })
-    logger.info("pos_close_tab order=%s tab=%s session=%s total=%s", result.order_ref, tab_ref, session.session_key, result.total_q)
-    order = Order.objects.filter(ref=result.order_ref).first()
-    payment_result = {}
-    if order is not None:
-        order = _reconcile_order_payment_to_total(order)
-        payment_result = _settle_pos_sale(order, shift=shift, operator_username=operator_username)
-        # A nota segue o primeiro dos dois fatos: o pagamento se liquidar ou a
-        # mercadoria sair. No balcão os dois acontecem AQUI — a venda direta
-        # fechou paga, a entrega/encomenda sai com a sacola (e a DANFE vai
-        # junto). Para a venda presencial que o lifecycle já concluiu, isto é
-        # dedupe-hit; para as demais, é o gatilho que ``on_completed`` (fim da
-        # jornada) demoraria dias a alcançar. Idempotente e deduplicado no banco.
-        # ⚠️ A venda JÁ fechou e o cliente já foi embora — não dá para desfazer
-        # aqui, então isto falha GRITANDO, não fechado. O `logger.warning` que
-        # havia não chegava a ninguém: era venda sem nota, com o balcão achando
-        # que a nota estava a caminho (a tela só diz "Fiscal pendente", que é o
-        # que ela diz também quando está tudo certo). Agora nasce alerta no
-        # Gestor, com o pedido no nome, para alguém reemitir.
-        try:
-            from shopman.shop.services import fiscal as fiscal_service
+    try:
+        _mark_tab_committed(
+            order_ref=result.order_ref,
+            tab_ref=tab_ref,
+            operator_username=operator_username,
+            session_data=session.data,
+        )
+        # Marcador de transição na trilha da sessão; o mesmo ``session_key`` agora
+        # resolve para o Order, cujo lifecycle é auditado pelo OrderEvent.
+        session.emit_event("sale_committed", actor=operator_username, payload={
+            "order_ref": result.order_ref, "total_q": int(result.total_q),
+        })
+        logger.info("pos_close_tab order=%s tab=%s session=%s total=%s", result.order_ref, tab_ref, session.session_key, result.total_q)
+        return _resume_committed_sale(result.order_ref)
+    except Exception as exc:
+        from shopman.shop.services.pos_sale_recovery import _as_error
 
+        raise _as_error(result.order_ref, exc) from exc
+
+
+def _resume_committed_sale(order_ref: str) -> PosSaleResult:
+    from shopman.shop.services.pos_sale_recovery import settle
+
+    try:
+        payment_result = settle(order_ref)
+        order = Order.objects.get(ref=order_ref)
+    except Exception as exc:
+        from shopman.shop.services.pos_sale_recovery import _as_error
+
+        raise _as_error(order_ref, exc) from exc
+    try:
+        from shopman.shop.services import fiscal as fiscal_service
+        from shopman.shop.services.payment_gate import payment_is_captured, requires_captured_payment
+
+        if not requires_captured_payment(order) or payment_is_captured(order):
             fiscal_service.emit(order)
-        except Exception as exc:
-            logger.warning("pos_close_fiscal_emit_failed order=%s", result.order_ref, exc_info=True)
-            _alert_fiscal_emit_failed(result.order_ref, exc)
+    except Exception as exc:
+        logger.warning("pos_close_fiscal_emit_failed order=%s", order_ref, exc_info=True)
+        _alert_fiscal_emit_failed(order_ref, exc)
     return PosSaleResult(
-        order_ref=result.order_ref,
-        total_q=int(order.total_q if order is not None else result.total_q),
+        order_ref=order_ref,
+        total_q=int(order.total_q),
         fiscal_hint=_sale_fiscal_hint(order),
         payment=payment_result,
     )
@@ -644,7 +653,7 @@ def review_sale(
     payment_collection = _payload_payment_collection(payload, fulfillment_type)
     subtotal_q = _payload_subtotal_q(payload)
     line_discount_q = _payload_line_discounts_q(payload)
-    order_discount_q = int(_payload_manual_discount(payload).get("discount_q", 0) or 0)
+    order_discount_q = _payload_applied_order_discount_q(payload)
     discount_q = order_discount_q + line_discount_q
     delivery = _resolve_delivery_fee(payload)
     delivery_fee_q = delivery.fee_q
@@ -2202,8 +2211,29 @@ def _ensure_resolved_prices(payload: dict) -> None:
 
 
 def _payload_discount_q(payload: dict) -> int:
-    order_discount_q = int(_payload_manual_discount(payload).get("discount_q", 0) or 0)
+    order_discount_q = _payload_applied_order_discount_q(payload)
     return order_discount_q + _payload_line_discounts_q(payload)
+
+
+
+def _payload_applied_order_discount_q(payload: dict) -> int:
+    """Preview the kernel's representable unit-price discount, keeping its ceiling."""
+    from shopman.shop.modifiers import _is_non_merchandise_line, _spread_order_discount
+
+    requested_q = int(_payload_manual_discount(payload).get("discount_q", 0) or 0)
+    if requested_q <= 0:
+        return 0
+    lines = []
+    for item in payload.get("items", []):
+        if _is_non_merchandise_line(item):
+            continue
+        qty = max(0, int(item.get("qty", 1)))
+        if not qty:
+            continue
+        line_gain_q = _payload_line_discounts_q({"items": [item]})
+        unit_q = max(0, int(item.get("unit_price_q", 0)) - line_gain_q // qty)
+        lines.append({"qty": qty, "unit_price_q": unit_q, "line_total_q": qty * unit_q})
+    return sum(amount for _line, _unit, amount in _spread_order_discount(lines, requested_q, at_least=False))
 
 
 def _normalize_line_discount(raw) -> dict:
@@ -2838,6 +2868,10 @@ def _settle_pos_sale(order: Order, *, shift, operator_username: str) -> dict:
             }
         order = Order.objects.get(ref=order.ref)
         payment = dict((order.data or {}).get("payment") or {})
+        if not payment.get("intent_ref"):
+            # A linha é imutável: aguardar prova do intent evita gravar uma
+            # venda sem associação e depois perder o vínculo na recuperação.
+            return payment_result or _pos_payment_response(order)
         if method == "link" and payment.get("checkout_url"):
             _send_payment_link(order)
         intents = {method: payment["intent_ref"]} if payment.get("intent_ref") else {}
@@ -3306,6 +3340,7 @@ def _ensure_pos_tab(tab_ref: str, display: str = "") -> str:
     return pos_adapter.ensure_tab(ref=tab_ref, display=display or display_tab_ref(tab_ref))
 
 
+@transaction.atomic
 def _mark_tab_committed(
     *,
     order_ref: str,
@@ -3315,7 +3350,7 @@ def _mark_tab_committed(
 ) -> None:
     now = timezone.now().isoformat()
 
-    order = Order.objects.filter(ref=order_ref).first()
+    order = Order.objects.select_for_update().filter(ref=order_ref).first()
     if order is None:
         return
     order_data = dict(order.data or {})
