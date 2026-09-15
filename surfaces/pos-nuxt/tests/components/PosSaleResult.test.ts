@@ -12,6 +12,7 @@ import { formatBRL } from "~/utils/posIntent";
 
 function result(overrides: Partial<PosSaleResultSnapshot> = {}): PosSaleResultSnapshot {
   return {
+    salesMode: "counter",
     orderRef: "PDV-042",
     nextUrl: "http://gestor.test/PDV-042",
     payment: null,
@@ -95,6 +96,7 @@ describe("PosSaleResult — o palco pós-venda", () => {
     expect(wrapper.text()).toContain("Encomenda registrada");
     expect(wrapper.text()).not.toContain("Venda concluída");
     expect(wrapper.text()).not.toContain("Nova venda em");
+    expect(wrapper.find(`a[href="http://gestor.test/PDV-042"]`).exists()).toBe(true);
   });
 
   it("o CTA emite newSale", async () => {
@@ -125,6 +127,6 @@ describe("PosSaleResult — o palco pós-venda", () => {
     expect(wrapper.emitted("printReceipt")).toHaveLength(1);
     expect(wrapper.emitted("printDanfe")).toHaveLength(1);
     expect(wrapper.emitted("cancelSale")).toHaveLength(1);
-    expect(wrapper.find(`a[href="http://gestor.test/PDV-042"]`).exists()).toBe(true);
+    expect(wrapper.find(`a[href="http://gestor.test/PDV-042"]`).exists()).toBe(false);
   });
 });
