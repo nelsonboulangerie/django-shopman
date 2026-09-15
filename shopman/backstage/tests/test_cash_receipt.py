@@ -192,12 +192,14 @@ def _grant(user):
 
 @pytest.fixture
 def operador_logado(client, movimento):
+    from shopman.backstage.tests.pos_test_runtime import bind_station
     from shopman.shop.models import Shop
 
     Shop.objects.create(name="Loja")
     user = movimento.shift.opened_by
     _grant(user)
     client.force_login(user)
+    bind_station(client, movimento.shift.terminal.ref)
     return client, movimento
 
 

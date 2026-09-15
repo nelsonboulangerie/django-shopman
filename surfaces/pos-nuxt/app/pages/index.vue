@@ -66,6 +66,8 @@ const {
   busy,
   saving,
   unsaved,
+  tabConflict,
+  reloadConflictingTab,
   firing,
   cancellingSale,
   cancelSaleReason,
@@ -171,7 +173,7 @@ const {
   submitSale,
   dismissResult,
   resendingLink,
-  resendPaymentLink,
+  sendPaymentNotice,
   onExternalSaleCancelled,
   clearCurrentTab,
   openMoveDialog,
@@ -787,10 +789,13 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           v-if="inSaleView && !checkoutMode && unsaved"
           class="inline-flex shrink-0 items-center gap-1 rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-xs font-medium text-warning"
           role="status"
-          title="A comanda não pôde ser salva — tentando de novo"
+          :title="tabConflict ? 'A comanda mudou em outro dispositivo. Confira antes de salvar.' : 'A comanda não pôde ser salva — tentando de novo'"
         >
           <Icon name="lucide:cloud-off" class="size-3.5" /> Não salvo
         </span>
+        <UiButton v-if="inSaleView && tabConflict" variant="ghost" size="sm" :disabled="busy" @click="reloadConflictingTab">
+          Descartar minhas alterações e atualizar
+        </UiButton>
         <!-- A BARRA CARREGA OS FATOS DO PEDIDO — cliente e recebimento — e segue
              carregando durante o checkout. Antes ela sumia ali, e a informação
              tinha de ser reconstruída dentro da coluna de trabalho do pagamento;
@@ -830,7 +835,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           @clear="clearCurrentTab"
           @clear-customer="clearCustomer"
           @lookup-customer="lookupCustomer"
-          @resolve-customer="resolveCustomer"
+          @resolve-customer="(done) => { void resolveCustomer().then(done) }"
           @decision-confirm="confirmCustomerDecision"
           @decision-cancel="cancelCustomerDecision"
           @decision-merge="mergeConflictCustomers"
@@ -899,7 +904,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           @print-receipt="printReceipt"
           @print-danfe="printDanfe"
           @cancel-sale="openCancelSaleDialog"
-          @resend-link="resendPaymentLink"
+          @payment-notice="sendPaymentNotice"
         />
       </div>
 
@@ -998,7 +1003,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         @tender-add="tenderAdd"
         @tender-exact="tenderExact"
         @lookup-customer="lookupCustomer"
-        @resolve-customer="resolveCustomer"
+        @resolve-customer="(done) => { void resolveCustomer().then(done) }"
         @decision-confirm="confirmCustomerDecision"
         @decision-cancel="cancelCustomerDecision"
         @decision-merge="mergeConflictCustomers"

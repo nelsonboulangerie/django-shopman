@@ -49,7 +49,16 @@ def reviewed_saleable_quantity(work_order_ref: str, *, channel_ref: str) -> Deci
     )
 
 
-def effective_partitions(work_orders, *, include_loss: bool = True) -> dict[int, list[dict]]:
+class EffectiveQualityPartitionError(RuntimeError):
+    """Canonical QC projection could not be read reliably."""
+
+
+def effective_partitions(
+    work_orders,
+    *,
+    include_loss: bool = True,
+    strict: bool = False,
+) -> dict[int, list[dict]]:
     """Return the latest effective QC partition for several work orders.
 
     The closing :class:`WorkOrderItem` rows remain the original production
@@ -158,12 +167,14 @@ def effective_partitions(work_orders, *, include_loss: bool = True) -> dict[int,
                 )
             result[work_order_id] = groups
         return result
-    except Exception:
+    except Exception as exc:
         logger.debug(
             "quality.effective_partitions_lookup_failed work_orders=%r",
             work_order_ids,
             exc_info=True,
         )
+        if strict:
+            raise EffectiveQualityPartitionError("effective quality partition unavailable") from exc
         return {work_order_id: [] for work_order_id in work_order_ids}
 
 

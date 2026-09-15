@@ -1,6 +1,7 @@
 # ADR-029 — “Avise-me” é assinatura persistente com ocorrências distintas
 
 **Data:** 2026-09-11
+**Emenda de comprovação de identidade web:** 2026-09-14
 
 **Status:** aceito
 **Escopo:** Storefront, disponibilidade, produção/QC e entrega de comunicação com finalidade específica
@@ -35,14 +36,15 @@ não oferecia pausa da autorização específica.
 - Cada aviso oferece controle no aparelho atual e por uma capacidade opaca, restrita à finalidade
   e revogável, enviada no fragmento de um link “Gerenciar este aviso”. A página remove o fragmento
   imediatamente, `GET` apenas consulta e `PATCH`/`DELETE` pausam, retomam ou cancelam. Cancelamento
-  é irreversível; retomada vale apenas para ocorrências futuras. No aparelho que cadastrou um
-  aviso anônimo, a sessão permite recuperar o link após reload somente quando referência, SKU e
-  contato conferem com a mesma assinatura. O `POST` anônimo sempre devolve confirmação genérica:
-  somente a transação que criou a assinatura vincula o marcador à sessão. Repetir SKU e telefone
-  em outra sessão não concede a capacidade, não retoma uma assinatura pausada e não revela se ela
-  já existia. Cliente autenticado usa o telefone da identidade canônica e recebe acesso explícito
-  à seção de avisos em Preferências. Na confirmação genérica, a próxima ação é entrar com o mesmo
-  WhatsApp para conferir ou reativar na conta; a copy não afirma que um aviso pausado está ativo.
+  é irreversível; retomada vale apenas para ocorrências futuras. No web, novo opt-in exige a
+  identidade autenticada e usa o telefone canônico da conta. A tela preserva página, filtros,
+  âncora e SKU durante a entrada; ao voltar, a pessoa confirma explicitamente a assinatura sem
+  redigitar o telefone. Um `POST` anônimo responde `401`, oferece a entrada como próxima ação e
+  não grava telefone, assinatura ou marcador de sessão. A migração marca assinaturas web ativas
+  sem `customer_ref` como `legacy_unverified`, preservando histórico e recibos, impedindo novas
+  entregas e invalidando sua capacidade de gestão; após entrar, a pessoa pode criar uma assinatura
+  nova. Outros canais podem usar contato sem `customer_ref` quando o evento de entrada já fornece
+  prova de identidade.
 - Uma correção de QC antes do adapter suprime recibos ainda enfileirados ou reclamados. Se o
   provedor já aceitou a entrega, o fato não é apagado e um alerta operacional exige conciliação.
 - O contato pode ser usado apenas para a finalidade e ocorrência autorizadas. Quando outra fonte

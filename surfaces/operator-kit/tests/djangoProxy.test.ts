@@ -12,10 +12,14 @@ import {
   DJANGO_CONDITIONAL_REQUEST_HEADERS,
   DJANGO_OPERATIONAL_RESPONSE_HEADERS,
   isSafeDjangoLocation,
-  isSafeDjangoSetCookieHeader,
   mergeSetCookieIntoCookieHeader,
   mutationHeaders,
 } from "../server/utils/djangoProxy";
+import {
+  isSafeDjangoSetCookieHeader,
+  operatorCookieHeaderForDjango,
+  operatorSetCookieHeaderForBrowser,
+} from "../server/utils/operatorCookies";
 
 import {
   assertProductionDjangoConfiguration,
@@ -28,6 +32,56 @@ import {
 const proxySource = readFileSync(fileURLToPath(new URL("../server/utils/djangoProxy.ts", import.meta.url)), "utf8");
 
 describe("Django proxy — transporte de CSRF/cookie do BFF de operador", () => {
+  it("não deixa a sessão direta do Admin atravessar a fronteira do BFF", () => {
+    expect(operatorCookieHeaderForDjango(
+      "sessionid=admin-session; csrftoken=admin-csrf; shopman_station_trust_pdv=station-1",
+    )).toBe("shopman_station_trust_pdv=station-1");
+    expect(operatorCookieHeaderForDjango("sessionid=admin-session; csrftoken=admin-csrf")).toBe("");
+  });
+
+  it("traduz a sessão namespaced compartilhada entre as superfícies e preserva outros cookies", () => {
+    const upstreamCookie = operatorCookieHeaderForDjango([
+      "sessionid=admin-session",
+      "csrftoken=admin-csrf",
+      "shopman_station_trust_pdv=station-1",
+      "shopman_operator_sessionid=operator-session",
+      "shopman_operator_csrftoken=operator-csrf",
+    ].join("; "));
+
+    expect(upstreamCookie).toBe(
+      "shopman_station_trust_pdv=station-1; sessionid=operator-session; csrftoken=operator-csrf",
+    );
+    expect(upstreamCookie).not.toContain("admin-session");
+    expect(upstreamCookie).not.toContain("admin-csrf");
+    expect(upstreamCookie).not.toContain("shopman_operator_");
+  });
+
+  it("reescreve login e CSRF para o namespace de operador sem perder os atributos", () => {
+    expect(operatorSetCookieHeaderForBrowser(
+      "sessionid=operator-session; Domain=.boulangerie.com.br; Path=/; Secure; HttpOnly; SameSite=Lax",
+    )).toBe(
+      "shopman_operator_sessionid=operator-session; Domain=.boulangerie.com.br; Path=/; Secure; HttpOnly; SameSite=Lax",
+    );
+    expect(operatorSetCookieHeaderForBrowser(
+      "csrftoken=operator-csrf; Domain=.boulangerie.com.br; Path=/; Secure; SameSite=Lax",
+    )).toBe(
+      "shopman_operator_csrftoken=operator-csrf; Domain=.boulangerie.com.br; Path=/; Secure; SameSite=Lax",
+    );
+  });
+
+  it("reescreve a expiração do logout para apagar somente a sessão de operador", () => {
+    expect(operatorSetCookieHeaderForBrowser(
+      "sessionid=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Domain=.boulangerie.com.br; Path=/; Secure; HttpOnly; SameSite=Lax",
+    )).toBe(
+      "shopman_operator_sessionid=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Domain=.boulangerie.com.br; Path=/; Secure; HttpOnly; SameSite=Lax",
+    );
+    expect(operatorSetCookieHeaderForBrowser(
+      "shopman_station_trust_pdv=station-1; Domain=.boulangerie.com.br; Path=/; Secure; SameSite=Lax",
+    )).toBe(
+      "shopman_station_trust_pdv=station-1; Domain=.boulangerie.com.br; Path=/; Secure; SameSite=Lax",
+    );
+  });
+
   it("preserva o cookie de sessão do Django ao atualizar o estado de CSRF", () => {
     const cookie = "sessionid=session-123; csrftoken=old-token";
     expect(csrfTokenFromCookieHeader(cookie)).toBe("old-token");

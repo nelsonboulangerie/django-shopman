@@ -251,6 +251,14 @@ def test_textos_semeados_so_usam_chaves_que_o_contexto_produz():
     )
 
 
+def test_payment_requested_seed_supports_pix_without_promising_acceptance():
+    text = _seeded_bodies()["payment_requested"]
+
+    assert "{pix_suffix}" in text
+    assert "confirmamos" not in text.lower()
+    assert "garantid" not in text.lower()
+
+
 def test_fallbacks_de_cada_canal_so_usam_chaves_que_o_contexto_produz():
     produced = _produced_keys()
     offenders: list[str] = []

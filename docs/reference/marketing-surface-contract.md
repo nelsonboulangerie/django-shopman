@@ -39,6 +39,13 @@ fechados por destino. Durante a transição, cada plataforma continua resumida a
 e a decisão completas estão em
 [`marketing-platform-capability-audit-20260911.md`](../reports/execution/marketing-platform-capability-audit-20260911.md).
 
+Para novas entregas, as três dimensões são obrigatórias desde o schema 4 e são
+persistidas no artefato, outbox e destino. A resposta de `/marketing/options/`
+projeta `delivery_capabilities` com modalidade, formatos, default, campos aceitos e
+exigência de mídia; o formulário consome essa projeção. Linhas e artefatos anteriores
+continuam legíveis pela compatibilidade histórica, mas não podem originar uma nova
+identidade incompleta.
+
 O formato público faz parte do artefato imutável (`publication_format`). A prévia,
 aprovação e chamada do provider leem o mesmo valor. No Instagram, `story` é o default
 de produto para FOMO e exige imagem pública; `feed` é secundário e precisa estar
@@ -155,6 +162,7 @@ não concede aprovação, publicação, disparo, teste ou configuração.
 | `SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado | por canário público |
 | `SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado | por canário público |
 | `SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado | por canário público |
+| `SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter experimental nem é registrado | somente após OAuth, revisão e gate TikTok |
 | `SHOPMAN_MARKETING_TARGET_HMAC_KEY` e versão | Segurança | vazio bloqueia materialização segura | rotação versionada |
 | `SHOPMAN_MARKETING_TEST_TARGETS_JSON` | Platform Owner | `{}`; nenhum alvo de teste | remover alvo ao fim do teste |
 | `SHOPMAN_MARKETING_MEDIA_HOSTS` | Segurança/Marca | vazio; mídia externa bloqueada | revisão por host |
@@ -175,6 +183,12 @@ contínua exige decidir e validar seu ciclo de renovação. Credencial presente 
 publicação: a flag da plataforma e os consumidores duráveis — ou o canário unitário
 explicitamente armado — permanecem gates independentes. Em `DEBUG`, adapter externo
 também exige o opt-in geral de saída externa.
+
+TikTok ainda não integra o catálogo selecionável. O adapter Direct Post de foto é
+somente uma fronteira testável e inerte: token estático serve no máximo a canário
+controlado; operação contínua exige armazenamento OAuth com renovação, consulta de
+`creator_info`, aprovação de `video.publish` e auditoria Direct Post. A simples
+presença da flag ou da credencial não autoriza adicionar TikTok a uma campanha.
 
 ## Operação, diagnóstico e gates
 

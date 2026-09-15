@@ -158,6 +158,36 @@ for (const route of criticalRoutes) {
   });
 }
 
+test("relatório populado mantém os controles compostos com alvo de 44 px", async ({
+  context,
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "chromium-tablet-landscape",
+    "O gate de touch da composição roda na viewport primária de tablet",
+  );
+  await context.addCookies([
+    authed,
+    {
+      name: "e2e_scenario",
+      value: "reports-populated",
+      domain: "127.0.0.1",
+      path: "/",
+    },
+  ]);
+  await page.goto("/reports");
+  await expect(page.getByText("WO-0042", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Próxima" })).toBeVisible();
+  await expectTouchTargets(page, "relatório populado");
+
+  await page.getByRole("button", { name: "Baixar CSV" }).click();
+  const cancel = page.getByRole("button", { name: "Cancelar" });
+  await expect(cancel).toBeVisible();
+  await expectTouchTargets(page, "exportação de relatório pendente");
+  await cancel.click();
+  await expect(page.getByText("Exportação cancelada.", { exact: true })).toBeVisible();
+});
+
 test("Expedição abre a revisão de QC mantendo contexto", async ({ context, page }, testInfo) => {
   test.skip(
     Boolean(testInfo.project.metadata.board) ||

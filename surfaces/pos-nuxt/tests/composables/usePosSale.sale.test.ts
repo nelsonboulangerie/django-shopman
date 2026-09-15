@@ -412,6 +412,47 @@ describe("usePosSale — PIX polling pós-venda", () => {
     h.handles.dispose();
   });
 
+  it("resposta PIX tardia não contamina um polling de venda mais nova", async () => {
+    let releaseOld!: (value: unknown) => void;
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => { releaseOld = resolve; }));
+    fetchMock.mockResolvedValue({});
+    let closes = 0;
+    const actionCall = vi.fn().mockImplementation(async (path: string) => {
+      if (String(path).includes("/sale/review/")) {
+        return { review: { total_q: 1000, total_display: "R$ 10,00", subtotal_q: 1000 } };
+      }
+      if (String(path).includes("/sale/close/")) {
+        closes += 1;
+        return { ok: true, order_ref: `PED-${closes}`, payment: pixProof };
+      }
+      return {};
+    });
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    h.sale.dismissResult();
+    const pao = h.handles.posValue.value!.products[0]!;
+    h.sale.addProduct(pao);
+    h.sale.addProduct(pao);
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+    expect(h.sale.result.value?.orderRef).toBe("PED-2");
+    expect(h.sale.pixStatus.value).toBe("polling");
+
+    releaseOld({
+      is_paid: true,
+      payment_delivery: { status: "accepted", channel: "whatsapp", notice: "Venda antiga" },
+    });
+    await vi.runAllTicks();
+
+    expect(h.sale.pixStatus.value).toBe("polling");
+    expect(h.sale.result.value?.paymentDelivery).toBeNull();
+    h.handles.dispose();
+  });
+
   it("o chip pendente resolve em voz alta: confirmou → toast e chip sai", async () => {
     fetchMock.mockResolvedValue({ is_paid: true });
     const actionCall = saleRouter(pixProof);

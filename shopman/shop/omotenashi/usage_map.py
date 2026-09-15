@@ -494,6 +494,48 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "PROFILE_SECTION_TITLE": (
         ("shopman/storefront/api/account.py", "Loja", "Conta do cliente"),
     ),
+    "PWA_INSTALL_CTA": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "PWA_INSTALL_DISMISS_CTA": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "PWA_INSTALL_MESSAGE": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "PWA_INSTALL_TITLE": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "PWA_IOS_ADD_STEP": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "PWA_IOS_DONE_CTA": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "PWA_IOS_MESSAGE": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "PWA_IOS_SHARE_STEP": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "PWA_IOS_TITLE": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "PWA_OFFLINE_MESSAGE": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "PWA_OFFLINE_RETRY_CTA": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "PWA_OFFLINE_TITLE": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "PWA_UPDATE_CTA": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "PWA_UPDATE_TITLE": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
     "REORDER_CONFLICT_APPEND_HELP": (
         ("shopman/storefront/presentation/reorder.py", "Loja", "Pedir de novo"),
     ),

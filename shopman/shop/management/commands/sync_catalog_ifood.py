@@ -26,7 +26,7 @@ class Command(BaseCommand):
             "--full",
             action="store_true",
             default=False,
-            help="Full catalog sync — replace the entire iFood menu.",
+            help="Reenviar todos os itens da seleção local autorizada.",
         )
         parser.add_argument(
             "--dry-run",
@@ -39,7 +39,17 @@ class Command(BaseCommand):
         from shopman.offerman.exceptions import CatalogError
         from shopman.offerman.service import CatalogService
 
+        from shopman.shop.adapters.catalog_projection_ifood import (
+            IFoodCatalogWriteBlocked,
+            ensure_catalog_write_allowed,
+        )
         from shopman.shop.models import Channel
+
+        if not options["dry_run"]:
+            try:
+                ensure_catalog_write_allowed()
+            except IFoodCatalogWriteBlocked as exc:
+                raise CommandError(str(exc)) from exc
 
         try:
             channel = Channel.objects.get(ref="ifood")
@@ -76,8 +86,8 @@ class Command(BaseCommand):
         except CatalogError as exc:
             if exc.code == "PROJECTION_BACKEND_NOT_CONFIGURED":
                 raise CommandError(
-                    "iFood projection backend not configured. Set "
-                    "IFOOD_CATALOG_PROJECTION=1 (with iFood OAuth creds) to enable."
+                    "Backend iFood não registrado (IFOOD_CATALOG_PROJECTION). "
+                    "O registro não substitui a política de escrita restrita a teste."
                 ) from exc
             raise CommandError(f"iFood sync error: {exc}") from exc
         except Exception as exc:

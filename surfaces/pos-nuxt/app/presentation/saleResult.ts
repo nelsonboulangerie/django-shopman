@@ -7,6 +7,7 @@
 // como a tela se comporta com ele.
 
 import type { PaymentProofView } from "~/presentation/payment";
+import type { POSPaymentDeliveryProjection } from "~/types/pos";
 import type { PosReceiptSnapshot } from "~/presentation/receipt";
 import { firstName } from "~/presentation/customerDisplay";
 import { formatBRL } from "~/utils/posIntent";
@@ -25,6 +26,7 @@ export interface PosSaleResultSnapshot {
   /** Link do pedido no Gestor de Pedidos (orders app). */
   nextUrl: string;
   payment: PaymentProofView | null;
+  paymentDelivery?: POSPaymentDeliveryProjection | null;
   receipt: PosReceiptSnapshot;
   fiscalExpected: boolean;
   changeQ: number;

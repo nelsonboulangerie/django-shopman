@@ -309,12 +309,26 @@ describe("PosCustomerModal — a recusa tem motivo E caminho", () => {
     expect(wrapper.emitted("decisionPick")?.[0]?.[0]).toMatchObject({ ref: "CUST-B" });
   });
 
-  it("sem pergunta pendente, Concluir resolve e fecha como sempre", async () => {
+  it("sem pergunta pendente, Concluir só fecha depois que o servidor confirma", async () => {
     const wrapper = await mount();
     buttonByText("Cadastrar cliente")!.click();
     await wrapper.vm.$nextTick();
     expect(wrapper.emitted("resolveCustomer")).toHaveLength(1);
+    expect(wrapper.emitted("update:open")).toBeUndefined();
+    const done = wrapper.emitted("resolveCustomer")![0]![0] as (saved: boolean) => void;
+    done(true);
+    await wrapper.vm.$nextTick();
     expect(wrapper.emitted("update:open")?.at(-1)).toEqual([false]);
+  });
+
+  it("erro ao salvar mantém o modal aberto e libera nova tentativa", async () => {
+    const wrapper = await mount();
+    buttonByText("Cadastrar cliente")!.click();
+    const done = wrapper.emitted("resolveCustomer")![0]![0] as (saved: boolean) => void;
+    done(false);
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("update:open")).toBeUndefined();
+    expect(buttonByText("Cadastrar cliente")!.disabled).toBe(false);
   });
 });
 
@@ -337,6 +351,22 @@ describe("cadastro novo com telefone existente", () => {
 });
 
 describe("buscar existente e cadastrar novo são atos separados", () => {
+  it("expõe abas acessíveis e preserva a associação ao navegar", async () => {
+    const wrapper = await mount({
+      customerLookup: { ref: "CUST-A", name: "Ana Prado", phone: "+5543999990022", email: "", tax_id: "" },
+    });
+    const tabs = Array.from(document.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+    expect(tabs).toHaveLength(2);
+    expect(tabs.map((tab) => tab.getAttribute("aria-selected"))).toEqual(["false", "true"]);
+    expect(tabs[1]!.textContent).toContain("Editar cadastro");
+    tabs[0]!.click();
+    await wrapper.vm.$nextTick();
+    tabs[1]!.click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("clear")).toBeUndefined();
+    expect(tabs[1]!.getAttribute("aria-selected")).toBe("true");
+  });
+
   it("digitar telefone no cadastro novo e sair do campo não busca nem seleciona", async () => {
     const wrapper = await mount({ customerName: "", customerPhone: "" });
     expect(document.querySelector('input[aria-label="Buscar cliente"]')).not.toBeNull();

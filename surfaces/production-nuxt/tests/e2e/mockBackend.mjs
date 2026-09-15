@@ -160,6 +160,45 @@ const QC = {
   },
 };
 
+const REPORTS = {
+  reports: {
+    filters: {
+      report_kind: "history",
+      date_from: "2026-07-01",
+      date_to: "2026-07-06",
+    },
+    history_rows: [
+      {
+        ref: "WO-0042",
+        date: "06/07/2026",
+        recipe_name: "Pão francês",
+        position_ref: "forno-1",
+        qty_planned: "40",
+        qty_started: "40",
+        qty_finished: "38",
+        qty_loss: "2",
+        yield_rate: "95%",
+        operator_ref: "admin",
+        duration_minutes: "60",
+      },
+    ],
+    operator_rows: [],
+    waste_rows: [],
+    quality_rows: [],
+    available_recipes: [{ ref: "pao-frances", name: "Pão francês" }],
+    available_positions: [{ ref: "forno-1", name: "Forno 1" }],
+  },
+  pagination: {
+    total: 2,
+    page_size: 1,
+    from: 1,
+    to: 1,
+    sort: "default",
+    next_cursor: "cursor-e2e-seguinte",
+    previous_cursor: "",
+  },
+};
+
 function json(res, status, body) {
   res.statusCode = status;
   res.end(JSON.stringify(body));
@@ -176,6 +215,7 @@ const server = createServer((req, res) => {
   const authed = cookie.includes("e2e_session=authed");
   const locked = cookie.includes("e2e_session=locked");
   const longCopy = (req.headers.cookie || "").includes("e2e_scenario=long-copy");
+  const populatedReports = cookie.includes("e2e_scenario=reports-populated");
 
   if (/\/storefront\//.test(url)) return json(res, 404, { detail: "Storefront fora do Produção." });
 
@@ -203,6 +243,17 @@ const server = createServer((req, res) => {
   if (/\/production\/kds\/?(\?|$)/.test(url)) return json(res, 200, KDS);
   if (/\/production\/qc\/?(\?|$)/.test(url)) return json(res, 200, QC);
   if (/\/production\/mise-en-place\/?(\?|$)/.test(url)) return json(res, 200, MISE);
+  if (
+    /\/production\/reports\/?\?/.test(url) &&
+    url.includes("format=csv") &&
+    populatedReports
+  ) {
+    res.setHeader("content-type", "text/csv; charset=utf-8");
+    return setTimeout(() => res.end("OP;Ficha técnica\nWO-0042;Pão francês\n"), 1_000);
+  }
+  if (/\/production\/reports\/?(\?|$)/.test(url) && populatedReports) {
+    return json(res, 200, REPORTS);
+  }
   if (/\/production\/?(\?|$)/.test(url)) return json(res, 200, longCopy ? LONG_COPY_BOARD : BOARD);
   if (/\/alerts\/?(\?|$)/.test(url)) return json(res, 200, ALERTS);
   return json(res, 200, {});

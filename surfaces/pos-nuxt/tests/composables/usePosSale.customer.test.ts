@@ -70,14 +70,19 @@ describe("usePosSale — cliente por ref e o flag de cadastro novo", () => {
     disposers.push(handles.dispose);
 
     sale.cart.customerTaxId = "52998224725";
-    await sale.resolveCustomer();
+    expect(await sale.resolveCustomer()).toBe(true);
 
     expect(sale.customerResolvedNew.value).toBe(true);
     expect(sale.cart.customerRef).toBe("CUST-9");
+    expect(actionCall.mock.calls[0]?.[1]?.body).not.toHaveProperty("customer_name_correction");
 
     // O mesmo CPF de novo: o servidor ACHOU (created=false) → o flag cai.
     actionCall.mockResolvedValue({ customer: lookupProjection(), created: false });
-    await sale.resolveCustomer();
+    expect(await sale.resolveCustomer()).toBe(true);
+    expect(actionCall.mock.calls[1]?.[1]?.body).toMatchObject({
+      customer_ref: "CUST-9",
+      customer_name_correction: true,
+    });
     expect(sale.customerResolvedNew.value).toBe(false);
   });
 

@@ -79,6 +79,43 @@ def test_operator_productivity_aggregates_finished_only(report_data):
     assert report.operator_rows[0].qty_total == "36"
 
 
+def test_report_averages_keep_constant_memory_and_exact_display():
+    from shopman.backstage.projections.production import _OnlineAverage
+
+    average = _OnlineAverage()
+    for index in range(10_000):
+        average.add(Decimal("0.9") if index % 2 else Decimal("0.8"))
+
+    assert not hasattr(average, "__dict__")
+    assert average.count == 10_000
+    assert average.percent_display() == "85%"
+
+    durations = _OnlineAverage()
+    durations.add(10)
+    durations.add(11)
+    assert durations.integer_display() == "10"
+
+
+@pytest.mark.django_db
+def test_effective_quality_strict_mode_fails_closed_without_changing_fail_soft_default(
+    report_data,
+    monkeypatch,
+):
+    from shopman.craftsman.models import WorkOrderEvent
+
+    from shopman.shop.services import quality as quality_service
+
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(WorkOrderEvent.objects, "filter", unavailable)
+    work_order = report_data["finished"]
+
+    assert quality_service.effective_partitions([work_order]) == {work_order.pk: []}
+    with pytest.raises(quality_service.EffectiveQualityPartitionError):
+        quality_service.effective_partitions([work_order], strict=True)
+
+
 @pytest.mark.django_db
 def test_recipe_waste_returns_top_waste_rows(report_data):
     report = build_production_reports(
@@ -162,6 +199,77 @@ def test_csv_export_has_bom_pt_br_header_and_accents(report_data):
     assert "Qtd planejada" in text
     assert "Café especial" in text
     assert report_data["today"].isoformat() in text
+
+
+@pytest.mark.django_db
+def test_csv_stream_emits_bom_and_header_before_querying_rows(report_data, django_assert_num_queries):
+    from shopman.backstage.services.production import iter_reports_csv
+
+    stream = iter_reports_csv(
+        "history",
+        {"date_from": report_data["today"], "date_to": report_data["today"]},
+    )
+    with django_assert_num_queries(0):
+        assert next(stream) == "\ufeff"
+        assert "Ref,Data,Receita" in next(stream)
+    assert report_data["finished"].ref in "".join(stream)
+
+
+@pytest.mark.django_db
+def test_csv_stream_fails_if_dataset_revision_changes(report_data, monkeypatch):
+    from shopman.backstage.projections import production as production_projection
+    from shopman.backstage.services.production import (
+        ProductionReportChangedDuringExport,
+        prepare_reports_csv,
+    )
+
+    revisions = iter(("before", "after"))
+    monkeypatch.setattr(
+        production_projection,
+        "_report_dataset_revision",
+        lambda qs, kind: next(revisions),
+    )
+    with pytest.raises(ProductionReportChangedDuringExport):
+        prepare_reports_csv(
+            "history",
+            {"date_from": report_data["today"], "date_to": report_data["today"]},
+        )
+
+
+@pytest.mark.django_db
+def test_prepared_csv_spools_to_disk_and_enforces_row_limit(report_data, settings):
+    from shopman.backstage.services.production import (
+        ProductionReportExportLimitExceeded,
+        prepare_reports_csv,
+    )
+
+    settings.SHOPMAN_PRODUCTION_REPORT_EXPORT_SPOOL_BYTES = 16
+    prepared = prepare_reports_csv(
+        "history",
+        {"date_from": report_data["today"], "date_to": report_data["today"]},
+    )
+    try:
+        assert prepared._rolled is True
+        assert prepared.read().startswith(b"\xef\xbb\xbf")
+    finally:
+        prepared.close()
+
+    settings.SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_ROWS = 1
+    with pytest.raises(ProductionReportExportLimitExceeded) as caught:
+        prepare_reports_csv(
+            "history",
+            {"date_from": report_data["today"], "date_to": report_data["today"]},
+        )
+    assert caught.value.limit == "rows"
+
+    settings.SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_ROWS = 50_000
+    settings.SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_BYTES = 8
+    with pytest.raises(ProductionReportExportLimitExceeded) as caught:
+        prepare_reports_csv(
+            "history",
+            {"date_from": report_data["today"], "date_to": report_data["today"]},
+        )
+    assert caught.value.limit == "bytes"
 
 
 @pytest.mark.django_db

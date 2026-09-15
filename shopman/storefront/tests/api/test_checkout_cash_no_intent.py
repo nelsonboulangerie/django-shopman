@@ -21,6 +21,7 @@ from shopman.orderman.models import Order
 from shopman.payman.models import PaymentIntent
 
 from shopman.shop.models import DeliveryZone, Shop
+from shopman.storefront.tests._checkout_auth import authenticate_checkout
 from shopman.storefront.tests._checkout_baseline import with_baseline
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
@@ -49,6 +50,7 @@ def _checkout(client, django_capture_on_commit_callbacks, **payload) -> Order:
 
 def test_delivery_cash_checkout_has_no_payment_intent(client, django_capture_on_commit_callbacks):
     _seed_surface()
+    authenticate_checkout(client)
     DeliveryZone.objects.create(
         shop=Shop.objects.first(),
         name="Centro",
@@ -80,6 +82,7 @@ def test_pickup_cash_checkout_has_no_payment_intent(client, django_capture_on_co
     from shopman.storefront.services.pickup_slots import get_slots
 
     _seed_surface()
+    authenticate_checkout(client)
 
     order = _checkout(
         client,

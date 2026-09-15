@@ -4,7 +4,7 @@ KDS (Kitchen Display System) dispatch service.
 Bridge: KDS is reactive to the order lifecycle (unidirecional Order→KDS):
 - dispatch()         — cria tickets quando o trabalho físico é liberado; o lifecycle grava PREPARING em seguida
 - cancel_tickets()   — cancela tickets abertos quando Order é CANCELLED
-- on_all_tickets_done() — transiciona Order para READY quando todos os tickets concluídos
+- on_all_tickets_done() — transiciona Order para READY; balcão encerra no próprio KDS
 
 Invariantes garantidos:
 - dispatch() é idempotente: não cria duplicatas se já há tickets para o pedido
@@ -403,7 +403,10 @@ def on_all_tickets_done(order, *, actor: str = "kds.all_done") -> bool:
     Check if all KDS tickets are done and transition order to READY.
 
     Called when a ticket is marked as done. If all tickets for the order
-    are now done, transitions the order to READY status.
+    are now done, transitions the order to READY status. Uma venda imediata de
+    balcão pertence ao PDV/KDS, não ao Gestor; nesse caso READY é só o degrau
+    obrigatório da máquina de estados e o mesmo bump conclui a venda, desde que
+    a régua canônica de pagamento libere a entrega.
 
     Returns True if transitioned, False otherwise.
 
@@ -433,6 +436,20 @@ def on_all_tickets_done(order, *, actor: str = "kds.all_done") -> bool:
 
     order.transition_status(Order.Status.READY, actor=actor)
     logger.info("kds.on_all_tickets_done: order %s → READY", order.ref)
+
+    from shopman.shop.services.pos_sales_mode import is_pos_counter_order
+
+    if (
+        is_pos_counter_order(order)
+        and order.can_transition_to(Order.Status.COMPLETED)
+        and not payment_gate.payment_blocks_transition(
+            order,
+            current_status=Order.Status.READY,
+            target_status=Order.Status.COMPLETED,
+        )
+    ):
+        order.transition_status(Order.Status.COMPLETED, actor="system:counter_kds_handoff")
+        logger.info("kds.on_all_tickets_done: order %s → COMPLETED (counter)", order.ref)
     return True
 
 

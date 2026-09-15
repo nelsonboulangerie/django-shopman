@@ -14,15 +14,19 @@ Reuses ``build_production_reports``/``build_production_dashboard``/
 
 from __future__ import annotations
 
+import json
 from datetime import date
 from decimal import Decimal
 
 import pytest
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
+from django.db import connection
+from django.http import FileResponse
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from shopman.craftsman import craft
-from shopman.craftsman.models import Recipe
+from shopman.craftsman.models import Recipe, WorkOrderEvent
 from shopman.stockman import Position
 
 from shopman.backstage.models import DayClosing
@@ -142,9 +146,21 @@ def test_reports_payload_shape(client, manager, report_data):
     assert finished_row["yield_rate"] == "90%"
 
     assert [row["operator_ref"] for row in reports["operator_rows"]] == ["ana"]
-    assert reports["waste_rows"][0]["recipe_ref"] == "report-api-pao"
+    assert [row["recipe_ref"] for row in reports["waste_rows"]] == ["report-api-pao"]
     assert {recipe["ref"] for recipe in reports["available_recipes"]} == {"report-api-pao"}
     assert {position["ref"] for position in reports["available_positions"]} == {"forno"}
+
+    productivity = client.get(
+        reverse("api-backstage-production-reports"),
+        {
+            "date_from": report_data["today"].isoformat(),
+            "date_to": report_data["today"].isoformat(),
+            "report_kind": "operator_productivity",
+            "selected_only": True,
+        },
+    ).json()["reports"]
+    assert [row["operator_ref"] for row in productivity["operator_rows"]] == ["ana"]
+    assert productivity["history_rows"] == []
 
 
 @pytest.mark.django_db
@@ -160,6 +176,257 @@ def test_reports_filters_reduce_history(client, manager, report_data):
     )
     rows = response.json()["reports"]["history_rows"]
     assert [row["ref"] for row in rows] == [report_data["planned"].ref]
+
+
+@pytest.mark.django_db
+def test_reports_paginate_with_filter_bound_cursor_and_server_sort(client, manager, report_data):
+    client.force_login(manager)
+    url = reverse("api-backstage-production-reports")
+    query = {
+        "date_from": report_data["today"].isoformat(),
+        "date_to": report_data["today"].isoformat(),
+        "report_kind": "history",
+        "selected_only": True,
+        "sort": "quantity_desc",
+        "page_size": 1,
+    }
+
+    first = client.get(url, query)
+    assert first.status_code == 200
+    payload = first.json()
+    assert payload["pagination"]["total"] == 2
+    assert payload["reports"]["history_rows"][0]["ref"] == report_data["planned"].ref
+    assert payload["reports"]["operator_rows"] == []
+    cursor = payload["pagination"]["next_cursor"]
+
+    with CaptureQueriesContext(connection) as captured:
+        second = client.get(url, {**query, "cursor": cursor})
+    assert second.status_code == 200
+    assert second.json()["reports"]["history_rows"][0]["ref"] == report_data["finished"].ref
+    assert second.json()["pagination"]["previous_cursor"]
+    assert len(captured) <= 20
+    assert any(
+        'FROM "crafting_work_order"' in query["sql"]
+        and "LIMIT 1 OFFSET 1" in query["sql"].upper()
+        for query in captured.captured_queries
+    )
+
+    tampered = client.get(url, {**query, "cursor": f"{cursor}x"})
+    assert tampered.status_code == 400
+    mismatched = client.get(url, {**query, "operator_ref": "ana", "cursor": cursor})
+    assert mismatched.status_code == 400
+
+    craft.adjust(report_data["planned"], Decimal("35"), reason="revisão de página")
+    stale = client.get(url, {**query, "cursor": cursor})
+    assert stale.status_code == 409
+    assert stale.json()["error"] == {
+        "code": "stale_report_cursor",
+        "recovery": "apply_filters",
+    }
+
+
+@pytest.mark.django_db
+def test_history_page_does_not_build_unselected_aggregates(client, manager, report_data, monkeypatch):
+    from shopman.backstage.projections import production as production_projection
+
+    original_row_builder = production_projection._work_order_report_row
+    materialized = []
+
+    def record_row(work_order):
+        materialized.append(work_order.pk)
+        return original_row_builder(work_order)
+
+    monkeypatch.setattr(production_projection, "_work_order_report_row", record_row)
+    monkeypatch.setattr(
+        production_projection,
+        "_operator_productivity_rows",
+        lambda rows: pytest.fail("history must not aggregate operator rows"),
+    )
+    monkeypatch.setattr(
+        production_projection,
+        "_recipe_waste_rows",
+        lambda rows: pytest.fail("history must not aggregate waste rows"),
+    )
+    client.force_login(manager)
+
+    response = client.get(
+        reverse("api-backstage-production-reports"),
+        {
+            "date_from": report_data["today"].isoformat(),
+            "date_to": report_data["today"].isoformat(),
+            "page_size": 1,
+            "selected_only": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()["reports"]["history_rows"]) == 1
+    assert len(materialized) == 1
+
+
+@pytest.mark.django_db
+def test_reports_reject_a_dataset_that_changes_while_page_is_built(client, manager, report_data, monkeypatch):
+    from shopman.backstage.projections import production as production_projection
+
+    revisions = iter(("before", "after"))
+    monkeypatch.setattr(production_projection, "_report_dataset_revision", lambda qs, kind: next(revisions))
+    client.force_login(manager)
+
+    response = client.get(
+        reverse("api-backstage-production-reports"),
+        {
+            "date_from": report_data["today"].isoformat(),
+            "date_to": report_data["today"].isoformat(),
+            "selected_only": True,
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "stale_report_cursor"
+
+
+@pytest.mark.django_db
+def test_quality_page_and_csv_use_latest_correction_and_invalidate_older_cursor(
+    client,
+    manager,
+    report_data,
+):
+    work_order = report_data["finished"]
+    first_correction = [
+        {
+            "quantity": "10",
+            "quality_grade_ref": "fair",
+            "quality_defect_ref": "misshapen",
+            "loss": False,
+            "batch_ref": "",
+        },
+        {
+            "quantity": "8",
+            "quality_grade_ref": "standard",
+            "quality_defect_ref": "",
+            "loss": False,
+            "batch_ref": "",
+        },
+    ]
+    WorkOrderEvent.objects.create(
+        work_order=work_order,
+        seq=work_order.events.order_by("-seq").values_list("seq", flat=True).first() + 1,
+        kind=WorkOrderEvent.Kind.QUALITY_CORRECTED,
+        actor="manager:test",
+        payload={"schema_version": 1, "after_partition": first_correction},
+    )
+    client.force_login(manager)
+    url = reverse("api-backstage-production-reports")
+    query = {
+        "date_from": report_data["today"].isoformat(),
+        "date_to": report_data["today"].isoformat(),
+        "report_kind": "quality",
+        "selected_only": True,
+        "page_size": 1,
+    }
+
+    first = client.get(url, query)
+    assert first.status_code == 200
+    assert first.json()["pagination"]["total"] == 2
+    assert first.json()["reports"]["quality_rows"] == [
+        {
+            "recipe_ref": "report-api-pao",
+            "recipe_name": "Pão de Relatório",
+            "grade_ref": "fair",
+            "grade_label": "Razoável",
+            "defect_ref": "misshapen",
+            "defect_label": "Deformado",
+            "quantity": "10",
+            "share": "55%",
+        }
+    ]
+    cursor = first.json()["pagination"]["next_cursor"]
+
+    csv_response = client.get(url, {**query, "format": "csv"})
+    assert isinstance(csv_response, FileResponse)
+    assert int(csv_response["Content-Length"]) > 0
+    csv_text = b"".join(csv_response.streaming_content).decode("utf-8-sig")
+    assert "report-api-pao,Pão de Relatório,Razoável,Deformado,10,55%" in csv_text
+
+    WorkOrderEvent.objects.create(
+        work_order=work_order,
+        seq=work_order.events.order_by("-seq").values_list("seq", flat=True).first() + 1,
+        kind=WorkOrderEvent.Kind.QUALITY_CORRECTED,
+        actor="manager:test",
+        payload={
+            "schema_version": 1,
+            "after_partition": [
+                {
+                    "quantity": "18",
+                    "quality_grade_ref": "minimal",
+                    "quality_defect_ref": "underproofed",
+                    "loss": False,
+                    "batch_ref": "",
+                }
+            ],
+        },
+    )
+
+    stale = client.get(url, {**query, "cursor": cursor})
+    assert stale.status_code == 409
+    fresh = client.get(url, query)
+    assert fresh.json()["reports"]["quality_rows"][0]["grade_ref"] == "minimal"
+
+
+@pytest.mark.django_db
+def test_quality_report_and_export_fail_closed_when_effective_partition_is_unavailable(
+    client,
+    manager,
+    report_data,
+    monkeypatch,
+):
+    from shopman.shop.services import quality as quality_service
+
+    def unavailable(*args, **kwargs):
+        raise quality_service.EffectiveQualityPartitionError
+
+    monkeypatch.setattr(quality_service, "effective_partitions", unavailable)
+    client.force_login(manager)
+    url = reverse("api-backstage-production-reports")
+    query = {
+        "date_from": report_data["today"].isoformat(),
+        "date_to": report_data["today"].isoformat(),
+        "report_kind": "quality",
+        "selected_only": True,
+    }
+
+    response = client.get(url, query)
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "quality_projection_unavailable"
+
+    exported = client.get(url, {**query, "format": "csv"})
+    assert exported.status_code == 503
+    assert json.loads(exported.content)["error"]["code"] == "quality_projection_unavailable"
+
+
+@pytest.mark.django_db
+def test_csv_limit_returns_actionable_error_before_file_response(client, manager, report_data, settings):
+    settings.SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_ROWS = 1
+    client.force_login(manager)
+    response = client.get(
+        reverse("api-backstage-production-reports"),
+        {
+            "date_from": report_data["today"].isoformat(),
+            "date_to": report_data["today"].isoformat(),
+            "report_kind": "history",
+            "selected_only": True,
+            "format": "csv",
+        },
+    )
+
+    assert response.status_code == 413
+    payload = json.loads(response.content)
+    assert payload["error"] == {
+        "code": "report_export_too_large",
+        "recovery": "narrow_filters",
+        "limit": "rows",
+        "maximum": 1,
+    }
 
 
 @pytest.mark.django_db
@@ -215,7 +482,8 @@ def test_reports_csv_download(client, manager, report_data):
     assert response["Content-Type"] == "text/csv; charset=utf-8"
     disposition = response["Content-Disposition"]
     assert disposition.startswith('attachment; filename="producao_history_')
-    text = response.content.decode("utf-8-sig")
+    assert response.streaming
+    text = b"".join(response.streaming_content).decode("utf-8-sig")
     assert "Qtd planejada" in text
     assert report_data["finished"].ref in text
 

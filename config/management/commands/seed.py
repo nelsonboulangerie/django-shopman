@@ -1238,10 +1238,10 @@ class Command(BaseCommand):
                 "heading_font": "Instrument Sans",
                 "body_font": "Instrument Sans",
                 "border_radius": "soft",
-                "primary_color": "#C5A55A",
+                "primary_color": "#7C3A40",
                 "secondary_color": "#2C1810",
                 "accent_color": "#8B4513",
-                "neutral_color": "#F5E6D3",
+                "neutral_color": "#FCF7EE",
                 "neutral_dark_color": "#1A0F0A",
                 "formatted_address": "Av. Madre Leônia Milito, 446 - Bela Suíça, Londrina - PR, 86050-270",
                 "route": "Av. Madre Leônia Milito",
@@ -5966,11 +5966,9 @@ class Command(BaseCommand):
             "fallback_chain": ["sms", "email"],
         }
         _remote_config = {
-            # Aceite otimista em 1 min (alpha/staging): com estoque fantasma do
-            # autosserviço não dá pra cobrar antes de confirmar disponibilidade,
-            # então mantemos o aceite — mas curto, pra o cliente ver o QR rápido.
-            # Reavaliar no go-live (janela de cancelamento do operador vs. espera).
-            "confirmation": {"mode": "auto_confirm", "timeout_minutes": 1, "stale_new_alert_minutes": 10},
+            # Pedido remoto só é aceito quando uma pessoa confere disponibilidade.
+            # Cobrança e copy não podem transformar silêncio operacional em garantia.
+            "confirmation": {"mode": "manual", "stale_new_alert_minutes": 10},
             "payment": {"method": ["pix", "card"], "timing": "post_commit", "timeout_minutes": 10},
             "stock": _remote_stock,
             "waitlist": _remote_waitlist,
@@ -5992,7 +5990,7 @@ class Command(BaseCommand):
             "stock": {**_remote_stock, "check_on_commit": False},
         }
         _whatsapp_config = {
-            "confirmation": {"mode": "auto_confirm", "timeout_minutes": 5, "stale_new_alert_minutes": 10},
+            "confirmation": {"mode": "manual", "stale_new_alert_minutes": 10},
             # O link de Pix/cartão aparece no chat logo depois do pedido, como o
             # link de pagamento do PDV. `at_commit` também faz a confirmação
             # esperar a captura (`lifecycle._requires_captured_payment_before_confirmation`):
@@ -8206,7 +8204,7 @@ class Command(BaseCommand):
             "order_delivered": {"subject": "Pedido {order_ref} entregue", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* foi entregue.\n\nEsperamos que tenha gostado! Obrigado pela preferência."},
             "order_cancelled": {"subject": "Pedido {order_ref} cancelado", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* foi cancelado.{reason_note}\n\nVeja os detalhes do pedido por aqui: {tracking_url}"},
             "order_rejected": {"subject": "Pedido {order_ref} não confirmado", "body": "Olá{customer_name_greeting}! O estabelecimento não conseguiu confirmar o pedido *{order_ref}*.{reason_note}\n\nVeja os detalhes do pedido por aqui: {tracking_url}"},
-            "payment_requested": {"subject": "Pedido {order_ref}: pagamento liberado", "body": "Olá{customer_name_greeting}! Confirmamos a disponibilidade do pedido *{order_ref}*.\n\nPara continuar, conclua o pagamento dentro do prazo: {payment_url}"},
+            "payment_requested": {"subject": "Pedido {order_ref}: pagamento disponível", "body": "Olá{customer_name_greeting}! O pagamento do pedido *{order_ref}* está disponível.\n\nPara continuar, pague dentro do prazo: {payment_url}{pix_suffix}"},
             "payment_confirmed": {"subject": "Pagamento do pedido {order_ref} confirmado", "body": "Olá{customer_name_greeting}! O pagamento do pedido *{order_ref}* foi recebido.\n\nValor: *{total}*\n\nAvisamos a cada passo. Acompanhe por aqui: {tracking_url}"},
             # Pedido remoto anotado no PDV: a venda fechou e o cliente paga pelo link.
             # Evento próprio, não o `payment_requested` — a copy é outra ("anotamos",

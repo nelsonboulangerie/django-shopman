@@ -363,6 +363,11 @@ def close_sale(
                 # A comanda é relida SOB LOCK: os ops de troca (remove_line dos itens
                 # atuais + add_line dos novos) só valem para o estado que travamos.
                 session = _locked_session(session)
+                from shopman.shop.services.pos_intent import pos_session_revision
+
+                if session.state != "open" or ("expected_revision" in payload and payload["expected_revision"] != pos_session_revision(session)):
+                    raise PosIntentError(code="tab_revision_conflict", status=409,
+                        message="Esta comanda mudou. Confira a versão atual antes de finalizar.")
                 direct_checkout = False
 
             result, session, tab_ref = _commit_sale_session(
@@ -2869,6 +2874,8 @@ def _settle_pos_sale(order: Order, *, shift, operator_username: str) -> dict:
             return payment_result or _pos_payment_response(order)
         if method == "link" and payment.get("checkout_url"):
             _send_payment_link(order)
+        elif method == "pix" and payment.get("copy_paste"):
+            _send_payment_pix(order)
         intents = {method: payment["intent_ref"]} if payment.get("intent_ref") else {}
         try:
             _record_sale(order, shift=shift, operator=operator, cash_q=0, payment_ref=intents.get(method, ""), intents=intents)
@@ -2939,6 +2946,16 @@ def _send_payment_link(order: Order) -> None:
         notification.send(order, "payment_link_sent")
     except Exception:
         logger.exception("pos_payment_link_notification_failed order=%s", order.ref)
+
+
+def _send_payment_pix(order: Order) -> None:
+    """Enfileira o PIX somente depois que o gateway gravou o copia-e-cola."""
+    from shopman.shop.services import notification
+
+    try:
+        notification.send(order, notification.PAYMENT_PIX_TEMPLATE)
+    except Exception:
+        logger.exception("pos_payment_pix_notification_failed order=%s", order.ref)
 
 
 def _settle_after_shift_closed(order: Order, *, shift, operator, resettle: bool = True) -> None:
@@ -3475,6 +3492,7 @@ def resolve_or_create_customer(
     tax_id: str = "",
     email: str = "",
     contact_correction: bool = False,
+    name_correction: bool = False,
     receipt_identity_action: dict | None = None,
     operator_username: str,
 ) -> dict:
@@ -3494,7 +3512,9 @@ def resolve_or_create_customer(
 
     ``contact_correction`` é a permissão explícita do operador para CORRIGIR o
     contato do cliente associado (o telefone digitado errado ontem). Sem ela o
-    merge só preenche lacuna.
+    merge só preenche lacuna. ``name_correction`` tem a mesma natureza, mas é
+    separada: o botão "Salvar cadastro" pode corrigir o nome sem transformar o
+    payload passivo de toda venda em editor de CRM.
     """
     if receipt_identity_action is not None:
         from shopman.shop.services.pos_receipt_identity import resolve_receipt_identity
@@ -3508,6 +3528,7 @@ def resolve_or_create_customer(
             "customer_tax_id": tax_id,
             "customer_email": email,
             "customer_contact_correction": contact_correction,
+            "customer_name_correction": name_correction,
         },
         operator_username=operator_username,
     )
@@ -3564,6 +3585,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
     # cliente identificado por REF. Sem ref não há "de quem" para corrigir, e um
     # telefone digitado num formulário nunca vira mudança de identidade sozinho.
     wants_contact_correction = bool(payload.get("customer_contact_correction")) and bool(raw_ref)
+    wants_name_correction = bool(payload.get("customer_name_correction")) and bool(raw_ref)
     # ATUALIZAR o cadastro é ação PRÓPRIA, com nome próprio na tela. Quando o
     # contato do comprovante DIVERGE do que o cadastro já tem, o padrão é não
     # tocar em nada: a nota vai para o informado e o cadastro segue como estava.
@@ -3624,6 +3646,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
         correct_phone = corrects_phone and on_associated
         correct_email = corrects_email and on_associated
         correct_tax_id = corrects_tax_id and on_associated
+        correct_name = wants_name_correction and on_associated
         # ⚠️ ANTES de qualquer escrita. ``Customer.save()`` espelha e-mail num
         # ContactPoint e o UNIQUE (type, value_normalized) é GLOBAL: gravar um
         # endereço que já é de outro cadastro estourava IntegrityError lá
@@ -3681,6 +3704,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
                 correct_phone=correct_phone,
                 correct_email=correct_email,
                 correct_tax_id=correct_tax_id,
+                correct_name=correct_name,
             )
 
         if phone:
@@ -4033,6 +4057,7 @@ def _merge_pos_customer_fields(
     correct_phone: bool = False,
     correct_email: bool = False,
     correct_tax_id: bool = False,
+    correct_name: bool = False,
 ) -> None:
     """Preenche LACUNA por padrão; CORRIGE só com a ordem do campo.
 
@@ -4049,10 +4074,10 @@ def _merge_pos_customer_fields(
     first_name, last_name = _split_name(name)
     updates: list[str] = []
 
-    if first_name and _should_refresh_name(customer):
+    if first_name and (correct_name or _should_refresh_name(customer)):
         customer.first_name = first_name
         updates.append("first_name")
-        if last_name:
+        if correct_name or last_name:
             customer.last_name = last_name
             updates.append("last_name")
     elif last_name and not customer.last_name:

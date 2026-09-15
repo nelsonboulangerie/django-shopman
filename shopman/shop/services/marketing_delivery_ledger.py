@@ -22,6 +22,7 @@ from shopman.shop.models import (
     DeliveryTarget,
     MarketingOutbox,
 )
+from shopman.shop.services.marketing_capabilities import persisted_identity
 from shopman.shop.services.marketing_contracts import MarketingContractError
 
 MAX_TARGETS_PER_COMMAND = 5_000
@@ -66,7 +67,8 @@ def ensure_targets(
                 detail="O grafo aprovado não corresponde à intent de entrega.",
             )
 
-        if outbox.platform == "whatsapp":
+        delivery_kind, delivery_format = persisted_identity(outbox)
+        if delivery_kind == "direct_message":
             members = _members(outbox, member_ids)
             identities = [(member, f"member:{member.target_key}") for member in members]
         else:
@@ -90,26 +92,25 @@ def ensure_targets(
                 key_version=key_version,
                 snapshot_ref=str(outbox.snapshot.ref),
                 platform=outbox.platform,
+                delivery_kind=delivery_kind,
+                format_ref=delivery_format,
                 identity=identity,
             )
             for member, identity in identities
         }
         member_keys = [member.pk for member, _identity in identities if member is not None]
-        existing = list(
-            DeliveryTarget.objects.select_for_update().filter(
-                snapshot=outbox.snapshot,
-                platform=outbox.platform,
-                member_id__in=member_keys,
-            )
+        existing_query = DeliveryTarget.objects.select_for_update().filter(
+            snapshot=outbox.snapshot,
+            platform=outbox.platform,
         )
-        if not member_keys:
-            existing = list(
-                DeliveryTarget.objects.select_for_update().filter(
-                    snapshot=outbox.snapshot,
-                    platform=outbox.platform,
-                    member__isnull=True,
-                )
+        if outbox.delivery_kind and outbox.format:
+            existing_query = existing_query.filter(
+                delivery_kind=delivery_kind,
+                format=delivery_format,
             )
+        existing = list(existing_query.filter(member_id__in=member_keys))
+        if not member_keys:
+            existing = list(existing_query.filter(member__isnull=True))
         collision = [target for target in existing if target.outbox_id != outbox.pk]
         if collision:
             raise MarketingContractError(
@@ -131,6 +132,8 @@ def ensure_targets(
                 artifact=outbox.artifact,
                 member=member,
                 platform=outbox.platform,
+                delivery_kind=delivery_kind,
+                format=delivery_format,
                 wave_key=outbox.wave_key,
                 target_fingerprint=fingerprints[member_id],
                 fingerprint_key_version=key_version,
@@ -144,6 +147,11 @@ def ensure_targets(
             snapshot=outbox.snapshot,
             platform=outbox.platform,
         )
+        if outbox.delivery_kind and outbox.format:
+            target_query = target_query.filter(
+                delivery_kind=delivery_kind,
+                format=delivery_format,
+            )
         if member_keys:
             target_query = target_query.filter(member_id__in=member_keys)
         else:
@@ -159,6 +167,15 @@ def ensure_targets(
             raise MarketingContractError(
                 code="delivery_wave_collision",
                 detail="Um target aprovado já pertence a outra lane desta plataforma.",
+            )
+        if any(
+            target.delivery_kind not in ("", delivery_kind)
+            or target.format not in ("", delivery_format)
+            for target in targets
+        ):
+            raise MarketingContractError(
+                code="delivery_identity_mismatch",
+                detail="Um destino materializado diverge da modalidade aprovada.",
             )
         from shopman.shop.services.marketing_observability import record_correlation
 
@@ -219,11 +236,14 @@ def _target_fingerprint(
     key_version: int,
     snapshot_ref: str,
     platform: str,
+    delivery_kind: str,
+    format_ref: str,
     identity: str,
 ) -> str:
     canonical = (
         f"marketing-target:v{key_version}:snapshot:{snapshot_ref}:"
-        f"platform:{platform}:identity:{identity}"
+        f"platform:{platform}:kind:{delivery_kind}:format:{format_ref}:"
+        f"identity:{identity}"
     )
     return hmac.new(secret, canonical.encode("utf-8"), hashlib.sha256).hexdigest()
 

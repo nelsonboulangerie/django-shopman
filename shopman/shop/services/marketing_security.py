@@ -907,10 +907,14 @@ def _external_target_count(context: AuthorizationContext) -> int:
     # their conservative cohort count until those contexts are migrated.
     if not context.platforms:
         return max(context.audience_count, 1)
-    direct_messages = context.audience_count if "whatsapp" in context.platforms else 0
-    public_publications = sum(
-        platform != "whatsapp" for platform in context.platforms
+    from shopman.shop.services.marketing_capabilities import platform_kind
+
+    direct_messages = (
+        context.audience_count
+        if any(platform_kind(platform) == "direct_message" for platform in context.platforms)
+        else 0
     )
+    public_publications = sum(platform_kind(platform) == "publication" for platform in context.platforms)
     return max(direct_messages + public_publications, 1)
 
 

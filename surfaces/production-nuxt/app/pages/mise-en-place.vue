@@ -23,6 +23,8 @@ const dateChips = [
   { iso: isoForOffset(1), label: "Amanhã" },
 ];
 
+const { stationRef } = useOperatorLock("backstage.operate_production");
+
 const {
   projection,
   lines,
@@ -33,7 +35,8 @@ const {
   isChecked,
   toggleChecked,
   checkedCount,
-} = useMiseEnPlace(selectedDate);
+  checklistRevisionChanged,
+} = useMiseEnPlace(selectedDate, stationRef);
 const weighing = useWeighing(selectedDate);
 
 const mode = ref<"insumos" | "preparos">("preparos");
@@ -230,6 +233,14 @@ function refreshAll() {
           {{ checkedCount }}/{{ lines.length }} separados
         </span>
 
+        <span
+          v-if="mode === 'insumos' && lines.length"
+          class="flex items-center gap-1.5 text-xs text-muted-foreground"
+        >
+          <Icon name="lucide:info" class="size-4 shrink-0" />
+          Checklist local {{ stationRef ? "desta estação" : "deste dispositivo" }} · não é registro de auditoria
+        </span>
+
         <div class="ml-auto flex items-center gap-3">
           <label
             v-if="mode === 'insumos'"
@@ -263,6 +274,15 @@ function refreshAll() {
 
       <!-- ── Modo Insumos: agregado do dia (provisionamento + checklist) ── -->
       <template v-if="mode === 'insumos'">
+        <div
+          v-if="checklistRevisionChanged"
+          role="status"
+          aria-live="polite"
+          class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
+        >
+          <Icon name="lucide:refresh-cw" class="size-4 shrink-0" />
+          <span>O planejamento mudou. Confira esta revisão; as marcações da lista anterior foram limpas.</span>
+        </div>
         <p
           v-if="pending && !lines.length"
           class="text-sm text-muted-foreground"

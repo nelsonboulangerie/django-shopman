@@ -116,6 +116,20 @@ class TestPreorderTracking:
         assert proj.when_display == "amanhã · A partir das 09h"
         assert "garantido para amanhã · A partir das 09h" in proj.promise.message
 
+    def test_unaccepted_future_order_never_promises_confirmation_or_guarantee(self, order):
+        from shopman.orderman.models import Order as _Order
+
+        order, _ = self._make_preorder(order)
+        _Order.objects.filter(pk=order.pk).update(status="new")
+        order.refresh_from_db()
+
+        proj = build_order_tracking(order)
+
+        assert proj.status_label == "Aguardando a loja"
+        assert proj.promise.state != "preorder_scheduled"
+        assert "confirmad" not in proj.promise.title.lower()
+        assert "garantid" not in proj.promise.message.lower()
+
     def test_future_order_without_slot_shows_date_only(self, order):
         from datetime import date
 

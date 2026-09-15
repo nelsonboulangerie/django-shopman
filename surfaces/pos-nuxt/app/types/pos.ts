@@ -542,6 +542,7 @@ export interface POSPaymentTenderDraft {
 }
 
 export interface POSTabPayload {
+  revision?: string;
   sales_mode?: "counter" | "order";
   session_key: string;
   tab_session_key: string;
@@ -579,10 +580,24 @@ export interface POSCloseSaleResponse {
   order_ref?: string;
   tab_ref?: string;
   payment?: POSPaymentResultProjection;
+  payment_delivery?: POSPaymentDeliveryProjection;
   /** Esta venda vai ter NFC-e. Quem responde é a regra fiscal no servidor: a
    *  emissão também dispara por forma de pagamento, sem o operador marcar nada,
    *  e a nota ainda não existe no instante do fechamento. */
   fiscal_expected?: boolean;
+}
+
+export interface POSPaymentDeliveryProjection {
+  template: string;
+  status: "not_sent" | "queued" | "sending" | "accepted" | "unknown" | "skipped" | "failed" | string;
+  channel: "whatsapp" | "email" | "sms" | "" | string;
+  channel_label: string;
+  notice: string;
+  reason_code: string;
+  can_send: boolean;
+  can_resend: boolean;
+  action: "send" | "resend" | "";
+  action_label: string;
 }
 
 export interface POSPaymentResultProjection {
@@ -609,6 +624,7 @@ export interface POSReceiptIdentityChoice {
 }
 
 export interface POSIntentCartState {
+  expectedRevision?: string;
   salesMode?: "counter" | "order";
   tabRef: string;
   tabSessionKey: string;

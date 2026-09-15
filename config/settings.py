@@ -139,6 +139,9 @@ SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED = _env_bool(
 SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED = _env_bool(
     "SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED", False
 )
+SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED", False
+)
 SHOPMAN_MARKETING_TARGET_HMAC_KEY = os.environ.get(
     "SHOPMAN_MARKETING_TARGET_HMAC_KEY",
     "",
@@ -651,6 +654,17 @@ SHOPMAN_MARKETING_GOOGLE = {
     "timeout": _env_int("GOOGLE_BUSINESS_TIMEOUT", 30),
 }
 
+# TikTok Content Posting API.  The static token exists only to exercise a
+# controlled sandbox/canary while the OAuth connection store is not available;
+# the platform remains absent from the selectable capability catalog.
+SHOPMAN_MARKETING_TIKTOK = {
+    "access_token": os.environ.get("TIKTOK_CONTENT_ACCESS_TOKEN", "").strip(),
+    "api_base": os.environ.get(
+        "TIKTOK_CONTENT_API_BASE", "https://open.tiktokapis.com"
+    ).strip(),
+    "timeout": _env_int("TIKTOK_CONTENT_TIMEOUT", 30),
+}
+
 # Register only explicitly enabled publication lanes. Independent consumer
 # switches above still gate whether queued work can reach these adapters.
 if SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED:
@@ -664,6 +678,10 @@ if SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED:
 if SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED:
     SHOPMAN_MARKETING_DELIVERY_ADAPTERS["google_business"] = (
         "shopman.shop.adapters.marketing_delivery_google"
+    )
+if SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED:
+    SHOPMAN_MARKETING_DELIVERY_ADAPTERS["tiktok"] = (
+        "shopman.shop.adapters.marketing_delivery_tiktok"
     )
 
 # ── Machine (courier — despacho de entregadores) ───────────────────
@@ -1529,6 +1547,15 @@ SHOPMAN_KDS_BASE_URL = (os.environ.get("SHOPMAN_KDS_BASE_URL") or "").strip().rs
 # (surfaces/production-nuxt). Vazio ⇒ o item "Produção ao vivo" some do nav
 # do Admin (sem link morto), e o operador acessa direto pelo subdomínio (prod.).
 SHOPMAN_PRODUCTION_BASE_URL = (os.environ.get("SHOPMAN_PRODUCTION_BASE_URL") or "").strip().rstrip("/")
+SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_ROWS = int(
+    os.environ.get("SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_ROWS", "50000")
+)
+SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_BYTES = int(
+    os.environ.get("SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_BYTES", str(20 * 1024 * 1024))
+)
+SHOPMAN_PRODUCTION_REPORT_EXPORT_SPOOL_BYTES = int(
+    os.environ.get("SHOPMAN_PRODUCTION_REPORT_EXPORT_SPOOL_BYTES", str(1024 * 1024))
+)
 
 # Base URL pública do Marketing (surfaces/marketing-nuxt) — app Nuxt dedicado,
 # publicado em `mkt.` (staging: mkt.boulangerie.com.br). Vazio ⇒ o tile

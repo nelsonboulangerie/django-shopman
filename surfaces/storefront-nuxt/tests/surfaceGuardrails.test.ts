@@ -1143,6 +1143,14 @@ describe('surface UX guardrails', () => {
     expect(css).toContain('@apply min-h-dvh min-w-0 bg-background text-foreground')
   })
 
+  it('keeps native pull-to-refresh available without horizontal overscroll', () => {
+    const css = read('app/assets/css/tailwind.css')
+
+    expect(css).toContain('overscroll-behavior-x: none')
+    expect(css).not.toContain('overscroll-behavior: none')
+    expect(css).not.toContain('overscroll-behavior-y: none')
+  })
+
   it('dresses the brand as a reversible override of the neutral base', () => {
     // A marca é uma CAMADA DE OVERRIDE: design_tokens → as variáveis reais que os
     // componentes consomem (`--primary`, `--background`, …), num bloco :root{}/.dark{}.
