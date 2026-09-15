@@ -179,7 +179,13 @@ def _api_call(endpoint: str, payload: dict, config: dict) -> dict:
                 # Subscriber identity is not a delivery receipt.
                 return {"success": True}
             return {"success": False, "error": "provider_rejected"}
-    except (HTTPError, URLError):
+    except HTTPError as exc:
+        # Explicit request rejection: no acceptance to reconcile. 408/5xx and
+        # transport failures remain uncertain, so the chain must stop there.
+        if exc.code in {400, 401, 403, 404, 405, 413, 415, 422, 429}:
+            return {"success": False, "error": "provider_rejected"}
+        return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
+    except URLError:
         return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
     except Exception:
         logger.warning("manychat acceptance unconfirmed; response unavailable")
