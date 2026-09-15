@@ -1,6 +1,9 @@
 import { computed, reactive, ref } from "vue";
-import type { ReportFiltersQuery } from "~/presentation/reports";
-import { reportDateError } from "~/presentation/reports";
+import {
+  reportDateError,
+  type ReportFiltersQuery,
+  type ReportKind,
+} from "~/presentation/reports";
 
 export function useReportFilters(initial: ReportFiltersQuery) {
   const draft = reactive({ ...initial });
@@ -8,17 +11,31 @@ export function useReportFilters(initial: ReportFiltersQuery) {
   const validationError = computed(() =>
     reportDateError(draft.date_from, draft.date_to),
   );
+  const isDirty = computed(() =>
+    Object.entries(draft).some(
+      ([key, value]) =>
+        key !== "cursor" &&
+        value !== applied.value[key as keyof ReportFiltersQuery],
+    ),
+  );
+
+  function normalizeDraft(): void {
+    if (draft.report_kind !== "history" && draft.sort.startsWith("date_")) {
+      draft.sort = "default";
+    }
+  }
+
+  function selectKind(kind: ReportKind): void {
+    draft.report_kind = kind;
+    normalizeDraft();
+  }
 
   function apply(): boolean {
     if (validationError.value) return false;
-    const sort =
-      draft.report_kind === "history" || !draft.sort.startsWith("date_")
-        ? draft.sort
-        : "default";
+    normalizeDraft();
+    draft.operator_ref = draft.operator_ref.trim();
     applied.value = {
       ...draft,
-      operator_ref: draft.operator_ref.trim(),
-      sort,
       cursor: "",
     };
     return true;
@@ -28,5 +45,13 @@ export function useReportFilters(initial: ReportFiltersQuery) {
     applied.value = { ...applied.value, cursor };
   }
 
-  return { draft, applied, validationError, apply, openCursor };
+  return {
+    draft,
+    applied,
+    validationError,
+    isDirty,
+    selectKind,
+    apply,
+    openCursor,
+  };
 }

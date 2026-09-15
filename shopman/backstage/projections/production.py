@@ -19,6 +19,7 @@ from decimal import ROUND_CEILING, Decimal
 from typing import Literal
 
 from django.conf import settings
+from django.db.models import Count, Max, Sum
 from django.utils import timezone
 from shopman.craftsman import craft
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderEvent
@@ -2195,14 +2196,7 @@ def build_production_reports(
     work_orders = list(qs)
     history_rows = tuple(_work_order_report_row(wo) for wo in work_orders)
 
-    recipes = tuple(
-        RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.name or r.output_sku or r.ref)
-        for r in Recipe.objects.filter(is_active=True).order_by("name", "ref")
-    )
-    positions = tuple(
-        PositionOptionProjection(pk=p.pk, ref=p.ref, name=p.name, is_default=p.is_default)
-        for p in Position.objects.all().order_by("name")
-    )
+    recipes, positions = _report_options()
 
     return ProductionReportsProjection(
         filters=normalized,
@@ -2214,6 +2208,199 @@ def build_production_reports(
         available_positions=positions,
         access=access,
     )
+
+
+def _report_options():
+    recipes = tuple(
+        RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.name or r.output_sku or r.ref)
+        for r in Recipe.objects.filter(is_active=True).order_by("name", "ref")
+    )
+    positions = tuple(
+        PositionOptionProjection(pk=p.pk, ref=p.ref, name=p.name, is_default=p.is_default)
+        for p in Position.objects.all().order_by("name")
+    )
+    return recipes, positions
+
+
+def _report_dataset_revision(qs, report_kind: str) -> str:
+    """Cheap revision stamp used to reject cursors after any source mutation."""
+
+    summary = qs.aggregate(count=Count("pk"), max_pk=Max("pk"), max_updated=Max("updated_at"), rev_sum=Sum("rev"))
+    event_summary = WorkOrderEvent.objects.filter(work_order__in=qs).aggregate(
+        count=Count("pk"), max_pk=Max("pk")
+    )
+    recipe_summary = Recipe.objects.filter(work_orders__in=qs).aggregate(
+        count=Count("pk", distinct=True), max_updated=Max("updated_at")
+    )
+    item_summary = {}
+    quality_catalog = ()
+    if report_kind == "quality":
+        from shopman.craftsman.models import WorkOrderItem
+
+        from shopman.shop.models import QualityDefect, QualityGrade
+
+        item_summary = WorkOrderItem.objects.filter(work_order__in=qs).aggregate(
+            count=Count("pk"), max_pk=Max("pk")
+        )
+        quality_catalog = (
+            tuple(QualityGrade.objects.order_by("pk").values_list("pk", "ref", "label")),
+            tuple(QualityDefect.objects.order_by("pk").values_list("pk", "ref", "label")),
+        )
+    payload = {
+        "work_orders": {key: str(value or "") for key, value in summary.items()},
+        "events": event_summary,
+        "recipes": {key: str(value or "") for key, value in recipe_summary.items()},
+        "items": item_summary,
+        "quality_catalog": quality_catalog,
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()[:24]
+
+
+def _history_ordering(sort: str) -> tuple[str, ...]:
+    return {
+        "date_asc": ("target_date", "pk"),
+        "date_desc": ("-target_date", "-pk"),
+        "name_asc": ("recipe__name", "pk"),
+        "name_desc": ("-recipe__name", "-pk"),
+        "quantity_asc": ("quantity", "pk"),
+        "quantity_desc": ("-quantity", "-pk"),
+    }.get(sort, ("target_date", "recipe__ref", "ref"))
+
+
+def _quality_report_rows_queryset(qs) -> tuple[QualityReportRow, ...]:
+    from shopman.craftsman.models import WorkOrderItem
+
+    from shopman.shop.models import QualityDefect, QualityGrade
+    from shopman.shop.services import quality as quality_service
+
+    grade_labels = dict(QualityGrade.objects.values_list("ref", "label"))
+    defect_labels = dict(QualityDefect.objects.values_list("ref", "label"))
+    default_ref = quality_service.default_grade_ref()
+    lines = (
+        WorkOrderItem.objects.filter(
+            work_order__in=qs.filter(status=WorkOrder.Status.FINISHED),
+            kind__in=(WorkOrderItem.Kind.OUTPUT, WorkOrderItem.Kind.WASTE),
+        )
+        .values_list(
+            "work_order__recipe__ref",
+            "work_order__recipe__name",
+            "kind",
+            "quality_grade_ref",
+            "quality_defect_ref",
+            "quantity",
+        )
+        .iterator(chunk_size=500)
+    )
+    grouped: dict[tuple[str, str, str], dict[str, object]] = {}
+    recipe_totals: dict[str, Decimal] = {}
+    for recipe_ref, recipe_name, kind, grade_ref, defect_ref, quantity in lines:
+        grade = (grade_ref or default_ref) if kind == WorkOrderItem.Kind.OUTPUT else ""
+        if kind == WorkOrderItem.Kind.WASTE and not defect_ref:
+            continue
+        key = (recipe_ref, grade, defect_ref)
+        bucket = grouped.setdefault(key, {"name": recipe_name or recipe_ref, "qty": Decimal("0")})
+        bucket["qty"] = bucket["qty"] + quantity
+        recipe_totals[recipe_ref] = recipe_totals.get(recipe_ref, Decimal("0")) + quantity
+    return tuple(
+        QualityReportRow(
+            recipe_ref=recipe_ref,
+            recipe_name=str(data["name"]),
+            grade_ref=grade_ref,
+            grade_label=grade_labels.get(grade_ref, grade_ref) if grade_ref else "Descarte",
+            defect_ref=defect_ref,
+            defect_label=defect_labels.get(defect_ref, defect_ref),
+            quantity=_qty(Decimal(data["qty"])),
+            share=f"{int(Decimal(data['qty']) * 100 / recipe_totals[recipe_ref])}%",
+        )
+        for (recipe_ref, grade_ref, defect_ref), data in sorted(grouped.items())
+    )
+
+
+def build_production_report_page(
+    filters: dict,
+    *,
+    sort: str,
+    offset: int,
+    page_size: int,
+    access: ProductionSurfaceAccess | None = None,
+) -> tuple[ProductionReportsProjection, int, str, bool]:
+    """Build only the selected report and enforce the database/page memory bound."""
+
+    access = access or _full_access()
+    normalized = _normalize_report_filters(filters)
+    qs = _report_queryset(normalized)
+    revision = _report_dataset_revision(qs, normalized.report_kind)
+    rows = dict.fromkeys(_REPORT_ROWS_FIELD.values(), ())
+    field = _REPORT_ROWS_FIELD[normalized.report_kind]
+
+    if normalized.report_kind == "history":
+        total = qs.count()
+        page_qs = qs.order_by(*_history_ordering(sort))[offset : offset + page_size]
+        rows[field] = tuple(_work_order_report_row(work_order) for work_order in page_qs)
+    else:
+        work_orders = qs.iterator(chunk_size=200)
+        if normalized.report_kind == "operator_productivity":
+            selected = _operator_productivity_rows(work_orders)
+        elif normalized.report_kind == "recipe_waste":
+            selected = _recipe_waste_rows(work_orders)
+        else:
+            selected = _quality_report_rows_queryset(qs)
+        shell = ProductionReportsProjection(
+            filters=normalized,
+            history_rows=(),
+            operator_rows=(),
+            waste_rows=(),
+            quality_rows=(),
+            available_recipes=(),
+            available_positions=(),
+            access=access,
+        )
+        sorted_reports = sort_production_reports(replace(shell, **{field: selected}), sort)
+        selected = getattr(sorted_reports, field)
+        total = len(selected)
+        rows[field] = selected[offset : offset + page_size]
+
+    recipes, positions = _report_options()
+    final_revision = _report_dataset_revision(qs, normalized.report_kind)
+    reports = ProductionReportsProjection(
+        filters=normalized,
+        available_recipes=recipes,
+        available_positions=positions,
+        access=access,
+        source_revision=final_revision,
+        **rows,
+    )
+    return reports, total, final_revision, revision == final_revision
+
+
+def iter_production_report_rows(filters: dict, *, sort: str):
+    """Iterate only the selected report; history stays DB-streamed and aggregates stay bounded."""
+
+    normalized = _normalize_report_filters(filters)
+    qs = _report_queryset(normalized)
+    if normalized.report_kind == "history":
+        for work_order in qs.order_by(*_history_ordering(sort)).iterator(chunk_size=200):
+            yield _work_order_report_row(work_order)
+        return
+    if normalized.report_kind == "quality":
+        rows = _quality_report_rows_queryset(qs)
+    elif normalized.report_kind == "operator_productivity":
+        rows = _operator_productivity_rows(qs.iterator(chunk_size=200))
+    else:
+        rows = _recipe_waste_rows(qs.iterator(chunk_size=200))
+    shell = ProductionReportsProjection(
+        filters=normalized,
+        history_rows=(),
+        operator_rows=(),
+        waste_rows=(),
+        quality_rows=(),
+        available_recipes=(),
+        available_positions=(),
+        access=_full_access(),
+    )
+    field = _REPORT_ROWS_FIELD[normalized.report_kind]
+    shell = replace(shell, **{field: rows})
+    yield from getattr(sort_production_reports(shell, sort), field)
 
 
 _REPORT_ROWS_FIELD = {
@@ -2254,24 +2441,6 @@ def sort_production_reports(
         return primary, repr(row)
 
     return replace(reports, **{field: tuple(sorted(rows, key=row_key, reverse=descending))})
-
-
-def paginate_production_reports(
-    reports: ProductionReportsProjection,
-    *,
-    sort: str,
-    offset: int,
-    page_size: int,
-) -> tuple[ProductionReportsProjection, int]:
-    """Return one bounded page; inactive row collections keep their typed empty shape."""
-
-    reports = sort_production_reports(reports, sort)
-    field = _REPORT_ROWS_FIELD[reports.filters.report_kind]
-    rows = getattr(reports, field)
-    page = rows[offset : offset + page_size]
-    page_rows = dict.fromkeys(_REPORT_ROWS_FIELD.values(), ())
-    page_rows[field] = page
-    return replace(reports, **page_rows), len(rows)
 
 
 # ── Internals ──────────────────────────────────────────────────────────

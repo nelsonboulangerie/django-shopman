@@ -112,10 +112,9 @@ from shopman.backstage.projections.production import (
     build_production_forecast,
     build_production_kds,
     build_production_mise_en_place,
-    build_production_reports,
+    build_production_report_page,
     build_production_weighing,
     build_qc_kiosk,
-    paginate_production_reports,
     resolve_production_access,
 )
 from shopman.backstage.services import (
@@ -1360,15 +1359,26 @@ class ProductionReportsView(APIView):
                 content_type="text/csv; charset=utf-8",
                 headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )
-        reports = build_production_reports(filters, access=access)
         page_size = filters["page_size"]
         page_offset = filters["page_offset"]
-        reports, total = paginate_production_reports(
-            reports,
+        reports, total, revision, stable = build_production_report_page(
+            filters,
             sort=filters["sort"],
             offset=page_offset,
             page_size=page_size,
+            access=access,
         )
+        if not stable or (filters["cursor_revision"] and filters["cursor_revision"] != revision):
+            return Response(
+                {
+                    "detail": "O relatório mudou desde a página anterior. Aplique os filtros novamente.",
+                    "error": {
+                        "code": "stale_report_cursor",
+                        "recovery": "apply_filters",
+                    },
+                },
+                status=409,
+            )
         next_offset = page_offset + page_size
         previous_offset = max(0, page_offset - page_size)
         return Response(
@@ -1377,12 +1387,14 @@ class ProductionReportsView(APIView):
                 "pagination": {
                     "total": total,
                     "page_size": page_size,
+                    "from": page_offset + 1 if total else 0,
+                    "to": min(page_offset + page_size, total),
                     "sort": filters["sort"],
                     "next_cursor": (
-                        encode_report_cursor(filters, next_offset) if next_offset < total else ""
+                        encode_report_cursor(filters, next_offset, revision) if next_offset < total else ""
                     ),
                     "previous_cursor": (
-                        encode_report_cursor(filters, previous_offset) if page_offset else ""
+                        encode_report_cursor(filters, previous_offset, revision) if page_offset else ""
                     ),
                 },
             }

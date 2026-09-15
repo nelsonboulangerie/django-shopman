@@ -116,7 +116,7 @@ class ProductionReportsQuerySerializer(StrictQuerySerializer):
         if attrs["sort"].startswith("date_") and attrs["report_kind"] != "history":
             raise serializers.ValidationError({"sort": ["Ordenação por data só está disponível no histórico."]})
 
-        attrs["page_offset"] = decode_report_cursor(attrs.pop("cursor", ""), attrs)
+        attrs["page_offset"], attrs["cursor_revision"] = decode_report_cursor(attrs.pop("cursor", ""), attrs)
         return attrs
 
 
@@ -124,29 +124,30 @@ def _report_cursor_scope(filters: dict) -> dict[str, str | int]:
     return {
         key: value.isoformat() if hasattr(value, "isoformat") else value
         for key, value in filters.items()
-        if key not in {"cursor", "page_offset", "format"}
+        if key not in {"cursor", "page_offset", "cursor_revision", "format"}
     }
 
 
-def encode_report_cursor(filters: dict, offset: int) -> str:
+def encode_report_cursor(filters: dict, offset: int, revision: str) -> str:
     """Return an opaque cursor bound to the exact filter/sort/page-size scope."""
 
     return signing.dumps(
-        {"offset": offset, "scope": _report_cursor_scope(filters)},
+        {"offset": offset, "revision": revision, "scope": _report_cursor_scope(filters)},
         salt=REPORT_CURSOR_SALT,
         compress=True,
     )
 
 
-def decode_report_cursor(cursor: str, filters: dict) -> int:
+def decode_report_cursor(cursor: str, filters: dict) -> tuple[int, str]:
     if not cursor:
-        return 0
+        return 0, ""
     try:
         payload = signing.loads(cursor, salt=REPORT_CURSOR_SALT)
         offset = int(payload["offset"])
-        if offset < 0 or payload["scope"] != _report_cursor_scope(filters):
+        revision = str(payload["revision"])
+        if offset < 0 or not revision or payload["scope"] != _report_cursor_scope(filters):
             raise ValueError
-        return offset
+        return offset, revision
     except (signing.BadSignature, KeyError, TypeError, ValueError):
         raise serializers.ValidationError({"cursor": ["Cursor inválido ou incompatível com estes filtros."]}) from None
 

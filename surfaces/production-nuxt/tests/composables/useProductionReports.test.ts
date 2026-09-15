@@ -31,6 +31,8 @@ describe("useProductionReports", () => {
       pagination: {
         total: 2,
         page_size: 50,
+        from: 1,
+        to: 2,
         sort: "default",
         next_cursor: "",
         previous_cursor: "",
@@ -86,5 +88,18 @@ describe("useProductionReports", () => {
     expect(historyRows.value).toEqual([]);
     expect(operatorRows.value).toEqual([]);
     expect(wasteRows.value).toEqual([]);
+  });
+
+  it("exposes the stale-cursor recovery state", () => {
+    env.fetchError.value = {
+      status: 409,
+      data: { error: { code: "stale_report_cursor" } },
+    };
+
+    const { cursorStale } = useProductionReports(
+      ref(filters({ cursor: "page-2" })),
+    );
+
+    expect(cursorStale.value).toBe(true);
   });
 });

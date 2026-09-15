@@ -203,6 +203,72 @@ def test_reports_paginate_with_filter_bound_cursor_and_server_sort(client, manag
     mismatched = client.get(url, {**query, "operator_ref": "ana", "cursor": cursor})
     assert mismatched.status_code == 400
 
+    craft.adjust(report_data["planned"], Decimal("35"), reason="revisão de página")
+    stale = client.get(url, {**query, "cursor": cursor})
+    assert stale.status_code == 409
+    assert stale.json()["error"] == {
+        "code": "stale_report_cursor",
+        "recovery": "apply_filters",
+    }
+
+
+@pytest.mark.django_db
+def test_history_page_does_not_build_unselected_aggregates(client, manager, report_data, monkeypatch):
+    from shopman.backstage.projections import production as production_projection
+
+    original_row_builder = production_projection._work_order_report_row
+    materialized = []
+
+    def record_row(work_order):
+        materialized.append(work_order.pk)
+        return original_row_builder(work_order)
+
+    monkeypatch.setattr(production_projection, "_work_order_report_row", record_row)
+    monkeypatch.setattr(
+        production_projection,
+        "_operator_productivity_rows",
+        lambda rows: pytest.fail("history must not aggregate operator rows"),
+    )
+    monkeypatch.setattr(
+        production_projection,
+        "_recipe_waste_rows",
+        lambda rows: pytest.fail("history must not aggregate waste rows"),
+    )
+    client.force_login(manager)
+
+    response = client.get(
+        reverse("api-backstage-production-reports"),
+        {
+            "date_from": report_data["today"].isoformat(),
+            "date_to": report_data["today"].isoformat(),
+            "page_size": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()["reports"]["history_rows"]) == 1
+    assert len(materialized) == 1
+
+
+@pytest.mark.django_db
+def test_reports_reject_a_dataset_that_changes_while_page_is_built(client, manager, report_data, monkeypatch):
+    from shopman.backstage.projections import production as production_projection
+
+    revisions = iter(("before", "after"))
+    monkeypatch.setattr(production_projection, "_report_dataset_revision", lambda qs, kind: next(revisions))
+    client.force_login(manager)
+
+    response = client.get(
+        reverse("api-backstage-production-reports"),
+        {
+            "date_from": report_data["today"].isoformat(),
+            "date_to": report_data["today"].isoformat(),
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "stale_report_cursor"
+
 
 @pytest.mark.django_db
 def test_reports_reject_inverted_or_oversized_ranges(client, manager, report_data):

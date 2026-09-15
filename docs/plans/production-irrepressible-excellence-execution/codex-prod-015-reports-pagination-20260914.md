@@ -21,17 +21,19 @@
 
 - Filtros de rascunho e filtros aplicados foram separados; digitar/selecionar não muda a query até `Aplicar`.
 - Datas invertidas, ausentes e intervalos acima de 93 dias são bloqueados no cliente antes do request; o backend continua sendo a autoridade e mantém a validação estrita.
-- A API aceita `page_size` (1–100), `sort` e cursor opaco assinado. O cursor é vinculado às datas, filtros, relatório, sort e tamanho da página; adulteração ou reutilização em outro escopo retorna validação 400.
-- Apenas o rowset do `report_kind` selecionado é retornado/paginado; os demais campos permanecem no contrato como listas vazias. A projection original continua disponível completa para os chamadores internos e para exportação.
-- Ordenação servidor-side cobre data (histórico), nome e quantidade, com desempate determinístico.
-- O CSV respeita os filtros e sort aplicados, deliberadamente ignora cursor/tamanho de página e é transmitido linha a linha. A proteção compartilhada contra CSV formula injection e o helper legado de bytes foram preservados.
+- A API aceita `page_size` (1–100), `sort` e cursor opaco assinado. O cursor é vinculado às datas, filtros, relatório, sort, tamanho da página e revisão do conjunto; adulteração/reuso em outro escopo retorna 400, enquanto mutação entre páginas ou durante a montagem retorna 409 com reconciliação explícita.
+- Apenas o rowset do `report_kind` selecionado é retornado/paginado; os demais campos permanecem no contrato como listas vazias. A projection original continua disponível completa somente para os chamadores internos legados; API e exportação usam os caminhos específicos por relatório.
+- Histórico aplica ordenação e `LIMIT` no queryset antes de materializar linhas. Produtividade, desperdício e qualidade executam somente sua agregação, percorrendo fontes em chunks e mantendo em memória apenas os grupos necessários.
+- O CSV respeita os filtros e sort aplicados, deliberadamente ignora cursor/tamanho de página, emite BOM/cabeçalho antes de consultar linhas e transmite o histórico em chunks. A proteção compartilhada contra CSV formula injection e o helper legado de bytes foram preservados.
+- A aba aplicada, tabela e CSV permanecem coerentes; troca de relatório aplica imediatamente e normaliza sort incompatível, enquanto qualquer outro rascunho desabilita o download até `Aplicar`.
+- Erros de data usam `aria-invalid`, descrição associada e região viva; a faixa atual e reconciliação de cursor também são anunciadas.
 
 ## Evidências
 
-- [x] backend focal: `36 passed` em API, projection/service e schema export;
-- [x] regressões específicas: página seguinte sem sobreposição, anterior, sort, cursor adulterado e cursor incompatível com filtros;
-- [x] frontend focal: `10 passed` para query/export, composable de fetch e estado rascunho→Aplicar;
-- [x] suíte completa Production Nuxt: `38 files / 283 tests passed`;
+- [x] backend focal/adversarial: `47 passed` em API, projection/service, CSV adversarial e schema export;
+- [x] regressões específicas: `LIMIT` real de materialização, ausência de agregados irmãos, primeira emissão CSV sem query, página seguinte/anterior, sort, cursor adulterado/incompatível e mutação entre/durante páginas;
+- [x] frontend focal: query/export, stale cursor e estado rascunho→Aplicar, incluindo normalização de aba/sort;
+- [x] suíte completa Production Nuxt: `38 files / 285 tests passed`;
 - [x] TypeScript (`nuxi typecheck`) aprovado com Node 22 após disponibilizar as dependências do operator-kit na worktree;
 - [x] build Nuxt de produção aprovado;
 - [x] ESLint focal, Ruff e `git diff --check` aprovados;

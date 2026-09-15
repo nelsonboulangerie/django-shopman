@@ -43,6 +43,8 @@ const {
   draft: filterDraft,
   applied: filters,
   validationError: filterError,
+  isDirty: filtersDirty,
+  selectKind,
   apply: applyFilters,
   openCursor,
 } = useReportFilters(initialFilters);
@@ -58,6 +60,7 @@ const {
   availableRecipes,
   availablePositions,
   forbidden: reportsForbidden,
+  cursorStale,
   csvUrl,
   pending,
   error,
@@ -79,6 +82,14 @@ const hasRows = computed(() => {
 const stale = computed(() =>
   isStale({ error: !!error.value, hasData: !!reports.value }),
 );
+const canExport = computed(
+  () => !filtersDirty.value && !filterError.value && !cursorStale.value,
+);
+
+function changeReportKind(reportKind: (typeof REPORT_KINDS)[number]["kind"]) {
+  selectKind(reportKind);
+  applyFilters();
+}
 
 function refreshAll() {
   refresh();
@@ -270,20 +281,29 @@ function refreshAll() {
             type="button"
             class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
-              filterDraft.report_kind === entry.kind
+              activeKind === entry.kind
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:bg-accent hover:text-foreground'
             "
-            :aria-pressed="filterDraft.report_kind === entry.kind"
-            @click="filterDraft.report_kind = entry.kind"
+            :aria-pressed="activeKind === entry.kind"
+            @click="changeReportKind(entry.kind)"
           >
             {{ entry.label }}
           </button>
         </div>
         <a
-          :href="csvUrl"
+          :href="canExport ? csvUrl : undefined"
           download
-          class="ml-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition hover:bg-accent"
+          :aria-disabled="!canExport"
+          :title="
+            canExport
+              ? undefined
+              : 'Aplique os filtros válidos antes de baixar.'
+          "
+          class="ml-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition"
+          :class="
+            canExport ? 'hover:bg-accent' : 'cursor-not-allowed opacity-50'
+          "
         >
           <Icon name="lucide:download" class="size-4" /> Baixar CSV
         </a>
@@ -294,11 +314,23 @@ function refreshAll() {
       >
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">
           De
-          <UiInput v-model="filterDraft.date_from" type="date" class="w-auto" />
+          <UiInput
+            v-model="filterDraft.date_from"
+            type="date"
+            class="w-auto"
+            :aria-invalid="!!filterError"
+            aria-describedby="report-date-help"
+          />
         </label>
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">
           Até
-          <UiInput v-model="filterDraft.date_to" type="date" class="w-auto" />
+          <UiInput
+            v-model="filterDraft.date_to"
+            type="date"
+            class="w-auto"
+            :aria-invalid="!!filterError"
+            aria-describedby="report-date-help"
+          />
         </label>
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">
           Ficha técnica
@@ -366,6 +398,9 @@ function refreshAll() {
           Aplicar
         </UiButton>
         <p
+          id="report-date-help"
+          role="status"
+          aria-live="polite"
           class="basis-full text-xs"
           :class="filterError ? 'text-destructive' : 'text-muted-foreground'"
         >
@@ -377,20 +412,39 @@ function refreshAll() {
       </div>
 
       <div
-        v-if="stale"
+        v-if="cursorStale"
+        role="alert"
+        aria-live="assertive"
+        class="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
+      >
+        <Icon name="lucide:refresh-cw" class="size-4 shrink-0" />
+        <span>O relatório mudou enquanto você navegava.</span>
+        <UiButton
+          type="button"
+          size="sm"
+          variant="outline"
+          class="ml-auto"
+          @click="applyFilters()"
+        >
+          Reconciliar relatório
+        </UiButton>
+      </div>
+
+      <div
+        v-if="stale && !cursorStale"
         role="status"
         aria-live="polite"
         class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
       >
         <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
-        <span>Sem atualizar — mostrando o último relatório carregado.</span>
+        <span>Sem atualizar — mostrando a última página aplicada.</span>
       </div>
 
       <p v-if="pending && !reports" class="text-sm text-muted-foreground">
         Carregando…
       </p>
       <div
-        v-else-if="error && !reports"
+        v-else-if="error && !reports && !cursorStale"
         class="grid place-items-center gap-2 rounded-md border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
       >
         <Icon name="lucide:cloud-off" class="size-8 text-destructive/70" />
@@ -404,11 +458,12 @@ function refreshAll() {
           size="sm"
           @click="refresh()"
         >
-          <Icon name="lucide:refresh-cw" class="size-4" /> Tentar de novo
+          <Icon name="lucide:refresh-cw" class="size-4" />
+          Tentar de novo
         </UiButton>
       </div>
       <div
-        v-else-if="!hasRows"
+        v-else-if="!hasRows && !cursorStale"
         class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center text-muted-foreground"
       >
         <Icon name="lucide:table-2" class="size-8" />
@@ -594,7 +649,8 @@ function refreshAll() {
         class="mt-3 flex items-center justify-between gap-3 text-sm"
         aria-label="Paginação do relatório"
       >
-        <span class="text-muted-foreground">
+        <span class="text-muted-foreground" role="status" aria-live="polite">
+          Exibindo {{ pagination.from }}–{{ pagination.to }} de
           {{ pagination.total }} resultado{{
             pagination.total === 1 ? "" : "s"
           }}

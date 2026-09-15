@@ -19,12 +19,26 @@ describe("useReportFilters", () => {
     const state = useReportFilters({ ...INITIAL, cursor: "old-page" });
     state.draft.operator_ref = "  ana  ";
 
+    expect(state.isDirty.value).toBe(true);
     expect(state.applied.value.operator_ref).toBe("");
     expect(state.applied.value.cursor).toBe("old-page");
 
     expect(state.apply()).toBe(true);
     expect(state.applied.value.operator_ref).toBe("ana");
     expect(state.applied.value.cursor).toBe("");
+    expect(state.isDirty.value).toBe(false);
+  });
+
+  it("normalizes an incompatible date sort when the report kind changes", () => {
+    const state = useReportFilters({ ...INITIAL, sort: "date_desc" });
+
+    state.selectKind("operator_productivity");
+
+    expect(state.draft.sort).toBe("default");
+    expect(state.isDirty.value).toBe(true);
+    state.apply();
+    expect(state.applied.value.report_kind).toBe("operator_productivity");
+    expect(state.applied.value.sort).toBe("default");
   });
 
   it("blocks inverted and oversized periods before changing the request", () => {

@@ -165,6 +165,20 @@ def test_csv_export_has_bom_pt_br_header_and_accents(report_data):
 
 
 @pytest.mark.django_db
+def test_csv_stream_emits_bom_and_header_before_querying_rows(report_data, django_assert_num_queries):
+    from shopman.backstage.services.production import iter_reports_csv
+
+    stream = iter_reports_csv(
+        "history",
+        {"date_from": report_data["today"], "date_to": report_data["today"]},
+    )
+    with django_assert_num_queries(0):
+        assert next(stream) == "\ufeff"
+        assert "Ref,Data,Receita" in next(stream)
+    assert report_data["finished"].ref in "".join(stream)
+
+
+@pytest.mark.django_db
 def test_csv_export_operator_productivity_header(report_data):
     text = export_reports_csv(
         "operator_productivity",

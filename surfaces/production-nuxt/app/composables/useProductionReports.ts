@@ -1,7 +1,7 @@
 // Relatórios de produção — read-side da página /reports (persona GESTOR).
 // GET /api/v1/backstage/production/reports/ com os filtros da tela; o payload
-// traz as três visões de uma vez (histórico, produtividade por operador e
-// desperdício por ficha) + as opções de filtro (fichas/postos). O CSV NÃO passa
+// traz somente a página da visão selecionada + as opções de filtro
+// (fichas/postos). O CSV NÃO passa
 // por aqui: é um `<a href>` direto ao endpoint com `format=csv` (reportsCsvUrl).
 // 403 é um estado LEGÍTIMO (operador de chão sem a perm fina de gestor) — a
 // página o trata com calma; por isso este fetch não aciona operatorSessionOnError.
@@ -36,6 +36,9 @@ export function useProductionReports(filters: Ref<ReportFiltersQuery>) {
     () => reports.value?.available_positions ?? [],
   );
   const forbidden = computed(() => httpError(error.value).status === 403);
+  const cursorStale = computed(
+    () => httpErrorCode(error.value) === "stale_report_cursor",
+  );
   const csvUrl = computed(() => reportsCsvUrl(filters.value));
 
   return {
@@ -48,6 +51,7 @@ export function useProductionReports(filters: Ref<ReportFiltersQuery>) {
     availableRecipes,
     availablePositions,
     forbidden,
+    cursorStale,
     csvUrl,
     pending,
     error,

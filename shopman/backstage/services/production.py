@@ -3179,16 +3179,16 @@ class _StreamingCSVBuffer:
 
 def iter_reports_csv(report_kind: str, filters: dict | None = None):
     """Yield bounded CSV rows without buffering the complete download in memory."""
-    from shopman.backstage.projections.production import build_production_reports, sort_production_reports
+    from shopman.backstage.projections.production import iter_production_report_rows
 
     requested = dict(filters or {})
-    requested["report_kind"] = report_kind
-    reports = build_production_reports(requested)
-    reports = sort_production_reports(reports, str(requested.get("sort") or "default"))
+    kind = report_kind if report_kind in {"history", "operator_productivity", "recipe_waste", "quality"} else "history"
+    requested["report_kind"] = kind
+    rows = iter_production_report_rows(requested, sort=str(requested.get("sort") or "default"))
     writer = csv.writer(_StreamingCSVBuffer())
     yield "\ufeff"
 
-    if reports.filters.report_kind == "operator_productivity":
+    if kind == "operator_productivity":
         yield writer.writerow(
             [
                 "Operador",
@@ -3199,7 +3199,7 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
                 "Tempo médio (min)",
             ]
         )
-        for row in reports.operator_rows:
+        for row in rows:
             yield writer.writerow(
                 [
                     _csv_safe(row.operator_ref),
@@ -3210,7 +3210,7 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
                     row.duration_avg_minutes,
                 ]
             )
-    elif reports.filters.report_kind == "quality":
+    elif kind == "quality":
         # Sem este ramo o "quality" caía no else e exportava o HISTÓRICO —
         # o gestor baixava a tabela errada com o nome certo.
         yield writer.writerow(
@@ -3223,7 +3223,7 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
                 "% da receita",
             ]
         )
-        for row in reports.quality_rows:
+        for row in rows:
             yield writer.writerow(
                 [
                     _csv_safe(row.recipe_ref),
@@ -3234,7 +3234,7 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
                     row.share,
                 ]
             )
-    elif reports.filters.report_kind == "recipe_waste":
+    elif kind == "recipe_waste":
         yield writer.writerow(
             [
                 "Receita",
@@ -3245,7 +3245,7 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
                 "Utilização capacidade",
             ]
         )
-        for row in reports.waste_rows:
+        for row in rows:
             yield writer.writerow(
                 [
                     _csv_safe(row.recipe_ref),
@@ -3275,7 +3275,7 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
                 "Duração (min)",
             ]
         )
-        for row in reports.history_rows:
+        for row in rows:
             yield writer.writerow(
                 [
                     _csv_safe(row.ref),
