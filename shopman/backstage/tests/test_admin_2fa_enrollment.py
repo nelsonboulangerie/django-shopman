@@ -223,3 +223,25 @@ def test_enrollment_password_throttle_and_expiration(client, staff):
     session['admin_2fa_enrollment']['until'] = 0
     session.save()
     assert b'data:image' not in client.get(url).content
+
+
+@pytest.mark.parametrize('operation', ['add', 'change', 'delete', 'bulk-delete'])
+def test_privileged_direct_device_posts_cannot_skip_enrollment(client, staff, operation):
+    privileged = get_user_model().objects.create_superuser('otp-maintainer', password='synthetic-admin-password')
+    pending = authorize_enrollment(staff)
+    original_key = pending.key
+    client.force_login(privileged)
+    assert privileged.has_perm('otp_totp.add_totpdevice')
+    assert privileged.has_perm('otp_totp.change_totpdevice')
+    assert privileged.has_perm('otp_totp.delete_totpdevice')
+    paths = {'add': '/admin/otp_totp/totpdevice/add/',
+             'change': f'/admin/otp_totp/totpdevice/{pending.pk}/change/',
+             'delete': f'/admin/otp_totp/totpdevice/{pending.pk}/delete/',
+             'bulk-delete': '/admin/otp_totp/totpdevice/'}
+    response = client.post(paths[operation], {'user': privileged.pk, 'name': 'bypass',
+        'confirmed': 'on', 'key': '00' * 20, 'post': 'yes', 'action': 'delete_selected',
+        '_selected_action': pending.pk})
+    assert response.status_code == 404
+    pending.refresh_from_db()
+    assert pending.user_id == staff.pk and pending.key == original_key and not pending.confirmed
+    assert TOTPDevice.objects.count() == 1

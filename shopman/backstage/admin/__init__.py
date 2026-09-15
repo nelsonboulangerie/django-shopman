@@ -3,7 +3,7 @@
 from shopman.backstage.admin.accounts import (  # noqa: F401
     GroupAdmin,
     UserAdmin,
-    register_totp_admin,
+    unregister_otp_device_admins,
 )
 from shopman.backstage.admin.alerts import OperatorAlertAdmin  # noqa: F401
 from shopman.backstage.admin.aliases import (  # noqa: F401
@@ -51,7 +51,7 @@ from shopman.backstage.admin.seating import SeatingSpotAdmin  # noqa: F401
 from shopman.backstage.admin.sign_in import SignInEventAdmin  # noqa: F401
 from shopman.backstage.admin.terminal import TerminalAdmin  # noqa: F401
 
-register_totp_admin()
+unregister_otp_device_admins()
 
 # Depois de todo mundo registrar: o backstage é o último app do INSTALLED_APPS, e
 # esta chamada é a última linha do módulo, então Core e shop já colocaram no site

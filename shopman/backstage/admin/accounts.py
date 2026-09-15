@@ -1,16 +1,4 @@
-"""Usuários, grupos e 2FA no Unfold — as três telas que ficaram no Admin antigo.
-
-Ninguém as registrou: elas vêm prontas do `django.contrib.auth` e do
-`django_otp`, com o `ModelAdmin` vanilla. O Unfold estiliza o que passa pelo
-`ModelAdmin` dele, então essas três abriam com a cara do Django de sempre —
-input de borda quadrada, rádio sem estilo, botão cinza — no meio de um Admin
-Unfold. Era o ponto mais visível do "Frankenstein": não é que estivessem feias,
-é que eram de OUTRO sistema.
-
-O Unfold publica exatamente para isto os seus formulários de conta
-(`unfold.forms`), que preservam o comportamento do Django (hash de senha, o link
-para trocá-la, validação) e trocam só os widgets.
-"""
+"""Native Unfold accounts; OTP devices are managed only by the verified enrollment flow."""
 
 from __future__ import annotations
 
@@ -46,68 +34,11 @@ class GroupAdmin(DjangoGroupAdmin, ModelAdmin):
     compressed_fields = True
 
 
-def register_totp_admin() -> None:
-    """Re-registra o dispositivo TOTP no Unfold, se o django_otp estiver instalado.
+def unregister_otp_device_admins() -> None:
+    """Enrollment is owner-proved; privileged ModelAdmin CRUD must not bypass it."""
+    from django_otp.plugins.otp_static.models import StaticDevice
+    from django_otp.plugins.otp_totp.models import TOTPDevice
 
-    Fica atrás de uma função porque o app é opcional: sem ele, não há o que
-    re-registrar, e um import no topo quebraria o boot de um deployment sem 2FA.
-    """
-    try:
-        from django_otp.plugins.otp_totp.admin import TOTPDeviceAdmin
-        from django_otp.plugins.otp_totp.models import TOTPDevice
-    except ImportError:
-        return
-
-    try:
-        admin.site.unregister(TOTPDevice)
-    except admin.sites.NotRegistered:
-        return
-
-    @admin.register(TOTPDevice)
-    class UnfoldTOTPDeviceAdmin(TOTPDeviceAdmin, ModelAdmin):
-        """O django_otp vem inteiro em inglês, e nada disso é nosso vocabulário.
-
-        Os fieldsets herdados dizem "Timestamps", "Configuration", "State". Traduzir
-        os TÍTULOS é o que dá para fazer sem tocar no pacote de terceiros; os rótulos
-        dos campos técnicos (`step`, `drift`) seguem do django_otp, e quem mexe nesta
-        tela é superusuário configurando 2FA, não o dono da padaria.
-
-        ⚠️ A tradução vive num `get_fieldsets` e NÃO num atributo `fieldsets`, e a
-        diferença não é estilo. O `TOTPDeviceAdmin` sobrescreve `get_fieldsets()` e
-        ignora `self.fieldsets` — então o atributo que existia aqui era código morto,
-        e a tela seguiu em inglês desde sempre. Ninguém percebeu porque a tela é
-        superusuário-only.
-
-        ⚠️ E o `get_fieldsets` do upstream é chamado, não copiado. Ele é quem decide
-        se `key` e `qrcode_link` aparecem, conforme `OTP_ADMIN_HIDE_SENSITIVE_DATA`.
-        Copiar a lista de campos para traduzir o título teria congelado uma decisão
-        de SEGURANÇA num arquivo de tradução — e é justamente essa decisão que não
-        pode envelhecer sozinha aqui.
-        """
-
-        #: Título do upstream → título da casa. Título que o django_otp mudar cai
-        #: fora do mapa e aparece em inglês — visível, e não silenciosamente errado.
-        TITULOS = {
-            "Identity": "Identificação",
-            "Timestamps": "Datas",
-            "Configuration": "Configuração",
-            "State": "Estado",
-            "Throttling": "Bloqueio por tentativa",
-        }
-
-        compressed_fields = True
-
-        def get_fieldsets(self, request, obj=None):
-            return [
-                (self.TITULOS.get(titulo, titulo), opcoes)
-                for titulo, opcoes in super().get_fieldsets(request, obj)
-            ]
-
-
-# Recovery codes are displayed once to their owner; never expose the token inline in Admin.
-from django_otp.plugins.otp_static.models import StaticDevice
-
-try:
-    admin.site.unregister(StaticDevice)
-except admin.sites.NotRegistered:
-    pass
+    for model in (TOTPDevice, StaticDevice):
+        if admin.site.is_registered(model):
+            admin.site.unregister(model)
