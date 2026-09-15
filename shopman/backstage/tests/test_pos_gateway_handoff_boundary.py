@@ -179,16 +179,16 @@ def test_partial_capture_does_not_release_counter(close_counter):
     assert_waiting_for_payment(order)
 
 
-def test_future_pickup_emits_after_capture_without_early_handoff(close_counter):
+def test_future_pickup_emits_after_capture_without_accepting_or_early_handoff(close_counter):
     from django.utils import timezone
 
     tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
     order, _ = close_counter("pix", delivery_date=tomorrow, customer_name="Ana", customer_phone="43999990000")
-    assert order.status == Order.Status.ACCEPTED
+    assert order.status == Order.Status.NEW
     assert not fiscal_rows(order).exists()
     assert payment.mock_confirm(order) is True
     order.refresh_from_db()
-    assert order.status == Order.Status.ACCEPTED
+    assert order.status == Order.Status.NEW
     assert Quant.objects.get(sku="BREAD")._quantity == Decimal("10")
     assert not KDSTicket.objects.filter(session_key=order.session_key).exists()
     assert fiscal_rows(order).get().payload["customer"]["tax_id"] == "52998224725"
