@@ -259,7 +259,11 @@ def test_reschedule_refuses_any_wave_at_or_after_expiry(actor, announcement):
 def test_reschedule_refuses_a_whatsapp_wave_in_quiet_hours(actor, announcement):
     _approve(actor, announcement, scheduled=True)
     first = MarketingOutbox.objects.order_by("pk").first()
-    MarketingOutbox.objects.filter(pk=first.pk).update(platform="whatsapp")
+    MarketingOutbox.objects.filter(pk=first.pk).update(
+        platform="whatsapp",
+        delivery_kind="direct_message",
+        format="message",
+    )
     original_times = list(
         MarketingOutbox.objects.order_by("pk").values_list("available_at", flat=True)
     )

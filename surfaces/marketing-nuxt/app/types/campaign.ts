@@ -207,9 +207,28 @@ export interface Choice {
   label: string;
 }
 
+export interface MarketingFormatCapability {
+  ref: string;
+  label: string;
+  provider_fields: string[];
+  required_provider_fields: string[];
+  media_required: boolean;
+}
+
+export interface MarketingPlatformCapability {
+  platform: string;
+  label: string;
+  delivery_kind: "publication" | "direct_message";
+  formats: MarketingFormatCapability[];
+  default_format: string;
+}
+
 export interface CampaignOptions {
   triggers: Choice[];
   platforms: Choice[];
+  /** Contrato canônico projetado pelo servidor; evita que cada tela reinvente
+   *  modalidade, formatos ou exigências de mídia por plataforma. */
+  delivery_capabilities: MarketingPlatformCapability[];
   templates: AnnouncementTemplate[];
   variables: string[];
   /** Vocabulário de público — vem do backend para a tela nunca oferecer o que o
