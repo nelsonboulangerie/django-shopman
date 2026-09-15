@@ -1068,6 +1068,16 @@ class TestOptions:
 
         assert {t["value"] for t in options["triggers"]} >= {"production_finished", "low_stock"}
         assert {p["value"] for p in options["platforms"]} >= {"instagram", "google_business"}
+        capabilities = {
+            item["platform"]: item for item in options["delivery_capabilities"]
+        }
+        assert capabilities["whatsapp"]["delivery_kind"] == "direct_message"
+        assert capabilities["instagram"]["delivery_kind"] == "publication"
+        assert capabilities["instagram"]["default_format"] == "story"
+        assert [
+            item["ref"] for item in capabilities["instagram"]["formats"]
+        ] == ["story", "feed"]
+        assert capabilities["instagram"]["formats"][0]["media_required"] is True
         assert template.pk in {t["pk"] for t in options["templates"]}
         projected_template = next(t for t in options["templates"] if t["pk"] == template.pk)
         assert projected_template["requires_product"] is True

@@ -6,6 +6,7 @@ import re
 from collections.abc import Iterable, Sequence
 
 from shopman.shop.models import AudienceSnapshotMember, MarketingOutbox
+from shopman.shop.services.marketing_capabilities import persisted_identity
 from shopman.shop.services.marketing_contracts import MarketingContractError
 
 _WAVE_RE = re.compile(r"^(all|vip|general)(?:@([0-9]|1[0-9]|2[0-3]))?$")
@@ -68,15 +69,17 @@ def select_partition[Member](
 def select_snapshot_member_ids(outbox: MarketingOutbox) -> tuple[int, ...]:
     """Select one protected cohort partition without resolving contact data."""
 
-    if outbox.platform != "whatsapp":
+    if persisted_identity(outbox)[0] != "direct_message":
         raise MarketingContractError(
             code="delivery_wave_platform_invalid",
-            detail="Somente uma lane WhatsApp possui membros de audiência.",
+            detail="Somente uma entrega por mensagem direta possui destinatários.",
         )
     lanes = list(
         MarketingOutbox.objects.filter(
             command=outbox.command,
-            platform="whatsapp",
+            platform=outbox.platform,
+            delivery_kind=outbox.delivery_kind,
+            format=outbox.format,
         ).values("wave_key", "snapshot_id", "announcement_id")
     )
     if any(
