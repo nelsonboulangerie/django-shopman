@@ -55,7 +55,7 @@ async function installNow () {
     data-testid="pwa-install-invite"
     @update:open="value => { if (!value) close() }"
   >
-    <PwaIosGuide v-if="isIos" v-model:step="iosStep" :copy="copy" />
+    <PwaIosGuide v-if="isIos" :step="iosStep" :copy="copy" />
     <div v-else class="flex items-start gap-3 p-4">
       <span class="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
         <Icon name="lucide:download" class="size-5" />
