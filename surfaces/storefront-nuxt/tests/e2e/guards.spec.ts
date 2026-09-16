@@ -30,10 +30,37 @@ test('documento aplica a política de segurança da borda sem bloquear o app', a
   expect(headers['strict-transport-security']).toBe('max-age=31536000; includeSubDomains; preload')
 })
 
-test('home proíbe transformações do SSR por intermediários', async ({ request }) => {
-  const response = await request.get('/')
-  const cacheControl = response.headers()['cache-control']?.split(',').map(value => value.trim()) || []
+test('home preserva o SSR e negocia compressão na origem', async ({ request }) => {
+  const identity = await request.get('/', { headers: { 'accept-encoding': 'identity' } })
+  const compressed = await request.get('/', { headers: { 'accept-encoding': 'gzip' } })
+  const wildcard = await request.get('/', { headers: { 'accept-encoding': '*' } })
+  const rejectedGzip = await request.get('/', { headers: { 'accept-encoding': 'gzip;q=0, *;q=1' } })
+  const preferredIdentity = await request.get('/', { headers: { 'accept-encoding': 'gzip;q=0.5, identity;q=1' } })
+  const rejectedAll = await request.get('/', { headers: { 'accept-encoding': 'gzip;q=0, identity;q=0, *;q=0' } })
+  const head = await request.head('/', { headers: { 'accept-encoding': 'gzip' } })
+  const cacheControl = compressed.headers()['cache-control']?.split(',').map(value => value.trim()) || []
+  const vary = compressed.headers().vary?.split(',').map(value => value.trim().toLowerCase()) || []
 
-  expect(response.status()).toBe(200)
+  expect(compressed.status()).toBe(200)
   expect(cacheControl).toEqual(expect.arrayContaining(['private', 'no-transform']))
+  expect(vary).toContain('accept-encoding')
+  expect(compressed.headers()['content-encoding']).toBe('gzip')
+  expect(Number(compressed.headers()['content-length'])).toBeGreaterThan(0)
+  expect(Number(compressed.headers()['content-length'])).toBeLessThan(Number(identity.headers()['content-length']))
+  expect(compressed.headers().etag).toBeUndefined()
+  expect(wildcard.headers()['content-encoding']).toBe('gzip')
+  expect(await compressed.text()).toBe(await identity.text())
+  expect(await wildcard.text()).toBe(await identity.text())
+  expect(identity.headers()['content-encoding']).toBeUndefined()
+  expect(rejectedGzip.headers()['content-encoding']).toBeUndefined()
+  expect(await rejectedGzip.text()).toBe(await identity.text())
+  expect(preferredIdentity.headers()['content-encoding']).toBeUndefined()
+  expect(await preferredIdentity.text()).toBe(await identity.text())
+  expect(rejectedAll.status()).toBe(406)
+  expect(await rejectedAll.text()).toBe('Not Acceptable')
+
+  expect(head.status()).toBe(200)
+  expect(head.headers()['content-encoding']).toBe('gzip')
+  expect(head.headers()['content-length']).toBe(compressed.headers()['content-length'])
+  expect(await head.body()).toHaveLength(0)
 })
