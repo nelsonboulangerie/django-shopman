@@ -46,7 +46,9 @@ branch="$(git -C "${cwd}" branch --show-current 2>/dev/null)"
 [ -n "${branch}" ] || exit 0
 [ "${branch}" = "main" ] && exit 0
 
-NOISE='^.. (\.nuxtrc|\.alpha-tmp/|\.claude/|\.codex/|\.env$|\.env\.local$)'
+# Artefato de dev que não é trabalho: não conta como "sujo". Casa em qualquer
+# subpasta (o .nuxtrc mora em surfaces/<app>/).
+NOISE='^.. (.*/)?(\.nuxtrc|\.alpha-tmp/|\.claude/|\.codex/|\.local-tests/|\.artifacts/|output/|\.env|\.env\.local)$'
 pend=""
 
 dirty="$(git -C "${cwd}" status --porcelain 2>/dev/null | grep -Ev "${NOISE}" | grep -c . || true)"

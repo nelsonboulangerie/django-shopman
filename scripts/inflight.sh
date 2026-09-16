@@ -31,8 +31,9 @@ export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"
 BASE="${BASE:-origin/main}"
 REMOTE="${REMOTE:-origin}"
 SHOW_DELIVERED="${SHOW_DELIVERED:-0}"
-# Artefato de dev que não é trabalho: não conta como "sujo".
-NOISE='^.. (\.nuxtrc|\.alpha-tmp/|\.claude/|\.codex/|\.env$|\.env\.local$)'
+# Artefato de dev que não é trabalho: não conta como "sujo". Casa em qualquer
+# subpasta (o .nuxtrc mora em surfaces/<app>/).
+NOISE='^.. (.*/)?(\.nuxtrc|\.alpha-tmp/|\.claude/|\.codex/|\.local-tests/|\.artifacts/|output/|\.env|\.env\.local)$'
 
 bold=""; dim=""; red=""; green=""; yellow=""; reset=""
 if [ -t 1 ]; then
@@ -49,10 +50,14 @@ BASE_TREE="$(git rev-parse "${BASE}^{tree}")"
 
 # Uma consulta só para todos os PRs; a pergunta dirigida fica para quem escapar
 # da janela (a janela é cache, não verdade — ver audit-branches.sh).
-PRS="[]"
+# Duas chamadas, de propósito: pedir statusCheckRollup de 400 PRs de uma vez
+# devolve HTTP 504 do GraphQL (medido em 16/09/2026) e o script ficava cego
+# para os PRs abertos. O mapa branch→PR é leve; os checks só dos abertos.
+PRS="[]"; OPEN="[]"
 if command -v gh >/dev/null 2>&1; then
   echo "${dim}Consultando PRs (gh)...${reset}" >&2
-  PRS="$(gh pr list --state all --limit 400 \
+  PRS="$(gh pr list --state all --limit 500 --json number,state,isDraft,headRefName 2>/dev/null || echo '[]')"
+  OPEN="$(gh pr list --state open --limit 100 \
     --json number,state,isDraft,headRefName,mergeStateStatus,autoMergeRequest,statusCheckRollup,author,title,updatedAt \
     2>/dev/null || echo '[]')"
 else
@@ -88,7 +93,8 @@ while IFS=$'\t' read -r w b; do
   dirty="$(git -C "${w}" status --porcelain 2>/dev/null | grep -Ev "${NOISE}" | grep -c . || true)"
   if [ "${b}" = "${base_short}" ] || [ "${b}" = "(detached)" ]; then
     if [ "${dirty}" -gt 0 ]; then
-      rows_red+="${red}${bold}🔴 SUJA (${b})${reset}\t${b}\t${dirty} arquivo(s) não commitados\t${short}\n"; n_red=$((n_red + 1))
+      lbl="checkout em ${b}"; [ "${b}" = "(detached)" ] && lbl="detached HEAD"
+      rows_red+="${red}${bold}🔴 SUJA (${lbl})${reset}\t${b}\t${dirty} arquivo(s) não commitados\t${short}\n"; n_red=$((n_red + 1))
     fi
     continue
   fi
@@ -171,9 +177,8 @@ echo "${dim}${n_ok} entregue(s) ocultas (SHOW_DELIVERED=1 lista); ${n_missing} w
 echo
 echo "${bold}PRs abertos — quem está esperando o quê${reset}"
 echo
-printf '%s' "${PRS}" | jq -r '
-  map(select(.state=="OPEN"))
-  | map(. + {
+printf '%s' "${OPEN}" | jq -r '
+  map(. + {
       fail: ([.statusCheckRollup[]? | select(.conclusion=="FAILURE")] | length),
       pend: ([.statusCheckRollup[]? | select(.conclusion==null and .state!="SUCCESS" and .state!="FAILURE")] | length),
       total: ([.statusCheckRollup[]?] | length),
