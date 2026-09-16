@@ -141,7 +141,7 @@ def test_arm_refuses_a_sku_outside_the_catalog(cenario):
 def test_restock_fires_the_pending_alert(cenario, django_capture_on_commit_callbacks):
     sku = DEFAULT_SKUS["sold_out"]
     call_command("qa_scenarios", arm=[f"sold_out={sku}"])
-    sub = stock_alerts.subscribe(sku, channel_ref="web", phone=PHONE)
+    sub = stock_alerts.subscribe(sku, channel_ref="web", phone=PHONE, adult_declared=True)
 
     # O envio é agendado em `transaction.on_commit`: fora do runner isso roda
     # sozinho (autocommit), aqui o commit nunca chega e precisa ser capturado.

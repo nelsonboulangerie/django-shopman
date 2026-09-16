@@ -13,7 +13,7 @@ O que este arquivo protege, em ordem de importância:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -1511,6 +1511,7 @@ class TestManualFire:
             first_name="Ana",
             phone="+5543999998801",
             price_tier=tier,
+            birthday=date(1990, 1, 1),
         )
         ConsentService.grant_consent(customer.ref, "whatsapp", source="test")
         rule.audience_rules = {"price_tiers": [tier.ref]}
@@ -2281,7 +2282,13 @@ class TestAudienceCount:
             ("CLI-WHOLE", "+5543999993003", atacado, "at_risk"),
         ]
         for ref, phone, tier, segment in rows:
-            customer = Customer.objects.create(ref=ref, first_name="Ana", phone=phone, price_tier=tier)
+            customer = Customer.objects.create(
+                ref=ref,
+                first_name="Ana",
+                phone=phone,
+                price_tier=tier,
+                birthday=date(1990, 1, 1),
+            )
             CustomerInsight.objects.create(customer=customer, rfm_segment=segment)
             ConsentService.grant_consent(ref, "whatsapp", source="test")
 
@@ -2364,8 +2371,8 @@ class TestAudienceCount:
 
         client.force_login(gestor)
         subscriptions = [
-            stock_alerts.subscribe("BF", phone="+5543999993010"),
-            stock_alerts.subscribe("BF", phone="+5543999993011"),
+            stock_alerts.subscribe("BF", phone="+5543999993010", adult_declared=True),
+            stock_alerts.subscribe("BF", phone="+5543999993011", adult_declared=True),
         ]
         occurrence = StockAlertOccurrence.objects.create(
             sku="BF",

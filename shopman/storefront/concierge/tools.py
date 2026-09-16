@@ -1441,7 +1441,7 @@ def notify_when_available(ctx: ToolContext, sku: str) -> dict:
         _assert_authority(ctx)
         subscription = stock_alerts.subscribe(item.sku, channel_ref=ctx.channel_ref, customer=customer,
             phone=ctx.conversation.phone, disclosure_text=offered.envelope["disclosure"]["text"],
-            disclosure_version=offered.envelope["disclosure"]["version"])
+            disclosure_version=offered.envelope["disclosure"]["version"], adult_declared=True)
         if subscription is None:
             return _error("subscribe_failed", "Não consegui registrar o aviso. Suas escolhas estão preservadas.")
         # A inscrição é a fonte de consentimento; Message só liga a prova que o originou.

@@ -69,6 +69,13 @@ def _claim(delivery_id: int) -> str:
         occurrence = delivery.occurrence
         if not sub.is_active:
             return _suppress(delivery, "subscription_inactive")
+        try:
+            from shopman.shop.services.marketing_age import customer_is_known_minor
+
+            if customer_is_known_minor(sub.customer_ref):
+                return _suppress(delivery, "known_minor")
+        except Exception as exc:
+            raise DirectiveTransientError("age_check_failed") from exc
         if occurrence.status != occurrence.Status.ELIGIBLE:
             return _suppress(delivery, f"occurrence_{occurrence.status}")
         if not subscription_notification_allowed(customer_ref=sub.customer_ref, phone=sub.contact_phone):
@@ -116,6 +123,13 @@ def _send_claimed(delivery_id: int) -> str:
             customer_ref=sub.customer_ref, phone=sub.contact_phone
         ):
             return _suppress(delivery, "subscription_inactive_before_send")
+        try:
+            from shopman.shop.services.marketing_age import customer_is_known_minor
+
+            if customer_is_known_minor(sub.customer_ref):
+                return _suppress(delivery, "known_minor_before_send")
+        except Exception as exc:
+            raise DirectiveTransientError("age_recheck_failed") from exc
         occurrence.refresh_from_db(fields=["status"])
         if occurrence.status != occurrence.Status.ELIGIBLE:
             return _suppress(delivery, f"occurrence_{occurrence.status}_before_send")

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -542,6 +542,7 @@ def test_whatsapp_at_approved_minimum_seals_exact_members_flow_and_one_wave(acto
             ref=f"MKT-APPROVAL-{number}",
             first_name=f"Pessoa {number}",
             phone=f"+554399910{number:04d}",
+            birthday=date(1990, 1, 1),
         )
         ConsentService.grant_consent(customer.ref, "whatsapp", source="approval-test")
         refs.append(customer.ref)

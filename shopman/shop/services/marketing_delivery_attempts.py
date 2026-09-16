@@ -146,11 +146,36 @@ def execute_target(
             )
         )
 
-    attempt, target, began_call = _begin_call(
-        attempt.ref,
-        worker_id=safe_worker_id,
-        now=clock,
-    )
+    try:
+        attempt, target, began_call = _begin_call(
+            attempt.ref,
+            worker_id=safe_worker_id,
+            now=clock,
+        )
+    except MarketingContractError as exc:
+        if exc.code not in {
+            "recipient_age_not_verified",
+            "recipient_known_minor",
+            "recipient_age_source_unavailable",
+            "subscription_inactive",
+            "subscription_unavailable",
+        }:
+            raise
+        attempt, target = _settle_pre_provider_guard(
+            attempt.ref,
+            error=exc,
+            now=clock,
+        )
+        if exc.retryable:
+            raise
+        return _observed_execution(
+            AttemptExecution(
+                attempt,
+                target,
+                provider_called=False,
+                replayed=replayed,
+            )
+        )
     if not began_call:
         return _observed_execution(
             AttemptExecution(
@@ -304,6 +329,58 @@ def _defer_frozen_call(attempt_ref, *, now: datetime) -> None:
         ])
 
 
+def _settle_pre_provider_guard(
+    attempt_ref,
+    *,
+    error: MarketingContractError,
+    now: datetime,
+) -> tuple[DeliveryAttempt, DeliveryTarget]:
+    """Persist a last-boundary denial without pretending the provider ran."""
+
+    with transaction.atomic():
+        attempt = DeliveryAttempt.objects.select_for_update().get(ref=attempt_ref)
+        target = DeliveryTarget.objects.select_for_update().get(pk=attempt.target_id)
+        if attempt.state != DeliveryAttempt.State.PREPARED:
+            return attempt, target
+
+        attempt.state = DeliveryAttempt.State.COMPLETED
+        attempt.outcome_kind = ProviderOutcomeKind.NOT_ATTEMPTED.value
+        attempt.error_code = error.code
+        attempt.completed_at = now
+        attempt.save(update_fields=[
+            "state",
+            "outcome_kind",
+            "error_code",
+            "completed_at",
+            "updated_at",
+        ])
+
+        terminal = not error.retryable
+        if terminal:
+            next_state = DeliveryState.SUPPRESSED
+            ensure_delivery_transition(DeliveryState(target.state), next_state)
+            target.state = next_state.value
+        target.lease_owner = ""
+        target.lease_until = None
+        target.last_error_code = error.code
+        target.next_attempt_at = now + timedelta(seconds=30)
+        target.settled_at = now if terminal else None
+        target.version += 1
+        target.updated_at = now
+        target.save(update_fields=[
+            "state",
+            "lease_owner",
+            "lease_until",
+            "next_attempt_at",
+            "last_error_code",
+            "settled_at",
+            "version",
+            "updated_at",
+        ])
+        _schedule_aggregate(target.announcement_id)
+        return attempt, target
+
+
 def reconcile_calling(
     *,
     now: datetime | None = None,
@@ -437,6 +514,8 @@ def _begin_call(
         )
         if attempt.state != DeliveryAttempt.State.PREPARED:
             return attempt, attempt.target, False
+        # Do not join the nullable ``member`` relation under FOR UPDATE:
+        # PostgreSQL refuses to lock the nullable side of an outer join.
         target = DeliveryTarget.objects.select_for_update().get(pk=attempt.target_id)
         if target.state != DeliveryTarget.State.QUEUED:
             raise MarketingContractError(
@@ -444,6 +523,7 @@ def _begin_call(
                 detail="O target mudou antes da chamada ao provider.",
             )
         _validate_claim(target, worker_id=worker_id, now=now)
+        _validate_recipient_age_at_provider_boundary(target, now=now)
         ensure_delivery_transition(DeliveryState(target.state), DeliveryState.SENDING)
         attempt.state = DeliveryAttempt.State.CALLING
         attempt.save(update_fields=["state", "updated_at"])
@@ -462,6 +542,77 @@ def _begin_call(
             "updated_at",
         ])
         return attempt, target, True
+
+
+def _validate_recipient_age_at_provider_boundary(
+    target: DeliveryTarget,
+    *,
+    now: datetime,
+) -> None:
+    """Re-read age evidence immediately before crossing the provider boundary."""
+
+    from shopman.shop.services.marketing_capabilities import persisted_identity
+
+    delivery_kind, _delivery_format = persisted_identity(target)
+    if delivery_kind == "publication":
+        return
+
+    member = target.member
+    if member is None:
+        raise MarketingContractError(
+            code="recipient_age_not_verified",
+            detail="A idade do destinatário não pôde ser comprovada.",
+        )
+
+    from shopman.shop.services.marketing_age import (
+        canonical_birthday_for_customer_id,
+        is_known_adult,
+        is_known_minor,
+    )
+
+    try:
+        birthday = canonical_birthday_for_customer_id(member.customer_id)
+    except Exception as exc:
+        raise MarketingContractError(
+            code="recipient_age_source_unavailable",
+            detail="A fonte canônica de idade está temporariamente indisponível.",
+            retryable=True,
+        ) from exc
+    reasons = frozenset(member.reasons or [])
+    is_alert_delivery = bool("alerts" in reasons and member.subscription_ref)
+    if is_alert_delivery:
+        if is_known_minor(birthday):
+            raise MarketingContractError(
+                code="recipient_known_minor",
+                detail="A data de nascimento canônica indica menoridade.",
+            )
+        try:
+            from shopman.shop.adapters.audience_sources import (
+                active_alert_subscription_refs,
+            )
+
+            active_refs = active_alert_subscription_refs(
+                {member.subscription_ref},
+                now=now,
+            )
+        except Exception as exc:
+            raise MarketingContractError(
+                code="subscription_unavailable",
+                detail="A prova específica do aviso está temporariamente indisponível.",
+                retryable=True,
+            ) from exc
+        if member.subscription_ref not in active_refs:
+            raise MarketingContractError(
+                code="subscription_inactive",
+                detail="A inscrição específica do aviso não está mais ativa.",
+            )
+        return
+
+    if not is_known_adult(birthday):
+        raise MarketingContractError(
+            code="recipient_age_not_verified",
+            detail="O cadastro não comprova idade igual ou superior a 18 anos.",
+        )
 
 
 def _complete_attempt(

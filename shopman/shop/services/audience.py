@@ -17,7 +17,11 @@ Três invariantes:
    (``ConsentService``), nunca por model interno de contrib.
 2. **Um destinatário por telefone.** As três regras se sobrepõem muito; o
    telefone normalizado é a chave de dedupe, então ninguém recebe em dobro.
-3. **VIP primeiro é vantagem, não exclusão.** O atraso do grupo geral é uma
+3. **Sem prova de maioridade não há marketing direto.** Cadastro com data que
+   comprove 18+ ou aceite específico do “Avise-me” é obrigatório. Idade
+   desconhecida e menor conhecido falham fechados; consentimento de canal
+   sozinho não substitui a prova de maioridade.
+4. **VIP primeiro é vantagem, não exclusão.** O atraso do grupo geral é uma
    janela de privilégio, e todo mundo acaba recebendo.
 
 O envio sai em **ondas** (``AudienceResult.waves()``): o VIP abre, o geral vem
@@ -40,6 +44,8 @@ from decimal import Decimal, InvalidOperation
 from django.conf import settings
 from django.utils import timezone
 from shopman.utils.phone import normalize_phone
+
+from shopman.shop.services.marketing_age import is_known_adult, is_known_minor
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +126,10 @@ class Recipient:
     first_name: str = ""
     reasons: frozenset = frozenset()  # favorites | alerts | bought
     is_vip: bool = False
+    #: Data conhecida prova idade inferior a 18 anos. Nunca sai no summary/browser.
+    is_known_minor: bool = False
+    #: Prova de 18+: data de nascimento adulta ou declaração específica do alerta.
+    has_adult_declaration: bool = False
     #: Hora habitual de compra (0-23), de ``CustomerInsight.preferred_hour``.
     #: ``None`` para quem ainda não tem padrão — esse recebe na hora.
     preferred_hour: int | None = None
@@ -382,13 +392,18 @@ def resolve(
         by_phone = _narrow_to_all(by_phone, applied)
     rule_mismatch = before_intersection - len(by_phone)
 
-    recipients, consent_exclusions, consent_degraded = _filter_opted_in(by_phone.values())
+    eligible_recipients, age_exclusions = _exclude_without_adult_declaration(
+        by_phone.values()
+    )
+
+    recipients, consent_exclusions, consent_degraded = _filter_opted_in(eligible_recipients)
     degraded.update(consent_degraded)
     excluded_by_reason = dict(consent_exclusions)
     if rule_mismatch:
         excluded_by_reason["rule_mismatch"] = rule_mismatch
     if invalid_contact_count:
         excluded_by_reason["invalid_contact"] = invalid_contact_count
+    excluded_by_reason.update(age_exclusions)
     window = max(int(rules.get("preferred_hour_window_hours") or 0), 0)
     common = {
         "counts": counts,
@@ -558,6 +573,7 @@ def _pending_alerts(sku: str) -> list[Recipient]:
     for row in rows:
         phone, customer_ref = row[:2]
         source_subscription_ref = str(row[2]) if len(row) > 2 and row[2] else ""
+        adult_declared = bool(row[3]) if len(row) > 3 else False
         phone = (phone or "").strip()
         if not phone:
             continue
@@ -570,6 +586,8 @@ def _pending_alerts(sku: str) -> list[Recipient]:
                 customer_uuid=profile.get("customer_uuid", ""),
                 first_name=profile.get("first_name", ""),
                 is_vip=bool(profile.get("is_vip", False)),
+                is_known_minor=bool(profile.get("is_known_minor", False)),
+                has_adult_declaration=adult_declared,
                 preferred_hour=profile.get("preferred_hour"),
                 source_subscription_ref=source_subscription_ref,
             )
@@ -641,6 +659,7 @@ def _bought_skus_within_days(skus, days: int) -> list[Recipient]:
                 "customer__uuid",
                 "customer__first_name",
                 "customer__phone",
+                "customer__birthday",
             )
         )
         if (
@@ -667,6 +686,10 @@ def _bought_skus_within_days(skus, days: int) -> list[Recipient]:
                     customer_uuid=str(getattr(customer, "uuid", "") or ""),
                     first_name=(getattr(customer, "first_name", "") or "").strip(),
                     is_vip=bool(getattr(insight, "is_vip", False)),
+                    is_known_minor=is_known_minor(getattr(customer, "birthday", None)),
+                    has_adult_declaration=is_known_adult(
+                        getattr(customer, "birthday", None)
+                    ),
                     preferred_hour=getattr(insight, "preferred_hour", None),
                 )
             )
@@ -943,6 +966,8 @@ def _recipients_for_refs(customer_refs: list[str]) -> list[Recipient]:
                 customer_uuid=profile["customer_uuid"],
                 first_name=profile["first_name"],
                 is_vip=profile["is_vip"],
+                is_known_minor=profile["is_known_minor"],
+                has_adult_declaration=profile["has_adult_declaration"],
                 preferred_hour=profile["preferred_hour"],
             )
         )
@@ -968,6 +993,7 @@ def _profiles_for_refs(customer_refs: list[str]) -> dict[str, dict]:
                     "ref",
                     "uuid",
                     "first_name",
+                    "birthday",
                     "insight__rfm_segment",
                     "insight__preferred_hour",
                     "loyalty_account__tier",
@@ -978,6 +1004,7 @@ def _profiles_for_refs(customer_refs: list[str]) -> dict[str, dict]:
                 ref,
                 customer_uuid,
                 first_name,
+                birthday,
                 rfm_segment,
                 preferred_hour,
                 loyalty_tier,
@@ -986,6 +1013,8 @@ def _profiles_for_refs(customer_refs: list[str]) -> dict[str, dict]:
                     "phone": phone,
                     "customer_uuid": str(customer_uuid or ""),
                     "first_name": (first_name or "").strip(),
+                    "is_known_minor": is_known_minor(birthday),
+                    "has_adult_declaration": is_known_adult(birthday),
                     "is_vip": bool(
                         rfm_segment in VIP_RFM_SEGMENTS
                         or loyalty_tier in VIP_LOYALTY_TIERS
@@ -1006,6 +1035,7 @@ def _recipients_from_customers(customers, *, reason: str) -> list[Recipient]:
         "ref",
         "uuid",
         "first_name",
+        "birthday",
         "insight__rfm_segment",
         "insight__preferred_hour",
         "loyalty_account__tier",
@@ -1016,6 +1046,7 @@ def _recipients_from_customers(customers, *, reason: str) -> list[Recipient]:
         ref,
         customer_uuid,
         first_name,
+        birthday,
         rfm_segment,
         preferred_hour,
         loyalty_tier,
@@ -1034,10 +1065,29 @@ def _recipients_from_customers(customers, *, reason: str) -> list[Recipient]:
                     rfm_segment in VIP_RFM_SEGMENTS
                     or loyalty_tier in VIP_LOYALTY_TIERS
                 ),
+                is_known_minor=is_known_minor(birthday),
+                has_adult_declaration=is_known_adult(birthday),
                 preferred_hour=preferred_hour,
             )
         )
     return recipients
+
+
+def _exclude_without_adult_declaration(
+    recipients,
+) -> tuple[list[Recipient], dict[str, int]]:
+    """Fail closed unless 18+ is proved, retaining non-PII reason counts."""
+
+    eligible: list[Recipient] = []
+    excluded: dict[str, int] = {}
+    for recipient in recipients:
+        if recipient.is_known_minor:
+            excluded["known_minor"] = excluded.get("known_minor", 0) + 1
+        elif not recipient.has_adult_declaration:
+            excluded["age_not_declared"] = excluded.get("age_not_declared", 0) + 1
+        else:
+            eligible.append(recipient)
+    return eligible, excluded
 
 
 def _batches(values: list[str], size: int):
@@ -1103,6 +1153,8 @@ def _merge(by_phone: dict, found: list, *, reason: str) -> tuple[int, int]:
                 first_name=recipient.first_name,
                 reasons=frozenset({reason}),
                 is_vip=recipient.is_vip,
+                is_known_minor=recipient.is_known_minor,
+                has_adult_declaration=recipient.has_adult_declaration,
                 preferred_hour=recipient.preferred_hour,
                 source_subscription_ref=recipient.source_subscription_ref,
             )
@@ -1116,6 +1168,10 @@ def _merge(by_phone: dict, found: list, *, reason: str) -> tuple[int, int]:
             first_name=existing.first_name or recipient.first_name,
             reasons=existing.reasons | {reason},
             is_vip=existing.is_vip or recipient.is_vip,
+            is_known_minor=existing.is_known_minor or recipient.is_known_minor,
+            has_adult_declaration=(
+                existing.has_adult_declaration or recipient.has_adult_declaration
+            ),
             # Idem para a hora habitual: a primeira conhecida vale.
             preferred_hour=(
                 existing.preferred_hour

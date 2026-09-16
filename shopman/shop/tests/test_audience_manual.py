@@ -25,9 +25,20 @@ from shopman.offerman.models import Collection, CollectionItem, Product
 from shopman.shop.services import audience
 
 pytestmark = pytest.mark.django_db
+_DEFAULT_BIRTHDAY = object()
 
 
-def _customer(phone: str, *, ref: str = "", price_tier=None, birthday=None, opted_in: bool = True):
+def _customer(
+    phone: str,
+    *,
+    ref: str = "",
+    price_tier=None,
+    birthday=_DEFAULT_BIRTHDAY,
+    opted_in: bool = True,
+):
+    if birthday is _DEFAULT_BIRTHDAY:
+        today = timezone.localdate()
+        birthday = today.replace(year=today.year - 30)
     customer = Customer.objects.create(
         ref=ref or f"CLI-{phone[-4:]}",
         first_name="Ana",

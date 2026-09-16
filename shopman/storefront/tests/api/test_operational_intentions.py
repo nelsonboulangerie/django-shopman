@@ -132,7 +132,7 @@ def test_stock_notice_checks_global_optout():
     from shopman.storefront.stock_alert_delivery import StockAlertDeliveryHandler
 
     c = customers.create(ref="AUDIT-S", first_name="Ana", phone="+5543999990002")
-    sub = stock_alerts.subscribe("AUDIT-SKU", customer=c, alert_type="stock_back")
+    sub = stock_alerts.subscribe("AUDIT-SKU", customer=c, alert_type="stock_back", adult_declared=True)
     ConsentService.revoke_consent(c.ref, "whatsapp")
     with (
         patch("shopman.shop.notifications.notify", return_value=NotificationResult(success=True)) as send,
@@ -346,7 +346,7 @@ def test_stock_claim_prevents_retry_after_unknown_provider_acceptance():
     from shopman.storefront.stock_alert_delivery import StockAlertDeliveryHandler
 
     _seed_surface()
-    sub = stock_alerts.subscribe("PAO-FRANCES", phone="+5543999990007", alert_type="stock_back")
+    sub = stock_alerts.subscribe("PAO-FRANCES", phone="+5543999990007", alert_type="stock_back", adult_declared=True)
     with (
         patch(
             "shopman.storefront.services.sku_state.resolve",

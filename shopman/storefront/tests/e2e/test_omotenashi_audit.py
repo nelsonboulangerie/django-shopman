@@ -179,7 +179,7 @@ def test_06c_soldout_409_remembers_who_already_asked(client):
     J.authenticate(client, customer)
     resp = client.post(
         f"/api/v1/availability/{SKU}/notify/",
-        data=json.dumps({}),
+        data=json.dumps({"adult_declared": True}),
         content_type="application/json",
     )
     assert resp.status_code == 200
@@ -422,7 +422,7 @@ def test_13_mutation_success_shape_is_consistent(client):
     # Stock-alert subscribe.
     resp = client.post(
         f"/api/v1/availability/{SKU}/notify/",
-        data=json.dumps({}),
+        data=json.dumps({"adult_declared": True}),
         content_type="application/json",
     )
     assert resp.status_code == 200
@@ -589,7 +589,7 @@ def test_18_unavailable_product_exposes_notify_affordance(client):
     # And the back-in-stock subscription round-trips.
     resp = client.post(
         f"/api/v1/availability/{SKU}/notify/",
-        data=json.dumps({}),
+        data=json.dumps({"adult_declared": True}),
         content_type="application/json",
     )
     assert resp.status_code == 200

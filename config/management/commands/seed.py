@@ -1027,7 +1027,10 @@ class Command(BaseCommand):
                     "customer_type": "individual",
                     "price_tier": tier,
                     "phone": phone,
-                    "birthday": timezone.localdate(),
+                    # Cohort sintética explicitamente adulta: a resolução real
+                    # de Marketing exige DOB canônico >= 18 anos e deve poder
+                    # exercitar o caminho feliz sem enfraquecer essa guarda.
+                    "birthday": date(1990, 1, 1),
                     "is_active": True,
                 },
             )
