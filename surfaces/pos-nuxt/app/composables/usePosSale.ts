@@ -1096,11 +1096,15 @@ export function usePosSale(deps: PosSaleDeps) {
   );
   const suggestedSplitRef = computed(() => (cart.tabDisplay ? `${cart.tabDisplay}-2` : ""));
 
+  // ⚠️ Sem cláusula de método. `cart.paymentMethod` é campo LEGADO (o primeiro
+  // método da projeção, "cash", ou o que a comanda salva trouxe): filtrar por
+  // ele fazia o watcher abaixo reescrever "Na entrega" para "No caixa" em
+  // silêncio numa comanda reaberta com `payment_method: "pix"`. Os tenders são a
+  // verdade, e o workspace já valida cada linha contra a coleta (`blockedForDelivery`).
   const availablePaymentCollections = computed(() =>
     (pos.value?.payment_collections || []).filter((collection) =>
       collection.fulfillment_types.includes(cart.fulfillmentType)
-      && !(collection.ref === "on_delivery" && cart.fulfillmentType === "pickup" && cart.salesMode !== "order")
-      && collection.payment_method_refs.includes(cart.paymentMethod),
+      && !(collection.ref === "on_delivery" && cart.fulfillmentType === "pickup" && cart.salesMode !== "order"),
     ),
   );
 
@@ -1574,7 +1578,12 @@ export function usePosSale(deps: PosSaleDeps) {
       paymentCollection: cart.paymentCollection,
       paymentTenders: resolvedPayment.paymentTenders,
       tenderedQ: resolvedPayment.tenderedQ,
+      // "Troco para quanto?" só existe quando o operador PERGUNTOU: a linha de
+      // dinheiro virgem é o auto-preenchimento do sistema (= total), e mandá-la
+      // gravava "troco para R$ 42 num pedido de R$ 42" sem ninguém ter falado
+      // com o cliente — o entregador saía com troco zero por engano.
       changeForQ: cart.paymentCollection === "on_delivery"
+        && cart.paymentTenders.some((t) => t.method === "cash" && !t._virgin)
         ? cart.paymentTenders.filter((t) => t.method === "cash").reduce((sum, t) => sum + t.amount_q, 0)
         : 0,
       receiptChannels: cart.receiptChannels,
@@ -3142,6 +3151,7 @@ export function usePosSale(deps: PosSaleDeps) {
     deliveryDistanceKm,
     deliverySlots,
     deliverySlotsPending,
+    availablePaymentCollections,
     canonicalDeliverySlots,
     deliveryWindowLabel,
     deliveryDateEffective,

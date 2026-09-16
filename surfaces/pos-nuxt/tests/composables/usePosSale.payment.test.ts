@@ -428,7 +428,10 @@ describe("usePosSale — ONDE se recebe é da VENDA, não da linha que nasceu pr
     h.sale.cart.paymentCollection = "on_delivery";
     await nextTick();
     h.sale.addTender("cash");
+    // O operador DIGITOU com quanto o cliente vai pagar (a linha deixou de ser
+    // o auto-preenchimento do sistema).
     h.sale.cart.paymentTenders[0]!.amount_q = 2000;
+    h.sale.cart.paymentTenders[0]!._virgin = false;
     h.sale.cart.changeForInput = "999,00";
     await h.sale.reviewCheckout();
     const request = h.handles.actionCall.mock.calls.find((c) => String(c[0]).includes("/sale/review/"));
@@ -436,4 +439,87 @@ describe("usePosSale — ONDE se recebe é da VENDA, não da linha que nasceu pr
     h.handles.dispose();
   });
 
+  // "Troco para = total" era gravado sem o operador ter perguntado: a linha de
+  // dinheiro VIRGEM (o auto-preenchimento = total) subia como `change_for_q`, e
+  // o entregador saía com "troco para R$ 5" num pedido de R$ 5 — troco zero,
+  // registrado como se alguém tivesse combinado.
+  it("linha de dinheiro virgem NÃO manda troco-para: ninguém perguntou ao cliente", async () => {
+    const h = makeSale({ projection: entregaComDuasColetas() });
+    h.sale.addProduct(h.handles.posValue.value!.products[0]!);
+    h.sale.cart.fulfillmentType = "delivery";
+    await nextTick();
+    h.sale.cart.paymentCollection = "on_delivery";
+    await nextTick();
+    h.sale.addTender("cash");
+    expect(h.sale.cart.paymentTenders[0]!._virgin).toBe(true);
+    await h.sale.reviewCheckout();
+    const request = h.handles.actionCall.mock.calls.find((c) => String(c[0]).includes("/sale/review/"));
+    expect(request?.[1].body).not.toHaveProperty("change_for_q");
+    h.handles.dispose();
+  });
+
+  it("uma cédula tocada na linha de dinheiro libera o troco-para", async () => {
+    const h = makeSale({ projection: entregaComDuasColetas() });
+    h.sale.addProduct(h.handles.posValue.value!.products[0]!);
+    h.sale.cart.fulfillmentType = "delivery";
+    await nextTick();
+    h.sale.cart.paymentCollection = "on_delivery";
+    await nextTick();
+    h.sale.addTender("cash");
+    h.sale.tenderAdd(2000); // a cédula de R$ 20 substitui o auto-preenchimento
+    expect(h.sale.cart.paymentTenders[0]!._virgin).toBe(false);
+    await h.sale.reviewCheckout();
+    const request = h.handles.actionCall.mock.calls.find((c) => String(c[0]).includes("/sale/review/"));
+    expect(request?.[1].body.change_for_q).toBe(2000);
+    h.handles.dispose();
+  });
+
+});
+
+// O campo LEGADO `cart.paymentMethod` forçava "No caixa" em silêncio: as coletas
+// eram filtradas por `payment_method_refs.includes(cart.paymentMethod)` e o
+// watcher reescrevia `paymentCollection`. Comanda reaberta com `payment_method:
+// "pix"` e "Na entrega" marcado voltava para o caixa sem ninguém tocar. Os
+// tenders são a verdade; o workspace valida cada linha contra a coleta.
+describe("usePosSale — a coleta não obedece ao campo legado de método", () => {
+  function entregaComColetaRestrita() {
+    const base = freeCartProjection();
+    return makeProjection({
+      checkout: base.checkout,
+      payment_collections: [
+        ...base.payment_collections,
+        {
+          ref: "on_delivery" as (typeof base.payment_collections)[number]["ref"],
+          label: "Na entrega",
+          description: "",
+          fulfillment_types: ["delivery"],
+          payment_method_refs: ["cash", "credit", "debit"],
+        },
+      ],
+    });
+  }
+
+  it("paymentMethod='pix' + paymentCollection='on_delivery' NÃO vira 'terminal'", async () => {
+    const h = makeSale({ projection: entregaComColetaRestrita() });
+    h.sale.cart.fulfillmentType = "delivery";
+    await nextTick();
+    h.sale.cart.paymentMethod = "pix";
+    h.sale.cart.paymentCollection = "on_delivery";
+    await nextTick();
+    expect(h.sale.cart.paymentCollection).toBe("on_delivery");
+    expect(h.sale.availablePaymentCollections.value.map((c) => c.ref)).toEqual(["terminal", "on_delivery"]);
+    h.handles.dispose();
+  });
+
+  it("a coleta ainda cai para a primeira quando o RECEBIMENTO a exclui (retirada de balcão)", async () => {
+    const h = makeSale({ projection: entregaComColetaRestrita() });
+    h.sale.cart.fulfillmentType = "delivery";
+    await nextTick();
+    h.sale.cart.paymentCollection = "on_delivery";
+    await nextTick();
+    h.sale.cart.fulfillmentType = "pickup";
+    await nextTick();
+    expect(h.sale.cart.paymentCollection).toBe("terminal");
+    h.handles.dispose();
+  });
 });
