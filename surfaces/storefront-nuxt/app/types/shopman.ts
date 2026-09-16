@@ -1028,6 +1028,7 @@ export interface AccountStockAlertSubscription {
   event_type: 'stock_back' | 'production_ready'
   event_label: string
   active: boolean
+  requires_adult_confirmation: boolean
   expires_at: string | null
 }
 

@@ -55,11 +55,23 @@ def test_web_phone_only_alerts_are_quarantined_without_touching_verified_channel
         MigrationExecutor(connection).migrate(latest)
         from shopman.storefront.models import StockAlertSubscription
 
-        assert StockAlertSubscription.objects.get(pk=typed_web.pk).proof_status == "legacy_unverified"
-        assert StockAlertSubscription.objects.get(pk=account_web.pk).proof_status == "verified"
-        assert StockAlertSubscription.objects.get(pk=trusted_channel.pk).proof_status == "verified"
-        assert StockAlertSubscription.objects.get(pk=historical.pk).proof_status == "verified"
-        assert StockAlertSubscription.objects.get(pk=typed_web.pk).is_active is False
+        current_typed_web = StockAlertSubscription.objects.get(pk=typed_web.pk)
+        current_account_web = StockAlertSubscription.objects.get(pk=account_web.pk)
+        current_trusted_channel = StockAlertSubscription.objects.get(pk=trusted_channel.pk)
+        current_historical = StockAlertSubscription.objects.get(pk=historical.pk)
+        assert current_typed_web.proof_status == "legacy_unverified"
+        assert current_account_web.proof_status == "verified"
+        assert current_trusted_channel.proof_status == "verified"
+        assert current_historical.proof_status == "verified"
+        # Expansion never fabricates an age declaration. Even identity-verified
+        # rows stay inactive until a new explicit confirmation is recorded.
+        assert current_typed_web.adult_declared is False
+        assert current_account_web.adult_declared is False
+        assert current_trusted_channel.adult_declared is False
+        assert current_historical.adult_declared is False
+        assert current_typed_web.is_active is False
+        assert current_account_web.is_active is False
+        assert current_trusted_channel.is_active is False
         assert StockAlertSubscription.objects.get(pk=typed_web.pk).deliveries.get(pk=receipt.pk).status == "accepted"
     finally:
         MigrationExecutor(connection).migrate(latest)
@@ -191,6 +203,9 @@ def test_additive_migrations_preserve_legacy_unknown_receipts_and_subscriptions(
         assert current_unverified_only.expires_at is not None
         assert current_cancelled.revoked_at is not None
         assert current_cancelled.expires_at == cancelled_expiry
-        assert StockAlertSubscription.objects.get(evidence_hash="mixed-worker-evidence").pause_reason == ""
+        mixed_worker = StockAlertSubscription.objects.get(evidence_hash="mixed-worker-evidence")
+        assert mixed_worker.pause_reason == ""
+        assert mixed_worker.adult_declared is False
+        assert mixed_worker.is_active is False
     finally:
         MigrationExecutor(connection).migrate(latest)

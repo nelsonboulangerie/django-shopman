@@ -139,7 +139,7 @@ class StockAlertSubscribeView(APIView):
             if sub is not None:
                 return _no_store_response(
                     {
-                        "active": sub.paused_at is None,
+                        "active": sub.is_active,
                         "management_url": stock_alerts.management_url(sub),
                     },
                     status_code=status.HTTP_200_OK,
@@ -192,6 +192,29 @@ class StockAlertSubscribeView(APIView):
                 status_code=status.HTTP_401_UNAUTHORIZED,
             )
 
+        adult_declaration = str(request.data.get("adult_declared") or "").strip().lower()
+        if adult_declaration not in {"true", "1"}:
+            return Response(
+                {
+                    "detail": "Confirme que você tem 18 anos ou mais para receber este aviso.",
+                    "field": "adult_declared",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        from shopman.shop.services.marketing_age import is_known_minor
+
+        if is_known_minor(getattr(customer, "birthday", None)):
+            return Response(
+                {
+                    "detail": (
+                        "Este aviso está disponível somente para pessoas com 18 anos ou mais. "
+                        "A data de nascimento da sua conta indica idade inferior a 18 anos."
+                    ),
+                    "field": "birthday",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         channel_ref = request.GET.get("channel") or STOREFRONT_CHANNEL_REF
         # A sessão autenticada usa sempre o contato da identidade canônica;
         # um telefone no corpo não pode redirecionar o aviso.
@@ -202,6 +225,7 @@ class StockAlertSubscribeView(APIView):
             customer=customer,
             phone="",
             alert_type=alert_type,
+            adult_declared=True,
             resume_existing=False,
         )
         sub = outcome.subscription

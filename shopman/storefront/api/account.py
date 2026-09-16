@@ -626,7 +626,8 @@ def _stock_alert_preferences(customer) -> list[dict]:
             "product_name": product_name(row.sku),
             "event_type": row.alert_type,
             "event_label": labels.get(row.alert_type, row.alert_type),
-            "active": row.paused_at is None,
+            "active": row.is_active,
+            "requires_adult_confirmation": not row.adult_declared,
             "expires_at": row.expires_at.isoformat() if row.expires_at else None,
         }
         for row in rows.order_by("sku", "alert_type", "pk")

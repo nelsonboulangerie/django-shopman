@@ -1,7 +1,8 @@
 // StockNotifyButton: telefone vem da identidade canônica. Anônimo preserva
-// página + produto no login e confirma o opt-in depois, sem redigitar o número.
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+// página + produto no login; autenticado confirma o opt-in e a maioridade.
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { nextTick } from 'vue'
+import { DOMWrapper } from '@vue/test-utils'
 import { mountSuspended, mockNuxtImport } from '@nuxt/test-utils/runtime'
 import StockNotifyButton from '~/components/StockNotifyButton.vue'
 
@@ -39,6 +40,30 @@ async function setAuthenticated (value: boolean) {
   if (value) session.setFromAuthSession({ is_authenticated: true, customer_name: 'Ana', customer_phone: '43999' })
 }
 
+const mountedWrappers: Array<{ unmount: () => void }> = []
+
+async function mountStockNotify (props: {
+  sku: string
+  name?: string
+  subscribed?: boolean
+  pill?: boolean
+}) {
+  const wrapper = await mountSuspended(StockNotifyButton, { props })
+  mountedWrappers.push(wrapper)
+  return wrapper
+}
+
+async function confirmAdultAndSubmit () {
+  const declaration = document.body.querySelector<HTMLElement>('[aria-label="Confirmar maioridade"]')
+  const form = document.body.querySelector<HTMLFormElement>('form')
+  expect(declaration).not.toBeNull()
+  expect(form).not.toBeNull()
+  await new DOMWrapper(declaration!).trigger('click')
+  await new DOMWrapper(form!).trigger('submit')
+  await new Promise(resolve => setTimeout(resolve, 0))
+  await nextTick()
+}
+
 describe('StockNotifyButton', () => {
   beforeEach(() => {
     document.cookie = 'csrftoken=testtoken'
@@ -55,14 +80,15 @@ describe('StockNotifyButton', () => {
     mocks.toast.success.mockClear()
     mocks.toast.error.mockClear()
     vi.stubGlobal('$fetch', mocks.fetch)
-    document.body.innerHTML = ''
+  })
+
+  afterEach(() => {
+    for (const wrapper of mountedWrappers.splice(0)) wrapper.unmount()
   })
 
   it('shows the calm confirmed state when already subscribed', async () => {
     await setAuthenticated(true)
-    const wrapper = await mountSuspended(StockNotifyButton, {
-      props: { sku: 'PAO', name: 'Pão', subscribed: true }
-    })
+    const wrapper = await mountStockNotify({ sku: 'PAO', name: 'Pão', subscribed: true })
 
     expect(wrapper.text()).toContain('Aviso ativo')
     expect(wrapper.get('button').attributes('disabled')).toBeDefined()
@@ -74,9 +100,7 @@ describe('StockNotifyButton', () => {
   it('legacy anonymous reload can still recover its exact management capability', async () => {
     await setAuthenticated(false)
     mocks.fetch.mockResolvedValue({ active: true, management_url: '/gerenciar-aviso#recovered-capability' })
-    const wrapper = await mountSuspended(StockNotifyButton, {
-      props: { sku: 'PAO', name: 'Pão', subscribed: true }
-    })
+    const wrapper = await mountStockNotify({ sku: 'PAO', name: 'Pão', subscribed: true })
 
     await new Promise(resolve => setTimeout(resolve, 0))
     await nextTick()
@@ -95,21 +119,20 @@ describe('StockNotifyButton', () => {
       query: { categoria: 'paes' },
       hash: '#fornada'
     })
-    const wrapper = await mountSuspended(StockNotifyButton, {
-      props: { sku: 'PAO', name: 'Pão', subscribed: false }
-    })
+    const wrapper = await mountStockNotify({ sku: 'PAO', name: 'Pão', subscribed: false })
 
     expect(wrapper.text()).toContain('Entrar para ser avisado')
     expect(wrapper.get('button').attributes('aria-label')).toContain('Entrar para ativar avisos recorrentes')
     await wrapper.get('button').trigger('click')
 
     expect(mocks.fetch).not.toHaveBeenCalled()
+    expect(document.body.querySelector('[data-stock-notify-sheet]')).toBeNull()
     expect(mocks.navigate).toHaveBeenCalledWith(
       `/entrar?next=${encodeURIComponent('/menu?categoria=paes&aviso=PAO#fornada')}`
     )
   })
 
-  it('authenticated return offers explicit confirmation and clears only its intention after success', async () => {
+  it('authenticated return requires the adult declaration and clears only its intention after success', async () => {
     await setAuthenticated(true)
     Object.assign(mocks.route, {
       path: '/menu',
@@ -118,21 +141,28 @@ describe('StockNotifyButton', () => {
       hash: '#fornada'
     })
     mocks.fetch.mockResolvedValue({ management_url: '/gerenciar-aviso#opaque-capability' })
-    const wrapper = await mountSuspended(StockNotifyButton, {
-      props: { sku: 'PAO', name: 'Pão', subscribed: false }
-    })
+    const wrapper = await mountStockNotify({ sku: 'PAO', name: 'Pão', subscribed: false })
 
     expect(wrapper.text()).toContain('WhatsApp confirmado. Confirme para ativar este aviso.')
     expect(wrapper.get('button').text()).toContain('Confirmar aviso')
     expect(wrapper.get('button').attributes('autofocus')).toBeDefined()
     const replaceCallsBeforeClick = mocks.replace.mock.calls.length
     await wrapper.get('button').trigger('click')
-    await new Promise(resolve => setTimeout(resolve, 0))
     await nextTick()
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('Usaremos o WhatsApp confirmado na sua conta.')
+
+    const form = document.body.querySelector<HTMLFormElement>('form')
+    await new DOMWrapper(form!).trigger('submit')
+    await nextTick()
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('Confirme que você tem 18 anos ou mais.')
+
+    await confirmAdultAndSubmit()
 
     expect(mocks.fetch).toHaveBeenCalledOnce()
     expect(mocks.fetch.mock.calls[0]?.[0]).toContain('/availability/PAO/notify/')
-    expect(mocks.fetch.mock.calls[0]?.[1]).toMatchObject({ method: 'POST', body: {} })
+    expect(mocks.fetch.mock.calls[0]?.[1]).toMatchObject({ method: 'POST', body: { adult_declared: true } })
     expect(mocks.replace.mock.calls.length).toBe(replaceCallsBeforeClick + 1)
     expect(mocks.replace).toHaveBeenLastCalledWith({
       path: '/menu',
@@ -143,45 +173,44 @@ describe('StockNotifyButton', () => {
     expect(wrapper.get('a').attributes('href')).toBe('/gerenciar-aviso#opaque-capability')
   })
 
-  it('keeps the preserved intention when subscribe fails so retry is the next action', async () => {
+  it('keeps the preserved intention and explicit choice available when subscribe fails', async () => {
     await setAuthenticated(true)
     Object.assign(mocks.route, { query: { aviso: 'PAO' } })
     mocks.fetch.mockRejectedValue(new Error('offline'))
-    const wrapper = await mountSuspended(StockNotifyButton, {
-      props: { sku: 'PAO', name: 'Pão', subscribed: false }
-    })
+    const wrapper = await mountStockNotify({ sku: 'PAO', name: 'Pão', subscribed: false })
 
     const replaceCallsBeforeClick = mocks.replace.mock.calls.length
     await wrapper.get('button').trigger('click')
-    await new Promise(resolve => setTimeout(resolve, 0))
+    await nextTick()
+    await confirmAdultAndSubmit()
 
+    expect(mocks.fetch.mock.calls[0]?.[1]?.body).toEqual({ adult_declared: true })
     expect(mocks.replace.mock.calls.length).toBe(replaceCallsBeforeClick)
-    expect(wrapper.text()).toContain('Confirmar aviso')
+    expect(document.body.textContent).toContain('Ativar aviso')
+    expect(document.body.querySelector('[aria-label="Confirmar maioridade"]')).not.toBeNull()
   })
 
-  it('authenticated ordinary one-click subscribe uses the account identity', async () => {
+  it('authenticated ordinary subscribe also requires explicit adult confirmation and uses account identity', async () => {
     await setAuthenticated(true)
     mocks.fetch.mockResolvedValue({ management_url: '/gerenciar-aviso#opaque-capability' })
-    const wrapper = await mountSuspended(StockNotifyButton, {
-      props: { sku: 'PAO', name: 'Pão', subscribed: false }
-    })
+    const wrapper = await mountStockNotify({ sku: 'PAO', name: 'Pão', subscribed: false })
 
     const replaceCallsBeforeClick = mocks.replace.mock.calls.length
     await wrapper.get('button').trigger('click')
-    await new Promise(resolve => setTimeout(resolve, 0))
     await nextTick()
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    expect(document.body.querySelector('input[type="tel"]')).toBeNull()
+    await confirmAdultAndSubmit()
 
     expect(mocks.fetch).toHaveBeenCalledOnce()
-    expect(mocks.fetch.mock.calls[0]?.[1]?.body).toEqual({})
+    expect(mocks.fetch.mock.calls[0]?.[1]?.body).toEqual({ adult_declared: true })
     expect(mocks.replace.mock.calls.length).toBe(replaceCallsBeforeClick)
     expect(wrapper.text()).toContain('Aviso ativo')
   })
 
   it('renders an accessible label when not subscribed', async () => {
     await setAuthenticated(true)
-    const wrapper = await mountSuspended(StockNotifyButton, {
-      props: { sku: 'PAO', name: 'Pão', pill: true, subscribed: false }
-    })
+    const wrapper = await mountStockNotify({ sku: 'PAO', name: 'Pão', pill: true, subscribed: false })
     expect(wrapper.get('button').attributes('aria-label')).toBe('Ativar avisos recorrentes quando Pão voltar')
   })
 })
