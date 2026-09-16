@@ -14,6 +14,7 @@ import { useOperatorSession } from "./useOperatorSession";
 import { coalesceRefresh } from "../utils/coalesceRefresh";
 import type { OperatorSession } from "../types/operator";
 import { unreadOf } from "../presentation/notifications";
+import { updateAppBadge } from "../utils/appBadge";
 
 /** Rede de segurança, não o motor: o SSE é quem avisa. 60s não pesa e não atrasa. */
 const POLL_MS = 60_000;
@@ -104,6 +105,7 @@ export function useNotifications() {
 
   // O push (canal `user-<id>`) só chuta o refetch — quem manda é o fetch acima.
   const { realtime } = useUserNotifications(() => refresh());
+  watch(unread, value => void updateAppBadge(value), { immediate: true });
 
   let timer: ReturnType<typeof setInterval> | null = null;
   onMounted(() => {

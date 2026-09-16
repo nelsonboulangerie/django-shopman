@@ -36,6 +36,7 @@ export default defineNuxtConfig({
       wakeLock: true,
       kiosk: true,
       idleReloadPaths: ["/board"],
+      push: { surfaceRef: "production", categories: ["production", "system"] },
       manifest: {
         name: "Shopman Produção",
         shortName: "Produção",

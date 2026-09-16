@@ -45,6 +45,7 @@ export default defineNuxtConfig({
       display: "standalone",
       wakeLock: true,
       kiosk: false,
+      push: { surfaceRef: "pos", categories: ["order", "system"] },
       manifest: {
         name: "Shopman PDV",
         shortName: "PDV",

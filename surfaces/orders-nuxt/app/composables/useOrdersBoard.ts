@@ -11,6 +11,7 @@ import { useOrderIntention } from "./useOrderIntention";
 // SSE/poll are client-only (EventSource is a browser API).
 import type { CancellationReason, OrderQueueResponse, TwoZoneQueueProjection } from "~/types/orders";
 import { preorderGroups, treatableOrderRefs, zonesView, type PreorderGroup, type ZoneView } from "~/presentation/board";
+import { showTreatableOrderNotification } from "~/utils/treatableNotification";
 
 export type { CancellationReason };
 
@@ -213,15 +214,17 @@ export function useOrdersBoard() {
 
   function toggleSound() {
     toggleAlertSound();
-    // Mesmo gesto que destrava o autoplay pede a permissão de notificação: fora
-    // de um gesto do usuário o browser ignora (ou penaliza) o pedido.
+    // O mesmo gesto que liga o som pode pedir a permissão da notificação local.
+    // A assinatura Web Push continua sendo uma ação própria e explícita.
     if (
-      soundOn.value &&
-      import.meta.client &&
-      "Notification" in window &&
-      Notification.permission === "default"
+      soundOn.value
+      && typeof window !== "undefined"
+      && "Notification" in window
+      && Notification.permission === "default"
     ) {
-      Notification.requestPermission().catch(() => {});
+      void Notification.requestPermission().catch(() => {
+        // silêncio-deliberado: som e título continuam mesmo se o prompt falhar
+      });
     }
   }
 
@@ -245,25 +248,19 @@ export function useOrdersBoard() {
     }, 1_500);
   }
 
-  function notifyTreatableOrder(ref_: string) {
-    // Silenciosamente degradável: sem API ou sem permissão, som e título cobrem.
-    try {
-      if (!("Notification" in window) || Notification.permission !== "granted") return;
-      const n = new Notification(`Pedido para tratar${ref_ ? ` ${ref_}` : ""}`, {
-        body: "Há um pedido que já pode ser tratado no quadro.",
-        tag: "gestor-treatable-order",
-      });
-      n.onclick = () => { window.focus(); n.close(); };
-    } catch {
-      // construtor pode lançar (ex.: Android sem service worker) — sem drama
-    }
-  }
-
   function announceTreatableOrder(ref_: string) {
     startAlert();
     if (document.visibilityState !== "visible") {
-      notifyTreatableOrder(ref_);
       startTitleAlert(ref_);
+      const worker = "serviceWorker" in navigator ? navigator.serviceWorker : undefined;
+      const location = window.location;
+      void showTreatableOrderNotification(ref_, {
+        permission: "Notification" in window ? Notification.permission : "denied",
+        serviceWorker: worker,
+        actionUrl: location
+          ? `${location.pathname || "/"}${location.search || ""}${location.hash || ""}`
+          : "/",
+      });
     }
   }
 

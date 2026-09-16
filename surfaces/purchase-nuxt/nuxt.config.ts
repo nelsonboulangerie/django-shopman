@@ -26,6 +26,7 @@ export default defineNuxtConfig({
       display: "standalone",
       wakeLock: false,
       kiosk: false,
+      push: { surfaceRef: "purchase", categories: ["purchase"] },
       manifest: {
         name: "Shopman Compras",
         shortName: "Compras",

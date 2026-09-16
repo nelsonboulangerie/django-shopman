@@ -167,6 +167,12 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
             _model("Grupos", "auth_group", "Os papéis e o que cada um pode fazer.", "group"),
             _model("Operadores e PIN", "doorman_pincredential", "O PIN e o crachá de cada operador do balcão.", "badge"),
             _model("Dispositivos confiáveis", "doorman_trusteddevice", "Aparelhos que dispensam nova verificação.", "devices"),
+            _model(
+                "Aparelhos com avisos",
+                "shop_pushsubscription",
+                "Inscrições Web Push por pessoa e aplicativo, sem expor as credenciais do aparelho.",
+                "notifications_active",
+            ),
             SettingsEntry("Verificação em duas etapas", "admin_2fa_enroll", "Inscrição pessoal do autenticador e da recuperação.", "security", is_custom_page=True),
             _model("Referências", "refs_ref", "O registro interno de códigos e a renomeação em massa.", "tag"),
         ),

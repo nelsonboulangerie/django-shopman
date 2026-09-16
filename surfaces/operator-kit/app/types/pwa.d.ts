@@ -7,3 +7,9 @@ declare module "virtual:pwa-register/vue" {
     updateServiceWorker: (reloadPage?: boolean) => Promise<void>;
   };
 }
+
+interface Navigator {
+  clearAppBadge?: () => Promise<void>;
+  setAppBadge?: (contents?: number) => Promise<void>;
+  userAgentData?: { platform?: string };
+}

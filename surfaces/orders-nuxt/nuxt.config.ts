@@ -41,6 +41,7 @@ export default defineNuxtConfig({
       display: "standalone",
       wakeLock: false,
       kiosk: false,
+      push: { surfaceRef: "orders", categories: ["order"] },
       manifest: {
         name: "Shopman Gestor",
         shortName: "Gestor",

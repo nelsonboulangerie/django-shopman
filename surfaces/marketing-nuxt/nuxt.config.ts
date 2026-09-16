@@ -69,6 +69,7 @@ export default defineNuxtConfig({
       display: "standalone",
       wakeLock: false,
       kiosk: false,
+      push: { surfaceRef: "marketing", categories: ["campaign"] },
       manifest: {
         name: "Shopman Marketing",
         shortName: "Marketing",

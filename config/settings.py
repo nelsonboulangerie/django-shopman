@@ -949,6 +949,14 @@ EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 # Em produção, declare `DEFAULT_FROM_EMAIL` no spec de deploy.
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@shopman.local")
 
+# Web Push do backstage. O Storefront não lê estas chaves e a privada nunca
+# atravessa a API. As três vazias mantêm o canal desativado; configuração
+# parcial falha no deploy check SHOPMAN_E024.
+VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "").strip()
+VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "").strip()
+VAPID_CLAIMS_EMAIL = os.environ.get("VAPID_CLAIMS_EMAIL", "").strip()
+VAPID_TIMEOUT_SECONDS = _env_int("VAPID_TIMEOUT_SECONDS", 10)
+
 # Quanto esperar por um servidor de SMTP que não responde. Sem isto o socket
 # herda o timeout do sistema — na prática, dois minutos pendurado.
 #

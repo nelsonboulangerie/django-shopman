@@ -87,6 +87,21 @@ extras.
 **Não-segredo** — copie chave, `scope`, `type` e `value` exatamente como o
 `spec get` devolveu.
 
+### Web Push: distribuição mínima das chaves
+
+- `web` e `directive-worker`: `VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY` e
+  `VAPID_CLAIMS_EMAIL`, todos `SECRET`, `RUN_TIME` e sem valor versionado;
+- `NUXT_PUBLIC_VAPID_PUBLIC_KEY`: app-level, `SECRET`, `RUN_AND_BUILD_TIME`,
+  sem valor. Ela é pública por desenho; fica app-level para o mesmo par alcançar
+  todos os builds sem sete cópias de configuração;
+- Storefront e KDS herdam essa chave pública, mas não declaram a capability nem
+  importam os handlers de push — portanto não assinam nem recebem avisos.
+
+Antes do update, confira no spec vivo que os valores já existem. Uma chave
+`SECRET` sem `value` preserva o cifrado existente; ela não fabrica uma
+credencial ausente. O par público usado pelo Django e pelos sete apps precisa
+ser o mesmo, sem jamais copiar a privada para um componente Nuxt.
+
 ## Estado hoje (08/09/2026): drift do alpha **limpo**
 
 `make deploy-spec-drift` sai `[OK]`. As 13 divergências de valor medidas em

@@ -46,6 +46,12 @@ from .delivery import DeliveryDistanceBand, DeliveryZone
 from .faq import FAQEntry
 from .omotenashi_copy import OmotenashiCopy
 from .promotion import Coupon, Promotion
+from .push_subscription import (
+    PUSH_CATEGORIES,
+    PUSH_SURFACE_CATEGORIES,
+    PushSubscription,
+    PushSurface,
+)
 from .quality import QualityDefect, QualityGrade
 from .rules import RuleConfig
 from .settings_proxies import (
@@ -135,4 +141,8 @@ __all__ = [
     "NotificationEventType",
     "NotificationLifecycle",
     "NotificationSeverity",
+    "PUSH_CATEGORIES",
+    "PUSH_SURFACE_CATEGORIES",
+    "PushSubscription",
+    "PushSurface",
 ]

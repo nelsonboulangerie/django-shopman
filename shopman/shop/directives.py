@@ -21,6 +21,8 @@ LIFECYCLE_PHASE_RECEIPT_SCOPE = "lifecycle:phase"
 
 # Notification
 NOTIFICATION_SEND = "notification.send"
+NOTIFICATION_PUSH = "notification.push"
+NOTIFICATION_PUSH_RECEIPT_SCOPE = "notification:push"
 STOCK_ALERT_DELIVER = "stock_alert.deliver"
 STOCK_ALERT_DELIVERY_RECEIPT_SCOPE = "stock_alert:delivery"
 

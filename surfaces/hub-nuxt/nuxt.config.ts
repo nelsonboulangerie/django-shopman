@@ -30,6 +30,10 @@ export default defineNuxtConfig({
       display: "standalone",
       wakeLock: false,
       kiosk: false,
+      push: {
+        surfaceRef: "hub",
+        categories: ["campaign", "production", "order", "purchase", "report", "sign_in", "system"],
+      },
       manifest: {
         name: "Shopman Central",
         shortName: "Central",

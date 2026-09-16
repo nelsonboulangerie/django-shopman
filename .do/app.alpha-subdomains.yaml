@@ -139,6 +139,9 @@ ingress:
       path:
         prefix: /
 envs:
+- key: NUXT_PUBLIC_VAPID_PUBLIC_KEY
+  scope: RUN_AND_BUILD_TIME
+  type: SECRET
 - key: DJANGO_SETTINGS_MODULE
   scope: RUN_TIME
   value: 'config.settings'
@@ -649,6 +652,16 @@ services:
     success_threshold: 1
     timeout_seconds: 5
   name: web
+  envs:
+  - key: VAPID_PRIVATE_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: VAPID_PUBLIC_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: VAPID_CLAIMS_EMAIL
+    scope: RUN_TIME
+    type: SECRET
   # ⚠️ `--access-log=/dev/null` NÃO é economia de log: é vazamento de segredo.
   # O access log do daphne grava o request-target CRU, com query string
   # (daphne/http_protocol.py: "path": uri), e o token dos webhooks viaja na query
@@ -1057,6 +1070,16 @@ workers:
   instance_count: 1
   instance_size_slug: apps-s-1vcpu-0.5gb
   name: directive-worker
+  envs:
+  - key: VAPID_PRIVATE_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: VAPID_PUBLIC_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: VAPID_CLAIMS_EMAIL
+    scope: RUN_TIME
+    type: SECRET
   run_command: python manage.py process_directives --watch
   image:
     registry_type: DOCR
