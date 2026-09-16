@@ -1088,15 +1088,15 @@ class AccountExportView(APIView):
                 receipt_pk=receipt.pk,
             )
         except Exception:
+            logger.exception(
+                "storefront_account_export_failed",
+                extra={"privacy_receipt_ref": str(receipt.ref)},
+            )
             if artifact is not None:
                 artifact.close()
             # ``prepare_account_export`` already records ordinary failures;
             # this idempotent fallback also covers faults at the call boundary.
             account_privacy.fail_export(receipt.pk)
-            logger.exception(
-                "storefront_account_export_failed",
-                extra={"privacy_receipt_ref": str(receipt.ref)},
-            )
             return Response(
                 {
                     "detail": "Não conseguimos preparar seus dados agora. Tente novamente em alguns minutos.",

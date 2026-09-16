@@ -7,6 +7,7 @@ before every database read and JSON encoding step has succeeded.
 
 from __future__ import annotations
 
+import logging
 import tempfile
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, BinaryIO
@@ -20,6 +21,8 @@ from django.utils import timezone
 SCHEMA_VERSION = "account_export.v1"
 DEFAULT_SPOOL_MAX_SIZE = 2 * 1024 * 1024
 DEFAULT_ITERATOR_CHUNK_SIZE = 500
+
+logger = logging.getLogger(__name__)
 
 # JSON fields can contain integration payloads.  Their outer model field may be
 # allowlisted while an embedded credential is not, so apply the same explicit
@@ -1631,6 +1634,10 @@ def prepare_account_export(
             )
         return artifact, receipt
     except Exception as exc:
+        logger.exception(
+            "account_export_preparation_failed",
+            extra={"privacy_receipt_pk": receipt_pk},
+        )
         if artifact is not None:
             artifact.close()
         stage = "precondition" if isinstance(exc, account_service.AccountUnavailable) else "artifact"
