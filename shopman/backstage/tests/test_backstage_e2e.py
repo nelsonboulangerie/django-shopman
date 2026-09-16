@@ -22,7 +22,6 @@ from shopman.stockman.services.movements import StockMovements
 
 from shopman.backstage.models import OperatorAlert
 from shopman.backstage.services import production as production_service
-from shopman.backstage.tests.support import production_mutation_post
 from shopman.shop.handlers.production_alerts import check_late_started_orders
 from shopman.shop.handlers.production_order_sync import WORK_ORDER_COMMITTED_ORDER_REFS_KEY
 from shopman.shop.models import Shop
@@ -206,37 +205,3 @@ def test_e2e_production_management_reflects_lifecycle(client, setup):
     assert management["finished_qty"] == "10"
 
 
-# ── Cenário 7 — advance step view updates meta ──────────────────────
-
-
-@pytest.mark.django_db
-def test_e2e_advance_step_via_view_updates_meta(client, setup):
-    recipe = Recipe.objects.create(
-        ref="recipe-step-e2e",
-        name="StepE2E",
-        output_sku="STEP-SKU",
-        batch_size=Decimal("10"),
-        meta={
-            "steps": [
-                {"name": "A", "target_seconds": 60},
-                {"name": "B", "target_seconds": 60},
-            ]
-        },
-    )
-    wo = craft.plan(recipe, 10, date=date.today())
-    craft.start(wo, quantity=10, expected_rev=0)
-    client.force_login(setup)
-
-    # The production floor moved to the prod. Nuxt app over the headless API;
-    # advancing a step is now POST /api/v1/backstage/production/<pk>/advance-step/.
-    response = production_mutation_post(
-        client,
-        f"/api/v1/backstage/production/{wo.pk}/advance-step/",
-        {"expected_rev": wo.rev, "idempotency_key": "e2e-advance"},
-        content_type="application/json",
-    )
-    assert response.status_code == 200
-
-    wo.refresh_from_db()
-    assert wo.meta["steps_progress"] == 1
-    assert wo.meta["steps_progress_actor"].startswith("production:")

@@ -237,7 +237,6 @@ def has_committed_mutation_attempt(
         "start": ("start", WorkOrderEvent.Kind.STARTED),
         "review_qc": ("quality-review", WorkOrderEvent.Kind.QUALITY_REVIEWED),
         "correct_qc": ("quality-correction", WorkOrderEvent.Kind.QUALITY_CORRECTED),
-        "advance_step": ("advance-step", WorkOrderEvent.Kind.STEP_ADVANCED),
         "void": ("void", WorkOrderEvent.Kind.VOIDED),
         "oven_arm": ("oven-arm", WorkOrderEvent.Kind.OVEN_ARMED),
         "oven_conclude": ("oven-conclude", WorkOrderEvent.Kind.OVEN_CONCLUDED),
@@ -3055,102 +3054,6 @@ def _finish_idempotency_key(
     if attempt:
         return f"production.finish:{work_order.pk}:{attempt}:{digest}"
     return f"production.finish:{work_order.pk}:{digest}"
-
-
-def apply_advance_step(
-    *,
-    work_order_id,
-    actor: str,
-    expected_rev: int | None = None,
-    idempotency_key: str | None = None,
-) -> int:
-    """Advance the manual step pointer of a STARTED work order by one.
-
-    Stores the new index in ``WorkOrder.meta["steps_progress"]`` (1-based).
-    Returns the new step index. Capped at the number of recipe steps.
-    Raises ProductionError if the work order is not in STARTED state or has
-    no recipe steps.
-    """
-    from django.db import transaction
-    from shopman.craftsman.exceptions import StaleRevision
-    from shopman.craftsman.models import WorkOrder, WorkOrderEvent
-    from shopman.craftsman.services.execution import CraftExecution
-
-    _require_irreversible_attempt(
-        actor=actor,
-        expected_rev=expected_rev,
-        idempotency_key=idempotency_key,
-    )
-    attempt_key = _mutation_idempotency_key("advance-step", work_order_id, idempotency_key)
-    try:
-        with transaction.atomic():
-            work_order = WorkOrder.objects.select_for_update().select_related("recipe").get(pk=work_order_id)
-            if attempt_key:
-                replay = WorkOrderEvent.objects.filter(idempotency_key=attempt_key).first()
-                if replay:
-                    if (
-                        replay.work_order_id != work_order.pk
-                        or replay.kind != WorkOrderEvent.Kind.STEP_ADVANCED
-                        or replay.actor != str(actor or "")
-                    ):
-                        raise ProductionConflict(
-                            "Esta tentativa já foi usada em outra ação.",
-                            data={"work_order": work_order.ref},
-                        )
-                    return int(replay.payload["step_index"])
-
-            if work_order.status != WorkOrder.Status.STARTED:
-                raise ProductionError("Só é possível avançar passo em ordens iniciadas.")
-            if expected_rev is not None and work_order.rev != expected_rev:
-                raise StaleRevision(work_order, expected_rev)
-
-            snapshot = (work_order.meta or {}).get("_recipe_snapshot") or {}
-            production_snapshot = snapshot.get("production") or {}
-            if "steps" in production_snapshot:
-                steps = production_snapshot["steps"]
-            else:
-                steps = (work_order.recipe.meta or {}).get("steps") or work_order.recipe.steps or []
-            total = len(steps)
-            if total <= 0:
-                raise ProductionError("Receita sem passos configurados.")
-
-            current = (work_order.meta or {}).get("steps_progress")
-            try:
-                current_value = int(current) if current not in (None, "") else 0
-            except (TypeError, ValueError):
-                current_value = 0
-            if current_value >= total:
-                raise ProductionConflict(
-                    "Todos os passos desta fornada já foram concluídos.",
-                    code="conflict",
-                    data={
-                        "work_order": work_order.ref,
-                        "expected_rev": expected_rev,
-                        "current_rev": work_order.rev,
-                        "cause": "steps_complete",
-                    },
-                )
-            new_index = max(1, current_value + 1)
-            CraftExecution.advance_step(
-                work_order,
-                step_index=new_index,
-                step_name=str(steps[new_index - 1].get("name") or "")
-                if isinstance(steps[new_index - 1], dict)
-                else str(steps[new_index - 1] or ""),
-                expected_rev=expected_rev,
-                actor=actor,
-                idempotency_key=attempt_key,
-            )
-    except WorkOrder.DoesNotExist:
-        raise ProductionNotFound(
-            "Ordem de produção não encontrada.",
-            resource="work_order",
-            identifier=str(work_order_id),
-        ) from None
-    except Exception as exc:
-        translated = _operator_error(exc)
-        raise translated from (None if translated is exc else exc)
-    return new_index
 
 
 def _mutation_idempotency_key(

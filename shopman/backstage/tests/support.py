@@ -122,10 +122,6 @@ def production_mutation_post(client, path: str, data=None, **kwargs):
         projection_kind = "board"
         action_kind = "start"
         action_ref = f"start:{work_order_id}"
-    elif path.endswith("/advance-step/"):
-        projection_kind = "kds"
-        action_kind = "advance_step"
-        action_ref = f"advance_step:{work_order_id}"
     elif path.endswith("/void/"):
         status = WorkOrder.objects.filter(pk=work_order_id).values_list("status", flat=True).first()
         projection_kind = "board" if status == WorkOrder.Status.PLANNED else "kds"
