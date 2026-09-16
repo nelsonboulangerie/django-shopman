@@ -7,6 +7,10 @@ const props = defineProps<{
   savedAt: number;
   conflicts?: MarketingDraftConflict[];
   labels?: Record<string, string>;
+  /** Frase humana para o valor de um campo composto (público, agendamento,
+   *  plataformas). Quem conhece o vocabulário é o formulário dono do campo; sem
+   *  frase, o aviso cai numa contagem — nunca em JSON. */
+  describe?: (field: string, value: unknown) => string | undefined;
 }>();
 
 defineEmits<{
@@ -26,12 +30,28 @@ function label(field: string): string {
   return props.labels?.[field] ?? field;
 }
 
-function value(value: unknown): string {
-  if (value === undefined) return "não preenchido";
+function clip(rendered: string): string {
+  return rendered.length > 180 ? `${rendered.slice(0, 177)}…` : rendered;
+}
+
+// ⚠️ Imprimia `JSON.stringify` para público, agendamento e plataformas: chave em
+// inglês e chaves na tela do gestor. Valor composto vira frase (do dono do campo)
+// ou contagem; a chave JSON nunca aparece.
+function value(field: string, value: unknown): string {
+  if (value === undefined || value === null) return "não preenchido";
   if (value === "") return "em branco";
   if (typeof value === "boolean") return value ? "sim" : "não";
-  const rendered = typeof value === "string" ? value : JSON.stringify(value);
-  return rendered.length > 180 ? `${rendered.slice(0, 177)}…` : rendered;
+  if (typeof value === "string") return clip(value);
+  if (typeof value === "number") return String(value);
+  const described = props.describe?.(field, value);
+  if (described) return clip(described);
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "nenhum";
+    return value.length === 1 ? "1 item" : `${value.length} itens`;
+  }
+  const count = Object.keys(value as Record<string, unknown>).length;
+  if (count === 0) return "nenhum critério";
+  return count === 1 ? "1 critério" : `${count} critérios`;
 }
 </script>
 
@@ -53,8 +73,8 @@ function value(value: unknown): string {
       <dl class="mt-2 space-y-2">
         <div v-for="conflict in conflicts" :key="conflict.field" class="rounded bg-background/80 p-2">
           <dt class="text-xs font-semibold">{{ label(conflict.field) }}</dt>
-          <dd class="mt-1 text-xs"><strong>Versão atual:</strong> {{ value(conflict.current) }}</dd>
-          <dd class="mt-0.5 text-xs"><strong>Seu rascunho:</strong> {{ value(conflict.draft) }}</dd>
+          <dd class="mt-1 text-xs"><strong>Versão atual:</strong> {{ value(conflict.field, conflict.current) }}</dd>
+          <dd class="mt-0.5 text-xs"><strong>Seu rascunho:</strong> {{ value(conflict.field, conflict.draft) }}</dd>
         </div>
       </dl>
       <div class="mt-2 flex flex-wrap gap-2">

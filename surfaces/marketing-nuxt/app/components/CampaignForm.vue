@@ -11,6 +11,11 @@ import type {
   AnnouncementTemplate,
 } from "~/types/campaign";
 import { useMarketingDraft } from "~/composables/useMarketingDraft";
+import {
+  audienceRulesSummary,
+  choiceLabels,
+  platformsSummary,
+} from "~/presentation/campaign";
 import type { MarketingDraftPayload } from "~/utils/marketingDraft";
 import {
   resolveScheduleInput,
@@ -111,6 +116,77 @@ const DRAFT_LABELS = {
   schedule: "Agendamento",
   audience_rules: "Público",
 };
+
+// ⚠️ A tela imprimia a CHAVE do JSON ("collections, skus", "bought_skus") quando
+// avisava que um filtro salvo seria preservado. Chave é contrato com o servidor,
+// não vocabulário do gestor: aqui vira rótulo; chave que o formulário não conhece
+// vira contagem, nunca texto em inglês.
+const TRIGGER_FILTER_LABELS: Record<string, string> = {
+  collections: "coleções",
+  skus: "produtos",
+  quality_min: "qualidade mínima da fornada",
+  quality_min_share: "parcela mínima na qualidade",
+  max_remaining: "estoque máximo restante",
+};
+const PRESERVED_AUDIENCE_LABELS: Record<string, string> = {
+  bought_skus: "produtos comprados",
+  bought_collections: "coleções compradas",
+};
+
+/** "coleções, produtos" — ou "coleções e mais 1 critério" quando a chave é nova. */
+function preservedSummary(
+  keys: string[],
+  labels: Record<string, string>,
+): string {
+  const named = keys.flatMap((key) => (labels[key] ? [labels[key]] : []));
+  const unknown = keys.length - named.length;
+  const rest = unknown
+    ? `${unknown} ${unknown === 1 ? "critério" : "critérios"}`
+    : "";
+  if (!named.length) return rest;
+  return rest ? `${named.join(", ")} e mais ${rest}` : named.join(", ");
+}
+
+const audienceLabels = computed(() => ({
+  priceTiers: choiceLabels(props.priceTiers ?? []),
+  tags: choiceLabels(props.tags ?? []),
+  segments: choiceLabels(props.rfmSegments ?? []),
+}));
+
+/** Frase de um agendamento salvo, para o aviso de conflito do rascunho. */
+function scheduleDraftSummary(schedule: Record<string, unknown>): string {
+  if (schedule.type === "once" && typeof schedule.at === "string") {
+    return scheduleSummary(schedule.at, timezoneName.value) || "uma vez";
+  }
+  const windows = Array.isArray(schedule.windows)
+    ? schedule.windows
+        .filter(Array.isArray)
+        .map((window) => String(window[0]))
+        .join(", ")
+    : "";
+  const days = Array.isArray(schedule.weekdays)
+    ? schedule.weekdays
+        .map((day) => WEEKDAY_LABELS[Number(day)])
+        .filter(Boolean)
+        .join(", ")
+    : "";
+  if (!windows) return "sem horário definido";
+  return days ? `${days} às ${windows}` : `todo dia às ${windows}`;
+}
+
+/** O aviso de conflito pede uma frase, não JSON: o formulário é quem sabe ler o campo. */
+function describeDraftValue(field: string, value: unknown): string | undefined {
+  if (field === "platforms" && Array.isArray(value)) {
+    return platformsSummary(value.map(String), props.platformLabels);
+  }
+  if (field === "audience_rules" && value && typeof value === "object") {
+    return audienceRulesSummary(value as AudienceRules, audienceLabels.value);
+  }
+  if (field === "schedule" && value && typeof value === "object") {
+    return scheduleDraftSummary(value as Record<string, unknown>);
+  }
+  return undefined;
+}
 
 function cloneRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -545,6 +621,7 @@ function submit() {
       :saved-at="draft.savedAt.value"
       :conflicts="draft.conflicts.value"
       :labels="DRAFT_LABELS"
+      :describe="describeDraftValue"
       @keep-local="draft.keepLocal()"
       @keep-server="draft.keepServer()"
       @discard="draft.discard()"
@@ -839,8 +916,9 @@ function submit() {
       v-if="!schedules && preservedTriggerFilterKeys.length"
       class="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
     >
-      Os filtros do evento ({{ preservedTriggerFilterKeys.join(", ") }}) serão
-      preservados.
+      Os filtros do evento já salvos ({{
+        preservedSummary(preservedTriggerFilterKeys, TRIGGER_FILTER_LABELS)
+      }}) continuam valendo.
     </p>
 
     <fieldset>
@@ -1097,8 +1175,9 @@ function submit() {
           v-if="preservedAudienceKeys.length"
           class="rounded-md bg-muted/50 px-2.5 py-2 text-xs text-muted-foreground"
         >
-          Filtros protegidos ({{ preservedAudienceKeys.join(", ") }}) serão
-          preservados sem alteração.
+          Filtros de público já salvos ({{
+            preservedSummary(preservedAudienceKeys, PRESERVED_AUDIENCE_LABELS)
+          }}) continuam valendo, sem alteração.
         </p>
       </div>
       <p class="mt-2 text-xs text-muted-foreground">

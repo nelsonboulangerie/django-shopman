@@ -27,6 +27,7 @@ import {
   expiryTone,
   parseHashtags,
   platformIcon,
+  platformsSummary,
   vipSummary,
 } from "~/presentation/campaign";
 
@@ -228,6 +229,14 @@ const DRAFT_LABELS = {
   publish_fold: "Ocorrência do horário",
 };
 
+/** O aviso de conflito mostra nomes de plataforma, não a lista de refs em JSON. */
+function describeDraftValue(field: string, value: unknown): string | undefined {
+  if (field === "platforms" && Array.isArray(value)) {
+    return platformsSummary(value.map(String), platformLabels.value);
+  }
+  return undefined;
+}
+
 const timezoneName = computed(() => props.shopTimezone || "UTC");
 const expiresAtMs = computed(() => Date.parse(props.announcement.expires_at));
 const exactExpiryMinutes = computed(() => {
@@ -410,6 +419,7 @@ function askToReject() {
       :saved-at="draft.savedAt.value"
       :conflicts="draft.conflicts.value"
       :labels="DRAFT_LABELS"
+      :describe="describeDraftValue"
       class="m-3 mb-0"
       @keep-local="draft.keepLocal()"
       @keep-server="draft.keepServer()"
