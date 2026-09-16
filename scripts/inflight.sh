@@ -33,7 +33,7 @@ REMOTE="${REMOTE:-origin}"
 SHOW_DELIVERED="${SHOW_DELIVERED:-0}"
 # Artefato de dev que não é trabalho: não conta como "sujo". Casa em qualquer
 # subpasta (o .nuxtrc mora em surfaces/<app>/).
-NOISE='^.. (.*/)?(\.nuxtrc|\.alpha-tmp/|\.claude/|\.codex/|\.local-tests/|\.artifacts/|output/|\.env|\.env\.local)$'
+NOISE='^.. (.*/)?(\.nuxtrc|\.alpha-tmp/|\.claude/|\.codex/|\.local-tests/|\.artifacts/|\.orders-lab/|output/|\.env|\.env\.local)$'
 
 bold=""; dim=""; red=""; green=""; yellow=""; reset=""
 if [ -t 1 ]; then
