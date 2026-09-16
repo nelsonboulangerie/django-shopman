@@ -3,48 +3,51 @@ import {
   getRequestURL,
   getResponseHeader,
   removeResponseHeader,
-  setResponseHeader
+  setResponseHeader,
+  setResponseStatus
 } from 'h3'
+import {
+  headerValue,
+  mergeVary,
+  prepareHomeRepresentation,
+  removeHeaderValue,
+  setHeaderValue,
+  type RenderHeaders
+} from '../utils/homeCompression'
 
-function qualityForEncoding (header: string | undefined, encoding: string): number {
-  if (!header) return 0
-
-  let wildcardQuality = 0
-  for (const entry of header.split(',')) {
-    const [rawName, ...parameters] = entry.trim().split(';')
-    const name = rawName?.trim().toLowerCase()
-    if (!name) continue
-
-    let quality = 1
-    for (const parameter of parameters) {
-      const [rawKey, rawValue] = parameter.trim().split('=', 2)
-      if (rawKey?.toLowerCase() !== 'q') continue
-      const parsed = Number(rawValue)
-      quality = Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : 0
-    }
-
-    if (name === encoding) return quality
-    if (name === '*') wildcardQuality = quality
-  }
-
-  return wildcardQuality
+function setRenderedHeader (
+  response: { headers?: RenderHeaders },
+  event: Parameters<typeof setResponseHeader>[0],
+  name: string,
+  value: string
+): void {
+  response.headers ||= {}
+  setHeaderValue(response.headers, name, value)
+  setResponseHeader(event, name, value)
 }
 
-function mergeVary (current: string | string[] | number | undefined, value: string): string {
-  const values = (Array.isArray(current) ? current : [current])
-    .flatMap(item => String(item || '').split(','))
-    .map(item => item.trim())
-    .filter(Boolean)
-
-  if (values.includes('*')) return '*'
-  if (!values.some(item => item.toLowerCase() === value.toLowerCase())) values.push(value)
-  return values.join(', ')
+function removeRenderedHeader (
+  response: { headers?: RenderHeaders },
+  event: Parameters<typeof removeResponseHeader>[0],
+  name: string
+): void {
+  removeHeaderValue(response.headers, name)
+  removeResponseHeader(event, name)
 }
 
-function responseHeader (headers: Record<string, string> | undefined, name: string): string | undefined {
-  if (!headers) return undefined
-  const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase())
-  return entry?.[1]
+function renderNotAcceptable (
+  response: { body?: unknown, headers?: RenderHeaders, statusCode?: number, statusMessage?: string },
+  event: Parameters<typeof setResponseStatus>[0]
+): void {
+  const body = 'Not Acceptable'
+  response.statusCode = 406
+  response.statusMessage = body
+  response.body = body
+  setResponseStatus(event, 406, body)
+  removeRenderedHeader(response, event, 'Content-Encoding')
+  removeRenderedHeader(response, event, 'ETag')
+  setRenderedHeader(response, event, 'Content-Type', 'text/plain; charset=utf-8')
+  setRenderedHeader(response, event, 'Content-Length', String(Buffer.byteLength(body)))
 }
 
 export default defineNitroPlugin((nitro) => {
@@ -52,28 +55,31 @@ export default defineNitroPlugin((nitro) => {
     if (!['GET', 'HEAD'].includes(event.method)) return
     if (getRequestURL(event).pathname !== '/') return
     if ((response.statusCode || 200) !== 200) return
-    if (!responseHeader(response.headers, 'content-type')?.startsWith('text/html')) return
+    if (!String(headerValue(response.headers, 'content-type') || '').startsWith('text/html')) return
 
-    const vary = mergeVary(responseHeader(response.headers, 'vary') || getResponseHeader(event, 'vary'), 'Accept-Encoding')
-    response.headers = { ...response.headers, vary }
-    setResponseHeader(event, 'Vary', vary)
+    const vary = mergeVary([
+      headerValue(response.headers, 'vary'),
+      getResponseHeader(event, 'vary')
+    ], 'Accept-Encoding')
+    setRenderedHeader(response, event, 'Vary', vary)
+    if (headerValue(response.headers, 'content-encoding') || getResponseHeader(event, 'content-encoding')) return
 
-    if (qualityForEncoding(getRequestHeader(event, 'accept-encoding'), 'gzip') <= 0) return
-    if (responseHeader(response.headers, 'content-encoding') || getResponseHeader(event, 'content-encoding')) return
-
-    const originalBody = response.body
-    try {
-      const source = new Response(originalBody).body
-      if (!source) return
-
-      response.body = source.pipeThrough(new CompressionStream('gzip'))
-      setResponseHeader(event, 'Content-Encoding', 'gzip')
-    } catch (error) {
-      // Compression is an optimization. Preserve the canonical SSR response if
-      // encoder setup fails instead of turning the home into a 500.
-      response.body = originalBody
-      removeResponseHeader(event, 'Content-Encoding')
-      nitro.captureError(error as Error, { event, tags: ['storefront-home-compression'] })
+    const representation = await prepareHomeRepresentation(
+      response.body,
+      getRequestHeader(event, 'accept-encoding')
+    )
+    if (representation.error) {
+      nitro.captureError(representation.error, { event, tags: ['storefront-home-compression'] })
     }
+    if (representation.kind === 'identity') return
+    if (representation.kind === 'not-acceptable') {
+      renderNotAcceptable(response, event)
+      return
+    }
+
+    response.body = representation.body
+    removeRenderedHeader(response, event, 'ETag')
+    setRenderedHeader(response, event, 'Content-Encoding', 'gzip')
+    setRenderedHeader(response, event, 'Content-Length', String(representation.body.byteLength))
   })
 })
