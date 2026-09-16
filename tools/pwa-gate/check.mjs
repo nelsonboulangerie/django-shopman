@@ -39,18 +39,41 @@ async function pngSize (path) {
   return [bytes.readUInt32BE(16), bytes.readUInt32BE(20)]
 }
 
+const repository = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
+const profiles = {
+  storefront: {
+    surface: 'storefront-nuxt',
+    manifestUrl: '/manifest.webmanifest?v=3',
+    manifestHref: '/manifest.webmanifest?v=3',
+    manifestCache: 'private, no-store',
+    packageWithPwaDependency: 'storefront-nuxt',
+    storefront: true,
+  },
+  pos: {
+    surface: 'pos-nuxt',
+    manifestUrl: '/manifest.webmanifest',
+    manifestHref: '/manifest.webmanifest',
+    manifestCache: 'public, max-age=3600',
+    packageWithPwaDependency: 'operator-kit',
+    storefront: false,
+  },
+}
 const requestedApp = process.argv.find(value => value.startsWith('--app='))?.split('=', 2)[1]
-check(requestedApp === 'storefront', 'app=storefront é a surface suportada')
+const profile = profiles[requestedApp]
+check(Boolean(profile), `app=${requestedApp || '<ausente>'} optou pela capability PWA`)
 check(process.versions.node.startsWith('22.'), `Node 22 em uso (${process.version})`)
 
-const repository = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
-const surface = join(repository, 'surfaces/storefront-nuxt')
+const surface = join(repository, 'surfaces', profile.surface)
 const output = join(surface, '.output')
-const packageJson = JSON.parse(await readFile(join(surface, 'package.json'), 'utf8'))
-const splashScreens = JSON.parse(await readFile(join(surface, 'pwa-splash-screens.json'), 'utf8'))
-check(packageJson.dependencies['@vite-pwa/nuxt'] === '1.1.1', '@vite-pwa/nuxt usa versão fixa 1.1.1')
-check(splashScreens.length === 40, 'matriz canônica contém 40 splash screens iOS')
-check(new Set(splashScreens.map(([width, height]) => `${width}x${height}`)).size === 40, 'dimensões de splash screen não se repetem')
+const pwaPackage = JSON.parse(await readFile(join(repository, 'surfaces', profile.packageWithPwaDependency, 'package.json'), 'utf8'))
+const splashScreens = profile.storefront
+  ? JSON.parse(await readFile(join(surface, 'pwa-splash-screens.json'), 'utf8'))
+  : []
+check(pwaPackage.dependencies['@vite-pwa/nuxt'] === '1.1.1', '@vite-pwa/nuxt usa versão fixa 1.1.1')
+if (profile.storefront) {
+  check(splashScreens.length === 40, 'matriz canônica contém 40 splash screens iOS')
+  check(new Set(splashScreens.map(([width, height]) => `${width}x${height}`)).size === 40, 'dimensões de splash screen não se repetem')
+}
 
 const swPath = join(output, 'public/sw.js')
 await stat(swPath)
@@ -73,23 +96,27 @@ const requiredAssets = [
   ['pwa-512x512.png', 512, 512],
   ['maskable-512x512.png', 512, 512],
   ['apple-touch-icon-180x180.png', 180, 180],
+]
+if (profile.storefront) requiredAssets.push(
   ['monochrome-512x512.png', 512, 512],
   ['screenshots/home-narrow.png', 1080, 1920],
   ['screenshots/menu-narrow.png', 1080, 1920],
-  ['screenshots/home-wide.png', 1280, 720]
-]
+  ['screenshots/home-wide.png', 1280, 720],
+)
 for (const [name, width, height] of requiredAssets) {
   const actual = await pngSize(join(surface, 'public/pwa', name))
   check(actual[0] === width && actual[1] === height, `${name} mede ${width}x${height}`)
 }
-await Promise.all(['favicon.ico', 'favicon.svg', 'nelson-logo.svg'].map(name => stat(join(surface, 'public/pwa', name))))
-const splashFiles = precache.filter(url => url.startsWith('pwa/apple-splash-') && url.endsWith('.png'))
-check(splashFiles.length === 40, '40 splash screens iOS estão no precache')
-for (const [width, height] of splashScreens) {
-  const name = `apple-splash-${width}-${height}.png`
-  const actual = await pngSize(join(surface, 'public/pwa', name))
-  check(actual[0] === width && actual[1] === height, `${name} mede ${width}x${height}`)
-  check(splashFiles.includes(`pwa/${name}`), `${name} está no precache`)
+if (profile.storefront) {
+  await Promise.all(['favicon.ico', 'favicon.svg', 'nelson-logo.svg'].map(name => stat(join(surface, 'public/pwa', name))))
+  const splashFiles = precache.filter(url => url.startsWith('pwa/apple-splash-') && url.endsWith('.png'))
+  check(splashFiles.length === 40, '40 splash screens iOS estão no precache')
+  for (const [width, height] of splashScreens) {
+    const name = `apple-splash-${width}-${height}.png`
+    const actual = await pngSize(join(surface, 'public/pwa', name))
+    check(actual[0] === width && actual[1] === height, `${name} mede ${width}x${height}`)
+    check(splashFiles.includes(`pwa/${name}`), `${name} está no precache`)
+  }
 }
 
 const port = await freePort()
@@ -110,19 +137,25 @@ preview.stderr.on('data', chunk => { logs += chunk })
 
 try {
   await waitForServer(`${baseUrl}/offline.html`, preview)
-  const manifestResponse = await fetch(`${baseUrl}/manifest.webmanifest?v=3`)
+  const manifestResponse = await fetch(`${baseUrl}${profile.manifestUrl}`)
   check(manifestResponse.ok, 'manifesto responde 200 mesmo sem Django')
   check(manifestResponse.headers.get('content-type')?.startsWith('application/manifest+json'), 'manifesto usa application/manifest+json')
-  check(manifestResponse.headers.get('cache-control') === 'private, no-store', 'manifesto por dispositivo não usa cache compartilhado')
-  check(manifestResponse.headers.get('vary') === 'User-Agent', 'manifesto declara variação por dispositivo')
+  check(manifestResponse.headers.get('cache-control') === profile.manifestCache, `manifesto usa cache esperado (${profile.manifestCache})`)
+  if (profile.storefront) check(manifestResponse.headers.get('vary') === 'User-Agent', 'manifesto declara variação por dispositivo')
   const manifest = await manifestResponse.json()
-  for (const field of ['id', 'name', 'short_name', 'description', 'lang', 'dir', 'start_url', 'scope', 'display', 'display_override', 'orientation', 'theme_color', 'background_color', 'icons', 'shortcuts', 'categories', 'screenshots']) {
+  const requiredManifestFields = ['id', 'name', 'short_name', 'description', 'lang', 'dir', 'start_url', 'scope', 'display', 'display_override', 'orientation', 'theme_color', 'background_color', 'icons', 'shortcuts']
+  if (profile.storefront) requiredManifestFields.push('categories', 'screenshots')
+  for (const field of requiredManifestFields) {
     check(field in manifest, `manifesto contém ${field}`)
   }
   check(manifest.icons.some(icon => icon.purpose === 'maskable'), 'manifesto declara ícone maskable')
-  check(manifest.icons.some(icon => icon.purpose === 'monochrome'), 'manifesto declara ícone monochrome')
-  check(manifest.screenshots.filter(item => item.form_factor === 'narrow').length === 2, 'manifesto declara duas screenshots narrow')
-  check(manifest.screenshots.filter(item => item.form_factor === 'wide').length === 1, 'manifesto declara uma screenshot wide')
+  if (profile.storefront) {
+    check(manifest.icons.some(icon => icon.purpose === 'monochrome'), 'manifesto declara ícone monochrome')
+    check(manifest.screenshots.filter(item => item.form_factor === 'narrow').length === 2, 'manifesto declara duas screenshots narrow')
+    check(manifest.screenshots.filter(item => item.form_factor === 'wide').length === 1, 'manifesto declara uma screenshot wide')
+  } else {
+    check(manifest.shortcuts.length > 0, 'manifesto do operador declara atalhos')
+  }
 
   const swResponse = await fetch(`${baseUrl}/sw.js`, { method: 'HEAD' })
   check(swResponse.ok, 'service worker responde 200')
@@ -131,11 +164,11 @@ try {
   const documentResponse = await fetch(`${baseUrl}/`, { headers: { 'x-forwarded-proto': 'https' } })
   const document = await documentResponse.text()
   const csp = documentResponse.headers.get('content-security-policy') || ''
-  check(csp.includes("worker-src 'self' blob:") && csp.includes("manifest-src 'self'"), 'CSP existente libera worker e manifesto locais')
-  check(document.includes('href="/manifest.webmanifest?v=3"'), 'HTML usa manifesto versionado sem reutilizar cache anterior')
+  if (profile.storefront) check(csp.includes("worker-src 'self' blob:") && csp.includes("manifest-src 'self'"), 'CSP existente libera worker e manifesto locais')
+  check(document.includes(`href="${profile.manifestHref}"`), 'HTML referencia o manifesto da surface')
   check(document.includes('rel="manifest"') && document.includes('name="theme-color"'), 'HTML contém manifesto e theme-color')
   check(document.includes('apple-mobile-web-app-capable') && document.includes('apple-mobile-web-app-status-bar-style'), 'HTML contém metas iOS')
-  check((document.match(/rel="apple-touch-startup-image"/g) || []).length === 40, 'HTML contém 40 links apple-touch-startup-image')
+  if (profile.storefront) check((document.match(/rel="apple-touch-startup-image"/g) || []).length === 40, 'HTML contém 40 links apple-touch-startup-image')
 } catch (error) {
   process.stderr.write(logs)
   throw error

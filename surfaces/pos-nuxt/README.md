@@ -40,6 +40,25 @@ For local development, keep Django and Nuxt on the same hostname, such as
 npm run build
 ```
 
+## PWA
+
+O PDV opta explicitamente pela capability PWA do `operator-kit`: abre em modo
+standalone, mantém a tela acordada quando o navegador permite e oferece atalhos
+para Venda e Caixa. A atualização só é aplicada após confirmação do operador;
+nenhuma venda ou resposta de API é mantida offline.
+
+Gere os ícones a partir do símbolo mestre versionado e rode o gate na raiz do
+repositório, sempre com Node 22:
+
+```bash
+npm run pwa:assets
+cd ../..
+make pwa app=pos
+```
+
+O gate falha se o service worker cachear API, eventos, Admin, HTML ou navegação.
+Sem rede, o PDV mostra apenas um casco informativo e não simula operação offline.
+
 ## Tests
 
 ```bash

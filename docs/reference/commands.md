@@ -57,14 +57,16 @@
 
 ## Detalhes
 
-### Gate PWA do Storefront
+### Gate PWA das surfaces opt-in
 
-Valida o PWA instalável do Storefront com Node 22. O alvo faz o build, verifica o
-manifesto Nitro e seus assets, inspeciona o service worker e roda o smoke
-Playwright de registro, fallback offline e ausência do convite no checkout.
+Valida cada PWA instalável com Node 22. O alvo instala dependências pelo lock,
+faz o build, verifica o manifesto Nitro e seus assets e inspeciona o service
+worker. O Storefront também roda o smoke Playwright de registro, fallback
+offline e ausência do convite no checkout.
 
 ```bash
 make pwa app=storefront
+make pwa app=pos
 ```
 
 Falha se o precache contiver `/api/`, `/events/` ou `/admin/`, se houver HTML
@@ -76,6 +78,9 @@ Para regenerar os assets antes do gate:
 
 ```bash
 cd surfaces/storefront-nuxt
+npm run pwa:assets
+
+cd ../pos-nuxt
 npm run pwa:assets
 ```
 

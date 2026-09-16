@@ -65,15 +65,15 @@ jobs:
             surfaces/${{ matrix.app }}/package-lock.json
             surfaces/operator-kit/package-lock.json
 
-      - name: Install dependencies
-        run: npm ci
-
-      # Apps que estendem a layer resolvem módulos ('vue', '@vueuse/core') a
-      # partir do node_modules da própria operator-kit no typecheck — sem este
-      # install, hub/production falham com TS2307.
+      # Apps que estendem a layer resolvem módulos da própria operator-kit já
+      # no `nuxt prepare` do postinstall. Portanto o kit precisa existir antes
+      # do `npm ci` da surface, não apenas antes do typecheck.
       - name: Install operator-kit layer deps
         if: matrix.app != 'operator-kit' && matrix.app != 'storefront-nuxt'
         working-directory: surfaces/operator-kit
+        run: npm ci
+
+      - name: Install dependencies
         run: npm ci
 
       - name: Vitest
@@ -84,6 +84,66 @@ jobs:
       # junto com este gate.
       - name: Typecheck
         run: npm run typecheck --if-present
+
+  pwa-quality:
+    name: PWA — ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: storefront
+            surface: storefront-nuxt
+          - app: pos
+            surface: pos-nuxt
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            surfaces/${{ matrix.surface }}/package-lock.json
+            surfaces/operator-kit/package-lock.json
+
+      - name: Install operator-kit capability dependencies
+        if: matrix.app != 'storefront'
+        working-directory: surfaces/operator-kit
+        run: npm ci
+
+      - name: Install surface dependencies
+        working-directory: surfaces/${{ matrix.surface }}
+        run: npm ci
+
+      - name: Install Storefront browser
+        if: matrix.app == 'storefront'
+        working-directory: surfaces/storefront-nuxt
+        run: npx playwright install --with-deps chromium
+
+      - name: Production build
+        working-directory: surfaces/${{ matrix.surface }}
+        run: npm run build
+
+      - name: Structural PWA gate
+        run: node tools/pwa-gate/check.mjs --app=${{ matrix.app }}
+
+      - name: Storefront PWA browser smoke
+        if: matrix.app == 'storefront'
+        working-directory: surfaces/storefront-nuxt
+        run: npx playwright test tests/e2e/pwa.spec.ts
+
+      # O deploy usa esta receita genérica, não o workspace já preparado pelo
+      # job. Construí-la aqui prova a ordem real de instalação e impede que o
+      # postinstall do consumer só falhe depois do merge, ao publicar no DOCR.
+      - name: Build POS deployment image
+        if: matrix.app == 'pos'
+        run: docker build --file surfaces/Dockerfile.surface --build-arg SURFACE=pos-nuxt .
 
   marketing-complete:
     name: Marketing — cadeia completa
