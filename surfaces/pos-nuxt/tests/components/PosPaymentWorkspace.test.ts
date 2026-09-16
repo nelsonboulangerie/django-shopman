@@ -1461,22 +1461,22 @@ it("explica antecipação e cobrança pendente no modo encomendas", async () => 
     paymentTenders: [{ method: "credit", amount_q: 1000, collection: "on_delivery" }],
   }) });
   expect(w.text()).toContain("Pagamento da encomenda");
-  expect(w.text()).toContain("Pagamento antecipado");
-  expect(w.text()).toContain("Cobrar na entrega");
-  expect(w.text()).toContain("pagamento pendente até o recebimento ser registrado no Gestor");
+  expect(w.text()).toContain("No balcão");
+  expect(w.text()).toContain("Na entrega");
+  expect(w.text()).toContain("o entregador recebe e o Gestor registra");
   expect(w.text()).toContain("Levar maquininha");
   await w.setProps({ fulfillmentType: "pickup", paymentCollection: "terminal", paymentTenders: [{ method: "pix", amount_q: 1000, collection: "terminal" }] });
-  expect(w.text()).toContain("pendente até a confirmação do provedor de pagamento");
-  expect(w.text()).not.toContain("Cobrar na entrega");
+  expect(w.text()).toContain("até o provedor confirmar");
+  expect(w.text()).not.toContain("Na entrega");
 
   await w.setProps({
     fulfillmentType: "pickup",
     paymentCollection: "on_delivery",
     paymentTenders: [{ method: "cash", amount_q: 1000, collection: "on_delivery" }],
   });
-  expect(w.text()).toContain("Pagamento na retirada");
+  expect(w.text()).toContain("Na retirada");
   expect(w.text()).toContain("Registre o recebimento no Gestor antes de concluir a retirada");
-  expect(w.text()).not.toContain("Cobrar na entrega");
+  expect(w.text()).not.toContain("Na entrega");
 });
 
 it("balcão não abre entrega ou agenda pelos atalhos expostos", async () => {

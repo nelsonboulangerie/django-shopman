@@ -77,6 +77,9 @@ describe("scheduleLabel — o botão da barra de contexto", () => {
 
   it("hoje com hora marcada carrega a hora", () => {
     expect(scheduleLabel(HOJE, "14:00 às 14:30", HOJE)).toBe("Hoje, 14:00 às 14:30");
+    // O rótulo do servidor começa maiúsculo ("A partir das 9h"); na frase, minúsculo.
+    expect(scheduleLabel(HOJE, "A partir das 9h", HOJE)).toBe("Hoje, a partir das 9h");
+    expect(scheduleLabel(HOJE, windowLabel([], "slot-09"), HOJE)).toBe("Hoje, a partir das 9h");
   });
 
   it("outro dia sem hora carrega o dia", () => {
@@ -111,7 +114,11 @@ describe("windowLabel", () => {
 
   it("ref fora da grade não deixa a tela em branco", () => {
     // O expediente do dia pode ter mudado depois; o ref se lê sozinho.
-    expect(windowLabel(JANELAS, "23:00-23:30")).toBe("23:00-23:30");
+    // Ref fora da lista NUNCA vira texto cru: o dono viu "Hoje, slot-09".
+    expect(windowLabel(JANELAS, "23:00-23:30")).toBe("23:00 às 23:30");
+    expect(windowLabel([], "slot-09")).toBe("a partir das 9h");
+    expect(windowLabel([], "slot-15")).toBe("a partir das 15h");
+    expect(windowLabel([], "qualquer-coisa")).toBe("horário combinado");
   });
 
   it("sem ref, sem rótulo", () => {

@@ -1238,25 +1238,37 @@ defineExpose({
                 aria-hidden="true"
               >F10</OperatorKbd>
             </button>
-            <template v-if="deliveryCollections.length > 1">
-              <button
-                v-for="collection in deliveryCollections"
-                :key="collection.ref"
-                type="button"
-                class="flex h-11 items-center gap-2 rounded-md border px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-                :class="paymentCollection === collection.ref ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground'"
-                :aria-pressed="paymentCollection === collection.ref"
-                @click="$emit('update:paymentCollection', collection.ref)"
-              >
-                <Icon :name="collection.ref === 'terminal' || fulfillmentType === 'pickup' ? 'lucide:store' : 'lucide:truck'" class="size-4 shrink-0" />
-                <span class="min-w-0 truncate text-left">{{ paymentCollectionLabel(collection, salesMode, fulfillmentType) }}</span>
-              </button>
-            </template>
           </div>
         </section>
 
         <section class="grid gap-1.5" aria-label="Forma de pagamento">
           <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{{ salesMode === "order" ? "Pagamento da encomenda" : "Forma de pagamento" }}</h3>
+          <!-- QUANDO COBRAR — a primeira pergunta da encomenda, SOB o título e
+               em duas palavras. Os botões moravam na fileira de ações, ao lado
+               de Desconto e Dividir, com rótulos longos que truncavam: não dava
+               para saber qual era qual. O escolhido é cheio, como o modo
+               Balcão/Encomendas. -->
+          <div
+            v-if="deliveryCollections.length > 1"
+            class="flex items-center gap-0.5 rounded-md border bg-muted/40 p-0.5"
+            role="group"
+            aria-label="Quando cobrar"
+          >
+            <button
+              v-for="collection in deliveryCollections"
+              :key="collection.ref"
+              type="button"
+              class="flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded px-3 text-sm font-semibold transition"
+              :class="paymentCollection === collection.ref
+                ? 'bg-primary text-primary-foreground shadow-xs'
+                : 'text-muted-foreground hover:text-foreground'"
+              :aria-pressed="paymentCollection === collection.ref"
+              @click="$emit('update:paymentCollection', collection.ref)"
+            >
+              <Icon :name="collection.ref === 'terminal' ? 'lucide:store' : fulfillmentType === 'pickup' ? 'lucide:hand-coins' : 'lucide:bike'" class="size-4 shrink-0" />
+              <span class="truncate">{{ paymentCollectionLabel(collection, salesMode, fulfillmentType) }}</span>
+            </button>
+          </div>
           <p v-if="paymentGuidance" class="px-1 text-sm text-muted-foreground" role="status">{{ paymentGuidance }}</p>
           <p
             v-if="pixProviderTest && !hasPixProviderTestTender && (splitActive || hasNonPixTender)"

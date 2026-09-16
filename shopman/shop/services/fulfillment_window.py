@@ -18,7 +18,7 @@ chega às 11:30 tem razão.
   granularidade fina: "14:00 às 14:30" é o que o operador combina com o
   entregador.
 - **OUTRO DIA (encomenda)** → os slots canônicos da casa
-  (``Shop.defaults["pickup_slots"]``: *A partir das 09h / 12h / 15h*, editáveis
+  (``Shop.defaults["pickup_slots"]``: *A partir das 9h / 12h / 15h*, editáveis
   no Admin). Encomenda não é hora marcada, é fornada: o cliente escolhe o TURNO,
   e é assim que a loja já pergunta. Oferecer meia hora para daqui a três dias
   seria uma precisão que a padaria não tem como cumprir — e faria a loja e o
@@ -83,7 +83,7 @@ def _window_start(slot: dict) -> time | None:
 
 #: Os slots de encomenda quando a casa ainda não configurou os dela.
 DEFAULT_CANONICAL_SLOTS = [
-    {"ref": "slot-09", "label": "A partir das 09h", "starts_at": "09:00"},
+    {"ref": "slot-09", "label": "A partir das 9h", "starts_at": "09:00"},
     {"ref": "slot-12", "label": "A partir das 12h", "starts_at": "12:00"},
     {"ref": "slot-15", "label": "A partir das 15h", "starts_at": "15:00"},
 ]
@@ -109,7 +109,10 @@ def canonical_slots() -> list[dict]:
             if slots:
                 return [s for s in slots if isinstance(s, dict) and s.get("ref")]
     except Exception:
-        logger.debug("fulfillment_window: could not load canonical slots", exc_info=True)
+        # Cair nos slots padrão com a config da casa quebrada é prometer ao
+        # cliente um turno que a loja não configurou — isso grita, como o
+        # vizinho da prontidão abaixo.
+        logger.warning("fulfillment_window: could not load canonical slots; using defaults", exc_info=True)
     return list(DEFAULT_CANONICAL_SLOTS)
 
 
@@ -312,7 +315,7 @@ def annotate(
         enabled = True
         reason = ""
         # O corte é o mesmo nas duas grades. Numa meia hora ele apaga
-        # "09:00 às 09:30"; num slot canônico apaga "A partir das 09h". A
+        # "09:00 às 09:30"; num slot canônico apaga "A partir das 9h". A
         # mediana precisa (11:37) vira o slot que a cobre porque a comparação é
         # com o INÍCIO da janela — 09:00 < 11:37 apaga, 12:00 >= 11:37 fica.
         if ready_at is not None and start is not None and start < ready_at:

@@ -117,6 +117,21 @@ describe("PosSaleResult — o palco pós-venda", () => {
     counter.unmount();
   });
 
+  it("a ficha do pedido fica na fileira de saídas de papel, só na encomenda", async () => {
+    const order = await mountSuspended(PosSaleResult, { props: props({ result: result({ salesMode: "order" }), printingTicket: false }) });
+    const button = order.findAll("button").find((b) => b.text().includes("Imprimir ficha do pedido"));
+    expect(button).toBeDefined();
+    await button!.trigger("click");
+    expect(order.emitted("printTicket")).toHaveLength(1);
+    await order.setProps({ printingTicket: true });
+    expect(order.text()).toContain("Imprimindo…");
+    order.unmount();
+
+    const counter = await mountSuspended(PosSaleResult, { props: props({ result: result({ salesMode: "counter" }) }) });
+    expect(counter.text()).not.toContain("ficha do pedido");
+    counter.unmount();
+  });
+
   it("o CTA emite newSale", async () => {
     const wrapper = await mountSuspended(PosSaleResult, { props: props() });
     const cta = wrapper.findAll("button").find((b) => b.text().includes("Nova venda"));

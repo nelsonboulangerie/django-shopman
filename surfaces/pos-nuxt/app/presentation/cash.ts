@@ -18,7 +18,7 @@ import type {
  * identificador do domínio, viaja na API e está no banco.
  *
  * "Sangria" é vocabulário de PDV brasileiro: quem trabalha em varejo sabe, quem
- * lê a filipeta dias depois não. Entrada/Saída não precisa ser aprendido, e a
+ * lê a ficha dias depois não. Entrada/Saída não precisa ser aprendido, e a
  * conferência do caixa é feita justamente por quem não estava no balcão.
  */
 const MOVEMENT_LABELS: Record<string, string> = {
