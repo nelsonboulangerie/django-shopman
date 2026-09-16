@@ -54,7 +54,7 @@ export function buildStorefrontManifest (shop: PwaShopSource = {}, userAgent = '
       { src: '/pwa/pwa-192x192.png?v=3', sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: '/pwa/pwa-512x512.png?v=3', sizes: '512x512', type: 'image/png', purpose: 'any' },
       ...(!macDesktop ? [{ src: '/pwa/maskable-512x512.png?v=3', sizes: '512x512', type: 'image/png', purpose: 'maskable' }] : []),
-      { src: '/pwa/monochrome-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'monochrome' }
+      { src: '/pwa/monochrome-512x512.png?v=3', sizes: '512x512', type: 'image/png', purpose: 'monochrome' }
     ],
     shortcuts: [
       { name: 'Cardápio', short_name: 'Cardápio', url: '/menu', icons: [{ src: '/pwa/pwa-192x192.png?v=3', sizes: '192x192' }] },
