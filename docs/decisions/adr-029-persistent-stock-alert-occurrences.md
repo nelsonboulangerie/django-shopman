@@ -42,7 +42,9 @@ não oferecia pausa da autorização específica.
   versionada e sem PII. A tela preserva página, filtros, âncora, SKU e a referência dessa intenção;
   ao voltar, revalida sessão, SKU e aniversário conhecido e conclui automaticamente sem pedir o
   mesmo consentimento duas vezes. Uma query isolada ou intenção de outra sessão não autoriza a
-  criação. Um `POST` anônimo no endpoint de assinatura continua respondendo `401`, ignora telefone,
+  criação. Depois de concluída, a intenção fica vinculada à assinatura original: replay de resposta
+  perdida apenas lê esse resultado e nunca desfaz pausa nem recria cancelamento. Um `POST` anônimo
+  no endpoint de assinatura continua respondendo `401`, ignora telefone,
   CPF e e-mail digitados e não cria opt-in. A migração
   marca assinaturas web ativas
   sem `customer_ref` como `legacy_unverified`, preservando histórico e recibos, impedindo novas

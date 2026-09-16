@@ -700,6 +700,67 @@ def test_completed_intent_replays_for_same_customer_after_lost_response(client, 
     assert StockAlertSubscription.objects.filter(sku=product.sku).count() == 1
 
 
+def test_completed_intent_replay_does_not_resume_a_later_pause(client, isolated_stock_intent_rate_limit):
+    product = _publish(sku="SKU-INTENT-PAUSED-REPLAY")
+    prepared = client.post(
+        f"/api/v1/availability/{product.sku}/notify/intent/",
+        {"adult_declared": True},
+        REMOTE_ADDR="203.0.113.33",
+    ).json()
+    customer = _authenticate(client, ref="CUS-INTENT-PAUSED-REPLAY")
+    payload = {"intent_ref": prepared["intent_ref"]}
+    assert client.post(
+        f"/api/v1/availability/{product.sku}/notify/",
+        payload,
+        REMOTE_ADDR="203.0.113.34",
+    ).status_code == 200
+    sub = StockAlertSubscription.objects.get(sku=product.sku)
+    assert stock_alerts.set_paused(sub.ref, paused=True, sku=sub.sku, customer=customer)
+
+    repeated = client.post(
+        f"/api/v1/availability/{product.sku}/notify/",
+        payload,
+        REMOTE_ADDR="203.0.113.34",
+    )
+
+    sub.refresh_from_db()
+    assert repeated.status_code == 200
+    assert repeated.json()["active"] is False
+    assert sub.paused_at is not None
+    assert StockAlertSubscription.objects.filter(sku=product.sku).count() == 1
+
+
+def test_completed_intent_replay_does_not_recreate_a_cancelled_alert(client, isolated_stock_intent_rate_limit):
+    product = _publish(sku="SKU-INTENT-CANCELLED-REPLAY")
+    prepared = client.post(
+        f"/api/v1/availability/{product.sku}/notify/intent/",
+        {"adult_declared": True},
+        REMOTE_ADDR="203.0.113.35",
+    ).json()
+    customer = _authenticate(client, ref="CUS-INTENT-CANCELLED-REPLAY")
+    payload = {"intent_ref": prepared["intent_ref"]}
+    assert client.post(
+        f"/api/v1/availability/{product.sku}/notify/",
+        payload,
+        REMOTE_ADDR="203.0.113.36",
+    ).status_code == 200
+    sub = StockAlertSubscription.objects.get(sku=product.sku)
+    assert stock_alerts.revoke(sub.ref, sku=sub.sku, customer=customer)
+
+    repeated = client.post(
+        f"/api/v1/availability/{product.sku}/notify/",
+        payload,
+        REMOTE_ADDR="203.0.113.36",
+    )
+
+    sub.refresh_from_db()
+    assert repeated.status_code == 200
+    assert repeated.json()["active"] is False
+    assert "management_url" not in repeated.json()
+    assert sub.revoked_at is not None
+    assert StockAlertSubscription.objects.filter(sku=product.sku).count() == 1
+
+
 def test_known_minor_cannot_complete_prelogin_intent(client, isolated_stock_intent_rate_limit):
     product = _publish(sku="SKU-INTENT-MINOR")
     prepared = client.post(

@@ -141,6 +141,20 @@ describe('StockNotifyButton', () => {
     expect(wrapper.get('a').attributes('href')).toBe('/gerenciar-aviso#capability')
   })
 
+  it('does not present a paused or cancelled replay as a new active opt-in', async () => {
+    await setAuthenticated(true)
+    Object.assign(mocks.route, { query: { aviso: 'PAO', aviso_intent: 'completed-intent' } })
+    mocks.fetch.mockResolvedValue({ active: false })
+    const wrapper = await mountStockNotify({ sku: 'PAO', name: 'Pão' })
+    await flush()
+
+    expect(mocks.fetch).toHaveBeenCalledOnce()
+    expect(mocks.fetch.mock.calls[0]?.[1]?.body).toEqual({ intent_ref: 'completed-intent' })
+    expect(mocks.replace).toHaveBeenCalledWith({ path: '/menu', query: {}, hash: '' })
+    expect(wrapper.text()).toContain('Me avise sempre')
+    expect(wrapper.text()).not.toContain('Anotado')
+  })
+
   it('never falls back from a forged intent to an ordinary subscription', async () => {
     await setAuthenticated(true)
     Object.assign(mocks.route, { query: { aviso: 'PAO', aviso_intent: 'forged' } })

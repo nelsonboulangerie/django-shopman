@@ -52,13 +52,18 @@ async function subscribe (intentRef = '') {
   submitting.value = true
   resumeFailed.value = false
   try {
-    const result = await $fetch<{ management_url?: string }>(apiPath(`/api/v1/availability/${encodeURIComponent(props.sku)}/notify/`), {
+    const result = await $fetch<{ active?: boolean, management_url?: string }>(apiPath(`/api/v1/availability/${encodeURIComponent(props.sku)}/notify/`), {
       method: 'POST',
       headers: await csrfHeaders(),
       credentials: 'include',
       body: intentRef ? { intent_ref: intentRef } : { adult_declared: true }
     })
     managementUrl.value = String(result?.management_url || '')
+    if (result?.active === false) {
+      isSubscribed.value = false
+      if (import.meta.client) useSonner('Este aviso não está ativo. Você pode ativá-lo novamente quando quiser.')
+      return true
+    }
     isSubscribed.value = true
     if (import.meta.client) useSonner.success(notifyConfirmationMessage())
     return true

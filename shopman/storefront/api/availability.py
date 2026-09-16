@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import secrets
 import time
+import uuid
 from datetime import timedelta
 from decimal import Decimal
 
@@ -82,7 +83,13 @@ def _stock_alert_intent(request, *, sku: str, intent_ref: str, customer_ref: str
     return None
 
 
-def _mark_stock_alert_intent_complete(request, *, intent_ref: str, customer_ref: str) -> None:
+def _mark_stock_alert_intent_complete(
+    request,
+    *,
+    intent_ref: str,
+    customer_ref: str,
+    subscription_ref: str,
+) -> None:
     """Keep a completed proof replayable only by the same customer until TTL."""
     session = getattr(request, "session", None)
     if session is None:
@@ -91,6 +98,7 @@ def _mark_stock_alert_intent_complete(request, *, intent_ref: str, customer_ref:
     for marker in intents:
         if secrets.compare_digest(str(marker.get("ref") or ""), intent_ref):
             marker["completed_customer_ref"] = customer_ref
+            marker["completed_subscription_ref"] = subscription_ref
             session[_STOCK_ALERT_INTENTS_SESSION_KEY] = intents
             return
 
@@ -371,6 +379,40 @@ class StockAlertSubscribeView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # A repetição de uma intenção já concluída é somente uma leitura do
+        # resultado original. Ela nunca executa o opt-in novamente: assim uma
+        # resposta HTTP perdida não pode desfazer uma pausa ou recriar algo que
+        # a pessoa cancelou logo depois em outra aba/dispositivo.
+        completed_subscription_ref = str((intent or {}).get("completed_subscription_ref") or "")
+        if intent is not None and str(intent.get("completed_customer_ref") or ""):
+            try:
+                completed_sub = StockAlertSubscription.objects.filter(
+                    ref=uuid.UUID(completed_subscription_ref),
+                    sku=sku,
+                    customer_ref=customer.ref,
+                    purpose="stock_availability",
+                    proof_status="verified",
+                ).first()
+            except (TypeError, ValueError):
+                completed_sub = None
+            if completed_sub is None:
+                return _no_store_response(
+                    {
+                        "detail": "Este pedido de aviso não corresponde mais ao resultado original.",
+                        "field": "intent_ref",
+                    },
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+            replay = {
+                "ok": True,
+                "subscription_ref": str(completed_sub.ref),
+                "active": completed_sub.is_active,
+                "expires_at": completed_sub.expires_at.isoformat() if completed_sub.expires_at else None,
+            }
+            if completed_sub.revoked_at is None:
+                replay["management_url"] = stock_alerts.management_url(completed_sub)
+            return _no_store_response(replay, status_code=status.HTTP_200_OK)
+
         channel_ref = request.GET.get("channel") or STOREFRONT_CHANNEL_REF
         # A sessão autenticada usa sempre o contato da identidade canônica;
         # um telefone no corpo não pode redirecionar o aviso.
@@ -427,6 +469,7 @@ class StockAlertSubscribeView(APIView):
                 request,
                 intent_ref=intent_ref,
                 customer_ref=str(customer.ref),
+                subscription_ref=str(sub.ref),
             )
 
         return _no_store_response(
