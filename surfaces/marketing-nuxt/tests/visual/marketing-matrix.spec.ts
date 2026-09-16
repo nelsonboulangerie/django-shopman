@@ -194,7 +194,7 @@ test.describe("painel", () => {
           page.getByRole("button", { name: "Entregar agora" }),
         ).toBeVisible();
         await expect(
-          page.getByText("entregar agora é uma decisão separada", {
+          page.getByText("São duas decisões separadas", {
             exact: false,
           }),
         ).toBeVisible();
