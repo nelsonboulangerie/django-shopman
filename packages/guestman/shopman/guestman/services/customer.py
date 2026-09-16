@@ -207,7 +207,7 @@ def create(
     if price_tier_ref:
         try:
             price_tier = PriceTier.objects.get(ref=price_tier_ref)
-        except PriceTier.DoesNotExist:
+        except PriceTier.DoesNotExist:  # silêncio-deliberado: tier opcional inválido mantém cadastro sem tier
             pass
 
     with transaction.atomic():
