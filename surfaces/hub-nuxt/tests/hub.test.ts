@@ -6,6 +6,7 @@ import {
   hubGreeting,
   hubIsEmpty,
   tileIcon,
+  tileIconUrl,
   tileTarget,
 } from "../app/presentation/hub";
 import type { HubTileProjection } from "../app/types/hub";
@@ -14,7 +15,7 @@ const tile = (over: Partial<HubTileProjection> = {}): HubTileProjection => ({
   ref: "pos",
   label: "PDV",
   description: "Vender no balcão",
-  icon: "banknote",
+  icon: "shopping-basket",
   url: "http://127.0.0.1:3002/",
   kind: "launch",
   ...over,
@@ -22,8 +23,27 @@ const tile = (over: Partial<HubTileProjection> = {}): HubTileProjection => ({
 
 describe("presentation/hub", () => {
   it("tileIcon prefixa lucide: quando falta e preserva quando já tem", () => {
-    expect(tileIcon("banknote")).toBe("lucide:banknote");
+    expect(tileIcon("shopping-basket")).toBe("lucide:shopping-basket");
     expect(tileIcon("lucide:store")).toBe("lucide:store");
+  });
+
+  it("tileIconUrl aponta para o PNG da família PWA na origem do próprio tile", () => {
+    expect(tileIconUrl(tile({ url: "http://127.0.0.1:3002/" }))).toBe(
+      "http://127.0.0.1:3002/pwa/pwa-192x192.png?v=2",
+    );
+    // Em produção o tile é o subdomínio; caminho/query do tile não vazam no ícone.
+    expect(tileIconUrl(tile({ url: "https://pdv.boulangerie.com.br/session?x=1" }))).toBe(
+      "https://pdv.boulangerie.com.br/pwa/pwa-192x192.png?v=2",
+    );
+    // A Loja (external) publica a mesma família — mesma regra.
+    expect(tileIconUrl(tile({ kind: "external", url: "https://boulangerie.com.br/" }))).toBe(
+      "https://boulangerie.com.br/pwa/pwa-192x192.png?v=2",
+    );
+  });
+
+  it("tileIconUrl devolve null para URL que não resolve — a tela cai no Lucide", () => {
+    expect(tileIconUrl(tile({ url: "" }))).toBeNull();
+    expect(tileIconUrl(tile({ url: "/admin/" }))).toBeNull();
   });
 
   it("tileTarget: launch na mesma aba, external (loja do cliente) em nova aba", () => {
