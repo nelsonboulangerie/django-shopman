@@ -9,10 +9,6 @@ const requestUrl = useRequestURL()
 const { setFromServer } = useCartState()
 const { performAction, pending: reorderPending } = useReorder()
 const { openSearch } = useSearchOverlay()
-// Cloudflare adds CF-Ray between the browser and the origin. Its email
-// obfuscator consumes the opt-out comments before hydration, so direct/local
-// responses and the browser VDOM must render without those server-only nodes.
-const protectFaqEmailFromCloudflare = import.meta.server && Boolean(useRequestHeader('cf-ray'))
 
 const { data, pending, error, refresh } = await useFetch<HomeResponse>(apiPath('/api/v1/storefront/home/'), {
   credentials: 'include'
@@ -426,11 +422,7 @@ useHead({
             class="mt-6 border-y"
           >
             <template #content="{ item }">
-              <UiAccordionContent>
-                <CloudflareEmailBoundary :protect="protectFaqEmailFromCloudflare">
-                  {{ item.content }}
-                </CloudflareEmailBoundary>
-              </UiAccordionContent>
+              <UiAccordionContent>{{ item.content }}</UiAccordionContent>
             </template>
           </UiAccordion>
         </div>
