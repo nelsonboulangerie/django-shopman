@@ -286,6 +286,17 @@ export interface AudienceCount {
    *  `-1` = a regra `alerts` nem rodou, que é diferente de "rodou e achou zero". */
   alerts_pending: number;
   alerts_notified: number;
+  /** Quem as regras acharam mas o envio NÃO alcança, por motivo (chaves do resolvedor:
+   *  `age_not_declared`, `missing_consent`, `global_optout`, `known_minor`,
+   *  `rule_mismatch`, `invalid_contact`, `consent_unavailable`). É o que faz um zero
+   *  dizer QUAL zero é: "1 favoritou, mas está sem data de nascimento" em vez de
+   *  "ninguém se encaixa". */
+  excluded_by_reason: Record<string, number>;
+  /** `false` = alguma fonte da audiência não respondeu; o número está incompleto e o
+   *  disparo fica bloqueado. `blocked_reason` é a frase do servidor para esse caso. */
+  can_approve: boolean;
+  blocked_reason: string;
+  degraded_sources: string[];
 }
 
 /** Templates aprovados da plataforma + o escolhido agora. */

@@ -34,16 +34,30 @@ export function formatCount(value: number): string {
  * quem favoritou e também recompra é uma pessoa só, e somar mentiria pra cima.
  */
 export function audienceSummary(
-  audience: Record<string, number> | undefined,
+  audience: Record<string, unknown> | undefined,
 ): string {
-  const counts = audience ?? {};
+  const raw = audience ?? {};
+  const counts: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw))
+    if (typeof value === "number") counts[key] = value;
   const parts = AUDIENCE_LABELS.filter(([key]) => (counts[key] ?? 0) > 0).map(
     ([key, label]) => `${formatCount(counts[key] ?? 0)} ${label}`,
   );
   const total = counts.total ?? 0;
 
-  if (total === 0)
+  if (total === 0) {
+    // Achou gente e barrou no envio: o card diz quem e por quê, senão "ninguém para
+    // avisar" ao lado de "1 favoritos" parece contradição.
+    const excluded = raw.excluded_by_reason;
+    const notes = exclusionNotes(
+      excluded && typeof excluded === "object"
+        ? (excluded as Record<string, number>)
+        : undefined,
+    );
+    if (parts.length && notes.length)
+      return `${parts.join(", ")}, mas ninguém pôde receber: ${notes.join("; ")}`;
     return alertsNote(counts) || "Ninguém para avisar por enquanto";
+  }
   if (parts.length === 0)
     return `${formatCount(total)} ${total === 1 ? "cliente" : "clientes"}`;
   return `${parts.join(", ")} = ${formatCount(total)} ${total === 1 ? "cliente" : "clientes"}`;
@@ -75,6 +89,108 @@ export function alertsNote(
   if (already > 1)
     return `As ${already} pessoas que pediram aviso deste produto já foram avisadas`;
   return "Ninguém pediu para ser avisado deste produto ainda";
+}
+
+/**
+ * Por que alguém que as regras ACHARAM não recebe — um motivo por linha, na voz do gestor.
+ *
+ * ⚠️ O caso da Baguete Gergelim, de novo, com outra causa: o Pablo favoritou o produto
+ * pelo celular, abriu o Marketing e leu "0 pessoas recebem — ninguém se encaixa". A regra
+ * tinha achado 1 pessoa; o envio a excluiu por falta de data de nascimento (sem prova de
+ * 18+ não há marketing direto) e por falta de consentimento de WhatsApp. O backend mandava
+ * `excluded_by_reason` desde sempre; a tela é que não lia. Zero calado com 1 achado é
+ * indistinguível de tela quebrada.
+ *
+ * Chaves são as do resolvedor (`services/audience.py`); chave desconhecida vira uma linha
+ * genérica em vez de sumir, porque motivo novo no servidor não pode virar silêncio aqui.
+ */
+const EXCLUSION_LABELS: ReadonlyArray<readonly [string, string]> = [
+  ["age_not_declared", "sem data de nascimento no cadastro (a prova de 18+ que o envio exige)"],
+  ["known_minor", "com menos de 18 anos"],
+  ["missing_consent", "sem consentimento para receber no WhatsApp"],
+  ["global_optout", "pediram para não receber"],
+  ["consent_unavailable", "com consentimento que não pôde ser conferido agora"],
+  ["rule_mismatch", "fora do cruzamento (não se encaixam em todas as regras)"],
+  ["invalid_contact", "com telefone que não serve para WhatsApp"],
+];
+
+/** Motivos que o CLIENTE resolve sozinho na loja, e onde. */
+const EXCLUSIONS_THE_CUSTOMER_FIXES = new Set(["age_not_declared", "missing_consent"]);
+
+export function exclusionNotes(
+  excluded: Record<string, number> | undefined,
+): string[] {
+  const counts = excluded ?? {};
+  const known = EXCLUSION_LABELS.filter(([key]) => (counts[key] ?? 0) > 0).map(
+    ([key, label]) => sentence(counts[key] ?? 0, label),
+  );
+  const unknown = Object.keys(counts)
+    .filter((key) => (counts[key] ?? 0) > 0 && !EXCLUSION_LABELS.some(([k]) => k === key))
+    .sort()
+    .map((key) => sentence(counts[key] ?? 0, `fora por "${key}"`));
+  return [...known, ...unknown];
+}
+
+function sentence(count: number, label: string): string {
+  const people = count === 1 ? "pessoa" : "pessoas";
+  // "1 pessoa pediram" não existe: o rótulo no plural se ajusta ao singular.
+  const agreed =
+    count === 1 ? label.replace(/^pediram /, "pediu ").replace(/se encaixam/, "se encaixa") : label;
+  return `${formatCount(count)} ${people} ${agreed}`;
+}
+
+/** Onde o cliente conserta o que o deixou de fora — só quando há o que consertar. */
+export function exclusionHint(
+  excluded: Record<string, number> | undefined,
+): string {
+  const counts = excluded ?? {};
+  const fixable = [...EXCLUSIONS_THE_CUSTOMER_FIXES].some((key) => (counts[key] ?? 0) > 0);
+  if (!fixable) return "";
+  return "O cliente resolve isso na loja: aniversário em Conta › Perfil e WhatsApp em Conta › Preferências.";
+}
+
+/**
+ * A frase do zero, dita pelo que ACONTECEU: nada achado é uma coisa; achado e barrado no
+ * envio é outra, e o gestor precisa saber qual das duas está lendo.
+ */
+export function zeroExplanation(count: {
+  total: number;
+  empty_selection: boolean;
+  parts: { label: string; count: number }[];
+}): string {
+  if (count.empty_selection || count.total > 0) return "";
+  const found = count.parts.filter((part) => part.count > 0);
+  if (found.length === 0)
+    return "Ninguém se encaixa neste público hoje. Nada será enviado.";
+  // Uma regra só: o número é exato. Mais de uma: a mesma pessoa pode estar em várias, e
+  // somar mentiria pra cima — a lista de parcelas logo abaixo conta cada uma.
+  if (found.length === 1) {
+    const n = found[0]!.count;
+    return n === 1
+      ? "As regras acharam 1 pessoa, mas ela não pode receber. Nada será enviado."
+      : `As regras acharam ${formatCount(n)} pessoas, mas nenhuma pode receber. Nada será enviado.`;
+  }
+  return "As regras acharam gente, mas ninguém pode receber. Nada será enviado.";
+}
+
+/** Chaves que só AJUSTAM a entrega; sozinhas não escolhem ninguém. */
+const DELIVERY_ONLY_RULE_KEYS = new Set([
+  "match",
+  "vip_first_minutes",
+  "preferred_hour_window_hours",
+]);
+
+/** A campanha tem alguma regra que escolhe gente? (`{ vip_first_minutes: 15 }` não tem.) */
+export function hasSavedAudience(rules: AudienceRules | undefined): boolean {
+  return Object.entries(rules ?? {}).some(
+    ([key, value]) =>
+      !DELIVERY_ONLY_RULE_KEYS.has(key) &&
+      value !== undefined &&
+      value !== null &&
+      value !== false &&
+      value !== "" &&
+      !(Array.isArray(value) && value.length === 0),
+  );
 }
 
 /** Quantos VIPs recebem antes, e com quanto de vantagem. */

@@ -4,9 +4,12 @@ import {
   audienceRulesSummary,
   audienceSummary,
   displayHashtag,
+  exclusionHint,
+  exclusionNotes,
   expiryLabel,
   expiryTone,
   formatCount,
+  hasSavedAudience,
   isStillReviewable,
   parseHashtags,
   platformsSummary,
@@ -18,6 +21,7 @@ import {
   resultTone,
   shortDateTime,
   vipSummary,
+  zeroExplanation,
 } from "~/presentation/campaign";
 import type { Announcement, PlatformResult } from "~/types/campaign";
 
@@ -102,8 +106,139 @@ describe("audienceSummary", () => {
     );
   });
 
+  it("explains a zero that came from people the rules found but the delivery barred", () => {
+    // A Baguete Gergelim de 16/09: o gestor favoritou pelo celular, a regra achou 1,
+    // e o envio barrou por falta de data de nascimento. O card dizia "ninguém para avisar".
+    expect(
+      audienceSummary({
+        favorites_count: 1,
+        total: 0,
+        excluded_by_reason: { age_not_declared: 1 },
+      }),
+    ).toBe(
+      "1 favoritos, mas ninguém pôde receber: 1 pessoa sem data de nascimento no cadastro (a prova de 18+ que o envio exige)",
+    );
+  });
+
+  it("ignores non-numeric summary keys when reading the parts", () => {
+    expect(
+      audienceSummary({
+        favorites_count: 2,
+        total: 2,
+        degraded_sources: [],
+        excluded_by_reason: {},
+        policy_version: "marketing-audience-v1",
+      }),
+    ).toBe("2 favoritos = 2 clientes");
+  });
+
   it("falls back to the bare total when no source is broken out", () => {
     expect(audienceSummary({ total: 7 })).toBe("7 clientes");
+  });
+});
+
+describe("exclusionNotes", () => {
+  // O caso da Baguete Gergelim: 1 favoritou, 0 recebem, e a tela não dizia por quê.
+  it("names each reason in the manager's words, singular and plural", () => {
+    expect(
+      exclusionNotes({ age_not_declared: 1, missing_consent: 2 }),
+    ).toEqual([
+      "1 pessoa sem data de nascimento no cadastro (a prova de 18+ que o envio exige)",
+      "2 pessoas sem consentimento para receber no WhatsApp",
+    ]);
+    expect(exclusionNotes({ global_optout: 1 })).toEqual([
+      "1 pessoa pediu para não receber",
+    ]);
+    expect(exclusionNotes({ global_optout: 3 })).toEqual([
+      "3 pessoas pediram para não receber",
+    ]);
+    expect(exclusionNotes({ rule_mismatch: 1 })).toEqual([
+      "1 pessoa fora do cruzamento (não se encaixa em todas as regras)",
+    ]);
+  });
+
+  it("never turns a new server reason into silence", () => {
+    expect(exclusionNotes({ some_new_gate: 2 })).toEqual([
+      '2 pessoas fora por "some_new_gate"',
+    ]);
+  });
+
+  it("stays quiet on zeros and absence", () => {
+    expect(exclusionNotes(undefined)).toEqual([]);
+    expect(exclusionNotes({})).toEqual([]);
+    expect(exclusionNotes({ missing_consent: 0 })).toEqual([]);
+  });
+});
+
+describe("exclusionHint", () => {
+  it("points to the store only when the customer can fix it there", () => {
+    expect(exclusionHint({ age_not_declared: 1 })).toContain("Conta › Perfil");
+    expect(exclusionHint({ missing_consent: 1 })).toContain("Conta › Preferências");
+    expect(exclusionHint({ global_optout: 1 })).toBe("");
+    expect(exclusionHint(undefined)).toBe("");
+  });
+});
+
+describe("zeroExplanation", () => {
+  it("tells 'found nobody' apart from 'found and barred'", () => {
+    expect(
+      zeroExplanation({
+        total: 0,
+        empty_selection: false,
+        parts: [{ label: "Favoritaram o produto", count: 0 }],
+      }),
+    ).toBe("Ninguém se encaixa neste público hoje. Nada será enviado.");
+    expect(
+      zeroExplanation({
+        total: 0,
+        empty_selection: false,
+        parts: [{ label: "Favoritaram o produto", count: 1 }],
+      }),
+    ).toBe("As regras acharam 1 pessoa, mas ela não pode receber. Nada será enviado.");
+    expect(
+      zeroExplanation({
+        total: 0,
+        empty_selection: false,
+        parts: [{ label: "Favoritaram o produto", count: 4 }],
+      }),
+    ).toBe("As regras acharam 4 pessoas, mas nenhuma pode receber. Nada será enviado.");
+  });
+
+  it("does not add up parts, because one person can sit in several", () => {
+    expect(
+      zeroExplanation({
+        total: 0,
+        empty_selection: false,
+        parts: [
+          { label: "Etiquetas", count: 2 },
+          { label: "Faixa de preço", count: 2 },
+        ],
+      }),
+    ).toBe("As regras acharam gente, mas ninguém pode receber. Nada será enviado.");
+  });
+
+  it("says nothing when nothing was chosen or somebody receives", () => {
+    expect(zeroExplanation({ total: 0, empty_selection: true, parts: [] })).toBe("");
+    expect(
+      zeroExplanation({
+        total: 2,
+        empty_selection: false,
+        parts: [{ label: "Etiquetas", count: 2 }],
+      }),
+    ).toBe("");
+  });
+});
+
+describe("hasSavedAudience", () => {
+  it("needs a rule that picks people, not just a delivery tweak", () => {
+    expect(hasSavedAudience({ favorites: true })).toBe(true);
+    expect(hasSavedAudience({ tags: ["corredores"] })).toBe(true);
+    expect(hasSavedAudience({ vip_first_minutes: 15 })).toBe(false);
+    expect(hasSavedAudience({ match: "all", vip_first_minutes: 15 })).toBe(false);
+    expect(hasSavedAudience({ tags: [] })).toBe(false);
+    expect(hasSavedAudience({ favorites: false })).toBe(false);
+    expect(hasSavedAudience({})).toBe(false);
+    expect(hasSavedAudience(undefined)).toBe(false);
   });
 });
 

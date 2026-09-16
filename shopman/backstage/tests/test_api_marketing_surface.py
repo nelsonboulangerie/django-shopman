@@ -1497,6 +1497,47 @@ class TestManualFire:
         assert Announcement.objects.filter(rule=rule).count() == 0
         assert MarketingCommandReceipt.objects.count() == 0
 
+    def test_fire_resolves_the_event_audience_with_the_chosen_product(
+        self, client, gestor, rule, template
+    ):
+        """A campanha "quem favoritou" contava 1 e o disparo respondia "ninguém elegível".
+
+        O disparo resolvia o público SEM o SKU; ``favorites`` nem rodava. Contagem,
+        aprovação e disparo têm de olhar para a mesma lista.
+        """
+        from shopman.guestman import ConsentService
+        from shopman.guestman.models import Customer
+        from shopman.offerman.models import Product
+
+        from shopman.storefront.models import CustomerFavorite
+
+        Product.objects.create(sku="BE", name="Baguete Gergelim", base_price_q=1200)
+        customer = Customer.objects.create(
+            ref="CLI-FAV-FIRE", first_name="Pablo", phone="+5543999998811",
+            birthday=date(1990, 1, 1),
+        )
+        ConsentService.grant_consent(customer.ref, "whatsapp", source="test")
+        CustomerFavorite.objects.create(customer_ref=customer.ref, sku="BE")
+        rule.platforms = ["whatsapp"]
+        rule.requires_approval = False
+        rule.save(update_fields=["platforms", "requires_approval"])
+        client.force_login(gestor)
+        payload = {"base_version": rule.version, "sku": "BE"}
+
+        counted = client.post(
+            COUNT_URL, {"audience_rules": rule.audience_rules, "sku": "BE"},
+            content_type="application/json",
+        ).json()
+        assert counted["total"] == 1
+
+        response = _confirmed_post(client, _fire_url(rule), payload, key="fire-fav-sku-0001")
+
+        assert response.status_code == 200, response.json()
+        assert response.json()["receipt"]["outcome"]["audience_count"] == 1
+        announcement = Announcement.objects.get(rule=rule)
+        assert announcement.audience["favorites_count"] == 1
+        assert announcement.audience["total"] == 1
+
     def test_confirmed_fire_creates_review_snapshot_receipt_and_audit_without_delivery(
         self, client, gestor, rule, template
     ):
@@ -2363,6 +2404,82 @@ class TestAudienceCount:
         ).json()
         assert chosen["empty_selection"] is False
         assert chosen["total"] == 0
+
+    def test_the_count_says_who_the_rule_found_and_why_they_cannot_receive(self, client, gestor):
+        """O caso da Baguete Gergelim (16/09): 1 favoritou, "0 pessoas recebem".
+
+        O gestor favoritou o produto pelo celular, abriu o Marketing e leu "ninguém se
+        encaixa". A regra tinha achado 1 pessoa; o envio a barrou por falta de data de
+        nascimento (sem prova de 18+ não há marketing direto) e a outra, por falta de
+        consentimento. A resposta precisa carregar os dois lados: quem a regra achou
+        (``parts``) e por que não recebe (``excluded_by_reason``) — é o contrato que a
+        tela lê para o zero dizer qual zero é.
+        """
+        from shopman.guestman import ConsentService
+        from shopman.guestman.models import Customer
+
+        from shopman.storefront.models import CustomerFavorite
+
+        Customer.objects.create(ref="CLI-SEM-DATA", first_name="Pablo", phone="+5543999993101")
+        Customer.objects.create(
+            ref="CLI-SEM-CONSENT", first_name="Ana", phone="+5543999993102",
+            birthday=date(1990, 1, 1),
+        )
+        Customer.objects.create(
+            ref="CLI-OK", first_name="Bia", phone="+5543999993103", birthday=date(1990, 1, 1),
+        )
+        ConsentService.grant_consent("CLI-OK", "whatsapp", source="test")
+        for ref in ("CLI-SEM-DATA", "CLI-SEM-CONSENT", "CLI-OK"):
+            CustomerFavorite.objects.create(customer_ref=ref, sku="BE")
+        client.force_login(gestor)
+
+        data = client.post(
+            COUNT_URL, {"audience_rules": {"favorites": True}, "sku": "BE"},
+            content_type="application/json",
+        ).json()
+
+        assert data["total"] == 1
+        assert data["parts"] == [{"label": "Favoritaram o produto", "count": 3}]
+        assert data["excluded_by_reason"] == {"age_not_declared": 1, "missing_consent": 1}
+        assert data["can_approve"] is True
+        assert data["blocked_reason"] == ""
+
+    def test_favorites_without_a_product_do_not_run_and_the_zero_says_nothing_was_found(self, client, gestor):
+        """Sem SKU a regra ``favorites`` nem roda: não é "achou e barrou", é "não perguntou"."""
+        from shopman.guestman.models import Customer
+
+        from shopman.storefront.models import CustomerFavorite
+
+        Customer.objects.create(ref="CLI-FAV", first_name="Pablo", phone="+5543999993104")
+        CustomerFavorite.objects.create(customer_ref="CLI-FAV", sku="BE")
+        client.force_login(gestor)
+
+        data = client.post(
+            COUNT_URL, {"audience_rules": {"favorites": True}},
+            content_type="application/json",
+        ).json()
+
+        assert data["total"] == 0
+        assert data["parts"] == []
+        assert data["empty_selection"] is True
+        assert data["excluded_by_reason"] == {}
+
+    def test_the_count_refuses_the_private_selector_like_fire_and_crud_do(self, client, gestor):
+        """``customer_refs`` é seletor privado: disparo e cadastro recusam, a contagem aceitava.
+
+        Aceitar virava oráculo por pessoa — quem só pode contar descobria, por ref, se o
+        cliente está ativo, tem telefone, é maior de idade e consentiu.
+        """
+        client.force_login(gestor)
+
+        response = client.post(
+            COUNT_URL, {"audience_rules": {"customer_refs": ["CLI-SEGREDO"]}},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "invalid_audience_rules"
+        assert response.json()["field_errors"]["audience_rules"] == ["customer_refs"]
 
     def test_a_delivered_alert_remains_an_active_marketing_opt_in(self, client, gestor):
         """Uma entrega aceita não consome a assinatura persistente do cliente."""

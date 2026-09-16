@@ -212,7 +212,12 @@ def fire_campaign_command(
             else:
                 public_only = _public_only_platforms(rule.platforms)
                 selected_rules = public_rules or dict(rule.audience_rules or {})
-                resolution = audience_service.resolve(selected_rules, now=now)
+                # ⚠️ Com o SKU, como a contagem e a aprovação. Sem ele, ``favorites``/
+                # ``alerts``/``bought_within_days`` nem rodam: a tela contava 1 e o
+                # disparo respondia "ninguém elegível" — para toda campanha de evento.
+                resolution = audience_service.resolve(
+                    selected_rules, sku=safe_sku, now=now
+                )
                 receipt = MarketingCommandReceipt.objects.create(**common)
                 if resolution.degraded_sources:
                     receipt.state = MarketingCommandReceipt.State.REJECTED
