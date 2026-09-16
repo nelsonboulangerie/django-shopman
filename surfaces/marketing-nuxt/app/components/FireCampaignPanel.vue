@@ -18,7 +18,11 @@ import {
   alertsNote,
   audienceRulesSummary,
   choiceLabels,
+  exclusionHint,
+  exclusionNotes,
   formatCount,
+  hasSavedAudience,
+  zeroExplanation,
 } from "~/presentation/campaign";
 import type {
   AudienceMatch,
@@ -50,7 +54,9 @@ type FireRequest = {
   productLabel: string;
 };
 
-const useSaved = ref(true);
+// Abre no público salvo, que é o caminho seguro — salvo quando a campanha não tem
+// público nenhum: aí o rádio "salvo" media `{}`, o botão morria e a tela não dizia por quê.
+const useSaved = ref(hasSavedAudience(props.rule?.audience_rules));
 const tiers = ref<string[]>([]);
 const chosenTags = ref<string[]>([]);
 const segments = ref<string[]>([]);
@@ -82,6 +88,29 @@ const {
   clear,
 } = useAudienceCount();
 
+/** Quem as regras acharam mas o envio não alcança, e onde o cliente conserta isso.
+ *  ⚠️ É o que faltava no "0 pessoas recebem" da Baguete Gergelim: a regra tinha achado
+ *  1 pessoa (o próprio gestor, pelo celular) e o envio a barrou por falta de data de
+ *  nascimento e de consentimento — e a tela dizia "ninguém se encaixa". */
+const exclusions = computed(() =>
+  count.value ? exclusionNotes(count.value.excluded_by_reason) : [],
+);
+const exclusionsHint = computed(() =>
+  count.value ? exclusionHint(count.value.excluded_by_reason) : "",
+);
+const zeroText = computed(() => (count.value ? zeroExplanation(count.value) : ""));
+/** As parcelas aparecem com mais de uma regra (ensinam somar × cruzar) OU quando alguém
+ *  ficou de fora: "Favoritaram o produto: 1" ao lado de "0 recebem" conta a história. */
+const showParts = computed(
+  () =>
+    !!count.value &&
+    (count.value.parts.length > 1 || exclusions.value.length > 0),
+);
+/** A campanha salva não escolhe ninguém: sem esta frase o botão morria mudo. */
+const savedAudienceEmpty = computed(
+  () => !publicOnly.value && !hasSavedAudience(props.rule?.audience_rules),
+);
+
 /** Por que a fila de "me avise" está vazia — a mesma frase do card do anúncio.
  *  Zero calado é indistinguível de tela quebrada: foi o que aconteceu com a Baguette. */
 const emptyAlerts = computed(() =>
@@ -108,7 +137,7 @@ const audienceLabels = computed(() => ({
 watch(
   () => [props.rule?.pk, props.rule?.version] as const,
   () => {
-    useSaved.value = true;
+    useSaved.value = hasSavedAudience(props.rule?.audience_rules);
     tiers.value = [];
     chosenTags.value = [];
     segments.value = [];
@@ -204,6 +233,9 @@ const cannotSubmit = computed(() => {
     countFailed.value ||
     !count.value ||
     count.value.empty_selection ||
+    // Fonte degradada = número incompleto. O servidor já dizia `can_approve: false`;
+    // a tela mostrava o total e deixava disparar.
+    !count.value.can_approve ||
     count.value.total === 0
   );
 });
@@ -405,6 +437,13 @@ watch(
                 : ""
             }}
           </span>
+          <span
+            v-if="savedAudienceEmpty"
+            class="mt-1 block text-xs text-warning"
+          >
+            Esta campanha não tem público salvo. Escolha agora, logo abaixo, ou
+            edite a campanha para dar um público a ela.
+          </span>
         </span>
       </label>
 
@@ -557,6 +596,10 @@ watch(
         </span>
       </label>
 
+      <p v-if="nothingChosen" class="text-xs text-muted-foreground">
+        Escolha pelo menos um grupo acima para ver quantas pessoas recebem.
+      </p>
+
       <!-- ⚠️ Só com duas ou mais regras escolhidas: cruzar uma regra com nada dá ela
            mesma, e oferecer o interruptor ali ensinaria uma diferença que não existe. -->
       <fieldset v-if="rulesChosen > 1" class="border-t border-border pt-3">
@@ -627,7 +670,7 @@ watch(
 
       <!-- As parcelas contam a história que o total sozinho esconde: com "todas", o total
            fica MENOR que qualquer parcela, e é aí que o recorte se explica sozinho. -->
-      <ul v-if="count && count.parts.length > 1" class="mt-2 space-y-0.5">
+      <ul v-if="count && showParts" class="mt-2 space-y-0.5">
         <li
           v-for="part in count.parts"
           :key="part.label"
@@ -654,11 +697,34 @@ watch(
         depois.
       </p>
 
+      <p v-if="zeroText" class="mt-2 text-xs text-warning">
+        {{ zeroText }}
+      </p>
+
+      <!-- Quem ficou de fora, e por quê. Sem isto, "1 favoritou" e "0 recebem" na mesma
+           tela parecem contradição — e a contradição parece bug. -->
+      <div v-if="exclusions.length" class="mt-2" data-audience-exclusions>
+        <p class="text-xs font-medium text-muted-foreground">Ficam de fora</p>
+        <ul class="mt-0.5 space-y-0.5">
+          <li
+            v-for="note in exclusions"
+            :key="note"
+            class="text-xs text-muted-foreground"
+          >
+            {{ note }}
+          </li>
+        </ul>
+        <p v-if="exclusionsHint" class="mt-1 text-xs text-muted-foreground">
+          {{ exclusionsHint }}
+        </p>
+      </div>
+
       <p
-        v-if="count && !count.empty_selection && count.total === 0"
-        class="mt-2 text-xs text-warning"
+        v-if="count && !count.can_approve"
+        class="mt-2 text-xs font-medium text-warning"
+        role="alert"
       >
-        Ninguém se encaixa neste público hoje. Nada será enviado.
+        {{ count.blocked_reason || "Não foi possível conferir todas as fontes do público. O disparo está bloqueado." }}
       </p>
       <UiButton
         v-if="countFailed"

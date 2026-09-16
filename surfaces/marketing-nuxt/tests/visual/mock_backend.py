@@ -690,6 +690,12 @@ class Handler(BaseHTTPRequestHandler):
                 "parts": [{"label": "Clientes da casa", "count": total}],
                 "vip_count": 0,
                 "empty_selection": False,
+                "alerts_pending": -1,
+                "alerts_notified": -1,
+                "excluded_by_reason": {},
+                "can_approve": True,
+                "blocked_reason": "",
+                "degraded_sources": [],
             })
             return
         if path == "/api/v1/backstage/marketing/preview/":
