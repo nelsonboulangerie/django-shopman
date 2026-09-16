@@ -323,6 +323,8 @@ const nowFallsInQuietHours = computed(
 const canPublishNow = computed(
   () => canPublish.value && !nowFallsInQuietHours.value,
 );
+/** Agendar só é "recomendado" com motivo: o agora cai no silêncio do WhatsApp. */
+const scheduleRecommended = computed(() => nowFallsInQuietHours.value);
 const scheduleResolution = computed(() =>
   resolveScheduleInput({
     localValue: publishAt.value,
@@ -741,26 +743,37 @@ function askToReject() {
         <p class="text-sm font-semibold">Como aprovar este anúncio</p>
         <p class="text-xs text-muted-foreground">
           Aprovar confirma esta versão e define quando ela fica pronta para
-          entrega. Agende o próximo horário seguro; entregar agora é uma decisão
-          separada.
+          entrega: agora, ou num horário que você escolhe. São duas decisões
+          separadas.
         </p>
       </div>
 
+      <!-- ⚠️ "Agendar (recomendado)" era fixo, a qualquer hora, e "recomendado" sem
+           porquê é ruído. Só é recomendado quando o agora cai no silêncio do WhatsApp
+           (20–08h), e aí a frase de baixo diz o motivo; fora dele, entregar agora é
+           o gesto primário. -->
       <UiButton
         type="button"
         data-testid="schedule-recommended"
         :aria-expanded="scheduling"
+        :variant="scheduleRecommended ? 'default' : 'outline'"
         @click="toggleScheduling"
       >
         <Icon name="lucide:clock" class="size-4" />
-        {{ scheduling ? "Fechar agendamento" : "Agendar (recomendado)" }}
+        {{
+          scheduling
+            ? "Fechar agendamento"
+            : scheduleRecommended
+              ? "Agendar (recomendado)"
+              : "Agendar"
+        }}
       </UiButton>
 
       <UiButton
         type="button"
         data-testid="publish-now"
         :disabled="!canPublishNow"
-        variant="outline"
+        :variant="scheduleRecommended ? 'outline' : 'default'"
         @click="publishNow"
       >
         <Icon
@@ -794,8 +807,9 @@ function askToReject() {
         class="w-full text-xs font-medium text-warning"
         role="status"
       >
-        WhatsApp em silêncio das 20:00 às 08:00 ({{ timezoneName }}). Agende o
-        próximo horário permitido.
+        Agendar é o recomendado agora: o WhatsApp está em silêncio das 20:00 às
+        08:00 ({{ timezoneName }}). O próximo horário permitido já vem
+        preenchido.
       </p>
       <p
         v-else-if="expired"
