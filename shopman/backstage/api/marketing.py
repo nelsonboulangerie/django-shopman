@@ -1253,10 +1253,25 @@ class AudienceCountView(_CampaignBase):
     throttle_classes = [MarketingAudienceUserThrottle, MarketingAudienceShopThrottle]
 
     def post(self, request):
+        from shopman.shop.services.audience import PUBLIC_RULE_KEYS
+
         payload = request.data if isinstance(request.data, dict) else {}
         rules = payload.get("audience_rules")
         if not isinstance(rules, dict):
             rules = {}
+        # O gêmeo que faltava: disparo e cadastro recusam ``customer_refs``; a contagem
+        # aceitava, e virava oráculo por pessoa (ativo? telefone? 18+? consentiu?) para
+        # quem só pode contar.
+        unknown_rules = sorted(set(rules) - PUBLIC_RULE_KEYS)
+        if unknown_rules:
+            return Response(
+                {
+                    "code": "invalid_audience_rules",
+                    "detail": "O público contém filtros desconhecidos ou privados.",
+                    "field_errors": {"audience_rules": unknown_rules},
+                },
+                status=422,
+            )
         return Response(
             projection_data(
                 marketing_projection.build_audience_count(
