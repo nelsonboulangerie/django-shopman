@@ -350,30 +350,34 @@ describe("cadastro novo com telefone existente", () => {
   });
 });
 
-describe("buscar existente e cadastrar novo são atos separados", () => {
-  it("expõe abas acessíveis e preserva a associação ao navegar", async () => {
+describe("busca e formulário convivem na mesma tela", () => {
+  // Não há mais abas: a diferença existente × novo é um SELO, e a busca fica
+  // sempre no topo. O que as abas provavam continua provado — navegar entre
+  // buscar e editar nunca desassocia o cliente.
+  it("com cadastro associado, o selo diz quem é e a busca segue disponível sem desassociar", async () => {
     const wrapper = await mount({
       customerLookup: { ref: "CUST-A", name: "Ana Prado", phone: "+5543999990022", email: "", tax_id: "" },
     });
-    const tabs = Array.from(document.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
-    expect(tabs).toHaveLength(2);
-    expect(tabs.map((tab) => tab.getAttribute("aria-selected"))).toEqual(["false", "true"]);
-    expect(tabs[1]!.textContent).toContain("Editar cadastro");
-    tabs[0]!.click();
-    await wrapper.vm.$nextTick();
-    tabs[1]!.click();
+    expect(document.querySelector('[role="tablist"]')).toBeNull();
+    expect(document.querySelectorAll('[role="tab"]')).toHaveLength(0);
+    expect(screenText()).toContain("Cadastro existente · Ana Prado");
+    expect(document.querySelector('input[aria-label="Buscar cliente"]')).not.toBeNull();
+    expect((document.querySelector('input[placeholder="Nome no balcão"]') as HTMLInputElement).value).toBe("Ana Prado");
+    const search = document.querySelector('input[aria-label="Buscar cliente"]') as HTMLInputElement;
+    search.value = "Bru";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
     await wrapper.vm.$nextTick();
     expect(wrapper.emitted("clear")).toBeUndefined();
-    expect(tabs[1]!.getAttribute("aria-selected")).toBe("true");
+    expect(wrapper.emitted("selectResult")).toBeUndefined();
+    expect(screenText()).toContain("Cadastro existente · Ana Prado");
   });
 
   it("digitar telefone no cadastro novo e sair do campo não busca nem seleciona", async () => {
     const wrapper = await mount({ customerName: "", customerPhone: "" });
+    // Busca E formulário na mesma tela, sem trocar de painel.
     expect(document.querySelector('input[aria-label="Buscar cliente"]')).not.toBeNull();
-    buttonByText("Cadastrar novo")!.click();
-    await wrapper.vm.$nextTick();
-    expect(document.querySelector('input[aria-label="Buscar cliente"]')).toBeNull();
     const phone = document.querySelector('input[inputmode="tel"]') as HTMLInputElement;
+    expect(phone).not.toBeNull();
     phone.value = "43999990022";
     phone.dispatchEvent(new Event("input", { bubbles: true }));
     phone.dispatchEvent(new Event("blur", { bubbles: true }));
@@ -383,17 +387,19 @@ describe("buscar existente e cadastrar novo são atos separados", () => {
     expect(wrapper.emitted("selectResult")).toBeUndefined();
     expect(wrapper.emitted("resolveCustomer")).toBeUndefined();
     expect(document.body.textContent).not.toContain("Remover cliente");
+    await wrapper.setProps({ customerPhone: "43999990022" });
     buttonByText("Cadastrar cliente")!.click();
     expect(wrapper.emitted("resolveCustomer")).toHaveLength(1);
   });
 
-  it("alternar para busca e voltar preserva o rascunho de cadastro", async () => {
+  it("digitar na busca preserva o rascunho de cadastro", async () => {
     const wrapper = await mount({ customerName: "Outra Pessoa", customerPhone: "43999990022" });
-    buttonByText("Buscar existente")!.click();
-    await wrapper.vm.$nextTick();
-    buttonByText("Cadastrar novo")!.click();
+    const search = document.querySelector('input[aria-label="Buscar cliente"]') as HTMLInputElement;
+    search.value = "Ana";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
     await wrapper.vm.$nextTick();
     expect(wrapper.emitted("clear")).toBeUndefined();
+    expect(wrapper.emitted("update:customerName")).toBeUndefined();
     expect((document.querySelector('input[inputmode="tel"]') as HTMLInputElement).value).toBe("43999990022");
   });
 });
@@ -405,8 +411,10 @@ describe("decisão do documento", () => {
       ...CONFLICT, kind: "receipt_identity", field: "tax_id", typed: "52998224725", fromReceipt: true,
     } });
     expect(screenText()).toContain("CPF na nota");
-    expect(buttonByText("Buscar existente")).toBeUndefined();
-    expect(buttonByText("Cadastrar novo")).toBeUndefined();
+    // Sem busca, sem selo, sem formulário: a decisão do documento é a tela inteira.
+    expect(document.querySelector("[data-customer-state]")).toBeNull();
+    expect(screenText()).not.toContain("Cliente novo");
+    expect(screenText()).not.toContain("Cadastro existente");
     expect(buttonByText("Concluir")).toBeUndefined();
     expect(document.querySelector('input')).toBeNull();
     expect(document.activeElement?.tagName).toBe("H2");
