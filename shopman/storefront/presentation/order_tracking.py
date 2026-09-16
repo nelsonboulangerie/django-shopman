@@ -497,9 +497,12 @@ def _when_display(commitment_date_iso: str | None, slot_ref: str | None) -> str 
     if not date_part:
         return None
     if slot_ref:
-        from shopman.storefront.services.pickup_slots import slot_label
+        # As DUAS grades: o canônico da encomenda ("A partir das 09h") e o par
+        # de horas da venda do dia anotada no PDV ("14:00 às 14:30"). Só o
+        # canônico deixava o pedido do balcão com "14:00-14:30" cru na tela.
+        from shopman.shop.services.fulfillment_window import window_label
 
-        label = slot_label(slot_ref)
+        label = window_label(slot_ref)
         if label:
             return f"{date_part} · {label}"
     return date_part

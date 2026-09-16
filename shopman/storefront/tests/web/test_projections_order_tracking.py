@@ -144,6 +144,15 @@ class TestPreorderTracking:
         assert proj.when_display == expected
         assert proj.promise.state == "preorder_scheduled"
 
+    def test_the_half_hour_window_of_a_pos_order_reads_as_hours_not_as_a_raw_ref(self, order):
+        """Pedido anotado no PDV para outro dia com o par de horas: o
+        acompanhamento resolvia só a grade canônica e "14:00-14:30" saía cru."""
+        order, _ = self._make_preorder(order, slot="14:00-14:30")
+
+        proj = build_order_tracking(order)
+
+        assert proj.when_display == "amanhã · 14:00 às 14:30"
+
     def test_on_the_day_the_preorder_rejoins_the_normal_flow(self, order):
         order, _ = self._make_preorder(order, days_ahead=0)
 
