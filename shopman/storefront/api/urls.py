@@ -21,6 +21,7 @@ from .account import (
     FavoriteDetailView,
     FavoriteListView,
     FoodPreferenceToggleView,
+    MarketingPromptView,
     NotificationPreferenceToggleView,
     OrderHistoryView,
     PhoneChangeConfirmView,
@@ -171,6 +172,9 @@ urlpatterns = [
         NotificationPreferenceToggleView.as_view(),
         name="api-account-notification-preferences",
     ),
+    # A pergunta de novidades, feita uma vez no gate de boas-vindas (carimbo em
+    # Customer.metadata). A chave continua em account/preferences/notifications/.
+    path("account/marketing-prompt/", MarketingPromptView.as_view(), name="api-account-marketing-prompt"),
     path("account/passkeys/", AccountPasskeyListView.as_view(), name="api-account-passkeys"),
     path("account/passkeys/<str:credential_id>/", AccountPasskeyDetailView.as_view(), name="api-account-passkey-detail"),
     path("account/devices/", AccountDeviceListView.as_view(), name="api-account-devices"),

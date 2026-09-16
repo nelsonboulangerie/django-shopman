@@ -46,6 +46,8 @@ def test_auth_session_returns_anonymous_identity(client: Client):
         "customer_phone": "",
         "customer_email": "",
         "requires_welcome": False,
+        "welcome_asks_name": False,
+        "welcome_asks_marketing": False,
         "welcome_suggested_name": "",
     }
 
@@ -57,6 +59,8 @@ def test_auth_session_returns_customer_identity(client: Client):
         last_name="Silva",
         phone="+5543999990001",
         email="ana@example.com",
+        # Já respondeu à pergunta de novidades: nada a perguntar na entrada.
+        metadata={"marketing_prompt_answered_at": "2026-09-16T10:00:00+00:00"},
     )
     _login_as_customer(client, customer)
 
@@ -70,6 +74,8 @@ def test_auth_session_returns_customer_identity(client: Client):
     assert data["customer_phone"] == customer.phone
     assert data["customer_email"] == customer.email
     assert data["requires_welcome"] is False
+    assert data["welcome_asks_name"] is False
+    assert data["welcome_asks_marketing"] is False
     assert data["welcome_suggested_name"] == customer.name
 
 
@@ -88,6 +94,9 @@ def test_auth_session_marks_nameless_customer_for_welcome(client: Client):
     data = response.json()
     assert data["is_authenticated"] is True
     assert data["requires_welcome"] is True
+    assert data["welcome_asks_name"] is True
+    # Nunca respondeu sobre novidades: o gate pergunta as duas coisas de uma vez.
+    assert data["welcome_asks_marketing"] is True
     assert data["welcome_suggested_name"] == ""
 
 
@@ -106,6 +115,80 @@ def test_auth_session_marks_dirty_customer_name_for_welcome(client: Client):
     data = response.json()
     assert data["requires_welcome"] is True
     assert data["welcome_suggested_name"] == "João & Maria"
+
+
+# ── A pergunta de novidades abre o gate sozinha ─────────────────────────
+#
+# Medido no alpha em 16/09: 58 clientes ativos, 1 aniversário, 5 consentimentos
+# de WhatsApp. Sem perguntar na entrada, campanha direta não alcança ninguém.
+
+
+def _named_customer(ref: str, phone: str, **extra) -> Customer:
+    return Customer.objects.create(ref=ref, first_name="Ana", last_name="Silva", phone=phone, **extra)
+
+
+def test_auth_session_asks_marketing_when_the_question_was_never_answered(client: Client):
+    customer = _named_customer("CUS-MKT-ASK", "+5543999990020")
+    _login_as_customer(client, customer)
+
+    data = client.get("/api/v1/auth/session/").json()
+
+    assert data["welcome_asks_name"] is False
+    assert data["welcome_asks_marketing"] is True
+    # Só a pergunta de novidades basta para abrir o gate.
+    assert data["requires_welcome"] is True
+
+
+def test_auth_session_stamp_silences_the_marketing_question(client: Client):
+    customer = _named_customer(
+        "CUS-MKT-STAMP", "+5543999990021",
+        metadata={"marketing_prompt_answered_at": "2026-09-16T10:00:00+00:00"},
+    )
+    _login_as_customer(client, customer)
+
+    data = client.get("/api/v1/auth/session/").json()
+
+    assert data["welcome_asks_marketing"] is False
+    assert data["requires_welcome"] is False
+
+
+def test_auth_session_existing_whatsapp_consent_counts_as_answered(client: Client):
+    from shopman.guestman import ConsentService
+
+    customer = _named_customer("CUS-MKT-OPTIN", "+5543999990022")
+    ConsentService.grant_consent(customer.ref, "whatsapp", source="storefront_settings")
+    _login_as_customer(client, customer)
+
+    data = client.get("/api/v1/auth/session/").json()
+
+    assert data["welcome_asks_marketing"] is False
+    assert data["requires_welcome"] is False
+
+
+def test_auth_session_whatsapp_opt_out_also_counts_as_answered(client: Client):
+    """Quem desligou a chave em Preferências já disse o que quer: não se pergunta de novo."""
+    from shopman.guestman import ConsentService
+
+    customer = _named_customer("CUS-MKT-OPTOUT", "+5543999990023")
+    ConsentService.revoke_consent(customer.ref, "whatsapp")
+    _login_as_customer(client, customer)
+
+    data = client.get("/api/v1/auth/session/").json()
+
+    assert data["welcome_asks_marketing"] is False
+    assert data["requires_welcome"] is False
+
+
+def test_auth_session_consent_on_another_channel_does_not_answer_for_whatsapp(client: Client):
+    from shopman.guestman import ConsentService
+
+    customer = _named_customer("CUS-MKT-EMAIL", "+5543999990024")
+    ConsentService.grant_consent(customer.ref, "email", source="storefront_settings")
+    _login_as_customer(client, customer)
+
+    data = client.get("/api/v1/auth/session/").json()
+
+    assert data["welcome_asks_marketing"] is True
 
 
 def test_auth_logout_is_json_and_does_not_require_csrf():
@@ -478,6 +561,8 @@ def test_auth_verify_code_accepts_json_and_creates_session_contract(monkeypatch)
         "customer_phone": "",
         "customer_email": "",
         "requires_welcome": False,
+        "welcome_asks_name": False,
+        "welcome_asks_marketing": False,
         "welcome_suggested_name": "",
     }
     assert verified == {"phone": "+5543999998888", "code_input": "123456"}
