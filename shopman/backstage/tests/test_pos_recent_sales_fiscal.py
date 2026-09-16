@@ -114,11 +114,14 @@ class POSRecentSalesFiscalTests(TestCase):
         sales = {s["order_ref"]: s for s in response.json()["sales"]}
         authorized = sales["PDV-RS-1"]
         self.assertEqual(authorized["fiscal_status"], "authorized")
+        # O MESMO vocabulário da resposta do fechamento e da pill do Gestor.
+        self.assertEqual(authorized["fiscal_state"], "authorized")
         self.assertTrue(authorized["can_print_danfe"])
         self.assertTrue(authorized["can_resend_email"])
         self.assertFalse(authorized["can_requeue_fiscal"])
         failed = sales["PDV-RS-2"]
         self.assertEqual(failed["fiscal_status"], "failed")
+        self.assertEqual(failed["fiscal_state"], "failed")
         self.assertFalse(failed["can_print_danfe"])
         self.assertTrue(failed["can_requeue_fiscal"])
 
