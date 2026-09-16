@@ -77,6 +77,11 @@ const emit = defineEmits<{
   customerClosed: [];
 }>();
 
+const SALES_MODES = [
+  { ref: "counter", label: "Balcão", icon: "lucide:store" },
+  { ref: "order", label: "Encomendas", icon: "lucide:calendar-clock" },
+] as const;
+
 const renaming = ref(false);
 const renameValue = ref("");
 function startRename() {
@@ -124,9 +129,27 @@ function runClear() {
 
 <template>
   <div class="flex min-w-0 flex-wrap items-center gap-2">
-    <div v-if="!readOnly" class="flex shrink-0 items-center rounded-md border p-0.5" role="group" aria-label="Modo de atendimento">
-      <UiButton :variant="salesMode !== 'order' ? 'secondary' : 'ghost'" size="sm" :aria-pressed="salesMode !== 'order'" :disabled="loading" @click="$emit('salesModeChange', 'counter')">Balcão</UiButton>
-      <UiButton :variant="salesMode === 'order' ? 'secondary' : 'ghost'" size="sm" :aria-pressed="salesMode === 'order'" :disabled="loading" @click="$emit('salesModeChange', 'order')">Encomendas</UiButton>
+    <!-- MODO DE ATENDIMENTO — o escolhido é CHEIO (`bg-primary`), como o modo
+         do numpad e o seletor do "Transferir": `secondary` sobre `ghost` era
+         dois cinzas quase iguais, e sob a luz do balcão ninguém dizia qual
+         estava ligado. O ícone dobra a leitura para quem não pára para ler. -->
+    <div v-if="!readOnly" class="flex shrink-0 items-center gap-0.5 rounded-md border bg-muted/40 p-0.5" role="group" aria-label="Modo de atendimento">
+      <UiButton
+        v-for="mode in SALES_MODES"
+        :key="mode.ref"
+        variant="ghost"
+        size="sm"
+        class="h-8 gap-1.5 px-3 font-semibold"
+        :class="(salesMode || 'counter') === mode.ref
+          ? 'bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 hover:text-primary-foreground'
+          : 'text-muted-foreground hover:text-foreground'"
+        :aria-pressed="(salesMode || 'counter') === mode.ref"
+        :disabled="loading"
+        @click="$emit('salesModeChange', mode.ref)"
+      >
+        <Icon :name="mode.icon" class="size-4 shrink-0" />
+        {{ mode.label }}
+      </UiButton>
     </div>
     <!-- tab number (renameable) -->
     <div v-if="renaming" class="flex items-center gap-1">

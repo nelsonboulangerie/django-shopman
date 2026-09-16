@@ -53,7 +53,9 @@ describe("PosCustomerModal — contato sem oferta inline", () => {
   it.each([ANONIMA, ATUALIZAR, null])("mantém o campo editável sem oferecer gravação durante digitação", async (offer) => {
     const wrapper = await mount({ receiptEmailOffer: offer });
     expect(popover()).toBeNull();
-    expect(document.querySelector('[role="switch"]')).toBeNull();
+    // Os interruptores de CANAL (imprimir / e-mail) são outra coisa: o que não
+    // pode existir aqui é o interruptor da OFERTA de gravar o contato.
+    expect(document.querySelector('[role="switch"]:not([data-receipt-channel])')).toBeNull();
     expect(document.querySelector('input[aria-label="E-mail do comprovante"]')).not.toBeNull();
     expect(wrapper.emitted("update:saveReceiptContact")).toBeUndefined();
   });
