@@ -50,11 +50,11 @@ const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
         :attention="!hasOpenCashSession"
         @activate="emit('cash')"
       />
-      <!-- Filipetas: o pedido remoto virando papel para o painel de parede. Mora
+      <!-- Fichas de pedido: o pedido remoto virando papel para o painel de parede. Mora
            no rail do PDV porque a bobina e o agente do balcão moram aqui. -->
       <RailItem
         icon="printer"
-        label="Filipetas"
+        label="Fichas de pedido"
         :active="view === 'tickets'"
         @activate="emit('tickets')"
       />

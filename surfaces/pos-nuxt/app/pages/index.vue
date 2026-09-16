@@ -48,7 +48,7 @@ async function goToCashSession() {
   await navigateTo("/session");
 }
 
-// Filipetas do pedido remoto: o lote da semana para o painel físico da padaria.
+// Fichas de pedido: o lote da semana para o painel físico da padaria.
 async function goToOrderTickets() {
   await navigateTo("/tickets");
 }
@@ -935,10 +935,6 @@ onBeforeUnmount(() => {
       <!-- TELA DE RESULTADO — substitui o banner de antes: tela cheia no fluxo
            de venda, com o troco congelado como herói e "Nova venda" dominante. -->
       <div v-if="result" class="h-full md:overflow-y-auto">
-        <div v-if="result.salesMode === 'order'" class="mx-auto mb-4 flex max-w-3xl flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4">
-          <div><h2 class="font-semibold">Filipeta do pedido</h2><p class="text-sm text-muted-foreground">Imprima a filipeta para acompanhar o preparo e o recebimento, inclusive com pagamento pendente.</p></div>
-          <UiButton :disabled="Boolean(printingOrderRef)" @click="printOrderTicket(result.orderRef)"><Icon name="lucide:printer" class="mr-2 size-4" />{{ printingOrderRef ? 'Imprimindo…' : 'Imprimir filipeta' }}</UiButton>
-        </div>
         <PosSaleResult
           :result="result"
           :pix-status="pixStatus"
@@ -947,7 +943,9 @@ onBeforeUnmount(() => {
           :printing-receipt="printingReceipt"
           :printing-danfe="printingDanfe"
           :resending-link="resendingLink"
+          :printing-ticket="Boolean(printingOrderRef)"
           @new-sale="startNextSale"
+          @print-ticket="printOrderTicket(result.orderRef)"
           @print-receipt="printReceipt"
           @print-danfe="printDanfe"
           @cancel-sale="openCancelSaleDialog"
