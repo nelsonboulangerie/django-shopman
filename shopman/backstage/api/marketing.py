@@ -126,6 +126,12 @@ class _CampaignBase(APIView):
                 {"detail": "Autenticação necessária.", "code": "not_authenticated"},
                 status=401,
             )
+        # Erro de contrato que uma view não traduziu (regra salva quebrada lida
+        # pela contagem, por exemplo) fala o dialeto de comando em vez de virar
+        # 500 sem código: falhar gritando, com `code` para a tela e `detail`
+        # para o operador.
+        if isinstance(exc, MarketingContractError):
+            return _command_error_response(exc)
         return super().handle_exception(exc)
 
 
@@ -1527,7 +1533,7 @@ class CampaignDetailView(_CampaignBase):
     def get(self, request, pk: int):
         rule = _rule_or_none(pk)
         if rule is None:
-            return Response({"detail": "Regra não encontrada."}, status=404)
+            return Response({"detail": "Campanha não encontrada."}, status=404)
         actions = resolve_actions(rule, actor=request.user)
         return Response(
             {
@@ -1540,7 +1546,7 @@ class CampaignDetailView(_CampaignBase):
         with transaction.atomic():
             rule = Campaign.objects.select_for_update().select_related("template").filter(pk=pk).first()
             if rule is None:
-                return Response({"detail": "Regra não encontrada."}, status=404)
+                return Response({"detail": "Campanha não encontrada."}, status=404)
             guarded = _updated_at_guard(request.data, rule.updated_at)
             if guarded:
                 payload, status_code = guarded
@@ -1567,7 +1573,7 @@ class CampaignDetailView(_CampaignBase):
     def delete(self, request, pk: int):
         rule = _rule_or_none(pk)
         if rule is None:
-            return Response({"detail": "Regra não encontrada."}, status=404)
+            return Response({"detail": "Campanha não encontrada."}, status=404)
         rule.delete()
         return Response({"ok": True, "pk": pk})
 
@@ -1743,7 +1749,10 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
             if not isinstance(value, dict):
                 return {}, {"detail": "Configuração inválida.", "field": name}
             if name == "audience_rules":
-                from shopman.shop.services.audience import PUBLIC_RULE_KEYS
+                from shopman.shop.services.audience import (
+                    PUBLIC_RULE_KEYS,
+                    invalid_integer_rules,
+                )
 
                 unknown = sorted(set(value) - PUBLIC_RULE_KEYS)
                 if unknown:
@@ -1751,6 +1760,16 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
                         "detail": "A audiência contém campos desconhecidos ou privados.",
                         "field": "audience_rules",
                         "fields": unknown,
+                    }
+                # Chave certa com valor errado salvava limpo e só estourava na
+                # contagem, no disparo e na aprovação — todos com 500. A mesma
+                # régua do resolvedor recusa aqui, antes de gravar.
+                not_integer = invalid_integer_rules(value)
+                if not_integer:
+                    return {}, {
+                        "detail": "A audiência tem um valor que não é número inteiro.",
+                        "field": "audience_rules",
+                        "fields": not_integer,
                     }
             fields[name] = value
 
