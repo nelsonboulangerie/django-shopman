@@ -14,7 +14,7 @@ const isCustomerBoard = computed(() => route.path.startsWith("/pickup"));
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
-useHead({ title: "Shopman KDS" });
+useOperatorWindowTitle("KDS");
 
 async function goToStations() {
   await navigateTo("/");

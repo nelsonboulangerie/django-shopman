@@ -12,7 +12,7 @@
 // sem nenhum composable de operador; nada aqui busca dado no servidor.
 import type { CustomerDisplayPhase } from "~/types/customerDisplay";
 
-useHead({ title: "Tela do cliente · PDV" });
+useHead({ title: "Tela do cliente" });
 
 const { snapshot } = useCustomerDisplayConsumer();
 

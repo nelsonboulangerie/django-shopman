@@ -145,7 +145,7 @@ const pendingFlowName = computed(() => {
   );
 });
 
-useHead({ title: "Plataformas · Marketing" });
+useHead({ title: "Plataformas" });
 </script>
 
 <template>

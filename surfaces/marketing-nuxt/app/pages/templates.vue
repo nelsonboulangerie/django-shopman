@@ -63,7 +63,7 @@ async function confirmRemove() {
   busy.value = false;
 }
 
-useHead({ title: "Modelos · Marketing" });
+useHead({ title: "Modelos" });
 </script>
 
 <template>

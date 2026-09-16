@@ -71,7 +71,7 @@ export default defineNuxtConfig({
       kiosk: false,
       push: { surfaceRef: "marketing", categories: ["campaign"] },
       manifest: {
-        name: "Shopman Marketing",
+        name: "Marketing",
         shortName: "Marketing",
         description: "Campanhas e anúncios da operação.",
         themeColor: "#FFFFFF",

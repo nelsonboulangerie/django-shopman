@@ -28,7 +28,7 @@ export default defineNuxtConfig({
       kiosk: false,
       push: { surfaceRef: "purchase", categories: ["purchase"] },
       manifest: {
-        name: "Shopman Compras",
+        name: "Compras",
         shortName: "Compras",
         description: "Compras e recebimento de insumos.",
         themeColor: "#FFFFFF",

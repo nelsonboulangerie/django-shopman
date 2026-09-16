@@ -20,7 +20,7 @@ function applyShortcutView(value: unknown) {
 applyShortcutView(route.query.view);
 watch(() => route.query.view, applyShortcutView);
 
-useHead({ title: "Compras" });
+useOperatorWindowTitle("Compras");
 </script>
 
 <template>

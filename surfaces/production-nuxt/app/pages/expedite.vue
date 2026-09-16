@@ -41,7 +41,7 @@ const stale = computed(() =>
   isStale({ error: !!error.value, hasData: !!kiosk.value }),
 );
 
-useHead({ title: "Expedição · Produção" });
+useHead({ title: "Expedição" });
 
 const query = ref(typeof route.query.q === "string" ? route.query.q : "");
 watch(

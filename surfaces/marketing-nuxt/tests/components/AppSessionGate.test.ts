@@ -16,6 +16,9 @@ beforeEach(() => {
   Object.assign(globalThis, {
     nextTick,
     useHead: vi.fn(),
+    // O template de título do kit é auto-import do layer; aqui o app monta
+    // com o vue-test-utils puro, então ele entra como os demais globais.
+    useOperatorWindowTitle: vi.fn(() => ({ appName: "Marketing" })),
     useRuntimeConfig: () => ({ public: { operatorHubUrl: "/apps/" } }),
     useOperatorLock: () => ({
       canIdentify: ref(canIdentify),

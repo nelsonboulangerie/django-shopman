@@ -38,7 +38,7 @@ export default defineNuxtConfig({
       idleReloadPaths: ["/board"],
       push: { surfaceRef: "production", categories: ["production", "system"] },
       manifest: {
-        name: "Shopman Produção",
+        name: "Produção",
         shortName: "Produção",
         description: "Planejamento, preparo e fornadas.",
         themeColor: "#FFFFFF",

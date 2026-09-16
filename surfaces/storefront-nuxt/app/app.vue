@@ -77,7 +77,7 @@ const hideFooter = computed(() => route.path.startsWith('/finalizar'))
 const brandName = computed(() => session.shop.value?.brand_name || NELSON_FALLBACK_SHOP.brand_name)
 const shortName = computed(() => session.shop.value?.short_name || NELSON_FALLBACK_SHOP.short_name)
 useHead(() => ({
-  titleTemplate: title => (title && title !== brandName.value ? `${title} | ${brandName.value}` : brandName.value),
+  titleTemplate: title => (title && title !== brandName.value ? `${title} · ${brandName.value}` : brandName.value),
   meta: [{ name: 'apple-mobile-web-app-title', content: shortName.value }]
 }))
 // PREVIEW DO LINK — todo link que a casa manda vira CARTÃO, não URL crua.

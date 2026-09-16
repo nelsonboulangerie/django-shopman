@@ -80,7 +80,10 @@ onBeforeUnmount(() => {
   window.removeEventListener("offline", updateConnection);
 });
 
-useHead({ title: `${presentation.value.title} · Marketing` });
+// O Nuxt renderiza o error.vue NO LUGAR do app.vue: o template do título tem
+// que ser instalado aqui também, senão a janela perde o nome do app.
+useOperatorWindowTitle("Marketing");
+useHead({ title: presentation.value.title });
 </script>
 
 <template>

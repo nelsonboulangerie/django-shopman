@@ -21,7 +21,7 @@ import {
   type TicketPreset,
 } from "~/presentation/orderTickets";
 
-useHead({ title: "Filipetas · PDV" });
+useHead({ title: "Filipetas" });
 
 const { pos, pending: posPending, refresh: refreshPos } = await usePosTerminal();
 const { operator: activeOperator, lock } = useOperatorLock("cashman.operate_pos");
