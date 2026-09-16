@@ -5,6 +5,7 @@ import pytest
 from django.test import override_settings
 from shopman.doorman.adapter import DefaultAuthAdapter
 from shopman.doorman.conf import reset_adapter
+from shopman.doorman.error_codes import ErrorCode
 from shopman.doorman.services.verification import AuthService
 
 pytestmark = pytest.mark.django_db
@@ -163,6 +164,39 @@ class TestRequestCodeWithFallback:
 
     def teardown_method(self):
         reset_adapter()
+
+    @override_settings(DOORMAN={
+        "CUSTOMER_RESOLVER_CLASS": "shopman.guestman.adapters.auth.CustomerResolver",
+    })
+    def test_successful_delivery_is_verifiable_once_end_to_end(self):
+        """The public service path persists SENT before allowing one verification."""
+        from shopman.doorman.models import VerificationCode
+
+        phone = "+5543999990042"
+        sender = FakeSender(succeed=True)
+
+        requested = AuthService.request_code(
+            target_value=phone,
+            purpose=VerificationCode.Purpose.LOGIN,
+            delivery_method=VerificationCode.DeliveryMethod.WHATSAPP,
+            sender=sender,
+        )
+
+        assert requested.success is True
+        assert requested.debug_code is not None
+        assert len(sender.calls) == 1
+        code = VerificationCode.objects.get(pk=requested.code_id)
+        assert code.status == VerificationCode.Status.SENT
+
+        verified = AuthService.verify_for_login(phone, requested.debug_code)
+
+        assert verified.success is True
+        code.refresh_from_db()
+        assert code.status == VerificationCode.Status.VERIFIED
+
+        replay = AuthService.verify_for_login(phone, requested.debug_code)
+        assert replay.success is False
+        assert replay.error_code == ErrorCode.CODE_EXPIRED
 
     @override_settings(DOORMAN={
         "CUSTOMER_RESOLVER_CLASS": "shopman.guestman.adapters.auth.CustomerResolver",
