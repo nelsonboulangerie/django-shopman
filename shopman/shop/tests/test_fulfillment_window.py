@@ -351,3 +351,37 @@ class TestFalhaAoApurar:
 
         monkeypatch.setattr(product_readiness, "bottleneck", explode)
         assert fulfillment_window.validate(QUINTA, "", ["BF"], now=AGORA) is None
+
+
+class TestSlotCanonicoEmPedidoQueVirouHoje:
+    """A encomenda feita ontem para hoje chega ao balcão com ``slot-09`` no
+    payload — e a grade de HOJE é de meias horas, que não o conhece.
+
+    ``_window_start({"ref": "slot-09"})`` devolvia ``None`` e ``validate``
+    recusava como "Horário combinado não reconhecido". O ref canônico resolve
+    pela configuração da casa em qualquer dia: quem decide é a HORA do slot.
+    """
+
+    def test_o_inicio_do_canonico_resolve_sem_starts_at(self, loja):
+        from datetime import time
+
+        assert fulfillment_window._window_start({"ref": "slot-09"}) == time(9, 0)
+        assert fulfillment_window._window_start({"ref": "slot-15"}) == time(15, 0)
+        assert fulfillment_window._window_start({"ref": "manhã"}) is None
+
+    def test_hoje_o_canonico_e_recusado_pela_HORA_nao_por_desconhecido(self, loja, baguete):
+        erro = fulfillment_window.validate(HOJE, "slot-09", [baguete.sku], now=AGORA)
+
+        assert erro is not None
+        assert "não reconhecido" not in erro
+        assert "Baguette de Tradition sai às 12:00" in erro
+
+    def test_hoje_o_canonico_compativel_com_o_preparo_passa(self, loja, baguete):
+        assert fulfillment_window.validate(HOJE, "slot-12", [baguete.sku], now=AGORA) is None
+        assert fulfillment_window.validate(HOJE, "slot-15", [baguete.sku], now=AGORA) is None
+
+    def test_o_ilegivel_continua_recusado(self, loja, baguete):
+        erro = fulfillment_window.validate(HOJE, "09:00 às 09:30", [baguete.sku], now=AGORA)
+
+        assert erro is not None
+        assert "não reconhecido" in erro

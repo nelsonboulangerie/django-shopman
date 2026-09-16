@@ -70,6 +70,12 @@ def _window_start(slot: dict) -> time | None:
     ⚠️ Ler só o ref quebraria os canônicos em silêncio: ``"slot-09"`` partido no
     hífen dá ``"slot"``, que não é hora nenhuma — a janela passaria a não ter
     início e NENHUM corte de prontidão se aplicaria a ela.
+
+    ⚠️ E um canônico SEM ``starts_at`` (só o ref, como chega do payload de um
+    pedido cuja data virou hoje) resolve pela configuração da casa. A grade de
+    hoje é de meias horas e não o conhece; sem esta volta, ``validate`` lia
+    ``None`` e recusava "slot-09" como "não reconhecido" — a encomenda feita
+    ontem para hoje não fechava no balcão.
     """
     from shopman.shop.services.product_readiness import parse_clock
 
@@ -78,7 +84,14 @@ def _window_start(slot: dict) -> time | None:
     declared = parse_clock(slot.get("starts_at"))
     if declared is not None:
         return declared
-    return parse_clock(str(slot.get("ref") or "").split("-")[0])
+    ref = str(slot.get("ref") or "").strip()
+    inicio = parse_clock(ref.split("-")[0])
+    if inicio is not None:
+        return inicio
+    for canonico in canonical_slots():
+        if str(canonico.get("ref") or "") == ref:
+            return parse_clock(canonico.get("starts_at"))
+    return None
 
 
 #: Os slots de encomenda quando a casa ainda não configurou os dela.
