@@ -91,7 +91,7 @@ def test_concurrent_stock_moves_create_one_occurrence_and_one_delivery():
     from shopman.storefront.services import stock_alerts
 
     Channel.objects.get_or_create(ref="web", defaults={"name": "Web", "is_active": True})
-    stock_alerts.subscribe("PG-STOCK-CYCLE", phone="+5543999990088", alert_type="stock_back")
+    stock_alerts.subscribe("PG-STOCK-CYCLE", phone="+5543999990088", alert_type="stock_back", adult_declared=True)
     barrier = Barrier(2)
 
     def run(source_ref):
@@ -134,6 +134,7 @@ def test_concurrent_authenticated_subscribe_creates_one_customer_alert():
                 "PG-SUBSCRIBE-OWNERSHIP",
                 customer=customer,
                 resume_existing=False,
+                adult_declared=True,
             )
         finally:
             connections.close_all()
@@ -156,6 +157,7 @@ def test_concurrent_quality_review_releases_one_bake_delivery():
         "PG-QC-BAKE",
         phone="+5543999990089",
         alert_type="production_ready",
+        adult_declared=True,
     )
     stock_alerts.record_bake_pending("PG-QC-BAKE", source_ref="WO-PG-QC")
     barrier = Barrier(2)
@@ -206,6 +208,7 @@ def test_subscription_control_race_with_worker_has_one_documented_boundary(contr
         f"PG-CONTROL-{control.upper()}",
         phone=f"+55439999900{91 if control == 'pause' else 92}",
         alert_type="stock_back",
+        adult_declared=True,
     )
     with patch(
         "shopman.storefront.services.sku_state.resolve",

@@ -23,7 +23,7 @@ def test_revocation_lock_wins_over_previously_loaded_notification(monkeypatch, p
     assert connection.vendor == "postgresql"
     Channel.objects.create(ref="web", name="Web", is_active=True)
     phone = "+5543999990001"
-    sub = stock_alerts.subscribe("SYNTHETIC-CONSENT-RACE", phone=phone)
+    sub = stock_alerts.subscribe("SYNTHETIC-CONSENT-RACE", phone=phone, adult_declared=True)
     original_proof = sub.evidence_hash
     occurrence = StockAlertOccurrence.objects.create(
         sku=sub.sku, channel_ref=sub.channel_ref, event_type="stock_back",

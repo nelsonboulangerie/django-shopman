@@ -460,6 +460,19 @@ def _pre_send_outcome(
         return DeliveryState.SUPPRESSED.value, "global_optout"
 
     reasons = frozenset(member.reasons or [])
+    from shopman.shop.services.marketing_age import is_known_adult, is_known_minor
+
+    is_alert_delivery = bool("alerts" in reasons and member.subscription_ref)
+    if is_alert_delivery:
+        # The alert-specific declaration can prove adulthood while the account
+        # birthday is unknown, but it can never override a canonical minor DOB.
+        if customer is not None and is_known_minor(customer.birthday):
+            return DeliveryState.SUPPRESSED.value, "recipient_known_minor"
+    elif customer is None or not is_known_adult(customer.birthday):
+        # General direct marketing requires the canonical account fact. A
+        # legacy snapshot or a removed birthday must fail closed at claim time.
+        return DeliveryState.SUPPRESSED.value, "recipient_age_not_verified"
+
     if member.subscription_ref:
         if subscription_unavailable:
             return "defer", "subscription_unavailable"

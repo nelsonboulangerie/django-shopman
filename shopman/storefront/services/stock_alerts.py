@@ -145,7 +145,7 @@ def subscribe(
     alert_type: str = "",
     disclosure_text: str = STOCK_ALERT_DISCLOSURE,
     disclosure_version: str = STOCK_ALERT_DISCLOSURE_VERSION,
-    adult_declared: bool = True,
+    adult_declared: bool = False,
 ):
     """Register or resume a persistent alert. Returns it or ``None``.
 
@@ -184,7 +184,7 @@ def subscribe_with_outcome(
     alert_type: str = "",
     disclosure_text: str = STOCK_ALERT_DISCLOSURE,
     disclosure_version: str = STOCK_ALERT_DISCLOSURE_VERSION,
-    adult_declared: bool = True,
+    adult_declared: bool = False,
     resume_existing: bool = True,
 ) -> SubscribeOutcome:
     """Subscribe and report whether this transaction created the row.

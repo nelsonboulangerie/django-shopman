@@ -2371,8 +2371,8 @@ class TestAudienceCount:
 
         client.force_login(gestor)
         subscriptions = [
-            stock_alerts.subscribe("BF", phone="+5543999993010"),
-            stock_alerts.subscribe("BF", phone="+5543999993011"),
+            stock_alerts.subscribe("BF", phone="+5543999993010", adult_declared=True),
+            stock_alerts.subscribe("BF", phone="+5543999993011", adult_declared=True),
         ]
         occurrence = StockAlertOccurrence.objects.create(
             sku="BF",

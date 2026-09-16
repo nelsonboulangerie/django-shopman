@@ -230,6 +230,7 @@ def test_bake_alert_is_pending_at_finish_and_queues_only_after_manager_review(
         qc_recipe.output_sku,
         phone="+5543999997777",
         alert_type="production_ready",
+        adult_declared=True,
     )
     with django_capture_on_commit_callbacks(execute=True):
         wo = _finished(qc_recipe, monkeypatch)

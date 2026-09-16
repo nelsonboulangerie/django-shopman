@@ -52,3 +52,23 @@ def customer_is_known_minor(customer_ref: str, *, today: date | None = None) -> 
         .first()
     )
     return is_known_minor(birthday, today=today)
+
+
+def canonical_birthday_for_customer_id(customer_id: int | None) -> date | None:
+    """Read the current canonical birthday for a final delivery decision.
+
+    Callers deliberately handle database failures as retryable. Returning
+    ``None`` is reserved for a missing customer or birthday and therefore can
+    never be confused with a successfully proven adult.
+    """
+
+    if customer_id is None:
+        return None
+
+    from shopman.guestman.models import Customer
+
+    return (
+        Customer.objects.filter(pk=customer_id)
+        .values_list("birthday", flat=True)
+        .first()
+    )

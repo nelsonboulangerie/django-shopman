@@ -100,6 +100,9 @@ def _graph(
             ref=f"LEDGER-{suffix}-{index}",
             first_name="Pessoa",
             phone=f"+55439{announcement.pk:06d}{index:02d}",
+            birthday=timezone.localdate().replace(
+                year=timezone.localdate().year - 30
+            ),
         )
         members.append(AudienceSnapshotMember.objects.create(
             snapshot=snapshot,

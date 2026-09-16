@@ -61,7 +61,7 @@ def test_account_summary_exposes_specific_alert_controls_without_contact_data(cl
         phone="+5543999990077",
     )
     _login_as_customer(client, customer)
-    sub = stock_alerts.subscribe("SKU-SUMMARY-ALERT", customer=customer, alert_type="production_ready")
+    sub = stock_alerts.subscribe("SKU-SUMMARY-ALERT", customer=customer, alert_type="production_ready", adult_declared=True)
     stock_alerts.set_paused(sub.ref, paused=True, sku=sub.sku, customer=customer)
 
     item = client.get("/api/v1/account/summary/").json()["stock_alert_subscriptions"][0]

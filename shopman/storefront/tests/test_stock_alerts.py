@@ -110,22 +110,22 @@ def _mark_legacy_session(client, sub):
 
 
 def test_subscribe_anonymous_creates_pending():
-    sub = stock_alerts.subscribe("SKU-1", channel_ref="web", phone=PHONE)
+    sub = stock_alerts.subscribe("SKU-1", channel_ref="web", phone=PHONE, adult_declared=True)
     assert sub is not None
     assert sub.is_pending
     assert sub.contact_phone == PHONE
 
 
 def test_subscribe_dedupes_pending_for_same_contact():
-    a = stock_alerts.subscribe("SKU-1", phone=PHONE)
-    b = stock_alerts.subscribe("SKU-1", phone=PHONE)
+    a = stock_alerts.subscribe("SKU-1", phone=PHONE, adult_declared=True)
+    b = stock_alerts.subscribe("SKU-1", phone=PHONE, adult_declared=True)
     assert a.pk == b.pk
     assert StockAlertSubscription.objects.filter(sku="SKU-1").count() == 1
 
 
 def test_subscribe_dedupes_phone_formats_and_keeps_verifiable_evidence():
-    first = stock_alerts.subscribe("SKU-NORM", phone="(43) 99999-0001")
-    second = stock_alerts.subscribe("SKU-NORM", phone="+55 43 99999-0001")
+    first = stock_alerts.subscribe("SKU-NORM", phone="(43) 99999-0001", adult_declared=True)
+    second = stock_alerts.subscribe("SKU-NORM", phone="+55 43 99999-0001", adult_declared=True)
 
     assert first.pk == second.pk
     assert first.contact_phone == "+5543999990001"
@@ -138,7 +138,7 @@ def test_subscribe_dedupes_phone_formats_and_keeps_verifiable_evidence():
 
 
 def test_database_unique_rejects_two_pending_rows_for_same_target():
-    original = stock_alerts.subscribe("SKU-UNIQUE", phone=PHONE)
+    original = stock_alerts.subscribe("SKU-UNIQUE", phone=PHONE, adult_declared=True)
 
     with pytest.raises(IntegrityError):
         StockAlertSubscription.objects.create(
@@ -157,12 +157,15 @@ def test_database_unique_rejects_two_pending_rows_for_same_target():
 
 
 def test_subscribe_requires_a_contact():
-    assert stock_alerts.subscribe("SKU-1") is None
+    assert stock_alerts.subscribe("SKU-1", adult_declared=True) is None
 
 
 def test_subscribe_requires_an_adult_declaration():
+    assert stock_alerts.subscribe("SKU-ADULT-OMITTED", phone=PHONE) is None
     assert stock_alerts.subscribe("SKU-ADULT", phone=PHONE, adult_declared=False) is None
-    assert not StockAlertSubscription.objects.filter(sku="SKU-ADULT").exists()
+    assert not StockAlertSubscription.objects.filter(
+        sku__in=("SKU-ADULT-OMITTED", "SKU-ADULT")
+    ).exists()
 
 
 def test_subscribe_known_minor_cannot_override_birthday_with_declaration():
@@ -198,7 +201,7 @@ def test_subscribe_race_with_ineligible_old_writer_fails_closed_without_500():
 
 
 def test_subscribe_rejects_ambiguous_mobile_without_creating_subscription():
-    assert stock_alerts.subscribe("SKU-AMBIGUOUS", phone="(43) 9840-4900") is None
+    assert stock_alerts.subscribe("SKU-AMBIGUOUS", phone="(43) 9840-4900", adult_declared=True) is None
     assert not StockAlertSubscription.objects.filter(sku="SKU-AMBIGUOUS").exists()
 
 
@@ -212,7 +215,7 @@ def test_subscribe_reconfirms_legacy_row_without_consent_evidence():
         proof_status="legacy_unverified",
     )
 
-    current = stock_alerts.subscribe("SKU-LEGACY", phone=PHONE, alert_type="stock_back")
+    current = stock_alerts.subscribe("SKU-LEGACY", phone=PHONE, alert_type="stock_back", adult_declared=True)
 
     legacy.refresh_from_db()
     assert legacy.revoked_at is not None
@@ -238,7 +241,7 @@ def test_subscribe_reconfirms_verified_row_without_adult_declaration():
         adult_declared=False,
     )
 
-    current = stock_alerts.subscribe("SKU-LEGACY-AGE", phone=PHONE, alert_type="stock_back")
+    current = stock_alerts.subscribe("SKU-LEGACY-AGE", phone=PHONE, alert_type="stock_back", adult_declared=True)
 
     legacy.refresh_from_db()
     assert legacy.revoked_at is not None
@@ -280,7 +283,7 @@ def test_known_minor_cannot_resume_existing_alert():
         phone=PHONE,
         birthday=today.replace(year=today.year - 30),
     )
-    sub = stock_alerts.subscribe("SKU-MINOR-RESUME", customer=customer)
+    sub = stock_alerts.subscribe("SKU-MINOR-RESUME", customer=customer, adult_declared=True)
     assert stock_alerts.set_paused(
         sub.ref,
         paused=True,
@@ -307,7 +310,7 @@ def test_known_minor_cannot_resume_existing_alert():
 
 
 def test_notify_sends_and_marks_when_available():
-    sub = stock_alerts.subscribe("SKU-1", phone=PHONE)
+    sub = stock_alerts.subscribe("SKU-1", phone=PHONE, adult_declared=True)
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)),
         patch("shopman.shop.notifications.notify", return_value=MagicMock(success=True)) as nf,
@@ -324,7 +327,7 @@ def test_notify_sends_and_marks_when_available():
 
 
 def test_notify_context_includes_truthful_availability_phrase():
-    stock_alerts.subscribe("SKU-1", phone=PHONE, alert_type="production_ready")
+    stock_alerts.subscribe("SKU-1", phone=PHONE, alert_type="production_ready", adult_declared=True)
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True, available_qty=12)),
         patch(
@@ -347,7 +350,7 @@ def test_notify_context_includes_truthful_availability_phrase():
 
 
 def test_notify_context_uses_neutral_phrase_when_quantity_is_unknown():
-    stock_alerts.subscribe("SKU-1", phone=PHONE, alert_type="stock_back")
+    stock_alerts.subscribe("SKU-1", phone=PHONE, alert_type="stock_back", adult_declared=True)
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)),
         patch("shopman.shop.notifications.notify", return_value=MagicMock(success=True)) as nf,
@@ -368,7 +371,7 @@ def test_availability_phrase_uses_singular_for_one_unit():
 
 
 def test_notify_skips_when_still_unavailable():
-    sub = stock_alerts.subscribe("SKU-1", phone=PHONE)
+    sub = stock_alerts.subscribe("SKU-1", phone=PHONE, adult_declared=True)
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(False)),
         patch("shopman.shop.notifications.notify") as nf,
@@ -382,7 +385,7 @@ def test_notify_skips_when_still_unavailable():
 
 
 def test_non_sellable_bake_is_recorded_blocked_and_subscription_stays_active():
-    sub = stock_alerts.subscribe("SKU-QC-BLOCK", phone=PHONE, alert_type="production_ready")
+    sub = stock_alerts.subscribe("SKU-QC-BLOCK", phone=PHONE, alert_type="production_ready", adult_declared=True)
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(False)),
         patch(
@@ -405,7 +408,7 @@ def test_non_sellable_bake_is_recorded_blocked_and_subscription_stays_active():
 
 
 def test_finished_bake_stays_pending_until_manager_review_then_queues_once():
-    sub = stock_alerts.subscribe("SKU-QC-PENDING", phone=PHONE, alert_type="production_ready")
+    sub = stock_alerts.subscribe("SKU-QC-PENDING", phone=PHONE, alert_type="production_ready", adult_declared=True)
 
     assert stock_alerts.record_bake_pending(sub.sku, source_ref="work-order-qc-2") == 1
     occurrence = StockAlertOccurrence.objects.get()
@@ -431,7 +434,7 @@ def test_finished_bake_stays_pending_until_manager_review_then_queues_once():
 
 
 def test_reviewed_bake_with_no_channel_eligible_quality_is_blocked():
-    sub = stock_alerts.subscribe("SKU-QC-FAIR", phone=PHONE, alert_type="production_ready")
+    sub = stock_alerts.subscribe("SKU-QC-FAIR", phone=PHONE, alert_type="production_ready", adult_declared=True)
     stock_alerts.record_bake_pending(sub.sku, source_ref="work-order-qc-3")
 
     with (
@@ -452,7 +455,7 @@ def test_reviewed_bake_with_no_channel_eligible_quality_is_blocked():
 
 
 def test_quality_change_before_provider_suppresses_queued_bake_delivery():
-    sub = stock_alerts.subscribe("SKU-QC-CHANGED", phone=PHONE, alert_type="production_ready")
+    sub = stock_alerts.subscribe("SKU-QC-CHANGED", phone=PHONE, alert_type="production_ready", adult_declared=True)
     stock_alerts.record_bake_pending(sub.sku, source_ref="work-order-qc-4")
     with (
         patch(
@@ -480,7 +483,7 @@ def test_quality_change_before_provider_suppresses_queued_bake_delivery():
 
 
 def test_notify_is_idempotent_within_one_occurrence_but_subscription_stays_active():
-    stock_alerts.subscribe("SKU-1", phone=PHONE)
+    stock_alerts.subscribe("SKU-1", phone=PHONE, adult_declared=True)
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)),
         patch("shopman.shop.notifications.notify", return_value=MagicMock(success=True)),
@@ -494,7 +497,7 @@ def test_notify_is_idempotent_within_one_occurrence_but_subscription_stays_activ
 
 
 def test_notify_does_not_mark_on_send_failure():
-    sub = stock_alerts.subscribe("SKU-1", phone=PHONE)
+    sub = stock_alerts.subscribe("SKU-1", phone=PHONE, adult_declared=True)
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)),
         patch("shopman.shop.notifications.notify", return_value=MagicMock(success=False)),
@@ -510,7 +513,7 @@ def test_notify_does_not_mark_on_send_failure():
 
 
 def test_revoke_before_notify_prevents_delivery_and_preserves_evidence():
-    sub = stock_alerts.subscribe("SKU-REVOKE", phone=PHONE)
+    sub = stock_alerts.subscribe("SKU-REVOKE", phone=PHONE, adult_declared=True)
     original_evidence = sub.evidence_hash
     assert stock_alerts.revoke(sub.ref, sku=sub.sku, phone=PHONE) is True
 
@@ -533,7 +536,7 @@ def test_global_optout_is_rechecked_immediately_before_stock_alert_send():
         first_name="Ana",
         phone=PHONE,
     )
-    sub = stock_alerts.subscribe("SKU-OPTOUT", customer=customer)
+    sub = stock_alerts.subscribe("SKU-OPTOUT", customer=customer, adult_declared=True)
     ConsentService.revoke_consent(customer.ref, "whatsapp")
 
     with (
@@ -586,7 +589,7 @@ def test_anonymous_repeat_from_other_session_cannot_take_over_existing_subscript
 
     product = _publish(sku="SKU-SUBSCRIBE-CROSS-SESSION")
     path = f"/api/v1/availability/{product.sku}/notify/"
-    sub = stock_alerts.subscribe(product.sku, phone=PHONE)
+    sub = stock_alerts.subscribe(product.sku, phone=PHONE, adult_declared=True)
     other_session = Client()
 
     repeated = other_session.post(path, {"phone": PHONE}, REMOTE_ADDR="203.0.113.211")
@@ -617,7 +620,7 @@ def test_anonymous_repeat_from_other_session_does_not_resume_paused_subscription
 
     product = _publish(sku="SKU-SUBSCRIBE-CROSS-SESSION-PAUSED")
     path = f"/api/v1/availability/{product.sku}/notify/"
-    sub = stock_alerts.subscribe(product.sku, phone=PHONE)
+    sub = stock_alerts.subscribe(product.sku, phone=PHONE, adult_declared=True)
     assert stock_alerts.set_paused(sub.ref, paused=True, sku=sub.sku, phone=PHONE)
 
     other_session = Client()
@@ -632,7 +635,7 @@ def test_anonymous_repeat_from_other_session_does_not_resume_paused_subscription
 def test_anonymous_reload_recovers_exact_session_management_link(client):
     product = _publish(sku="SKU-MANAGE-SESSION")
     path = f"/api/v1/availability/{product.sku}/notify/"
-    sub = stock_alerts.subscribe(product.sku, phone=PHONE)
+    sub = stock_alerts.subscribe(product.sku, phone=PHONE, adult_declared=True)
     _mark_legacy_session(client, sub)
 
     recovered = client.get(path)
@@ -651,7 +654,7 @@ def test_session_management_link_cannot_be_recovered_by_ref_or_wrong_owner(clien
     from django.test import Client
 
     product = _publish(sku="SKU-MANAGE-SESSION-IDOR")
-    sub = stock_alerts.subscribe(product.sku, phone=PHONE)
+    sub = stock_alerts.subscribe(product.sku, phone=PHONE, adult_declared=True)
     other_device = Client()
     session = other_device.session
     session["stock_alert_subscriptions"] = [
@@ -749,7 +752,7 @@ def test_authenticated_known_minor_gets_clear_non_actionable_age_response(client
 
 def test_endpoint_anonymous_can_cancel_only_its_session_subscription(client):
     product = _publish(sku="SKU-CANCEL")
-    sub = stock_alerts.subscribe(product.sku, phone=PHONE)
+    sub = stock_alerts.subscribe(product.sku, phone=PHONE, adult_declared=True)
     _mark_legacy_session(client, sub)
     subscription_ref = str(sub.ref)
 
@@ -767,7 +770,7 @@ def test_endpoint_anonymous_can_cancel_only_its_session_subscription(client):
 
 def test_endpoint_does_not_cancel_a_ref_outside_anonymous_session(client):
     product = _publish(sku="SKU-CANCEL-IDOR")
-    sub = stock_alerts.subscribe(product.sku, phone=PHONE)
+    sub = stock_alerts.subscribe(product.sku, phone=PHONE, adult_declared=True)
 
     response = client.delete(
         f"/api/v1/availability/{product.sku}/notify/",
@@ -790,7 +793,7 @@ def test_anonymous_session_marker_remains_after_a_delivery(rf):
 
     from shopman.storefront.presentation.catalog import notify_subscribed_skus
 
-    sub = stock_alerts.subscribe("SKU-PENDING-MARK", phone=PHONE)
+    sub = stock_alerts.subscribe("SKU-PENDING-MARK", phone=PHONE, adult_declared=True)
     request = rf.get("/")
     SessionMiddleware(lambda request: None).process_request(request)
     request.session["stock_alert_skus"] = ["SKU-LEGACY-MARK"]
@@ -817,7 +820,7 @@ def test_anonymous_session_marker_remains_after_a_delivery(rf):
 def test_move_receiver_schedules_notify_for_pending_sku():
     from shopman.storefront import handlers
 
-    stock_alerts.subscribe("SKU-MOVE", phone=PHONE)
+    stock_alerts.subscribe("SKU-MOVE", phone=PHONE, adult_declared=True)
     fake = _move("SKU-MOVE", kind="buy")
     with (
         patch("shopman.storefront.services.stock_alerts.notify_back_in_stock") as nb,
@@ -850,7 +853,7 @@ def test_move_receiver_skips_synthetic_refresh_and_future_planning(kind):
     move = (_move("SKU-SYNTHETIC", metadata={"suppress_notifications": True}) if kind == "synthetic"
             else _move("SKU-FUTURE", target_date=timezone.localdate() + timedelta(days=1)))
 
-    stock_alerts.subscribe(move.quant.sku, phone=PHONE)
+    stock_alerts.subscribe(move.quant.sku, phone=PHONE, adult_declared=True)
     with (
         patch("shopman.storefront.services.stock_alerts.notify_back_in_stock") as nb,
         patch("django.db.transaction.on_commit", side_effect=lambda fn: fn()),
@@ -862,7 +865,7 @@ def test_move_receiver_skips_synthetic_refresh_and_future_planning(kind):
 def test_move_receiver_reconciles_a_debit_to_close_the_availability_cycle():
     from shopman.storefront import handlers
 
-    stock_alerts.subscribe("SKU-QC", phone=PHONE)
+    stock_alerts.subscribe("SKU-QC", phone=PHONE, adult_declared=True)
     with (
         patch("shopman.storefront.services.stock_alerts.notify_back_in_stock") as nb,
         patch("django.db.transaction.on_commit", side_effect=lambda fn: fn()),
@@ -874,7 +877,7 @@ def test_move_receiver_reconciles_a_debit_to_close_the_availability_cycle():
 def test_move_receiver_never_calls_a_qc_correction_a_new_arrival():
     from shopman.storefront import handlers
 
-    stock_alerts.subscribe("SKU-QC", phone=PHONE)
+    stock_alerts.subscribe("SKU-QC", phone=PHONE, adult_declared=True)
     move = _move(
         "SKU-QC",
         delta=1,
@@ -896,7 +899,7 @@ def test_bake_receiver_records_pending_occurrence_until_quality_review():
     """A fornada cria o fato pendente sem autorizar comunicação ao cliente."""
     from shopman.storefront import handlers
 
-    stock_alerts.subscribe("SKU-BAKE", phone=PHONE, alert_type="production_ready")
+    stock_alerts.subscribe("SKU-BAKE", phone=PHONE, alert_type="production_ready", adult_declared=True)
     with (
         patch("shopman.storefront.services.stock_alerts.record_bake_pending") as pending,
         patch("django.db.transaction.on_commit", side_effect=lambda fn: fn()),
@@ -910,7 +913,7 @@ def test_bake_receiver_records_pending_occurrence_until_quality_review():
 def test_quality_review_receiver_releases_the_same_bake_occurrence():
     from shopman.storefront import handlers
 
-    stock_alerts.subscribe("SKU-BAKE", phone=PHONE, alert_type="production_ready")
+    stock_alerts.subscribe("SKU-BAKE", phone=PHONE, alert_type="production_ready", adult_declared=True)
     work_order = MagicMock(ref="wo-reviewed")
     with (
         patch("shopman.storefront.services.stock_alerts.review_bake_ready") as reviewed,
@@ -929,7 +932,7 @@ def test_quality_review_receiver_releases_the_same_bake_occurrence():
 def test_bake_receiver_ignores_other_production_actions():
     from shopman.storefront import handlers
 
-    stock_alerts.subscribe("SKU-BAKE", phone=PHONE, alert_type="production_ready")
+    stock_alerts.subscribe("SKU-BAKE", phone=PHONE, alert_type="production_ready", adult_declared=True)
     with (
         patch("shopman.storefront.services.stock_alerts.record_bake_pending") as pending,
         patch("shopman.storefront.services.stock_alerts.review_bake_ready") as reviewed,
@@ -947,7 +950,7 @@ def test_stock_back_subscriber_is_not_woken_by_a_bake():
     """Os dois gatilhos são independentes: quem espera reposição não recebe fornada."""
     from shopman.storefront import handlers
 
-    stock_alerts.subscribe("SKU-BAKE", phone=PHONE)  # stock_back (default)
+    stock_alerts.subscribe("SKU-BAKE", phone=PHONE, adult_declared=True)  # stock_back (default)
     with (
         patch("shopman.storefront.services.stock_alerts.record_bake_pending") as pending,
         patch("django.db.transaction.on_commit", side_effect=lambda fn: fn()),
@@ -959,8 +962,8 @@ def test_stock_back_subscriber_is_not_woken_by_a_bake():
 
 
 def test_both_alert_types_coexist_for_the_same_shopper():
-    back = stock_alerts.subscribe("SKU-BOTH", phone=PHONE)
-    bake = stock_alerts.subscribe("SKU-BOTH", phone=PHONE, alert_type="production_ready")
+    back = stock_alerts.subscribe("SKU-BOTH", phone=PHONE, adult_declared=True)
+    bake = stock_alerts.subscribe("SKU-BOTH", phone=PHONE, alert_type="production_ready", adult_declared=True)
     assert back.pk != bake.pk
     assert bake.alert_type == "production_ready"
 
@@ -997,13 +1000,13 @@ def test_bread_subscribes_to_the_oven_not_to_the_shelf():
     caía em ``stock_back`` e a fila de fornada nascia vazia para sempre.
     """
     _publish(sku="BF", is_batch_produced=True)
-    sub = stock_alerts.subscribe("BF", phone=PHONE)
+    sub = stock_alerts.subscribe("BF", phone=PHONE, adult_declared=True)
     assert sub.alert_type == StockAlertSubscription.AlertType.PRODUCTION_READY
 
 
 def test_shelf_item_subscribes_to_the_shelf():
     _publish(sku="AG")  # água: chega por recebimento, não sai do forno
-    sub = stock_alerts.subscribe("AG", phone=PHONE)
+    sub = stock_alerts.subscribe("AG", phone=PHONE, adult_declared=True)
     assert sub.alert_type == StockAlertSubscription.AlertType.STOCK_BACK
 
 
@@ -1026,17 +1029,17 @@ def test_an_active_recipe_is_enough_to_make_it_an_oven_item():
         batch_size=Decimal("10"),
         is_active=True,
     )
-    assert stock_alerts.subscribe("CI", phone=PHONE).alert_type == "production_ready"
+    assert stock_alerts.subscribe("CI", phone=PHONE, adult_declared=True).alert_type == "production_ready"
 
 
 def test_unknown_sku_falls_back_to_the_shelf():
     """Na dúvida, prateleira: é o eixo com mais caminhos de chegada."""
-    assert stock_alerts.subscribe("SKU-GHOST", phone=PHONE).alert_type == "stock_back"
+    assert stock_alerts.subscribe("SKU-GHOST", phone=PHONE, adult_declared=True).alert_type == "stock_back"
 
 
 def test_explicit_alert_type_still_wins():
     _publish(sku="BF-EXPLICIT", is_batch_produced=True)
-    sub = stock_alerts.subscribe("BF-EXPLICIT", phone=PHONE, alert_type="stock_back")
+    sub = stock_alerts.subscribe("BF-EXPLICIT", phone=PHONE, alert_type="stock_back", adult_declared=True)
     assert sub.alert_type == "stock_back"
 
 
@@ -1066,7 +1069,7 @@ def test_a_bake_waits_for_qc_and_does_not_send_twice_to_the_same_person():
     from shopman.storefront import handlers
 
     _publish(sku="BF-BAKE", is_batch_produced=True)
-    stock_alerts.subscribe("BF-BAKE", phone=PHONE)
+    stock_alerts.subscribe("BF-BAKE", phone=PHONE, adult_declared=True)
 
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True, 6)),
@@ -1110,7 +1113,7 @@ def test_a_production_move_never_serves_the_oven_queue():
     from shopman.storefront import handlers
 
     _publish(sku="BF-MAKE", is_batch_produced=True)
-    stock_alerts.subscribe("BF-MAKE", phone=PHONE)
+    stock_alerts.subscribe("BF-MAKE", phone=PHONE, adult_declared=True)
 
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)),
@@ -1124,8 +1127,8 @@ def test_a_production_move_never_serves_the_oven_queue():
 
 
 def test_one_event_only_targets_its_matching_subscription():
-    stock_alerts.subscribe("SKU-LEGACY-BOTH", phone=PHONE, alert_type="stock_back")
-    stock_alerts.subscribe("SKU-LEGACY-BOTH", phone=PHONE, alert_type="production_ready")
+    stock_alerts.subscribe("SKU-LEGACY-BOTH", phone=PHONE, alert_type="stock_back", adult_declared=True)
+    stock_alerts.subscribe("SKU-LEGACY-BOTH", phone=PHONE, alert_type="production_ready", adult_declared=True)
 
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)),
@@ -1151,7 +1154,7 @@ def test_a_non_production_arrival_does_not_impersonate_a_bake():
     from shopman.storefront import handlers
 
     _publish(sku="BF-RECEBIDO", is_batch_produced=True)
-    stock_alerts.subscribe("BF-RECEBIDO", phone=PHONE)
+    stock_alerts.subscribe("BF-RECEBIDO", phone=PHONE, adult_declared=True)
 
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True, 3)),
@@ -1169,7 +1172,7 @@ def test_a_non_production_arrival_does_not_impersonate_a_bake():
 
 
 def test_subscription_delivers_again_only_after_a_new_stock_cycle():
-    sub = stock_alerts.subscribe("SKU-CYCLE", phone=PHONE)
+    sub = stock_alerts.subscribe("SKU-CYCLE", phone=PHONE, adult_declared=True)
     states = [
         _state(True, 2),
         _state(True, 2),
@@ -1202,7 +1205,7 @@ def test_subscription_delivers_again_only_after_a_new_stock_cycle():
 
 
 def test_stock_cycle_closes_after_last_subscription_is_cancelled():
-    sub = stock_alerts.subscribe("SKU-CYCLE-CANCELLED", phone=PHONE)
+    sub = stock_alerts.subscribe("SKU-CYCLE-CANCELLED", phone=PHONE, adult_declared=True)
     with patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True, 2)):
         assert stock_alerts.notify_back_in_stock(sub.sku, source_ref="move-open") == 1
     assert stock_alerts.revoke(sub.ref, sku=sub.sku, phone=PHONE)
@@ -1217,14 +1220,14 @@ def test_stock_cycle_closes_after_last_subscription_is_cancelled():
 
     first = StockAlertOccurrence.objects.get(sku=sub.sku)
     assert first.closed_at is not None
-    replacement = stock_alerts.subscribe(sub.sku, phone=PHONE)
+    replacement = stock_alerts.subscribe(sub.sku, phone=PHONE, adult_declared=True)
     with patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True, 3)):
         assert stock_alerts.notify_back_in_stock(replacement.sku, source_ref="move-new-cycle") == 1
     assert StockAlertOccurrence.objects.filter(sku=sub.sku).count() == 2
 
 
 def test_replayed_bake_source_has_one_occurrence_and_one_delivery():
-    sub = stock_alerts.subscribe("SKU-BAKE-REPLAY", phone=PHONE, alert_type="production_ready")
+    sub = stock_alerts.subscribe("SKU-BAKE-REPLAY", phone=PHONE, alert_type="production_ready", adult_declared=True)
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True, 5)),
         patch(
@@ -1243,7 +1246,7 @@ def test_replayed_bake_source_has_one_occurrence_and_one_delivery():
 
 
 def test_pause_after_queue_is_rechecked_before_provider_call():
-    sub = stock_alerts.subscribe("SKU-PAUSE", phone=PHONE)
+    sub = stock_alerts.subscribe("SKU-PAUSE", phone=PHONE, adult_declared=True)
     with patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)):
         assert stock_alerts.notify_back_in_stock(sub.sku, source_ref="move-pause") == 1
     assert stock_alerts.set_paused(sub.ref, paused=True, sku=sub.sku, phone=PHONE)
@@ -1264,7 +1267,7 @@ def test_known_minor_birthday_added_after_queue_suppresses_before_provider_call(
         phone=PHONE,
         birthday=today.replace(year=today.year - 30),
     )
-    sub = stock_alerts.subscribe("SKU-LATE-KNOWN-MINOR", customer=customer)
+    sub = stock_alerts.subscribe("SKU-LATE-KNOWN-MINOR", customer=customer, adult_declared=True)
     with patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)):
         assert stock_alerts.notify_back_in_stock(sub.sku, source_ref="move-known-minor") == 1
     Customer.objects.filter(pk=customer.pk).update(
@@ -1286,7 +1289,7 @@ def test_known_minor_is_rechecked_again_at_provider_boundary():
         first_name="Ana",
         phone=PHONE,
     )
-    sub = stock_alerts.subscribe("SKU-PROVIDER-AGE-BOUNDARY", customer=customer)
+    sub = stock_alerts.subscribe("SKU-PROVIDER-AGE-BOUNDARY", customer=customer, adult_declared=True)
     with patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)):
         assert stock_alerts.notify_back_in_stock(sub.sku, source_ref="move-age-boundary") == 1
 
@@ -1312,7 +1315,7 @@ def test_age_lookup_failure_retries_without_contacting_provider():
         first_name="Ana",
         phone=PHONE,
     )
-    sub = stock_alerts.subscribe("SKU-AGE-LOOKUP-FAILURE", customer=customer)
+    sub = stock_alerts.subscribe("SKU-AGE-LOOKUP-FAILURE", customer=customer, adult_declared=True)
     with patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)):
         assert stock_alerts.notify_back_in_stock(sub.sku, source_ref="move-age-failure") == 1
 
@@ -1332,7 +1335,7 @@ def test_age_lookup_failure_retries_without_contacting_provider():
 
 
 def test_unavailable_at_provider_boundary_suppresses_delivery():
-    sub = stock_alerts.subscribe("SKU-BOUNDARY", phone=PHONE)
+    sub = stock_alerts.subscribe("SKU-BOUNDARY", phone=PHONE, adult_declared=True)
     with patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)):
         assert stock_alerts.notify_back_in_stock(sub.sku, source_ref="move-boundary") == 1
 
@@ -1352,7 +1355,7 @@ def test_unavailable_at_provider_boundary_suppresses_delivery():
 
 
 def test_lost_provider_response_is_not_retried_blindly(django_capture_on_commit_callbacks):
-    sub = stock_alerts.subscribe("SKU-UNKNOWN", phone=PHONE)
+    sub = stock_alerts.subscribe("SKU-UNKNOWN", phone=PHONE, adult_declared=True)
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)),
         patch(
@@ -1372,7 +1375,7 @@ def test_lost_provider_response_is_not_retried_blindly(django_capture_on_commit_
 
 
 def test_stale_worker_claim_is_indeterminate_and_alerted_without_resend():
-    sub = stock_alerts.subscribe("SKU-STALE", phone=PHONE)
+    sub = stock_alerts.subscribe("SKU-STALE", phone=PHONE, adult_declared=True)
     with patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)):
         stock_alerts.notify_back_in_stock(sub.sku, source_ref="move-stale")
     delivery = StockAlertDelivery.objects.get()
@@ -1397,7 +1400,7 @@ def test_stale_worker_claim_is_indeterminate_and_alerted_without_resend():
 
 
 def test_delivery_sla_command_alerts_with_counts_and_runbook():
-    sub = stock_alerts.subscribe("SKU-SLA", phone=PHONE)
+    sub = stock_alerts.subscribe("SKU-SLA", phone=PHONE, adult_declared=True)
     with patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)):
         stock_alerts.notify_back_in_stock(sub.sku, source_ref="move-sla")
     StockAlertDelivery.objects.update(updated_at=timezone.now() - timedelta(minutes=11))
@@ -1414,8 +1417,8 @@ def test_delivery_sla_command_alerts_with_counts_and_runbook():
 
 
 def test_partial_failure_keeps_independent_receipts_and_same_occurrence():
-    stock_alerts.subscribe("SKU-PARTIAL", phone=PHONE)
-    stock_alerts.subscribe("SKU-PARTIAL", phone="+5543999990002")
+    stock_alerts.subscribe("SKU-PARTIAL", phone=PHONE, adult_declared=True)
+    stock_alerts.subscribe("SKU-PARTIAL", phone="+5543999990002", adult_declared=True)
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)),
         patch(
@@ -1439,7 +1442,7 @@ def test_partial_failure_keeps_independent_receipts_and_same_occurrence():
 
 def test_anonymous_can_pause_and_resume_the_exact_session_subscription(client):
     product = _publish(sku="SKU-PAUSE-API")
-    sub = stock_alerts.subscribe(product.sku, phone=PHONE)
+    sub = stock_alerts.subscribe(product.sku, phone=PHONE, adult_declared=True)
     _mark_legacy_session(client, sub)
     subscription_ref = str(sub.ref)
     path = f"/api/v1/availability/{product.sku}/notify/"
@@ -1462,7 +1465,7 @@ def test_anonymous_can_pause_and_resume_the_exact_session_subscription(client):
 
 def test_former_expiry_does_not_disable_or_prevent_resuming(client):
     product = _publish(sku="SKU-EXPIRED-API")
-    sub = stock_alerts.subscribe(product.sku, phone=PHONE)
+    sub = stock_alerts.subscribe(product.sku, phone=PHONE, adult_declared=True)
     _mark_legacy_session(client, sub)
     subscription_ref = str(sub.ref)
     StockAlertSubscription.objects.filter(ref=subscription_ref).update(
@@ -1481,7 +1484,7 @@ def test_former_expiry_does_not_disable_or_prevent_resuming(client):
 
 
 def test_verified_subscription_remains_eligible_after_more_than_30_days():
-    sub = stock_alerts.subscribe("SKU-PERSISTENT-31-DAYS", phone=PHONE)
+    sub = stock_alerts.subscribe("SKU-PERSISTENT-31-DAYS", phone=PHONE, adult_declared=True)
     StockAlertSubscription.objects.filter(pk=sub.pk).update(
         subscribed_at=timezone.now() - timedelta(days=31),
         expires_at=timezone.now() - timedelta(days=1),
@@ -1508,7 +1511,7 @@ def test_management_capability_works_cross_device_and_get_is_read_only(client):
     from django.test import Client
 
     product = _publish(sku="SKU-MANAGE-CROSS-DEVICE")
-    sub = stock_alerts.subscribe(product.sku, phone=PHONE)
+    sub = stock_alerts.subscribe(product.sku, phone=PHONE, adult_declared=True)
     token = _management_token(sub)
     other_device = Client()
 
@@ -1531,7 +1534,7 @@ def test_management_capability_works_cross_device_and_get_is_read_only(client):
 
 @pytest.mark.parametrize("candidate", ["simple-ref", "altered-token"])
 def test_management_rejects_simple_ref_and_altered_token(client, candidate):
-    sub = stock_alerts.subscribe("SKU-MANAGE-TAMPER", phone=PHONE)
+    sub = stock_alerts.subscribe("SKU-MANAGE-TAMPER", phone=PHONE, adult_declared=True)
     management_token = _management_token(sub)
     altered_token = f"{management_token[:-1]}{'A' if management_token[-1] != 'A' else 'B'}"
     token = str(sub.ref) if candidate == "simple-ref" else altered_token
@@ -1559,7 +1562,7 @@ def test_capability_pause_or_cancel_immediately_suppresses_enqueued_delivery(
     body,
     reason,
 ):
-    sub = stock_alerts.subscribe(f"SKU-MANAGE-{method.upper()}", phone=PHONE)
+    sub = stock_alerts.subscribe(f"SKU-MANAGE-{method.upper()}", phone=PHONE, adult_declared=True)
     with patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)):
         stock_alerts.notify_back_in_stock(sub.sku, source_ref=f"move-{method}")
 
@@ -1579,7 +1582,7 @@ def test_capability_pause_or_cancel_immediately_suppresses_enqueued_delivery(
 
 
 def test_resume_applies_only_to_future_occurrences(client):
-    sub = stock_alerts.subscribe("SKU-MANAGE-FUTURE", phone=PHONE, alert_type="production_ready")
+    sub = stock_alerts.subscribe("SKU-MANAGE-FUTURE", phone=PHONE, alert_type="production_ready", adult_declared=True)
     with (
         patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True, 3)),
         patch("shopman.shop.services.quality.reviewed_saleable_quantity", return_value=Decimal("3")),
@@ -1610,7 +1613,7 @@ def test_logged_in_account_cannot_control_another_customers_alert(client):
 
     owner = Customer.objects.create(ref="CUS-ALERT-OWNER", first_name="Ana", phone=PHONE)
     stranger = Customer.objects.create(ref="CUS-ALERT-STRANGER", first_name="Bia", phone="+5543999990099")
-    sub = stock_alerts.subscribe("SKU-ACCOUNT-IDOR", customer=owner)
+    sub = stock_alerts.subscribe("SKU-ACCOUNT-IDOR", customer=owner, adult_declared=True)
     info = AuthCustomerInfo(uuid=stranger.uuid, name=stranger.name, phone=stranger.phone, email=None, is_active=True)
     user, _created = get_or_create_user_for_customer(info)
     client.force_login(user, backend="shopman.doorman.backends.PhoneOTPBackend")
@@ -1635,7 +1638,7 @@ def test_logged_in_account_cannot_control_another_customers_alert(client):
 )
 def test_capability_never_appears_in_application_logs(client, caplog, settings, subscription_ref):
     settings.SECRET_KEY = "stock-alert-log-test-only"
-    sub = stock_alerts.subscribe("SKU-MANAGE-LOG", phone=PHONE)
+    sub = stock_alerts.subscribe("SKU-MANAGE-LOG", phone=PHONE, adult_declared=True)
     sub.ref = subscription_ref
     sub.save(update_fields=["ref"])
     token = _management_token(sub)

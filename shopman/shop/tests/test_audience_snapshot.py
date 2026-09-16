@@ -114,7 +114,7 @@ def test_removed_birthday_is_subtracted_as_age_not_declared() -> None:
 
 
 def test_anonymous_subscription_is_late_bound_and_revocable() -> None:
-    sub = stock_alerts.subscribe("SKU-SNAPSHOT", phone="+5543999002006")
+    sub = stock_alerts.subscribe("SKU-SNAPSHOT", phone="+5543999002006", adult_declared=True)
     rules = {"alerts": True}
     snapshot = audience_snapshot.create_snapshot(
         audience.resolve(rules, sku=sub.sku),

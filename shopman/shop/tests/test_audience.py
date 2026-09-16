@@ -165,7 +165,7 @@ class TestAlerts:
         """Quem pediu para ser avisado daquele SKU já consentiu naquele SKU."""
         from shopman.storefront.services import stock_alerts
 
-        stock_alerts.subscribe(SKU, phone="+5543999990002")
+        stock_alerts.subscribe(SKU, phone="+5543999990002", adult_declared=True)
 
         result = audience.resolve({"alerts": True}, sku=SKU)
         assert [r.phone for r in result.general] == ["+5543999990002"]
@@ -173,7 +173,7 @@ class TestAlerts:
     def test_already_notified_subscription_remains_active(self):
         from shopman.storefront.services import stock_alerts
 
-        sub = stock_alerts.subscribe(SKU, phone="+5543999990002")
+        sub = stock_alerts.subscribe(SKU, phone="+5543999990002", adult_declared=True)
         sub.notified_at = timezone.now()
         sub.save(update_fields=["notified_at"])
         assert audience.resolve({"alerts": True}, sku=SKU).total == 1
@@ -333,7 +333,7 @@ class TestDedupe:
 
         customer = _customer("+5543999990001")
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
-        stock_alerts.subscribe(SKU, customer=customer)
+        stock_alerts.subscribe(SKU, customer=customer, adult_declared=True)
 
         result = audience.resolve({"favorites": True, "alerts": True}, sku=SKU)
         assert result.total == 1
@@ -343,7 +343,7 @@ class TestDedupe:
 
         customer = _customer("+5543999990001")
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
-        stock_alerts.subscribe(SKU, customer=customer)
+        stock_alerts.subscribe(SKU, customer=customer, adult_declared=True)
 
         recipient = audience.resolve({"favorites": True, "alerts": True}, sku=SKU).general[0]
         assert recipient.reasons == frozenset({"favorites", "alerts"})
@@ -353,7 +353,7 @@ class TestDedupe:
 
         customer = _customer("+5543999990001")
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
-        stock_alerts.subscribe(SKU, customer=customer)
+        stock_alerts.subscribe(SKU, customer=customer, adult_declared=True)
 
         summary = audience.resolve({"favorites": True, "alerts": True}, sku=SKU).summary()
         assert summary["favorites_count"] == 1

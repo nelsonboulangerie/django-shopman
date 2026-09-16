@@ -228,7 +228,7 @@ def test_a_loja_apaga_o_que_e_dela():
 
     customer = _customer()
     CustomerFavorite.objects.create(customer_ref=customer.ref, sku="CROIS-01")
-    stock_alerts.subscribe("CROIS-01", customer=customer)
+    stock_alerts.subscribe("CROIS-01", customer=customer, adult_declared=True)
 
     anonymize_customer(customer)
 

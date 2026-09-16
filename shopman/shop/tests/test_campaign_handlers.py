@@ -397,7 +397,7 @@ class TestAlertQueueSurvivesTheRealFinish:
         from shopman.backstage.services import production as production_service
         from shopman.storefront.services import stock_alerts
 
-        sub = stock_alerts.subscribe(SKU, phone="+5543999990099", alert_type="production_ready")
+        sub = stock_alerts.subscribe(SKU, phone="+5543999990099", alert_type="production_ready", adult_declared=True)
         assert sub is not None
 
         production_service.apply_quick_finish(
