@@ -58,6 +58,15 @@ export interface POSFulfillmentOptionProjection {
   requires_address: boolean;
 }
 
+/**
+ * O ESTADO da NFC-e desta venda, dito pelo servidor no fechamento e na lista de
+ * últimas vendas. O botão "Imprimir DANFE" era oferecido por PREVISÃO
+ * (`fiscal_expected`) e o endpoint respondia 409 até a nota autorizar — no Pix,
+ * durante TODA a espera. Opcional porque o backend pode chegar depois: sem ele a
+ * tela deriva de `fiscal_expected` (`queued` / `not_expected`).
+ */
+export type PosFiscalState = "not_expected" | "queued" | "awaiting_payment" | "authorized" | "failed";
+
 export interface POSPaymentCollectionProjection {
   ref: PosPaymentCollection;
   label: string;
@@ -157,6 +166,11 @@ export interface POSCheckoutContractProjection {
   // antesala ("sem turno aberto não há venda") lia daí — se o contrato mudasse a
   // chave, ele receberia `undefined` em silêncio e a antesala nunca dispararia.
   capabilities: POSCheckoutCapabilities;
+  /** Pedir papel ("Impressa?") é pedir a NOTA? Quando a regra fiscal lê o canal
+   *  de impressão e emite, a tela promete "imprime sozinha"; sem isso a bobina
+   *  só sai quando outra regra (CPF, cartão, Pix) emitir. Opcional: backend
+   *  pode chegar depois — ausente é "não promete". */
+  receipt_requests_emission?: boolean;
 }
 
 /**
@@ -440,6 +454,11 @@ export interface POSProjection {
   /** As janelas de hoje, para o formulário abrir já respondendo. A review
    * assume quando o operador escolhe OUTRA data. */
   delivery_slots_today: Array<{ ref: string; label: string }>;
+  /** Os slots CANÔNICOS da casa ("A partir das 9h/12h/15h"), com o rótulo real.
+   * Uma comanda salva com `slot-09` para HOJE mostrava o ref cru porque a grade
+   * de hoje ainda não tinha sido buscada; o rótulo do servidor resolve primeiro,
+   * a humanização (`humanizeWindowRef`) fica de rede. Opcional: pode chegar depois. */
+  delivery_slots_canonical?: Array<{ ref: string; label: string; starts_at: string }>;
   operators: POSOperatorProjection[];
   managers: POSManagerProjection[];
   auto_lock_seconds: number;
@@ -598,6 +617,8 @@ export interface POSCloseSaleResponse {
    *  emissão também dispara por forma de pagamento, sem o operador marcar nada,
    *  e a nota ainda não existe no instante do fechamento. */
   fiscal_expected?: boolean;
+  /** O estado da nota no instante do fechamento (ver `PosFiscalState`). */
+  fiscal_state?: PosFiscalState;
 }
 
 export interface POSPaymentDeliveryProjection {
