@@ -410,6 +410,9 @@ diagnose-health: ## Diagnostica health/readiness, checks Django e configuracao c
 audit-branches: ## Lista branches remotos à frente do main e separa entregues de ⚠️ não mergeados
 	@bash scripts/audit-branches.sh
 
+inflight: ## O que está em voo e o que está DORMINDO: worktrees sujas, branches sem PR, PRs verdes fora da fila
+	@bash scripts/inflight.sh
+
 release-readiness: ## Consolida prontidao local e bloqueios externos de piloto/release
 	$(PYTHON) scripts/check_release_readiness.py $(if $(profile),--profile=$(profile),) $(if $(json),--json,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
 
