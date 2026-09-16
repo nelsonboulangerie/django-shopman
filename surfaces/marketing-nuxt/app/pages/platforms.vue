@@ -11,6 +11,8 @@ import { platformIcon } from "~/presentation/campaign";
 import { receiptStateLabel } from "~/presentation/marketingResult";
 
 const { platforms, loading, error, load: loadPlatforms } = usePlatforms();
+// Produtos publicáveis, para o teste de envio escolher por NOME em vez de digitar SKU.
+const { products } = useCampaigns();
 const waTemplate = useWhatsAppTemplate();
 
 // ⚠️ O detalhe abre em painel, não fica aberto na página. Com o WhatsApp expandido o tempo
@@ -491,18 +493,24 @@ useHead({ title: "Plataformas" });
                     </option>
                   </UiNativeSelect>
                 </div>
+                <!-- ⚠️ Era "SKU (opcional)" em texto livre: o gestor não decora código
+                     de produto. A lista é a mesma do disparo manual (options.products). -->
                 <div>
                   <label
-                    for="test-sku"
+                    for="test-product"
                     class="mb-1 block text-xs font-medium text-muted-foreground"
-                    >SKU (opcional)</label
+                    >Produto (opcional)</label
                   >
-                  <UiInput
-                    id="test-sku"
-                    v-model="testSku"
-                    type="text"
-                    placeholder="BAGUETE"
-                  />
+                  <UiNativeSelect id="test-product" v-model="testSku">
+                    <option value="">Sem produto — só o texto do modelo</option>
+                    <option
+                      v-for="product in products"
+                      :key="product.value"
+                      :value="product.value"
+                    >
+                      {{ product.label }}
+                    </option>
+                  </UiNativeSelect>
                 </div>
                 <UiButton
                   type="button"

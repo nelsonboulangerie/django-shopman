@@ -52,6 +52,9 @@ const props = defineProps<{
   quietHoursSuspendedForLocalSimulation?: boolean;
   /** Estado e motivo por plataforma (`/marketing/platforms/`). Ausente = tudo pronto. */
   platformReadiness?: PlatformReadiness[];
+  /** Produtos publicáveis (`options.products`): o nome que o gestor fala, no lugar
+   *  do SKU. Sem rótulo, o SKU continua sendo o que há. */
+  productOptions?: { value: string; label: string }[];
 }>();
 
 const emit = defineEmits<{
@@ -236,6 +239,15 @@ const DRAFT_LABELS = {
   publish_at: "Data e hora",
   publish_fold: "Ocorrência do horário",
 };
+
+/** Nome do produto quando o catálogo o deu; o SKU só como último recurso. */
+const productLabel = computed(() => {
+  const sku = props.announcement.sku;
+  if (!sku) return "";
+  return (
+    props.productOptions?.find((option) => option.value === sku)?.label || sku
+  );
+});
 
 // Prontidão por plataforma, antes do clique: pílula pintada e frase sob a escolha.
 const readinessMap = computed(() =>
@@ -423,11 +435,14 @@ function askToReject() {
       >
         {{ announcement.trigger_label }}
       </span>
+      <!-- ⚠️ Era o SKU em monoespaçado ("BAGUETE"). O gestor fala "Baguete
+           tradicional"; o código só aparece quando o catálogo não deu nome. -->
       <span
         v-if="announcement.sku"
-        class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground"
+        class="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+        :class="productLabel === announcement.sku ? 'font-mono' : ''"
       >
-        {{ announcement.sku }}
+        {{ productLabel }}
       </span>
       <span
         v-if="expiry"
@@ -456,7 +471,7 @@ function askToReject() {
         <img
           v-if="announcement.image_url"
           :src="announcement.image_url"
-          :alt="`Foto de ${announcement.sku || 'produto'}`"
+          :alt="`Foto de ${productLabel || 'produto'}`"
           class="size-32 rounded-lg border border-border object-cover"
         />
         <div

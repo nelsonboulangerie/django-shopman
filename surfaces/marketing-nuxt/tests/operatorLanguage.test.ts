@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 // ("collections, skus", "bought_skus"): chave é contrato com o servidor, não
 // vocabulário do gestor.
 const FORBIDDEN_OPERATOR_TERMS =
-  /\b(announcements?|churn|flows?|providers?|receipts?|sandboxes?|templates?|collections?|bought_\w+|price_tiers|rfm_segments|audience_rules|trigger_filter)\b/i;
+  /\b(announcements?|churn|flows?|providers?|receipts?|sandboxes?|templates?|skus?|collections?|bought_\w+|price_tiers|rfm_segments|audience_rules|trigger_filter)\b/i;
 
 function vueFiles(directory: string): string[] {
   return readdirSync(directory).flatMap((entry) => {

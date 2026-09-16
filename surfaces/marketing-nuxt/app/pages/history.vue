@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { MarketingHistoryFilterName } from "~/composables/useCampaignHistory";
-import { formatCount } from "~/presentation/campaign";
+import { choiceLabels, formatCount } from "~/presentation/campaign";
 import {
   historyActorLabel,
   historyHref,
@@ -32,6 +32,9 @@ const {
   setFilter,
   clearFilters,
 } = useCampaignHistory();
+// O assunto diz o NOME do produto, não o SKU: o rótulo mora em `options.products`.
+const { products } = useCampaigns();
+const productLabels = computed(() => choiceLabels(products.value));
 
 const loadFailure = computed(() =>
   marketingLoadError(error.value || loadMoreError.value),
@@ -292,7 +295,7 @@ useHead({ title: "Histórico" });
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <h2 class="font-semibold">
-                  {{ historySubject(announcement) }}
+                  {{ historySubject(announcement, productLabels) }}
                 </h2>
                 <span class="text-xs text-muted-foreground">
                   {{

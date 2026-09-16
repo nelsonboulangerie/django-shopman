@@ -46,7 +46,7 @@ const {
   resumeDecision,
   cancelDecision,
 } = useCampaignBoard();
-const { platforms } = useCampaigns();
+const { platforms, products } = useCampaigns();
 // Prontidão por plataforma: o card conta ANTES de aprovar onde o anúncio não sai.
 const { platforms: platformReadiness } = usePlatforms();
 const busyPk = ref<number | null>(null);
@@ -385,6 +385,7 @@ useHead({ title: "Painel" });
           :announcement="announcement"
           :platform-options="platforms"
           :platform-readiness="platformReadiness"
+          :product-options="products"
           :busy="busyPk === announcement.pk"
           :ai-assist-available="aiAssistAvailable"
           :draft-owner="draftOwner"

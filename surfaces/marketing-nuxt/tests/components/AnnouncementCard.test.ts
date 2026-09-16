@@ -111,6 +111,32 @@ describe("AnnouncementCard", () => {
     expect(text).toContain("Expira em 20 min");
   });
 
+  // ⚠️ O cabeçalho mostrava o SKU em monoespaçado e a foto dizia "Foto de CRO-001".
+  // O gestor fala o nome do produto; o código só quando o catálogo não deu nome.
+  it("mostra o nome do produto no lugar do SKU quando o catálogo o dá", () => {
+    const wrapper = mountCard(
+      makeAnnouncement({ image_url: "/media/croissant.jpg" }),
+      "",
+      "America/Sao_Paulo",
+      false,
+      false,
+      { productOptions: [{ value: "CRO-001", label: "Croissant de manteiga" }] },
+    );
+
+    expect(wrapper.text()).toContain("Croissant de manteiga");
+    expect(wrapper.text()).not.toContain("CRO-001");
+    expect(wrapper.get("img").attributes("alt")).toBe(
+      "Foto de Croissant de manteiga",
+    );
+  });
+
+  it("cai no SKU só quando não há rótulo", () => {
+    const wrapper = mountCard(makeAnnouncement({ image_url: "/media/c.jpg" }));
+
+    expect(wrapper.text()).toContain("CRO-001");
+    expect(wrapper.get("img").attributes("alt")).toBe("Foto de CRO-001");
+  });
+
   // ⚠️ As plataformas apareciam iguais e a recusa só vinha no comprovante. Aprovar
   // continua possível: a pré-condição é de publicar, e o gestor fica sabendo AGORA.
   it("conta antes de aprovar onde o anúncio não vai sair", async () => {
