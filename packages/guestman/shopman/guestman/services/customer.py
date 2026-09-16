@@ -247,7 +247,7 @@ def update(ref: str, **fields) -> Customer | None:
     """Update customer fields (only whitelisted fields are accepted)."""
     with transaction.atomic():
         cust = (
-            Customer.objects.select_for_update()
+            Customer.objects.select_for_update(of=("self",))
             .select_related("price_tier")
             .filter(ref=ref, is_active=True)
             .first()

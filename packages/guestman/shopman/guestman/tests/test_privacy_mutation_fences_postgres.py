@@ -19,6 +19,7 @@ from shopman.guestman.contrib.preferences.service import PreferenceService
 from shopman.guestman.contrib.timeline.models import TimelineEvent
 from shopman.guestman.contrib.timeline.service import TimelineService
 from shopman.guestman.models import Customer
+from shopman.guestman.services import customer as customer_service
 
 requires_postgres = pytest.mark.skipif(
     connection.vendor != "postgresql",
@@ -169,6 +170,47 @@ def test_deletion_wins_without_guestman_child_recreation(customer, mutation_name
     assert not TimelineEvent.objects.filter(customer=customer).exists()
     assert not CustomerInsight.objects.filter(customer=customer).exists()
     assert not LoyaltyAccount.objects.filter(customer=customer).exists()
+
+
+def test_customer_update_locks_only_customer_with_nullable_price_tier():
+    customer = Customer.objects.create(
+        ref="CUST-NULLABLE-TIER",
+        first_name="Antes",
+        price_tier=None,
+    )
+
+    updated = customer_service.update(customer.ref, first_name="Depois")
+
+    assert updated is not None
+    assert updated.first_name == "Depois"
+
+
+def test_deletion_wins_against_customer_update(customer):
+    locked, release = Event(), Event()
+    deletion = Worker(
+        lambda: _close_customer_and_children(customer.pk, locked, release)
+    )
+    mutation = Worker(
+        lambda: customer_service.update(
+            customer.ref,
+            first_name="Não pode voltar",
+        )
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        deleted = pool.submit(deletion)
+        try:
+            assert locked.wait(10)
+            mutated = pool.submit(mutation)
+            _assert_database_wait(mutation)
+        finally:
+            release.set()
+        assert deleted.result(20) is None
+        assert mutated.result(20) is None
+
+    customer.refresh_from_db()
+    assert customer.is_active is False
+    assert customer.first_name == "John"
 
 
 def _hold_customer(customer_pk, locked: Event, release: Event):
