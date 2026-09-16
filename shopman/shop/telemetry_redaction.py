@@ -98,9 +98,14 @@ _URL_RE = re.compile(r"https?://[^\s<>\]\[\"']+")
 def redact_text(value: str) -> str:
     """Remove common PII/secret shapes and URL query/fragment values."""
 
-    text = _URL_RE.sub(lambda match: strip_url_query(match.group(0)), str(value))
-    text = _BEARER_RE.sub(REDACTED, text)
+    # Segredo e bearer vêm ANTES do corte de URL: um `token=` dentro da query
+    # precisa deixar o marcador `[redacted]` no texto, porque é por ele que a
+    # observação do concierge classifica a redação como `secret`. O regex de URL
+    # para em `[`, então o marcador sobrevive ao corte. A atribuição pessoal
+    # fica DEPOIS da URL, senão o `[^,;]+` engoliria a URL inteira.
+    text = _BEARER_RE.sub(REDACTED, str(value))
     text = _SECRET_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}={REDACTED}", text)
+    text = _URL_RE.sub(lambda match: strip_url_query(match.group(0)), text)
     text = _PERSONAL_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}={REDACTED}", text)
     text = _EMAIL_RE.sub("[email]", text)
     text = _PHONE_RE.sub("[phone]", text)
