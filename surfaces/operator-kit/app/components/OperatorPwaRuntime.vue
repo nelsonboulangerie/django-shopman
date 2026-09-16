@@ -1,17 +1,24 @@
 <script setup lang="ts">
-import { shouldApplyKioskUpdate } from "../presentation/pwaRuntime";
+import { applyKioskUpdate, idleReloadPathAllowed } from "../presentation/pwaRuntime";
 
 interface OperatorPwaRuntimeConfig {
   app?: string;
   kiosk?: boolean;
   wakeLock?: boolean;
+  idleReloadPaths?: string[];
   manifest?: { name?: string };
 }
 
-withDefaults(defineProps<{ showPrompts?: boolean }>(), { showPrompts: true });
+withDefaults(defineProps<{
+  showPrompts?: boolean;
+}>(), {
+  showPrompts: true,
+});
 
 const config = (useRuntimeConfig().public.operatorPwa || {}) as OperatorPwaRuntimeConfig;
 const enabled = Boolean(config.app);
+const route = useRoute();
+const idleReloadSafe = computed(() => idleReloadPathAllowed(config.idleReloadPaths || [], route.path));
 
 // As APIs de aparelho continuam progressivas: uma surface sem suporte preserva
 // exatamente o comportamento web atual. Só capabilities declaradas no manifesto
@@ -22,14 +29,18 @@ const pwaUpdate = usePwaUpdate();
 const applyingIdleUpdate = ref(false);
 
 async function applyIdleUpdate() {
-  if (!shouldApplyKioskUpdate({
+  await applyKioskUpdate({
+    allowedPaths: config.idleReloadPaths || [],
+    path: route.path,
     idle: kiosk.isIdle.value,
     needsRefresh: pwaUpdate.needRefresh.value,
     applying: applyingIdleUpdate.value,
-  })) return;
-  applyingIdleUpdate.value = true;
-  const accepted = await pwaUpdate.update();
-  if (!accepted) applyingIdleUpdate.value = false;
+  }, async () => {
+    applyingIdleUpdate.value = true;
+    const accepted = await pwaUpdate.update();
+    if (!accepted) applyingIdleUpdate.value = false;
+    return accepted;
+  });
 }
 
 const kiosk = useKioskMode({
@@ -41,10 +52,8 @@ const kiosk = useKioskMode({
 // Se o worker terminar de baixar quando o kiosk já está ocioso, não existe novo
 // evento de atividade para disparar o callback. Esta observação fecha essa janela.
 watch(
-  [kiosk.isIdle, pwaUpdate.needRefresh],
-  ([idle, needsRefresh]) => {
-    if (idle && needsRefresh) void applyIdleUpdate();
-  },
+  [kiosk.isIdle, pwaUpdate.needRefresh, idleReloadSafe],
+  () => void applyIdleUpdate(),
   { flush: "post" },
 );
 </script>

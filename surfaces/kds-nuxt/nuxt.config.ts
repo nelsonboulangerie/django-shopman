@@ -28,6 +28,7 @@ export default defineNuxtConfig({
       display: "fullscreen",
       wakeLock: true,
       kiosk: true,
+      idleReloadPaths: ["*"],
       manifest: {
         name: "Shopman KDS",
         shortName: "KDS",

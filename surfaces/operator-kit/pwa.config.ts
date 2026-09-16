@@ -34,6 +34,7 @@ export interface OperatorPwaCapabilityOptions {
   manifest: OperatorPwaManifestOptions;
   wakeLock?: boolean;
   kiosk?: boolean;
+  idleReloadPaths?: string[];
 }
 
 function namesImport(entry: unknown, name: string): boolean {
@@ -63,6 +64,7 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
     },
     wakeLock: false,
     kiosk: false,
+    idleReloadPaths: [],
   },
   async setup(options, nuxt) {
     if (!options.app.trim()) throw new TypeError("operator PWA exige app");
@@ -74,6 +76,12 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
     }
     if (!options.manifest.icons.some((icon) => icon.sizes === "512x512")) {
       throw new TypeError("operator PWA exige ícone 512x512");
+    }
+    if (options.kiosk && !options.idleReloadPaths?.length) {
+      throw new TypeError("operator PWA kiosk exige rotas explícitas para recarga ociosa");
+    }
+    if (!options.kiosk && options.idleReloadPaths?.length) {
+      throw new TypeError("operator PWA sem kiosk não aceita recarga ociosa");
     }
 
     const resolver = createResolver(import.meta.url);

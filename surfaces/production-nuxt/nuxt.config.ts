@@ -35,6 +35,7 @@ export default defineNuxtConfig({
       display: "fullscreen",
       wakeLock: true,
       kiosk: true,
+      idleReloadPaths: ["/board"],
       manifest: {
         name: "Shopman Produção",
         shortName: "Produção",
