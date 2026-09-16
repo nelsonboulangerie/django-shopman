@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
 import { useStationLock } from "../../../operator-kit/app/composables/useStationLock";
-import { GESTOR_ALERT, useOrdersBoard } from "../../app/composables/useOrdersBoard";
+import { GESTOR_ALERT, gestorAttentionDecision, useOrdersBoard } from "../../app/composables/useOrdersBoard";
 import type { TwoZoneQueueProjection } from "../../app/types/orders";
 
 const env = installNuxtGlobals();
@@ -58,6 +58,43 @@ describe("useOrdersBoard — derivação da fila", () => {
     expect(board.soundOn.value).toBe(false);
     board.toggleSound();
     expect(board.soundOn.value).toBe(true);
+  });
+});
+
+describe("useOrdersBoard — atenção diária", () => {
+  const dueQueue = (ref_: string): TwoZoneQueueProjection => ({
+    ...emptyZone(),
+    intake: [{ ref: ref_, can_confirm: true } as never],
+    total_count: 1,
+  });
+
+  it("avisa na primeira abertura quando o pedido já está tratável", () => {
+    expect(gestorAttentionDecision(dueQueue("PRE-1"), new Set(), "", "2026-09-16").firstUnseen).toBe("PRE-1");
+  });
+
+  it("não repete depois que alguém viu o mesmo pedido", () => {
+    const decision = gestorAttentionDecision(dueQueue("PRE-1"), new Set(["PRE-1"]), "2026-09-16:PRE-1", "2026-09-16");
+    expect(decision.firstUnseen).toBe("");
+    expect(decision.shouldStop).toBe(true);
+  });
+
+  it("uma troca com a mesma contagem ainda avisa pelo novo ref", () => {
+    const decision = gestorAttentionDecision(
+      dueQueue("PRE-2"),
+      new Set(["PRE-1"]),
+      "2026-09-16:PRE-1",
+      "2026-09-16",
+    );
+    expect(decision.firstUnseen).toBe("PRE-2");
+  });
+
+  it("encomenda ainda futura fica silenciosa", () => {
+    const queue = {
+      ...emptyZone(),
+      preorders: [{ ref: "PRE-AMANHA", can_confirm: true, can_advance: true } as never],
+      total_count: 1,
+    };
+    expect(gestorAttentionDecision(queue, new Set(), "", "2026-09-15").firstUnseen).toBe("");
   });
 });
 
@@ -341,6 +378,7 @@ it("SSE só toca depois do refresh tornar o pedido tratável", async () => {
     };
   });
   const startAlert = vi.fn();
+  const stopAlert = vi.fn();
   const prior = {
     useFetch: globalThis.useFetch,
     useAlertSound: globalThis.useAlertSound,
@@ -349,7 +387,14 @@ it("SSE só toca depois do refresh tornar o pedido tratável", async () => {
   };
   vi.stubGlobal("useFetch", () => ({ data, pending: ref(false), error: ref(null), refresh }));
   vi.stubGlobal("useAlertSound", () => ({
-    soundOn: ref(true), soundBlocked: ref(false), toggleSound: vi.fn(), startAlert,
+    soundOn: ref(true),
+    soundBlocked: ref(false),
+    alerting: ref(false),
+    playbackCount: ref(0),
+    toggleSound: vi.fn(),
+    activateSound: vi.fn(async () => true),
+    startAlert,
+    stopAlert,
   }));
   vi.stubGlobal("onMounted", (callback: () => void) => { mounted = callback; });
   vi.stubGlobal("onBeforeUnmount", (callback: () => void) => { unmount = callback; });

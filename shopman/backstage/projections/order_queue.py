@@ -540,7 +540,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
     payment_data = order.data.get("payment", {})
     method = payment_data.get("method", "")
     payment_status = _payment_status(order)
-    payment_method_label = _payment_method_label(method, payment_data)
+    payment_method_label = _payment_method_label(method, payment_data, order=order)
     fiscal_status, fiscal_status_label, fiscal_links = _fiscal_status(order)
 
     recipient = order.data.get("recipient") if isinstance(order.data.get("recipient"), dict) else {}
@@ -1232,7 +1232,7 @@ def _build_card(
     payment_data = order.data.get("payment", {})
     method = payment_data.get("method", "")
     payment_status = (_payment_status(order) if order.channel_ref == "ifood" else (payment_svc.get_payment_status(order, payment_reads=payment_reads) or ""))
-    payment_method_label = _payment_method_label(method, payment_data, labels=method_labels)
+    payment_method_label = _payment_method_label(method, payment_data, labels=method_labels, order=order)
     fiscal_status, fiscal_status_label, _fiscal_links = _fiscal_status(
         order, directive_status=fiscal_states.get(order.ref, "") if fiscal_states is not None else None,
     )
@@ -1565,7 +1565,7 @@ def _payment_status(order: Order) -> str:
     return payment_svc.get_payment_status(order) or ""
 
 
-def _payment_method_label(method: str, payment_data: dict, *, labels: dict | None = None) -> str:
+def _payment_method_label(method: str, payment_data: dict, *, labels: dict | None = None, order: Order | None = None) -> str:
     if _has_no_payment_info(payment_data):
         # Pill explícito em vez de rótulo vazio (que sumiria o pill). Ver
         # _has_no_payment_info: card mudo se confunde com pedido pago.
@@ -1578,8 +1578,9 @@ def _payment_method_label(method: str, payment_data: dict, *, labels: dict | Non
         )
     if payment_data.get("collection") == "on_delivery":
         if payment_data.get("cod_settled_at"):
-            return f"{label} — acerto confirmado"
-        return f"{label} na entrega"
+            return f"{label} — pagamento confirmado"
+        handoff = "retirada" if order is not None and not _is_delivery(order) else "entrega"
+        return f"{label} na {handoff}"
     return label
 
 
@@ -1608,7 +1609,10 @@ def _cash_settlement_actions(order, user, context):
     authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
     if not authorized:
         reason = "Identifique uma pessoa com permissão para gerenciar pedidos."
-    return (Action(ref="settle-delivery-cash", kind="mutation", label="Registrar dinheiro recebido",
+    is_pickup = not _is_delivery(order)
+    return (Action(ref="settle-delivery-cash", kind="mutation", label=(
+        "Registrar pagamento na retirada" if is_pickup else "Registrar pagamento da entrega"
+    ),
         enabled=authorized and not reason, reason=reason, method="POST", idempotency="required",
         payload_schema={"base_revision": operator_orders.cash_settlement_revision(order, shift),
             "expected_actor_id": getattr(user, "pk", None), "cash_shift_id": shift.pk if shift else None},
@@ -1616,12 +1620,16 @@ def _cash_settlement_actions(order, user, context):
 
 
 def _can_settle_delivery_cash(order: Order, payment_data: dict) -> bool:
+    fulfillment_ready = (
+        order.status == Order.Status.READY
+        if not _is_delivery(order)
+        else order.status in {Order.Status.DISPATCHED, Order.Status.DELIVERED, Order.Status.COMPLETED}
+    )
     return (
-        _is_delivery(order)
-        and payment_data.get("method") in {"cash", "credit", "debit", "mixed"}
+        payment_data.get("method") in {"cash", "credit", "debit", "mixed"}
         and payment_data.get("collection") == "on_delivery"
         and not payment_data.get("cod_settled_at")
-        and order.status in {Order.Status.DISPATCHED, Order.Status.DELIVERED, Order.Status.COMPLETED}
+        and fulfillment_ready
     )
 
 

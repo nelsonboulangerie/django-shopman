@@ -928,7 +928,8 @@ export function usePosSale(deps: PosSaleDeps) {
 
   function addTender(method: string) {
     if (cart.paymentCollection === "on_delivery" && !["cash", "credit", "debit"].includes(method)) {
-      toast.info("Na entrega, use dinheiro ou cartão na maquininha. PIX Efí exige confirmação automática.");
+      const handoff = cart.fulfillmentType === "pickup" ? "retirada" : "entrega";
+      toast.info(`Na ${handoff}, use dinheiro ou cartão na maquininha. PIX Efí exige confirmação automática.`);
       return;
     }
     const amountQ = Math.max(0, splitNextShareQ.value);
@@ -1068,6 +1069,7 @@ export function usePosSale(deps: PosSaleDeps) {
   const availablePaymentCollections = computed(() =>
     (pos.value?.payment_collections || []).filter((collection) =>
       collection.fulfillment_types.includes(cart.fulfillmentType)
+      && !(collection.ref === "on_delivery" && cart.fulfillmentType === "pickup" && cart.salesMode !== "order")
       && collection.payment_method_refs.includes(cart.paymentMethod),
     ),
   );
@@ -1542,7 +1544,7 @@ export function usePosSale(deps: PosSaleDeps) {
       paymentCollection: cart.paymentCollection,
       paymentTenders: resolvedPayment.paymentTenders,
       tenderedQ: resolvedPayment.tenderedQ,
-      changeForQ: cart.fulfillmentType === "delivery" && cart.paymentCollection === "on_delivery"
+      changeForQ: cart.paymentCollection === "on_delivery"
         ? cart.paymentTenders.filter((t) => t.method === "cash").reduce((sum, t) => sum + t.amount_q, 0)
         : 0,
       receiptChannels: cart.receiptChannels,

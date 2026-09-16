@@ -137,11 +137,11 @@ def cancellation_reasons(order) -> list[dict]:
 def settle_delivery_cash(
     order, *, operator, amount_raw: str = "", actor: str, change_back_raw: str | None = None, equipment_back: bool = False, expected_revision=None
 ):
-    """Acerto do dinheiro de entrega: entra no turno ABERTO (``cashman``) de quem recebeu.
+    """Acerto no hand-off: entra no turno ABERTO (``cashman``) de quem recebeu.
 
-    ``change_back_raw`` é o troco que voltou com o entregador (texto em reais;
-    vazio = não informado). O shop exige quando saiu troco no despacho, zero
-    incluído, e grava ``courier_in`` na mesma transação do ``cod_settled``.
+    Na retirada, o recebimento acontece com o pedido pronto e precisa anteceder
+    a conclusão. Na entrega, ``change_back_raw`` é o troco que voltou com o
+    entregador (texto em reais; vazio = não informado).
     """
     from shopman.cashman.exceptions import CashError
 

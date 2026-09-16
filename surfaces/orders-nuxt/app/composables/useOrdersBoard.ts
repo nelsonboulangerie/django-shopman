@@ -10,7 +10,7 @@ import { useOrderIntention } from "./useOrderIntention";
 // Writes go through the django proxy (CSRF handled there) and reconcile via refresh.
 // SSE/poll are client-only (EventSource is a browser API).
 import type { CancellationReason, OrderQueueResponse, TwoZoneQueueProjection } from "~/types/orders";
-import { newlyTreatableOrderRefs, preorderGroups, zonesView, type PreorderGroup, type ZoneView } from "~/presentation/board";
+import { preorderGroups, treatableOrderRefs, zonesView, type PreorderGroup, type ZoneView } from "~/presentation/board";
 
 export type { CancellationReason };
 
@@ -54,6 +54,25 @@ export const GESTOR_ALERT = {
     { f: 523.25, t: 0.28, d: 1.9 },
   ],
 };
+
+export function gestorAttentionDecision(
+  queue: TwoZoneQueueProjection | null,
+  seenRefs: ReadonlySet<string>,
+  previousSignature: string,
+  serviceDay: string,
+): { signature: string; firstUnseen: string; shouldStop: boolean } {
+  const refs = [...treatableOrderRefs(queue)].sort();
+  const signature = `${serviceDay}:${refs.join("|")}`;
+  const noUnseen = refs.every((ref_) => seenRefs.has(ref_));
+  if (signature === previousSignature) {
+    return { signature, firstUnseen: "", shouldStop: noUnseen };
+  }
+  return {
+    signature,
+    firstUnseen: refs.find((ref_) => !seenRefs.has(ref_)) || "",
+    shouldStop: noUnseen,
+  };
+}
 
 // O beep/mute é o do kit (mesmo do KDS), com chave própria do Gestor. O push
 // O SSE só dispara o refetch; a mudança da projection para ação liberada avisa.
@@ -120,9 +139,62 @@ export function useOrdersBoard() {
   const {
     soundOn,
     soundBlocked,
+    alerting,
+    playbackCount,
     toggleSound: toggleAlertSound,
+    activateSound,
     startAlert,
+    stopAlert,
   } = useAlertSound("gestor_sound", GESTOR_ALERT);
+
+  let attentionReady = false;
+  let lastAttentionSignature = "";
+  const attentionPending = ref(false);
+  let pendingAttentionRefs = new Set<string>();
+  const localServiceDay = () => {
+    const value = new Date();
+    return [
+      value.getFullYear(),
+      String(value.getMonth() + 1).padStart(2, "0"),
+      String(value.getDate()).padStart(2, "0"),
+    ].join("-");
+  };
+  const attentionStorageKey = (day: string) => `gestor_seen_${day}`;
+
+  function seenTreatableRefs(day: string): Set<string> {
+    if (!import.meta.client) return new Set();
+    try {
+      const value = JSON.parse(localStorage.getItem(attentionStorageKey(day)) || "[]");
+      return new Set(Array.isArray(value) ? value.map(String) : []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  function rememberPendingTreatableRefs() {
+    if (!import.meta.client) return;
+    const day = localServiceDay();
+    const seen = seenTreatableRefs(day);
+    for (const ref_ of pendingAttentionRefs) seen.add(ref_);
+    try {
+      localStorage.setItem(attentionStorageKey(day), JSON.stringify([...seen].slice(-500)));
+    } catch {
+      // Sem storage, a assinatura ainda impede repetição nesta montagem.
+    }
+    lastAttentionSignature = `${day}:${[...treatableOrderRefs(queue.value)].sort().join("|")}`;
+    pendingAttentionRefs = new Set();
+    attentionPending.value = false;
+    stopAlert();
+    stopTitleAlert();
+  }
+
+  function acknowledgeAttention() {
+    rememberPendingTreatableRefs();
+  }
+
+  async function activateAttentionSound() {
+    await activateSound();
+  }
 
   function toggleSound() {
     toggleAlertSound();
@@ -180,6 +252,43 @@ export function useOrdersBoard() {
     }
   }
 
+  function evaluateTreatableAttention() {
+    if (!attentionReady) return;
+    const day = localServiceDay();
+    const decision = gestorAttentionDecision(
+      queue.value,
+      seenTreatableRefs(day),
+      lastAttentionSignature,
+      day,
+    );
+    lastAttentionSignature = decision.signature;
+    if (decision.shouldStop) {
+      pendingAttentionRefs = new Set();
+      attentionPending.value = false;
+      stopAlert();
+      stopTitleAlert();
+    }
+    if (decision.firstUnseen) {
+      const seen = seenTreatableRefs(day);
+      pendingAttentionRefs = new Set(
+        [...treatableOrderRefs(queue.value)].filter((ref_) => !seen.has(ref_)),
+      );
+      attentionPending.value = pendingAttentionRefs.size > 0;
+      announceTreatableOrder(decision.firstUnseen);
+    }
+  }
+
+  // Tentar tocar com autoplay bloqueado não é recibo. Persistimos as refs como
+  // vistas somente quando o kit confirma uma reprodução real, ou no Ciente.
+  watch(playbackCount, (count, previous) => {
+    if (count > previous && attentionPending.value) rememberPendingTreatableRefs();
+  });
+
+  // Uma única régua para SSE, poll, retorno da aba e primeira abertura. Assim
+  // a encomenda que virou tratável com a tela fechada não depende de ter havido
+  // um evento SSE exatamente depois que o browser conectou.
+  watch(queue, evaluateTreatableAttention, { flush: "post" });
+
   function connectSse() {
     if (source) return;
     // Same-origin sempre: o BFF (server/routes/sse/orders.ts) faz streaming do
@@ -188,24 +297,18 @@ export function useOrdersBoard() {
     try {
       realtime.value = "connecting";
       source = new EventSource(url, { withCredentials: true });
-      // SSE é somente um sinal. O som nasce da diferença entre as projections
-      // canônicas antes/depois do refresh: espera de PIX/data não incomoda, mas
-      // o pagamento que libera uma ação passa a avisar naquele instante.
+      // SSE é somente um sinal. A atenção nasce do watch da projection
+      // canônica, compartilhado com poll/primeira abertura.
       let attentionRefresh: Promise<void> | null = null;
       let attentionQueued = false;
       const onPush = () => {
         attentionQueued = true;
         if (attentionRefresh) return;
-        const before = queue.value;
         attentionRefresh = (async () => {
           do {
             attentionQueued = false;
             await refresh();
           } while (attentionQueued);
-          if (!error.value) {
-            const [ref_] = newlyTreatableOrderRefs(before, queue.value);
-            if (ref_) announceTreatableOrder(ref_);
-          }
         })()
           .catch(() => {})
           .finally(() => {
@@ -245,6 +348,8 @@ export function useOrdersBoard() {
     refresh();
   };
   onMounted(() => {
+    attentionReady = true;
+    evaluateTreatableAttention();
     pollTimer = setInterval(() => refresh(), 30_000);
     connectWhenReady();
     // Voltou à aba / reconectou: refetch imediato (o poll de 30s é longo demais
@@ -395,5 +500,12 @@ export function useOrdersBoard() {
   const confirmMany = (refs: string[]) => actMany(refs, "confirm");
   const advanceMany = (refs: string[]) => actMany(refs, "advance");
 
-  return { readMetadata, queue, zones, totalCount, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, equipmentOut, equipmentAvailable, assign, unassign, confirmMany, advanceMany, soundOn, soundBlocked, toggleSound };
+  return {
+    readMetadata, queue, zones, totalCount, preorders, realtime, pending, error,
+    refresh, isBusy, actionError, clearActionError, confirm, advance, reject,
+    fetchCancellationReasons, settleCash, equipmentBack, equipmentOut,
+    equipmentAvailable, assign, unassign, confirmMany, advanceMany,
+    soundOn, soundBlocked, alerting, attentionPending, toggleSound,
+    activateAttentionSound, acknowledgeAttention,
+  };
 }

@@ -63,6 +63,7 @@ def unfire_session_lines(session_key: str, line_ids: list[str]) -> dict:
     a line drops it from the fire-ledger, so it may be fired again (reprint =
     un-fire + fire). Returns ``{"cancelled": n, "trimmed": n}``.
     """
+    from django.db import transaction
     from django.utils import timezone
 
     from shopman.backstage.models import KDSTicket
@@ -72,21 +73,40 @@ def unfire_session_lines(session_key: str, line_ids: list[str]) -> dict:
     if not targets:
         return {"cancelled": 0, "trimmed": 0}
 
-    tickets = KDSTicket.objects.filter(session_key=session_key).exclude(status="cancelled")
-    for ticket in tickets:
-        items = ticket.items or []
-        kept = [it for it in items if it.get("line_id") not in targets]
-        if len(kept) == len(items):
-            continue
-        if kept:
-            ticket.items = kept
-            ticket.save(update_fields=["items"])
-            trimmed += 1
-        else:
-            ticket.status = "cancelled"
-            ticket.cancelled_at = timezone.now()
-            ticket.save(update_fields=["status", "cancelled_at"])
-            cancelled += 1
+    with transaction.atomic():
+        tickets = (
+            KDSTicket.objects.select_for_update()
+            .filter(session_key=session_key)
+            .exclude(status="cancelled")
+        )
+        for ticket in tickets:
+            items = ticket.items or []
+            removed = [it for it in items if it.get("line_id") in targets]
+            kept = [it for it in items if it.get("line_id") not in targets]
+            if not removed:
+                continue
+            cancelled_at = timezone.now()
+            if kept:
+                # Não apague o fato operacional. Antes, um cancelamento parcial
+                # apenas sumia do JSON do ticket vivo: o KDS não tinha card,
+                # alerta nem gesto de ciência e deixava finalizar o restante em
+                # silêncio. O comprovante cancelado preserva somente os itens
+                # retirados e usa o fluxo canônico de "Ciente" do board.
+                ticket.items = kept
+                ticket.save(update_fields=["items"])
+                KDSTicket.objects.create(
+                    session_key=session_key,
+                    kds_instance=ticket.kds_instance,
+                    items=removed,
+                    status="cancelled",
+                    cancelled_at=cancelled_at,
+                )
+                trimmed += 1
+            else:
+                ticket.status = "cancelled"
+                ticket.cancelled_at = cancelled_at
+                ticket.save(update_fields=["status", "cancelled_at"])
+                cancelled += 1
     return {"cancelled": cancelled, "trimmed": trimmed}
 
 

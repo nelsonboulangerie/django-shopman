@@ -7,6 +7,7 @@
 // SSE/poll/beep are client-only (EventSource + Web Audio are browser APIs).
 import type { KDSBoardProjection, KDSBoardResponse, KDSTicketProjection } from "~/types/kds";
 import { boardView, type KDSBoardView } from "~/presentation/board";
+import type { Ref } from "vue";
 
 /**
  * O aviso de ticket novo do KDS — a FANFARRA.
@@ -43,9 +44,36 @@ export const KDS_ALERT = {
   ],
 };
 
-export function useKdsBoard(stationRef: string) {
+export function kdsAttentionDecision(
+  current: KDSBoardView,
+  seenIds: ReadonlySet<string>,
+  previousSignature: string,
+): { signature: string; shouldAlert: boolean; shouldStop: boolean } {
+  if (current.serviceDate !== current.today) {
+    return { signature: "", shouldAlert: false, shouldStop: true };
+  }
+  const ids = [
+    ...current.cards.map((card) => `active:${card.pk}`),
+    ...current.cancelled.map((card) => `cancelled:${card.pk}`),
+  ].sort();
+  const signature = ids.join("|");
+  const noUnseen = ids.every((id) => seenIds.has(id));
+  if (signature === previousSignature) {
+    return { signature, shouldAlert: false, shouldStop: noUnseen };
+  }
+  return {
+    signature,
+    shouldAlert: ids.some((id) => !seenIds.has(id)),
+    shouldStop: noUnseen,
+  };
+}
+
+export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
   const config = useRuntimeConfig();
-  const path = `/api/v1/backstage/kds/${encodeURIComponent(stationRef)}/`;
+  const path = computed(() => {
+    const base = `/api/v1/backstage/kds/${encodeURIComponent(stationRef)}/`;
+    return serviceDate?.value ? `${base}?date=${encodeURIComponent(serviceDate.value)}` : base;
+  });
 
   // useFetch (not useAsyncData) so the SSR payload transfers reliably (POS gotcha).
   const { data, pending, error, refresh } = useFetch<KDSBoardResponse>(path, {
@@ -61,19 +89,104 @@ export function useKdsBoard(stationRef: string) {
 
   // Realtime + polling + audio cue (client only). O bloco de áudio (beep 880Hz,
   // mute persistido, desbloqueio de autoplay) é o do kit — chave por estação.
-  const { soundOn, soundBlocked, toggleSound, beep } = useAlertSound(
+  const {
+    soundOn,
+    soundBlocked,
+    playbackCount,
+    toggleSound,
+    activateSound,
+    startAlert,
+    stopAlert,
+  } = useAlertSound(
     `kds_sound_${stationRef}`,
     KDS_ALERT,
   );
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let source: EventSource | null = null;
-  let lastTotal = -1;
+  let attentionReady = false;
+  let lastAttentionSignature = "";
+  const attentionPending = ref(false);
+  let pendingAttentionIds = new Set<string>();
 
-  // Beep when the active total rises (a new ticket arrived on this station).
-  watch(() => view.value?.total ?? 0, (total) => {
-    if (lastTotal >= 0 && total > lastTotal) beep();
-    lastTotal = total;
+  const attentionStorageKey = (date: string) => `kds_seen_${stationRef}_${date}`;
+
+  function attentionIds(current: KDSBoardView): string[] {
+    return [
+      ...current.cards.map((card) => `active:${card.pk}`),
+      ...current.cancelled.map((card) => `cancelled:${card.pk}`),
+    ];
+  }
+
+  function seenAttentionIds(date: string): Set<string> {
+    if (!import.meta.client) return new Set();
+    try {
+      const value = JSON.parse(localStorage.getItem(attentionStorageKey(date)) || "[]");
+      return new Set(Array.isArray(value) ? value.map(String) : []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  function rememberPendingAttention() {
+    const current = view.value;
+    if (!current || current.serviceDate !== current.today || !import.meta.client) return;
+    const seen = seenAttentionIds(current.serviceDate);
+    for (const id of pendingAttentionIds) seen.add(id);
+    try {
+      // Limite defensivo: a chave é diária, mas um terminal pode ficar semanas
+      // sem limpeza. Os mais novos bastam para impedir repetição no remount.
+      localStorage.setItem(
+        attentionStorageKey(current.serviceDate),
+        JSON.stringify([...seen].slice(-500)),
+      );
+    } catch {
+      // Sem storage, a atenção continua válida apenas nesta montagem.
+    }
+    lastAttentionSignature = attentionIds(current).sort().join("|");
+    pendingAttentionIds = new Set();
+    attentionPending.value = false;
+    stopAlert();
+  }
+
+  function acknowledgeAttention() {
+    rememberPendingAttention();
+  }
+
+  async function activateAttentionSound() {
+    await activateSound();
+  }
+
+  function alertForUnseenWork(current: KDSBoardView) {
+    if (!attentionReady || !import.meta.client) return;
+    const seen = seenAttentionIds(current.serviceDate);
+    const decision = kdsAttentionDecision(current, seen, lastAttentionSignature);
+    lastAttentionSignature = decision.signature;
+    if (decision.shouldStop) {
+      pendingAttentionIds = new Set();
+      attentionPending.value = false;
+      stopAlert();
+    }
+    if (decision.shouldAlert) {
+      pendingAttentionIds = new Set(attentionIds(current).filter((id) => !seen.has(id)));
+      attentionPending.value = pendingAttentionIds.size > 0;
+      startAlert();
+    }
+  }
+
+  // Tentativa bloqueada pelo autoplay não conta como vista. Só a reprodução
+  // efetiva (recibo do kit) ou o botão Ciente persiste os IDs pendentes.
+  watch(playbackCount, (count, previous) => {
+    if (count > previous && attentionPending.value) rememberPendingAttention();
   });
+
+  // Som só pertence ao quadro de HOJE. A atenção é por identidade, não por
+  // contagem: uma troca de tickets que preserve o total ainda precisa avisar. A
+  // memória diária também faz um ticket criado de madrugada tocar na primeira
+  // abertura, mas não repetir depois que alguém interagiu com o KDS.
+  watch(() => view.value, (current) => {
+    if (!current) return;
+    alertForUnseenWork(current);
+  }, { immediate: true });
 
   function connectSse() {
     if (source) return;
@@ -95,7 +208,8 @@ export function useKdsBoard(stationRef: string) {
   let removeVisibilityListeners: (() => void) | null = null;
 
   onMounted(() => {
-    lastTotal = view.value?.total ?? -1;
+    attentionReady = true;
+    if (view.value) alertForUnseenWork(view.value);
     pollTimer = setInterval(() => refresh(), 15_000);
     connectSse();
     // Tablet dormiu / voltou à aba: refetch imediato (setInterval é throttlado em
@@ -116,6 +230,7 @@ export function useKdsBoard(stationRef: string) {
   // numa cozinha em ritmo, toques em sequência não podem ser descartados.
   let chain: Promise<unknown> = Promise.resolve();
   let reconcileTimer: ReturnType<typeof setTimeout> | null = null;
+  const readOnly = computed(() => Boolean(view.value && view.value.serviceDate !== view.value.today));
 
   // O `$fetch` tipado do Nitro estoura o typecheck (TS2321 excessive stack depth) ao casar
   // um path DINÂMICO contra o catch-all `/api/v1/**:path`. Estas escritas vão pro proxy BFF
@@ -138,6 +253,7 @@ export function useKdsBoard(stationRef: string) {
   }
 
   function checkItem(pk: number, index: number, checked: boolean) {
+    if (readOnly.value) return;
     const t = data.value?.board?.tickets?.find((x) => x.pk === pk && "items" in x) as KDSTicketProjection | undefined;
     const item = t?.items?.[index];
     if (!t || !item) return;
@@ -175,16 +291,24 @@ export function useKdsBoard(stationRef: string) {
       });
   }
 
-  const finalize = (pk: number) =>
+  const finalize = (pk: number) => {
+    if (readOnly.value) return;
     removeFrom(() => data.value?.board?.tickets, pk, `/api/v1/backstage/kds/tickets/${pk}/done/`);
-  const expedite = (pk: number, action: "dispatch" | "complete") =>
+  };
+  const expedite = (pk: number, action: "dispatch" | "complete") => {
+    if (readOnly.value) return;
     removeFrom(() => data.value?.board?.tickets, pk, `/api/v1/backstage/kds/expedition/${pk}/action/`, { action });
+  };
   // Recall: o concluído sai da lista de recentes; a reconciliação o traz de volta ao board ativo.
-  const recall = (pk: number) =>
+  const recall = (pk: number) => {
+    if (readOnly.value) return;
     removeFrom(() => data.value?.board?.recent_done, pk, `/api/v1/backstage/kds/tickets/${pk}/recall/`);
+  };
   // Reconhecer cancelado: some do board.
-  const acknowledge = (pk: number) =>
+  const acknowledge = (pk: number) => {
+    if (readOnly.value) return;
     removeFrom(() => data.value?.board?.cancelled_tickets, pk, `/api/v1/backstage/kds/tickets/${pk}/acknowledge/`);
+  };
 
   onBeforeUnmount(() => {
     if (pollTimer) clearInterval(pollTimer);
@@ -193,5 +317,23 @@ export function useKdsBoard(stationRef: string) {
     if (removeVisibilityListeners) removeVisibilityListeners();
   });
 
-  return { board, view, pending, error, refresh, soundOn, soundBlocked, toggleSound, checkItem, finalize, expedite, recall, acknowledge };
+  return {
+    board,
+    view,
+    readOnly,
+    pending,
+    error,
+    refresh,
+    soundOn,
+    soundBlocked,
+    attentionPending,
+    toggleSound,
+    activateAttentionSound,
+    acknowledgeAttention,
+    checkItem,
+    finalize,
+    expedite,
+    recall,
+    acknowledge,
+  };
 }

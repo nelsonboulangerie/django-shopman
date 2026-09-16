@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
@@ -53,6 +55,97 @@ def test_build_kds_board_returns_ticket_projection(kds_setup):
 
 
 @pytest.mark.django_db
+def test_kds_defaults_to_today_and_future_order_only_appears_on_its_date(kds_setup):
+    _, _, _, _ = kds_setup
+    picking = KDSInstance.objects.create(
+        ref="picking-proj",
+        name="Encomendas",
+        type="picking",
+        target_time_minutes=10,
+    )
+    tomorrow = timezone.localdate() + timedelta(days=1)
+    future = Order.objects.create(
+        ref="KDS-AMANHA",
+        channel_ref="pos",
+        session_key="sk-kds-amanha",
+        status=Order.Status.ACCEPTED,
+        total_q=1200,
+        data={"delivery_date": tomorrow.isoformat(), "fulfillment_type": "pickup"},
+    )
+    OrderItem.objects.create(
+        order=future,
+        line_id="future",
+        sku="F",
+        name="Encomenda",
+        qty=1,
+        unit_price_q=1200,
+        line_total_q=1200,
+    )
+
+    today_board = build_kds_board(picking.ref)
+    assert today_board.tickets == ()
+    assert tomorrow.isoformat() in today_board.available_dates
+    assert today_board.service_date == timezone.localdate().isoformat()
+
+    future_board = build_kds_board(picking.ref, service_date=tomorrow)
+    assert [ticket.order_ref for ticket in future_board.tickets] == ["KDS-AMANHA"]
+    assert future_board.tickets[0].is_scheduled is True
+    assert KDSTicket.objects.filter(session_key=future.session_key).exists() is False
+    assert future_board.service_date_display == "Amanhã"
+
+
+@pytest.mark.django_db
+def test_future_materialized_ticket_is_still_read_only(kds_setup):
+    prep, _, _, _ = kds_setup
+    tomorrow = timezone.localdate() + timedelta(days=1)
+    future = Order.objects.create(
+        ref="KDS-LEGADO-AMANHA",
+        channel_ref="pos",
+        session_key="sk-kds-legado-amanha",
+        status=Order.Status.ACCEPTED,
+        total_q=1200,
+        data={"delivery_date": tomorrow.isoformat(), "fulfillment_type": "pickup"},
+    )
+    legacy = KDSTicket.objects.create(
+        session_key=future.session_key,
+        kds_instance=prep,
+        items=[{"sku": "F", "name": "Legado", "qty": 1, "checked": False}],
+    )
+
+    board = build_kds_board(prep.ref, service_date=tomorrow)
+
+    projected = next(ticket for ticket in board.tickets if ticket.pk == legacy.pk)
+    assert projected.is_scheduled is True
+
+
+@pytest.mark.django_db
+def test_future_expedition_card_is_read_only(kds_setup):
+    _, expedition, _, _ = kds_setup
+    tomorrow = timezone.localdate() + timedelta(days=1)
+    future = Order.objects.create(
+        ref="KDS-EXP-AMANHA",
+        channel_ref="web",
+        status=Order.Status.READY,
+        total_q=1200,
+        data={"delivery_date": tomorrow.isoformat(), "fulfillment_type": "pickup"},
+    )
+    OrderItem.objects.create(
+        order=future,
+        line_id="exp-future",
+        sku="F",
+        name="Encomenda",
+        qty=1,
+        unit_price_q=1200,
+        line_total_q=1200,
+    )
+
+    board = build_kds_board(expedition.ref, service_date=tomorrow)
+
+    assert [card.order_ref for card in board.tickets] == ["KDS-EXP-AMANHA"]
+    assert board.tickets[0].is_scheduled is True
+
+
+@pytest.mark.django_db
 def test_ticket_exposes_order_level_kitchen_and_customer_notes(kds_setup):
     prep, _, _, _ = kds_setup
     # The operator's kitchen note (from the gestor) and the customer's checkout note
@@ -65,6 +158,22 @@ def test_ticket_exposes_order_level_kitchen_and_customer_notes(kds_setup):
 
     assert ticket.kitchen_note == "Bem assado. Sem cebola."
     assert ticket.customer_note == "Cortar ao meio"
+
+
+@pytest.mark.django_db
+def test_unacknowledged_cancellation_stays_visible_while_same_order_has_active_work(kds_setup):
+    prep, _, active, _ = kds_setup
+    cancelled = KDSTicket.objects.create(
+        session_key=active.session_key,
+        kds_instance=prep,
+        status="cancelled",
+        cancelled_at=timezone.now() - timedelta(hours=1),
+        items=[{"line_id": "cancelled", "sku": "X", "name": "Item retirado", "qty": 1}],
+    )
+
+    board = build_kds_board(prep.ref)
+
+    assert [ticket.pk for ticket in board.cancelled_tickets] == [cancelled.pk]
 
 
 @pytest.mark.django_db
@@ -122,9 +231,9 @@ def test_precommit_comanda_surfaces_named_tab(kds_setup):
 
 
 @pytest.mark.django_db
-def test_committed_order_keeps_named_tab_label(kds_setup):
-    # After payment the tab_display copied into Order.data keeps the KDS heading stable
-    # (no jarring flip from "Mesa 5" to the random order ref).
+def test_committed_order_shows_new_order_and_keeps_former_tab_as_reference(kds_setup):
+    # Depois do pagamento a comanda está livre: o pedido vira a referência
+    # principal, mas a antiga etiqueta segue disponível para ser riscada na UI.
     prep, _, _, _ = kds_setup
     order = Order.objects.create(
         ref="A42",
@@ -144,7 +253,8 @@ def test_committed_order_keeps_named_tab_label(kds_setup):
 
     projection = build_kds_ticket(ticket.pk)
 
-    assert projection.order_ref == "Mesa 5"
+    assert projection.order_ref == "A42"
+    assert projection.previous_tab_ref == "Mesa 5"
 
 
 @pytest.mark.django_db

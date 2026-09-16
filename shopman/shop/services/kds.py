@@ -25,7 +25,7 @@ from django.utils import timezone
 from shopman.orderman.models import Order
 
 from shopman.shop.services import payment_gate
-from shopman.shop.services.order_helpers import get_fulfillment_type, json_quantity
+from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type, json_quantity
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,10 @@ class TicketCompletionBlocked(Exception):
     a superfície mostrar a mensagem certa — nunca o genérico "ticket não está
     aberto", que descreveria outro problema.
     """
+
+
+class FutureWorkBlocked(ValueError):
+    """Mutação recusada: a encomenda futura está disponível só para consulta."""
 
 
 def dispatch(order) -> list:
@@ -263,6 +267,66 @@ def fired_line_ids(session_key: str) -> set:
     return kds_adapter.fired_line_ids_for_session(session_key)
 
 
+def preview_order_for_instance(order, instance) -> list[dict]:
+    """Route an order for a read-only future KDS preview, without firing it.
+
+    Future preorders must be inspectable from the KDS date picker, but creating a
+    ``KDSTicket`` would turn a preview into live kitchen work and emit the very
+    alert we are trying to defer. This uses the same bundle expansion and station
+    precedence as ``fire_lines`` and returns only the items owned by ``instance``.
+    """
+    from shopman.shop.adapters import get_adapter
+    from shopman.shop.adapters import kds as kds_adapter
+
+    lines = _order_to_lines(order)
+    if not lines:
+        return []
+
+    instances = kds_adapter.get_active_prep_instances()
+    if not instances or not any(candidate.pk == instance.pk for candidate in instances):
+        return []
+
+    catalog = get_adapter("catalog")
+    routable_items = _build_routable_items(lines)
+    skus = list({item["sku"] for item in routable_items})
+    sku_to_collection = catalog.bulk_sku_to_collection_id(skus)
+    production = get_adapter("production")
+    prep_skus = production.get_prep_skus(skus) if production else set()
+
+    type_col_map = defaultdict(list)
+    catchall_map = defaultdict(list)
+    for candidate in instances:
+        collection_ids = set(candidate.collections.values_list("id", flat=True))
+        if collection_ids:
+            for collection_id in collection_ids:
+                type_col_map[(candidate.type, collection_id)].append(candidate)
+        else:
+            catchall_map[candidate.type].append(candidate)
+
+    preview: list[dict] = []
+    for item in routable_items:
+        item_type = "prep" if item["sku"] in prep_skus else "picking"
+        matched = _match_instances(
+            item_type=item_type,
+            collection_id=sku_to_collection.get(item["sku"]),
+            type_col_map=type_col_map,
+            catchall_map=catchall_map,
+        )
+        if not any(candidate.pk == instance.pk for candidate in matched):
+            continue
+        preview.append(
+            {
+                "sku": item["sku"],
+                "name": item["name"],
+                "qty": item["qty"],
+                "notes": item["notes"],
+                "checked": False,
+                "line_id": item["line_id"],
+            }
+        )
+    return preview
+
+
 def unfire_lines(*, session_key: str, line_ids: list[str]) -> dict:
     """Cancel the kitchen fire for specific lines, freeing them to re-fire."""
     from shopman.shop.adapters import kds as kds_adapter
@@ -467,6 +531,34 @@ def _ticket_order(ticket, *, for_update: bool = False):
     return qs.first()
 
 
+def _ticket_source(ticket, *, for_update: bool = False):
+    """Resolve Order ou a comanda aberta que originou um ticket legado."""
+    order = _ticket_order(ticket, for_update=for_update)
+    if order is not None:
+        return order
+    from shopman.orderman.models import Session
+
+    qs = Session.objects.filter(session_key=ticket.session_key, state="open").order_by("-id")
+    if for_update:
+        qs = qs.select_for_update()
+    return qs.first()
+
+
+def _ensure_source_due(source) -> None:
+    commitment = get_commitment_date(source)
+    today = timezone.localdate()
+    if commitment is not None and commitment > today:
+        raise FutureWorkBlocked(
+            f"Esta encomenda é para {commitment.strftime('%d/%m/%Y')}. "
+            "A prévia é somente para consulta; as ações serão liberadas no dia combinado."
+        )
+
+
+def ensure_ticket_due(ticket) -> None:
+    """Read guard used by the facade before idempotent-replay shortcuts."""
+    _ensure_source_due(_ticket_source(ticket))
+
+
 def set_ticket_item_checked(ticket, *, index: int, checked: bool, actor: str) -> bool:
     """Escreve o estado DESEJADO de um item, e inicia o preparo quando o trabalho começa.
 
@@ -493,6 +585,8 @@ def set_ticket_item_checked(ticket, *, index: int, checked: bool, actor: str) ->
 
 
 def _set_ticket_item_checked_locked(ticket, *, index: int, checked: bool, actor: str) -> bool:
+    source = _ticket_source(ticket, for_update=True)
+    _ensure_source_due(source)
     if ticket.status not in OPEN_TICKET_STATUSES:
         return False
     if not 0 <= index < len(ticket.items):
@@ -505,7 +599,7 @@ def _set_ticket_item_checked_locked(ticket, *, index: int, checked: bool, actor:
 
     ticket.save(update_fields=["items", "status"])
 
-    order = _ticket_order(ticket, for_update=True)
+    order = source if isinstance(source, Order) else None
     if order is not None:
         _ensure_order_preparing_for_work(order, actor=actor)
     return True
@@ -533,9 +627,24 @@ def complete_ticket(ticket, *, actor: str) -> bool:
 
 
 def _complete_ticket_locked(ticket, *, actor: str) -> bool:
+    source = _ticket_source(ticket, for_update=True)
+    _ensure_source_due(source)
     if ticket.status not in OPEN_TICKET_STATUSES:
         return False
-    order = _ticket_order(ticket, for_update=True)
+    if (
+        ticket.__class__.objects.filter(
+            session_key=ticket.session_key,
+            kds_instance_id=ticket.kds_instance_id,
+            status="cancelled",
+            acknowledged_at__isnull=True,
+        )
+        .exclude(pk=ticket.pk)
+        .exists()
+    ):
+        raise TicketCompletionBlocked(
+            "Há item cancelado neste pedido. Confira o alerta vermelho e toque em Ciente antes de finalizar."
+        )
+    order = source if isinstance(source, Order) else None
     if order is not None and order.status in (Order.Status.NEW, Order.Status.ACCEPTED):
         # Gate de pagamento: trabalho físico só começa quando o lifecycle deixa.
         blocked = _advance_to_preparing_block_reason(order, actor=actor)
@@ -570,13 +679,15 @@ def reopen_ticket(ticket, *, actor: str) -> bool:
 
 
 def _reopen_ticket_locked(ticket, *, actor: str) -> bool:
+    source = _ticket_source(ticket, for_update=True)
+    _ensure_source_due(source)
     if ticket.status != "done":
         return False
     ticket.status = "in_progress"
     ticket.completed_at = None
     ticket.save(update_fields=["status", "completed_at"])
 
-    order = _ticket_order(ticket, for_update=True)
+    order = source if isinstance(source, Order) else None
     if (
         order is not None
         and order.status == Order.Status.READY
@@ -601,6 +712,7 @@ def acknowledge_ticket(ticket, *, actor: str) -> bool:
 
 
 def _acknowledge_ticket_locked(ticket, *, actor: str) -> bool:
+    _ensure_source_due(_ticket_source(ticket, for_update=True))
     if ticket.status != "cancelled" or ticket.acknowledged_at is not None:
         return False
     ticket.acknowledged_at = timezone.now()
@@ -654,6 +766,7 @@ def expedition_action(order, *, action: str, actor: str) -> str:
     porta sem um centavo. Dinheiro na entrega (COD) passa: é venda legítima cujo
     pagamento acontece na porta, por desenho (ver ``payment_gate``).
     """
+    _ensure_source_due(order)
     is_delivery = get_fulfillment_type(order) == "delivery"
     if action == "dispatch" and not is_delivery:
         raise ValueError("Pedido de retirada não pode ser despachado")
@@ -686,6 +799,7 @@ def expedition_action_by_order_id(order_id: int, *, action: str, actor: str) -> 
         order = Order.objects.select_for_update().filter(pk=order_id).first()
         if order is None:
             raise ExpeditionOrderNotFound("Pedido não encontrado")
+        _ensure_source_due(order)
         target = EXPEDITION_TRANSITIONS.get(action)
         if target and order.status == target:
             return order.status

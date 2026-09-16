@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.db.models import Q, Sum
@@ -22,7 +22,7 @@ from shopman.orderman.models import Order
 from shopman.utils.monetary import format_money
 
 from shopman.shop.services import operator_orders
-from shopman.shop.services.order_helpers import get_fulfillment_type, json_quantity
+from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type, json_quantity
 from shopman.shop.services.pos import display_tab_ref, is_numeric_tab_ref
 
 from .order_queue import _DEFAULT_CHANNEL_ICON, CHANNEL_ICONS, advance_block_label
@@ -31,7 +31,6 @@ logger = logging.getLogger(__name__)
 
 ACTIVE_TICKET_STATUSES = ("pending", "in_progress")
 RECENT_CANCELLED_WINDOW = timedelta(minutes=10)
-RECENT_CANCELLED_LIMIT = 8
 RECENT_DONE_WINDOW = timedelta(minutes=30)
 RECENT_DONE_LIMIT = 12
 
@@ -67,6 +66,13 @@ class KDSTicketProjection:
     items: tuple[KDSItemProjection, ...]
     status: str
     all_checked: bool
+    # Comanda disparada antes do pagamento muda de dono quando o Order nasce:
+    # o pedido vira a referência principal; a comanda permanece riscada apenas
+    # para conferência visual e para deixar claro que já foi liberada.
+    previous_tab_ref: str = ""
+    # Encomenda futura projetada sem KDSTicket: visível para planejamento, mas
+    # deliberadamente sem check/finalização nem som até chegar a data.
+    is_scheduled: bool = False
     # Discriminante explícito da união ticket|expedição no front (nunca inferir por
     # presença de campo: foi o que quebrou a Expedição quando `items` passou a existir
     # nos dois). Ticket de preparo é sempre False.
@@ -96,6 +102,9 @@ class KDSExpeditionCardProjection:
     line_count: int
     total_display: str
     items: tuple[KDSItemProjection, ...] = ()
+    # Datas futuras são uma prévia operacional: nenhum card pode despachar ou
+    # concluir antes do compromisso chegar, inclusive cards já materializados.
+    is_scheduled: bool = False
     # Discriminante explícito da união ticket|expedição (ver KDSTicketProjection).
     # Card de expedição é sempre True.
     is_expedition: bool = True
@@ -129,6 +138,13 @@ class KDSBoardProjection:
     is_expedition: bool
     tickets: tuple[KDSTicketProjection | KDSExpeditionCardProjection, ...]
     counts: dict[str, int]  # "pending", "in_progress", "total"
+    # Data operacional explícita: o KDS abre em hoje e só mostra encomenda
+    # futura quando o operador a escolhe. Isto também impede ticket legado ou
+    # fire antecipado de apitar como trabalho do turno atual.
+    service_date: str = ""
+    service_date_display: str = ""
+    today: str = ""
+    available_dates: tuple[str, ...] = ()
     cancelled_tickets: tuple[KDSTicketProjection, ...] = ()
     recent_done: tuple[KDSTicketProjection, ...] = ()  # para recall (desfazer finalização)
 
@@ -157,19 +173,16 @@ class KDSCustomerStatusProjection:
 
 def build_kds_index() -> tuple[KDSInstanceSummaryProjection, ...]:
     """Build the KDS instance selector (index page)."""
-    from shopman.backstage.models import KDSInstance, KDSTicket
+    from shopman.backstage.models import KDSInstance
 
     instances = KDSInstance.objects.filter(is_active=True).order_by("name")
     result: list[KDSInstanceSummaryProjection] = []
 
     for inst in instances:
-        if inst.type == "expedition":
-            count = Order.objects.filter(status="ready").count()
-        else:
-            count = KDSTicket.objects.filter(
-                kds_instance=inst,
-                status__in=ACTIVE_TICKET_STATUSES,
-            ).count()
+        # O seletor segue a mesma data padrão do board. Antes ele somava
+        # encomendas futuras e prometia "3 pendentes" para uma tela de hoje
+        # vazia — além de reforçar a impressão de que já eram trabalho atual.
+        count = int(build_kds_board(inst.ref).counts.get("total", 0))
 
         result.append(
             KDSInstanceSummaryProjection(
@@ -184,33 +197,40 @@ def build_kds_index() -> tuple[KDSInstanceSummaryProjection, ...]:
     return tuple(result)
 
 
-def build_kds_board(instance_ref: str) -> KDSBoardProjection:
+def build_kds_board(instance_ref: str, *, service_date: date | None = None) -> KDSBoardProjection:
     """Build the KDS board projection for a specific instance."""
     from shopman.backstage.models import KDSInstance, KDSTicket
 
     instance = KDSInstance.objects.get(ref=instance_ref, is_active=True)
 
-    if instance.type == "expedition":
-        return _build_expedition_board(instance)
+    today = timezone.localdate()
+    selected_date = service_date or today
 
-    active_qs = (
+    if instance.type == "expedition":
+        return _build_expedition_board(instance, service_date=selected_date, today=today)
+
+    active_all = list(
         KDSTicket.objects.filter(
             kds_instance=instance,
             status__in=ACTIVE_TICKET_STATUSES,
         )
                 .order_by("created_at")
     )
+    active_session_keys = {ticket.session_key for ticket in active_all if ticket.session_key}
     now = timezone.now()
-    cancelled_qs = (
+    cancelled_all = list(
         KDSTicket.objects.filter(
             kds_instance=instance,
             status="cancelled",
             acknowledged_at__isnull=True,
-            cancelled_at__gte=now - RECENT_CANCELLED_WINDOW,
         )
-                .order_by("-cancelled_at", "-created_at")[:RECENT_CANCELLED_LIMIT]
+        .filter(
+            Q(cancelled_at__gte=now - RECENT_CANCELLED_WINDOW)
+            | Q(session_key__in=active_session_keys)
+        )
+        .order_by("-cancelled_at", "-created_at")
     )
-    done_qs = (
+    done_all = list(
         KDSTicket.objects.filter(
             kds_instance=instance,
             status="done",
@@ -219,11 +239,67 @@ def build_kds_board(instance_ref: str) -> KDSBoardProjection:
                 .order_by("-completed_at")[:RECENT_DONE_LIMIT]
     )
 
-    tickets = tuple(_build_ticket(t, instance) for t in active_qs)
-    cancelled_tickets = tuple(_build_ticket(t, instance) for t in cancelled_qs)
-    recent_done = tuple(_build_ticket(t, instance) for t in done_qs)
+    all_rows = [*active_all, *cancelled_all, *done_all]
+    sources = {ticket.pk: _resolve_ticket_source(ticket) for ticket in all_rows}
+    scheduled_orders_qs = (
+        Order.objects.filter(
+            status__in=[Order.Status.NEW, Order.Status.ACCEPTED, Order.Status.PREPARING],
+            data__delivery_date__gte=today.isoformat(),
+        )
+        .order_by("created_at")
+    )
+    scheduled_sources = list(scheduled_orders_qs)
+    available_dates = _available_service_dates(
+        [*(sources[ticket.pk] for ticket in active_all), *scheduled_sources],
+        today=today,
+        selected_date=selected_date,
+    )
+    active = [
+        ticket for ticket in active_all
+        if _source_matches_service_date(sources[ticket.pk], selected_date=selected_date, today=today)
+    ]
+    cancelled = [
+        ticket for ticket in cancelled_all
+        if _source_matches_service_date(sources[ticket.pk], selected_date=selected_date, today=today)
+    ]
+    done = [
+        ticket for ticket in done_all
+        if _source_matches_service_date(sources[ticket.pk], selected_date=selected_date, today=today)
+    ]
+
+    future_view = selected_date > today
+    tickets_list: list[KDSTicketProjection] = [
+        _build_ticket(t, instance, source=sources[t.pk], is_scheduled=future_view) for t in active
+    ]
+    if selected_date > today:
+        from shopman.shop.services import kds as kds_service
+
+        materialized_session_keys = {ticket.session_key for ticket in active}
+        selected_orders = scheduled_orders_qs.filter(
+            data__delivery_date=selected_date.isoformat(),
+        ).prefetch_related("items")
+        for order in selected_orders:
+            if order.session_key in materialized_session_keys:
+                continue
+            if get_commitment_date(order) != selected_date:
+                continue
+            preview_items = kds_service.preview_order_for_instance(order, instance)
+            if preview_items:
+                tickets_list.append(
+                    _build_scheduled_ticket(order, instance, raw_items=preview_items)
+                )
+    tickets = tuple(tickets_list)
+    cancelled_tickets = tuple(
+        _build_ticket(t, instance, source=sources[t.pk], is_scheduled=future_view)
+        for t in cancelled
+    )
+    recent_done = tuple(
+        _build_ticket(t, instance, source=sources[t.pk], is_scheduled=future_view)
+        for t in done
+    )
     pending = sum(1 for t in tickets if t.status == "pending")
     in_progress = sum(1 for t in tickets if t.status == "in_progress")
+    scheduled = sum(1 for t in tickets if t.is_scheduled)
 
     return KDSBoardProjection(
         instance_ref=instance.ref,
@@ -235,9 +311,14 @@ def build_kds_board(instance_ref: str) -> KDSBoardProjection:
             "pending": pending,
             "in_progress": in_progress,
             "total": len(tickets),
+            "scheduled": scheduled,
             "cancelled_recent": len(cancelled_tickets),
             "done_recent": len(recent_done),
         },
+        service_date=selected_date.isoformat(),
+        service_date_display=_service_date_display(selected_date, today=today),
+        today=today.isoformat(),
+        available_dates=available_dates,
         cancelled_tickets=cancelled_tickets,
         recent_done=recent_done,
     )
@@ -358,9 +439,15 @@ def _public_comanda_code(session) -> str:
 # ── Internals ──────────────────────────────────────────────────────────
 
 
-def _build_expedition_board(instance) -> KDSBoardProjection:
-    orders = Order.objects.filter(status="ready").order_by("created_at")
-    cards = tuple(_build_expedition_card(o) for o in orders)
+def _build_expedition_board(instance, *, service_date: date, today: date) -> KDSBoardProjection:
+    all_orders = list(Order.objects.filter(status="ready").order_by("created_at"))
+    orders = [
+        order for order in all_orders
+        if _source_matches_service_date(order, selected_date=service_date, today=today)
+    ]
+    cards = tuple(
+        _build_expedition_card(o, is_scheduled=service_date > today) for o in orders
+    )
 
     return KDSBoardProjection(
         instance_ref=instance.ref,
@@ -374,7 +461,43 @@ def _build_expedition_board(instance) -> KDSBoardProjection:
             "total": len(cards),
             "cancelled_recent": 0,
         },
+        service_date=service_date.isoformat(),
+        service_date_display=_service_date_display(service_date, today=today),
+        today=today.isoformat(),
+        available_dates=_available_service_dates(
+            all_orders,
+            today=today,
+            selected_date=service_date,
+        ),
     )
+
+
+def _source_matches_service_date(source, *, selected_date: date, today: date) -> bool:
+    """Hoje inclui backlog sem data/passado; futuro exige a data exata."""
+    commitment = get_commitment_date(source)
+    if selected_date == today:
+        return commitment is None or commitment <= today
+    return commitment == selected_date
+
+
+def _available_service_dates(sources, *, today: date, selected_date: date) -> tuple[str, ...]:
+    dates = {today, selected_date}
+    dates.update(
+        commitment
+        for source in sources
+        if (commitment := get_commitment_date(source)) is not None and commitment >= today
+    )
+    return tuple(value.isoformat() for value in sorted(dates))
+
+
+def _service_date_display(value: date, *, today: date) -> str:
+    from django.utils import formats
+
+    if value == today:
+        return "Hoje"
+    if value == today + timedelta(days=1):
+        return "Amanhã"
+    return f"{formats.date_format(value, 'D')}, {formats.date_format(value, 'd/m')}"
 
 
 def _resolve_ticket_source(ticket):
@@ -408,8 +531,8 @@ def _resolve_ticket_source(ticket):
     )
 
 
-def _display_order_ref(source, source_data: dict, handle_ref: str, session_key: str) -> str:
-    """Resolve the heading a KDS card calls a comanda/order by.
+def _display_order_refs(source, source_data: dict, handle_ref: str, session_key: str) -> tuple[str, str]:
+    """Resolve current order ref plus the former comanda reference.
 
     Prefers the operator-chosen POS tab label (``tab_display`` — e.g. "Mesa 5",
     or "1012" already stripped of the 8-digit storage padding), so a *named* tab
@@ -424,16 +547,15 @@ def _display_order_ref(source, source_data: dict, handle_ref: str, session_key: 
     still splits the {channel-date-} prefix from the called code.
     """
     tab_display = str(source_data.get("tab_display") or "").strip()
-    if tab_display:
-        return tab_display
     tab_ref = str(source_data.get("tab_ref") or "").strip()
-    if tab_ref:
-        return display_tab_ref(tab_ref)
-    raw_ref = getattr(source, "ref", "") or handle_ref or session_key
-    return display_tab_ref(raw_ref)
+    tab_label = tab_display or (display_tab_ref(tab_ref) if tab_ref else "")
+    committed_ref = str(getattr(source, "ref", "") or "").strip()
+    if committed_ref:
+        return display_tab_ref(committed_ref), tab_label
+    return tab_label or display_tab_ref(handle_ref or session_key), ""
 
 
-def _build_ticket(ticket, instance) -> KDSTicketProjection:
+def _build_ticket(ticket, instance, *, source=None, is_scheduled: bool = False) -> KDSTicketProjection:
     now = timezone.now()
     is_cancelled = ticket.status == "cancelled"
     elapsed_until = ticket.cancelled_at if is_cancelled and ticket.cancelled_at else now
@@ -447,10 +569,13 @@ def _build_ticket(ticket, instance) -> KDSTicketProjection:
     else:
         timer_class = "timer-late"
 
-    source = _resolve_ticket_source(ticket)
+    if source is None:
+        source = _resolve_ticket_source(ticket)
     source_data = (getattr(source, "data", None) or {}) if source is not None else {}
     handle_ref = getattr(source, "handle_ref", "") if source is not None else ""
-    order_ref = _display_order_ref(source, source_data, handle_ref, ticket.session_key)
+    order_ref, previous_tab_ref = _display_order_refs(
+        source, source_data, handle_ref, ticket.session_key
+    )
     channel_ref = getattr(source, "channel_ref", "") if source is not None else ""
     customer_name = (
         source_data.get("customer", {}).get("name", "")
@@ -489,6 +614,8 @@ def _build_ticket(ticket, instance) -> KDSTicketProjection:
         items=items,
         status=ticket.status,
         all_checked=all(it.checked for it in items) if items else False,
+        previous_tab_ref=previous_tab_ref,
+        is_scheduled=is_scheduled,
         status_label=_ticket_status_label(ticket.status),
         is_cancelled=is_cancelled,
         cancelled_at_display=_format_time(ticket.cancelled_at),
@@ -498,17 +625,74 @@ def _build_ticket(ticket, instance) -> KDSTicketProjection:
     )
 
 
+def _build_scheduled_ticket(order: Order, instance, *, raw_items: list[dict]) -> KDSTicketProjection:
+    """Build a non-actionable card for a future order without materializing work."""
+    source_data = order.data or {}
+    order_ref, previous_tab_ref = _display_order_refs(
+        order,
+        source_data,
+        order.handle_ref or "",
+        order.session_key,
+    )
+    fulfillment_type = source_data.get("fulfillment_type") or source_data.get("delivery_method", "")
+    items = tuple(
+        KDSItemProjection(
+            sku=item.get("sku", ""),
+            name=item.get("name", item.get("sku", "")),
+            qty=json_quantity(item.get("qty", 1)),
+            notes=item.get("notes", ""),
+            checked=False,
+            stock_warning="",
+        )
+        for item in raw_items
+    )
+    return KDSTicketProjection(
+        pk=-int(order.pk),
+        order_ref=order_ref,
+        channel_icon=CHANNEL_ICONS.get(order.channel_ref or "", _DEFAULT_CHANNEL_ICON),
+        customer_name=(
+            source_data.get("customer", {}).get("name", "")
+            or order.handle_ref
+            or ""
+        ),
+        fulfillment_icon="local_shipping" if fulfillment_type == "delivery" else "storefront",
+        created_at_display=_scheduled_time_display(source_data),
+        elapsed_seconds=0,
+        target_seconds=0,
+        timer_class="timer-ok",
+        items=items,
+        status="scheduled",
+        all_checked=False,
+        previous_tab_ref=previous_tab_ref,
+        is_scheduled=True,
+        status_label="Agendado",
+        kitchen_note=str(source_data.get("kitchen_note", "") or ""),
+        customer_note=str(source_data.get("order_notes", "") or ""),
+    )
+
+
+def _scheduled_time_display(source_data: dict) -> str:
+    value = str(
+        source_data.get("delivery_time")
+        or source_data.get("pickup_time")
+        or source_data.get("scheduled_time")
+        or ""
+    ).strip()
+    return value[:5] if value else "Horário não informado"
+
+
 def _ticket_status_label(status: str) -> str:
     labels = {
         "pending": "Pendente",
         "in_progress": "Em preparo",
         "done": "Concluído",
         "cancelled": "Cancelado",
+        "scheduled": "Agendado",
     }
     return labels.get(status, status)
 
 
-def _build_expedition_card(order: Order) -> KDSExpeditionCardProjection:
+def _build_expedition_card(order: Order, *, is_scheduled: bool = False) -> KDSExpeditionCardProjection:
     customer_name = (
         order.data.get("customer", {}).get("name", "")
         or order.handle_ref
@@ -544,6 +728,7 @@ def _build_expedition_card(order: Order) -> KDSExpeditionCardProjection:
         line_count=len(items),
         total_display=_money(order.total_q),
         items=item_projections,
+        is_scheduled=is_scheduled,
         advance_block_label=advance_block_label(bloqueio),
         advance_block_reason=operator_orders.advance_block_message(bloqueio),
     )

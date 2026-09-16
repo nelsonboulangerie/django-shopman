@@ -574,7 +574,11 @@ const injectableMethods = computed(() =>
 // forma é o gesto de TODA venda; era o único do checkout que exigia o mouse.
 const methodKeys = computed(() => methodShortcuts(injectableMethods.value));
 const tenderLines = computed(() => props.paymentTenders.map((tender) => tenderLineView(tender, injectableMethods.value)));
-const deliveryCollections = computed(() => collectionsForFulfillment(props.paymentCollections, props.fulfillmentType));
+const deliveryCollections = computed(() => collectionsForFulfillment(
+  props.paymentCollections,
+  props.fulfillmentType,
+  props.salesMode,
+));
 const paymentGuidance = computed(() => orderPaymentGuidance({
   salesMode: props.salesMode,
   fulfillmentType: props.fulfillmentType,
@@ -661,7 +665,7 @@ function blockedByPixProviderTest(ref: string): boolean {
 }
 
 const onDelivery = computed(
-  () => props.fulfillmentType === "delivery" && props.paymentCollection === "on_delivery",
+  () => props.paymentCollection === "on_delivery",
 );
 function blockedForDelivery(method: string): boolean {
   return onDelivery.value && !["cash", "credit", "debit"].includes(method);
@@ -669,7 +673,8 @@ function blockedForDelivery(method: string): boolean {
 
 function paymentMethodBlockedReason(ref: string): string | undefined {
   if (blockedForDelivery(ref)) {
-    return "PIX Efí e pagamentos online precisam da confirmação automática antes da entrega. Escolha o recebimento antecipado.";
+    const handoff = props.fulfillmentType === "pickup" ? "retirada" : "entrega";
+    return `PIX Efí e pagamentos online precisam da confirmação automática antes da ${handoff}. Escolha o recebimento antecipado.`;
   }
   if (blockedByLink(ref)) return "O link de pagamento cobra a venda inteira";
   if (blockedByPixProviderTest(ref)) {
@@ -951,10 +956,22 @@ const notices = computed<CheckoutNotice[]>(() => {
   // O troco que SAI COM O ENTREGADOR. Era legenda do próprio campo, lá na coluna
   // que rola; é consequência de finalizar, e por isso mora aqui.
   if (onDelivery.value && props.paymentTenders.some((t) => t.method === "cash")) {
-    notes.push({ key: "courier", icon: "lucide:banknote", message: "Dinheiro pendente. O troco calculado será separado no despacho." });
+    notes.push({
+      key: "courier",
+      icon: "lucide:banknote",
+      message: props.fulfillmentType === "pickup"
+        ? "Dinheiro pendente. Registre o recebimento no Gestor antes de concluir a retirada."
+        : "Dinheiro pendente. O troco calculado será separado no despacho.",
+    });
   }
   if (onDelivery.value && machineTenders.value.length) {
-    notes.push({ key: "delivery-machine", icon: "lucide:smartphone-nfc", message: "Levar maquininha. O cartão permanece pendente até conferir o comprovante no acerto da entrega." });
+    notes.push({
+      key: "delivery-machine",
+      icon: "lucide:smartphone-nfc",
+      message: props.fulfillmentType === "pickup"
+        ? "Passe o cartão na retirada e registre o recebimento no Gestor antes de concluir o pedido."
+        : "Levar maquininha. O cartão permanece pendente até conferir o comprovante no acerto da entrega.",
+    });
   }
   if (wantsPrintedReceipt.value) {
     // AGORA A FRASE PODE DIZER QUE A NOTA SAI. Não existe DANFE sem NFC-e
@@ -1230,8 +1247,8 @@ defineExpose({
                 :aria-pressed="paymentCollection === collection.ref"
                 @click="$emit('update:paymentCollection', collection.ref)"
               >
-                <Icon :name="collection.ref === 'terminal' ? 'lucide:store' : 'lucide:truck'" class="size-4 shrink-0" />
-                <span class="min-w-0 truncate text-left">{{ paymentCollectionLabel(collection, salesMode) }}</span>
+                <Icon :name="collection.ref === 'terminal' || fulfillmentType === 'pickup' ? 'lucide:store' : 'lucide:truck'" class="size-4 shrink-0" />
+                <span class="min-w-0 truncate text-left">{{ paymentCollectionLabel(collection, salesMode, fulfillmentType) }}</span>
               </button>
             </template>
           </div>
@@ -1342,7 +1359,7 @@ defineExpose({
             class="grid flex-1 basis-0 gap-1.5"
             :style="{ gridTemplateRows: `repeat(${cashNotesQ.length}, minmax(0, 1fr))` }"
             role="group"
-            :aria-label="onDelivery ? 'Cédulas previstas na entrega' : 'Cédulas recebidas'"
+            :aria-label="onDelivery ? `Cédulas previstas na ${fulfillmentType === 'pickup' ? 'retirada' : 'entrega'}` : 'Cédulas recebidas'"
           >
             <button
               v-for="note in cashNotesQ"

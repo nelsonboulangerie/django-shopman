@@ -12,22 +12,58 @@ import { isExpeditionCard, splitRef } from "~/presentation/board";
 import type { KDSDensity } from "~/components/KdsTicketCard.vue";
 
 const route = useRoute();
+const router = useRouter();
 const stationRef = computed(() => String(route.params.ref || ""));
+const serviceDate = computed(() => {
+  const value = route.query.date;
+  return Array.isArray(value) ? String(value[0] || "") : String(value || "");
+});
 
 // Write-side é otimista (toque instantâneo) e mora no composable, junto do estado.
 const {
   view,
+  readOnly,
   pending,
   error,
   soundOn,
   soundBlocked,
+  attentionPending,
   toggleSound,
+  activateAttentionSound,
+  acknowledgeAttention,
   checkItem,
   finalize,
   expedite,
   recall,
   acknowledge,
-} = useKdsBoard(stationRef.value);
+} = useKdsBoard(stationRef.value, serviceDate);
+
+function handleSoundAction() {
+  if (!soundOn.value || soundBlocked.value) {
+    void activateAttentionSound();
+    return;
+  }
+  toggleSound();
+}
+
+function serviceDateLabel(value: string): string {
+  if (!view.value) return value;
+  if (value === view.value.today) return "Hoje";
+  const base = new Date(`${view.value.today}T12:00:00`);
+  const date = new Date(`${value}T12:00:00`);
+  if (date.getTime() - base.getTime() === 86_400_000) return "Amanhã";
+  return date.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
+}
+
+async function selectServiceDate(value: string) {
+  const query = { ...route.query };
+  if (!view.value || value === view.value.today) delete query.date;
+  else query.date = value;
+  await router.replace({ path: route.path, query });
+}
+function onServiceDateChange(event: Event) {
+  void selectServiceDate((event.target as HTMLSelectElement).value);
+}
 
 // Recall: painel de concluídos recentes (desfazer finalização).
 const recallOpen = ref(false);
@@ -137,6 +173,7 @@ function setModalOpen(value: boolean) {
   if (!value) openTicketPk.value = null;
 }
 function finalizeFromModal(pk: number) {
+  if (readOnly.value) return;
   finalize(pk); // otimista — fecha o modal na hora
   openTicketPk.value = null;
 }
@@ -182,6 +219,24 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
           >
         </div>
       </ClientOnly>
+
+      <!-- O KDS é de hoje por padrão; datas futuras são consulta explícita e
+           nunca disparam som. As opções vêm do servidor, só com datas que têm
+           trabalho vivo (mais hoje). -->
+      <label v-if="view" class="flex items-center gap-2 text-sm">
+        <Icon name="lucide:calendar-days" class="size-4 text-muted-foreground" />
+        <span class="sr-only">Data operacional do KDS</span>
+        <select
+          :value="view.serviceDate"
+          class="h-9 rounded-md border bg-background px-2.5 font-semibold outline-none focus:ring-1 focus:ring-ring"
+          aria-label="Data operacional do KDS"
+          @change="onServiceDateChange"
+        >
+          <option v-for="date in view.availableDates" :key="date" :value="date">
+            {{ serviceDateLabel(date) }}
+          </option>
+        </select>
+      </label>
 
       <!-- contadores: neutros e padronizados (cor reservada à urgência dos cards) -->
       <div
@@ -259,7 +314,7 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
               ? 'Som bloqueado — toque para ativar'
               : 'Som'
           "
-          @click="toggleSound"
+          @click="handleSoundAction"
         >
           <Icon
             :name="soundOn ? 'lucide:volume-2' : 'lucide:volume-x'"
@@ -272,7 +327,17 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
           />
         </button>
         <button
-          v-if="view && !view.isExpedition && view.recentDone.length"
+          v-if="attentionPending"
+          type="button"
+          class="inline-flex h-9 items-center gap-1.5 rounded-md border px-2.5 text-xs font-semibold transition hover:bg-accent"
+          aria-label="Reconhecer aviso de ticket novo"
+          @click="acknowledgeAttention"
+        >
+          <Icon name="lucide:check" class="size-4" />
+          Ciente
+        </button>
+        <button
+          v-if="view && !view.isExpedition && !readOnly && view.recentDone.length"
           type="button"
           class="relative grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
           aria-label="Concluídos recentes — reabrir"
@@ -338,8 +403,10 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
       </p>
       <template v-if="view">
         <!-- cancelled (loud — único lugar onde o vermelho é alerta de verdade) -->
-        <div
+        <TransitionGroup
           v-if="view.cancelled.length"
+          tag="div"
+          name="kds-cancel"
           class="mb-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3"
         >
           <article
@@ -365,18 +432,24 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
               >
                 {{ t.customer_name }}
               </p>
+              <ul class="mt-2 space-y-0.5 text-sm font-semibold">
+                <li v-for="(item, idx) in t.items" :key="`${t.pk}-${idx}`">
+                  {{ item.qty }}× {{ item.name }}
+                </li>
+              </ul>
             </div>
             <button
               type="button"
-              class="flex shrink-0 items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-2 text-sm font-semibold text-destructive transition hover:bg-destructive/15 active:scale-[0.98]"
+              :disabled="readOnly"
+              class="flex shrink-0 items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-2 text-sm font-semibold text-destructive transition hover:bg-destructive/15 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
               aria-label="Dar baixa no cancelado"
-              @click="acknowledge(t.pk)"
+              @click="!readOnly && acknowledge(t.pk)"
             >
               <Icon name="lucide:check" class="size-4" />
               Ciente
             </button>
           </article>
-        </div>
+        </TransitionGroup>
 
         <!-- empty — estação zerada: estado calmo/acolhedor (omotenashi) -->
         <div
@@ -388,10 +461,15 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
           >
             <Icon name="lucide:coffee" class="size-8" />
           </div>
-          <p class="text-3xl font-bold">Tudo em dia</p>
+          <p class="text-3xl font-bold">
+            {{ view.serviceDate === view.today ? "Tudo em dia" : "Nada agendado" }}
+          </p>
           <p class="max-w-sm text-base text-muted-foreground">
-            Nenhum pedido na fila agora. Aproveite para respirar — a gente avisa
-            quando o próximo chegar.
+            {{
+              view.serviceDate === view.today
+                ? "Nenhum pedido na fila agora. Aproveite para respirar — a gente avisa quando o próximo chegar."
+                : `Nenhum item desta estação para ${view.serviceDateDisplay.toLowerCase()}.`
+            }}
           </p>
         </div>
 
@@ -421,8 +499,15 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
             v-if="!view.isExpedition && !query"
             class="mb-2.5 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground"
           >
-            <Icon name="lucide:arrow-down-wide-narrow" class="size-3.5" />
-            Mais urgente primeiro — o destacado é o próximo
+            <Icon
+              :name="view.serviceDate === view.today ? 'lucide:arrow-down-wide-narrow' : 'lucide:calendar-search'"
+              class="size-3.5"
+            />
+            {{
+              view.serviceDate === view.today
+                ? "Mais urgente primeiro — o destacado é o próximo"
+                : `Prévia de ${view.serviceDateDisplay.toLowerCase()} — sem ações e sem som`
+            }}
           </p>
           <TransitionGroup
             tag="div"
@@ -435,16 +520,16 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
                 v-if="view.isExpedition"
                 :card="asExpedition(card)"
                 :density="density"
-                @action="(action) => expedite(card.pk, action)"
+                @action="(action) => !readOnly && expedite(card.pk, action)"
               />
               <KdsTicketCard
                 v-else
                 :ticket="asTicket(card)"
                 :density="density"
-                :next="!query && !view.isExpedition && idx === 0"
-                @open="openTicketPk = card.pk"
-                @check="(i, checked) => checkItem(card.pk, i, checked)"
-                @done="finalize(card.pk)"
+                :next="!query && !view.isExpedition && view.serviceDate === view.today && idx === 0"
+                @open="!readOnly && !asTicket(card).is_scheduled && (openTicketPk = card.pk)"
+                @check="(i, checked) => !readOnly && !asTicket(card).is_scheduled && checkItem(card.pk, i, checked)"
+                @done="!readOnly && !asTicket(card).is_scheduled && finalize(card.pk)"
               />
             </div>
           </TransitionGroup>
@@ -458,9 +543,9 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
       :ticket="openTicket"
       @update:open="setModalOpen"
       @check-item="
-        (idx, checked) => openTicket && checkItem(openTicket.pk, idx, checked)
+        (idx, checked) => !readOnly && openTicket && checkItem(openTicket.pk, idx, checked)
       "
-      @done="openTicket && finalizeFromModal(openTicket.pk)"
+      @done="!readOnly && openTicket && finalizeFromModal(openTicket.pk)"
     />
 
     <!-- recall: concluídos recentes (desfazer finalização) -->
@@ -503,8 +588,9 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
               </div>
               <button
                 type="button"
-                class="flex shrink-0 items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-semibold transition hover:bg-accent active:scale-[0.98]"
-                @click="recall(t.pk)"
+                :disabled="readOnly"
+                class="flex shrink-0 items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-semibold transition hover:bg-accent active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                @click="!readOnly && recall(t.pk)"
               >
                 <Icon name="lucide:rotate-ccw" class="size-4" />
                 Reabrir
@@ -536,11 +622,25 @@ const asExpedition = (c: KDSTicketProjection | KDSExpeditionCardProjection) =>
   transform: scale(0.96);
 }
 
+/* Cancelamento entra duas vezes com um pulso curto: atenção inequívoca, sem
+   manter o board inteiro piscando. O gesto "Ciente" encerra o estado. */
+.kds-cancel-enter-active {
+  animation: kds-cancel-attention 0.7s ease-in-out 2;
+}
+@keyframes kds-cancel-attention {
+  0%, 100% { transform: translateX(0) scale(1); }
+  30% { transform: translateX(-5px) scale(1.015); }
+  60% { transform: translateX(5px) scale(1.015); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .kds-card-move,
   .kds-card-enter-active,
   .kds-card-leave-active {
     transition: none;
+  }
+  .kds-cancel-enter-active {
+    animation: none;
   }
 }
 </style>

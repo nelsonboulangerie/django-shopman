@@ -135,18 +135,31 @@ const d = computed(
       class="flex items-start justify-between gap-2.5"
       :class="[d.inset, d.padT]"
     >
-      <p
-        class="whitespace-nowrap font-extrabold tracking-tight tabular-nums leading-none"
-        :class="d.code"
-      >
-        {{ ref_.code }}
-      </p>
+      <div class="min-w-0">
+        <p
+          class="whitespace-nowrap font-extrabold tracking-tight tabular-nums leading-none"
+          :class="d.code"
+        >
+          {{ ref_.code }}
+        </p>
+        <p
+          v-if="ticket.previous_tab_ref"
+          class="mt-1 truncate text-xs font-semibold text-muted-foreground"
+          :title="`Comanda ${ticket.previous_tab_ref} já liberada`"
+        >
+          <span class="line-through">Comanda {{ ticket.previous_tab_ref }}</span>
+          <span class="ml-1 no-underline">· liberada</span>
+        </p>
+      </div>
       <div
         class="inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 font-bold tabular-nums"
-        :class="[timerChip, d.ctrlH, d.timer]"
+        :class="[ticket.is_scheduled ? 'bg-muted text-muted-foreground' : timerChip, d.ctrlH, d.timer]"
       >
-        <Icon name="lucide:timer" class="size-4 shrink-0 opacity-70" />
-        {{ elapsedLabel(ticket.elapsed_seconds) }}
+        <Icon
+          :name="ticket.is_scheduled ? 'lucide:calendar-clock' : 'lucide:timer'"
+          class="size-4 shrink-0 opacity-70"
+        />
+        {{ ticket.is_scheduled ? "Agendado" : elapsedLabel(ticket.elapsed_seconds) }}
       </div>
     </div>
 
@@ -187,6 +200,8 @@ const d = computed(
           <button
             type="button"
             class="-mx-2 flex w-full items-start justify-between gap-3 rounded-md px-2 py-1.5 text-left transition hover:bg-accent/50 active:scale-[0.99]"
+            :disabled="ticket.is_scheduled"
+            :class="ticket.is_scheduled ? 'cursor-default hover:bg-transparent active:scale-100' : ''"
             @click="$emit('check', idx, !item.checked)"
           >
             <span class="min-w-0 flex-1">
@@ -259,7 +274,16 @@ const d = computed(
 
     <!-- ações: "Ver completo" (olho — abre o detalhe) + "Finalizar" em destaque
          (neutro INVERTIDO — a ação principal). -->
-    <div class="flex gap-2" :class="[d.inset, d.padB]">
+    <div v-if="ticket.is_scheduled" class="flex" :class="[d.inset, d.padB]">
+      <div
+        class="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-md border bg-muted/50 px-3 text-sm font-semibold text-muted-foreground"
+        :class="d.fin"
+      >
+        <Icon name="lucide:eye" class="size-4 shrink-0" />
+        <span class="truncate">Prévia · libera na data</span>
+      </div>
+    </div>
+    <div v-else class="flex gap-2" :class="[d.inset, d.padB]">
       <button
         type="button"
         class="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border border-border/60 text-sm font-semibold text-muted-foreground transition hover:bg-accent hover:text-foreground active:scale-[0.99]"
@@ -281,7 +305,7 @@ const d = computed(
     </div>
 
     <!-- time-to-SLA fill bar (bottom edge) — o único elemento de cor de urgência -->
-    <div class="h-1.5 w-full bg-white/5" aria-hidden="true">
+    <div v-if="!ticket.is_scheduled" class="h-1.5 w-full bg-white/5" aria-hidden="true">
       <div
         class="h-full rounded-r-full transition-[width] duration-500"
         :class="barFill"

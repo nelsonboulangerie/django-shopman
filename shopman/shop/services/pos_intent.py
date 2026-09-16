@@ -219,15 +219,21 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
 
     payment_method = _payment_method(payload.get("payment_method") or "cash")
     payment_collection = _payment_collection(payload.get("payment_collection") or "terminal")
-    if fulfillment_type != "delivery":
+    # ``on_delivery`` is the legacy wire value for payment collected at the
+    # physical hand-off.  Orders may be handed off either by delivery or by a
+    # scheduled pickup; an immediate counter sale still always settles now.
+    if fulfillment_type != "delivery" and not (
+        payload.get("sales_mode") == "order" and fulfillment_type == "pickup"
+    ):
         payment_collection = "terminal"
     if payment_collection == "on_delivery" and payment_method not in {"cash", "credit", "debit", "mixed"}:
+        handoff = "retirada" if fulfillment_type == "pickup" else "entrega"
         raise PosIntentError(
             code="invalid_on_delivery_payment",
-            message="Na entrega, use dinheiro ou cartão na maquininha.",
+            message=f"Na {handoff}, use dinheiro ou cartão na maquininha.",
             field="payment_collection",
             focus="payment",
-            recovery="PIX Efí e pagamentos online exigem confirmação automática antes da entrega.",
+            recovery=f"PIX Efí e pagamentos online exigem confirmação automática antes da {handoff}.",
         )
     payload["payment_method"] = payment_method
     payload["payment_collection"] = payment_collection

@@ -196,11 +196,10 @@ export function buildPosSaleIntent(
   ) {
     payload.tendered_q = state.tenderedQ;
   }
-  // "Troco para quanto?" só existe no dinheiro NA ENTREGA (COD) — fora dele o
-  // servidor descarta; aqui nem viaja.
+  // "Troco para quanto?" só existe no dinheiro pendente para o hand-off
+  // (entrega ou retirada) — fora dele o servidor descarta; aqui nem viaja.
   if (
-    state.fulfillmentType === "delivery"
-    && state.paymentCollection === "on_delivery"
+    state.paymentCollection === "on_delivery"
     && state.changeForQ > 0
   ) {
     payload.change_for_q = state.changeForQ;

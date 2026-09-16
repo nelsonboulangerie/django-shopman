@@ -11,7 +11,9 @@ GET  /api/v1/backstage/kds/pickup/               → customer pickup board
 from __future__ import annotations
 
 import logging
+from datetime import date
 
+from django.utils import timezone
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.response import Response
@@ -66,7 +68,14 @@ class KDSBoardView(APIView):
     required_permission = "backstage.operate_kds"
 
     def get(self, request, ref: str):
-        board = build_kds_board(ref)
+        raw_date = str(request.query_params.get("date") or "").strip()
+        try:
+            service_date = date.fromisoformat(raw_date) if raw_date else None
+        except ValueError:
+            return Response({"detail": "Data inválida."}, status=status.HTTP_400_BAD_REQUEST)
+        if service_date is not None and service_date < timezone.localdate():
+            return Response({"detail": "Escolha hoje ou uma data futura."}, status=status.HTTP_400_BAD_REQUEST)
+        board = build_kds_board(ref, service_date=service_date)
         return Response({"board": projection_data(board)})
 
 
