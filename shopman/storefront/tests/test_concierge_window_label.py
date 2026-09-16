@@ -17,7 +17,7 @@ pytestmark = pytest.mark.django_db
 
 @pytest.mark.parametrize("fulfillment_type", ["delivery", "pickup"])
 def test_o_canonico_sai_com_o_rotulo_da_casa_em_qualquer_recebimento(fulfillment_type):
-    assert _slot_label(fulfillment_type, "slot-09") == "A partir das 09h"
+    assert _slot_label(fulfillment_type, "slot-09") == "A partir das 9h"
 
 
 @pytest.mark.parametrize("fulfillment_type", ["delivery", "pickup"])

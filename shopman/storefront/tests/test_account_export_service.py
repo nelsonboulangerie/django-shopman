@@ -342,7 +342,7 @@ def test_export_never_claims_legacy_records_by_recycled_phone() -> None:
 
 @pytest.mark.parametrize(
     "slot_ref,label",
-    [("slot-09", "A partir das 09h"), ("14:00-14:30", "14:00 às 14:30")],
+    [("slot-09", "A partir das 9h"), ("14:00-14:30", "14:00 às 14:30")],
 )
 def test_export_labels_the_agreed_window_next_to_its_raw_ref(slot_ref, label) -> None:
     """O titular lê o export: "slot-09" é identificador interno. O ref fica

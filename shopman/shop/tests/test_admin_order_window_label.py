@@ -25,7 +25,7 @@ def _rows(data: dict) -> dict[str, str]:
 def test_o_resumo_resolve_o_canonico():
     rows = _rows({"delivery_date": "2026-09-16", "delivery_time_slot": "slot-09"})
 
-    assert rows["Entrega em"] == "2026-09-16 (A partir das 09h)"
+    assert rows["Entrega em"] == "2026-09-16 (A partir das 9h)"
 
 
 def test_o_resumo_resolve_a_meia_hora():
