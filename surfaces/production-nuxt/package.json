@@ -16,7 +16,7 @@
     "test:e2e": "playwright test",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "pwa:assets": "node ../operator-kit/scripts/generate-pwa-assets.mjs --source=../storefront-nuxt/brand/nelson-mark.svg --out=public/pwa --background=#8B4B2F --ink=#4A2A1F --paper=#FAFAF9 --badge=PR",
+    "pwa:assets": "node ../operator-kit/scripts/generate-pwa-assets.mjs --icon=tabler:baguette --out=public/pwa --background=#B9781B --foreground=#FCF7EE",
     "format": "prettier --write \"app/**/*.{ts,vue}\" \"tests/**/*.ts\"",
     "typecheck": "NUXT_SHOPMAN_ENVIRONMENT=development nuxi typecheck",
     "postinstall": "NUXT_SHOPMAN_ENVIRONMENT=development nuxt prepare"

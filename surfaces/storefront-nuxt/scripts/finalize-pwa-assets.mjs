@@ -3,21 +3,42 @@ import {
   readFile,
   writeFile
 } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 
+const require = createRequire(import.meta.url)
 const root = new URL('../', import.meta.url)
 const sourceMark = new URL('brand/nelson-mark.svg', root)
-const sourceBackgroundMark = new URL('brand/nelson-mark-bg.svg', root)
 const sourceLogo = new URL('brand/nelson-logo.svg', root)
 const splashScreensSource = new URL('pwa-splash-screens.json', root)
 const output = new URL('public/pwa/', root)
 
 const source = await readFile(sourceMark, 'utf8')
-const backgroundMark = await readFile(sourceBackgroundMark)
-const monochrome = source
-  .replace(/\s*<path class="st0"[^>]+\/>/, '')
-  .replace(/fill:\s*#[0-9a-f]{6};/gi, 'fill: #000000;')
+const lucide = require('@iconify-json/lucide/icons.json')
+const storeIcon = lucide.icons.store
+const storeWidth = storeIcon.width || lucide.width || 24
+const storeHeight = storeIcon.height || lucide.height || 24
+
+function storeIconSvg (size, {
+  background = '#6D1F32',
+  foreground = '#FCF7EE',
+  symbolRatio = 0.56,
+  transparent = false
+} = {}) {
+  const symbolWidth = size * symbolRatio
+  const symbolHeight = symbolWidth * (storeHeight / storeWidth)
+  const scale = symbolWidth / storeWidth
+  const left = (size - symbolWidth) / 2
+  const top = (size - symbolHeight) / 2
+  const body = storeIcon.body.replaceAll('currentColor', foreground)
+  return Buffer.from(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+      ${transparent ? '' : `<rect width="${size}" height="${size}" fill="${background}"/>`}
+      <g transform="translate(${left} ${top}) scale(${scale})">${body}</g>
+    </svg>
+  `)
+}
 
 const paperTexture = (width, height) => Buffer.from(`
   <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
@@ -77,20 +98,24 @@ for (const [width, height] of splashScreens) {
     .toFile(fileURLToPath(new URL(`apple-splash-${width}-${height}.png`, output)))
 }
 
-await sharp(Buffer.from(monochrome))
-  .resize(512, 512, { fit: 'contain' })
+await sharp(storeIconSvg(512, { foreground: '#000000', transparent: true }))
   .png({ compressionLevel: 9 })
   .toFile(fileURLToPath(new URL('monochrome-512x512.png', output)))
 
 await Promise.all([
-  // O gerador usa uma única fonte. Sobrescrevemos somente os artefatos que
-  // precisam do fundo full-bleed com a variante oficial fornecida pelo dono.
-  sharp(backgroundMark)
-    .resize(512, 512, { fit: 'fill' })
+  sharp(storeIconSvg(64))
+    .png({ compressionLevel: 9, adaptiveFiltering: true })
+    .toFile(fileURLToPath(new URL('pwa-64x64.png', output))),
+  sharp(storeIconSvg(192))
+    .png({ compressionLevel: 9, adaptiveFiltering: true })
+    .toFile(fileURLToPath(new URL('pwa-192x192.png', output))),
+  sharp(storeIconSvg(512))
+    .png({ compressionLevel: 9, adaptiveFiltering: true })
+    .toFile(fileURLToPath(new URL('pwa-512x512.png', output))),
+  sharp(storeIconSvg(512, { symbolRatio: 0.48 }))
     .png({ compressionLevel: 9 })
     .toFile(fileURLToPath(new URL('maskable-512x512.png', output))),
-  sharp(backgroundMark)
-    .resize(180, 180, { fit: 'fill' })
+  sharp(storeIconSvg(180))
     .png({ compressionLevel: 9 })
     .toFile(fileURLToPath(new URL('apple-touch-icon-180x180.png', output))),
   writeFile(new URL('favicon.svg', output), source),

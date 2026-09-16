@@ -17,6 +17,8 @@
     "vue": "^3.5.42"
   },
   "dependencies": {
+    "@iconify-json/lucide": "1.2.133",
+    "@iconify-json/tabler": "1.2.38",
     "@nuxt/kit": "3.21.8",
     "@vite-pwa/nuxt": "1.1.1",
     "sharp": "0.35.4",

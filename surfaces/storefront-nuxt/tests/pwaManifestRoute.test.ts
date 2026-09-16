@@ -23,7 +23,7 @@ describe('manifest HTTP cache boundary', () => {
     const handle = toWebHandler(app)
     for (const order of [['mac', 'android', 'mac', 'ipad'], ['android', 'mac', 'android', 'ipad']] as const) {
       for (const client of order) {
-        const response = await handle(new Request('http://store.test/manifest.webmanifest?v=3', {
+        const response = await handle(new Request('http://store.test/manifest.webmanifest?v=4', {
           headers: { 'user-agent': agents[client] }
         }))
         expect(response.status).toBe(200)

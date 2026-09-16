@@ -40,7 +40,7 @@ async function pngSize (path) {
 }
 
 const repository = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
-const operatorProfile = (surface, { display = 'standalone', orientation = 'any', shortcuts = true } = {}) => ({
+const operatorProfile = (surface, { display = 'standalone', orientation = 'any', shortcuts = true, icon, background } = {}) => ({
   surface: `${surface}-nuxt`,
   manifestUrl: '/manifest.webmanifest',
   manifestHref: '/manifest.webmanifest',
@@ -50,26 +50,28 @@ const operatorProfile = (surface, { display = 'standalone', orientation = 'any',
   display,
   orientation,
   shortcuts,
+  icon,
+  background,
 })
 const profiles = {
   storefront: {
     surface: 'storefront-nuxt',
-    manifestUrl: '/manifest.webmanifest?v=3',
-    manifestHref: '/manifest.webmanifest?v=3',
+    manifestUrl: '/manifest.webmanifest?v=4',
+    manifestHref: '/manifest.webmanifest?v=4',
     manifestCache: 'private, no-store',
     packageWithPwaDependency: 'storefront-nuxt',
     storefront: true,
     display: 'standalone',
     orientation: 'portrait',
   },
-  pos: operatorProfile('pos'),
-  hub: operatorProfile('hub'),
-  orders: operatorProfile('orders'),
-  kds: operatorProfile('kds', { display: 'fullscreen', orientation: 'landscape', shortcuts: false }),
-  production: operatorProfile('production', { display: 'fullscreen', orientation: 'landscape' }),
-  marketing: operatorProfile('marketing'),
-  purchase: operatorProfile('purchase'),
-  bi: operatorProfile('bi'),
+  pos: operatorProfile('pos', { icon: 'lucide:shopping-basket', background: '#A95032' }),
+  hub: operatorProfile('hub', { icon: 'lucide:layout-grid', background: '#34373B' }),
+  orders: operatorProfile('orders', { icon: 'lucide:square-kanban', background: '#8B2F4D' }),
+  kds: operatorProfile('kds', { display: 'fullscreen', orientation: 'landscape', shortcuts: false, icon: 'lucide:chef-hat', background: '#2E7168' }),
+  production: operatorProfile('production', { display: 'fullscreen', orientation: 'landscape', icon: 'tabler:baguette', background: '#B9781B' }),
+  marketing: operatorProfile('marketing', { icon: 'lucide:megaphone', background: '#7D4B88' }),
+  purchase: operatorProfile('purchase', { icon: 'lucide:package', background: '#386F9A' }),
+  bi: operatorProfile('bi', { icon: 'lucide:chart-no-axes-combined', background: '#414F91' }),
 }
 const requestedApp = process.argv.find(value => value.startsWith('--app='))?.split('=', 2)[1]
 const profile = profiles[requestedApp]
@@ -79,6 +81,7 @@ check(process.versions.node.startsWith('22.'), `Node 22 em uso (${process.versio
 const surface = join(repository, 'surfaces', profile.surface)
 const output = join(surface, '.output')
 const pwaPackage = JSON.parse(await readFile(join(repository, 'surfaces', profile.packageWithPwaDependency, 'package.json'), 'utf8'))
+const surfacePackage = JSON.parse(await readFile(join(surface, 'package.json'), 'utf8'))
 const splashScreens = profile.storefront
   ? JSON.parse(await readFile(join(surface, 'pwa-splash-screens.json'), 'utf8'))
   : []
@@ -86,6 +89,12 @@ check(pwaPackage.dependencies['@vite-pwa/nuxt'] === '1.1.1', '@vite-pwa/nuxt usa
 if (profile.storefront) {
   check(splashScreens.length === 40, 'matriz canônica contém 40 splash screens iOS')
   check(new Set(splashScreens.map(([width, height]) => `${width}x${height}`)).size === 40, 'dimensões de splash screen não se repetem')
+}
+if (!profile.storefront) {
+  const assetScript = surfacePackage.scripts?.['pwa:assets'] || ''
+  check(assetScript.includes(`--icon=${profile.icon}`), `gerador usa ${profile.icon}`)
+  check(assetScript.includes(`--background=${profile.background}`), `gerador usa fundo ${profile.background}`)
+  check(assetScript.includes('--foreground=#FCF7EE'), 'gerador usa desenho creme canônico')
 }
 
 const swPath = join(output, 'public/sw.js')
@@ -163,6 +172,8 @@ try {
   for (const field of requiredManifestFields) {
     check(field in manifest, `manifesto contém ${field}`)
   }
+  const assetVersion = profile.storefront ? '4' : '2'
+  check(manifest.icons.every(icon => new URL(icon.src, baseUrl).searchParams.get('v') === assetVersion), `ícones do manifesto usam cache-busting v=${assetVersion}`)
   check(manifest.icons.some(icon => icon.purpose === 'maskable'), 'manifesto declara ícone maskable')
   check(manifest.display === (profile.display || 'standalone'), `manifesto usa display ${profile.display || 'standalone'}`)
   check(manifest.orientation === (profile.orientation || 'any'), `manifesto usa orientação ${profile.orientation || 'any'}`)
@@ -185,6 +196,7 @@ try {
   if (profile.storefront) check(csp.includes("worker-src 'self' blob:") && csp.includes("manifest-src 'self'"), 'CSP existente libera worker e manifesto locais')
   check(document.includes(`href="${profile.manifestHref}"`), 'HTML referencia o manifesto da surface')
   check(document.includes('rel="manifest"') && document.includes('name="theme-color"'), 'HTML contém manifesto e theme-color')
+  check(document.includes(`/pwa/apple-touch-icon-180x180.png?v=${profile.storefront ? '4' : '2'}`), 'HTML referencia apple-touch-icon versionado')
   check(document.includes('apple-mobile-web-app-capable') && document.includes('apple-mobile-web-app-status-bar-style'), 'HTML contém metas iOS')
   if (profile.storefront) check((document.match(/rel="apple-touch-startup-image"/g) || []).length === 40, 'HTML contém 40 links apple-touch-startup-image')
 } catch (error) {

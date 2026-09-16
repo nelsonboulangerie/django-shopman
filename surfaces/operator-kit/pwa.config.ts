@@ -136,7 +136,7 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
     head.link = [
       ...(head.link || []).filter((entry) => !managedLinks.has(String(entry.rel || ""))),
       { rel: "manifest", href: "/manifest.webmanifest" },
-      { rel: "apple-touch-icon", href: "/pwa/apple-touch-icon-180x180.png" },
+      { rel: "apple-touch-icon", href: "/pwa/apple-touch-icon-180x180.png?v=2" },
     ];
 
     addServerHandler({
