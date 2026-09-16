@@ -666,7 +666,7 @@ def _valid_push_endpoint(value) -> str | None:
     try:
         if not ip_address(hostname).is_global:
             return None
-    except ValueError:
+    except ValueError:  # silêncio-deliberado: hostname DNS válido não é um literal IP
         pass
     return endpoint
 

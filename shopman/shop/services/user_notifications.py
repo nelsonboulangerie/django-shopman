@@ -453,7 +453,7 @@ def push_user_notification(
         from django_eventstream import send_event
 
         send_event(f"user-{notification.user_id}", "user-notification", payload)
-    except ImportError:
+    except ImportError:  # silêncio-deliberado: SSE é opcional; Web Push segue independente
         pass
     except Exception:
         logger.warning(
