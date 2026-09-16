@@ -6,6 +6,9 @@ interface ShopSessionState {
   customerPhone: string | null
   isAuthenticated: boolean
   requiresWelcome: boolean
+  // As duas perguntas do gate: nome (vazio/importado sujo) e novidades (nunca respondida).
+  welcomeAsksName: boolean
+  welcomeAsksMarketing: boolean
   welcomeSuggestedName: string | null
   lastOrderRef: string | null
   shop: ShopProjection | null
@@ -23,6 +26,8 @@ interface AuthSessionProjection {
   customer_phone?: string
   customer_email?: string
   requires_welcome?: boolean
+  welcome_asks_name?: boolean
+  welcome_asks_marketing?: boolean
   welcome_suggested_name?: string
 }
 
@@ -39,6 +44,8 @@ function emptyState (): ShopSessionState {
     customerPhone: null,
     isAuthenticated: false,
     requiresWelcome: false,
+    welcomeAsksName: false,
+    welcomeAsksMarketing: false,
     welcomeSuggestedName: null,
     lastOrderRef: null,
     shop: NELSON_FALLBACK_SHOP,
@@ -74,6 +81,8 @@ export function useShopSession () {
       customerPhone: keepIdentity ? state.value.customerPhone : null,
       isAuthenticated: keepIdentity,
       requiresWelcome: keepIdentity ? state.value.requiresWelcome : false,
+      welcomeAsksName: keepIdentity ? state.value.welcomeAsksName : false,
+      welcomeAsksMarketing: keepIdentity ? state.value.welcomeAsksMarketing : false,
       welcomeSuggestedName: keepIdentity ? state.value.welcomeSuggestedName : null,
       lastOrderRef: homeAuthenticated
         ? home.last_order_ref
@@ -96,29 +105,40 @@ export function useShopSession () {
         customerPhone: null,
         isAuthenticated: false,
         requiresWelcome: false,
+        welcomeAsksName: false,
+        welcomeAsksMarketing: false,
         welcomeSuggestedName: null,
         lastOrderRef: null
       }
       return
     }
+    // Payload antigo (só `requires_welcome`, sem os `asks_*`): era o nome que faltava.
+    const asksName = session.welcome_asks_name ?? !!session.requires_welcome
+    const asksMarketing = !!session.welcome_asks_marketing
     state.value = {
       ...state.value,
       customerName: cleanOptionalText(session.customer_name),
       customerPhone: cleanOptionalText(session.customer_phone) || state.value.customerPhone,
       isAuthenticated: true,
-      requiresWelcome: !!session.requires_welcome,
+      requiresWelcome: !!session.requires_welcome || asksName || asksMarketing,
+      welcomeAsksName: asksName,
+      welcomeAsksMarketing: asksMarketing,
       welcomeSuggestedName: cleanOptionalText(session.welcome_suggested_name)
     }
   }
 
   function setIdentity (next: { name?: string | null, phone?: string | null, isAuthenticated?: boolean, requiresWelcome?: boolean }) {
+    const requiresWelcome = next.requiresWelcome ?? state.value.requiresWelcome
     state.value = {
       ...state.value,
       customerName: next.name ?? state.value.customerName,
       customerPhone: next.phone ?? state.value.customerPhone,
       isAuthenticated: next.isAuthenticated ?? state.value.isAuthenticated,
-      // Nome confirmado no welcome gate: o convite não deve reaparecer nesta sessão.
-      requiresWelcome: next.requiresWelcome ?? state.value.requiresWelcome
+      // Gate respondido (nome confirmado e/ou pergunta de novidades respondida):
+      // o convite não deve reaparecer nesta sessão.
+      requiresWelcome,
+      welcomeAsksName: requiresWelcome ? state.value.welcomeAsksName : false,
+      welcomeAsksMarketing: requiresWelcome ? state.value.welcomeAsksMarketing : false
     }
   }
 
@@ -138,6 +158,8 @@ export function useShopSession () {
   const customerPhone = computed(() => state.value.customerPhone)
   const isAuthenticated = computed(() => state.value.isAuthenticated)
   const requiresWelcome = computed(() => state.value.requiresWelcome)
+  const welcomeAsksName = computed(() => state.value.welcomeAsksName)
+  const welcomeAsksMarketing = computed(() => state.value.welcomeAsksMarketing)
   const welcomeSuggestedName = computed(() => state.value.welcomeSuggestedName)
   const lastOrderRef = computed(() => state.value.lastOrderRef)
   const shop = computed(() => state.value.shop)
@@ -153,6 +175,8 @@ export function useShopSession () {
     customerPhone,
     isAuthenticated,
     requiresWelcome,
+    welcomeAsksName,
+    welcomeAsksMarketing,
     welcomeSuggestedName,
     lastOrderRef,
     shop,

@@ -93,4 +93,23 @@ describe('useShopSession', () => {
     expect(s.requiresWelcome.value).toBe(false)
     expect(s.isAuthenticated.value).toBe(false)
   })
+
+  it('carries the two welcome questions and opens the gate for marketing alone', async () => {
+    const s = await loadSession()
+    s.setFromAuthSession({ is_authenticated: true, customer_name: 'Ana', requires_welcome: true, welcome_asks_name: false, welcome_asks_marketing: true })
+    expect(s.requiresWelcome.value).toBe(true)
+    expect(s.welcomeAsksName.value).toBe(false)
+    expect(s.welcomeAsksMarketing.value).toBe(true)
+    // Gate respondido: as duas perguntas se apagam junto com o convite.
+    s.setIdentity({ requiresWelcome: false })
+    expect(s.requiresWelcome.value).toBe(false)
+    expect(s.welcomeAsksMarketing.value).toBe(false)
+  })
+
+  it('reads a payload without the asks_* flags as the old name-only gate', async () => {
+    const s = await loadSession()
+    s.setFromAuthSession({ is_authenticated: true, requires_welcome: true, welcome_suggested_name: '' })
+    expect(s.welcomeAsksName.value).toBe(true)
+    expect(s.welcomeAsksMarketing.value).toBe(false)
+  })
 })
