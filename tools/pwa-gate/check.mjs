@@ -59,6 +59,8 @@ const profiles = {
     manifestCache: 'private, no-store',
     packageWithPwaDependency: 'storefront-nuxt',
     storefront: true,
+    display: 'standalone',
+    orientation: 'portrait',
   },
   pos: operatorProfile('pos'),
   hub: operatorProfile('hub'),
