@@ -22,7 +22,7 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E017  Catálogo de qualidade não tem grau ativo a preço cheio
   SHOPMAN_E018  Catálogo de qualidade tem política ativa incoerente
   SHOPMAN_E019  Configuração de produção da loja é inválida
-  SHOPMAN_E020  WhatsApp Marketing ativo sem isolamento ManyChat comprovado
+  SHOPMAN_W020  WhatsApp Marketing ativo sem isolamento ManyChat comprovado (o envio já falha fechado em runtime)
   SHOPMAN_E021  Allowlist de mídia Marketing contém host inseguro
   SHOPMAN_E022  Provedor de produção aponta para ambiente ou credencial de teste
   SHOPMAN_E023  Google Maps exige credenciais de browser e servidor separadas em produção
@@ -915,9 +915,10 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
     número frio, e um erro opaco. É o tipo de configuração faltando que só aparece no
     dia em que importa, então ela passa a aparecer na subida.
 
-    A ausência de flow remains a setup warning because runtime approval is already
-    blocked.  A configured flow whose persistent custom-field isolation has not
-    passed G-H03 is a deploy error: credentials must never turn an unproven path on.
+    A ausência de flow é aviso de setup porque a aprovação em runtime já está
+    bloqueada. Um flow configurado sem o ensaio G-H03 também é AVISO: o mesmo
+    `safety_state` fecha o envio em runtime, e um `Error` aqui derrubava o deploy
+    do sistema inteiro por uma faixa que já não podia enviar nada.
     """
     warnings = []
 
@@ -951,12 +952,20 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
 
         safety = manychat_marketing_safety.safety_state()
         if not safety.safe:
+            # AVISO, não erro. O caminho inseguro já falha fechado em RUNTIME
+            # (`require_safe_delivery`, `delivery_readiness`, `marketing_security`
+            # e a API do cockpit leem o mesmo `safety_state`): nenhum envio real
+            # sai sem o ensaio G-H03. Como `Error`, este check derrubava o job
+            # `release` inteiro (check --deploy) assim que o banco tinha uma
+            # campanha de WhatsApp ativa com flow — e o alpha ficou sem deploy
+            # de TODO o sistema por causa de uma faixa que já estava bloqueada
+            # (16/09, 22:15 em diante, 7 deployments em rollback).
             warnings.append(
-                Error(
+                Warning(
                     "WhatsApp Marketing permanece bloqueado: a isolação dos campos "
                     "persistentes do ManyChat ainda não foi comprovada.",
                     hint=safety.action,
-                    id="SHOPMAN_E020",
+                    id="SHOPMAN_W020",
                 )
             )
         return warnings
