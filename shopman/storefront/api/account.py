@@ -4,11 +4,10 @@ Consumes projections from the projection layer where applicable.
 """
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime
 
-from django.http import HttpResponse
+from django.http import FileResponse
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
@@ -61,27 +60,37 @@ logger = logging.getLogger(__name__)
 # Step-up de reautenticação: antes de ações destrutivas/sensíveis (excluir conta,
 # exportar dados) exigimos uma reconfirmação de identidade por OTP, mesmo já logado.
 # A confirmação marca a sessão por uma janela curta; delete/export checam essa marca.
-STEP_UP_SESSION_KEY = "account_step_up_at"
+STEP_UP_SESSION_KEY = "account_step_up"
 STEP_UP_MAX_AGE_SECONDS = 600  # 10 minutos
+STEP_UP_PURPOSES = frozenset({"export", "delete"})
 
 
-def _mark_step_up(request) -> None:
+def _mark_step_up(request, *, customer_uuid, purpose: str) -> None:
     if hasattr(request, "session"):
-        request.session[STEP_UP_SESSION_KEY] = timezone.now().isoformat()
+        request.session[STEP_UP_SESSION_KEY] = {
+            "customer_uuid": str(customer_uuid),
+            "purpose": purpose,
+            "accepted_at": timezone.now().isoformat(),
+        }
 
 
-def _step_up_is_fresh(request) -> bool:
+def _step_up_authorized_at(request, *, customer_uuid, purpose: str):
     session = getattr(request, "session", None)
     if session is None:
-        return False
+        return None
     raw = session.get(STEP_UP_SESSION_KEY)
-    if not raw:
-        return False
+    if not isinstance(raw, dict):
+        return None
+    if raw.get("customer_uuid") != str(customer_uuid) or raw.get("purpose") != purpose:
+        return None
     try:
-        accepted_at = datetime.fromisoformat(raw)
+        accepted_at = datetime.fromisoformat(str(raw.get("accepted_at") or ""))
     except (TypeError, ValueError):
-        return False
-    return (timezone.now() - accepted_at).total_seconds() <= STEP_UP_MAX_AGE_SECONDS
+        return None
+    if timezone.is_naive(accepted_at):
+        return None
+    age = (timezone.now() - accepted_at).total_seconds()
+    return accepted_at if 0 <= age <= STEP_UP_MAX_AGE_SECONDS else None
 
 
 def _step_up_required_response() -> Response:
@@ -1041,12 +1050,53 @@ class AccountExportView(APIView):
         customer = get_authenticated_customer(request)
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
-        if not _step_up_is_fresh(request):
+        authorized_at = _step_up_authorized_at(
+            request,
+            customer_uuid=customer.uuid,
+            purpose="export",
+        )
+        if authorized_at is None:
             return _step_up_required_response()
-        payload = account_service.export_customer_data(customer)
-        body = json.dumps(payload, ensure_ascii=False, indent=2, default=str)
-        response = HttpResponse(body, content_type="application/json; charset=utf-8")
-        response["Content-Disposition"] = 'attachment; filename="shopman-dados-cliente.json"'
+        from shopman.storefront.services import account_export, account_privacy
+
+        receipt = account_privacy.begin_export(
+            customer_uuid=customer.uuid,
+            authorized_at=authorized_at,
+        )
+        artifact = None
+        try:
+            artifact = account_export.build_account_export(customer)
+            receipt = account_privacy.complete_export(
+                receipt.pk,
+                counts=artifact.section_counts,
+            )
+        except Exception:
+            if artifact is not None:
+                artifact.close()
+            account_privacy.fail_export(receipt.pk)
+            logger.exception(
+                "storefront_account_export_failed",
+                extra={"privacy_receipt_ref": str(receipt.ref)},
+            )
+            return Response(
+                {
+                    "detail": "Não conseguimos preparar seus dados agora. Tente novamente em alguns minutos.",
+                    "error": {"code": "account_export_incomplete"},
+                    "receipt_ref": str(receipt.ref),
+                },
+                status=503,
+            )
+
+        response = FileResponse(
+            artifact,
+            as_attachment=True,
+            filename="shopman-dados-cliente.json",
+            content_type="application/json; charset=utf-8",
+        )
+        response["Cache-Control"] = "private, no-store"
+        response["Pragma"] = "no-cache"
+        response["X-Content-Type-Options"] = "nosniff"
+        response["X-Privacy-Request-Ref"] = str(receipt.ref)
         return response
 
 
@@ -1066,6 +1116,9 @@ class AccountStepUpView(APIView):
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
         code = str((request.data or {}).get("code") or "").strip()
+        purpose = str((request.data or {}).get("purpose") or "").strip()
+        if purpose not in STEP_UP_PURPOSES:
+            return Response({"detail": "Informe qual ação deseja confirmar."}, status=400)
         if not code:
             return Response({"detail": "Informe o código de confirmação."}, status=400)
         phone = getattr(customer, "phone", "") or ""
@@ -1075,7 +1128,7 @@ class AccountStepUpView(APIView):
         result = auth_service.verify_for_login(phone=phone, code_input=code, request=None)
         if not getattr(result, "success", False):
             return Response({"detail": "Código inválido ou expirado."}, status=400)
-        _mark_step_up(request)
+        _mark_step_up(request, customer_uuid=customer.uuid, purpose=purpose)
 
         # ⚠️ E o aparelho passa a ser CONHECIDO. É o que dissolve a cerca em vez de
         # empilhá-la: quem chegou por um link de campanha (`identity_strength = number`)
@@ -1239,30 +1292,103 @@ class AccountDeleteView(APIView):
     authentication_classes = [SessionAuthentication]
 
     def post(self, request):
+        from shopman.storefront.services import account_privacy
+
+        payload = request.data if hasattr(request, "data") else {}
         customer = get_authenticated_customer(request)
         if not customer:
+            if payload.get("acknowledged") is True:
+                try:
+                    replay = account_privacy.replay_completed_deletion(
+                        request.headers.get("Idempotency-Key", "")
+                    )
+                except account_privacy.InvalidIdempotencyKey:
+                    replay = None
+                if replay is not None:
+                    return Response(
+                        {
+                            "ok": True,
+                            "receipt_ref": replay.receipt_ref,
+                            "replayed": True,
+                        }
+                    )
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
-        payload = request.data if hasattr(request, "data") else {}
-        if not payload.get("acknowledged"):
+        if payload.get("acknowledged") is not True:
             return Response({"detail": "Confirme a exclusão antes de continuar."}, status=400)
-        if not _step_up_is_fresh(request):
+        authorized_at = _step_up_authorized_at(
+            request,
+            customer_uuid=customer.uuid,
+            purpose="delete",
+        )
+        if authorized_at is None:
             return _step_up_required_response()
 
         try:
-            original_ref, phone_hash = account_service.anonymize_customer(customer)
-        except account_service.AnonymizationIncomplete:
-            # A exclusão rodou inteira e parte dela falhou. Dizer "pronto" aqui
-            # seria a pior resposta possível: o titular sai achando que seus
-            # dados foram apagados, e eles não foram. O alerta crítico já subiu
-            # para a operação (dentro do service); aqui a conta NÃO é
-            # desconectada, porque a sessão é o caminho de volta para tentar de
-            # novo — deslogar transformaria uma falha parcial em falha sem saída.
+            outcome = account_privacy.delete_account(
+                customer=customer,
+                idempotency_key=request.headers.get("Idempotency-Key", ""),
+                authorized_at=authorized_at,
+            )
+        except account_privacy.InvalidIdempotencyKey:
+            return Response(
+                {
+                    "detail": "Não foi possível identificar esta tentativa. Reabra a confirmação.",
+                    "error": {"code": "invalid_idempotency_key"},
+                },
+                status=400,
+            )
+        except account_privacy.PrivacyRequestConflict:
+            return Response(
+                {
+                    "detail": "Esta confirmação não corresponde à solicitação original. Reabra a exclusão.",
+                    "error": {"code": "idempotency_conflict"},
+                },
+                status=409,
+            )
+        except account_privacy.PrivacyRequestInProgress:
+            return Response(
+                {
+                    "detail": "Esta solicitação já está sendo processada. Aguarde um instante.",
+                    "error": {"code": "privacy_request_in_progress"},
+                },
+                status=409,
+            )
+        except account_privacy.AccountDeletionBlocked as exc:
+            messages = {
+                "active_order": (
+                    "Ainda existe um pedido em andamento. Conclua ou cancele esse pedido antes "
+                    "de excluir a conta."
+                ),
+                "stock_alert_delivery_in_flight": (
+                    "Um aviso está sendo enviado neste instante. Aguarde um momento e tente novamente."
+                ),
+                "order_automation_in_flight": (
+                    "Uma atualização do pedido está sendo concluída. Aguarde um momento e tente novamente."
+                ),
+                "conversation_delivery_in_flight": (
+                    "Uma mensagem está sendo enviada neste instante. Aguarde um momento e tente novamente."
+                ),
+                "marketing_delivery_in_flight": (
+                    "Uma mensagem de marketing está sendo enviada neste instante. Aguarde um momento e tente novamente."
+                ),
+            }
+            return Response(
+                {
+                    "detail": messages.get(
+                        exc.reason,
+                        "A exclusão está temporariamente bloqueada. Aguarde um momento e tente novamente.",
+                    ),
+                    "error": {"code": "account_deletion_blocked", "reason": exc.reason},
+                },
+                status=409,
+            )
+        except Exception:
+            logger.exception("storefront_account_deletion_failed")
             return Response(
                 {
                     "detail": (
-                        "Não conseguimos concluir a exclusão agora. Parte dos seus dados "
-                        "ainda está conosco, e já avisamos nossa equipe. Tente de novo em "
-                        "alguns minutos."
+                        "Não conseguimos concluir a exclusão agora. Nenhuma exclusão parcial foi "
+                        "confirmada, e nossa equipe já foi avisada. Tente novamente em alguns minutos."
                     ),
                     "error": {"code": "account_deletion_incomplete"},
                 },
@@ -1270,11 +1396,13 @@ class AccountDeleteView(APIView):
             )
         if hasattr(request, "session"):
             request.session.flush()
-        response = Response({
-            "ok": True,
-            "customer_ref": original_ref,
-            "phone_hash": phone_hash,
-        })
+        response = Response(
+            {
+                "ok": True,
+                "receipt_ref": outcome.receipt_ref,
+                "replayed": outcome.replayed,
+            }
+        )
         response.delete_cookie(device_service.cookie_name())
         return response
 

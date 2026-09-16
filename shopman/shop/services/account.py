@@ -8,12 +8,50 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import uuid
+
+from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
 # Domain registry of consent channels this shop tracks. Display copy (labels,
 # descriptions) is a storefront concern and lives in storefront.presentation.account.
 NOTIFICATION_CONSENT_CHANNELS: tuple[str, ...] = ("whatsapp", "email", "sms", "push")
+
+
+class AccountUnavailable(ValueError):
+    """A conta não existe mais ou perdeu autoridade para receber mutações."""
+
+
+def lock_active_customer(*, customer_ref: str = "", customer_pk: int | None = None):
+    """Cerca canônica compartilhada com a exclusão de conta.
+
+    Toda mutação pessoal deve adquirir ``Customer`` primeiro. Se a exclusão
+    venceu a corrida, a linha continua no banco, mas inativa, e nenhuma escrita
+    posterior pode recriar endereço, perfil, preferência ou consentimento.
+    """
+
+    from shopman.guestman.models import Customer
+
+    query = Customer.objects.select_for_update().filter(is_active=True)
+    if customer_pk is not None:
+        query = query.filter(pk=customer_pk)
+    elif customer_ref:
+        query = query.filter(ref=customer_ref)
+    else:
+        raise ValueError("customer_ref or customer_pk is required")
+    customer = query.first()
+    if customer is None:
+        raise AccountUnavailable("customer_unavailable")
+    return customer
+
+
+def lock_customer_for_privacy(customer_pk: int):
+    """Trava inclusive uma conta inativa para decidir replay da exclusão."""
+
+    from shopman.guestman.models import Customer
+
+    return Customer.objects.select_for_update().get(pk=customer_pk)
 
 
 def get_authenticated_customer(request):
@@ -42,73 +80,83 @@ def get_address(customer_ref: str, pk: int):
 def add_address(customer_ref: str, intent):
     from shopman.guestman.services import address as address_service
 
-    return address_service.add_address(
-        customer_ref=customer_ref,
-        label=intent.label,
-        label_custom=intent.label_custom,
-        formatted_address=intent.formatted_address,
-        place_id=intent.place_id or "",
-        coordinates=intent.coordinates,
-        complement=intent.complement,
-        delivery_instructions=intent.delivery_instructions,
-        is_default=intent.is_default,
-        components={
+    with transaction.atomic():
+        lock_active_customer(customer_ref=customer_ref)
+        return address_service.add_address(
+            customer_ref=customer_ref,
+            label=intent.label,
+            label_custom=intent.label_custom,
+            formatted_address=intent.formatted_address,
+            place_id=intent.place_id or "",
+            coordinates=intent.coordinates,
+            complement=intent.complement,
+            delivery_instructions=intent.delivery_instructions,
+            is_default=intent.is_default,
+            components={
+                "route": intent.route,
+                "street_number": intent.street_number,
+                "neighborhood": intent.neighborhood,
+                "city": intent.city,
+                "state_code": intent.state_code,
+                "postal_code": intent.postal_code,
+            },
+        )
+
+
+def update_address(customer_ref: str, pk: int, intent) -> None:
+    from shopman.guestman.services import address as address_service
+
+    with transaction.atomic():
+        lock_active_customer(customer_ref=customer_ref)
+        fields: dict = {
+            "label": intent.label,
+            "label_custom": intent.label_custom,
+            "formatted_address": intent.formatted_address,
             "route": intent.route,
             "street_number": intent.street_number,
             "neighborhood": intent.neighborhood,
             "city": intent.city,
             "state_code": intent.state_code,
             "postal_code": intent.postal_code,
-        },
-    )
+            "complement": intent.complement,
+            "delivery_instructions": intent.delivery_instructions,
+            "place_id": intent.place_id or "",
+            "is_default": intent.is_default,
+        }
+        if intent.coordinates is not None:
+            fields["latitude"] = intent.coordinates[0]
+            fields["longitude"] = intent.coordinates[1]
+            fields["is_verified"] = True
+        elif not intent.place_id:
+            fields["latitude"] = None
+            fields["longitude"] = None
+            fields["is_verified"] = False
 
-
-def update_address(customer_ref: str, pk: int, intent) -> None:
-    from shopman.guestman.services import address as address_service
-
-    fields: dict = {
-        "label": intent.label,
-        "label_custom": intent.label_custom,
-        "formatted_address": intent.formatted_address,
-        "route": intent.route,
-        "street_number": intent.street_number,
-        "neighborhood": intent.neighborhood,
-        "city": intent.city,
-        "state_code": intent.state_code,
-        "postal_code": intent.postal_code,
-        "complement": intent.complement,
-        "delivery_instructions": intent.delivery_instructions,
-        "place_id": intent.place_id or "",
-        "is_default": intent.is_default,
-    }
-    if intent.coordinates is not None:
-        fields["latitude"] = intent.coordinates[0]
-        fields["longitude"] = intent.coordinates[1]
-        fields["is_verified"] = True
-    elif not intent.place_id:
-        fields["latitude"] = None
-        fields["longitude"] = None
-        fields["is_verified"] = False
-
-    address_service.update_address(customer_ref, pk, **fields)
+        address_service.update_address(customer_ref, pk, **fields)
 
 
 def update_address_label(customer_ref: str, pk: int, *, label: str, label_custom: str) -> None:
     from shopman.guestman.services import address as address_service
 
-    address_service.update_address(customer_ref, pk, label=label, label_custom=label_custom)
+    with transaction.atomic():
+        lock_active_customer(customer_ref=customer_ref)
+        address_service.update_address(customer_ref, pk, label=label, label_custom=label_custom)
 
 
 def delete_address(customer_ref: str, pk: int) -> None:
     from shopman.guestman.services import address as address_service
 
-    address_service.delete_address(customer_ref, pk)
+    with transaction.atomic():
+        lock_active_customer(customer_ref=customer_ref)
+        address_service.delete_address(customer_ref, pk)
 
 
 def set_default_address(customer_ref: str, pk: int) -> None:
     from shopman.guestman.services import address as address_service
 
-    address_service.set_default_address(customer_ref, pk)
+    with transaction.atomic():
+        lock_active_customer(customer_ref=customer_ref)
+        address_service.set_default_address(customer_ref, pk)
 
 
 # A frase que o cliente lê quando o e-mail digitado já é de outro cadastro. Diz
@@ -390,9 +438,7 @@ def update_profile(customer_ref: str, intent):
     from shopman.guestman.services import customer as customer_service
 
     with transaction.atomic():
-        customer = customer_service.get(customer_ref)
-        if not customer:
-            return None
+        customer = lock_active_customer(customer_ref=customer_ref)
 
         # `UNSET` = a requisição não falou deste campo; deixe-o como está.
         # `""` = a requisição pediu para limpar. Os dois eram a mesma coisa até
@@ -443,20 +489,22 @@ def toggle_food_preference(customer_ref: str, key: str) -> set[str]:
     """Toggle one dietary preference; return the active preference keys."""
     from shopman.guestman import PreferenceService
 
-    existing = PreferenceService.get_preference(customer_ref, "alimentar", key)
-    if existing is not None:
-        PreferenceService.delete_preference(customer_ref, "alimentar", key)
-    else:
-        PreferenceService.set_preference(
-            customer_ref,
-            "alimentar",
-            key,
-            value=True,
-            preference_type="restriction",
-            source="storefront_settings",
-        )
+    with transaction.atomic():
+        lock_active_customer(customer_ref=customer_ref)
+        existing = PreferenceService.get_preference(customer_ref, "alimentar", key)
+        if existing is not None:
+            PreferenceService.delete_preference(customer_ref, "alimentar", key)
+        else:
+            PreferenceService.set_preference(
+                customer_ref,
+                "alimentar",
+                key,
+                value=True,
+                preference_type="restriction",
+                source="storefront_settings",
+            )
 
-    return active_food_keys(customer_ref)
+        return active_food_keys(customer_ref)
 
 
 def enabled_notification_channels(customer_ref: str) -> set[str]:
@@ -471,14 +519,17 @@ def set_notification_consent(customer_ref: str, channel: str, *, enabled: bool, 
     from django.db import transaction
     from shopman.guestman import ConsentService
     from shopman.guestman.models import Customer
+
     if type(enabled) is not bool or channel not in NOTIFICATION_CONSENT_CHANNELS:
         raise ValueError("Invalid consent state")
     with transaction.atomic():
-        Customer.objects.select_for_update().get(ref=customer_ref)
+        Customer.objects.select_for_update().get(ref=customer_ref, is_active=True)
         if not enabled:
             ConsentService.revoke_consent(customer_ref, channel)
         elif not ConsentService.has_consent(customer_ref, channel):
-            ConsentService.grant_consent(customer_ref, channel, source="storefront_settings", legal_basis="consent", ip_address=ip_address)
+            ConsentService.grant_consent(
+                customer_ref, channel, source="storefront_settings", legal_basis="consent", ip_address=ip_address
+            )
         return _complete_notification_preferences(customer_ref)
 
 
@@ -487,14 +538,18 @@ def toggle_notification_consent(customer_ref: str, channel: str, *, ip_address: 
     from django.db import transaction
     from shopman.guestman import ConsentService
     from shopman.guestman.models import Customer
+
     with transaction.atomic():
-        Customer.objects.select_for_update().get(ref=customer_ref)
-        return set_notification_consent(customer_ref, channel, enabled=not ConsentService.has_consent(customer_ref, channel), ip_address=ip_address)
+        Customer.objects.select_for_update().get(ref=customer_ref, is_active=True)
+        return set_notification_consent(
+            customer_ref, channel, enabled=not ConsentService.has_consent(customer_ref, channel), ip_address=ip_address
+        )
 
 
 def _complete_notification_preferences(customer_ref: str) -> set[str]:
     # Preserve the existing rule: preferences displayed off gain explicit opt-out.
     from shopman.guestman import ConsentService
+
     known = {consent.channel for consent in ConsentService.get_consents(customer_ref)}
     for other in NOTIFICATION_CONSENT_CHANNELS:
         if other in known:
@@ -504,7 +559,9 @@ def _complete_notification_preferences(customer_ref: str) -> set[str]:
         except Exception:
             logger.warning(
                 "consent: opt-out explícito falhou customer=%s channel=%s",
-                customer_ref, other, exc_info=True,
+                customer_ref,
+                other,
+                exc_info=True,
             )
 
     return enabled_notification_channels(customer_ref)
@@ -528,7 +585,18 @@ def _complete_notification_preferences(customer_ref: str) -> set[str]:
 _PII_DATA_KEYS: tuple[str, ...] = (
     "customer",  # {name, phone, email, cpf, uuid, address}
     "customer_name",
+    "customer_ref",
     "customer_phone",
+    "customer_email",
+    "customer_tax_id",
+    "name",
+    "phone",
+    "email",
+    "tax_id",
+    "document",
+    "receipt_email",
+    "recipient_name",
+    "recipient_phone",
     "delivery_address",
     "delivery_address_structured",
     "recipient",  # presente para terceiro: nome e telefone de quem recebe
@@ -536,11 +604,17 @@ _PII_DATA_KEYS: tuple[str, ...] = (
     "order_notes",  # texto livre escrito pelo cliente
 )
 
+_PII_NESTED_KEYS: dict[str, frozenset[str]] = {
+    "receipt": frozenset({"email", "customer_name", "customer_phone"}),
+    "notification_context": frozenset(
+        {"customer_name", "customer_phone", "customer_email", "recipient_name", "recipient_phone"}
+    ),
+    "context": frozenset({"customer_name", "customer_phone", "customer_email", "recipient_name", "recipient_phone"}),
+}
+
 # Handles que SÃO a pessoa. `pos_tab`, `table` e o código de pedido do iFood
 # identificam a comanda, a mesa ou o pedido — não o titular — e ficam como estão.
-_PERSONAL_HANDLE_TYPES: frozenset[str] = frozenset(
-    {"phone", "customer", "whatsapp", "manychat"}
-)
+_PERSONAL_HANDLE_TYPES: frozenset[str] = frozenset({"phone", "customer", "whatsapp", "manychat"})
 
 # Tipo de handle de um pedido cujo titular pediu exclusão. Trocar o TIPO junto
 # com o valor não é cosmético: `customer_orders.customer_identity_filter` casa
@@ -561,13 +635,19 @@ def customer_footprint_query(customer_ref: str, phone: str):
     """
     from django.db.models import Q
 
-    query = Q()
+    canonical = Q()
     if customer_ref:
-        query |= Q(data__customer_ref=customer_ref)
-        query |= Q(data__customer__ref=customer_ref)
+        canonical |= Q(data__customer_ref=customer_ref)
+        canonical |= Q(data__customer__ref=customer_ref)
+    query = canonical
     if phone:
-        query |= Q(handle_type__in=tuple(_PERSONAL_HANDLE_TYPES), handle_ref=phone)
-        query |= Q(data__customer__phone=phone)
+        # Telefone e e-mail mudam de dono. Eles só podem recuperar legado sem
+        # vínculo canônico; se um registro já aponta para outro Customer, essa
+        # identidade prevalece mesmo que o contato coincida com o atual.
+        ownerless = ~Q(data__has_key="customer_ref") & ~Q(data__customer__has_key="ref")
+        query |= ownerless & (
+            Q(handle_type__in=tuple(_PERSONAL_HANDLE_TYPES), handle_ref=phone) | Q(data__customer__phone=phone)
+        )
     return query
 
 
@@ -580,22 +660,137 @@ def _customer_orders(customer_ref: str, phone: str):
     return Order.objects.filter(query)
 
 
+def privacy_order_deletion_blocker(customer_ref: str, phone: str) -> str:
+    """Retorna o bloqueio operacional do rastro de pedidos, sem expor o kernel."""
+
+    from shopman.orderman.models import Directive
+
+    orders = _customer_orders(customer_ref, phone)
+    if orders.exclude(status__in=("completed", "cancelled", "returned")).exists():
+        return "active_order"
+    if Directive.objects.filter(
+        payload__order_ref__in=orders.values("ref"),
+        status=Directive.Status.RUNNING,
+    ).exists():
+        return "order_automation_in_flight"
+    return ""
+
+
+def _customer_conversations(customer_ref: str, phone: str):
+    """Conversas identificadas pelo mesmo titular, sem depender do cadastro ativo."""
+    from django.db.models import Q
+
+    from shopman.shop.models import Conversation
+
+    query = Q()
+    if customer_ref:
+        query |= Q(customer_ref=customer_ref)
+    if phone:
+        query |= Q(customer_ref="", phone=phone)
+    return Conversation.objects.filter(query) if query.children else Conversation.objects.none()
+
+
+def _delete_customer_conversations(customer_ref: str, phone: str) -> int:
+    """Apaga a árvore do concierge na ordem exigida pelos vínculos protegidos."""
+    from shopman.shop.models import ConversationBinding, ConversationMessage, OutboundAttempt
+
+    conversations = _customer_conversations(customer_ref, phone)
+    conversation_ids = tuple(conversations.values_list("id", flat=True))
+    if not conversation_ids:
+        return 0
+    messages = ConversationMessage.objects.filter(conversation_id__in=conversation_ids)
+    if OutboundAttempt.objects.filter(
+        message__in=messages,
+        state=OutboundAttempt.State.EXECUTING,
+    ).exists():
+        raise RuntimeError("conversation_delivery_in_progress")
+    OutboundAttempt.objects.filter(message__in=messages).delete()
+    messages.delete()
+    ConversationBinding.objects.filter(conversation_id__in=conversation_ids).delete()
+    deleted, _ = conversations.delete()
+    return deleted
+
+
+def _settle_customer_marketing(customer) -> int:
+    """Cancela efeitos futuros e recusa exclusão durante uma saída em curso."""
+    from django.utils import timezone
+
+    from shopman.shop.models import DeliveryTarget
+
+    member_ids = tuple(customer.marketing_audience_memberships.select_for_update().values_list("pk", flat=True))
+    targets = DeliveryTarget.objects.select_for_update().filter(member_id__in=member_ids)
+    if targets.filter(state=DeliveryTarget.State.SENDING).exists():
+        raise RuntimeError("marketing_delivery_in_progress")
+    return targets.filter(
+        state__in=(
+            DeliveryTarget.State.PLANNED,
+            DeliveryTarget.State.QUEUED,
+            DeliveryTarget.State.FAILED_RETRYABLE,
+        )
+    ).update(
+        state=DeliveryTarget.State.CANCELLED,
+        lease_owner="",
+        lease_until=None,
+        last_error_code="subject_deleted",
+        settled_at=timezone.now(),
+    )
+
+
 def _scrub_pii(payload) -> tuple[dict, bool]:
     """Devolve (cópia sem as chaves de PII, houve mudança)."""
     if not isinstance(payload, dict):
         return payload, False
     clean = {k: v for k, v in payload.items() if k not in _PII_DATA_KEYS}
-    return clean, len(clean) != len(payload)
+    changed = len(clean) != len(payload)
+    for container, personal_keys in _PII_NESTED_KEYS.items():
+        nested = clean.get(container)
+        if not isinstance(nested, dict):
+            continue
+        scrubbed = {key: value for key, value in nested.items() if key not in personal_keys}
+        if len(scrubbed) != len(nested):
+            clean[container] = scrubbed
+            changed = True
+    return clean, changed
 
 
 def _anonymize_order_trail(*, customer_ref: str, phone: str, pseudonym: str) -> dict[str, int]:
     """Apaga o PII do titular dos pedidos e das sessões dele. Idempotente."""
     from django.db import IntegrityError
-    from shopman.orderman.models import Order, Session
+    from django.db.models import Subquery
+    from shopman.orderman.models import Directive, Order, Session
+    from shopman.payman.models import PaymentIntent
 
-    counts = {"orders": 0, "sessions": 0}
+    counts = {"orders": 0, "sessions": 0, "payment_intents": 0, "directives": 0}
 
-    for order in _customer_orders(customer_ref, phone).iterator():
+    matching_orders = _customer_orders(customer_ref, phone)
+    payment_intents = PaymentIntent.objects.filter(order_ref__in=Subquery(matching_orders.values("ref")))
+    for payment_intent in payment_intents.only("pk", "gateway_data").iterator():
+        gateway_data, changed = _scrub_pii(payment_intent.gateway_data)
+        if changed:
+            PaymentIntent.objects.filter(pk=payment_intent.pk).update(gateway_data=gateway_data)
+            counts["payment_intents"] += 1
+
+    directives = Directive.objects.select_for_update().filter(
+        payload__order_ref__in=Subquery(matching_orders.values("ref"))
+    )
+    if directives.filter(status=Directive.Status.RUNNING).exists():
+        raise RuntimeError("order_directive_in_progress")
+    for directive in directives.iterator():
+        payload, changed = _scrub_pii(directive.payload)
+        updates = {}
+        if changed:
+            updates["payload"] = payload
+        if directive.status == Directive.Status.QUEUED:
+            updates.update(
+                status=Directive.Status.FAILED,
+                error_code="subject_deleted",
+                last_error="",
+            )
+        if updates:
+            Directive.objects.filter(pk=directive.pk).update(**updates)
+            counts["directives"] += 1
+
+    for order in matching_orders.iterator():
         fields: dict = {}
 
         data, changed = _scrub_pii(order.data)
@@ -653,99 +848,6 @@ def _anonymize_order_trail(*, customer_ref: str, phone: str, pseudonym: str) -> 
     return counts
 
 
-def export_customer_data(customer) -> dict:
-    data = {
-        "customer": {
-            "ref": customer.ref,
-            "first_name": customer.first_name,
-            "last_name": customer.last_name,
-            "phone": customer.phone,
-            "email": customer.email,
-            # `document` e `metadata` são apagados por `purge_pii` na exclusão e
-            # faltavam aqui: o titular só pode conferir o que a loja guarda dele
-            # se a exportação mostrar tudo que a exclusão alcança.
-            "document": customer.document,
-            "metadata": customer.metadata,
-            "birthday": str(customer.birthday) if customer.birthday else None,
-            "created_at": customer.created_at.isoformat(),
-        },
-        "addresses": [
-            {
-                "label": addr.label,
-                "formatted_address": addr.formatted_address,
-                "route": addr.route,
-                "street_number": addr.street_number,
-                "neighborhood": addr.neighborhood,
-                "city": addr.city,
-                "complement": addr.complement,
-                "delivery_instructions": addr.delivery_instructions,
-                "is_default": addr.is_default,
-            }
-            for addr in addresses(customer.ref)
-        ],
-    }
-
-    orders = _customer_orders(customer.ref, customer.phone or "").order_by("-created_at")[:200]
-    data["orders"] = [
-        {
-            "ref": order.ref,
-            "status": order.status,
-            "total_q": (order.snapshot or {}).get("pricing", {}).get("total_q", order.total_q),
-            "created_at": order.created_at.isoformat(),
-            "items": list((order.snapshot or {}).get("items", [])),
-        }
-        for order in orders
-    ]
-
-    data["preferences"] = [
-        {
-            "category": pref.category,
-            "key": pref.key,
-            "value": pref.value,
-            "preference_type": pref.preference_type,
-        }
-        for pref in preferences(customer.ref)
-    ]
-
-    from shopman.guestman import ConsentService
-
-    data["consents"] = [
-        {
-            "channel": consent.channel,
-            "status": consent.status,
-            "consented_at": consent.consented_at,
-            "revoked_at": consent.revoked_at,
-        }
-        for consent in ConsentService.get_consents(customer.ref)
-    ]
-
-    try:
-        from shopman.guestman import LoyaltyService
-
-        account = LoyaltyService.get_account(customer.ref)
-        if account:
-            data["loyalty"] = {
-                "tier": account.tier,
-                "points_balance": account.points_balance,
-                "lifetime_points": account.lifetime_points,
-                "stamps_current": account.stamps_current,
-            }
-            txns = LoyaltyService.get_transactions(customer.ref, limit=100)
-            data["loyalty"]["transactions"] = [
-                {
-                    "type": txn.transaction_type,
-                    "points": txn.points,
-                    "description": txn.description,
-                    "created_at": txn.created_at.isoformat(),
-                }
-                for txn in txns
-            ]
-    except Exception:
-        logger.warning("data_export_loyalty_failed", exc_info=True)
-
-    return data
-
-
 def _nada_a_apagar(exc: BaseException) -> bool:
     """A etapa falhou porque não havia nada lá? Então ela não falhou.
 
@@ -786,6 +888,7 @@ class AnonymizationIncomplete(Exception):
         super().__init__("Exclusão incompleta: " + ", ".join(self.steps))
 
 
+@transaction.atomic
 def anonymize_customer(customer) -> tuple[str, str]:
     """Anonymize personal data and return original ref + phone hash.
 
@@ -793,9 +896,13 @@ def anonymize_customer(customer) -> tuple[str, str]:
     o User do doorman, o perfil de RFM e — desde a correção do LOTE 6 — o rastro
     do titular em `Order` e `Session`, que é onde o telefone realmente morava.
     """
+    # O mesmo Customer é a trava canônica de todos os dados pessoais da conta.
+    # A releitura evita decidir com uma instância anterior à espera pelo lock.
+    customer = type(customer).objects.select_for_update().get(pk=customer.pk)
     falhas: list[str] = []
     original_ref = customer.ref
     original_phone = customer.phone or ""
+    original_email = customer.email or ""
     phone_hash = hashlib.sha256(original_phone.encode()).hexdigest()[:12]
 
     # O pseudônimo do pedido vem do uuid do Customer, e NÃO do `phone_hash`
@@ -819,11 +926,20 @@ def anonymize_customer(customer) -> tuple[str, str]:
             logger.warning("consent_revoke_failed channel=%s", channel, exc_info=True)
 
     try:
+        from shopman.guestman.contrib.consent.models import CommunicationConsentEvent
+
+        CommunicationConsentEvent.redact_subject(customer)
+        customer.consents.all().delete()
+    except Exception:
+        falhas.append("desvincular provas de consentimento")
+        logger.warning("consent_evidence_redaction_failed subject=%s", pseudonym, exc_info=True)
+
+    try:
         address_service.delete_all_addresses(original_ref)
     except Exception as exc:
         if not _nada_a_apagar(exc):
             falhas.append("apagar endereços")
-        logger.warning("address_cleanup_failed customer=%s", original_ref, exc_info=True)
+        logger.warning("address_cleanup_failed subject=%s", pseudonym, exc_info=True)
 
     customer.first_name = "Anonimizado"
     customer.last_name = ""
@@ -842,15 +958,15 @@ def anonymize_customer(customer) -> tuple[str, str]:
         customer_service.purge_pii(customer)
     except Exception:
         falhas.append("purgar PII do cadastro")
-        logger.warning("anonymize: purge_pii falhou customer=%s", original_ref, exc_info=True)
+        logger.warning("anonymize: purge_pii falhou subject=%s", pseudonym, exc_info=True)
 
     try:
         from shopman.doorman.services._user_bridge import forget_customer
 
-        forget_customer(customer.uuid, phone=original_phone)
+        forget_customer(customer.uuid, phone=original_phone, email=original_email)
     except Exception:
         falhas.append("esquecer o login")
-        logger.warning("anonymize: forget_customer falhou customer=%s", original_ref, exc_info=True)
+        logger.warning("anonymize: forget_customer falhou subject=%s", pseudonym, exc_info=True)
 
     # O pedido e a sessão — onde o telefone é coluna, não campo derivado.
     try:
@@ -860,12 +976,14 @@ def anonymize_customer(customer) -> tuple[str, str]:
             pseudonym=pseudonym,
         )
         logger.info(
-            "anonymize: rastro apagado customer=%s orders=%s sessions=%s",
-            original_ref, counts["orders"], counts["sessions"],
+            "anonymize: rastro apagado subject=%s orders=%s sessions=%s",
+            pseudonym,
+            counts["orders"],
+            counts["sessions"],
         )
     except Exception:
         falhas.append("apagar o rastro em pedidos e sessões")
-        logger.warning("anonymize: rastro de pedidos falhou customer=%s", original_ref, exc_info=True)
+        logger.warning("anonymize: rastro de pedidos falhou subject=%s", pseudonym, exc_info=True)
 
     # O perfil de RFM é um retrato comportamental montado para MIRAR a pessoa
     # (recência, frequência, ticket, segmento). Não tem valor fiscal e não
@@ -877,7 +995,72 @@ def anonymize_customer(customer) -> tuple[str, str]:
         CustomerInsight.objects.filter(customer=customer).delete()
     except Exception:
         falhas.append("apagar o perfil de RFM")
-        logger.warning("anonymize: insight delete falhou customer=%s", original_ref, exc_info=True)
+        logger.warning("anonymize: insight delete falhou subject=%s", pseudonym, exc_info=True)
+
+    try:
+        from django.db.models import Q
+        from django.utils import timezone
+        from shopman.guestman.contrib.merge.models import MergeAudit, MergeStatus
+
+        from shopman.shop.models import ContactRelease
+
+        ContactRelease.objects.filter(released_from_ref=original_ref).update(
+            value="",
+            released_from_ref=pseudonym,
+            released_from_name="",
+            released_pk="",
+        )
+        replacement_uuid = uuid.uuid4()
+        MergeAudit.objects.filter(Q(source_ref=original_ref) | Q(source_id=customer.uuid)).update(
+            source_ref=pseudonym,
+            source_id=replacement_uuid,
+            actor="",
+            evidence={},
+            snapshot={},
+            status=MergeStatus.REDACTED,
+            reverted_at=timezone.now(),
+            reverted_by="",
+        )
+        MergeAudit.objects.filter(Q(target_ref=original_ref) | Q(target_id=customer.uuid)).update(
+            target_ref=pseudonym,
+            target_id=replacement_uuid,
+            actor="",
+            evidence={},
+            snapshot={},
+            status=MergeStatus.REDACTED,
+            reverted_at=timezone.now(),
+            reverted_by="",
+        )
+    except Exception:
+        falhas.append("redigir auditorias pessoais")
+        logger.warning("anonymize: personal audit redaction failed subject=%s", pseudonym, exc_info=True)
+
+    # Personalização, fidelidade e conversa não têm obrigação fiscal. Como toda
+    # a função é atômica, uma falha em qualquer etapa impede que uma exclusão
+    # parcial seja persistida ou declarada concluída.
+    for label, delete in (
+        ("apagar preferências", lambda: customer.preferences.all().delete()),
+        ("apagar timeline", lambda: customer.timeline_events.all().delete()),
+        ("apagar fidelidade", lambda: customer.loyalty_account.delete()),
+        ("apagar etiquetas", lambda: customer.tags.clear()),
+        (
+            "apagar conversas",
+            lambda: _delete_customer_conversations(original_ref, original_phone),
+        ),
+        (
+            "desvincular públicos de marketing",
+            lambda: (
+                _settle_customer_marketing(customer),
+                customer.marketing_audience_memberships.all().delete(),
+            ),
+        ),
+    ):
+        try:
+            delete()
+        except Exception as exc:
+            if not _nada_a_apagar(exc):
+                falhas.append(label)
+            logger.warning("anonymize: %s falhou subject=%s", label, pseudonym, exc_info=True)
 
     # As superfícies guardam dado do cliente que o shop não pode importar
     # (`storefront` importa `shop`, nunca o contrário — ADR-001). O anúncio é um
@@ -893,24 +1076,12 @@ def anonymize_customer(customer) -> tuple[str, str]:
         )
     except Exception:
         falhas.append("avisar as superfícies")
-        logger.warning("anonymize: signal customer_anonymized falhou customer=%s", original_ref, exc_info=True)
+        logger.warning("anonymize: signal customer_anonymized falhou subject=%s", pseudonym, exc_info=True)
 
     if falhas:
-        # Alerta ANTES de levantar: a exceção sobe para a API e vira resposta de
-        # erro, mas quem tem de agir é a operação — dado de titular que não saiu
-        # do banco é obrigação legal em aberto, não um 500 qualquer.
-        from shopman.shop.services.observability import create_operator_alert
-
-        create_operator_alert(
-            type="account_deletion_incomplete",
-            severity="critical",
-            message=(
-                f"Exclusão de conta incompleta ({original_ref}): "
-                + ", ".join(falhas)
-                + ". Dado pessoal permanece no banco."
-            ),
-            dedupe_key=f"anonymize:{original_ref}",
-        )
+        # O coordenador externo registra o recibo e alerta DEPOIS do rollback.
+        # Persistir o alerta aqui seria ilusório: esta função é atômica, então a
+        # mesma exceção que protege contra meia-exclusão também o desfaria.
         raise AnonymizationIncomplete(falhas)
 
     return original_ref, phone_hash

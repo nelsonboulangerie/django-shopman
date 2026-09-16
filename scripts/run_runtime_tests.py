@@ -36,6 +36,9 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     "shopman/shop/tests/test_concurrent_finish_does_not_double_credit.py",
     "shopman/storefront/tests/test_concurrent_checkout.py",
     "shopman/storefront/tests/test_operational_postgres.py",
+    # Exclusão de conta compartilha a trava canônica do Customer com novos
+    # pedidos, inscrições e mensagens; as três corridas exigem conexões reais.
+    "shopman/storefront/tests/test_account_privacy_postgres.py",
     # Provas do concierge dependem de locks, conexões independentes e migrações
     # reais; skips do lote SQLite precisam executar neste gate estrito.
     "shopman/storefront/tests/test_concierge_authority.py",

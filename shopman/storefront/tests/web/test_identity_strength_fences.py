@@ -305,7 +305,7 @@ def test_confirming_identity_makes_the_device_known_for_good(client, person, mon
 
     response = client.post(
         "/api/v1/account/step-up/",
-        data=json.dumps({"code": "123456"}),
+        data=json.dumps({"code": "123456", "purpose": "export"}),
         content_type="application/json",
     )
 
@@ -330,7 +330,7 @@ def test_a_wrong_code_changes_nothing(client, person, monkeypatch):
 
     response = client.post(
         "/api/v1/account/step-up/",
-        data=json.dumps({"code": "000000"}),
+        data=json.dumps({"code": "000000", "purpose": "export"}),
         content_type="application/json",
     )
 
@@ -356,7 +356,7 @@ def test_a_failure_to_remember_the_device_still_confirms(client, person, monkeyp
 
     response = client.post(
         "/api/v1/account/step-up/",
-        data=json.dumps({"code": "123456"}),
+        data=json.dumps({"code": "123456", "purpose": "export"}),
         content_type="application/json",
     )
 

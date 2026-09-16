@@ -57,11 +57,14 @@ def needs_stock_reconciliation(sku: str) -> bool:
     """Keep an open stock cycle accurate even when its last opt-in disappears."""
     from shopman.storefront.models import StockAlertOccurrence
 
-    return has_pending(sku, alert_types=("stock_back",)) or StockAlertOccurrence.objects.filter(
-        sku=sku,
-        event_type="stock_back",
-        closed_at__isnull=True,
-    ).exists()
+    return (
+        has_pending(sku, alert_types=("stock_back",))
+        or StockAlertOccurrence.objects.filter(
+            sku=sku,
+            event_type="stock_back",
+            closed_at__isnull=True,
+        ).exists()
+    )
 
 
 def default_alert_type(sku: str) -> str:
@@ -194,6 +197,17 @@ def subscribe_with_outcome(
     a phone number must never be treated as proof by a public endpoint.
     """
     from shopman.storefront.models import StockAlertSubscription
+
+    if customer is not None:
+        # Mesma cerca usada pela exclusão: enquanto esta transação cria ou
+        # retoma a inscrição, o titular não pode ser anonimizado; se a exclusão
+        # venceu a corrida, não recriamos contato depois do recibo de sucesso.
+        from shopman.shop.services import account as account_service
+
+        try:
+            customer = account_service.lock_active_customer(customer_pk=customer.pk)
+        except account_service.AccountUnavailable:
+            return SubscribeOutcome(None, False)
 
     alert_type = alert_type or default_alert_type(sku)
     customer_ref = (getattr(customer, "ref", "") or "").strip()
@@ -478,9 +492,7 @@ def set_paused_by_capability(capability: str, *, paused: bool):
     sub = subscription_for_management(capability, for_update=True)
     if sub is None:
         return None
-    if not paused and (
-        not sub.adult_declared or customer_is_known_minor(sub.customer_ref)
-    ):
+    if not paused and (not sub.adult_declared or customer_is_known_minor(sub.customer_ref)):
         return sub, 0
     sub.paused_at = timezone.now() if paused else None
     sub.pause_reason = "customer_capability" if paused else ""
@@ -528,7 +540,8 @@ def record_bake_pending(sku: str, *, source_ref: str) -> int:
     from shopman.storefront.models import StockAlertSubscription
 
     channels = set(
-        StockAlertSubscription.objects.active().filter(
+        StockAlertSubscription.objects.active()
+        .filter(
             sku=sku,
             alert_type="production_ready",
             revoked_at__isnull=True,
@@ -554,7 +567,8 @@ def review_bake_ready(sku: str, *, source_ref: str) -> int:
     from shopman.storefront.services import sku_state
 
     channels = set(
-        StockAlertSubscription.objects.active().filter(
+        StockAlertSubscription.objects.active()
+        .filter(
             sku=sku,
             alert_type="production_ready",
             revoked_at__isnull=True,
@@ -615,11 +629,7 @@ def review_bake_ready(sku: str, *, source_ref: str) -> int:
             event_type="production_ready",
             channel_ref=channel_ref,
             source_ref=source_ref,
-            available_qty=(
-                reviewed_qty
-                if state.available_qty is None
-                else min(reviewed_qty, state.available_qty)
-            ),
+            available_qty=(reviewed_qty if state.available_qty is None else min(reviewed_qty, state.available_qty)),
         )
     return queued
 

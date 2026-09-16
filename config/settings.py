@@ -150,6 +150,21 @@ SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION = max(
     1,
     _env_int("SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION", 1),
 )
+# Recibos de direitos de dados usam segredo próprio e versionado. A chave
+# anterior permanece no keyring durante a retenção dos recibos para que replay
+# e prova de idempotência sobrevivam a rotações sem reutilizar SECRET_KEY.
+SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY = os.environ.get(
+    "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY",
+    "",
+).strip()
+SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION = max(
+    1,
+    _env_int("SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION", 1),
+)
+SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS = os.environ.get(
+    "SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS",
+    "{}",
+).strip()
 
 # ⚠️ PRODUÇÃO: Restringir a domínios reais. "*" é apenas para desenvolvimento.
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")

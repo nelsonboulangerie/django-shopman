@@ -24,6 +24,7 @@ from __future__ import annotations
 import pytest
 from django.db import connection, transaction
 from shopman.guestman.models import Customer
+from shopman.orderman.exceptions import CommitError
 from shopman.orderman.ids import generate_idempotency_key, generate_session_key
 from shopman.orderman.models import Order, Session
 from shopman.orderman.services import CommitService
@@ -112,8 +113,8 @@ def _sweep(needles: tuple[str, ...]) -> list[str]:
             for column in columns:
                 for needle in needles:
                     sql = (
-                        f'SELECT count(*) FROM {connection.ops.quote_name(table)} '
-                        f'WHERE CAST({connection.ops.quote_name(column)} AS TEXT) LIKE %s'
+                        f"SELECT count(*) FROM {connection.ops.quote_name(table)} "
+                        f"WHERE CAST({connection.ops.quote_name(column)} AS TEXT) LIKE %s"
                     )
                     try:
                         with transaction.atomic():
@@ -134,8 +135,7 @@ def test_a_varredura_do_banco_nao_acha_mais_o_titular():
 
     antes = _sweep((PHONE, FIRST_NAME))
     assert any("orderman_order" in hit for hit in antes), (
-        "controle positivo: o teste tem de VER o telefone antes de apagar, "
-        f"senão não prova nada. Achados: {antes}"
+        f"controle positivo: o teste tem de VER o telefone antes de apagar, senão não prova nada. Achados: {antes}"
     )
 
     anonymize_customer(customer)
@@ -173,8 +173,9 @@ def test_o_pedido_perde_o_pii_e_guarda_a_compra():
     for key in ("customer", "delivery_address", "delivery_address_structured", "order_notes"):
         assert key not in order.data, key
         assert key not in (order.snapshot or {}).get("data", {}), f"snapshot.{key}"
-    # O que descreve a COMPRA fica: é dele que vivem a obrigação fiscal e o B.I.
-    assert order.data.get("customer_ref") == "CLI-ANON-ORD"
+    # O que descreve a COMPRA fica: é dele que vivem a obrigação fiscal e o B.I.;
+    # o ref do titular, embora interno, continua correlacionável e sai.
+    assert "customer_ref" not in order.data
     assert order.data.get("fulfillment_type") == "delivery"
     assert order.snapshot["items"]
     assert order.total_q > 0
@@ -206,6 +207,58 @@ def test_o_telefone_reciclado_nao_abre_o_historico_antigo():
 
     query = customer_identity_filter(customer_ref="CLI-OUTRO", phone=PHONE)
     assert Order.objects.filter(query).count() == 0
+
+
+def test_exclusao_nao_altera_pedido_com_dono_canonico_diferente():
+    current = _customer()
+    previous = Customer.objects.create(ref="CLI-ANTERIOR", first_name="Outra pessoa")
+    alien = Order.objects.create(
+        ref="ORDER-OUTRO-DONO",
+        channel_ref="web",
+        handle_type="phone",
+        handle_ref=current.phone,
+        status="completed",
+        data={
+            "customer_ref": previous.ref,
+            "customer": {"ref": previous.ref, "phone": current.phone},
+        },
+    )
+
+    anonymize_customer(current)
+
+    alien.refresh_from_db()
+    assert alien.handle_type == "phone"
+    assert alien.handle_ref == PHONE
+    assert alien.data["customer_ref"] == previous.ref
+
+
+def test_commit_recusa_sessao_antiga_de_customer_inativo() -> None:
+    customer = _customer()
+    Channel.objects.get_or_create(ref="web", defaults={"name": "web"})
+    session = Session.objects.create(
+        session_key=generate_session_key(),
+        channel_ref="web",
+        state="open",
+        handle_type="phone",
+        handle_ref=customer.phone,
+        items=[{"sku": "CROIS-01", "qty": 1, "unit_price_q": 500, "line_id": "L1"}],
+        data={
+            "customer_ref": customer.ref,
+            "customer": {"ref": customer.ref, "phone": customer.phone},
+        },
+    )
+    customer.is_active = False
+    customer.save(update_fields=["is_active"])
+
+    with pytest.raises(CommitError) as caught:
+        CommitService.commit(
+            session_key=session.session_key,
+            channel_ref="web",
+            idempotency_key=generate_idempotency_key(),
+        )
+
+    assert caught.value.code == "customer_inactive"
+    assert not Order.objects.filter(session_key=session.session_key).exists()
 
 
 def test_o_perfil_de_rfm_nao_sobrevive():
@@ -251,7 +304,9 @@ def test_a_exportacao_mostra_o_que_a_exclusao_apaga():
     apenas pelo handle de telefone — mostrava ao titular menos do que a loja
     guardava dele.
     """
-    from shopman.shop.services.account import export_customer_data
+    import json
+
+    from shopman.storefront.services.account_export import build_account_export
 
     customer = _customer()
     order = _order_for(customer)
@@ -262,7 +317,9 @@ def test_a_exportacao_mostra_o_que_a_exclusao_apaga():
     data.pop("customer", None)
     Order.objects.filter(pk=orphan.pk).update(data=data)
 
-    exported = export_customer_data(customer)
+    artifact = build_account_export(customer)
+    exported = json.load(artifact)
+    artifact.close()
     refs = {row["ref"] for row in exported["orders"]}
     assert {order.ref, orphan.ref} <= refs
     assert exported["customer"]["phone"] == PHONE

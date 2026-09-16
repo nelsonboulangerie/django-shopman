@@ -45,6 +45,11 @@ from .contact_release import ContactRelease, ReleasedContactKind
 from .delivery import DeliveryDistanceBand, DeliveryZone
 from .faq import FAQEntry
 from .omotenashi_copy import OmotenashiCopy
+from .privacy import (
+    PrivacyRequestOperation,
+    PrivacyRequestReceipt,
+    PrivacyRequestState,
+)
 from .promotion import Coupon, Promotion
 from .push_subscription import (
     PUSH_CATEGORIES,
@@ -91,6 +96,9 @@ __all__ = [
     "Channel",
     "Promotion",
     "Coupon",
+    "PrivacyRequestOperation",
+    "PrivacyRequestReceipt",
+    "PrivacyRequestState",
     "DeliveryZone",
     "DeliveryDistanceBand",
     "FAQEntry",
