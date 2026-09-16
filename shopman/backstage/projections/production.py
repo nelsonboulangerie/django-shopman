@@ -92,7 +92,6 @@ class ProductionActionProjection:
     kind: Literal[
         "plan",
         "start",
-        "advance_step",
         "finish",
         "review_qc",
         "correct_qc",
@@ -505,7 +504,6 @@ class ProductionSurfaceAccess:
     can_view_plan: bool
     can_edit_plan: bool
     can_start: bool
-    can_advance_step: bool
     can_close_qc: bool
     can_correct_qc: bool
     can_quick_finish: bool
@@ -717,42 +715,20 @@ def _kds_actions(
 ) -> tuple[ProductionActionProjection, ...]:
     actions: list[ProductionActionProjection] = []
     for card in cards:
-        can_advance = card.can_advance_step
-        actions.extend(
-            (
-                _production_action(
-                    ref=f"advance_step:{card.pk}",
-                    kind="advance_step",
-                    label="Avançar etapa",
-                    priority=10,
-                    enabled=access.can_advance_step and can_advance,
-                    reason=(
-                        "A receita não possui etapas configuradas."
-                        if card.total_steps <= 0
-                        else (
-                            "Todos os passos desta fornada já foram concluídos."
-                            if not can_advance
-                            else "Sem capacidade para avançar etapas."
-                        )
-                    ),
-                    href=f"/api/v1/backstage/production/{card.pk}/advance-step/",
-                    payload_schema="ProductionAdvanceStepMutationRequest",
-                    expected_rev=card.rev,
-                ),
-                _production_action(
-                    ref=f"void:{card.pk}",
-                    kind="void",
-                    label="Estornar fornada",
-                    priority=90,
-                    enabled=access.can_void,
-                    reason="Sem capacidade para estornar fornadas.",
-                    href=f"/api/v1/backstage/production/{card.pk}/void/",
-                    payload_schema="ProductionVoidMutationRequest",
-                    expected_rev=card.rev,
-                    confirmation_title="Estornar esta fornada?",
-                    confirmation_label="Confirmar estorno",
-                    confirmation_reason_required=True,
-                ),
+        actions.append(
+            _production_action(
+                ref=f"void:{card.pk}",
+                kind="void",
+                label="Estornar fornada",
+                priority=90,
+                enabled=access.can_void,
+                reason="Sem capacidade para estornar fornadas.",
+                href=f"/api/v1/backstage/production/{card.pk}/void/",
+                payload_schema="ProductionVoidMutationRequest",
+                expected_rev=card.rev,
+                confirmation_title="Estornar esta fornada?",
+                confirmation_label="Confirmar estorno",
+                confirmation_reason_required=True,
             )
         )
     return tuple(actions)
@@ -952,14 +928,6 @@ class ProductionKDSCardProjection:
     target_seconds: int
     timer_status_code: str
     timer_tone: str
-    current_step: str
-    current_step_index: int | None
-    total_steps: int
-    current_step_name: str
-    step_progress_pct: int
-    next_step_name: str
-    time_remaining_min: int | None
-    can_advance_step: bool
     can_finish: bool
     order_refs: tuple[str, ...]
     # Pedidos que aguardam este lote (production_order_sync) — o estorno avisa.
@@ -2640,10 +2608,6 @@ def _build_production_kds_card(
         timer_status_code = "late"
         timer_tone = "danger"
 
-    step_state = _production_step_state(wo, elapsed)
-    current_step = step_state["current_step_name"] or "Produção"
-    manual_step_index = _manual_step_index(wo.meta, total=step_state["total_steps"])
-
     return ProductionKDSCardProjection(
         pk=wo.pk,
         ref=wo.ref,
@@ -2659,14 +2623,6 @@ def _build_production_kds_card(
         target_seconds=target_seconds,
         timer_status_code=timer_status_code,
         timer_tone=timer_tone,
-        current_step=str(current_step),
-        current_step_index=step_state["current_step_index"],
-        total_steps=step_state["total_steps"],
-        current_step_name=step_state["current_step_name"],
-        step_progress_pct=step_state["step_progress_pct"],
-        next_step_name=step_state["next_step_name"],
-        time_remaining_min=step_state["time_remaining_min"],
-        can_advance_step=(step_state["total_steps"] > 0 and (manual_step_index or 0) < step_state["total_steps"]),
         can_finish=access.can_close_qc,
         order_refs=_linked_order_refs(wo),
     )
@@ -2738,95 +2694,6 @@ def _work_order_progress_pct(wo: WorkOrder) -> int:
     else:
         value = Decimal("0")
     return max(0, min(100, int(value)))
-
-
-def _production_step_state(wo: WorkOrder, elapsed_seconds: int) -> dict[str, int | str | None]:
-    steps = _recipe_steps(wo)
-    if not steps:
-        return {
-            "current_step_index": None,
-            "total_steps": 0,
-            "current_step_name": "",
-            "step_progress_pct": 0,
-            "next_step_name": "",
-            "time_remaining_min": None,
-        }
-
-    override_index = _manual_step_index(wo.meta, total=len(steps))
-    elapsed = max(0, elapsed_seconds)
-    elapsed_before = 0
-    current_index = 1
-    current_step = steps[0]
-
-    if override_index is not None:
-        current_index = override_index
-        current_step = steps[current_index - 1]
-        elapsed_before = sum(step["target_seconds"] for step in steps[: current_index - 1])
-    else:
-        for index, step in enumerate(steps, start=1):
-            target = step["target_seconds"]
-            if elapsed < elapsed_before + target or index == len(steps):
-                current_index = index
-                current_step = step
-                break
-            elapsed_before += target
-
-    target_seconds = max(1, current_step["target_seconds"])
-    elapsed_in_step = max(0, elapsed - elapsed_before)
-    progress = max(0, min(100, int((Decimal(elapsed_in_step) / Decimal(target_seconds)) * 100)))
-    next_step = steps[current_index] if current_index < len(steps) else None
-    remaining = max(0, elapsed_before + target_seconds - elapsed)
-
-    return {
-        "current_step_index": current_index,
-        "total_steps": len(steps),
-        "current_step_name": current_step["name"],
-        "step_progress_pct": progress,
-        "next_step_name": next_step["name"] if next_step else "",
-        "time_remaining_min": int((remaining + 59) // 60) if next_step else None,
-    }
-
-
-def _recipe_steps(work_order: WorkOrder) -> list[dict[str, int | str]]:
-    recipe = work_order.recipe
-    snapshot = (work_order.meta or {}).get("_recipe_snapshot") or {}
-    production_snapshot = snapshot.get("production") or {}
-    if "steps" in production_snapshot:
-        raw_steps = production_snapshot["steps"]
-    else:
-        raw_steps = (recipe.meta or {}).get("steps") or recipe.steps or []
-    result: list[dict[str, int | str]] = []
-    for index, raw in enumerate(raw_steps, start=1):
-        if isinstance(raw, dict):
-            name = str(raw.get("name") or raw.get("label") or f"Passo {index}").strip()
-            target = raw.get("target_seconds") or raw.get("seconds") or raw.get("target")
-        else:
-            name = str(raw or f"Passo {index}").strip()
-            target = None
-        try:
-            target_seconds = int(target or 0)
-        except (TypeError, ValueError):
-            target_seconds = 0
-        result.append(
-            {
-                "name": name or f"Passo {index}",
-                "target_seconds": max(
-                    1, target_seconds or int(_target_minutes_for_recipe(recipe) * 60 / max(1, len(raw_steps)))
-                ),
-            }
-        )
-    return result
-
-
-def _manual_step_index(meta: dict | None, *, total: int) -> int | None:
-    raw = (meta or {}).get("steps_progress")
-    if raw in (None, ""):
-        return None
-    try:
-        value = int(raw)
-    except (TypeError, ValueError):
-        return None
-    return max(1, min(total, value))
 
 
 def _target_minutes_for_recipe(recipe: Recipe) -> int:
@@ -3813,7 +3680,6 @@ def resolve_production_access(
         can_view_plan=view("suggested") or view("planned"),
         can_edit_plan=capability("can_edit_plan", can_edit_plan),
         can_start=capability("can_start", can_start),
-        can_advance_step=capability("can_advance_step", can_start),
         can_close_qc=capability("can_close_qc", can_close_qc),
         can_correct_qc=capability(
             "can_correct_qc",
@@ -3860,7 +3726,6 @@ def _full_access() -> ProductionSurfaceAccess:
         can_view_plan=True,
         can_edit_plan=True,
         can_start=True,
-        can_advance_step=True,
         can_close_qc=True,
         can_correct_qc=True,
         can_quick_finish=True,

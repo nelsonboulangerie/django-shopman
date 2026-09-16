@@ -22,7 +22,6 @@ POST endpoints (operator actions):
   POST /api/v1/backstage/production/plan/                 → plan/adjust matrix cell
   POST /api/v1/backstage/production/<wo_id>/start/        → start a planned WO
   POST /api/v1/backstage/production/<wo_id>/finish/       → finish a started WO
-  POST /api/v1/backstage/production/<wo_id>/advance-step/ → next step
   POST /api/v1/backstage/production/quick-finish/         → plan + finish in one step
   POST /api/v1/backstage/production/<wo_id>/void/         → void work order
   POST /api/v1/backstage/closing/                    → finalize day closing
@@ -70,7 +69,6 @@ from shopman.backstage.api._production_filters import (
     validated_query,
 )
 from shopman.backstage.api._production_mutations import (
-    ProductionAdvanceStepMutationSerializer,
     ProductionFinishMutationSerializer,
     ProductionMutationValidationError,
     ProductionOvenArmMutationSerializer,
@@ -3113,54 +3111,6 @@ class WorkOrderQualityCorrectionView(_ProductionActionBase):
                 "wo_ref": work_order.ref,
                 "quantity": _production_quantity(work_order.finished or 0),
                 "current": _current_work_order_projection(work_order.pk),
-            }
-        )
-
-
-@extend_schema_view(
-    post=extend_schema(
-        tags=["backstage"],
-        summary="Advance work order step",
-        responses={200: OpenApiResponse(description="Step advanced.")},
-    ),
-)
-class WorkOrderAdvanceStepView(_ProductionActionBase):
-    required_production_capability = "can_advance_step"
-
-    def post(self, request, wo_id: int):
-        body = validated_body(
-            request,
-            ProductionAdvanceStepMutationSerializer,
-            projection_kind="kds",
-            action_kind="advance_step",
-            action_href=f"/api/v1/backstage/production/{wo_id}/advance-step/",
-            action_ref=f"advance_step:{wo_id}",
-            work_order_id=wo_id,
-        )
-        _require_projected_work_order(
-            request,
-            wo_id,
-            committed_replay=body.get("_committed_replay", False),
-        )
-        try:
-            new_index = production_service.apply_advance_step(
-                work_order_id=wo_id,
-                actor=_production_actor(request),
-                expected_rev=body["expected_rev"],
-                idempotency_key=body["idempotency_key"],
-            )
-        except ProductionError as exc:
-            return _production_error_response(
-                exc,
-                idempotency_key=body["idempotency_key"],
-                projection_generated_at=body.get("projection_generated_at"),
-            )
-        return Response(
-            {
-                "ok": True,
-                "wo_id": wo_id,
-                "step_index": new_index,
-                "current": _current_work_order_projection(wo_id),
             }
         )
 

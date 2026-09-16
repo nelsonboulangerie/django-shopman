@@ -5,10 +5,7 @@
 // Material/order shortage is surfaced as a structured error so the page can open
 // the shortage modal (a finish can be retried with force=1).
 import type { ProductionKDSCardProjection, ProductionKDSResponse, ProductionShortageError } from "~/types/production";
-import {
-  advanceProductionWorkOrderStep,
-  voidProductionWorkOrder,
-} from "~/generated/productionContract";
+import { voidProductionWorkOrder } from "~/generated/productionContract";
 import { parseShortage } from "~/presentation/production";
 import { newProductionMutationKey } from "~/utils/api";
 import {
@@ -80,16 +77,6 @@ export function useProductionKds() {
     }
   }
 
-  const advanceStep = (pk: number, rev: number) =>
-    post(pk, "advance_step", (idempotencyKey, metadata) =>
-      advanceProductionWorkOrderStep(pk, {
-        expected_rev:
-          kds.value?.actions.find((action) => action.ref === `advance_step:${pk}`)
-            ?.expected_rev ?? rev,
-        ...metadata,
-        idempotency_key: idempotencyKey,
-      }),
-    );
   // O finish não vive mais aqui: fechar a fornada é a Expedição (quiosque de
   // QC, useQcKiosk), sempre com partição — ADR-017 §9.
   const voidOrder = (pk: number, rev: number, reason: string) =>
@@ -104,5 +91,5 @@ export function useProductionKds() {
       }),
     );
 
-  return { cards, totalCount, lateCount, pending, error, refresh, isBusy, advanceStep, voidOrder };
+  return { cards, totalCount, lateCount, pending, error, refresh, isBusy, voidOrder };
 }

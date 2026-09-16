@@ -53,14 +53,6 @@ class ProductionWorkOrderMutationSuccess:
 
 
 @dataclass(frozen=True)
-class ProductionAdvanceStepMutationSuccess:
-    ok: bool
-    wo_id: int
-    step_index: int
-    current: ProductionMutationCurrent | None
-
-
-@dataclass(frozen=True)
 class ProductionVoidMutationSuccess:
     ok: bool
     wo_ref: str
@@ -443,10 +435,6 @@ class ProductionQualityReviewMutationSerializer(ExistingWorkOrderMutationSeriali
     pass
 
 
-class ProductionAdvanceStepMutationSerializer(ExistingWorkOrderMutationSerializer):
-    pass
-
-
 class ProductionQuickFinishMutationSerializer(MutationAttemptSerializer):
     override_proof = serializers.CharField(
         required=False,
@@ -555,14 +543,6 @@ PRODUCTION_ACTION_SPECS = (
         "workOrderId",
     ),
     ProductionActionSpec(
-        "advanceProductionWorkOrderStep",
-        "/api/v1/backstage/production/{workOrderId}/advance-step/",
-        "ProductionAdvanceStepMutationRequest",
-        ProductionAdvanceStepMutationSerializer,
-        ProductionAdvanceStepMutationSuccess,
-        "workOrderId",
-    ),
-    ProductionActionSpec(
         "quickFinishProduction",
         "/api/v1/backstage/production/quick-finish/",
         "ProductionQuickFinishMutationRequest",
@@ -612,7 +592,6 @@ PRODUCTION_MUTATION_DATACLASSES = (
     ProductionMutationCurrent,
     ProductionPlanMutationSuccess,
     ProductionWorkOrderMutationSuccess,
-    ProductionAdvanceStepMutationSuccess,
     ProductionVoidMutationSuccess,
     ProductionOvenArmMutationSuccess,
     ProductionOvenConcludeMutationSuccess,
