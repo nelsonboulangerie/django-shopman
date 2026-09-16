@@ -22,6 +22,8 @@ const props = defineProps<{
   searchBusy: boolean;
   /** O cliente associado foi criado agora (resolve just-in-time). */
   customerResolvedNew?: boolean;
+  /** Rascunho dos padrões do cliente NOVO — mora no shell, o modal só lê. */
+  newCustomerPrefs?: { cpf_na_nota?: boolean; email_receipt?: boolean };
   /** A escolha pendente do operador (conflito/correção de contato). */
   customerDecision?: CustomerDecision | null;
   customerMergeBusy?: boolean;
@@ -68,6 +70,8 @@ const emit = defineEmits<{
   selectResult: [POSCustomerSearchResult];
   applyCustomerFavorite: [];
   repeatCustomerLastOrder: [];
+  /** Um padrão do cliente virado no modal: vale nesta venda, na hora. */
+  applyPreference: [key: "cpf_na_nota" | "email_receipt", value: boolean];
   openFulfillment: [];
   openSchedule: [];
   /** Só em `readOnly` (checkout): quem tem o modal do cliente ali é a tela de
@@ -288,6 +292,7 @@ function runClear() {
       :search-busy="searchBusy"
       :lookup-busy="lookupBusy"
       :resolved-new="customerResolvedNew"
+      :new-customer-prefs="newCustomerPrefs"
       :customer-decision="readOnly ? null : customerDecision"
       :customer-merge-busy="customerMergeBusy"
       :customer-release-busy="customerReleaseBusy"
@@ -306,6 +311,7 @@ function runClear() {
       @decision-pick="$emit('decisionPick', $event)"
       @apply-customer-favorite="$emit('applyCustomerFavorite')"
       @repeat-customer-last-order="$emit('repeatCustomerLastOrder')"
+      @apply-preference="(key, value) => $emit('applyPreference', key, value)"
     />
 
     <UiDialog :open="confirmClear" @update:open="(value) => { if (!value) confirmClear = false; }">

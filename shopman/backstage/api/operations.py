@@ -4553,6 +4553,9 @@ class POSCustomerResolveView(APIView):
                 contact_correction=as_bool(body, "customer_contact_correction", default=False),
                 name_correction=as_bool(body, "customer_name_correction", default=False),
                 receipt_identity_action=body.get("receipt_identity_action"),
+                # Os PADRÕES do cliente novo (cpf_na_nota / email_receipt), virados
+                # no modal antes de o cadastro existir. Ausente = nada a gravar.
+                fiscal_prefs=body.get("fiscal_prefs"),
                 operator_username=_username(request),
             )
         except PosIntentError as exc:
@@ -4563,6 +4566,10 @@ class POSCustomerResolveView(APIView):
             # ⚠️ ANTES do `except ValueError` — ver `_pos_tax_id_overwrite_response`.
             return _pos_tax_id_overwrite_response(exc)
         except ValueError as exc:
+            # Mesma recusa do endpoint de perfil: payload malformado é 400 com o
+            # campo nomeado, não "cadastro conflitante".
+            if str(exc) == "fiscal_prefs inválido.":
+                return Response({"detail": str(exc), "field": "fiscal_prefs"}, status=400)
             return Response(
                 {"detail": str(exc) or "Cadastro conflitante.", "error": {"code": "customer_conflict"}},
                 status=422,

@@ -81,6 +81,8 @@ const props = defineProps<{
   searchBusy: boolean;
   /** O cliente associado foi criado agora (resolve just-in-time). */
   customerResolvedNew?: boolean;
+  /** Rascunho dos padrões do cliente NOVO — mora no shell, o modal só lê. */
+  newCustomerPrefs?: { cpf_na_nota?: boolean; email_receipt?: boolean };
   /** A escolha pendente do operador (conflito/correção de contato). */
   customerDecision?: CustomerDecision | null;
   customerMergeBusy?: boolean;
@@ -229,6 +231,8 @@ const emit = defineEmits<{
   selectResult: [POSCustomerSearchResult];
   applyCustomerFavorite: [];
   repeatCustomerLastOrder: [];
+  /** Um padrão do cliente virado no modal: vale nesta venda, na hora. */
+  applyPreference: [key: "cpf_na_nota" | "email_receipt", value: boolean];
   pickSavedAddress: [SavedAddressProjection];
 }>();
 
@@ -236,13 +240,10 @@ const emit = defineEmits<{
 // composable (líquido, com o último total de review retido) — nunca o bruto do
 // carrinho, que fazia o hero saltar durante o debounce da review.
 const interimTotalDisplay = computed(() => formatBRL(props.paymentTotalQ));
-// Nota fiscal é SECUNDÁRIA: mora no modal do Cliente (não é botãozão no grid) e só
-// aparece quando a loja ofereceu NFC-e no PDV E o adapter fiscal está configurado.
+// Nota fiscal é SECUNDÁRIA: mora na coluna "Nota e comprovante" (não é botãozão
+// no grid) e só aparece quando a loja ofereceu NFC-e no PDV E o adapter fiscal
+// está configurado.
 const supportsFiscalDocument = computed(() => !!props.checkoutContract?.capabilities?.supports_fiscal_document);
-const receiptChannelOptions = computed(() => props.checkoutContract?.receipt_channels || [
-  { ref: "print", label: "Imprimir", description: "" },
-  { ref: "email", label: "E-mail", description: "" },
-]);
 const savedAddresses = computed(() => props.customerLookup?.saved_addresses || []);
 const needsReview = computed(() => !props.review);
 const approvalBlocking = computed(() =>
@@ -1889,9 +1890,11 @@ defineExpose({
   />
 
   <!-- Cliente & fiscal — shared full-screen picker (showFiscal rides the receipt) -->
+  <!-- O comprovante DESTA venda (impressa / e-mail / CPF na nota) mora na
+       coluna "Nota e comprovante" acima; o modal cuida do cadastro e dos
+       PADRÕES do cliente. Nada de comprovante viaja para ele. -->
   <PosCustomerModal
     v-model:open="customerSheetOpen"
-    :show-fiscal="supportsFiscalDocument"
     :customer-name="customerName"
     :customer-phone="customerPhone"
     :customer-tax-id="customerTaxId"
@@ -1901,21 +1904,14 @@ defineExpose({
     :search-busy="searchBusy"
     :lookup-busy="lookupBusy"
     :resolved-new="customerResolvedNew"
+    :new-customer-prefs="newCustomerPrefs"
     :customer-decision="customerDecision"
     :customer-merge-busy="customerMergeBusy"
     :customer-release-busy="customerReleaseBusy"
-    :receipt-channels="receiptChannels"
-    :receipt-channel-options="receiptChannelOptions"
-    :receipt-email="receiptEmail"
-    :receipt-email-offer="receiptEmailOffer"
-    :save-receipt-contact="saveReceiptEmailChecked"
     @update:customer-name="$emit('update:customerName', $event)"
     @update:customer-phone="$emit('update:customerPhone', $event)"
     @update:customer-tax-id="$emit('update:customerTaxId', $event)"
     @update:customer-email="$emit('update:customerEmail', $event)"
-    @update:receipt-channels="$emit('update:receiptChannels', $event)"
-    @update:receipt-email="$emit('update:receiptEmail', $event)"
-    @update:save-receipt-contact="$emit('update:saveReceiptContact', $event)"
     @search="$emit('search', $event)"
     @select-result="onSelectResult"
     @clear="$emit('clearCustomer')"
@@ -1927,6 +1923,7 @@ defineExpose({
     @decision-pick="$emit('decisionPick', $event)"
     @apply-customer-favorite="$emit('applyCustomerFavorite')"
     @repeat-customer-last-order="$emit('repeatCustomerLastOrder')"
+    @apply-preference="(key, value) => $emit('applyPreference', key, value)"
   />
 
   <!-- MODAL: MAQUININHA — o valor que o operador vai digitar no terminal.

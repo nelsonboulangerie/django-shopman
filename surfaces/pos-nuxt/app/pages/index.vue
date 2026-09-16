@@ -165,6 +165,8 @@ const {
   customerSearchResults,
   customerSearchBusy,
   customerResolvedNew,
+  pendingCustomerPrefs,
+  applyCustomerPreference,
   searchCustomers,
   selectCustomerResult,
   clearCustomer,
@@ -847,6 +849,7 @@ onBeforeUnmount(() => {
           :search-results="customerSearchResults"
           :search-busy="customerSearchBusy"
           :customer-resolved-new="customerResolvedNew"
+          :new-customer-prefs="pendingCustomerPrefs"
           :customer-decision="customerDecision"
           :customer-merge-busy="customerMergeBusy"
           :customer-release-busy="customerReleaseBusy"
@@ -874,6 +877,7 @@ onBeforeUnmount(() => {
           @search="searchCustomers"
           @select-result="selectCustomerResult"
           @apply-customer-favorite="applyCustomerFavorite"
+          @apply-preference="applyCustomerPreference"
           @repeat-customer-last-order="repeatCustomerLastOrder"
           @open-fulfillment="openFulfillmentHere"
           @open-schedule="openScheduleHere"
@@ -1022,6 +1026,7 @@ onBeforeUnmount(() => {
         :search-results="customerSearchResults"
         :search-busy="customerSearchBusy"
         :customer-resolved-new="customerResolvedNew"
+        :new-customer-prefs="pendingCustomerPrefs"
         :customer-decision="customerDecision"
         :customer-merge-busy="customerMergeBusy"
         :customer-release-busy="customerReleaseBusy"
@@ -1061,6 +1066,7 @@ onBeforeUnmount(() => {
         @select-result="selectCustomerResult"
         @clear-customer="clearCustomer"
         @apply-customer-favorite="applyCustomerFavorite"
+        @apply-preference="applyCustomerPreference"
         @repeat-customer-last-order="repeatCustomerLastOrder"
         @pick-saved-address="applySavedAddress"
       />

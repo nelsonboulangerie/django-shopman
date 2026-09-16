@@ -1,25 +1,29 @@
 <script setup lang="ts">
 import { toast } from "vue-sonner";
-// Customer picker (spec — Odoo "Choose Customer" clone, redesign 2026-06-10).
-// One SHARED modal for both the comanda header and the payment screen, replacing
-// the two divergent inline dialogs. Picker-first (not form-first), full-screen
-// overlay like Odoo:
-//   1. associated customer (if any) pinned at top, highlighted, with "Remover
-//      cliente" (= Odoo's UNSELECT — the disassociate affordance we were missing);
-//   2. a prominent search → rich results list (shared PosCustomerSearch);
-//   3. a create/edit form below.
-// The payment context also passes showFiscal to surface the fiscal/comprovante
-// block (it rides with the customer because the receipt needs the e-mail).
+// Customer picker (spec — Odoo "Choose Customer" clone, redesign 2026-06-10;
+// estrutura única 2026-09-16).
+// One SHARED modal for both the comanda header and the payment screen. UMA
+// estrutura, sempre a mesma — a diferença "existente × novo" é dita por um
+// SELO, não por abas:
+//   1. the decision (contact conflict / receipt identity), when there is one,
+//      above everything: it is what blocks the sale;
+//   2. a prominent search → rich results list (shared PosCustomerSearch),
+//      always on top: Enter decides, named acts;
+//   3. the state badge: "Cadastro existente · Nome" (with "Remover cliente",
+//      memory and alerts) or "Cliente novo";
+//   4. the SAME form for both (nome, WhatsApp, CPF/CNPJ, e-mail);
+//   5. "Padrões deste cliente" — the PERSISTENT defaults, only with a ref.
+// ⚠️ The receipt of THIS sale (print / e-mail / CPF on the invoice) does NOT
+// live here: it is the "Nota e comprovante" column of the payment screen. The
+// modal sets the customer's DEFAULTS; the column decides the sale of NOW.
 // Renders intent; the shell owns clearCustomer / resolveCustomer / search.
 import type {
-  POSCheckoutOptionProjection,
   POSCustomerLookupProjection,
   POSCustomerSearchResult,
 } from "~/types/pos";
 import { cpfTail } from "~/presentation/customerSearch";
 import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
 import { candidateSubtitle, candidateValue, customerDecisionCopy } from "~/presentation/customerDecision";
-import type { ReceiptContactOffer } from "~/presentation/receiptContact";
 
 const props = withDefaults(defineProps<{
   open: boolean;
@@ -42,32 +46,16 @@ const props = withDefaults(defineProps<{
   customerMergeBusy?: boolean;
   /** A liberação do contato está em voo — mesmo motivo. */
   customerReleaseBusy?: boolean;
-  /** Payment context: also show the fiscal/comprovante block. */
-  showFiscal?: boolean;
-  receiptChannels?: string[];
-  receiptChannelOptions?: POSCheckoutOptionProjection[];
-  receiptEmail?: string;
-  /** A OFERTA sobre o e-mail do comprovante, decidida pela mesma função pura
-   *  que a coluna do fechamento lê (`receiptSaveOffers`).
-   *
-   *  ⚠️ Ela precisa existir AQUI porque este campo é o GÊMEO do da coluna: quem
-   *  digitava o e-mail por dentro do modal via o balão abrir lá atrás, do outro
-   *  lado do overlay, e fechava o modal com a oferta JÁ MARCADA sem nunca ter
-   *  sido perguntado. Padrão marcado + pergunta invisível = gravar calado com
-   *  outro nome — exatamente o que este caminho existe para acabar. */
-  receiptEmailOffer?: ReceiptContactOffer | null;
-  saveReceiptContact?: boolean;
+  /** Rascunho dos PADRÕES do cliente NOVO. Mora no shell (é ele que o manda
+   *  no "Cadastrar cliente" como `fiscal_prefs`); o modal só o lê e pede a
+   *  mudança por `applyPreference`. Com cadastro, a fonte é o lookup. */
+  newCustomerPrefs?: { cpf_na_nota?: boolean; email_receipt?: boolean };
 }>(), {
   customerDecision: null,
   customerMergeBusy: false,
   customerReleaseBusy: false,
   resolvedNew: false,
-  showFiscal: false,
-  receiptChannels: () => [],
-  receiptChannelOptions: () => [],
-  receiptEmail: "",
-  receiptEmailOffer: null,
-  saveReceiptContact: false,
+  newCustomerPrefs: () => ({}),
 });
 
 const emit = defineEmits<{
@@ -76,9 +64,6 @@ const emit = defineEmits<{
   "update:customerPhone": [string];
   "update:customerTaxId": [string];
   "update:customerEmail": [string];
-  "update:receiptChannels": [string[]];
-  "update:receiptEmail": [string];
-  "update:saveReceiptContact": [boolean];
   search: [string];
   selectResult: [POSCustomerSearchResult];
   clear: [];
@@ -96,6 +81,9 @@ const emit = defineEmits<{
   decisionPick: [ServerConflictCandidate];
   applyCustomerFavorite: [];
   repeatCustomerLastOrder: [];
+  /** Um padrão virado vale NESTA venda, na hora — o shell aplica ao carrinho
+   *  (e, sem cadastro, guarda o rascunho que viaja no cadastrar). */
+  applyPreference: [key: "cpf_na_nota" | "email_receipt", value: boolean];
 }>();
 
 // ── Preferências persistentes do cliente (painel do balcão) ──────────────────
@@ -131,9 +119,20 @@ async function saveProfile(body: Record<string, unknown>) {
   }
 }
 
+// O interruptor lê do cadastro (rascunho sincronizado do lookup) ou, sem
+// cadastro, do rascunho que o shell guarda para o cadastrar.
+function prefOn(key: "cpf_na_nota" | "email_receipt"): boolean {
+  return props.customerLookup?.ref ? profileDraft[key] : Boolean(props.newCustomerPrefs?.[key]);
+}
+// Virar o interruptor: com cadastro, grava no perfil (POST parcial); sem
+// cadastro, o shell guarda o rascunho. Nos dois casos a venda de AGORA muda
+// na hora — "vale nesta venda e nas próximas".
 function setProfilePref(key: "cpf_na_nota" | "email_receipt", value: boolean) {
-  profileDraft[key] = value;
-  void saveProfile({ fiscal_prefs: { [key]: value } });
+  if (props.customerLookup?.ref) {
+    profileDraft[key] = value;
+    void saveProfile({ fiscal_prefs: { [key]: value } });
+  }
+  emit("applyPreference", key, value);
 }
 
 function saveProfileText() {
@@ -143,31 +142,40 @@ function saveProfileText() {
   });
 }
 
-// Os canais são uma LISTA no contrato; na tela, um interruptor por canal — o
-// mesmo desenho do bloco "Nota e comprovante" da tela de pagamento.
-function setReceiptChannel(ref: string, on: boolean) {
-  const next = on
-    ? (props.receiptChannels.includes(ref) ? props.receiptChannels : [...props.receiptChannels, ref])
-    : props.receiptChannels.filter((c) => c !== ref);
-  emit("update:receiptChannels", next);
-}
-const RECEIPT_CHANNEL_ICONS: Record<string, string> = { print: "lucide:printer", email: "lucide:mail" };
-
 // Só um cadastro carregado representa cliente associado; texto digitado é rascunho.
 const hasCustomer = computed(() => Boolean(props.customerLookup?.ref));
-function initialCustomerPanel(): "search" | "form" {
-  return props.customerLookup?.ref || props.customerName.trim() || props.customerPhone.trim() || props.customerTaxId.trim() || props.customerEmail.trim() ? "form" : "search";
-}
-const customerPanel = ref<"search" | "form">(initialCustomerPanel());
-watch(() => props.open, (open) => {
-  if (open) customerPanel.value = initialCustomerPanel();
+const displayName = computed(() =>
+  props.customerName || props.customerLookup?.name || props.customerLookup?.email || props.customerLookup?.tax_id || "Cliente",
+);
+// O SELO diz o estado; o formulário é o mesmo nos dois. "Criado agora" é o
+// cadastro que acabou de nascer pelo resolve — existente, mas não "encontrado".
+const stateBadge = computed(() => {
+  if (!hasCustomer.value) return "Cliente novo";
+  return `${props.resolvedNew ? "Cadastro criado agora" : "Cadastro existente"} · ${displayName.value}`;
 });
-function openNewCustomer() {
-  customerPanel.value = "form";
-}
-watch(() => props.customerLookup?.ref, (ref) => {
-  if (ref) customerPanel.value = "form";
+// O formulário DIVERGE do cadastro? Decide o rótulo do rodapé: com o cadastro
+// intocado, "Concluir" só fecha — salvar o que não mudou era um POST à toa.
+const formDirty = computed(() => {
+  const lookup = props.customerLookup;
+  if (!lookup?.ref) return false;
+  const differs = (typed: string, stored: string | null | undefined) => typed.trim() !== (stored || "").trim();
+  return differs(props.customerName, lookup.name)
+    || differs(props.customerPhone, lookup.phone)
+    || differs(props.customerTaxId, lookup.tax_id)
+    || differs(props.customerEmail, lookup.email);
 });
+// Algum dado no formulário sem cadastro: o rodapé vira "Cadastrar cliente".
+// E-mail entra porque o resolve do shell também o aceita sozinho.
+const formFilled = computed(() =>
+  [props.customerName, props.customerPhone, props.customerTaxId, props.customerEmail].some((v) => v.trim()),
+);
+const footerAction = computed<"conclude" | "save" | "create">(() => {
+  if (hasCustomer.value) return formDirty.value ? "save" : "conclude";
+  return formFilled.value ? "create" : "conclude";
+});
+const footerLabel = computed(() =>
+  footerAction.value === "save" ? "Salvar cadastro" : footerAction.value === "create" ? "Cadastrar cliente" : "Concluir",
+);
 const memory = computed(() => props.customerLookup?.memory || null);
 const identityChips = computed(() =>
   [props.customerPhone, props.customerTaxId, props.customerEmail].map((v) => v.trim()).filter(Boolean),
@@ -321,21 +329,20 @@ async function cancelDecision() {
   const decision = props.customerDecision;
   emit("decisionCancel");
   if (decision?.kind !== "existing_customer") return;
-  customerPanel.value = "form";
   await nextTick();
   const input = decision.field === "phone" ? phoneInputRef : decision.field === "email" ? emailInputRef : taxIdInputRef;
   input.value?.inputRef?.focus();
 }
 
 function onSelect(result: POSCustomerSearchResult) {
-  customerPanel.value = "form";
   emit("selectResult", result);
 }
 const concludePending = ref(false);
 function onConclude() {
   // Uma pergunta aberta na tela não se responde fechando a tela.
   if (props.customerDecision || props.lookupBusy || concludePending.value) return;
-  if (customerPanel.value !== "form") {
+  // Nada a salvar (cadastro intocado, ou formulário vazio): concluir só fecha.
+  if (footerAction.value === "conclude") {
     emit("update:open", false);
     return;
   }
@@ -347,21 +354,23 @@ function onConclude() {
 }
 
 // ── Atos NOMEADOS vindos do PosCustomerSearch ───────────────────────────────
-// CPF sem resultado abre cadastro para revisão. Documento só para a nota
-// permanece no fluxo fiscal separado.
+// O formulário está sempre na tela: transferir é preencher o campo E levar o
+// foco ao próximo dado que falta. Cadastrar continua exigindo o botão próprio.
+// CPF sem resultado: o documento vai ao cadastro para revisão. Documento só
+// para a nota permanece no fluxo fiscal separado.
 function onResolveCpf(cpf: string) {
   emit("update:customerTaxId", cpf);
-  customerPanel.value = "form";
+  void nextTick(() => nameInputRef.value?.inputRef?.focus());
 }
 // Telefone sem resultado: transfere para o campo do cadastro novo.
 function onTransfer(payload: { field: "phone"; value: string }) {
   emit("update:customerPhone", payload.value);
-  customerPanel.value = "form";
+  void nextTick(() => nameInputRef.value?.inputRef?.focus());
 }
-// Nome sem resultado abre o formulário; cadastrar exige o botão próprio.
+// Nome sem resultado vai ao formulário; o WhatsApp é o próximo dado que falta.
 function onCreateNameOnly(name: string) {
   emit("update:customerName", name);
-  customerPanel.value = "form";
+  void nextTick(() => phoneInputRef.value?.inputRef?.focus());
 }
 
 // Foco garantido na BUSCA ao abrir: sem isto o foco inicial do diálogo caía no
@@ -375,7 +384,7 @@ function onOpenAutoFocus(event: Event) {
   event.preventDefault();
   void nextTick(() => {
     if (isReceiptDecision.value) receiptTitleRef.value?.$el?.focus();
-    else if (customerPanel.value === "search") searchRef.value?.focus();
+    else if (!hasCustomer.value) searchRef.value?.focus();
     else nameInputRef.value?.inputRef?.focus();
   });
 }
@@ -401,104 +410,7 @@ const newCustomerNote = computed(() => {
 
       <div>
         <div class="grid gap-5">
-          <!-- 1 · associated customer (Odoo's pinned-and-highlighted) + Remover -->
-          <div v-if="hasCustomer && !isReceiptDecision" class="grid gap-3 rounded-md border border-primary bg-primary/5 p-4">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="flex items-center gap-1.5 text-base font-semibold">
-                  <Icon name="lucide:user-check" class="size-4 shrink-0 text-primary" />
-                  <span class="truncate">{{ customerName || customerLookup?.name || customerLookup?.email || customerLookup?.tax_id || "Cliente" }}</span>
-                  <span
-                    v-if="newCustomerNote"
-                    class="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
-                    role="status"
-                  >
-                    <Icon name="lucide:sparkles" class="size-3" />
-                    {{ newCustomerNote }}
-                  </span>
-                </p>
-                <p v-if="identityChips.length" class="mt-0.5 truncate text-sm tabular-nums text-muted-foreground">
-                  {{ identityChips.join(" · ") }}
-                </p>
-              </div>
-              <UiButton type="button" variant="outline" size="sm" class="shrink-0 text-destructive" @click="$emit('clear')">
-                <Icon name="lucide:user-x" class="size-4" />
-                Remover cliente
-              </UiButton>
-            </div>
-            <!-- Guestman memory (warmer than Odoo's raw "All Orders"): favourite +
-                 last order, one tap to apply. -->
-            <div v-if="memory && (memory.favorite_item?.sku || memory.last_order_items?.length || memory.total_orders)" class="flex flex-wrap items-center gap-2">
-              <span v-if="memory.total_orders" class="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                {{ memory.total_orders }} {{ memory.total_orders === 1 ? "pedido" : "pedidos" }}
-              </span>
-              <UiButton v-if="memory.favorite_item?.sku" type="button" variant="outline" size="xs" @click="$emit('applyCustomerFavorite')">
-                <Icon name="lucide:heart" class="size-3.5" /> Favorito
-              </UiButton>
-              <UiButton v-if="memory.last_order_items?.length" type="button" variant="outline" size="xs" @click="$emit('repeatCustomerLastOrder')">
-                <Icon name="lucide:rotate-ccw" class="size-3.5" /> Último pedido
-              </UiButton>
-            </div>
-
-            <!-- Alertas do balcão: só existem quando há dado (a tela não cresce à toa).
-                 Restrição alimentar é SEGURANÇA — sempre visível, cor funcional. -->
-            <div v-if="customerLookup?.dietary_restrictions || customerLookup?.is_birthday_today || customerLookup?.is_birthday_month" class="flex flex-wrap items-center gap-2">
-              <span v-if="customerLookup?.dietary_restrictions" class="inline-flex items-center gap-1 rounded-full border border-warning/50 bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">
-                <Icon name="lucide:triangle-alert" class="size-3.5" /> {{ customerLookup.dietary_restrictions }}
-              </span>
-              <span v-if="customerLookup?.is_birthday_today" class="inline-flex items-center gap-1 rounded-full border border-primary/50 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                🎂 Aniversário HOJE{{ customerLookup?.birthday_promo_label ? ` · ${customerLookup.birthday_promo_label}` : "" }}
-              </span>
-              <span v-else-if="customerLookup?.is_birthday_month" class="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                🎂 Aniversariante do mês ({{ customerLookup?.birthday_display }})
-              </span>
-            </div>
-
-            <!-- Preferências PERSISTENTES do cliente: liga E desliga aqui —
-                 "hoje não" é desmarcar na venda; "nunca mais" é desligar AQUI. -->
-            <div v-if="customerLookup?.ref" class="grid gap-2 border-t border-primary/20 pt-3">
-              <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Preferências do cliente</p>
-              <!-- INTERRUPTORES, não botões-com-check: preferência é ESTADO
-                   ("sempre assim"), e o switch diz de longe se está ligado —
-                   a mesma peça do bloco "Nota e comprovante" do pagamento. -->
-              <div class="grid divide-y rounded-md border">
-                <label class="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm">
-                  <span class="flex min-w-0 items-center gap-2 font-medium">
-                    <Icon name="lucide:id-card" class="size-4 shrink-0 text-muted-foreground" />
-                    CPF na nota por padrão
-                  </span>
-                  <UiSwitch
-                    :model-value="profileDraft.cpf_na_nota"
-                    :disabled="profileSaving"
-                    aria-label="CPF na nota por padrão"
-                    @update:model-value="setProfilePref('cpf_na_nota', $event)"
-                  />
-                </label>
-                <label class="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm">
-                  <span class="flex min-w-0 items-center gap-2 font-medium">
-                    <Icon name="lucide:mail" class="size-4 shrink-0 text-muted-foreground" />
-                    Nota por e-mail por padrão
-                  </span>
-                  <UiSwitch
-                    :model-value="profileDraft.email_receipt"
-                    :disabled="profileSaving"
-                    aria-label="Nota por e-mail por padrão"
-                    @update:model-value="setProfilePref('email_receipt', $event)"
-                  />
-                </label>
-              </div>
-              <label class="grid gap-1 text-sm">
-                <span class="text-xs font-medium text-muted-foreground">Restrições alimentares</span>
-                <UiInput v-model="profileDraft.dietary_restrictions" placeholder="Ex: alérgico a nozes" @blur="saveProfileText" />
-              </label>
-              <label class="grid gap-1 text-sm">
-                <span class="text-xs font-medium text-muted-foreground">Observações do balcão</span>
-                <UiTextarea v-model="profileDraft.notes" :rows="2" placeholder="Ex: prefere pão bem assado; busca às 17h" @blur="saveProfileText" />
-              </label>
-            </div>
-          </div>
-
-          <!-- 1.5 · A PERGUNTA — e ela vem antes do resto porque é o que trava
+          <!-- 1 · A PERGUNTA — e ela vem antes do resto porque é o que trava
                a venda. Duas situações, uma forma: o sistema NÃO decide sozinho.
 
                · o WhatsApp digitado já é de outro cadastro (trocar de cliente é
@@ -745,23 +657,18 @@ const newCustomerNote = computed(() => {
             </UiButton>
           </div>
 
-          <!-- 2 · the picker: prominent search + rich results list.
-               Enter decide (seleciona / cria por CPF / transfere / cadastra). -->
-          <div v-if="!isReceiptDecision" class="grid grid-cols-2 gap-1 rounded-md border bg-background p-1" role="tablist" aria-label="Escolher como identificar cliente">
-            <UiButton type="button" role="tab" :aria-selected="customerPanel === 'search'" :variant="customerPanel === 'search' ? 'default' : 'ghost'" @click="customerPanel = 'search'">
-              Buscar existente
-            </UiButton>
-            <UiButton type="button" role="tab" :aria-selected="customerPanel === 'form'" :variant="customerPanel === 'form' ? 'default' : 'ghost'" @click="openNewCustomer">
-              {{ customerLookup?.ref ? "Editar cadastro" : "Cadastrar novo" }}
-            </UiButton>
-          </div>
+          <!-- 2 · the picker, SEMPRE no topo: prominent search + rich results
+               list. Enter decide (seleciona / cria por CPF / transfere / nomeia
+               o cadastro só com o nome / conclui). Escolher um resultado ou
+               transferir preenche o formulário logo abaixo — não há painel para
+               trocar. -->
           <PosCustomerSearch
-            v-if="customerPanel === 'search' && !isReceiptDecision"
+            v-if="!isReceiptDecision"
             ref="searchRef"
             :results="searchResults"
             :busy="searchBusy"
-            :has-customer-ref="Boolean(customerLookup?.ref)"
-            :pending-name="customerLookup?.ref ? '' : customerName"
+            :has-customer-ref="hasCustomer"
+            :pending-name="hasCustomer ? '' : customerName"
             @search="$emit('search', $event)"
             @select="onSelect"
             @resolve-cpf="onResolveCpf"
@@ -770,11 +677,76 @@ const newCustomerNote = computed(() => {
             @conclude="onConclude"
           />
 
-          <!-- 3 · create / edit form -->
-          <div v-if="customerPanel === 'form' && !isReceiptDecision" class="grid gap-3">
-            <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {{ customerLookup?.ref ? "Editar cadastro" : "Novo cadastro" }}
-            </p>
+          <!-- 3 · UMA estrutura: selo de estado + o MESMO formulário para
+               existente e novo. O selo (e o tom) é a única diferença nítida —
+               abas "buscar × cadastrar" faziam o operador escolher um modo
+               antes de saber se a pessoa já tinha cadastro. -->
+          <div
+            v-if="!isReceiptDecision"
+            class="grid gap-3 rounded-md border p-4"
+            :class="hasCustomer ? 'border-primary bg-primary/5' : 'bg-muted/30'"
+            data-customer-state
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="flex items-center gap-1.5 text-base font-semibold" role="status">
+                  <Icon
+                    :name="hasCustomer ? 'lucide:user-check' : 'lucide:user-round-plus'"
+                    class="size-4 shrink-0"
+                    :class="hasCustomer ? 'text-primary' : 'text-muted-foreground'"
+                  />
+                  <span class="truncate">{{ stateBadge }}</span>
+                  <span
+                    v-if="newCustomerNote"
+                    class="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                  >
+                    <Icon name="lucide:sparkles" class="size-3" />
+                    {{ newCustomerNote }}
+                  </span>
+                </p>
+                <p v-if="hasCustomer && identityChips.length" class="mt-0.5 truncate text-sm tabular-nums text-muted-foreground">
+                  {{ identityChips.join(" · ") }}
+                </p>
+                <p v-else-if="!hasCustomer" class="mt-0.5 text-sm text-muted-foreground">
+                  Preencha o que souber; só o nome já basta.
+                </p>
+              </div>
+              <UiButton v-if="hasCustomer" type="button" variant="outline" size="sm" class="shrink-0 text-destructive" @click="$emit('clear')">
+                <Icon name="lucide:user-x" class="size-4" />
+                Remover cliente
+              </UiButton>
+            </div>
+            <!-- Guestman memory (warmer than Odoo's raw "All Orders"): favourite +
+                 last order, one tap to apply. -->
+            <div v-if="hasCustomer && memory && (memory.favorite_item?.sku || memory.last_order_items?.length || memory.total_orders)" class="flex flex-wrap items-center gap-2">
+              <span v-if="memory.total_orders" class="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                {{ memory.total_orders }} {{ memory.total_orders === 1 ? "pedido" : "pedidos" }}
+              </span>
+              <UiButton v-if="memory.favorite_item?.sku" type="button" variant="outline" size="xs" @click="$emit('applyCustomerFavorite')">
+                <Icon name="lucide:heart" class="size-3.5" /> Favorito
+              </UiButton>
+              <UiButton v-if="memory.last_order_items?.length" type="button" variant="outline" size="xs" @click="$emit('repeatCustomerLastOrder')">
+                <Icon name="lucide:rotate-ccw" class="size-3.5" /> Último pedido
+              </UiButton>
+            </div>
+
+            <!-- Alertas do balcão: só existem quando há dado (a tela não cresce à toa).
+                 Restrição alimentar é SEGURANÇA — sempre visível, cor funcional. -->
+            <div v-if="hasCustomer && (customerLookup?.dietary_restrictions || customerLookup?.is_birthday_today || customerLookup?.is_birthday_month)" class="flex flex-wrap items-center gap-2">
+              <span v-if="customerLookup?.dietary_restrictions" class="inline-flex items-center gap-1 rounded-full border border-warning/50 bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">
+                <Icon name="lucide:triangle-alert" class="size-3.5" /> {{ customerLookup.dietary_restrictions }}
+              </span>
+              <span v-if="customerLookup?.is_birthday_today" class="inline-flex items-center gap-1 rounded-full border border-primary/50 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                🎂 Aniversário HOJE{{ customerLookup?.birthday_promo_label ? ` · ${customerLookup.birthday_promo_label}` : "" }}
+              </span>
+              <span v-else-if="customerLookup?.is_birthday_month" class="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                🎂 Aniversariante do mês ({{ customerLookup?.birthday_display }})
+              </span>
+            </div>
+
+            <!-- 4 · the form — o MESMO para existente e novo. O e-mail daqui é
+                 o do CADASTRO, e só grava no "Salvar cadastro"; o e-mail do
+                 comprovante desta venda mora na tela de pagamento. -->
             <div class="grid gap-3 sm:grid-cols-2">
               <label class="grid gap-1.5 text-sm">
                 <span class="font-medium text-muted-foreground">Nome</span>
@@ -793,47 +765,57 @@ const newCustomerNote = computed(() => {
                 <UiInput ref="emailInputRef" :model-value="customerEmail" type="email" placeholder="cliente@email.com" @update:model-value="$emit('update:customerEmail', String($event || ''))" />
               </label>
             </div>
-          </div>
 
-          <!-- payment context only: comprovante (rides with the customer).
-               O toggle "Emitir nota fiscal" saiu daqui e do checkout: emitir ou
-               não é decisão da REGRA no servidor, nunca de quem está no caixa. O
-               pedido do consumidor é o CPF, e ele mora no campo de identidade
-               acima — um número, uma intenção. -->
-          <div v-if="showFiscal && !isReceiptDecision" class="grid gap-3 border-t pt-4">
-            <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Comprovante</p>
-            <!-- MULTI: imprimir E enviar não competem. "Sem comprovante" é
-                 nenhum canal ligado, não um terceiro botão. Interruptor por
-                 canal: um botão-com-check dizia "eu executo" e não se lia de
-                 longe qual estava marcado; o switch é estado, e se vê. -->
-            <div class="grid divide-y rounded-md border">
-              <label
-                v-for="channel in receiptChannelOptions"
-                :key="channel.ref"
-                class="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm"
-              >
-                <span class="flex min-w-0 items-center gap-2 font-medium">
-                  <Icon :name="RECEIPT_CHANNEL_ICONS[channel.ref] || 'lucide:receipt'" class="size-4 shrink-0 text-muted-foreground" />
-                  {{ channel.label }}
-                </span>
-                <UiSwitch
-                  data-receipt-channel
-                  :model-value="receiptChannels.includes(channel.ref)"
-                  :aria-label="channel.label"
-                  @update:model-value="setReceiptChannel(channel.ref, $event)"
-                />
-              </label>
-            </div>
-            <!-- ⚠️ Sem `<label>` em volta: a oferta traz o interruptor dela num
-                 `<label>` próprio, e rótulo dentro de rótulo faz o clique no
-                 texto do campo alternar o interruptor. O vínculo do nome com o
-                 campo passa a ser o `aria-label`. -->
-            <div v-if="receiptChannels.includes('email')" class="grid gap-1.5 text-sm">
-              <span class="font-medium text-muted-foreground">E-mail do comprovante</span>
-              <UiInput :model-value="receiptEmail" type="email" aria-label="E-mail do comprovante" :placeholder="customerEmail || 'cliente@email.com'" @update:model-value="$emit('update:receiptEmail', String($event || ''))" />
-              <span v-if="!receiptEmail.trim() && customerEmail.trim()" class="text-xs text-muted-foreground">
-                Sem preencher, enviamos para o e-mail do cliente: <span class="font-medium text-foreground">{{ customerEmail }}</span>
-              </span>
+            <!-- 5 · PADRÕES do cliente: valem NESTA venda, na hora, e nas
+                 próximas. Liga E desliga aqui — "hoje não" é desmarcar na
+                 venda; "nunca mais" é desligar AQUI. Com cadastro, grava no
+                 perfil; sem cadastro, o rascunho viaja no "Cadastrar cliente".
+                 INTERRUPTORES, não botões-com-check: padrão é ESTADO ("sempre
+                 assim"), e o switch diz de longe se está ligado. -->
+            <div class="grid gap-2 border-t pt-3" :class="hasCustomer ? 'border-primary/20' : ''" data-customer-defaults>
+              <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Padrões deste cliente</p>
+              <p class="text-xs text-muted-foreground">Vale nesta venda e nas próximas.</p>
+              <div class="grid divide-y rounded-md border">
+                <label class="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm">
+                  <span class="flex min-w-0 items-center gap-2 font-medium">
+                    <Icon name="lucide:id-card" class="size-4 shrink-0 text-muted-foreground" />
+                    CPF na nota
+                  </span>
+                  <UiSwitch
+                    :model-value="prefOn('cpf_na_nota')"
+                    :disabled="profileSaving"
+                    aria-label="CPF na nota"
+                    @update:model-value="setProfilePref('cpf_na_nota', $event)"
+                  />
+                </label>
+                <label class="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm">
+                  <span class="flex min-w-0 items-center gap-2 font-medium">
+                    <Icon name="lucide:mail" class="size-4 shrink-0 text-muted-foreground" />
+                    Nota por e-mail
+                  </span>
+                  <UiSwitch
+                    :model-value="prefOn('email_receipt')"
+                    :disabled="profileSaving"
+                    aria-label="Nota por e-mail"
+                    @update:model-value="setProfilePref('email_receipt', $event)"
+                  />
+                </label>
+              </div>
+              <!-- A resposta à pergunta do dono, visível: o fechamento da venda
+                   LIGA o padrão sozinho (`_remember_fiscal_prefs` só liga);
+                   desligar é gesto daqui. -->
+              <p class="text-xs text-muted-foreground">Usar CPF ou e-mail numa venda liga o padrão sozinho; desligar é aqui.</p>
+              <template v-if="hasCustomer">
+                <label class="grid gap-1 text-sm">
+                  <span class="text-xs font-medium text-muted-foreground">Restrições alimentares</span>
+                  <UiInput v-model="profileDraft.dietary_restrictions" placeholder="Ex: alérgico a nozes" @blur="saveProfileText" />
+                </label>
+                <label class="grid gap-1 text-sm">
+                  <span class="text-xs font-medium text-muted-foreground">Observações do balcão</span>
+                  <UiTextarea v-model="profileDraft.notes" :rows="2" placeholder="Ex: prefere pão bem assado; busca às 17h" @blur="saveProfileText" />
+                </label>
+              </template>
+              <p v-else class="text-xs text-muted-foreground">Restrições e observações ficam disponíveis depois de cadastrar.</p>
             </div>
           </div>
         </div>
@@ -842,7 +824,7 @@ const newCustomerNote = computed(() => {
       <UiDialogFooter v-if="!isReceiptDecision">
         <UiButton class="h-14 w-full" :disabled="Boolean(customerDecision) || lookupBusy || concludePending" @click="onConclude">
           <Icon v-if="concludePending" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" />
-          {{ customerPanel === "form" ? (customerLookup?.ref ? "Salvar cadastro" : "Cadastrar cliente") : "Concluir" }}
+          {{ footerLabel }}
         </UiButton>
       </UiDialogFooter>
     </UiDialogContent>
