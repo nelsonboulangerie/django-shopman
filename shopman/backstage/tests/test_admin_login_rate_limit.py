@@ -13,6 +13,7 @@ pytestmark = pytest.mark.django_db
 def limits(settings):
     settings.SHOPMAN_ADMIN_LOGIN_ACCOUNT_IP_LIMIT = 2
     settings.SHOPMAN_ADMIN_LOGIN_IP_LIMIT = 4
+    settings.DOORMAN = {**getattr(settings, "DOORMAN", {}), "TRUSTED_PROXY_DEPTH": 1}
     cache.clear()
     yield
     cache.clear()
@@ -22,9 +23,9 @@ def test_admin_password_throttles_before_authentication_and_ignores_forged_forwa
     with patch("django.contrib.auth.forms.authenticate", return_value=None) as authenticate:
         for i in range(2):
             assert client.post("/admin/login/", {"username": "owner", "password": "wrong"},
-                               HTTP_X_FORWARDED_FOR=f"192.0.2.{i}").status_code == 200
+                               HTTP_X_FORWARDED_FOR=f"192.0.2.{i}, 198.51.100.7").status_code == 200
         response = client.post("/admin/login/", {"username": "owner", "password": "wrong"},
-                               HTTP_X_FORWARDED_FOR="192.0.2.200")
+                               HTTP_X_FORWARDED_FOR="192.0.2.200, 198.51.100.7")
     assert response.status_code == 429
     assert authenticate.call_count == 2
     assert response["Retry-After"] == "300"

@@ -8,6 +8,8 @@ from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.deprecation import MiddlewareMixin
 
+from shopman.shop.services.auth import client_ip
+
 logger = logging.getLogger(__name__)
 
 
@@ -16,7 +18,11 @@ class AdminLoginRateLimitMiddleware(MiddlewareMixin):
         if request.method != "POST" or request.path != reverse("admin:login"):
             return None
         window = max(1, int(getattr(settings, "SHOPMAN_ADMIN_LOGIN_WINDOW_SECONDS", 300)))
-        address = str(request.META.get("REMOTE_ADDR") or "unknown")
+        # Keep the Admin on the same proxy-depth-aware client-IP contract used
+        # by django-ratelimit and the customer authentication gates. Using
+        # REMOTE_ADDR here would put every user behind the App Platform ingress
+        # in one global bucket.
+        address = client_ip(request) or "unknown"
         username = str(request.POST.get("username") or "").strip().casefold()
         buckets = [(address, int(getattr(settings, "SHOPMAN_ADMIN_LOGIN_IP_LIMIT", 20))),
                    (address + "\0" + username, int(getattr(settings, "SHOPMAN_ADMIN_LOGIN_ACCOUNT_IP_LIMIT", 5)))]
