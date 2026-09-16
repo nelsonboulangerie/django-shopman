@@ -7,8 +7,9 @@
 //   · expedite (Expedição):    PRODUZIDO  | CONCLUÍDO  — fechamento no QC.
 // A ação abre overlay com quantidade em stepper touch (+/−) e confirmação
 // explícita; cada informe vira evento imutável (actor + timestamp → BI).
-// Na Produção a ação é UMA só — "Continuar · N" confirma quanto segue para a
-// Expedição, já preenchido com o planejado (decisão Pablo 2026-09-16). A
+// Na Produção a ação é UMA só — "Continuar" confirma quanto segue para a
+// Expedição, já preenchido com o planejado (decisão Pablo 2026-09-16); o
+// número fica na coluna Planejado, como no Planejamento, não no botão. A
 // diferença para o planejado é rendimento da massa, não perda: fica nos dois
 // números da ordem, sem pedir motivo — motivo se pede na Expedição, onde há
 // produto pronto que pode sumir. Sem "iniciar", sem subetapas, sem máquina de
@@ -475,14 +476,6 @@ const ACTION_VERB: Record<string, string> = {
   produce: "Continuar",
 };
 
-// "Continuar · 100": a célula já diz quanto vai seguir — quando a linha tem
-// UMA fornada planejada. Com várias, o diálogo pede qual antes de dizer quanto.
-function continueLabel(row: ProductionMatrixRowProjection): string {
-  if (row.planned_orders.length === 1)
-    return `Continuar · ${row.planned_orders[0]!.planned_qty}`;
-  return "Continuar";
-}
-
 // Verbo da célula de plano: quando a produção já assumiu a quantidade do dia,
 // o gesto disponível é somar um lote — e a célula diz isso antes do modal.
 function planCellVerb(row: ProductionMatrixRowProjection): string {
@@ -757,7 +750,7 @@ const headerCount = computed(() => {
                 <!-- Coluna de AÇÃO (verbo no cabeçalho; valor atual + gesto) -->
                 <td v-if="lens.action.visible" class="px-3 py-1.5 text-right">
                   <!-- Produção: o produzido fica à vista (abre conferência/estorno) e a
-                       única ação é Continuar · N sobre o que ainda está planejado. -->
+                       única ação é Continuar sobre o que ainda está planejado. -->
                   <span
                     v-if="stage === 'produce' && actionEnabled(row)"
                     class="inline-flex flex-wrap items-center justify-end gap-1.5"
@@ -782,7 +775,7 @@ const headerCount = computed(() => {
                       @click="openStart(row)"
                     >
                       <span class="whitespace-nowrap text-sm font-medium">{{
-                        continueLabel(row)
+                        ACTION_VERB[stage]
                       }}</span>
                       <Icon
                         name="lucide:chevron-right"

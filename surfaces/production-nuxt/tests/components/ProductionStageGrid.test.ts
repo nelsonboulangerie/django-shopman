@@ -19,7 +19,7 @@ import {
 // (resolvidos pelo alias). O finish saiu do grid: fechar a fornada é a Expedição
 // (quiosque de QC), que mira UMA WorkOrder por cartão — o bug do rendimento de 200%
 // (pré-preencher o agregado contra a WO[0]) morreu por construção. Na Produção a
-// ação é uma só — Continuar · N (16/09/2026); a diferença para o planejado é
+// ação é uma só — Continuar (16/09/2026); a diferença para o planejado é
 // rendimento e não pede motivo; o modal de etapas ("Avançar para Fermentação")
 // não existe mais.
 
@@ -339,7 +339,7 @@ describe("ProductionStageGrid — planning authority", () => {
 });
 
 describe("ProductionStageGrid — produce render", () => {
-  it("mostra Planejado → Produzido com uma ação só: Continuar · N", () => {
+  it("mostra Planejado → Produzido com uma ação só: Continuar", () => {
     boardRows.value = [
       row({ planned_qty: "30", planned_orders: [wo({ status: "planned" })] }),
     ];
@@ -347,23 +347,10 @@ describe("ProductionStageGrid — produce render", () => {
     expect(w.text()).toContain("PAO-001");
     expect(w.text()).toContain("Planejado");
     expect(w.text()).toContain("Produzido");
-    expect(byText(w, "button", "Continuar · 30")).toBeTruthy();
-    expect(w.text()).not.toContain("em processo");
-  });
-
-  it("com várias fornadas planejadas a célula diz só Continuar", () => {
-    boardRows.value = [
-      row({
-        planned_qty: "50",
-        planned_orders: [
-          wo({ pk: 7, status: "planned", planned_qty: "20" }),
-          wo({ pk: 8, status: "planned", planned_qty: "30" }),
-        ],
-      }),
-    ];
-    const w = mountGrid();
+    // O número mora na coluna Planejado, como no Planejamento — o botão é só o verbo.
     const cell = byText(w, "button", "Continuar")!;
     expect(cell.text().trim()).toBe("Continuar");
+    expect(w.text()).not.toContain("em processo");
   });
 
   it("nomeia a linha pelo produto e deixa o SKU na segunda linha", () => {
@@ -536,7 +523,7 @@ describe("ProductionStageGrid — produce render", () => {
     expect(w.text()).not.toContain("em processo");
   });
 
-  it("com um lote produzido e outro planejado, mostra o número e Continuar · N", () => {
+  it("com um lote produzido e outro planejado, mostra o número e Continuar", () => {
     boardRows.value = [
       row({
         planned_qty: "20",
@@ -547,7 +534,7 @@ describe("ProductionStageGrid — produce render", () => {
     ];
     const w = mountGrid();
     expect(byText(w, "button", "30")).toBeTruthy();
-    expect(byText(w, "button", "Continuar · 20")).toBeTruthy();
+    expect(byText(w, "button", "Continuar")!.text().trim()).toBe("Continuar");
   });
 });
 
