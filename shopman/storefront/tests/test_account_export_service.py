@@ -338,3 +338,41 @@ def test_export_never_claims_legacy_records_by_recycled_phone() -> None:
     assert alien_order.ref not in refs
     assert payload["auth_verification_codes"] == []
     assert payload["stock_alert_subscriptions"] == []
+
+
+@pytest.mark.parametrize(
+    "slot_ref,label",
+    [("slot-09", "A partir das 9h"), ("14:00-14:30", "14:00 às 14:30")],
+)
+def test_export_labels_the_agreed_window_next_to_its_raw_ref(slot_ref, label) -> None:
+    """O titular lê o export: "slot-09" é identificador interno. O ref fica
+    (é o dado gravado) e o rótulo vai junto, pelas DUAS grades."""
+    customer = _customer(suffix="77")
+    Order.objects.create(
+        ref="EXP-WINDOW",
+        channel_ref="web",
+        handle_type="phone",
+        handle_ref=customer.phone,
+        status="completed",
+        data={"customer_ref": customer.ref, "delivery_date": "2026-09-20", "delivery_time_slot": slot_ref},
+        total_q=1000,
+    )
+
+    payload, _counts = _decoded_export(customer)
+
+    (row,) = payload["orders"]
+    assert row["data"]["delivery_time_slot"] == slot_ref
+    assert row["data"]["delivery_time_slot_label"] == label
+
+
+def test_export_without_a_window_has_no_label() -> None:
+    customer = _customer(suffix="78")
+    Order.objects.create(
+        ref="EXP-NO-WINDOW", channel_ref="web", handle_type="phone", handle_ref=customer.phone,
+        status="completed", data={"customer_ref": customer.ref}, total_q=1000,
+    )
+
+    payload, _counts = _decoded_export(customer)
+
+    (row,) = payload["orders"]
+    assert "delivery_time_slot_label" not in row["data"]

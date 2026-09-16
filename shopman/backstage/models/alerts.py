@@ -110,6 +110,10 @@ class OperatorAlert(models.Model):
         ("fiscal_email_failed", "NFC-e autorizada mas o e-mail não saiu"),
         ("fiscal_cancel_failed", "Cancelamento da NFC-e falhou"),
         ("fiscal_partial_return", "Devolução parcial com NFC-e em pé"),
+        # A mercadoria SAIU (despacho ou conclusão) com a nota ainda na fila ou
+        # com a emissão morta. Nenhum portão barra — é aviso, e a decisão de
+        # barrar é do dono.
+        ("fiscal_handoff_without_nfce", "Pedido saiu sem NFC-e autorizada"),
         # O desconto de pontos já entrou no total e a baixa no saldo não passou:
         # receita perdida que some sem ninguém ver.
         ("loyalty_redeem_uncovered", "Desconto de pontos sem baixa no saldo"),

@@ -4113,6 +4113,13 @@ def _fiscal_expected(order_ref: str | None) -> bool:
         return False
 
 
+def _fiscal_state(order) -> str:
+    """O estado da NFC-e da venda recém-fechada. Sem pedido carregado, não há nota."""
+    if order is None:
+        return fiscal_service.FISCAL_STATE_NOT_EXPECTED
+    return fiscal_service.fiscal_state(order)
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
@@ -4732,6 +4739,10 @@ class POSCloseSaleView(APIView):
                 "payment": getattr(result, "payment", None) or {},
                 "payment_delivery": build_pos_payment_delivery(closed_order) if closed_order else {},
                 "fiscal_expected": _fiscal_expected(order_ref),
+                # Em que pé a nota está AGORA (``fiscal_service.fiscal_state``):
+                # ``not_expected`` | ``queued`` | ``awaiting_payment`` |
+                # ``authorized`` | ``failed``. ``fiscal_expected`` fica por compat.
+                "fiscal_state": _fiscal_state(closed_order),
             }
         )
 

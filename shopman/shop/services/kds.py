@@ -840,6 +840,11 @@ def expedition_action(order, *, action: str, actor: str) -> str:
     blocked = expedition_block_reason(order, action=action)
     if blocked:
         raise ValueError(blocked)
+    # A outra porta por onde a mercadoria sai: mesmo aviso do Gestor
+    # (``operator_orders.advance_order``), sem barrar.
+    from shopman.shop.services import fiscal as fiscal_service
+
+    fiscal_service.alert_handoff_without_nfce(order, target_status=next_status)
     order.transition_status(next_status, actor=actor)
     logger.info("kds_expedition %s order=%s", action, order.ref)
     return next_status

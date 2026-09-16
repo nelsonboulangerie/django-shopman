@@ -374,6 +374,13 @@ def _project_order_data(value: Any) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         return {}
     projected = _closed_mapping(value, ORDER_DATA_SCALAR_KEYS)
+    if projected.get("delivery_time_slot"):
+        # O titular lê o export: "slot-09" é identificador interno, não a janela
+        # que ele combinou. O ref fica (é o dado gravado); o rótulo vai junto,
+        # resolvido pelas duas grades como em toda superfície.
+        from shopman.shop.services.fulfillment_window import window_label
+
+        projected["delivery_time_slot_label"] = window_label(str(projected["delivery_time_slot"]))
     for container, fields in ORDER_DATA_NESTED_FIELDS.items():
         nested = {
             field: _clean_embedded(value[path])

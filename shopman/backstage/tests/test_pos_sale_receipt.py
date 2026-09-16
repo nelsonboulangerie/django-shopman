@@ -145,3 +145,61 @@ class POSSaleReceiptTests(TestCase):
         self.assertFalse(
             (Order.objects.get(ref="PDV-RC-4").data or {}).get("receipt_printed_at")
         )
+
+    # ── Venda COD: o dinheiro ainda não entrou ───────────────────────────
+
+    def _cod_order(self, ref: str, *, fulfillment_type: str = "delivery", settled: bool = False) -> Order:
+        order = self._order(ref)
+        data = dict(order.data)
+        data["fulfillment_type"] = fulfillment_type
+        data["payment"] = {
+            "method": "cash",
+            "amount_q": 1750,
+            "collection": "on_delivery",
+            "tenders": [{"method": "cash", "amount_q": 1750, "collection": "on_delivery"}],
+            # O troco COMBINADO com o cliente vive no pedido; o recibo não pode
+            # confundi-lo com dinheiro recebido.
+            "tendered_q": 2000,
+            "change_q": 250,
+        }
+        if settled:
+            data["payment"]["cod_settled_at"] = "2026-09-16T12:00:00Z"
+        order.data = data
+        order.save(update_fields=["data"])
+        return order
+
+    def test_cod_receipt_never_prints_as_paid(self) -> None:
+        """Recibo de venda COD saía igual ao de uma venda paga: "Recebido",
+        "Troco" e "Obrigado pela preferência!" para um dinheiro que ainda vai
+        entrar na porta."""
+        self._cod_order("PDV-RC-COD")
+
+        text, _ = self._receipt_text("PDV-RC-COD")
+
+        self.assertIn("*** PAGAMENTO PENDENTE ***", text)
+        self.assertIn("COBRAR NA ENTREGA", text)
+        self.assertIn("Dinheiro (pendente)", text)
+        self.assertNotIn("Recebido", text)
+        self.assertNotIn("Troco", text)
+        self.assertNotIn("Obrigado pela preferência!", text)
+
+    def test_cod_pickup_receipt_says_to_collect_at_pickup(self) -> None:
+        self._cod_order("PDV-RC-COD-PICKUP", fulfillment_type="pickup")
+
+        text, _ = self._receipt_text("PDV-RC-COD-PICKUP")
+
+        self.assertIn("*** PAGAMENTO PENDENTE ***", text)
+        self.assertIn("COBRAR NA RETIRADA", text)
+        self.assertNotIn("COBRAR NA ENTREGA", text)
+
+    def test_settled_cod_receipt_prints_as_paid(self) -> None:
+        """Depois do acerto (``cod_settled_at``) o recibo volta a ser o de uma venda paga."""
+        self._cod_order("PDV-RC-COD-OK", settled=True)
+
+        text, _ = self._receipt_text("PDV-RC-COD-OK")
+
+        self.assertNotIn("PAGAMENTO PENDENTE", text)
+        self.assertNotIn("COBRAR NA", text)
+        self.assertIn("Obrigado pela preferência!", text)
+        self.assertIn("Recebido", text)
+        self.assertIn("Troco", text)
