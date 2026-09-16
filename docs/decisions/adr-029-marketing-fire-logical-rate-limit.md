@@ -6,7 +6,7 @@
 
 O gate G-H04 limitava `fire` a 3 requests por hora por operador e 10 por dia
 por loja. O comando seguro usa ao menos dois POSTs com a mesma idempotency key:
-um abre `PUBLICAR <count>` e outro confirma. Assim, o transporte consumia quota
+um abre `PREPARAR <count>` e outro confirma. Assim, o transporte consumia quota
 sem representar uma nova intenção e podia bloquear o primeiro fluxo corrigido.
 
 ## Decisão

@@ -94,7 +94,7 @@ describe("MarketingCommandConfirmationDialog", () => {
             mode: "typed",
             step_up: "password",
             dual_control: false,
-            typed_phrase: "PUBLICAR 12",
+            typed_phrase: "PREPARAR 12",
             consequence: "creates_review_announcement",
             resource_ref: "campaign:3",
             base_version: 1,

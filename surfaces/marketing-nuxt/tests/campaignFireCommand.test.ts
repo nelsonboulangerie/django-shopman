@@ -31,7 +31,7 @@ const challenge = {
   mode: "typed" as const,
   step_up: "password" as const,
   dual_control: false,
-  typed_phrase: "PUBLICAR 48",
+  typed_phrase: "PREPARAR 48",
   consequence: "creates_review_announcement",
   resource_ref: "campaign:3",
   base_version: 7,
