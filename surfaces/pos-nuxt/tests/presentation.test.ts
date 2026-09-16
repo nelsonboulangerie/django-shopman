@@ -91,7 +91,7 @@ import {
   unfiredCount,
 } from "../app/presentation/kitchen";
 import { pruneSelection, selectedItems, selectionView, toggleSelected } from "../app/presentation/selection";
-import { cashLandedInDrawer, receiptLineTotalQ, receiptLines, receiptPayments, type PosReceiptSnapshot } from "../app/presentation/receipt";
+import { cashLandedInDrawer, receiptLineTotalQ, receiptLines, receiptPaymentPending, receiptPayments, type PosReceiptSnapshot } from "../app/presentation/receipt";
 import type { ActionAffordance } from "../app/presentation/actions";
 import { formatBRL } from "../app/utils/posIntent";
 
@@ -1104,6 +1104,49 @@ describe("presentation/receipt — print shaping (D3)", () => {
   it("labels payments from the method projection", () => {
     const methods = [{ ref: "cash", label: "Dinheiro", icon: "", requires_change: true }] as any;
     expect(receiptPayments(snap, methods)).toEqual([{ label: "Dinheiro", amountDisplay: formatBRL(3500) }]);
+  });
+
+  // O recibo do navegador é o FALLBACK da bobina e imprimia a linha como
+  // digitada ("Dinheiro R$ 100,00"); o servidor imprime "Dinheiro R$ 42 /
+  // Recebido R$ 100 / Troco R$ 58". Dois papéis da mesma venda, dois valores.
+  it("com troco, imprime como o servidor: forma pelo total, Recebido e Troco", () => {
+    const methods = [{ ref: "cash", label: "Dinheiro" }] as any;
+    const comTroco: PosReceiptSnapshot = {
+      ...snap,
+      totalDisplay: formatBRL(4200),
+      payments: [{ method: "cash", amount_q: 10000, collection: "terminal" }],
+      tenderedQ: 10000,
+      changeQ: 5800,
+    };
+    expect(receiptPayments(comTroco, methods)).toEqual([
+      { label: "Dinheiro", amountDisplay: formatBRL(4200) },
+      { label: "Recebido", amountDisplay: formatBRL(10000) },
+      { label: "Troco", amountDisplay: formatBRL(5800) },
+    ]);
+    expect(receiptPaymentPending(comTroco)).toBe(false);
+  });
+
+  it("Recebido é medição: sem `tenderedQ` a linha não existe, mesmo com dinheiro", () => {
+    const methods = [{ ref: "cash", label: "Dinheiro" }] as any;
+    expect(receiptPayments({ ...snap, changeQ: 0 }, methods)).toEqual([
+      { label: "Dinheiro", amountDisplay: formatBRL(3500) },
+    ]);
+  });
+
+  it("cobrança na entrega: PAGAMENTO PENDENTE, sem Recebido nem Troco", () => {
+    const methods = [{ ref: "cash", label: "Dinheiro" }] as any;
+    const naEntrega: PosReceiptSnapshot = {
+      ...snap,
+      payments: [{ method: "cash", amount_q: 10000, collection: "on_delivery" }],
+      tenderedQ: 0,
+      changeQ: 0,
+      paymentPending: true,
+    };
+    expect(receiptPaymentPending(naEntrega)).toBe(true);
+    expect(receiptPayments(naEntrega, methods)).toEqual([{ label: "Dinheiro", amountDisplay: formatBRL(10000) }]);
+    // e a marca também nasce das linhas, quando o snapshot antigo não a traz
+    expect(receiptPaymentPending({ ...naEntrega, paymentPending: undefined })).toBe(true);
+    expect(receiptPaymentPending(snap)).toBe(false);
   });
 });
 

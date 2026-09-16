@@ -2605,6 +2605,9 @@ export function usePosSale(deps: PosSaleDeps) {
       }
       if (guarded.kind === "error") throw guarded.error;
       const { response, orderRef } = guarded;
+      // COBRANÇA NA ENTREGA/RETIRADA: o dinheiro ainda não entrou. O troco
+      // calculado é o que o entregador vai separar, não o que sai da gaveta.
+      const paidOnDelivery = cart.paymentCollection === "on_delivery";
       // Freeze a receipt snapshot before the cart resets (spec §D3): the
         // printed receipt is a record of what was sold, not live state.
         const receipt: PosReceiptSnapshot = {
@@ -2627,6 +2630,13 @@ export function usePosSale(deps: PosSaleDeps) {
           })),
           fulfillmentLabel: pos.value?.fulfillment_options.find((option) => option.ref === cart.fulfillmentType)?.label || cart.fulfillmentType,
           printedAtMs: Date.now(),
+          // O recibo do navegador imprime como o servidor (`receipt_escpos`):
+          // "Dinheiro R$ 42 / Recebido R$ 100 / Troco R$ 58", e não a linha
+          // como digitada. "Recebido" é medição — só viaja quando o operador
+          // digitou (`tendered_q`, dinheiro sozinho no caixa).
+          tenderedQ: paidOnDelivery ? 0 : (resolvePayment(cart.paymentTenders, paymentTotalQ.value).tenderedQ ?? 0),
+          changeQ: paidOnDelivery ? 0 : Math.max(0, paymentChangeQ.value),
+          paymentPending: paidOnDelivery,
         };
         // Com entrega, o BAIRRO diz mais que a palavra "entrega" — é o que o
         // operador confere de relance e repete ao cliente.
