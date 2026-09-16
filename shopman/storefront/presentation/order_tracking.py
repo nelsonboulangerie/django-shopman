@@ -266,7 +266,7 @@ class OrderTrackingProjection:
     status_color: str
     # Encomenda (WP-D): quando o pedido tem data futura, ``when_display`` traz
     # o combinado como o cliente escolheu no checkout ("sábado, 19/07 · A
-    # partir das 09h") para o cabeçalho/resumo da página.
+    # partir das 9h") para o cabeçalho/resumo da página.
     is_preorder: bool
     when_display: str | None
     copy: OrderTrackingCopyProjection
