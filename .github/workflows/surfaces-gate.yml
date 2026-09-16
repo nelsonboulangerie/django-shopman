@@ -138,6 +138,13 @@ jobs:
         working-directory: surfaces/storefront-nuxt
         run: npx playwright test tests/e2e/pwa.spec.ts
 
+      # O deploy usa esta receita genérica, não o workspace já preparado pelo
+      # job. Construí-la aqui prova a ordem real de instalação e impede que o
+      # postinstall do consumer só falhe depois do merge, ao publicar no DOCR.
+      - name: Build POS deployment image
+        if: matrix.app == 'pos'
+        run: docker build --file surfaces/Dockerfile.surface --build-arg SURFACE=pos-nuxt .
+
   marketing-complete:
     name: Marketing — cadeia completa
     # Os screenshots foram revisados em macOS e usam o Chromium pinado pelo
