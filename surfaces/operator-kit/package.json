@@ -8,7 +8,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@nuxt/test-utils": "^4.0.3",
+    "@nuxt/test-utils": "^4.3.2",
     "@vue/test-utils": "^2.5.0",
     "@vueuse/core": "^14.4.0",
     "happy-dom": "^20.14.5",
@@ -17,7 +17,7 @@
     "vue": "^3.5.42"
   },
   "dependencies": {
-    "@nuxt/kit": "3.21.8",
+    "@nuxt/kit": "3.21.11",
     "@vite-pwa/nuxt": "1.1.1",
     "sharp": "0.35.4",
     "tailwind-merge": "^3.7.0"
