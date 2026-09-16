@@ -466,9 +466,9 @@ _PAYMENT_COLLECTIONS = (
     ),
     POSPaymentCollectionProjection(
         ref="on_delivery",
-        label="Receber na entrega",
-        description="Dinheiro ou cartão na maquininha; pagamento pendente até o acerto.",
-        fulfillment_types=("delivery",),
+        label="Receber ao entregar o pedido",
+        description="Dinheiro ou cartão na maquininha; pagamento pendente até o recebimento ser registrado.",
+        fulfillment_types=("pickup", "delivery"),
         payment_method_refs=("cash", "credit", "debit", "mixed"),
     ),
 )
@@ -1751,7 +1751,14 @@ def _checkout_contract(
             "customer_lookup_action_ref": "customer_lookup",
             "supports_split_payment": True,
             "supports_cash_change": True,
-            "supports_on_delivery_cash": "delivery" in fulfillment_types,
+            # Nome legado do contrato: hoje ``on_delivery`` significa receber
+            # no hand-off, tanto na entrega quanto na retirada de encomenda.
+            # Um canal somente-pickup precisa anunciar a capacidade; caso
+            # contrário superfícies headless escondem justamente a opção que
+            # ``payment_collections`` e o intent aceitam.
+            "supports_on_delivery_cash": bool(
+                {"pickup", "delivery"}.intersection(fulfillment_types)
+            ),
             "supports_customer_lookup": True,
             "supports_customer_memory": True,
             "supports_delivery_address_autocomplete": bool(_address_autocomplete_api_key()),

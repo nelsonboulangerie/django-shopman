@@ -2047,8 +2047,8 @@ class OrderCancellationReasonsView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
-        summary="Settle delivery cash-on-delivery into the operator's open shift",
-        responses={200: OpenApiResponse(description="Cash settled.")},
+        summary="Register payment collected at pickup or delivery in the operator's open shift",
+        responses={200: OpenApiResponse(description="Payment registered.")},
     ),
 )
 class OrderSettleDeliveryCashView(_OrderActionBase):

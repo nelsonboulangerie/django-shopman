@@ -32,7 +32,15 @@ import {
 import type { OrderCardProjection } from "~/types/orders";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
 
-const { readMetadata, queue, zones, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, assign, unassign, confirmMany, advanceMany, equipmentOut, equipmentAvailable, soundOn, soundBlocked, toggleSound } = useOrdersBoard();
+const { readMetadata, queue, zones, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, assign, unassign, confirmMany, advanceMany, equipmentOut, equipmentAvailable, soundOn, soundBlocked, attentionPending, toggleSound, activateAttentionSound, acknowledgeAttention } = useOrdersBoard();
+
+function handleSoundAction() {
+  if (!soundOn.value || soundBlocked.value) {
+    void activateAttentionSound();
+    return;
+  }
+  toggleSound();
+}
 
 // Sinal honesto de tempo-real vs poll (indicador de degradação do SSE).
 const realtimeView = computed(() => realtimeIndicator(realtime.value));
@@ -433,10 +441,20 @@ function printQueue() {
           :aria-label="soundOn && soundBlocked ? 'Som bloqueado — toque para ativar' : soundOn ? 'Som de pedido novo ativo' : 'Som de pedido novo desativado'"
           :title="soundOn && soundBlocked ? 'Som bloqueado — toque para ativar' : 'Som de pedido novo'"
           data-sound-toggle
-          @click="toggleSound"
+          @click="handleSoundAction"
         >
           <Icon :name="soundOn ? 'lucide:volume-2' : 'lucide:volume-x'" class="size-4" />
           <span v-if="soundOn && soundBlocked" class="absolute -right-1 -top-1 size-2 rounded-full bg-warning" aria-hidden="true" />
+        </button>
+        <button
+          v-if="attentionPending"
+          type="button"
+          class="inline-flex h-control items-center gap-1.5 rounded-md border px-2.5 text-xs font-semibold transition hover:bg-accent"
+          aria-label="Reconhecer aviso de pedido novo"
+          @click="acknowledgeAttention"
+        >
+          <Icon name="lucide:check" class="size-4" />
+          Ciente
         </button>
         <AlertsBell />
         <NotificationBell />
@@ -834,8 +852,8 @@ function printQueue() {
     <UiDialog :open="settleRef != null" @update:open="(v) => { if (!v) settleRef = null }">
       <UiDialogContent class="sm:max-w-sm">
         <UiDialogHeader>
-          <UiDialogTitle>Acerto da entrega</UiDialogTitle>
-          <UiDialogDescription>Valor recebido na entrega ({{ settleRef }}). Em branco usa o total de {{ settleCard?.total_display }}. {{ settleCustody }}</UiDialogDescription>
+          <UiDialogTitle>{{ settleCard?.fulfillment_type === "pickup" ? "Pagamento na retirada" : "Acerto da entrega" }}</UiDialogTitle>
+          <UiDialogDescription>{{ settleCard?.fulfillment_type === "pickup" ? "Valor recebido na retirada" : "Valor recebido na entrega" }} ({{ settleRef }}). Em branco usa o total de {{ settleCard?.total_display }}. {{ settleCustody }}</UiDialogDescription>
         </UiDialogHeader>
         <p v-if="settleChanged" role="alert" class="text-sm text-destructive">O pedido ou turno mudou. Confira o contexto atual: {{ settleAction?.confirmation.description }}
           <button type="button" class="min-h-control min-w-control underline" @click="reviewSettleCustody">Conferir e manter os valores digitados</button>

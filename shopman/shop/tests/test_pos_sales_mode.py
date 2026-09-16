@@ -91,6 +91,39 @@ def test_direct_close_preserves_mode_in_order(balcao, mode):  # noqa: F811
         assert order.data["delivery_date"] == timezone.localdate().isoformat()
 
 
+def test_pickup_order_can_defer_payment_but_counter_pickup_cannot(balcao):  # noqa: F811
+    operator, shift = balcao
+    deferred = parse_pos_sale_intent(
+        order_payload(payment_method="cash", payment_collection="on_delivery"),
+        for_commit=True,
+    )
+    assert deferred.payload["payment_collection"] == "on_delivery"
+
+    counter = parse_pos_sale_intent({
+        "sales_mode": "counter",
+        "items": [{"sku": "CR", "qty": 1, "unit_price_q": 900}],
+        "fulfillment_type": "pickup",
+        "payment_method": "cash",
+        "payment_collection": "on_delivery",
+    }, for_commit=True)
+    assert counter.payload["payment_collection"] == "terminal"
+
+    result = _close(operator, _payload(
+        shift,
+        client_request_id="pickup-pay-later",
+        **order_payload(payment_method="cash", payment_collection="on_delivery"),
+    ))
+    order = Order.objects.get(ref=result.order_ref)
+    assert order.data["payment"]["collection"] == "on_delivery"
+    assert order.data["payment"]["tenders"] == [{
+        "method": "cash",
+        "amount_q": order.total_q,
+        "collection": "on_delivery",
+        "status": "pending",
+    }]
+    assert "intent_ref" not in order.data["payment"]
+
+
 def test_order_tab_save_roundtrip_and_close(balcao):  # noqa: F811
     operator, shift = balcao
     session = pos.open_pos_tab(channel_ref="pdv", tab_ref="ORDER", actor="test", operator_username=operator.username)

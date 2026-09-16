@@ -1143,9 +1143,9 @@ def clear_pos_tab(*, channel_ref: str, session_key: str, operator_username: str)
         cleared = session_service.abandon_session(session_key=session.session_key, channel_ref=channel_ref)
         if cleared and fired:
             # A cozinha não pode continuar produzindo uma comanda descartada.
-            from shopman.shop.adapters import kds as kds_adapter
+            from shopman.shop.services import kds as kds_service
 
-            cancelled = kds_adapter.cancel_open_tickets_for_session(session.session_key)
+            cancelled = kds_service.cancel_tickets_for_session(session.session_key)
             if cancelled:
                 logger.info(
                     "pos_clear_tab: %d ticket(s) de cozinha cancelados session=%s",
@@ -1440,6 +1440,41 @@ def fire_pos_tab(
     from shopman.shop.services.pos_sales_mode import session_sales_payload, validate_sales_mode
 
     validate_sales_mode(session_sales_payload(session), require_ready=True)
+
+    # Uma comanda de encomenda pode ser montada (e até paga) antes do dia
+    # combinado, mas o gesto ``Enviar`` significa trabalho físico AGORA. O
+    # lifecycle do Order já posterga o KDS de encomendas futuras; o disparo
+    # progressivo da comanda é um atalho anterior ao commit e, sem esta mesma
+    # fronteira temporal, furava o lifecycle: criava KDSTicket, emitia SSE e
+    # fazia a cozinha apitar no dia em que o pedido foi anotado.
+    #
+    # A comparação é estrita. No próprio dia o botão volta a funcionar sem
+    # migração nem limpeza de estado — basta repetir o comando, e o ledger do
+    # KDS continua sendo a trava de idempotência.
+    raw_delivery_date = str((session.data or {}).get("delivery_date") or "").strip()
+    if raw_delivery_date:
+        from datetime import date as _date
+
+        try:
+            delivery_day = _date.fromisoformat(raw_delivery_date)
+        except ValueError:
+            delivery_day = None
+        today = timezone.localdate()
+        if delivery_day is not None and delivery_day > today:
+            raise PosIntentError(
+                code="preorder_not_due",
+                message=(
+                    f"Esta encomenda está marcada para {delivery_day.strftime('%d/%m/%Y')}. "
+                    "Envie à cozinha somente no dia combinado."
+                ),
+                field="delivery_date",
+                focus="schedule",
+                recovery="A comanda fica salva e poderá ser enviada nessa data.",
+                context={
+                    "delivery_date": delivery_day.isoformat(),
+                    "today": today.isoformat(),
+                },
+            )
 
     requested = {str(lid).strip() for lid in (line_ids or []) if str(lid).strip()}
     lines = _session_to_fire_lines(session)
@@ -2183,7 +2218,10 @@ def _payload_fulfillment_type(payload: dict) -> str:
 
 def _payload_payment_collection(payload: dict, fulfillment_type: str) -> str:
     value = str(payload.get("payment_collection") or "terminal").strip().lower()
-    if fulfillment_type == "delivery" and value == "on_delivery":
+    if value == "on_delivery" and (
+        fulfillment_type == "delivery"
+        or (fulfillment_type == "pickup" and str(payload.get("sales_mode") or "").strip().lower() == "order")
+    ):
         return "on_delivery"
     return "terminal"
 
@@ -2709,19 +2747,20 @@ def _payload_tenders(
             if collection not in {"terminal", "on_delivery"}:
                 collection = payment_collection
             if collection == "on_delivery" and method not in {"cash", "credit", "debit"}:
+                handoff = "retirada" if _payload_fulfillment_type(payload) == "pickup" else "entrega"
                 raise PosIntentError(
                     code="invalid_on_delivery_tender_payment",
-                    message="Na entrega, use dinheiro ou cartão na maquininha.",
+                    message=f"Na {handoff}, use dinheiro ou cartão na maquininha.",
                     field=f"payment_tenders.{len(tenders)}.collection",
                     focus="payment",
-                    recovery="PIX Efí e pagamentos online exigem confirmação automática antes da entrega.",
+                    recovery=f"PIX Efí e pagamentos online exigem confirmação automática antes da {handoff}.",
                 )
             if collection != payment_collection:
                 raise PosIntentError(
                     code="payment_collection_mismatch",
                     message="Todas as formas devem usar o mesmo momento de recebimento.",
                     field="payment_tenders", focus="payment",
-                    recovery="Revise Receber no caixa ou Receber na entrega.",
+                    recovery="Revise Receber no caixa ou Pagamento na retirada/entrega.",
                 )
             entry = {
                 "method": method,

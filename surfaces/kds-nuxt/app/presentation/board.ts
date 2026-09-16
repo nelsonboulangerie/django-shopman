@@ -110,6 +110,10 @@ export interface KDSBoardView {
   allDay: KDSAllDayCount[];
   counts: Record<string, number>;
   total: number;
+  serviceDate: string;
+  serviceDateDisplay: string;
+  today: string;
+  availableDates: string[];
 }
 
 export function boardView(board: KDSBoardProjection): KDSBoardView {
@@ -124,6 +128,10 @@ export function boardView(board: KDSBoardProjection): KDSBoardView {
     allDay: allDayCounts(cards),
     counts: board.counts || {},
     total: board.counts?.total ?? board.tickets.length,
+    serviceDate: board.service_date,
+    serviceDateDisplay: board.service_date_display,
+    today: board.today,
+    availableDates: [...(board.available_dates ?? [])],
   };
 }
 

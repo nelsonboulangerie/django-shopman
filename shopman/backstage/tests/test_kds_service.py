@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import Mock
 
 import pytest
@@ -114,6 +115,23 @@ def test_mark_ticket_done_surfaces_lifecycle_block_reason(ticket, monkeypatch):
 
 
 @pytest.mark.django_db
+def test_mark_ticket_done_requires_acknowledging_item_cancellation(ticket):
+    KDSTicket.objects.create(
+        session_key=ticket.session_key,
+        kds_instance=ticket.kds_instance,
+        items=[{"line_id": "removed", "sku": "B", "name": "Item retirado", "qty": 1}],
+        status="cancelled",
+        cancelled_at=timezone.now(),
+    )
+
+    with pytest.raises(KDSError, match="toque em Ciente"):
+        kds.mark_ticket_done(ticket_pk=ticket.pk, actor="kds:op")
+
+    ticket.refresh_from_db()
+    assert ticket.status == "pending"
+
+
+@pytest.mark.django_db
 def test_mark_ticket_done_replay_is_noop_success(ticket, monkeypatch):
     # Segundo bump (outra estação) = sucesso no-op, mesma semântica do replay
     # da expedição — nunca "Ticket não está aberto".
@@ -172,6 +190,50 @@ def test_acknowledge_ticket_marks_cancelled(ticket):
 def test_acknowledge_ticket_raises_when_not_cancelled(ticket):
     with pytest.raises(KDSError):
         kds.acknowledge_ticket(ticket_pk=ticket.pk, actor="kds:op")
+
+
+@pytest.mark.django_db
+def test_future_ticket_rejects_all_mutations(ticket):
+    order = Order.objects.get(session_key=ticket.session_key)
+    order.data = {"delivery_date": (timezone.localdate() + timedelta(days=1)).isoformat()}
+    order.save(update_fields=["data", "updated_at"])
+
+    with pytest.raises(KDSError, match="somente para consulta"):
+        kds.set_ticket_item_checked(ticket_pk=ticket.pk, index=0, checked=True, actor="kds:op")
+    with pytest.raises(KDSError, match="somente para consulta"):
+        kds.mark_ticket_done(ticket_pk=ticket.pk, actor="kds:op")
+
+    ticket.status = "done"
+    ticket.completed_at = timezone.now()
+    ticket.save(update_fields=["status", "completed_at"])
+    with pytest.raises(KDSError, match="somente para consulta"):
+        kds.recall_ticket(ticket_pk=ticket.pk, actor="kds:op")
+
+    ticket.status = "cancelled"
+    ticket.cancelled_at = timezone.now()
+    ticket.save(update_fields=["status", "cancelled_at"])
+    with pytest.raises(KDSError, match="somente para consulta"):
+        kds.acknowledge_ticket(ticket_pk=ticket.pk, actor="kds:op")
+
+    ticket.refresh_from_db()
+    assert ticket.acknowledged_at is None
+
+
+@pytest.mark.django_db
+def test_future_expedition_action_is_blocked_even_on_replay():
+    order = Order.objects.create(
+        ref="KDS-EXP-FUTURE",
+        channel_ref="web",
+        status=Order.Status.COMPLETED,
+        total_q=1000,
+        data={
+            "delivery_date": (timezone.localdate() + timedelta(days=1)).isoformat(),
+            "fulfillment_type": "pickup",
+        },
+    )
+
+    with pytest.raises(KDSError, match="somente para consulta"):
+        kds.expedition_action(order_id=order.pk, action="complete", actor="kds:op")
 
 
 def test_expedition_action_preserves_core_message(monkeypatch):

@@ -725,7 +725,7 @@ def settle_delivery_cash(
     equipment_back: bool = False,
     expected_revision: str | None = None,
 ) -> int:
-    """O dinheiro da entrega chega ao balcão: acerto no turno de quem RECEBEU.
+    """O pagamento no hand-off chega ao balcão: acerto no turno de quem RECEBEU.
 
     Três registros, na mesma transação, cada um na sua casa:
     - o pedido diz que foi acertado (``cod_settled_at/by``, tender recebido);
@@ -763,19 +763,37 @@ def settle_delivery_cash(
     if expected_revision is not None and cash_settlement_revision(order, cash_shift) != expected_revision:
         raise OrderStateConflict("O pedido ou turno de recebimento mudou. Confira o acerto antes de registrar.")
 
-    if get_fulfillment_type(order) != "delivery":
-        raise ValueError("Acerto de entrega só se aplica a pedidos delivery.")
-    if order.status not in {Order.Status.DISPATCHED, Order.Status.DELIVERED, Order.Status.COMPLETED}:
-        raise ValueError("Acerto de entrega só é permitido depois da saída para entrega.")
+    fulfillment_type = get_fulfillment_type(order)
+    if fulfillment_type not in {"delivery", "pickup"}:
+        raise ValueError("Acerto só se aplica a pedidos para entrega ou retirada.")
+    allowed_statuses = (
+        {Order.Status.DISPATCHED, Order.Status.DELIVERED, Order.Status.COMPLETED}
+        if fulfillment_type == "delivery"
+        else {Order.Status.READY}
+    )
+    if order.status not in allowed_statuses:
+        raise ValueError(
+            "Pagamento na retirada só pode ser registrado quando o pedido estiver pronto."
+            if fulfillment_type == "pickup"
+            else "Acerto de entrega só é permitido depois da saída para entrega."
+        )
     if cash_shift is None or not getattr(cash_shift, "is_open", False):
         raise ValueError("Abra um turno de caixa para registrar o acerto.")
 
     data = dict(order.data or {})
     payment = dict(data.get("payment") or {})
     if payment.get("collection") != "on_delivery" or payment.get("method") not in {"cash", "credit", "debit", "mixed"}:
-        raise ValueError("Pedido não está marcado para recebimento na entrega.")
+        raise ValueError(
+            "Pedido não está marcado para pagamento na retirada."
+            if fulfillment_type == "pickup"
+            else "Pedido não está marcado para recebimento na entrega."
+        )
     if payment.get("cod_settled_at"):
-        raise ValueError("Pagamento da entrega já foi acertado.")
+        raise ValueError(
+            "Pagamento da retirada já foi registrado."
+            if fulfillment_type == "pickup"
+            else "Pagamento da entrega já foi acertado."
+        )
 
     amount = int(amount_q if amount_q is not None else order.total_q or 0)
     if amount <= 0:

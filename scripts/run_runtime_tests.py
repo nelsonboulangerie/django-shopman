@@ -79,6 +79,7 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     "shopman/backstage/tests/test_gateway_smoke.py",
     "shopman/backstage/tests/test_pos_tab_revision_boundary.py",
     "shopman/backstage/tests/test_planning_idempotency_race.py",
+    "shopman/backstage/tests/test_kds_lock_order_postgresql.py",
     # Dois relays da mesma estação não podem capturar/imprimir a mesma etiqueta.
     # A garantia depende de SELECT FOR UPDATE SKIP LOCKED no PostgreSQL real.
     "shopman/backstage/tests/test_production_print_jobs_postgresql.py",

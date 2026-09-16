@@ -421,6 +421,8 @@ export interface TwoZoneQueueProjection {
   expedition_delivery_count: number;
   expedition_count: number;
   total_count: number;
+  service_day: string;
+  service_day_ends_at: string;
   preorders: OrderCardProjection[];
   preorders_count: number;
   equipment_out: EquipmentOutProjection[];

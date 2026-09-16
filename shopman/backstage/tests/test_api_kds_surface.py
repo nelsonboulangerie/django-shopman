@@ -104,6 +104,15 @@ def test_board_returns_tickets(client, kds_operator, kds_setup):
     assert len(board["tickets"]) == 1
 
 
+@pytest.mark.django_db
+def test_board_rejects_invalid_or_past_service_date(client, kds_operator, kds_setup):
+    prep = kds_setup[0]
+    client.force_login(kds_operator)
+    url = reverse("api-backstage-kds-board", args=[prep.ref])
+    assert client.get(url, {"date": "amanha"}).status_code == 400
+    assert client.get(url, {"date": "2000-01-01"}).status_code == 400
+
+
 # ── Write actions ──────────────────────────────────────────────────────────
 
 

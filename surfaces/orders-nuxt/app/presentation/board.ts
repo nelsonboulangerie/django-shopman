@@ -236,7 +236,7 @@ export function cardAffordances(card: OrderCardProjection): Affordance[] {
   }));
   if (card.can_settle_delivery_cash) {
     const settle = projected.find((action) => action.ref === "settle-delivery-cash");
-    out.push({ ref: "settle_cash", label: "Acertar entrega", icon: "lucide:banknote", priority: "secondary", needsInput: true,
+    out.push({ ref: "settle_cash", label: card.fulfillment_type === "pickup" ? "Receber na retirada" : "Acertar entrega", icon: "lucide:banknote", priority: "secondary", needsInput: true,
       disabled: !settle?.enabled, reason: settle?.reason || (!settle ? "Atualize o pedido para conferir o caixa." : "") });
   }
   // A maquininha saiu e não voltou; sem acerto em dinheiro para marcar, o card
@@ -333,13 +333,18 @@ export function realtimeIndicator(state: RealtimeState): RealtimeIndicatorView {
 /** A fonte do som é a projeção canônica após o refresh, nunca o sinal SSE cru. */
 export function treatableOrderRefs(queue: TwoZoneQueueProjection | null): Set<string> {
   if (!queue) return new Set();
+  // Encomenda futura pode até ter ação administrativa disponível (aceitar,
+  // corrigir, cancelar), mas não é trabalho do turno de agora. Incluí-la aqui
+  // fazia o sino do Gestor tocar no instante da venda, embora o próprio board a
+  // colocasse corretamente em "Agendados". Quando a data chega, a projeção (e,
+  // quando aplicável, o despertador do lifecycle) leva o card ao fluxo do dia;
+  // só então ele entra neste conjunto e a atenção toca uma única vez.
   const cards = [
     ...queue.intake,
     ...queue.prep,
     ...queue.expedition_pickup,
     ...queue.expedition_delivery,
     ...queue.expedition_delivery_transit,
-    ...(queue.preorders ?? []),
     ...(queue.ifood_negotiation_orders ?? []),
   ];
   return new Set(cards.filter((card) => (

@@ -177,6 +177,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             ["cash", "pix", "credit", "debit", "link", "mixed"],
         )
         self.assertEqual(payment_collections["on_delivery"]["payment_method_refs"], ["cash", "credit", "debit", "mixed"])
+        self.assertEqual(payment_collections["on_delivery"]["fulfillment_types"], ["pickup", "delivery"])
         action_refs = {action["ref"] for action in payload["pos"]["actions"]}
         self.assertIn("review_sale", action_refs)
         self.assertIn("close_sale", action_refs)
@@ -237,6 +238,24 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(checkout["capabilities"]["cash_management"]["movement_kinds"], ["sangria", "suprimento"])
         self.assertEqual(checkout["capabilities"]["sale_correction"]["cancel_recent_action_ref"], "cancel_recent_sale")
         self.assertTrue(checkout["capabilities"]["idempotent_replay"]["safe_for_offline_queue"])
+
+    def test_pickup_only_contract_advertises_deferred_handoff_payment(self) -> None:
+        channel = Channel.objects.get(ref="pdv")
+        channel.config = {
+            **channel.config,
+            "surface_policy": {"fulfillment_types": ["pickup"]},
+        }
+        channel.save(update_fields=["config"])
+
+        payload = projection_data(build_pos(operator=self.operator))
+
+        self.assertEqual(
+            [option["ref"] for option in payload["fulfillment_options"]],
+            ["pickup"],
+        )
+        self.assertTrue(
+            payload["checkout"]["capabilities"]["supports_on_delivery_cash"]
+        )
 
     def test_api_pos_exposes_shop_name_for_customer_display(self) -> None:
         # A tela do cliente (segundo monitor do balcão) dá as boas-vindas em

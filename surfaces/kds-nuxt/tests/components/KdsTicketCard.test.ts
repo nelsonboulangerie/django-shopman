@@ -44,6 +44,9 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
     ],
     status: "in_progress",
     all_checked: false,
+    previous_tab_ref: "",
+    is_scheduled: false,
+    is_expedition: false,
     status_label: "",
     is_cancelled: false,
     cancelled_at_display: "",
@@ -66,6 +69,13 @@ describe("KdsTicketCard — render", () => {
     expect(t).toContain("2×");
     expect(t).toContain("1×");
     expect(t).toContain("1m"); // 90s → "1m" (elapsedLabel)
+  });
+
+  it("mantém a antiga comanda riscada depois que o pedido ganha nova referência", () => {
+    const wrapper = mountCard({ ticket: ticket({ order_ref: "A42", previous_tab_ref: "Mesa 5" }) });
+    expect(wrapper.text()).toContain("A42");
+    expect(wrapper.text()).toContain("Comanda Mesa 5");
+    expect(wrapper.find(".line-through").exists()).toBe(true);
   });
 
   it("renderiza a nota do item (observação da cozinha)", () => {
@@ -105,6 +115,14 @@ describe("KdsTicketCard — render", () => {
       }),
     });
     expect(w.text()).toContain("Massa acabando");
+  });
+
+  it("mostra encomenda futura como prévia sem check ou finalização", () => {
+    const wrapper = mountCard({ ticket: ticket({ is_scheduled: true, status: "scheduled" }) });
+    expect(wrapper.text()).toContain("Agendado");
+    expect(wrapper.text()).toContain("Prévia · libera na data");
+    expect(wrapper.text()).not.toContain("Finalizar");
+    expect(wrapper.find("ul button").attributes("disabled")).toBeDefined();
   });
 
   it("escala de densidade mapeia aos papéis do canon: compact=title text-xl, roomy=display text-4xl", () => {

@@ -83,6 +83,13 @@ const progress = computed(() =>
               {{ ref_.code }}
             </p>
             <p
+              v-if="ticket.previous_tab_ref"
+              class="mt-1.5 text-sm font-semibold text-muted-foreground"
+            >
+              <span class="line-through">Comanda {{ ticket.previous_tab_ref }}</span>
+              <span class="ml-1">· já liberada após o pagamento</span>
+            </p>
+            <p
               v-if="ticket.customer_name"
               class="mt-1.5 truncate text-sm font-medium text-foreground/80"
             >
