@@ -17,6 +17,9 @@
     "vue": "^3.5.42"
   },
   "dependencies": {
+    "@nuxt/kit": "3.21.8",
+    "@vite-pwa/nuxt": "1.1.1",
+    "sharp": "0.35.4",
     "tailwind-merge": "^3.7.0"
   },
   "overrides": {

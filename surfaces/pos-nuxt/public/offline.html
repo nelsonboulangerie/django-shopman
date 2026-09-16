@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#FCF6F1">
+    <title>PDV sem conexão</title>
+    <style>
+      :root { color-scheme: light; font-family: "Instrument Sans", system-ui, sans-serif; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #fcf6f1; color: #3b2a1e; }
+      main { width: min(100%, 440px); border: 1px solid #dec9bb; border-radius: 10px; background: #fff; padding: 24px; text-align: center; }
+      img { width: 80px; height: 80px; border-radius: 18px; }
+      h1 { margin: 20px 0 8px; font-size: 1.35rem; }
+      p { margin: 0; color: #6e5a48; line-height: 1.5; }
+      button { margin-top: 24px; min-height: 44px; width: 100%; border: 0; border-radius: 8px; background: #8b6b2e; color: #fff; font: inherit; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/pwa/pwa-192x192.png" alt="">
+      <h1>O caixa ficou sem conexão</h1>
+      <p>Assim que a rede voltar, tente novamente. Nenhuma venda offline será simulada.</p>
+      <button type="button" onclick="location.reload()">Tentar de novo</button>
+    </main>
+  </body>
+</html>

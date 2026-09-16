@@ -85,6 +85,59 @@ jobs:
       - name: Typecheck
         run: npm run typecheck --if-present
 
+  pwa-quality:
+    name: PWA — ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: storefront
+            surface: storefront-nuxt
+          - app: pos
+            surface: pos-nuxt
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            surfaces/${{ matrix.surface }}/package-lock.json
+            surfaces/operator-kit/package-lock.json
+
+      - name: Install surface dependencies
+        working-directory: surfaces/${{ matrix.surface }}
+        run: npm ci
+
+      - name: Install operator-kit capability dependencies
+        if: matrix.app != 'storefront'
+        working-directory: surfaces/operator-kit
+        run: npm ci
+
+      - name: Install Storefront browser
+        if: matrix.app == 'storefront'
+        working-directory: surfaces/storefront-nuxt
+        run: npx playwright install --with-deps chromium
+
+      - name: Production build
+        working-directory: surfaces/${{ matrix.surface }}
+        run: npm run build
+
+      - name: Structural PWA gate
+        run: node tools/pwa-gate/check.mjs --app=${{ matrix.app }}
+
+      - name: Storefront PWA browser smoke
+        if: matrix.app == 'storefront'
+        working-directory: surfaces/storefront-nuxt
+        run: npx playwright test tests/e2e/pwa.spec.ts
+
   marketing-complete:
     name: Marketing — cadeia completa
     # Os screenshots foram revisados em macOS e usam o Chromium pinado pelo

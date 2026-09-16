@@ -1,4 +1,5 @@
 import tailwindcss from "@tailwindcss/vite";
+import { definePwaCapability } from "../operator-kit/pwa.config";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 
 export default defineNuxtConfig({
@@ -39,6 +40,29 @@ export default defineNuxtConfig({
   },
 
   modules: [
+    definePwaCapability({
+      app: "pos",
+      display: "standalone",
+      wakeLock: true,
+      kiosk: false,
+      manifest: {
+        name: "Shopman PDV",
+        shortName: "PDV",
+        description: "Ponto de venda da Nelson Boulangerie.",
+        themeColor: "#FCF6F1",
+        backgroundColor: "#FCF6F1",
+        orientation: "any",
+        icons: [
+          { src: "/pwa/pwa-192x192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/pwa/pwa-512x512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/pwa/maskable-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        ],
+        shortcuts: [
+          { name: "Venda", shortName: "Venda", url: "/", icon: "/pwa/pwa-192x192.png" },
+          { name: "Caixa", shortName: "Caixa", url: "/session", icon: "/pwa/pwa-192x192.png" },
+        ],
+      },
+    }),
     '@nuxtjs/color-mode',
     'motion-v/nuxt',
     '@vueuse/nuxt',
@@ -99,7 +123,6 @@ export default defineNuxtConfig({
       title: "Shopman POS",
       meta: [
         { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-        { name: "theme-color", content: "#fafafa" },
         { name: "robots", content: "noindex, nofollow" },
       ],
     },
