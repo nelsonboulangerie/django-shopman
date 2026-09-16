@@ -1,0 +1,80 @@
+{
+  "environment": "staging",
+  "disabled_reason": "",
+  "flags": {
+    "contract_version": 2,
+    "read_only": true,
+    "legacy_read_handoff_enabled": true,
+    "identity_link_enabled": false,
+    "human_return_enabled": false,
+    "output_retry_enabled": false,
+    "transfer_enabled": false
+  },
+  "subject_in_cohort": true,
+  "file_hashes": {
+    "shopman/storefront/concierge/service.py": "43c1950ba3865f0f7fe9ee2ab57a272c49228a50792d4fd96c79533430458e91",
+    "shopman/storefront/concierge/webhook.py": "a2e2f6cd43a7cea9757084925a0844c2b88cea4a756ded149525ccd903221c4e",
+    "shopman/storefront/concierge/transport.py": "51221cb195a5f47b0d4442ff28e18d8469066e092593891ed7475076dcc31bcd"
+  },
+  "migrations": [
+    [
+      "backstage",
+      "0064_concierge_alert_labels"
+    ],
+    [
+      "shop",
+      "0048_concierge_event_envelope"
+    ],
+    [
+      "shop",
+      "0049_concierge_turn_delivery_identity"
+    ],
+    [
+      "shop",
+      "0050_concierge_admin_labels"
+    ]
+  ],
+  "auth_smoke": {
+    "status": 400,
+    "body": {
+      "detail": "subscriber_id obrigatório",
+      "field": "subscriber_id"
+    }
+  },
+  "image_deployment": {
+    "id": "c08ee513-7ffb-4e15-8969-491fd1b14765",
+    "phase": "SUPERSEDED",
+    "created_at": "2026-09-12T02:00:45Z",
+    "updated_at": "2026-09-12T02:07:48Z",
+    "cause_details": {
+      "docr_push": {
+        "registry": "nelsonboulangerie",
+        "repository": "shopman",
+        "tag": "web",
+        "image_digest": "sha256:ceb094dce015416ceb279a065412ec4ccee89f5a3f114ea346023fe9fcfadf0f"
+      },
+      "type": "DEPLOY_ON_PUSH"
+    },
+    "success_steps": 47,
+    "total_steps": 47
+  },
+  "configuration_deployment": {
+    "id": "b77eefc4-a3e9-406f-804a-af72dbb3cb36",
+    "phase": "ACTIVE",
+    "created_at": "2026-09-12T02:05:05Z",
+    "updated_at": "2026-09-12T02:07:44Z",
+    "cause_details": {
+      "type": "MANUAL"
+    },
+    "success_steps": 47,
+    "total_steps": 47
+  },
+  "sha": "ed9a0d6dc0b34fb1377de950167eb8eb45448ac9",
+  "image_digest": "sha256:ceb094dce015416ceb279a065412ec4ccee89f5a3f114ea346023fe9fcfadf0f",
+  "verified_at": "2026-09-12T07:58:46.900880+00:00",
+  "probes": {
+    "https://api.boulangerie.com.br/health/": 200,
+    "https://api.boulangerie.com.br/ready/": 200,
+    "https://mkt.boulangerie.com.br/health/ready": 200
+  }
+}

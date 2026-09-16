@@ -24,7 +24,7 @@ O corpo atual sozinho NÃO comprova janela WhatsApp: sem evidência válida, res
 
 ## Execução
 
-Estado deste registro: preflight local concluído; PR/CI, deploy por imagens e atualização restrita de envs ainda pendentes. Merge main dispara workflow canônico Deploy Images. Só depois de deploymentACTIVE e releasejob/migrations saudáveis aplicar envs a partir de snapshot vivo revalidado. Registrar SHA/imagem/deployment e probes finais antes de declarar publicado.
+Estado final: publicação restrita de teste concluída; ver prova abaixo. O texto a seguir descreve o procedimento executado. Merge main dispara workflow canônico Deploy Images. Só depois de deploymentACTIVE e releasejob/migrations saudáveis aplicar envs a partir de snapshot vivo revalidado. Registrar SHA/imagem/deployment e probes finais antes de declarar publicado.
 
 Rollback funcional: manter read_onlytrue e desligar LEGACY_READ_HANDOFF_ENABLED ou contract_version0, sem apagar registros/filas. Antes de rollback de imagem, conter ingresso novo e manter schemas expansivos; não reenviar unknown. Configurações de terceiros nunca são revertidas por snapshot inteiro sem comparar alterações posteriores.
 
@@ -44,3 +44,17 @@ Migrações adicionais shop0050 e backstage0064 alteram apenas metadados de camp
 Provas locais desta correção:172passed/18,30s em PostgreSQL privado incluindo migração/histórico e rótulos/alertas;21passed/11,91s nas regressões Shop;11passed/0,24s em higiene/transporte. Ruff integral e drift de migrations passaram. A primeira invocação local de make admin usou pacote editable do checkout original e abortou no import; repetida com PYTHONPATH inteiro do worktree, sem tocar o checkout original.
 
 make admin integral: gate canônico aprovado e268passed/49,50s, sem escopo por URL (`ci-admin-final.txt`).
+
+## Publicação concluída — 2026-09-12
+
+PR620 integrada após26checks e nova aprovação da merge queue. SHA publicado: `ed9a0d6dc0b34fb1377de950167eb8eb45448ac9`. Deploy Images34666369547 aprovado; digest `sha256:ceb094dce015416ceb279a065412ec4ccee89f5a3f114ea346023fe9fcfadf0f`. Deployment de imagem `c08ee513-7ffb-4e15-8969-491fd1b14765` correlacionado pelo digest; configuração `b77eefc4-a3e9-406f-804a-af72dbb3cb36` ACTIVE desde02:07:44UTC,47/47etapas aprovadas.
+
+A configuração viva foi revalidada antes da única atualização: apenas as8envs autorizadas foram acrescentadas; demais componentes, segredos e coorte preservados. Migrations0048/0049/0050 de shop e0064 de backstage confirmadas no banco. Release registrou avisos staging existentes: payment_mock e OTP debug; nenhum gateway real foi ativado.
+
+Verificação final07:58UTC: hashes dos três módulos de ingresso/serviço/transporte idênticos ao código testado; contract2, read_only e legado habilitados; identidade/retorno/retry/transferência desligados; operador na coorte. Health e ready da API e readiness Marketing HTTP200. Smoke autenticado com objeto vazio retornou400/subscriber_id obrigatório, comprovando rota/autenticação/validação sem criar conversa, pedido ou envio. Nenhuma mensagem real foi enviada para homologação. Prova sanitizada: `publication-proof.json`.
+
+CI do candidato: Shop4356passed/32skipped/31deselected/3warnings/10subtests; Backstage rest3699passed/46skipped/28subtests; runtime estritoPG445passed/0skips/3warnings. Warnings de testes referem-se ao override DATABASES. Skips das suítes comuns não são prova de concorrência; a prova é o gatePG sem skips.
+
+**Concluído:** implementação testada e publicação técnica restrita. **Pendente:** homologação pelo operador, prova de janela WhatsApp e identidade estável de evento no flow para liberar as capacidades dependentes. Não há prova de entrega ManyChat nem ganho humano; piloto e rollout continuam não autorizados/não executados.
+
+Teste pelo mesmo endpoint e corpo de4campos: resultado esperado de ingresso `legacy_read_only`/`queued:true`. Isso não atesta entrega. Sem janela comprovada, saída fica contida. Rollback continua por gates, preservando receipts e schema expansivo.
