@@ -42,8 +42,10 @@ não oferecia pausa da autorização específica.
   versionada e sem PII. A tela preserva página, filtros, âncora, SKU e a referência dessa intenção;
   ao voltar, revalida sessão, SKU e aniversário conhecido e conclui automaticamente sem pedir o
   mesmo consentimento duas vezes. Uma query isolada ou intenção de outra sessão não autoriza a
-  criação. Depois de concluída, a intenção fica vinculada à assinatura original: replay de resposta
-  perdida apenas lê esse resultado e nunca desfaz pausa nem recria cancelamento. Um `POST` anônimo
+  criação. O consumo e o resultado ficam num recibo durável, atômico com o opt-in e vinculado à
+  assinatura original; a sessão preserva prova e contexto, mas não arbitra a conclusão. Assim,
+  requests concorrentes e replay de resposta perdida apenas leem o resultado e nunca desfazem
+  pausa nem recriam cancelamento. Um `POST` anônimo
   no endpoint de assinatura continua respondendo `401`, ignora telefone,
   CPF e e-mail digitados e não cria opt-in. A migração
   marca assinaturas web ativas

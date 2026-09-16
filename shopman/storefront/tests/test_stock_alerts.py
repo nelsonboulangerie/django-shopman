@@ -761,6 +761,53 @@ def test_completed_intent_replay_does_not_recreate_a_cancelled_alert(client, iso
     assert StockAlertSubscription.objects.filter(sku=product.sku).count() == 1
 
 
+@pytest.mark.parametrize("decision", ["pause", "cancel"])
+def test_inflight_intent_snapshot_cannot_undo_a_later_decision(
+    client,
+    isolated_stock_intent_rate_limit,
+    decision,
+):
+    """A second worker may have read the session before the first one commits."""
+    from copy import deepcopy
+
+    from shopman.orderman.models import IdempotencyKey
+
+    product = _publish(sku=f"SKU-INTENT-INFLIGHT-{decision.upper()}")
+    prepared = client.post(
+        f"/api/v1/availability/{product.sku}/notify/intent/",
+        {"adult_declared": True},
+        REMOTE_ADDR="203.0.113.37",
+    ).json()
+    stale_marker = deepcopy(client.session["stock_alert_intents"][0])
+    customer = _authenticate(client, ref=f"CUS-INTENT-INFLIGHT-{decision.upper()}")
+    payload = {"intent_ref": prepared["intent_ref"]}
+    url = f"/api/v1/availability/{product.sku}/notify/"
+    assert client.post(url, payload, REMOTE_ADDR="203.0.113.38").status_code == 200
+    sub = StockAlertSubscription.objects.get(sku=product.sku)
+    if decision == "pause":
+        assert stock_alerts.set_paused(sub.ref, paused=True, sku=sub.sku, customer=customer)
+    else:
+        assert stock_alerts.revoke(sub.ref, sku=sub.sku, customer=customer)
+
+    # Request B resumes with the pre-commit session snapshot. The durable
+    # receipt, not that snapshot, is the authority for the completed result.
+    with patch("shopman.storefront.api.availability._stock_alert_intent", return_value=stale_marker):
+        repeated = client.post(url, payload, REMOTE_ADDR="203.0.113.38")
+
+    sub.refresh_from_db()
+    assert repeated.status_code == 200
+    assert repeated.json()["active"] is False
+    assert StockAlertSubscription.objects.filter(sku=product.sku).count() == 1
+    assert not StockAlertSubscription.objects.active().filter(pk=sub.pk).exists()
+    receipt = IdempotencyKey.objects.get(
+        scope="storefront.stock-alert-intent.v1",
+        key=prepared["intent_ref"],
+    )
+    assert receipt.status == "done"
+    assert receipt.response_body["subscription_ref"] == str(sub.ref)
+    assert str(customer.ref) not in str(receipt.response_body)
+
+
 def test_known_minor_cannot_complete_prelogin_intent(client, isolated_stock_intent_rate_limit):
     product = _publish(sku="SKU-INTENT-MINOR")
     prepared = client.post(

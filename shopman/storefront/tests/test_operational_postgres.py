@@ -2,7 +2,7 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
-from threading import Barrier
+from threading import Barrier, Event
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -145,6 +145,63 @@ def test_concurrent_authenticated_subscribe_creates_one_customer_alert():
     assert sorted(outcome.created for outcome in outcomes) == [False, True]
     assert len({str(outcome.subscription.ref) for outcome in outcomes}) == 1
     assert StockAlertSubscription.objects.filter(sku="PG-SUBSCRIBE-OWNERSHIP").count() == 1
+
+
+def test_inflight_login_intent_cannot_resume_after_first_request_is_paused():
+    """A stale request-session snapshot must lose to the durable DB receipt."""
+    from django.test import Client
+
+    from shopman.storefront.api import availability
+    from shopman.storefront.models import StockAlertSubscription
+    from shopman.storefront.services import stock_alerts
+    from shopman.storefront.tests.test_stock_alerts import _authenticate, _publish
+
+    base = Client()
+    product = _publish(sku="PG-INTENT-ATOMIC-REPLAY")
+    url = f"/api/v1/availability/{product.sku}/notify/"
+    prepared = base.post(url + "intent/", {"adult_declared": True}).json()
+    customer = _authenticate(base, ref="CUS-PG-INTENT-ATOMIC")
+    client_a = Client()
+    client_b = Client()
+    client_a.cookies = base.cookies.copy()
+    client_b.cookies = base.cookies.copy()
+    b_loaded_session = Event()
+    release_b = Event()
+    original_resolver = availability._stock_alert_intent
+
+    def gated_resolver(request, **kwargs):
+        marker = original_resolver(request, **kwargs)
+        if request.headers.get("X-Test-Worker") == "B":
+            b_loaded_session.set()
+            assert release_b.wait(timeout=20)
+        return marker
+
+    def post(client, worker):
+        try:
+            return client.post(
+                url,
+                {"intent_ref": prepared["intent_ref"]},
+                HTTP_X_TEST_WORKER=worker,
+            )
+        finally:
+            connections.close_all()
+
+    with patch.object(availability, "_stock_alert_intent", side_effect=gated_resolver):
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            stale = pool.submit(post, client_b, "B")
+            assert b_loaded_session.wait(timeout=10)
+            first = pool.submit(post, client_a, "A").result(timeout=30)
+            assert first.status_code == 200
+            sub = StockAlertSubscription.objects.get(sku=product.sku)
+            assert stock_alerts.set_paused(sub.ref, paused=True, sku=sub.sku, customer=customer)
+            release_b.set()
+            replay = stale.result(timeout=30)
+
+    sub.refresh_from_db()
+    assert replay.status_code == 200
+    assert replay.json()["active"] is False
+    assert sub.paused_at is not None
+    assert StockAlertSubscription.objects.filter(sku=product.sku).count() == 1
 
 
 def test_concurrent_quality_review_releases_one_bake_delivery():
