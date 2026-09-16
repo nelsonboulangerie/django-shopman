@@ -226,7 +226,7 @@ function isActive(to: string): boolean {
         type="button"
         variant="outline"
         size="sm"
-        class="relative min-h-11"
+        class="relative min-h-11 min-w-11"
         :class="timersRinging ? 'border-destructive text-destructive' : ''"
         :aria-label="`Timers (${timersCount} ativos)`"
         title="Timers da bancada"

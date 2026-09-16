@@ -238,7 +238,7 @@ const PAD_ADD =
                 </p>
               </div>
               <p
-                class="shrink-0 text-2xl font-bold tabular-nums"
+                class="shrink-0 text-3xl font-bold tabular-nums"
                 :class="
                   entry.mode === 'ringing'
                     ? 'animate-pulse text-destructive motion-reduce:animate-none'
