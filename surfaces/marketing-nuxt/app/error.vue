@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import type { NuxtError } from "#app";
+import { clearError, useRoute, type NuxtError } from "#app";
 
 const props = defineProps<{ error: NuxtError }>();
 const online = ref(true);
+const route = useRoute();
 
 function safeRequestRef(): string {
   const data =
@@ -118,7 +119,7 @@ useHead({ title: `${presentation.value.title} · Marketing` });
         <UiButton
           v-if="presentation.retry"
           type="button"
-          @click="clearError({ redirect: $route.fullPath })"
+          @click="clearError({ redirect: route.fullPath })"
         >
           Tentar novamente
         </UiButton>

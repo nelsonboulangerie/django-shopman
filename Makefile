@@ -326,12 +326,16 @@ storefront-e2e: $(NUXT_DIR)/node_modules/.package-lock.json ## E2E Playwright: s
 		SHOPMAN_E2E_NUXT_PORT="$(or $(nuxt_port),3100)" \
 		bash scripts/run_storefront_e2e.sh $(args)
 
-pwa: ## PWA opt-in (app=storefront|pos): build, manifesto, SW, assets e offline
+pwa: ## PWA opt-in (app=storefront|pos|hub|orders|kds|production|marketing|purchase|bi)
 	@test -n "$(app)" || (echo "uso: make pwa app=<surface opt-in>" >&2; exit 2)
 	@test -d "$(PWA_DIR)" || (echo "surface desconhecida: $(app)" >&2; exit 2)
 	@if [ "$(app)" != "storefront" ]; then cd surfaces/operator-kit && npm ci; fi
 	cd $(PWA_DIR) && npm ci
-	cd $(PWA_DIR) && npm run build
+	@if [ "$(app)" = "production" ]; then \
+		cd $(PWA_DIR) && SHOPMAN_ENVIRONMENT=build NUXT_DJANGO_BASE_URL=https://django-upstream.invalid npm run build; \
+	else \
+		cd $(PWA_DIR) && npm run build; \
+	fi
 	node tools/pwa-gate/check.mjs --app=$(app)
 	@if [ -f "$(PWA_DIR)/tests/e2e/pwa.spec.ts" ]; then cd $(PWA_DIR) && npx playwright test tests/e2e/pwa.spec.ts; fi
 

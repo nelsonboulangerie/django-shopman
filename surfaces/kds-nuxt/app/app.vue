@@ -62,5 +62,6 @@ async function goToStations() {
       :perm="OPERATOR_PERM"
     />
     <OperatorSonner />
+    <OperatorPwaRuntime />
   </div>
 </template>

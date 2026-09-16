@@ -98,6 +98,20 @@ jobs:
             surface: storefront-nuxt
           - app: pos
             surface: pos-nuxt
+          - app: hub
+            surface: hub-nuxt
+          - app: orders
+            surface: orders-nuxt
+          - app: kds
+            surface: kds-nuxt
+          - app: production
+            surface: production-nuxt
+          - app: marketing
+            surface: marketing-nuxt
+          - app: purchase
+            surface: purchase-nuxt
+          - app: bi
+            surface: bi-nuxt
 
     steps:
       - name: Checkout
@@ -127,7 +141,17 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Production build
+        if: matrix.app != 'production'
         working-directory: surfaces/${{ matrix.surface }}
+        run: npm run build
+
+      - name: Production build (hermetic test upstream)
+        if: matrix.app == 'production'
+        working-directory: surfaces/production-nuxt
+        env:
+          NUXT_SHOPMAN_ENVIRONMENT: test
+          SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM: "1"
+          NUXT_DJANGO_BASE_URL: http://127.0.0.1:1
         run: npm run build
 
       - name: Structural PWA gate
@@ -141,9 +165,9 @@ jobs:
       # O deploy usa esta receita genérica, não o workspace já preparado pelo
       # job. Construí-la aqui prova a ordem real de instalação e impede que o
       # postinstall do consumer só falhe depois do merge, ao publicar no DOCR.
-      - name: Build POS deployment image
-        if: matrix.app == 'pos'
-        run: docker build --file surfaces/Dockerfile.surface --build-arg SURFACE=pos-nuxt .
+      - name: Build operator deployment image
+        if: matrix.app != 'storefront'
+        run: docker build --file surfaces/Dockerfile.surface --build-arg SURFACE=${{ matrix.surface }} .
 
   marketing-complete:
     name: Marketing — cadeia completa

@@ -99,5 +99,6 @@ async function goToRecipes() {
     <OperatorLogin v-if="!canIdentify" />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
     <OperatorSonner />
+    <OperatorPwaRuntime />
   </div>
 </template>

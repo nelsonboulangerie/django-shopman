@@ -79,23 +79,14 @@ onUnmounted(() => {
 });
 
 // ── Tela cheia (kiosk de verdade na TV) ─────────────────────────────────────
-const isFullscreen = ref(false);
-function toggleFullscreen() {
+// A mesma capability que governa o app mantém a semântica progressiva: entrar
+// continua exigindo o gesto da pessoa, e ausência/recusa da API nunca derruba o painel.
+const kiosk = useKioskMode();
+const isFullscreen = kiosk.isFullscreen;
+async function toggleFullscreen() {
   sound.unlock();
-  if (document.fullscreenElement) {
-    void document.exitFullscreen();
-  } else {
-    void document.documentElement.requestFullscreen?.();
-  }
-}
-onMounted(() => {
-  document.addEventListener("fullscreenchange", onFullscreenChange);
-});
-onUnmounted(() => {
-  document.removeEventListener("fullscreenchange", onFullscreenChange);
-});
-function onFullscreenChange() {
-  isFullscreen.value = !!document.fullscreenElement;
+  if (isFullscreen.value) await kiosk.exit();
+  else await kiosk.enter();
 }
 
 // ── Status → cor (uma cor, um significado) ─────────────────────────────────

@@ -934,6 +934,18 @@ services:
     scope: RUN_AND_BUILD_TIME
     value: 'https://api.boulangerie.com.br'
     type: GENERAL
+  - key: NUXT_PUBLIC_ORDERS_URL
+    scope: RUN_AND_BUILD_TIME
+    value: 'https://gestor.boulangerie.com.br/'
+    type: GENERAL
+  - key: NUXT_PUBLIC_POS_URL
+    scope: RUN_AND_BUILD_TIME
+    value: 'https://pdv.boulangerie.com.br/'
+    type: GENERAL
+  - key: NUXT_PUBLIC_PRODUCTION_URL
+    scope: RUN_AND_BUILD_TIME
+    value: 'https://prod.boulangerie.com.br/'
+    type: GENERAL
   health_check:
     failure_threshold: 5
     http_path: /

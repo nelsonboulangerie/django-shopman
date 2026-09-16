@@ -131,5 +131,6 @@ const isEmpty = computed(() => hubIsEmpty(tiles.value));
         </div>
       </div>
     </template>
+    <OperatorPwaRuntime />
   </main>
 </template>
