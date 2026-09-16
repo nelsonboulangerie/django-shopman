@@ -122,7 +122,9 @@ def canonical_slots() -> list[dict]:
             if slots:
                 return [s for s in slots if isinstance(s, dict) and s.get("ref")]
     except Exception:
-        logger.debug("fulfillment_window: could not load canonical slots", exc_info=True)
+        # A casa configurou os slots dela e a leitura falhou: oferecer os
+        # padrões no lugar é prometer turno que a padaria pode não ter. Grita.
+        logger.warning("fulfillment_window: could not load canonical slots; using defaults", exc_info=True)
     return list(DEFAULT_CANONICAL_SLOTS)
 
 
@@ -212,7 +214,9 @@ def _grid_for(day: date, *, now: datetime | None = None, shop=None) -> list[dict
             return []
         janela = business_calendar.selling_hours_for(day, shop=shop)
     except Exception:
-        logger.debug("fulfillment_window: could not read the calendar for %s", day, exc_info=True)
+        # Sem calendário não dá para saber se o dia está fechado: a grade sai
+        # inteira, e alguém precisa ficar sabendo que ela saiu no escuro.
+        logger.warning("fulfillment_window: could not read the calendar for %s", day, exc_info=True)
         return canonical_slots()
 
     slots = canonical_slots()
