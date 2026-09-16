@@ -6,8 +6,10 @@
 // balcão precisa a qualquer hora: imprimir a DANFE na bobina (via agente do
 // balcão), reenviar por e-mail (o Focus entrega) e reprocessar falha. As ações
 // seguem o FATO (a nota existe), nunca o toggle que o operador marcou na venda.
-import type { POSPaymentDeliveryProjection, POSProjection } from "~/types/pos";
+import type { PosFiscalState, POSPaymentDeliveryProjection, POSProjection } from "~/types/pos";
 import { toast } from "vue-sonner";
+
+import { fiscalStateLabel } from "~/presentation/saleResult";
 
 interface RecentSale {
   order_ref: string;
@@ -18,6 +20,9 @@ interface RecentSale {
   customer_name: string;
   fiscal_status: string;
   fiscal_label: string;
+  /** O estado canônico da nota (o mesmo da tela de resultado). Opcional: o
+   *  backend pode chegar depois; sem ele valem `fiscal_status`/`fiscal_label`. */
+  fiscal_state?: PosFiscalState;
   fiscal_links: Array<{ label: string; url: string }>;
   nfce_number: string;
   email_sent: boolean;
@@ -256,6 +261,15 @@ async function submitCancel(aprovacao: Record<string, string>) {
   }
 }
 
+// O chip fala o MESMO rótulo da tela de resultado quando o servidor manda o
+// estado canônico; sem ele, o rótulo pronto do servidor.
+function fiscalChipLabel(sale: RecentSale): string {
+  return sale.fiscal_state ? fiscalStateLabel(sale.fiscal_state) : sale.fiscal_label;
+}
+function fiscalChipStatus(sale: RecentSale): string {
+  if (!sale.fiscal_state) return sale.fiscal_status;
+  return sale.fiscal_state === "not_expected" ? "not_requested" : sale.fiscal_state;
+}
 // Cor só funcional (design neutro de operador): o chip fiscal informa estado.
 function fiscalChipClass(status: string): string {
   if (status === "authorized") return "bg-success/10 text-success border-success/30";
@@ -298,9 +312,10 @@ function fiscalChipClass(status: string): string {
               </div>
               <span
                 class="shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium"
-                :class="fiscalChipClass(sale.fiscal_status)"
+                :class="fiscalChipClass(fiscalChipStatus(sale))"
+                data-fiscal-chip
               >
-                {{ sale.fiscal_label }}
+                {{ fiscalChipLabel(sale) }}
               </span>
             </div>
 

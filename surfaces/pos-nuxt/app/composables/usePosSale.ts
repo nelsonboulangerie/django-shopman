@@ -18,6 +18,7 @@ import type {
   POSSaleReviewProjection,
   POSScheduleResponse,
   POSSaleReviewResponse,
+  PosFiscalState,
   POSTabPayload,
   POSTabProjection,
   SavedAddressProjection,
@@ -55,7 +56,7 @@ import {
 } from "~/utils/posTabLifecycle";
 import { cartNetTotalQ, cashLandedInDrawer, type PosReceiptSnapshot } from "~/presentation/receipt";
 import { manualDiscountWasOverridden, winningDiscountLabel } from "~/presentation/lineDiscounts";
-import type { PosSaleResultSnapshot } from "~/presentation/saleResult";
+import { resolveFiscalState, type PosSaleResultSnapshot } from "~/presentation/saleResult";
 import type {
   CustomerDecision,
   CustomerDecisionField,
@@ -424,7 +425,16 @@ export function usePosSale(deps: PosSaleDeps) {
         );
         if (generation !== pixPollGeneration || pixOrderRef.value !== orderRef) return;
         applyPaymentDelivery(orderRef, status.payment_delivery);
-        if (status?.is_paid) { pixStatus.value = "paid"; stopPixPolling(generation); }
+        if (status?.is_paid) {
+          pixStatus.value = "paid";
+          // A NFC-e que esperava o Pix agora está na fila: a tela de resultado
+          // troca "sai quando o pagamento confirmar" por "na fila", e a
+          // impressão automática começa a esperar a autorização.
+          if (result.value?.orderRef === orderRef && result.value.fiscalState === "awaiting_payment") {
+            markFiscalState(orderRef, "queued");
+          }
+          stopPixPolling(generation);
+        }
         else if (status?.is_terminal) { pixStatus.value = "expired"; stopPixPolling(generation); } // cancelado/expirado
       // A desistência é que fala alto: 240 tentativas → `pixStatus = "expired"`
       // e o toast do watcher. A tentativa isolada, não.
@@ -452,6 +462,18 @@ export function usePosSale(deps: PosSaleDeps) {
    * aguardando não é descartado: vira o chip pendente no header e o polling
    * continua até resolver/expirar. Sem prova pendente, o polling encerra.
    */
+  /**
+   * A tela de resultado descobre o estado da nota DEPOIS do fechamento: a
+   * impressão automática vê o 409 virar 200 (`authorized`), o polling do Pix vê
+   * o pagamento confirmar (`awaiting_payment` → `queued`). Só a venda que está
+   * na tela é promovida; a de uma venda que já saiu não tem onde aparecer.
+   */
+  function markFiscalState(orderRef: string, state: PosFiscalState) {
+    if (!result.value || result.value.orderRef !== orderRef) return;
+    if (result.value.fiscalState === state) return;
+    result.value = { ...result.value, fiscalState: state };
+  }
+
   function dismissResult() {
     if (!result.value) return;
     stopDeliveryPolling();
@@ -2657,10 +2679,18 @@ export function usePosSale(deps: PosSaleDeps) {
           // O botão da DANFE segue a REGRA fiscal, não o toggle: cartão e pix
           // emitem por forma de pagamento, sem o operador marcar nada.
           fiscalExpected: !!response.fiscal_expected,
+          // Onde a nota está: dito pelo close; sem `fiscal_state`, deriva.
+          fiscalState: resolveFiscalState(response),
           // Troco congelado AGORA — o resetCart logo abaixo apaga os tenders e
           // o troco computado voltaria a zero. Uma fonte só: a tela de
           // resultado do operador e a tela do cliente leem daqui.
-          changeQ: Math.max(0, paymentChangeQ.value),
+          //
+          // ⚠️ Na cobrança na entrega/retirada o troco é ZERO aqui: a tela
+          // anunciava "TROCO R$ 58 · Confira o troco" e travava Enter e
+          // auto-avanço por um dinheiro que ainda não tinha entrado. O que o
+          // entregador leva vai em `courierChangeQ`, informativo.
+          changeQ: paidOnDelivery ? 0 : Math.max(0, paymentChangeQ.value),
+          courierChangeQ: paidOnDelivery ? Math.max(0, paymentChangeQ.value) : 0,
           // Congelado pelo mesmo motivo do troco: o `resetCart` logo abaixo
           // apaga os canais, e a nota autoriza depois — segundos ou minutos.
           wantsPrintedInvoice: cart.receiptChannels.includes("print"),
@@ -3181,6 +3211,7 @@ export function usePosSale(deps: PosSaleDeps) {
     reviewCheckout,
     submitSale,
     dismissResult,
+    markFiscalState,
     resendingLink,
     sendPaymentNotice,
     resendPaymentLink,

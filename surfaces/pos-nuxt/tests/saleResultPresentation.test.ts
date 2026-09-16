@@ -7,9 +7,13 @@ import {
   AUTO_ADVANCE_SECONDS,
   autoAdvanceSeconds,
   changeDisplay,
+  courierChangeLine,
+  danfeOffer,
   enterAdvances,
+  fiscalStateLabel,
   orderReadback,
   pixAwaiting,
+  resolveFiscalState,
   saleResultTitle,
 } from "~/presentation/saleResult";
 import { formatBRL } from "~/utils/posIntent";
@@ -174,5 +178,58 @@ describe("orderReadback — a leitura de volta da encomenda", () => {
 
   it("encomenda sem nenhum dos dois não inventa bloco vazio", () => {
     expect(orderReadback({ salesMode: "order", fulfillmentLabel: "", scheduleLabel: "  " })).toBeNull();
+  });
+});
+
+describe("enterAdvances — a encomenda não é dispensada por hábito", () => {
+  it("no modo encomenda, Enter NÃO avança (a tela é a leitura de volta ao cliente)", () => {
+    expect(enterAdvances({ changeQ: 0, payment: null, pixStatus: "idle", salesMode: "order" })).toBe(false);
+  });
+  it("no balcão, o mesmo estado avança", () => {
+    expect(enterAdvances({ changeQ: 0, payment: null, pixStatus: "idle", salesMode: "counter" })).toBe(true);
+    expect(enterAdvances({ changeQ: 0, payment: null, pixStatus: "idle" })).toBe(true);
+  });
+});
+
+describe("courierChangeLine — o troco que sai com o entregador é linha, não herói", () => {
+  it("formata quando há troco a separar", () => {
+    expect(courierChangeLine(5800)).toBe(`Troco a separar: ${formatBRL(5800)}`);
+  });
+  it("vazio sem troco, zero ou ausente", () => {
+    expect(courierChangeLine(0)).toBe("");
+    expect(courierChangeLine(undefined)).toBe("");
+  });
+});
+
+describe("resolveFiscalState — o estado do close, ou a derivação da previsão", () => {
+  it("o `fiscal_state` do servidor vence a previsão", () => {
+    expect(resolveFiscalState({ fiscal_state: "awaiting_payment", fiscal_expected: true })).toBe("awaiting_payment");
+    expect(resolveFiscalState({ fiscal_state: "failed", fiscal_expected: false })).toBe("failed");
+  });
+  it("sem `fiscal_state`: esperada = na fila; não esperada = sem nota", () => {
+    expect(resolveFiscalState({ fiscal_expected: true })).toBe("queued");
+    expect(resolveFiscalState({ fiscal_expected: false })).toBe("not_expected");
+    expect(resolveFiscalState({})).toBe("not_expected");
+  });
+});
+
+describe("danfeOffer — a DANFE por existência da nota, não por previsão", () => {
+  it("só `authorized` ganha o botão vivo", () => {
+    expect(danfeOffer("authorized")).toEqual({ kind: "print", label: "Imprimir DANFE" });
+  });
+  it("na fila: botão desabilitado com a espera nomeada", () => {
+    expect(danfeOffer("queued")).toEqual({ kind: "queued", label: "NFC-e na fila…" });
+  });
+  it("aguardando pagamento e falha dizem o próximo passo; sem nota, nada", () => {
+    expect(danfeOffer("awaiting_payment")).toEqual({ kind: "awaiting_payment", label: "NFC-e sai quando o pagamento confirmar" });
+    expect(danfeOffer("failed")).toEqual({ kind: "failed", label: "NFC-e falhou — veja Últimas vendas" });
+    expect(danfeOffer("not_expected")).toBeNull();
+  });
+  it("o chip das Últimas vendas fala os mesmos estados", () => {
+    expect(fiscalStateLabel("authorized")).toBe("NFC-e autorizada");
+    expect(fiscalStateLabel("queued")).toBe("NFC-e na fila");
+    expect(fiscalStateLabel("awaiting_payment")).toBe("NFC-e aguarda o pagamento");
+    expect(fiscalStateLabel("failed")).toBe("NFC-e falhou");
+    expect(fiscalStateLabel("not_expected")).toBe("Sem NFC-e");
   });
 });
