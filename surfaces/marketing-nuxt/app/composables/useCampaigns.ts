@@ -1,4 +1,4 @@
-// Regras de campanha — listagem, liga/desliga e o CRUD leve do formulário.
+// Campanhas — listagem, liga/desliga e o CRUD leve do formulário.
 //
 // As "options" (gatilhos, plataformas, modelos, variáveis) vêm do backend em vez
 // de hardcoded na tela: gatilho novo no domínio aparece no formulário sem deploy
@@ -69,7 +69,7 @@ export function useCampaigns() {
         method: "PATCH",
         body: payload,
       });
-      useSonner.success("Regra salva.");
+      useSonner.success("Campanha salva.");
       await refresh();
       return true;
     } catch (err) {
@@ -81,7 +81,7 @@ export function useCampaigns() {
         await refresh();
       } else {
         useSonner.error(
-          httpErrorMessage(err, "Não foi possível salvar a regra."),
+          httpErrorMessage(err, "Não foi possível salvar a campanha."),
         );
       }
       return false;
@@ -94,12 +94,12 @@ export function useCampaigns() {
         method: "POST",
         body,
       });
-      useSonner.success("Regra criada.");
+      useSonner.success("Campanha criada.");
       await refresh();
       return true;
     } catch (err) {
       flagMarketingSessionError(err);
-      useSonner.error(httpErrorMessage(err, "Não foi possível criar a regra."));
+      useSonner.error(httpErrorMessage(err, "Não foi possível criar a campanha."));
       return false;
     }
   }

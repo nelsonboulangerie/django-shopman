@@ -519,3 +519,14 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
     );
   });
 });
+
+describe("CampaignForm — a voz do gestor", () => {
+  // ⚠️ A entidade é `Campaign` e a lista chama de "campanha"; o formulário fechava
+  // com "Regra ativa", um terceiro nome para a mesma coisa.
+  it("chama a campanha de campanha, nunca de regra", () => {
+    const text = form(makeRule()).text();
+
+    expect(text).toContain("Campanha ligada");
+    expect(text).not.toMatch(/\bRegra\b/);
+  });
+});

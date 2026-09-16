@@ -107,7 +107,7 @@ const DRAFT_LABELS = {
   requires_approval: "Revisão antes de publicar",
   expires_after_minutes: "Prazo de revisão",
   promotion_ref: "Oferta",
-  is_active: "Regra ativa",
+  is_active: "Campanha ligada",
   schedule: "Agendamento",
   audience_rules: "Público",
 };
@@ -1148,7 +1148,7 @@ function submit() {
           type="checkbox"
           class="size-4 rounded border-border"
         />
-        Regra ativa
+        Campanha ligada
       </label>
     </div>
 
