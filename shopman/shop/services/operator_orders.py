@@ -14,6 +14,7 @@ from enum import StrEnum
 from django.db import transaction
 from shopman.orderman.models import Order
 
+from shopman.shop.services import fiscal as fiscal_service
 from shopman.shop.services import ifood_cancellation, payment_gate
 from shopman.shop.services import payment as payment_service
 from shopman.shop.services.cancellation import cancel
@@ -374,6 +375,10 @@ def advance_order(
             order.data = data
             order.save(update_fields=["data", "updated_at"])
         _sync_delivery_fulfillment(order, next_status)
+        # A mercadoria está saindo AGORA: se a NFC-e não está autorizada, grita
+        # (alerta por pedido) — sem barrar. Dentro da transação de propósito: se
+        # a transição não acontecer, o aviso dela também não fica.
+        fiscal_service.alert_handoff_without_nfce(order, target_status=next_status)
         order.transition_status(next_status, actor=actor)
         if change_out > 0:
             from shopman.cashman import services as cash_ledger
