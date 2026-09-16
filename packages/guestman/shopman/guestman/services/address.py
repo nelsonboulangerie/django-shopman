@@ -288,7 +288,7 @@ def suggest_address(
         )
         if most_used is not None:
             return most_used
-    except Exception:
+    except Exception:  # silêncio-deliberado: o reverse accessor é opcional; usa a mais recente
         # Reverse accessor `orders` does not exist — graceful fallback.
         pass
 

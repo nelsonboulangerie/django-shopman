@@ -125,7 +125,7 @@ def _lookup_phone_values(phone: str) -> tuple[str, ...]:
         from shopman.utils.phone import normalize_phone
 
         add(normalize_phone(phone))
-    except Exception:
+    except Exception:  # silêncio-deliberado: a variante bruta continua válida para o lookup
         logger.debug("Manychat resolver: phone variant normalization failed", exc_info=True)
     return tuple(values)
 
@@ -135,7 +135,7 @@ def _canonical_phone(phone: str) -> str:
         from shopman.utils.phone import normalize_phone
 
         return normalize_phone(phone) or phone
-    except Exception:
+    except Exception:  # silêncio-deliberado: o chamador ainda compara o telefone original
         logger.debug("Manychat resolver: phone normalization failed", exc_info=True)
         return phone
 
@@ -167,7 +167,7 @@ def _custom_field_name_by_id(api_token: str, field_id: str) -> str:
             _read_http_error_body(e),
         )
     except (URLError, ValueError, Exception):
-        logger.debug("Manychat resolver: custom fields lookup failed", exc_info=True)
+        logger.warning("Manychat resolver: custom fields lookup failed", exc_info=True)
     return ""
 
 
@@ -432,7 +432,7 @@ class ManychatSubscriberResolver:
                 e.code, subscriber_id, _read_http_error_body(e),
             )
         except (URLError, ValueError, Exception):
-            logger.debug(
+            logger.warning(
                 "Manychat resolver: getInfo call failed for %s", subscriber_id, exc_info=True
             )
         return None
@@ -578,7 +578,7 @@ class ManychatSubscriberResolver:
                         error_body,
                     )
             except (URLError, ValueError, Exception):
-                logger.debug(
+                logger.warning(
                     "Manychat resolver: WhatsApp ID API call failed for %s",
                     whatsapp_id[:8],
                     exc_info=True,
@@ -723,7 +723,7 @@ class ManychatSubscriberResolver:
                 _read_http_error_body(e),
             )
         except (URLError, ValueError, Exception):
-            logger.debug(
+            logger.warning(
                 "Manychat resolver: createSubscriber call failed for phone %s",
                 phone[:8],
                 exc_info=True,
@@ -791,7 +791,7 @@ class ManychatSubscriberResolver:
                 _read_http_error_body(e),
             )
         except (URLError, ValueError, Exception):
-            logger.debug(
+            logger.warning(
                 "Manychat resolver: WhatsApp ID mirror call failed for subscriber %s",
                 subscriber_id,
                 exc_info=True,

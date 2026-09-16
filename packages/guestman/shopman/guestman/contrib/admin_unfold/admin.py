@@ -43,7 +43,7 @@ from unfold.widgets import UnfoldAdminRadioSelectWidget, UnfoldAdminTextInputWid
 for model in [Customer, PriceTier, CustomerAddress, ContactPoint, ExternalIdentity]:
     try:
         admin.site.unregister(model)
-    except admin.sites.NotRegistered:
+    except admin.sites.NotRegistered:  # silêncio-deliberado: o contrib pode não ter registrado o modelo
         pass
 
 
@@ -432,7 +432,7 @@ class CustomerAdmin(CustomerPrivacyFenceAdminMixin, BaseModelAdmin):
                 _rfm_segment=Subquery(insight_qs.values("rfm_segment")[:1]),
                 _churn_risk=Subquery(insight_qs.values("churn_risk")[:1]),
             )
-        except ImportError:
+        except ImportError:  # silêncio-deliberado: insights é um contrib opcional
             pass
         return qs
 
@@ -738,7 +738,7 @@ if LoyaltyAccount is not None:
     for _model in (LoyaltyAccount, LoyaltyTransaction):
         try:
             admin.site.unregister(_model)
-        except admin.sites.NotRegistered:
+        except admin.sites.NotRegistered:  # silêncio-deliberado: loyalty pode não ter admin registrado
             pass
 
     _TIER_COLORS = {
