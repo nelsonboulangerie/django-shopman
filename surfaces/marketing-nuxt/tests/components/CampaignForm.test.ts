@@ -572,6 +572,61 @@ describe("CampaignForm — a voz do gestor", () => {
     expect(text).not.toMatch(/\bbought_(skus|collections)\b/);
   });
 
+  // ⚠️ As quatro plataformas apareciam iguais e a recusa só chegava depois de
+  // aprovar. A prontidão é pré-condição de PUBLICAR, não de configurar.
+  it("mostra antes do clique onde a campanha não vai sair, sem travar o salvar", async () => {
+    const wrapper = mount(CampaignForm, {
+      props: {
+        rule: makeRule({ platforms: ["instagram"] }),
+        triggers: TRIGGERS,
+        platformOptions: PLATFORMS,
+        templates: TEMPLATES as never,
+        offers: OFFERS,
+        platformLabels: { whatsapp: "WhatsApp", instagram: "Instagram" },
+        platformReadiness: [
+          {
+            platform: "instagram",
+            state: "blocked",
+            ready: false,
+            reason: "A integração existe, mas está sem credencial neste ambiente.",
+            limitation: "",
+            source_status: "live",
+          },
+          {
+            platform: "whatsapp",
+            state: "unknown",
+            ready: false,
+            reason: "Não foi possível verificar o transporte do WhatsApp agora.",
+            limitation: "",
+            source_status: "live",
+          },
+        ],
+      },
+      global: {
+        components: { DraftRecoveryNotice, UiNativeSelect: UiNativeSelectStub },
+        stubs: { Icon: true, NuxtLink: true },
+      },
+    });
+    const text = wrapper.text();
+
+    // A pílula conta o estado das duas, escolhida ou não.
+    expect(wrapper.find('[data-readiness="blocked"]').text()).toContain(
+      "Instagram · não publica",
+    );
+    expect(wrapper.find('[data-readiness="unknown"]').text()).toContain(
+      "WhatsApp · não verificada",
+    );
+    // A escolhida ganha a frase completa; a não escolhida não faz barulho.
+    expect(text).toContain(
+      "Instagram: A integração existe, mas está sem credencial neste ambiente. Não vai publicar por aqui até resolver.",
+    );
+    expect(text).toContain("A campanha pode ser salva assim mesmo.");
+    expect(text).not.toContain("Não foi possível verificar o transporte");
+
+    await wrapper.find("form").trigger("submit");
+    expect(wrapper.emitted("submit")).toHaveLength(1);
+  });
+
   it("descreve o público em conflito como frase, não como JSON", async () => {
     const rule = makeRule({
       trigger: "production_finished",

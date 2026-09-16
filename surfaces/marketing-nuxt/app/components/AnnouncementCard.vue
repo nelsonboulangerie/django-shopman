@@ -30,6 +30,12 @@ import {
   platformsSummary,
   vipSummary,
 } from "~/presentation/campaign";
+import {
+  platformReadinessNote,
+  readinessByPlatform,
+  readinessPillClass,
+} from "~/presentation/platformReadiness";
+import type { PlatformReadiness } from "~/presentation/platformReadiness";
 
 const props = defineProps<{
   announcement: Announcement;
@@ -44,6 +50,8 @@ const props = defineProps<{
   shopTimezone?: string;
   /** Explicit server proof that this lane ends at the hermetic local simulator. */
   quietHoursSuspendedForLocalSimulation?: boolean;
+  /** Estado e motivo por plataforma (`/marketing/platforms/`). Ausente = tudo pronto. */
+  platformReadiness?: PlatformReadiness[];
 }>();
 
 const emit = defineEmits<{
@@ -228,6 +236,20 @@ const DRAFT_LABELS = {
   publish_at: "Data e hora",
   publish_fold: "Ocorrência do horário",
 };
+
+// Prontidão por plataforma, antes do clique: pílula pintada e frase sob a escolha.
+const readinessMap = computed(() =>
+  readinessByPlatform(props.platformReadiness),
+);
+function readinessNote(option: { value: string; label: string }) {
+  return platformReadinessNote(readinessMap.value[option.value], option.label);
+}
+const selectedReadinessNotes = computed(() =>
+  props.platformOptions
+    .filter((option) => platforms.value.includes(option.value))
+    .map((option) => ({ platform: option.value, ...readinessNote(option) }))
+    .filter((note) => note.tone !== "ready"),
+);
 
 /** O aviso de conflito mostra nomes de plataforma, não a lista de refs em JSON. */
 function describeDraftValue(field: string, value: unknown): string | undefined {
@@ -620,15 +642,19 @@ function askToReject() {
             Entregar por
           </legend>
           <div class="flex flex-wrap gap-1.5">
+            <!-- ⚠️ A pílula já conta o estado ("não publica", "não verificada"): antes as
+                 quatro apareciam iguais e a recusa só chegava depois de aprovar. -->
             <label
               v-for="option in platformOptions"
               :key="option.value"
               class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors"
-              :class="
+              :class="[
                 platforms.includes(option.value)
                   ? 'border-primary bg-primary/10 text-foreground'
-                  : 'border-border text-muted-foreground hover:bg-muted'
-              "
+                  : 'border-border text-muted-foreground hover:bg-muted',
+                readinessPillClass(readinessNote(option).tone),
+              ]"
+              :data-readiness="readinessNote(option).tone"
             >
               <!-- Checkbox nativo sr-only preserva a semântica enquanto a pílula amplia o alvo visual. -->
               <input
@@ -640,6 +666,7 @@ function askToReject() {
               />
               <Icon :name="platformIcon(option.value)" class="size-3.5" />
               {{ option.label }}
+              <span v-if="readinessNote(option).badge" class="text-xs opacity-80">· {{ readinessNote(option).badge }}</span>
             </label>
           </div>
           <p
@@ -649,6 +676,28 @@ function askToReject() {
           >
             Escolha ao menos uma plataforma.
           </p>
+          <!-- Aprovar continua possível (a pré-condição é de publicar): o gestor só
+               fica sabendo AGORA, e não no comprovante, onde o anúncio não vai sair. -->
+          <ul v-if="selectedReadinessNotes.length" class="mt-1.5 space-y-1">
+            <li
+              v-for="note in selectedReadinessNotes"
+              :key="note.platform"
+              class="text-xs"
+              :class="
+                note.tone === 'blocked' ? 'text-destructive' : 'text-warning'
+              "
+              role="status"
+            >
+              {{ note.text }}
+              <NuxtLink
+                v-if="note.tone !== 'limited'"
+                to="/platforms"
+                class="font-semibold underline"
+              >
+                Ver em Plataformas
+              </NuxtLink>
+            </li>
+          </ul>
         </fieldset>
 
         <!-- A decisão e a representação enviada não podem morar em telas diferentes.

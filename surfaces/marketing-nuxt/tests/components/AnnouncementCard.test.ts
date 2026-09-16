@@ -82,6 +82,7 @@ function mountCard(
   shopTimezone = "America/Sao_Paulo",
   aiAssistAvailable = false,
   quietHoursSuspendedForLocalSimulation = false,
+  extra: Record<string, unknown> = {},
 ) {
   return mount(AnnouncementCard, {
     props: {
@@ -91,10 +92,11 @@ function mountCard(
       shopTimezone,
       aiAssistAvailable,
       quietHoursSuspendedForLocalSimulation,
+      ...extra,
     },
     global: {
       components: { DraftRecoveryNotice },
-      stubs: { Icon: true },
+      stubs: { Icon: true, NuxtLink: true },
     },
   });
 }
@@ -107,6 +109,55 @@ describe("AnnouncementCard", () => {
     expect(text).toContain("Fornada de pães");
     expect(text).toContain("12 favoritos, 3 alertas = 15 clientes");
     expect(text).toContain("Expira em 20 min");
+  });
+
+  // ⚠️ As plataformas apareciam iguais e a recusa só vinha no comprovante. Aprovar
+  // continua possível: a pré-condição é de publicar, e o gestor fica sabendo AGORA.
+  it("conta antes de aprovar onde o anúncio não vai sair", async () => {
+    const wrapper = mountCard(
+      makeAnnouncement({ platforms: ["instagram"] }),
+      "",
+      "America/Sao_Paulo",
+      false,
+      false,
+      {
+        platformReadiness: [
+          {
+            platform: "instagram",
+            state: "blocked",
+            ready: false,
+            reason: "A integração existe, mas está sem credencial neste ambiente.",
+            limitation: "",
+            source_status: "live",
+          },
+          {
+            platform: "whatsapp",
+            state: "degraded",
+            ready: true,
+            reason: "",
+            limitation: "Sem fila segura, o envio é um por vez.",
+            source_status: "live",
+          },
+        ],
+      },
+    );
+    const text = wrapper.text();
+
+    expect(wrapper.find('[data-readiness="blocked"]').text()).toContain(
+      "Instagram · não publica",
+    );
+    expect(wrapper.find('[data-readiness="limited"]').text()).toContain(
+      "WhatsApp · limitada",
+    );
+    expect(text).toContain(
+      "Instagram: A integração existe, mas está sem credencial neste ambiente. Não vai publicar por aqui até resolver.",
+    );
+    expect(text).not.toContain("um por vez");
+
+    const publishNow = wrapper.get("[data-testid=publish-now]");
+    expect((publishNow.element as HTMLButtonElement).disabled).toBe(false);
+    await publishNow.trigger("click");
+    expect(wrapper.emitted("approve")).toHaveLength(1);
   });
 
   it("does not present a contact audience as recipient of a public post", () => {

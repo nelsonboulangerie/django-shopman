@@ -16,6 +16,12 @@ import {
   choiceLabels,
   platformsSummary,
 } from "~/presentation/campaign";
+import {
+  platformReadinessNote,
+  readinessByPlatform,
+  readinessPillClass,
+} from "~/presentation/platformReadiness";
+import type { PlatformReadiness } from "~/presentation/platformReadiness";
 import type { MarketingDraftPayload } from "~/utils/marketingDraft";
 import {
   resolveScheduleInput,
@@ -35,6 +41,9 @@ const props = defineProps<{
   /** Rótulos de plataforma e template do WhatsApp: a prévia precisa dos dois para não
    *  prometer o que o envio não faz. */
   platformLabels: Record<string, string>;
+  /** Estado e motivo por plataforma (`/marketing/platforms/`). Ausente = tudo pronto.
+   *  Pinta a pílula e explica, ANTES do clique, onde a campanha não vai sair. */
+  platformReadiness?: PlatformReadiness[];
   whatsappTemplate?: string;
   busy?: boolean;
   draftOwner?: string;
@@ -173,6 +182,21 @@ function scheduleDraftSummary(schedule: Record<string, unknown>): string {
   if (!windows) return "sem horário definido";
   return days ? `${days} às ${windows}` : `todo dia às ${windows}`;
 }
+
+// Prontidão por plataforma: a pílula ganha cor e palavra, e a escolhida que não
+// publica ganha a frase completa embaixo — antes do clique, não depois de aprovar.
+const readinessMap = computed(() =>
+  readinessByPlatform(props.platformReadiness),
+);
+function readinessNote(option: Choice) {
+  return platformReadinessNote(readinessMap.value[option.value], option.label);
+}
+const selectedReadinessNotes = computed(() =>
+  props.platformOptions
+    .filter((option) => platforms.value.includes(option.value))
+    .map((option) => ({ platform: option.value, ...readinessNote(option) }))
+    .filter((note) => note.tone !== "ready"),
+);
 
 /** O aviso de conflito pede uma frase, não JSON: o formulário é quem sabe ler o campo. */
 function describeDraftValue(field: string, value: unknown): string | undefined {
@@ -926,16 +950,20 @@ function submit() {
         Entregar por
       </legend>
       <div class="flex flex-wrap gap-1.5">
-        <!-- Checkboxes nativos sr-only preservam semântica enquanto as pílulas ampliam os alvos. -->
+        <!-- Checkboxes nativos sr-only preservam semântica enquanto as pílulas ampliam os alvos.
+             ⚠️ A pílula já conta o estado da plataforma ("não publica", "não verificada"):
+             antes, as quatro apareciam iguais e a recusa só vinha depois de aprovar. -->
         <label
           v-for="option in platformOptions"
           :key="option.value"
           class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors"
-          :class="
+          :class="[
             platforms.includes(option.value)
               ? 'border-primary bg-primary/10 text-foreground'
-              : 'border-border text-muted-foreground hover:bg-muted'
-          "
+              : 'border-border text-muted-foreground hover:bg-muted',
+            readinessPillClass(readinessNote(option).tone),
+          ]"
+          :data-readiness="readinessNote(option).tone"
         >
           <input
             type="checkbox"
@@ -945,8 +973,28 @@ function submit() {
             @change="togglePlatform(option.value)"
           />
           {{ option.label }}
+          <span v-if="readinessNote(option).badge" class="text-xs opacity-80">· {{ readinessNote(option).badge }}</span>
         </label>
       </div>
+      <!-- Prontidão é pré-condição de PUBLICAR, não de configurar: a campanha salva,
+           mas o gestor sabe agora, e não depois de aprovar, onde ela não vai sair. -->
+      <ul v-if="selectedReadinessNotes.length" class="mt-1.5 space-y-1">
+        <li
+          v-for="note in selectedReadinessNotes"
+          :key="note.platform"
+          class="text-xs"
+          :class="note.tone === 'blocked' ? 'text-destructive' : 'text-warning'"
+          role="status"
+        >
+          {{ note.text }}
+          <template v-if="note.tone !== 'limited'">
+            A campanha pode ser salva assim mesmo.
+            <NuxtLink to="/platforms" class="font-semibold underline">
+              Ver em Plataformas
+            </NuxtLink>
+          </template>
+        </li>
+      </ul>
       <p class="mt-1.5 text-xs text-muted-foreground">
         Instagram, Facebook e Google criam uma postagem pública por plataforma.
         WhatsApp envia uma mensagem por pessoa elegível. Mensagens diretas do

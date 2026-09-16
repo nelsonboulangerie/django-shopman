@@ -51,6 +51,9 @@ const {
 // A prévia precisa saber se há template aprovado: com ele, o texto que sai no WhatsApp é o
 // da Meta, e prometer o do modelo seria mentira.
 const waTemplate = useWhatsAppTemplate();
+// Prontidão por plataforma: a pílula do formulário conta ANTES do clique onde a
+// campanha não vai sair. Salvar continua livre — a pré-condição é de publicar.
+const { platforms: platformReadiness } = usePlatforms();
 onMounted(() => {
   waTemplate.load();
 });
@@ -710,6 +713,7 @@ useHead({ title: "Campanhas" });
             :tags="tags"
             :rfm-segments="rfmSegments"
             :platform-labels="platformLabels"
+            :platform-readiness="platformReadiness"
             :whatsapp-template="waTemplate.current.value"
             :busy="busy"
             :draft-owner="draftOwner"

@@ -51,6 +51,8 @@ const {
   error: resultError,
 } = resultRequest;
 const { platforms, shopTimezone: optionsTimezone } = useCampaigns();
+// Prontidão por plataforma: o card conta ANTES de aprovar onde o anúncio não sai.
+const { platforms: platformReadiness } = usePlatforms();
 
 const announcement = computed(() => data.value?.announcement);
 const shopTimezone = computed(
@@ -333,6 +335,7 @@ useHead({ title: "Anúncio" });
         <AnnouncementCard
           :announcement="announcement"
           :platform-options="platforms"
+          :platform-readiness="platformReadiness"
           :busy="busy"
           :draft-owner="draftOwner"
           :shop-timezone="shopTimezone"

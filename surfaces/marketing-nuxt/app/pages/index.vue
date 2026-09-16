@@ -47,6 +47,8 @@ const {
   cancelDecision,
 } = useCampaignBoard();
 const { platforms } = useCampaigns();
+// Prontidão por plataforma: o card conta ANTES de aprovar onde o anúncio não sai.
+const { platforms: platformReadiness } = usePlatforms();
 const busyPk = ref<number | null>(null);
 const rejecting = ref<number | null>(null);
 const rejectReason = ref("");
@@ -382,6 +384,7 @@ useHead({ title: "Painel" });
           :key="announcement.pk"
           :announcement="announcement"
           :platform-options="platforms"
+          :platform-readiness="platformReadiness"
           :busy="busyPk === announcement.pk"
           :ai-assist-available="aiAssistAvailable"
           :draft-owner="draftOwner"
