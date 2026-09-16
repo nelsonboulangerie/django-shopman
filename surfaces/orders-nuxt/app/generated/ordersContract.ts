@@ -302,6 +302,7 @@ export interface OrderCardProjection {
   can_settle_delivery_cash: boolean;
   fiscal_status_label: string;
   fiscal_status: string;
+  fiscal_state: string;
   has_kitchen_note: boolean;
   has_customer_note: boolean;
   is_gift: boolean;
@@ -374,6 +375,7 @@ export interface OperatorOrderProjection {
   can_settle_delivery_cash: boolean;
   fiscal_status_label: string;
   fiscal_status: string;
+  fiscal_state: string;
   fiscal_links: Record<string, string>[];
   awaiting_work_orders: AwaitingWorkOrderProjection[];
   is_gift: boolean;
