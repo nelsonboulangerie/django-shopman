@@ -7,9 +7,9 @@
 //   · expedite (Expedição):    PRODUZIDO  | CONCLUÍDO  — fechamento no QC.
 // A ação abre overlay com quantidade em stepper touch (+/−) e confirmação
 // explícita; cada informe vira evento imutável (actor + timestamp → BI).
-// Na Produção a ação é UMA só — "Continuar" confirma quanto segue para a
-// Expedição, já preenchido com o planejado (decisão Pablo 2026-09-16); o
-// número fica na coluna Planejado, como no Planejamento, não no botão. A
+// Na Produção a ação é UMA só — "Confirmar" (o mesmo verbo do Planejamento)
+// diz quanto segue para a Expedição, já preenchido com o planejado (decisão
+// Pablo 2026-09-16); o número fica na coluna Planejado, não no botão. A
 // diferença para o planejado é rendimento da massa, não perda: fica nos dois
 // números da ordem, sem pedir motivo — motivo se pede na Expedição, onde há
 // produto pronto que pode sumir. Sem "iniciar", sem subetapas, sem máquina de
@@ -473,7 +473,7 @@ function actionEnabled(row: ProductionMatrixRowProjection): boolean {
 
 const ACTION_VERB: Record<string, string> = {
   plan: "Confirmar",
-  produce: "Continuar",
+  produce: "Confirmar",
 };
 
 // Verbo da célula de plano: quando a produção já assumiu a quantidade do dia,
@@ -750,7 +750,7 @@ const headerCount = computed(() => {
                 <!-- Coluna de AÇÃO (verbo no cabeçalho; valor atual + gesto) -->
                 <td v-if="lens.action.visible" class="px-3 py-1.5 text-right">
                   <!-- Produção: o produzido fica à vista (abre conferência/estorno) e a
-                       única ação é Continuar sobre o que ainda está planejado. -->
+                       única ação é Confirmar sobre o que ainda está planejado. -->
                   <span
                     v-if="stage === 'produce' && actionEnabled(row)"
                     class="inline-flex flex-wrap items-center justify-end gap-1.5"
@@ -771,7 +771,7 @@ const headerCount = computed(() => {
                       type="button"
                       :class="[CELL_ACTION, 'text-foreground']"
                       :disabled="isBusy(row.output_sku)"
-                      :aria-label="`Continuar ${rowLabel(row)}`"
+                      :aria-label="`Confirmar ${rowLabel(row)}`"
                       @click="openStart(row)"
                     >
                       <span class="whitespace-nowrap text-sm font-medium">{{
@@ -979,7 +979,7 @@ const headerCount = computed(() => {
       </UiDialogContent>
     </UiDialog>
 
-    <!-- Continuar: quanto foi produzido segue para a Expedição (evento interno: start) -->
+    <!-- Confirmar: quanto foi produzido segue para a Expedição (evento interno: start) -->
     <UiDialog
       :open="startRow != null"
       @update:open="
@@ -1011,7 +1011,7 @@ const headerCount = computed(() => {
           class="grid gap-2"
         >
           <p class="text-sm text-muted-foreground">
-            Selecione a fornada que vai continuar.
+            Selecione a fornada que vai confirmar.
           </p>
           <!-- Tile de fornada carrega referência e quantidade; é seleção de registro, não CTA. -->
           <button
