@@ -43,7 +43,7 @@ export default defineNuxtConfig({
       kiosk: false,
       push: { surfaceRef: "orders", categories: ["order"] },
       manifest: {
-        name: "Shopman Gestor",
+        name: "Gestor de Pedidos",
         shortName: "Gestor",
         description: "Fila e acompanhamento de pedidos.",
         themeColor: "#FFFFFF",

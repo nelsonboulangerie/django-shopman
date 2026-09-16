@@ -30,7 +30,7 @@ export default defineNuxtConfig({
       kiosk: true,
       idleReloadPaths: ["*"],
       manifest: {
-        name: "Shopman KDS",
+        name: "KDS",
         shortName: "KDS",
         description: "Painel de preparo e expedição da cozinha.",
         themeColor: "#0A0A0A",
@@ -105,7 +105,7 @@ export default defineNuxtConfig({
     baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
-      title: "Shopman KDS",
+      title: "KDS",
       meta: [
         { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
         { name: "theme-color", content: "#0a0a0a" },

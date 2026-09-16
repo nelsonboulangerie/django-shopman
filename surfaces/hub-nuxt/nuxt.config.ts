@@ -35,7 +35,7 @@ export default defineNuxtConfig({
         categories: ["campaign", "production", "order", "purchase", "report", "sign_in", "system"],
       },
       manifest: {
-        name: "Shopman Central",
+        name: "Central de Apps",
         shortName: "Central",
         description: "Central dos aplicativos de operação.",
         themeColor: "#7C3A40",

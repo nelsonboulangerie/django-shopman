@@ -28,7 +28,7 @@ export default defineNuxtConfig({
       kiosk: false,
       push: { surfaceRef: "bi", categories: ["report"] },
       manifest: {
-        name: "Shopman B.I.",
+        name: "B.I.",
         shortName: "B.I.",
         description: "Leitura dos números da operação.",
         themeColor: "#FFFFFF",

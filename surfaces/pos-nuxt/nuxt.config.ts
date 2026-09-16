@@ -47,7 +47,7 @@ export default defineNuxtConfig({
       kiosk: false,
       push: { surfaceRef: "pos", categories: ["order", "system"] },
       manifest: {
-        name: "Shopman PDV",
+        name: "PDV",
         shortName: "PDV",
         description: "Ponto de venda da Nelson Boulangerie.",
         themeColor: "#FCF6F1",
@@ -121,7 +121,7 @@ export default defineNuxtConfig({
     baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
-      title: "Shopman POS",
+      title: "PDV",
       meta: [
         { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
         { name: "robots", content: "noindex, nofollow" },
