@@ -1415,6 +1415,7 @@ describe('customer surface never names the reason behind unavailability', () => 
       // "Pausado" is a customer-controlled state for a persistent alert, not
       // the internal reason a product is unavailable.
       .filter(file => ![
+        'app/components/StockNotifyButton.vue',
         'app/pages/conta/preferencias.vue',
         'app/pages/gerenciar-aviso.vue'
       ].includes(file))
@@ -1422,7 +1423,7 @@ describe('customer surface never names the reason behind unavailability', () => 
 
     expect(offenders).toEqual([])
     expect(read('app/pages/conta/preferencias.vue')).toContain("subscription.active ? 'Ativo' : 'Pausado'")
-    expect(read('app/pages/gerenciar-aviso.vue')).toContain("alertState.state === 'paused'")
+    expect(read('app/pages/gerenciar-aviso.vue')).toContain("alertState.value?.state === 'paused'")
   })
 
   it('shows one label for every unavailable cause on the product page', () => {

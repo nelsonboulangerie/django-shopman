@@ -28,6 +28,8 @@ async function setAuthenticated (value: boolean) {
   const { useShopSession } = await import('~/composables/useShopSession')
   const session = useShopSession()
   session.reset()
+  const transientStates = useState<Record<string, 'paused' | 'cancelled'>>('stock-notify-transient-states', () => ({}))
+  transientStates.value = {}
   if (value) session.setFromAuthSession({ is_authenticated: true, customer_name: 'Ana', customer_phone: '43999' })
 }
 
@@ -78,13 +80,25 @@ describe('StockNotifyButton', () => {
 
   it('uses one clickable Anotado control for state and management', async () => {
     await setAuthenticated(true)
+    mocks.fetch.mockResolvedValue({ active: true, management_url: '/gerenciar-aviso#capability' })
     const wrapper = await mountStockNotify({ sku: 'PAO', name: 'Pão', subscribed: true, pill: true })
+    await flush()
 
     expect(wrapper.text()).toBe('Anotado')
     expect(wrapper.findAll('a')).toHaveLength(1)
-    expect(wrapper.get('a').attributes('href')).toBe('/conta/preferencias#avisos-produtos')
+    expect(wrapper.get('a').attributes('href')).toBe('/gerenciar-aviso#capability')
     expect(wrapper.get('a').attributes('aria-label')).toBe('Anotado para Pão. Gerenciar aviso')
     expect(wrapper.text()).not.toContain('Gerenciar este aviso')
+    expect(mocks.fetch).toHaveBeenCalledWith(expect.stringContaining('/availability/PAO/notify/'), expect.objectContaining({ method: 'GET' }))
+  })
+
+  it('uses account preferences only when authenticated capability recovery fails', async () => {
+    await setAuthenticated(true)
+    mocks.fetch.mockRejectedValue(new Error('offline'))
+    const wrapper = await mountStockNotify({ sku: 'PAO', name: 'Pão', subscribed: true, pill: true })
+    await flush()
+
+    expect(wrapper.get('a').attributes('href')).toBe('/conta/preferencias#avisos-produtos')
   })
 
   it('recovers a legacy anonymous management capability into the same Anotado control', async () => {
@@ -96,6 +110,34 @@ describe('StockNotifyButton', () => {
     expect(mocks.fetch).toHaveBeenCalledOnce()
     expect(wrapper.get('a').attributes('href')).toBe('/gerenciar-aviso#capability')
     expect(wrapper.text()).toBe('Anotado')
+  })
+
+  it.each([
+    { state: 'paused' as const, label: 'Pausado' },
+    { state: 'cancelled' as const, label: 'Cancelado' }
+  ])('shows the immediate $label confirmation in the same bounded control', async ({ state, label }) => {
+    await setAuthenticated(true)
+    const transientStates = useState<Record<string, 'paused' | 'cancelled'>>('stock-notify-transient-states', () => ({}))
+    transientStates.value = { PAO: state }
+
+    const wrapper = await mountStockNotify({ sku: 'PAO', name: 'Pão', subscribed: true, pill: true })
+
+    expect(wrapper.text()).toBe(label)
+    expect(wrapper.findAll('button')).toHaveLength(1)
+    expect(wrapper.find('a').exists()).toBe(false)
+    expect(wrapper.get('button').attributes('title')).toContain('Na próxima atualização, Me avise ficará disponível.')
+    expect(wrapper.get('button').find('svg').exists()).toBe(true)
+  })
+
+  it('returns a transient paused/cancelled SKU to Me avise when the next projection is inactive', async () => {
+    await setAuthenticated(true)
+    const transientStates = useState<Record<string, 'paused' | 'cancelled'>>('stock-notify-transient-states', () => ({}))
+    transientStates.value = { PAO: 'paused' }
+
+    const wrapper = await mountStockNotify({ sku: 'PAO', name: 'Pão', subscribed: false, pill: true })
+
+    expect(wrapper.text()).toBe('Me avise')
+    expect(wrapper.get('button').attributes('title')).toBe('Ativar avisos recorrentes quando Pão voltar')
   })
 
   it('captures the 18+ disclosure before login and preserves product context', async () => {

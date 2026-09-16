@@ -10,9 +10,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.core.cache import cache
-from django.db import IntegrityError, transaction
 from django.http import Http404
-from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
@@ -280,13 +278,33 @@ class StockAlertSubscribeView(APIView):
         responses={200: StockAlertSessionStateSerializer},
     )
     def get(self, request, sku):
-        """Recover only an exact alert already owned by this browser session.
+        """Recover only an exact alert owned by this principal or browser.
 
-        The subscription ref comes from the server-side session and is still
-        checked against SKU and contact before a capability is minted.  A ref
-        supplied by the caller never authorizes access.
+        An authenticated customer is resolved from the canonical principal.
+        Anonymous recovery still requires the exact server-side session marker,
+        checked against SKU and contact. A caller-supplied ref never authorizes.
         """
+        from shopman.storefront.identity import get_authenticated_customer
         from shopman.storefront.services import stock_alerts
+
+        customer = get_authenticated_customer(request)
+        if customer is not None:
+            sub = stock_alerts.active_subscription_for_sku_owner(
+                sku=sku,
+                customer=customer,
+            )
+            if sub is not None:
+                return _no_store_response(
+                    {
+                        "active": True,
+                        "management_url": stock_alerts.management_url(sub),
+                    },
+                    status_code=status.HTTP_200_OK,
+                )
+            return _no_store_response(
+                {"detail": "Aviso não encontrado para esta conta."},
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
 
         session = getattr(request, "session", None)
         markers = session.get("stock_alert_subscriptions", []) if session is not None else []
@@ -402,144 +420,107 @@ class StockAlertSubscribeView(APIView):
         # A sessão autenticada usa sempre o contato da identidade canônica;
         # um telefone no corpo não pode redirecionar o aviso.
 
-        receipt = None
-        receipt_created = False
-        replay = None
-        failed = False
-        # A sessão prova posse da intenção e aplica TTL; o recibo durável decide
-        # atomicamente quem pode executar o opt-in. Duas requests que carregaram
-        # o mesmo snapshot de sessão não podem, portanto, executar duas vezes.
-        with transaction.atomic():
-            if intent is not None:
-                from shopman.orderman.models import IdempotencyKey
+        class StockAlertActivationError(Exception):
+            pass
 
-                fingerprint = _stock_alert_intent_fingerprint(
-                    intent_ref=intent_ref,
-                    sku=sku,
-                    customer_ref=str(customer.ref),
-                )
-                receipt = (
-                    IdempotencyKey.objects.select_for_update()
-                    .filter(scope=_STOCK_ALERT_INTENT_RECEIPT_SCOPE, key=intent_ref)
-                    .first()
-                )
-                if receipt is None:
-                    try:
-                        # Savepoint obrigatório: a unicidade é o árbitro quando
-                        # duas workers viram ausência antes de uma delas commitar.
-                        with transaction.atomic():
-                            receipt = IdempotencyKey.objects.create(
-                                scope=_STOCK_ALERT_INTENT_RECEIPT_SCOPE,
-                                key=intent_ref,
-                                status="in_progress",
-                                request_fingerprint=fingerprint,
-                                expires_at=timezone.now() + timedelta(days=1),
-                            )
-                            receipt_created = True
-                    except IntegrityError:
-                        receipt = IdempotencyKey.objects.select_for_update().get(
-                            scope=_STOCK_ALERT_INTENT_RECEIPT_SCOPE,
-                            key=intent_ref,
-                        )
-
-                if receipt.request_fingerprint != fingerprint:
-                    return _no_store_response(
-                        {
-                            "detail": "Este pedido de aviso não corresponde a esta conta ou produto.",
-                            "field": "intent_ref",
-                        },
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                    )
-                if receipt.status == "done":
-                    body = receipt.response_body or {}
-                    completed_subscription_ref = str(body.get("subscription_ref") or "")
-                    if body.get("contract") == _STOCK_ALERT_INTENT_RECEIPT_CONTRACT:
-                        try:
-                            completed_sub = StockAlertSubscription.objects.filter(
-                                ref=uuid.UUID(completed_subscription_ref),
-                                sku=sku,
-                                customer_ref=customer.ref,
-                                purpose="stock_availability",
-                                proof_status="verified",
-                            ).first()
-                        except (TypeError, ValueError):
-                            completed_sub = None
-                    else:
-                        completed_sub = None
-                    if completed_sub is None:
-                        return _no_store_response(
-                            {
-                                "detail": "Este pedido de aviso não corresponde mais ao resultado original.",
-                                "field": "intent_ref",
-                            },
-                            status_code=status.HTTP_400_BAD_REQUEST,
-                        )
-                    replay = {
-                        "ok": True,
-                        "subscription_ref": str(completed_sub.ref),
-                        "active": completed_sub.is_active,
-                        "expires_at": (
-                            completed_sub.expires_at.isoformat() if completed_sub.expires_at else None
-                        ),
-                    }
-                    if completed_sub.revoked_at is None:
-                        replay["management_url"] = stock_alerts.management_url(completed_sub)
-                elif receipt.status != "in_progress" or not receipt_created:
-                    return _no_store_response(
-                        {
-                            "detail": "Não foi possível confirmar este pedido de aviso. Tente novamente.",
-                            "field": "intent_ref",
-                        },
-                        status_code=status.HTTP_409_CONFLICT,
-                    )
-
-            if replay is None:
-                outcome = stock_alerts.subscribe_with_outcome(
-                    sku,
-                    channel_ref=channel_ref,
+        def activate_subscription():
+            outcome = stock_alerts.subscribe_with_outcome(
+                sku,
+                channel_ref=channel_ref,
+                customer=customer,
+                phone="",
+                alert_type=alert_type,
+                adult_declared=True,
+                resume_existing=False,
+            )
+            activated = outcome.subscription
+            if activated is None:
+                # Raising keeps both the opt-in and its durable receipt uncommitted.
+                raise StockAlertActivationError
+            # A fresh explicit gesture may resume an existing paused row.
+            if activated.paused_at is not None:
+                stock_alerts.set_paused(
+                    activated.ref,
+                    paused=False,
+                    sku=activated.sku,
                     customer=customer,
-                    phone="",
-                    alert_type=alert_type,
-                    adult_declared=True,
-                    resume_existing=False,
                 )
-                sub = outcome.subscription
-                if sub is None:
-                    failed = True
-                    transaction.set_rollback(True)
-                else:
-                    # subscribe_with_outcome deliberately leaves an existing paused
-                    # row untouched. A fresh explicit gesture may resume it.
-                    if sub.paused_at is not None:
-                        stock_alerts.set_paused(
-                            sub.ref,
-                            paused=False,
-                            sku=sub.sku,
-                            customer=customer,
-                        )
-                        sub.refresh_from_db()
-                    if receipt is not None:
-                        receipt.status = "done"
-                        receipt.response_code = status.HTTP_200_OK
-                        receipt.response_body = {
-                            "contract": _STOCK_ALERT_INTENT_RECEIPT_CONTRACT,
-                            "subscription_ref": str(sub.ref),
-                        }
-                        receipt.save(update_fields=["status", "response_code", "response_body"])
+                activated.refresh_from_db()
+            return activated
 
-        if failed:
-            return Response(
-                {"detail": "Não foi possível registrar o aviso."},
-                status=status.HTTP_400_BAD_REQUEST,
+        if intent is not None:
+            from shopman.shop.services.remote_mutations import (
+                RemoteMutationConflict,
+                RemoteMutationInProgress,
+                run_idempotent_mutation,
             )
-        if replay is not None:
-            _mark_stock_alert_intent_complete(
-                request,
+
+            fingerprint = _stock_alert_intent_fingerprint(
                 intent_ref=intent_ref,
+                sku=sku,
                 customer_ref=str(customer.ref),
-                subscription_ref=str(replay["subscription_ref"]),
             )
-            return _no_store_response(replay, status_code=status.HTTP_200_OK)
+
+            def execute_activation():
+                activated = activate_subscription()
+                return {"subscription_ref": str(activated.ref)}, status.HTTP_200_OK
+
+            try:
+                result = run_idempotent_mutation(
+                    scope=_STOCK_ALERT_INTENT_RECEIPT_SCOPE,
+                    key=intent_ref,
+                    fingerprint=fingerprint,
+                    execute=execute_activation,
+                )
+            except RemoteMutationConflict:
+                return _no_store_response(
+                    {
+                        "detail": "Este pedido de aviso não corresponde a esta conta ou produto.",
+                        "field": "intent_ref",
+                    },
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+            except RemoteMutationInProgress:
+                return _no_store_response(
+                    {
+                        "detail": "Não foi possível confirmar este pedido de aviso. Tente novamente.",
+                        "field": "intent_ref",
+                    },
+                    status_code=status.HTTP_409_CONFLICT,
+                )
+            except StockAlertActivationError:
+                return Response(
+                    {"detail": "Não foi possível registrar o aviso."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            completed_subscription_ref = str(result.response_body.get("subscription_ref") or "")
+            try:
+                sub = StockAlertSubscription.objects.filter(
+                    ref=uuid.UUID(completed_subscription_ref),
+                    sku=sku,
+                    customer_ref=customer.ref,
+                    purpose="stock_availability",
+                    proof_status="verified",
+                ).first()
+            except (TypeError, ValueError):
+                sub = None
+            if sub is None:
+                return _no_store_response(
+                    {
+                        "detail": "Este pedido de aviso não corresponde mais ao resultado original.",
+                        "field": "intent_ref",
+                    },
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            try:
+                sub = activate_subscription()
+            except StockAlertActivationError:
+                return Response(
+                    {"detail": "Não foi possível registrar o aviso."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         # Mantém o marcador de sessão compatível com capacidades já emitidas; a
         # identidade autenticada continua sendo a autoridade para esta criação.
@@ -569,16 +550,15 @@ class StockAlertSubscribeView(APIView):
                 subscription_ref=str(sub.ref),
             )
 
-        return _no_store_response(
-            {
-                "ok": True,
-                "subscription_ref": str(sub.ref),
-                "active": sub.is_active,
-                "expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
-                "management_url": stock_alerts.management_url(sub),
-            },
-            status_code=status.HTTP_200_OK,
-        )
+        response_payload = {
+            "ok": True,
+            "subscription_ref": str(sub.ref),
+            "active": sub.is_active,
+            "expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
+        }
+        if sub.revoked_at is None:
+            response_payload["management_url"] = stock_alerts.management_url(sub)
+        return _no_store_response(response_payload, status_code=status.HTTP_200_OK)
 
     @extend_schema(
         tags=["availability"],
@@ -771,6 +751,7 @@ def _management_payload(sub, *, suppressed: int = 0) -> dict:
     state = "cancelled" if sub.revoked_at is not None else "paused" if sub.paused_at is not None else "active"
     return {
         "ok": True,
+        "sku": sub.sku,
         "product_name": product_name(sub.sku),
         "event_label": dict(StockAlertSubscription.AlertType.choices).get(sub.alert_type, sub.alert_type),
         "state": state,

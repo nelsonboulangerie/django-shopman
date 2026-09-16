@@ -804,7 +804,8 @@ def test_inflight_intent_snapshot_cannot_undo_a_later_decision(
         key=prepared["intent_ref"],
     )
     assert receipt.status == "done"
-    assert receipt.response_body["subscription_ref"] == str(sub.ref)
+    assert receipt.response_body["contract"] == "local-mutation-v1"
+    assert receipt.response_body["result"]["subscription_ref"] == str(sub.ref)
     assert str(customer.ref) not in str(receipt.response_body)
 
 
@@ -925,6 +926,51 @@ def test_anonymous_reload_recovers_exact_session_management_link(client):
     body = recovered.content.decode()
     assert PHONE not in body
     assert str(sub.ref) not in body
+
+
+def test_authenticated_owner_recovers_individual_management_link(client):
+    product = _publish(sku="SKU-MANAGE-ACCOUNT")
+    customer = _authenticate(client, ref="CUS-MANAGE-ACCOUNT")
+    sub = stock_alerts.subscribe(
+        product.sku,
+        customer=customer,
+        adult_declared=True,
+    )
+
+    recovered = client.get(f"/api/v1/availability/{product.sku}/notify/")
+
+    assert recovered.status_code == 200
+    assert recovered["Cache-Control"] == "private, no-store, max-age=0"
+    assert recovered["Referrer-Policy"] == "no-referrer"
+    assert recovered.json() == {
+        "active": True,
+        "management_url": stock_alerts.management_url(sub),
+    }
+    body = recovered.content.decode()
+    assert PHONE not in body
+    assert str(sub.ref) not in body
+
+
+def test_authenticated_non_owner_cannot_recover_foreign_session_management_link(client):
+    product = _publish(sku="SKU-MANAGE-ACCOUNT-IDOR")
+    owner = Customer.objects.create(
+        ref="CUS-MANAGE-OWNER",
+        first_name="Bia",
+        phone="+5543999990010",
+    )
+    sub = stock_alerts.subscribe(
+        product.sku,
+        customer=owner,
+        adult_declared=True,
+    )
+    _authenticate(client, ref="CUS-MANAGE-STRANGER", phone="+5543999990011")
+    _mark_legacy_session(client, sub)
+
+    recovered = client.get(f"/api/v1/availability/{product.sku}/notify/")
+
+    assert recovered.status_code == 404
+    assert recovered["Cache-Control"] == "private, no-store, max-age=0"
+    assert stock_alerts.management_url(sub) not in recovered.content.decode()
 
 
 def test_session_management_link_cannot_be_recovered_by_ref_or_wrong_owner(client):
@@ -1800,6 +1846,7 @@ def test_management_capability_works_cross_device_and_get_is_read_only(client):
     assert response.status_code == 200
     assert response["Cache-Control"] == "private, no-store, max-age=0"
     assert response["Referrer-Policy"] == "no-referrer"
+    assert response.json()["sku"] == product.sku
     assert response.json()["state"] == "active"
     body = response.content.decode()
     assert PHONE not in body

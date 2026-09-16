@@ -186,6 +186,7 @@ class StockAlertManagementActionSerializer(serializers.Serializer):
 
 class StockAlertManagementStateSerializer(serializers.Serializer):
     ok = serializers.BooleanField()
+    sku = serializers.CharField()
     product_name = serializers.CharField()
     event_label = serializers.CharField()
     state = serializers.ChoiceField(choices=["active", "paused", "cancelled"])

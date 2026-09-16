@@ -28,10 +28,12 @@ const csrfHeaders = useShopmanCsrfHeaders()
 const { isAuthenticated } = useShopSession()
 const route = useRoute()
 const router = useRouter()
+const { states: transientStates, clearStockNotifyState } = useStockNotifyTransientState()
 
 const submitting = ref(false)
 const isSubscribed = ref(!!props.subscribed)
 const managementUrl = ref('')
+const managementRecoveryComplete = ref(false)
 const sheetOpen = ref(false)
 const adultDeclared = ref(false)
 const declarationError = ref('')
@@ -46,6 +48,12 @@ const intendedRef = computed(() => {
   return Array.isArray(value) ? String(value[0] || '') : String(value || '')
 })
 const hasMatchingIntent = computed(() => intendedSku.value === props.sku && !!intendedRef.value && !isSubscribed.value)
+const transientState = computed(() => isSubscribed.value ? transientStates.value[props.sku] : undefined)
+const transientLabel = computed(() => transientState.value === 'paused' ? 'Pausado' : 'Cancelado')
+const transientDescription = computed(() => transientState.value === 'paused'
+  ? 'Aviso pausado agora. Na próxima atualização, Me avise ficará disponível.'
+  : 'Aviso cancelado agora. Na próxima atualização, Me avise ficará disponível.'
+)
 
 async function subscribe (intentRef = '') {
   if (submitting.value) return false
@@ -64,6 +72,7 @@ async function subscribe (intentRef = '') {
       if (import.meta.client) useSonner('Este aviso não está ativo. Você pode ativá-lo novamente quando quiser.')
       return true
     }
+    clearStockNotifyState(props.sku)
     isSubscribed.value = true
     if (import.meta.client) useSonner.success(notifyConfirmationMessage())
     return true
@@ -132,7 +141,10 @@ async function onSubmit () {
 }
 
 async function recoverManagementLink () {
-  if (!props.subscribed || isAuthenticated.value || managementUrl.value) return false
+  if (!props.subscribed || managementUrl.value) {
+    managementRecoveryComplete.value = true
+    return false
+  }
   try {
     const result = await $fetch<{ active: boolean, management_url: string }>(apiPath(`/api/v1/availability/${encodeURIComponent(props.sku)}/notify/`), {
       method: 'GET',
@@ -144,6 +156,8 @@ async function recoverManagementLink () {
     // A projeção continua sendo a fonte do estado visual. A ausência de uma
     // sessão recuperável não transforma falha de rede em nova assinatura.
     return false
+  } finally {
+    managementRecoveryComplete.value = true
   }
 }
 
@@ -165,13 +179,39 @@ async function restartIntent () {
 
 onMounted(initialize)
 
-const managementHref = computed(() => managementUrl.value || (isAuthenticated.value ? '/conta/preferencias#avisos-produtos' : ''))
+watch(() => props.subscribed, value => {
+  isSubscribed.value = !!value
+})
+
+const managementHref = computed(() => managementUrl.value || (
+  isAuthenticated.value && managementRecoveryComplete.value
+    ? '/conta/preferencias#avisos-produtos'
+    : ''
+))
 </script>
 
 <template>
+  <!-- Confirmação efêmera da última ação: não sobrevive à próxima projeção/reload. -->
+  <UiButton
+    v-if="transientState"
+    disabled
+    :variant="pill ? 'default' : 'outline'"
+    :size="pill ? 'sm' : (compact ? 'sm' : 'lg')"
+    :icon="transientState === 'paused' ? 'lucide:pause' : 'lucide:bell-off'"
+    :class="[
+      pill ? 'h-10 w-full justify-center gap-1 rounded-full px-3 text-sm tracking-tight shadow-sm' : (compact ? '' : 'w-full'),
+      'disabled:opacity-100',
+      !pill && (inverted ? 'shop-action-inverted' : 'border-muted-foreground/40 text-muted-foreground')
+    ]"
+    :aria-label="transientDescription"
+    :title="transientDescription"
+  >
+    {{ transientLabel }}
+  </UiButton>
+
   <!-- Estado confirmado (persistente): calmo, sem ação pendente. -->
   <UiButton
-    v-if="isSubscribed"
+    v-else-if="isSubscribed"
     :to="managementHref || undefined"
     :disabled="!managementHref"
     :variant="pill ? 'default' : 'outline'"
