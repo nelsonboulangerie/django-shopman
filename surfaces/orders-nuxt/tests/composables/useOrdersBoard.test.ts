@@ -4,7 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
 import { useStationLock } from "../../../operator-kit/app/composables/useStationLock";
-import { GESTOR_ALERT, gestorAttentionDecision, useOrdersBoard } from "../../app/composables/useOrdersBoard";
+import {
+  GESTOR_ALERT,
+  gestorAttentionDecision,
+  gestorAttentionStorageKey,
+  gestorServiceDayBoundaryDelay,
+  useOrdersBoard,
+} from "../../app/composables/useOrdersBoard";
 import type { TwoZoneQueueProjection } from "../../app/types/orders";
 
 const env = installNuxtGlobals();
@@ -21,6 +27,8 @@ function emptyZone(): TwoZoneQueueProjection {
     expedition_delivery_count: 0,
     expedition_count: 0,
     total_count: 0,
+    service_day: "2026-09-16",
+    service_day_ends_at: "2026-09-17T00:00:00-03:00",
   };
 }
 
@@ -96,6 +104,72 @@ describe("useOrdersBoard — atenção diária", () => {
     };
     expect(gestorAttentionDecision(queue, new Set(), "", "2026-09-15").firstUnseen).toBe("");
   });
+
+  it("usa o dia canônico do servidor na chave mesmo com tablet em outro fuso", () => {
+    expect(gestorAttentionStorageKey("2026-09-16")).toBe("gestor_seen_2026-09-16");
+    // 23h59m59 em São Paulo ainda são 02h59m59 UTC do dia seguinte no tablet.
+    expect(
+      gestorServiceDayBoundaryDelay(
+        "2026-09-17T00:00:00-03:00",
+        "2026-09-17T02:59:59Z",
+      ),
+    ).toBe(1_250);
+  });
+
+  it("na virada do dia o mesmo pedido volta a ser unseen na nova memória diária", () => {
+    const queue = dueQueue("PRE-1");
+    const yesterday = gestorAttentionDecision(queue, new Set(["PRE-1"]), "", "2026-09-15");
+    const today = gestorAttentionDecision(queue, new Set(), yesterday.signature, "2026-09-16");
+
+    expect(today.firstUnseen).toBe("PRE-1");
+    expect(today.signature).toBe("2026-09-16:PRE-1");
+  });
+});
+
+it("refaz a leitura na meia-noite operacional do servidor, não na do tablet", async () => {
+  env.reset();
+  vi.useFakeTimers();
+  // Mesmo que o relógio civil do tablet esteja absurdo, a conta usa apenas os
+  // dois timestamps canônicos devolvidos pelo servidor.
+  vi.setSystemTime(new Date("2038-01-01T00:00:00Z"));
+  env.fetchData.value = {
+    generated_at: "2026-09-17T02:59:59Z",
+    contract_version: 1,
+    queue: emptyZone(),
+  };
+  let mounted!: () => void;
+  let unmount!: () => void;
+  const listeners = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
+  const source = vi.fn(function () { return { addEventListener: vi.fn(), close: vi.fn() }; });
+  const prior = {
+    onMounted: globalThis.onMounted,
+    onBeforeUnmount: globalThis.onBeforeUnmount,
+    document: globalThis.document,
+    window: globalThis.window,
+    EventSource: globalThis.EventSource,
+    ssePath: globalThis.ssePath,
+  };
+  vi.stubGlobal("onMounted", (callback: () => void) => { mounted = callback; });
+  vi.stubGlobal("onBeforeUnmount", (callback: () => void) => { unmount = callback; });
+  vi.stubGlobal("document", { ...listeners, title: "Pedidos", visibilityState: "visible" });
+  vi.stubGlobal("window", listeners);
+  vi.stubGlobal("EventSource", source);
+  vi.stubGlobal("ssePath", (await import("../../../operator-kit/app/utils/ssePath")).ssePath);
+  try {
+    useOrdersBoard();
+    mounted();
+    await vi.advanceTimersByTimeAsync(1_250);
+    expect(env.refresh).toHaveBeenCalledTimes(1);
+  } finally {
+    unmount?.();
+    vi.stubGlobal("onMounted", prior.onMounted);
+    vi.stubGlobal("onBeforeUnmount", prior.onBeforeUnmount);
+    vi.stubGlobal("document", prior.document);
+    vi.stubGlobal("window", prior.window);
+    vi.stubGlobal("EventSource", prior.EventSource);
+    vi.stubGlobal("ssePath", prior.ssePath);
+    vi.useRealTimers();
+  }
 });
 
 describe("useOrdersBoard — ações (act)", () => {

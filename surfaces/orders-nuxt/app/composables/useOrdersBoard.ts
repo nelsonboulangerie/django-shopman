@@ -74,6 +74,28 @@ export function gestorAttentionDecision(
   };
 }
 
+const MAX_BROWSER_TIMEOUT_MS = 2_147_000_000;
+
+/** Delay until the server's next operational day, independent of tablet TZ. */
+export function gestorServiceDayBoundaryDelay(
+  serviceDayEndsAt: string,
+  serverGeneratedAt: string,
+): number | null {
+  const boundary = Date.parse(serviceDayEndsAt);
+  const observedAt = Date.parse(serverGeneratedAt);
+  if (!Number.isFinite(boundary) || !Number.isFinite(observedAt)) return null;
+  // Dois timestamps do servidor: nem o timezone nem o relógio civil do tablet
+  // participam do cálculo. A latência só pode atrasar a leitura por poucos ms.
+  const remaining = boundary - observedAt;
+  // Relógio do tablet adiantado ou resposta capturada na virada: não cria loop
+  // apertado; o poll e esta retentativa buscarão o novo dia do servidor.
+  if (remaining <= 0) return 30_000;
+  return Math.min(remaining + 250, MAX_BROWSER_TIMEOUT_MS);
+}
+
+export const gestorAttentionStorageKey = (serviceDay: string) =>
+  `gestor_seen_${serviceDay}`;
+
 // O beep/mute é o do kit (mesmo do KDS), com chave própria do Gestor. O push
 // O SSE só dispara o refetch; a mudança da projection para ação liberada avisa.
 //
@@ -151,20 +173,12 @@ export function useOrdersBoard() {
   let lastAttentionSignature = "";
   const attentionPending = ref(false);
   let pendingAttentionRefs = new Set<string>();
-  const localServiceDay = () => {
-    const value = new Date();
-    return [
-      value.getFullYear(),
-      String(value.getMonth() + 1).padStart(2, "0"),
-      String(value.getDate()).padStart(2, "0"),
-    ].join("-");
-  };
-  const attentionStorageKey = (day: string) => `gestor_seen_${day}`;
+  let pendingAttentionDay = "";
 
   function seenTreatableRefs(day: string): Set<string> {
     if (!import.meta.client) return new Set();
     try {
-      const value = JSON.parse(localStorage.getItem(attentionStorageKey(day)) || "[]");
+      const value = JSON.parse(localStorage.getItem(gestorAttentionStorageKey(day)) || "[]");
       return new Set(Array.isArray(value) ? value.map(String) : []);
     } catch {
       return new Set();
@@ -173,16 +187,17 @@ export function useOrdersBoard() {
 
   function rememberPendingTreatableRefs() {
     if (!import.meta.client) return;
-    const day = localServiceDay();
+    const day = pendingAttentionDay;
+    if (!day) return;
     const seen = seenTreatableRefs(day);
     for (const ref_ of pendingAttentionRefs) seen.add(ref_);
     try {
-      localStorage.setItem(attentionStorageKey(day), JSON.stringify([...seen].slice(-500)));
+      localStorage.setItem(gestorAttentionStorageKey(day), JSON.stringify([...seen].slice(-500)));
     } catch {
       // Sem storage, a assinatura ainda impede repetição nesta montagem.
     }
-    lastAttentionSignature = `${day}:${[...treatableOrderRefs(queue.value)].sort().join("|")}`;
     pendingAttentionRefs = new Set();
+    pendingAttentionDay = "";
     attentionPending.value = false;
     stopAlert();
     stopTitleAlert();
@@ -254,7 +269,8 @@ export function useOrdersBoard() {
 
   function evaluateTreatableAttention() {
     if (!attentionReady) return;
-    const day = localServiceDay();
+    const day = queue.value?.service_day || "";
+    if (!day) return;
     const decision = gestorAttentionDecision(
       queue.value,
       seenTreatableRefs(day),
@@ -264,6 +280,7 @@ export function useOrdersBoard() {
     lastAttentionSignature = decision.signature;
     if (decision.shouldStop) {
       pendingAttentionRefs = new Set();
+      pendingAttentionDay = "";
       attentionPending.value = false;
       stopAlert();
       stopTitleAlert();
@@ -273,6 +290,7 @@ export function useOrdersBoard() {
       pendingAttentionRefs = new Set(
         [...treatableOrderRefs(queue.value)].filter((ref_) => !seen.has(ref_)),
       );
+      pendingAttentionDay = day;
       attentionPending.value = pendingAttentionRefs.size > 0;
       announceTreatableOrder(decision.firstUnseen);
     }
@@ -287,7 +305,27 @@ export function useOrdersBoard() {
   // Uma única régua para SSE, poll, retorno da aba e primeira abertura. Assim
   // a encomenda que virou tratável com a tela fechada não depende de ter havido
   // um evento SSE exatamente depois que o browser conectou.
-  watch(queue, evaluateTreatableAttention, { flush: "post" });
+  let serviceDayTimer: ReturnType<typeof setTimeout> | null = null;
+  let serviceDayClockReady = false;
+  function scheduleServiceDayRefresh() {
+    if (serviceDayTimer) clearTimeout(serviceDayTimer);
+    serviceDayTimer = null;
+    // Só é habilitado em onMounted, portanto nunca agenda no SSR.
+    if (!serviceDayClockReady) return;
+    const delay = gestorServiceDayBoundaryDelay(
+      queue.value?.service_day_ends_at || "",
+      data.value?.generated_at || "",
+    );
+    if (delay == null) return;
+    serviceDayTimer = setTimeout(() => {
+      serviceDayTimer = null;
+      void Promise.resolve(refresh()).finally(scheduleServiceDayRefresh);
+    }, delay);
+  }
+  watch(queue, () => {
+    evaluateTreatableAttention();
+    scheduleServiceDayRefresh();
+  }, { flush: "post" });
 
   function connectSse() {
     if (source) return;
@@ -349,7 +387,9 @@ export function useOrdersBoard() {
   };
   onMounted(() => {
     attentionReady = true;
+    serviceDayClockReady = true;
     evaluateTreatableAttention();
+    scheduleServiceDayRefresh();
     pollTimer = setInterval(() => refresh(), 30_000);
     connectWhenReady();
     // Voltou à aba / reconectou: refetch imediato (o poll de 30s é longo demais
@@ -360,6 +400,7 @@ export function useOrdersBoard() {
   onBeforeUnmount(() => {
     stopWaitingForRead?.();
     if (pollTimer) clearInterval(pollTimer);
+    if (serviceDayTimer) clearTimeout(serviceDayTimer);
     if (source) { source.close(); source = null; }
     stopTitleAlert();
     document.removeEventListener("visibilitychange", onVisible);

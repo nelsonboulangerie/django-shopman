@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
+import pytest
 from django.test import TestCase
+from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from shopman.orderman.models import Order, OrderItem
 
@@ -783,3 +787,16 @@ class TimelineSpeaksPortugueseTests(TestCase):
 
                 self.assertEqual(event.label, order_status_label("accepted"))
                 self.assertNotIn("Status", event.label)
+
+
+@pytest.mark.django_db
+def test_queue_projects_server_operational_day_and_its_boundary(settings):
+    settings.TIME_ZONE = "America/Sao_Paulo"
+
+    queue = build_two_zone_queue()
+
+    assert queue.service_day == timezone.localdate().isoformat()
+    assert queue.service_day_ends_at.endswith("-03:00")
+    assert queue.service_day_ends_at.startswith(
+        (timezone.localdate() + timedelta(days=1)).isoformat()
+    )

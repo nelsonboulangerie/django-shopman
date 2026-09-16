@@ -417,6 +417,11 @@ class TwoZoneQueueProjection:
     expedition_delivery_count: int
     expedition_count: int
     total_count: int
+    # Relógio operacional canônico da loja. O tablet pode estar em UTC, com
+    # timezone errado ou atravessar a meia-noite local em outro instante; som e
+    # memória diária devem seguir o dia calculado pelo Django.
+    service_day: str
+    service_day_ends_at: str
     # Encomendas para datas futuras (WP-D): fora das colunas do dia, ordenadas
     # pela data combinada. Inclui pedidos NOVOS (ainda a aceitar) e confirmados —
     # ambos carregam o badge "Agendado · <data>", então pertencem aqui, não na
@@ -1068,6 +1073,14 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         if o.status in ("dispatched", "delivered")
     )
 
+    from datetime import datetime, time, timedelta
+
+    service_day = timezone.localdate()
+    service_day_ends_at = timezone.make_aware(
+        datetime.combine(service_day + timedelta(days=1), time.min),
+        timezone.get_current_timezone(),
+    )
+
     return TwoZoneQueueProjection(
         equipment_out=_equipment_out(user=user, devices=devices),
         equipment_available=tuple(EquipmentOptionProjection(ref=PREFIX + str(device.ref), label=device.label)
@@ -1087,6 +1100,8 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         + len(expedition_delivery)
         + len(expedition_delivery_transit),
         total_count=len(all_orders),
+        service_day=service_day.isoformat(),
+        service_day_ends_at=service_day_ends_at.isoformat(),
         preorders=preorders,
         preorders_count=len(preorders),
     )
