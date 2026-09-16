@@ -12,18 +12,22 @@ import { toast } from "vue-sonner";
 import {
   amountInputError,
   amountToQ,
+  attentionCount,
   canRegisterMovement,
   canRequestChange,
   canSubmitCashAmount,
   changeDenominations,
   changeRequestSummary,
+  endOfDayTiles,
   formatAmountInput,
   formatOpenedAt,
   formatRequestedAt,
   movementLabel,
   movementReasons,
+  sessionActionTiles,
   sessionScreenState,
 } from "~/presentation/cash";
+import type { SessionActionTile, SessionNavTile } from "~/presentation/cash";
 import type { ManagerApproval } from "~/composables/usePosCashSession";
 import type { DayClosingResponse } from "~/types/closing";
 
@@ -73,17 +77,66 @@ const cashRuntime = computed(() => pos.value?.cash_runtime ?? null);
 // Ausente vale `false`: contrato mudo não abre porta de dinheiro.
 const canAuditCash = computed(() => cashRuntime.value?.can_audit_cash === true);
 
-// Exceção e encerramento nascem RECOLHIDOS. Ver o formulário é uma escolha, e a
-// escolha é o que separa "abri a gaveta porque precisei" de "abri porque estava
-// ali". Nada some: os dois abrem a um toque.
-const openingDrawerPanel = ref(false);
-const closingPanel = ref(false);
+// Com o turno aberto, cada ação de gaveta é um TILE, e o formulário mora num
+// diálogo que nasce recolhido. Ver o formulário é uma escolha, e a escolha é o
+// que separa "abri a gaveta porque precisei" de "abri porque estava ali" —
+// dois campos de dinheiro abertos o turno inteiro eram ruído em 99% das
+// visitas e um toque errado no 1% restante. Nada some: cada um abre a um
+// toque, e o tile diz o que vai acontecer antes de o formulário aparecer.
+const changeDialogOpen = ref(false);
+const movementDialogOpen = ref(false);
+const drawerDialogOpen = ref(false);
+const closingDialogOpen = ref(false);
 // A capability é a FONTE dos motivos de movimento e das denominações do troco.
 // Repetir as listas em TypeScript seria assinar uma divergência para o dia em
 // que uma moeda saísse de circulação.
 const cashManagement = computed(() => pos.value?.checkout?.capabilities?.cash_management ?? null);
 const openedAtDisplay = computed(() => formatOpenedAt(cashRuntime.value?.opened_at));
 const salesCount = computed(() => shift.value?.count ?? 0);
+
+// "Precisa de você": o que pede uma pessoa agora, contado para o cabeçalho.
+// Zero = o bloco não existe; a antesala sem pendência é só status e ações.
+const attention = computed(() => attentionCount({
+  pendingCashRefunds: pendingCashRefunds.value,
+  pendingChangeRequests: pendingChangeRequests.value,
+  accountBalances: accountBalances.value,
+}));
+
+// Os tiles da "Gaveta" e do "Fim do expediente" — a lista é pura; a página só
+// abre o diálogo (ou navega) que o tile nomeia.
+const actionTiles = computed(() => sessionActionTiles({
+  movementKinds: movementKinds.value,
+  canOpenDrawer: canOpenDrawer.value,
+  drawerUnavailableReason: drawerUnavailableReason.value,
+}));
+const endOfDay = computed(() => endOfDayTiles({
+  canAuditCash: canAuditCash.value,
+  dayClosing: dayClosing.value,
+}));
+
+function openTile(tile: SessionActionTile) {
+  if (tile.disabled) return;
+  if (tile.action === "request_change") changeDialogOpen.value = true;
+  else if (tile.action === "movement") openMovement(tile.kind || "");
+  else if (tile.action === "open_drawer") drawerDialogOpen.value = true;
+  else if (tile.action === "close_shift") closingDialogOpen.value = true;
+}
+
+async function goToTile(tile: SessionNavTile) {
+  if (tile.key === "cash_report") await goToCashReport();
+  else await goToDayClosing();
+}
+
+// O campo de valor nasce focado ao abrir o diálogo: tocar o tile já foi a
+// decisão, digitar é o próximo gesto. O foco padrão do diálogo cairia no
+// primeiro botão (o tipo, ou uma denominação), e a mão precisaria de um
+// segundo alvo.
+function focusOnOpen(event: Event, field: { inputRef: HTMLInputElement | null } | null) {
+  event.preventDefault();
+  void nextTick(() => field?.inputRef?.focus());
+}
+const changeAmountField = useTemplateRef<{ inputRef: HTMLInputElement | null }>("changeAmountField");
+const closingAmountField = useTemplateRef<{ inputRef: HTMLInputElement | null }>("closingAmountField");
 
 // ABERTURA GUIADA (pedido do dono): a antesala conduz. O campo de valor já
 // nasce focado, o placeholder sugere o fundo de troco que o GESTOR configurou
@@ -176,6 +229,14 @@ function pickMovementKind(kind: string) {
   void nextTick(() => movementAmountField.value?.inputRef?.focus());
 }
 
+// Saída e entrada são o MESMO diálogo com o tipo pré-escolhido pelo tile; o
+// seletor de tipo continua dentro, para trocar. O título acompanha o tipo.
+function openMovement(kind: string) {
+  pickMovementKind(kind);
+  movementDialogOpen.value = true;
+}
+const movementDialogTitle = computed(() => movementLabel(movementKind.value));
+
 function pickMovementReason(reason: string) {
   movementReasonPick.value = reason;
   movementReasonOther.value = "";
@@ -253,7 +314,6 @@ async function refundPending(orderRef: string, managerApproval: ManagerApproval 
 const settleCustomerRef = ref<string | null>(null);
 const settleAmount = ref("");
 const settleMethod = ref<"cash" | "pix" | "credit" | "debit" | "external">("cash");
-const settleCustomer = computed(() => accountBalances.value.find((a) => a.customer_ref === settleCustomerRef.value) ?? null);
 function openSettle(customerRef: string, balanceQ: number) {
   settleCustomerRef.value = customerRef;
   settleAmount.value = (balanceQ / 100).toFixed(2).replace(".", ",");
@@ -280,6 +340,7 @@ async function submitMovement(managerApproval: ManagerApproval | null = null) {
     managerAuthOpen.value = false;
     movementAmount.value = "";
     clearMovementReason();
+    movementDialogOpen.value = false;
   }
 }
 
@@ -314,6 +375,7 @@ async function submitChangeRequest() {
     changeAmount.value = "";
     changeDenominationsPicked.value = [];
     changeNote.value = "";
+    changeDialogOpen.value = false;
   }
 }
 
@@ -345,7 +407,10 @@ async function openDrawer(reason: string) {
   const chosen = reason.trim();
   if (!chosen) return;
   const ok = await openDrawerWithoutSale(chosen);
-  if (ok) drawerReason.value = "";
+  if (ok) {
+    drawerReason.value = "";
+    drawerDialogOpen.value = false;
+  }
 }
 
 // Teste de gaveta: a sonda só alcança a FILA do sistema. Se a gaveta está
@@ -374,6 +439,10 @@ const closingEchoDisplay = computed(() => {
 // preenchendo o campo — para quem conta nota por nota.
 const closingCounter = ref(false);
 const confirmingClose = ref(false);
+// Fechar o diálogo no meio da confirmação desarma a confirmação, e só ela: o
+// valor contado e as observações ficam, para quem foi só espiar a gaveta
+// não digitar tudo de novo — mas reabrir não pode cair direto no "Confirmar".
+watch(closingDialogOpen, (open) => { if (!open) confirmingClose.value = false; });
 // O fim de dia se ENCADEIA: fechado o caixa, a antesala oferece o próximo
 // passo (fechamento do dia, se pendente e permitido) em vez de deixar o
 // operador adivinhar que existem mais duas telas.
@@ -385,7 +454,7 @@ async function confirmClose() {
   if (ok) {
     closingAmount.value = "";
     closingNotes.value = "";
-    closingPanel.value = false;
+    closingDialogOpen.value = false;
     closingCounter.value = false;
     justClosedShift.value = true;
   }
@@ -515,7 +584,9 @@ async function confirmClose() {
             </UiButton>
           </section>
 
-          <!-- Turno aberto: status (cego), continuar, movimentos, fechamento -->
+          <!-- Turno aberto: status (cego) e continuar, o que precisa de gente,
+               os tiles da gaveta, e o fim do expediente. Os formulários moram
+               em diálogos, um por tile — ver abaixo. -->
           <template v-else>
             <section class="grid gap-3 rounded-md border bg-card p-4">
               <div class="grid grid-cols-2 gap-2 rounded-md border bg-muted/40 p-3 text-sm">
@@ -534,459 +605,560 @@ async function confirmClose() {
               </UiButton>
             </section>
 
+            <!-- PRECISA DE VOCÊ: só existe com pendência, e junta o que pede uma
+                 pessoa agora — devolução em dinheiro, pedido de troco à espera
+                 e conta na casa com saldo. Antes cada um era um card no meio
+                 das ações raras, e a próxima pessoa a chegar ao balcão tinha
+                 que achar. Tom de atenção, não de alarme: é trabalho, não
+                 falha. -->
+            <section
+              v-if="attention"
+              class="grid gap-4 rounded-md border border-warning/40 bg-card p-4"
+              data-needs-you
+              aria-labelledby="needs-you-title"
+            >
+              <div class="flex items-center gap-2">
+                <Icon name="lucide:bell-ring" class="size-4 text-warning" />
+                <h2 id="needs-you-title" class="text-base font-semibold">Precisa de você</h2>
+                <span class="ml-auto rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-warning">
+                  {{ attention }}<span class="sr-only"> {{ attention === 1 ? "pendência" : "pendências" }}</span>
+                </span>
+              </div>
+
+              <!-- Cancelar não é devolver. O gestor cancela de noite e ninguém abriu
+                   gaveta: a devolução fica aqui, visível, até quem está com a gaveta
+                   aberta entregar as notas. Só então Payman e livro registram. -->
+              <div v-if="pendingCashRefunds.length" class="grid gap-2">
+                <div class="flex items-center gap-2">
+                  <Icon name="lucide:rotate-ccw" class="size-4 text-muted-foreground" />
+                  <h3 class="text-sm font-semibold">Devoluções em dinheiro pendentes</h3>
+                </div>
+                <ul class="grid gap-2" aria-label="Devoluções em dinheiro pendentes">
+                  <li
+                    v-for="refund in pendingCashRefunds"
+                    :key="refund.order_ref"
+                    class="grid gap-2 rounded-md border bg-muted/30 p-3"
+                  >
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <span class="text-sm font-medium tabular-nums">{{ refund.amount_display }}</span>
+                      <span class="text-xs text-muted-foreground">
+                        pedido {{ refund.order_ref }}<template v-if="refund.customer_name"> · {{ refund.customer_name }}</template>
+                      </span>
+                    </div>
+                    <UiButton size="sm" :disabled="busy" @click="refundPending(refund.order_ref)">
+                      <Icon name="lucide:hand-coins" class="size-4" />
+                      Devolver
+                    </UiButton>
+                  </li>
+                </ul>
+                <p class="text-xs text-muted-foreground">
+                  O dinheiro sai desta gaveta e fica registrado no turno. Um gerente autoriza com o PIN.
+                </p>
+              </div>
+
+              <!-- Pedidos de troco à espera: é o que a próxima pessoa a chegar ao
+                   balcão precisa ver, e é onde a troca acontece. O PEDIR mora no
+                   tile "Pedir troco", abaixo. -->
+              <div v-if="pendingChangeRequests.length" class="grid gap-2">
+                <div class="flex items-center gap-2">
+                  <Icon name="lucide:coins" class="size-4 text-muted-foreground" />
+                  <h3 class="text-sm font-semibold">Pedidos de troco pendentes</h3>
+                </div>
+                <ul class="grid gap-2" aria-label="Pedidos de troco pendentes">
+                  <li
+                    v-for="request in pendingChangeRequests"
+                    :key="request.ref"
+                    class="grid gap-2 rounded-md border bg-muted/30 p-3"
+                  >
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <span class="text-sm font-medium">{{ changeRequestSummary(request, cashManagement) }}</span>
+                      <span class="text-xs text-muted-foreground">
+                        {{ request.requested_by }}<template v-if="formatRequestedAt(request.requested_at)"> · {{ formatRequestedAt(request.requested_at) }}</template>
+                      </span>
+                    </div>
+                    <p v-if="request.note" class="text-xs text-muted-foreground">{{ request.note }}</p>
+
+                    <div v-if="cancellingChangeRef !== request.ref" class="grid grid-cols-2 gap-2">
+                      <UiButton size="sm" :disabled="busy" @click="serveChange(request.ref)">
+                        <Icon name="lucide:hand-coins" class="size-4" />
+                        Atender
+                      </UiButton>
+                      <UiButton
+                        variant="outline"
+                        size="sm"
+                        :disabled="busy"
+                        @click="cancellingChangeRef = request.ref"
+                      >
+                        Cancelar pedido
+                      </UiButton>
+                    </div>
+                    <div v-else class="grid gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
+                      <p class="text-sm font-medium">Cancelar este pedido? Ninguém vai trazer o troco.</p>
+                      <div class="grid grid-cols-2 gap-2">
+                        <UiButton variant="outline" size="sm" :disabled="busy" @click="cancellingChangeRef = ''">
+                          Voltar
+                        </UiButton>
+                        <UiButton
+                          variant="destructive"
+                          size="sm"
+                          :disabled="busy"
+                          :loading="busy"
+                          @click="confirmCancelChange(request.ref)"
+                        >
+                          Confirmar
+                        </UiButton>
+                      </div>
+                    </div>
+                  </li>
+                </ul>
+              </div>
+
+              <!-- Conta na casa: quem deve quanto, e o acerto. Só aparece quando há
+                   saldo em aberto: dado opcional faz a tela crescer. -->
+              <div v-if="accountBalances.length" class="grid gap-2" data-house-accounts>
+                <div class="flex items-center gap-2">
+                  <Icon name="lucide:book-user" class="size-4 text-muted-foreground" />
+                  <h3 class="text-sm font-semibold">Contas na casa</h3>
+                </div>
+                <ul class="grid gap-2" aria-label="Contas na casa com saldo em aberto">
+                  <li
+                    v-for="account in accountBalances"
+                    :key="account.customer_ref"
+                    class="grid gap-2 rounded-md border bg-muted/30 p-3"
+                  >
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <span class="text-sm font-medium">{{ account.customer_name }}</span>
+                      <span class="text-sm tabular-nums">{{ account.balance_display }}</span>
+                      <span class="text-xs text-muted-foreground">
+                        {{ account.intents }} {{ account.intents === 1 ? "venda" : "vendas" }} em aberto
+                      </span>
+                    </div>
+                    <template v-if="settleCustomerRef === account.customer_ref">
+                      <div class="grid gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+                        <label class="grid gap-1.5 text-sm">
+                          <span class="font-medium text-muted-foreground">Recebido</span>
+                          <UiInput
+                            v-model="settleAmount"
+                            inputmode="decimal"
+                            placeholder="0,00"
+                            class="text-right tabular-nums"
+                            aria-label="Valor recebido no acerto"
+                            @keydown.enter="submitSettle"
+                          />
+                        </label>
+                        <label class="grid gap-1.5 text-sm">
+                          <span class="font-medium text-muted-foreground">Como</span>
+                          <UiNativeSelect v-model="settleMethod" aria-label="Método do acerto">
+                            <option value="cash">Dinheiro</option>
+                            <option value="pix">Pix</option>
+                            <option value="credit">Crédito</option>
+                            <option value="debit">Débito</option>
+                            <option value="external">Outro</option>
+                          </UiNativeSelect>
+                        </label>
+                        <div class="flex gap-2">
+                          <UiButton size="sm" variant="outline" :disabled="busy" @click="settleCustomerRef = null">Cancelar</UiButton>
+                          <UiButton size="sm" :disabled="busy || !settleAmount.trim()" @click="submitSettle">
+                            <Icon name="lucide:check" class="size-4" />
+                            Receber
+                          </UiButton>
+                        </div>
+                      </div>
+                      <p class="text-xs text-muted-foreground">
+                        O acerto é por venda inteira, da mais antiga para a mais nova; o que não couber fica em aberto.
+                      </p>
+                    </template>
+                    <UiButton v-else size="sm" :disabled="busy" @click="openSettle(account.customer_ref, account.balance_q)">
+                      <Icon name="lucide:hand-coins" class="size-4" />
+                      Receber acerto
+                    </UiButton>
+                  </li>
+                </ul>
+              </div>
+            </section>
+
+            <!-- GAVETA: uma grade de tiles, a gramática da Central. Cada tile é
+                 um ato com nome, ícone e uma linha dizendo o que vai acontecer;
+                 o formulário só aparece quando o operador escolhe.
+
+                 ABRIR GAVETA É EXCEÇÃO, e a tela precisa dizer isso pelo
+                 tamanho. Como card aberto do mesmo porte dos outros, ela
+                 convidava: abrir a gaveta sem venda é o buraco que a chave
+                 física deixava, e todo o controle de caixa fica de pé só
+                 enquanto isso for raro. Segue disponível, a um toque, e continua
+                 exigindo motivo e registro — mas não fica em exposição. O mesmo
+                 vale para "Fechar caixa": dois campos de dinheiro abertos o turno
+                 inteiro são ruído em 99% das visitas e um toque errado no 1%
+                 restante. O tile É a escolha consciente.
+
+                 Sem caminho de software a gaveta DIZ por que, em vez de sumir:
+                 o tile fica desabilitado com o motivo. Sumir calado fez o dono
+                 procurar um botão que nunca ia aparecer, achando que o PDV
+                 estava quebrado. -->
+            <section class="grid gap-3" aria-labelledby="drawer-actions-title">
+              <h2 id="drawer-actions-title" class="text-base font-semibold">Gaveta</h2>
+              <ul class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <li v-for="tile in actionTiles" :key="tile.key">
+                  <button
+                    type="button"
+                    class="flex min-h-28 w-full flex-col gap-2 rounded-md border border-border bg-card p-4 text-left transition hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-border disabled:hover:bg-card"
+                    :disabled="tile.disabled"
+                    :data-session-tile="tile.key"
+                    @click="openTile(tile)"
+                  >
+                    <span
+                      class="grid size-11 place-items-center rounded-md"
+                      :class="tile.tone === 'destructive' ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'"
+                    >
+                      <Icon :name="tile.icon" class="size-6" />
+                    </span>
+                    <span class="mt-auto">
+                      <span class="block text-sm font-semibold leading-tight">{{ tile.label }}</span>
+                      <span class="block text-xs text-muted-foreground">{{ tile.description }}</span>
+                    </span>
+                  </button>
+                </li>
+              </ul>
+            </section>
+
+            <!-- FIM DO EXPEDIENTE: só para quem pode. O relatório é de quem
+                 AUDITA, não de quem opera — faturamento e quebra por método
+                 são questão financeira, invisível ao balcão e ao gerente; o
+                 servidor recusa por conta própria (`cashman.audit_shift`), isto
+                 só evita oferecer uma porta que vai bater na cara. O fechamento
+                 do dia (contagem cega de sobras/perdas) entra quando a API
+                 deixou. -->
+            <section v-if="endOfDay.length" class="grid gap-3" aria-labelledby="end-of-day-title">
+              <h2 id="end-of-day-title" class="text-base font-semibold">Fim do expediente</h2>
+              <ul class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <li v-for="tile in endOfDay" :key="tile.key">
+                  <button
+                    type="button"
+                    class="flex min-h-28 w-full flex-col gap-2 rounded-md border border-border bg-card p-4 text-left transition hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    :data-session-tile="tile.key"
+                    @click="goToTile(tile)"
+                  >
+                    <span class="grid size-11 place-items-center rounded-md bg-primary/10 text-primary">
+                      <Icon :name="tile.icon" class="size-6" />
+                    </span>
+                    <span class="mt-auto">
+                      <span class="block text-sm font-semibold leading-tight">{{ tile.label }}</span>
+                      <span class="block text-xs text-muted-foreground">{{ tile.description }}</span>
+                    </span>
+                  </button>
+                </li>
+              </ul>
+            </section>
+
+            <!-- ── Diálogos, um por tile ──────────────────────────────────────
+                 Os formulários são os mesmos de antes, movidos tal qual: mesmos
+                 refs, mesmas funções, mesma validação. O que mudou é onde moram.
+                 O PIN do gerente (`OperatorManagerAuth`, no fim da página) sobe
+                 por cima do diálogo aberto; o formulário digitado fica. -->
+
             <!-- Pedido de troco: o dinheiro fica no balcão, o troco vem até ele.
                  Antes o operador atravessava a loja até o cofre com dinheiro na
                  mão; agora ele pede, alguém traz, e a troca acontece aqui, à
                  vista das duas pessoas. Trocar não muda o total da gaveta. -->
-            <!-- Cancelar não é devolver. O gestor cancela de noite e ninguém abriu
-                 gaveta: a devolução fica aqui, visível, até quem está com a gaveta
-                 aberta entregar as notas. Só então Payman e livro registram. -->
-            <section v-if="pendingCashRefunds.length" class="grid gap-3 rounded-md border bg-card p-4">
-              <div class="flex items-center gap-2">
-                <Icon name="lucide:rotate-ccw" class="size-4 text-muted-foreground" />
-                <h2 class="text-base font-semibold">Devoluções em dinheiro pendentes</h2>
-              </div>
-              <ul class="grid gap-2" aria-label="Devoluções em dinheiro pendentes">
-                <li
-                  v-for="refund in pendingCashRefunds"
-                  :key="refund.order_ref"
-                  class="grid gap-2 rounded-md border bg-muted/30 p-3"
-                >
-                  <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                    <span class="text-sm font-medium tabular-nums">{{ refund.amount_display }}</span>
-                    <span class="text-xs text-muted-foreground">
-                      pedido {{ refund.order_ref }}<template v-if="refund.customer_name"> · {{ refund.customer_name }}</template>
-                    </span>
+            <UiDialog v-model:open="changeDialogOpen">
+              <UiDialogContent
+                class="max-h-[85vh] overflow-y-auto sm:max-w-lg"
+                data-session-dialog="request_change"
+                @open-auto-focus="focusOnOpen($event, changeAmountField)"
+              >
+                <UiDialogHeader>
+                  <div class="flex items-center gap-2">
+                    <Icon name="lucide:coins" class="size-4 text-muted-foreground" />
+                    <UiDialogTitle>Pedido de troco</UiDialogTitle>
                   </div>
-                  <UiButton size="sm" :disabled="busy" @click="refundPending(refund.order_ref)">
-                    <Icon name="lucide:hand-coins" class="size-4" />
-                    Devolver
-                  </UiButton>
-                </li>
-              </ul>
-              <p class="text-xs text-muted-foreground">
-                O dinheiro sai desta gaveta e fica registrado no turno. Um gerente autoriza com o PIN.
-              </p>
-            </section>
+                  <UiDialogDescription>
+                    Peça o troco em vez de sair do balcão com dinheiro. Um gerente traz e autoriza aqui mesmo.
+                  </UiDialogDescription>
+                </UiDialogHeader>
 
-            <!-- Conta na casa: quem deve quanto, e o acerto. Só aparece quando há
-                 saldo em aberto: dado opcional faz a tela crescer. -->
-            <section v-if="accountBalances.length" class="grid gap-3 rounded-md border bg-card p-4" data-house-accounts>
-              <div class="flex items-center gap-2">
-                <Icon name="lucide:book-user" class="size-4 text-muted-foreground" />
-                <h2 class="text-base font-semibold">Contas na casa</h2>
-              </div>
-              <ul class="grid gap-2" aria-label="Contas na casa com saldo em aberto">
-                <li
-                  v-for="account in accountBalances"
-                  :key="account.customer_ref"
-                  class="grid gap-2 rounded-md border bg-muted/30 p-3"
-                >
-                  <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                    <span class="text-sm font-medium">{{ account.customer_name }}</span>
-                    <span class="text-sm tabular-nums">{{ account.balance_display }}</span>
-                    <span class="text-xs text-muted-foreground">
-                      {{ account.intents }} {{ account.intents === 1 ? "venda" : "vendas" }} em aberto
-                    </span>
-                  </div>
-                  <template v-if="settleCustomerRef === account.customer_ref">
-                    <div class="grid gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-end">
-                      <label class="grid gap-1.5 text-sm">
-                        <span class="font-medium text-muted-foreground">Recebido</span>
-                        <UiInput
-                          v-model="settleAmount"
-                          inputmode="decimal"
-                          placeholder="0,00"
-                          class="text-right tabular-nums"
-                          aria-label="Valor recebido no acerto"
-                          @keydown.enter="submitSettle"
-                        />
-                      </label>
-                      <label class="grid gap-1.5 text-sm">
-                        <span class="font-medium text-muted-foreground">Como</span>
-                        <UiNativeSelect v-model="settleMethod" aria-label="Método do acerto">
-                          <option value="cash">Dinheiro</option>
-                          <option value="pix">Pix</option>
-                          <option value="credit">Crédito</option>
-                          <option value="debit">Débito</option>
-                          <option value="external">Outro</option>
-                        </UiNativeSelect>
-                      </label>
-                      <div class="flex gap-2">
-                        <UiButton size="sm" variant="outline" :disabled="busy" @click="settleCustomerRef = null">Cancelar</UiButton>
-                        <UiButton size="sm" :disabled="busy || !settleAmount.trim()" @click="submitSettle">
-                          <Icon name="lucide:check" class="size-4" />
-                          Receber
-                        </UiButton>
-                      </div>
-                    </div>
-                    <p class="text-xs text-muted-foreground">
-                      O acerto é por venda inteira, da mais antiga para a mais nova; o que não couber fica em aberto.
-                    </p>
-                  </template>
-                  <UiButton v-else size="sm" :disabled="busy" @click="openSettle(account.customer_ref, account.balance_q)">
-                    <Icon name="lucide:hand-coins" class="size-4" />
-                    Receber acerto
-                  </UiButton>
-                </li>
-              </ul>
-            </section>
+                <!-- O VALOR primeiro, e exato. É a pergunta que quem vai ao cofre
+                     precisa respondida antes de sair andando. -->
+                <label class="grid gap-1.5 text-sm">
+                  <span class="font-medium text-muted-foreground">Quanto</span>
+                  <UiInput
+                    ref="changeAmountField"
+                    v-model="changeAmount"
+                    inputmode="decimal"
+                    placeholder="0,00"
+                    class="text-right tabular-nums"
+                    @keydown.enter="submitChangeRequest"
+                  />
+                </label>
 
-            <section class="grid gap-3 rounded-md border bg-card p-4">
-              <div class="flex items-center gap-2">
-                <Icon name="lucide:coins" class="size-4 text-muted-foreground" />
-                <h2 class="text-base font-semibold">Pedido de troco</h2>
-              </div>
+                <!-- EM QUÊ. Cédula é retangular e verde, moeda é redonda e amarela,
+                     porque é assim que a mão reconhece no balcão sem parar para
+                     ler. Várias podem ser marcadas: "R$ 100 em notas de 5 e moedas
+                     de 0,50" é uma frase que se diz de verdade.
 
-              <!-- Pendentes primeiro: é o que a próxima pessoa a chegar ao
-                   balcão precisa ver, e é onde a troca acontece. -->
-              <ul v-if="pendingChangeRequests.length" class="grid gap-2" aria-label="Pedidos de troco pendentes">
-                <li
-                  v-for="request in pendingChangeRequests"
-                  :key="request.ref"
-                  class="grid gap-2 rounded-md border bg-muted/30 p-3"
-                >
-                  <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                    <span class="text-sm font-medium">{{ changeRequestSummary(request, cashManagement) }}</span>
-                    <span class="text-xs text-muted-foreground">
-                      {{ request.requested_by }}<template v-if="formatRequestedAt(request.requested_at)"> · {{ formatRequestedAt(request.requested_at) }}</template>
-                    </span>
-                  </div>
-                  <p v-if="request.note" class="text-xs text-muted-foreground">{{ request.note }}</p>
-
-                  <div v-if="cancellingChangeRef !== request.ref" class="grid grid-cols-2 gap-2">
-                    <UiButton size="sm" :disabled="busy" @click="serveChange(request.ref)">
-                      <Icon name="lucide:hand-coins" class="size-4" />
-                      Atender
-                    </UiButton>
-                    <UiButton
-                      variant="outline"
-                      size="sm"
+                     Nada aqui é obrigatório: "me traz R$ 100" já é um pedido
+                     inteiro, e o gerente resolve com o que houver no cofre. -->
+                <div class="grid gap-1.5">
+                  <span id="change-denom-label" class="text-sm font-medium text-muted-foreground">
+                    Em quê <span class="font-normal">(opcional)</span>
+                  </span>
+                  <div class="flex flex-wrap gap-2" role="group" aria-labelledby="change-denom-label">
+                    <button
+                      v-for="denom in changeDenominationOptions"
+                      :key="denom.q"
+                      type="button"
+                      :aria-pressed="changeDenominationsPicked.includes(denom.q)"
+                      :aria-label="`${denom.shape === 'note' ? 'Nota' : 'Moeda'} de ${denom.label}`"
+                      class="inline-flex items-center justify-center border text-sm font-semibold tabular-nums transition-colors disabled:opacity-50"
+                      :class="[
+                        // Cédula é retangular, moeda é redonda — o desenho é a
+                        // informação, e a mão acha antes do olho ler.
+                        denom.shape === 'note' ? 'h-12 rounded-md px-4' : 'size-12 rounded-full',
+                        denom.shape === 'note'
+                          ? 'border-success/40 bg-success/10 text-success'
+                          : 'border-warning/40 bg-warning/10 text-warning',
+                        // Marcado é um ANEL, não um tom mais escuro: sob a luz do
+                        // balcão dois tons da mesma cor viram um só, e o operador
+                        // não saberia dizer o que pediu.
+                        changeDenominationsPicked.includes(denom.q)
+                          ? (denom.shape === 'note' ? 'ring-2 ring-success' : 'ring-2 ring-warning')
+                          : '',
+                      ]"
                       :disabled="busy"
-                      @click="cancellingChangeRef = request.ref"
+                      @click="toggleDenomination(denom.q)"
                     >
-                      Cancelar pedido
-                    </UiButton>
+                      {{ denom.label }}
+                    </button>
                   </div>
-                  <div v-else class="grid gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
-                    <p class="text-sm font-medium">Cancelar este pedido? Ninguém vai trazer o troco.</p>
-                    <div class="grid grid-cols-2 gap-2">
-                      <UiButton variant="outline" size="sm" :disabled="busy" @click="cancellingChangeRef = ''">
-                        Voltar
-                      </UiButton>
-                      <UiButton
-                        variant="destructive"
-                        size="sm"
-                        :disabled="busy"
-                        :loading="busy"
-                        @click="confirmCancelChange(request.ref)"
-                      >
-                        Confirmar
-                      </UiButton>
-                    </div>
-                  </div>
-                </li>
-              </ul>
+                </div>
 
-              <p class="text-sm text-muted-foreground">
-                Peça o troco em vez de sair do balcão com dinheiro. Um gerente traz e autoriza aqui mesmo.
-              </p>
-
-              <!-- O VALOR primeiro, e exato. É a pergunta que quem vai ao cofre
-                   precisa respondida antes de sair andando. -->
-              <label class="grid gap-1.5 text-sm">
-                <span class="font-medium text-muted-foreground">Quanto</span>
                 <UiInput
-                  v-model="changeAmount"
-                  inputmode="decimal"
-                  placeholder="0,00"
-                  class="text-right tabular-nums"
+                  v-model="changeNote"
+                  aria-label="Observação do pedido"
+                  placeholder="Observação (opcional)"
                   @keydown.enter="submitChangeRequest"
                 />
-              </label>
 
-              <!-- EM QUÊ. Cédula é retangular e verde, moeda é redonda e amarela,
-                   porque é assim que a mão reconhece no balcão sem parar para
-                   ler. Várias podem ser marcadas: "R$ 100 em notas de 5 e moedas
-                   de 0,50" é uma frase que se diz de verdade.
-
-                   Nada aqui é obrigatório: "me traz R$ 100" já é um pedido
-                   inteiro, e o gerente resolve com o que houver no cofre. -->
-              <div class="grid gap-1.5">
-                <span id="change-denom-label" class="text-sm font-medium text-muted-foreground">
-                  Em quê <span class="font-normal">(opcional)</span>
-                </span>
-                <div class="flex flex-wrap gap-2" role="group" aria-labelledby="change-denom-label">
-                  <button
-                    v-for="denom in changeDenominationOptions"
-                    :key="denom.q"
-                    type="button"
-                    :aria-pressed="changeDenominationsPicked.includes(denom.q)"
-                    :aria-label="`${denom.shape === 'note' ? 'Nota' : 'Moeda'} de ${denom.label}`"
-                    class="inline-flex items-center justify-center border text-sm font-semibold tabular-nums transition-colors disabled:opacity-50"
-                    :class="[
-                      // Cédula é retangular, moeda é redonda — o desenho é a
-                      // informação, e a mão acha antes do olho ler.
-                      denom.shape === 'note' ? 'h-12 rounded-md px-4' : 'size-12 rounded-full',
-                      denom.shape === 'note'
-                        ? 'border-success/40 bg-success/10 text-success'
-                        : 'border-warning/40 bg-warning/10 text-warning',
-                      // Marcado é um ANEL, não um tom mais escuro: sob a luz do
-                      // balcão dois tons da mesma cor viram um só, e o operador
-                      // não saberia dizer o que pediu.
-                      changeDenominationsPicked.includes(denom.q)
-                        ? (denom.shape === 'note' ? 'ring-2 ring-success' : 'ring-2 ring-warning')
-                        : '',
-                    ]"
-                    :disabled="busy"
-                    @click="toggleDenomination(denom.q)"
-                  >
-                    {{ denom.label }}
-                  </button>
-                </div>
-              </div>
-
-              <UiInput
-                v-model="changeNote"
-                aria-label="Observação do pedido"
-                placeholder="Observação (opcional)"
-                @keydown.enter="submitChangeRequest"
-              />
-
-              <UiButton
-                variant="outline"
-                size="sm"
-                :disabled="busy || !canSubmitChange"
-                @click="submitChangeRequest"
-              >
-                Preciso de troco
-              </UiButton>
-
-              <!-- Honestidade: o registro é trilha e dado, não um recado
-                   entregue. Ninguém está de olho numa tela de alertas aqui. -->
-              <p class="flex items-start gap-2 text-xs text-muted-foreground">
-                <Icon name="lucide:megaphone" class="mt-0.5 size-4 shrink-0" />
-                <span>O pedido fica registrado no turno. Avise em voz alta também.</span>
-              </p>
-            </section>
-
-            <section class="grid gap-3 rounded-md border bg-card p-4">
-              <h2 class="text-base font-semibold">Movimento de caixa</h2>
-              <div class="grid gap-1.5">
-                <span id="movement-kind-label" class="text-sm font-medium text-muted-foreground">Tipo</span>
-                <div class="grid grid-cols-2 gap-2" role="group" aria-labelledby="movement-kind-label">
-                  <UiButton
-                    v-for="kind in movementKinds"
-                    :key="kind"
-                    variant="outline"
-                    size="sm"
-                    :aria-pressed="movementKind === kind"
-                    :class="movementKind === kind ? 'border-primary bg-primary/5' : ''"
-                    @click="pickMovementKind(kind)"
-                  >
-                    {{ movementLabel(kind) }}
-                  </UiButton>
-                </div>
-              </div>
-              <label class="grid gap-1.5 text-sm">
-                <span class="font-medium text-muted-foreground">Valor</span>
-                <UiInput
-                  ref="movementAmountField"
-                  v-model="movementAmount"
-                  inputmode="decimal"
-                  placeholder="0,00"
-                  :aria-invalid="movementError ? 'true' : undefined"
-                />
-              </label>
-              <p v-if="movementError" class="text-xs text-destructive">{{ movementError }}</p>
-
-              <!-- Motivo obrigatório, em botões. O digitado fica como saída para o
-                   que não estava previsto, e é o único caminho quando o tipo não
-                   tem opções conhecidas. -->
-              <div v-if="movementKind" class="grid gap-1.5">
-                <span id="movement-reason-label" class="text-sm font-medium text-muted-foreground">
-                  {{ movementKind === "sangria" ? "Motivo (obrigatório)" : "Observação (opcional)" }}
-                </span>
-                <div
-                  v-if="movementReasonOptions.length"
-                  class="grid grid-cols-2 gap-2"
-                  role="group"
-                  aria-labelledby="movement-reason-label"
+                <UiButton
+                  :disabled="busy || !canSubmitChange"
+                  @click="submitChangeRequest"
                 >
+                  Preciso de troco
+                </UiButton>
+
+                <!-- Honestidade: o registro é trilha e dado, não um recado
+                     entregue. Ninguém está de olho numa tela de alertas aqui. -->
+                <p class="flex items-start gap-2 text-xs text-muted-foreground">
+                  <Icon name="lucide:megaphone" class="mt-0.5 size-4 shrink-0" />
+                  <span>O pedido fica registrado no turno. Avise em voz alta também.</span>
+                </p>
+              </UiDialogContent>
+            </UiDialog>
+
+            <!-- Movimento de caixa: saída (sangria) / entrada (suprimento). Um
+                 diálogo para os dois, com o tipo que o tile escolheu e o seletor
+                 dentro, para trocar. -->
+            <UiDialog v-model:open="movementDialogOpen">
+              <UiDialogContent
+                class="max-h-[85vh] overflow-y-auto sm:max-w-lg"
+                data-session-dialog="movement"
+                @open-auto-focus="focusOnOpen($event, movementAmountField)"
+              >
+                <UiDialogHeader>
+                  <UiDialogTitle>{{ movementDialogTitle }}</UiDialogTitle>
+                  <UiDialogDescription>Movimento de caixa</UiDialogDescription>
+                </UiDialogHeader>
+                <div class="grid gap-1.5">
+                  <span id="movement-kind-label" class="text-sm font-medium text-muted-foreground">Tipo</span>
+                  <div class="grid grid-cols-2 gap-2" role="group" aria-labelledby="movement-kind-label">
+                    <UiButton
+                      v-for="kind in movementKinds"
+                      :key="kind"
+                      variant="outline"
+                      size="sm"
+                      :aria-pressed="movementKind === kind"
+                      :class="movementKind === kind ? 'border-primary bg-primary/5' : ''"
+                      @click="pickMovementKind(kind)"
+                    >
+                      {{ movementLabel(kind) }}
+                    </UiButton>
+                  </div>
+                </div>
+                <label class="grid gap-1.5 text-sm">
+                  <span class="font-medium text-muted-foreground">Valor</span>
+                  <UiInput
+                    ref="movementAmountField"
+                    v-model="movementAmount"
+                    inputmode="decimal"
+                    placeholder="0,00"
+                    :aria-invalid="movementError ? 'true' : undefined"
+                  />
+                </label>
+                <p v-if="movementError" class="text-xs text-destructive">{{ movementError }}</p>
+
+                <!-- Motivo obrigatório, em botões. O digitado fica como saída para o
+                     que não estava previsto, e é o único caminho quando o tipo não
+                     tem opções conhecidas. -->
+                <div v-if="movementKind" class="grid gap-1.5">
+                  <span id="movement-reason-label" class="text-sm font-medium text-muted-foreground">
+                    {{ movementKind === "sangria" ? "Motivo (obrigatório)" : "Observação (opcional)" }}
+                  </span>
+                  <div
+                    v-if="movementReasonOptions.length"
+                    class="grid grid-cols-2 gap-2"
+                    role="group"
+                    aria-labelledby="movement-reason-label"
+                  >
+                    <UiButton
+                      v-for="reason in movementReasonOptions"
+                      :key="reason"
+                      variant="outline"
+                      size="sm"
+                      :aria-pressed="movementReasonPick === reason"
+                      :class="movementReasonPick === reason ? 'border-primary bg-primary/5' : ''"
+                      @click="pickMovementReason(reason)"
+                    >
+                      {{ reason }}
+                    </UiButton>
+                  </div>
+                  <UiInput
+                    v-model="movementReasonOther"
+                    :aria-label="movementReasonOptions.length ? 'Outro motivo' : 'Motivo'"
+                    :placeholder="movementReasonOptions.length ? 'Outro motivo' : 'Motivo'"
+                  />
+                </div>
+
+                <p v-if="movementKind === 'sangria'" class="flex items-start gap-2 text-xs text-muted-foreground">
+                  <Icon name="lucide:shield-check" class="mt-0.5 size-4 shrink-0" />
+                  <span>Tirar dinheiro da gaveta precisa da autorização de um gerente.</span>
+                </p>
+                <UiButton
+                  :disabled="busy || !canSubmitMovement"
+                  @click="submitMovement()"
+                >
+                  Registrar movimento
+                </UiButton>
+              </UiDialogContent>
+            </UiDialog>
+
+            <!-- Abrir a gaveta sem venda: motivo obrigatório, porque é o único
+                 dos quatro momentos que não deixa rastro sozinho. -->
+            <UiDialog v-model:open="drawerDialogOpen">
+              <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" data-session-dialog="open_drawer">
+                <UiDialogHeader>
+                  <div class="flex items-center gap-2">
+                    <Icon name="lucide:archive" class="size-4 text-muted-foreground" />
+                    <UiDialogTitle>Abrir gaveta</UiDialogTitle>
+                  </div>
+                  <UiDialogDescription>
+                    Abrir sem venda fica registrado no turno: quem abriu, quando e por quê.
+                  </UiDialogDescription>
+                </UiDialogHeader>
+                <div class="grid grid-cols-2 gap-2">
                   <UiButton
-                    v-for="reason in movementReasonOptions"
+                    v-for="reason in DRAWER_REASONS"
                     :key="reason"
                     variant="outline"
                     size="sm"
-                    :aria-pressed="movementReasonPick === reason"
-                    :class="movementReasonPick === reason ? 'border-primary bg-primary/5' : ''"
-                    @click="pickMovementReason(reason)"
+                    :disabled="busy"
+                    @click="openDrawer(reason)"
                   >
                     {{ reason }}
                   </UiButton>
                 </div>
-                <UiInput
-                  v-model="movementReasonOther"
-                  :aria-label="movementReasonOptions.length ? 'Outro motivo' : 'Motivo'"
-                  :placeholder="movementReasonOptions.length ? 'Outro motivo' : 'Motivo'"
-                />
-              </div>
-
-              <p v-if="movementKind === 'sangria'" class="flex items-start gap-2 text-xs text-muted-foreground">
-                <Icon name="lucide:shield-check" class="mt-0.5 size-4 shrink-0" />
-                <span>Tirar dinheiro da gaveta precisa da autorização de um gerente.</span>
-              </p>
-              <UiButton
-                variant="outline"
-                size="sm"
-                :disabled="busy || !canSubmitMovement"
-                @click="submitMovement()"
-              >
-                Registrar movimento
-              </UiButton>
-            </section>
-
-            <!-- Gaveta: só aparece onde existe caminho de software. Num balcão
-                 de gaveta com chave, um botão que não abre nada seria pior que
-                 botão nenhum. -->
-            <!-- ABRIR GAVETA É EXCEÇÃO, e a tela precisa dizer isso pelo tamanho.
-                 Como card aberto do mesmo porte dos outros, ela convidava: abrir
-                 a gaveta sem venda é o buraco que a chave física deixava, e todo
-                 o controle de caixa fica de pé só enquanto isso for raro. Segue
-                 disponível, a um toque, e continua exigindo motivo e registro —
-                 mas não fica em exposição.
-
-                 O mesmo vale para "Fechar caixa" logo abaixo: dois campos de
-                 dinheiro abertos o turno inteiro são ruído em 99% das visitas e
-                 um toque errado no 1% restante. -->
-            <section class="grid gap-2 rounded-md border bg-card p-4">
-              <div class="flex items-center justify-between gap-3">
-                <div class="flex items-center gap-2">
-                  <Icon name="lucide:archive" class="size-4 text-muted-foreground" />
-                  <h2 class="text-base font-semibold">Abrir gaveta</h2>
-                </div>
-                <UiButton
-                  v-if="canOpenDrawer && !openingDrawerPanel"
-                  variant="ghost"
-                  size="sm"
-                  @click="openingDrawerPanel = true"
-                >
-                  Abrir sem venda
-                </UiButton>
-              </div>
-
-              <!-- Sem caminho de software o card DIZ por que, em vez de sumir.
-                   Sumir calado fez o dono procurar um botão que nunca ia
-                   aparecer, achando que o PDV estava quebrado. -->
-              <p v-if="!canOpenDrawer" class="text-sm text-muted-foreground">
-                {{ drawerUnavailableReason }}
-              </p>
-
-              <template v-else-if="openingDrawerPanel">
-              <p class="text-sm text-muted-foreground">
-                Abrir sem venda fica registrado no turno: quem abriu, quando e por quê.
-              </p>
-              <div class="grid grid-cols-2 gap-2">
-                <UiButton
-                  v-for="reason in DRAWER_REASONS"
-                  :key="reason"
-                  variant="outline"
-                  size="sm"
-                  :disabled="busy"
-                  @click="openDrawer(reason)"
-                >
-                  {{ reason }}
-                </UiButton>
-              </div>
-              <div class="grid grid-cols-[1fr_auto] gap-2">
-                <UiInput v-model="drawerReason" placeholder="Outro motivo" @keydown.enter="openDrawer(drawerReason)" />
-                <UiButton variant="outline" size="sm" :disabled="busy || !drawerReason.trim()" @click="openDrawer(drawerReason)">
-                  Abrir
-                </UiButton>
-              </div>
-              <div class="mt-1 grid gap-2 border-t pt-3">
-                <UiButton variant="ghost" size="sm" :disabled="busy || drawerProbing" :loading="drawerProbing" @click="testDrawer">
-                  <Icon name="lucide:stethoscope" class="size-4" />
-                  Testar gaveta
-                </UiButton>
-                <p v-if="drawerProbeResult" class="text-xs" :class="drawerProbeResult.ok ? 'text-muted-foreground' : 'text-destructive'">
-                  <template v-if="drawerProbeResult.ok">
-                    {{ drawerProbeResult.message }} A gaveta abriu? Se não abriu, confira o cabo dela na impressora.
-                  </template>
-                  <template v-else>{{ drawerProbeResult.message }}</template>
-                </p>
-              </div>
-              </template>
-            </section>
-
-            <section class="grid gap-2 rounded-md border bg-card p-4">
-              <div class="flex items-center justify-between gap-3">
-                <h2 class="text-base font-semibold">Fechar caixa</h2>
-                <UiButton v-if="!closingPanel" variant="ghost" size="sm" @click="closingPanel = true">
-                  Encerrar turno
-                </UiButton>
-              </div>
-
-              <template v-if="closingPanel">
-              <div class="flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                <Icon name="lucide:eye-off" class="mt-0.5 size-4 shrink-0" />
-                <span>Contagem cega: conte o dinheiro do caixa e informe o valor. A conferência fica no gestor.</span>
-              </div>
-              <label class="grid gap-1 text-sm">
-                <span class="font-medium text-muted-foreground">Valor contado</span>
-                <!-- Nasce focado: expandir o painel já foi a decisão, contar é
-                     o próximo gesto. -->
-                <UiInput
-                  v-model="closingAmount"
-                  inputmode="decimal"
-                  autofocus
-                  placeholder="0,00"
-                  :aria-invalid="closingError ? 'true' : undefined"
-                />
-              </label>
-              <p v-if="closingError" class="text-xs text-destructive">{{ closingError }}</p>
-              <UiButton
-                v-if="!closingCounter"
-                variant="ghost"
-                size="sm"
-                class="justify-self-start"
-                @click="closingCounter = true"
-              >
-                <Icon name="lucide:calculator" class="size-4" />
-                Contar por cédulas e moedas
-              </UiButton>
-              <PosDenominationCounter
-                v-if="closingCounter"
-                :denominations="changeDenominationOptions"
-                :disabled="busy"
-                @total-q="closingAmount = formatAmountInput($event)"
-              />
-              <label class="grid gap-1 text-sm">
-                <span class="font-medium text-muted-foreground">Observações</span>
-                <UiTextarea v-model="closingNotes" :rows="2" placeholder="Conferência, divergências" />
-              </label>
-              <div v-if="!confirmingClose">
-                <!-- Só arma com um valor legível — vazio virava "0" calado, e o
-                     turno fechava com uma contagem que ninguém fez. -->
-                <UiButton variant="destructive" class="w-full" :disabled="busy || !canClose" @click="confirmingClose = true">
-                  Fechar caixa
-                </UiButton>
-              </div>
-              <div v-else class="grid gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
-                <!-- O eco do valor: a última leitura antes de a contagem virar
-                     a única palavra do operador no livro. -->
-                <p class="text-sm font-medium">
-                  Confirmar fechamento do caixa? Contado: R$ {{ closingEchoDisplay }}. Esta ação encerra o turno.
-                </p>
-                <div class="grid grid-cols-2 gap-2">
-                  <UiButton variant="outline" :disabled="busy" @click="confirmingClose = false">Cancelar</UiButton>
-                  <UiButton variant="destructive" :disabled="busy" :loading="busy" @click="confirmClose">
-                    Confirmar
+                <div class="grid grid-cols-[1fr_auto] gap-2">
+                  <UiInput v-model="drawerReason" placeholder="Outro motivo" @keydown.enter="openDrawer(drawerReason)" />
+                  <UiButton variant="outline" size="sm" :disabled="busy || !drawerReason.trim()" @click="openDrawer(drawerReason)">
+                    Abrir
                   </UiButton>
                 </div>
-              </div>
-              </template>
-            </section>
+                <div class="mt-1 grid gap-2 border-t pt-3">
+                  <UiButton variant="ghost" size="sm" :disabled="busy || drawerProbing" :loading="drawerProbing" @click="testDrawer">
+                    <Icon name="lucide:stethoscope" class="size-4" />
+                    Testar gaveta
+                  </UiButton>
+                  <p v-if="drawerProbeResult" class="text-xs" :class="drawerProbeResult.ok ? 'text-muted-foreground' : 'text-destructive'">
+                    <template v-if="drawerProbeResult.ok">
+                      {{ drawerProbeResult.message }} A gaveta abriu? Se não abriu, confira o cabo dela na impressora.
+                    </template>
+                    <template v-else>{{ drawerProbeResult.message }}</template>
+                  </p>
+                </div>
+              </UiDialogContent>
+            </UiDialog>
+
+            <!-- Fechar caixa (contagem cega) — destrutivo; a confirmação com o
+                 eco do valor continua aqui dentro. -->
+            <UiDialog v-model:open="closingDialogOpen">
+              <UiDialogContent
+                class="max-h-[85vh] overflow-y-auto sm:max-w-lg"
+                data-session-dialog="close_shift"
+                @open-auto-focus="focusOnOpen($event, closingAmountField)"
+              >
+                <UiDialogHeader>
+                  <UiDialogTitle>Fechar caixa</UiDialogTitle>
+                  <!-- O aviso da contagem cega É a descrição do diálogo: o
+                       leitor de tela lê antes do campo, como o olho. -->
+                  <UiDialogDescription class="flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2 text-left text-xs">
+                    <Icon name="lucide:eye-off" class="mt-0.5 size-4 shrink-0" />
+                    <span>Contagem cega: conte o dinheiro do caixa e informe o valor. A conferência fica no gestor.</span>
+                  </UiDialogDescription>
+                </UiDialogHeader>
+                <label class="grid gap-1 text-sm">
+                  <span class="font-medium text-muted-foreground">Valor contado</span>
+                  <!-- Nasce focado: abrir o diálogo já foi a decisão, contar é
+                       o próximo gesto. -->
+                  <UiInput
+                    ref="closingAmountField"
+                    v-model="closingAmount"
+                    inputmode="decimal"
+                    autofocus
+                    placeholder="0,00"
+                    :aria-invalid="closingError ? 'true' : undefined"
+                  />
+                </label>
+                <p v-if="closingError" class="text-xs text-destructive">{{ closingError }}</p>
+                <UiButton
+                  v-if="!closingCounter"
+                  variant="ghost"
+                  size="sm"
+                  class="justify-self-start"
+                  @click="closingCounter = true"
+                >
+                  <Icon name="lucide:calculator" class="size-4" />
+                  Contar por cédulas e moedas
+                </UiButton>
+                <PosDenominationCounter
+                  v-if="closingCounter"
+                  :denominations="changeDenominationOptions"
+                  :disabled="busy"
+                  @total-q="closingAmount = formatAmountInput($event)"
+                />
+                <label class="grid gap-1 text-sm">
+                  <span class="font-medium text-muted-foreground">Observações</span>
+                  <UiTextarea v-model="closingNotes" :rows="2" placeholder="Conferência, divergências" />
+                </label>
+                <div v-if="!confirmingClose">
+                  <!-- Só arma com um valor legível — vazio virava "0" calado, e o
+                       turno fechava com uma contagem que ninguém fez. -->
+                  <UiButton variant="destructive" class="w-full" :disabled="busy || !canClose" @click="confirmingClose = true">
+                    Fechar caixa
+                  </UiButton>
+                </div>
+                <div v-else class="grid gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
+                  <!-- O eco do valor: a última leitura antes de a contagem virar
+                       a única palavra do operador no livro. -->
+                  <p class="text-sm font-medium">
+                    Confirmar fechamento do caixa? Contado: R$ {{ closingEchoDisplay }}. Esta ação encerra o turno.
+                  </p>
+                  <div class="grid grid-cols-2 gap-2">
+                    <UiButton variant="outline" :disabled="busy" @click="confirmingClose = false">Cancelar</UiButton>
+                    <UiButton variant="destructive" :disabled="busy" :loading="busy" @click="confirmClose">
+                      Confirmar
+                    </UiButton>
+                  </div>
+                </div>
+              </UiDialogContent>
+            </UiDialog>
           </template>
 
           <!-- Relatório de caixa: leituras X/Z e histórico de turnos do dia. -->
@@ -994,8 +1166,9 @@ async function confirmClose() {
                do dia e a quebra por método — questão financeira, que não fica
                visível para o balcão nem para o gerente. O servidor recusa por
                conta própria (`cashman.audit_shift`); isto aqui só evita oferecer
-               uma porta que vai bater na cara. -->
-          <section v-if="canAuditCash" class="grid gap-2 rounded-md border bg-card p-4">
+               uma porta que vai bater na cara. Com o turno ABERTO vira tile em
+               "Fim do expediente"; com o caixa fechado segue card. -->
+          <section v-if="screen === 'closed' && canAuditCash" class="grid gap-2 rounded-md border bg-card p-4">
             <div class="flex items-center gap-2">
               <Icon name="lucide:receipt-text" class="size-4 text-muted-foreground" />
               <h2 class="text-base font-semibold">Relatório de caixa</h2>
@@ -1009,7 +1182,7 @@ async function confirmClose() {
           </section>
 
           <!-- Fechamento do DIA (gerente): contagem cega de sobras/perdas. -->
-          <section v-if="dayClosing" class="grid gap-2 rounded-md border bg-card p-4">
+          <section v-if="screen === 'closed' && dayClosing" class="grid gap-2 rounded-md border bg-card p-4">
             <div class="flex items-center gap-2">
               <Icon name="lucide:clipboard-check" class="size-4 text-muted-foreground" />
               <h2 class="text-base font-semibold">Fechamento do dia</h2>
