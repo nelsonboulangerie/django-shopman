@@ -314,7 +314,6 @@ async function refundPending(orderRef: string, managerApproval: ManagerApproval 
 const settleCustomerRef = ref<string | null>(null);
 const settleAmount = ref("");
 const settleMethod = ref<"cash" | "pix" | "credit" | "debit" | "external">("cash");
-const settleCustomer = computed(() => accountBalances.value.find((a) => a.customer_ref === settleCustomerRef.value) ?? null);
 function openSettle(customerRef: string, balanceQ: number) {
   settleCustomerRef.value = customerRef;
   settleAmount.value = (balanceQ / 100).toFixed(2).replace(".", ",");
