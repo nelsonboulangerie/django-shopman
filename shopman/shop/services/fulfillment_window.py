@@ -109,7 +109,10 @@ def canonical_slots() -> list[dict]:
             if slots:
                 return [s for s in slots if isinstance(s, dict) and s.get("ref")]
     except Exception:
-        logger.debug("fulfillment_window: could not load canonical slots", exc_info=True)
+        # Cair nos slots padrão com a config da casa quebrada é prometer ao
+        # cliente um turno que a loja não configurou — isso grita, como o
+        # vizinho da prontidão abaixo.
+        logger.warning("fulfillment_window: could not load canonical slots; using defaults", exc_info=True)
     return list(DEFAULT_CANONICAL_SLOTS)
 
 
