@@ -81,8 +81,10 @@ projeção pública de Loja; nome, nome curto, descrição e cores não devem se
 duplicados em componentes. Se o Django estiver indisponível, o builder usa o
 fallback da Nelson gravado em `server/utils/pwaManifest.ts`.
 
-O SVG mestre dos ícones é `brand/nelson-mark.svg`. Para regenerar favicon,
-ícones, maskable, monochrome, apple-touch-icon e todos os splash screens iOS:
+Os SVGs mestres são `brand/nelson-mark.svg`, para os artefatos transparentes,
+e `brand/nelson-mark-bg.svg`, para os artefatos full-bleed com degradê. Para
+regenerar favicon, ícones, maskable, monochrome, apple-touch-icon e todos os
+splash screens iOS:
 
 ```bash
 npm run pwa:assets
@@ -97,9 +99,10 @@ Os ícones `any` usam o selo circular sem margem adicional e com transparência.
 No Mac, o manifesto omite `maskable` para o Chrome selecionar esse selo; a
 resposta varia por `User-Agent` e usa `private, no-store`, pois a borda pode
 ignorar `Vary` ao formar a chave de cache. O link versionado do manifesto evita
-reutilizar a resposta pública anterior; `id`, `scope` e `start_url` não mudam. O ícone Apple é opaco, amarelo `#FFD25C`, com
-98% de ocupação. O adaptativo Android usa o mesmo amarelo com 80% de ocupação,
-preservando a zona segura contra recortes do launcher. Ícones já instalados
+reutilizar a resposta pública anterior; `id`, `scope` e `start_url` não mudam.
+O ícone Apple e o adaptativo Android usam a variante oficial opaca, com fundo
+amarelo em degradê e a margem óptica já embutida no SVG; o `maskable` preserva
+a zona segura contra recortes do launcher. Ícones já instalados
 precisam receber a atualização do navegador; validar também uma instalação nova.
 
 O gate completo da fase parte da raiz do repositório:

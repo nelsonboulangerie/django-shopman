@@ -76,9 +76,9 @@ export default defineNuxtConfig({
       ],
       link: [
         { rel: 'manifest', href: '/manifest.webmanifest?v=3' },
-        { rel: 'icon', href: '/pwa/favicon.svg', type: 'image/svg+xml' },
-        { rel: 'icon', href: '/pwa/favicon.ico', sizes: 'any' },
-        { rel: 'apple-touch-icon', href: '/pwa/apple-touch-icon-180x180.png' },
+        { rel: 'icon', href: '/pwa/favicon.svg?v=3', type: 'image/svg+xml' },
+        { rel: 'icon', href: '/pwa/favicon.ico?v=3', sizes: 'any' },
+        { rel: 'apple-touch-icon', href: '/pwa/apple-touch-icon-180x180.png?v=3' },
         ...appleStartupLinks
       ]
     }
