@@ -244,6 +244,9 @@ class TrackingData:
     convenience_pending: tuple[str, ...] = ()
     can_mock_confirm_payment: bool = False
     stale_after_seconds: int = 30  # sobrescrito no build com a config viva
+    # O rótulo humano do slot ("A partir das 9h" / "14:00 às 14:30"), resolvido
+    # AQUI, no lado de leitura: a presentation não importa shop.services.
+    commitment_slot_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -262,6 +265,15 @@ class TrackingStatusData:
 # Builders
 # ──────────────────────────────────────────────────────────────────────
 
+
+
+def _slot_label(slot_ref: str | None) -> str | None:
+    """As DUAS grades: canônico da encomenda e meia hora do PDV — um resolvedor só."""
+    if not slot_ref:
+        return None
+    from shopman.shop.services.fulfillment_window import window_label
+
+    return window_label(slot_ref) or None
 
 def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     """Build the full tracking data projection for an order."""
@@ -347,6 +359,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         is_preorder=is_preorder,
         commitment_date=commitment_date.isoformat() if commitment_date else None,
         commitment_slot_ref=(order_data.get("delivery_time_slot") or None),
+        commitment_slot_label=_slot_label(order_data.get("delivery_time_slot") or None),
         promise=promise,
         progress_steps=progress_steps,
         timeline=timeline,
