@@ -156,7 +156,7 @@ def _record_identity_strength(request, metadata, *, customer) -> None:
     try:
         if customer is not None:
             trusted = auth_service.device_is_trusted(request, customer_uuid=customer.uuid)
-    except Exception:
+    except Exception:  # silêncio-deliberado: falha fechado para a identidade FRACA, que só reduz o que aparece
         # Na dúvida, a identidade é a FRACA: reduzir o que aparece é degradação segura;
         # assumir confiança que não se verificou não é.
         logger.debug("access_link: device trust check degraded", exc_info=True)
@@ -293,7 +293,7 @@ class AccessLinkExchangeView(APIView):
         try:
             if result.customer:
                 customer = auth_service.customer_by_uuid(result.customer.uuid)
-        except Exception:
+        except Exception:  # silêncio-deliberado: sem cliente o payload sai anônimo; o link já foi trocado e o log guarda o traceback
             logger.debug("access_link_exchange: customer lookup degraded", exc_info=True)
 
         payload = {
