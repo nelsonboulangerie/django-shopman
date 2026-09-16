@@ -66,6 +66,7 @@ test('overlays travam e restauram o body no navegador comum', async ({ page }) =
 test('barra inferior permanece ancorada fora da rolagem no PWA instalado', async ({ page }) => {
   await page.addInitScript(() => {
     const nativeMatchMedia = window.matchMedia.bind(window)
+    Object.defineProperty(navigator, 'platform', { configurable: true, get: () => 'MacIntel' })
     Object.defineProperty(navigator, 'maxTouchPoints', { configurable: true, get: () => 5 })
     window.matchMedia = query => query === '(display-mode: standalone)'
       ? {
