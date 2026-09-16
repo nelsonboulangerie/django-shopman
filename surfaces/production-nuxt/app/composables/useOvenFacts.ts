@@ -1,7 +1,7 @@
 // O fato do forno é do SERVIDOR (ADR-021 §4): armar = enfornou, retirar =
 // retirou; o Django carimba a hora no recebimento, como started_at/finished_at
 // da WO — sem relógio de cliente. O countdown/alarme continua 100% local
-// (useOvenTimers): aqui se DECLARAM os dois momentos com retry idempotente.
+// (useFloorTimers): aqui se DECLARAM os dois momentos com retry idempotente.
 // A UI só altera o timer local depois da confirmação do servidor e mantém erro
 // reconciliável no diálogo. Pausa, retomar e +N são UX local: não declaram nada.
 

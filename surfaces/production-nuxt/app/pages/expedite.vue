@@ -288,8 +288,10 @@ function cardAnchor(order: QCOrderCardProjection): string {
 // ── Timer do forno: lembrete armado por fornada, com som ────────────────────
 // A ferramenta ATIVA do forneiro para conferir/retirar — a ação de toda hora
 // no rush: arma na enfornada, estende e marca Visto quando toca. Não confundir
-// com o relógio de idade do lote (alertas), nem com concluir a fornada.
-const oven = useOvenTimers();
+// com o relógio de idade do lote (alertas), nem com concluir a fornada. É o
+// mesmo mecanismo dos timers avulsos do cabeçalho (useFloorTimers): o forno
+// só acrescenta o FATO declarado ao servidor.
+const oven = useFloorTimers();
 const quickFinishAvailable = computed(
   () =>
     !isCustomDate.value &&
@@ -372,7 +374,11 @@ async function startOven() {
     return;
   const recorded = await ovenFacts.armed(order.pk, order.rev, minutes);
   if (!recorded) return;
-  oven.arm(ovenKey(order), minutes);
+  oven.arm(ovenKey(order), minutes, {
+    kind: "oven",
+    label: order.recipe_name,
+    sku: order.output_sku,
+  });
   ovenOrder.value = null;
 }
 function markOvenSeen() {

@@ -25,6 +25,19 @@ const route = useRoute();
 const searchInput = ref<{ inputRef: HTMLInputElement | null } | null>(null);
 const shortcutsHelpOpen = ref(false);
 
+// Timers da bancada: ferramenta de primeira classe, em toda tela. O contador
+// vem do localStorage — o servidor não o conhece —, então o primeiro render
+// do cliente precisa BATER com o SSR (0) e só depois de montar mostrar o real.
+const floorTimers = useFloorTimers();
+const timersOpen = ref(false);
+const hydrated = ref(false);
+const timersCount = computed(() =>
+  hydrated.value ? floorTimers.activeCount.value : 0,
+);
+const timersRinging = computed(() =>
+  hydrated.value ? floorTimers.ringingCount.value : 0,
+);
+
 const SHORTCUT_ROUTES = {
   plan: "/plan",
   "mise-en-place": "/mise-en-place",
@@ -56,7 +69,10 @@ function onGlobalKeydown(event: KeyboardEvent) {
   navigateTo(SHORTCUT_ROUTES[shortcut]);
 }
 
-onMounted(() => window.addEventListener("keydown", onGlobalKeydown));
+onMounted(() => {
+  hydrated.value = true;
+  window.addEventListener("keydown", onGlobalKeydown);
+});
 onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
 
 // As abas são SÓ o fluxo do dia do operador: decide → separa/pesa → produz →
@@ -205,6 +221,34 @@ function isActive(to: string): boolean {
           aria-hidden="true"
           >/</OperatorKbd>
       </div>
+      <!-- Timers: contador de ativos; pulsa quando algum toca. Nunca bloqueia nada. -->
+      <UiButton
+        type="button"
+        variant="outline"
+        size="sm"
+        class="relative min-h-11 min-w-11"
+        :class="timersRinging ? 'border-destructive text-destructive' : ''"
+        :aria-label="`Timers (${timersCount} ativos)`"
+        title="Timers da bancada"
+        @click="timersOpen = true"
+      >
+        <Icon
+          name="lucide:alarm-clock"
+          class="size-4"
+          :class="timersRinging ? 'animate-pulse motion-reduce:animate-none' : ''"
+        />
+        <span class="hidden xl:inline">Timers</span>
+        <span
+          v-if="timersCount"
+          class="absolute -right-1 -top-1 grid min-w-4 place-items-center rounded-full px-1 text-xs font-bold tabular-nums"
+          :class="
+            timersRinging
+              ? 'bg-destructive text-destructive-foreground'
+              : 'bg-primary text-primary-foreground'
+          "
+          >{{ timersCount }}</span
+        >
+      </UiButton>
       <AlertsBell />
       <UiButton
         type="button"
@@ -226,7 +270,7 @@ function isActive(to: string): boolean {
         type="button"
         variant="outline"
         size="sm"
-        class="min-h-11"
+        class="hidden min-h-11 sm:inline-flex"
         aria-label="Ver atalhos do teclado"
         aria-keyshortcuts="?"
         title="Atalhos do teclado · ?"
@@ -242,4 +286,5 @@ function isActive(to: string): boolean {
   </header>
 
   <ProductionShortcutsHelp v-model:open="shortcutsHelpOpen" />
+  <FloorTimersPanel v-model:open="timersOpen" />
 </template>
