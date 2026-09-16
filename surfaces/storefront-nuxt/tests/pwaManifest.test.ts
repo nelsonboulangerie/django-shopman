@@ -23,7 +23,7 @@ describe('storefront PWA manifest', () => {
       expect.objectContaining({ sizes: '192x192', purpose: 'any' }),
       expect.objectContaining({ sizes: '512x512', purpose: 'any' }),
       expect.objectContaining({ sizes: '512x512', purpose: 'maskable' }),
-      expect.objectContaining({ src: '/pwa/monochrome-512x512.png?v=3', purpose: 'monochrome' })
+      expect.objectContaining({ src: '/pwa/monochrome-512x512.png?v=4', purpose: 'monochrome' })
     ]))
     expect(manifest.screenshots).toEqual(expect.arrayContaining([
       expect.objectContaining({ sizes: '1080x1920', form_factor: 'narrow' }),
@@ -31,7 +31,7 @@ describe('storefront PWA manifest', () => {
     ]))
   })
 
-  it('offers transparent icons on Mac without removing Android adaptive icons', () => {
+  it('avoids the extra maskable plate on Mac without removing Android adaptive icons', () => {
     const mac = buildStorefrontManifest({}, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/153.0.0.0 Safari/537.36')
     expect(mac.icons.some(icon => icon.purpose === 'maskable')).toBe(false)
     expect(mac.icons.some(icon => icon.purpose === 'any' && icon.sizes === '512x512')).toBe(true)

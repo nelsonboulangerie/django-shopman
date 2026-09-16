@@ -15,7 +15,7 @@
     "test:component": "vitest run --project component",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "pwa:assets": "node ../operator-kit/scripts/generate-pwa-assets.mjs --source=../storefront-nuxt/brand/nelson-mark.svg --out=public/pwa --background=#2E5E73 --ink=#1F4150 --paper=#FAFAF9 --badge=BI",
+    "pwa:assets": "node ../operator-kit/scripts/generate-pwa-assets.mjs --icon=lucide:chart-no-axes-combined --out=public/pwa --background=#414F91 --foreground=#FCF7EE",
     "format": "prettier --write \"app/**/*.{ts,vue}\" \"tests/**/*.ts\"",
     "typecheck": "nuxi typecheck",
     "postinstall": "nuxt prepare"

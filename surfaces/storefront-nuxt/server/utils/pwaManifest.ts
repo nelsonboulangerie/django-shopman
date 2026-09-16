@@ -31,8 +31,8 @@ export function shortPwaName (shop: PwaShopSource): string {
 export function buildStorefrontManifest (shop: PwaShopSource = {}, userAgent = '') {
   const name = textOrFallback(shop.brand_name, STOREFRONT_PWA_FALLBACK.brand_name)
 
-  // Chrome on macOS prefers maskable icons and adds a plate around the seal.
-  // Keep Android adaptive icons, but offer the transparent seal on Mac.
+  // Chrome on macOS may add a second plate around maskable artwork. The
+  // full-bleed any-purpose icon already carries the approved bordeaux field.
   const macDesktop = /Macintosh|Mac OS X/i.test(userAgent) && !/Mobile|iPhone|iPad/i.test(userAgent)
 
   return {
@@ -50,16 +50,16 @@ export function buildStorefrontManifest (shop: PwaShopSource = {}, userAgent = '
     theme_color: textOrFallback(shop.theme_color, STOREFRONT_PWA_FALLBACK.theme_color),
     background_color: textOrFallback(shop.background_color, STOREFRONT_PWA_FALLBACK.background_color),
     icons: [
-      { src: '/pwa/pwa-64x64.png?v=3', sizes: '64x64', type: 'image/png', purpose: 'any' },
-      { src: '/pwa/pwa-192x192.png?v=3', sizes: '192x192', type: 'image/png', purpose: 'any' },
-      { src: '/pwa/pwa-512x512.png?v=3', sizes: '512x512', type: 'image/png', purpose: 'any' },
-      ...(!macDesktop ? [{ src: '/pwa/maskable-512x512.png?v=3', sizes: '512x512', type: 'image/png', purpose: 'maskable' }] : []),
-      { src: '/pwa/monochrome-512x512.png?v=3', sizes: '512x512', type: 'image/png', purpose: 'monochrome' }
+      { src: '/pwa/pwa-64x64.png?v=4', sizes: '64x64', type: 'image/png', purpose: 'any' },
+      { src: '/pwa/pwa-192x192.png?v=4', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/pwa/pwa-512x512.png?v=4', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      ...(!macDesktop ? [{ src: '/pwa/maskable-512x512.png?v=4', sizes: '512x512', type: 'image/png', purpose: 'maskable' }] : []),
+      { src: '/pwa/monochrome-512x512.png?v=4', sizes: '512x512', type: 'image/png', purpose: 'monochrome' }
     ],
     shortcuts: [
-      { name: 'Cardápio', short_name: 'Cardápio', url: '/menu', icons: [{ src: '/pwa/pwa-192x192.png?v=3', sizes: '192x192' }] },
-      { name: 'Sacola', short_name: 'Sacola', url: '/sacola', icons: [{ src: '/pwa/pwa-192x192.png?v=3', sizes: '192x192' }] },
-      { name: 'Meus pedidos', short_name: 'Pedidos', url: '/conta', icons: [{ src: '/pwa/pwa-192x192.png?v=3', sizes: '192x192' }] }
+      { name: 'Cardápio', short_name: 'Cardápio', url: '/menu', icons: [{ src: '/pwa/pwa-192x192.png?v=4', sizes: '192x192' }] },
+      { name: 'Sacola', short_name: 'Sacola', url: '/sacola', icons: [{ src: '/pwa/pwa-192x192.png?v=4', sizes: '192x192' }] },
+      { name: 'Meus pedidos', short_name: 'Pedidos', url: '/conta', icons: [{ src: '/pwa/pwa-192x192.png?v=4', sizes: '192x192' }] }
     ],
     screenshots: [
       { src: '/pwa/screenshots/home-narrow.png', sizes: '1080x1920', type: 'image/png', form_factor: 'narrow', label: 'Início da Nelson Boulangerie' },

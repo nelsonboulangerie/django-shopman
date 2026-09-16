@@ -19,7 +19,7 @@
     "test:security": "vitest run --project unit --run tests/securityDelivery.test.ts tests/operatorLanguage.test.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "pwa:assets": "node ../operator-kit/scripts/generate-pwa-assets.mjs --source=../storefront-nuxt/brand/nelson-mark.svg --out=public/pwa --background=#6B4F75 --ink=#3F2D46 --paper=#FAFAF9 --badge=MKT",
+    "pwa:assets": "node ../operator-kit/scripts/generate-pwa-assets.mjs --icon=lucide:megaphone --out=public/pwa --background=#7D4B88 --foreground=#FCF7EE",
     "format": "prettier --write \"app/**/*.{ts,vue}\" \"tests/**/*.ts\"",
     "typecheck": "nuxi typecheck",
     "postinstall": "nuxt prepare"

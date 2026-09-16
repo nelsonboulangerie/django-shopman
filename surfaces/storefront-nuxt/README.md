@@ -81,28 +81,27 @@ projeção pública de Loja; nome, nome curto, descrição e cores não devem se
 duplicados em componentes. Se o Django estiver indisponível, o builder usa o
 fallback da Nelson gravado em `server/utils/pwaManifest.ts`.
 
-Os SVGs mestres são `brand/nelson-mark.svg`, para os artefatos transparentes,
-e `brand/nelson-mark-bg.svg`, para os artefatos full-bleed com degradê. Para
-regenerar favicon, ícones, maskable, monochrome, apple-touch-icon e todos os
-splash screens iOS:
+O ícone instalável usa o pictograma `store` do Lucide centralizado no campo
+bordeaux `#6D1F32`, com desenho creme `#FCF7EE`. Os SVGs de marca continuam
+como fonte do favicon, do logotipo e dos splash screens. Para regenerar favicon,
+ícones, maskable, monochrome, apple-touch-icon e todos os splash screens iOS:
 
 ```bash
 npm run pwa:assets
 ```
 
 Revise visualmente `public/pwa/maskable-512x512.png` depois de qualquer troca do
-SVG: todo o símbolo precisa continuar dentro da zona segura central de 80%. A
+pictograma: todo o símbolo precisa continuar dentro da zona segura central. A
 saída é versionada; o comando deve ser executado e o diff conferido antes do
 commit.
 
-Os ícones `any` usam o selo circular sem margem adicional e com transparência.
-No Mac, o manifesto omite `maskable` para o Chrome selecionar esse selo; a
+Os ícones `any` usam fundo bordeaux opaco e o símbolo centralizado. No Mac, o
+manifesto omite `maskable` para evitar que o Chrome acrescente uma segunda placa; a
 resposta varia por `User-Agent` e usa `private, no-store`, pois a borda pode
 ignorar `Vary` ao formar a chave de cache. O link versionado do manifesto evita
 reutilizar a resposta pública anterior; `id`, `scope` e `start_url` não mudam.
-O ícone Apple e o adaptativo Android usam a variante oficial opaca, com fundo
-amarelo em degradê e a margem óptica já embutida no SVG; o `maskable` preserva
-a zona segura contra recortes do launcher. Ícones já instalados
+O ícone Apple usa a mesma composição; o adaptativo Android reduz o símbolo para
+preservar a zona segura contra recortes do launcher. Ícones já instalados
 precisam receber a atualização do navegador; validar também uma instalação nova.
 
 O gate completo da fase parte da raiz do repositório:

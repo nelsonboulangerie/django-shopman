@@ -4,10 +4,8 @@ import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 
 describe('storefront PWA assets', () => {
-  it('keeps any-purpose icons transparent and background icons full-bleed', async () => {
-    const transparentSource = readFileSync(resolve('brand/nelson-mark.svg'), 'utf8')
-    const backgroundSource = readFileSync(resolve('brand/nelson-mark-bg.svg'), 'utf8')
-    const transparent = await sharp(resolve('public/pwa/pwa-512x512.png'))
+  it('keeps the approved store symbol centered on a solid bordeaux field', async () => {
+    const regular = await sharp(resolve('public/pwa/pwa-512x512.png'))
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true })
@@ -19,19 +17,23 @@ describe('storefront PWA assets', () => {
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true })
-    const topLeftRgb = Array.from(maskable.data.subarray(0, 3))
-    const topRightOffset = (maskable.info.width - 1) * 4
-    const topRightRgb = Array.from(maskable.data.subarray(topRightOffset, topRightOffset + 3))
+    const bordeaux = [109, 31, 50]
+    const foregroundPixels = (data: Buffer) => {
+      let count = 0
+      for (let offset = 0; offset < data.length; offset += 4) {
+        if (data[offset] > 240 && data[offset + 1] > 235 && data[offset + 2] > 225) count += 1
+      }
+      return count
+    }
 
-    expect(transparentSource).toContain('fill: #ffcd40;')
-    expect(transparentSource).toContain('fill: #aa6a2b;')
-    expect(backgroundSource).toContain('linearGradient')
-    expect(backgroundSource).toContain('stop-color="#cca135"')
-    expect(backgroundSource).toContain('stop-color="#ffcd40"')
-    expect(transparent.data[3]).toBe(0)
+    expect(Array.from(regular.data.subarray(0, 3))).toEqual(bordeaux)
+    expect(Array.from(maskable.data.subarray(0, 3))).toEqual(bordeaux)
+    expect(Array.from(apple.data.subarray(0, 3))).toEqual(bordeaux)
+    expect(regular.data[3]).toBe(255)
     expect(maskable.data[3]).toBe(255)
     expect(apple.data[3]).toBe(255)
-    expect(topLeftRgb).not.toEqual(topRightRgb)
+    expect(foregroundPixels(regular.data)).toBeGreaterThan(5_000)
+    expect(foregroundPixels(maskable.data)).toBeLessThan(foregroundPixels(regular.data))
   })
 
   it('uses the same high-contrast instruction grammar in both iOS steps', () => {
