@@ -81,6 +81,8 @@ const props = defineProps<{
   searchBusy: boolean;
   /** O cliente associado foi criado agora (resolve just-in-time). */
   customerResolvedNew?: boolean;
+  /** Rascunho dos padrões do cliente NOVO — mora no shell, o modal só lê. */
+  newCustomerPrefs?: { cpf_na_nota?: boolean; email_receipt?: boolean };
   /** A escolha pendente do operador (conflito/correção de contato). */
   customerDecision?: CustomerDecision | null;
   customerMergeBusy?: boolean;
@@ -229,6 +231,8 @@ const emit = defineEmits<{
   selectResult: [POSCustomerSearchResult];
   applyCustomerFavorite: [];
   repeatCustomerLastOrder: [];
+  /** Um padrão do cliente virado no modal: vale nesta venda, na hora. */
+  applyPreference: [key: "cpf_na_nota" | "email_receipt", value: boolean];
   pickSavedAddress: [SavedAddressProjection];
 }>();
 
@@ -1900,6 +1904,7 @@ defineExpose({
     :search-busy="searchBusy"
     :lookup-busy="lookupBusy"
     :resolved-new="customerResolvedNew"
+    :new-customer-prefs="newCustomerPrefs"
     :customer-decision="customerDecision"
     :customer-merge-busy="customerMergeBusy"
     :customer-release-busy="customerReleaseBusy"
@@ -1918,6 +1923,7 @@ defineExpose({
     @decision-pick="$emit('decisionPick', $event)"
     @apply-customer-favorite="$emit('applyCustomerFavorite')"
     @repeat-customer-last-order="$emit('repeatCustomerLastOrder')"
+    @apply-preference="(key, value) => $emit('applyPreference', key, value)"
   />
 
   <!-- MODAL: MAQUININHA — o valor que o operador vai digitar no terminal.

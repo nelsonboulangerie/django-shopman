@@ -1,4 +1,4 @@
-// Os PADRÕES do cliente são INTERRUPTORES, e valem para as PRÓXIMAS vendas.
+// Os PADRÕES do cliente são INTERRUPTORES, e valem NESTA venda e nas próximas.
 //
 // Eram botões-com-check ("Imprimir ✓/–"): não se lia de longe qual estava
 // marcado, e o dono disse isso com todas as letras. O switch é a mesma peça
@@ -64,7 +64,7 @@ describe("PosCustomerModal — padrões persistentes do cliente", () => {
     expect(prefSwitch("Nota por e-mail")?.getAttribute("aria-checked")).toBe("false");
   });
 
-  it("virar o interruptor salva SÓ aquele padrão, com o valor novo", async () => {
+  it("virar o interruptor salva SÓ aquele padrão, com o valor novo — e avisa a venda de agora", async () => {
     const wrapper = await mount({ customerLookup: lookup, customerName: "Ana Prado" });
 
     prefSwitch("Nota por e-mail")!.click();
@@ -74,6 +74,8 @@ describe("PosCustomerModal — padrões persistentes do cliente", () => {
     const [url, options] = fetchMock.mock.calls[0]!;
     expect(String(url)).toContain("/pos/customer/CUST-A/profile/");
     expect(options).toMatchObject({ method: "POST", body: { fiscal_prefs: { email_receipt: true } } });
+    // "Vale nesta venda": o shell recebe a mesma mudança para aplicar ao carrinho.
+    expect(wrapper.emitted("applyPreference")).toEqual([["email_receipt", true]]);
 
     // O interruptor fica desabilitado enquanto salva: espera o POST terminar.
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -83,11 +85,21 @@ describe("PosCustomerModal — padrões persistentes do cliente", () => {
     expect(fetchMock.mock.calls[1]![1]).toMatchObject({ body: { fiscal_prefs: { cpf_na_nota: false } } });
   });
 
-  it("sem cadastro não há padrão para gravar: os interruptores não existem", async () => {
-    await mount({ customerName: "Outra Pessoa" });
-    expect(prefSwitch("CPF na nota")).toBeNull();
-    expect(prefSwitch("Nota por e-mail")).toBeNull();
-    expect(document.body.textContent).toContain("Os padrões do cliente ficam disponíveis depois de cadastrar.");
+  // Sem cadastro não há perfil para gravar: o interruptor lê o rascunho do
+  // shell (`newCustomerPrefs`) e só pede a mudança — ela viaja no cadastrar.
+  it("sem cadastro o interruptor mostra o rascunho do shell e pede a mudança sem gravar", async () => {
+    const wrapper = await mount({ customerName: "Outra Pessoa", newCustomerPrefs: { cpf_na_nota: true } });
+    expect(prefSwitch("CPF na nota")?.getAttribute("aria-checked")).toBe("true");
+    expect(prefSwitch("Nota por e-mail")?.getAttribute("aria-checked")).toBe("false");
+
+    prefSwitch("Nota por e-mail")!.click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("applyPreference")).toEqual([["email_receipt", true]]);
     expect(fetchMock).not.toHaveBeenCalled();
+    // O interruptor NÃO vira sozinho: espera o shell devolver o rascunho.
+    expect(prefSwitch("Nota por e-mail")?.getAttribute("aria-checked")).toBe("false");
+    await wrapper.setProps({ newCustomerPrefs: { cpf_na_nota: true, email_receipt: true } });
+    expect(prefSwitch("Nota por e-mail")?.getAttribute("aria-checked")).toBe("true");
+    expect(document.body.textContent).toContain("Restrições e observações ficam disponíveis depois de cadastrar.");
   });
 });

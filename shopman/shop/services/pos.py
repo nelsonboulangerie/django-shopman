@@ -3637,14 +3637,10 @@ def update_pos_customer_profile(*, customer_ref: str, payload: dict) -> dict:
             raise PosCustomerUnavailable("Cliente não encontrado.") from exc
 
         updates: list[str] = []
-        metadata = dict(customer.metadata or {})
         if "fiscal_prefs" in payload:
-            prefs = dict(metadata.get("fiscal_prefs") or {})
-            for key in ("cpf_na_nota", "email_receipt"):
-                if key in (incoming_fiscal or {}):
-                    prefs[key] = bool(incoming_fiscal[key])
-            metadata["fiscal_prefs"] = prefs
+            _merge_fiscal_prefs(customer, incoming_fiscal or {})
             updates.append("metadata")
+        metadata = dict(customer.metadata or {})
 
         if "dietary_restrictions" in payload:
             metadata["preferences"] = str(payload.get("dietary_restrictions") or "").strip()
@@ -3676,6 +3672,7 @@ def resolve_or_create_customer(
     contact_correction: bool = False,
     name_correction: bool = False,
     receipt_identity_action: dict | None = None,
+    fiscal_prefs: dict | None = None,
     operator_username: str,
 ) -> dict:
     """Get-or-create a POS customer JUST-IN-TIME — when the operator defines them
@@ -3697,7 +3694,15 @@ def resolve_or_create_customer(
     merge só preenche lacuna. ``name_correction`` tem a mesma natureza, mas é
     separada: o botão "Salvar cadastro" pode corrigir o nome sem transformar o
     payload passivo de toda venda em editor de CRM.
+
+    ``fiscal_prefs`` são os PADRÕES do cliente (``cpf_na_nota`` /
+    ``email_receipt``) virados no modal ANTES de o cadastro existir: viajam no
+    "Cadastrar cliente" e nascem junto com o registro. Mesma validação e mesma
+    escrita do endpoint de perfil (``_merge_fiscal_prefs``) — o cliente
+    existente continua gravando pelo perfil ao virar o interruptor.
     """
+    if fiscal_prefs is not None and not isinstance(fiscal_prefs, dict):
+        raise ValueError("fiscal_prefs inválido.")
     if receipt_identity_action is not None:
         from shopman.shop.services.pos_receipt_identity import resolve_receipt_identity
 
@@ -3711,6 +3716,7 @@ def resolve_or_create_customer(
             "customer_email": email,
             "customer_contact_correction": contact_correction,
             "customer_name_correction": name_correction,
+            **({"fiscal_prefs": fiscal_prefs} if fiscal_prefs is not None else {}),
         },
         operator_username=operator_username,
     )
@@ -3913,6 +3919,12 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
         if address:
             _ensure_customer_address(address_service, customer.ref, address, structured_address)
         _remember_fiscal_prefs(customer, payload)
+        # Os padrões EXPLÍCITOS (o operador virou o interruptor no cadastro
+        # novo) vêm depois do gravador passivo, e mandam: ele só liga; estes
+        # dizem o valor.
+        explicit_prefs = payload.get("fiscal_prefs")
+        if isinstance(explicit_prefs, dict) and _merge_fiscal_prefs(customer, explicit_prefs):
+            customer.save(update_fields=["metadata", "updated_at"])
 
         customer.refresh_from_db()
         return {
@@ -3925,6 +3937,30 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             # "criei agora" ≠ "achei": a tela distingue o cadastro recém-criado.
             "created": created,
         }
+
+
+def _merge_fiscal_prefs(customer, incoming: dict) -> bool:
+    """UM escritor para os padrões fiscais EXPLÍCITOS em ``metadata["fiscal_prefs"]``.
+
+    Dois caminhos chegam aqui: o perfil do balcão (liga E desliga um cadastro
+    que existe) e o cadastro novo pelo resolve (os interruptores viajam junto
+    com o "Cadastrar cliente"). Parcial: só as chaves presentes mudam, e sempre
+    como ``bool``. Não salva — quem chama grava junto com o resto. Devolve se
+    algum valor mudou de fato.
+    """
+    if not isinstance(incoming, dict):
+        raise ValueError("fiscal_prefs inválido.")
+    metadata = dict(customer.metadata or {})
+    prefs = dict(metadata.get("fiscal_prefs") or {})
+    changed = False
+    for key in ("cpf_na_nota", "email_receipt"):
+        if key in incoming:
+            value = bool(incoming[key])
+            changed = changed or prefs.get(key) != value
+            prefs[key] = value
+    metadata["fiscal_prefs"] = prefs
+    customer.metadata = metadata
+    return changed
 
 
 def _remember_fiscal_prefs(customer, payload: dict) -> None:

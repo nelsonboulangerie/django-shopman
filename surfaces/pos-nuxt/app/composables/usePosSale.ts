@@ -1259,6 +1259,7 @@ export function usePosSale(deps: PosSaleDeps) {
   function resetCart() {
     tabConflict.value = false;
     receiptIdentityChoices.value = [];
+    pendingCustomerPrefs.value = {};
     cart.tabRef = "";
     cart.tabDisplay = "";
     cart.tabSessionKey = "";
@@ -1819,6 +1820,11 @@ export function usePosSale(deps: PosSaleDeps) {
           customer_email: email,
           ...(options.contactCorrection ? { customer_contact_correction: true } : {}),
           ...(customerRef ? { customer_name_correction: true } : {}),
+          // Os padrões virados no modal ANTES do cadastro existir nascem junto
+          // com ele. Só sem ref: com cadastro o modal já gravou no perfil.
+          ...(!customerRef && Object.values(pendingCustomerPrefs.value).some(Boolean)
+            ? { fiscal_prefs: { ...pendingCustomerPrefs.value } }
+            : {}),
         },
       });
       customerDecision.value = null;
@@ -1826,6 +1832,8 @@ export function usePosSale(deps: PosSaleDeps) {
       // "Criei agora" ≠ "achei": a confirmação visual do modal distingue.
       customerResolvedNew.value = !!response.created;
       customerLookup.value = response.customer;
+      // O cadastro existe: o rascunho dos padrões já mora nele (`fiscal_prefs`).
+      pendingCustomerPrefs.value = {};
       cart.customerRef = response.customer.ref;
       cart.customerName = response.customer.name || cart.customerName;
       cart.customerPhone = response.customer.phone || cart.customerPhone;
@@ -2195,6 +2203,13 @@ export function usePosSale(deps: PosSaleDeps) {
   // O cliente associado foi CRIADO agora (resolve just-in-time devolveu
   // created=true) — a confirmação do modal distingue novo × encontrado.
   const customerResolvedNew = ref(false);
+  // Os PADRÕES do cliente (CPF na nota / nota por e-mail) virados no modal
+  // ANTES de o cadastro existir. Com cadastro, o modal grava direto no perfil
+  // e aqui só a venda de agora muda; sem cadastro, o rascunho mora AQUI (é o
+  // que o interruptor mostra) e viaja no "Cadastrar cliente" como
+  // `fiscal_prefs` do resolve. Zera quando o cadastro nasce, ao remover o
+  // cliente e ao trocar de comanda.
+  const pendingCustomerPrefs = ref<{ cpf_na_nota?: boolean; email_receipt?: boolean }>({});
   async function searchCustomers(query: string) {
     const q = (query || "").trim();
     if (q.length < 2) { customerSearchResults.value = []; return; }
@@ -2234,7 +2249,31 @@ export function usePosSale(deps: PosSaleDeps) {
   // Disassociate the customer from the tab (Odoo's UNSELECT): drop every customer
   // field + the loaded lookup so nothing lingers (clearing only the name would
   // leave customerRef attached). The debounced autosave then persists the removal.
+  // Virar um padrão no modal vale NESTA venda, na hora — e nas próximas (o
+  // perfil ou o cadastro novo gravam por fora). `cpf_na_nota` segue a MESMA
+  // regra de `applyCustomerDefaults`: o CPF do cadastro entra como DEFAULT do
+  // campo da nota, sem passar por cima de um já digitado; o switch decide se
+  // ele viaja. `email_receipt` liga ou desliga o canal de e-mail do comprovante.
+  function applyCustomerPreference(key: "cpf_na_nota" | "email_receipt", value: boolean) {
+    if (!cart.customerRef.trim()) {
+      pendingCustomerPrefs.value = { ...pendingCustomerPrefs.value, [key]: value };
+    }
+    if (key === "cpf_na_nota") {
+      cart.wantsCpfOnInvoice = value;
+      if (value && !cart.invoiceTaxId.trim()) {
+        cart.invoiceTaxId = cart.customerTaxId.trim() || customerLookup.value?.tax_id || "";
+      }
+      return;
+    }
+    if (value && !cart.receiptChannels.includes("email")) {
+      cart.receiptChannels = [...cart.receiptChannels, "email"];
+    } else if (!value && cart.receiptChannels.includes("email")) {
+      cart.receiptChannels = cart.receiptChannels.filter((channel) => channel !== "email");
+    }
+  }
+
   function clearCustomer() {
+    pendingCustomerPrefs.value = {};
     cart.customerRef = "";
     cart.customerName = "";
     cart.customerPhone = "";
@@ -3151,6 +3190,8 @@ export function usePosSale(deps: PosSaleDeps) {
     customerSearchResults,
     customerSearchBusy,
     customerResolvedNew,
+    pendingCustomerPrefs,
+    applyCustomerPreference,
     searchCustomers,
     selectCustomerResult,
     clearCustomer,

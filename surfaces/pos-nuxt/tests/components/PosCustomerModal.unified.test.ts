@@ -80,9 +80,13 @@ describe("PosCustomerModal — uma estrutura, um selo", () => {
     expect(nameInput()).not.toBeNull();
     expect(phoneInput()).not.toBeNull();
     expect(formEmailInput()).not.toBeNull();
-    // Sem ref não há padrão a gravar: a linha diz quando eles aparecem.
-    expect(document.querySelector("[data-customer-defaults]")).toBeNull();
-    expect(text()).toContain("Os padrões do cliente ficam disponíveis depois de cadastrar.");
+    // Os padrões existem para o cliente NOVO também (viajam no cadastrar);
+    // restrições e observações precisam de cadastro.
+    expect(document.querySelector("[data-customer-defaults]")).not.toBeNull();
+    expect(prefSwitch("CPF na nota")?.getAttribute("aria-checked")).toBe("false");
+    expect(prefSwitch("Nota por e-mail")?.getAttribute("aria-checked")).toBe("false");
+    expect(text()).toContain("Restrições e observações ficam disponíveis depois de cadastrar.");
+    expect(text()).not.toContain("Restrições alimentares");
     expect(text()).not.toContain("Remover cliente");
     // Foco na busca, não em "Remover cliente" nem no formulário.
     expect(document.activeElement).toBe(searchInput());
@@ -102,7 +106,8 @@ describe("PosCustomerModal — uma estrutura, um selo", () => {
 
     expect(document.querySelector("[data-customer-defaults]")).not.toBeNull();
     expect(text()).toContain("Padrões deste cliente");
-    expect(text()).toContain("Valem para as próximas vendas. A venda de agora se decide na tela de pagamento.");
+    expect(text()).toContain("Vale nesta venda e nas próximas.");
+    expect(text()).toContain("Usar CPF ou e-mail numa venda liga o padrão sozinho; desligar é aqui.");
     expect(prefSwitch("CPF na nota")?.getAttribute("aria-checked")).toBe("true");
     expect(prefSwitch("Nota por e-mail")?.getAttribute("aria-checked")).toBe("false");
     expect(text()).toContain("Restrições alimentares");

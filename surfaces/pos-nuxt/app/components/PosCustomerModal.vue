@@ -46,11 +46,16 @@ const props = withDefaults(defineProps<{
   customerMergeBusy?: boolean;
   /** A liberação do contato está em voo — mesmo motivo. */
   customerReleaseBusy?: boolean;
+  /** Rascunho dos PADRÕES do cliente NOVO. Mora no shell (é ele que o manda
+   *  no "Cadastrar cliente" como `fiscal_prefs`); o modal só o lê e pede a
+   *  mudança por `applyPreference`. Com cadastro, a fonte é o lookup. */
+  newCustomerPrefs?: { cpf_na_nota?: boolean; email_receipt?: boolean };
 }>(), {
   customerDecision: null,
   customerMergeBusy: false,
   customerReleaseBusy: false,
   resolvedNew: false,
+  newCustomerPrefs: () => ({}),
 });
 
 const emit = defineEmits<{
@@ -76,6 +81,9 @@ const emit = defineEmits<{
   decisionPick: [ServerConflictCandidate];
   applyCustomerFavorite: [];
   repeatCustomerLastOrder: [];
+  /** Um padrão virado vale NESTA venda, na hora — o shell aplica ao carrinho
+   *  (e, sem cadastro, guarda o rascunho que viaja no cadastrar). */
+  applyPreference: [key: "cpf_na_nota" | "email_receipt", value: boolean];
 }>();
 
 // ── Preferências persistentes do cliente (painel do balcão) ──────────────────
@@ -111,9 +119,20 @@ async function saveProfile(body: Record<string, unknown>) {
   }
 }
 
+// O interruptor lê do cadastro (rascunho sincronizado do lookup) ou, sem
+// cadastro, do rascunho que o shell guarda para o cadastrar.
+function prefOn(key: "cpf_na_nota" | "email_receipt"): boolean {
+  return props.customerLookup?.ref ? profileDraft[key] : Boolean(props.newCustomerPrefs?.[key]);
+}
+// Virar o interruptor: com cadastro, grava no perfil (POST parcial); sem
+// cadastro, o shell guarda o rascunho. Nos dois casos a venda de AGORA muda
+// na hora — "vale nesta venda e nas próximas".
 function setProfilePref(key: "cpf_na_nota" | "email_receipt", value: boolean) {
-  profileDraft[key] = value;
-  void saveProfile({ fiscal_prefs: { [key]: value } });
+  if (props.customerLookup?.ref) {
+    profileDraft[key] = value;
+    void saveProfile({ fiscal_prefs: { [key]: value } });
+  }
+  emit("applyPreference", key, value);
 }
 
 function saveProfileText() {
@@ -747,14 +766,15 @@ const newCustomerNote = computed(() => {
               </label>
             </div>
 
-            <!-- 5 · PADRÕES PERSISTENTES do cliente: liga E desliga aqui —
-                 "hoje não" é desmarcar na venda; "nunca mais" é desligar AQUI.
-                 Só com cadastro (o servidor grava padrão em cadastro com ref).
+            <!-- 5 · PADRÕES do cliente: valem NESTA venda, na hora, e nas
+                 próximas. Liga E desliga aqui — "hoje não" é desmarcar na
+                 venda; "nunca mais" é desligar AQUI. Com cadastro, grava no
+                 perfil; sem cadastro, o rascunho viaja no "Cadastrar cliente".
                  INTERRUPTORES, não botões-com-check: padrão é ESTADO ("sempre
                  assim"), e o switch diz de longe se está ligado. -->
-            <div v-if="hasCustomer" class="grid gap-2 border-t border-primary/20 pt-3" data-customer-defaults>
+            <div class="grid gap-2 border-t pt-3" :class="hasCustomer ? 'border-primary/20' : ''" data-customer-defaults>
               <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Padrões deste cliente</p>
-              <p class="text-xs text-muted-foreground">Valem para as próximas vendas. A venda de agora se decide na tela de pagamento.</p>
+              <p class="text-xs text-muted-foreground">Vale nesta venda e nas próximas.</p>
               <div class="grid divide-y rounded-md border">
                 <label class="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm">
                   <span class="flex min-w-0 items-center gap-2 font-medium">
@@ -762,7 +782,7 @@ const newCustomerNote = computed(() => {
                     CPF na nota
                   </span>
                   <UiSwitch
-                    :model-value="profileDraft.cpf_na_nota"
+                    :model-value="prefOn('cpf_na_nota')"
                     :disabled="profileSaving"
                     aria-label="CPF na nota"
                     @update:model-value="setProfilePref('cpf_na_nota', $event)"
@@ -774,23 +794,29 @@ const newCustomerNote = computed(() => {
                     Nota por e-mail
                   </span>
                   <UiSwitch
-                    :model-value="profileDraft.email_receipt"
+                    :model-value="prefOn('email_receipt')"
                     :disabled="profileSaving"
                     aria-label="Nota por e-mail"
                     @update:model-value="setProfilePref('email_receipt', $event)"
                   />
                 </label>
               </div>
-              <label class="grid gap-1 text-sm">
-                <span class="text-xs font-medium text-muted-foreground">Restrições alimentares</span>
-                <UiInput v-model="profileDraft.dietary_restrictions" placeholder="Ex: alérgico a nozes" @blur="saveProfileText" />
-              </label>
-              <label class="grid gap-1 text-sm">
-                <span class="text-xs font-medium text-muted-foreground">Observações do balcão</span>
-                <UiTextarea v-model="profileDraft.notes" :rows="2" placeholder="Ex: prefere pão bem assado; busca às 17h" @blur="saveProfileText" />
-              </label>
+              <!-- A resposta à pergunta do dono, visível: o fechamento da venda
+                   LIGA o padrão sozinho (`_remember_fiscal_prefs` só liga);
+                   desligar é gesto daqui. -->
+              <p class="text-xs text-muted-foreground">Usar CPF ou e-mail numa venda liga o padrão sozinho; desligar é aqui.</p>
+              <template v-if="hasCustomer">
+                <label class="grid gap-1 text-sm">
+                  <span class="text-xs font-medium text-muted-foreground">Restrições alimentares</span>
+                  <UiInput v-model="profileDraft.dietary_restrictions" placeholder="Ex: alérgico a nozes" @blur="saveProfileText" />
+                </label>
+                <label class="grid gap-1 text-sm">
+                  <span class="text-xs font-medium text-muted-foreground">Observações do balcão</span>
+                  <UiTextarea v-model="profileDraft.notes" :rows="2" placeholder="Ex: prefere pão bem assado; busca às 17h" @blur="saveProfileText" />
+                </label>
+              </template>
+              <p v-else class="text-xs text-muted-foreground">Restrições e observações ficam disponíveis depois de cadastrar.</p>
             </div>
-            <p v-else class="text-xs text-muted-foreground">Os padrões do cliente ficam disponíveis depois de cadastrar.</p>
           </div>
         </div>
       </div>

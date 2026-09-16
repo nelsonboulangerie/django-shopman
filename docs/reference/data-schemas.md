@@ -1929,6 +1929,13 @@ exact `receipt_only` choice (`owner_ref: ""`) or an explicit legacy save opt-in.
 A missing request ID never bypasses this decision. Hidden email remains ignored.
 
 `POST /api/v1/backstage/pos/customer/resolve/` accepts optional
+`fiscal_prefs: {cpf_na_nota?: bool, email_receipt?: bool}` — the customer's
+DEFAULTS toggled in the POS customer modal before the record exists; they are
+written to `Customer.metadata.fiscal_prefs` by the same writer as the profile
+endpoint (`_merge_fiscal_prefs`, partial, after the passive `_remember_fiscal_prefs`).
+A non-object value is refused with 400 `{detail, field: "fiscal_prefs"}`.
+
+It also accepts optional
 `receipt_identity_action`: `{action: "create" | "save", client_request_id,
 customer_ref, target_ref, fields: [{field: "tax_id" | "email", value, owner_ref}],
 tax_id_overwrite_confirmed?: boolean, tax_id_before?: string}`.
