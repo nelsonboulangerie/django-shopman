@@ -404,6 +404,39 @@ def subscription_for_owner(subscription_ref, *, sku: str, customer=None, phone: 
     return sub
 
 
+def active_subscription_for_sku_owner(*, sku: str, customer):
+    """Return one active SKU alert owned by the authenticated principal.
+
+    Customer identity wins over contact text. The phone fallback exists only
+    for a verified legacy row with no customer_ref, so a recycled/shared number
+    cannot grant one account the capability of another identified customer.
+    """
+    from django.db.models import Q
+
+    from shopman.storefront.models import StockAlertSubscription
+
+    customer_ref = (getattr(customer, "ref", "") or "").strip()
+    contact = normalize_user_phone(getattr(customer, "phone", "") or "")
+    if not customer_ref and not contact:
+        return None
+
+    owner = Q()
+    if customer_ref:
+        owner |= Q(customer_ref=customer_ref)
+    if contact:
+        owner |= Q(customer_ref="", contact_phone=contact)
+    return (
+        StockAlertSubscription.objects.active()
+        .filter(
+            owner,
+            sku=sku,
+            purpose="stock_availability",
+        )
+        .order_by("-subscribed_at", "-pk")
+        .first()
+    )
+
+
 def subscription_for_management(capability: str, *, for_update: bool = False):
     """Resolve one active verified subscription without logging the bearer token."""
     from shopman.storefront.models import StockAlertSubscription
