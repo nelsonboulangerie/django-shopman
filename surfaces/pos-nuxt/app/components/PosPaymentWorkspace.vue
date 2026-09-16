@@ -63,6 +63,7 @@ import {
   receiptSaveSummary,
 } from "~/presentation/receiptContact";
 import { resolveWindowLabel, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
+import { toast } from "vue-sonner";
 
 const props = defineProps<{
   salesMode?: "counter" | "order";
@@ -1077,7 +1078,15 @@ defineExpose({
   pressMethodKey: (letter: string) => {
     const ref = Object.keys(methodKeys.value).find((key) => methodKeys.value[key] === letter);
     if (!ref) return false;
-    if (blockedForDelivery(ref) || blockedByLink(ref) || blockedByPixProviderTest(ref)) return true;
+    // A tecla da forma bloqueada calava: o operador apertava P, nada
+    // acontecia, e apertava de novo achando que a tecla quebrou. O dedo no
+    // botão já ouvia o motivo (`addTender`); a tecla ouve o mesmo.
+    if (blockedForDelivery(ref)) {
+      const handoff = props.fulfillmentType === "pickup" ? "retirada" : "entrega";
+      toast.info(`Na ${handoff}, use dinheiro ou cartão na maquininha. PIX Efí exige confirmação automática.`);
+      return true;
+    }
+    if (blockedByLink(ref) || blockedByPixProviderTest(ref)) return true;
     emit("addTender", ref);
     return true;
   },
