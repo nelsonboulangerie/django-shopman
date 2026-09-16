@@ -180,7 +180,8 @@ echo
 printf '%s' "${OPEN}" | jq -r '
   map(. + {
       fail: ([.statusCheckRollup[]? | select(.conclusion=="FAILURE")] | length),
-      pend: ([.statusCheckRollup[]? | select(.conclusion==null and .state!="SUCCESS" and .state!="FAILURE")] | length),
+      # check em andamento vem com conclusion "" (string vazia), não null.
+      pend: ([.statusCheckRollup[]? | select((.conclusion // "")=="")] | length),
       total: ([.statusCheckRollup[]?] | length),
       queued: (.autoMergeRequest != null),
       bot: ((.author.login // "") | test("dependabot"))
