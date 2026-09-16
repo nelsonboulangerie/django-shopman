@@ -20,6 +20,7 @@ from shopman.shop.models import (
     MarketingOutbox,
 )
 from shopman.shop.services import marketing_time
+from shopman.shop.services.marketing_capabilities import persisted_identity
 from shopman.shop.services.marketing_contracts import (
     DeliveryState,
     MarketingContractError,
@@ -74,14 +75,17 @@ def fanout_in_chunks(
     clock = _aware_now(now)
     safe_chunk_size = max(1, min(int(chunk_size), 500))
     safe_max_chunks = max(1, min(int(max_chunks), 100))
-    outbox = MarketingOutbox.objects.select_related("snapshot").get(ref=outbox_ref)
+    outbox = MarketingOutbox.objects.select_related("snapshot", "artifact").get(
+        ref=outbox_ref
+    )
     if outbox.state != MarketingOutbox.State.DISPATCHED:
         raise MarketingContractError(
             code="outbox_not_dispatched",
             detail="A intent ainda não foi entregue à fila durável.",
         )
 
-    if outbox.platform != "whatsapp":
+    delivery_kind, _delivery_format = persisted_identity(outbox)
+    if delivery_kind == "publication":
         selection_hash = _selection_hash(outbox, (f"public:{outbox.platform}",))
         outbox = _initialize_fanout(
             outbox.ref,
@@ -239,6 +243,7 @@ def claim_due_targets(
     limit: int = DEFAULT_CLAIM_LIMIT,
     lease_seconds: int = DEFAULT_TARGET_LEASE_SECONDS,
     platforms: Iterable[str] | None = None,
+    outbox_refs: Iterable[str] | None = None,
 ) -> TargetClaimReport:
     """Lease eligible targets after one batched consent/expiry recheck."""
 
@@ -265,10 +270,16 @@ def claim_due_targets(
         ).filter(Q(lease_owner="") | Q(lease_until__lte=clock))
         if platform_filter is not None:
             query = query.filter(platform__in=platform_filter)
+        if outbox_refs is not None:
+            exact_refs = tuple(dict.fromkeys(str(value) for value in outbox_refs))
+            if not exact_refs:
+                return TargetClaimReport((), 0, 0, 0, 0, 0, 0)
+            query = query.filter(outbox__ref__in=exact_refs)
         query = query.select_related(
             "announcement",
             "artifact",
             "outbox",
+            "outbox__artifact",
             "member__customer",
         ).order_by("next_attempt_at", "pk")
         query = _select_for_update(query)
@@ -397,6 +408,13 @@ def _pre_send_outcome(
     now: datetime,
 ) -> tuple[str, str]:
     announcement = target.announcement
+    try:
+        target_identity = persisted_identity(target)
+        outbox_identity = persisted_identity(target.outbox)
+    except MarketingContractError:
+        return DeliveryState.FAILED_FINAL.value, "delivery_identity_invalid"
+    if target_identity != outbox_identity:
+        return DeliveryState.FAILED_FINAL.value, "delivery_identity_mismatch"
     if (
         announcement.status == AnnouncementStatus.EXPIRED
         or (announcement.expires_at is not None and announcement.expires_at <= now)
@@ -424,7 +442,8 @@ def _pre_send_outcome(
     facts_outcome = facts_outcomes.get(target.artifact_id)
     if facts_outcome is not None:
         return facts_outcome
-    if target.platform != "whatsapp":
+    delivery_kind, _delivery_format = target_identity
+    if delivery_kind == "publication":
         return "claim", ""
 
     member = target.member
@@ -441,6 +460,19 @@ def _pre_send_outcome(
         return DeliveryState.SUPPRESSED.value, "global_optout"
 
     reasons = frozenset(member.reasons or [])
+    from shopman.shop.services.marketing_age import is_known_adult, is_known_minor
+
+    is_alert_delivery = bool("alerts" in reasons and member.subscription_ref)
+    if is_alert_delivery:
+        # The alert-specific declaration can prove adulthood while the account
+        # birthday is unknown, but it can never override a canonical minor DOB.
+        if customer is not None and is_known_minor(customer.birthday):
+            return DeliveryState.SUPPRESSED.value, "recipient_known_minor"
+    elif customer is None or not is_known_adult(customer.birthday):
+        # General direct marketing requires the canonical account fact. A
+        # legacy snapshot or a removed birthday must fail closed at claim time.
+        return DeliveryState.SUPPRESSED.value, "recipient_age_not_verified"
+
     if member.subscription_ref:
         if subscription_unavailable:
             return "defer", "subscription_unavailable"
@@ -515,7 +547,7 @@ def _consent_statuses(rows) -> tuple[dict[str, str], bool]:
     refs = {
         target.member.customer.ref
         for target in rows
-        if target.platform == "whatsapp"
+        if _delivery_kind(target) == "direct_message"
         and target.member_id
         and target.member.customer_id
         and target.member.customer
@@ -533,7 +565,7 @@ def _active_subscriptions(rows, *, now: datetime) -> tuple[set, bool]:
     refs = {
         target.member.subscription_ref
         for target in rows
-        if target.platform == "whatsapp"
+        if _delivery_kind(target) == "direct_message"
         and target.member_id
         and target.member.subscription_ref
     }
@@ -564,6 +596,13 @@ def _member_ids(values: Iterable[int] | None) -> tuple[int, ...]:
             code="invalid_delivery_member_selection",
             detail="A seleção protegida de membros é inválida.",
         ) from exc
+
+
+def _delivery_kind(row: object) -> str:
+    try:
+        return persisted_identity(row)[0]
+    except MarketingContractError:
+        return ""
 
 
 def _selection_hash(outbox: MarketingOutbox, target_keys: tuple[str, ...]) -> str:
@@ -658,6 +697,17 @@ def _worker_id(value: str) -> str:
 
 
 def _select_for_update(query):
+    # ``claim_due_targets`` hydrates ``member__customer`` in the same query so the
+    # consent recheck stays bounded. ``member`` is nullable for public publications,
+    # therefore PostgreSQL renders that path as an OUTER JOIN and refuses a broad
+    # ``FOR UPDATE`` (it cannot lock the nullable side). We only mutate
+    # ``DeliveryTarget`` here, so lock precisely the base rows when the backend
+    # supports ``FOR UPDATE OF``.
+    if connection.features.has_select_for_update_of:
+        return query.select_for_update(
+            of=("self",),
+            skip_locked=connection.features.has_select_for_update_skip_locked,
+        )
     if connection.features.has_select_for_update_skip_locked:
         return query.select_for_update(skip_locked=True)
     return query.select_for_update()

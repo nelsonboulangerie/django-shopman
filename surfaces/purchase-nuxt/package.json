@@ -15,6 +15,7 @@
     "test:component": "vitest run --project component",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "pwa:assets": "node ../operator-kit/scripts/generate-pwa-assets.mjs --icon=lucide:package --out=public/pwa --background=#386F9A --foreground=#FCF7EE",
     "format": "prettier --write \"app/**/*.{ts,vue}\" \"tests/**/*.ts\"",
     "typecheck": "nuxi typecheck",
     "postinstall": "nuxt prepare"
@@ -55,6 +56,7 @@
     "vue-tsc": "^3.0.0"
   },
   "overrides": {
-    "esbuild": "^0.28.2"
+    "esbuild": "^0.28.2",
+    "js-yaml": "^4.3.2"
   }
 }

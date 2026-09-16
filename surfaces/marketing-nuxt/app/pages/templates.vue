@@ -14,7 +14,7 @@ import { marketingTemplateSummary } from "~/presentation/marketingVariables";
 
 const { templates, loading, error, load, create, patch, remove } =
   useAnnouncementTemplates();
-const { variables } = useCampaigns();
+const { variables, deliveryCapabilities } = useCampaigns();
 const { aiAssistAvailable } = useCampaignBoard();
 
 const editing = ref<AnnouncementTemplate | null>(null);
@@ -63,7 +63,7 @@ async function confirmRemove() {
   busy.value = false;
 }
 
-useHead({ title: "Modelos · Marketing" });
+useHead({ title: "Modelos" });
 </script>
 
 <template>
@@ -215,6 +215,7 @@ useHead({ title: "Modelos · Marketing" });
           <AnnouncementTemplateForm
             :template="editing"
             :variables="variables"
+            :delivery-capabilities="deliveryCapabilities"
             :ai-available="aiAssistAvailable"
             :busy="busy"
             :draft-owner="draftOwner"

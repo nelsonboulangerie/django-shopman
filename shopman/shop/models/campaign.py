@@ -1351,6 +1351,11 @@ class MarketingOutbox(models.Model):
         related_name="outbox_entries",
     )
     platform = models.CharField(max_length=32)
+    # Keep the database default throughout the expand phase.  Older application
+    # code does not know these columns yet and must remain able to insert while a
+    # deploy is rolled back with the expanded schema still in place.
+    delivery_kind = models.CharField(max_length=24, blank=True, db_default="")
+    format = models.CharField(max_length=32, blank=True, db_default="")
     wave_key = models.CharField(max_length=64, blank=True)
     state = models.CharField(max_length=16, choices=State.choices, default=State.PENDING)
     available_at = models.DateTimeField(db_index=True)
@@ -1378,9 +1383,23 @@ class MarketingOutbox(models.Model):
     class Meta:
         ordering = ["available_at", "pk"]
         constraints = [
+            # Expand-phase compatibility: keep the legacy lane unique while
+            # old application instances can still write this table.  A later
+            # contract migration may remove it after rollback is no longer
+            # permitted.
             models.UniqueConstraint(
                 fields=["command", "platform", "wave_key"],
                 name="shop_marketing_outbox_command_lane_uq",
+            ),
+            models.UniqueConstraint(
+                fields=[
+                    "command",
+                    "platform",
+                    "delivery_kind",
+                    "format",
+                    "wave_key",
+                ],
+                name="shop_marketing_outbox_command_dest_lane_uq",
             ),
             models.UniqueConstraint(
                 fields=["dispatch_ref"],
@@ -1427,6 +1446,16 @@ class MarketingOutbox(models.Model):
             models.CheckConstraint(
                 condition=models.Q(state__in=("pending", "claimed", "dispatched", "cancelled", "failed")),
                 name="shop_marketing_outbox_state_ck",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(delivery_kind="", format="")
+                    | models.Q(
+                        delivery_kind__in=("publication", "direct_message"),
+                        format__gt="",
+                    )
+                ),
+                name="shop_marketing_outbox_identity_ck",
             ),
         ]
         indexes = [models.Index(fields=["state", "available_at"])]
@@ -1477,6 +1506,8 @@ class DeliveryTarget(models.Model):
         blank=True,
     )
     platform = models.CharField(max_length=32)
+    delivery_kind = models.CharField(max_length=24, blank=True, db_default="")
+    format = models.CharField(max_length=32, blank=True, db_default="")
     wave_key = models.CharField(max_length=64, blank=True)
     target_fingerprint = models.CharField(max_length=64)
     fingerprint_key_version = models.PositiveSmallIntegerField()
@@ -1506,6 +1537,16 @@ class DeliveryTarget(models.Model):
             models.UniqueConstraint(
                 fields=["snapshot", "platform", "target_fingerprint"],
                 name="shop_delivery_target_snapshot_platform_fp_uq",
+            ),
+            models.UniqueConstraint(
+                fields=[
+                    "snapshot",
+                    "platform",
+                    "delivery_kind",
+                    "format",
+                    "target_fingerprint",
+                ],
+                name="shop_delivery_target_snapshot_dest_fp_uq",
             ),
             models.CheckConstraint(
                 condition=models.Q(fingerprint_key_version__gt=0),
@@ -1543,6 +1584,16 @@ class DeliveryTarget(models.Model):
                     )
                 ),
                 name="shop_delivery_target_state_ck",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(delivery_kind="", format="")
+                    | models.Q(
+                        delivery_kind__in=("publication", "direct_message"),
+                        format__gt="",
+                    )
+                ),
+                name="shop_delivery_target_identity_ck",
             ),
         ]
         indexes = [

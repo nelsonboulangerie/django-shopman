@@ -6,10 +6,10 @@ import pytest
 from django.contrib.auth.models import Permission
 from django.db import connection
 from django.urls import reverse
-from shopman.orderman.models import IdempotencyKey, Order
+from shopman.orderman.models import Directive, IdempotencyKey, Order
 
 from shopman.shop.models import Shop
-from shopman.shop.services import cancellation, operator_orders
+from shopman.shop.services import cancellation, ifood_cancellation, operator_orders
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -40,6 +40,8 @@ def test_replay_and_receipt_do_not_repeat_provider_preparation(client, context, 
     with patch.object(operator_orders, "cancellation_reasons", side_effect=reasons) as lookup:
         first = client.post(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
         assert first.status_code == 200, first.content
+        order.refresh_from_db()
+        initial_request = dict(order.data[ifood_cancellation.KEY])
         second = client.post(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
         assert second.status_code == 200, second.content
         assert second.json()["replayed"]
@@ -48,7 +50,17 @@ def test_replay_and_receipt_do_not_repeat_provider_preparation(client, context, 
         conflict = client.post(url, {**body, "reason": "Outra decisão"}, content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
         assert conflict.status_code == 409
         assert lookup.call_count == 1
-    assert order.events.filter(type="status_changed").count() == 1
+    # A receipt records the durable request, not a completed cancellation.
+    # Replays must neither close the order before CAN nor enqueue a new request.
+    order.refresh_from_db()
+    assert order.status == Order.Status.NEW
+    assert order.events.filter(type="status_changed").count() == 0
+    assert order.data[ifood_cancellation.KEY] == initial_request
+    assert ifood_cancellation.is_pending(order)
+    directive = Directive.objects.get(topic="ifood.status_callback", payload__order_ref=order.ref)
+    assert directive.payload["cancellation_request_id"] == initial_request["id"]
+    assert directive.payload["cancellation_code"] == "SYNTHETIC"
+    assert directive.payload["cancellation_reason"] == "Motivo sintético"
 
 
 def test_paid_cancel_preserves_signature_and_never_retains_pin(client, context):

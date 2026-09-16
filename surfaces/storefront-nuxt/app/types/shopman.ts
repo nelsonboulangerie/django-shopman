@@ -222,6 +222,8 @@ export interface CartItemProjection {
 }
 
 export interface CartProjection {
+  revision?: number
+  draft_context?: string
   items: CartItemProjection[]
   items_count: number
   is_empty: boolean
@@ -323,6 +325,7 @@ export interface ShopDesignTokensProjection {
 
 export interface ShopProjection {
   brand_name: string
+  short_name: string
   tagline: string
   description: string
   description_html: string
@@ -422,6 +425,30 @@ export interface HomeSectionsCopyProjection {
   tomorrow_hook: CopyEntryProjection
   whatsapp_cta: CopyEntryProjection
   whatsapp_cta_label: CopyEntryProjection
+  faq_heading: CopyEntryProjection
+}
+
+export interface PwaCopyProjection {
+  offline_title: CopyEntryProjection
+  offline_message: CopyEntryProjection
+  offline_retry_cta: CopyEntryProjection
+  install_title: CopyEntryProjection
+  install_message: CopyEntryProjection
+  install_cta: CopyEntryProjection
+  install_dismiss_cta: CopyEntryProjection
+  ios_title: CopyEntryProjection
+  ios_message: CopyEntryProjection
+  ios_share_step: CopyEntryProjection
+  ios_add_step: CopyEntryProjection
+  ios_done_cta: CopyEntryProjection
+  update_title: CopyEntryProjection
+  update_cta: CopyEntryProjection
+}
+
+export interface FAQItemProjection {
+  ref: string
+  question: string
+  answer: string
 }
 
 export interface AuthCopyProjection {
@@ -479,10 +506,12 @@ export interface HomeProjection {
   hero_copy: HomeHeroCopyProjection
   sections_copy: HomeSectionsCopyProjection
   auth_copy: AuthCopyProjection
+  pwa_copy: PwaCopyProjection
   shop: ShopProjection
   shop_status: ShopStatusProjection
   notices: HomeNoticeProjection[]
   opening_hours: OpeningHoursEntry[]
+  faq: FAQItemProjection[]
   last_order_ref: string | null
   last_order_items: LastOrderItemProjection[]
   actions: Action[]
@@ -601,6 +630,18 @@ export interface PaymentMethodProjection {
   is_default: boolean
 }
 
+export interface PaymentConstraintProjection {
+  provider: string
+  environment: string
+  mode: string
+  is_test: boolean
+  max_amount_q: number
+  max_amount_display: string
+  message: string
+}
+
+export type PaymentConstraintsProjection = Partial<Record<string, PaymentConstraintProjection>>
+
 export interface PickupSlotProjection {
   ref: string
   label: string
@@ -679,6 +720,7 @@ export interface CheckoutProjection {
   saved_addresses: SavedAddressProjection[]
   preselected_address_id: number | null
   payment_methods: PaymentMethodProjection[]
+  payment_constraints?: PaymentConstraintsProjection
   default_payment_method: string
   actions: Action[]
   fulfillment_options: Array<'pickup' | 'delivery' | string>
@@ -714,6 +756,7 @@ export interface CheckoutResponse {
 }
 
 export interface CheckoutMutationResponse {
+  convenience_pending?: string[]
   order_ref: string
   status: string
   next_url?: string
@@ -851,6 +894,7 @@ export interface TrackingCopyProjection {
 }
 
 export interface TrackingResponse {
+  convenience_pending?: string[]
   ref: string
   status: string
   status_label: string
@@ -889,6 +933,12 @@ export interface TrackingResponse {
   // estorno na própria tela, sem depender da notificação.
   cancellation_note: string
   refund_status_label: string | null
+  cancellation_request: {
+    protocol: string
+    requested_at_display: string
+    title: string
+    message: string
+  } | null
   // Fila de espera: 'none' | 'fermata' | 'confirming' | 'confirmed' |
   // 'released'. Em confirming o deadline é o relógio do cliente.
   waitlist_state: string
@@ -971,6 +1021,17 @@ export interface AccountNotificationPreference {
   enabled: boolean
 }
 
+export interface AccountStockAlertSubscription {
+  ref: string
+  sku: string
+  product_name: string
+  event_type: 'stock_back' | 'production_ready'
+  event_label: string
+  active: boolean
+  requires_adult_confirmation: boolean
+  expires_at: string | null
+}
+
 export interface AccountSummaryCopy {
   greeting_prefix: string
   page_title: string
@@ -988,6 +1049,7 @@ export interface AccountSummary {
   loyalty: AccountLoyalty | null
   food_preferences: AccountFoodPreference[]
   notification_preferences: AccountNotificationPreference[]
+  stock_alert_subscriptions: AccountStockAlertSubscription[]
 }
 
 export interface AccountProfileCopy {
@@ -1076,6 +1138,7 @@ export interface AccountDeviceCopy {
 export interface AccountDeviceResponse {
   devices: AccountDeviceProjection[]
   copy: AccountDeviceCopy
+  privacy_requests_available?: boolean
 }
 
 export interface FavoritesResponse {

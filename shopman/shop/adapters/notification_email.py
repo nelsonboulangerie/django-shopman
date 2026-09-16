@@ -8,6 +8,7 @@ falls back to inline text templates.
 from __future__ import annotations
 
 import logging
+import smtplib
 from typing import Any
 
 from django.conf import settings
@@ -18,6 +19,7 @@ from django.template.loader import render_to_string
 logger = logging.getLogger(__name__)
 
 SUBJECT_TEMPLATES: dict[str, str] = {
+    "operator_critical": "Alerta crítico operacional — {alert_type}",
     "order_received": "Recebemos seu pedido {order_ref}",
     "order_accepted": "Pedido {order_ref} confirmado",
     "order_preparing": "Pedido {order_ref} em preparo",
@@ -42,6 +44,7 @@ SUBJECT_TEMPLATES: dict[str, str] = {
 }
 
 BODY_TEMPLATES: dict[str, str] = {
+    "operator_critical": "O alerta {alert_type} exige atenção no Gestor. Referência: {order_ref}. Confira os alertas operacionais antes de repetir a operação.",
     "order_received": (
         "Olá{customer_name_greeting}!\n\n"
         "Recebemos seu pedido {order_ref}.\n\n"
@@ -129,12 +132,12 @@ BODY_TEMPLATES: dict[str, str] = {
     "stock_arrived": (
         "Boa notícia!\n\n"
         "{product_name} chegou.{reserve_note}{deadline_note}\n\n"
-        "{cta} {action_url}\n"
+        "{cta} {action_url}{management_note}\n"
     ),
     "production_ready": (
         "Saiu do forno agora!\n\n"
         "{product_name} acabou de ficar pronto.\n\n"
-        "{cta} {action_url}\n"
+        "{cta} {action_url}{management_note}\n"
     ),
     "announcement_published": "{body}\n\n{cta} {action_url}\n",
     "purchase_request": (
@@ -231,6 +234,13 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         )
         logger.info("Email result: template=%s accepted=%s", template, count == 1)
         return count == 1
+    except (smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused,
+            smtplib.SMTPDataError, smtplib.SMTPAuthenticationError,
+            smtplib.SMTPConnectError, smtplib.SMTPHeloError) as exc:
+        # These exceptions report refusal before SMTP accepted the message.
+        # A disconnect/timeout can occur after DATA acceptance and stays unknown.
+        logger.warning("Email rejected: template=%s error=%s", template, type(exc).__name__)
+        return False
     except Exception as exc:
         raise RuntimeError("acceptance_unconfirmed") from exc
 

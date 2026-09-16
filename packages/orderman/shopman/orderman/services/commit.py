@@ -5,17 +5,21 @@ CommitService — Fecha sessões e cria Orders.
 from __future__ import annotations
 
 import copy
+import hashlib
 import logging
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from django.apps import apps
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 from shopman.orderman import registry
 from shopman.orderman.exceptions import CommitError, IdempotencyCacheHit, SessionError, ValidationError
 from shopman.orderman.ids import generate_order_ref
 from shopman.orderman.models import Directive, IdempotencyKey, Order, OrderItem, Session
+from shopman.utils.phone import normalize_phone
 
 # Ref de pedido é aleatório (1 letra + 2 dígitos). generate_order_ref já sorteia de novo
 # se o ref existe; sob CORRIDA (dois commits pegando o mesmo código no mesmo instante) o
@@ -58,6 +62,26 @@ class CommitService:
         ctx: dict | None = None,
         channel_config: dict | None = None,
     ) -> CommitResult:
+        try:
+            return CommitService._commit_atomic(session_key, channel_ref, idempotency_key, ctx, channel_config)
+        except Exception:
+            # Preserve the failed-attempt contract without leaving a committed
+            # in-progress claim between receipt acquisition and the local seal.
+            # Never overwrite another request's live or completed receipt.
+            IdempotencyKey.objects.get_or_create(
+                scope=f"commit:{channel_ref}:{session_key}", key=idempotency_key, defaults={"status": "failed"}
+            )
+            raise
+
+    @staticmethod
+    @transaction.atomic
+    def _commit_atomic(
+        session_key: str,
+        channel_ref: str,
+        idempotency_key: str,
+        ctx: dict | None = None,
+        channel_config: dict | None = None,
+    ) -> CommitResult:
         """
         Fecha uma sessão e cria um Order.
 
@@ -81,8 +105,11 @@ class CommitService:
         # Escopo inclui a sessão: chave fornecida pelo cliente não pode
         # colidir/vazar o CommitResult de OUTRA sessão do mesmo canal.
         idem_scope = f"commit:{channel_ref}:{session_key}"
+        scope_limit = IdempotencyKey._meta.get_field("scope").max_length
+        if len(idem_scope) > scope_limit:
+            idem_scope = "commit:" + hashlib.sha256(idem_scope.encode()).hexdigest()[: scope_limit - 7]
 
-        # 1. Check/create idempotency key (outside main transaction)
+        # Receipt acquisition, seal and response share this outer transaction.
         try:
             idem = CommitService._acquire_idempotency_lock(idem_scope, idempotency_key)
         except IdempotencyCacheHit as cache_hit:
@@ -98,7 +125,7 @@ class CommitService:
                 channel_config=channel_config,
             )
 
-            # 3. Mark idempotency key as done (outside transaction)
+            # Persist the response before the outer transaction commits.
             idem.status = "done"
             idem.response_body = asdict(response)
             idem.response_code = 201
@@ -193,7 +220,26 @@ class CommitService:
         """
         Execute the actual commit logic in an atomic transaction.
         """
-        # Lock session
+        # Leia a identidade antes dos locks, trave primeiro o Customer e só
+        # então a Session. A exclusão usa a mesma ordem; assim ela não consegue
+        # concluir e deixar uma sessão antiga criar um novo pedido com PII logo
+        # depois do recibo de sucesso.
+        identity_snapshot = (
+            Session.objects.filter(
+                session_key=session_key,
+                channel_ref=channel_ref,
+            )
+            .values("data", "handle_type", "handle_ref")
+            .first()
+        )
+        if identity_snapshot is None:
+            raise SessionError(
+                code="not_found",
+                message=f"Sessão não encontrada: {channel_ref}:{session_key}",
+            )
+        locked_customer = CommitService._lock_active_session_customer(identity_snapshot)
+
+        # Lock session after the canonical subject fence.
         try:
             session = Session.objects.select_for_update().get(
                 session_key=session_key,
@@ -205,7 +251,14 @@ class CommitService:
                 message=f"Sessão não encontrada: {channel_ref}:{session_key}",
             ) from e
 
+        CommitService._revalidate_session_customer(
+            identity_snapshot,
+            session,
+            locked_customer=locked_customer,
+        )
+
         import types
+
         channel = types.SimpleNamespace(ref=channel_ref, config={})
 
         # Validate session is open
@@ -299,16 +352,41 @@ class CommitService:
                 context={"session_key": session_key},
             )
 
+        expected_total = ctx.get("expected_total_q")
+        actual_total = sum(int(item.get("line_total_q") or 0) for item in session.items)
+        if expected_total is not None and actual_total != expected_total:
+            raise ValidationError(
+                code="total_changed",
+                message="O total mudou. Confira e confirme novamente.",
+                context={"new_total_q": actual_total, "old_total_q": expected_total},
+            )
+
         # Build order.data from session.data (key fields for handlers)
         order_data = {}
         session_data = session.data or {}
         for key in (
-            "customer", "customer_ref", "fulfillment_type", "delivery_address",
-            "delivery_address_structured", "delivery_date",
-            "delivery_time_slot", "order_notes",
-            "origin_channel", "payment", "loyalty",
-            "delivery_fee_q", "delivery_distance_km",
-            "is_gift", "recipient", "gift_message", "gift_hide_values",
+            "customer",
+            "customer_ref",
+            "fulfillment_type",
+            "delivery_address",
+            "save_as_default",
+            "saved_address_id",
+            "address_label",
+            "delivery_address_structured",
+            "delivery_date",
+            "delivery_time_slot",
+            "order_notes",
+            "origin_channel",
+            "payment",
+            "loyalty",
+            "fiscal",
+            "receipt",
+            "delivery_fee_q",
+            "delivery_distance_km",
+            "is_gift",
+            "recipient",
+            "gift_message",
+            "gift_hide_values",
         ):
             if key in session_data:
                 order_data[key] = session_data[key]
@@ -323,10 +401,11 @@ class CommitService:
         delivery_date_str = session_data.get("delivery_date")
         if delivery_date_str:
             from datetime import date as date_type
+
             try:
                 delivery_dt = date_type.fromisoformat(delivery_date_str)
                 order_data["is_preorder"] = delivery_dt > timezone.localdate()
-            except (ValueError, TypeError):
+            except (ValueError, TypeError):  # silêncio-deliberado: data inválida não pode marcar pré-venda
                 pass
 
         # Create Order + OrderItems. Ref aleatório → savepoint + retry na corrida de índice.
@@ -343,14 +422,16 @@ class CommitService:
             # `order.data` — uma mutação legítima em order.data["payment"] (ex.:
             # payment.initiate gravando idempotency_key) vazaria para o snapshot em
             # memória e derrubaria qualquer save posterior com sealed_field_modified.
-            "snapshot": copy.deepcopy({
-                "items": session.items,
-                "data": session.data,
-                "pricing": session.pricing,
-                "rev": session.rev,
-                "commitment": commitment_snapshot,
-                "lifecycle": effective_config.get("lifecycle", {}),
-            }),
+            "snapshot": copy.deepcopy(
+                {
+                    "items": session.items,
+                    "data": session.data,
+                    "pricing": session.pricing,
+                    "rev": session.rev,
+                    "commitment": commitment_snapshot,
+                    "lifecycle": effective_config.get("lifecycle", {}),
+                }
+            ),
             "data": order_data,
             "total_q": CommitService._calculate_total(session.items),
         }
@@ -362,9 +443,7 @@ class CommitService:
                     # Prefixo do ref vem da config resolvida (canal←loja←defaults);
                     # sem a chave, o prefixo é o próprio canal — comportamento de sempre.
                     order = Order.objects.create(
-                        ref=generate_order_ref(
-                            channel_ref=effective_config.get("order_ref_prefix") or channel_ref
-                        ),
+                        ref=generate_order_ref(channel_ref=effective_config.get("order_ref_prefix") or channel_ref),
                         **order_fields,
                     )
                 break
@@ -399,6 +478,7 @@ class CommitService:
 
         # Emit signal
         from shopman.orderman.signals import order_changed
+
         order_changed.send(
             sender=Order,
             order=order,
@@ -415,8 +495,9 @@ class CommitService:
         # Carryover refs from session to order (optional contrib)
         try:
             from shopman.orderman.contrib.refs.services import on_session_committed
+
             on_session_committed(session.pk, order.pk)
-        except ImportError:
+        except ImportError:  # silêncio-deliberado: integração contrib é opcional
             pass
 
         # Preorder reminder: D-1 notification if delivery_date is future
@@ -437,8 +518,7 @@ class CommitService:
                 customer_name = order_data.get("customer", {}).get("name", "")
                 time_slot = order_data.get("delivery_time_slot", "")
                 items_summary = ", ".join(
-                    f"{item.get('qty', '')}x {item.get('name', item.get('sku', ''))}"
-                    for item in session.items[:5]
+                    f"{item.get('qty', '')}x {item.get('name', item.get('sku', ''))}" for item in session.items[:5]
                 )
 
                 Directive.objects.create(
@@ -456,7 +536,7 @@ class CommitService:
                         },
                     },
                 )
-            except (ValueError, TypeError):
+            except (ValueError, TypeError):  # silêncio-deliberado: data inválida não agenda lembrete
                 pass
 
         return CommitResult(
@@ -465,6 +545,114 @@ class CommitService:
             total_q=order.total_q,
             items_count=len(session.items),
         )
+
+    @staticmethod
+    def _session_customer_identity(session_or_row) -> tuple[str, str]:
+        if isinstance(session_or_row, dict):
+            data = session_or_row.get("data") or {}
+            handle_type = str(session_or_row.get("handle_type") or "")
+            handle_ref = str(session_or_row.get("handle_ref") or "")
+        else:
+            data = session_or_row.data or {}
+            handle_type = str(session_or_row.handle_type or "")
+            handle_ref = str(session_or_row.handle_ref or "")
+        customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
+        customer_ref = str(data.get("customer_ref") or customer.get("ref") or "").strip()
+        phone = str(customer.get("phone") or "").strip()
+        if not customer_ref and handle_type == "customer":
+            customer_ref = handle_ref.strip()
+        if not phone and handle_type in {"phone", "whatsapp", "manychat"}:
+            phone = handle_ref.strip()
+        # Sessões legadas/PDV podem guardar o mesmo número em formato humano,
+        # enquanto Customer/ContactPoint usam E.164. A cerca deve comparar a
+        # identidade canônica, sem relaxar o fail-closed de ref+telefone.
+        phone = normalize_phone(phone) or phone
+        return customer_ref, phone
+
+    @staticmethod
+    def _lock_active_session_customer(identity_snapshot: dict):
+        customer_ref, phone = CommitService._session_customer_identity(identity_snapshot)
+        if not customer_ref and not phone:
+            return None
+        try:
+            Customer = apps.get_model("guestman", "Customer")
+        except LookupError:
+            # Orderman continua um kernel instalável sem Guestman; a cerca só
+            # existe quando o deployment integra o cadastro canônico.
+            return None
+        phone_query = Q(phone=phone) | Q(
+            contact_points__value_normalized=phone,
+            contact_points__type__in=("phone", "whatsapp"),
+        )
+        if customer_ref and phone:
+            query = Q(ref=customer_ref) & phone_query
+        elif customer_ref:
+            query = Q(ref=customer_ref)
+        else:
+            query = phone_query
+        matches = list(
+            Customer.objects.filter(query).values_list("pk", flat=True).distinct()[:2]
+        )
+        if len(matches) > 1:
+            raise CommitError(
+                code="customer_identity_ambiguous",
+                message="A identidade do cliente precisa ser confirmada novamente.",
+            )
+        if not matches:
+            if customer_ref and phone and Customer.objects.filter(
+                Q(ref=customer_ref) | phone_query
+            ).exists():
+                raise CommitError(
+                    code="customer_identity_mismatch",
+                    message="A identidade do cliente precisa ser confirmada novamente.",
+                )
+            # Integrações legadas podem selar um ref externo sem Customer local.
+            # Exclusão não remove a linha canônica: ela a mantém inativa, então
+            # apenas uma linha encontrada e inativa comprova a corrida perdida.
+            return None
+        customer = Customer.objects.select_for_update().get(pk=matches[0])
+        if not customer.is_active:
+            raise CommitError(
+                code="customer_inactive",
+                message="A conta vinculada a esta sessão não está mais disponível.",
+            )
+        return customer
+
+    @staticmethod
+    def _revalidate_session_customer(
+        identity_snapshot: dict,
+        session: Session,
+        *,
+        locked_customer,
+    ) -> None:
+        before_ref, before_phone = CommitService._session_customer_identity(identity_snapshot)
+        current_ref, current_phone = CommitService._session_customer_identity(session)
+        if locked_customer is None:
+            if (before_ref, before_phone) != (current_ref, current_phone):
+                raise CommitError(
+                    code="customer_identity_changed",
+                    message="A identidade da sessão mudou. Revise e confirme novamente.",
+                )
+            return
+        if (before_ref, before_phone) != (current_ref, current_phone):
+            raise CommitError(
+                code="customer_identity_changed",
+                message="A identidade da sessão mudou. Revise e confirme novamente.",
+            )
+
+        ref_matches = not current_ref or current_ref == locked_customer.ref
+        customer_phone = normalize_phone(locked_customer.phone) or locked_customer.phone
+        phone_matches = not current_phone or current_phone == customer_phone
+        if current_phone and not phone_matches:
+            phone_matches = locked_customer.contact_points.filter(
+                value_normalized=current_phone,
+                type__in=("phone", "whatsapp"),
+            ).exists()
+        if not ref_matches or not phone_matches:
+            raise CommitError(
+                code="customer_identity_changed",
+                message="A identidade da sessão mudou. Revise e confirme novamente.",
+            )
 
     @staticmethod
     def _build_commitment_snapshot(

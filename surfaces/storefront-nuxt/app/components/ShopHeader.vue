@@ -62,17 +62,19 @@ function toggleMenu () {
 // scrollover superior acompanha a cor dinamicamente (plugin overscroll), então
 // navbar e borda nunca destoam.
 const scrolled = ref(false)
+let scrollTarget: ShopScrollTarget | null = null
 // Síncrono (sem rAF): o iOS PAUSA o requestAnimationFrame durante o scroll, então a
 // status bar não colapsava no iPhone. Ler scrollY é barato, não causa thrash.
 function onScroll () {
-  scrolled.value = headerCollapsed(scrolled.value, window.scrollY)
+  scrolled.value = headerCollapsed(scrolled.value, shopScrollTop(scrollTarget || undefined))
 }
 // Topo do chrome sticky: 6.25rem (status+navbar) no topo · 4rem (só navbar) ao rolar.
 // Alinha o painel do menu à base da navbar nos dois estados.
 const chromeTop = computed(() => (scrolled.value ? '4rem' : '6.25rem'))
 
 onMounted(() => {
-  window.addEventListener('scroll', onScroll, { passive: true })
+  scrollTarget = shopScrollTarget()
+  scrollTarget.addEventListener('scroll', onScroll, { passive: true })
   // touchmove dispara durante o arraste do dedo (o scroll do iOS chega em lote/atrasado),
   // então a status bar reage na hora, não com atraso.
   window.addEventListener('touchmove', onScroll, { passive: true })
@@ -94,8 +96,9 @@ useOverlayLock(menuOpen, {
 
 onBeforeUnmount(() => {
   if (!import.meta.client) return
-  window.removeEventListener('scroll', onScroll)
+  scrollTarget?.removeEventListener('scroll', onScroll)
   window.removeEventListener('touchmove', onScroll)
+  scrollTarget = null
 })
 </script>
 

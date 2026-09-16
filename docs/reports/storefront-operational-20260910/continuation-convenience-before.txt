@@ -1,0 +1,19 @@
+....F                                                                    [100%]
+=================================== FAILURES ===================================
+____ test_new_address_is_remembered_by_canonical_defaults_without_retyping _____
+
+order = <Order: RECOVERY-ORDER>
+
+    def test_new_address_is_remembered_by_canonical_defaults_without_retyping(order):
+        assert checkout._apply_post_commit_side_effects(order.data, "web", order_ref=order.ref) == []
+        saved = list(address.addresses("RECOVERY-CUSTOMER"))
+        assert len(saved) == 1
+        defaults = CheckoutDefaultsService.get_defaults("RECOVERY-CUSTOMER", "web")
+>       assert str(defaults["delivery_address_id"]) == str(saved[0].pk)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'delivery_address_id'
+
+shopman/shop/tests/test_checkout_convenience_recovery.py:75: KeyError
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_checkout_convenience_recovery.py::test_new_address_is_remembered_by_canonical_defaults_without_retyping
+1 failed, 4 passed in 4.73s

@@ -33,6 +33,7 @@ from .catalog import (
     CatalogSocialView,
     CatalogSyncStatusView,
 )
+from .catalog_bindings import CatalogBindingConfirmView, CatalogBindingReviewView, CatalogSnapshotImportView
 from .feeds import (
     FeedActiveView,
     FeedBoardView,
@@ -87,6 +88,7 @@ from .notifications import (
     NotificationActionView,
     NotificationListV2View,
     NotificationListView,
+    NotificationPushSubscriptionView,
     NotificationReadView,
     NotificationSeenBatchView,
 )
@@ -112,6 +114,8 @@ from .operations import (
     OrderCourierQuoteView,
     OrderDetailView,
     OrderEquipmentBackView,
+    OrderIFoodEvidenceView,
+    OrderIFoodHandshakeView,
     OrderNotesView,
     OrderQueueView,
     OrderRejectView,
@@ -155,6 +159,7 @@ from .operations import (
     POSReviewSaleView,
     POSSaleReceiptEscposView,
     POSScheduleView,
+    POSSendPaymentNoticeView,
     POSTabClearView,
     POSTabCreateView,
     POSTabFireView,
@@ -180,6 +185,7 @@ from .operations import (
     WorkOrderOvenConcludeView,
     WorkOrderPlanView,
     WorkOrderQualityCorrectionView,
+    WorkOrderQualityReviewView,
     WorkOrderQuickFinishView,
     WorkOrderStartView,
     WorkOrderVoidView,
@@ -419,6 +425,9 @@ urlpatterns = [
     ),
     path("orders/", OrderQueueView.as_view(), name="api-backstage-orders"),
     # Catalog matrix (produto × superfície)
+    path("catalog/channels/<str:ref>/review/", CatalogBindingReviewView.as_view(), name="api-backstage-catalog-binding-review"),
+    path("catalog/channels/<str:ref>/snapshots/", CatalogSnapshotImportView.as_view(), name="api-backstage-catalog-snapshot-import"),
+    path("catalog/channels/<str:ref>/bindings/", CatalogBindingConfirmView.as_view(), name="api-backstage-catalog-binding-confirm"),
     path("catalog/", CatalogMatrixView.as_view(), name="api-backstage-catalog"),
     path("catalog/cell/", CatalogCellView.as_view(), name="api-backstage-catalog-cell"),
     path("catalog/product/", CatalogProductView.as_view(), name="api-backstage-catalog-product"),
@@ -458,6 +467,8 @@ urlpatterns = [
     ),
     path("orders/<str:ref>/advance/", OrderAdvanceView.as_view(), name="api-backstage-order-advance"),
     path("orders/<str:ref>/confirm/", OrderConfirmView.as_view(), name="api-backstage-order-confirm"),
+    path("orders/<str:ref>/ifood-handshake-evidence/", OrderIFoodEvidenceView.as_view(), name="api-backstage-order-ifood-handshake-evidence"),
+    path("orders/<str:ref>/ifood-handshake/", OrderIFoodHandshakeView.as_view(), name="api-backstage-order-ifood-handshake"),
     path("orders/<str:ref>/reject/", OrderRejectView.as_view(), name="api-backstage-order-reject"),
     path("orders/<str:ref>/cancel/", OrderCancelView.as_view(), name="api-backstage-order-cancel"),
     path("orders/<str:ref>/cancellation-reasons/", OrderCancellationReasonsView.as_view(), name="api-backstage-order-cancellation-reasons"),
@@ -482,6 +493,11 @@ urlpatterns = [
     # Auditoria no Admin). É para onde o aviso de acesso aponta.
     path("sign-ins/", SignInListView.as_view(), name="api-backstage-sign-ins"),
     path("notifications/", NotificationListView.as_view(), name="api-backstage-notifications"),
+    path(
+        "notifications/push/",
+        NotificationPushSubscriptionView.as_view(),
+        name="api-backstage-notifications-push",
+    ),
     path("notifications/v2/", NotificationListV2View.as_view(), name="api-backstage-notifications-v2"),
     path(
         "notifications/v2/seen/",
@@ -551,6 +567,11 @@ urlpatterns = [
     path("production/<int:wo_id>/start/", WorkOrderStartView.as_view(), name="api-backstage-wo-start"),
     path("production/<int:wo_id>/finish/", WorkOrderFinishView.as_view(), name="api-backstage-wo-finish"),
     path(
+        "production/<int:wo_id>/quality-review/",
+        WorkOrderQualityReviewView.as_view(),
+        name="api-backstage-wo-quality-review",
+    ),
+    path(
         "production/<int:wo_id>/quality-correction/",
         WorkOrderQualityCorrectionView.as_view(),
         name="api-backstage-wo-quality-correction",
@@ -619,6 +640,7 @@ urlpatterns = [
     path("pos/orders/<str:ref>/receipt-escpos/", POSSaleReceiptEscposView.as_view(), name="api-backstage-pos-receipt-escpos"),
     path("pos/orders/<str:ref>/resend-fiscal-email/", POSResendFiscalEmailView.as_view(), name="api-backstage-pos-resend-fiscal-email"),
     path("pos/orders/<str:ref>/resend-payment-link/", POSResendPaymentLinkView.as_view(), name="api-backstage-pos-resend-payment-link"),
+    path("pos/orders/<str:ref>/send-payment-notice/", POSSendPaymentNoticeView.as_view(), name="api-backstage-pos-send-payment-notice"),
     path("pos/sale/recent/cancel/", POSCancelRecentSaleView.as_view(), name="api-backstage-pos-cancel-recent-sale"),
     path("pos/payment/<str:ref>/status/", POSPaymentStatusView.as_view(), name="api-backstage-pos-payment-status"),
     path("pos/customer/lookup/", POSCustomerLookupView.as_view(), name="api-backstage-pos-customer-lookup"),

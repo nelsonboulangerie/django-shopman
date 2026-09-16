@@ -43,7 +43,11 @@ def test_legacy_permission_only_falls_back_for_safe_operations(client, monkeypat
     client.force_login(_operator("legado", "manage_campaigns"))
 
     assert client.get(BOARD).status_code == 200
-    assert client.post(PREVIEW, data={"body": "Olá"}, content_type="application/json").status_code == 200
+    assert client.post(
+        PREVIEW,
+        data={"body": "Olá", "platforms": ["google_business"]},
+        content_type="application/json",
+    ).status_code == 200
     assert client.post(APPROVE, data={}, content_type="application/json").status_code == 403
     assert client.post(FIRE, data={}, content_type="application/json").status_code == 403
     assert client.post(TEST_SEND, data={}, content_type="application/json").status_code == 403
@@ -63,7 +67,11 @@ def test_editor_can_edit_and_preview_but_cannot_decide_or_publish(client):
     ))
 
     assert client.get(BOARD).status_code == 200
-    assert client.post(PREVIEW, data={"body": "Olá"}, content_type="application/json").status_code == 200
+    assert client.post(
+        PREVIEW,
+        data={"body": "Olá", "platforms": ["google_business"]},
+        content_type="application/json",
+    ).status_code == 200
     # A capability deixou o gate passar; agora é a validação do formulário.
     assert client.post(RULES, data={}, content_type="application/json").status_code == 400
     assert client.post(REJECT, data={}, content_type="application/json").status_code == 403

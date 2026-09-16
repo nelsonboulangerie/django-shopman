@@ -226,7 +226,7 @@ def test_focus_nfe_request_uses_homologation_basic_auth_and_json():
 
 
 @override_settings(SHOPMAN_FOCUS_NFE=_settings())
-def test_focus_nfe_delivery_fee_stays_out_of_the_document():
+def test_focus_nfe_fee_without_delivery_fact_is_rejected():
     from shopman.shop.adapters.fiscal_focusnfe import FocusNFeBackend
 
     captured = {}
@@ -255,17 +255,10 @@ def test_focus_nfe_delivery_fee_stays_out_of_the_document():
             payment={"method": "pix", "amount_q": 1600},
         )
 
-    assert result.success is True
-    payload = captured["payload"]
-    # SEFAZ-PR rejeita NFC-e com frete ("NFC-e com Frete", homologação
-    # 2026-07-02): a taxa fica FORA do documento — nota e pagamento cobrem
-    # só as mercadorias.
-    assert len(payload["items"]) == 1  # taxa NÃO é item
-    assert "valor_frete" not in payload
-    assert payload["valor_produtos"] == "10.00"
-    assert payload["valor_total"] == "10.00"
-    assert payload["formas_pagamento"] == [{"forma_pagamento": "17", "valor_pagamento": "10.00"}]
-    assert payload["modalidade_frete"] == "9"  # sem ocorrência de transporte
+    assert result.success is False
+    assert result.error_code == "focus_nfe_invalid_payload"
+    assert "taxa de entrega" in result.error_message
+    assert captured == {}  # não reduz pagamento nem envia nota presencial
 
 
 @override_settings(SHOPMAN_FOCUS_NFE=_settings())
@@ -309,7 +302,7 @@ def test_focus_nfe_home_delivery_freight_with_identified_recipient():
 
     Receita do MOC validada em homologação SEFAZ-PR (nota autorizada
     2026-07-02): vFrete no item (I15) e no total (W08), modFrete=3 e grupo
-    transportador = emitente. Sem identificação, cai no fallback fora-da-nota.
+    transportador = emitente. Sem identificação, a emissão deve ser recusada.
     """
     from shopman.shop.adapters.fiscal_focusnfe import FocusNFeBackend
 
@@ -437,3 +430,83 @@ def test_focus_nfe_emits_the_profile_pis_cofins_cst_and_never_07():
     assert mapped["pis_situacao_tributaria"] == "99"
     assert mapped["cofins_situacao_tributaria"] == "99"
     assert mapped["icms_situacao_tributaria"] == "102"
+
+
+_DELIVERY_ADDRESS = {"route": "Rua X", "street_number": "1", "neighborhood": "Jardim Real",
+                     "city": "Londrina", "state_code": "PR", "postal_code": "86010-000"}
+
+
+def _delivery_input(fee_q=0):
+    items = [{"sku": "SKU-1", "name": "Pao", "qty": "2", "unit": "un",
+              "unit_price_q": 500, "total_q": 1000, "fiscal": FISCAL_OWN_PRODUCTION}]
+    if fee_q:
+        items.append({"sku": "__DELIVERY_FEE__", "name": "Taxa de entrega", "qty": "1", "unit": "UN",
+                      "unit_price_q": fee_q, "total_q": fee_q, "meta": {"type": "delivery_fee"}, "fiscal": {}})
+    return {"reference": "ORD-DELIVERY", "items": items, "customer": {"name": "Ana", "tax_id": "52998224725"},
+            "payment": {"method": "pix", "amount_q": 1000 + fee_q}, "delivery": {"address": dict(_DELIVERY_ADDRESS)}}
+
+
+@override_settings(SHOPMAN_FOCUS_NFE=_settings())
+@pytest.mark.parametrize("fee_q", [0, 600])
+def test_free_and_paid_delivery_keep_the_actual_fiscal_operation(fee_q):
+    from shopman.shop.adapters.fiscal_focusnfe import FocusNFeBackend
+
+    with patch("shopman.shop.adapters.fiscal_focusnfe._request", return_value={"status": "autorizado", "chave_nfe": "KEY"}) as send:
+        result = FocusNFeBackend().emit(**_delivery_input(fee_q))
+    assert result.success
+    payload = send.call_args.args[2]
+    assert payload["presenca_comprador"] == "4"
+    assert payload["modalidade_frete"] == "3"
+    assert payload["valor_frete"] == ("6.00" if fee_q else "0.00")
+    assert payload["valor_total"] == ("16.00" if fee_q else "10.00")
+    assert payload["bairro_destinatario"] == "Jardim Real"
+    assert payload["formas_pagamento"][0]["valor_pagamento"] == payload["valor_total"]
+
+
+@override_settings(SHOPMAN_FOCUS_NFE=_settings())
+@pytest.mark.parametrize("missing", ["tax_id", "route", "street_number", "neighborhood", "city", "state_code", "postal_code"])
+@pytest.mark.parametrize("fee_q", [0, 600])
+def test_incomplete_delivery_fails_before_http_instead_of_inventing_data(missing, fee_q):
+    from shopman.shop.adapters.fiscal_focusnfe import FocusNFeBackend
+
+    request = _delivery_input(fee_q)
+    if missing == "tax_id":
+        request["customer"].pop(missing)
+    else:
+        request["delivery"]["address"].pop(missing)
+    with patch("shopman.shop.adapters.fiscal_focusnfe._request") as send:
+        result = FocusNFeBackend().emit(**request)
+    assert not result.success
+    assert result.error_code == "focus_nfe_invalid_payload"
+    assert "Entrega a domicílio: confira" in result.error_message
+    send.assert_not_called()
+    assert request["payment"]["amount_q"] == 1000 + fee_q
+
+
+@override_settings(SHOPMAN_FOCUS_NFE=_settings())
+def test_immediate_pickup_remains_presential_and_accepts_anonymous_customer():
+    from shopman.shop.adapters.fiscal_focusnfe import FocusNFeBackend
+
+    request = _delivery_input()
+    request.update(delivery=None, customer={})
+    with patch("shopman.shop.adapters.fiscal_focusnfe._request", return_value={"status": "autorizado", "chave_nfe": "KEY"}) as send:
+        assert FocusNFeBackend().emit(**request).success
+    payload = send.call_args.args[2]
+    assert payload["presenca_comprador"] == "1"
+    assert payload["modalidade_frete"] == "9"
+    assert "logradouro_destinatario" not in payload
+    assert "valor_frete" not in payload
+
+
+@override_settings(SHOPMAN_FOCUS_NFE=_settings())
+@pytest.mark.parametrize("field,value", [("state_code", "XX"), ("postal_code", "123"), ("street_number", " ")])
+def test_invalid_delivery_address_values_are_not_guessed(field, value):
+    from shopman.shop.adapters.fiscal_focusnfe import FocusNFeBackend
+
+    request = _delivery_input()
+    request["delivery"]["address"][field] = value
+    with patch("shopman.shop.adapters.fiscal_focusnfe._request") as send:
+        result = FocusNFeBackend().emit(**request)
+    assert not result.success
+    assert result.error_code == "focus_nfe_invalid_payload"
+    send.assert_not_called()

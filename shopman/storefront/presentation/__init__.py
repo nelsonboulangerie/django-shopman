@@ -65,6 +65,7 @@ from .product_detail import (
     ProductDetailProjection,
     build_product_detail,
 )
+from .public_information import FAQItemProjection, build_public_faq, search_public_faq
 from .reorder import (
     ReorderConflictCopyProjection,
     ReorderConflictItemProjection,
@@ -87,6 +88,7 @@ __all__ = [
     "CustomerProfileProjection",
     "DiscountLineProjection",
     "FomoBadge",
+    "FAQItemProjection",
     "HomeHeroCopyProjection",
     "HomeProjection",
     "HomeSectionsCopyProjection",
@@ -123,10 +125,12 @@ __all__ = [
     "build_order_tracking",
     "build_order_tracking_status",
     "build_product_detail",
+    "build_public_faq",
     "build_reorder_conflict",
     "build_shop_projection",
     "order_history_for_customer",
     "order_history_for_phone",
     "present_tracking",
     "present_tracking_status",
+    "search_public_faq",
 ]

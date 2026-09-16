@@ -27,11 +27,14 @@ def read_sales(window) -> tuple[list[CanonicalSale], int]:
 
     from shopman.backstage.projections.bi_payments import payment_method_label
     from shopman.backstage.services.payments import iter_order_payments
+    from shopman.shop.services.payment_provenance import exclude_provider_simulated_orders
 
     excluded = _excluded_statuses()
     sales: list[CanonicalSale] = []
     cancelled = 0
-    rows = Order.objects.filter(created_at__range=window).values_list(
+    rows = exclude_provider_simulated_orders(
+        Order.objects.filter(created_at__range=window)
+    ).values_list(
         "id", "ref", "created_at", "total_q", "channel_ref", "status", "data"
     )
     for pk, ref, created_at, total_q, channel_ref, status, data in rows:
@@ -77,11 +80,21 @@ def read_sales(window) -> tuple[list[CanonicalSale], int]:
 
 def read_lines(window) -> list[CanonicalSaleLine]:
     """As linhas dos pedidos que contam como venda (cancelado/devolvido fora)."""
+    # The helper targets Order fields; apply the same exact predicate through
+    # the relation for line reads so simulated test baskets cannot leak into
+    # product/revenue consumers.
+    from django.db.models import Q
     from shopman.orderman.models import OrderItem
+
+    from shopman.shop.services.payment_provenance import PROVIDER_SIMULATED_CONFIRMATION_MODE
 
     rows = (
         OrderItem.objects.filter(order__created_at__range=window)
         .exclude(order__status__in=_excluded_statuses())
+        .filter(
+            Q(order__data__payment__confirmation_mode__isnull=True)
+            | ~Q(order__data__payment__confirmation_mode=PROVIDER_SIMULATED_CONFIRMATION_MODE)
+        )
         .values_list("order_id", "sku", "name", "qty", "line_total_q")
     )
     return [

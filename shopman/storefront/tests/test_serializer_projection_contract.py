@@ -38,6 +38,7 @@ from shopman.shop.projections.types import (
 from shopman.shop.services.conversation import RemoteConversationProjection
 from shopman.storefront.api import serializers as api_serializers
 from shopman.storefront.presentation.order_tracking import (
+    CancellationRequestProjection,
     OrderTrackingCopyProjection,
     OrderTrackingProjection,
     OrderTrackingPromiseProjection,
@@ -55,6 +56,11 @@ MIRROR_CONTRACTS = [
     (api_serializers.TimelineEventSerializer, TimelineEventProjection, {"actor", "detail"}),
     (api_serializers.OrderItemSerializer, OrderItemProjection, set()),
     (api_serializers.PickupInfoSerializer, PickupInfoProjection, set()),
+    (
+        api_serializers.CancellationRequestProjectionSerializer,
+        CancellationRequestProjection,
+        set(),
+    ),
     (api_serializers.OrderProgressStepSerializer, OrderProgressStepProjection, set()),
     # O cliente recebe os ISOs crus (dispatched_at/delivered_at); os *_display são internos.
     (
@@ -75,12 +81,25 @@ NON_MIRROR = {
     # Corpos de request (entrada, não projection).
     "SetSkuQtySerializer",
     "CheckoutSerializer",
+    "CheckoutAddressLabelSerializer",
     "ReverseGeocodeRequestSerializer",
+    "StockAlertSubscribeRequestSerializer",
+    "StockAlertSubscriptionRefSerializer",
+    "StockAlertSubscriptionControlRequestSerializer",
+    "StockAlertManagementActionSerializer",
+    "CancellationRequestInputSerializer",
     # Envelope de erro canônico ({detail, ...}).
     "DetailSerializer",
     # Respostas montadas como dict ad-hoc no view (não há dataclass fonte).
     "CheckoutResponseSerializer",
     "AvailabilityResponseSerializer",
+    "StockAlertAuthRequiredResponseSerializer",
+    "StockAlertIntentRequestSerializer",
+    "StockAlertIntentResponseSerializer",
+    "StockAlertSubscribeResponseSerializer",
+    "StockAlertSessionStateSerializer",
+    "StockAlertSubscriptionControlResponseSerializer",
+    "StockAlertManagementStateSerializer",
     "ReverseGeocodeResponseSerializer",
     "CollectionSerializer",
     "OrderHistoryItemSerializer",

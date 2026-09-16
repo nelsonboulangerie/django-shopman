@@ -27,6 +27,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import timedelta
+from importlib import import_module
 
 from django.conf import settings
 from django.utils import timezone
@@ -56,6 +57,15 @@ _GATEWAY_METHODS = frozenset({"pix", "card", "link"})
 #: três — pago no gateway e nunca capturado, sem rede contra webhook perdido e
 #: sem botão de pagar para quem voltava ao pedido.
 HOSTED_CHECKOUT_METHODS = frozenset({"card", "link"})
+
+# Provider operations are routed by the gateway persisted on the Payman intent,
+# not by today's shop setting.  A config flip must not send an old mock intent
+# to Efí, nor an old Efí intent to the mock after rollback.
+_PAYMENT_GATEWAY_ADAPTER_PATHS = {
+    "efi": "shopman.shop.adapters.payment_efi",
+    "mock": "shopman.shop.adapters.payment_mock",
+    "stripe": "shopman.shop.adapters.payment_stripe",
+}
 
 
 def settles_without_gateway(method: str | None) -> bool:
@@ -92,27 +102,107 @@ def initiate(order) -> None:
     if not method:
         return
 
-    # Idempotent: skip if intent already exists
-    if payment_data.get("intent_ref"):
-        return
-
     if settles_without_gateway(method):
+        if payment_data.get("intent_ref"):
+            return
         settle_terminal_tenders(order)
         return
 
     amount_q = order.total_q
-    existing_intent = _existing_active_intent(order, method=method, amount_q=amount_q)
-    if existing_intent:
-        _persist_intent(order, payment_data=payment_data, method=method, amount_q=amount_q, intent=existing_intent)
-        logger.info(
-            "payment.initiate: reused existing %s intent %s for order %s",
-            method,
-            existing_intent.intent_ref,
-            order.ref,
-        )
-        return
-
     adapter = get_adapter("payment", method=method)
+    route_by_persisted_gateway = str(method).lower() == "pix"
+    expected_gateway = (
+        (_gateway_for_adapter(adapter) or "__unresolved__")
+        if route_by_persisted_gateway
+        else None
+    )
+    resume_creation = False
+
+    # Idempotent only inside the same provider route.  On a config flip, an old
+    # pending/authorized mock charge is kept for explicit reconciliation; it is
+    # neither adopted by Efí nor silently cancelled/replaced.  Captured remains
+    # a payment fact and is never charged again.
+    if intent_ref := payment_data.get("intent_ref"):
+        persisted = _payman_intent(intent_ref)
+        if (
+            route_by_persisted_gateway
+            and persisted is not None
+            and persisted.status != "captured"
+            and persisted.gateway != expected_gateway
+        ):
+            expected_label = (
+                expected_gateway
+                if expected_gateway != "__unresolved__"
+                else "um adapter sem rota de gateway reconhecida"
+            )
+            _record_initiate_error(
+                order,
+                payment_data=payment_data,
+                method=method,
+                amount_q=order.total_q,
+                error=(
+                    f"A cobrança pendente pertence ao gateway {persisted.gateway or 'local'}, "
+                    f"mas Pix agora usa {expected_label}. Reconcilie a cobrança anterior antes de gerar outra."
+                ),
+            )
+            return
+        if (
+            route_by_persisted_gateway
+            and persisted is not None
+            and persisted.gateway == "efi"
+            and not _efi_intent_environment_matches_runtime(persisted)
+        ):
+            return
+        if not _pix_intent_needs_creation_resume(persisted, expected_gateway=expected_gateway):
+            if (
+                route_by_persisted_gateway
+                and persisted is not None
+                and persisted.gateway == "efi"
+                and (persisted.gateway_data or {}).get("client_secret")
+                and not (payment_data.get("copy_paste") or payment_data.get("qr_code"))
+            ):
+                _persist_intent(
+                    order,
+                    payment_data=payment_data,
+                    method=method,
+                    amount_q=amount_q,
+                    intent=_payment_intent_from_payman(persisted),
+                )
+            return
+        # A Efí já pode ter aceitado o PUT e falhado apenas ao buscar o QR. O
+        # adapter tem um cursor durável (txid + loc) e sabe retomar no MESMO
+        # intent. Reusar exatamente a chave original é o que impede outro PUT
+        # e outra cobrança irmã.
+        persisted_key = str(getattr(persisted, "idempotency_key", "") or "").strip()
+        if not persisted_key:
+            _record_initiate_error(
+                order,
+                payment_data=payment_data,
+                method=method,
+                amount_q=amount_q,
+                error=(
+                    "A cobrança Pix ficou sem QR e não possui chave segura para retomada. "
+                    "Reconcilie a cobrança antes de tentar novamente."
+                ),
+            )
+            return
+        payment_data["idempotency_key"] = persisted_key
+        resume_creation = True
+
+    if not resume_creation:
+        existing_intent = _existing_active_intent(
+            order, method=method, amount_q=amount_q, gateway=expected_gateway,
+        )
+        if existing_intent:
+            _persist_intent(order, payment_data=payment_data, method=method, amount_q=amount_q, intent=existing_intent)
+            logger.info(
+                "payment.initiate: reused existing %s intent %s for order %s",
+                method,
+                existing_intent.intent_ref,
+                order.ref,
+            )
+            return
+
     if not adapter:
         logger.warning("payment.initiate: no adapter for method=%s", method)
         _record_initiate_error(
@@ -148,9 +238,20 @@ def initiate(order) -> None:
             method,
             exc,
         )
-        existing_intent = _existing_active_intent(order, method=method, amount_q=amount_q)
+        existing_intent = _existing_active_intent(
+            order, method=method, amount_q=amount_q, gateway=expected_gateway,
+        )
         if existing_intent:
             _persist_intent(order, payment_data=payment_data, method=method, amount_q=amount_q, intent=existing_intent)
+            if method == "pix" and not existing_intent.client_secret:
+                _record_initiate_error(
+                    order,
+                    payment_data=dict((order.data or {}).get("payment") or {}),
+                    method=method,
+                    amount_q=amount_q,
+                    error=str(exc),
+                )
+                return
             logger.warning(
                 "payment.initiate: recovered existing %s intent %s for order %s after adapter error: %s",
                 method,
@@ -177,6 +278,43 @@ def initiate(order) -> None:
     )
 
 
+def restore_existing_intent(order) -> bool:
+    """Restore a persisted Payman intent to Order data without contacting a provider."""
+    payment_data = dict((order.data or {}).get("payment") or {})
+    method = payment_data.get("method")
+    route_by_persisted_gateway = str(method or "").lower() == "pix"
+    expected_gateway = (
+        _gateway_for_adapter(get_adapter("payment", method=method)) or "__unresolved__"
+        if route_by_persisted_gateway
+        else None
+    )
+    if payment_data.get("intent_ref"):
+        from shopman.payman import PaymentService
+
+        try:
+            intent = PaymentService.get(payment_data["intent_ref"])
+        except Exception:
+            logger.warning("payment.restore_existing_intent_failed order=%s", order.ref)
+            return False
+        return (
+            intent.order_ref == order.ref
+            and intent.method == method
+            and intent.amount_q == order.total_q
+            and (
+                not route_by_persisted_gateway
+                or intent.status == "captured"
+                or intent.gateway == expected_gateway
+            )
+        )
+    existing = _existing_active_intent(
+        order, method=method, amount_q=order.total_q, gateway=expected_gateway,
+    )
+    if existing is None:
+        return False
+    _persist_intent(order, payment_data=payment_data, method=method, amount_q=order.total_q, intent=existing)
+    return True
+
+
 def _persist_intent(
     order,
     *,
@@ -185,37 +323,75 @@ def _persist_intent(
     amount_q: int,
     intent: PaymentIntent,
 ) -> None:
-    # Build payment data to save — intent_ref + method + display fields only.
-    # Status is NOT stored here; Payman (PaymentService) is the canonical source.
-    result = {
-        **payment_data,
-        "intent_ref": intent.intent_ref,
-        "amount_q": amount_q,
-        "method": method,
-    }
-    result.pop("error", None)
+    from django.db import transaction
+    from shopman.orderman.models import Order
 
-    # Extract QR/client_secret data for UI display
-    if method == "pix":
-        qr_data = _extract_qr_data(intent)
-        result["qr_code"] = (
-            qr_data.get("imagemQrcode") or qr_data.get("qr_image") or qr_data.get("qr_code") or qr_data.get("qrcode")
-        )
-        result["copy_paste"] = qr_data.get("brcode") or qr_data.get("copy_paste") or qr_data.get("qrcode")
-    elif method in HOSTED_CHECKOUT_METHODS:
-        # Sessão hospedada (Stripe Checkout): a URL que o cliente abre para pagar.
-        checkout_url = (intent.metadata or {}).get("checkout_url")
-        if checkout_url:
-            result["checkout_url"] = checkout_url
-    # O prazo é de quem TEM prazo, não de um método: o QR do Pix e o link de
-    # pagamento vencem, e os dois precisam dizer isso ao cliente ("vale até …")
-    # e ao `payment.timeout` (logo abaixo). Enquanto a chave só era gravada no
-    # ramo do Pix, o link nascia com prazo no Payman e sem prazo no pedido.
-    if intent.expires_at:
-        result["expires_at"] = intent.expires_at.isoformat()
+    from shopman.shop.services.payment_provenance import confirmation_provenance
 
-    order.data["payment"] = result
-    order.save(update_fields=["data", "updated_at"])
+    # Financial provenance belongs to the persisted charge, not to a later
+    # webhook payload.  Copy it as soon as the Efí intent exists so even a
+    # pending sandbox order cannot appear as real revenue in Order-based BI.
+    persisted_intent = _payman_intent(intent.intent_ref)
+    provenance = confirmation_provenance(persisted_intent or intent)
+
+    def persist_into(target) -> dict:
+        locked_data = dict(target.data or {})
+        current_payment = dict(locked_data.get("payment") or {})
+        # Build payment data to save — intent_ref + method + display fields only.
+        # Status is NOT stored here; Payman (PaymentService) is the canonical source.
+        result = {
+            **payment_data,
+            **current_payment,
+            "intent_ref": intent.intent_ref,
+            "amount_q": amount_q,
+            "method": method,
+            **provenance,
+        }
+        result.pop("error", None)
+
+        # Extract QR/client_secret data for UI display
+        if method == "pix":
+            qr_data = _extract_qr_data(intent)
+            result["qr_code"] = (
+                qr_data.get("imagemQrcode")
+                or qr_data.get("qr_image")
+                or qr_data.get("qr_code")
+                or qr_data.get("qrcode")
+            )
+            result["copy_paste"] = (
+                qr_data.get("brcode") or qr_data.get("copy_paste") or qr_data.get("qrcode")
+            )
+        elif method in HOSTED_CHECKOUT_METHODS:
+            # Sessão hospedada (Stripe Checkout): a URL que o cliente abre para pagar.
+            checkout_url = (intent.metadata or {}).get("checkout_url")
+            if checkout_url:
+                result["checkout_url"] = checkout_url
+        # O prazo é de quem TEM prazo, não de um método: o QR do Pix e o link de
+        # pagamento vencem, e os dois precisam dizer isso ao cliente ("vale até …")
+        # e ao `payment.timeout` (logo abaixo). Enquanto a chave só era gravada no
+        # ramo do Pix, o link nascia com prazo no Payman e sem prazo no pedido.
+        if intent.expires_at:
+            result["expires_at"] = intent.expires_at.isoformat()
+
+        locked_data["payment"] = result
+        target.data = locked_data
+        target.save(update_fields=["data", "updated_at"])
+        return locked_data
+
+    # A confirmação pode chegar entre o PUT da cobrança e a busca/persistência
+    # do QR. Leia o JSON canônico sob lock: recibos, e2e, captured_at e
+    # provenance escritos pelo webhook vencem o snapshot anterior do initiate;
+    # somente os artefatos de apresentação acima são atualizados por nós.
+    if isinstance(order, Order) and getattr(order, "pk", None) is not None:
+        with transaction.atomic():
+            locked = Order.objects.select_for_update().get(pk=order.pk)
+            persisted_data = persist_into(locked)
+    else:
+        # Adapter/service unit tests intentionally use lightweight Order
+        # protocols. Preserve that supported seam without attempting a DB lock.
+        persisted_data = persist_into(order)
+
+    order.data = persisted_data
     _ack_payment_failed_alerts(order)
     if intent.expires_at:
         _schedule_payment_timeout(order, intent)
@@ -272,7 +448,9 @@ def settle_terminal_tenders(order) -> dict[str, str]:
         if existing_ref:
             settled[method] = existing_ref
             continue
-        existing_intent = _existing_active_intent(order, method=method, amount_q=amount_q)
+        existing_intent = _existing_active_intent(
+            order, method=method, amount_q=amount_q, gateway="",
+        )
         if existing_intent and existing_intent.status == "captured":
             settled[method] = existing_intent.intent_ref
             logger.info(
@@ -404,25 +582,48 @@ def capture(order) -> None:
 
     SYNC — capture must succeed.
     """
-    payment_data = (order.data or {}).get("payment", {})
-    intent_ref = payment_data.get("intent_ref")
+    from django.db import transaction
+    from shopman.orderman.models import Order
 
-    if not intent_ref:
+    if not isinstance(order, Order):
+        # Unit-level adapters also use a lightweight Order protocol. The real
+        # orchestration path below always receives the persisted model.
+        _capture_once(order)
         return
 
-    # Idempotency via Payman — skip if already captured
+    # Serialize the final Payman check and adapter call by the canonical order.
+    # This keeps two lifecycle workers from both issuing a capture. A process
+    # crash after provider acceptance still requires provider reconciliation;
+    # the row lock does not claim otherwise.
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        _capture_once(locked)
+        order.data = locked.data
+
+
+def _capture_once(order) -> None:
+    """Capture after the caller has acquired the canonical Order lock."""
+    data = dict(order.data or {})
+    payment_data = dict(data.get("payment") or {})
+    intent_ref = payment_data.get("intent_ref")
+
+    if not intent_ref or payment_data.get("transaction_id"):
+        return
+
+    # Payman is authoritative, and persisted callers make this check under lock.
     if _payman_intent_captured(intent_ref):
         return
 
     method = payment_data.get("method", "pix")
-    adapter = get_adapter("payment", method=method)
+    adapter = _adapter_for_persisted_intent(intent_ref, method=method)
     if not adapter:
         return
 
     result = adapter.capture(intent_ref)
     if result.success:
         payment_data["transaction_id"] = result.transaction_id
-        order.data["payment"] = payment_data
+        data["payment"] = payment_data
+        order.data = data
         order.save(update_fields=["data", "updated_at"])
         _ack_payment_failed_alerts(order)
         cancel_stale_intents(order, keep_intent_ref=intent_ref)
@@ -430,19 +631,7 @@ def capture(order) -> None:
         logger.info("payment.capture: captured %s for order %s", intent_ref, order.ref)
         return
 
-    # ⚠️ Captura que falha NÃO pode ser silenciosa, e era.
-    #
-    # O docstring já dizia "capture must succeed" e o código, no ``else``
-    # implícito, não fazia nada: sem log, sem alerta, sem exceção. O efeito no
-    # balcão é o pior tipo de pane — a autorização do cliente segue de pé no
-    # gateway, o pedido fica ACCEPTED com o avanço barrado por "Aguardando
-    # pagamento…", e ninguém no mundo é avisado de que o dinheiro não entrou.
-    # O operador vê um pedido parado sem causa e o cliente vê um pedido pago.
-    #
-    # Não levantamos: quem chama é lifecycle/webhook/reconciliação, e derrubar
-    # o handler perderia a fase inteira (o pedido para em pior estado ainda). O
-    # contrato é falhar GRITANDO — a próxima rodada da reconciliação tenta de
-    # novo, e enquanto não conseguir há alerta aberto no Gestor.
+    # A captura recusada fica observável e continua recuperável.
     logger.error(
         "payment.capture_failed order=%s intent=%s method=%s code=%s",
         order.ref,
@@ -743,7 +932,7 @@ def _refund_intent(
 
     adapter = None
     if not settles_without_gateway(method) and not _asserted_at_terminal(intent_ref):
-        adapter = get_adapter("payment", method=method)
+        adapter = _adapter_for_persisted_intent(intent_ref, method=method)
         if not adapter:
             return 0
 
@@ -871,7 +1060,7 @@ def cancel(order, *, reason: str = "order_cancelled") -> None:
         return
 
     method = payment_data.get("method", "pix")
-    adapter = get_adapter("payment", method=method)
+    adapter = _adapter_for_persisted_intent(intent_ref, method=method)
     if not adapter or not hasattr(adapter, "cancel"):
         return
 
@@ -891,7 +1080,13 @@ _UNCERTAIN_STATUSES = {"unknown"}
 
 
 def cancel_stale_intents(order, *, keep_intent_ref: str) -> int:
-    """Cancel same-order pending/authorized intents once one intent wins."""
+    """Cancel same-order pending/authorized intents once one intent wins.
+
+    A stale Pix QR remains payable at its provider. For Efí/mock intents the
+    provider-origin adapter must therefore cancel first; only a successful
+    provider result authorizes the local Payman transition. Other methods keep
+    the established local cleanup behavior.
+    """
     if not keep_intent_ref:
         return 0
     try:
@@ -904,15 +1099,59 @@ def cancel_stale_intents(order, *, keep_intent_ref: str) -> int:
             if intent.status not in {"pending", "authorized"}:
                 continue
             try:
+                if str(intent.method or "").lower() == "pix" and str(intent.gateway or "").lower() in {
+                    "efi",
+                    "mock",
+                }:
+                    adapter = _adapter_for_persisted_intent(intent.ref, method="pix")
+                    if adapter is None or not hasattr(adapter, "cancel"):
+                        _alert_stale_intent_cancel_failed(
+                            order,
+                            intent_ref=intent.ref,
+                            gateway=str(intent.gateway or ""),
+                            error="Adapter de origem indisponível.",
+                        )
+                        continue
+                    result = adapter.cancel(intent.ref, reason="superseded_by_captured_payment")
+                    if not getattr(result, "success", False):
+                        _alert_stale_intent_cancel_failed(
+                            order,
+                            intent_ref=intent.ref,
+                            gateway=str(intent.gateway or ""),
+                            error=(
+                                getattr(result, "message", "")
+                                or getattr(result, "error_code", "")
+                                or "Cancelamento recusado pelo gateway."
+                            ),
+                        )
+                        continue
+                    # Adapters can own the Payman write (Efí/mock do). Re-read
+                    # and complete it only after provider success so a remote
+                    # failure can never be disguised as cancelled locally.
+                    refreshed = PaymentService.get(intent.ref)
+                    if refreshed.status not in {"cancelled", "failed"}:
+                        PaymentService.cancel(
+                            intent.ref,
+                            reason="superseded_by_captured_payment",
+                        )
+                    count += 1
+                    continue
                 PaymentService.cancel(intent.ref, reason="superseded_by_captured_payment")
                 count += 1
-            except Exception:
+            except Exception as exc:
                 logger.warning(
                     "payment.cancel_stale_intent_failed order=%s intent=%s",
                     order.ref,
                     intent.ref,
                     exc_info=True,
                 )
+                if str(intent.method or "").lower() == "pix":
+                    _alert_stale_intent_cancel_failed(
+                        order,
+                        intent_ref=intent.ref,
+                        gateway=str(intent.gateway or ""),
+                        error=str(exc),
+                    )
         return count
     # O laço interno já gritava por intent; o `except` de fora ficou mudo — e é
     # ele que pega a falha que impede o laço INTEIRO de rodar. Sem esta faxina,
@@ -921,6 +1160,41 @@ def cancel_stale_intents(order, *, keep_intent_ref: str) -> int:
     except Exception:
         logger.warning("payment.cancel_stale_intents_failed order=%s", order.ref, exc_info=True)
         return 0
+
+
+def _alert_stale_intent_cancel_failed(order, *, intent_ref: str, gateway: str, error: str) -> None:
+    """Make an old, still-payable Pix visible without claiming it was cancelled."""
+    logger.error(
+        "payment.stale_pix_cancel_failed order=%s intent=%s gateway=%s error=%s",
+        order.ref,
+        intent_ref,
+        gateway or "-",
+        error,
+    )
+    try:
+        from shopman.shop.services.observability import create_operator_alert
+
+        create_operator_alert(
+            type="payment_reconciliation_failed",
+            severity="critical",
+            message=(
+                f"A cobrança Pix antiga {intent_ref} do pedido {order.ref} continua potencialmente "
+                f"pagável no gateway {gateway or 'desconhecido'}. O cancelamento remoto falhou; "
+                "não foi feita baixa local. Concilie antes de reenviar uma cobrança."
+            ),
+            order_ref=order.ref,
+            dedupe_key=f"stale-pix-cancel:{intent_ref}",
+            intent_ref=intent_ref,
+            gateway=gateway,
+            error=str(error)[:200],
+        )
+    except Exception:
+        logger.warning(
+            "payment.stale_pix_cancel_alert_failed order=%s intent=%s",
+            order.ref,
+            intent_ref,
+            exc_info=True,
+        )
 
 
 def read_payments_for(orders):
@@ -1110,9 +1384,11 @@ def settle_from_gateway(order) -> str:
     if method not in _GATEWAY_METHODS or not intent_ref:
         return "unpaid"
 
-    adapter = get_adapter("payment", method=method)
+    adapter = _adapter_for_persisted_intent(intent_ref, method=method)
     if adapter is None:
-        return "unpaid"
+        # An intent exists but its persisted provider route cannot be loaded.
+        # That is uncertainty, never evidence that the customer did not pay.
+        return "indeterminate"
 
     # ── A pergunta é de LEITURA, e a resposta não pode ter efeito colateral ──
     #
@@ -1204,6 +1480,12 @@ def settle_from_gateway(order) -> str:
         transaction_id = result.transaction_id
         captured_amount_q = result.amount_q
 
+    # Read classification from the durable Payman intent after reconciliation.
+    # A gateway status/result is not allowed to declare its own financial mode.
+    from shopman.shop.services.payment_provenance import confirmation_provenance
+
+    provenance = confirmation_provenance(_payman_intent(intent_ref))
+
     # Pagou e o webhook se perdeu: promover ao caminho de pago. SOB LOCK +
     # re-check de captured_at — dois resolvers concorrentes (handler do
     # directive + resolve lazy no acesso) não podem despachar on_paid duas
@@ -1219,6 +1501,7 @@ def settle_from_gateway(order) -> str:
             return "paid"  # outro resolver já promoveu — não duplicar
         locked_payment["transaction_id"] = transaction_id
         locked_payment["captured_at"] = timezone.now().isoformat()
+        locked_payment.update(provenance)
         locked_data = dict(locked.data or {})
         locked_data["payment"] = locked_payment
         locked.data = locked_data
@@ -1351,10 +1634,10 @@ def mock_capture_allowed(method: str | None = None) -> bool:
     pedido de cartão produziria exatamente essa divergência, destruindo a
     fidelidade que ir para o gateway real existe para comprar.
 
-    Por isso, com ``method``, a resposta exige também que o adapter DAQUELE método
-    seja o simulado. A regra deriva da configuração em vez de fixar ``"pix"``: no
-    dia em que o PIX apontar para a Efí, o botão some sozinho, sem env nova e sem
-    ninguém lembrar de mudar código.
+    Por isso, com ``method``, a resposta exige também que o adapter EFETIVO
+    daquele método seja o simulado. ``get_adapter`` inclui a precedência de
+    ``Shop.integrations`` sobre settings; ler só a env aqui poderia expor o botão
+    sobre uma intent Efí quando o banco sobrescrevesse a configuração do deploy.
     """
     from django.conf import settings
 
@@ -1362,8 +1645,8 @@ def mock_capture_allowed(method: str | None = None) -> bool:
         return False
     if method is None:
         return True
-    adapters = getattr(settings, "SHOPMAN_PAYMENT_ADAPTERS", {}) or {}
-    return "payment_mock" in str(adapters.get(str(method).lower()) or "")
+    adapter = get_adapter("payment", method=str(method).lower())
+    return _gateway_for_adapter(adapter) == "mock"
 
 
 def mock_confirm(order) -> bool:
@@ -1532,8 +1815,154 @@ def _payment_idempotency_key_reusable(
     return True
 
 
-def _existing_active_intent(order, *, method: str, amount_q: int) -> PaymentIntent | None:
-    """Return a reusable Payman intent for this order/method/amount, if any."""
+def _payman_intent(intent_ref: str):
+    try:
+        from shopman.payman import PaymentService
+
+        return PaymentService.get(intent_ref)
+    except Exception:
+        logger.warning("payment.intent_route_lookup_failed intent=%s", intent_ref, exc_info=True)
+        return None
+
+
+def _gateway_for_adapter(adapter) -> str | None:
+    raw_declared = getattr(adapter, "PAYMENT_GATEWAY", "")
+    declared = raw_declared.strip().lower() if isinstance(raw_declared, str) else ""
+    if declared:
+        return declared
+    path = str(getattr(adapter, "__name__", "") or "")
+    for gateway, adapter_path in _PAYMENT_GATEWAY_ADAPTER_PATHS.items():
+        if path == adapter_path:
+            return gateway
+    return None
+
+
+def _pix_intent_needs_creation_resume(intent, *, expected_gateway: str | None) -> bool:
+    """True only for an Efí Pix attempt whose payable artifact is incomplete.
+
+    The adapter persists the intent, txid and Efí location before fetching the
+    QR. A failed GET must therefore re-enter that adapter with the original
+    idempotency key; merely attaching the pending row to the order strands a
+    live charge with no way for the customer to pay it.
+    """
+    if intent is None or expected_gateway != "efi":
+        return False
+    if str(getattr(intent, "method", "") or "").lower() != "pix":
+        return False
+    if str(getattr(intent, "gateway", "") or "").lower() != "efi":
+        return False
+    if str(getattr(intent, "status", "") or "").lower() != "pending":
+        return False
+    return not bool((getattr(intent, "gateway_data", None) or {}).get("client_secret"))
+
+
+def _adapter_for_persisted_intent(intent_ref: str, *, method: str):
+    """Route money operations by the intent's persisted gateway.
+
+    A missing Payman row or unknown gateway is an uncertain money state, not
+    permission to send an orphan reference to whichever provider happens to be
+    configured today.  The persisted route always wins across flips/rollbacks.
+    """
+    # Persisted-provider routing is a Pix migration safety rule. Stripe/link
+    # and custom methods keep their established registry semantics; forcing
+    # them through the small Pix gateway map would disable valid adapters.
+    if str(method or "").strip().lower() != "pix":
+        return get_adapter("payment", method=method)
+
+    intent = _payman_intent(intent_ref)
+    if intent is None:
+        return None
+    gateway = str(intent.gateway or "").strip().lower()
+    if not gateway:
+        # A late Pix received on an already-dead charge is booked as a new local
+        # intent (the old unique ``gateway/gateway_id`` pair is occupied), but
+        # refund still belongs to the provider of the persisted superseded
+        # charge.  Follow that explicit ledger link; never infer from settings.
+        gateway_data = intent.gateway_data or {}
+        superseded_ref = str(gateway_data.get("superseded_intent_ref") or "")
+        if (
+            gateway_data.get("booked_by") == "pix_confirmation"
+            and superseded_ref
+            and superseded_ref != intent_ref
+        ):
+            return _adapter_for_persisted_intent(superseded_ref, method=method)
+        return None
+    if gateway == "efi" and not _efi_intent_environment_matches_runtime(intent):
+        return None
+    configured = get_adapter("payment", method=method)
+    if _gateway_for_adapter(configured) == gateway:
+        return configured
+    adapter_path = _PAYMENT_GATEWAY_ADAPTER_PATHS.get(gateway)
+    if not adapter_path:
+        logger.error(
+            "payment.intent_gateway_unknown intent=%s gateway=%s method=%s",
+            intent_ref,
+            gateway,
+            method,
+        )
+        return None
+    return import_module(adapter_path)
+
+
+def _efi_intent_environment_matches_runtime(intent) -> bool:
+    from django.conf import settings
+
+    persisted = str((intent.gateway_data or {}).get("provider_environment") or "").strip().lower()
+    current = "sandbox" if (getattr(settings, "SHOPMAN_EFI", {}) or {}).get("sandbox", True) else "production"
+    if persisted == current:
+        return True
+
+    # An unmarked legacy Efí intent is not evidence that today's credentials
+    # point at its origin. Financial verbs must wait for manual reconciliation
+    # instead of guessing an environment and potentially touching another Cob.
+    persisted_label = persisted or "desconhecido"
+
+    logger.error(
+        "payment.efi_environment_mismatch intent=%s order=%s persisted=%s current=%s",
+        intent.ref,
+        intent.order_ref,
+        persisted_label,
+        current,
+    )
+    try:
+        from shopman.shop.services.observability import create_operator_alert
+
+        create_operator_alert(
+            type="payment_reconciliation_failed",
+            severity="critical",
+            message=(
+                f"A cobrança Pix {intent.ref} do pedido {intent.order_ref} pertence ao ambiente Efí "
+                f"{persisted_label}, mas a aplicação está em {current}. Nenhuma operação foi enviada; "
+                "concilie no ambiente de origem."
+            ),
+            order_ref=intent.order_ref,
+            dedupe_key=f"efi-environment-mismatch:{intent.ref}:{persisted_label}:{current}",
+            intent_ref=intent.ref,
+            persisted_environment=persisted_label,
+            current_environment=current,
+        )
+    except Exception:
+        logger.warning(
+            "payment.efi_environment_mismatch_alert_failed intent=%s",
+            intent.ref,
+            exc_info=True,
+        )
+    return False
+
+
+def _existing_active_intent(
+    order,
+    *,
+    method: str,
+    amount_q: int,
+    gateway: str | None = None,
+) -> PaymentIntent | None:
+    """Return a reusable intent without crossing provider routes.
+
+    A captured intent is a payment fact and remains reusable across a config
+    change.  Pending/authorized intents are reusable only on the gateway that
+    will receive the next operation.
+    """
     try:
         from shopman.payman import PaymentService
 
@@ -1549,6 +1978,8 @@ def _existing_active_intent(order, *, method: str, amount_q: int) -> PaymentInte
             if intent.status == "captured":
                 return _payment_intent_from_payman(intent)
         for intent in candidates:
+            if gateway is not None and intent.gateway != gateway:
+                continue
             if intent.expires_at and intent.expires_at <= now:
                 continue
             return _payment_intent_from_payman(intent)
@@ -1593,14 +2024,52 @@ def _record_initiate_error(
     amount_q: int,
     error: str,
 ) -> None:
+    from django.db import transaction
+    from shopman.orderman.models import Order
+
     error_message = str(error or "Falha ao gerar pagamento.")[:200]
-    order.data["payment"] = {
-        **payment_data,
-        "method": method,
-        "amount_q": amount_q,
-        "error": error_message,
-    }
-    order.save(update_fields=["data", "updated_at"])
+
+    def persist_into(target) -> bool:
+        data = dict(target.data or {})
+        current_payment = dict(data.get("payment") or {})
+        intent_ref = str(current_payment.get("intent_ref") or payment_data.get("intent_ref") or "")
+        try:
+            paid_amount_q = int(current_payment.get("paid_amount_q") or 0)
+        except (TypeError, ValueError):
+            paid_amount_q = 0
+        receipt_proves_payment = bool(current_payment.get("captured_at")) or (
+            paid_amount_q >= int(amount_q or 0) > 0
+        )
+        if receipt_proves_payment or (intent_ref and _payman_intent_captured(intent_ref)):
+            # Webhook won the race. An adapter exception from the older create
+            # snapshot is no longer a payment failure. The Order receipt is
+            # sufficient even in the narrow window before Payman capture.
+            current_payment.pop("error", None)
+            data["payment"] = current_payment
+            target.data = data
+            target.save(update_fields=["data", "updated_at"])
+            return False
+        data["payment"] = {
+            **payment_data,
+            **current_payment,
+            "method": method,
+            "amount_q": amount_q,
+            "error": error_message,
+        }
+        target.data = data
+        target.save(update_fields=["data", "updated_at"])
+        return True
+
+    if isinstance(order, Order) and getattr(order, "pk", None) is not None:
+        with transaction.atomic():
+            locked = Order.objects.select_for_update().get(pk=order.pk)
+            recorded = persist_into(locked)
+            order.data = locked.data
+    else:
+        recorded = persist_into(order)
+    if not recorded:
+        _ack_payment_failed_alerts(order)
+        return
     _create_payment_failed_alert(order, method=method, error=error_message)
     _notify_payment_failed(order)
 

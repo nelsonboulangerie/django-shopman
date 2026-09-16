@@ -65,12 +65,17 @@ def _action(actions, kind: str):
     return next(action for action in actions if action.kind == kind)
 
 
-def _pending(*, suffix: str, eligible_count: int = 12) -> Announcement:
+def _pending(
+    *,
+    suffix: str,
+    eligible_count: int = 12,
+    platforms: list[str] | None = None,
+) -> Announcement:
     now = timezone.now()
     return Announcement.objects.create(
         status=AnnouncementStatus.PENDING_REVIEW,
         content={"body": f"Conteúdo {suffix}"},
-        platforms=["instagram"],
+        platforms=platforms or ["instagram"],
         audience={
             "eligible_count": eligible_count,
             "calculated_at": now.isoformat(),
@@ -88,7 +93,7 @@ def _ready_projection(announcement: Announcement):
             state="ready",
             platforms=(
                 PlatformReadinessProjectionV2(
-                    platform_ref="instagram",
+                    platform_ref=announcement.platforms[0],
                     state="ready",
                     reason_code="",
                     version=1,
@@ -189,16 +194,30 @@ def test_pending_decision_uses_readiness_zero_audience_and_fresh_permissions():
         "missing_capability"
     )
 
-    empty = _pending(suffix="zero", eligible_count=0)
-    empty_actions = resolve_actions(_ready_projection(empty), actor=publisher)
-    assert _action(empty_actions, "publish_announcement_now").reason == (
+    empty_public = _pending(suffix="zero-public", eligible_count=0)
+    empty_public_actions = resolve_actions(
+        _ready_projection(empty_public), actor=publisher
+    )
+    assert _action(empty_public_actions, "publish_announcement_now").reason == (
         "missing_capability"
     )
     publisher.user_permissions.add(
         Permission.objects.get(codename="publish_marketing_announcements")
     )
-    empty_actions = resolve_actions(_ready_projection(empty), actor=publisher)
-    assert _action(empty_actions, "publish_announcement_now").reason == (
+    empty_public_actions = resolve_actions(
+        _ready_projection(empty_public), actor=publisher
+    )
+    assert _action(empty_public_actions, "publish_announcement_now").enabled is True
+
+    empty_direct = _pending(
+        suffix="zero-direct",
+        eligible_count=0,
+        platforms=["whatsapp"],
+    )
+    empty_direct_actions = resolve_actions(
+        _ready_projection(empty_direct), actor=publisher
+    )
+    assert _action(empty_direct_actions, "publish_announcement_now").reason == (
         "no_eligible_audience"
     )
 

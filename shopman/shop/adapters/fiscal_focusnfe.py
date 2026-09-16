@@ -250,12 +250,9 @@ def _build_nfce_payload(
     additional_info: str | None,
     delivery: dict | None = None,
 ) -> dict:
-    # Taxa de entrega na NFC-e (MOC + validação em homologação SEFAZ-PR):
-    # frete SÓ é aceito como ENTREGA A DOMICÍLIO — indPres=4, destinatário
-    # identificado (CPF + endereço) e grupo transportador (rejeições 753/787/
-    # 786). Com tudo isso, vFrete entra no item e no total. Sem CPF/endereço,
-    # a taxa fica FORA do documento (nota só de mercadorias, pagamento
-    # reduzido na mesma medida) — nunca emitir um XML incoerente.
+    # Entrega é fato do pedido, inclusive grátis; taxa não decide indPres.
+    # Dados fiscais incompletos recusam a emissão antes do HTTP, sem reclassificar
+    # a operação nem reduzir o valor declarado para contornar validações.
     fee_items = [item for item in items if _is_delivery_fee_item(item)]
     merchandise = [item for item in items if not _is_delivery_fee_item(item)]
     freight_q = sum(int(item.get("total_q") or 0) for item in fee_items)
@@ -263,13 +260,12 @@ def _build_nfce_payload(
     if not merchandise:
         raise FocusNFePayloadError("NFC-e exige ao menos um item.")
 
-    home_delivery = _home_delivery_fields(config, customer, delivery) if freight_q > 0 else None
+    if freight_q and delivery is None:
+        raise FocusNFePayloadError("Pedido com taxa de entrega sem indicação de entrega a domicílio.")
+    home_delivery = _home_delivery_fields(config, customer, delivery) if delivery is not None else None
 
     mapped_items = [_map_item(idx, item, config) for idx, item in enumerate(merchandise, start=1)]
     product_total_q = _sum_focus_money_q(mapped_items, "valor_bruto")
-    if home_delivery is None:
-        payment = _payment_without_fee(payment, freight_q)
-        freight_q = 0
     payment_total_q = _payment_total_q(payment)
     note_total_q = payment_total_q or (product_total_q + freight_q)
 
@@ -315,27 +311,35 @@ def _build_nfce_payload(
     return payload
 
 
-def _home_delivery_fields(config: dict, customer: dict, delivery: dict | None) -> dict | None:
-    """Campos de entrega a domicílio (MOC): destinatário + endereço + transportador.
-
-    Retorna ``None`` quando faltam CPF/CNPJ ou endereço — nesse caso a taxa
-    fica fora do documento (fallback coerente, nunca XML rejeitável).
-    """
+def _home_delivery_fields(config: dict, customer: dict, delivery: dict) -> dict:
+    """Exige identificação e endereço reais para entrega a domicílio."""
     from shopman.utils.documents import is_valid_tax_id
 
-    address = dict((delivery or {}).get("address") or {})
+    if not isinstance(delivery, dict) or not isinstance(delivery.get("address"), dict):
+        raise FocusNFePayloadError("Entrega a domicílio: informe o endereço estruturado do destinatário.")
+    address = delivery["address"]
     tax_id = _digits(customer.get("tax_id") or customer.get("cpf") or customer.get("cnpj"))
     street = str(address.get("route") or "").strip()
     city = str(address.get("city") or "").strip()
     state = str(address.get("state_code") or "").strip()
     cep = _digits(address.get("postal_code"))
-    if not (tax_id and is_valid_tax_id(tax_id) and street and city and state and cep):
-        return None
+    number = str(address.get("street_number") or "").strip()
+    neighborhood = str(address.get("neighborhood") or "").strip()
+    valid_states = {"AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG",
+                    "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"}
+    missing = [label for label, valid in (
+        ("CPF/CNPJ solicitado para a nota", tax_id and is_valid_tax_id(tax_id)),
+        ("logradouro", street), ("número (ou S/N explicitamente informado)", number),
+        ("bairro", neighborhood), ("município", city), ("UF válida", state.upper() in valid_states),
+        ("CEP de 8 dígitos", len(cep) == 8),
+    ) if not valid]
+    if missing:
+        raise FocusNFePayloadError("Entrega a domicílio: confira " + ", ".join(missing) + ".")
 
     fields = {
         "logradouro_destinatario": street[:60],
-        "numero_destinatario": str(address.get("street_number") or "S/N")[:60],
-        "bairro_destinatario": str(address.get("neighborhood") or "")[:60] or "Centro",
+        "numero_destinatario": number[:60],
+        "bairro_destinatario": neighborhood[:60],
         "municipio_destinatario": city[:60],
         "uf_destinatario": state[:2].upper(),
         "cep_destinatario": cep,
@@ -356,36 +360,6 @@ def _shop_name() -> str:
     except Exception:
         logger.debug("focus_nfe_shop_name_lookup_failed", exc_info=True)
         return ""
-
-
-def _payment_without_fee(payment: dict, freight_q: int) -> dict:
-    """Reduz a taxa de entrega do pagamento declarado na nota.
-
-    A taxa fica fora do documento; o dinheiro/PIX que a cobre também. A
-    redução sai do tender em dinheiro primeiro (mesma regra do caixa) e do
-    último tender em último caso.
-    """
-    if freight_q <= 0:
-        return payment
-    adjusted = dict(payment or {})
-    if adjusted.get("amount_q"):
-        adjusted["amount_q"] = max(int(adjusted["amount_q"]) - freight_q, 0)
-    tenders = adjusted.get("tenders")
-    if isinstance(tenders, list) and tenders:
-        tenders = [dict(t) for t in tenders]
-        remaining = freight_q
-        ordered = [t for t in reversed(tenders) if str(t.get("method") or "").lower() == "cash"] + [
-            t for t in reversed(tenders) if str(t.get("method") or "").lower() != "cash"
-        ]
-        for tender in ordered:
-            if remaining <= 0:
-                break
-            current = int(tender.get("amount_q") or 0)
-            cut = min(current, remaining)
-            tender["amount_q"] = current - cut
-            remaining -= cut
-        adjusted["tenders"] = [t for t in tenders if int(t.get("amount_q") or 0) > 0]
-    return adjusted
 
 
 def _apportion_over_items(mapped_items: list[dict], total_q: int, *, field: str) -> None:

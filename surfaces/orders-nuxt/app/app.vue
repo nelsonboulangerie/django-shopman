@@ -29,7 +29,7 @@ async function restoreAuthenticatedWorkspace() {
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
-useHead({ title: "Gestor de Pedidos" });
+useOperatorWindowTitle("Gestor de Pedidos");
 </script>
 
 <template>
@@ -41,7 +41,8 @@ useHead({ title: "Gestor de Pedidos" });
          fixo enquanto o conteúdo rola. Colapsado → não renderiza (some de verdade). -->
     <div v-if="canIdentify" class="sticky top-0 flex h-screen shrink-0 print:hidden">
       <OperatorRail
-        app-icon="clipboard-list"
+        app-icon="square-kanban"
+        app-icon-src="/pwa/pwa-64x64.png?v=2"
         app-label="Gestor"
         :central-url="hubUrl"
         :operator-name="operator?.name"
@@ -58,5 +59,6 @@ useHead({ title: "Gestor de Pedidos" });
     <OperatorLogin v-if="!canIdentify" :reload-on-success="false" @success="restoreAuthenticatedWorkspace" />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
     <OperatorSonner />
+    <OperatorPwaRuntime />
   </div>
 </template>

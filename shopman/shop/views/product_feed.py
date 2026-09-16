@@ -22,14 +22,10 @@ docs/plans/CATALOG-FEEDS-GOOGLE-META.md.
 
 from __future__ import annotations
 
-import logging
-
 from django.conf import settings
 from django.http import Http404, HttpResponse
 from django.shortcuts import render
 from django.views import View
-
-logger = logging.getLogger(__name__)
 
 # availability diverge por plataforma (verificado): Google underscore, Meta espaço.
 _AVAILABILITY = {
@@ -64,6 +60,7 @@ def _storefront_base(request) -> str:
 
 def build_feed_items(ref: str, request) -> list[dict]:
     """Itens do feed a partir das coleções do canal. Formatação = camada de view."""
+    from shopman.offerman import get_social_attributes
     from shopman.offerman.models import Collection
 
     from shopman.shop.services.display_prices import resolve_prices
@@ -98,6 +95,7 @@ def build_feed_items(ref: str, request) -> list[dict]:
                 # imagem é omitido (image_link é obrigatório — seria reprovado).
                 continue
             seen.add(product.sku)
+            attributes = get_social_attributes(product)
             available = product.is_published and product.is_sellable and product.sku not in paused
             items.append({
                 "id": product.sku,
@@ -105,6 +103,11 @@ def build_feed_items(ref: str, request) -> list[dict]:
                 "description": (product.long_description or product.short_description or product.name)[:5000],
                 "link": f"{base}/produto/{product.sku}",
                 "image_link": product.image_url,
+                "brand": attributes.brand,
+                "gtin": attributes.gtin,
+                "mpn": attributes.mpn,
+                "condition": attributes.condition,
+                "google_product_category": attributes.google_product_category,
                 "availability": avail[available],
                 "price": f"{prices.get(product.sku, product.base_price_q) / 100:.2f} BRL",
                 "product_type": coll.name,
@@ -122,14 +125,11 @@ class ProductFeedView(View):
         except ProductFeedError as exc:
             raise Http404(str(exc)) from exc
 
-        brand = ""
-        try:
-            from shopman.shop.models import Shop
+        from shopman.shop.models import Shop
 
-            shop = Shop.objects.only("name").first()
-            brand = shop.name if shop else ""
-        except Exception:
-            logger.debug("product_feed.brand_lookup_failed", exc_info=True)
+        # Loja ausente usa a referência no título; erro de banco não vira feed válido.
+        shop = Shop.objects.only("name").first()
+        brand = shop.name if shop else ""
 
         content = render(
             request,

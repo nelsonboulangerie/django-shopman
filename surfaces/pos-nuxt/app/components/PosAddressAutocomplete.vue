@@ -261,6 +261,6 @@ onBeforeUnmount(() => {
       </ul>
     </div>
     <p v-if="!isAvailable" class="text-xs text-muted-foreground">Digite o endereço manualmente, ou informe o CEP para preencher.</p>
-    <p v-else-if="error" class="text-xs text-amber-700 dark:text-amber-400">{{ error }}</p>
+    <p v-else-if="error" class="text-xs text-warning">{{ error }}</p>
   </div>
 </template>

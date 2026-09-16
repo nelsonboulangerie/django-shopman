@@ -16,6 +16,7 @@ from shopman.utils.phone import normalize_phone
 
 from shopman.shop.models import AudienceSnapshot, AudienceSnapshotMember
 from shopman.shop.services.audience import AudienceResult, Recipient
+from shopman.shop.services.marketing_age import is_known_adult, is_known_minor
 from shopman.shop.services.marketing_contracts import MarketingContractError
 
 SNAPSHOT_RETENTION = timedelta(days=90)
@@ -168,6 +169,13 @@ def materialize_active_recipients(
         if customer is not None and not customer.is_active:
             exclude("customer_inactive")
             continue
+        if customer is not None:
+            if is_known_minor(customer.birthday):
+                exclude("known_minor")
+                continue
+            if subscription is None and not is_known_adult(customer.birthday):
+                exclude("age_not_declared")
+                continue
         customer_ref = customer.ref if customer is not None else ""
         status = statuses.get(customer_ref, "")
         if status == "opted_out":
@@ -193,6 +201,11 @@ def materialize_active_recipients(
             first_name=(getattr(customer, "first_name", "") or "").strip() if customer else "",
             reasons=reasons,
             is_vip=member.is_vip,
+            has_adult_declaration=(
+                subscription.adult_declared
+                if subscription is not None
+                else is_known_adult(customer.birthday)
+            ),
             preferred_hour=member.preferred_hour,
             source_subscription_ref=str(member.subscription_ref or ""),
         )

@@ -8,7 +8,7 @@ import {
   resolveSectionRefFromParam,
   uniqueItemsBySku
 } from '~/presentation/menu'
-import { collectionJsonLd } from '~/presentation/seo'
+import { collectionJsonLd, jsonLdText } from '~/presentation/seo'
 import type { MenuResponse } from '~/types/shopman'
 
 const apiPath = useShopmanApiPath()
@@ -138,10 +138,7 @@ function scrollToSection (ref: string) {
     : document.getElementById(sectionDomId(ref))
   if (!target) return
 
-  window.scrollTo({
-    top: Math.max(0, target.getBoundingClientRect().top + window.scrollY - menuScrollOffset()),
-    behavior: scrollBehavior()
-  })
+  shopScrollToElement(target, menuScrollOffset(), scrollBehavior())
 }
 
 function selectSection (value: string | number | undefined) {
@@ -187,6 +184,7 @@ let scrollRaf = 0
 let programmaticScrollRef = ''
 let programmaticScrollUntil = 0
 let lastCenteredPillRef = ''
+let pageScrollTarget: ShopScrollTarget | null = null
 
 function holdActiveSection (ref: string) {
   programmaticScrollRef = ref
@@ -212,7 +210,8 @@ function syncActiveSectionFromScroll () {
   const firstSection = sectionEls[0]
   const lastSection = sectionEls[sectionEls.length - 1]
   if (!firstSection || !lastSection) return
-  const nearDocumentEnd = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 8
+  const metrics = shopScrollMetrics()
+  const nearDocumentEnd = metrics.top + metrics.height >= metrics.scrollHeight - 8
   if (nearDocumentEnd && lastSection) {
     const current = lastSection.dataset.menuSectionRef || 'all'
     activeSection.value = current
@@ -279,7 +278,8 @@ onMounted(() => {
   }
   applyRouteSection(route.query.secao)
   updatePillRailTailWidth()
-  window.addEventListener('scroll', queueActiveSectionSync, { passive: true })
+  pageScrollTarget = shopScrollTarget()
+  pageScrollTarget.addEventListener('scroll', queueActiveSectionSync, { passive: true })
   window.addEventListener('resize', updatePillRailTailWidth, { passive: true })
   window.addEventListener('resize', queueActiveSectionSync, { passive: true })
   queueActiveSectionSync()
@@ -288,7 +288,8 @@ onMounted(() => {
 watch(() => route.query.secao, applyRouteSection)
 
 onBeforeUnmount(() => {
-  window.removeEventListener('scroll', queueActiveSectionSync)
+  pageScrollTarget?.removeEventListener('scroll', queueActiveSectionSync)
+  pageScrollTarget = null
   window.removeEventListener('resize', updatePillRailTailWidth)
   window.removeEventListener('resize', queueActiveSectionSync)
   if (scrollRaf) window.cancelAnimationFrame(scrollRaf)
@@ -308,7 +309,7 @@ useHead({
   script: () => catalog.value && uniqueItems.value.length
     ? [{
         type: 'application/ld+json',
-        innerHTML: JSON.stringify(collectionJsonLd({
+        innerHTML: jsonLdText(collectionJsonLd({
           name: 'Cardápio',
           url: menuCanonical.value,
           origin: requestUrl.origin,

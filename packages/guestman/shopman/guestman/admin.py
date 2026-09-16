@@ -10,6 +10,10 @@ from django.contrib import admin
 from django.db.models import Count
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
+from shopman.guestman.admin_privacy import (
+    CustomerOwnedPrivacyFenceAdminMixin,
+    CustomerPrivacyFenceAdminMixin,
+)
 from shopman.guestman.contrib.merge.admin import MergeAdminMixin
 from shopman.guestman.models import (
     ContactPoint,
@@ -120,7 +124,7 @@ except ImportError:
 
 
 @admin.register(Customer)
-class CustomerAdmin(MergeAdminMixin, admin.ModelAdmin):
+class CustomerAdmin(CustomerPrivacyFenceAdminMixin, MergeAdminMixin, admin.ModelAdmin):
     list_display = [
         "ref",
         "name",
@@ -179,7 +183,7 @@ class CustomerAdmin(MergeAdminMixin, admin.ModelAdmin):
 
 
 @admin.register(CustomerAddress)
-class CustomerAddressAdmin(admin.ModelAdmin):
+class CustomerAddressAdmin(CustomerOwnedPrivacyFenceAdminMixin, admin.ModelAdmin):
     list_display = [
         "customer",
         "label",
@@ -198,7 +202,7 @@ class CustomerAddressAdmin(admin.ModelAdmin):
 
 
 @admin.register(ContactPoint)
-class ContactPointAdmin(admin.ModelAdmin):
+class ContactPointAdmin(CustomerOwnedPrivacyFenceAdminMixin, admin.ModelAdmin):
     list_display = [
         "value_masked",
         "type",
@@ -253,7 +257,7 @@ class ContactPointAdmin(admin.ModelAdmin):
 
 
 @admin.register(ExternalIdentity)
-class ExternalIdentityAdmin(admin.ModelAdmin):
+class ExternalIdentityAdmin(CustomerOwnedPrivacyFenceAdminMixin, admin.ModelAdmin):
     list_display = [
         "provider",
         "provider_uid_short",

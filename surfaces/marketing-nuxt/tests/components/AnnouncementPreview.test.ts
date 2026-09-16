@@ -1,6 +1,14 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import AnnouncementPreview from "~/components/AnnouncementPreview.vue";
 
 beforeAll(() => {
@@ -93,11 +101,14 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     }> = [];
     vi.stubGlobal(
       "$fetch",
-      vi.fn((_url, options: { signal: AbortSignal }) =>
-        new Promise((resolve) => calls.push({
-          resolve: resolve as (value: ReturnType<typeof batch>) => void,
-          signal: options.signal,
-        })),
+      vi.fn(
+        (_url, options: { signal: AbortSignal }) =>
+          new Promise((resolve) =>
+            calls.push({
+              resolve: resolve as (value: ReturnType<typeof batch>) => void,
+              signal: options.signal,
+            }),
+          ),
       ),
     );
     const wrapper = mountPreview();
@@ -121,10 +132,12 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
   });
 
   it("envia todas as variantes uma vez e alterna o artefato exato por plataforma", async () => {
-    const fetch = vi.fn().mockResolvedValue(batch({
-      instagram: "Texto exclusivo do Instagram",
-      whatsapp: "Texto exclusivo do WhatsApp",
-    }));
+    const fetch = vi.fn().mockResolvedValue(
+      batch({
+        instagram: "Texto exclusivo do Instagram",
+        whatsapp: "Texto exclusivo do WhatsApp",
+      }),
+    );
     vi.stubGlobal("$fetch", fetch);
     const platformContent = {
       instagram: { body: "Texto exclusivo do Instagram" },
@@ -172,16 +185,14 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     wrapper.unmount();
   });
 
-  it("mostra erro estruturado no contexto e recupera sem navegação", async () => {
-    const fetch = vi.fn()
-      .mockRejectedValueOnce({
-        data: {
-          detail: "O conteúdo usa uma variável desconhecida.",
-          field_errors: { body: ["Variável não reconhecida: precoo."] },
-          retryable: false,
-        },
-      })
-      .mockResolvedValueOnce(batch({ instagram: "Prévia corrigida" }));
+  it("orienta a correção de erro determinístico sem oferecer repetição inútil", async () => {
+    const fetch = vi.fn().mockRejectedValueOnce({
+      data: {
+        detail: "O conteúdo usa uma variável desconhecida.",
+        field_errors: { body: ["Variável não reconhecida: precoo."] },
+        retryable: false,
+      },
+    });
     vi.stubGlobal("$fetch", fetch);
     const wrapper = mountPreview();
 
@@ -191,16 +202,72 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     expect(wrapper.get("[data-testid='preview-error']").text()).toContain(
       "Variável não reconhecida: precoo.",
     );
+    expect(wrapper.text()).toContain("Revise os dados para gerar a prévia");
+    expect(wrapper.find("[data-testid='preview-error'] button").exists()).toBe(
+      false,
+    );
+    expect(fetch).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+
+  it("leva um erro de imagem ao lugar onde ele pode ser corrigido", async () => {
+    vi.stubGlobal(
+      "$fetch",
+      vi.fn().mockRejectedValue({
+        data: {
+          code: "marketing_media_host_not_allowed",
+          detail: "Esta imagem não pode ser usada na publicação.",
+          field_errors: {
+            image_url: ["Este domínio ainda não foi aprovado pela loja."],
+          },
+          retryable: false,
+        },
+      }),
+    );
+    const wrapper = mountPreview();
+
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+
+    const error = wrapper.get("[data-testid='preview-error']");
+    expect(error.text()).toContain("Corrija a imagem para gerar a prévia");
+    expect(error.text()).toContain("Corrigir imagem nos modelos");
+    expect(error.get("button").attributes("to")).toBe("/templates");
+    wrapper.unmount();
+  });
+
+  it("mantém nova tentativa somente para falha temporária", async () => {
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce({
+        data: {
+          detail: "A plataforma demorou para responder.",
+          retryable: true,
+        },
+      })
+      .mockResolvedValueOnce(batch({ instagram: "Prévia atualizada" }));
+    vi.stubGlobal("$fetch", fetch);
+    const wrapper = mountPreview();
+
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain(
+      "Não foi possível atualizar a prévia agora",
+    );
     await wrapper.get("[data-testid='preview-error'] button").trigger("click");
     await flushPromises();
 
-    expect(wrapper.text()).toContain("Prévia corrigida");
+    expect(wrapper.text()).toContain("Prévia atualizada");
     expect(fetch).toHaveBeenCalledTimes(2);
     wrapper.unmount();
   });
 
   it("rotula explicitamente a amostra, o as-of e a versão verificável", async () => {
-    vi.stubGlobal("$fetch", vi.fn().mockResolvedValue(batch({ instagram: "Prévia final" })));
+    vi.stubGlobal(
+      "$fetch",
+      vi.fn().mockResolvedValue(batch({ instagram: "Prévia final" })),
+    );
     const wrapper = mountPreview();
 
     await vi.advanceTimersByTimeAsync(400);
@@ -209,6 +276,27 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     expect(wrapper.text()).toContain("Exemplo com Croissant");
     expect(wrapper.text()).toContain("Dados conferidos às");
     expect(wrapper.text()).toContain("Versão bbbbbbbb");
+    wrapper.unmount();
+  });
+
+  it("mostra Story em 9:16 e não promete sobrepor o texto na imagem", async () => {
+    const response = batch({ instagram: "Texto guardado no comprovante" });
+    response.previews.instagram!.artifact.image_url =
+      "https://cdn.example.test/story.jpg";
+    response.previews.instagram!.artifact.provider_fields = {
+      publication_format: "story",
+    };
+    vi.stubGlobal("$fetch", vi.fn().mockResolvedValue(response));
+    const wrapper = mountPreview();
+
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Story do Instagram");
+    expect(wrapper.text()).toContain("imagem vertical acima");
+    expect(wrapper.text()).toContain("não é inserido automaticamente");
+    expect(wrapper.find(".aspect-\\[9\\/16\\]").exists()).toBe(true);
+    expect(wrapper.text()).not.toContain("Texto guardado no comprovante");
     wrapper.unmount();
   });
 });

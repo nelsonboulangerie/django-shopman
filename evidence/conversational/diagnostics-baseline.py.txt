@@ -1,0 +1,139 @@
+"""Diagnostic assertions of current defects, NOT acceptance of desired behavior."""
+from datetime import timedelta
+import pytest
+from django.test import override_settings
+from django.utils import timezone
+from shopman.storefront.tests.test_concierge_engine import (surface, customer, conversation, ctx, outbox, _pickup_ready, _tomorrow, SKU, CONCIERGE_SETTINGS)
+from shopman.storefront.concierge import service, tools, agent
+from shopman.shop.models import Conversation, ConversationMessage as Message
+from shopman.orderman.models import Order, Session
+pytestmark = pytest.mark.django_db
+
+def inbound(c, text='Quero pão', ext='in-1'):
+    return Message.objects.create(conversation=c,role=Message.Role.USER,kind=Message.Kind.INBOUND,text=text,content=[{'type':'text','text':text}],external_id=ext)
+
+def test_d01_message_during_turn_is_hidden(conversation,outbox,monkeypatch):
+    first=inbound(conversation)
+    late=[]
+    def respond(**kwargs):
+        late.append(inbound(conversation,'Na verdade, três','in-2'))
+        return agent.AgentOutcome(reply_text='Dois pães na sacola.')
+    monkeypatch.setattr(agent,'run_agent',respond)
+    result=service.run_turn(conversation.pk)
+    assert result.processed_message_ids==[first.pk]
+    assert late[0].pk not in result.processed_message_ids
+    assert not result.pending_more and not service.unanswered_inbound(conversation)
+
+@override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS,AI_ASSIST_API_KEY='fake')
+def test_d02_intake_failure_cannot_requeue_by_replay(conversation,monkeypatch):
+    def fail(c): raise RuntimeError('injected enqueue failure')
+    monkeypatch.setattr(service,'_enqueue_turn',fail)
+    with pytest.raises(RuntimeError):
+        service.receive_inbound(subscriber_id=conversation.subscriber_id,text='Olá',external_id='durable-1')
+    assert conversation.messages.filter(external_id='durable-1').exists()
+    assert service.receive_inbound(subscriber_id=conversation.subscriber_id,text='Olá',external_id='durable-1').reason=='duplicate'
+
+def test_d03_failed_send_consumes_inbound(conversation,monkeypatch):
+    inbound(conversation)
+    monkeypatch.setattr('shopman.storefront.concierge.transport.send_text',lambda *a:False)
+    message=service._send_reply(conversation,'Resposta')
+    assert message.delivered is False
+    assert not service.unanswered_inbound(conversation)
+
+def test_d04_order_without_customer_confirmation(ctx):
+    quote=_pickup_ready(ctx)
+    assert ctx.conversation.messages.count()==0
+    result=tools.place_order(ctx,quote['quote_token'],'pix')
+    assert result['ok'] and Order.objects.filter(ref=result['order_ref']).exists()
+
+def test_d05_repeat_order_loses_receipt(ctx):
+    quote=_pickup_ready(ctx)
+    first=tools.place_order(ctx,quote['quote_token'],'pix')
+    second=tools.place_order(ctx,quote['quote_token'],'pix')
+    assert first['ok'] and second['error']=='no_cart'
+    assert Order.objects.count()==1
+
+def test_d06_invalid_fulfillment_partially_writes(ctx):
+    assert tools.set_item(ctx,SKU,2)['ok']
+    session=Session.objects.get(session_key=ctx.conversation.session_key)
+    session.data={**session.data,'fulfillment_type':'delivery','delivery_address':'Rua de Teste, 1','delivery_address_structured':{'formatted_address':'Rua de Teste, 1'}}
+    session.save(update_fields=['data'])
+    result=tools.set_fulfillment(ctx,'pickup',_tomorrow(),'invalid-slot','')
+    session.refresh_from_db()
+    assert not result['ok'] and result['error']=='validation'
+    assert session.data['fulfillment_type']=='pickup'
+    assert 'delivery_address' not in session.data
+
+def test_d07_negative_quantity_removes(ctx):
+    assert tools.set_item(ctx,SKU,2)['ok']
+    result=tools.set_item(ctx,SKU,-1)
+    assert result['ok'] and result['removed']==SKU
+
+
+def test_d08_remote_handoff_failure_ignored(conversation,monkeypatch):
+    conversation.state=Conversation.State.HANDOFF
+    conversation.save(update_fields=['state'])
+    monkeypatch.setattr('shopman.storefront.concierge.transport.set_handoff',lambda *a:False)
+    assert service.return_to_concierge(conversation) is None
+    conversation.refresh_from_db()
+    assert conversation.state==Conversation.State.ACTIVE
+
+@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS,'enabled':False})
+def test_d09_worker_ignores_disabled_switch(conversation,outbox,monkeypatch):
+    inbound(conversation)
+    called=[]
+    monkeypatch.setattr(agent,'run_agent',lambda **kw:called.append(True) or agent.AgentOutcome(reply_text='Ainda respondo'))
+    assert not service.is_enabled()
+    service.run_turn(conversation.pk)
+    assert called==[True] and outbox.sent==['Ainda respondo']
+
+
+def test_d10_projection_failure_becomes_not_found(ctx,monkeypatch):
+    quote=_pickup_ready(ctx)
+    order=tools.place_order(ctx,quote['quote_token'],'pix')
+    def fail(*a,**kw): raise RuntimeError('projection unavailable')
+    monkeypatch.setattr('shopman.shop.services.conversation.build_order_conversation',fail)
+    result=tools.order_status(ctx,order['order_ref'])
+    assert result['ok'] and not result['orders'] and 'Não achei' in result['message']
+
+
+def test_d11_fallback_event_identity_collision_and_drift(monkeypatch):
+    now=timezone.now().replace(second=10,microsecond=0)
+    monkeypatch.setattr(service.timezone,'now',lambda:now)
+    first=service._external_id('subscriber','sim','')
+    assert first==service._external_id('subscriber','sim','')
+    monkeypatch.setattr(service.timezone,'now',lambda:now+timedelta(minutes=1))
+    assert first!=service._external_id('subscriber','sim','')
+
+def test_d12_partial_web_transfer_abandons_source(ctx,monkeypatch):
+    from decimal import Decimal
+    from shopman.offerman.models import Product,Listing,ListingItem,Collection,CollectionItem
+    from shopman.storefront.tests.test_concierge_engine import _seed_stock
+    from shopman.shop.services import cart
+    p=Product.objects.create(sku='SEGUNDO',name='Segundo produto',base_price_q=100,is_published=True,is_sellable=True)
+    CollectionItem.objects.create(collection=Collection.objects.first(),product=p,sort_order=2)
+    for listing in Listing.objects.all(): ListingItem.objects.create(listing=listing,product=p,price_q=100,is_published=True,is_sellable=True)
+    _seed_stock('SEGUNDO',Decimal('10'))
+    assert tools.set_item(ctx,SKU,2)['ok']
+    assert tools.set_item(ctx,'SEGUNDO',2)['ok']
+    assert tools.set_fulfillment(ctx,'pickup',_tomorrow(),'slot-12','')['ok']
+    source=Session.objects.get(session_key=ctx.conversation.session_key)
+    original=cart.add_item
+    def add(**kw):
+        if kw['sku']=='SEGUNDO': raise RuntimeError('injected failure for second item')
+        return original(**kw)
+    monkeypatch.setattr(cart,'add_item',add)
+    web_key=tools._copy_cart_to_web(ctx)
+    source.refresh_from_db()
+    web=Session.objects.get(session_key=web_key)
+    assert source.state=='abandoned' and ctx.conversation.session_key==''
+    assert [i['sku'] for i in web.items]==[SKU]
+    assert not web.data.get('delivery_time_slot')
+
+
+def test_d13_model_unfounded_price_is_forwarded(conversation,outbox):
+    from shopman.storefront.tests.test_concierge_engine import ScriptedClient,_response,_text
+    inbound(conversation,'Quanto custa o pão?')
+    client=ScriptedClient(_response(_text('O Pão Francês custa R$ 999,99.'),stop_reason='end_turn'))
+    result=service.run_turn(conversation.pk,client=client)
+    assert 'R$ 999,99' in outbox.sent[0] and not result.fallback

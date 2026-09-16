@@ -23,6 +23,7 @@ from shopman.utils.monetary import format_money
 from shopman.shop.adapters import pos as pos_adapter
 from shopman.shop.config import ChannelConfig
 from shopman.shop.models import Channel
+from shopman.shop.services import account as account_service
 from shopman.shop.services import payment as payment_service
 from shopman.shop.services import sessions as session_service
 from shopman.shop.services.cancellation import cancel
@@ -37,6 +38,10 @@ class PosRecentSaleNotFound(ValueError):
     Tipo distinto para a camada HTTP mapear para 404 sem inspecionar a
     mensagem; as demais violações de janela/estado seguem como ``ValueError``.
     """
+
+
+class PosCustomerUnavailable(ValueError):
+    """The selected customer was removed or became inactive before mutation."""
 
 
 _TAB_REF_MAX_LENGTH = 64
@@ -294,6 +299,7 @@ def close_sale(
     operator_username: str,
 ) -> PosSaleResult:
     """Create and commit a POS sale from a parsed cart payload."""
+    payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
     channel, config = _channel_and_config(channel_ref)
     # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou, e o
@@ -312,7 +318,6 @@ def close_sale(
     # desconto lá embaixo. Ver `build_session_ops`.
     approver = validate_manager_approval(payload, operator_username=operator_username)
     approved_by = approver.get_username() if approver is not None else ""
-    _validate_fiscal_delivery_fee(payload)
     _validate_schedule(payload)
     _require_customer_if_scheduled(payload)
     _require_contact_if_payment_link(payload)
@@ -322,6 +327,7 @@ def close_sale(
         payment_method=_normalize_payment_method(payload.get("payment_method") or "cash"),
         tenders=[t for t in (payload.get("payment_tenders") or []) if isinstance(t, dict)],
     )
+    _enforce_pix_payment_policy(payload)
     # A partir daqui é uma transação só, e ela existe por causa de um defeito:
     # ``client_request_id`` era conferido com um SELECT solto e os ops eram
     # montados de um estado lido antes. Duas requests com a MESMA chave passavam
@@ -344,44 +350,50 @@ def close_sale(
             channel_ref=channel.ref, payload=payload
         )
         if existing is not None:
-            # Vale com comanda também: ``client_request_id`` identifica ESTE
-            # envio, e o segundo envio do mesmo é replay, não venda nova.
-            # Reancora a resposta: se a trava anterior expirou e esta é nova, ela
-            # nasce sabendo qual venda responde por esta chave.
             _answer_sale_claim(claim, order_ref=existing.ref)
-            return PosSaleResult(
-                order_ref=existing.ref, total_q=existing.total_q, fiscal_hint=_sale_fiscal_hint(existing)
-            )
-        # A venda do terminal acontece DENTRO de um turno de caixa: é no livro dele
-        # que a linha `sale` vai nascer. Sem turno aberto não há onde registrar, e
-        # a recusa tem de vir ANTES do commit do pedido, não depois.
-        shift = _require_open_shift(payload)
-        if session is None:
-            if _payload_has_tab_identity(payload):
-                raise ValueError("Abra um POS tab antes de finalizar.")
-            session = _create_direct_checkout_session(
-                channel_ref=channel.ref,
-                payload=payload,
-                operator_username=operator_username,
-            )
-            direct_checkout = True
         else:
-            # A comanda é relida SOB LOCK: os ops de troca (remove_line dos itens
-            # atuais + add_line dos novos) só valem para o estado que travamos.
-            session = _locked_session(session)
-            direct_checkout = False
+            # A venda do terminal acontece DENTRO de um turno de caixa: é no livro dele
+            # que a linha `sale` vai nascer. Sem turno aberto não há onde registrar, e
+            # a recusa tem de vir ANTES do commit do pedido, não depois.
+            shift = _require_open_shift(payload)
+            if session is None:
+                if _payload_has_tab_identity(payload):
+                    raise ValueError("Abra um POS tab antes de finalizar.")
+                session = _create_direct_checkout_session(
+                    channel_ref=channel.ref,
+                    payload=payload,
+                    operator_username=operator_username,
+                )
+                direct_checkout = True
+            else:
+                # A comanda é relida SOB LOCK: os ops de troca (remove_line dos itens
+                # atuais + add_line dos novos) só valem para o estado que travamos.
+                session = _locked_session(session)
+                from shopman.shop.services.pos_intent import pos_session_revision
 
-        result, session, tab_ref = _commit_sale_session(
-            session=session,
-            channel=channel,
-            config=config,
-            payload=payload,
-            actor=actor,
-            operator_username=operator_username,
-            direct_checkout=direct_checkout,
-            approved_by=approved_by,
-        )
-        _answer_sale_claim(claim, order_ref=result.order_ref)
+                if session.state != "open" or ("expected_revision" in payload and payload["expected_revision"] != pos_session_revision(session)):
+                    raise PosIntentError(code="tab_revision_conflict", status=409,
+                        message="Esta comanda mudou. Confira a versão atual antes de finalizar.")
+                direct_checkout = False
+
+            result, session, tab_ref = _commit_sale_session(
+                session=session,
+                channel=channel,
+                config=config,
+                payload=payload,
+                actor=actor,
+                operator_username=operator_username,
+                direct_checkout=direct_checkout,
+                approved_by=approved_by,
+            )
+            _answer_sale_claim(claim, order_ref=result.order_ref)
+
+            from shopman.shop.services.pos_sale_recovery import prepare
+
+            prepare(result.order_ref, shift_id=shift.pk, operator_username=operator_username)
+
+    if existing is not None:
+        return _resume_committed_sale(existing.ref)
 
     # Fora da transação, e a ordem importa: os callbacks de ``on_commit`` do
     # lifecycle já rodaram e já reescreveram ``order.data``. Escrever o carimbo
@@ -389,45 +401,48 @@ def close_sale(
     # sem essa chave o replay do mesmo envio não encontra a venda — cria a
     # segunda. Medido: no ``main`` o pedido sai com a chave; com o carimbo dentro
     # da transação, sai sem.
-    _mark_tab_committed(
-        order_ref=result.order_ref,
-        tab_ref=tab_ref,
-        operator_username=operator_username,
-        session_data=session.data,
-    )
-    # Marcador de transição na trilha da sessão; o mesmo ``session_key`` agora
-    # resolve para o Order, cujo lifecycle é auditado pelo OrderEvent.
-    session.emit_event("sale_committed", actor=operator_username, payload={
-        "order_ref": result.order_ref, "total_q": int(result.total_q),
-    })
-    logger.info("pos_close_tab order=%s tab=%s session=%s total=%s", result.order_ref, tab_ref, session.session_key, result.total_q)
-    order = Order.objects.filter(ref=result.order_ref).first()
-    payment_result = {}
-    if order is not None:
-        order = _reconcile_order_payment_to_total(order)
-        payment_result = _settle_pos_sale(order, shift=shift, operator_username=operator_username)
-        # A nota segue o primeiro dos dois fatos: o pagamento se liquidar ou a
-        # mercadoria sair. No balcão os dois acontecem AQUI — a venda direta
-        # fechou paga, a entrega/encomenda sai com a sacola (e a DANFE vai
-        # junto). Para a venda presencial que o lifecycle já concluiu, isto é
-        # dedupe-hit; para as demais, é o gatilho que ``on_completed`` (fim da
-        # jornada) demoraria dias a alcançar. Idempotente e deduplicado no banco.
-        # ⚠️ A venda JÁ fechou e o cliente já foi embora — não dá para desfazer
-        # aqui, então isto falha GRITANDO, não fechado. O `logger.warning` que
-        # havia não chegava a ninguém: era venda sem nota, com o balcão achando
-        # que a nota estava a caminho (a tela só diz "Fiscal pendente", que é o
-        # que ela diz também quando está tudo certo). Agora nasce alerta no
-        # Gestor, com o pedido no nome, para alguém reemitir.
-        try:
-            from shopman.shop.services import fiscal as fiscal_service
+    try:
+        _mark_tab_committed(
+            order_ref=result.order_ref,
+            tab_ref=tab_ref,
+            operator_username=operator_username,
+            session_data=session.data,
+        )
+        # Marcador de transição na trilha da sessão; o mesmo ``session_key`` agora
+        # resolve para o Order, cujo lifecycle é auditado pelo OrderEvent.
+        session.emit_event("sale_committed", actor=operator_username, payload={
+            "order_ref": result.order_ref, "total_q": int(result.total_q),
+        })
+        logger.info("pos_close_tab order=%s tab=%s session=%s total=%s", result.order_ref, tab_ref, session.session_key, result.total_q)
+        return _resume_committed_sale(result.order_ref)
+    except Exception as exc:
+        from shopman.shop.services.pos_sale_recovery import _as_error
 
+        raise _as_error(result.order_ref, exc) from exc
+
+
+def _resume_committed_sale(order_ref: str) -> PosSaleResult:
+    from shopman.shop.services.pos_sale_recovery import settle
+
+    try:
+        payment_result = settle(order_ref)
+        order = Order.objects.get(ref=order_ref)
+    except Exception as exc:
+        from shopman.shop.services.pos_sale_recovery import _as_error
+
+        raise _as_error(order_ref, exc) from exc
+    try:
+        from shopman.shop.services import fiscal as fiscal_service
+        from shopman.shop.services.payment_gate import payment_is_captured, requires_captured_payment
+
+        if not requires_captured_payment(order) or payment_is_captured(order):
             fiscal_service.emit(order)
-        except Exception as exc:
-            logger.warning("pos_close_fiscal_emit_failed order=%s", result.order_ref, exc_info=True)
-            _alert_fiscal_emit_failed(result.order_ref, exc)
+    except Exception as exc:
+        logger.warning("pos_close_fiscal_emit_failed order=%s", order_ref, exc_info=True)
+        _alert_fiscal_emit_failed(order_ref, exc)
     return PosSaleResult(
-        order_ref=result.order_ref,
-        total_q=int(order.total_q if order is not None else result.total_q),
+        order_ref=order_ref,
+        total_q=int(order.total_q),
         fiscal_hint=_sale_fiscal_hint(order),
         payment=payment_result,
     )
@@ -627,7 +642,11 @@ def review_sale(
     operator_username: str,
 ) -> PosSaleReview:
     """Validate a POS checkout intent without committing the Orderman session."""
+    from shopman.shop.services.pos_receipt_identity import require_receipt_identity_choice
+
+    payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
+    require_receipt_identity_choice(payload)
     channel, _config = _channel_and_config(channel_ref)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     if session is None and _payload_has_tab_identity(payload):
@@ -640,7 +659,7 @@ def review_sale(
     payment_collection = _payload_payment_collection(payload, fulfillment_type)
     subtotal_q = _payload_subtotal_q(payload)
     line_discount_q = _payload_line_discounts_q(payload)
-    order_discount_q = int(_payload_manual_discount(payload).get("discount_q", 0) or 0)
+    order_discount_q = _payload_applied_order_discount_q(payload)
     discount_q = order_discount_q + line_discount_q
     delivery = _resolve_delivery_fee(payload)
     delivery_fee_q = delivery.fee_q
@@ -678,7 +697,7 @@ def review_sale(
     # Agendado sem cliente é promessa sem destinatário. Aqui é aviso (a review
     # é tela); a recusa de verdade mora em `_require_customer_if_scheduled`,
     # no `close_sale` — mesmo code/field, para a UI apontar o mesmo lugar.
-    if _is_scheduled_for_future(payload) and not _payload_identifies_customer(payload):
+    if _fulfillment_requires_customer(payload) and not _payload_identifies_customer(payload):
         warnings.append({
             "code": "customer_required_for_scheduled",
             "field": "customer_phone",
@@ -740,6 +759,15 @@ def review_sale(
             "field": "payment_tenders",
             "message": "Os pagamentos informados não cobrem o total da venda.",
         })
+
+    pix_warning = _pix_payment_policy_warning(
+        payload,
+        total_q=total_q,
+        payment_method=payment_method,
+        tenders=tenders,
+    )
+    if pix_warning is not None:
+        warnings.append(pix_warning)
 
     approval_reasons = _approval_reasons(discount_q=discount_q, threshold_q=threshold_q)
 
@@ -910,22 +938,13 @@ def _validate_schedule(payload: dict) -> None:
         raise ValueError(error)
 
 
-def _is_scheduled_for_future(payload: dict) -> bool:
-    """A venda é para OUTRO dia? Data de HOJE não conta — estritamente futura.
-
-    Mesmo predicado do lifecycle (`_physical_work_deferred`): `>` e não `>=`,
-    para que a venda de balcão com a data de hoje continue sendo balcão.
-    """
-    from datetime import date as _date
-
-    raw = str(payload.get("delivery_date") or "").strip()
-    if not raw:
-        return False
-    try:
-        return _date.fromisoformat(raw) > timezone.localdate()
-    except ValueError:
-        # Data ilegível é problema de `_validate_schedule`, que roda antes.
-        return False
+def _fulfillment_requires_customer(payload: dict) -> bool:
+    """Data/janela explícita distingue retirada combinada de venda imediata."""
+    return (
+        _payload_fulfillment_type(payload) == "delivery"
+        or bool(str(payload.get("delivery_date") or "").strip())
+        or bool(str(payload.get("delivery_time_slot") or "").strip())
+    )
 
 
 def _payload_identifies_customer(payload: dict) -> bool:
@@ -970,19 +989,8 @@ def _payload_payment_method_set(payload: dict) -> set[str]:
 
 
 def _require_customer_if_scheduled(payload: dict) -> None:
-    """Encomenda para outro dia só com cliente identificado; recusa ANTES do commit.
-
-    O agendado é uma promessa que atravessa dias: se a fornada atrasar, se o
-    item acabar, se a casa fechar — alguém precisa AVISAR alguém. Um pedido
-    agendado 100% anônimo é uma promessa sem destinatário: ninguém para chamar
-    quando algo muda, e ninguém para cobrar quando ninguém aparece.
-
-    A venda de agora segue anônima (o cliente está na frente do operador); a
-    data de HOJE também não conta como agendamento (ver
-    `test_data_de_HOJE_nao_adia_a_venda_de_balcao`). Basta UM identificador:
-    nome, telefone ou cadastro — o balcão não vira formulário.
-    """
-    if not _is_scheduled_for_future(payload):
+    """Pedido combinado, inclusive hoje, e entrega exigem identificação."""
+    if not _fulfillment_requires_customer(payload):
         return
     if _payload_identifies_customer(payload):
         return
@@ -1074,16 +1082,21 @@ def save_pos_tab(
     operator_username: str,
 ) -> PosTabResult:
     """Save the current POS cart on its tab and return to the tab grid."""
+    payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=False).payload
     channel, config = _channel_and_config(channel_ref)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     if session is None:
         raise ValueError("Abra um POS tab antes de deixar em espera.")
 
+    if payload.get("sales_mode") == "order" and payload.get("items"):
+        _validate_schedule(payload)
     before_items = session.items
     tab_ref = _session_tab_ref(session)
     tab_display = _ensure_pos_tab(tab_ref, display=_session_tab_display(session))
     fulfillment_type = _payload_fulfillment_type(payload)
+    if payload.get("sales_mode") == "order" and not payload.get("items") and not payload.get("fulfillment_type"):
+        fulfillment_type = ""
     ops = _replace_session_ops(session, payload, operator_username)
     ops.extend([
         {"op": "set_data", "path": "origin_channel", "value": "pos"},
@@ -1135,9 +1148,9 @@ def clear_pos_tab(*, channel_ref: str, session_key: str, operator_username: str)
         cleared = session_service.abandon_session(session_key=session.session_key, channel_ref=channel_ref)
         if cleared and fired:
             # A cozinha não pode continuar produzindo uma comanda descartada.
-            from shopman.shop.adapters import kds as kds_adapter
+            from shopman.shop.services import kds as kds_service
 
-            cancelled = kds_adapter.cancel_open_tickets_for_session(session.session_key)
+            cancelled = kds_service.cancel_tickets_for_session(session.session_key)
             if cancelled:
                 logger.info(
                     "pos_clear_tab: %d ticket(s) de cozinha cancelados session=%s",
@@ -1314,6 +1327,17 @@ def move_pos_tab_lines(
             focus="cart",
         )
 
+    from shopman.shop.services.pos_sales_mode import sales_mode, session_sales_payload, validate_sales_mode
+
+    if sales_mode(source.data or {}) != sales_mode(target.data or {}):
+        if target_created:
+            session_service.abandon_session(session_key=target.session_key, channel_ref=channel.ref)
+        raise PosIntentError(
+            "sales_mode_transfer_mismatch", "Mova itens apenas entre atendimentos do mesmo modo.",
+            field="to_session_key", focus="cart",
+        )
+    validate_sales_mode(session_sales_payload(target), require_ready=True)
+
     try:
         session_service.move_session_lines(
             from_session_key=source.session_key,
@@ -1417,6 +1441,45 @@ def fire_pos_tab(
             field="session_key",
             focus="cart",
         )
+
+    from shopman.shop.services.pos_sales_mode import session_sales_payload, validate_sales_mode
+
+    validate_sales_mode(session_sales_payload(session), require_ready=True)
+
+    # Uma comanda de encomenda pode ser montada (e até paga) antes do dia
+    # combinado, mas o gesto ``Enviar`` significa trabalho físico AGORA. O
+    # lifecycle do Order já posterga o KDS de encomendas futuras; o disparo
+    # progressivo da comanda é um atalho anterior ao commit e, sem esta mesma
+    # fronteira temporal, furava o lifecycle: criava KDSTicket, emitia SSE e
+    # fazia a cozinha apitar no dia em que o pedido foi anotado.
+    #
+    # A comparação é estrita. No próprio dia o botão volta a funcionar sem
+    # migração nem limpeza de estado — basta repetir o comando, e o ledger do
+    # KDS continua sendo a trava de idempotência.
+    raw_delivery_date = str((session.data or {}).get("delivery_date") or "").strip()
+    if raw_delivery_date:
+        from datetime import date as _date
+
+        try:
+            delivery_day = _date.fromisoformat(raw_delivery_date)
+        except ValueError:
+            delivery_day = None
+        today = timezone.localdate()
+        if delivery_day is not None and delivery_day > today:
+            raise PosIntentError(
+                code="preorder_not_due",
+                message=(
+                    f"Esta encomenda está marcada para {delivery_day.strftime('%d/%m/%Y')}. "
+                    "Envie à cozinha somente no dia combinado."
+                ),
+                field="delivery_date",
+                focus="schedule",
+                recovery="A comanda fica salva e poderá ser enviada nessa data.",
+                context={
+                    "delivery_date": delivery_day.isoformat(),
+                    "today": today.isoformat(),
+                },
+            )
 
     requested = {str(lid).strip() for lid in (line_ids or []) if str(lid).strip()}
     lines = _session_to_fire_lines(session)
@@ -1734,6 +1797,9 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
             op["meta"] = meta
         ops.append(op)
 
+    from shopman.shop.services.pos_receipt_identity import receipt_payload_for_channels
+
+    payload = receipt_payload_for_channels(payload)
     customer_name = str(payload.get("customer_name", "") or "").strip()
     customer_phone = str(payload.get("customer_phone", "") or "").strip()
     customer_tax_id = str(payload.get("customer_tax_id", "") or "").strip()
@@ -1781,6 +1847,9 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
                     "value": customer.price_tier.ref,
                 })
 
+    from shopman.shop.services.pos_sales_mode import sales_mode
+
+    ops.append({"op": "set_data", "path": "pos.sales_mode", "value": sales_mode(payload)})
     fulfillment_type = _payload_fulfillment_type(payload)
     ops.append({"op": "set_data", "path": "fulfillment_type", "value": fulfillment_type})
     # Observações do pedido valem para QUALQUER recebimento (retirada incluída):
@@ -2136,6 +2205,15 @@ def _replace_session_ops(
     return ops
 
 
+def _inherit_sales_mode(channel_ref: str, payload: dict) -> dict:
+    """Omitir o modo não apaga o contrato de uma comanda já marcada."""
+    if not isinstance(payload, dict) or payload.get("sales_mode") is not None:
+        return payload
+    session = _payload_open_tab_session(channel_ref=channel_ref, payload=payload)
+    mode = ((session.data or {}).get("pos") or {}).get("sales_mode") if session is not None else None
+    return {**payload, "sales_mode": mode} if mode else payload
+
+
 def _payload_fulfillment_type(payload: dict) -> str:
     value = str(payload.get("fulfillment_type") or "pickup").strip().lower()
     if value == "delivery":
@@ -2145,13 +2223,94 @@ def _payload_fulfillment_type(payload: dict) -> str:
 
 def _payload_payment_collection(payload: dict, fulfillment_type: str) -> str:
     value = str(payload.get("payment_collection") or "terminal").strip().lower()
-    if fulfillment_type == "delivery" and value == "on_delivery":
+    if value == "on_delivery" and (
+        fulfillment_type == "delivery"
+        or (fulfillment_type == "pickup" and str(payload.get("sales_mode") or "").strip().lower() == "order")
+    ):
         return "on_delivery"
     return "terminal"
 
 
 def _payload_total_q(payload: dict) -> int:
     return max(0, _payload_subtotal_q(payload) - _payload_discount_q(payload) + _payload_delivery_fee_q(payload))
+
+
+def _pix_payment_policy_error(payload: dict, *, total_q: int | None = None):
+    """Return a structured provider-test refusal for this normalized POS intent."""
+    from shopman.shop.services.pix_policy import (
+        PixPaymentPolicyError,
+        enforce_pix_test_amount_limit,
+        pix_payment_constraint,
+        reject_pix_in_mixed_payment,
+    )
+
+    if pix_payment_constraint() is None:
+        return None
+
+    current_total_q = _payload_total_q(payload) if total_q is None else int(total_q)
+    requested = _normalize_payment_method(payload.get("payment_method") or "cash")
+    raw_tenders = [
+        tender
+        for tender in (payload.get("payment_tenders") or [])
+        if isinstance(tender, dict) and _int_q(tender.get("amount_q")) > 0
+    ]
+    contains_pix = requested == "pix" or any(
+        _normalize_payment_method(tender.get("method")) == "pix" for tender in raw_tenders
+    )
+    mixed_pix = contains_pix and (
+        requested == "mixed"
+        or len(raw_tenders) > 1
+        or (raw_tenders and any(_normalize_payment_method(t.get("method")) != "pix" for t in raw_tenders))
+    )
+    try:
+        if mixed_pix:
+            reject_pix_in_mixed_payment(current_amount_q=current_total_q)
+        if contains_pix:
+            enforce_pix_test_amount_limit(current_total_q)
+    except PixPaymentPolicyError as exc:
+        return exc
+    return None
+
+
+def _enforce_pix_payment_policy(payload: dict) -> None:
+    exc = _pix_payment_policy_error(payload)
+    if exc is None:
+        return
+    raise PosIntentError(
+        code=exc.code,
+        message=exc.message,
+        field="payment_tenders" if exc.code == "pix_test_mixed_payment_unsupported" else "payment_method",
+        focus="payment",
+        status=422,
+        recovery=(
+            "Use Pix para o total inteiro ou remova Pix das formas combinadas."
+            if exc.code == "pix_test_mixed_payment_unsupported"
+            else "Troque a forma de pagamento ou ajuste os itens do pedido."
+        ),
+        context=exc.context,
+    )
+
+
+def _pix_payment_policy_warning(
+    payload: dict,
+    *,
+    total_q: int,
+    payment_method: str,
+    tenders: list[dict],
+) -> dict | None:
+    # ``payment_method``/``tenders`` document that this warning is based on the
+    # same normalized review the operator sees.  The policy helper deliberately
+    # rechecks the raw intent too, closing alternate API spellings.
+    del payment_method, tenders
+    exc = _pix_payment_policy_error(payload, total_q=total_q)
+    if exc is None:
+        return None
+    return {
+        "code": exc.code,
+        "field": "payment_tenders" if exc.code == "pix_test_mixed_payment_unsupported" else "payment_method",
+        "message": exc.message,
+        "context": exc.context,
+    }
 
 
 def _payload_subtotal_q(payload: dict) -> int:
@@ -2183,8 +2342,29 @@ def _ensure_resolved_prices(payload: dict) -> None:
 
 
 def _payload_discount_q(payload: dict) -> int:
-    order_discount_q = int(_payload_manual_discount(payload).get("discount_q", 0) or 0)
+    order_discount_q = _payload_applied_order_discount_q(payload)
     return order_discount_q + _payload_line_discounts_q(payload)
+
+
+
+def _payload_applied_order_discount_q(payload: dict) -> int:
+    """Preview the kernel's representable unit-price discount, keeping its ceiling."""
+    from shopman.shop.modifiers import _is_non_merchandise_line, _spread_order_discount
+
+    requested_q = int(_payload_manual_discount(payload).get("discount_q", 0) or 0)
+    if requested_q <= 0:
+        return 0
+    lines = []
+    for item in payload.get("items", []):
+        if _is_non_merchandise_line(item):
+            continue
+        qty = max(0, int(item.get("qty", 1)))
+        if not qty:
+            continue
+        line_gain_q = _payload_line_discounts_q({"items": [item]})
+        unit_q = max(0, int(item.get("unit_price_q", 0)) - line_gain_q // qty)
+        lines.append({"qty": qty, "unit_price_q": unit_q, "line_total_q": qty * unit_q})
+    return sum(amount for _line, _unit, amount in _spread_order_discount(lines, requested_q, at_least=False))
 
 
 def _normalize_line_discount(raw) -> dict:
@@ -2458,28 +2638,6 @@ def _payload_delivery_fee_q(payload: dict) -> int:
     return _resolve_delivery_fee(payload).fee_q
 
 
-def _validate_fiscal_delivery_fee(payload: dict) -> None:
-    """Nota fiscal + taxa de entrega ainda pede conferência no gestor.
-
-    A regra é a de sempre; mudou o lugar. Enquanto a taxa era digitada, o
-    parser do intent conseguia vê-la sem tocar no banco. Agora ela é RESOLVIDA
-    pelo motor de entrega, e só quem resolveu sabe se existe — então a porta
-    mora aqui, ao lado da resolução, em vez de olhar para um campo que o PDV
-    não preenche mais.
-    """
-    if not str(payload.get("fiscal_tax_id") or "").strip():
-        return
-    if _resolve_delivery_fee(payload).fee_q <= 0:
-        return
-    raise PosIntentError(
-        code="fiscal_delivery_fee_pending",
-        message="Fiscal com taxa de entrega ainda exige revisão no gestor.",
-        field="delivery_fee_q",
-        focus="delivery_address",
-        recovery="Finalize sem taxa, ou finalize sem fiscal e reprocesse no gestor após conferência.",
-    )
-
-
 def _validate_payment_completion(payload: dict) -> None:
     total_q = _payload_total_q(payload)
     fulfillment_type = _payload_fulfillment_type(payload)
@@ -2594,19 +2752,20 @@ def _payload_tenders(
             if collection not in {"terminal", "on_delivery"}:
                 collection = payment_collection
             if collection == "on_delivery" and method not in {"cash", "credit", "debit"}:
+                handoff = "retirada" if _payload_fulfillment_type(payload) == "pickup" else "entrega"
                 raise PosIntentError(
                     code="invalid_on_delivery_tender_payment",
-                    message="Na entrega, use dinheiro ou cartão na maquininha.",
+                    message=f"Na {handoff}, use dinheiro ou cartão na maquininha.",
                     field=f"payment_tenders.{len(tenders)}.collection",
                     focus="payment",
-                    recovery="PIX Efí e pagamentos online exigem confirmação automática antes da entrega.",
+                    recovery=f"PIX Efí e pagamentos online exigem confirmação automática antes da {handoff}.",
                 )
             if collection != payment_collection:
                 raise PosIntentError(
                     code="payment_collection_mismatch",
                     message="Todas as formas devem usar o mesmo momento de recebimento.",
                     field="payment_tenders", focus="payment",
-                    recovery="Revise Receber no caixa ou Receber na entrega.",
+                    recovery="Revise Receber no caixa ou Pagamento na retirada/entrega.",
                 )
             entry = {
                 "method": method,
@@ -2841,8 +3000,14 @@ def _settle_pos_sale(order: Order, *, shift, operator_username: str) -> dict:
             }
         order = Order.objects.get(ref=order.ref)
         payment = dict((order.data or {}).get("payment") or {})
+        if not payment.get("intent_ref"):
+            # A linha é imutável: aguardar prova do intent evita gravar uma
+            # venda sem associação e depois perder o vínculo na recuperação.
+            return payment_result or _pos_payment_response(order)
         if method == "link" and payment.get("checkout_url"):
             _send_payment_link(order)
+        elif method == "pix" and payment.get("copy_paste"):
+            _send_payment_pix(order)
         intents = {method: payment["intent_ref"]} if payment.get("intent_ref") else {}
         try:
             _record_sale(order, shift=shift, operator=operator, cash_q=0, payment_ref=intents.get(method, ""), intents=intents)
@@ -2913,6 +3078,16 @@ def _send_payment_link(order: Order) -> None:
         notification.send(order, "payment_link_sent")
     except Exception:
         logger.exception("pos_payment_link_notification_failed order=%s", order.ref)
+
+
+def _send_payment_pix(order: Order) -> None:
+    """Enfileira o PIX somente depois que o gateway gravou o copia-e-cola."""
+    from shopman.shop.services import notification
+
+    try:
+        notification.send(order, notification.PAYMENT_PIX_TEMPLATE)
+    except Exception:
+        logger.exception("pos_payment_pix_notification_failed order=%s", order.ref)
 
 
 def _settle_after_shift_closed(order: Order, *, shift, operator, resettle: bool = True) -> None:
@@ -3309,6 +3484,7 @@ def _ensure_pos_tab(tab_ref: str, display: str = "") -> str:
     return pos_adapter.ensure_tab(ref=tab_ref, display=display or display_tab_ref(tab_ref))
 
 
+@transaction.atomic
 def _mark_tab_committed(
     *,
     order_ref: str,
@@ -3318,7 +3494,7 @@ def _mark_tab_committed(
 ) -> None:
     now = timezone.now().isoformat()
 
-    order = Order.objects.filter(ref=order_ref).first()
+    order = Order.objects.select_for_update().filter(ref=order_ref).first()
     if order is None:
         return
     order_data = dict(order.data or {})
@@ -3440,6 +3616,56 @@ class PosTaxIdOverwriteError(ValueError):
     field = "customer_tax_id"
 
 
+def update_pos_customer_profile(*, customer_ref: str, payload: dict) -> dict:
+    """Atualiza o perfil do balcão sob a cerca canônica do titular.
+
+    A exclusão e todas as mutações pessoais disputam primeiro a linha de
+    ``Customer``. Assim uma requisição que esperou a exclusão não reaproveita a
+    instância lida antes da espera para recriar metadata ou observações.
+    """
+
+    incoming_fiscal = (payload.get("fiscal_prefs") or {}) if "fiscal_prefs" in payload else None
+    if incoming_fiscal is not None and not isinstance(incoming_fiscal, dict):
+        raise ValueError("fiscal_prefs inválido.")
+    if not any(key in payload for key in ("fiscal_prefs", "dietary_restrictions", "notes")):
+        raise ValueError("Nada para atualizar.")
+
+    with transaction.atomic():
+        try:
+            customer = account_service.lock_active_customer(customer_ref=customer_ref)
+        except account_service.AccountUnavailable as exc:
+            raise PosCustomerUnavailable("Cliente não encontrado.") from exc
+
+        updates: list[str] = []
+        metadata = dict(customer.metadata or {})
+        if "fiscal_prefs" in payload:
+            prefs = dict(metadata.get("fiscal_prefs") or {})
+            for key in ("cpf_na_nota", "email_receipt"):
+                if key in (incoming_fiscal or {}):
+                    prefs[key] = bool(incoming_fiscal[key])
+            metadata["fiscal_prefs"] = prefs
+            updates.append("metadata")
+
+        if "dietary_restrictions" in payload:
+            metadata["preferences"] = str(payload.get("dietary_restrictions") or "").strip()
+            if "metadata" not in updates:
+                updates.append("metadata")
+
+        if "notes" in payload:
+            customer.notes = str(payload.get("notes") or "").strip()
+            updates.append("notes")
+
+        if "metadata" in updates:
+            customer.metadata = metadata
+        customer.save(update_fields=[*updates, "updated_at"])
+        return {
+            "ok": True,
+            "fiscal_prefs": dict((customer.metadata or {}).get("fiscal_prefs") or {}),
+            "notes": customer.notes,
+            "dietary_restrictions": str((customer.metadata or {}).get("preferences") or ""),
+        }
+
+
 def resolve_or_create_customer(
     *,
     ref: str = "",
@@ -3448,12 +3674,15 @@ def resolve_or_create_customer(
     tax_id: str = "",
     email: str = "",
     contact_correction: bool = False,
+    name_correction: bool = False,
+    receipt_identity_action: dict | None = None,
     operator_username: str,
 ) -> dict:
     """Get-or-create a POS customer JUST-IN-TIME — when the operator defines them
     on the counter, not deferred to order commit. Resolves by phone/CPF/email or
     creates a fresh record, and returns the customer dict (ref/name/phone/tax_id/
-    email/tier). Idempotent (same identifiers → same customer). Reuses the exact
+    email/tier). Repeated updates use the selected ref. A registration
+    matching an existing identifier requires explicit selection. Reuses the exact
     commit-time logic so the just-in-time customer is identical to the final one.
 
     ⚠️ ``ref`` é o cliente JÁ ASSOCIADO à comanda, e ele não é decoração: sem
@@ -3465,8 +3694,14 @@ def resolve_or_create_customer(
 
     ``contact_correction`` é a permissão explícita do operador para CORRIGIR o
     contato do cliente associado (o telefone digitado errado ontem). Sem ela o
-    merge só preenche lacuna.
+    merge só preenche lacuna. ``name_correction`` tem a mesma natureza, mas é
+    separada: o botão "Salvar cadastro" pode corrigir o nome sem transformar o
+    payload passivo de toda venda em editor de CRM.
     """
+    if receipt_identity_action is not None:
+        from shopman.shop.services.pos_receipt_identity import resolve_receipt_identity
+
+        return resolve_receipt_identity(receipt_identity_action, operator_username=operator_username)
     return _persist_customer_from_payload(
         {
             "customer_ref": ref,
@@ -3475,6 +3710,7 @@ def resolve_or_create_customer(
             "customer_tax_id": tax_id,
             "customer_email": email,
             "customer_contact_correction": contact_correction,
+            "customer_name_correction": name_correction,
         },
         operator_username=operator_username,
     )
@@ -3482,6 +3718,10 @@ def resolve_or_create_customer(
 
 def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> dict:
     """Resolve/create/update a Guestman customer from any POS customer data."""
+    from shopman.shop.services.pos_receipt_identity import receipt_payload_for_channels, require_receipt_identity_choice
+
+    payload = receipt_payload_for_channels(payload)
+    require_receipt_identity_choice(payload)
     name = str(payload.get("customer_name") or "").strip()
     phone = _normalize_phone(str(payload.get("customer_phone") or "").strip())
     # IDENTIDADE — com o que se ACHA o cliente.
@@ -3527,6 +3767,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
     # cliente identificado por REF. Sem ref não há "de quem" para corrigir, e um
     # telefone digitado num formulário nunca vira mudança de identidade sozinho.
     wants_contact_correction = bool(payload.get("customer_contact_correction")) and bool(raw_ref)
+    wants_name_correction = bool(payload.get("customer_name_correction")) and bool(raw_ref)
     # ATUALIZAR o cadastro é ação PRÓPRIA, com nome próprio na tela. Quando o
     # contato do comprovante DIVERGE do que o cadastro já tem, o padrão é não
     # tocar em nada: a nota vai para o informado e o cadastro segue como estava.
@@ -3577,7 +3818,19 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             phone=phone,
             tax_id=resolve_tax_id,
             email=resolve_email,
+            require_selection=bool((name or phone or tax_id or email or payload.get("_receipt_registration")) and not raw_ref),
         )
+        if customer is not None:
+            try:
+                # Customer vem PRIMEIRO. ContactPoint, identificador, endereco e
+                # metadata abaixo so podem nascer enquanto esta linha ativa
+                # estiver travada; a instancia usada passa a ser a releitura
+                # posterior a qualquer espera pela exclusao.
+                customer = account_service.lock_active_customer(customer_pk=customer.pk)
+            except account_service.AccountUnavailable as exc:
+                raise PosCustomerUnavailable(
+                    "O cadastro selecionado não está disponível. Busque o cliente novamente.",
+                ) from exc
         created = customer is None
         # A correção vale para o cadastro que o REF apontou — e para mais
         # ninguém. Se o resolve caiu em outro cliente (ou criou um), corrigir
@@ -3586,6 +3839,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
         correct_phone = corrects_phone and on_associated
         correct_email = corrects_email and on_associated
         correct_tax_id = corrects_tax_id and on_associated
+        correct_name = wants_name_correction and on_associated
         # ⚠️ ANTES de qualquer escrita. ``Customer.save()`` espelha e-mail num
         # ContactPoint e o UNIQUE (type, value_normalized) é GLOBAL: gravar um
         # endereço que já é de outro cadastro estourava IntegrityError lá
@@ -3605,7 +3859,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
         )
         if customer is None:
             first_name, last_name = _split_name(name)
-            fallback = _fallback_customer_name(phone=phone, tax_id=fill_tax_id, email=fill_email)
+            fallback = ("", "") if payload.get("_receipt_registration") else _fallback_customer_name(phone=phone, tax_id=fill_tax_id, email=fill_email)
             customer = Customer.objects.create(
                 ref=Customer.generate_ref(),
                 first_name=first_name or fallback[0],
@@ -3643,6 +3897,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
                 correct_phone=correct_phone,
                 correct_email=correct_email,
                 correct_tax_id=correct_tax_id,
+                correct_name=correct_name,
             )
 
         if phone:
@@ -3681,8 +3936,13 @@ def _remember_fiscal_prefs(customer, payload: dict) -> None:
     lookup projection e pré-seta o toggle fiscal / o canal de e-mail.
     """
     # A preferência lembrada é sobre a NOTA, então lê o campo da nota.
-    wants_fiscal = bool(str(payload.get("fiscal_tax_id") or "").strip())
-    wants_email = "email" in (payload.get("receipt_channels") or [])
+    document_only = {
+        choice["field"] for choice in (payload.get("receipt_identity_choices") or [])
+        if choice.get("choice") == "receipt_only"
+    }
+    # Documento de terceiro não ensina preferências fiscais ao cliente atual.
+    wants_fiscal = "tax_id" not in document_only and bool(str(payload.get("fiscal_tax_id") or "").strip())
+    wants_email = "email" not in document_only and "email" in (payload.get("receipt_channels") or [])
     if not (wants_fiscal or wants_email):
         return
     metadata = dict(customer.metadata or {})
@@ -3758,7 +4018,7 @@ def _guard_receipt_tax_id_overwrite(
     )
 
 
-def _resolve_pos_customer(Customer, *, ref: str, phone: str, tax_id: str, email: str):
+def _resolve_pos_customer(Customer, *, ref: str, phone: str, tax_id: str, email: str, require_selection: bool = False):
     candidates: dict[int, object] = {}
     evidence: dict[int, set[str]] = {}
 
@@ -3769,7 +4029,10 @@ def _resolve_pos_customer(Customer, *, ref: str, phone: str, tax_id: str, email:
         evidence.setdefault(candidate.pk, set()).add(source)
 
     if ref:
-        add(Customer.objects.filter(ref=ref, is_active=True).first(), "ref")
+        selected = Customer.objects.filter(ref=ref, is_active=True).first()
+        if selected is None:
+            raise ValueError("O cadastro selecionado não está disponível. Busque o cliente novamente.")
+        add(selected, "ref")
     if phone:
         from shopman.guestman.services import customer as customer_service
 
@@ -3787,6 +4050,10 @@ def _resolve_pos_customer(Customer, *, ref: str, phone: str, tax_id: str, email:
     if not candidates:
         return None
     if len(candidates) == 1:
+        if require_selection:
+            # Novo cadastro não autoriza reutilizar ou preencher o
+            # cadastro encontrado. O operador deve selecioná-lo explicitamente.
+            raise _pos_customer_conflict(candidates, evidence)
         return next(iter(candidates.values()))
 
     detail = ", ".join(
@@ -3827,8 +4094,8 @@ def _pos_customer_conflict(candidates: dict, evidence: dict) -> PosCustomerConfl
         "Os dados do cliente apontam para cadastros diferentes. "
         "Revise telefone, CPF/CNPJ ou e-mail antes de fechar."
     )
-    if len(intruding) == 1:
-        source = next(iter(intruding))
+    if len(intruding) == 1 or (len(candidates) == 1 and intruding):
+        source = next(source for source in ("phone", "email", "document", "cpf") if source in intruding)
         field, message = _CONFLICT_FIELDS.get(source, ("", message))
 
     rows = [
@@ -3983,6 +4250,7 @@ def _merge_pos_customer_fields(
     correct_phone: bool = False,
     correct_email: bool = False,
     correct_tax_id: bool = False,
+    correct_name: bool = False,
 ) -> None:
     """Preenche LACUNA por padrão; CORRIGE só com a ordem do campo.
 
@@ -3999,10 +4267,10 @@ def _merge_pos_customer_fields(
     first_name, last_name = _split_name(name)
     updates: list[str] = []
 
-    if first_name and _should_refresh_name(customer):
+    if first_name and (correct_name or _should_refresh_name(customer)):
         customer.first_name = first_name
         updates.append("first_name")
-        if last_name:
+        if correct_name or last_name:
             customer.last_name = last_name
             updates.append("last_name")
     elif last_name and not customer.last_name:
@@ -4159,28 +4427,45 @@ def merge_pos_customers(*, source_ref: str, target_ref: str, operator_username: 
     if source_ref == target_ref:
         raise PosCustomerMergeError("Os dois cadastros são o mesmo.")
 
-    # ⚠️ SEM filtro de ativo na busca: o caso que mais pede unificação é
-    # justamente o do dono DESATIVADO segurando o contato. Quem recusa merge de
-    # inativo é o `MergeService`, com a frase dele — não uma busca vazia aqui,
-    # que viraria "cadastro não encontrado" sobre um cadastro que existe.
-    source = Customer.objects.filter(ref=source_ref).first()
-    target = Customer.objects.filter(ref=target_ref).first()
-    if source is None or target is None:
-        raise PosCustomerMergeError("Cadastro não encontrado.")
-
     try:
-        result = MergeService.merge(
-            source,
-            target,
-            evidence={
-                # A chave que o gate G6 conhece. As outras duas são o contexto
-                # da auditoria: quem disse, e de onde.
-                "staff_override": True,
-                "operator_confirmed": True,
-                "source_surface": "pdv",
-            },
-            actor=operator_username or "pdv",
-        )
+        with transaction.atomic():
+            # As duas linhas de Customer vêm antes de qualquer filho movido
+            # pelo MergeService. A ordem por PK é estável inclusive quando dois
+            # operadores tentam unificações invertidas.
+            locked = list(
+                Customer.objects.select_for_update()
+                .filter(ref__in=(source_ref, target_ref))
+                .order_by("pk")
+            )
+            by_ref = {customer.ref: customer for customer in locked}
+            source = by_ref.get(source_ref)
+            target = by_ref.get(target_ref)
+            if source is None or target is None:
+                raise PosCustomerMergeError("Cadastro não encontrado.")
+            # Revalida DEPOIS da espera. Sem isto uma exclusão vencedora deixava
+            # o merge mover contatos/endereços usando as instâncias antigas.
+            if not source.is_active:
+                raise PosCustomerMergeError(
+                    "O cadastro que sairia já está desativado. Unifique na outra direção.",
+                )
+            if not target.is_active:
+                raise PosCustomerMergeError(
+                    "O cadastro que ficaria está desativado. Reative-o antes de unificar.",
+                )
+
+            result = MergeService.merge(
+                source,
+                target,
+                evidence={
+                    # A chave que o gate G6 conhece. As outras duas são o contexto
+                    # da auditoria: quem disse, e de onde.
+                    "staff_override": True,
+                    "operator_confirmed": True,
+                    "source_surface": "pdv",
+                },
+                actor=operator_username or "pdv",
+            )
+            target.refresh_from_db()
     except GateError as exc:
         # A frase do Core é de engenharia e em inglês; o balcão lê português.
         logger.warning("pos_customer_merge_denied gate=%s", exc, exc_info=True)
@@ -4204,7 +4489,6 @@ def merge_pos_customers(*, source_ref: str, target_ref: str, operator_username: 
         operator_username,
         result.audit_id,
     )
-    target.refresh_from_db()
     return {
         "source_ref": result.source_ref,
         "target_ref": result.target_ref,

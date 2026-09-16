@@ -13,7 +13,9 @@ backoff. Conversa que não existe é terminal: não há o que tentar.
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
+from django.utils import timezone
 from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
 from shopman.orderman.models import Directive
 
@@ -41,19 +43,22 @@ def _is_transient(exc: BaseException) -> bool:
 
 
 class ConciergeTurnHandler:
-    """Responde a conversa apontada em ``payload["conversation_id"]``."""
+    """Responde pelo vínculo causal indicado pela diretiva v3."""
 
     topic = service.TURN_TOPIC
 
     def handle(self, *, message: Directive, ctx: dict) -> None:
         payload = message.payload or {}
+        if payload.get("contract_version") != 3:
+            raise DirectiveTerminalError("unsupported concierge contract")
         conversation_id = payload.get("conversation_id")
-        if not conversation_id:
-            raise DirectiveTerminalError("missing conversation_id")
+        binding_id = payload.get("binding_id")
+        if not conversation_id or not binding_id:
+            raise DirectiveTerminalError("missing conversation_id or binding_id")
 
         for loop in range(1, MAX_LOOPS + 1):
             try:
-                result = service.run_turn(int(conversation_id))
+                result = service.run_turn(int(conversation_id), int(binding_id))
             except Conversation.DoesNotExist as exc:
                 raise DirectiveTerminalError(f"Conversation not found: {conversation_id}") from exc
             except Exception as exc:
@@ -62,11 +67,17 @@ class ConciergeTurnHandler:
                 raise
             if not result.pending_more:
                 return
+            if not result.processed_message_ids:
+                # O turno não concluiu (claim ocupado ou contexto revogado).
+                # Devolver a diretiva à fila sem repetir trabalho velho em loop.
+                break
             logger.info(
                 "concierge.turn: mensagens novas durante o turno, rodando de novo (%d/%d) conversation=%s",
                 loop, MAX_LOOPS, conversation_id,
             )
-        logger.warning(
-            "concierge.turn: teto de %d turnos seguidos na conversa %s; o resto fica para a próxima mensagem",
-            MAX_LOOPS, conversation_id,
-        )
+        # Deferir a MESMA Directive: fairness sem consumir tentativas nem criar
+        # outra fila. O dispatcher preserva status alterado pelo handler.
+        message.status = "queued"
+        message.available_at = timezone.now() + timedelta(seconds=1)
+        message.attempts = 0
+        message.save(update_fields=["status", "available_at", "attempts", "updated_at"])

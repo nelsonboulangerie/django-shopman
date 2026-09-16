@@ -17,6 +17,7 @@ from shopman.craftsman.contrib.formula.percentages import (
     derive_bom,
     item_grams,
     looks_like_flour,
+    reference_for,
     scale,
     standardize,
     validate_formula,
@@ -370,6 +371,23 @@ class TestReferences:
     def test_references_only_speak_with_the_flour_anchor(self):
         analysis = analyze({"anchor": {"kind": "total"}, "items": tradicao()["items"]})
         assert check_references(analysis, "bread") == []
+
+    def test_cookie_does_not_inherit_bread_hydration_or_salt_ranges(self):
+        formula = {
+            "anchor": {"kind": "flour"},
+            "items": [
+                {"sku": "FARINHA-T45", "name": "Farinha T45", "role": "flour", "quantity": 500, "unit": "g"},
+                {"sku": "MANTEIGA", "name": "Manteiga", "role": "fat", "quantity": 250, "unit": "g"},
+                {"sku": "ACUCAR", "name": "Açúcar", "role": "sugar", "quantity": 200, "unit": "g"},
+                {"sku": "OVOS", "name": "Ovos", "role": "egg", "quantity": 50, "unit": "g"},
+            ],
+        }
+        analysis = analyze(formula)
+
+        assert analysis.hydration_pct == Decimal("0")
+        assert reference_for("hydration_pct", "cookie") is None
+        assert reference_for("salt_pct", "cookie") is None
+        assert check_references(analysis, "cookie") == []
 
 
 # ── Schema ───────────────────────────────────────────────────────────────────

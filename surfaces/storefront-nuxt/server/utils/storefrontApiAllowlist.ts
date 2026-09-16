@@ -10,6 +10,7 @@ const STOREFRONT_API_PREFIXES = [
   'offers/',
   'orders/',
   'payment/',
+  'stock-alert/',
   'storefront/',
   'tracking/',
 ]

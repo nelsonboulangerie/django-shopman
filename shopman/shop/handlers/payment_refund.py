@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 
-from shopman.orderman.dispatch import MAX_ATTEMPTS
 from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
 from shopman.orderman.models import Directive
 
@@ -24,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 class PaymentRefundHandler:
     topic = PAYMENT_REFUND
+    retry_delays_seconds = (30, 60, 120, 300, 600, 900, 1800)
 
     def handle(self, *, message: Directive, ctx: dict) -> None:
         from shopman.orderman.models import Order
@@ -51,7 +51,7 @@ class PaymentRefundHandler:
             # Última tentativa (attempts é incrementado ANTES do handle): o engine vai
             # marcar failed. Alerta o operador antes de propagar — o dinheiro pode
             # estar retido e ninguém mais avisa.
-            if message.attempts >= MAX_ATTEMPTS:
+            if message.attempts >= len(self.retry_delays_seconds) + 1:
                 intent_ref = (order.data or {}).get("payment", {}).get("intent_ref")
                 payment.alert_refund_failed(
                     order, intent_ref, payload.get("amount_q"),

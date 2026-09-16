@@ -94,6 +94,22 @@ def test_internal_state_never_becomes_a_customer_field(calls, with_flow):
     assert "product_name" in fields
 
 
+def test_stock_management_capability_is_persisted_only_in_purpose_scoped_note(calls, with_flow):
+    capability = "https://shop.example/gerenciar-aviso#opaque-capability"
+    mc.send(
+        "+5543984049009",
+        "order_accepted",
+        {
+            "management_url": capability,
+            "management_note": f"Gerenciar este aviso: {capability}",
+        },
+    )
+
+    fields = _field_payloads(calls)
+    assert "management_url" not in fields
+    assert fields["management_note"] == f"Gerenciar este aviso: {capability}"
+
+
 def test_empty_values_are_not_written(calls, with_flow):
     """`deadline_note` vazio é o caso normal do "me avise": não sobrescreve com nada."""
     mc.send(

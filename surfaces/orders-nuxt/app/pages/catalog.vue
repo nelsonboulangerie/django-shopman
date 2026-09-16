@@ -428,7 +428,7 @@ function assistFor(sku: Ref<string | null>) {
 }
 const detailAssist = assistFor(detailSku);
 
-useHead({ title: "Catálogo · Gestor" });
+useHead({ title: "Catálogo" });
 </script>
 
 <template>
@@ -762,6 +762,8 @@ useHead({ title: "Catálogo · Gestor" });
                     <span class="inline-block size-3 rounded-full bg-white shadow-sm transition-transform" :class="cell.is_sellable ? 'translate-x-3.5' : 'translate-x-0.5'"></span>
                   </span>
                 </button>
+
+                <span v-if="cell.pause_audit" class="max-w-40 text-xs text-muted-foreground">{{ cell.pause_audit }}</span>
 
                 <!-- Feed não vende: sem divisória nem preço — só a pausa por item. -->
                 <template v-if="isCellTransactional(cell)">

@@ -15,6 +15,7 @@ import json
 
 import pytest
 
+from shopman.storefront.tests._checkout_auth import authenticate_checkout
 from shopman.storefront.tests._checkout_baseline import with_baseline
 
 pytestmark = pytest.mark.django_db
@@ -84,6 +85,7 @@ def test_serializer_error_is_canonicalized(cart_session):
     """A missing required field must be converted by the custom EXCEPTION_HANDLER
     into ``{detail, field, errors}`` — the raw DRF ``{"name": [...]}`` never
     reaches the client."""
+    authenticate_checkout(cart_session)
     resp = cart_session.post(
         "/api/v1/checkout/",
         data=json.dumps({"phone": "+5543999990001", "fulfillment_type": "pickup"}),  # no name
@@ -101,10 +103,11 @@ def test_serializer_error_is_canonicalized(cart_session):
 def test_business_400_has_field_and_errors(cart_session):
     """A business validation error (checkout requiring a date) carries the field
     router and the errors map for inline rendering."""
+    authenticate_checkout(cart_session)
     resp = cart_session.post(
         "/api/v1/checkout/",
         data=json.dumps(with_baseline(cart_session, {
-            "name": "Ana", "phone": "+5543999990001",
+            "name": "Ana", "phone": "+5543999990001", "payment_method": "cash",
             "fulfillment_type": "delivery", "delivery_address": "Rua X 1",
             # no delivery_date → triggers "Escolha a data."
         })),

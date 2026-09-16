@@ -52,6 +52,8 @@ class ManychatService:
         Returns:
             Tuple of (Customer, created: bool)
         """
+        if not isinstance(subscriber_data, dict):
+            raise ValueError("Subscriber data must be an object")
         manychat_id = subscriber_data.get("id")
         if not manychat_id:
             raise ValueError("Subscriber data must contain 'id' field")
@@ -62,6 +64,7 @@ class ManychatService:
             customer = cls._find_by_manychat_id(manychat_id)
 
             if customer:
+                customer = cls._lock_active_customer(customer.pk)
                 if not customer.phone and not incoming_phone:
                     raise ValueError(UNIDENTIFIED_SUBSCRIBER)
                 # Update existing customer
@@ -73,6 +76,7 @@ class ManychatService:
             customer = cls._find_by_identifiers(subscriber_data)
 
             if customer:
+                customer = cls._lock_active_customer(customer.pk)
                 if not customer.phone and not incoming_phone:
                     raise ValueError(UNIDENTIFIED_SUBSCRIBER)
                 # Link Manychat ID to existing customer
@@ -124,7 +128,13 @@ class ManychatService:
             value = subscriber_data.get(field)
             if value is None:
                 continue
-            opted_in = bool(value)
+            if type(value) is bool:
+                opted_in = value
+            elif isinstance(value, str) and value.strip().lower() in ("true", "false"):
+                opted_in = value.strip().lower() == "true"
+            else:
+                # Valor malformado não concede nem revoga por coerção Python.
+                continue
             try:
                 if opted_in:
                     ConsentService.grant_consent(customer.ref, channel, source="manychat")
@@ -148,11 +158,24 @@ class ManychatService:
     ) -> Customer:
         """Bind trusted ManyChat/access-link identity data to a known customer."""
         with transaction.atomic():
-            customer = Customer.objects.select_for_update().get(pk=customer.pk)
+            customer = cls._lock_active_customer(customer.pk)
             cls._add_manychat_identifiers(customer, subscriber_data, source_system)
             cls._update_customer(customer, subscriber_data, source_system=source_system)
             customer.refresh_from_db()
             return customer
+
+    @staticmethod
+    def _lock_active_customer(customer_pk: int) -> Customer:
+        """Acquire the canonical privacy fence before any identity write."""
+
+        customer = (
+            Customer.objects.select_for_update()
+            .filter(pk=customer_pk, is_active=True)
+            .first()
+        )
+        if customer is None:
+            raise ValueError("Customer is inactive.")
+        return customer
 
     @classmethod
     def _find_by_manychat_id(cls, manychat_id: str) -> Customer | None:
@@ -177,7 +200,7 @@ class ManychatService:
                     identifier_value=phone,
                 )
                 return ident.customer if ident.customer.is_active else None
-            except CustomerIdentifier.DoesNotExist:
+            except CustomerIdentifier.DoesNotExist:  # silêncio-deliberado: identificador opcional ausente; tentar a próxima fonte canônica
                 pass
             customer = Customer.objects.filter(phone=phone, is_active=True).first()
             if customer:
@@ -196,7 +219,7 @@ class ManychatService:
                     identifier_value=email,
                 )
                 return ident.customer if ident.customer.is_active else None
-            except CustomerIdentifier.DoesNotExist:
+            except CustomerIdentifier.DoesNotExist:  # silêncio-deliberado: identificador opcional ausente; tentar a próxima fonte canônica
                 pass
             customer = Customer.objects.filter(email=email, is_active=True).first()
             if customer:
@@ -210,7 +233,7 @@ class ManychatService:
                     identifier_value=phone,
                 )
                 return ident.customer if ident.customer.is_active else None
-            except CustomerIdentifier.DoesNotExist:
+            except CustomerIdentifier.DoesNotExist:  # silêncio-deliberado: identificador opcional ausente; tentar a próxima fonte canônica
                 pass
             customer = Customer.objects.filter(phone=phone, is_active=True).first()
             if customer:

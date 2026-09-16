@@ -1,0 +1,4 @@
+................................................................s        [100%]
+=========================== short test summary info ============================
+SKIPPED [1] shopman/shop/tests/test_directive_dedupe.py:169: Requires PostgreSQL for real concurrency testing
+64 passed, 1 skipped in 5.19s

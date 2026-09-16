@@ -89,9 +89,21 @@ class MergeService:
             )
 
         with transaction.atomic():
-            # Lock both rows to prevent concurrent modifications
-            source = Customer.objects.select_for_update().get(pk=source_customer.pk)
-            target = Customer.objects.select_for_update().get(pk=target_customer.pk)
+            # Lock both canonical rows in deterministic order before any child.
+            # The checks above were only hints: deletion may have won while this
+            # request waited, so active state must be revalidated under lock.
+            locked = {
+                customer.pk: customer
+                for customer in Customer.objects.select_for_update()
+                .filter(pk__in=(source_customer.pk, target_customer.pk))
+                .order_by("pk")
+            }
+            source = locked.get(source_customer.pk)
+            target = locked.get(target_customer.pk)
+            if source is None or not source.is_active:
+                raise CustomerError("MERGE_FAILED", message="Source customer is inactive.")
+            if target is None or not target.is_active:
+                raise CustomerError("MERGE_FAILED", message="Target customer is inactive.")
 
             # Snapshot tracks migrated PKs for undo
             snapshot: dict[str, list] = {}
@@ -182,8 +194,24 @@ class MergeService:
             )
 
         with transaction.atomic():
-            source = Customer.objects.select_for_update().get(pk=audit.source_id)
-            target = Customer.objects.select_for_update().get(pk=audit.target_id)
+            # MergeAudit's historical UUID fields store the integer Customer PK
+            # encoded as a UUID.  Convert explicitly before building the lock
+            # map; comparing the UUID object to integer dict keys always misses.
+            source_pk = int(audit.source_id)
+            target_pk = int(audit.target_id)
+            locked = {
+                customer.pk: customer
+                for customer in Customer.objects.select_for_update()
+                .filter(pk__in=(source_pk, target_pk))
+                .order_by("pk")
+            }
+            source = locked.get(source_pk)
+            target = locked.get(target_pk)
+            if source is None or target is None or not target.is_active:
+                raise CustomerError(
+                    "UNDO_FAILED",
+                    message="Merge participants are no longer available.",
+                )
 
             snapshot = audit.snapshot
 
@@ -211,7 +239,7 @@ class MergeService:
                         customer=source,
                     )
                 except ImportError:
-                    pass
+                    logger.warning("Merge optional component unavailable: identifiers; related operation was not performed")
 
             # Revert addresses
             addr_pks = snapshot.get("addresses", [])
@@ -230,7 +258,7 @@ class MergeService:
                         customer=source,
                     )
                 except ImportError:
-                    pass
+                    logger.warning("Merge optional component unavailable: preferences; related operation was not performed")
 
             # Revert consents (only non-conflicting ones that were moved)
             consent_pks = snapshot.get("consents_moved", [])
@@ -242,7 +270,7 @@ class MergeService:
                         customer=source,
                     )
                 except ImportError:
-                    pass
+                    logger.warning("Merge optional component unavailable: consent; related operation was not performed")
 
             # Revert timeline events
             te_pks = snapshot.get("timeline_events", [])
@@ -254,7 +282,7 @@ class MergeService:
                         customer=source,
                     )
                 except ImportError:
-                    pass
+                    logger.warning("Merge optional component unavailable: timeline; related operation was not performed")
 
             # Revert order identity links
             order_snapshots = snapshot.get("orders", [])
@@ -269,7 +297,7 @@ class MergeService:
                             data=order_snapshot.get("data") or {},
                         )
                 except ImportError:
-                    pass
+                    logger.warning("Merge optional component unavailable: orderman; related operation was not performed")
 
             # NOTE: Loyalty is NOT reverted automatically — too complex.
             # Manual adjustment via LoyaltyService if needed.
@@ -668,7 +696,10 @@ class MergeService:
 
         moved: list[dict] = []
         migrated = 0
-        for order in Order.objects.select_for_update().filter(identity_query).distinct():
+        # Identity predicates use only Order columns/JSON, so each row appears
+        # once even when several predicates match. DISTINCT is unnecessary and
+        # PostgreSQL rejects it together with FOR UPDATE; keep the row lock.
+        for order in Order.objects.select_for_update().filter(identity_query):
             previous = {
                 "pk": order.pk,
                 "handle_type": order.handle_type,
@@ -824,7 +855,7 @@ class MergeService:
 
             InsightService.recalculate(target.ref)
         except ImportError:
-            pass
+            logger.warning("Merge optional component unavailable: insights; related operation was not performed")
         except Exception as exc:
             # Non-fatal — insights can be recalculated later
             logger.warning(
@@ -863,7 +894,7 @@ class MergeService:
                 created_by=actor,
             )
         except ImportError:
-            pass
+            logger.warning("Merge optional component unavailable: timeline; related operation was not performed")
 
     @classmethod
     def _log_undo_event(
@@ -889,4 +920,4 @@ class MergeService:
                 created_by=actor,
             )
         except ImportError:
-            pass
+            logger.warning("Merge optional component unavailable: timeline; related operation was not performed")

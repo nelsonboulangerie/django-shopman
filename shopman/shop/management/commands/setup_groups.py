@@ -151,7 +151,7 @@ class Command(BaseCommand):
                 # A configuração inteira se lê; muda o que é do turno dela.
                 # Regra de preço continua atrás de `manage_rules` (WP-GAP-06):
                 # ela executa expressão, e isso é portão de segurança.
-                *_ver("shop"), *_escrever("shop", "promotion", "coupon", "omotenashicopy"),
+                *_ver("shop"), *_escrever("shop", "promotion", "coupon", "omotenashicopy", "faqentry"),
                 # O terminal do balcão ("Equipamentos") — ela cadastra a estação.
                 *_ver("cashman", "terminal"), *_escrever("cashman", "terminal"),
                 # A estação de KDS pelo mesmo motivo do terminal: cadastrar o ponto de

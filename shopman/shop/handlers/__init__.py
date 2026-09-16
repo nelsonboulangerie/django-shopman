@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 # ── ALL_HANDLERS — single source of truth ──
 
 ALL_HANDLERS = [
+    "shopman.shop.handlers.checkout.CheckoutConvenienceHandler",
     # Lifecycle
     "shopman.shop.handlers.lifecycle_phase.LifecyclePhaseHandler",
     "shopman.shop.handlers.confirmation.ConfirmationTimeoutHandler",
@@ -51,6 +52,7 @@ ALL_HANDLERS = [
     "shopman.shop.handlers.courier_sync.CourierSyncHandler",
     # Notification
     "shopman.shop.handlers.notification.NotificationSendHandler",
+    "shopman.shop.handlers.notification_push.NotificationPushHandler",
     # Returns
     "shopman.shop.handlers.returns.ReturnHandler",
     # Loyalty
@@ -85,6 +87,8 @@ ALL_HANDLERS = [
 
 def register_all() -> None:
     """Register all directive handlers, modifiers, validators, and signals."""
+    from shopman.shop.handlers.checkout import CheckoutConvenienceHandler
+    registry.register_directive_handler(CheckoutConvenienceHandler())
     _register_notification_handlers()
     _register_confirmation_handler()
     from shopman.shop.handlers.lifecycle_phase import LifecyclePhaseHandler
@@ -109,22 +113,34 @@ def register_all() -> None:
     _register_stock_signals()
     _register_production_alerts()
     _register_production_order_sync()
+    _register_cancellation_request_signals()
     _register_sse_emitters()
     _register_catalog_projection_handler()
     _register_catalog_signals()
     _register_ifood_status_callbacks()
+    from shopman.shop.handlers.ifood_handshake import IFoodHandshakeResponseHandler
+
+    registry.register_directive_handler(IFoodHandshakeResponseHandler())
     _register_campaign()
 
 
 # ── Individual registrations ──
 
 
+def _register_cancellation_request_signals() -> None:
+    from shopman.shop.handlers import cancellation_requests
+
+    cancellation_requests.connect()
+
+
 def _register_notification_handlers() -> None:
     from shopman.shop.adapters import notification_email, notification_manychat
     from shopman.shop.handlers.notification import NotificationSendHandler
+    from shopman.shop.handlers.notification_push import NotificationPushHandler
     from shopman.shop.notifications import register_backend
 
     registry.register_directive_handler(NotificationSendHandler())
+    registry.register_directive_handler(NotificationPushHandler())
     register_backend("email", notification_email)
     register_backend("manychat", notification_manychat)
     if "console" in (getattr(settings, "SHOPMAN_NOTIFICATION_ADAPTERS", {}) or {}):

@@ -1,0 +1,11 @@
+{
+  "yaml_valid": true,
+  "existing_envs_preserved": true,
+  "domains_routes_components_preserved": true,
+  "new_keys": [
+    "CONCIERGE_ACCOUNT_ID",
+    "CONCIERGE_CONTRACT_VERSION"
+  ],
+  "contract_version": 0,
+  "source": "verified existing account, no activation"
+}

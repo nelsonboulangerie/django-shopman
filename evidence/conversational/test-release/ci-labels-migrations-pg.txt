@@ -1,0 +1,5 @@
+AUDIT_IMPORTS ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-release-20260911/packages/orderman/shopman/orderman'] ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-release-20260911/packages/guestman/shopman/guestman']
+........................................................................ [ 41%]
+........................................................................ [ 83%]
+............................                                             [100%]
+172 passed in 18.30s

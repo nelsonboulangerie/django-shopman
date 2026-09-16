@@ -16,7 +16,7 @@ const {
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
-useHead({ title: "Marketing" });
+useOperatorWindowTitle("Marketing");
 
 watch(sessionState, async (next, previous) => {
   if (next !== "authenticated" || previous === "authenticated") return;
@@ -47,6 +47,7 @@ watch(sessionState, async (next, previous) => {
         <div class="sticky top-0 flex h-screen shrink-0 print:hidden">
           <OperatorRail
             app-icon="megaphone"
+            app-icon-src="/pwa/pwa-64x64.png?v=2"
             app-label="Marketing"
             :central-url="hubUrl"
             :operator-name="operator?.name"
@@ -133,6 +134,7 @@ watch(sessionState, async (next, previous) => {
       />
       <OperatorLock v-else :perm="OPERATOR_PERM" />
       <OperatorSonner />
+      <OperatorPwaRuntime />
     </div>
   </NuxtPage>
 </template>

@@ -9,8 +9,11 @@ A estação confiável é o oposto disso: uma chave que só abre a antessala.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from django.test import Client
+from django.utils import timezone
 from shopman.doorman.models.device_trust import SubjectType, TrustedDevice
 
 from shopman.backstage import station_trust
@@ -23,11 +26,13 @@ class _Resposta:
 
     def __init__(self):
         self.cookies = {}
+        self.deleted = []
 
     def set_cookie(self, nome, valor, **kw):
         self.cookies[nome] = valor
 
     def delete_cookie(self, nome, **kw):
+        self.deleted.append(nome)
         self.cookies.pop(nome, None)
 
 
@@ -53,21 +58,66 @@ def test_provisionado_uma_vez_o_dispositivo_se_identifica_sozinho(client):
     assert station_trust.is_trusted_station(_req(client)) is True
 
 
-def test_um_computador_pode_ser_DUAS_estacoes(client):
-    """Balcão e totem no mesmo dispositivo: o nome do cookie carrega o ref.
+def test_dois_vinculos_legados_nao_escolhem_gaveta_por_ordem_do_cookie(client):
+    """O estado legado fica travado até um gestor escolher explicitamente."""
+    _confia_sem_reparar(client, "balcao")
+    _confia_sem_reparar(client, "totem")
 
-    Com um nome só, provisionar o segundo sobrescreveria o token do primeiro e os
-    dois se derrubariam em revezamento — foi o defeito que o quadro de menu já
-    teve, e a razão de o nome levar o ``subject_id``.
-    """
-    _provisiona(client, "balcao")
-    _provisiona(client, "totem")
-
-    assert station_trust.station_ref(_req(client)) in {"balcao", "totem"}
+    # Ambos os vínculos existem; nenhum escolhe implicitamente a gaveta.
+    assert station_trust.station_ref(_req(client)) == ""
     from shopman.doorman.services.device_trust import DeviceTrustService
 
     assert DeviceTrustService.check(_req(client), SubjectType.STATION, "balcao")
     assert DeviceTrustService.check(_req(client), SubjectType.STATION, "totem")
+
+
+def test_escolha_explicita_repara_dois_vinculos_e_revoga_o_descartado(client):
+    _confia_sem_reparar(client, "balcao")
+    _confia_sem_reparar(client, "totem")
+
+    resposta = _Resposta()
+    station_trust.provision(_req(client), resposta, "totem")
+
+    assert station_trust.station_cookie_name("balcao") in resposta.deleted
+    assert station_trust.station_ref(_req(client)) == "totem"
+    assert not TrustedDevice.objects.get(subject_id="balcao").is_valid
+    assert TrustedDevice.objects.get(subject_id="totem").is_valid
+
+
+def test_reparo_sem_vinculo_cria_somente_a_escolha(client):
+    resposta = _Resposta()
+
+    station_trust.provision(_req(client), resposta, "balcao")
+
+    assert list(TrustedDevice.objects.values_list("subject_id", flat=True)) == ["balcao"]
+    assert station_trust.station_cookie_name("balcao") in resposta.cookies
+
+
+def test_reparo_limpa_cookie_expirado(client):
+    nome = _confia_sem_reparar(client, "antigo")
+    TrustedDevice.objects.filter(subject_id="antigo").update(
+        expires_at=timezone.now() - timedelta(seconds=1)
+    )
+    resposta = _Resposta()
+
+    station_trust.provision(_req(client), resposta, "novo")
+
+    assert nome in resposta.deleted
+    assert TrustedDevice.objects.get(subject_id="antigo").is_valid is False
+    assert TrustedDevice.objects.get(subject_id="novo").is_valid is True
+
+
+def test_reparo_nao_revoga_token_de_outro_tipo_disfarcado_de_estacao(client):
+    dispositivo, token = TrustedDevice.create_for(SubjectType.DISPLAY, "menu")
+    nome = station_trust.station_cookie_name("intruso")
+    client.cookies[nome] = token
+
+    resposta = _Resposta()
+    station_trust.provision(_req(client), resposta, "balcao")
+
+    dispositivo.refresh_from_db()
+    assert dispositivo.is_valid
+    assert nome in resposta.deleted
 
 
 def test_a_confianca_de_uma_estacao_nao_serve_para_outra(client):
@@ -125,3 +175,11 @@ def test_estacao_sem_terminal_e_recusada():
 
 def _req(cliente: Client):
     return type("R", (), {"COOKIES": {k: v.value for k, v in cliente.cookies.items()}, "META": {}})()
+
+
+def _confia_sem_reparar(cliente: Client, ref: str) -> str:
+    """Cria o estado legado sem passar pelo provisionamento reparador."""
+    _, token = TrustedDevice.create_for(SubjectType.STATION, ref)
+    nome = station_trust.station_cookie_name(ref)
+    cliente.cookies[nome] = token
+    return nome

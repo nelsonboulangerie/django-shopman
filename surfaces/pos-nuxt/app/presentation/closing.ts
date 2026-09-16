@@ -22,7 +22,7 @@ export function closingBadge(classification: string): ClosingBadge {
     return { label: "Vira perda", css: "border-destructive/50 bg-destructive/10 text-destructive" };
   }
   if (classification === "mixed") {
-    return { label: "Parte vence", css: "border-warning/50 bg-warning/10 text-amber-700 dark:text-amber-400" };
+    return { label: "Parte vence", css: "border-warning/50 bg-warning/10 text-warning" };
   }
   return { label: "Fica", css: "border-border bg-muted text-muted-foreground" };
 }

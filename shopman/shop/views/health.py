@@ -40,6 +40,7 @@ _PROBE_RATE_LIMIT = 600
 _PROBE_RATE_WINDOW_SECONDS = 60
 _PROBE_RATE_MAX_CLIENTS = 2048
 _QUEUE_STALE_SECONDS = 30
+_WORKER_PROBE_STARTED_AT = timezone.now()
 
 
 @dataclass(slots=True)
@@ -126,6 +127,29 @@ def _check_migrations() -> tuple[str, str | None]:
     return "ok", None
 
 
+
+def _check_required_workers(now) -> tuple[str, str | None]:
+    from shopman.orderman import worker_heartbeat
+
+    # Local in-memory cache cannot observe a separate worker process. Shared
+    # runtimes require both loops, independently of the current queue length.
+    shared_cache = settings.CACHES.get("default", {}).get("BACKEND", "") != _LOCMEM_BACKEND
+    required = getattr(settings, "SHOPMAN_REQUIRED_WORKERS", None)
+    if required is None:
+        required = (worker_heartbeat.PROCESS_DIRECTIVES_WORKER, "maintenance_worker") if shared_cache else ()
+    grace = max(0, int(getattr(settings, "SHOPMAN_WORKER_STARTUP_GRACE_SECONDS", 180)))
+    stale = timedelta(minutes=max(1, int(getattr(settings, "SHOPMAN_WORKER_HEARTBEAT_STALE_MINUTES", 15))))
+    for name in required:
+        last = worker_heartbeat.last_beat(name)
+        if last is None:
+            if now - _WORKER_PROBE_STARTED_AT < timedelta(seconds=grace):
+                continue
+            return "fail", "worker_missing"
+        if now - last > stale:
+            return "fail", "worker_stale"
+    return "ok", None
+
+
 def _check_queue() -> tuple[str, str | None]:
     """Check durable queue freshness without invoking an outbound adapter."""
 
@@ -137,6 +161,9 @@ def _check_queue() -> tuple[str, str | None]:
     now = timezone.now()
     cutoff = now - timedelta(seconds=_QUEUE_STALE_SECONDS)
     try:
+        workers = _check_required_workers(now)
+        if workers[0] == "fail":
+            return workers
         directive_stale = Directive.objects.filter(
             status="queued",
             available_at__lte=cutoff,

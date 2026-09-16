@@ -1,0 +1,21 @@
+
+> test
+> vitest run --run --maxWorkers=2
+
+(node:57166) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+ RUN  v4.1.6 /private/tmp/shopman-storefront-execution-20260910/surfaces/storefront-nuxt
+
+(node:57196) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:57197) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:57202) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ Test Files  59 passed (59)
+      Tests  548 passed (548)
+   Start at  05:46:05
+   Duration  10.47s (transform 4.37s, setup 572ms, import 5.71s, tests 6.95s, environment 2.78s)
+

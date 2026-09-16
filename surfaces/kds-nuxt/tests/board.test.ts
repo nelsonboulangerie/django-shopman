@@ -46,16 +46,21 @@ const ticket = (
   ],
   status: "in_progress",
   all_checked: false,
+  previous_tab_ref: "",
+  is_scheduled: false,
   status_label: "",
   is_cancelled: false,
   cancelled_at_display: "",
+  completed_at_display: "",
+  kitchen_note: "",
+  customer_note: "",
   is_expedition: false,
   ...over,
 });
 
 const expedition = (): KDSExpeditionCardProjection => ({
   pk: 9,
-  ref: "WHATS-9",
+  order_ref: "WHATS-9",
   channel_icon: "store",
   customer_name: "Beto",
   fulfillment_icon: "bike",
@@ -64,6 +69,8 @@ const expedition = (): KDSExpeditionCardProjection => ({
   units_count: "3",
   line_count: 2,
   total_display: "R$ 30,00",
+  items: [],
+  is_scheduled: false,
   is_expedition: true,
   advance_block_label: "",
   advance_block_reason: "",
@@ -89,7 +96,12 @@ describe("kds board presentation", () => {
       is_expedition: false,
       tickets: [ticket(), ticket({ pk: 2 })],
       counts: { total: 2, pending: 1, in_progress: 1 },
+      service_date: "2026-09-15",
+      service_date_display: "Hoje",
+      today: "2026-09-15",
+      available_dates: ["2026-09-15"],
       cancelled_tickets: [ticket({ pk: 3, is_cancelled: true })],
+      recent_done: [],
     };
     const view = boardView(board);
     expect(view.instanceName).toBe("Cafés");

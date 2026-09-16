@@ -13,15 +13,16 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from decimal import ROUND_CEILING, Decimal
 from typing import Literal
 
 from django.conf import settings
+from django.db.models import Count, Max, Sum
 from django.utils import timezone
 from shopman.craftsman import craft
-from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder
+from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderEvent
 from shopman.stockman import Position
 from shopman.utils import units
 from shopman.utils.units import UnitError
@@ -93,6 +94,7 @@ class ProductionActionProjection:
         "start",
         "advance_step",
         "finish",
+        "review_qc",
         "correct_qc",
         "quick_finish",
         "void",
@@ -767,6 +769,22 @@ def _qc_actions(
     actions: list[ProductionActionProjection] = []
     for card in cards:
         if card.closed:
+            if not card.quality_reviewed:
+                actions.append(
+                    _production_action(
+                        ref=f"review_qc:{card.pk}",
+                        kind="review_qc",
+                        label="Confirmar qualidade",
+                        priority=20,
+                        enabled=card.can_correct,
+                        reason="Somente a gestão pode revisar uma fornada concluída.",
+                        href=f"/api/v1/backstage/production/{card.pk}/quality-review/",
+                        payload_schema="ProductionQualityReviewMutationRequest",
+                        expected_rev=card.rev,
+                        confirmation_title="Confirmar o QC desta fornada?",
+                        confirmation_label="Confirmar qualidade",
+                    )
+                )
             actions.append(
                 _production_action(
                     ref=f"correct_qc:{card.pk}",
@@ -1021,6 +1039,7 @@ class QCOrderCardProjection:
     can_close: bool
     closed: bool
     can_correct: bool
+    quality_reviewed: bool
     partition: tuple[QCPartitionGroupProjection, ...]
     correction_count: int
     last_correction_at_display: str
@@ -1942,6 +1961,14 @@ def build_qc_kiosk(
         if wo.started_at and not closed:
             elapsed = max(0, int((now - wo.started_at).total_seconds() // 60))
         started_qty = _wo_started_qty(wo)
+        quality_reviewed = any(
+            event.kind
+            in {
+                WorkOrderEvent.Kind.QUALITY_REVIEWED,
+                WorkOrderEvent.Kind.QUALITY_CORRECTED,
+            }
+            for event in wo.events.all()
+        )
         card = QCOrderCardProjection(
             pk=wo.pk,
             ref=wo.ref,
@@ -1963,6 +1990,7 @@ def build_qc_kiosk(
             ),
             closed=closed,
             can_correct=closed and access.can_correct_qc,
+            quality_reviewed=quality_reviewed,
             partition=effective_partition,
             correction_count=correction_count,
             last_correction_at_display=last_correction_at_display,
@@ -2168,14 +2196,7 @@ def build_production_reports(
     work_orders = list(qs)
     history_rows = tuple(_work_order_report_row(wo) for wo in work_orders)
 
-    recipes = tuple(
-        RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.name or r.output_sku or r.ref)
-        for r in Recipe.objects.filter(is_active=True).order_by("name", "ref")
-    )
-    positions = tuple(
-        PositionOptionProjection(pk=p.pk, ref=p.ref, name=p.name, is_default=p.is_default)
-        for p in Position.objects.all().order_by("name")
-    )
+    recipes, positions = _report_options()
 
     return ProductionReportsProjection(
         filters=normalized,
@@ -2187,6 +2208,262 @@ def build_production_reports(
         available_positions=positions,
         access=access,
     )
+
+
+def _report_options():
+    recipes = tuple(
+        RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.name or r.output_sku or r.ref)
+        for r in Recipe.objects.filter(is_active=True).order_by("name", "ref")
+    )
+    positions = tuple(
+        PositionOptionProjection(pk=p.pk, ref=p.ref, name=p.name, is_default=p.is_default)
+        for p in Position.objects.all().order_by("name")
+    )
+    return recipes, positions
+
+
+def _report_dataset_revision(qs, report_kind: str) -> str:
+    """Cheap revision stamp used to reject cursors after any source mutation."""
+
+    summary = qs.aggregate(count=Count("pk"), max_pk=Max("pk"), max_updated=Max("updated_at"), rev_sum=Sum("rev"))
+    event_summary = WorkOrderEvent.objects.filter(work_order__in=qs).aggregate(
+        count=Count("pk"), max_pk=Max("pk")
+    )
+    recipe_summary = Recipe.objects.filter(work_orders__in=qs).aggregate(
+        count=Count("pk", distinct=True), max_updated=Max("updated_at")
+    )
+    item_summary = {}
+    quality_catalog = ()
+    if report_kind == "quality":
+        from shopman.craftsman.models import WorkOrderItem
+
+        from shopman.shop.models import QualityDefect, QualityGrade
+
+        item_summary = WorkOrderItem.objects.filter(work_order__in=qs).aggregate(
+            count=Count("pk"), max_pk=Max("pk")
+        )
+        quality_catalog = (
+            tuple(QualityGrade.objects.order_by("pk").values_list("pk", "ref", "label", "is_default")),
+            tuple(QualityDefect.objects.order_by("pk").values_list("pk", "ref", "label")),
+        )
+    payload = {
+        "work_orders": {key: str(value or "") for key, value in summary.items()},
+        "events": event_summary,
+        "recipes": {key: str(value or "") for key, value in recipe_summary.items()},
+        "items": item_summary,
+        "quality_catalog": quality_catalog,
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()[:24]
+
+
+def _history_ordering(sort: str) -> tuple[str, ...]:
+    return {
+        "date_asc": ("target_date", "pk"),
+        "date_desc": ("-target_date", "-pk"),
+        "name_asc": ("recipe__name", "pk"),
+        "name_desc": ("-recipe__name", "-pk"),
+        "quantity_asc": ("quantity", "pk"),
+        "quantity_desc": ("-quantity", "-pk"),
+    }.get(sort, ("target_date", "recipe__ref", "ref"))
+
+
+def _quality_report_rows_queryset(qs) -> tuple[QualityReportRow, ...]:
+    from shopman.shop.models import QualityDefect, QualityGrade
+    from shopman.shop.services import quality as quality_service
+
+    grade_labels = dict(QualityGrade.objects.values_list("ref", "label"))
+    defect_labels = dict(QualityDefect.objects.values_list("ref", "label"))
+    grouped: dict[tuple[str, str, str], dict[str, object]] = {}
+    recipe_totals: dict[str, Decimal] = {}
+    batch = []
+    work_orders = qs.filter(status=WorkOrder.Status.FINISHED).prefetch_related(None).iterator(chunk_size=200)
+    for work_order in work_orders:
+        batch.append(work_order)
+        if len(batch) == 200:
+            _accumulate_effective_quality(
+                batch,
+                quality_service.effective_partitions(batch, strict=True),
+                grouped,
+                recipe_totals,
+            )
+            batch = []
+    if batch:
+        _accumulate_effective_quality(
+            batch,
+            quality_service.effective_partitions(batch, strict=True),
+            grouped,
+            recipe_totals,
+        )
+    return _finalize_quality_rows(grouped, recipe_totals, grade_labels, defect_labels)
+
+
+def _accumulate_effective_quality(work_orders, partitions, grouped, recipe_totals) -> None:
+    """Fold canonical effective QC partitions into report groups."""
+
+    for work_order in work_orders:
+        recipe_ref = work_order.recipe.ref
+        recipe_name = work_order.recipe.name or recipe_ref
+        for group in partitions.get(work_order.pk, ()):
+            loss = bool(group.get("loss"))
+            defect_ref = str(group.get("quality_defect_ref") or "")
+            if loss and not defect_ref:
+                continue
+            grade_ref = "" if loss else str(group.get("quality_grade_ref") or "")
+            quantity = Decimal(str(group.get("quantity") or "0"))
+            key = (recipe_ref, grade_ref, defect_ref)
+            bucket = grouped.setdefault(key, {"name": recipe_name, "qty": Decimal("0")})
+            bucket["qty"] = bucket["qty"] + quantity
+            recipe_totals[recipe_ref] = recipe_totals.get(recipe_ref, Decimal("0")) + quantity
+
+
+def _finalize_quality_rows(grouped, recipe_totals, grade_labels, defect_labels) -> tuple[QualityReportRow, ...]:
+    return tuple(
+        QualityReportRow(
+            recipe_ref=recipe_ref,
+            recipe_name=str(data["name"]),
+            grade_ref=grade_ref,
+            grade_label=grade_labels.get(grade_ref, grade_ref) if grade_ref else "Descarte",
+            defect_ref=defect_ref,
+            defect_label=defect_labels.get(defect_ref, defect_ref),
+            quantity=_qty(Decimal(data["qty"])),
+            share=f"{int(Decimal(data['qty']) * 100 / recipe_totals[recipe_ref])}%",
+        )
+        for (recipe_ref, grade_ref, defect_ref), data in sorted(grouped.items())
+    )
+
+
+def build_production_report_page(
+    filters: dict,
+    *,
+    sort: str,
+    offset: int,
+    page_size: int,
+    access: ProductionSurfaceAccess | None = None,
+) -> tuple[ProductionReportsProjection, int, str, bool]:
+    """Build only the selected report and enforce the database/page memory bound."""
+
+    access = access or _full_access()
+    normalized = _normalize_report_filters(filters)
+    qs = _report_queryset(normalized)
+    revision = _report_dataset_revision(qs, normalized.report_kind)
+    rows = dict.fromkeys(_REPORT_ROWS_FIELD.values(), ())
+    field = _REPORT_ROWS_FIELD[normalized.report_kind]
+
+    if normalized.report_kind == "history":
+        total = qs.count()
+        page_qs = qs.order_by(*_history_ordering(sort))[offset : offset + page_size]
+        rows[field] = tuple(_work_order_report_row(work_order) for work_order in page_qs)
+    else:
+        work_orders = qs.iterator(chunk_size=200)
+        if normalized.report_kind == "operator_productivity":
+            selected = _operator_productivity_rows(work_orders)
+        elif normalized.report_kind == "recipe_waste":
+            selected = _recipe_waste_rows(work_orders)
+        else:
+            selected = _quality_report_rows_queryset(qs)
+        shell = ProductionReportsProjection(
+            filters=normalized,
+            history_rows=(),
+            operator_rows=(),
+            waste_rows=(),
+            quality_rows=(),
+            available_recipes=(),
+            available_positions=(),
+            access=access,
+        )
+        sorted_reports = sort_production_reports(replace(shell, **{field: selected}), sort)
+        selected = getattr(sorted_reports, field)
+        total = len(selected)
+        rows[field] = selected[offset : offset + page_size]
+
+    recipes, positions = _report_options()
+    final_revision = _report_dataset_revision(qs, normalized.report_kind)
+    reports = ProductionReportsProjection(
+        filters=normalized,
+        available_recipes=recipes,
+        available_positions=positions,
+        access=access,
+        source_revision=final_revision,
+        **rows,
+    )
+    return reports, total, final_revision, revision == final_revision
+
+
+def iter_production_report_rows(filters: dict, *, sort: str):
+    """Iterate one selected report without materializing source work orders."""
+
+    normalized = _normalize_report_filters(filters)
+    qs = _report_queryset(normalized)
+    if normalized.report_kind == "history":
+        for work_order in qs.order_by(*_history_ordering(sort)).iterator(chunk_size=200):
+            yield _work_order_report_row(work_order)
+    else:
+        if normalized.report_kind == "quality":
+            rows = _quality_report_rows_queryset(qs)
+        elif normalized.report_kind == "operator_productivity":
+            rows = _operator_productivity_rows(qs.iterator(chunk_size=200))
+        else:
+            rows = _recipe_waste_rows(qs.iterator(chunk_size=200))
+        shell = ProductionReportsProjection(
+            filters=normalized,
+            history_rows=(),
+            operator_rows=(),
+            waste_rows=(),
+            quality_rows=(),
+            available_recipes=(),
+            available_positions=(),
+            access=_full_access(),
+        )
+        field = _REPORT_ROWS_FIELD[normalized.report_kind]
+        shell = replace(shell, **{field: rows})
+        yield from getattr(sort_production_reports(shell, sort), field)
+
+
+def production_report_revision(filters: dict) -> str:
+    """Return the revision stamp used by paging and prepared exports."""
+
+    normalized = _normalize_report_filters(filters)
+    return _report_dataset_revision(_report_queryset(normalized), normalized.report_kind)
+
+
+_REPORT_ROWS_FIELD = {
+    "history": "history_rows",
+    "operator_productivity": "operator_rows",
+    "recipe_waste": "waste_rows",
+    "quality": "quality_rows",
+}
+
+
+def sort_production_reports(
+    reports: ProductionReportsProjection,
+    sort: str,
+) -> ProductionReportsProjection:
+    """Sort only the selected operational report with stable row tie-breakers."""
+
+    field = _REPORT_ROWS_FIELD[reports.filters.report_kind]
+    rows = getattr(reports, field)
+    if sort == "default":
+        return reports
+
+    descending = sort.endswith("_desc")
+
+    def row_key(row):
+        if sort.startswith("date_"):
+            primary = row.date
+        elif sort.startswith("name_"):
+            primary = getattr(row, "operator_name", getattr(row, "recipe_name", ""))
+            primary = primary.casefold()
+        elif reports.filters.report_kind == "history":
+            primary = Decimal(row.qty_planned or "0")
+        elif reports.filters.report_kind == "operator_productivity":
+            primary = Decimal(row.qty_total or "0")
+        elif reports.filters.report_kind == "recipe_waste":
+            primary = Decimal(row.loss_total or "0")
+        else:
+            primary = Decimal(row.quantity or "0")
+        return primary, repr(row)
+
+    return replace(reports, **{field: tuple(sorted(rows, key=row_key, reverse=descending))})
 
 
 # ── Internals ──────────────────────────────────────────────────────────
@@ -2643,85 +2920,61 @@ def _operator_productivity_rows(work_orders: list[WorkOrder]) -> tuple[OperatorP
         if wo.status != WorkOrder.Status.FINISHED:
             continue
         operator = wo.operator_ref or "sem-operador"
-        bucket = grouped.setdefault(operator, {"count": 0, "qty": Decimal("0"), "yield": [], "duration": []})
+        bucket = grouped.setdefault(
+            operator,
+            {
+                "count": 0,
+                "qty": Decimal("0"),
+                "yield": _OnlineAverage(),
+                "duration": _OnlineAverage(),
+            },
+        )
         bucket["count"] = int(bucket["count"]) + 1
         bucket["qty"] = bucket["qty"] + (wo.finished or Decimal("0"))
         base = _wo_started_qty(wo) or wo.quantity
         if base:
-            bucket["yield"].append((wo.finished or Decimal("0")) / base)
+            bucket["yield"].add((wo.finished or Decimal("0")) / base)
         duration = _duration_minutes(wo.started_at, wo.finished_at)
         if duration is not None:
-            bucket["duration"].append(duration)
+            bucket["duration"].add(duration)
     return tuple(
         OperatorProductivityRow(
             operator_ref=operator,
             operator_name=operator.replace("chef:", "").replace("production:", "") or "Sem operador",
             wo_count=int(data["count"]),
             qty_total=_qty(data["qty"]),
-            yield_avg=_percent_avg(data["yield"]),
-            duration_avg_minutes=_int_avg_display(data["duration"]),
+            yield_avg=data["yield"].percent_display(),
+            duration_avg_minutes=data["duration"].integer_display(),
         )
         for operator, data in sorted(grouped.items(), key=lambda item: item[0])
     )
 
 
 def _quality_report_rows(work_orders: list[WorkOrder]) -> tuple[QualityReportRow, ...]:
-    """GROUP BY receita × grau × defeito sobre as linhas de OUTPUT/WASTE.
+    """GROUP BY receita × grau × defeito sobre a partição efetiva do QC.
 
-    Linha sem grau (finish escalar antigo) conta no grau padrão; WASTE com
-    defeito entra com grau vazio — perda vetada é qualidade também, e é o que
-    o relatório precisa para dizer "o forno 2 está queimando".
+    A autoridade canônica aplica a última QUALITY_CORRECTED sobre as linhas
+    físicas originais. Perda com defeito entra com grau vazio — perda vetada é
+    qualidade também, e é o que diz se o forno está queimando.
     """
-    from shopman.craftsman.models import WorkOrderItem
-
     from shopman.shop.models import QualityDefect, QualityGrade
     from shopman.shop.services import quality as quality_service
 
-    finished = {wo.pk: wo for wo in work_orders if wo.status == WorkOrder.Status.FINISHED}
+    finished = [wo for wo in work_orders if wo.status == WorkOrder.Status.FINISHED]
     if not finished:
         return ()
 
     grade_labels = dict(QualityGrade.objects.values_list("ref", "label"))
     defect_labels = dict(QualityDefect.objects.values_list("ref", "label"))
-    default_ref = quality_service.default_grade_ref()
-
-    lines = WorkOrderItem.objects.filter(
-        work_order_id__in=finished,
-        kind__in=(WorkOrderItem.Kind.OUTPUT, WorkOrderItem.Kind.WASTE),
-    ).values_list("work_order_id", "kind", "quality_grade_ref", "quality_defect_ref", "quantity")
-
     grouped: dict[tuple[str, str, str], dict[str, object]] = {}
     recipe_totals: dict[str, Decimal] = {}
-    for wo_id, kind, grade_ref, defect_ref, quantity in lines:
-        wo = finished[wo_id]
-        if kind == WorkOrderItem.Kind.OUTPUT:
-            grade = grade_ref or default_ref
-        else:
-            if not defect_ref:
-                continue  # perda sem defeito é rendimento, não qualidade
-            grade = ""
-        key = (wo.recipe.ref, grade, defect_ref)
-        bucket = grouped.setdefault(key, {"name": wo.recipe.name or wo.recipe.ref, "qty": Decimal("0")})
-        bucket["qty"] = bucket["qty"] + quantity
-        recipe_totals[wo.recipe.ref] = recipe_totals.get(wo.recipe.ref, Decimal("0")) + quantity
-
-    rows = []
-    for (recipe_ref, grade_ref, defect_ref), data in sorted(grouped.items()):
-        total = recipe_totals.get(recipe_ref) or Decimal("0")
-        share = int(Decimal(data["qty"]) * 100 / total) if total else 0
-        rows.append(
-            QualityReportRow(
-                recipe_ref=recipe_ref,
-                recipe_name=str(data["name"]),
-                grade_ref=grade_ref,
-                grade_label=grade_labels.get(grade_ref, grade_ref) if grade_ref else "Descarte",
-                defect_ref=defect_ref,
-                defect_label=defect_labels.get(defect_ref, defect_ref),
-                quantity=_qty(Decimal(data["qty"])),
-                share=f"{share}%",
-            )
-        )
-    return tuple(rows)
+    _accumulate_effective_quality(
+        finished,
+        quality_service.effective_partitions(finished, strict=True),
+        grouped,
+        recipe_totals,
+    )
+    return _finalize_quality_rows(grouped, recipe_totals, grade_labels, defect_labels)
 
 
 def _recipe_waste_rows(work_orders: list[WorkOrder]) -> tuple[RecipeWasteRow, ...]:
@@ -2735,7 +2988,7 @@ def _recipe_waste_rows(work_orders: list[WorkOrder]) -> tuple[RecipeWasteRow, ..
                 "name": wo.recipe.name or wo.recipe.ref,
                 "count": 0,
                 "loss": Decimal("0"),
-                "yield": [],
+                "yield": _OnlineAverage(),
                 "planned": Decimal("0"),
                 "capacity": Decimal("0"),
                 "dates": set(),
@@ -2750,19 +3003,19 @@ def _recipe_waste_rows(work_orders: list[WorkOrder]) -> tuple[RecipeWasteRow, ..
         if wo.target_date:
             bucket["dates"].add(wo.target_date)
         if started:
-            bucket["yield"].append(finished / started)
+            bucket["yield"].add(finished / started)
     rows = [
         RecipeWasteRow(
             recipe_ref=recipe_ref,
             recipe_name=str(data["name"]),
             wo_count=int(data["count"]),
             loss_total=_qty(data["loss"]),
-            yield_avg=_percent_avg(data["yield"]),
+            yield_avg=data["yield"].percent_display(),
             capacity_utilization=_capacity_utilization(data),
         )
         for recipe_ref, data in grouped.items()
     ]
-    return tuple(sorted(rows, key=lambda row: Decimal(row.loss_total or "0"), reverse=True)[:10])
+    return tuple(sorted(rows, key=lambda row: Decimal(row.loss_total or "0"), reverse=True))
 
 
 def _capacity_utilization(data: dict) -> str:
@@ -2786,16 +3039,22 @@ def _duration_minutes(started_at, finished_at) -> int | None:
     return max(0, int((finished_at - started_at).total_seconds() // 60))
 
 
-def _percent_avg(values: list[Decimal]) -> str:
-    if not values:
-        return ""
-    return f"{int((sum(values) / Decimal(len(values))) * 100)}%"
+@dataclass(slots=True)
+class _OnlineAverage:
+    """Exact running mean with constant memory, regardless of source row count."""
 
+    total: Decimal = Decimal("0")
+    count: int = 0
 
-def _int_avg_display(values: list[int]) -> str:
-    if not values:
-        return ""
-    return str(int(sum(values) / len(values)))
+    def add(self, value: Decimal | int) -> None:
+        self.total += Decimal(value)
+        self.count += 1
+
+    def percent_display(self) -> str:
+        return f"{int((self.total / Decimal(self.count)) * 100)}%" if self.count else ""
+
+    def integer_display(self) -> str:
+        return str(int(self.total / Decimal(self.count))) if self.count else ""
 
 
 def _is_late_started(wo: WorkOrder) -> bool:

@@ -35,13 +35,16 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def product():
+def product(settings):
+    settings.SHOPMAN_STOREFRONT_BASE_URL = "https://shop.example"
+    settings.SHOPMAN_MARKETING_MEDIA_HOSTS = ("shop.example",)
     return Product.objects.create(
         sku="croissant-facts",
         name="Croissant Tradicional",
         base_price_q=850,
         is_published=True,
         is_sellable=True,
+        image_url="/media/croissant.jpg",
     )
 
 

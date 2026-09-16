@@ -15,6 +15,7 @@ from django.http import HttpRequest
 from shopman.shop.projections.types import Action
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF, get_default_ddd
 from shopman.storefront.presentation.catalog import CatalogItemProjection, build_catalog
+from shopman.storefront.presentation.public_information import FAQItemProjection, build_public_faq
 from shopman.storefront.presentation.shop import ShopProjection, build_shop_projection
 from shopman.storefront.presentation.shop_status import _format_opening_hours, _shop_status
 
@@ -114,6 +115,7 @@ class HomeSectionsCopyProjection:
     tomorrow_hook: CopyEntryProjection
     whatsapp_cta: CopyEntryProjection
     whatsapp_cta_label: CopyEntryProjection
+    faq_heading: CopyEntryProjection
 
 
 @dataclass(frozen=True)
@@ -144,6 +146,24 @@ class AuthCopyProjection:
     device_trust_skip_cta: CopyEntryProjection
     device_trust_redirecting: CopyEntryProjection
     device_trust_saved: CopyEntryProjection
+
+
+@dataclass(frozen=True)
+class PwaCopyProjection:
+    offline_title: CopyEntryProjection
+    offline_message: CopyEntryProjection
+    offline_retry_cta: CopyEntryProjection
+    install_title: CopyEntryProjection
+    install_message: CopyEntryProjection
+    install_cta: CopyEntryProjection
+    install_dismiss_cta: CopyEntryProjection
+    ios_title: CopyEntryProjection
+    ios_message: CopyEntryProjection
+    ios_share_step: CopyEntryProjection
+    ios_add_step: CopyEntryProjection
+    ios_done_cta: CopyEntryProjection
+    update_title: CopyEntryProjection
+    update_cta: CopyEntryProjection
 
 
 @dataclass(frozen=True)
@@ -205,10 +225,12 @@ class HomeProjection:
     hero_copy: HomeHeroCopyProjection
     sections_copy: HomeSectionsCopyProjection
     auth_copy: AuthCopyProjection
+    pwa_copy: PwaCopyProjection
     shop: ShopProjection
     shop_status: ShopStatusProjection
     notices: tuple[HomeNoticeProjection, ...]
     opening_hours: tuple[OpeningHoursEntry, ...]
+    faq: tuple[FAQItemProjection, ...]
     last_order_ref: str | None
     last_order_items: tuple[LastOrderItemProjection, ...]
     actions: tuple[Action, ...]
@@ -218,6 +240,7 @@ class HomeProjection:
 
 
 def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> HomeProjection:
+    from shopman.shop.google_maps_credentials import browser_api_key
     from shopman.shop.models import Shop
     from shopman.shop.omotenashi import OmotenashiContext
 
@@ -263,12 +286,10 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         logger.debug("home.origin_channel_unavailable", exc_info=True)
         origin_channel = None
 
-    from django.conf import settings
-
     shop_latitude = float(shop.latitude) if shop and shop.latitude else None
     shop_longitude = float(shop.longitude) if shop and shop.longitude else None
     public_config = PublicConfigProjection(
-        google_maps_api_key=getattr(settings, "GOOGLE_MAPS_API_KEY", "") or "",
+        google_maps_api_key=browser_api_key(),
         whatsapp_url=shop_proj.whatsapp_url or "",
         shop_latitude=shop_latitude,
         shop_longitude=shop_longitude,
@@ -294,10 +315,17 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         hero_copy=_home_hero_copy(omotenashi),
         sections_copy=_home_sections_copy(omotenashi, default_city=shop_proj.default_city),
         auth_copy=_auth_copy(omotenashi),
+        pwa_copy=_pwa_copy(omotenashi),
         shop=shop_proj,
         shop_status=shop_status,
         notices=notices,
         opening_hours=hours,
+        faq=build_public_faq(
+            channel_ref=STOREFRONT_CHANNEL_REF,
+            shop=shop,
+            status=status_dict,
+            opening_hours=hours,
+        ),
         last_order_ref=last_ref,
         last_order_items=last_items,
         actions=_home_actions(last_ref),
@@ -441,6 +469,25 @@ def _home_hero_copy(omotenashi: OmotenashiProjection) -> HomeHeroCopyProjection:
     )
 
 
+def _pwa_copy(omotenashi: OmotenashiProjection) -> PwaCopyProjection:
+    return PwaCopyProjection(
+        offline_title=_copy_entry("PWA_OFFLINE_TITLE", omotenashi=omotenashi),
+        offline_message=_copy_entry("PWA_OFFLINE_MESSAGE", omotenashi=omotenashi),
+        offline_retry_cta=_copy_entry("PWA_OFFLINE_RETRY_CTA", omotenashi=omotenashi),
+        install_title=_copy_entry("PWA_INSTALL_TITLE", omotenashi=omotenashi),
+        install_message=_copy_entry("PWA_INSTALL_MESSAGE", omotenashi=omotenashi),
+        install_cta=_copy_entry("PWA_INSTALL_CTA", omotenashi=omotenashi),
+        install_dismiss_cta=_copy_entry("PWA_INSTALL_DISMISS_CTA", omotenashi=omotenashi),
+        ios_title=_copy_entry("PWA_IOS_TITLE", omotenashi=omotenashi),
+        ios_message=_copy_entry("PWA_IOS_MESSAGE", omotenashi=omotenashi),
+        ios_share_step=_copy_entry("PWA_IOS_SHARE_STEP", omotenashi=omotenashi),
+        ios_add_step=_copy_entry("PWA_IOS_ADD_STEP", omotenashi=omotenashi),
+        ios_done_cta=_copy_entry("PWA_IOS_DONE_CTA", omotenashi=omotenashi),
+        update_title=_copy_entry("PWA_UPDATE_TITLE", omotenashi=omotenashi),
+        update_cta=_copy_entry("PWA_UPDATE_CTA", omotenashi=omotenashi),
+    )
+
+
 def _home_sections_copy(
     omotenashi: OmotenashiProjection, *, default_city: str = ""
 ) -> HomeSectionsCopyProjection:
@@ -469,6 +516,7 @@ def _home_sections_copy(
         tomorrow_hook=_copy_entry("TRACKING_TOMORROW_HOOK", omotenashi=omotenashi),
         whatsapp_cta=_copy_entry("HOME_WHATSAPP_CTA", omotenashi=omotenashi),
         whatsapp_cta_label=_copy_entry("HOME_WHATSAPP_CTA_LABEL", omotenashi=omotenashi),
+        faq_heading=_copy_entry("HOME_FAQ_HEADING", omotenashi=omotenashi),
     )
 
 
@@ -569,6 +617,7 @@ def _reorder_context(request: HttpRequest) -> tuple[str | None, tuple[LastOrderI
 def _empty_shop() -> ShopProjection:
     return ShopProjection(
         brand_name="",
+        short_name="",
         tagline="",
         description="",
         description_html="",

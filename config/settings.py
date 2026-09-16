@@ -37,6 +37,18 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_int_or_raw(name: str, default: int) -> int | str:
+    """Parse an integer without hiding an explicitly invalid deployment value."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    value = raw.strip()
+    try:
+        return int(value)
+    except ValueError:
+        return value
+
+
 def _materialized_secret_file(*, content: str, filename: str) -> str:
     secret_dir = Path(os.environ.get("SHOPMAN_RUNTIME_SECRET_DIR", "/tmp/shopman-secrets"))
     secret_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -117,12 +129,31 @@ SHOPMAN_MARKETING_SIMULATION_ENABLED = _env_bool(
     "SHOPMAN_MARKETING_SIMULATION_ENABLED",
     False,
 )
+# One-shot public publication canaries are deliberately independent from the
+# batch consumers.  The management command still requires an exact outbox ref,
+# its platform switch and an explicit consequence phrase before provider I/O.
+SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED",
+    False,
+)
 # Local rehearsal affordances remain inert unless the final delivery adapter is
 # itself a hermetic simulator. Production must never gain either capability by
 # setting one flag in isolation.
 SHOPMAN_MARKETING_SIMULATION_IGNORE_QUIET_HOURS = False
 SHOPMAN_MARKETING_SIMULATION_FLOWS: tuple[tuple[str, str], ...] = ()
 SHOPMAN_MARKETING_DELIVERY_ADAPTERS: dict[str, str | None] = {}
+SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED", False
+)
+SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED", False
+)
+SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED", False
+)
+SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED", False
+)
 SHOPMAN_MARKETING_TARGET_HMAC_KEY = os.environ.get(
     "SHOPMAN_MARKETING_TARGET_HMAC_KEY",
     "",
@@ -131,6 +162,21 @@ SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION = max(
     1,
     _env_int("SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION", 1),
 )
+# Recibos de direitos de dados usam segredo próprio e versionado. A chave
+# anterior permanece no keyring durante a retenção dos recibos para que replay
+# e prova de idempotência sobrevivam a rotações sem reutilizar SECRET_KEY.
+SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY = os.environ.get(
+    "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY",
+    "",
+).strip()
+SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION = _env_int_or_raw(
+    "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION",
+    1,
+)
+SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS = os.environ.get(
+    "SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS",
+    "{}",
+).strip()
 
 # ⚠️ PRODUÇÃO: Restringir a domínios reais. "*" é apenas para desenvolvimento.
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
@@ -223,6 +269,7 @@ INSTALLED_APPS = [
     # 2FA (django-otp) — TOTP devices for admin step-up (gated by SHOPMAN_ADMIN_REQUIRE_2FA)
     "django_otp",
     "django_otp.plugins.otp_totp",
+    "django_otp.plugins.otp_static",
     # Shopman core apps
     "shopman.refs",
     "shopman.utils",
@@ -480,7 +527,14 @@ MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 MEDIA_URL = "/media/"
 
 # ── Google Maps ──────────────────────────────────────────────────────
+# A chave do navegador aparece, por natureza, no bootstrap do Maps JS e deve ser
+# limitada por referer + APIs. A chave de servidor nunca é projetada para o
+# cliente e deve ser limitada ao Geocoding (e por IP quando houver egress fixo).
+# GOOGLE_MAPS_API_KEY fica como compatibilidade temporária para rollout sem
+# interrupção; os consumidores preferem sempre as credenciais separadas.
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+GOOGLE_MAPS_BROWSER_API_KEY = os.environ.get("GOOGLE_MAPS_BROWSER_API_KEY", "")
+GOOGLE_MAPS_SERVER_API_KEY = os.environ.get("GOOGLE_MAPS_SERVER_API_KEY", "")
 
 # ── Stripe ────────────────────────────────────────────────────────────
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
@@ -509,6 +563,10 @@ SHOPMAN_MANYCHAT = {
     "resolver": os.environ.get(
         "MANYCHAT_SUBSCRIBER_RESOLVER",
         "shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.resolve",
+    ),
+    "otp_resolver": os.environ.get(
+        "MANYCHAT_OTP_SUBSCRIBER_RESOLVER",
+        "shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.resolve_active_customer",
     ),
     "flow_map": MANYCHAT_FLOW_MAP,
 }
@@ -618,7 +676,60 @@ SHOPMAN_MARKETING_META = {
     "page_access_token": os.environ.get("META_PAGE_ACCESS_TOKEN", "").strip(),
     "api_version": SHOPMAN_META["api_version"],
     "api_base": SHOPMAN_META["api_base"],
+    "timeout": _env_int("META_MARKETING_TIMEOUT", 30),
 }
+
+# Public Google Business Profile posts. Renewable OAuth needs client ID,
+# client secret and refresh token; the static access token remains only as a
+# short-lived canary fallback. Account, location and the independent switch
+# are always required before the adapter reports ready.
+SHOPMAN_MARKETING_GOOGLE = {
+    "access_token": os.environ.get("GOOGLE_BUSINESS_ACCESS_TOKEN", "").strip(),
+    "client_id": os.environ.get("GOOGLE_BUSINESS_OAUTH_CLIENT_ID", "").strip(),
+    "client_secret": os.environ.get("GOOGLE_BUSINESS_OAUTH_CLIENT_SECRET", "").strip(),
+    "refresh_token": os.environ.get("GOOGLE_BUSINESS_OAUTH_REFRESH_TOKEN", "").strip(),
+    # Fixed credential boundary: a production environment variable must not be
+    # able to redirect long-lived secrets to another host. Tests may override
+    # this settings dictionary with a fake HTTPS provider.
+    "token_url": "https://oauth2.googleapis.com/token",
+    "account_id": os.environ.get("GOOGLE_BUSINESS_ACCOUNT_ID", "").strip(),
+    "location_id": os.environ.get("GOOGLE_BUSINESS_LOCATION_ID", "").strip(),
+    "api_base": os.environ.get(
+        "GOOGLE_BUSINESS_API_BASE", "https://mybusiness.googleapis.com"
+    ).strip(),
+    "api_version": os.environ.get("GOOGLE_BUSINESS_API_VERSION", "v4").strip(),
+    "timeout": _env_int("GOOGLE_BUSINESS_TIMEOUT", 30),
+}
+
+# TikTok Content Posting API.  The static token exists only to exercise a
+# controlled sandbox/canary while the OAuth connection store is not available;
+# the platform remains absent from the selectable capability catalog.
+SHOPMAN_MARKETING_TIKTOK = {
+    "access_token": os.environ.get("TIKTOK_CONTENT_ACCESS_TOKEN", "").strip(),
+    "api_base": os.environ.get(
+        "TIKTOK_CONTENT_API_BASE", "https://open.tiktokapis.com"
+    ).strip(),
+    "timeout": _env_int("TIKTOK_CONTENT_TIMEOUT", 30),
+}
+
+# Register only explicitly enabled publication lanes. Independent consumer
+# switches above still gate whether queued work can reach these adapters.
+if SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED:
+    SHOPMAN_MARKETING_DELIVERY_ADAPTERS["instagram"] = (
+        "shopman.shop.adapters.marketing_delivery_instagram"
+    )
+if SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED:
+    SHOPMAN_MARKETING_DELIVERY_ADAPTERS["facebook"] = (
+        "shopman.shop.adapters.marketing_delivery_facebook"
+    )
+if SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED:
+    SHOPMAN_MARKETING_DELIVERY_ADAPTERS["google_business"] = (
+        "shopman.shop.adapters.marketing_delivery_google"
+    )
+if SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED:
+    SHOPMAN_MARKETING_DELIVERY_ADAPTERS["tiktok"] = (
+        "shopman.shop.adapters.marketing_delivery_tiktok"
+    )
 
 # ── Machine (courier — despacho de entregadores) ───────────────────
 # API da central de entregas (TaOn roda sobre a Machine/Gaudium). O adapter só
@@ -869,6 +980,14 @@ EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 # Em produção, declare `DEFAULT_FROM_EMAIL` no spec de deploy.
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@shopman.local")
 
+# Web Push do backstage. O Storefront não lê estas chaves e a privada nunca
+# atravessa a API. As três vazias mantêm o canal desativado; configuração
+# parcial falha no deploy check SHOPMAN_E024.
+VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "").strip()
+VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "").strip()
+VAPID_CLAIMS_EMAIL = os.environ.get("VAPID_CLAIMS_EMAIL", "").strip()
+VAPID_TIMEOUT_SECONDS = _env_int("VAPID_TIMEOUT_SECONDS", 10)
+
 # Quanto esperar por um servidor de SMTP que não responde. Sem isto o socket
 # herda o timeout do sistema — na prática, dois minutos pendurado.
 #
@@ -911,8 +1030,8 @@ REST_FRAMEWORK = {
         "marketing_audience_shop": "120/minute",
         "marketing_dangerous_user": "10/minute",
         "marketing_dangerous_shop": "30/minute",
-        "marketing_fire_user": "3/hour",
-        "marketing_fire_shop": "10/day",
+        "marketing_fire_user": "10/hour",
+        "marketing_fire_shop": "30/day",
         "marketing_ai": os.environ.get("SHOPMAN_MARKETING_AI_THROTTLE_RATE", "10/hour"),
     },
     # ⚠️ Sem isto, `BaseThrottle.get_ident` lê o PRIMEIRO valor do
@@ -1004,19 +1123,26 @@ SHOPMAN_MARKETING_AI_TIMEOUT_SECONDS = float(
     os.environ.get("SHOPMAN_MARKETING_AI_TIMEOUT_SECONDS", "12")
 )
 
-# ── Concierge de WhatsApp (venda conversacional) ─────────────────────
+# ── Concierge multicanal (venda conversacional) ──────────────────────
 #
 # O atendente que vende pelo chat. A LÍNGUA é do modelo; o DINHEIRO é do código:
 # preço, disponibilidade, sacola, prazo e pagamento saem das ferramentas
 # (services do Shopman), nunca do texto gerado. Desligado por padrão: ligar é
-# `SHOPMAN_CONCIERGE_ENABLED=true` + credencial da Anthropic (`AI_ASSIST_API_KEY`)
-# + chave S2S que o ManyChat apresenta (`CONCIERGE_API_KEY`, ou a mesma do access
-# link). Sem chave S2S fora de DEBUG o endpoint falha FECHADO.
+# `SHOPMAN_CONCIERGE_ENABLED=true` + credencial da Anthropic (`AI_ASSIST_API_KEY`).
+# Cada connection declara adapter, conta, canal e autenticação próprios e permanece
+# inativa até seu gate explícito. Nenhuma credencial liga outro provider por efeito
+# colateral.
 SHOPMAN_CONCIERGE = {
+    # Contrato do núcleo. Transportes existem somente no registry explícito abaixo.
+    "contract_version": int(os.environ.get("CONCIERGE_CONTRACT_VERSION", "0")),
+    # Um modo por vez. Em ``observe`` nenhuma entrada chega ao modelo, à fila
+    # de turnos ou ao fornecedor, mesmo se uma automação antiga chamar o endpoint.
+    "operation_mode": os.environ.get("CONCIERGE_OPERATION_MODE", "assist"),
+    "read_only": _env_bool("CONCIERGE_READ_ONLY", False),
+    "human_return_enabled": _env_bool("CONCIERGE_HUMAN_RETURN_ENABLED", False),
+    "output_retry_enabled": _env_bool("CONCIERGE_OUTPUT_RETRY_ENABLED", False),
+    "transfer_enabled": _env_bool("CONCIERGE_TRANSFER_ENABLED", False),
     "enabled": _env_bool("SHOPMAN_CONCIERGE_ENABLED", False),
-    # Chave que o External Request do ManyChat apresenta (X-Api-Key). Default: a
-    # mesma do access link, que já é a chave "ManyChat → casa".
-    "api_key": os.environ.get("CONCIERGE_API_KEY", "") or os.environ.get("DOORMAN_ACCESS_LINK_API_KEY", ""),
     # Modelo do concierge. Sonnet 5 por padrão: latência de chat e custo de
     # centavos por conversa. `claude-opus-5` é troca de env, sem deploy de código.
     "model": os.environ.get("CONCIERGE_MODEL", "claude-sonnet-5"),
@@ -1033,9 +1159,6 @@ SHOPMAN_CONCIERGE = {
     "max_turns_per_day": int(os.environ.get("CONCIERGE_MAX_TURNS_PER_DAY", "80")),
     # Máximo de idas ao modelo num turno (cada ida pode chamar ferramentas).
     "max_iterations": int(os.environ.get("CONCIERGE_MAX_ITERATIONS", "6")),
-    # Campo personalizado do ManyChat que o flow consulta ANTES de chamar a casa:
-    # "1" = conversa com a equipe, o bot não responde.
-    "handoff_field": os.environ.get("CONCIERGE_HANDOFF_FIELD", "concierge_handoff"),
     # Segundos entre a chegada da mensagem e o processamento: o webhook responde
     # em milissegundos e a diretiva fica para o worker (nunca inline no request).
     "dispatch_delay_seconds": int(os.environ.get("CONCIERGE_DISPATCH_DELAY_SECONDS", "1")),
@@ -1046,13 +1169,79 @@ SHOPMAN_CONCIERGE = {
     # popularidade) e os pareamentos configuráveis de `suggestion.complement`.
     # Continua UMA por conversa — o `suggestion_offered` em `Conversation.flags`.
     "suggest_add_ons": _env_bool("CONCIERGE_SUGGEST_ADD_ONS", True),
-    # Piloto fechado: só estes assinantes (ids do ManyChat) ou telefones (E.164, com
-    # "+") recebem o concierge; todo o resto volta `not_allowed` sem tocar em nada.
-    # Vazio = aberto a todos. É a segunda tranca, além da tag no flow do ManyChat:
-    # um gatilho errado lá não vira cliente "testando" sem querer aqui.
-    "allowed_subscribers": [
-        v.strip() for v in os.environ.get("CONCIERGE_ALLOWED_SUBSCRIBERS", "").split(",") if v.strip()
-    ],
+    # Primeira connection real. Novos providers/canais entram como irmãos com o
+    # mesmo contrato; nenhuma view ou service recebe defaults de transporte.
+    "connections": {
+        "manychat-whatsapp-primary": {
+            "active": _env_bool("CONCIERGE_MANYCHAT_WHATSAPP_ACTIVE", False),
+            "provider": "manychat",
+            "account": os.environ.get("CONCIERGE_ACCOUNT_ID", ""),
+            "channel": "whatsapp",
+            "adapter_path": "shopman.storefront.concierge.transport.ManyChatWhatsAppAdapter",
+            "options": {
+                "authentication": {
+                    "scheme": "api_key",
+                    "keys": [
+                        value
+                        for value in (
+                            os.environ.get("CONCIERGE_API_KEY", ""),
+                            os.environ.get("CONCIERGE_API_KEY_PREVIOUS", ""),
+                        )
+                        if value
+                    ],
+                },
+                "allowed_subjects": [
+                    value.strip()
+                    for value in os.environ.get("CONCIERGE_ALLOWED_SUBSCRIBERS", "").split(",")
+                    if value.strip()
+                ],
+                "identity_link_enabled": _env_bool("CONCIERGE_IDENTITY_LINK_ENABLED", False),
+                "stable_event_identity_verified": _env_bool(
+                    "CONCIERGE_MANYCHAT_EVENT_ID_VERIFIED", False
+                ),
+                "delivery_receipts": False,
+                "handoff_field": os.environ.get("CONCIERGE_HANDOFF_FIELD", "concierge_handoff"),
+                "pilot_prefixes": ["#concierge", "#c"],
+                "pilot_entry_text": "oi",
+                # Captura passiva usa o mesmo ingresso autenticado, mas nunca
+                # chama modelo/worker. Quatro gates independentes evitam coleta
+                # geral por uma lista vazia ou por uma única flag equivocada.
+                "observation": {
+                    "enabled": _env_bool("CONCIERGE_OBSERVATION_ENABLED", False),
+                    "privacy_approved": _env_bool(
+                        "CONCIERGE_OBSERVATION_PRIVACY_APPROVED", False
+                    ),
+                    "notice_version": os.environ.get(
+                        "CONCIERGE_OBSERVATION_NOTICE_VERSION", ""
+                    ),
+                    # O service converte e valida. Preservar o valor cru faz um
+                    # typo falhar fechado em vez de virar silenciosamente 7 dias.
+                    "retention_days": os.environ.get(
+                        "CONCIERGE_OBSERVATION_RETENTION_DAYS", "7"
+                    ),
+                    "allow_all_subjects": _env_bool(
+                        "CONCIERGE_OBSERVATION_ALLOW_ALL_SUBJECTS", False
+                    ),
+                    "allowed_subjects": [
+                        value.strip()
+                        for value in os.environ.get(
+                            "CONCIERGE_OBSERVATION_ALLOWED_SUBSCRIBERS", ""
+                        ).split(",")
+                        if value.strip()
+                    ],
+                },
+                "response_window": {
+                    "policy": "manychat-whatsapp-customer-care-24h-v1",
+                    "source": "manychat_whatsapp_last_interaction",
+                    "field": "provider_timestamp",
+                    "timezone": os.environ.get("CONCIERGE_WHATSAPP_INTERACTION_TIMEZONE", ""),
+                    "authentication": "api_key",
+                    "duration_seconds": 24 * 60 * 60,
+                    "purposes": ["reply", "handoff_ack"],
+                },
+            },
+        },
+    },
 }
 
 # ── Craftsman (micro-MRP integration) ──────────────────────────────
@@ -1313,7 +1502,7 @@ SHOPMAN_ACCOUNTING_BACKEND = None
 
 # Operator email for backend notifications (order alerts, etc.).
 # Falls back to DEFAULT_FROM_EMAIL if None.
-SHOPMAN_OPERATOR_EMAIL = None
+SHOPMAN_OPERATOR_EMAIL = os.environ.get("SHOPMAN_OPERATOR_EMAIL", "").strip() or None
 
 # Retenção da trilha de acessos de operador (SignInEvent), em dias.
 # 180 dias: longo o bastante para investigar "mês passado", curto o bastante para
@@ -1443,6 +1632,15 @@ SHOPMAN_KDS_BASE_URL = (os.environ.get("SHOPMAN_KDS_BASE_URL") or "").strip().rs
 # (surfaces/production-nuxt). Vazio ⇒ o item "Produção ao vivo" some do nav
 # do Admin (sem link morto), e o operador acessa direto pelo subdomínio (prod.).
 SHOPMAN_PRODUCTION_BASE_URL = (os.environ.get("SHOPMAN_PRODUCTION_BASE_URL") or "").strip().rstrip("/")
+SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_ROWS = int(
+    os.environ.get("SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_ROWS", "50000")
+)
+SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_BYTES = int(
+    os.environ.get("SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_BYTES", str(20 * 1024 * 1024))
+)
+SHOPMAN_PRODUCTION_REPORT_EXPORT_SPOOL_BYTES = int(
+    os.environ.get("SHOPMAN_PRODUCTION_REPORT_EXPORT_SPOOL_BYTES", str(1024 * 1024))
+)
 
 # Base URL pública do Marketing (surfaces/marketing-nuxt) — app Nuxt dedicado,
 # publicado em `mkt.` (staging: mkt.boulangerie.com.br). Vazio ⇒ o tile
@@ -1514,9 +1712,9 @@ SHOPMAN_SURFACE_URLS = {
 SHOPMAN_MENUBOARD_PUBLIC = os.environ.get("SHOPMAN_MENUBOARD_PUBLIC", "false").strip().lower() == "true"
 
 # 2FA obrigatório no Admin (django-otp/TOTP) — gated por env. Default OFF para não
-# trancar fora antes do enrollment; ligar (env="true") só depois de cada superuser
-# ter um TOTPDevice confirmado (management command `setup_admin_totp`). Em PROD,
-# combinar com IP allowlist no ingress do admin. (OPERATOR-APPS-PLAN Fase 3 · WP-A1.)
+# trancar fora antes da inscrição. `setup_admin_totp` apenas prepara a conta;
+# ligar só após prova no navegador do autenticador e da recuperação de TODOS os
+# staff ativos e `check_admin_2fa_ready` verde. Nenhuma ativação automática.
 SHOPMAN_ADMIN_REQUIRE_2FA = (os.environ.get("SHOPMAN_ADMIN_REQUIRE_2FA", "") or "").strip().lower() in {
     "1",
     "true",

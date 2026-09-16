@@ -897,14 +897,23 @@ describe('surface UX guardrails', () => {
     expect(prefs).toContain('v-for="pref in summary?.notification_preferences || []"')
     expect(prefs).not.toContain(':checked')
     expect(prefs).not.toContain('@update:checked')
+    expect(prefs).toContain('@click="stockAlertCancelTarget = subscription"')
+    expect(prefs).toContain('<UiAlertDialogTitle>Cancelar este aviso?</UiAlertDialogTitle>')
+    expect(prefs).toContain("@click=\"changeStockAlert(stockAlertCancelTarget, 'cancel')\"")
 
     const security = read('app/pages/conta/seguranca.vue')
     expect(security).toContain("apiPath('/api/v1/account/devices/')")
     expect(security).toContain("apiPath('/api/v1/account/export/')")
     expect(security).toContain("apiPath('/api/v1/account/delete/')")
     expect(security).toContain('deleteAccountAcknowledged')
+    expect(security).toContain('crypto.randomUUID()')
+    expect(security).toContain("'Idempotency-Key': deleteAccountIdempotencyKey.value")
+    expect(security).toContain('body: { code: stepUpCodeStr.value, purpose: pendingStepUpPurpose }')
     expect(security).toContain('Exportar meus dados')
     expect(security).toContain('Excluir minha conta')
+    expect(security).toContain('privacy_requests_available')
+    expect(security).toContain('Solicitações temporariamente indisponíveis')
+    expect(security).toContain(':disabled="!privacyRequestsAvailable"')
     expect(security).toContain('<UiItem v-for="device in accountDevices" :key="device.id" variant="outline" class="bg-card">')
     expect(security).toContain('<UiItemMedia variant="icon"')
     expect(security).toContain(':name="deviceIcon(device.label)"')
@@ -1135,9 +1144,22 @@ describe('surface UX guardrails', () => {
     expect(css).toContain('--font-sans: "Instrument Sans", ui-sans-serif, system-ui')
     expect(css).not.toContain('"Inter"')
     // O body NÃO pinta bg-background (fica transparente p/ o overscroll revelar o
-    // <html> bicolor do plugin); a base neutra vem do .shop-shell (min-h-dvh).
+    // canvas escuro do <html>); a base neutra vem do .shop-shell (min-h-dvh).
     expect(css).toMatch(/body \{[\s\S]*?@apply text-foreground;/)
     expect(css).toContain('@apply min-h-dvh min-w-0 bg-background text-foreground')
+  })
+
+  it('keeps native pull-to-refresh available without horizontal overscroll', () => {
+    const css = read('app/assets/css/tailwind.css')
+    const app = read('app/app.vue')
+    const nuxtConfig = read('nuxt.config.ts')
+
+    expect(css).toContain('overscroll-behavior-x: none')
+    expect(css).not.toContain('overscroll-behavior: none')
+    expect(css).not.toContain('overscroll-behavior-y: none')
+    expect(css).toMatch(/html \{[\s\S]*?background-color: var\(--shop-ink\)/)
+    expect(app).toContain("return '#531D22'")
+    expect(nuxtConfig).toContain("{ name: 'theme-color', content: '#531D22' }")
   })
 
   it('dresses the brand as a reversible override of the neutral base', () => {
@@ -1394,11 +1416,20 @@ describe('customer surface never names the reason behind unavailability', () => 
 
   const forbidden = /pausad|pausou|em pausa/i
 
-  it('keeps "pausado" out of every string the storefront renders', () => {
+  it('keeps internal pause reasons out of product availability copy', () => {
     const offenders = collectSourceFiles('app')
+      // "Pausado" is a customer-controlled state for a persistent alert, not
+      // the internal reason a product is unavailable.
+      .filter(file => ![
+        'app/components/StockNotifyButton.vue',
+        'app/pages/conta/preferencias.vue',
+        'app/pages/gerenciar-aviso.vue'
+      ].includes(file))
       .filter(file => forbidden.test(withoutComments(read(file))))
 
     expect(offenders).toEqual([])
+    expect(read('app/pages/conta/preferencias.vue')).toContain("subscription.active ? 'Ativo' : 'Pausado'")
+    expect(read('app/pages/gerenciar-aviso.vue')).toContain("alertState.value?.state === 'paused'")
   })
 
   it('shows one label for every unavailable cause on the product page', () => {
@@ -1518,7 +1549,7 @@ describe('surface claims stay inside what the projection actually says', () => {
 
     expect(offer).toContain('v-for="item in skipped"')
     expect(offer).toContain('<StockNotifyButton')
-    expect(offer).not.toContain('ref<string[]>([])')
+    expect(offer).not.toMatch(/const skipped\s*=\s*ref<string\[\]>/)
   })
 
   it('keeps the progress timeline readable by assistive tech', () => {

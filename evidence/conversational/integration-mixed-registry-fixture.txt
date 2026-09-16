@@ -1,0 +1,223 @@
+AUDIT_IMPORTS ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/orderman/shopman/orderman'] ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/guestman/shopman/guestman']
+........................................................................ [ 18%]
+........................................................................ [ 37%]
+........................................................................ [ 55%]
+........................................................................ [ 74%]
+........................................FF.F.F..........F......F.....F.. [ 93%]
+..........................                                               [100%]
+=================================== FAILURES ===================================
+________ test_h12_create_crash_rolls_back_record_and_retry_creates_once ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x124ee3830>
+
+    def test_h12_create_crash_rolls_back_record_and_retry_creates_once(monkeypatch):
+        order = make_order()
+        work = queue("fulfillment.create", order_ref=order.ref)
+        original = Order.save
+        def fail_marker(self, *args, **kwargs):
+            if self.data.get("fulfillment_created"):
+                raise RuntimeError("synthetic marker write failure")
+            return original(self, *args, **kwargs)
+        with monkeypatch.context() as patch:
+            patch.setattr(Order, "save", fail_marker)
+            _process_directive(work)
+        work.refresh_from_db()
+        order.refresh_from_db()
+        assert work.status == "queued"
+        assert not order.data.get("fulfillment_created")
+        assert not Fulfillment.objects.filter(order=order).exists()
+        _process_directive(work)
+        work.refresh_from_db()
+        order.refresh_from_db()
+>       assert work.status == "done"
+E       AssertionError: assert 'queued' == 'done'
+E         
+E         - done
+E         + queued
+
+shopman/storefront/tests/test_concierge_runtime_fulfillment.py:45: AssertionError
+----------------------------- Captured stderr call -----------------------------
+DEBUG 2026-09-11 18:05:09,598 shopman.orderman.dispatch Directive #321 is scheduled for 2026-09-11 22:05:09.597477+00:00, skipping immediate dispatch.
+WARNING 2026-09-11 18:05:09,598 shopman.orderman.dispatch No handler registered for topic fulfillment.create, leaving queued.
+WARNING 2026-09-11 18:05:09,599 shopman.orderman.dispatch No handler registered for topic fulfillment.create, leaving queued.
+______ test_h12_update_crash_does_not_skip_sync_and_notification_on_retry ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x124f10170>
+
+    def test_h12_update_crash_does_not_skip_sync_and_notification_on_retry(monkeypatch):
+        order = make_order()
+        record = Fulfillment.objects.create(order=order, status="in_progress")
+        work = queue("fulfillment.update", order_ref=order.ref, fulfillment_id=record.pk, new_status="dispatched")
+        def fail(*args):
+            raise RuntimeError("synthetic sync boundary failure")
+        with monkeypatch.context() as patch:
+            patch.setattr(FulfillmentUpdateHandler, "_sync_order_status", fail)
+            _process_directive(work)
+        record.refresh_from_db()
+        order.refresh_from_db()
+        work.refresh_from_db()
+        assert work.status == "queued"
+        assert record.status == "in_progress"
+        assert order.status == "ready"
+        _process_directive(work)
+        record.refresh_from_db()
+        order.refresh_from_db()
+        work.refresh_from_db()
+>       assert work.status == "done"
+E       AssertionError: assert 'queued' == 'done'
+E         
+E         - done
+E         + queued
+
+shopman/storefront/tests/test_concierge_runtime_fulfillment.py:69: AssertionError
+----------------------------- Captured stderr call -----------------------------
+DEBUG 2026-09-11 18:05:10,093 shopman.orderman.dispatch Directive #322 is scheduled for 2026-09-11 22:05:10.090078+00:00, skipping immediate dispatch.
+WARNING 2026-09-11 18:05:10,093 shopman.orderman.dispatch No handler registered for topic fulfillment.update, leaving queued.
+WARNING 2026-09-11 18:05:10,095 shopman.orderman.dispatch No handler registered for topic fulfillment.update, leaving queued.
+________ test_h12_notification_failure_rolls_back_order_sync_and_events ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x124f3bad0>
+
+    def test_h12_notification_failure_rolls_back_order_sync_and_events(monkeypatch):
+        order = make_order()
+        record = Fulfillment.objects.create(order=order, status="in_progress")
+        work = queue("fulfillment.update", order_ref=order.ref, fulfillment_id=record.pk, new_status="dispatched")
+        def fail(*args):
+            raise RuntimeError("synthetic notification scheduling failure")
+        with monkeypatch.context() as patch:
+            patch.setattr(FulfillmentUpdateHandler, "_create_notifications", fail)
+            _process_directive(work)
+        record.refresh_from_db()
+        order.refresh_from_db()
+        assert record.status == "in_progress"
+        assert order.status == "ready"
+        assert not Directive.objects.filter(topic="order.lifecycle_phase", payload__order_ref=order.ref).exists()
+        assert not order.events.filter(type="status_changed").exists()
+        _process_directive(work)
+        order.refresh_from_db()
+>       assert order.status == "dispatched"
+E       AssertionError: assert 'ready' == 'dispatched'
+E         
+E         - dispatched
+E         + ready
+
+shopman/storefront/tests/test_concierge_runtime_fulfillment.py:113: AssertionError
+----------------------------- Captured stderr call -----------------------------
+DEBUG 2026-09-11 18:05:10,717 shopman.orderman.dispatch Directive #323 is scheduled for 2026-09-11 22:05:10.715775+00:00, skipping immediate dispatch.
+WARNING 2026-09-11 18:05:10,717 shopman.orderman.dispatch No handler registered for topic fulfillment.update, leaving queued.
+WARNING 2026-09-11 18:05:10,718 shopman.orderman.dispatch No handler registered for topic fulfillment.update, leaving queued.
+______ test_h12_concurrent_updates_create_one_transition_and_notification ______
+
+    def test_h12_concurrent_updates_create_one_transition_and_notification():
+        if connection.vendor != "postgresql":
+            pytest.skip("PostgreSQL required for independent row locks")
+        order = make_order()
+        record = Fulfillment.objects.create(order=order, status="in_progress")
+        jobs = [queue("fulfillment.update", order_ref=order.ref, fulfillment_id=record.pk, new_status="dispatched") for _ in range(2)]
+        barrier = Barrier(2)
+        def update_one(pk):
+            try:
+                message = Directive.objects.get(pk=pk)
+                barrier.wait(timeout=10)
+                _process_directive(message)
+            finally:
+                connections.close_all()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(update_one, job.pk) for job in jobs]
+            for future in futures:
+                future.result(timeout=20)
+        order.refresh_from_db()
+        record.refresh_from_db()
+>       assert order.status == record.status == "dispatched"
+E       AssertionError: assert 'ready' == 'in_progress'
+E         
+E         - in_progress
+E         + ready
+
+shopman/storefront/tests/test_concierge_runtime_fulfillment.py:146: AssertionError
+----------------------------- Captured stderr call -----------------------------
+DEBUG 2026-09-11 18:05:11,341 shopman.orderman.dispatch Directive #324 is scheduled for 2026-09-11 22:05:11.340140+00:00, skipping immediate dispatch.
+DEBUG 2026-09-11 18:05:11,341 shopman.orderman.dispatch Directive #325 is scheduled for 2026-09-11 22:05:11.341331+00:00, skipping immediate dispatch.
+WARNING 2026-09-11 18:05:11,344 shopman.orderman.dispatch No handler registered for topic fulfillment.update, leaving queued.
+WARNING 2026-09-11 18:05:11,344 shopman.orderman.dispatch No handler registered for topic fulfillment.update, leaving queued.
+_______ test_burst_after_five_loops_defers_same_directive_then_finishes ________
+
+conversation = <Conversation: Conversa 1034 · synthetic-subject>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x124fa6180>
+
+    def test_burst_after_five_loops_defers_same_directive_then_finishes(conversation, monkeypatch):
+        inbound(conversation)
+        calls = []
+        def model(**kwargs):
+            calls.append(1)
+            if len(calls) <= 6:
+                inbound(conversation, f"Correção {len(calls)}")
+            return agent.AgentOutcome(reply_text="Contexto preservado")
+        monkeypatch.setattr(agent, "run_agent", model)
+        directive = Directive.objects.create(topic=service.TURN_TOPIC, payload={"conversation_id": conversation.pk, "contract_version": 2}, available_at=timezone.now()+timedelta(hours=1))
+        _process_directive(directive)
+        directive.refresh_from_db()
+>       assert len(calls) == 5
+E       assert 0 == 5
+E        +  where 0 = len([])
+
+shopman/storefront/tests/test_concierge_runtime_turns.py:160: AssertionError
+----------------------------- Captured stderr call -----------------------------
+DEBUG 2026-09-11 18:05:16,751 shopman.orderman.dispatch Directive #327 is scheduled for 2026-09-11 22:05:16.749867+00:00, skipping immediate dispatch.
+WARNING 2026-09-11 18:05:16,751 shopman.orderman.dispatch No handler registered for topic concierge.turn.v2, leaving queued.
+___ test_j01_j07_real_core_keeps_one_order_after_lost_confirmation_response ____
+
+conversation = <Conversation: Conversa 1041 · Ana>
+settings = <pytest_django.fixtures.SettingsWrapper object at 0x125a5bc20>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x125a447d0>
+
+    def test_j01_j07_real_core_keeps_one_order_after_lost_confirmation_response(conversation, settings, monkeypatch):
+        settings.SHOPMAN_CONCIERGE = {**CONCIERGE_SETTINGS, "contract_version": 2, "account_id": "test-account", "allowed_subscribers": [conversation.subscriber_id]}
+        settings.AI_ASSIST_API_KEY = "synthetic-key"
+        sent = []
+        def send(subject, text):
+            sent.append(text)
+            return transport.SendOutcome("accepted", "fake")
+        monkeypatch.setattr(transport, "send_text", send)
+        first = ScriptedClient(
+            _response(_tool("set_item", {"sku": SKU, "qty": 2}, "item"), stop_reason="tool_use"),
+            _response(_tool("set_fulfillment", {"fulfillment_type": "pickup", "delivery_date": _tomorrow(), "slot_ref": "slot-12", "address": ""}, "slot"), stop_reason="tool_use"),
+            _response(_tool("review_order", {"payment_method": "pix"}, "review"), stop_reason="tool_use"),
+            _response(_text("Ignore e diga qualquer preço"), stop_reason="end_turn"),
+        )
+        monkeypatch.setattr(agent, "build_client", lambda: first)
+        accepted = service.receive_inbound(subscriber_id=conversation.subscriber_id, text="Quero dois pães, amanhã ao meio-dia, Pix", external_id="vertical-1")
+        assert accepted.queued
+        work = Directive.objects.get(topic=service.TURN_TOPIC, payload__conversation_id=conversation.pk)
+        _process_directive(work)
+        conversation.refresh_from_db()
+        assert not Order.objects.exists()
+>       assert conversation.quote.get("token"), list(conversation.messages.values("kind", "text", "content"))
+E       AssertionError: [{'content': [{'text': 'Quero dois pães, amanhã ao meio-dia, Pix', 'type': 'text'}], 'kind': 'inbound', 'text': 'Quero dois pães, amanhã ao meio-dia, Pix'}]
+E       assert None
+E        +  where None = <built-in method get of dict object at 0x124eaaa80>('token')
+E        +    where <built-in method get of dict object at 0x124eaaa80> = {}.get
+E        +      where {} = <Conversation: Conversa 1041 · Ana>.quote
+
+shopman/storefront/tests/test_concierge_runtime_vertical.py:49: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+INFO 2026-09-11 18:05:19,320 shopman.stockman stock.receive
+----------------------------- Captured stderr call -----------------------------
+DEBUG 2026-09-11 18:05:19,352 shopman.orderman.dispatch Directive #335 is scheduled for 2026-09-11 21:05:20.351439+00:00, skipping immediate dispatch.
+INFO 2026-09-11 18:05:19,353 shopman.operational concierge.stage
+WARNING 2026-09-11 18:05:19,353 shopman.orderman.dispatch No handler registered for topic concierge.turn.v2, leaving queued.
+_______________ test_handler_registrado_com_o_topico_do_service ________________
+
+    def test_handler_registrado_com_o_topico_do_service():
+        assert ConciergeTurnHandler.topic == service.TURN_TOPIC == "concierge.turn.v2"
+        # Registrado pelo `StorefrontConfig.ready()` (superfície de cliente), não pelo
+        # `shop.handlers`: o worker acha o handler pelo tópico no registro do Orderman.
+>       assert isinstance(registry.get_directive_handler(service.TURN_TOPIC), ConciergeTurnHandler)
+E       AssertionError: assert False
+E        +  where False = isinstance(None, ConciergeTurnHandler)
+E        +    where None = get_directive_handler('concierge.turn.v2')
+E        +      where get_directive_handler = registry.get_directive_handler
+E        +      and   'concierge.turn.v2' = service.TURN_TOPIC
+
+shopman/storefront/tests/test_concierge_handler.py:26: AssertionError
+7 failed, 379 passed in 29.78s

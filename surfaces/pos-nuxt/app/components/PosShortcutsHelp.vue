@@ -61,6 +61,13 @@ const groups: Array<{ title: string; items: Array<{ keys: string[]; label: strin
     ],
   },
   {
+    title: "No modal Dividir conta",
+    items: [
+      { keys: ["2–6"], label: "Escolher a quantidade de pessoas e fechar" },
+      { keys: ["1"], label: "Desfazer a divisão (quando ativa)" },
+    ],
+  },
+  {
     title: "Na venda concluída",
     items: [
       { keys: ["F2"], label: "Nova venda (sempre)" },

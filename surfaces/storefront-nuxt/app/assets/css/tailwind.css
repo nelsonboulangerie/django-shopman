@@ -268,15 +268,16 @@
   }
   html {
     @apply antialiased;
-    /* Canvas = área de overscroll da BASE → faubourg (--shop-bottomnav), igual à
-       bottom-nav, pra fundir embaixo. O TOPO é outra superfície (o header escuro que
-       estica), por isso topo e base podem ter cores diferentes. */
-    background-color: var(--shop-bottomnav);
-    overscroll-behavior: none;
+    /* Canvas exposto pelo pull-to-refresh. O shell pinta todo o conteúdo e a bottom-nav
+       pinta sua própria superfície; o root fica no Dark Burgundy da barra superior. */
+    background-color: var(--shop-ink);
+    /* Mantém o shell contido na horizontal sem bloquear o gesto nativo de
+       puxar para atualizar no eixo vertical. */
+    overscroll-behavior-x: none;
   }
   body {
     @apply text-foreground;
-    overscroll-behavior: none;
+    overscroll-behavior-x: none;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     overflow-x: clip;
   }
@@ -309,6 +310,48 @@
   .shop-shell {
     @apply min-h-dvh min-w-0 bg-background text-foreground;
     overflow-x: clip;
+  }
+
+  /* WebKit/iOS 26 pode pintar position:fixed fora da posição durante a rolagem
+     de um PWA standalone. Só nesse modo o casco vira uma coluna de altura fixa:
+     o conteúdo rola dentro dela e a bottom-nav permanece em fluxo normal. */
+  @media (max-width: 767px) {
+    html.shop-ios-standalone,
+    html.shop-ios-standalone body,
+    html.shop-ios-standalone #__nuxt {
+      height: 100%;
+      overflow: hidden;
+    }
+
+    html.shop-ios-standalone .shop-shell.shop-shell {
+      /* Backing do scrollport: se o WebKit compuser o rubber-band através da
+         transparência do scroller, ainda encontra Bordeaux — nunca o creme. */
+      background-color: var(--shop-ink);
+      height: 100dvh;
+      min-height: 100dvh;
+      overflow: hidden;
+    }
+
+    html.shop-ios-standalone .shop-scroll-viewport {
+      /* Este elemento passou a ser o viewport vertical no PWA instalado. O
+         rubber-band do pull-to-refresh revela o canvas do próprio scroller,
+         não mais o `html`; portanto ele precisa carregar o mesmo Bordeaux
+         escuro reservado ao overscroll da barra superior. */
+      background-color: var(--shop-ink);
+      min-height: 0;
+      overflow-x: clip;
+      overflow-y: auto;
+      overscroll-behavior-x: none;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    html.shop-ios-standalone .shop-bottomnav-bar.shop-bottomnav-bar {
+      flex: none;
+    }
+
+    html.shop-ios-standalone .shop-scroll-viewport .shop-bottom-safe {
+      padding-bottom: 1.5rem;
+    }
   }
 
   /* ── Sistema tipográfico (fonte única) ──────────────────────────────────────
@@ -611,5 +654,23 @@
   scrollbar-width: none;
   &::-webkit-scrollbar {
     display: none;
+  }
+}
+
+/* Fora das cascade layers de Tailwind de propósito: precisa vencer as utilities
+   `fixed`, `bottom-0` e `inset-x-0` presentes no markup do modo navegador. */
+@media (max-width: 767px) {
+  html.shop-ios-standalone .shop-bottomnav-bar.shop-bottomnav-bar {
+    position: relative;
+    inset: auto;
+  }
+
+  /* Dentro da coluna de altura fixa, `flex-1` encolheria o main e faria seu
+     conteúdo transbordar por baixo do footer. Em fluxo auto ele cresce inteiro. */
+  html.shop-ios-standalone #main-content {
+    /* Mantém o conteúdo da loja no canvas claro; o Bordeaux do scrollport só
+       aparece quando o WebKit estica além do topo durante o pull-to-refresh. */
+    background-color: var(--background);
+    flex: none;
   }
 }

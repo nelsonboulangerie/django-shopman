@@ -45,13 +45,13 @@ import {
 
 describe("presentation/bi", () => {
   it("formata centavos em pt-BR", () => {
-    expect(formatMoney(123456).replace(/ /g, " ")).toBe("R$ 1.234,56");
-    expect(formatMoney(-200).replace(/ /g, " ")).toBe("-R$ 2,00");
+    expect(formatMoney(123456).replace(/\u00A0/g, " ")).toBe("R$ 1.234,56");
+    expect(formatMoney(-200).replace(/\u00A0/g, " ")).toBe("-R$ 2,00");
   });
 
   it("compacta valores grandes para tiles", () => {
-    expect(formatMoneyCompact(123456789).replace(/ /g, " ")).toBe("R$ 1.234,6 mil");
-    expect(formatMoneyCompact(4000).replace(/ /g, " ")).toBe("R$ 40,00");
+    expect(formatMoneyCompact(123456789).replace(/\u00A0/g, " ")).toBe("R$ 1.234,6 mil");
+    expect(formatMoneyCompact(4000).replace(/\u00A0/g, " ")).toBe("R$ 40,00");
   });
 
   it("quantidades e minutos trocam ponto por vírgula", () => {

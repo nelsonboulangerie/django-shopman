@@ -1,5 +1,6 @@
 """Backstage models — KDS, DayClosing, OperatorAlert, Operation."""
 
+from .admin_two_factor import AdminTwoFactorEnrollment
 from .alerts import OperatorAlert
 from .aliases import AliasStatus, CategoryAlias, PaymentMethodAlias, ProductAlias
 from .bi_alerts import BIAlertEvent, BIAlertRule
@@ -39,6 +40,7 @@ from .shelf_outage import OutageReason, ShelfOutage
 from .sign_in import SignInEvent, SignInMethod, SignInOutcome
 
 __all__ = [
+    "AdminTwoFactorEnrollment",
     "OperatorAlert",
     "AliasStatus",
     "BIAlertEvent",

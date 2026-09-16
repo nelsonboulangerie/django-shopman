@@ -728,6 +728,11 @@ def standardize(formula: dict, basis_g: Decimal | int | str = Decimal(1000)) -> 
 
 _ALL = "*"
 
+# As faixas desta lente vêm da literatura de panificação. Biscoito pode usar
+# âncora de farinha para leitura percentual sem por isso herdar hidratação,
+# sal ou fermento de pão.
+REFERENCE_EXCLUDED_KINDS = ("cookie",)
+
 
 def _range(low, high, maximum=None, note="") -> dict:
     return {
@@ -795,7 +800,10 @@ _METRIC_LABELS = {
 def reference_for(metric: str, kind: str) -> dict | None:
     """A faixa de ``metric`` para o ``kind`` da receita, ou ``None`` se não há."""
     table = REFERENCE_RANGES.get(metric) or {}
-    return table.get(kind) or table.get(_ALL)
+    exact = table.get(kind)
+    if exact:
+        return exact
+    return None if kind in REFERENCE_EXCLUDED_KINDS else table.get(_ALL)
 
 
 def _pct_text(value: Decimal | None) -> str:
@@ -826,7 +834,7 @@ def _check_value(code_prefix: str, label: str, metric: str, value: Decimal | Non
 def check_references(analysis: FormulaAnalysis, kind: str) -> list[FormulaWarning]:
     """Compara as métricas (e a farinha de cada parte) com a literatura. Nunca bloqueia."""
     out: list[FormulaWarning] = []
-    if analysis.anchor_kind != "flour":
+    if analysis.anchor_kind != "flour" or kind in REFERENCE_EXCLUDED_KINDS:
         return out
     for metric, value in analysis.metrics().items():
         # Ausente não é errado: pão de levain não leva fermento, massa magra não

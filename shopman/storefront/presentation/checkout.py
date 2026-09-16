@@ -102,6 +102,7 @@ class CheckoutProjection:
     # Payment methods available on this channel
     payment_methods: tuple[PaymentMethodOptionProjection, ...]
     default_payment_method: str
+    payment_constraints: dict
 
     # Resolved options/actions for the surface
     actions: tuple[Action, ...]
@@ -222,6 +223,7 @@ def build_checkout(
         preselected_address_id=preselected_address_id,
         payment_methods=payment_methods,
         default_payment_method=payment_methods[0].ref if payment_methods else "cash",
+        payment_constraints=_payment_constraints(),
         actions=_checkout_actions(
             policy,
             cart=cart,
@@ -390,6 +392,13 @@ def _payment_methods(channel_ref: str) -> tuple[PaymentMethodOptionProjection, .
     )
 
 
+def _payment_constraints() -> dict:
+    """Provider-test capabilities resolved from the effective runtime adapter."""
+    from shopman.shop.projections.payment_constraints import payment_constraints_payload
+
+    return payment_constraints_payload()
+
+
 def _checkout_actions(
     policy: ChannelPolicyResolution,
     *,
@@ -398,12 +407,16 @@ def _checkout_actions(
     requires_authentication: bool,
 ) -> tuple[Action, ...]:
     auth_blocked = requires_authentication and not is_authenticated
-    enabled = policy.can_checkout and not cart.is_empty and not auth_blocked
+    cart_checkout = next((action for action in cart.actions if action.ref == "checkout"), None)
+    cart_allowed = cart_checkout is not None and cart_checkout.enabled
+    enabled = policy.can_checkout and cart_allowed and not cart.is_empty and not auth_blocked
     reason = ""
     if cart.is_empty:
         reason = resolve_copy("CART_CHECKOUT_BLOCK_EMPTY", moment="*", audience="*").message or "Sacola vazia."
     elif auth_blocked:
         reason = "Entre por telefone para continuar."
+    elif not cart_allowed:
+        reason = (cart_checkout.reason if cart_checkout else "") or "Revise a sacola antes de finalizar."
     elif not policy.can_checkout:
         reason = (
             resolve_copy("CART_CHECKOUT_BLOCK_CHANNEL", moment="*", audience="*").message

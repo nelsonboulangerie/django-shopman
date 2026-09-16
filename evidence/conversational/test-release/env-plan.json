@@ -1,0 +1,19 @@
+{
+  "private_directory": "/var/folders/26/_q6qdvgd7ng__s8yvxymfy2h0000gn/T/concierge-test-release-pmyrhru1",
+  "app_id": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f",
+  "active_deployment_before": "239c5fd5-846f-4983-be70-9fb660654c73",
+  "changes": {
+    "CONCIERGE_ACCOUNT_ID": "764222643620409",
+    "CONCIERGE_CONTRACT_VERSION": "2",
+    "CONCIERGE_LEGACY_READ_HANDOFF_ENABLED": "true",
+    "CONCIERGE_READ_ONLY": "true",
+    "CONCIERGE_IDENTITY_LINK_ENABLED": "false",
+    "CONCIERGE_HUMAN_RETURN_ENABLED": "false",
+    "CONCIERGE_OUTPUT_RETRY_ENABLED": "false",
+    "CONCIERGE_TRANSFER_ENABLED": "false"
+  },
+  "existing_envs_preserved": true,
+  "existing_components_preserved": true,
+  "subject_cohort_preserved": true,
+  "environment": "staging"
+}

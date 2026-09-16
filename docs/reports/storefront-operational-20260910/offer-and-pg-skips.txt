@@ -1,0 +1,7 @@
+..............ssss                                                       [100%]
+=========================== short test summary info ============================
+SKIPPED [1] shopman/storefront/tests/test_operational_postgres.py:14: Requires independent PostgreSQL connections
+SKIPPED [1] shopman/storefront/tests/test_operational_postgres.py:37: Requires independent PostgreSQL connections
+SKIPPED [1] shopman/storefront/tests/test_concurrent_checkout.py:216: Requires PostgreSQL for real concurrency testing
+SKIPPED [1] shopman/storefront/tests/test_concurrent_checkout.py:265: Requires PostgreSQL for real concurrency testing
+14 passed, 4 skipped in 17.20s

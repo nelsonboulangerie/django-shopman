@@ -7,18 +7,28 @@ import hmac
 import math
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
 from shopman.shop.models import DeliveryTarget, MarketingContentArtifact
+from shopman.shop.services import marketing_capabilities
 from shopman.shop.services.marketing_contracts import (
     MarketingContractError,
     ResolvedDispatchArtifact,
 )
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = marketing_capabilities.CAPABILITY_IDENTITY_SCHEMA_VERSION
 RESOLVED_ARTIFACT_SCHEMA_VERSION = 2
-SUPPORTED_PLATFORMS = frozenset({"facebook", "google_business", "instagram", "whatsapp"})
+SUPPORTED_PLATFORMS = frozenset(marketing_capabilities.platform_refs())
+PUBLICATION_FORMATS: dict[str, frozenset[str]] = {
+    platform: marketing_capabilities.format_refs(platform)
+    for platform in marketing_capabilities.publication_platform_refs()
+}
+DEFAULT_PUBLICATION_FORMATS = {
+    platform: marketing_capabilities.default_format(platform)
+    for platform in marketing_capabilities.publication_platform_refs()
+}
 _HASH = re.compile(r"^[a-f0-9]{64}$")
 _FIELD = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _FLOW_REF = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
@@ -154,13 +164,29 @@ def resolve_dispatch_artifact(
                 code="invalid_flow_catalog_hash",
                 detail="O hash do catálogo de fluxos é inválido.",
             )
+    provider_fields = _provider_fields(variant, platform=normalized_platform)
+    _validate_publication_contract(
+        platform=normalized_platform,
+        provider_fields=dict(provider_fields),
+        image_url=image_url,
+    )
+    delivery_kind, delivery_format = marketing_capabilities.resolve_identity(
+        normalized_platform,
+        delivery_kind=marketing_capabilities.platform_kind(normalized_platform) or "",
+        format_ref=str(
+            dict(provider_fields).get("publication_format")
+            or marketing_capabilities.default_format(normalized_platform)
+        ),
+    )
     return ResolvedDispatchArtifact(
         platform=normalized_platform,
         body=body,
+        delivery_kind=delivery_kind,
+        format=delivery_format,
         hashtags=hashtags,
         link=link,
         image_url=image_url,
-        provider_fields=_provider_fields(variant, platform=normalized_platform),
+        provider_fields=provider_fields,
         content_version=content_version,
         facts_as_of=normalized_facts_as_of,
         facts_hash=normalized_facts_hash,
@@ -168,6 +194,128 @@ def resolve_dispatch_artifact(
         flow_version=flow_version if has_flow_binding else 0,
         flow_catalog_hash=normalized_catalog_hash,
     )
+
+
+def normalize_platform_content(
+    *,
+    platforms: Sequence[str],
+    platform_content: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Seal an explicit publication format into mutable preview/approval input.
+
+    This is called before approval. Old immutable artifacts are never upgraded
+    on read: if they do not name a format, a live adapter refuses them instead
+    of guessing a new consequence.
+    """
+
+    variants = _mapping(platform_content, field="platform_content")
+    normalized: dict[str, dict[str, Any]] = {}
+    for raw_platform, raw_variant in variants.items():
+        platform = str(raw_platform)
+        normalized[platform] = _mapping(
+            raw_variant,
+            field=f"platform_content.{platform}",
+        )
+
+    for platform in platforms:
+        if platform not in PUBLICATION_FORMATS:
+            continue
+        variant = normalized.setdefault(platform, {})
+        legacy = str(variant.get("post_type") or "").strip().lower()
+        explicit = str(variant.get("publication_format") or "").strip().lower()
+        legacy_format = {
+            "stories": "story",
+            "story": "story",
+            "feed": "feed",
+            "standard": "standard",
+        }.get(legacy, "")
+        if legacy and not legacy_format:
+            raise MarketingContractError(
+                code="publication_format_invalid",
+                detail="O formato antigo não corresponde a uma publicação suportada.",
+                field_errors={
+                    f"platform_content.{platform}.post_type": (
+                        "Escolha um formato disponível.",
+                    )
+                },
+            )
+        if explicit and legacy_format and explicit != legacy_format:
+            raise MarketingContractError(
+                code="publication_format_conflict",
+                detail="A variante contém dois formatos de publicação diferentes.",
+                field_errors={
+                    f"platform_content.{platform}.publication_format": (
+                        "Escolha um único formato.",
+                    )
+                },
+            )
+        variant["publication_format"] = (
+            explicit or legacy_format or DEFAULT_PUBLICATION_FORMATS[platform]
+        )
+        # ``post_type`` was an unimplemented draft field. Once interpreted, it
+        # must not survive beside the canonical field and create ambiguity.
+        variant.pop("post_type", None)
+
+    for platform in platforms:
+        variant = normalized.setdefault(platform, {})
+        _validate_provider_schema(platform=platform, variant=variant)
+    return normalized
+
+
+def _validate_provider_schema(
+    *,
+    platform: str,
+    variant: Mapping[str, Any],
+) -> None:
+    """Reject provider knobs that the selected destination cannot honor.
+
+    Historical sealed artifacts do not pass through this function. New preview
+    and approval input does, so compatibility remains read-only while every new
+    consequence has a closed schema.
+    """
+
+    destination = marketing_capabilities.DESTINATIONS_BY_PLATFORM.get(platform)
+    if destination is None:
+        return
+    format_ref = str(
+        variant.get("publication_format") or destination.default_format
+    ).strip().lower()
+    capability = destination.format(format_ref)
+    if capability is None:
+        raise MarketingContractError(
+            code="publication_format_invalid",
+            detail="O formato de publicação não é aceito por esta plataforma.",
+            field_errors={
+                f"platform_content.{platform}.publication_format": (
+                    "Escolha um formato disponível.",
+                )
+            },
+        )
+    provider_keys = set(variant) - _RESERVED_CONTENT_FIELDS
+    unexpected = sorted(provider_keys - capability.provider_fields)
+    if unexpected:
+        field = f"platform_content.{platform}.{unexpected[0]}"
+        raise MarketingContractError(
+            code="unsupported_provider_field",
+            detail="Há uma opção que esta plataforma não consegue aplicar.",
+            field_errors={
+                field: (
+                    "Remova esta opção ou escolha um formato que ofereça esse recurso.",
+                )
+            },
+        )
+    missing = sorted(
+        field
+        for field in capability.required_provider_fields
+        if variant.get(field) in (None, "")
+    )
+    if missing:
+        field = f"platform_content.{platform}.{missing[0]}"
+        raise MarketingContractError(
+            code="provider_field_required",
+            detail="Falta uma opção obrigatória para esta publicação.",
+            field_errors={field: ("Escolha uma opção antes de continuar.",)},
+        )
 
 
 def resolve_all_dispatch_artifacts(
@@ -244,7 +392,11 @@ def resolve_approved_dispatch_artifact(
 
     if artifact.schema_version >= RESOLVED_ARTIFACT_SCHEMA_VERSION:
         stored = _mapping(payload.get("resolved_artifacts"), field="resolved_artifacts")
-        resolved = _resolved_from_payload(stored.get(platform), platform=platform)
+        resolved = _resolved_from_payload(
+            stored.get(platform),
+            platform=platform,
+            require_identity=artifact.schema_version >= SCHEMA_VERSION,
+        )
         if resolved.content_version != artifact.version:
             raise MarketingContractError(
                 code="artifact_version_mismatch",
@@ -254,7 +406,7 @@ def resolve_approved_dispatch_artifact(
 
     # Compatibility window for approvals created before schema v2. New
     # approvals always persist ``resolved_artifacts`` and never re-render here.
-    return resolve_dispatch_artifact(
+    legacy = resolve_dispatch_artifact(
         platform=platform,
         content=_mapping(payload.get("content"), field="content"),
         platform_content=_mapping(
@@ -264,6 +416,7 @@ def resolve_approved_dispatch_artifact(
         content_version=artifact.version,
         facts_hash=str(payload.get("facts_hash") or ""),
     )
+    return replace(legacy, delivery_kind="", format="")
 
 
 def resolve_target_dispatch_artifact(target: DeliveryTarget) -> ResolvedDispatchArtifact:
@@ -272,18 +425,34 @@ def resolve_target_dispatch_artifact(target: DeliveryTarget) -> ResolvedDispatch
             code="delivery_artifact_mismatch",
             detail="O target não aponta para um artefato e plataforma válidos.",
         )
-    return resolve_approved_dispatch_artifact(
+    resolved = resolve_approved_dispatch_artifact(
         target.artifact,
         platform=target.platform,
     )
+    delivery_kind, delivery_format = marketing_capabilities.persisted_identity(target)
+    if (resolved.delivery_kind or resolved.format) and (
+        resolved.delivery_kind != delivery_kind or resolved.format != delivery_format
+    ):
+        raise MarketingContractError(
+            code="delivery_identity_mismatch",
+            detail="O destino não corresponde à modalidade aprovada.",
+        )
+    return resolved
 
 
-def _resolved_from_payload(value: object, *, platform: str) -> ResolvedDispatchArtifact:
+def _resolved_from_payload(
+    value: object,
+    *,
+    platform: str,
+    require_identity: bool = False,
+) -> ResolvedDispatchArtifact:
     payload = _mapping(value, field=f"resolved_artifacts.{platform}")
     try:
         resolved = ResolvedDispatchArtifact(
             platform=str(payload.get("platform") or ""),
             body=str(payload.get("body") or ""),
+            delivery_kind=str(payload.get("delivery_kind") or ""),
+            format=str(payload.get("format") or ""),
             hashtags=_hashtags(payload.get("hashtags")),
             link=str(payload.get("link") or ""),
             image_url=str(payload.get("image_url") or ""),
@@ -310,9 +479,15 @@ def _resolved_from_payload(value: object, *, platform: str) -> ResolvedDispatchA
             code="artifact_platform_mismatch",
             detail="A plataforma resolvida diverge da evidência aprovada.",
         )
+    marketing_capabilities.resolve_identity(
+        resolved.platform,
+        delivery_kind=resolved.delivery_kind,
+        format_ref=resolved.format,
+        allow_legacy_missing=not require_identity,
+    )
     # Round-trip through the pure resolver applies the same invariants used by
     # preview and approval without inheriting any later mutable model state.
-    return resolve_dispatch_artifact(
+    checked = resolve_dispatch_artifact(
         platform=resolved.platform,
         content={
             "body": resolved.body,
@@ -328,6 +503,9 @@ def _resolved_from_payload(value: object, *, platform: str) -> ResolvedDispatchA
         flow_version=resolved.flow_version,
         flow_catalog_hash=resolved.flow_catalog_hash,
     )
+    if not require_identity and not resolved.delivery_kind and not resolved.format:
+        return replace(checked, delivery_kind="", format="")
+    return checked
 
 
 def _flow_binding(
@@ -422,6 +600,42 @@ def _provider_fields(
             _assert_resolved(value, field=f"platform_content.{platform}.{key}")
         fields.append((key, value))
     return tuple(sorted(fields))
+
+
+def _validate_publication_contract(
+    *,
+    platform: str,
+    provider_fields: Mapping[str, Any],
+    image_url: str,
+) -> None:
+    """Validate explicit formats while keeping old sealed artifacts readable."""
+
+    allowed = PUBLICATION_FORMATS.get(platform)
+    if allowed is None:
+        return
+    raw_format = provider_fields.get("publication_format")
+    if raw_format in (None, ""):
+        # Compatibility only. Live adapters fail closed on this absence; new
+        # preview/approval input always passes through normalize_platform_content.
+        return
+    publication_format = str(raw_format).strip().lower()
+    field = f"platform_content.{platform}.publication_format"
+    if publication_format not in allowed:
+        raise MarketingContractError(
+            code="publication_format_invalid",
+            detail="O formato de publicação não é aceito por esta plataforma.",
+            field_errors={field: ("Escolha um formato disponível.",)},
+        )
+    if platform == "instagram" and not image_url:
+        raise MarketingContractError(
+            code="instagram_media_required",
+            detail="O Instagram precisa de uma imagem pública para publicar.",
+            field_errors={
+                "content.image_url": (
+                    "Escolha uma imagem para o Story ou Feed do Instagram.",
+                )
+            },
+        )
 
 
 def _assert_resolved(value: str, *, field: str) -> None:

@@ -30,7 +30,7 @@ describe('Django proxy CSRF transport', () => {
   it('normalizes unsafe request origin to the Django backend origin', () => {
     expect(proxySource).toContain('headers.origin = djangoOrigin')
     expect(proxySource).toContain('headers.referer = `${djangoOrigin}/`')
-    expect(proxySource).not.toContain("getRequestHeader(event, 'origin')")
+    expect(proxySource).toContain("getRequestHeader(event, 'origin')")
     expect(proxySource).not.toContain("getRequestHeader(event, 'referer')")
   })
 

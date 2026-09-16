@@ -236,7 +236,7 @@ export function cardAffordances(card: OrderCardProjection): Affordance[] {
   }));
   if (card.can_settle_delivery_cash) {
     const settle = projected.find((action) => action.ref === "settle-delivery-cash");
-    out.push({ ref: "settle_cash", label: "Acertar entrega", icon: "lucide:banknote", priority: "secondary", needsInput: true,
+    out.push({ ref: "settle_cash", label: card.fulfillment_type === "pickup" ? "Receber na retirada" : "Acertar entrega", icon: "lucide:banknote", priority: "secondary", needsInput: true,
       disabled: !settle?.enabled, reason: settle?.reason || (!settle ? "Atualize o pedido para conferir o caixa." : "") });
   }
   // A maquininha saiu e não voltou; sem acerto em dinheiro para marcar, o card
@@ -330,23 +330,35 @@ export function realtimeIndicator(state: RealtimeState): RealtimeIndicatorView {
   return { label: "Atualização automática", live: false, dotClass: "bg-muted-foreground/40", title: "Sem tempo real; o board atualiza sozinho a cada 30s" };
 }
 
-/**
- * Parse do payload de um push SSE do board (backstage-orders-update): devolve o
- * ref quando é um pedido NOVO (`kind === "created"`, ver _sse_emitters), "" se é
- * novo sem ref, e null para qualquer outro push (mudança de status, corrida) —
- * o aviso de pedido novo (som/notificação) não pode gritar em transição de
- * status, e um payload imparseável não é pedido novo.
- */
-export function newOrderPush(data: unknown): string | null {
-  try {
-    const payload = JSON.parse(String(data ?? ""));
-    if (payload && typeof payload === "object" && payload.kind === "created") {
-      return String(payload.ref || "");
-    }
-    return null;
-  } catch {
-    return null;
-  }
+/** A fonte do som é a projeção canônica após o refresh, nunca o sinal SSE cru. */
+export function treatableOrderRefs(queue: TwoZoneQueueProjection | null): Set<string> {
+  if (!queue) return new Set();
+  // Encomenda futura pode até ter ação administrativa disponível (aceitar,
+  // corrigir, cancelar), mas não é trabalho do turno de agora. Incluí-la aqui
+  // fazia o sino do Gestor tocar no instante da venda, embora o próprio board a
+  // colocasse corretamente em "Agendados". Quando a data chega, a projeção (e,
+  // quando aplicável, o despertador do lifecycle) leva o card ao fluxo do dia;
+  // só então ele entra neste conjunto e a atenção toca uma única vez.
+  const cards = [
+    ...queue.intake,
+    ...queue.prep,
+    ...queue.expedition_pickup,
+    ...queue.expedition_delivery,
+    ...queue.expedition_delivery_transit,
+    ...(queue.ifood_negotiation_orders ?? []),
+  ];
+  return new Set(cards.filter((card) => (
+    card.can_confirm || card.can_advance || card.can_settle_delivery_cash || card.equipment_back_pending
+  )).map((card) => card.ref));
+}
+
+/** Refs que passaram de espera passiva para trabalho possível no Gestor. */
+export function newlyTreatableOrderRefs(
+  before: TwoZoneQueueProjection | null,
+  after: TwoZoneQueueProjection | null,
+): string[] {
+  const prior = treatableOrderRefs(before);
+  return [...treatableOrderRefs(after)].filter((ref) => !prior.has(ref));
 }
 
 /** Contagem por fulfillment na fila corrente (para os selos dos filtros). */

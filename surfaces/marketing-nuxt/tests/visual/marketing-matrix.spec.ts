@@ -39,7 +39,10 @@ async function openScenario(
     reducedMotion: "reduce",
   });
   await page.goto(path, { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("main")).toBeVisible();
+  // Dev assets can compile on first request while another worktree is using the
+  // local CPU. The visual assertion remains exact; only bootstrap gets room to
+  // finish instead of turning machine contention into a false UI regression.
+  await expect(page.getByRole("main")).toBeVisible({ timeout: 30_000 });
   await page.waitForFunction(() =>
     document.querySelector("#__nuxt")?.hasAttribute("data-v-app"),
   );
@@ -50,11 +53,16 @@ async function expectStableScreenshot(
   name: string,
   viewport: Viewport,
   theme: Theme = "light",
-  options: { fullPage?: boolean } = {},
+  options: { fullPage?: boolean; maxDiffPixels?: number } = {},
 ) {
   await expect(page).toHaveScreenshot(
     [`${name}__${viewport.label}__${theme}.png`],
-    { fullPage: options.fullPage ?? true },
+    {
+      fullPage: options.fullPage ?? true,
+      ...(options.maxDiffPixels === undefined
+        ? {}
+        : { maxDiffPixels: options.maxDiffPixels }),
+    },
   );
   const width = await page.evaluate(() => ({
     client: document.documentElement.clientWidth,
@@ -178,7 +186,35 @@ test.describe("painel", () => {
       await expect(page.getByRole("heading", { level: 1, name: "Painel" })).toBeVisible();
       if (scenario !== "board-empty" && scenario !== "board-normal")
         await waitForFaithfulPreview(page);
-      await expectStableScreenshot(page, `panel__${state}`, viewport);
+      if (scenario === "board-pending") {
+        await expect(
+          page.getByRole("group", { name: "Entregar por" }),
+        ).toBeVisible();
+        await expect(
+          page.getByRole("button", { name: "Entregar agora" }),
+        ).toBeVisible();
+        await expect(
+          page.getByText("entregar agora é uma decisão separada", {
+            exact: false,
+          }),
+        ).toBeVisible();
+        await expect(
+          page.getByText("Publicar em", { exact: true }),
+        ).toHaveCount(0);
+      }
+      await expectStableScreenshot(
+        page,
+        `panel__${state}`,
+        viewport,
+        "light",
+        scenario === "board-pending"
+          ? {
+              // A mesma árvore macOS/Chromium variou 112 pixels nos ícones.
+              // 128 preserva essa margem sem esconder a copy (659 pixels).
+              maxDiffPixels: 128,
+            }
+          : {},
+      );
     });
   }
 
@@ -219,10 +255,10 @@ test.describe("cartão de anúncio", () => {
     await expectStableScreenshot(page, "announcement-card__long-edit", V320);
   });
 
-  test("publicar agora abre confirmação factual", async ({ page }) => {
+  test("entregar agora abre confirmação factual", async ({ page }) => {
     await openScenario(page, "board-pending", "/", V390);
     await waitForFaithfulPreview(page);
-    await page.getByRole("button", { name: "Publicar agora" }).click();
+    await page.getByRole("button", { name: "Entregar agora" }).click();
     await expect(page.getByRole("dialog")).toContainText("12");
     await expectStableScreenshot(page, "announcement-card__confirm-now", V390, "light", { fullPage: false });
   });
@@ -332,6 +368,7 @@ test.describe("listas operacionais", () => {
     await openScenario(page, "campaigns-dense", "/campaigns", V1440);
     await page.locator("main li").first().locator("button").nth(1).click();
     await expect(page.getByText("Este conteúdo também mudou em outra sessão.")).toBeVisible();
+    await waitForFaithfulPreview(page);
     await expectStableScreenshot(page, "campaign-form__conflict-diff", V1440, "light", { fullPage: false });
   });
 
@@ -457,7 +494,8 @@ test.describe("disparo manual seguro", () => {
     await page.getByRole("button", { name: /Disparar a campanha Fornada artesanal 01.*agora/ }).click();
     await page.waitForTimeout(450);
     await page.getByRole("button", { name: "Disparar agora" }).click();
-    await expect(page.getByRole("alert")).toContainText("limite temporário");
+    await expect(page.getByRole("alert")).toContainText("em cerca de 20 minutos");
+    await expect(page.getByRole("alert")).toContainText("Nada foi criado");
     await expectStableScreenshot(page, "fire-campaign__throttled", V768, "light", { fullPage: false });
   });
 
@@ -605,7 +643,7 @@ test.describe("modos transversais", () => {
         p { margin-bottom: 2em !important; }
       `,
     });
-    await expect(page.getByRole("button", { name: "Publicar agora" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Entregar agora" })).toBeVisible();
     await expectStableScreenshot(page, "panel__text-spacing", V1024);
   });
 });

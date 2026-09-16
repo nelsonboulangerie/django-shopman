@@ -85,14 +85,48 @@ class AgentInstallGuide:
     #: porque instalação se faz uma vez e diagnóstico se faz sempre — misturar
     #: obrigaria a reler o roteiro inteiro para achar o comando de conferir.
     commands: tuple[AgentStep, ...] = field(default_factory=tuple)
+    #: Estado do relay visto pelo servidor. O segredo nunca volta: uma
+    #: credencial emitida só pode ser substituída por outra.
+    relay_active: bool = False
+    relay_ready: bool = False
+    relay_status_label: str = "Não pareado"
+    relay_status_detail: str = ""
+    relay_credential_ref: str = ""
+    relay_credential_version: str = ""
+    relay_can_issue: bool = False
+    relay_blocker: str = ""
+    #: Existe somente na resposta POST que acabou de emitir/rotacionar o
+    #: bearer. Não é persistido, não entra em URL e não reaparece no GET.
+    relay_install_command: str = ""
+    relay_secret_once: str = ""
 
 
-def build_agent_install(terminal, *, download_url: str, os_key: str = DEFAULT_OS) -> AgentInstallGuide:
+def build_agent_install(
+    terminal,
+    *,
+    download_url: str,
+    os_key: str = DEFAULT_OS,
+    relay_bearer: str = "",
+) -> AgentInstallGuide:
     from shopman.backstage.services.pos_hardware import DeviceAgentConfig
 
     config = DeviceAgentConfig.from_terminal(terminal)
     available = AGENT_SOURCE.is_file()
     os_key = normalize_os(os_key)
+    relay = _relay_state(terminal)
+    relay_server_url = _relay_server_url()
+
+    relay_blocker = ""
+    if not config.available:
+        relay_blocker = "Configure primeiro o agente local deste terminal."
+    else:
+        from shopman.backstage.services.print_jobs import PrinterConfig
+
+        printer = PrinterConfig.from_terminal(terminal)
+        if not printer.accepts_preparation:
+            relay_blocker = printer.problem or "Ative a impressora de preparação neste terminal."
+        elif not relay_server_url:
+            relay_blocker = "O endereço HTTPS da API de operadores não está configurado."
 
     blocker = ""
     if not config.declared:
@@ -103,7 +137,23 @@ def build_agent_install(terminal, *, download_url: str, os_key: str = DEFAULT_OS
         # Falha honesta em vez de um download que devolve 500 no balcão.
         blocker = "O arquivo do agente não veio nesta instalação. Confira o COPY tools do Dockerfile."
 
+    # Nunca deixar um chamador acidentalmente montar um comando incompleto com
+    # bearer. A view valida antes de emitir, mas a projection também é uma
+    # fronteira de segurança e deve falhar fechada por conta própria.
+    effective_relay_bearer = relay_bearer if not relay_blocker and not blocker else ""
     label = next(lbl for key, lbl, _ in OS_CHOICES if key == os_key)
+    steps = (
+        _steps(
+            config,
+            os_key,
+            relay_server_url=relay_server_url,
+            station_ref=terminal.ref,
+            relay_bearer=effective_relay_bearer,
+        )
+        if not blocker
+        else ()
+    )
+    install_command = next((step.command for step in steps if "--install" in step.command), "")
     return AgentInstallGuide(
         terminal_ref=terminal.ref,
         terminal_label=terminal.label or terminal.ref,
@@ -121,12 +171,74 @@ def build_agent_install(terminal, *, download_url: str, os_key: str = DEFAULT_OS
             OSOption(key=key, label=lbl, note=note, active=key == os_key, url=f"?so={key}")
             for key, lbl, note in OS_CHOICES
         ),
-        steps=_steps(config, os_key) if not blocker else (),
+        steps=steps,
         # Os comandos do dia a dia saem MESMO com blocker: quando o terminal
         # está mal configurado é justamente quando alguém precisa rodar o
         # `--doctor` para descobrir o que falta.
         commands=_commands(os_key),
+        relay_active=relay["active"],
+        relay_ready=relay["ready"],
+        relay_status_label=relay["label"],
+        relay_status_detail=relay["detail"],
+        relay_credential_ref=relay["credential_ref"],
+        relay_credential_version=relay["credential_version"],
+        relay_can_issue=not relay_blocker and not blocker,
+        relay_blocker=relay_blocker,
+        relay_install_command=install_command if effective_relay_bearer else "",
+        relay_secret_once=effective_relay_bearer,
     )
+
+
+def _relay_server_url() -> str:
+    """URL canônica que o agente usa sem depender do host aberto no Admin."""
+    from urllib.parse import urlsplit
+
+    configured = str(getattr(settings, "SHOPMAN_OPERATOR_API_HOST", "") or "").strip()
+    if not configured:
+        return ""
+    candidate = configured if "://" in configured else f"https://{configured}"
+    parsed = urlsplit(candidate)
+    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+        return ""
+    return f"https://{parsed.netloc}"
+
+
+def _relay_state(terminal) -> dict[str, object]:
+    """Resumo não sensível da credencial; nunca tenta reconstruir o bearer."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from shopman.backstage.models import PrintAgentCredential
+    from shopman.backstage.services.print_jobs import LEASE_SECONDS
+
+    credential = (
+        PrintAgentCredential.objects.filter(terminal=terminal, is_active=True).order_by("-last_seen_at", "-pk").first()
+    )
+    if credential is None:
+        return {
+            "active": False,
+            "ready": False,
+            "label": "Não pareado",
+            "detail": "Gere um comando completo para a estação buscar impressões enviadas por tablets.",
+            "credential_ref": "",
+            "credential_version": "",
+        }
+    ready = bool(
+        credential.last_seen_at and credential.last_seen_at >= timezone.now() - timedelta(seconds=LEASE_SECONDS)
+    )
+    return {
+        "active": True,
+        "ready": ready,
+        "label": "Relay conectado" if ready else "Aguardando o agente",
+        "detail": (
+            "A estação está buscando trabalhos e pode receber impressões de outros dispositivos."
+            if ready
+            else "A credencial existe, mas a estação ainda não se apresentou. Repareie somente se o comando anterior não estiver mais disponível."
+        ),
+        "credential_ref": str(credential.ref),
+        "credential_version": f"{credential.ref}:{credential.rotated_at.isoformat()}",
+    }
 
 
 _OS_CAVEATS = {
@@ -221,12 +333,21 @@ def _commands(os_key: str) -> tuple[AgentStep, ...]:
     )
 
 
-def _steps(config, os_key: str) -> tuple[AgentStep, ...]:
+def _steps(
+    config,
+    os_key: str,
+    *,
+    relay_server_url: str = "",
+    station_ref: str = "",
+    relay_bearer: str = "",
+) -> tuple[AgentStep, ...]:
     runtime = _OS_RUNTIME[os_key]
     origins = _operator_origins()
     install = f"{runtime['python']} {AGENT_FILENAME} --install --token {config.token}"
     for origin in origins:
         install += f" --origin {origin}"
+    if relay_bearer:
+        install += f" --server-url {relay_server_url} --station {station_ref} --relay-token-prompt"
 
     prereq = (
         "Precisa do Python instalado. O Windows não traz de fábrica: se o comando não for "
@@ -248,8 +369,14 @@ def _steps(config, os_key: str) -> tuple[AgentStep, ...]:
             title="Rode o instalador",
             detail=(
                 "Ele lista as impressoras e pergunta qual é a térmica. Ela já existe, é por "
-                f"ela que o recibo sai hoje. O token já vai no comando, então não há nada "
-                f"para copiar de volta para cá. {prereq}"
+                "ela que o recibo sai hoje. O token já vai no comando, então não há nada "
+                "para copiar de volta para cá. "
+                + (
+                    "Este comando também liga o relay: depois dele, um tablet pode mandar a etiqueta para esta estação. "
+                    if relay_bearer
+                    else ""
+                )
+                + prereq
             ),
             command=install,
         ),

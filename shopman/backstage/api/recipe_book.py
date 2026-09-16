@@ -51,7 +51,7 @@ _MSG_EDIT = "Alterar o inventário de receitas exige shop.manage_production."
 #: Códigos do Craftsman que são conflito de ESTADO, não de campo: 409, não 400.
 _STATE_CONFLICT_CODES = ("VERSION_NOT_DRAFT", "ENTRY_ARCHIVED")
 
-_KINDS = ("bread", "viennoiserie", "sweet_dough", "filling", "cream", "sauce", "beverage", "other")
+_KINDS = ("bread", "viennoiserie", "sweet_dough", "cookie", "filling", "cream", "sauce", "beverage", "other")
 
 
 def _actor(request) -> str:

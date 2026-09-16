@@ -24,6 +24,10 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E019  Configuração de produção da loja é inválida
   SHOPMAN_E020  WhatsApp Marketing ativo sem isolamento ManyChat comprovado
   SHOPMAN_E021  Allowlist de mídia Marketing contém host inseguro
+  SHOPMAN_E022  Provedor de produção aponta para ambiente ou credencial de teste
+  SHOPMAN_E023  Google Maps exige credenciais de browser e servidor separadas em produção
+  SHOPMAN_E024  Configuração VAPID parcial ou inválida
+  SHOPMAN_E025  Chave HMAC dos recibos de privacidade ausente ou inválida
 
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode
@@ -44,15 +48,22 @@ Warnings (non-blocking, logged at startup):
   SHOPMAN_W016  Captura simulada exposta em staging técnico
   SHOPMAN_W017  SHOPMAN_ENVIRONMENT com valor irreconhecível (tratado como produção)
   SHOPMAN_W018  Botão "Simular pagamento" e auto-confirm do Pix mock ligados juntos
+  SHOPMAN_W019  Web Push do backstage desativado por ausência de VAPID
 """
 
 from __future__ import annotations
 
+import hmac
+import json
+import logging
 import os
+from collections.abc import Mapping
 from urllib.parse import urlparse
 
 from django.conf import settings
 from django.core.checks import Error, Warning, register
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 
 from shopman.shop.environment import (
     NON_PRODUCTION_ENVIRONMENTS,
@@ -809,7 +820,7 @@ def check_listing_channel_parity(app_configs, **kwargs):
                 )
             )
     except (OperationalError, ProgrammingError, ImportError):
-        pass  # tables not ready or offerman not installed
+        logging.getLogger(__name__).warning("listing_channel_check_unavailable_before_schema_or_optional_app_ready")
 
     return warnings
 
@@ -1139,3 +1150,135 @@ def check_production_configuration(app_configs, **kwargs):
             )
         ]
     return []
+
+
+@register(deploy=True)
+def check_production_provider_environments(app_configs, **kwargs):
+    """The release job already calls check --deploy; reuse canonical provider facts."""
+    if not is_production():
+        return []
+    from shopman.shop.adapters.provider_readiness import build_provider_readiness
+
+    try:
+        facts = build_provider_readiness(mode="runtime")
+    except Exception:
+        logging.getLogger(__name__).warning("production_provider_readiness_unavailable")
+        return [Error("Não foi possível verificar os ambientes dos provedores.",
+                      hint="Execute production-readiness no ambiente alvo e corrija a leitura antes do deploy.",
+                      id="SHOPMAN_E022")]
+    return [Error(
+        f"Provedor {fact.label} incompatível com produção.",
+        hint="Corrija os requisitos de ambiente: " + ", ".join(fact.missing),
+        id="SHOPMAN_E022",
+    ) for fact in facts if fact.status == "error"]
+
+
+@register(deploy=True)
+def check_google_maps_credential_boundary(app_configs, **kwargs):
+    if not is_production():
+        return []
+    browser = str(getattr(settings, "GOOGLE_MAPS_BROWSER_API_KEY", "") or "").strip()
+    server = str(getattr(settings, "GOOGLE_MAPS_SERVER_API_KEY", "") or "").strip()
+    legacy = str(getattr(settings, "GOOGLE_MAPS_API_KEY", "") or "").strip()
+    if legacy or not browser or not server or browser == server:
+        return [Error("Google Maps exige credenciais separadas e completas em produção.",
+                      hint="Remova GOOGLE_MAPS_API_KEY e provisione chaves distintas para browser (referrers) e servidor (Geocoding).",
+                      id="SHOPMAN_E023")]
+    return []
+
+
+@register(deploy=True)
+def check_vapid_configuration(app_configs, **kwargs):
+    private_key = str(getattr(settings, "VAPID_PRIVATE_KEY", "") or "").strip()
+    public_key = str(getattr(settings, "VAPID_PUBLIC_KEY", "") or "").strip()
+    claims_email = str(getattr(settings, "VAPID_CLAIMS_EMAIL", "") or "").strip()
+    configured = (private_key, public_key, claims_email)
+
+    if not any(configured):
+        if not is_production():
+            return []
+        return [Warning(
+            "Web Push do backstage está desativado porque as chaves VAPID não foram configuradas.",
+            hint=(
+                "Provisione VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY e VAPID_CLAIMS_EMAIL "
+                "como um único conjunto antes de habilitar Web Push."
+            ),
+            id="SHOPMAN_W019",
+        )]
+
+    invalid = not all(configured) or private_key == public_key or len(private_key) < 32 or len(public_key) < 32
+    try:
+        validate_email(claims_email)
+    except ValidationError:
+        invalid = True
+    if not invalid:
+        return []
+    return [Error(
+        "A configuração VAPID está parcial ou inválida.",
+        hint=(
+            "Defina em conjunto VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY e um "
+            "VAPID_CLAIMS_EMAIL válido; nunca reutilize a mesma chave nos dois campos."
+        ),
+        id="SHOPMAN_E024",
+    )]
+
+
+@register(deploy=True)
+def check_privacy_receipt_hmac_configuration(app_configs, **kwargs):
+    """Block non-debug releases with an unusable privacy receipt keyring."""
+    if settings.DEBUG:
+        return []
+
+    current_key = str(
+        getattr(settings, "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY", "") or ""
+    ).encode("utf-8")
+    raw_version = getattr(settings, "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION", 1)
+    raw_previous = getattr(settings, "SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS", {})
+
+    invalid = len(current_key) < 32
+    try:
+        current_version = int(raw_version)
+        invalid = invalid or current_version < 1
+    except (TypeError, ValueError):
+        current_version = None
+        invalid = True
+
+    if isinstance(raw_previous, str):
+        try:
+            previous = json.loads(raw_previous)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            previous = None
+    else:
+        previous = raw_previous
+
+    if not isinstance(previous, Mapping):
+        invalid = True
+    else:
+        for raw_previous_version, raw_previous_key in previous.items():
+            try:
+                previous_version = int(raw_previous_version)
+            except (TypeError, ValueError):
+                invalid = True
+                continue
+            previous_key = str(raw_previous_key or "").encode("utf-8")
+            if previous_version < 1 or len(previous_key) < 32:
+                invalid = True
+            if (
+                current_version is not None
+                and previous_version == current_version
+                and not hmac.compare_digest(previous_key, current_key)
+            ):
+                invalid = True
+
+    if not invalid:
+        return []
+    return [
+        Error(
+            "A configuração HMAC dos recibos de privacidade está ausente ou inválida.",
+            hint=(
+                "Defina uma chave atual exclusiva com ao menos 32 bytes, versão inteira "
+                "positiva e um keyring JSON de chaves anteriores igualmente válidas."
+            ),
+            id="SHOPMAN_E025",
+        )
+    ]

@@ -87,14 +87,14 @@ class CartLineProjection:
     line_id: str
     sku: str
     name: str
-    qty: int
+    qty: Decimal | int
     unit_price_q: int
     line_total_q: int
 
     # Availability at render-time (own-hold corrected: a session holding all
     # of its own stock is NOT flagged unavailable).
     is_available: bool
-    available_qty: int | None  # None = demand-based / no ceiling
+    available_qty: Decimal | int | None  # None = demand-based / no ceiling
 
     # Planned-hold lifecycle (AVAILABILITY-PLAN §8).
     is_awaiting_confirmation: bool
@@ -179,7 +179,8 @@ class CartProjection:
     upsell: UpsellSuggestionProjection | None
 
     can_checkout: bool
-    checkout_block_reason: str  # "" | "empty" | "unavailable" | "below_minimum"
+    revision: int = 0
+    checkout_block_reason: str = ""  # "" | "empty" | "unavailable" | "below_minimum"
 
 
 def _empty_cart(session_key: str = "") -> CartProjection:
@@ -315,6 +316,7 @@ def build_cart(
 
     return CartProjection(
         session_key=session_key,
+        revision=session.rev,
         lines=lines,
         count=count,
         is_empty=False,
@@ -403,27 +405,19 @@ def _made_to_order_skus(skus: list[str]) -> frozenset[str]:
 def _availability(
     skus: list[str], session_key: str, channel_ref: str,
 ) -> tuple[dict[str, dict | None], dict[str, Decimal]]:
-    """Batch availability + own-hold lookup; degrades to empty maps on failure
-    (including when Stockman is not installed — the import simply raises)."""
+    """Canonical catalog availability + own-hold lookup.
+
+    The catalog resolver deliberately reads ready stock for today and, when
+    enabled, the first reservable future batch as a separate promise. Passing
+    the waitlist horizon directly to Stockman made a zero-day product's fresh
+    stock look expired in the cart even while the menu correctly offered it.
+    """
     try:
-        from shopman.stockman.services.availability import availability_for_skus
-
-        from shopman.shop.adapters import stock as stock_adapter
+        from shopman.shop.projections import catalog_context
         from shopman.shop.services import availability as availability_service
-        from shopman.shop.services import waitlist
 
-        scope = stock_adapter.get_channel_scope(channel_ref)
-        avail_map = availability_for_skus(
-            skus,
-            # Fila de espera (WP-P2E): a sacola lê no HORIZONTE de promessa do
-            # canal. Desligada, o horizonte é hoje — a leitura é a de sempre.
-            target_date=waitlist.promise_horizon(channel_ref),
-            safety_margin=scope["safety_margin"],
-            allowed_positions=scope["allowed_positions"],
-            excluded_positions=scope.get("excluded_positions"),
-            expiry_margin_days=scope.get("expiry_margin_days", 0),
-            include_nonconforming=scope.get("sells_nonconforming", True),
-            allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
+        avail_map = catalog_context.availability_for_skus(
+            skus, channel_ref=channel_ref,
         )
         own_holds = availability_service.own_holds_by_sku(session_key, skus)
         return avail_map, own_holds
@@ -443,7 +437,9 @@ def _build_line(
     sellable_skus: frozenset[str] = frozenset(),
 ) -> CartLineProjection:
     sku = item.get("sku", "")
-    qty = int(Decimal(str(item.get("qty", 0) or 0)))
+    qty = Decimal(str(item.get("qty", 0) or 0))
+    if qty == qty.to_integral_value():
+        qty = int(qty)
     name = item.get("name") or names_by_sku.get(sku) or sku
 
     raw_avail = avail_map.get(sku)
@@ -562,7 +558,7 @@ def _line_availability(
         # sessão reabre a linha.
         return False, 0
 
-    own_hold = int(own_holds.get(sku, Decimal("0")))
+    own_hold = own_holds.get(sku, Decimal("0"))
     promisable = avail.get("total_promisable")
     if promisable is None:
         return True, None
@@ -573,7 +569,9 @@ def _line_availability(
     # ``ready_physical`` aqui era contar só a prateleira, e a linha em fila
     # nascia com máximo 0: o stepper travava no "+" e o checkout bloqueava
     # junto do selo que prometia a fornada (WP-P2E F1).
-    max_orderable = max(0, int(Decimal(str(promisable))) + own_hold)
+    max_orderable = max(Decimal("0"), Decimal(str(promisable)) + own_hold)
+    if max_orderable == max_orderable.to_integral_value():
+        max_orderable = int(max_orderable)
     return max_orderable >= qty, max_orderable
 
 

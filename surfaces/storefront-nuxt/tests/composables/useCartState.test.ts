@@ -126,6 +126,37 @@ describe('useCartState', () => {
     expect(store.rateLimitRecovery.value).toBeNull()
   })
 
+  it('reverts the optimistic cart when mutation and reconciliation both fail', async () => {
+    fetchMock
+      .mockRejectedValueOnce(fetchError(500, {}))
+      .mockRejectedValueOnce(new Error('backend unavailable'))
+    const store = await loadStore()
+
+    await expect(store.setSkuQty(meta, 1)).rejects.toThrow()
+
+    expect(store.cart.value.is_empty).toBe(true)
+    expect(store.cart.value.items).toEqual([])
+    expect(store.cart.value.summary_pending).toBe(false)
+    expect(store.lastMutation.value?.qty).toBe(1)
+  })
+
+  it('keeps the last confirmed response when a later queued mutation cannot reconcile', async () => {
+    fetchMock
+      .mockResolvedValueOnce({ cart: serverCart({ items: [{ sku: 'CROISSANT', qty: 1 }], items_count: 1 }) })
+      .mockRejectedValueOnce(fetchError(500, {}))
+      .mockRejectedValueOnce(new Error('backend unavailable'))
+    const store = await loadStore()
+
+    const first = store.setSkuQty(meta, 1)
+    const second = store.setSkuQty(meta, 4)
+    const results = await Promise.allSettled([first, second])
+
+    expect(results.map(result => result.status)).toEqual(['fulfilled', 'rejected'])
+    expect(store.cart.value.items).toEqual([{ sku: 'CROISSANT', qty: 1 }])
+    expect(store.cart.value.items_count).toBe(1)
+    expect(store.cart.value.summary_pending).toBe(false)
+  })
+
   it('retryLastMutation replays the last failed mutation', async () => {
     fetchMock
       .mockRejectedValueOnce(fetchError(500, {})) // mutação falha

@@ -19,6 +19,7 @@ from shopman.offerman.models import Product
 
 from shopman.shop.models import Promotion
 from shopman.shop.services import offers
+from shopman.shop.services.cart import CartUnavailableError
 
 pytestmark = pytest.mark.django_db
 
@@ -63,7 +64,14 @@ class _Cart:
 
     def add_item(self, request, *, sku, qty, unit_price_q, name):
         if sku in self.refuse:
-            raise RuntimeError("estoque recusou")
+            raise CartUnavailableError(
+                sku=sku,
+                requested_qty=qty,
+                available_qty=0,
+                is_paused=False,
+                substitutes=[],
+                error_code="insufficient_stock",
+            )
         self.items.append({"sku": sku, "qty": qty, "unit_price_q": unit_price_q, "name": name})
 
 

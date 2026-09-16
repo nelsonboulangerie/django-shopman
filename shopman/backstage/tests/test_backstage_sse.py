@@ -152,3 +152,20 @@ def test_rolled_back_note_never_publishes_context(mock_send, channel, django_cap
             transaction.set_rollback(True)
     assert not any(call.args[1] == "backstage-orders-update" for call in mock_send.call_args_list)
     assert not order.events.filter(type="kitchen_note_changed").exists()
+
+
+@pytest.mark.django_db
+@patch("django_eventstream.send_event")
+def test_resolved_operator_alert_refreshes_other_surfaces(mock_send, django_capture_on_commit_callbacks):
+    from django.utils import timezone
+
+    alert = OperatorAlert.objects.create(type="cash_change_requested", message="Troco solicitado")
+    with django_capture_on_commit_callbacks(execute=True):
+        alert.resolved_at = timezone.now()
+        alert.save(update_fields=["resolved_at"])
+    assert any(
+        call.args[0] == "backstage-alerts-main"
+        and call.args[1] == "backstage-alerts-update"
+        and call.args[2]["id"] == alert.pk
+        for call in mock_send.call_args_list
+    )

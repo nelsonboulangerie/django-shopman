@@ -1,0 +1,28 @@
+Spec versionado : .do/app.alpha-subdomains.yaml
+App vivo        : app 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f
+envs de app     : vivo=95 versionado=92
+domínios        : vivo=12 versionado=12
+
+Diferenças declaradas como esperadas (não são drift):
+  ✅ FOCUS_NFE_ENVIRONMENT: só no arquivo, de propósito — declarada explícita no arquivo; o vivo não a tem e cai no default do settings.py, que é o mesmo `homologacao`. Aplicar não muda comportamento.
+  ✅ SENTRY_DSN: só no arquivo, de propósito — SECRET sem valor, esperando o opt-in de docs/runbooks/ativar-sentry.md. Sem DSN o settings.py não inicializa o Sentry.
+
+- [FAIL] spec_drift: o spec versionado NÃO descreve o app vivo.
+  ⛔ SUMIRIAM no `apps update` — existem no vivo e NÃO no spec versionado (envs de app):
+       SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED
+       SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED
+       SHOPMAN_MARKETING_MEDIA_HOSTS
+       SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED
+       SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED
+       SHOPMAN_MARKETING_TARGET_HMAC_KEY
+       SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION
+  ➕ nasceriam — existem no spec versionado e não no vivo (envs de app):
+       CONCIERGE_ACCOUNT_ID
+       CONCIERGE_CONTRACT_VERSION
+
+⛔ NÃO rode `doctl apps update --spec` enquanto houver linha em SUMIRIAM:
+   o update substitui o spec inteiro, não faz merge. Env, DOMÍNIO e regra
+   de ingress somem do mesmo jeito. Traga a coisa para o arquivo primeiro
+   (segredo entra como `type: SECRET` SEM `value` — o valor cifrado que já
+   está no painel permanece).
+   Ver docs/runbooks/conferir-spec-digitalocean.md.

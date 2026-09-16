@@ -339,7 +339,7 @@ class TestManychatWebhook:
     def test_duplicate_event_returns_200_duplicate(self, factory):
         """Scenario 9: Duplicate event (replay) → 200 + 'duplicate'."""
         payload = {
-            "id": "evt-replay-001",
+            "event_id": "evt-replay-001",
             "subscriber": {
                 "id": "mc-replay-001",
                 "first_name": "Replay",

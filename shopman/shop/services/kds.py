@@ -4,7 +4,7 @@ KDS (Kitchen Display System) dispatch service.
 Bridge: KDS is reactive to the order lifecycle (unidirecional Order→KDS):
 - dispatch()         — cria tickets quando o trabalho físico é liberado; o lifecycle grava PREPARING em seguida
 - cancel_tickets()   — cancela tickets abertos quando Order é CANCELLED
-- on_all_tickets_done() — transiciona Order para READY quando todos os tickets concluídos
+- on_all_tickets_done() — transiciona Order para READY; balcão encerra no próprio KDS
 
 Invariantes garantidos:
 - dispatch() é idempotente: não cria duplicatas se já há tickets para o pedido
@@ -25,7 +25,7 @@ from django.utils import timezone
 from shopman.orderman.models import Order
 
 from shopman.shop.services import payment_gate
-from shopman.shop.services.order_helpers import get_fulfillment_type, json_quantity
+from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type, json_quantity
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,10 @@ class TicketCompletionBlocked(Exception):
     a superfície mostrar a mensagem certa — nunca o genérico "ticket não está
     aberto", que descreveria outro problema.
     """
+
+
+class FutureWorkBlocked(ValueError):
+    """Mutação recusada: a encomenda futura está disponível só para consulta."""
 
 
 def dispatch(order) -> list:
@@ -135,11 +139,17 @@ def fire_lines(*, session_key: str, lines: list[dict], prep_only: bool = False) 
 
     # Serializa fires concorrentes da mesma comanda (double-tap, dois devices,
     # on_accepted × on_paid): o dedupe por line_id é check-then-create — sem
-    # o lock na Session, dois fires leem o ledger vazio e a cozinha produz 2×.
+    # o lock na fonte, dois fires leem o ledger vazio e a cozinha produz 2×.
+    # Pedidos externos têm chave própria e nenhum checkout Session: nesse
+    # caso o próprio Order é a fonte estável que serializa a criação.
     with transaction.atomic():
         from shopman.orderman.models import Session
 
-        Session.objects.select_for_update().filter(session_key=session_key).first()
+        source = Session.objects.select_for_update().filter(session_key=session_key).first()
+        if source is None:
+            source = Order.objects.select_for_update().filter(session_key=session_key).first()
+        if source is None:
+            raise ValueError("Pedido ou comanda de origem não encontrado para enviar à cozinha.")
 
         return _fire_lines_locked(
             session_key=session_key,
@@ -257,11 +267,75 @@ def fired_line_ids(session_key: str) -> set:
     return kds_adapter.fired_line_ids_for_session(session_key)
 
 
-def unfire_lines(*, session_key: str, line_ids: list[str]) -> dict:
-    """Cancel the kitchen fire for specific lines, freeing them to re-fire."""
+def preview_order_for_instance(order, instance) -> list[dict]:
+    """Route an order for a read-only future KDS preview, without firing it.
+
+    Future preorders must be inspectable from the KDS date picker, but creating a
+    ``KDSTicket`` would turn a preview into live kitchen work and emit the very
+    alert we are trying to defer. This uses the same bundle expansion and station
+    precedence as ``fire_lines`` and returns only the items owned by ``instance``.
+    """
+    from shopman.shop.adapters import get_adapter
     from shopman.shop.adapters import kds as kds_adapter
 
-    return kds_adapter.unfire_session_lines(session_key, line_ids)
+    lines = _order_to_lines(order)
+    if not lines:
+        return []
+
+    instances = kds_adapter.get_active_prep_instances()
+    if not instances or not any(candidate.pk == instance.pk for candidate in instances):
+        return []
+
+    catalog = get_adapter("catalog")
+    routable_items = _build_routable_items(lines)
+    skus = list({item["sku"] for item in routable_items})
+    sku_to_collection = catalog.bulk_sku_to_collection_id(skus)
+    production = get_adapter("production")
+    prep_skus = production.get_prep_skus(skus) if production else set()
+
+    type_col_map = defaultdict(list)
+    catchall_map = defaultdict(list)
+    for candidate in instances:
+        collection_ids = set(candidate.collections.values_list("id", flat=True))
+        if collection_ids:
+            for collection_id in collection_ids:
+                type_col_map[(candidate.type, collection_id)].append(candidate)
+        else:
+            catchall_map[candidate.type].append(candidate)
+
+    preview: list[dict] = []
+    for item in routable_items:
+        item_type = "prep" if item["sku"] in prep_skus else "picking"
+        matched = _match_instances(
+            item_type=item_type,
+            collection_id=sku_to_collection.get(item["sku"]),
+            type_col_map=type_col_map,
+            catchall_map=catchall_map,
+        )
+        if not any(candidate.pk == instance.pk for candidate in matched):
+            continue
+        preview.append(
+            {
+                "sku": item["sku"],
+                "name": item["name"],
+                "qty": item["qty"],
+                "notes": item["notes"],
+                "checked": False,
+                "line_id": item["line_id"],
+            }
+        )
+    return preview
+
+
+def unfire_lines(*, session_key: str, line_ids: list[str]) -> dict:
+    """Cancel the kitchen fire for specific lines, freeing them to re-fire."""
+    from django.db import transaction
+
+    from shopman.shop.adapters import kds as kds_adapter
+
+    with transaction.atomic():
+        _lock_source_for_session(session_key)
+        return kds_adapter.unfire_session_lines(session_key, line_ids)
 
 
 def _order_to_lines(order) -> list[dict]:
@@ -386,10 +460,22 @@ def cancel_tickets(order) -> int:
     from shopman.shop.adapters import kds as kds_adapter
 
     with transaction.atomic():
+        _lock_source_for_session(order.session_key)
         count = kds_adapter.cancel_open_tickets(order)
     if count:
         logger.info("kds.cancel_tickets: cancelled %d tickets for order=%s", count, order.ref)
     return count
+
+
+def cancel_tickets_for_session(session_key: str) -> int:
+    """Cancel open tickets for a POS tab, always locking its source first."""
+    from django.db import transaction
+
+    from shopman.shop.adapters import kds as kds_adapter
+
+    with transaction.atomic():
+        _lock_source_for_session(session_key)
+        return kds_adapter.cancel_open_tickets_for_session(session_key)
 
 
 def on_all_tickets_done(order, *, actor: str = "kds.all_done") -> bool:
@@ -397,7 +483,10 @@ def on_all_tickets_done(order, *, actor: str = "kds.all_done") -> bool:
     Check if all KDS tickets are done and transition order to READY.
 
     Called when a ticket is marked as done. If all tickets for the order
-    are now done, transitions the order to READY status.
+    are now done, transitions the order to READY status. Uma venda imediata de
+    balcão pertence ao PDV/KDS, não ao Gestor; nesse caso READY é só o degrau
+    obrigatório da máquina de estados e o mesmo bump conclui a venda, desde que
+    a régua canônica de pagamento libere a entrega.
 
     Returns True if transitioned, False otherwise.
 
@@ -427,6 +516,20 @@ def on_all_tickets_done(order, *, actor: str = "kds.all_done") -> bool:
 
     order.transition_status(Order.Status.READY, actor=actor)
     logger.info("kds.on_all_tickets_done: order %s → READY", order.ref)
+
+    from shopman.shop.services.pos_sales_mode import is_pos_counter_order
+
+    if (
+        is_pos_counter_order(order)
+        and order.can_transition_to(Order.Status.COMPLETED)
+        and not payment_gate.payment_blocks_transition(
+            order,
+            current_status=Order.Status.READY,
+            target_status=Order.Status.COMPLETED,
+        )
+    ):
+        order.transition_status(Order.Status.COMPLETED, actor="system:counter_kds_handoff")
+        logger.info("kds.on_all_tickets_done: order %s → COMPLETED (counter)", order.ref)
     return True
 
 
@@ -438,10 +541,83 @@ def _ticket_order(ticket, *, for_update: bool = False):
     done-loop (advance to PREPARING / READY) is a no-op until then: kitchen
     progress on an open comanda does not move an order that does not exist.
     """
-    qs = Order.objects.filter(session_key=ticket.session_key).order_by("-id")
+    return _order_for_session_key(ticket.session_key, for_update=for_update)
+
+
+def _order_for_session_key(session_key: str, *, for_update: bool = False):
+    qs = Order.objects.filter(session_key=session_key).order_by("-id")
     if for_update:
         qs = qs.select_for_update()
     return qs.first()
+
+
+def _ticket_source(ticket, *, for_update: bool = False):
+    """Resolve Order ou a comanda aberta que originou um ticket legado."""
+    if for_update:
+        return _lock_source_for_session(ticket.session_key)
+
+    order = _ticket_order(ticket, for_update=for_update)
+    if order is not None:
+        return order
+    from shopman.orderman.models import Session
+
+    return (
+        Session.objects.filter(session_key=ticket.session_key, state="open")
+        .order_by("-id")
+        .first()
+    )
+
+
+def _lock_source_for_session(session_key: str):
+    """Lock the authoritative source before any KDSTicket for the same work.
+
+    The global writer order is ``Session/Order -> KDSTicket``.  A POS commit
+    holds the Session while creating the Order, so after waiting for a Session
+    lock we must check Order once more: the source may have changed ownership
+    while this transaction was blocked.
+    """
+    order = _order_for_session_key(session_key, for_update=True)
+    if order is not None:
+        return order
+
+    from shopman.orderman.models import Session
+
+    session = (
+        Session.objects.select_for_update()
+        .filter(session_key=session_key)
+        .order_by("-id")
+        .first()
+    )
+    if session is None:
+        return None
+
+    # We may have waited behind Session -> Order commit. Prefer and lock the
+    # newly committed aggregate before proceeding to its kitchen tickets.
+    return _order_for_session_key(session_key, for_update=True) or session
+
+
+def _lock_source_then_ticket(ticket):
+    session_key = ticket.session_key
+    source = _lock_source_for_session(session_key)
+    locked_ticket = _lock_ticket_after_source(ticket)
+    if locked_ticket.session_key != session_key:
+        raise RuntimeError("A origem do ticket mudou durante a operação.")
+    return source, locked_ticket
+
+
+def _ensure_source_due(source) -> None:
+    commitment = get_commitment_date(source)
+    today = timezone.localdate()
+    if commitment is not None and commitment > today:
+        raise FutureWorkBlocked(
+            f"Esta encomenda é para {commitment.strftime('%d/%m/%Y')}. "
+            "A prévia é somente para consulta; as ações serão liberadas no dia combinado."
+        )
+
+
+def ensure_ticket_due(ticket) -> None:
+    """Read guard used by the facade before idempotent-replay shortcuts."""
+    _ensure_source_due(_ticket_source(ticket))
 
 
 def set_ticket_item_checked(ticket, *, index: int, checked: bool, actor: str) -> bool:
@@ -465,11 +641,14 @@ def set_ticket_item_checked(ticket, *, index: int, checked: bool, actor: str) ->
     from django.db import transaction
 
     with transaction.atomic():
-        ticket = _locked_ticket(ticket)
-        return _set_ticket_item_checked_locked(ticket, index=index, checked=checked, actor=actor)
+        source, ticket = _lock_source_then_ticket(ticket)
+        return _set_ticket_item_checked_locked(
+            ticket, source=source, index=index, checked=checked, actor=actor
+        )
 
 
-def _set_ticket_item_checked_locked(ticket, *, index: int, checked: bool, actor: str) -> bool:
+def _set_ticket_item_checked_locked(ticket, *, source, index: int, checked: bool, actor: str) -> bool:
+    _ensure_source_due(source)
     if ticket.status not in OPEN_TICKET_STATUSES:
         return False
     if not 0 <= index < len(ticket.items):
@@ -482,7 +661,7 @@ def _set_ticket_item_checked_locked(ticket, *, index: int, checked: bool, actor:
 
     ticket.save(update_fields=["items", "status"])
 
-    order = _ticket_order(ticket, for_update=True)
+    order = source if isinstance(source, Order) else None
     if order is not None:
         _ensure_order_preparing_for_work(order, actor=actor)
     return True
@@ -505,14 +684,28 @@ def complete_ticket(ticket, *, actor: str) -> bool:
     from django.db import transaction
 
     with transaction.atomic():
-        ticket = _locked_ticket(ticket)
-        return _complete_ticket_locked(ticket, actor=actor)
+        source, ticket = _lock_source_then_ticket(ticket)
+        return _complete_ticket_locked(ticket, source=source, actor=actor)
 
 
-def _complete_ticket_locked(ticket, *, actor: str) -> bool:
+def _complete_ticket_locked(ticket, *, source, actor: str) -> bool:
+    _ensure_source_due(source)
     if ticket.status not in OPEN_TICKET_STATUSES:
         return False
-    order = _ticket_order(ticket, for_update=True)
+    if (
+        ticket.__class__.objects.filter(
+            session_key=ticket.session_key,
+            kds_instance_id=ticket.kds_instance_id,
+            status="cancelled",
+            acknowledged_at__isnull=True,
+        )
+        .exclude(pk=ticket.pk)
+        .exists()
+    ):
+        raise TicketCompletionBlocked(
+            "Há item cancelado neste pedido. Confira o alerta vermelho e toque em Ciente antes de finalizar."
+        )
+    order = source if isinstance(source, Order) else None
     if order is not None and order.status in (Order.Status.NEW, Order.Status.ACCEPTED):
         # Gate de pagamento: trabalho físico só começa quando o lifecycle deixa.
         blocked = _advance_to_preparing_block_reason(order, actor=actor)
@@ -542,18 +735,19 @@ def reopen_ticket(ticket, *, actor: str) -> bool:
     from django.db import transaction
 
     with transaction.atomic():
-        ticket = _locked_ticket(ticket)
-        return _reopen_ticket_locked(ticket, actor=actor)
+        source, ticket = _lock_source_then_ticket(ticket)
+        return _reopen_ticket_locked(ticket, source=source, actor=actor)
 
 
-def _reopen_ticket_locked(ticket, *, actor: str) -> bool:
+def _reopen_ticket_locked(ticket, *, source, actor: str) -> bool:
+    _ensure_source_due(source)
     if ticket.status != "done":
         return False
     ticket.status = "in_progress"
     ticket.completed_at = None
     ticket.save(update_fields=["status", "completed_at"])
 
-    order = _ticket_order(ticket, for_update=True)
+    order = source if isinstance(source, Order) else None
     if (
         order is not None
         and order.status == Order.Status.READY
@@ -573,11 +767,12 @@ def acknowledge_ticket(ticket, *, actor: str) -> bool:
     from django.db import transaction
 
     with transaction.atomic():
-        ticket = _locked_ticket(ticket)
-        return _acknowledge_ticket_locked(ticket, actor=actor)
+        source, ticket = _lock_source_then_ticket(ticket)
+        return _acknowledge_ticket_locked(ticket, source=source, actor=actor)
 
 
-def _acknowledge_ticket_locked(ticket, *, actor: str) -> bool:
+def _acknowledge_ticket_locked(ticket, *, source, actor: str) -> bool:
+    _ensure_source_due(source)
     if ticket.status != "cancelled" or ticket.acknowledged_at is not None:
         return False
     ticket.acknowledged_at = timezone.now()
@@ -586,7 +781,8 @@ def _acknowledge_ticket_locked(ticket, *, actor: str) -> bool:
     return True
 
 
-def _locked_ticket(ticket):
+def _lock_ticket_after_source(ticket):
+    """Lock one ticket only after its Session/Order source is already locked."""
     return ticket.__class__.objects.select_for_update().get(pk=ticket.pk)
 
 
@@ -602,6 +798,12 @@ def expedition_block_reason(order, *, action: str) -> str:
     target = EXPEDITION_TRANSITIONS.get(action)
     if not target:
         return ""
+    if order.channel_ref == "ifood":
+        # The expedition is another operator entry point: the same pending
+        # cancellation, preparation-window and delivery-owner guards apply.
+        blocked = operator_orders.advance_block_reason(order)
+        if blocked:
+            return blocked
     if payment_gate.payment_blocks_transition(
         order, current_status=order.status, target_status=target
     ):
@@ -625,6 +827,7 @@ def expedition_action(order, *, action: str, actor: str) -> str:
     porta sem um centavo. Dinheiro na entrega (COD) passa: é venda legítima cujo
     pagamento acontece na porta, por desenho (ver ``payment_gate``).
     """
+    _ensure_source_due(order)
     is_delivery = get_fulfillment_type(order) == "delivery"
     if action == "dispatch" and not is_delivery:
         raise ValueError("Pedido de retirada não pode ser despachado")
@@ -657,6 +860,7 @@ def expedition_action_by_order_id(order_id: int, *, action: str, actor: str) -> 
         order = Order.objects.select_for_update().filter(pk=order_id).first()
         if order is None:
             raise ExpeditionOrderNotFound("Pedido não encontrado")
+        _ensure_source_due(order)
         target = EXPEDITION_TRANSITIONS.get(action)
         if target and order.status == target:
             return order.status

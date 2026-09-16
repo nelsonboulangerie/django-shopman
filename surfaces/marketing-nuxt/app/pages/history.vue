@@ -105,7 +105,7 @@ function changeFilter(name: MarketingHistoryFilterName, event: Event) {
   if (target instanceof HTMLSelectElement) void setFilter(name, target.value);
 }
 
-useHead({ title: "Histórico · Marketing" });
+useHead({ title: "Histórico" });
 </script>
 
 <template>

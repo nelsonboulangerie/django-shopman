@@ -11,11 +11,15 @@ pdv-main". Depois disso, o cookie responde por ele.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
+from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 from shopman.cashman.models import Shift, Terminal
 from shopman.doorman.models import SubjectType, TrustedDevice
 
@@ -174,6 +178,87 @@ def test_provisionar_duas_vezes_nao_polui_a_auditoria(client, gerente, terminal)
     client.post(STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json")
 
     assert TrustedDevice.objects.filter(subject_type=SubjectType.STATION).count() == 1
+
+
+def test_gerente_repara_dois_vinculos_com_escolha_explicita(client, gerente, terminal):
+    """O rollout não deixa balcão+totem preso no estado ambíguo legado."""
+    outro = Terminal.objects.create(ref="totem", label="Totem")
+    trust_station(client, terminal.ref)
+    trust_station(client, outro.ref)
+    client.force_login(gerente)
+
+    resposta = client.post(
+        STATION_URL, {"terminal_ref": outro.ref}, content_type="application/json"
+    )
+
+    assert resposta.status_code == 200
+    assert client.get(STATION_URL).json()["station"] == outro.ref
+    assert not TrustedDevice.objects.get(subject_id=terminal.ref).is_valid
+    assert TrustedDevice.objects.get(subject_id=outro.ref).is_valid
+
+
+def test_reparo_preserva_outro_dispositivo(client, gerente, terminal):
+    """Trocar ESTE navegador não revoga outro balcão que usa o mesmo terminal."""
+    outro_terminal = Terminal.objects.create(ref="totem", label="Totem")
+    outro_navegador = type(client)()
+    trust_station(outro_navegador, terminal.ref)
+    dispositivo_alheio = TrustedDevice.objects.get(subject_id=terminal.ref)
+    trust_station(client, terminal.ref)
+    dispositivo_local = TrustedDevice.objects.filter(subject_id=terminal.ref).exclude(
+        pk=dispositivo_alheio.pk
+    ).get()
+    trust_station(client, outro_terminal.ref)
+    client.force_login(gerente)
+
+    resposta = client.post(
+        STATION_URL,
+        {"terminal_ref": outro_terminal.ref},
+        content_type="application/json",
+    )
+
+    assert resposta.status_code == 200
+    dispositivo_alheio.refresh_from_db()
+    dispositivo_local.refresh_from_db()
+    assert dispositivo_alheio.is_valid
+    assert not dispositivo_local.is_valid
+
+
+def test_reparo_substitui_cookie_expirado(client, gerente, terminal):
+    outro = Terminal.objects.create(ref="antigo", label="Antigo")
+    trust_station(client, outro.ref)
+    expirado = TrustedDevice.objects.get(subject_id=outro.ref)
+    expirado.expires_at = timezone.now() - timedelta(seconds=1)
+    expirado.save(update_fields=["expires_at"])
+    client.force_login(gerente)
+
+    resposta = client.post(
+        STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json"
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.cookies[station_trust.station_cookie_name(outro.ref)]["max-age"] == 0
+    assert client.get(STATION_URL).json()["station"] == terminal.ref
+
+
+def test_provisionamento_anonimo_e_recusado(client, terminal):
+    resposta = client.post(
+        STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json"
+    )
+
+    assert resposta.status_code in {401, 403}
+    assert not TrustedDevice.objects.filter(subject_type=SubjectType.STATION).exists()
+
+
+def test_provisionamento_por_sessao_exige_csrf(gerente, terminal):
+    csrf_client = Client(enforce_csrf_checks=True)
+    csrf_client.force_login(gerente)
+
+    resposta = csrf_client.post(
+        STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json"
+    )
+
+    assert resposta.status_code == 403
+    assert not TrustedDevice.objects.filter(subject_type=SubjectType.STATION).exists()
 
 
 def test_um_dispositivo_ja_provisionado_nao_precisa_de_gerente_para_pedir_PIN(client, terminal):

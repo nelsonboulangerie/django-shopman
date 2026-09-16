@@ -699,14 +699,14 @@ class TestPaymentService:
         mock_get_adapter.assert_not_called()
 
     @patch("shopman.shop.services.payment._payman_intent_refunded", return_value=False)
-    @patch("shopman.shop.services.payment.get_adapter")
-    def test_refund_with_intent(self, mock_get_adapter, mock_payman_check):
+    @patch("shopman.shop.services.payment._adapter_for_persisted_intent")
+    def test_refund_with_intent(self, mock_adapter_for_intent, mock_payman_check):
         from shopman.shop.adapters.payment_types import PaymentResult
         from shopman.shop.services.payment import refund
 
         adapter = MagicMock()
         adapter.refund.return_value = PaymentResult(success=True)
-        mock_get_adapter.return_value = adapter
+        mock_adapter_for_intent.return_value = adapter
 
         order = _make_order(
             data={"payment": {"method": "pix", "intent_ref": "INT-001"}},
@@ -719,14 +719,14 @@ class TestPaymentService:
         assert "status" not in order.data["payment"]
 
     @patch("shopman.shop.services.payment._payman_refundable_amount", return_value=3000)
-    @patch("shopman.shop.services.payment.get_adapter")
-    def test_refund_after_partial_refund_uses_remaining_balance(self, mock_get_adapter, mock_refundable):
+    @patch("shopman.shop.services.payment._adapter_for_persisted_intent")
+    def test_refund_after_partial_refund_uses_remaining_balance(self, mock_adapter_for_intent, mock_refundable):
         from shopman.shop.adapters.payment_types import PaymentResult
         from shopman.shop.services.payment import refund
 
         adapter = MagicMock()
         adapter.refund.return_value = PaymentResult(success=True)
-        mock_get_adapter.return_value = adapter
+        mock_adapter_for_intent.return_value = adapter
 
         order = _make_order(
             total_q=10000,
@@ -781,8 +781,8 @@ class TestPaymentService:
         assert has_sufficient_captured_payment(order) is True
 
     @patch("shopman.shop.services.payment._payman_intent_captured", return_value=False)
-    @patch("shopman.shop.services.payment.get_adapter")
-    def test_capture(self, mock_get_adapter, mock_payman_check):
+    @patch("shopman.shop.services.payment._adapter_for_persisted_intent")
+    def test_capture(self, mock_adapter_for_intent, mock_payman_check):
         from shopman.shop.adapters.payment_types import PaymentResult
         from shopman.shop.services.payment import capture
 
@@ -791,7 +791,7 @@ class TestPaymentService:
             success=True,
             transaction_id="TXN-001",
         )
-        mock_get_adapter.return_value = adapter
+        mock_adapter_for_intent.return_value = adapter
 
         order = _make_order(
             data={"payment": {"method": "pix", "intent_ref": "INT-001"}},
@@ -2087,10 +2087,14 @@ class TestKDSService:
 
 class TestCheckoutService:
 
+    @patch("shopman.shop.services.checkout.Session")
     @patch("shopman.shop.services.checkout.Channel")
     @patch("shopman.shop.services.checkout.ChannelConfig")
     @patch("shopman.shop.services.checkout.sessions")
-    def test_process_applies_data_and_commits(self, mock_sessions, mock_cfg, mock_channel):
+    @pytest.mark.django_db
+    def test_process_applies_data_and_commits(
+        self, mock_sessions, mock_cfg, mock_channel, mock_session_model
+    ):
         from shopman.orderman.services.commit import CommitResult
 
         from shopman.shop.config import ChannelConfig
@@ -2109,10 +2113,14 @@ class TestCheckoutService:
         mock_sessions.commit_session.assert_called_once()
         assert result.order_ref == "ORD-001"
 
+    @patch("shopman.shop.services.checkout.Session")
     @patch("shopman.shop.services.checkout.Channel")
     @patch("shopman.shop.services.checkout.ChannelConfig")
     @patch("shopman.shop.services.checkout.sessions")
-    def test_process_skips_modify_with_no_data(self, mock_sessions, mock_cfg, mock_channel):
+    @pytest.mark.django_db
+    def test_process_skips_modify_with_no_data(
+        self, mock_sessions, mock_cfg, mock_channel, mock_session_model
+    ):
         from shopman.orderman.services.commit import CommitResult
 
         from shopman.shop.config import ChannelConfig

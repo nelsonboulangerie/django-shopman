@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
+import { toast } from "vue-sonner";
 
 import { makeProjection, makeSale, makeTabPayload } from "./_posSaleHarness";
 
@@ -24,6 +25,7 @@ function saleWithOpenTab(actionCall = vi.fn().mockResolvedValue({})) {
   h.sale.cart.tabRef = "M1";
   h.sale.cart.tabDisplay = "M1";
   h.sale.cart.tabSessionKey = "sess-1";
+  h.sale.cart.expectedRevision = "v1:initial";
   return h;
 }
 
@@ -44,6 +46,90 @@ describe("usePosSale — autosave debounced (auto-persist estilo Odoo)", () => {
     expect(String(actionCall.mock.calls[0]![0])).toContain("/tabs/save/");
     expect(h.handles.refresh).not.toHaveBeenCalled(); // quiet: sem refresh de projeção
     expect(h.sale.unsaved.value).toBe(false);
+    h.handles.dispose();
+  });
+
+  it("reutiliza a revisão retornada no próximo save", async () => {
+    const actionCall = vi.fn().mockResolvedValue({ revision: "v1:next" });
+    const h = saleWithOpenTab(actionCall);
+    await h.sale.saveTab();
+    await h.sale.saveTab();
+    expect(actionCall.mock.calls[0]?.[1].body.expected_revision).toBe("v1:initial");
+    expect(actionCall.mock.calls[1]?.[1].body.expected_revision).toBe("v1:next");
+    h.handles.dispose();
+  });
+
+  it("conflito preserva o rascunho e não repete autosave até escolha explícita", async () => {
+    const actionCall = vi.fn().mockRejectedValue({ status: 409, data: { detail: "Outra estação alterou a comanda." } });
+    const h = saleWithOpenTab(actionCall);
+    h.sale.addProduct(h.handles.posValue.value!.products[0]!);
+    await nextTick();
+    await vi.advanceTimersByTimeAsync(1200);
+    expect(h.sale.tabConflict.value).toBe(true);
+    expect(h.sale.cart.items).toHaveLength(1);
+    expect(h.sale.cart.expectedRevision).toBe("v1:initial");
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(actionCall).toHaveBeenCalledTimes(1);
+    h.handles.dispose();
+  });
+
+  it("duas telas convergem somente após descarte explícito e salvam sobre a revisão atual", async () => {
+    const remoteItem = {
+      line_id: "L-shared",
+      sku: "PAO",
+      name: "Pão",
+      qty: 3,
+      unit_price_q: 500,
+      notes: "",
+    };
+    const actionCall = vi
+      .fn()
+      .mockRejectedValueOnce({
+        status: 409,
+        data: { detail: "Outra estação alterou a comanda." },
+      })
+      .mockResolvedValueOnce(
+        makeTabPayload({ revision: "v1:remote", items: [remoteItem] }),
+      )
+      .mockResolvedValueOnce({ revision: "v1:merged" });
+    const h = saleWithOpenTab(actionCall);
+    h.sale.addProduct(h.handles.posValue.value!.products[0]!);
+    const localLineId = h.sale.cart.items[0]?.line_id;
+
+    await h.sale.saveTab();
+    expect(h.sale.tabConflict.value).toBe(true);
+    expect(h.sale.cart.items[0]?.line_id).toBe(localLineId);
+    expect(h.sale.cart.expectedRevision).toBe("v1:initial");
+
+    await h.sale.reloadConflictingTab();
+    expect(actionCall.mock.calls[1]?.[1]?.method).toBe("GET");
+    expect(h.sale.tabConflict.value).toBe(false);
+    expect(h.sale.cart.items[0]?.qty).toBe(3);
+    expect(h.sale.cart.expectedRevision).toBe("v1:remote");
+
+    h.sale.cart.items[0]!.qty = 4;
+    await h.sale.saveTab();
+    expect(actionCall.mock.calls[2]?.[1]?.body.expected_revision).toBe(
+      "v1:remote",
+    );
+    expect(h.sale.cart.expectedRevision).toBe("v1:merged");
+    h.handles.dispose();
+  });
+
+  it("atualiza somente a comanda original após descarte explícito", async () => {
+    const actionCall = vi.fn().mockResolvedValue(makeTabPayload({ revision: "v1:remote" }));
+    const h = saleWithOpenTab(actionCall);
+    h.sale.tabConflict.value = true;
+    await h.sale.reloadConflictingTab();
+    expect(actionCall.mock.calls[0]?.[1].method).toBe("GET");
+    expect(h.sale.cart.expectedRevision).toBe("v1:remote");
+    expect(h.sale.tabConflict.value).toBe(false);
+    h.sale.tabConflict.value = true;
+    actionCall.mockResolvedValue(makeTabPayload({ session_key: "replacement", revision: "v1:other" }));
+    await h.sale.reloadConflictingTab();
+    expect(h.sale.cart.tabSessionKey).toBe("sess-1");
+    expect(h.sale.cart.expectedRevision).toBe("v1:remote");
+    expect(h.sale.tabConflict.value).toBe(true);
     h.handles.dispose();
   });
 
@@ -139,6 +225,46 @@ describe("usePosSale — persistQueue serializa gravações", () => {
 
     expect(overlapped).toBe(false);
     expect(actionCall.mock.calls.length).toBeGreaterThanOrEqual(2);
+    h.handles.dispose();
+  });
+});
+
+describe("cadastro em rascunho não é persistência autorizada", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
+  it("não salva versões digitadas do cadastro; selecionar ref libera autosave", async () => {
+    const h = saleWithOpenTab();
+    h.sale.addProduct(h.handles.posValue.value!.products[0]!);
+    await nextTick();
+    h.sale.cart.customerName = "Br";
+    await nextTick();
+    await vi.advanceTimersByTimeAsync(6000);
+    h.sale.cart.customerName = "Bruno";
+    h.sale.cart.customerPhone = "43999990022";
+    await nextTick();
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(h.handles.actionCall).not.toHaveBeenCalled();
+    expect(h.sale.unsaved.value).toBe(true);
+    h.sale.cart.customerRef = "CUST-B";
+    await nextTick();
+    await vi.advanceTimersByTimeAsync(1200);
+    expect(h.handles.actionCall).toHaveBeenCalledTimes(1);
+    expect(h.sale.unsaved.value).toBe(false);
+    h.handles.dispose();
+  });
+  it("checkout e fechamento pedem concluir cadastro, sem chamar API", async () => {
+    const h = saleWithOpenTab();
+    h.sale.addProduct(h.handles.posValue.value!.products[0]!);
+    h.sale.cart.customerPhone = "43999990022";
+    await nextTick();
+    const focus = h.sale.customerFocusNonce.value;
+    await h.sale.prepareCheckout();
+    expect(h.sale.checkoutMode.value).toBe(false);
+    expect(h.sale.customerFocusNonce.value).toBeGreaterThan(focus);
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("Conclua o cadastro ou remova os dados"));
+    h.sale.checkoutMode.value = true;
+    await h.sale.submitSale();
+    expect(h.handles.actionCall).not.toHaveBeenCalled();
     h.handles.dispose();
   });
 });

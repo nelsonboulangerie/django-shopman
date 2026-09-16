@@ -31,6 +31,7 @@ ORDER_ENDPOINTS = [
     ("get", "/api/v1/tracking/{ref}/", None),
     ("get", "/api/v1/tracking/{ref}/events/", None),  # SSE — stricter gate
     ("post", "/api/v1/orders/{ref}/cancel/", {}),
+    ("post", "/api/v1/orders/{ref}/cancellation-request/", {}),
     ("post", "/api/v1/orders/{ref}/confirm-received/", {}),
     ("post", "/api/v1/orders/{ref}/rate/", {"rating": 5}),
     ("get", "/api/v1/orders/{ref}/conversation/", None),

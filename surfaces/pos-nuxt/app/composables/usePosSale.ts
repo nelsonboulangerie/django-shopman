@@ -11,7 +11,9 @@ import type {
   POSCustomerMergeResponse,
   POSCustomerSearchResponse,
   POSCustomerSearchResult,
+  POSPaymentDeliveryProjection,
   POSProductProjection,
+  POSReceiptIdentityChoice,
   POSProjection,
   POSSaleReviewProjection,
   POSScheduleResponse,
@@ -33,7 +35,7 @@ import {
 } from "~/utils/posIntent";
 import { cartQtyForSku } from "~/presentation/catalog";
 import { sanitizeTabRef as sanitizeTabRefShape, sortTabs } from "~/presentation/tabBoard";
-import type { ScheduleWindow } from "~/presentation/schedule";
+import { scheduleLabel, windowLabel, type ScheduleWindow } from "~/presentation/schedule";
 import {
   isPaymentCovered,
   paymentChangeQ as computeChangeQ,
@@ -72,6 +74,85 @@ import { toast } from "vue-sonner";
 
 type FulfillmentType = "pickup" | "delivery";
 type PaymentCollection = "terminal" | "on_delivery";
+const CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY = "shopman:pos:close-outcome-uncertain";
+const CLOSE_GUARD_LOCK_NAME = "shopman:pos:close-sale";
+
+type CloseGuardState = "pending" | "uncertain";
+
+interface CloseGuardMarker {
+  client_request_id: string;
+  owner_id: string;
+  state: CloseGuardState;
+  recorded_at: string;
+}
+
+interface CloseGuardRead {
+  marker: CloseGuardMarker | null;
+  storageAvailable: boolean;
+}
+
+function readCloseOutcomeUncertain(): CloseGuardRead {
+  try {
+    const storage = globalThis.localStorage;
+    if (!storage) return { marker: null, storageAvailable: false };
+    const raw = storage.getItem(CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY);
+    if (!raw) return { marker: null, storageAvailable: true };
+    const parsed = JSON.parse(raw) as Partial<CloseGuardMarker>;
+    // Marcadores da primeira versão não tinham state/owner. Eles continuam
+    // bloqueando como outcome incerto e só saem por reconciliação explícita.
+    const marker: CloseGuardMarker = {
+      client_request_id: typeof parsed.client_request_id === "string" ? parsed.client_request_id : "",
+      owner_id: typeof parsed.owner_id === "string" ? parsed.owner_id : "",
+      state: parsed.state === "pending" ? "pending" : "uncertain",
+      recorded_at: typeof parsed.recorded_at === "string" ? parsed.recorded_at : "",
+    };
+    return { marker, storageAvailable: true };
+  } catch {
+    // Falha fechada: sem conseguir ler o marcador, não há prova de que uma
+    // cobrança anterior terminou. A estação só volta após reconciliação.
+    return { marker: null, storageAvailable: false };
+  }
+}
+
+function persistCloseGuard(marker: CloseGuardMarker): boolean {
+  try {
+    const storage = globalThis.localStorage;
+    if (!storage) return false;
+    const encoded = JSON.stringify(marker);
+    storage.setItem(CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY, encoded);
+    // setItem pode ser interceptado por storage degradado. Só há garantia se a
+    // mesma prova for lida de volta antes de qualquer chamada de fechamento.
+    return storage.getItem(CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY) === encoded;
+  } catch {
+    return false;
+  }
+}
+
+function sameCloseGuardOwner(marker: CloseGuardMarker | null, expected: CloseGuardMarker): boolean {
+  return marker?.owner_id === expected.owner_id
+    && marker.client_request_id === expected.client_request_id;
+}
+
+function transitionOwnedCloseGuard(expected: CloseGuardMarker, state: CloseGuardState): boolean {
+  const current = readCloseOutcomeUncertain();
+  if (!current.storageAvailable || !sameCloseGuardOwner(current.marker, expected)) return false;
+  return persistCloseGuard({ ...expected, state, recorded_at: new Date().toISOString() });
+}
+
+function clearPersistedCloseOutcomeUncertain(expected?: CloseGuardMarker): boolean {
+  try {
+    const storage = globalThis.localStorage;
+    if (!storage) return false;
+    if (expected) {
+      const current = readCloseOutcomeUncertain();
+      if (!current.storageAvailable || !sameCloseGuardOwner(current.marker, expected)) return false;
+    }
+    storage.removeItem(CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY);
+    return storage.getItem(CLOSE_OUTCOME_UNCERTAIN_STORAGE_KEY) === null;
+  } catch {
+    return false;
+  }
+}
 
 interface PosSaleDeps {
   /** Read-side slices of the terminal Projection (from usePosTerminal). */
@@ -83,7 +164,7 @@ interface PosSaleDeps {
   action: {
     call: <T = unknown>(
       path: string,
-      options?: { method?: "POST" | "PUT" | "PATCH" | "DELETE"; body?: Record<string, unknown> },
+      options?: { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: Record<string, unknown> },
     ) => Promise<T>;
   };
   apiPath: (path: string) => string;
@@ -132,6 +213,7 @@ export function usePosSale(deps: PosSaleDeps) {
   // erro era engolido (.catch(() => {})) e o operador seguia lançando itens numa
   // comanda que não estava sendo salva. A UI mostra um chip "não salvo".
   const unsaved = ref(false);
+  const tabConflict = ref(false);
   // Auto-persist the comanda (Odoo-style): no manual "Salvar". tabLoading guards
   // against re-saving right after a programmatic load (setFromTabPayload).
   const tabLoading = ref(false);
@@ -164,6 +246,110 @@ export function usePosSale(deps: PosSaleDeps) {
   // reseta logo depois e o troco computado voltaria a zero): uma fonte só para
   // o palco do operador e a tela do cliente.
   const result = ref<PosSaleResultSnapshot | null>(null);
+  // O Django respondeu ao close, mas sem a prova mínima (`ok + order_ref`).
+  // Repetir o mesmo gesto no escuro pode cobrar duas vezes; só a confirmação
+  // explícita de que pedido e pagamento foram conferidos libera nova tentativa.
+  // Começa falso também durante hydration; a página restaura localStorage no
+  // mounted para o HTML do servidor não divergir do primeiro render do cliente.
+  const closeOutcomeUncertain = ref(false);
+  const closeGuardPending = ref(false);
+  const closeGuardFailureMessage = ref("");
+  const closeOutcomeUncertainMessage = "Não foi possível confirmar o resultado desta venda. Confira o pedido e o pagamento antes de qualquer nova cobrança. Não repita esta venda.";
+  const closeGuardUnavailableMessage = "Este navegador não conseguiu ativar a proteção contra cobrança duplicada. Nenhuma cobrança foi iniciada. Confira o armazenamento do navegador e reconcilie a venda antes de tentar novamente.";
+  const closeGuardCoordinationUnavailableMessage = "Este navegador não oferece a coordenação segura entre abas exigida para cobrar. Nenhuma cobrança foi iniciada. Atualize o navegador ou use uma estação compatível.";
+  const closeGuardActiveMessage = "Há uma cobrança sendo processada nesta estação. Aguarde o resultado antes de reconciliar ou tentar novamente.";
+  const closeGuardReconciliationFailedMessage = "Não foi possível registrar a reconciliação porque o armazenamento do navegador está indisponível. A proteção continua ativa e nenhuma nova cobrança será iniciada.";
+
+  function restoreUncertainClose() {
+    const guard = readCloseOutcomeUncertain();
+    closeOutcomeUncertain.value = !guard.storageAvailable || Boolean(guard.marker);
+    closeGuardPending.value = guard.marker?.state === "pending";
+    closeGuardFailureMessage.value = guard.storageAvailable ? "" : closeGuardUnavailableMessage;
+    if (!guard.storageAvailable) serverError.value = closeGuardUnavailableMessage;
+  }
+
+  function establishCloseGuard(): CloseGuardMarker | null {
+    const marker: CloseGuardMarker = {
+      client_request_id: cart.clientRequestId,
+      owner_id: newClientRequestId(),
+      state: "pending",
+      recorded_at: new Date().toISOString(),
+    };
+    closeOutcomeUncertain.value = true;
+    closeGuardPending.value = true;
+    if (persistCloseGuard(marker)) {
+      closeGuardFailureMessage.value = "";
+      return marker;
+    }
+    closeGuardPending.value = false;
+    closeGuardFailureMessage.value = closeGuardUnavailableMessage;
+    serverError.value = closeGuardUnavailableMessage;
+    return null;
+  }
+
+  function releaseOwnedCloseGuard(marker: CloseGuardMarker, failureMessage = closeGuardUnavailableMessage): boolean {
+    if (!clearPersistedCloseOutcomeUncertain(marker)) {
+      closeOutcomeUncertain.value = true;
+      closeGuardPending.value = false;
+      closeGuardFailureMessage.value = failureMessage;
+      serverError.value = failureMessage;
+      return false;
+    }
+    closeOutcomeUncertain.value = false;
+    closeGuardPending.value = false;
+    closeGuardFailureMessage.value = "";
+    return true;
+  }
+
+  function markOwnedCloseGuardUncertain(marker: CloseGuardMarker) {
+    transitionOwnedCloseGuard(marker, "uncertain");
+    closeOutcomeUncertain.value = true;
+    closeGuardPending.value = false;
+    closeGuardFailureMessage.value = "";
+  }
+
+  async function acknowledgeUncertainClose(): Promise<boolean> {
+    const lockManager = globalThis.navigator?.locks;
+    if (!lockManager?.request) {
+      closeOutcomeUncertain.value = true;
+      closeGuardFailureMessage.value = closeGuardCoordinationUnavailableMessage;
+      serverError.value = closeGuardCoordinationUnavailableMessage;
+      return false;
+    }
+    try {
+      return await lockManager.request(CLOSE_GUARD_LOCK_NAME, { ifAvailable: true }, (lock) => {
+        if (!lock) {
+          serverError.value = closeGuardActiveMessage;
+          return false;
+        }
+        const current = readCloseOutcomeUncertain();
+        if (!current.storageAvailable) {
+          closeOutcomeUncertain.value = true;
+          closeGuardPending.value = false;
+          closeGuardFailureMessage.value = closeGuardReconciliationFailedMessage;
+          serverError.value = closeGuardReconciliationFailedMessage;
+          return false;
+        }
+        if (current.marker && !clearPersistedCloseOutcomeUncertain()) {
+          closeOutcomeUncertain.value = true;
+          closeGuardPending.value = false;
+          closeGuardFailureMessage.value = closeGuardReconciliationFailedMessage;
+          serverError.value = closeGuardReconciliationFailedMessage;
+          return false;
+        }
+        closeOutcomeUncertain.value = false;
+        closeGuardPending.value = false;
+        closeGuardFailureMessage.value = "";
+        serverError.value = "";
+        return true;
+      });
+    } catch {
+      closeOutcomeUncertain.value = true;
+      closeGuardFailureMessage.value = closeGuardCoordinationUnavailableMessage;
+      serverError.value = closeGuardCoordinationUnavailableMessage;
+      return false;
+    }
+  }
 
   // PIX no PDV: o proof mostra o QR e "aguarde confirmação", mas sem polling o
   // operador nunca via a confirmação chegar (tinha de ir ao gestor). Aqui pollamos
@@ -177,7 +363,45 @@ export function usePosSale(deps: PosSaleDeps) {
   // o pedido vira um chip compacto no header e o polling segue até resolver.
   const pendingPixOrderRef = ref("");
   let pixPollTimer: ReturnType<typeof setInterval> | null = null;
-  function stopPixPolling() {
+  let deliveryPollTimer: ReturnType<typeof setInterval> | null = null;
+  let pixPollGeneration = 0;
+  let deliveryPollGeneration = 0;
+  function applyPaymentDelivery(orderRef: string, delivery?: POSPaymentDeliveryProjection | null) {
+    if (result.value?.orderRef === orderRef && delivery) result.value.paymentDelivery = delivery;
+  }
+  function stopDeliveryPolling(expectedGeneration?: number) {
+    if (expectedGeneration !== undefined && expectedGeneration !== deliveryPollGeneration) return;
+    deliveryPollGeneration += 1;
+    if (deliveryPollTimer) { clearInterval(deliveryPollTimer); deliveryPollTimer = null; }
+  }
+  function startDeliveryPolling(orderRef: string) {
+    stopDeliveryPolling();
+    let attempts = 0;
+    let inFlight = false;
+    const generation = deliveryPollGeneration;
+    deliveryPollTimer = setInterval(async () => {
+      if (generation !== deliveryPollGeneration) return;
+      if (attempts >= 24 || result.value?.orderRef !== orderRef) return stopDeliveryPolling(generation);
+      if (inFlight) return;
+      attempts += 1;
+      inFlight = true;
+      try {
+        const response = await $fetch<{ payment_delivery?: POSPaymentDeliveryProjection }>(
+          apiPath(`/api/v1/backstage/pos/payment/${encodeURIComponent(orderRef)}/status/`),
+          { credentials: "include" },
+        );
+        if (generation !== deliveryPollGeneration || result.value?.orderRef !== orderRef) return;
+        applyPaymentDelivery(orderRef, response.payment_delivery);
+        if (!response.payment_delivery || !["queued", "sending"].includes(response.payment_delivery.status)) {
+          stopDeliveryPolling(generation);
+        }
+      } catch { /* silêncio-deliberado: o estado continua honesto; a próxima tentativa pode recuperar */ }
+      finally { inFlight = false; }
+    }, 2500);
+  }
+  function stopPixPolling(expectedGeneration?: number) {
+    if (expectedGeneration !== undefined && expectedGeneration !== pixPollGeneration) return;
+    pixPollGeneration += 1;
     if (pixPollTimer) { clearInterval(pixPollTimer); pixPollTimer = null; }
   }
   function startPixPolling(orderRef: string) {
@@ -185,19 +409,27 @@ export function usePosSale(deps: PosSaleDeps) {
     pixOrderRef.value = orderRef;
     pixStatus.value = "polling";
     let attempts = 0;
+    let inFlight = false;
+    const generation = pixPollGeneration;
     pixPollTimer = setInterval(async () => {
+      if (generation !== pixPollGeneration) return;
+      if (attempts >= 240) { pixStatus.value = "expired"; return stopPixPolling(generation); } // ~10 min a 2,5s → desiste
+      if (inFlight) return;
       attempts += 1;
-      if (attempts > 240) { pixStatus.value = "expired"; return stopPixPolling(); } // ~10 min a 2,5s → desiste
+      inFlight = true;
       try {
-        const status = await $fetch<{ is_paid?: boolean; is_terminal?: boolean }>(
+        const status = await $fetch<{ is_paid?: boolean; is_terminal?: boolean; payment_delivery?: POSPaymentDeliveryProjection }>(
           apiPath(`/api/v1/backstage/pos/payment/${encodeURIComponent(orderRef)}/status/`),
           { credentials: "include" },
         );
-        if (status?.is_paid) { pixStatus.value = "paid"; stopPixPolling(); }
-        else if (status?.is_terminal) { pixStatus.value = "expired"; stopPixPolling(); } // cancelado/expirado
+        if (generation !== pixPollGeneration || pixOrderRef.value !== orderRef) return;
+        applyPaymentDelivery(orderRef, status.payment_delivery);
+        if (status?.is_paid) { pixStatus.value = "paid"; stopPixPolling(generation); }
+        else if (status?.is_terminal) { pixStatus.value = "expired"; stopPixPolling(generation); } // cancelado/expirado
       // A desistência é que fala alto: 240 tentativas → `pixStatus = "expired"`
       // e o toast do watcher. A tentativa isolada, não.
       } catch { /* silêncio-deliberado: falha transiente de rede — segue tentando */ }
+      finally { inFlight = false; }
     }, 2500);
   }
 
@@ -222,6 +454,7 @@ export function usePosSale(deps: PosSaleDeps) {
    */
   function dismissResult() {
     if (!result.value) return;
+    stopDeliveryPolling();
     const proof = result.value.payment;
     const pixStillPending = Boolean(proof?.isPix && proof?.hasProof) && pixStatus.value === "polling";
     if (pixStillPending) {
@@ -239,20 +472,34 @@ export function usePosSale(deps: PosSaleDeps) {
   // ainda em andamento, clique cedo demais. A recusa é toast com o `detail`
   // do servidor; o botão não some, porque o motivo muda com o tempo.
   const resendingLink = ref(false);
-  async function resendPaymentLink(): Promise<boolean> {
+  async function sendPaymentNotice(requestedAction?: "send" | "resend"): Promise<boolean> {
     const orderRef = result.value?.orderRef;
     if (!orderRef || resendingLink.value) return false;
+    const requested = requestedAction || result.value?.paymentDelivery?.action || "send";
     resendingLink.value = true;
     try {
-      await action.call(`/api/v1/backstage/pos/orders/${encodeURIComponent(orderRef)}/resend-payment-link/`);
-      toast.success("Reenvio do link solicitado.");
+      const response = await action.call<{ payment_delivery?: POSPaymentDeliveryProjection }>(
+        `/api/v1/backstage/pos/orders/${encodeURIComponent(orderRef)}/send-payment-notice/`,
+        { body: { action: requested } },
+      );
+      applyPaymentDelivery(orderRef, response?.payment_delivery);
+      const notice = response?.payment_delivery?.notice || (requested === "resend" ? "Reenvio colocado na fila." : "Envio colocado na fila.");
+      toast.success(notice);
+      if (response?.payment_delivery && ["queued", "sending"].includes(response.payment_delivery.status)) {
+        if (!result.value?.payment?.isPix) startDeliveryPolling(orderRef);
+      }
       return true;
     } catch (error) {
-      toast.error(httpErrorMessage(error, "Não foi possível reenviar o link. Copie e mande você."));
+      const delivery = (httpError(error).data as { payment_delivery?: POSPaymentDeliveryProjection } | null)?.payment_delivery;
+      applyPaymentDelivery(orderRef, delivery);
+      toast.error(httpErrorMessage(error, "Não foi possível enviar a cobrança. Copie e mande você."));
       return false;
     } finally {
       resendingLink.value = false;
     }
+  }
+  async function resendPaymentLink(): Promise<boolean> {
+    return sendPaymentNotice("resend");
   }
 
   /**
@@ -293,6 +540,7 @@ export function usePosSale(deps: PosSaleDeps) {
   /** As ofertas do comprovante — a MESMA função que a tela lê para perguntar. */
   const receiptOffers = () =>
     receiptSaveOffers({
+      customerRef: cart.customerRef,
       receiptEmail: cart.receiptEmail,
       customerEmail: cart.customerEmail,
       invoiceTaxId: cart.invoiceTaxId,
@@ -305,6 +553,7 @@ export function usePosSale(deps: PosSaleDeps) {
     tabRef: "",
     tabDisplay: "",
     tabSessionKey: "",
+    expectedRevision: "",
     items: [] as POSCartItem[],
     customerName: "",
     customerRef: "",
@@ -316,6 +565,8 @@ export function usePosSale(deps: PosSaleDeps) {
     customerEmail: "",
     customerMemoryAction: "",
     fulfillmentType: "pickup" as FulfillmentType,
+    fulfillmentConfirmed: true,
+    salesMode: "counter" as "counter" | "order",
     deliveryAddress: "",
     deliveryAddressStructured: {} as StructuredAddressProjection,
     deliveryStreetNumber: "",
@@ -356,6 +607,61 @@ export function usePosSale(deps: PosSaleDeps) {
     managerPin: "",
     clientRequestId: "",
   });
+
+  const receiptIdentityChoices = ref<POSReceiptIdentityChoice[]>([]);
+  const customerDraftPending = computed(() => !cart.customerRef.trim()
+    && Boolean(cart.customerName.trim() || cart.customerPhone.trim() || cart.customerTaxId.trim() || cart.customerEmail.trim()));
+  const customerDraftMessage = "Conclua o cadastro ou remova os dados do cliente antes de continuar.";
+  function requireCustomerDraftDecision() {
+    if (!customerDraftPending.value) return false;
+    unsaved.value = true;
+    serverError.value = customerDraftMessage;
+    customerFocusNonce.value += 1;
+    return true;
+  }
+  const orderSetupComplete = ref(false);
+  const orderSetupIssue = computed<"customer" | "fulfillment" | "address" | "schedule" | "">(() => {
+    if (cart.salesMode !== "order") return "";
+    if (!cart.customerRef.trim()) return "customer";
+    if (!cart.fulfillmentConfirmed) return "fulfillment";
+    if (cart.fulfillmentType === "delivery" && !cart.deliveryAddress.trim()
+      && !cart.deliveryAddressStructured.route?.trim()) return "address";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(cart.deliveryDate)
+      || (pos.value?.delivery_today && cart.deliveryDate < pos.value.delivery_today)) return "schedule";
+    return "";
+  });
+  const orderSetupPending = computed(() => cart.salesMode === "order"
+    && (!orderSetupComplete.value || Boolean(orderSetupIssue.value)));
+  function completeOrderSetup() {
+    if (!orderSetupIssue.value) {
+      orderSetupComplete.value = true;
+      scheduleAutosave();
+    }
+  }
+  function setSalesMode(mode: "counter" | "order") {
+    if (mode === cart.salesMode) return;
+    cart.salesMode = mode;
+    orderSetupComplete.value = false;
+    checkoutMode.value = false;
+    review.value = null;
+    cart.fulfillmentConfirmed = mode === "counter";
+    if (mode === "counter") {
+      cart.fulfillmentType = "pickup";
+      cart.deliveryDate = "";
+      cart.deliveryTimeSlot = "";
+      cart.deliveryAddress = "";
+      cart.deliveryAddressStructured = {};
+      cart.deliveryStreetNumber = "";
+      cart.deliveryNeighborhood = "";
+      cart.deliveryComplement = "";
+      cart.deliveryInstructions = "";
+      cart.deliveryFeeOverride = false;
+      cart.deliveryFeeOverrideInput = "";
+      cart.paymentCollection = "terminal";
+      cart.paymentTenders = [];
+      cart.changeForInput = "";
+    }
+  }
 
   const checkoutContract = computed(() => pos.value?.checkout || null);
   const checkoutCapabilities = computed<POSCheckoutCapabilities>(
@@ -621,6 +927,11 @@ export function usePosSale(deps: PosSaleDeps) {
   });
 
   function addTender(method: string) {
+    if (cart.paymentCollection === "on_delivery" && !["cash", "credit", "debit"].includes(method)) {
+      const handoff = cart.fulfillmentType === "pickup" ? "retirada" : "entrega";
+      toast.info(`Na ${handoff}, use dinheiro ou cartão na maquininha. PIX Efí exige confirmação automática.`);
+      return;
+    }
     const amountQ = Math.max(0, splitNextShareQ.value);
     if (amountQ <= 0) {
       // Tocar num método com o total já coberto era silêncio absoluto — o
@@ -758,6 +1069,7 @@ export function usePosSale(deps: PosSaleDeps) {
   const availablePaymentCollections = computed(() =>
     (pos.value?.payment_collections || []).filter((collection) =>
       collection.fulfillment_types.includes(cart.fulfillmentType)
+      && !(collection.ref === "on_delivery" && cart.fulfillmentType === "pickup" && cart.salesMode !== "order")
       && collection.payment_method_refs.includes(cart.paymentMethod),
     ),
   );
@@ -765,10 +1077,15 @@ export function usePosSale(deps: PosSaleDeps) {
   watch(pos, (projection) => {
     if (!projection) return;
     if (!cart.paymentMethod) cart.paymentMethod = projection.payment_methods[0]?.ref || "cash";
+    if (cart.salesMode === "counter") return;
     const defaultFulfillment = projection.terminal_default_fulfillment_type === "delivery" ? "delivery" : "pickup";
-    if (!cart.fulfillmentType) cart.fulfillmentType = defaultFulfillment;
+    if (!cart.fulfillmentType) {
+      cart.fulfillmentType = defaultFulfillment;
+      cart.fulfillmentConfirmed = false;
+    }
     if (!projection.fulfillment_options.some((option) => option.ref === cart.fulfillmentType)) {
       cart.fulfillmentType = projection.fulfillment_options[0]?.ref || "pickup";
+      cart.fulfillmentConfirmed = false;
     }
   }, { immediate: true });
 
@@ -795,6 +1112,8 @@ export function usePosSale(deps: PosSaleDeps) {
     }, 450);
   }
   watch(() => [
+    cart.salesMode,
+    cart.fulfillmentConfirmed,
     cart.fulfillmentType,
     cart.deliveryAddress,
     cart.deliveryAddressStructured,
@@ -864,6 +1183,7 @@ export function usePosSale(deps: PosSaleDeps) {
    * com identidade nova — que é o que a cozinha precisa para receber um ticket.
    */
   function pushProduct(product: POSProductProjection) {
+    if (orderSetupPending.value) return;
     // Lançar item é sair da tela de resultado: pelo mesmo caminho do CTA
     // (PIX aguardando vira chip, nunca é descartado calado).
     dismissResult();
@@ -885,7 +1205,7 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   function setQty(lineId: string, qty: number) {
-    if (!canUseCart.value) return;
+    if (!canUseCart.value || orderSetupPending.value) return;
     review.value = null;
     checkoutMode.value = false;
     const existing = cart.items.find((item) => item.line_id === lineId);
@@ -937,9 +1257,12 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   function resetCart() {
+    tabConflict.value = false;
+    receiptIdentityChoices.value = [];
     cart.tabRef = "";
     cart.tabDisplay = "";
     cart.tabSessionKey = "";
+    cart.expectedRevision = "";
     cart.items = [];
     cart.customerName = "";
     cart.customerRef = "";
@@ -949,6 +1272,10 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.wantsCpfOnInvoice = false;
     cart.customerEmail = "";
     cart.customerMemoryAction = "";
+    cart.fulfillmentType = "pickup";
+    cart.fulfillmentConfirmed = true;
+    cart.salesMode = "counter";
+    orderSetupComplete.value = false;
     cart.deliveryAddress = "";
     cart.deliveryAddressStructured = {};
     cart.deliveryStreetNumber = "";
@@ -993,11 +1320,16 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.tabRef = payload.tab_ref;
     cart.tabDisplay = payload.tab_display;
     cart.tabSessionKey = payload.tab_session_key || payload.session_key;
+    cart.expectedRevision = payload.revision || "";
     showTabs.value = false;
   }
 
-  function setFromTabPayload(payload: POSTabPayload, options: { preserveCheckout?: boolean } = {}) {
+  async function setFromTabPayload(payload: POSTabPayload, options: { preserveCheckout?: boolean } = {}) {
+    tabConflict.value = false;
+    unsaved.value = false;
     tabLoading.value = true;
+    const sameTab = cart.tabRef === payload.tab_ref && cart.tabSessionKey === (payload.tab_session_key || payload.session_key);
+    const fulfillmentWasConfirmed = sameTab && cart.fulfillmentConfirmed && cart.fulfillmentType === payload.fulfillment_type;
     assignTabIdentityFromPayload(payload);
     cart.items = (payload.items || []).map((item) => ({ ...item }));
     cart.customerName = payload.customer_name || "";
@@ -1006,6 +1338,9 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.customerTaxId = payload.customer_tax_id || "";
     cart.customerEmail = payload.customer_email || "";
     cart.fulfillmentType = payload.fulfillment_type === "delivery" ? "delivery" : "pickup";
+    cart.salesMode = payload.sales_mode || (payload.fulfillment_type === "delivery" || payload.delivery_date || payload.delivery_time_slot ? "order" : "counter");
+    cart.fulfillmentConfirmed = cart.salesMode === "counter" || fulfillmentWasConfirmed || Boolean(payload.fulfillment_type);
+    orderSetupComplete.value = cart.salesMode === "order" && Boolean(payload.items?.length);
     cart.deliveryAddress = payload.delivery_address || "";
     cart.deliveryAddressStructured = payload.delivery_address_structured || {};
     cart.deliveryStreetNumber = payload.delivery_address_structured?.street_number || "";
@@ -1031,7 +1366,8 @@ export function usePosSale(deps: PosSaleDeps) {
       selectedTenderIndex.value = -1;
       cart.tenderedAmountInput = payload.tendered_q ? (Number(payload.tendered_q) / 100).toFixed(2).replace(".", ",") : "";
       cart.changeForInput = "";
-      cart.invoiceTaxId = cart.invoiceTaxId || String(payload.fiscal_tax_id || "");
+      cart.invoiceTaxId = String(payload.fiscal_tax_id || "");
+      cart.wantsCpfOnInvoice = Boolean(cart.invoiceTaxId);
       cart.receiptChannels = [...(payload.receipt_channels || [])];
       cart.receiptEmail = payload.receipt_email || "";
       // A ordem não volta da comanda reaberta: é decisão de QUEM está fechando
@@ -1045,8 +1381,12 @@ export function usePosSale(deps: PosSaleDeps) {
       cart.managerUsername = "";
       cart.managerPin = "";
     }
-    cart.clientRequestId = "";
-    customerLookup.value = null;
+    if (!sameTab || !receiptIdentityChoices.value.length) cart.clientRequestId = "";
+    if (!cart.customerRef) customerLookup.value = null;
+    else if (customerLookup.value?.ref !== cart.customerRef) {
+      customerLookup.value = null;
+      await fetchCustomerLookup();
+    }
     // preserveCheckout: o checkout otimista recarrega a comanda POR BAIXO do shell
     // de pagamento já aberto — sair do modo aqui devolveria o operador à venda.
     if (!options.preserveCheckout) {
@@ -1054,6 +1394,22 @@ export function usePosSale(deps: PosSaleDeps) {
       review.value = null;
     }
     void nextTick(() => { tabLoading.value = false; });
+  }
+
+  async function reloadConflictingTab() {
+    if (!tabConflict.value || !cart.tabRef || busy.value) return;
+    busy.value = true;
+    const sessionKey = cart.tabSessionKey;
+    try {
+      const payload = await action.call<POSTabPayload>(concreteActionHref(actions.value, "read_tab",
+        "/api/v1/backstage/pos/tabs/{tab_ref}/open/", { tab_ref: cart.tabRef }), { method: "GET" });
+      if (cart.tabSessionKey !== sessionKey || payload.session_key !== sessionKey) throw new Error("A comanda original foi encerrada.");
+      await setFromTabPayload(payload);
+    } catch (error) {
+      serverError.value = httpErrorMessage(error, "Não foi possível carregar a comanda atual.");
+    } finally {
+      busy.value = false;
+    }
   }
 
   function requestTabAssociation(reason: "start" | "save" | "cart" = "start") {
@@ -1103,7 +1459,7 @@ export function usePosSale(deps: PosSaleDeps) {
         checkoutMode.value = false;
         review.value = null;
       } else {
-        setFromTabPayload(payload);
+        await setFromTabPayload(payload);
       }
       tabInput.value = "";
       await refresh();
@@ -1163,6 +1519,7 @@ export function usePosSale(deps: PosSaleDeps) {
     return {
       tabRef: cart.tabRef,
       tabSessionKey: cart.tabSessionKey,
+      expectedRevision: cart.expectedRevision,
       items: cart.items,
       customerName: cart.customerName,
       customerRef: cart.customerRef,
@@ -1173,7 +1530,8 @@ export function usePosSale(deps: PosSaleDeps) {
       invoiceTaxId: cart.wantsCpfOnInvoice ? cart.invoiceTaxId : "",
       customerEmail: cart.customerEmail,
       customerMemoryAction: cart.customerMemoryAction,
-      fulfillmentType: cart.fulfillmentType,
+      salesMode: cart.salesMode,
+      fulfillmentType: cart.salesMode === "order" && !cart.fulfillmentConfirmed ? "" as const : cart.fulfillmentType,
       deliveryAddress,
       deliveryAddressStructured: structured,
       deliveryComplement: cart.deliveryComplement,
@@ -1186,14 +1544,14 @@ export function usePosSale(deps: PosSaleDeps) {
       paymentCollection: cart.paymentCollection,
       paymentTenders: resolvedPayment.paymentTenders,
       tenderedQ: resolvedPayment.tenderedQ,
-      changeForQ: cart.fulfillmentType === "delivery" && cart.paymentCollection === "on_delivery"
-        ? moneyInputToQ(cart.changeForInput)
+      changeForQ: cart.paymentCollection === "on_delivery"
+        ? cart.paymentTenders.filter((t) => t.method === "cash").reduce((sum, t) => sum + t.amount_q, 0)
         : 0,
       receiptChannels: cart.receiptChannels,
-      receiptEmail: cart.receiptEmail || cart.customerEmail,
+      receiptEmail: cart.receiptChannels.includes("email") ? cart.receiptEmail || cart.customerEmail : "",
       // O padrão da oferta vale enquanto o operador não tocar — e a régua é o
       // cadastro que o lookup trouxe, a mesma que a tela usou para perguntar.
-      saveReceiptContact: receiptContactArmed(receiptOffers().email, cart.saveReceiptContact, true),
+      saveReceiptContact: cart.receiptChannels.includes("email") && receiptContactArmed(receiptOffers().email, cart.saveReceiptContact, true),
       // ⚠️ `receiptContactArmed` e não `receiptContactChecked`: no CPF divergente
       // a caixa marcada sem a reconfirmação não grava NADA. É aqui que a
       // fricção deixa de ser conversa de tela e vira consequência.
@@ -1205,6 +1563,7 @@ export function usePosSale(deps: PosSaleDeps) {
       // este caso é sobrescrita ou lacuna. A tela só passa adiante o que já
       // sabe — que o operador confirmou.
       saveReceiptTaxIdConfirmed: cart.confirmReceiptTaxId,
+      receiptIdentityChoices: receiptIdentityChoices.value,
       manualDiscount,
       managerApproval,
       clientRequestId: cart.clientRequestId || newClientRequestId(),
@@ -1228,13 +1587,16 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.deliveryAddress = address.route || address.formatted_address;
   }
 
-  async function lookupCustomer() {
+  let customerLookupRequest = 0;
+  async function fetchCustomerLookup() {
     // O ref vence: é a chave exata do cadastro (cliente sem telefone existe, e
     // dois cadastros podem dividir um telefone de recado). O telefone segue
     // como fallback do fluxo antigo (digitou o fone no form e pediu lookup).
     const customerRef = cart.customerRef.trim();
     const phone = cart.customerPhone.trim();
     if (!customerRef && !phone) return;
+    const requestId = ++customerLookupRequest;
+    const tabSessionKey = cart.tabSessionKey;
     lookupBusy.value = true;
     serverError.value = "";
     try {
@@ -1249,47 +1611,61 @@ export function usePosSale(deps: PosSaleDeps) {
         credentials: "include",
         headers: requestHeaders,
       });
+      if (requestId !== customerLookupRequest || cart.customerRef.trim() !== customerRef || cart.customerPhone.trim() !== phone || cart.tabSessionKey !== tabSessionKey) return null;
       customerLookup.value = response.customer;
-      if (!response.customer) return;
-      cart.customerRef = response.customer.ref;
-      cart.customerName = response.customer.name || cart.customerName;
-      cart.customerPhone = response.customer.phone || cart.customerPhone;
-      cart.customerEmail = response.customer.email || cart.customerEmail;
-      // CPF conhecido entra como DEFAULT; o campo continua editável — o cliente
-      // pode pedir outro CPF nesta venda sem tocar no cadastro.
-      cart.customerTaxId = cart.customerTaxId || response.customer.tax_id || "";
-      // O cliente que já optou uma vez chega com o checkout PRÉ-MARCADO — e o
-      // operador pode desligar nesta venda ("hoje não"): pré-marcar não é impor.
-      // O CPF do cadastro entra como DEFAULT do campo da nota; o switch é que
-      // decide se ele viaja.
-      const prefs = response.customer.fiscal_prefs || {};
-      cart.invoiceTaxId = cart.invoiceTaxId || response.customer.tax_id || "";
-      if (prefs.cpf_na_nota) cart.wantsCpfOnInvoice = true;
-      if (prefs.email_receipt && !cart.receiptChannels.includes("email")) {
-        cart.receiptChannels = [...cart.receiptChannels, "email"];
-      }
-      // Aniversário HOJE: aviso elegante e discreto ao operador — omotenashi de
-      // balcão. Só promete desconto se uma promoção de aniversariante EXISTE
-      // configurada (o Core a aplica sozinho no reprice); sem promoção, o aviso
-      // é só o parabéns.
-      if (response.customer.is_birthday_today) {
-        const nome = (response.customer.name || "").split(" ")[0] || "o cliente";
-        toast.info(`🎂 Hoje é aniversário de ${nome}!`, {
-          description: response.customer.birthday_promo_label
-            ? `A promoção "${response.customer.birthday_promo_label}" se aplica sozinha na venda.`
-            : "Um parabéns cai bem.",
-          duration: 8000,
-        });
-      }
-      if (response.customer.is_staff) cart.customerMemoryAction = "";
-      if (cart.fulfillmentType === "delivery" && response.customer.default_address && !cart.deliveryAddress.trim()) {
-        applySavedAddress(response.customer.default_address);
-      }
+      return response.customer;
+
     } catch (error) {
-      serverError.value = httpErrorMessage(error, "Falha ao buscar cliente.");
+      if (requestId === customerLookupRequest && cart.customerRef.trim() === customerRef && cart.tabSessionKey === tabSessionKey) {
+        serverError.value = httpErrorMessage(error, "Falha ao buscar cliente.");
+      }
+      return null;
     } finally {
-      lookupBusy.value = false;
+      if (requestId === customerLookupRequest) lookupBusy.value = false;
     }
+  }
+
+  // Defaults pertencem à escolha de um cliente; reabrir comanda só recupera o cadastro.
+  function applyCustomerDefaults(customer: POSCustomerLookupProjection) {
+    cart.customerRef = customer.ref;
+    cart.customerName = customer.name || cart.customerName;
+    cart.customerPhone = customer.phone || cart.customerPhone;
+    cart.customerEmail = customer.email || cart.customerEmail;
+    // CPF conhecido entra como DEFAULT; o campo continua editável — o cliente
+    // pode pedir outro CPF nesta venda sem tocar no cadastro.
+    cart.customerTaxId = cart.customerTaxId || customer.tax_id || "";
+    // O cliente que já optou uma vez chega com o checkout PRÉ-MARCADO — e o
+    // operador pode desligar nesta venda ("hoje não"): pré-marcar não é impor.
+    // O CPF do cadastro entra como DEFAULT do campo da nota; o switch é que
+    // decide se ele viaja.
+    const prefs = customer.fiscal_prefs || {};
+    cart.invoiceTaxId = cart.invoiceTaxId || customer.tax_id || "";
+    if (prefs.cpf_na_nota) cart.wantsCpfOnInvoice = true;
+    if (prefs.email_receipt && !cart.receiptChannels.includes("email")) {
+      cart.receiptChannels = [...cart.receiptChannels, "email"];
+    }
+    // Aniversário HOJE: aviso elegante e discreto ao operador — omotenashi de
+    // balcão. Só promete desconto se uma promoção de aniversariante EXISTE
+    // configurada (o Core a aplica sozinho no reprice); sem promoção, o aviso
+    // é só o parabéns.
+    if (customer.is_birthday_today) {
+      const nome = (customer.name || "").split(" ")[0] || "o cliente";
+      toast.info(`🎂 Hoje é aniversário de ${nome}!`, {
+        description: customer.birthday_promo_label
+          ? `A promoção "${customer.birthday_promo_label}" se aplica sozinha na venda.`
+          : "Um parabéns cai bem.",
+        duration: 8000,
+      });
+    }
+    if (customer.is_staff) cart.customerMemoryAction = "";
+    if (cart.fulfillmentType === "delivery" && customer.default_address && !cart.deliveryAddress.trim()) {
+      applySavedAddress(customer.default_address);
+    }
+  }
+
+  async function lookupCustomer() {
+    const customer = await fetchCustomerLookup();
+    if (customer) applyCustomerDefaults(customer);
   }
 
   // Just-in-time get-or-create: when the operator finishes defining a customer
@@ -1301,6 +1677,69 @@ export function usePosSale(deps: PosSaleDeps) {
   // de outro cadastro) ou correção de contato (o do cliente associado vai
   // mudar). Enquanto ela existe, o modal fica aberto esperando a resposta.
   const customerDecision = ref<CustomerDecision | null>(null);
+  const pendingReceiptDecision = ref<{
+    fields: Array<{ field: "tax_id" | "email"; value: string; owner_ref: string; name: string; active: boolean }>;
+    customer_ref: string;
+    client_request_id: string;
+    origin: "review" | "close";
+  } | null>(null);
+
+  function receiptIdentityValue(field: "tax_id" | "email") {
+    return field === "tax_id"
+      ? (cart.wantsCpfOnInvoice ? cart.invoiceTaxId.replace(/\D/g, "") : "")
+      : cart.receiptChannels.includes("email") ? (cart.receiptEmail || cart.customerEmail).trim().toLowerCase() : "";
+  }
+
+  watch(() => [receiptIdentityValue("tax_id"), receiptIdentityValue("email"), cart.customerRef, cart.tabSessionKey, cart.clientRequestId], () => {
+    receiptIdentityChoices.value = [];
+    pendingReceiptDecision.value = null;
+    if (customerDecision.value?.kind === "receipt_identity") customerDecision.value = null;
+  }, { flush: "sync" });
+
+  function receiptDecisionMatches() {
+    const pending = pendingReceiptDecision.value;
+    return Boolean(pending && pending.fields.every((item) => receiptIdentityValue(item.field) === item.value)
+      && cart.customerRef === pending.customer_ref && cart.clientRequestId === pending.client_request_id);
+  }
+
+  function handleReceiptIdentityFailure(error: unknown, origin: "review" | "close"): boolean {
+    const failure = (httpError(error).data as { error?: {
+      code?: string; field?: string; value?: string; customer_ref?: string; client_request_id?: string;
+      candidates?: ServerConflictCandidate[];
+      conflicts?: Array<{ field: string; value: string; candidates: ServerConflictCandidate[] }>;
+    } } | null)?.error;
+    if (failure?.code !== "receipt_identity_conflict") return false;
+    const conflicts = failure.conflicts?.length ? failure.conflicts : [failure];
+    const fields = conflicts.map((conflict) => {
+      const field = conflict.field === "fiscal_tax_id" ? "tax_id" as const : "email" as const;
+      const owner = conflict.candidates?.find((candidate) => !candidate.is_current);
+      return { field, value: conflict.value || "", owner_ref: owner?.ref || "", name: owner?.name || "", active: !owner?.owner_inactive };
+    });
+    if (fields.some((item) => !item.value || receiptIdentityValue(item.field) !== item.value)
+      || cart.customerRef !== (failure.customer_ref || "") || cart.clientRequestId !== failure.client_request_id) {
+      review.value = null;
+      serverError.value = "Os dados do documento mudaram. Revise a venda novamente.";
+      return true;
+    }
+    const first = fields[0]!;
+    pendingReceiptDecision.value = {
+      fields, customer_ref: cart.customerRef, client_request_id: cart.clientRequestId, origin,
+    };
+    customerDecision.value = {
+      kind: "receipt_identity", field: first.field, typed: first.value,
+      current: cart.customerRef ? { ref: cart.customerRef, name: cart.customerName, value: "" } : null,
+      other: { ref: first.owner_ref, name: first.name, value: first.value },
+      receiptFields: fields.map((item) => ({ field: item.field, value: item.value,
+        owner: { ref: item.owner_ref, name: item.name, value: item.value }, active: item.active })),
+      candidates: failure.candidates,
+      receiptCreate: !cart.customerRef && fields.every((item) => !item.owner_ref),
+      receiptSave: !!cart.customerRef && fields.some((item) => !item.owner_ref),
+      fromReceipt: true,
+    };
+    customerFocusNonce.value += 1;
+    return true;
+  }
+
   /**
    * A recusa que abriu o painel interrompeu um FECHAMENTO (e não uma edição no
    * modal do cliente)?
@@ -1336,13 +1775,13 @@ export function usePosSale(deps: PosSaleDeps) {
     });
   }
 
-  async function resolveCustomer(options: { contactCorrection?: boolean } = {}) {
+  async function resolveCustomer(options: { contactCorrection?: boolean } = {}): Promise<boolean> {
     const customerRef = cart.customerRef.trim();
     const name = cart.customerName.trim();
     const phone = cart.customerPhone.trim();
     const taxId = cart.customerTaxId.trim();
     const email = cart.customerEmail.trim();
-    if (!customerRef && !name && !phone && !taxId && !email) return;
+    if (!customerRef && !name && !phone && !taxId && !email) return false;
 
     // CORRIGIR o contato do cliente associado é mudar a identidade de contato
     // de um cadastro — o número por onde ele recebe aviso de pronto. Isso é dito
@@ -1359,7 +1798,7 @@ export function usePosSale(deps: PosSaleDeps) {
       });
       if (change) {
         customerDecision.value = change;
-        return;
+        return false;
       }
     }
 
@@ -1379,10 +1818,11 @@ export function usePosSale(deps: PosSaleDeps) {
           customer_tax_id: taxId,
           customer_email: email,
           ...(options.contactCorrection ? { customer_contact_correction: true } : {}),
+          ...(customerRef ? { customer_name_correction: true } : {}),
         },
       });
       customerDecision.value = null;
-      if (!response.customer) return;
+      if (!response.customer) return false;
       // "Criei agora" ≠ "achei": a confirmação visual do modal distingue.
       customerResolvedNew.value = !!response.created;
       customerLookup.value = response.customer;
@@ -1419,6 +1859,8 @@ export function usePosSale(deps: PosSaleDeps) {
       if (cart.fulfillmentType === "delivery" && response.customer.default_address && !cart.deliveryAddress.trim()) {
         applySavedAddress(response.customer.default_address);
       }
+      toast.success(response.created ? "Cliente cadastrado." : "Cadastro do cliente salvo.");
+      return true;
     } catch (error) {
       const data = (httpError(error).data || {}) as { error?: { field?: string; candidates?: ServerConflictCandidate[] } };
       if (httpErrorCode(error) === "customer_conflict") {
@@ -1430,10 +1872,11 @@ export function usePosSale(deps: PosSaleDeps) {
         });
         if (decision) {
           customerDecision.value = decision;
-          return;
+          return false;
         }
       }
       serverError.value = httpErrorMessage(error, "Falha ao salvar o cliente.");
+      return false;
     } finally {
       lookupBusy.value = false;
     }
@@ -1459,9 +1902,93 @@ export function usePosSale(deps: PosSaleDeps) {
 
   /** O operador assumiu a mudança. Trocar de cliente pelo caminho EXPLÍCITO —
    *  o mesmo destino da busca, e nunca um efeito colateral de digitar. */
-  async function confirmCustomerDecision() {
+  async function confirmCustomerDecision(ownerRef?: string) {
     const decision = customerDecision.value;
     if (!decision) return;
+    if (decision.kind === "receipt_identity") {
+      if (receiptDecisionBusy) return;
+      const pending = pendingReceiptDecision.value;
+      const owners = pending?.fields.filter((item) => item.active && item.owner_ref) || [];
+      const unknown = pending?.fields.filter((item) => !item.owner_ref) || [];
+      const confirmedOverwrite = ownerRef === "__save_confirmed__";
+      if (confirmedOverwrite && !decision.receiptTaxIdOverwrite) return;
+      const actionTarget = confirmedOverwrite ? receiptOverwriteTarget : ownerRef;
+      const create = actionTarget === "__create__" && decision.receiptCreate;
+      const saveCurrent = actionTarget === "__save__" && decision.receiptSave;
+      const chosen = actionTarget ? owners.find((item) => item.owner_ref === actionTarget)
+        : new Set(owners.map((item) => item.owner_ref)).size === 1 ? owners[0] : undefined;
+      if (!receiptDecisionMatches() || !pending || (!chosen && !create && !saveCurrent)) return;
+      const targetRef = create ? "" : saveCurrent ? pending.customer_ref : chosen!.owner_ref;
+      const document = { invoiceTaxId: cart.invoiceTaxId, wantsCpfOnInvoice: cart.wantsCpfOnInvoice,
+        receiptEmail: cart.receiptChannels.includes("email") ? (cart.receiptEmail || cart.customerEmail) : cart.receiptEmail, receiptChannels: [...cart.receiptChannels] };
+      const saleId = cart.clientRequestId;
+      const session = cart.tabSessionKey;
+      receiptDecisionBusy = true;
+      pendingSaleAfterDecision.value = false;
+      try {
+        // Validate the selected owner before changing the cart. A failed or stale
+        // lookup must never acknowledge either document identity.
+        lookupBusy.value = true;
+        let response: POSCustomerLookupResponse;
+        if (targetRef) {
+          const path = concreteActionHref(actions.value, "customer_lookup",
+            "/api/v1/backstage/pos/customer/lookup/?phone={phone}&ref={ref}", { phone: "", ref: targetRef });
+          response = await $fetch<POSCustomerLookupResponse>(apiPath(path), {
+            method: "GET", credentials: "include", headers: requestHeaders,
+          });
+          if (customerDecision.value !== decision || pendingReceiptDecision.value !== pending || !receiptDecisionMatches()
+            || session !== cart.tabSessionKey || !response.customer || response.customer.ref !== targetRef) return;
+          const newTaxId = unknown.find((item) => item.field === "tax_id")?.value;
+          const oldTaxId = (response.customer.tax_id || "").replace(/\D/g, "");
+          if (newTaxId && oldTaxId && newTaxId !== oldTaxId && (!confirmedOverwrite || decision.receiptTaxIdOverwrite?.from !== oldTaxId)) {
+            receiptOverwriteTarget = actionTarget || targetRef;
+            customerDecision.value = { ...decision, receiptTaxIdOverwrite: { from: oldTaxId, to: newTaxId, customerName: response.customer.name, targetRef } };
+            return;
+          }
+        } else response = { customer: null };
+        if (unknown.length) {
+          const path = actionHref(actions.value, "customer_resolve", "/api/v1/backstage/pos/customer/resolve/");
+          response = await action.call<POSCustomerLookupResponse>(path, { body: { receipt_identity_action: {
+            action: create ? "create" : "save", client_request_id: saleId, customer_ref: pending.customer_ref,
+            target_ref: targetRef, fields: pending.fields.map(({ field, value, owner_ref }) => ({ field, value, owner_ref })),
+            tax_id_overwrite_confirmed: confirmedOverwrite,
+            ...(confirmedOverwrite ? { tax_id_before: decision.receiptTaxIdOverwrite!.from } : {}),
+          } } });
+        }
+        if (customerDecision.value !== decision || pendingReceiptDecision.value !== pending || !receiptDecisionMatches()
+          || session !== cart.tabSessionKey || !response.customer || (targetRef && response.customer.ref !== targetRef)) return;
+        const resolvedRef = response.customer.ref;
+        customerLookup.value = response.customer;
+        cart.customerName = "";
+        cart.customerPhone = "";
+        cart.customerEmail = "";
+        cart.customerTaxId = "";
+        applyCustomerDefaults(response.customer);
+        customerSearchResults.value = [];
+        customerResolvedNew.value = !!response.created;
+        Object.assign(cart, document);
+        cart.saveReceiptContact = false;
+        cart.saveReceiptTaxId = false;
+        cart.confirmReceiptTaxId = false;
+        receiptIdentityChoices.value = pending.fields.filter((item) => item.owner_ref && item.owner_ref !== resolvedRef).map((item) => ({
+          field: item.field, value: item.value, owner_ref: item.owner_ref, customer_ref: resolvedRef,
+          client_request_id: saleId, choice: "receipt_only" as const,
+        }));
+        customerDecision.value = null;
+        pendingReceiptDecision.value = null;
+        review.value = null;
+        if (checkoutMode.value) await reviewCheckout();
+      } catch (error) {
+        if (customerDecision.value === decision && receiptDecisionMatches()) {
+          if (handleReceiptIdentityFailure(error, pending.origin)) return;
+          serverError.value = httpErrorMessage(error, "Falha ao salvar o cliente.");
+        }
+      } finally {
+        receiptDecisionBusy = false;
+        lookupBusy.value = false;
+      }
+      return;
+    }
     // Trocar de cliente muda faixa de preço e restrições: a venda NÃO retoma
     // sozinha, o operador revisa o que passou a valer.
     pendingSaleAfterDecision.value = false;
@@ -1597,12 +2124,44 @@ export function usePosSale(deps: PosSaleDeps) {
    *
    *  No PAINEL do cliente é diferente e continua como estava: ali o valor É
    *  identidade, e descartá-lo significa voltar ao que o cadastro tem. */
+  let receiptDecisionBusy = false;
+  let receiptOverwriteTarget: string | undefined;
   async function cancelCustomerDecision() {
     const decision = customerDecision.value;
+    if (decision?.kind === "receipt_identity") {
+      const pending = pendingReceiptDecision.value;
+      if (!pending || receiptDecisionBusy) return;
+      if (!receiptDecisionMatches()) {
+        customerDecision.value = null;
+        return;
+      }
+      receiptIdentityChoices.value = [
+        ...receiptIdentityChoices.value.filter((choice) => !pending.fields.some((item) => item.field === choice.field)),
+        ...pending.fields.map((item) => ({ field: item.field, value: item.value, customer_ref: pending.customer_ref,
+          owner_ref: item.owner_ref, client_request_id: pending.client_request_id, choice: "receipt_only" as const })),
+      ];
+      if (pending.fields.some((item) => item.field === "tax_id")) {
+        cart.saveReceiptTaxId = false;
+        cart.confirmReceiptTaxId = false;
+      }
+      if (pending.fields.some((item) => item.field === "email")) cart.saveReceiptContact = false;
+      receiptDecisionBusy = true;
+      pendingReceiptDecision.value = null;
+      lookupBusy.value = true;
+      try {
+        if (pending.origin === "close") await submitSale();
+        else await reviewCheckout();
+        if (customerDecision.value === decision) customerDecision.value = null;
+      } finally {
+        receiptDecisionBusy = false;
+        lookupBusy.value = false;
+      }
+      return;
+    }
     customerDecision.value = null;
     const pendia = pendingSaleAfterDecision.value;
     pendingSaleAfterDecision.value = false;
-    if (!decision) return;
+    if (!decision || decision.kind === "existing_customer") return;
     const restored = decision.current?.value || "";
     let doComprovante = false;
     switch (conflictSource(decision.field).typedField) {
@@ -1732,12 +2291,24 @@ export function usePosSale(deps: PosSaleDeps) {
   let persistQueue: Promise<unknown> = Promise.resolve();
   function persistTab(quiet = false): Promise<void> {
     const run = async () => {
+      if (orderSetupPending.value && cart.items.length) {
+        unsaved.value = true;
+        return;
+      }
       const state = currentIntentState();
       cart.clientRequestId = state.clientRequestId;
-      await action.call(actionHref(actions.value, "save_tab", "/api/v1/backstage/pos/tabs/save/"), {
-        body: buildPosSaleIntent(state, checkoutContract.value?.intent_version),
-      });
-      unsaved.value = false; // persistiu de verdade
+      if (tabConflict.value) throw new Error("Confira a versão atual da comanda antes de salvar.");
+      const body = buildPosSaleIntent(state, checkoutContract.value?.intent_version);
+      const savedContent = JSON.stringify({ ...body, expected_revision: undefined });
+      let saved: { revision?: string } | undefined;
+      try {
+        saved = await action.call<{ revision?: string }>(actionHref(actions.value, "save_tab", "/api/v1/backstage/pos/tabs/save/"), { body });
+      } catch (error) {
+        if ([409, 422].includes(httpError(error).status)) tabConflict.value = true;
+        throw error;
+      }
+      cart.expectedRevision = saved?.revision || cart.expectedRevision;
+      unsaved.value = savedContent !== JSON.stringify({ ...buildCurrentIntent(), expected_revision: undefined });
       if (!quiet) await refresh();
     };
     persistQueue = persistQueue.then(run, run);
@@ -1747,13 +2318,19 @@ export function usePosSale(deps: PosSaleDeps) {
   // Retry do autosave: numa rede instável, uma comanda parada com save falho
   // precisa tentar de novo sozinha (o próximo lançamento também reagenda).
   let autosaveRetryTimer: ReturnType<typeof setTimeout> | null = null;
-  function onAutosaveFailed() {
+  function onAutosaveFailed(error?: unknown) {
+    if (tabConflict.value || httpError(error).status === 409 || httpError(error).status === 422) {
+      tabConflict.value = true;
+      unsaved.value = true;
+      serverError.value = httpErrorMessage(error, "A comanda mudou. Seus dados estão nesta tela; confira a versão atual antes de salvar.");
+      return;
+    }
     unsaved.value = true;
     if (autosaveRetryTimer) return;
     autosaveRetryTimer = setTimeout(() => {
       autosaveRetryTimer = null;
-      if (hasOpenTab.value && !checkoutMode.value && !busy.value && !saving.value) {
-        persistTab(true).catch(() => onAutosaveFailed());
+      if (hasOpenTab.value && !customerDraftPending.value && !checkoutMode.value && !busy.value && !saving.value) {
+        persistTab(true).catch((error) => onAutosaveFailed(error));
       }
     }, 5000);
   }
@@ -1762,12 +2339,19 @@ export function usePosSale(deps: PosSaleDeps) {
   // outside checkout. Quiet save (no projection refresh) to stay light.
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   function scheduleAutosave() {
-    if (tabLoading.value || !hasOpenTab.value || checkoutMode.value) return;
+    if (tabConflict.value) return;
+    if (customerDraftPending.value) {
+      unsaved.value = true;
+      if (autosaveTimer) clearTimeout(autosaveTimer);
+      autosaveTimer = null;
+      return;
+    }
+    if (tabLoading.value || !hasOpenTab.value || checkoutMode.value || (orderSetupPending.value && cart.items.length)) return;
     if (autosaveTimer) clearTimeout(autosaveTimer);
     autosaveTimer = setTimeout(() => {
       autosaveTimer = null;
-      if (!hasOpenTab.value || checkoutMode.value || busy.value || saving.value) return;
-      persistTab(true).catch(() => onAutosaveFailed());
+      if (!hasOpenTab.value || customerDraftPending.value || checkoutMode.value || busy.value || saving.value || (orderSetupPending.value && cart.items.length)) return;
+      persistTab(true).catch((error) => onAutosaveFailed(error));
     }, 1200);
   }
   watch(() => [
@@ -1777,6 +2361,8 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.customerPhone,
     cart.customerTaxId,
     cart.customerEmail,
+    cart.salesMode,
+    cart.fulfillmentConfirmed,
     cart.fulfillmentType,
     cart.deliveryAddress,
     cart.deliveryStreetNumber,
@@ -1815,7 +2401,7 @@ export function usePosSale(deps: PosSaleDeps) {
       { tab_ref: cart.tabRef },
     );
     const payload = await action.call<POSTabPayload>(path);
-    setFromTabPayload(payload, options);
+    await setFromTabPayload(payload, options);
     await refresh();
   }
 
@@ -1823,16 +2409,21 @@ export function usePosSale(deps: PosSaleDeps) {
     if (!cart.items.length) return null;
     const state = currentIntentState();
     cart.clientRequestId = state.clientRequestId;
-    const response = await action.call<POSSaleReviewResponse>(
-      actionHref(actions.value, "review_sale", "/api/v1/backstage/pos/sale/review/"),
-      { body: buildPosSaleIntent(state, checkoutContract.value?.intent_version) },
-    );
-    review.value = response.review;
-    return response.review;
+    try {
+      const response = await action.call<POSSaleReviewResponse>(
+        actionHref(actions.value, "review_sale", "/api/v1/backstage/pos/sale/review/"),
+        { body: buildPosSaleIntent(state, checkoutContract.value?.intent_version) },
+      );
+      review.value = response.review;
+      return response.review;
+    } catch (error) {
+      if (handleReceiptIdentityFailure(error, "review")) return null;
+      throw error;
+    }
   }
 
   async function prepareCheckout() {
-    if (!cart.items.length) return;
+    if (!cart.items.length || requireCustomerDraftDecision() || orderSetupPending.value) return;
     serverError.value = "";
     dismissResult();
     busy.value = true;
@@ -1848,6 +2439,7 @@ export function usePosSale(deps: PosSaleDeps) {
       }
       await reviewSale();
     } catch (error) {
+      if (handleReceiptIdentityFailure(error, "review")) return;
       // O checkout não abriu de verdade: volta à venda com o motivo no toast.
       checkoutMode.value = false;
       serverError.value = httpErrorMessage(error, "Falha ao revisar checkout.");
@@ -1883,11 +2475,107 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
+  type GuardedCloseResult =
+    | { kind: "ok"; response: Partial<POSCloseSaleResponse>; orderRef: string }
+    | { kind: "error"; error: unknown }
+    | { kind: "invalid" }
+    | { kind: "blocked" };
+
+  async function requestCloseUnderGuard(): Promise<GuardedCloseResult> {
+    const lockManager = globalThis.navigator?.locks;
+    if (!lockManager?.request) {
+      closeOutcomeUncertain.value = true;
+      closeGuardPending.value = false;
+      closeGuardFailureMessage.value = closeGuardCoordinationUnavailableMessage;
+      serverError.value = closeGuardCoordinationUnavailableMessage;
+      return { kind: "blocked" };
+    }
+    try {
+      // O lock cobre check + PENDING + POST + transição/clear. Assim nenhuma
+      // aba pode iniciar nem reconciliar enquanto o resultado ainda está em voo.
+      return await lockManager.request(CLOSE_GUARD_LOCK_NAME, { ifAvailable: true }, async (lock) => {
+        if (!lock) {
+          const current = readCloseOutcomeUncertain();
+          closeOutcomeUncertain.value = true;
+          closeGuardPending.value = current.marker?.state === "pending";
+          closeGuardFailureMessage.value = closeGuardActiveMessage;
+          serverError.value = closeGuardActiveMessage;
+          return { kind: "blocked" };
+        }
+        const current = readCloseOutcomeUncertain();
+        if (!current.storageAvailable || current.marker) {
+          closeOutcomeUncertain.value = true;
+          closeGuardPending.value = current.marker?.state === "pending";
+          closeGuardFailureMessage.value = current.storageAvailable ? "" : closeGuardUnavailableMessage;
+          serverError.value = current.storageAvailable
+            ? closeOutcomeUncertainMessage
+            : closeGuardUnavailableMessage;
+          return { kind: "blocked" };
+        }
+        const marker = establishCloseGuard();
+        if (!marker) return { kind: "blocked" };
+        try {
+          const rawResponse = await action.call<unknown>(
+            actionHref(actions.value, "close_sale", "/api/v1/backstage/pos/sale/close/"),
+            { body: buildCurrentIntent() },
+          );
+          const response = rawResponse && typeof rawResponse === "object"
+            ? rawResponse as Partial<POSCloseSaleResponse>
+            : null;
+          const orderRef = typeof response?.order_ref === "string" ? response.order_ref.trim() : "";
+          if (!response || response.ok !== true || !orderRef) {
+            markOwnedCloseGuardUncertain(marker);
+            return { kind: "invalid" };
+          }
+          closeOutcomeUncertain.value = false;
+          closeGuardPending.value = false;
+          closeGuardFailureMessage.value = "";
+          if (!clearPersistedCloseOutcomeUncertain(marker)) {
+            toast.warning(`Pedido ${orderRef} confirmado, mas o navegador não conseguiu liberar a proteção local. A próxima cobrança ficará bloqueada até o armazenamento ser corrigido.`);
+          }
+          return { kind: "ok", response, orderRef };
+        } catch (error) {
+          const errorInfo = httpError(error);
+          const failure = (errorInfo.data as {
+            error?: { code?: string; order_created?: boolean };
+          } | null)?.error;
+          const outcomeUnknown = Boolean(failure?.order_created)
+            || failure?.code === "sale_payment_outcome_unknown";
+          // Só 4xx sem sinal de outcome incerto prova rejeição pré-commit. Status
+          // 0 e TODO 5xx retêm o marcador, mesmo quando trazem error.code.
+          if (errorInfo.status >= 400 && errorInfo.status < 500 && !outcomeUnknown) {
+            releaseOwnedCloseGuard(marker);
+          } else {
+            markOwnedCloseGuardUncertain(marker);
+          }
+          return { kind: "error", error };
+        }
+      });
+    } catch {
+      closeOutcomeUncertain.value = true;
+      closeGuardPending.value = false;
+      closeGuardFailureMessage.value = closeGuardCoordinationUnavailableMessage;
+      serverError.value = closeGuardCoordinationUnavailableMessage;
+      return { kind: "blocked" };
+    }
+  }
+
   async function submitSale() {
     if (busy.value) return; // guarda de reentrância: duplo-toque não dispara 2 close_sale
-    if (!cart.items.length) return;
+    if (closeOutcomeUncertain.value) {
+      // A primeira resposta não provou se o servidor concluiu a operação. O
+      // botão pode voltar a ser acionado (mouse, toque ou Enter), mas nunca
+      // dispara outro close até a venda ser explicitamente reiniciada.
+      serverError.value = closeGuardFailureMessage.value || closeOutcomeUncertainMessage;
+      return;
+    }
+    if (!cart.items.length || requireCustomerDraftDecision()) return;
     if (!checkoutMode.value) {
       await prepareCheckout();
+      return;
+    }
+    if (orderSetupPending.value || !cart.fulfillmentConfirmed) {
+      serverError.value = "Escolha Entrega ou Retirada antes de finalizar.";
       return;
     }
     // Spec: the commit click must not hide an implicit review. If the review is
@@ -1901,13 +2589,15 @@ export function usePosSale(deps: PosSaleDeps) {
     result.value = null;
     busy.value = true;
     try {
-      const response = await action.call<POSCloseSaleResponse>(
-        actionHref(actions.value, "close_sale", "/api/v1/backstage/pos/sale/close/"),
-        { body: buildCurrentIntent() },
-      );
-      if (response.ok && response.order_ref) {
-        const orderRef = response.order_ref;
-        // Freeze a receipt snapshot before the cart resets (spec §D3): the
+      const guarded = await requestCloseUnderGuard();
+      if (guarded.kind === "blocked") return;
+      if (guarded.kind === "invalid") {
+        serverError.value = closeOutcomeUncertainMessage;
+        return;
+      }
+      if (guarded.kind === "error") throw guarded.error;
+      const { response, orderRef } = guarded;
+      // Freeze a receipt snapshot before the cart resets (spec §D3): the
         // printed receipt is a record of what was sold, not live state.
         const receipt: PosReceiptSnapshot = {
           orderRef,
@@ -1930,11 +2620,21 @@ export function usePosSale(deps: PosSaleDeps) {
           fulfillmentLabel: pos.value?.fulfillment_options.find((option) => option.ref === cart.fulfillmentType)?.label || cart.fulfillmentType,
           printedAtMs: Date.now(),
         };
+        // Com entrega, o BAIRRO diz mais que a palavra "entrega" — é o que o
+        // operador confere de relance e repete ao cliente.
+        function orderFulfillmentLabel(): string {
+          const base = receipt.fulfillmentLabel;
+          if (cart.fulfillmentType !== "delivery") return base;
+          const bairro = cart.deliveryNeighborhood.trim() || cart.deliveryAddressStructured?.neighborhood?.trim() || "";
+          return bairro ? `${base} · ${bairro}` : base;
+        }
         const proof = paymentProofView(response.payment);
         result.value = {
+          salesMode: cart.salesMode,
           orderRef,
           nextUrl: `${ordersUrl.value.replace(/\/+$/, "")}/${encodeURIComponent(orderRef)}`,
           payment: proof,
+          paymentDelivery: response.payment_delivery || null,
           receipt,
           // O botão da DANFE segue a REGRA fiscal, não o toggle: cartão e pix
           // emitem por forma de pagamento, sem o operador marcar nada.
@@ -1946,6 +2646,13 @@ export function usePosSale(deps: PosSaleDeps) {
           // Congelado pelo mesmo motivo do troco: o `resetCart` logo abaixo
           // apaga os canais, e a nota autoriza depois — segundos ou minutos.
           wantsPrintedInvoice: cart.receiptChannels.includes("print"),
+          // ENCOMENDA: a leitura de volta ("Retirada · sáb, 10:00 às 10:30")
+          // congela aqui pelo mesmo motivo do troco — o `resetCart` apaga a
+          // data, a janela e o bairro, e a tela de resultado precisa deles.
+          fulfillmentLabel: cart.salesMode === "order" ? orderFulfillmentLabel() : "",
+          scheduleLabel: cart.salesMode === "order"
+            ? scheduleLabel(cart.deliveryDate, windowLabel(deliverySlots.value, cart.deliveryTimeSlot), scheduleToday.value)
+            : "",
         };
         // PIX pendente → polla até confirmar; outros métodos já saem resolvidos.
         if (proof?.isPix && proof?.hasProof) {
@@ -1956,6 +2663,9 @@ export function usePosSale(deps: PosSaleDeps) {
             pendingPixOrderRef.value = "";
           }
           startPixPolling(orderRef);
+        } else if (proof?.isLink && response.payment_delivery
+          && ["queued", "sending"].includes(response.payment_delivery.status)) {
+          startDeliveryPolling(orderRef);
         } else if (!pendingPixOrderRef.value) {
           // Sem prova nova e sem chip pendente: nada a pollar. (Com chip, o
           // polling da venda anterior segue vivo até resolver/expirar.)
@@ -1970,15 +2680,24 @@ export function usePosSale(deps: PosSaleDeps) {
           void drawer.kick("cash_sale");
         }
         resetCart();
-        await refresh();
-      }
+        try {
+          await refresh();
+        } catch {
+          // `ok + order_ref` já confirmou o fechamento. Refresh é só leitura:
+          // sua falha não desfaz pedido, recibo nem pagamento, e não pode cair
+          // no catch do close como se o resultado da venda fosse desconhecido.
+          toast.warning(`Pedido ${orderRef} registrado. A atualização do balcão falhou; os dados podem estar desatualizados. Não repita esta venda.`);
+        }
     } catch (error) {
-      const failure = (httpError(error).data as {
+      const errorInfo = httpError(error);
+      const failure = (errorInfo.data as {
         error?: {
           code?: string; message?: string; recovery?: string; focus?: string;
+          order_ref?: string; order_created?: boolean;
           field?: string; candidates?: ServerConflictCandidate[];
         };
       } | null)?.error;
+      if (handleReceiptIdentityFailure(error, "close")) return;
       // ⚠️ O conflito de cliente também recusa no FECHAMENTO, e ali a saída
       // nunca chegava: a view achatava a recusa rica num `except ValueError`, e
       // aqui o catch nem procurava por ela. O operador lia um toast que sumia,
@@ -1989,6 +2708,11 @@ export function usePosSale(deps: PosSaleDeps) {
       // o e-mail ou o CPF DO COMPROVANTE, e a frase pegava o telefone do
       // carrinho antes do e-mail: numa recusa de e-mail o painel dizia
       // "(43) 99999-0000 é de Bia" — um telefone numa briga de e-mail.
+      if (failure?.code === "tab_revision_conflict" || failure?.code === "tab_revision_required") {
+        tabConflict.value = true;
+        unsaved.value = true;
+        checkoutMode.value = false;
+      }
       if (failure?.code === "customer_conflict") {
         const decision = conflictDecision({
           field: failure.field,
@@ -2016,8 +2740,10 @@ export function usePosSale(deps: PosSaleDeps) {
         // cliente): o toast diz o porquê e a tela abre a identificação.
         serverError.value = failure.recovery || failure.message || "Identifique o cliente para finalizar a venda.";
         customerFocusNonce.value += 1;
+      } else if (failure?.order_created && failure.order_ref) {
+        serverError.value = [failure.message || `Venda ${failure.order_ref} criada.`, failure.recovery].filter(Boolean).join(" ");
       } else {
-        serverError.value = httpErrorMessage(error, "Não foi possível finalizar a venda. O pedido não foi fechado; revise o pagamento e valide de novo.");
+        serverError.value = httpErrorMessage(error, "Não foi possível confirmar o resultado da venda. Mantenha esta tentativa e confira o pedido antes de reenviar.");
       }
     } finally {
       busy.value = false;
@@ -2038,7 +2764,7 @@ export function usePosSale(deps: PosSaleDeps) {
         "/api/v1/backstage/pos/tabs/{session_key}/clear/",
         { session_key: cart.tabSessionKey },
       );
-      await action.call(path, { method: "DELETE" });
+      await action.call(path, { method: "DELETE", body: { expected_revision: cart.expectedRevision } });
       resetCart();
       await refresh();
     } catch (error) {
@@ -2088,10 +2814,22 @@ export function usePosSale(deps: PosSaleDeps) {
     try {
       const body: Record<string, unknown> = {
         from_session_key: cart.tabSessionKey,
+        expected_revision: cart.expectedRevision,
         line_ids: payload.lineIds,
       };
       if (payload.toTabRef) body.to_tab_ref = payload.toTabRef;
       if (payload.toSessionKey) body.to_session_key = payload.toSessionKey;
+      const targetRef = payload.toTabRef || otherOpenTabs.value.find(tab => tab.session_key === payload.toSessionKey)?.ref;
+      if (targetRef) {
+        try {
+          const target = await action.call<POSTabPayload>(concreteActionHref(actions.value, "read_tab",
+            "/api/v1/backstage/pos/tabs/{tab_ref}/open/", { tab_ref: targetRef }), { method: "GET" });
+          if (payload.toSessionKey && target.session_key !== payload.toSessionKey) throw new Error("A comanda de destino mudou.");
+          body.target_revision = target.revision;
+        } catch (error) {
+          if (payload.toSessionKey || httpErrorCode(error) !== "tab_closed") throw error;
+        }
+      }
       if (payload.closeSource) body.close_source_when_empty = true;
       const response = await action.call<{ source_closed: boolean; source: POSTabPayload | null }>(
         actionHref(actions.value, "move_tab_lines", "/api/v1/backstage/pos/tabs/move-lines/"),
@@ -2101,7 +2839,7 @@ export function usePosSale(deps: PosSaleDeps) {
       if (response.source_closed || !response.source) {
         resetCart();
       } else {
-        setFromTabPayload(response.source);
+        await setFromTabPayload(response.source);
       }
       await refresh();
     } catch (error) {
@@ -2126,6 +2864,7 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   async function fireTab(selectedLineIds?: string[]) {
+    if (orderSetupPending.value) return false;
     if (!cart.tabSessionKey) return false;
     serverError.value = "";
     firing.value = true;
@@ -2142,11 +2881,12 @@ export function usePosSale(deps: PosSaleDeps) {
         await persistTab(true);
       }
       body.session_key = cart.tabSessionKey;
+      body.expected_revision = cart.expectedRevision;
       const response = await action.call<{ tab: POSTabPayload | null }>(
         actionHref(actions.value, "fire_tab", "/api/v1/backstage/pos/tabs/fire/"),
         { body },
       );
-      if (response.tab) setFromTabPayload(response.tab);
+      if (response.tab) await setFromTabPayload(response.tab);
       await refresh();
       return true;
     } catch (error) {
@@ -2161,9 +2901,9 @@ export function usePosSale(deps: PosSaleDeps) {
     if (!cart.tabSessionKey || !ids.length) return;
     const response = await action.call<{ tab: POSTabPayload | null }>(
       actionHref(actions.value, "unfire_tab", "/api/v1/backstage/pos/tabs/unfire/"),
-      { body: { session_key: cart.tabSessionKey, line_ids: ids } },
+      { body: { session_key: cart.tabSessionKey, expected_revision: cart.expectedRevision, line_ids: ids } },
     );
-    if (response.tab) setFromTabPayload(response.tab);
+    if (response.tab) await setFromTabPayload(response.tab);
     await refresh();
   }
 
@@ -2206,9 +2946,9 @@ export function usePosSale(deps: PosSaleDeps) {
     try {
       const response = await action.call<{ tab: POSTabPayload | null }>(
         actionHref(actions.value, "rename_tab", "/api/v1/backstage/pos/tabs/rename/"),
-        { body: { session_key: cart.tabSessionKey, new_tab_ref: newTabRef } },
+        { body: { session_key: cart.tabSessionKey, expected_revision: cart.expectedRevision, new_tab_ref: newTabRef } },
       );
-      if (response.tab) setFromTabPayload(response.tab);
+      if (response.tab) await setFromTabPayload(response.tab);
       await refresh();
     } catch (error) {
       serverError.value = httpErrorMessage(error, "Falha ao renomear comanda.");
@@ -2277,9 +3017,16 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
-  onScopeDispose(() => stopPixPolling());
+  onScopeDispose(() => {
+    stopPixPolling();
+    stopDeliveryPolling();
+  });
 
   return {
+    orderSetupPending,
+    orderSetupIssue,
+    completeOrderSetup,
+    setSalesMode,
     // draft + flags
     cart,
     tabInput,
@@ -2288,6 +3035,8 @@ export function usePosSale(deps: PosSaleDeps) {
     saving,
     pixStatus,
     unsaved,
+    tabConflict,
+    reloadConflictingTab,
     firing,
     renamingTab,
     cancellingSale,
@@ -2299,6 +3048,10 @@ export function usePosSale(deps: PosSaleDeps) {
     managerApprovalError,
     customerFocusNonce,
     result,
+    closeOutcomeUncertain,
+    closeGuardPending,
+    restoreUncertainClose,
+    acknowledgeUncertainClose,
     pendingPixOrderRef,
     checkoutMode,
     showTabs,
@@ -2409,6 +3162,7 @@ export function usePosSale(deps: PosSaleDeps) {
     submitSale,
     dismissResult,
     resendingLink,
+    sendPaymentNotice,
     resendPaymentLink,
     onExternalSaleCancelled,
     clearCurrentTab,

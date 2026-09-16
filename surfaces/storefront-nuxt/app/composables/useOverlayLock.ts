@@ -15,6 +15,8 @@ interface OverlayLockOptions {
    * para o elemento que abriu a overlay.
    */
   focus?: MaybeRefOrGetter<HTMLElement | null | undefined>
+  /** Elemento explícito que deve recuperar o foco; por padrão usa o foco pré-abertura. */
+  restoreFocus?: MaybeRefOrGetter<HTMLElement | null | undefined>
 }
 
 const FOCUSABLE =
@@ -26,7 +28,11 @@ const FOCUSABLE =
  * Concentra a lógica que antes vivia duplicada em cada overlay.
  */
 export function useOverlayLock (isOpen: Ref<boolean>, options: OverlayLockOptions = {}) {
-  const isLocked = useScrollLock(import.meta.client ? document.body : null)
+  // Resolve after mount (the standalone plugin has applied its root class by
+  // then) and again immediately before every lock. This avoids caching the SSR /
+  // hydration fallback and keeps regular browsers locked on the body.
+  const scrollTarget = shallowRef<HTMLElement | null>(null)
+  const isLocked = useScrollLock(scrollTarget)
   let lastActive: HTMLElement | null = null
   const inertEls: HTMLElement[] = []
 
@@ -47,15 +53,20 @@ export function useOverlayLock (isOpen: Ref<boolean>, options: OverlayLockOption
     inertEls.length = 0
   }
 
+  onMounted(() => {
+    scrollTarget.value = shopOverlayScrollTarget()
+  })
+
   useEventListener('keydown', (event: KeyboardEvent) => {
     if (isOpen.value && event.key === 'Escape') options.onEscape?.()
   })
 
   watch(isOpen, open => {
     if (!import.meta.client) return
+    if (open) scrollTarget.value = shopOverlayScrollTarget()
     isLocked.value = open
     if (open) {
-      lastActive = document.activeElement as HTMLElement | null
+      lastActive = toValue(options.restoreFocus) ?? document.activeElement as HTMLElement | null
       for (const el of resolveInert()) {
         el.inert = true
         inertEls.push(el)

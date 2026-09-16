@@ -197,7 +197,10 @@ def authorization_context(
 
 def requirement_for(context: AuthorizationContext, *, now: datetime | None = None) -> AuthorizationRequirement:
     clock = _aware_now(now)
-    count = context.audience_count
+    # Uma consequência pública tem um destino por plataforma mesmo quando não
+    # existe audiência de mensagens diretas. O número digitado deve descrever o
+    # efeito real; "PUBLICAR 0" para um Story é uma confirmação enganosa.
+    count = _external_target_count(context)
     if count > MAX_BLAST:
         raise MarketingAuthorizationError(
             code="marketing_blast_limit_exceeded",
@@ -863,7 +866,7 @@ def _reserve_external_quota(actor, *, context: AuthorizationContext, now: dateti
         ACTION_UNFREEZE,
     }:
         return
-    target_count = max(context.audience_count, len(context.platforms), 1)
+    target_count = _external_target_count(context)
     since = now - timedelta(days=1)
     used = sum(
         MarketingQuotaUsage.objects.filter(occurred_at__gte=since).values_list(
@@ -892,6 +895,27 @@ def _reserve_external_quota(actor, *, context: AuthorizationContext, now: dateti
         occurred_at=now,
         retention_until=now + SECURITY_RETENTION,
     )
+
+
+def _external_target_count(context: AuthorizationContext) -> int:
+    # ``audience_count`` is the sealed cohort available to direct-message lanes;
+    # it is not the cardinality of a public post.  Mixed campaigns must add both
+    # consequences: N WhatsApp messages + one publication for every other
+    # selected platform.  ``max(...)`` used to undercount that sum precisely at
+    # the thresholds where step-up and dual control become stronger.
+    # Some non-delivery/legacy callers do not carry platforms yet.  Preserve
+    # their conservative cohort count until those contexts are migrated.
+    if not context.platforms:
+        return max(context.audience_count, 1)
+    from shopman.shop.services.marketing_capabilities import platform_kind
+
+    direct_messages = (
+        context.audience_count
+        if any(platform_kind(platform) == "direct_message" for platform in context.platforms)
+        else 0
+    )
+    public_publications = sum(platform_kind(platform) == "publication" for platform in context.platforms)
+    return max(direct_messages + public_publications, 1)
 
 
 def _require_second_actor(

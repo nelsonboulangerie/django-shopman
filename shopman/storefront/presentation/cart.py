@@ -206,6 +206,8 @@ class CartProjection:
     # Canonical cart-level actions. Surfaces render these instead of deriving
     # checkout eligibility from local cart flags.
     actions: tuple[Action, ...]
+    revision: int = 0
+    draft_context: str = ""
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -254,7 +256,11 @@ def build_cart(
     actions = _cart_actions(data, min_order)
     empty_title, empty_message = _empty_copy(request, is_empty=data.is_empty)
 
+    from shopman.storefront.identity import checkout_draft_context
+    context = checkout_draft_context(request, session_key)
     return CartProjection(
+        revision=data.revision,
+        draft_context=context,
         items=items,
         items_count=data.count,
         is_empty=data.is_empty,

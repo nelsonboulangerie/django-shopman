@@ -72,3 +72,21 @@ it("GET indisponível conserva o editor e a seleção da última leitura", async
   expect(wrapper.get("[data-open]").attributes("data-open")).toBe("true");
   expect(setCollections).not.toHaveBeenCalled();
 });
+
+it("mostra integração sem switch de loja e preserva controles da TV", () => {
+  board.value = {
+    feeds: [{ ref: "tv", name: "TV", collections: [], actions: [{ ref: "active", enabled: true }], capability: "display", kind: "menuboard", is_active: true }],
+    all_collections: [],
+    catalog_channels: [{ ref: "ifood", name: "iFood", projection_enabled: false,
+      diagnostic: "Envio de catálogo desativado nesta instalação.", observed: 3,
+      synced: 1, pending: 1, errors: 1, retracted: 2, skipped: 3, catalog_path: "/catalog" }],
+  };
+  const wrapper = render();
+  const integration = wrapper.get('[aria-label="Canais de venda"]');
+  expect(integration.text()).toContain("Envio de catálogo desativado");
+  expect(integration.text()).toContain("1 sincronizados · 1 pendentes · 1 com erro");
+  expect(integration.text()).toContain("2 retirados · 3 não enviados");
+  expect(integration.find('[role="switch"]').exists()).toBe(false);
+  expect(integration.findAll("nuxtlink").map(link => link.attributes("to"))).toEqual(["/channels/ifood/catalog", "/catalog"]);
+  expect(wrapper.findAll('[role="switch"]')).toHaveLength(1);
+});

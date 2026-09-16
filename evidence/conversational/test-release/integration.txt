@@ -1,0 +1,59 @@
+AUDIT_IMPORTS ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-release-20260911/packages/orderman/shopman/orderman'] ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-release-20260911/packages/guestman/shopman/guestman']
+........................................................................ [ 15%]
+........................................................................ [ 30%]
+........................................................................ [ 45%]
+........................................................................ [ 60%]
+........................................................................ [ 75%]
+..........................................................F............. [ 90%]
+............................................                             [100%]
+=================================== FAILURES ===================================
+________ test_revocation_lock_wins_over_previously_loaded_notification _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10d018d40>
+
+    def test_revocation_lock_wins_over_previously_loaded_notification(monkeypatch):
+        assert connection.vendor == "postgresql"
+        phone = "+5543999990001"
+        sub = stock_alerts.subscribe("SYNTHETIC-CONSENT-RACE", phone=phone)
+        original_proof = sub.evidence_hash
+        locked, release = Event(), Event()
+        sends = []
+        monkeypatch.setattr(stock_alerts, "_deliver", lambda *a, **kw: sends.append(kw) or True)
+    
+        def revoke():
+            with transaction.atomic():
+                assert stock_alerts.revoke(sub.ref, sku=sub.sku, phone=phone)
+                locked.set()
+                assert release.wait(10)
+            return True
+    
+        revoke_worker = Worker(revoke)
+        send_worker = Worker(lambda: stock_alerts._deliver_group_if_still_active(
+            [sub.pk], product_name="Pão sintético", event="stock_arrived", available_qty=1,
+        ))
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            revoked = pool.submit(revoke_worker)
+            assert locked.wait(10)
+            notification = pool.submit(send_worker)
+            try:
+>               assert_database_wait(send_worker)
+
+shopman/storefront/tests/test_concierge_consent_race.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+worker = <shopman.storefront.tests.test_concierge_commercial_races.Worker object at 0x10cfe52b0>
+
+    def assert_database_wait(worker):
+        assert worker.started.wait(10)
+        deadline = monotonic() + 10
+        while monotonic() < deadline:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT cardinality(pg_blocking_pids(%s))", [worker.pid])
+                if cursor.fetchone()[0] > 0:
+                    return
+            Event().wait(0.01)
+>       pytest.fail(f"Conexão {worker.pid} não entrou em espera real de row lock")
+E       Failed: Conexão 57218 não entrou em espera real de row lock
+
+shopman/storefront/tests/test_concierge_commercial_races.py:68: Failed
+1 failed, 475 passed in 62.75s (0:01:02)

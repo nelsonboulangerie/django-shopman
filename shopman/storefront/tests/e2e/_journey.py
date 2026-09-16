@@ -53,9 +53,12 @@ def seed_channel(ref: str = WEB_CHANNEL, name: str = "Loja Online", config: dict
     return Channel.objects.create(ref=ref, name=name, config=config or {})
 
 
-def seed_web_channel():
-    """Create the storefront ``web`` channel with the production remote config."""
-    return seed_channel(WEB_CHANNEL, "Loja online", config=dict(WEB_CHANNEL_CONFIG))
+def seed_web_channel(*, allow_cash=False):
+    """Create the remote web config, optionally enabling cash for cash journeys."""
+    config = {**WEB_CHANNEL_CONFIG, "payment": dict(WEB_CHANNEL_CONFIG["payment"])}
+    if allow_cash:
+        config["payment"]["method"] = ["pix", "card", "cash"]
+    return seed_channel(WEB_CHANNEL, "Loja online", config=config)
 
 
 def seed_listing(ref: str = WEB_CHANNEL, name: str = "Web"):
@@ -214,11 +217,12 @@ def otp_login(client: Client, phone: str = DEFAULT_PHONE) -> dict:
     from shopman.doorman.models.verification_code import generate_raw_code
 
     raw_code, digest = generate_raw_code()
-    VerificationCode.objects.create(
+    verification_code = VerificationCode.objects.create(
         target_value=phone,
         purpose=VerificationCode.Purpose.LOGIN,
         code_hash=digest,
     )
+    verification_code.mark_sent()
     resp = client.post(
         "/api/v1/auth/verify-code/",
         data=json.dumps({"phone": phone, "code": raw_code}),

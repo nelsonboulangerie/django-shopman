@@ -60,6 +60,8 @@ const tracking = computed(() => data.value || null)
 const errorView = computed(() => orderAccessErrorView((error.value as { statusCode?: number } | null)?.statusCode, 'tracking'))
 const loginHref = computed(() => `/entrar?next=${encodeURIComponent(`/pedido/${orderRef.value}`)}`)
 const cancelAction = computed(() => tracking.value?.actions.find(action => action.ref === 'cancel_order' && action.enabled) || null)
+const cancellationRequestAction = computed(() => tracking.value?.actions.find(action => action.ref === 'request_cancellation' && action.enabled) || null)
+const cancellationReason = ref('')
 const rateAction = computed(() => tracking.value?.actions.find(action => action.ref === 'rate_order' && action.enabled) || null)
 // Estado de agradecimento (título/mensagem + se cabe confete) montado a partir da
 // copy e da nota escolhida. A copy é omotenashi (configurável), nunca inventada aqui.
@@ -115,7 +117,7 @@ const sideActionsPrimary = computed(() => {
 })
 const showSideActions = computed(() => Boolean(
   tracking.value &&
-  (cancelAction.value || showReorderAction.value || showSupportAction.value ||
+  (cancelAction.value || cancellationRequestAction.value || tracking.value.cancellation_request || showReorderAction.value || showSupportAction.value ||
     shareHref.value || tracking.value?.pickup_info?.directions_url)
 ))
 const showDeliveryTab = computed(() => Boolean(tracking.value?.pickup_info || tracking.value?.fulfillments.length))
@@ -231,8 +233,33 @@ watch(() => deadlineCount.value?.isExpired, async expired => {
 // tiver copy própria.
 function actionSuccessMessage (action: Action): string {
   if (action.ref === 'cancel_order') return tracking.value?.copy.cancel_success_title || 'Pedido cancelado.'
+  if (action.ref === 'request_cancellation') return 'Solicitação registrada. Guarde o protocolo.'
   if (action.ref === 'confirm_received') return 'Que bom que chegou. Bom apetite!'
   return 'Tudo certo, atualizamos seu pedido.'
+}
+
+async function requestCancellation () {
+  const action = cancellationRequestAction.value
+  if (!action) return
+  if (await postAction(action, { reason: cancellationReason.value.trim() })) {
+    cancellationReason.value = ''
+  }
+}
+
+function cancellationConfirmation (key: string, fallback: string): string {
+  const value = cancellationRequestAction.value?.confirmation?.[key]
+  return typeof value === 'string' && value ? value : fallback
+}
+
+async function refreshAfterConfirmedAction () {
+  const confirmed = data.value
+  try {
+    await refresh()
+    if (!error.value) return
+  } catch { /* confirmed action remains authoritative */ }
+  data.value = confirmed
+  error.value = undefined
+  if (import.meta.client) useSonner.info('Ação confirmada. A atualização do acompanhamento está pendente.')
 }
 
 async function postAction (action: Action, body: Record<string, unknown> = {}) {
@@ -242,16 +269,18 @@ async function postAction (action: Action, body: Record<string, unknown> = {}) {
     if (action.idempotency === 'required' || action.idempotency === 'recommended') {
       headers['x-idempotency-key'] = newRemoteMutationKey(action.ref)
     }
-    await $fetch(apiPath(action.href), {
+    data.value = await $fetch<TrackingResponse>(apiPath(action.href), {
       method: remoteMethod(action.method),
       headers,
       credentials: 'include',
       body
     })
-    await refresh()
     if (import.meta.client) useSonner.success(actionSuccessMessage(action))
+    await refreshAfterConfirmedAction()
+    return true
   } catch (e) {
     if (import.meta.client) useSonner.error(errorDetail(e, 'Não foi possível concluir. Tente de novo ou fale conosco.'))
+    return false
   } finally {
     actionPending.value = omitKey(actionPending.value, action.ref)
   }
@@ -271,7 +300,7 @@ async function submitRating () {
     if (action.idempotency === 'required' || action.idempotency === 'recommended') {
       headers['x-idempotency-key'] = newRemoteMutationKey(action.ref)
     }
-    await $fetch(apiPath(action.href), {
+    data.value = await $fetch<TrackingResponse>(apiPath(action.href), {
       method: remoteMethod(action.method),
       headers,
       credentials: 'include',
@@ -279,7 +308,7 @@ async function submitRating () {
     })
     ratingSubmitted.value = true
     if (import.meta.client && ratingThanks.value.celebrate) dispararConfetti()
-    await refresh()
+    await refreshAfterConfirmedAction()
   } catch (e) {
     if (import.meta.client) useSonner.error(errorDetail(e, tracking.value?.copy.rating_failed_message || 'Não foi possível concluir. Tente de novo ou fale conosco.'))
   } finally {
@@ -478,6 +507,9 @@ useSeoMeta({
         </UiAlert>
 
         <template v-else-if="tracking">
+          <UiAlert v-if="tracking.convenience_pending?.length" role="status" variant="warning" icon="lucide:info">
+            Pedido confirmado. Estamos tentando salvar suas escolhas para a próxima vez. Você não precisa repetir o pedido.
+          </UiAlert>
           <UiAlert
             variant="default"
             :class="statusPanelClass"
@@ -807,6 +839,20 @@ useSeoMeta({
             <UiCardTitle>Ações</UiCardTitle>
           </UiCardHeader>
           <UiCardContent class="space-y-2">
+            <UiAlert
+              v-if="tracking.cancellation_request"
+              variant="warning"
+              icon="lucide:clipboard-check"
+              role="status"
+              data-cancellation-request
+            >
+              <UiAlertTitle>{{ tracking.cancellation_request.title }}</UiAlertTitle>
+              <UiAlertDescription class="space-y-1">
+                <p>{{ tracking.cancellation_request.message }}</p>
+                <p class="font-semibold">Protocolo {{ tracking.cancellation_request.protocol }}</p>
+                <p class="text-xs">Recebida em {{ tracking.cancellation_request.requested_at_display }}</p>
+              </UiAlertDescription>
+            </UiAlert>
             <!-- Avaliar em destaque (primary); as demais ficam secundárias. -->
             <UiButton v-if="rateAction" class="w-full" icon="lucide:star" @click="ratingOpen = true">
               Avaliar pedido
@@ -855,6 +901,33 @@ useSeoMeta({
                 <UiAlertDialogFooter>
                   <UiAlertDialogCancel>{{ tracking.copy.cancel_dialog_back }}</UiAlertDialogCancel>
                   <UiAlertDialogAction @click="postAction(cancelAction)">{{ tracking.copy.cancel_dialog_confirm }}</UiAlertDialogAction>
+                </UiAlertDialogFooter>
+              </UiAlertDialogContent>
+            </UiAlertDialog>
+            <UiAlertDialog v-else-if="cancellationRequestAction">
+              <UiAlertDialogTrigger as-child>
+                <UiButton variant="destructive" class="w-full">{{ cancellationRequestAction.label }}</UiButton>
+              </UiAlertDialogTrigger>
+              <UiAlertDialogContent>
+                <UiAlertDialogHeader>
+                  <UiAlertDialogTitle>{{ cancellationConfirmation('title', 'Solicitar cancelamento') }}</UiAlertDialogTitle>
+                  <UiAlertDialogDescription>{{ cancellationConfirmation('message', 'A equipe vai analisar o cancelamento e um possível estorno. Você recebe um protocolo agora.') }}</UiAlertDialogDescription>
+                </UiAlertDialogHeader>
+                <UiTextarea
+                  v-model="cancellationReason"
+                  :rows="3"
+                  :maxlength="500"
+                  placeholder="Motivo (opcional)"
+                  aria-label="Motivo da solicitação de cancelamento"
+                />
+                <UiAlertDialogFooter>
+                  <UiAlertDialogCancel>{{ cancellationConfirmation('cancel_label', 'Manter pedido') }}</UiAlertDialogCancel>
+                  <UiAlertDialogAction
+                    :disabled="!!actionPending.request_cancellation"
+                    @click="requestCancellation"
+                  >
+                    {{ cancellationConfirmation('confirm_label', 'Enviar solicitação') }}
+                  </UiAlertDialogAction>
                 </UiAlertDialogFooter>
               </UiAlertDialogContent>
             </UiAlertDialog>

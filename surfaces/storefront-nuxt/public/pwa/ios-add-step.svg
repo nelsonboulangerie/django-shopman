@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240" role="img" aria-labelledby="title desc">
+  <title id="title">Adicionar à Tela de Início</title>
+  <desc id="desc">Menu do Safari com a opção Adicionar à Tela de Início destacada.</desc>
+  <rect width="320" height="240" rx="28" fill="#fcf7ee"/>
+  <rect x="34" y="26" width="252" height="188" rx="22" fill="#fff" stroke="#dec9bb" stroke-width="4"/>
+  <rect x="52" y="48" width="216" height="40" rx="10" fill="#f5e7dd"/>
+  <rect x="52" y="100" width="216" height="76" rx="12" fill="#7c3a40"/>
+  <rect x="70" y="118" width="40" height="40" rx="9" fill="#fcf7ee"/>
+  <path d="M90 126v24m-12-12h24" stroke="#7c3a40" stroke-width="5" stroke-linecap="round"/>
+  <path d="M126 126h116M126 144h88" stroke="#fcf7ee" stroke-width="6" stroke-linecap="round" opacity=".95"/>
+  <rect x="52" y="188" width="170" height="8" rx="4" fill="#ead8cb"/>
+</svg>

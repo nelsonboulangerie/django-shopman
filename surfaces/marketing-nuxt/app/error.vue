@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import type { NuxtError } from "#app";
+import { clearError, useRoute, type NuxtError } from "#app";
 
 const props = defineProps<{ error: NuxtError }>();
 const online = ref(true);
+const route = useRoute();
 
 function safeRequestRef(): string {
   const data =
@@ -79,7 +80,10 @@ onBeforeUnmount(() => {
   window.removeEventListener("offline", updateConnection);
 });
 
-useHead({ title: `${presentation.value.title} · Marketing` });
+// O Nuxt renderiza o error.vue NO LUGAR do app.vue: o template do título tem
+// que ser instalado aqui também, senão a janela perde o nome do app.
+useOperatorWindowTitle("Marketing");
+useHead({ title: presentation.value.title });
 </script>
 
 <template>
@@ -118,7 +122,7 @@ useHead({ title: `${presentation.value.title} · Marketing` });
         <UiButton
           v-if="presentation.retry"
           type="button"
-          @click="clearError({ redirect: $route.fullPath })"
+          @click="clearError({ redirect: route.fullPath })"
         >
           Tentar novamente
         </UiButton>

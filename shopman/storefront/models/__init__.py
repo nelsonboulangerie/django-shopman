@@ -9,9 +9,11 @@ que é adapter legítimo.
 """
 
 from .favorites import CustomerFavorite
-from .stock_alerts import StockAlertSubscription
+from .stock_alerts import StockAlertDelivery, StockAlertOccurrence, StockAlertSubscription
 
 __all__ = [
     "StockAlertSubscription",
+    "StockAlertOccurrence",
+    "StockAlertDelivery",
     "CustomerFavorite",
 ]

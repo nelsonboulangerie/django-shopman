@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from django.db import transaction
 from shopman.guestman.models import ContactPoint, Customer, ExternalIdentity
 
 
+@transaction.atomic
 def ensure_contact_point(
     customer: Customer,
     *,
@@ -14,6 +16,10 @@ def ensure_contact_point(
     is_verified: bool = False,
 ) -> ContactPoint:
     """Ensure a normalized contact point exists for the customer."""
+    customer = Customer.objects.select_for_update().get(
+        pk=customer.pk,
+        is_active=True,
+    )
     contact_point, created = ContactPoint.objects.get_or_create(
         customer=customer,
         type=type,
@@ -36,6 +42,7 @@ def ensure_contact_point(
     return contact_point
 
 
+@transaction.atomic
 def ensure_external_identity(
     customer: Customer,
     *,
@@ -44,6 +51,10 @@ def ensure_external_identity(
     metadata: dict | None = None,
 ) -> ExternalIdentity:
     """Ensure an external identity is linked to the customer."""
+    customer = Customer.objects.select_for_update().get(
+        pk=customer.pk,
+        is_active=True,
+    )
     identity, created = ExternalIdentity.objects.get_or_create(
         provider=provider,
         provider_uid=external_id,

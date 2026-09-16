@@ -11,11 +11,12 @@ cliente, o item lê "Esgotado" e não há fila em que entrar, mesmo com a
 fornada de amanhã já planejada.
 
 Este módulo é a pergunta certa, num lugar só: até que DIA de fornada
-planejada este canal promete. As leituras (sacola, cardápio, PDP) passam
-:func:`promise_horizon` como ``target_date``; a reserva passa
-:func:`reserve_target_date`, que é a data da fornada de verdade — o hold
-precisa ancorar no lote certo para que a sacola diga "Previsto para
-<dia>" sem mentir.
+planejada este canal promete. As leituras de cliente consultam separadamente
+o pronto de hoje e a primeira fornada elegível dentro de
+:func:`promise_horizon`; a reserva e decisões sem data explícita usam
+:func:`reserve_target_date`, que escolhe hoje quando há pronto ou a data da
+fornada de verdade — o hold precisa ancorar no lote certo para que a sacola
+diga "Previsto para <dia>" sem mentir.
 
 Desligado (``waitlist.enabled=False``, o default) tudo devolve hoje: o
 comportamento é exatamente o de sempre.

@@ -5,6 +5,15 @@ from __future__ import annotations
 from django.db import models
 
 
+def operator_alert_type_choices():
+    """Choices are presentation metadata, not a database constraint.
+
+    Keeping the callable stable prevents a new no-op ``AlterField`` migration
+    every time the operational alert catalogue gains a type.
+    """
+    return OperatorAlert.TYPE_CHOICES
+
+
 class OperatorAlert(models.Model):
     """Alerta operacional — falhas, estoque baixo, pagamentos pendentes."""
 
@@ -34,6 +43,8 @@ class OperatorAlert(models.Model):
         # está no simulador — e esperava alguém abrir /admin/diagnostics/ para
         # contar. Este tipo é a mesma verdade, empurrada em vez de puxada.
         ("integration_config_drift", "Integração em configuração degradada"),
+        ("ifood_schedule_invalid", "Agendamento iFood inválido"),
+        ("concierge_identity_conflict", "Concierge encontrou identidade divergente"),
         ("stock_discrepancy", "Discrepância de estoque"),
         ("payment_after_cancel", "Pagamento após cancelamento"),
         # A gêmea do `payment_after_cancel`: o dinheiro chegou com o pedido
@@ -67,6 +78,8 @@ class OperatorAlert(models.Model):
         # switch — e, por não ter dono, ficava invisível até um cliente reclamar.
         ("catalog_hidden_by_inactive_collection", "Produto fora do cardápio: categoria desativada"),
         ("stale_new_order", "Pedido parado aguardando confirmação"),
+        ("customer_cancellation_requested", "Cliente solicitou cancelamento"),
+        ("checkout_convenience_pending", "Conveniência do checkout pendente"),
         # Pedido fechado sem dono: nesta loja o telefone É a identidade, e sem
         # o vínculo o cliente fica sem histórico, fidelidade e rastreio.
         ("checkout_customer_unlinked", "Pedido fechou sem vínculo com cadastro"),
@@ -91,6 +104,7 @@ class OperatorAlert(models.Model):
         # e-mail não saiu; cancelamento que falhou (nota válida em pé para venda
         # cancelada é passivo); e devolução parcial com a nota inteira de pé.
         # Nenhum desses se resolve com retry — todos terminam em alguém.
+        ("fiscal_emit_failed", "Emissão da NFC-e falhou após tentativas"),
         ("fiscal_receipt_promised", "Nota prometida ao cliente e não emitida"),
         ("fiscal_payment_mismatch", "NFC-e barrada: pagamento abaixo do total"),
         ("fiscal_email_failed", "NFC-e autorizada mas o e-mail não saiu"),
@@ -131,6 +145,7 @@ class OperatorAlert(models.Model):
         ("directive_worker_stale", "Processador de tarefas de fundo parado"),
         ("lifecycle_phase_stuck", "Fase do pedido travada"),
         ("low_rating", "Avaliação baixa recebida"),
+        ("cash_change_requested", "Troco solicitado no PDV"),
         ("cash_shift_open_at_closing", "Caixa aberto no fechamento do dia"),
         # A venda foi criada e cobrada, mas o turno fechou entre o commit do
         # pedido e a linha do livro, e o livro-caixa é append-only num turno
@@ -170,10 +185,16 @@ class OperatorAlert(models.Model):
         ("marketing_unknown_stale", "Marketing: resultado desconhecido sem resolução"),
         ("marketing_partial_without_action", "Marketing: parcial sem ação de recuperação"),
         ("marketing_readiness_stale", "Marketing: prontidão do canal vencida"),
+        ("stock_alert_delivery_stuck", "Entrega de aviso de produto atrasada"),
+        ("stock_alert_dispatch_unknown", "Resultado de envio de aviso incerto"),
         # Concierge de WhatsApp: o cliente pediu gente (o bot calou e a conversa
         # espera a equipe), ou o modelo falhou três vezes seguidas numa conversa.
         ("concierge_handoff", "WhatsApp: cliente pediu a equipe"),
         ("concierge_unavailable", "WhatsApp: concierge fora do ar"),
+        ("concierge_empty_output", "WhatsApp: resposta automática vazia"),
+        ("concierge_handoff_sync", "WhatsApp: sincronização do atendimento pendente"),
+        ("concierge_output_blocked", "WhatsApp: resposta automática bloqueada"),
+        ("concierge_output_pending", "WhatsApp: resultado do envio pendente"),
         # ⚠️ Vai para o GESTOR, não para o CI. Teste vermelho é visto por quem
         # programa; a obrigação de cumprir a norma é de quem opera — então o
         # vencimento de um parâmetro legal precisa aparecer na tela dele.
@@ -218,11 +239,12 @@ class OperatorAlert(models.Model):
         "marketplace_rejected_oos",
         "pos_rejected_unavailable",
         "stale_new_order",
+        "customer_cancellation_requested",
         "lifecycle_phase_stuck",
         "order_production_quality_risk",
     }
 
-    type = models.CharField("tipo", max_length=50, choices=TYPE_CHOICES)
+    type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)
     severity = models.CharField("severidade", max_length=10, choices=SEVERITY_CHOICES, default="warning")
     audience = models.CharField(
         "público operacional",

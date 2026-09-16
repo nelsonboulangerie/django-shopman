@@ -77,11 +77,15 @@ class _AppSpec:
 
 
 # Registro declarativo das superfícies (ordem = ordem de exibição). Ícone forte por
-# app conforme o design system canônico (DS §6).
+# app conforme o design system canônico (DS §6). O nome Lucide é o FALLBACK do tile:
+# a Central mostra o PNG da família PWA (`surfaces/operator-kit/PWA_ICONS.md`) e só
+# cai no Lucide quando a imagem não carrega — por isso os nomes seguem a família
+# (Produção usa `tabler:baguette` no PNG; o fallback fica em `croissant`, único
+# símbolo próximo que existe no Lucide).
 _REGISTRY: tuple[_AppSpec, ...] = (
-    _AppSpec("pos", "PDV", "Vender no balcão", "banknote", "launch", can_operate_pos),
+    _AppSpec("pos", "PDV", "Vender no balcão", "shopping-basket", "launch", can_operate_pos),
     _AppSpec("kds", "Cozinha", "Preparo e expedição", "chef-hat", "launch", can_operate_kds),
-    _AppSpec("gestor", "Gestor de Pedidos", "Fila e acompanhamento", "clipboard-list", "launch", can_manage_orders),
+    _AppSpec("gestor", "Gestor de Pedidos", "Fila e acompanhamento", "square-kanban", "launch", can_manage_orders),
     # ⚠️ `can_operate_production`, e NÃO `can_access_production`: o tile tem de
     # perguntar a MESMA coisa que o app pergunta na porta. O `can_access_production`
     # exige `shop.manage_production` ou alguma permissão de COLUNA FINA do console
@@ -96,9 +100,9 @@ _REGISTRY: tuple[_AppSpec, ...] = (
     # qualquer grant customizado cai nele na hora — que é o caso normal quando entra
     # gente nova.
     _AppSpec("production", "Produção", "Produção e fornadas", "croissant", "launch", can_operate_production),
-    _AppSpec("purchase", "Compras", "Comprar e receber insumos", "package-check", "launch", can_operate_purchase),
+    _AppSpec("purchase", "Compras", "Comprar e receber insumos", "package", "launch", can_operate_purchase),
     _AppSpec("marketing", "Marketing", "Divulgar a fornada", "megaphone", "launch", can_manage_campaigns),
-    _AppSpec("bi", "B.I.", "Números da operação", "chart-line", "launch", can_view_bi),
+    _AppSpec("bi", "B.I.", "Números da operação", "chart-no-axes-combined", "launch", can_view_bi),
     _AppSpec("loja", "Loja online", "Abrir a loja do cliente", "store", "external", is_superuser),
 )
 

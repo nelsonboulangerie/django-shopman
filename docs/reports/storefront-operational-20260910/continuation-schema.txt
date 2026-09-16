@@ -1,0 +1,22 @@
+DEBUG 2026-09-11 04:34:35,660 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 04:34:35,661 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 04:34:35,661 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 04:34:35,662 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 04:34:35,669 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 04:34:35,671 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 04:34:35,672 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 04:34:35,672 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 04:34:35,677 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 04:34:35,678 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 04:34:35,678 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 04:34:35,679 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 04:34:35,694 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 04:34:35,694 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 04:34:35,695 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 04:34:35,695 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 04:34:35,695 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 04:34:35,696 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 04:34:35,699 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 04:34:35,699 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+DEBUG 2026-09-11 04:34:35,771 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+No changes detected in apps 'orderman', 'storefront'

@@ -176,7 +176,24 @@ class PrintAgentCredential(models.Model):
         self.is_active = True
         self.revoked_at = None
         self.rotated_at = timezone.now()
-        self.save(update_fields=("token_digest", "token_hint", "is_active", "revoked_at", "rotated_at"))
+        # A última presença pertencia ao bearer anterior. Mantê-la faria o
+        # Admin prometer “conectado” justamente no intervalo em que o agente
+        # ainda precisa receber o comando novo.
+        self.last_seen_at = None
+        self.last_build = ""
+        self.last_remote_addr = None
+        self.save(
+            update_fields=(
+                "token_digest",
+                "token_hint",
+                "is_active",
+                "revoked_at",
+                "rotated_at",
+                "last_seen_at",
+                "last_build",
+                "last_remote_addr",
+            )
+        )
         return f"{self.ref}.{secret}"
 
     @classmethod
@@ -186,11 +203,15 @@ class PrintAgentCredential(models.Model):
             ref = uuid.UUID(raw_ref)
         except (ValueError, AttributeError):
             return None
-        credential = cls.objects.select_related("terminal").filter(
-            ref=ref,
-            is_active=True,
-            terminal__is_active=True,
-        ).first()
+        credential = (
+            cls.objects.select_related("terminal")
+            .filter(
+                ref=ref,
+                is_active=True,
+                terminal__is_active=True,
+            )
+            .first()
+        )
         if credential is None or not hmac.compare_digest(credential.token_digest, cls._digest(secret)):
             return None
         return credential
@@ -238,7 +259,9 @@ class PrintAttempt(models.Model):
         verbose_name_plural = "tentativas de impressão"
         constraints = [
             models.UniqueConstraint(fields=("job", "sequence"), name="backstage_printattempt_unique_sequence"),
-            models.CheckConstraint(condition=models.Q(sequence__gte=1), name="backstage_printattempt_sequence_positive"),
+            models.CheckConstraint(
+                condition=models.Q(sequence__gte=1), name="backstage_printattempt_sequence_positive"
+            ),
         ]
 
     def __str__(self) -> str:

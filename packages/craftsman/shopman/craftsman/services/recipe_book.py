@@ -773,6 +773,8 @@ def _entry_kind(ref: str, name: str) -> str:
         return "bread"
     if any(word in text for word in ("croissant", "folhad", "brioche", "danish", "viennois")):
         return "viennoiserie"
+    if any(word in text for word in ("biscoit", "cookie", "sable")):
+        return "cookie"
     if text.startswith("recheio") or "recheio" in text:
         return "filling"
     if text.startswith("creme") or " creme" in text:

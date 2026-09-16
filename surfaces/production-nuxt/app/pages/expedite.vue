@@ -30,6 +30,7 @@ const {
   refresh,
   finish,
   quickFinish,
+  reviewQuality,
   correctQuality,
 } = useQcKiosk(routeDate);
 
@@ -40,7 +41,7 @@ const stale = computed(() =>
   isStale({ error: !!error.value, hasData: !!kiosk.value }),
 );
 
-useHead({ title: "Expedição · Produção" });
+useHead({ title: "Expedição" });
 
 const query = ref(typeof route.query.q === "string" ? route.query.q : "");
 watch(
@@ -58,12 +59,6 @@ watch(
 
 // ── Data: Hoje · Outra data (a fornada esquecida de ontem fecha por aqui) ───
 const isCustomDate = computed(() => selectedDate.value !== "");
-const customDateInput = ref<HTMLInputElement | null>(null);
-function openCustomDate() {
-  customDateInput.value?.showPicker?.();
-  customDateInput.value?.focus();
-}
-
 // Menu ⋯ do painel — a exceção mora aqui, fora de evidência.
 const menuOpen = ref(false);
 
@@ -100,6 +95,10 @@ function finishAvailable(order: QCOrderCardProjection): boolean {
 
 function correctionAvailable(order: QCOrderCardProjection): boolean {
   return projectedAction(`correct_qc:${order.pk}`)?.enabled === true;
+}
+
+function reviewAvailable(order: QCOrderCardProjection): boolean {
+  return projectedAction(`review_qc:${order.pk}`)?.enabled === true;
 }
 
 function correctionPartition(order: QCOrderCardProjection): QcPartitionGroup[] {
@@ -150,6 +149,18 @@ function openCorrection(order: QCOrderCardProjection) {
   if (!correctionAvailable(order)) return;
   selectedOrder.value = order;
   selectedRecipe.value = null;
+}
+
+async function confirmQuality(order: QCOrderCardProjection) {
+  if (!reviewAvailable(order)) return;
+  if (
+    !window.confirm(
+      `Confirmar a qualidade da fornada de ${order.recipe_name}? Isso libera os avisos de disponibilidade autorizados pelos clientes.`,
+    )
+  )
+    return;
+  const result = await reviewQuality(order.pk, order.rev);
+  if (result.ok) useSonner.success("Qualidade confirmada.");
 }
 
 function openOffPlan(recipe: RecipeOptionProjection) {
@@ -459,7 +470,7 @@ function onTimerKeydown(event: KeyboardEvent) {
           <!-- Data em segmento compacto: duas escolhas e o calendário ocupam um único controle. -->
           <button
             type="button"
-            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
               !isCustomDate
                 ? 'bg-primary text-primary-foreground'
@@ -469,26 +480,22 @@ function onTimerKeydown(event: KeyboardEvent) {
           >
             Hoje
           </button>
-          <button
-            type="button"
-            class="relative rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+          <label
+            class="date-input-hit-area relative inline-flex min-h-11 cursor-pointer items-center rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
               isCustomDate
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:bg-accent hover:text-foreground'
             "
-            @click="openCustomDate"
           >
-            {{ isCustomDate ? kiosk?.selected_date_display : "Outra data" }}
+            <span aria-hidden="true">{{ isCustomDate ? kiosk?.selected_date_display : "Outra data" }}</span>
             <input
-              ref="customDateInput"
               v-model="selectedDate"
               type="date"
               class="absolute inset-0 cursor-pointer opacity-0"
               aria-label="Escolher a data das fornadas"
-              tabindex="-1"
             />
-          </button>
+          </label>
         </div>
 
         <UiPopover
@@ -681,6 +688,16 @@ function onTimerKeydown(event: KeyboardEvent) {
               {{ order.output_sku }}
             </p>
             <p
+              class="truncate text-xs font-medium"
+              :class="order.quality_reviewed ? 'text-success' : 'text-warning'"
+            >
+              {{
+                order.quality_reviewed
+                  ? "Qualidade revisada"
+                  : "Aguardando revisão"
+              }}
+            </p>
+            <p
               v-if="order.correction_count"
               class="truncate text-xs text-muted-foreground"
             >
@@ -701,6 +718,18 @@ function onTimerKeydown(event: KeyboardEvent) {
                 · {{ order.loss_qty }} de perda</template
               >
             </p>
+            <UiButton
+              v-if="reviewAvailable(order)"
+              type="button"
+              size="sm"
+              :disabled="submitting"
+              :aria-busy="submitting"
+              :aria-label="`Confirmar qualidade da fornada de ${order.recipe_name}`"
+              @click="confirmQuality(order)"
+            >
+              <Icon name="lucide:badge-check" class="size-3.5" />
+              {{ submitting ? "Confirmando…" : "Confirmar qualidade" }}
+            </UiButton>
             <UiButton
               v-if="correctionAvailable(order)"
               type="button"

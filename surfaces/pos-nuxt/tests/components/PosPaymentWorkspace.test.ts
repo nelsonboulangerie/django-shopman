@@ -48,6 +48,7 @@ function props(overrides: Record<string, unknown> = {}) {
     managerPin: "",
     managers: [],
     fulfillmentType: "pickup",
+    fulfillmentConfirmed: true,
     paymentCollection: "terminal",
     paymentTenders: [],
     splitCount: 0,
@@ -153,7 +154,7 @@ describe("PosPaymentWorkspace — seções semânticas da coluna de trabalho", (
     expect(comFiscal.find(".order-2").text()).not.toContain("CPF na nota?");
   });
 
-  it("o troco-para da entrega mora na forma de pagamento e avisa quando não cobre o total", async () => {
+  it("a entrega usa o mesmo teclado sem campo paralelo de troco", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: props({
         fulfillmentType: "delivery",
@@ -166,8 +167,8 @@ describe("PosPaymentWorkspace — seções semânticas da coluna de trabalho", (
     const receiving = wrapper.find('section[aria-label="Forma de pagamento"]');
     // Rótulo diz o MOMENTO: "troco" sozinho confundia com o troco do numpad,
     // que é dinheiro na mão agora — este é o pagamento na porta, depois.
-    expect(receiving.text()).toContain("Com quanto vai pagar na porta?");
-    expect(receiving.text()).toContain("Menor que o total");
+    expect(receiving.text()).not.toContain("Com quanto vai pagar na porta?");
+    expect(receiving.find('[aria-label="Teclado de valor"]').exists()).toBe(true);
     // Na retirada o campo não existe.
     const pickup = await mountSuspended(PosPaymentWorkspace, { props: props() });
     expect(pickup.text()).not.toContain("Com quanto vai pagar na porta?");
@@ -221,6 +222,17 @@ describe("PosPaymentWorkspace — gate do Validar", () => {
     expect(button.attributes("disabled")).toBeUndefined();
     await button.trigger("click");
     expect(wrapper.emitted("submit")).toHaveLength(1);
+  });
+
+  it("salvamento do cliente em voo trava clique e atalho de Validar", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        paymentTenders: [tender], paymentCovered: true, paymentRemainingQ: 0, lookupBusy: true,
+      }),
+    });
+    expect(cta(wrapper)!.attributes("disabled")).toBeDefined();
+    await cta(wrapper)!.trigger("click");
+    expect(wrapper.emitted("submit")).toBeUndefined();
   });
 
   it("review sem total (stale) mostra 'Atualizando…' e mantém desabilitado", async () => {
@@ -470,7 +482,8 @@ describe("PosPaymentWorkspace — a coluna de contexto", () => {
     const ajustes = wrapper.find('section[aria-label="Ajustes da conta"]');
     expect(ajustes.exists()).toBe(true);
     expect(ajustes.text()).toContain("Dividir conta");
-    expect(ajustes.text()).not.toContain("Desconto");
+    expect(ajustes.findAll("button")).toHaveLength(2);
+    expect(ajustes.find('[aria-label="Desconto na venda"]').attributes("disabled")).toBeDefined();
   });
 
   it("o botão diz SOZINHO se o ajuste está ligado, e de quanto", async () => {
@@ -646,7 +659,7 @@ describe("PosPaymentWorkspace — agendado sem cliente trava o Validar, com cami
     expect(avisos(wrapper).text()).toContain("Encomenda precisa de cliente.");
     // O porquê continua na tela — é o que o operador DIZ ao cliente —, mas em
     // segunda linha: a frase que trava o botão precisa ser lida de longe.
-    expect(avisos(wrapper).text()).toContain("É o contato se algo mudar até a data.");
+    expect(avisos(wrapper).text()).toContain("Identifique quem vai receber a entrega ou retirar o pedido combinado.");
     expect(linhasDeAviso(wrapper)[0]).toContain("Encomenda precisa de cliente.");
   });
 
@@ -703,11 +716,12 @@ describe("PosPaymentWorkspace — agendado sem cliente trava o Validar, com cami
     expect(comCliente.text()).not.toContain("Encomenda precisa de cliente.");
   });
 
-  it("para hoje continua anônimo: data de hoje não trava nada", async () => {
+  it("retirada combinada hoje exige identificação", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: scheduled({ deliveryDate: "2026-09-01" }),
     });
-    expect(cta(wrapper)!.attributes("disabled")).toBeUndefined();
+    expect(cta(wrapper)!.attributes("disabled")).toBeDefined();
+    expect(wrapper.text()).toContain("Identificar cliente");
   });
 });
 
@@ -744,13 +758,13 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
       }),
     });
     expect(avisos(wrapper).text()).toContain("Pedir papel já pede a nota — imprime sozinha assim que autorizar.");
-    expect(avisos(wrapper).text()).toContain("O entregador sai com o troco separado.");
+    expect(avisos(wrapper).text()).toContain("Dinheiro pendente. O troco calculado será separado no despacho.");
     // e não voltaram a aparecer dentro da coluna do instrumento
     expect(wrapper.find(".order-2").text()).not.toContain("Imprime sozinha");
     expect(wrapper.find(".order-2").text()).not.toContain("troco separado");
   });
 
-  it("o combinado menor que o total continua colado no campo que o produz", async () => {
+  it("o campo legado não interfere mais no pagamento informado pelo teclado", async () => {
     // Isto NÃO é consequência de finalizar: é o que só aquele campo sabe dizer.
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: covered({
@@ -760,7 +774,7 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
         paymentTotalQ: 1000,
       }),
     });
-    expect(wrapper.find('section[aria-label="Forma de pagamento"]').text()).toContain("Menor que o total");
+    expect(wrapper.find('section[aria-label="Forma de pagamento"]').text()).not.toContain("Menor que o total");
     expect(avisos(wrapper).text()).not.toContain("Menor que o total");
   });
 
@@ -835,24 +849,12 @@ describe("PosPaymentWorkspace — toda recusa do commit tem gêmea na tela", () 
     paymentRemainingQ: 0,
     ...overrides,
   });
-  it("nota com CPF + taxa de entrega trava — era o portão que a tela CONTRADIZIA", async () => {
-    // `pos._validate_fiscal_delivery_fee` aborta a venda. A tela escrevia "Sai
-    // na nota: CPF …" logo abaixo do switch e deixava o Validar verde.
+  it("CPF com taxa de entrega mantém o pagamento disponível", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
-      props: ready({
-        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [] },
-        wantsCpfOnInvoice: true,
-        invoiceTaxId: "52998224725",
-        fulfillmentType: "delivery",
-        deliveryFeeQ: 800,
-      }),
+      props: ready({ customerName: "Maria", wantsCpfOnInvoice: true, invoiceTaxId: "52998224725", fulfillmentType: "delivery", deliveryFeeQ: 800 }),
     });
-    expect(cta(wrapper)!.attributes("disabled")).toBeDefined();
-    expect(avisos(wrapper).text()).toContain("Nota com CPF e taxa de entrega, não.");
-
-    const tirar = avisos(wrapper).findAll("button").find((b) => b.text().includes("Tirar o CPF"));
-    await tirar!.trigger("click");
-    expect(wrapper.emitted("update:wantsCpfOnInvoice")?.[0]).toEqual([false]);
+    expect(cta(wrapper)!.attributes("disabled")).toBeUndefined();
+    expect(wrapper.text()).not.toContain("Tirar o CPF");
   });
 
   it("comprovante por e-mail sem endereço nenhum trava", async () => {
@@ -876,6 +878,7 @@ describe("PosPaymentWorkspace — toda recusa do commit tem gêmea na tela", () 
     // seguia verde, e a recusa subia como 422 sem campo nenhum.
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: ready({
+        customerName: "Maria",
         deliveryTimeSlot: "09:00",
         deliverySlots: [{ ref: "09:00", label: "09:00 às 09:30", enabled: false, reason: "A baguete só fica pronta 10:30." }],
       }),
@@ -1331,10 +1334,7 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
     w.findAll('[aria-label="Cadastro do cliente"] li').map((li) => li.text());
   afterEach(() => { document.body.innerHTML = ""; });
 
-  it("sem cliente identificado, a venda anônima já anuncia o cadastro novo", async () => {
-    // ⚠️ "Já marcado" é decisão do dono, contra a recomendação de nascer
-    // desmarcado. O que segura a transparência é esta linha (e o interruptor
-    // à vista) — não reverter o padrão.
+  it("e-mail de comprovante não anuncia cadastro sem uma escolha explícita", async () => {
     const w = await mountSuspended(PosPaymentWorkspace, {
       props: props({
         checkoutContract: comFiscal,
@@ -1342,12 +1342,7 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
         receiptEmail: "novo@example.org",
       }),
     });
-
-    // ⚠️ E a linha NÃO promete cadastro novo: numa venda anônima o servidor
-    // acha quem já tem este e-mail e a venda vai para ele.
-    expect(registryLines(w)).toEqual([
-      "Este e-mail será salvo como cliente — ou vai para o cadastro que já o tem.",
-    ]);
+    expect(registryLines(w)).toEqual([]);
   });
 
   it("desmarcar cala a linha", async () => {
@@ -1388,14 +1383,11 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
     });
 
     expect(registryLines(w)).toEqual([
-      "O e-mail do cadastro de Ana será atualizado para este.",
+      "E-mail de Ana: ana@example.org → contador@example.org.",
     ]);
   });
 
-  it("o balão da coluna abre para a ESQUERDA — embaixo ficam o Validar e as perguntas", async () => {
-    // A coluna encosta na borda direita da tela e o miolo ao lado está vazio.
-    // Abrindo para baixo, o balão do e-mail (último campo) cobria o Validar, e
-    // o do CPF (primeiro da seção) cobria "Impressa?", "Por e-mail?" e o eco.
+  it("digitar e-mail não abre uma oferta automática sobre o checkout", async () => {
     await mountSuspended(PosPaymentWorkspace, {
       props: props({
         checkoutContract: comFiscal,
@@ -1405,8 +1397,7 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
     });
 
     const panel = document.querySelector('[role="dialog"][aria-label]');
-    expect(panel).not.toBeNull();
-    expect(panel!.getAttribute("data-side")).toBe("left");
+    expect(panel).toBeNull();
   });
 
   it("o CPF da nota tem a linha dele, com o mesmo interruptor à vista", async () => {
@@ -1420,8 +1411,80 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
       }),
     });
 
-    expect(registryLines(w)).toEqual(["O CPF será salvo no cadastro de Ana."]);
+    expect(registryLines(w)).toEqual(["CPF de Ana: 52998224725."]);
     const fiscal = w.find('section[aria-label="Nota fiscal"]');
-    expect(fiscal.text()).toContain("Salvar este CPF no cadastro de Ana?");
+    expect(fiscal.text()).not.toContain("Salvar no cadastro de Ana");
   });
+});
+
+it("na entrega oferece crédito e débito sem exigir cobrança antecipada na maquininha", async () => {
+  const wrapper = await mountSuspended(PosPaymentWorkspace, {
+    props: props({
+      fulfillmentType: "delivery", paymentCollection: "on_delivery",
+      paymentMethods: [{ ref: "credit", label: "Crédito" }, { ref: "debit", label: "Débito" }],
+      paymentTenders: [{ method: "credit", amount_q: 1000, collection: "on_delivery" }],
+      paymentCovered: true, paymentRemainingQ: 0,
+      customerPhone: "+5543999990001", deliveryAddress: "Rua de teste, 1",
+    }),
+  });
+  for (const label of ["Crédito", "Débito"]) {
+    const button = wrapper.find('section[aria-label="Forma de pagamento"]').findAll("button").find((b) => b.text().includes(label))!;
+    expect(button.attributes("disabled")).toBeUndefined();
+  }
+  const validate = wrapper.findAll("button").find((b) => b.text().includes("Validar"))!;
+  expect(validate.attributes("disabled")).toBeUndefined();
+  await validate.trigger("click");
+  expect(wrapper.emitted("submit")).toHaveLength(1);
+  expect(wrapper.text()).not.toContain("OK, cobrei na maquininha");
+});
+
+describe("recebimento explícito", () => {
+  it("exibe ação para escolher mesmo com cliente e data preenchidos", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, { props: props({
+      fulfillmentConfirmed: false, customerName: "Maria", deliveryDate: "2026-09-01",
+      scheduleToday: "2026-09-01", paymentTenders: [tender],
+    }) });
+    expect(w.text()).toContain("Como o cliente vai receber?");
+    expect(w.text()).toContain("Escolher entrega ou retirada");
+    await w.setProps({ fulfillmentConfirmed: true });
+    expect(w.text()).not.toContain("Como o cliente vai receber?");
+  });
+});
+
+it("explica antecipação e cobrança pendente no modo encomendas", async () => {
+  const w = await mountSuspended(PosPaymentWorkspace, { props: props({
+    salesMode: "order", fulfillmentType: "delivery", paymentCollection: "on_delivery",
+    paymentCollections: [
+      { ref: "terminal", label: "Receber no caixa", fulfillment_types: ["pickup", "delivery"], payment_method_refs: ["cash"] },
+      { ref: "on_delivery", label: "Receber ao entregar o pedido", fulfillment_types: ["pickup", "delivery"], payment_method_refs: ["cash", "credit"] },
+    ],
+    paymentTenders: [{ method: "credit", amount_q: 1000, collection: "on_delivery" }],
+  }) });
+  expect(w.text()).toContain("Pagamento da encomenda");
+  expect(w.text()).toContain("Pagamento antecipado");
+  expect(w.text()).toContain("Cobrar na entrega");
+  expect(w.text()).toContain("pagamento pendente até o recebimento ser registrado no Gestor");
+  expect(w.text()).toContain("Levar maquininha");
+  await w.setProps({ fulfillmentType: "pickup", paymentCollection: "terminal", paymentTenders: [{ method: "pix", amount_q: 1000, collection: "terminal" }] });
+  expect(w.text()).toContain("pendente até a confirmação do provedor de pagamento");
+  expect(w.text()).not.toContain("Cobrar na entrega");
+
+  await w.setProps({
+    fulfillmentType: "pickup",
+    paymentCollection: "on_delivery",
+    paymentTenders: [{ method: "cash", amount_q: 1000, collection: "on_delivery" }],
+  });
+  expect(w.text()).toContain("Pagamento na retirada");
+  expect(w.text()).toContain("Registre o recebimento no Gestor antes de concluir a retirada");
+  expect(w.text()).not.toContain("Cobrar na entrega");
+});
+
+it("balcão não abre entrega ou agenda pelos atalhos expostos", async () => {
+  const w = await mountSuspended(PosPaymentWorkspace, { props: props({ salesMode: "counter" }) });
+  const vm = (w.vm as unknown as { $: { exposed: { openFulfillment(): void; openSchedule(): void } } }).$.exposed;
+  vm.openFulfillment();
+  vm.openSchedule();
+  await nextTick();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(w.text()).not.toContain("Como o cliente vai receber?");
 });

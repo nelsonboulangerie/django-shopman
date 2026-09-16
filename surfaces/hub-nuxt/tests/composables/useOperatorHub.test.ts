@@ -19,7 +19,7 @@ describe("useOperatorHub", () => {
   });
 
   it("deriva tiles e nome do operador da projection", async () => {
-    const hub = { operator_name: "Ana", tiles: [{ ref: "pos", label: "PDV", icon: "banknote", url: "/x", kind: "launch", description: "" }] };
+    const hub = { operator_name: "Ana", tiles: [{ ref: "pos", label: "PDV", icon: "shopping-basket", url: "/x", kind: "launch", description: "" }] };
     fetchResult.value = asyncData({ hub });
     const h = await useOperatorHub();
     expect(h.operatorName.value).toBe("Ana");

@@ -8,6 +8,7 @@ sem ninguém saber. Agora fail-loud, espelhando stock.fulfill.
 
 from __future__ import annotations
 
+import hashlib
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -55,7 +56,10 @@ def test_refund_transient_exception_queues_retry_not_immediate_alert(paid_order)
         def refund(self, *a, **k):
             raise RuntimeError("gateway down")
 
-    with patch("shopman.shop.services.payment.get_adapter", return_value=FailingAdapter()):
+    with patch(
+        "shopman.shop.services.payment._adapter_for_persisted_intent",
+        return_value=FailingAdapter(),
+    ):
         with patch("shopman.shop.services.observability.create_operator_alert") as alert:
             payment_service.refund(paid_order)
 
@@ -69,7 +73,10 @@ def test_refund_adapter_failure_result_raises_critical_alert(paid_order):
         def refund(self, *a, **k):
             return SimpleNamespace(success=False, message="declined", error_code="E_DECLINED")
 
-    with patch("shopman.shop.services.payment.get_adapter", return_value=RejectingAdapter()):
+    with patch(
+        "shopman.shop.services.payment._adapter_for_persisted_intent",
+        return_value=RejectingAdapter(),
+    ):
         with patch("shopman.shop.services.observability.create_operator_alert") as alert:
             payment_service.refund(paid_order)
 
@@ -101,16 +108,72 @@ def test_refund_handler_retries_then_alerts_on_exhaustion(paid_order):
     handler = PaymentRefundHandler()
     payload = {"order_ref": "ORD-RF-1"}
 
-    with patch("shopman.shop.services.payment.get_adapter", return_value=FailingAdapter()):
+    with patch(
+        "shopman.shop.services.payment._adapter_for_persisted_intent",
+        return_value=FailingAdapter(),
+    ):
         # Tentativa 1 (attempts=1): propaga p/ retry, SEM alertar.
         with patch("shopman.shop.services.observability.create_operator_alert") as early:
             with pytest.raises(DirectiveTransientError):
                 handler.handle(message=NS(payload=payload, attempts=1), ctx={})
         early.assert_not_called()
 
-        # Última tentativa (attempts=5 == MAX): alerta antes de propagar.
+        # Última tentativa da janela de recuperação: alerta antes de propagar.
         with patch("shopman.shop.services.observability.create_operator_alert") as last:
             with pytest.raises(DirectiveTransientError):
-                handler.handle(message=NS(payload=payload, attempts=5), ctx={})
+                handler.handle(message=NS(payload=payload, attempts=len(handler.retry_delays_seconds) + 1), ctx={})
         last.assert_called_once()
         assert last.call_args.kwargs["type"] == "payment_refund_failed"
+
+
+@override_settings(
+    SHOPMAN_PAYMENT_ADAPTERS={"pix": "shopman.shop.adapters.payment_efi"},
+    SHOPMAN_EFI={"sandbox": True},
+)
+def test_efi_refund_directive_retries_timeout_with_same_deterministic_dev_id(paid_order):
+    from shopman.orderman.exceptions import DirectiveTransientError
+
+    from shopman.shop.adapters import payment_efi
+    from shopman.shop.handlers.payment_refund import PaymentRefundHandler
+
+    intent = PaymentService.get("INT-RF-1")
+    intent.gateway = "efi"
+    intent.gateway_data = {
+        "provider_environment": "sandbox",
+        "confirmation_mode": "provider_simulated",
+    }
+    intent.save(update_fields=["gateway", "gateway_data"])
+    key = "order-refund:ORD-RF-1"
+    dev_id = hashlib.sha256(key.encode()).hexdigest()[:35]
+    cob = {
+        "status": "CONCLUIDA",
+        "pix": [{"endToEndId": "E2E-REFUND"}],
+        "valor": {"original": "50.00"},
+    }
+    calls = []
+
+    def remote(method, path, payload=None):
+        calls.append((method, path, payload))
+        if method == "GET":
+            return cob
+        if sum(1 for called_method, _path, _payload in calls if called_method == "PUT") == 1:
+            raise TimeoutError("ambiguous refund timeout")
+        return {"id": dev_id}
+
+    handler = PaymentRefundHandler()
+    message = SimpleNamespace(
+        payload={"order_ref": paid_order.ref, "idempotency_key": key},
+        attempts=1,
+    )
+    with patch.object(payment_efi, "_request", side_effect=remote):
+        with pytest.raises(DirectiveTransientError, match="ambiguous refund timeout"):
+            handler.handle(message=message, ctx={})
+        handler.handle(message=message, ctx={})
+
+    put_paths = [path for method, path, _payload in calls if method == "PUT"]
+    assert put_paths == [
+        f"/v2/pix/E2E-REFUND/devolucao/{dev_id}",
+        f"/v2/pix/E2E-REFUND/devolucao/{dev_id}",
+    ]
+    intent.refresh_from_db()
+    assert intent.status == "refunded"

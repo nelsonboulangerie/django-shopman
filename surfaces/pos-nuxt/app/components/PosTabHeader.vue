@@ -8,6 +8,7 @@ import type { POSCustomerLookupProjection, POSCustomerSearchResult } from "~/typ
 import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
 
 const props = defineProps<{
+  salesMode?: "counter" | "order";
   tabDisplay: string;
   hasOpenTab: boolean;
   canRename: boolean;
@@ -51,12 +52,13 @@ const emit = defineEmits<{
   "update:customerPhone": [string];
   "update:customerTaxId": [string];
   "update:customerEmail": [string];
+  salesModeChange: ["counter" | "order"];
   rename: [string];
   clear: [];
   clearCustomer: [];
   lookupCustomer: [];
-  resolveCustomer: [];
-  decisionConfirm: [];
+  resolveCustomer: [done: (saved: boolean) => void];
+  decisionConfirm: [ownerRef?: string];
   decisionCancel: [];
   decisionMerge: [];
   /** LIBERAR o contato preso num cadastro desativado. */
@@ -72,7 +74,13 @@ const emit = defineEmits<{
    *  pagamento — a dela carrega a parte fiscal. Dois modais de Cliente na mesma
    *  tela seria a duplicação que esta barra veio justamente desfazer. */
   openCustomer: [];
+  customerClosed: [];
 }>();
+
+const SALES_MODES = [
+  { ref: "counter", label: "Balcão", icon: "lucide:store" },
+  { ref: "order", label: "Encomendas", icon: "lucide:calendar-clock" },
+] as const;
 
 const renaming = ref(false);
 const renameValue = ref("");
@@ -109,6 +117,7 @@ watch(customerSheetOpen, async (open) => {
   if (open || !import.meta.client) return;
   await nextTick();
   customerChipRef.value?.focus();
+  emit("customerClosed");
 });
 
 const confirmClear = ref(false);
@@ -120,6 +129,28 @@ function runClear() {
 
 <template>
   <div class="flex min-w-0 flex-wrap items-center gap-2">
+    <!-- MODO DE ATENDIMENTO — o escolhido é CHEIO (`bg-primary`), como o modo
+         do numpad e o seletor do "Transferir": `secondary` sobre `ghost` era
+         dois cinzas quase iguais, e sob a luz do balcão ninguém dizia qual
+         estava ligado. O ícone dobra a leitura para quem não pára para ler. -->
+    <div v-if="!readOnly" class="flex shrink-0 items-center gap-0.5 rounded-md border bg-muted/40 p-0.5" role="group" aria-label="Modo de atendimento">
+      <UiButton
+        v-for="mode in SALES_MODES"
+        :key="mode.ref"
+        variant="ghost"
+        size="sm"
+        class="h-8 gap-1.5 px-3 font-semibold"
+        :class="(salesMode || 'counter') === mode.ref
+          ? 'bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 hover:text-primary-foreground'
+          : 'text-muted-foreground hover:text-foreground'"
+        :aria-pressed="(salesMode || 'counter') === mode.ref"
+        :disabled="loading"
+        @click="$emit('salesModeChange', mode.ref)"
+      >
+        <Icon :name="mode.icon" class="size-4 shrink-0" />
+        {{ mode.label }}
+      </UiButton>
+    </div>
     <!-- tab number (renameable) -->
     <div v-if="renaming" class="flex items-center gap-1">
       <UiInput
@@ -147,7 +178,7 @@ function runClear() {
       <Icon name="lucide:pencil" class="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
     </button>
     <h1 v-else-if="hasOpenTab" class="truncate text-lg font-semibold leading-tight tabular-nums tracking-tight">#{{ tabDisplay || "..." }}</h1>
-    <h1 v-else class="truncate text-lg font-semibold leading-tight tracking-tight">Venda rápida</h1>
+    <h1 v-else class="truncate text-lg font-semibold">Venda rápida</h1>
 
     <!-- OS TRÊS CHIPS CARREGAM A PRÓPRIA TECLA — F6 · F7 · F8, na ordem em que
          aparecem. O atalho existia e só vivia no dicionário (tecla `?`), que é
@@ -170,7 +201,7 @@ function runClear() {
       type="button"
       class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
       :class="customerRequired
-        ? 'border-warning bg-warning/10 font-medium text-amber-700 motion-safe:animate-pulse dark:text-amber-400'
+        ? 'border-warning bg-warning/10 font-medium text-warning motion-safe:animate-pulse'
         : 'border-border'"
       aria-haspopup="dialog"
       :title="customerRequired ? 'Encomenda precisa de cliente — é o contato se algo mudar até a data' : undefined"
@@ -179,9 +210,9 @@ function runClear() {
       <Icon
         :name="customerRequired ? 'lucide:user-round-plus' : 'lucide:user-round'"
         class="size-4 shrink-0"
-        :class="customerRequired ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'"
+        :class="customerRequired ? 'text-warning' : 'text-muted-foreground'"
       />
-      <span v-if="customerName" class="min-w-0 max-w-40 truncate font-medium">{{ customerName }}</span>
+      <span v-if="customerName || customerLookup?.ref" class="min-w-0 max-w-40 truncate font-medium">{{ customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref }}</span>
       <span v-else class="min-w-0 truncate" :class="customerRequired ? '' : 'text-muted-foreground'">Identificar cliente</span>
       <OperatorKbd
         aria-hidden="true"
@@ -193,7 +224,7 @@ function runClear() {
          diante. Na barra eles são LEITURA com porta de saída; o lugar onde se
          decide é o começo do fluxo, não esta barra. -->
     <button
-      v-if="hasOpenTab"
+      v-if="hasOpenTab && salesMode !== 'counter'"
       type="button"
       class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
       :class="fulfillmentType === 'delivery' ? 'border-primary bg-primary/5' : 'border-border'"
@@ -212,7 +243,7 @@ function runClear() {
          encomenda por telefone e o balcão não tinha onde escrever isso.
          "Para hoje" é o padrão e é uma AFIRMAÇÃO, não um campo vazio. -->
     <button
-      v-if="hasOpenTab"
+      v-if="hasOpenTab && salesMode !== 'counter'"
       type="button"
       class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
       :class="scheduleConflict
@@ -267,8 +298,8 @@ function runClear() {
       @search="$emit('search', $event)"
       @select-result="$emit('selectResult', $event)"
       @clear="$emit('clearCustomer')"
-      @resolve-customer="$emit('resolveCustomer')"
-      @decision-confirm="$emit('decisionConfirm')"
+      @resolve-customer="$emit('resolveCustomer', $event)"
+      @decision-confirm="$emit('decisionConfirm', $event)"
       @decision-cancel="$emit('decisionCancel')"
       @decision-merge="$emit('decisionMerge')"
       @decision-release="$emit('decisionRelease', $event)"

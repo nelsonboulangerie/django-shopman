@@ -439,6 +439,10 @@ class ProductionQualityCorrectionMutationSerializer(ExistingWorkOrderMutationSer
     reason = serializers.CharField(allow_blank=False, trim_whitespace=True, max_length=500)
 
 
+class ProductionQualityReviewMutationSerializer(ExistingWorkOrderMutationSerializer):
+    pass
+
+
 class ProductionAdvanceStepMutationSerializer(ExistingWorkOrderMutationSerializer):
     pass
 
@@ -531,6 +535,14 @@ PRODUCTION_ACTION_SPECS = (
         "/api/v1/backstage/production/{workOrderId}/finish/",
         "ProductionFinishMutationRequest",
         ProductionFinishMutationSerializer,
+        ProductionWorkOrderMutationSuccess,
+        "workOrderId",
+    ),
+    ProductionActionSpec(
+        "reviewProductionQuality",
+        "/api/v1/backstage/production/{workOrderId}/quality-review/",
+        "ProductionQualityReviewMutationRequest",
+        ProductionQualityReviewMutationSerializer,
         ProductionWorkOrderMutationSuccess,
         "workOrderId",
     ),

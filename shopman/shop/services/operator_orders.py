@@ -14,8 +14,8 @@ from enum import StrEnum
 from django.db import transaction
 from shopman.orderman.models import Order
 
+from shopman.shop.services import ifood_cancellation, payment_gate
 from shopman.shop.services import payment as payment_service
-from shopman.shop.services import payment_gate
 from shopman.shop.services.cancellation import cancel
 from shopman.shop.services.order_helpers import get_fulfillment_type
 
@@ -63,6 +63,10 @@ class AdvanceBlock(StrEnum):
 
     NONE = ""
     NO_NEXT_STEP = "no_next_step"
+    IFOOD_CANCELLATION_PENDING = "ifood_cancellation_pending"
+    IFOOD_SCHEDULE_BLOCKED = "ifood_schedule_blocked"
+    IFOOD_WAITING_PICKUP = "ifood_waiting_pickup"
+    IFOOD_DELIVERY_UNKNOWN = "ifood_delivery_unknown"
     PAYMENT_NOT_CAPTURED = "payment_not_captured"
     DEVICE_UNAVAILABLE = "device_unavailable"
     # Encomenda para data futura: não dá pra iniciar o preparo antes do dia
@@ -77,7 +81,11 @@ class AdvanceBlock(StrEnum):
 
 
 _ADVANCE_BLOCK_MESSAGES: dict[AdvanceBlock, str] = {
+    AdvanceBlock.IFOOD_SCHEDULE_BLOCKED: "O horário de preparo do iFood ainda não permite avançar. Confira o agendamento deste pedido.",
+    AdvanceBlock.IFOOD_WAITING_PICKUP: "Aguardando o iFood confirmar a retirada pelo entregador.",
+    AdvanceBlock.IFOOD_DELIVERY_UNKNOWN: "O iFood não informou o responsável pela entrega. Confira a integração antes de despachar.",
     AdvanceBlock.DEVICE_UNAVAILABLE: "Nenhuma maquininha está disponível. Aguarde a devolução para despachar esta entrega.",
+    AdvanceBlock.IFOOD_CANCELLATION_PENDING: "Cancelamento solicitado ao iFood. Aguardando confirmação.",
     AdvanceBlock.NO_NEXT_STEP: "Pedido não possui próxima etapa",
     # A frase serve os três degraus que o gate cobre (preparo, despacho e
     # entrega no balcão), então não fala de "preparo": o mesmo bloqueio aparece
@@ -140,6 +148,8 @@ def confirm_order(order: Order, *, actor: str, expected_revision: str | None = N
                 "Pedido não está mais aguardando confirmação "
                 f"(status atual: {locked.get_status_display()})."
             )
+        if ifood_cancellation.is_pending(locked):
+            raise OrderStateConflict("Cancelamento solicitado ao iFood. Aguardando confirmação.")
         payment_service.lock_order_payment(locked)
         ensure_payment_captured(locked)
         ensure_confirmable(locked)
@@ -223,7 +233,8 @@ def reject_order(
         )
         from shopman.shop.services import notification
 
-        notification.send(locked, "order_rejected", reason=reason, rejected_by=rejected_by)
+        if locked.status == Order.Status.CANCELLED:
+            notification.send(locked, "order_rejected", reason=reason, rejected_by=rejected_by)
     logger.info("operator_reject order=%s reason=%s", order.ref, reason)
 
 
@@ -246,6 +257,8 @@ def advance_block(order: Order, *, waitlist_state: str | None = None, payment_re
     régua que a expedição do KDS consulta. Antes o pix/link não capturado era
     barrado no primeiro degrau e depois avançava à mão até ``DISPATCHED``.
     """
+    if ifood_cancellation.is_pending(order):
+        return AdvanceBlock.IFOOD_CANCELLATION_PENDING
     next_status = next_status_for(order)
     if not next_status:
         return AdvanceBlock.NO_NEXT_STEP
@@ -253,6 +266,19 @@ def advance_block(order: Order, *, waitlist_state: str | None = None, payment_re
         order, current_status=order.status, target_status=next_status, payment_reads=payment_reads
     ):
         return AdvanceBlock.PAYMENT_NOT_CAPTURED
+    if order.channel_ref == "ifood":
+        from shopman.shop.services import ifood_schedule
+
+        if ifood_schedule.block_reason(order):
+            return AdvanceBlock.IFOOD_SCHEDULE_BLOCKED
+        if next_status == Order.Status.DISPATCHED and not str(order.external_ref or "").upper().startswith("IFOOD-SIM-"):
+            facts = (order.data or {}).get("ifood") or {}
+            if not facts.get("remote_dispatched"):
+                delivered_by = str(facts.get("delivered_by") or "").upper()
+                if delivered_by == "IFOOD":
+                    return AdvanceBlock.IFOOD_WAITING_PICKUP
+                if delivered_by != "MERCHANT":
+                    return AdvanceBlock.IFOOD_DELIVERY_UNKNOWN
     if next_status == Order.Status.DISPATCHED:
         from shopman.shop.adapters import delivery_devices
 
@@ -647,7 +673,7 @@ def cancel_order(
     customer gets the plain cancellation message.
 
     Returns:
-        True se cancelou; False quando a máquina de estados recusou a transição.
+        True se cancelou ou persistiu solicitação iFood; False se a transição foi recusada.
     """
     reason_identity = prepared_identity if prepared_identity is not None else _validate_operator_cancellation_code(order, cancellation_code)
     extra_data: dict[str, str] = {}
@@ -699,7 +725,7 @@ def settle_delivery_cash(
     equipment_back: bool = False,
     expected_revision: str | None = None,
 ) -> int:
-    """O dinheiro da entrega chega ao balcão: acerto no turno de quem RECEBEU.
+    """O pagamento no hand-off chega ao balcão: acerto no turno de quem RECEBEU.
 
     Três registros, na mesma transação, cada um na sua casa:
     - o pedido diz que foi acertado (``cod_settled_at/by``, tender recebido);
@@ -737,19 +763,37 @@ def settle_delivery_cash(
     if expected_revision is not None and cash_settlement_revision(order, cash_shift) != expected_revision:
         raise OrderStateConflict("O pedido ou turno de recebimento mudou. Confira o acerto antes de registrar.")
 
-    if get_fulfillment_type(order) != "delivery":
-        raise ValueError("Acerto de entrega só se aplica a pedidos delivery.")
-    if order.status not in {Order.Status.DISPATCHED, Order.Status.DELIVERED, Order.Status.COMPLETED}:
-        raise ValueError("Acerto de entrega só é permitido depois da saída para entrega.")
+    fulfillment_type = get_fulfillment_type(order)
+    if fulfillment_type not in {"delivery", "pickup"}:
+        raise ValueError("Acerto só se aplica a pedidos para entrega ou retirada.")
+    allowed_statuses = (
+        {Order.Status.DISPATCHED, Order.Status.DELIVERED, Order.Status.COMPLETED}
+        if fulfillment_type == "delivery"
+        else {Order.Status.READY}
+    )
+    if order.status not in allowed_statuses:
+        raise ValueError(
+            "Pagamento na retirada só pode ser registrado quando o pedido estiver pronto."
+            if fulfillment_type == "pickup"
+            else "Acerto de entrega só é permitido depois da saída para entrega."
+        )
     if cash_shift is None or not getattr(cash_shift, "is_open", False):
         raise ValueError("Abra um turno de caixa para registrar o acerto.")
 
     data = dict(order.data or {})
     payment = dict(data.get("payment") or {})
     if payment.get("collection") != "on_delivery" or payment.get("method") not in {"cash", "credit", "debit", "mixed"}:
-        raise ValueError("Pedido não está marcado para recebimento na entrega.")
+        raise ValueError(
+            "Pedido não está marcado para pagamento na retirada."
+            if fulfillment_type == "pickup"
+            else "Pedido não está marcado para recebimento na entrega."
+        )
     if payment.get("cod_settled_at"):
-        raise ValueError("Pagamento da entrega já foi acertado.")
+        raise ValueError(
+            "Pagamento da retirada já foi registrado."
+            if fulfillment_type == "pickup"
+            else "Pagamento da entrega já foi acertado."
+        )
 
     amount = int(amount_q if amount_q is not None else order.total_q or 0)
     if amount <= 0:
@@ -955,8 +999,11 @@ def _preorder_not_due(order: Order) -> bool:
     """True quando a encomenda é para uma data FUTURA — preparo abre só no dia."""
     from django.utils import timezone
 
+    from shopman.shop.services import ifood_schedule
     from shopman.shop.services.order_helpers import get_commitment_date
 
+    if ifood_schedule.is_scheduled(order):
+        return not ifood_schedule.is_due(order)
     target = get_commitment_date(order)
     return target is not None and target > timezone.localdate()
 
@@ -1034,6 +1081,8 @@ def confirmation_block_reason(order: Order, *, payment_reads=None, channel_confi
 
     if order.status != Order.Status.NEW:
         return "Pedido não está aguardando confirmação."
+    if ifood_cancellation.is_pending(order):
+        return "Cancelamento solicitado ao iFood. Aguardando confirmação."
     try:
         ensure_payment_captured(order, payment_reads=payment_reads, channel_config=channel_config)
         ensure_confirmable(order, channel_config=channel_config)
@@ -1062,6 +1111,7 @@ def operational_revision(order: Order, *, field: str = "advance") -> str:
             "data": {key: data.get(key) for key in (
                 "payment", "availability_decision", "waitlist", "fulfillment_type",
                 "delivery_method", "delivery_date", "commitment_date", "dispatch",
+                "ifood_cancellation_request", "ifood",
             )},
         }
     else:

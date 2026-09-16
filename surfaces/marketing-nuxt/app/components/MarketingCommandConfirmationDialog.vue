@@ -53,8 +53,12 @@ const title = computed(() => {
   if (!props.command) return "Confirmar decisão";
   if (props.command.action === "fire") return "Confirmar este disparo?";
   if (props.command.action === "reject") return "Recusar este anúncio?";
-  return props.command.body.publish_mode === "scheduled"
-    ? "Confirmar este agendamento?"
+  if (props.command.body.publish_mode === "scheduled")
+    return "Confirmar este agendamento?";
+  if (includesDirectMessages.value && publicPlatforms.value.length)
+    return "Confirmar esta entrega agora?";
+  return includesDirectMessages.value
+    ? "Confirmar envio agora?"
     : "Confirmar publicação agora?";
 });
 
@@ -91,12 +95,13 @@ function submit() {
         <UiDialogTitle>{{ title }}</UiDialogTitle>
         <UiDialogDescription>
           <template v-if="isFire">
-            O servidor congelou esta versão e calculou o público abaixo. A confirmação
-            cria somente um anúncio para revisão; nada será publicado agora.
+            O servidor congelou esta versão e calculou o público abaixo. A
+            confirmação cria somente um anúncio para revisão; nenhuma publicação
+            ou mensagem será enviada agora.
           </template>
           <template v-else>
-            O servidor congelou esta versão e calculou a consequência abaixo. Nada
-            é publicado até a confirmação final.
+            O servidor congelou esta versão e calculou a consequência abaixo.
+            Nada será publicado ou enviado até a confirmação final.
           </template>
         </UiDialogDescription>
       </UiDialogHeader>
@@ -132,7 +137,12 @@ function submit() {
             </dd>
           </div>
           <div
-            v-if="isFire && command && 'productLabel' in command && command.productLabel"
+            v-if="
+              isFire &&
+              command &&
+              'productLabel' in command &&
+              command.productLabel
+            "
             class="sm:col-span-2"
           >
             <dt class="text-xs text-muted-foreground">Produto</dt>
@@ -152,15 +162,18 @@ function submit() {
           aria-label="Forma de entrega por plataforma"
         >
           <li v-if="publicPlatforms.length">
-            <strong>{{
-              publicPlatforms.map(platformResultLabel).join(", ")
-            }}:</strong>
-            uma publicação pública por plataforma; não envia DM por pessoa.
+            <strong
+              >{{
+                publicPlatforms.map(platformResultLabel).join(", ")
+              }}:</strong
+            >
+            uma postagem pública por plataforma; não envia mensagem direta por
+            pessoa.
           </li>
           <li v-if="includesDirectMessages">
             <strong>WhatsApp:</strong>
-            mensagem direta para as pessoas elegíveis, com consentimento revalidado
-            no envio.
+            mensagem direta para as pessoas elegíveis, com consentimento
+            revalidado no envio.
           </li>
         </ul>
 
@@ -199,7 +212,10 @@ function submit() {
 
         <div v-if="challenge.step_up !== 'none'">
           <div v-if="challenge.step_up === 'password'" class="mb-3">
-            <label for="decision-username" class="block text-xs font-medium text-muted-foreground">
+            <label
+              for="decision-username"
+              class="block text-xs font-medium text-muted-foreground"
+            >
               Usuário
             </label>
             <UiInput
@@ -220,7 +236,10 @@ function submit() {
             @keydown.enter="submit"
           />
           <template v-else>
-            <label for="decision-credential" class="block text-xs font-medium text-muted-foreground">
+            <label
+              for="decision-credential"
+              class="block text-xs font-medium text-muted-foreground"
+            >
               Sua senha
             </label>
             <UiInput
@@ -248,14 +267,16 @@ function submit() {
           :disabled="busy"
           @click="emit('cancel')"
         >
-          {{ isFire ? "Voltar sem criar" : "Voltar sem publicar" }}
+          {{ isFire ? "Voltar sem criar" : "Voltar sem confirmar" }}
         </UiButton>
-        <UiButton
-          type="button"
-          :disabled="!ready"
-          @click="submit"
-        >
-          {{ busy ? "Registrando…" : isFire ? "Criar para revisão" : "Confirmar consequência" }}
+        <UiButton type="button" :disabled="!ready" @click="submit">
+          {{
+            busy
+              ? "Registrando…"
+              : isFire
+                ? "Criar para revisão"
+                : "Confirmar consequência"
+          }}
         </UiButton>
       </UiDialogFooter>
     </UiDialogContent>

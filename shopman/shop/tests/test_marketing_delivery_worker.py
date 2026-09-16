@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from io import StringIO
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
@@ -16,7 +17,7 @@ from shopman.guestman.contrib.consent.models import (
     ConsentProofStatus,
 )
 
-from shopman.shop.models import DeliveryTarget
+from shopman.shop.models import DeliveryAttempt, DeliveryTarget
 from shopman.shop.services import marketing_delivery_attempts as attempt_service
 from shopman.shop.services import marketing_delivery_worker as worker_service
 from shopman.shop.services.marketing_contracts import (
@@ -52,6 +53,30 @@ class CountingAcceptedProvider:
             retryable=False,
             provider_receipt_ref=f"fake_claim_{self.calls}",
         )
+
+
+def test_row_lock_targets_only_the_base_table_when_backend_supports_of(monkeypatch):
+    class QueryProbe:
+        kwargs = None
+
+        def select_for_update(self, **kwargs):
+            self.kwargs = kwargs
+            return self
+
+    query = QueryProbe()
+    monkeypatch.setattr(
+        worker_service.connection.features,
+        "has_select_for_update_of",
+        True,
+    )
+    monkeypatch.setattr(
+        worker_service.connection.features,
+        "has_select_for_update_skip_locked",
+        True,
+    )
+
+    assert worker_service._select_for_update(query) is query
+    assert query.kwargs == {"of": ("self",), "skip_locked": True}
 
 
 def _fanout_whatsapp(*, suffix: str, count: int, opted_in: bool = False):
@@ -358,7 +383,7 @@ def test_revoked_specific_subscription_is_suppressed_before_claim():
         count=1,
     )
     customer = members[0].customer
-    subscription = stock_alerts.subscribe("SKU-WORKER", customer=customer)
+    subscription = stock_alerts.subscribe("SKU-WORKER", customer=customer, adult_declared=True)
     member = members[0]
     member.subscription_ref = subscription.ref
     member.reasons = ["alerts"]
@@ -379,6 +404,223 @@ def test_revoked_specific_subscription_is_suppressed_before_claim():
     assert report.suppressed == 1
     assert target.state == DeliveryTarget.State.SUPPRESSED
     assert target.last_error_code == "subscription_inactive"
+
+
+def test_general_direct_message_without_canonical_adult_proof_is_suppressed_at_claim():
+    outbox, members, _report = _fanout_whatsapp(
+        suffix="claim-age-not-verified",
+        count=1,
+        opted_in=True,
+    )
+    customer = members[0].customer
+    customer.birthday = None
+    customer.save(update_fields=["birthday"])
+    _queue_all(outbox)
+
+    report = claim_due_targets(
+        worker_id="worker-age-not-verified",
+        now=_next_allowed_time(),
+    )
+
+    target = DeliveryTarget.objects.get(outbox=outbox)
+    assert report.targets == ()
+    assert report.suppressed == 1
+    assert target.state == DeliveryTarget.State.SUPPRESSED
+    assert target.last_error_code == "recipient_age_not_verified"
+
+
+def test_legacy_claim_is_stopped_if_birthday_disappears_before_provider():
+    outbox, members, _report = _fanout_whatsapp(
+        suffix="provider-age-removed",
+        count=1,
+        opted_in=True,
+    )
+    _queue_all(outbox)
+    claim = claim_due_targets(
+        worker_id="worker-provider-age-removed",
+        now=_next_allowed_time(),
+    )
+    target = claim.targets[0]
+    members[0].customer.birthday = None
+    members[0].customer.save(update_fields=["birthday"])
+    provider = CountingAcceptedProvider()
+    artifact = _artifact("whatsapp")
+
+    result = execute_target(
+        target.ref,
+        provider=provider,
+        artifact=artifact,
+        idempotency_token="age-removed-token-0001",
+        request_hash=artifact.artifact_hash,
+        worker_id="worker-provider-age-removed",
+        now=target.lease_until - timedelta(seconds=1),
+    )
+
+    target.refresh_from_db()
+    attempt = DeliveryAttempt.objects.get(target=target)
+    assert provider.calls == 0
+    assert result.provider_called is False
+    assert target.state == DeliveryTarget.State.SUPPRESSED
+    assert attempt.outcome_kind == ProviderOutcomeKind.NOT_ATTEMPTED
+    assert attempt.error_code == "recipient_age_not_verified"
+
+
+def test_alert_declaration_never_overrides_minor_birthday_added_after_claim():
+    outbox, members, _report = _fanout_whatsapp(
+        suffix="provider-alert-minor",
+        count=1,
+    )
+    customer = members[0].customer
+    subscription = stock_alerts.subscribe(
+        "SKU-WORKER-AGE",
+        customer=customer,
+        adult_declared=True,
+    )
+    member = members[0]
+    member.subscription_ref = subscription.ref
+    member.reasons = ["alerts"]
+    member.save(update_fields=["subscription_ref", "reasons"])
+    _queue_all(outbox)
+    claim = claim_due_targets(
+        worker_id="worker-provider-alert-minor",
+        now=_next_allowed_time(),
+    )
+    target = claim.targets[0]
+    today = timezone.localdate()
+    customer.birthday = today.replace(year=today.year - 17)
+    customer.save(update_fields=["birthday"])
+    provider = CountingAcceptedProvider()
+    artifact = _artifact("whatsapp")
+
+    result = execute_target(
+        target.ref,
+        provider=provider,
+        artifact=artifact,
+        idempotency_token="alert-minor-token-0001",
+        request_hash=artifact.artifact_hash,
+        worker_id="worker-provider-alert-minor",
+        now=target.lease_until - timedelta(seconds=1),
+    )
+
+    target.refresh_from_db()
+    assert provider.calls == 0
+    assert result.provider_called is False
+    assert target.state == DeliveryTarget.State.SUPPRESSED
+
+
+def test_age_source_failure_before_provider_is_retryable_without_effect(monkeypatch):
+    outbox, _members, _report = _fanout_whatsapp(
+        suffix="provider-age-source-failure",
+        count=1,
+        opted_in=True,
+    )
+    _queue_all(outbox)
+    claim = claim_due_targets(
+        worker_id="worker-provider-age-source-failure",
+        now=_next_allowed_time(),
+    )
+    target = claim.targets[0]
+    first_call_at = target.lease_until - timedelta(seconds=1)
+    monkeypatch.setattr(
+        "shopman.shop.services.marketing_age.canonical_birthday_for_customer_id",
+        lambda _customer_id: (_ for _ in ()).throw(RuntimeError("database unavailable")),
+    )
+    provider = CountingAcceptedProvider()
+    artifact = _artifact("whatsapp")
+
+    with pytest.raises(MarketingContractError) as caught:
+        execute_target(
+            target.ref,
+            provider=provider,
+            artifact=artifact,
+            idempotency_token="age-source-fail-token-0001",
+            request_hash=artifact.artifact_hash,
+            worker_id="worker-provider-age-source-failure",
+            now=first_call_at,
+        )
+
+    target.refresh_from_db()
+    assert caught.value.code == "recipient_age_source_unavailable"
+    assert caught.value.retryable is True
+    assert provider.calls == 0
+    assert target.state == DeliveryTarget.State.QUEUED
+    assert target.lease_owner == ""
+    assert target.lease_until is None
+    assert target.next_attempt_at == first_call_at + timedelta(seconds=30)
+    assert target.settled_at is None
+
+    # A recovered canonical source permits a fresh claim and a new attempt;
+    # the failed lookup never consumed or duplicated the provider effect.
+    monkeypatch.undo()
+    retry = claim_due_targets(
+        worker_id="worker-provider-age-source-retry",
+        now=target.next_attempt_at,
+    )
+    retried_target = retry.targets[0]
+    result = execute_target(
+        retried_target.ref,
+        provider=provider,
+        artifact=artifact,
+        idempotency_token="age-source-retry-token-0002",
+        request_hash=artifact.artifact_hash,
+        worker_id="worker-provider-age-source-retry",
+        now=target.next_attempt_at,
+    )
+    assert provider.calls == 1
+    assert result.target.state == DeliveryTarget.State.ACCEPTED
+
+
+def test_delivery_command_reports_terminal_age_guard_as_not_attempted():
+    from shopman.shop.management.commands.process_marketing_delivery import Command
+
+    outbox, _members, _report = _fanout_whatsapp(
+        suffix="command-terminal-age-guard",
+        count=1,
+        opted_in=True,
+    )
+    _queue_all(outbox)
+    provider = CountingAcceptedProvider()
+    output = StringIO()
+    command = Command(stdout=output)
+    allowed_now = _next_allowed_time()
+
+    with (
+        patch(
+            "shopman.shop.services.marketing_age.canonical_birthday_for_customer_id",
+            return_value=None,
+        ),
+        patch(
+            "shopman.shop.services.marketing_delivery_runtime.delivery_provider",
+            side_effect=lambda platform: provider if platform == "whatsapp" else None,
+        ),
+        patch(
+            "shopman.shop.management.commands.process_marketing_delivery.timezone.now",
+            return_value=allowed_now,
+        ),
+        patch(
+            "shopman.shop.services.marketing_observability.record_delivery_execution"
+        ) as observe,
+    ):
+        active = command._cycle(
+            worker_id="worker-command-terminal-age-guard",
+            limit=10,
+            lease_seconds=60,
+            with_outbox=False,
+            with_reconciliation=False,
+            force=True,
+        )
+
+    target = DeliveryTarget.objects.get(outbox=outbox)
+    attempt = DeliveryAttempt.objects.get(target=target)
+    assert active is True
+    assert provider.calls == 0
+    assert target.state == DeliveryTarget.State.SUPPRESSED
+    assert target.last_error_code == "recipient_age_not_verified"
+    assert attempt.outcome_kind == ProviderOutcomeKind.NOT_ATTEMPTED
+    assert "outcomes=not_attempted=1" in output.getvalue()
+    assert "outcomes=deferred" not in output.getvalue()
+    observe.assert_called_once()
+    assert observe.call_args.kwargs["outcome"] == ProviderOutcomeKind.NOT_ATTEMPTED
 
 
 def test_expired_announcement_expires_public_target_before_claim():

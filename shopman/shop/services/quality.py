@@ -14,7 +14,51 @@ from decimal import Decimal
 logger = logging.getLogger(__name__)
 
 
-def effective_partitions(work_orders, *, include_loss: bool = True) -> dict[int, list[dict]]:
+def reviewed_saleable_quantity(work_order_ref: str, *, channel_ref: str) -> Decimal | None:
+    """Return manager-reviewed quantity eligible for the canonical channel policy."""
+    from shopman.craftsman.models import WorkOrder, WorkOrderEvent
+
+    from shopman.shop.projections.channel_policy import resolve_channel_policy
+
+    work_order = WorkOrder.objects.filter(ref=work_order_ref).first()
+    if work_order is None:
+        return None
+    reviewed = WorkOrderEvent.objects.filter(
+        work_order=work_order,
+        kind__in=(
+            WorkOrderEvent.Kind.QUALITY_REVIEWED,
+            WorkOrderEvent.Kind.QUALITY_CORRECTED,
+        ),
+    ).exists()
+    if not reviewed:
+        return None
+
+    allowed = resolve_channel_policy(channel_ref).stock_scope.get(
+        "allowed_quality_grade_refs"
+    )
+    allowed_refs = None if allowed is None else set(allowed)
+    return sum(
+        (
+            Decimal(str(group.get("quantity") or "0"))
+            for group in effective_partition(work_order, include_loss=False)
+            if allowed_refs is None
+            or str(group.get("quality_grade_ref") or default_grade_ref())
+            in allowed_refs
+        ),
+        Decimal("0"),
+    )
+
+
+class EffectiveQualityPartitionError(RuntimeError):
+    """Canonical QC projection could not be read reliably."""
+
+
+def effective_partitions(
+    work_orders,
+    *,
+    include_loss: bool = True,
+    strict: bool = False,
+) -> dict[int, list[dict]]:
     """Return the latest effective QC partition for several work orders.
 
     The closing :class:`WorkOrderItem` rows remain the original production
@@ -123,12 +167,14 @@ def effective_partitions(work_orders, *, include_loss: bool = True) -> dict[int,
                 )
             result[work_order_id] = groups
         return result
-    except Exception:
+    except Exception as exc:
         logger.debug(
             "quality.effective_partitions_lookup_failed work_orders=%r",
             work_order_ids,
             exc_info=True,
         )
+        if strict:
+            raise EffectiveQualityPartitionError("effective quality partition unavailable") from exc
         return {work_order_id: [] for work_order_id in work_order_ids}
 
 

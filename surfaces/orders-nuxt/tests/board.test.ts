@@ -19,7 +19,8 @@ import {
   matchesChannel,
   matchesFulfillment,
   matchesQuery,
-  newOrderPush,
+  newlyTreatableOrderRefs,
+  treatableOrderRefs,
   nextSort,
   preorderGroups,
   resolveShortcut,
@@ -61,6 +62,10 @@ const card = (over: Partial<OrderCardProjection> = {}): OrderCardProjection => (
   next_action_label: "Iniciar preparo",
   payment_method: "cash",
   payment_method_label: "Dinheiro",
+    ifood_cancellation_notice: "",
+    ifood_payment_summary: [],
+    ifood_operation_summary: [],
+    ifood_negotiations: [],
   payment_status: "pending",
   payment_pending: true,
   can_settle_delivery_cash: false,
@@ -149,8 +154,11 @@ describe("zonesView", () => {
     expedition_delivery_count: 2,
     expedition_count: 3,
     total_count: 6,
+    service_day: "2026-09-16",
+    service_day_ends_at: "2026-09-17T00:00:00-03:00",
     preorders: [],
     preorders_count: 0,
+    ifood_negotiation_orders: [],
   });
 
   it("groups the two-zone queue into three columns with merged Saída", () => {
@@ -197,8 +205,10 @@ describe("cardAffordances", () => {
     expect(refs).toEqual(["advance"]);
   });
   it("adds settle_cash when delivery cash is collectable", () => {
-    const refs = cardAffordances(card({ can_settle_delivery_cash: true })).map((a) => a.ref);
-    expect(refs).toContain("settle_cash");
+    const pickup = cardAffordances(card({ can_settle_delivery_cash: true })).find((a) => a.ref === "settle_cash");
+    const delivery = cardAffordances(card({ can_settle_delivery_cash: true, fulfillment_type: "delivery" })).find((a) => a.ref === "settle_cash");
+    expect(pickup?.label).toBe("Receber na retirada");
+    expect(delivery?.label).toBe("Acertar entrega");
   });
 });
 
@@ -461,24 +471,48 @@ describe("realtimeIndicator — honestidade do tempo-real", () => {
   });
 });
 
-describe("newOrderPush — só pedido NOVO dispara o aviso", () => {
-  it("kind 'created' devolve o ref do pedido", () => {
-    expect(newOrderPush(JSON.stringify({ ref: "WEB-9", status: "new", kind: "created" }))).toBe("WEB-9");
+describe("aviso de pedido tratável — nasce da projection canônica", () => {
+  const queue = (cards: OrderCardProjection[]): TwoZoneQueueProjection => ({
+    intake: cards,
+    preparing_count: 0,
+    prep: [],
+    expedition_pickup: [],
+    expedition_delivery: [],
+    expedition_delivery_transit: [],
+    expedition_delivery_count: 0,
+    expedition_count: 0,
+    total_count: cards.length,
+    service_day: "2026-09-16",
+    service_day_ends_at: "2026-09-17T00:00:00-03:00",
+    preorders: [],
+    preorders_count: 0,
+    ifood_negotiation_orders: [],
   });
 
-  it("'created' sem ref ainda é pedido novo (ref vazio, aviso genérico)", () => {
-    expect(newOrderPush(JSON.stringify({ kind: "created" }))).toBe("");
+  it("pedido bloqueado por pagamento não é tratável", () => {
+    const waiting = card({ ref: "PIX-1", can_confirm: false, can_advance: false, payment_pending: true });
+    expect([...treatableOrderRefs(queue([waiting]))]).toEqual([]);
   });
 
-  it("mudança de status NÃO é pedido novo — o som não pode gritar em transição", () => {
-    expect(newOrderPush(JSON.stringify({ ref: "WEB-9", status: "ready", kind: "status_changed" }))).toBeNull();
+  it("avisa quando o refresh mostra que o pagamento liberou a ação", () => {
+    const before = queue([card({ ref: "PIX-1", can_confirm: false, can_advance: false })]);
+    const after = queue([card({ ref: "PIX-1", can_confirm: false, can_advance: true })]);
+    expect(newlyTreatableOrderRefs(before, after)).toEqual(["PIX-1"]);
   });
 
-  it("payload imparseável/vazio degrada em silêncio (null)", () => {
-    expect(newOrderPush("not-json")).toBeNull();
-    expect(newOrderPush(undefined)).toBeNull();
-    expect(newOrderPush("")).toBeNull();
-    expect(newOrderPush(JSON.stringify({ ref: "WEB-9" }))).toBeNull();
+  it("created sem mudança real de tratabilidade não produz aviso", () => {
+    const before = queue([card({ ref: "PIX-1", can_confirm: false, can_advance: false })]);
+    const after = queue([card({ ref: "PIX-1", can_confirm: false, can_advance: false })]);
+    expect(newlyTreatableOrderRefs(before, after)).toEqual([]);
+  });
+
+  it("encomenda futura não toca agora e toca quando entra no fluxo do dia", () => {
+    const scheduled = card({ ref: "PRE-1", can_confirm: true, can_advance: true, is_preorder: true });
+    const before = { ...queue([]), preorders: [scheduled], preorders_count: 1, total_count: 1 };
+    expect([...treatableOrderRefs(before)]).toEqual([]);
+
+    const due = { ...queue([card({ ...scheduled, is_preorder: false })]), total_count: 1 };
+    expect(newlyTreatableOrderRefs(before, due)).toEqual(["PRE-1"]);
   });
 });
 

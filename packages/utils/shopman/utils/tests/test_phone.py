@@ -160,3 +160,15 @@ class TestIsValidPhone:
 
     def test_too_short(self):
         assert is_valid_phone("123") is False
+
+
+def test_user_input_does_not_inherit_legacy_integration_repair():
+    from shopman.utils.phone import normalize_phone, normalize_user_phone
+
+    for value in ["(43) 9840-4900", "+554398404900", "554398404900", "04398404900"]:
+        assert normalize_user_phone(value) == ""
+        assert normalize_phone(value) == "+5543998404900"
+    for value, expected in [("(43) 98404-9009", "+5543984049009"),
+                            ("(43) 3323-1997", "+554333231997"),
+                            ("+14155551234", "+14155551234")]:
+        assert normalize_user_phone(value) == expected

@@ -1,13 +1,9 @@
 """Exclusão de conta que falha pela metade não pode se declarar concluída.
 
-`anonymize_customer` roda sete etapas independentes, cada uma com seu
-`try/except`. A estrutura está certa: uma falha não pode impedir as outras de
-apagarem o que conseguem — quanto mais sair, melhor.
-
-O erro era o que vinha depois: a função voltava sem dizer nada, e a API
-respondia `{"ok": true}`. O titular ouvia que seus dados tinham sido apagados
-enquanto parte deles seguia no banco. Numa obrigação de LGPD, é a pior resposta
-possível — pior que o erro, porque fecha o assunto.
+`anonymize_customer` tenta todas as etapas para diagnosticar o escopo inteiro,
+mas fecha numa única transação. Se uma delas falhar, nenhuma meia-exclusão é
+persistida e o coordenador externo grava o recibo de falha e alerta a operação
+depois do rollback.
 """
 
 from __future__ import annotations
@@ -45,8 +41,8 @@ def test_uma_etapa_que_falha_impede_o_sucesso_e_nomeia_a_etapa(cliente):
 
 
 @pytest.mark.django_db
-def test_as_OUTRAS_etapas_rodam_mesmo_assim(cliente):
-    """A falha de uma não aborta as demais — apagar o que dá continua sendo o certo."""
+def test_falha_reverte_todas_as_etapas(cliente):
+    """O titular nunca fica num limbo de conta parcialmente apagada."""
     with patch(
         "shopman.guestman.services.customer.purge_pii",
         side_effect=RuntimeError("banco fora"),
@@ -55,14 +51,14 @@ def test_as_OUTRAS_etapas_rodam_mesmo_assim(cliente):
             anonymize_customer(cliente)
 
     cliente.refresh_from_db()
-    assert cliente.first_name == "Anonimizado"
-    assert cliente.phone == ""
-    assert cliente.is_active is False
+    assert cliente.first_name == "Ana"
+    assert cliente.phone == "+5543999990001"
+    assert cliente.is_active is True
 
 
 @pytest.mark.django_db
-def test_a_operacao_e_avisada_com_severidade_critica(cliente):
-    """Dado de titular que não saiu do banco é obrigação legal em aberto."""
+def test_a_camada_atomica_nao_grava_alerta_que_o_rollback_apagaria(cliente):
+    """O coordenador durável é o único responsável pelo alerta pós-rollback."""
     with patch(
         "shopman.guestman.services.customer.purge_pii",
         side_effect=RuntimeError("banco fora"),
@@ -71,11 +67,7 @@ def test_a_operacao_e_avisada_com_severidade_critica(cliente):
             with pytest.raises(AnonymizationIncomplete):
                 anonymize_customer(cliente)
 
-    assert alerta.called, "ninguém foi avisado de que sobrou dado pessoal no banco"
-    kwargs = alerta.call_args.kwargs
-    assert kwargs["severity"] == "critical"
-    assert kwargs["type"] == "account_deletion_incomplete"
-    assert cliente.ref in kwargs["message"]
+    assert not alerta.called
 
 
 @pytest.mark.django_db

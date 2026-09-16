@@ -198,6 +198,20 @@ def test_link_sale_keeps_the_esteira():
     ).exists()
 
 
+def test_pos_pix_payment_request_waits_for_checkout_payload():
+    """Lifecycle não pode avisar antes de o PDV persistir QR/copia-e-cola."""
+    order = _counter_order(
+        ref="PDV-TEST-PIX-NOTIFY",
+        data_extra={"payment": {"method": "pix", "collection": "terminal", "amount_q": 1000}},
+    )
+
+    lifecycle._on_accepted(order, ChannelConfig.for_channel("pdv"))
+
+    assert not Directive.objects.filter(
+        topic="notification.send", payload__order_ref=order.ref, payload__template="payment_requested"
+    ).exists()
+
+
 def test_customer_holds_the_goods_predicate():
     from shopman.shop.services.kds import _customer_holds_the_goods
 
@@ -215,3 +229,108 @@ def test_customer_holds_the_goods_predicate():
         data_extra={"payment": {"method": "link", "collection": "terminal", "amount_q": 1000}},
     )
     assert _customer_holds_the_goods(link) is False
+
+
+@pytest.mark.parametrize("source", ["data", "snapshot"])
+def test_same_day_order_mode_never_hands_goods_over_implicitly(source):
+    from django.utils import timezone
+
+    from shopman.shop.services.kds import _customer_holds_the_goods
+
+    order = _counter_order(
+        ref=f"PDV-ORDER-{source}",
+        data_extra={"delivery_date": timezone.localdate().isoformat()},
+    )
+    if source == "data":
+        order.data["pos"] = {"sales_mode": "order"}
+        order.save(update_fields=["data"])
+    else:
+        # Este é o contexto disponível durante os callbacks iniciais do commit.
+        Order.objects.filter(pk=order.pk).update(snapshot={**order.snapshot, "data": {"pos": {"sales_mode": "order"}}})
+        order.refresh_from_db()
+    assert _customer_holds_the_goods(order) is False
+    lifecycle._on_accepted(order, ChannelConfig.for_channel("pdv"))
+    order.refresh_from_db()
+    assert order.status == Order.Status.ACCEPTED
+
+
+def test_pos_order_mode_waits_for_human_acceptance_even_on_immediate_channel():
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    order = _counter_order(
+        ref="PDV-ORDER-MANUAL",
+        status=Order.Status.NEW,
+        data_extra={
+            "pos": {"sales_mode": "order"},
+            "delivery_date": (timezone.localdate() + timedelta(days=1)).isoformat(),
+        },
+    )
+
+    lifecycle._handle_confirmation(order, ChannelConfig.for_channel("pdv"))
+
+    order.refresh_from_db()
+    assert order.status == Order.Status.NEW
+
+
+def test_pos_counter_mode_keeps_immediate_confirmation():
+    order = _counter_order(
+        ref="PDV-COUNTER-IMMEDIATE",
+        status=Order.Status.NEW,
+        data_extra={"pos": {"sales_mode": "counter"}},
+    )
+
+    lifecycle._handle_confirmation(order, ChannelConfig.for_channel("pdv"))
+
+    order.refresh_from_db()
+    assert order.status != Order.Status.NEW
+
+
+def test_last_counter_prep_ticket_completes_the_sale_in_kds():
+    from shopman.backstage.models import KDSInstance, KDSTicket
+    from shopman.shop.services.kds import on_all_tickets_done
+
+    order = _counter_order(ref="PDV-KDS-COMPLETE", status=Order.Status.PREPARING)
+    station = KDSInstance.objects.create(ref="prep-counter", name="Preparo", type="prep")
+    KDSTicket.objects.create(
+        session_key=order.session_key,
+        kds_instance=station,
+        items=[{"sku": "LANCHE", "name": "Lanche", "qty": 1, "checked": True}],
+        status="done",
+    )
+
+    assert on_all_tickets_done(order, actor="kds:test") is True
+
+    order.refresh_from_db()
+    assert order.status == Order.Status.COMPLETED
+    assert order.ready_at is not None
+    assert order.completed_at is not None
+    assert list(order.events.values_list("payload__new_status", flat=True))[-2:] == [
+        Order.Status.READY,
+        Order.Status.COMPLETED,
+    ]
+
+
+def test_last_counter_ticket_never_hands_over_unpaid_digital_order():
+    from shopman.backstage.models import KDSInstance, KDSTicket
+    from shopman.shop.services.kds import on_all_tickets_done
+
+    order = _counter_order(
+        ref="PDV-KDS-UNPAID",
+        status=Order.Status.PREPARING,
+        data_extra={"payment": {"method": "pix", "collection": "terminal", "amount_q": 1000}},
+    )
+    station = KDSInstance.objects.create(ref="prep-counter-unpaid", name="Preparo", type="prep")
+    KDSTicket.objects.create(
+        session_key=order.session_key,
+        kds_instance=station,
+        items=[{"sku": "LANCHE", "name": "Lanche", "qty": 1, "checked": True}],
+        status="done",
+    )
+
+    assert on_all_tickets_done(order, actor="kds:test") is True
+
+    order.refresh_from_db()
+    assert order.status == Order.Status.READY
+    assert order.completed_at is None

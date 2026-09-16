@@ -1,0 +1,56 @@
+store
+Loja Sintética
+manage_search
+Search apps and models...
+⌘K
+Clientes
+chevron_right
+chat
+Conversas do WhatsApp
+S
+synthetic-viewer
+unfold_more
+dock_to_right
+arrow_back
+Loja
+chevron_right
+Conversas do concierge
+chevron_right
+Conversa 1 · Cliente Sintético
+history
+Histórico
+Nome do cliente
+Cliente Sintético
+Telefone
+-
+Assinante ManyChat
+synthetic-browser
+Ref do cliente
+-
+Estado
+Com a equipe
+Canal de venda
+whatsapp
+Fornecedor
+ManyChat
+Conta de atendimento
+browser-test
+Canal de atendimento
+WhatsApp
+Sincronização do atendimento
+Não confirmada; atendimento humano preservado
+Motivo do handoff
+Pedido de atendimento
+Handoff em
+-
+Última mensagem do cliente
+11 de Setembro de 2026 às 17:49
+Última resposta
+-
+Transcrição
+Pedido em andamento
+Consumo
+Transcrição
+11/09 20:49:45 MENSAGEM DO CLIENTE Quero falar com alguém.
+11/09 20:49:45 RESPOSTA Pedido registrado. O pagamento ainda precisa ser consultado.ENVIO DESCONHECIDO; NÃO REENVIAR SEM VERIFICAR
+Fechar

@@ -1,0 +1,8 @@
+AUDIT_IMPORTS ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/orderman/shopman/orderman'] ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/guestman/shopman/guestman']
+.......................................................                  [100%]
+=============================== warnings summary ===============================
+shopman/storefront/tests/test_concurrent_checkout.py::ConcurrentPaymentCaptureTests::test_concurrent_capture_idempotent
+  /Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911:0: PytestWarning: Error when trying to teardown test databases: OperationalError('database "test_concierge_tools_consumers" is being accessed by other users\nDETAIL:  There are 4 other sessions using the database.')
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+55 passed, 1 warning in 30.32s

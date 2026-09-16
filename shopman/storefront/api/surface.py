@@ -430,6 +430,7 @@ class OrderReorderView(APIView):
 
         mode = (request.data.get("mode") if hasattr(request, "data") else None) or ""
         mode = str(mode).strip().lower()
+        CartService._get_or_create_session(request)
         cart_has_items = CartService.has_items(request)
 
         if cart_has_items and mode not in {"replace", "append"}:
@@ -443,12 +444,16 @@ class OrderReorderView(APIView):
 
         def execute_reorder() -> tuple[dict, int]:
             if mode == "replace":
-                CartService.clear(request)
+                CartService.clear_items(request)
 
+            before = {line.get("sku"): line.get("qty", 0) for line in _cart_payload(request).get("items", [])}
             skipped = order_service.add_reorder_items(request, order, cart_service=CartService)
+            current = _cart_payload(request)
+            added = [{"sku": str(line["sku"]), "name": line.get("name") or str(line["sku"])} for line in current.get("items", []) if line.get("qty", 0) > before.get(line["sku"], 0)]
             return (
                 {
-                    "ok": True,
+                    "ok": bool(added),
+                    "added": added,
                     "skipped": skipped,
                     "skipped_items": _skipped_reorder_items(skipped),
                     "cart": _cart_payload(request),
@@ -458,7 +463,8 @@ class OrderReorderView(APIView):
 
         try:
             result = remote_mutations.run_idempotent_mutation(
-                scope=f"order-reorder:{ref}",
+                scope=remote_mutations.mutation_scope("web", "order-reorder", _session_scope(request), ref, request.session.get("cart_session_key", "")),
+                payload={"mode": mode}, local_atomic=True,
                 key=key,
                 execute=execute_reorder,
             )
@@ -467,7 +473,7 @@ class OrderReorderView(APIView):
                 {"detail": "Recompra já está em andamento.", "error_code": "mutation_in_progress"},
                 status=status.HTTP_409_CONFLICT,
             )
-        return Response(result.response_body, status=result.response_code)
+        return Response({**result.response_body, "cart": _cart_payload(request), "replayed": result.replayed}, status=result.response_code)
 
 
 @extend_schema_view(
@@ -515,24 +521,6 @@ class OfferClaimView(APIView):
                 retry_after_seconds=REORDER_RATE_LIMIT_RETRY_SECONDS,
             )
 
-        try:
-            promotion = offer_service.get_offer(ref, channel_ref=STOREFRONT_CHANNEL_REF)
-        except offer_service.OfferUnavailable as exc:
-            # 404 e não 400: para quem clicou, "não existe mais" é a informação, e o
-            # texto vem do serviço porque é ele que sabe se venceu, encerrou ou nunca foi.
-            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
-
-        # Oferta sem SKU nomeado vale para tudo, e não existe sacola de "tudo". Dizer
-        # isso é melhor que montar uma sacola errada ou devolver sucesso vazio.
-        if not offer_service.offer_skus(promotion):
-            return Response(
-                {
-                    "detail": "Esta oferta vale para o cardápio todo — escolha o que quiser.",
-                    "error_code": "offer_has_no_items",
-                },
-                status=status.HTTP_409_CONFLICT,
-            )
-
         mode = str((request.data.get("mode") if hasattr(request, "data") else "") or "").strip().lower()
 
         key = remote_mutations.idempotency_key_from_request(
@@ -540,7 +528,35 @@ class OfferClaimView(APIView):
             fallback=f"offer-claim:{ref}:{mode or 'default'}",
         )
 
+        if not request.session.get("cart_session_key"):
+            # No prior cart-scoped receipt can exist; reject an unknown offer
+            # before creating any cart (including an unconfigured storefront).
+            try:
+                offer_service.get_offer(ref, channel_ref=STOREFRONT_CHANNEL_REF)
+            except offer_service.OfferUnavailable as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+
+        CartService._get_or_create_session(request)
+
         def execute_claim() -> tuple[dict, int]:
+            try:
+                promotion = offer_service.get_offer(ref, channel_ref=STOREFRONT_CHANNEL_REF)
+            except offer_service.OfferUnavailable as exc:
+                # 404 e não 400: para quem clicou, "não existe mais" é a informação, e o
+                # texto vem do serviço porque é ele que sabe se venceu, encerrou ou nunca foi.
+                return {"detail": str(exc)}, status.HTTP_404_NOT_FOUND
+
+            # Oferta sem SKU nomeado vale para tudo, e não existe sacola de "tudo". Dizer
+            # isso é melhor que montar uma sacola errada ou devolver sucesso vazio.
+            if not offer_service.offer_skus(promotion):
+                return (
+                    {
+                        "detail": "Esta oferta vale para o cardápio todo — escolha o que quiser.",
+                        "error_code": "offer_has_no_items",
+                    },
+                    status.HTTP_409_CONFLICT,
+                )
+
             # ⚠️ A pergunta "sua sacola já tem itens" mora AQUI, dentro da execução, e não
             # antes dela. Fora, o segundo toque no mesmo link cairia neste 409 em vez de
             # repetir a resposta guardada — e aí a idempotência que a Action promete não
@@ -554,7 +570,7 @@ class OfferClaimView(APIView):
                     status.HTTP_409_CONFLICT,
                 )
             if mode == "replace":
-                CartService.clear(request)
+                CartService.clear_items(request)
             result = offer_service.add_offer_items(
                 request, promotion,
                 cart_service=CartService,
@@ -577,7 +593,9 @@ class OfferClaimView(APIView):
                 # um pedido, privado por natureza; aqui o `ref` é o mesmo para todo mundo
                 # que recebeu a mensagem — um escopo só com ele faria o segundo visitante
                 # receber a resposta guardada do primeiro, sacola dele inclusa.
-                scope=f"offer-claim:{_session_scope(request)}:{ref}",
+                scope=remote_mutations.mutation_scope("web", "offer", _session_scope(request), ref, request.session.get("cart_session_key", "")),
+                payload={"mode": mode}, local_atomic=True,
+                cache_response=lambda body, code: code < 400,
                 key=key,
                 execute=execute_claim,
             )
@@ -586,7 +604,7 @@ class OfferClaimView(APIView):
                 {"detail": "A oferta já está sendo aplicada.", "error_code": "mutation_in_progress"},
                 status=status.HTTP_409_CONFLICT,
             )
-        return Response(outcome.response_body, status=outcome.response_code)
+        return Response({**outcome.response_body, "cart": _cart_payload(request), "replayed": outcome.replayed}, status=outcome.response_code)
 
 
 @extend_schema_view(
@@ -691,16 +709,24 @@ class CheckoutDraftView(APIView):
         from shopman.shop.services import cart as cart_service
 
         data = request.data or {}
-        fulfillment_type = (data.get("fulfillment_type") or "pickup").strip()
-        if fulfillment_type not in {"pickup", "delivery"}:
-            fulfillment_type = "pickup"
+        if not isinstance(data, dict):
+            return Response({"detail": "Dados inválidos."}, status=400)
+        fulfillment_type = data.get("fulfillment_type", "pickup")
+        if not isinstance(fulfillment_type, str) or fulfillment_type not in {"pickup", "delivery"}:
+            return Response({"detail": "Escolha retirada ou entrega.", "field": "fulfillment_type"}, status=400)
 
         structured_raw = data.get("delivery_address_structured") or {}
         structured: dict = {}
+        if not isinstance(structured_raw, dict):
+            return Response({"detail": "Endereço inválido.", "field": "delivery_address_structured"}, status=400)
         if isinstance(structured_raw, dict):
             for field in _DRAFT_ADDRESS_FIELDS:
                 value = structured_raw.get(field)
                 if value not in (None, ""):
+                    import math
+                    valid = (type(value) in (int, float) and math.isfinite(value)) if field in {"latitude", "longitude"} else isinstance(value, str)
+                    if not valid:
+                        return Response({"detail": "Endereço inválido.", "field": "delivery_address_structured"}, status=400)
                     structured[field] = value
 
         session_key = request.session.get("cart_session_key")
@@ -738,7 +764,9 @@ class CheckoutLoyaltyView(APIView):
         from shopman.shop.services import cart as cart_service
 
         data = request.data or {}
-        enabled = bool(data.get("enabled"))
+        if not isinstance(data, dict) or type(data.get("enabled")) is not bool:
+            return Response({"detail": "Informe ligado ou desligado.", "field": "enabled"}, status=400)
+        enabled = data["enabled"]
 
         redeem_q = 0
         if enabled:

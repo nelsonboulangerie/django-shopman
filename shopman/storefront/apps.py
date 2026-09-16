@@ -18,8 +18,10 @@ class StorefrontConfig(AppConfig):
         from shopman.orderman import registry
 
         from shopman.storefront.concierge.handler import ConciergeTurnHandler
+        from shopman.storefront.stock_alert_delivery import StockAlertDeliveryHandler
 
         registry.register_directive_handler(ConciergeTurnHandler())
+        registry.register_directive_handler(StockAlertDeliveryHandler())
 
         # Stock-back alerts: react to Stockman Move arrivals to notify waiters.
         from django.db.models.signals import post_save

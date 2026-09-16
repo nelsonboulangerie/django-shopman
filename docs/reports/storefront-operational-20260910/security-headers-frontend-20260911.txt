@@ -1,0 +1,12 @@
+
+> test
+> vitest run --run --maxWorkers=2
+
+
+ RUN  v4.1.6 /private/tmp/shopman-storefront-execution-20260910/surfaces/storefront-nuxt
+
+
+ Test Files  60 passed (60)
+      Tests  552 passed (552)
+   Start at  09:52:04
+   Duration  11.76s (transform 4.80s, setup 708ms, import 5.54s, tests 7.28s, environment 3.08s)

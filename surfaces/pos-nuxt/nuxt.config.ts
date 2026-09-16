@@ -1,4 +1,5 @@
 import tailwindcss from "@tailwindcss/vite";
+import { definePwaCapability } from "../operator-kit/pwa.config";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 
 export default defineNuxtConfig({
@@ -7,6 +8,15 @@ export default defineNuxtConfig({
 
   compatibilityDate: "2026-05-16",
   devtools: { enabled: false },
+  // O Playwright injeta diretórios por execução para duas suítes no mesmo
+  // checkout nunca disputarem `.nuxt`/`.output`. Sem env, produção e dev
+  // preservam exatamente os caminhos canônicos do Nuxt.
+  buildDir: process.env.NUXT_BUILD_DIR || ".nuxt",
+  nitro: {
+    output: {
+      dir: process.env.NITRO_OUTPUT_DIR || ".output",
+    },
+  },
 
   runtimeConfig: {
     djangoBaseUrl: process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
@@ -30,6 +40,30 @@ export default defineNuxtConfig({
   },
 
   modules: [
+    definePwaCapability({
+      app: "pos",
+      display: "standalone",
+      wakeLock: true,
+      kiosk: false,
+      push: { surfaceRef: "pos", categories: ["order", "system"] },
+      manifest: {
+        name: "PDV",
+        shortName: "PDV",
+        description: "Ponto de venda da Nelson Boulangerie.",
+        themeColor: "#FCF6F1",
+        backgroundColor: "#FCF6F1",
+        orientation: "any",
+        icons: [
+          { src: "/pwa/pwa-192x192.png?v=2", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/pwa/pwa-512x512.png?v=2", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/pwa/maskable-512x512.png?v=2", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        ],
+        shortcuts: [
+          { name: "Venda", shortName: "Venda", url: "/", icon: "/pwa/pwa-192x192.png?v=2" },
+          { name: "Caixa", shortName: "Caixa", url: "/session", icon: "/pwa/pwa-192x192.png?v=2" },
+        ],
+      },
+    }),
     '@nuxtjs/color-mode',
     'motion-v/nuxt',
     '@vueuse/nuxt',
@@ -87,10 +121,9 @@ export default defineNuxtConfig({
     baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
-      title: "Shopman POS",
+      title: "PDV",
       meta: [
         { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-        { name: "theme-color", content: "#fafafa" },
         { name: "robots", content: "noindex, nofollow" },
       ],
     },

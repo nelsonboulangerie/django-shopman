@@ -47,14 +47,11 @@ def test_send_text_declara_o_canal_whatsapp(calls):
 
 
 @override_settings(SHOPMAN_MANYCHAT=MANYCHAT, DEBUG=False)
-def test_send_text_corta_em_4000_caracteres(calls, monkeypatch):
-    warnings: list[str] = []
-    monkeypatch.setattr(adapter.logger, "warning", lambda msg, *args, **kw: warnings.append(msg % args))
+def test_send_text_recusa_bloco_grande_sem_cortar(calls, monkeypatch):
     longo = "a" * 4500
-    assert adapter.send_text(12345, longo) is True
-    _, payload = calls[0]
-    assert len(payload["data"]["content"]["messages"][0]["text"]) == adapter.TEXT_MAX_CHARS == 4000
-    assert any("cortado" in w for w in warnings)
+    assert adapter.send_text(12345, longo) is False
+    assert calls == []
+    assert adapter.send_text_result(12345, longo)["error"] == "block_too_large"
 
 
 @override_settings(SHOPMAN_MANYCHAT=MANYCHAT, DEBUG=False)
@@ -71,8 +68,8 @@ def test_send_text_sem_token_devolve_false(calls):
 
 @override_settings(SHOPMAN_MANYCHAT=MANYCHAT, DEBUG=True, SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG=False,
                    SHOPMAN_ALLOW_EXTERNAL_IN_DEBUG=False)
-def test_send_text_inerte_em_dev_nao_chama_e_devolve_true(calls):
-    assert adapter.send_text("12345", "oi") is True
+def test_send_text_inerte_em_dev_nao_afirma_aceite(calls):
+    assert adapter.send_text("12345", "oi") is False
     assert calls == []
 
 
@@ -94,7 +91,7 @@ def test_set_custom_field_recusa_da_api_devolve_false(monkeypatch):
 @override_settings(SHOPMAN_MANYCHAT=MANYCHAT, DEBUG=True, SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG=False,
                    SHOPMAN_ALLOW_EXTERNAL_IN_DEBUG=False)
 def test_set_custom_field_inerte_em_dev(calls):
-    assert adapter.set_custom_field("777", "concierge_handoff", "1") is True
+    assert adapter.set_custom_field("777", "concierge_handoff", "1") is False
     assert calls == []
 
 

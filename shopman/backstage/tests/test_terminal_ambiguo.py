@@ -96,12 +96,14 @@ def test_a_ambiguidade_vira_409_e_nomeia_o_campo(client, operador, duas_gavetas)
     assert resposta.json()["field"] == "terminal_ref"
 
 
-def test_o_corpo_manda_mais_que_o_cookie(operador, duas_gavetas):
-    """O ref do corpo é AFIRMAÇÃO de quem chama; o cookie é contexto ambiente."""
+def test_o_corpo_sem_vinculo_nao_escolhe_gaveta(operador, duas_gavetas):
+    from rest_framework.exceptions import APIException
+
     from shopman.backstage.api.operations import _terminal_do_pedido
 
-    class _Req:
+    class Request:
         data = {"terminal_ref": "balcao-2"}
-        COOKIES: dict = {}
+        COOKIES = {}
 
-    assert _terminal_do_pedido(_Req()) == "balcao-2"
+    with pytest.raises(APIException):
+        _terminal_do_pedido(Request())

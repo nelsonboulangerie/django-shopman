@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import OrderIFoodNegotiations from "~/components/OrderIFoodNegotiations.vue";
+import OrderIFoodSummary from "~/components/OrderIFoodSummary.vue";
 // Order detail — the operator's full view of one order: items, timeline, kitchen
 // note, fiscal links, and the complete action set. Reads the expanded projection
 // via useOrderDetail; actions POST through the django proxy and reconcile.
@@ -94,7 +96,8 @@ async function saveKitchenNote() {
   }
 }
 const reasonDirty = ref(false);
-const hasUnsavedText = computed(() => notesDirty.value || Boolean(comment.value.trim()) || reasonDirty.value);
+const negotiationDirty = ref(false);
+const hasUnsavedText = computed(() => notesDirty.value || Boolean(comment.value.trim()) || reasonDirty.value || negotiationDirty.value);
 // Session-only drafts: leaving requires an explicit discard while text is dirty.
 onBeforeRouteLeave(() => {
   if (!hasUnsavedText.value) return true;
@@ -308,6 +311,8 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             </span>
           </p>
           <p class="flex items-center gap-2 text-muted-foreground"><Icon name="lucide:wallet" class="size-4" /> {{ order.payment_method_label || "—" }} · {{ order.payment_status_label || "—" }}</p>
+          <OrderIFoodSummary :cancellation-notice="order.ifood_cancellation_notice" :payment-summary="order.ifood_payment_summary" :operation-summary="order.ifood_operation_summary" />
+          <OrderIFoodNegotiations v-if="order.ifood_negotiations?.length" :order-ref="order.ref" :negotiations="order.ifood_negotiations" @refresh="refresh" @dirty-change="negotiationDirty = $event" />
           <!-- Prova de envio do link de pagamento: "Enviando…", "Link enviado
                às 14h32" ou "falhou — reenvie". Lida da última Directive do
                aviso; sem aviso nenhum, a linha não existe. -->
@@ -400,7 +405,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           <Icon name="lucide:clock" class="size-4" /> {{ projectedAction('advance')?.reason }}
         </button>
         <button v-if="order.can_settle_delivery_cash" type="button" :disabled="busy || !settleAction?.enabled" :title="settleAction?.reason" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="openDialog('settle')">
-          <Icon name="lucide:banknote" class="size-4" /> Acertar entrega
+          <Icon name="lucide:banknote" class="size-4" /> {{ order.fulfillment_type === "pickup" ? "Receber na retirada" : "Acertar entrega" }}
         </button>
         <button v-if="order.equipment_back_pending" type="button" :disabled="busy || !projectedAction('equipment-back')?.enabled" :title="projectedAction('equipment-back')?.reason || (projectedAction('equipment-back')?.enabled ? '' : 'Atualize o pedido para conferir esta ação.')" class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="equipmentBack">
           <Icon name="lucide:smartphone-nfc" class="size-4" /> Maquininha voltou
@@ -599,16 +604,16 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
     <!-- reject / cancel: marketplace-aware reason dialog (iFood coded reasons or
          store presets + free text) -->
     <OrderReasonDialog
-      @dirty-change="reasonDirty = $event"
       :open="dialog === 'reject' || dialog === 'cancel'"
       :mode="dialog === 'cancel' ? 'cancel' : 'reject'"
       :loading="reasonsLoading"
       :error="reasonsError"
       :marketplace="order?.channel_ref === 'ifood'"
-      @retry="loadReasons"
       :reasons="reasons"
       :presets="presets"
       :busy="busy"
+      @dirty-change="reasonDirty = $event"
+      @retry="loadReasons"
       @update:open="(v) => { if (!v) dialog = '' }"
       @confirm="submitReason"
     />
@@ -617,8 +622,8 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
     <UiDialog :open="dialog === 'settle'" @update:open="(v) => { if (!v) dialog = '' }">
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
-          <UiDialogTitle>Acerto da entrega</UiDialogTitle>
-          <UiDialogDescription>Confirme após conferir o dinheiro e os comprovantes da maquininha.</UiDialogDescription>
+          <UiDialogTitle>{{ order?.fulfillment_type === "pickup" ? "Pagamento na retirada" : "Acerto da entrega" }}</UiDialogTitle>
+          <UiDialogDescription>{{ order?.fulfillment_type === "pickup" ? "Confirme o recebimento antes de concluir e entregar o pedido ao cliente." : "Confirme após conferir o dinheiro e os comprovantes da maquininha." }}</UiDialogDescription>
         </UiDialogHeader>
         <p class="text-sm text-muted-foreground">{{ settleCustody }}</p>
         <p v-if="settleChanged" role="alert" class="text-sm text-destructive">O pedido ou turno mudou. Confira o contexto atual: {{ settleAction?.confirmation.description }}

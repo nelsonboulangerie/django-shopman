@@ -15,6 +15,13 @@ def _get_ticket(ticket_pk: int):
     return ticket
 
 
+def _ensure_ticket_due(ticket) -> None:
+    try:
+        kds_core.ensure_ticket_due(ticket)
+    except kds_core.FutureWorkBlocked as exc:
+        raise KDSError(str(exc)) from exc
+
+
 def set_ticket_item_checked(*, ticket_pk: int, index: int, checked: bool, actor: str):
     """Marca ou desmarca o item — SEM ler o estado atual antes para decidir.
 
@@ -27,10 +34,15 @@ def set_ticket_item_checked(*, ticket_pk: int, index: int, checked: bool, actor:
     concorrência: a última escrita ganha, e as duas telas convergem para ela.
     """
     ticket = _get_ticket(ticket_pk)
+    _ensure_ticket_due(ticket)
     if not 0 <= index < len(ticket.items):
         raise KDSError("Item não encontrado.")
 
-    if not kds_core.set_ticket_item_checked(ticket, index=index, checked=checked, actor=actor):
+    try:
+        changed = kds_core.set_ticket_item_checked(ticket, index=index, checked=checked, actor=actor)
+    except kds_core.FutureWorkBlocked as exc:
+        raise KDSError(str(exc)) from exc
+    if not changed:
         raise KDSError("Ticket não está aberto.")
     ticket.refresh_from_db()
     return ticket
@@ -38,13 +50,14 @@ def set_ticket_item_checked(*, ticket_pk: int, index: int, checked: bool, actor:
 
 def mark_ticket_done(*, ticket_pk: int, actor: str):
     ticket = _get_ticket(ticket_pk)
+    _ensure_ticket_due(ticket)
     if ticket.status == "done":
         # Replay (duas estações bumpando o mesmo ticket) = sucesso no-op,
         # mesma semântica do replay da expedição.
         return ticket
     try:
         completed = kds_core.complete_ticket(ticket, actor=actor)
-    except kds_core.TicketCompletionBlocked as exc:
+    except (kds_core.TicketCompletionBlocked, kds_core.FutureWorkBlocked) as exc:
         # Gate do lifecycle (pagamento não capturado, pedido não confirmado):
         # a razão real chega ao operador — não é "ticket não está aberto".
         raise KDSError(str(exc)) from exc
@@ -56,7 +69,12 @@ def mark_ticket_done(*, ticket_pk: int, actor: str):
 
 def recall_ticket(*, ticket_pk: int, actor: str):
     ticket = _get_ticket(ticket_pk)
-    if not kds_core.reopen_ticket(ticket, actor=actor):
+    _ensure_ticket_due(ticket)
+    try:
+        reopened = kds_core.reopen_ticket(ticket, actor=actor)
+    except kds_core.FutureWorkBlocked as exc:
+        raise KDSError(str(exc)) from exc
+    if not reopened:
         raise KDSError("Ticket não está concluído.")
     ticket.refresh_from_db()
     return ticket
@@ -64,7 +82,12 @@ def recall_ticket(*, ticket_pk: int, actor: str):
 
 def acknowledge_ticket(*, ticket_pk: int, actor: str):
     ticket = _get_ticket(ticket_pk)
-    if not kds_core.acknowledge_ticket(ticket, actor=actor):
+    _ensure_ticket_due(ticket)
+    try:
+        acknowledged = kds_core.acknowledge_ticket(ticket, actor=actor)
+    except kds_core.FutureWorkBlocked as exc:
+        raise KDSError(str(exc)) from exc
+    if not acknowledged:
         raise KDSError("Ticket não está cancelado.")
     ticket.refresh_from_db()
     return ticket

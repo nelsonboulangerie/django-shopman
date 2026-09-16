@@ -13,6 +13,7 @@ describe('storefront security boundaries', () => {
   it('does not proxy backstage APIs through the public storefront BFF', () => {
     expect(isStorefrontApiPathAllowed('storefront/menu/')).toBe(true)
     expect(isStorefrontApiPathAllowed('auth/session/')).toBe(true)
+    expect(isStorefrontApiPathAllowed('stock-alert/manage/')).toBe(true)
     expect(isStorefrontApiPathAllowed('backstage/orders/')).toBe(false)
     expect(isStorefrontApiPathAllowed('/backstage/kds/')).toBe(false)
   })

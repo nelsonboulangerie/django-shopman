@@ -147,7 +147,18 @@ const d = computed(
          Neutro de propósito: âmbar/vermelho aqui são o semáforo de SLA, e um
          segundo significado na mesma cor apaga os dois. Dinheiro na entrega NÃO
          cai aqui: é venda legítima que se paga na porta. -->
-    <div v-if="blocked" class="mt-auto" data-testid="expedition-blocked">
+    <div v-if="card.is_scheduled" class="mt-auto" data-testid="expedition-scheduled">
+      <button
+        type="button"
+        disabled
+        class="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-md border font-semibold text-muted-foreground opacity-60"
+        :class="d.fin"
+      >
+        <Icon name="lucide:calendar-clock" class="size-4 shrink-0" />
+        Prévia · libera na data
+      </button>
+    </div>
+    <div v-else-if="blocked" class="mt-auto" data-testid="expedition-blocked">
       <button
         type="button"
         disabled

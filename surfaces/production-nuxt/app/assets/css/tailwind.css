@@ -135,6 +135,20 @@
   --gradient-rust: oklch(55.695% 0.19944 34.155);
 }
 
+/* O input de data ocupa visualmente o rótulo inteiro. O foco pertence ao
+   contêiner visível e continua distinguível no modo de cores forçadas. */
+.date-input-hit-area:focus-within {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  .date-input-hit-area:focus-within {
+    outline-color: Highlight;
+    forced-color-adjust: auto;
+  }
+}
+
 
 
 
@@ -225,5 +239,12 @@
   scrollbar-width: none;
   &::-webkit-scrollbar {
     display: none;
+  }
+}
+
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid CanvasText;
+    outline-offset: 2px;
   }
 }

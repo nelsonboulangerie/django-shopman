@@ -125,6 +125,8 @@ def derive_context(context: dict | None) -> dict:
     # que não passa por lá e deixaria o rótulo cru na mensagem.
     ctx.setdefault("courier_tracking_suffix", "")
     ctx.setdefault("pix_suffix", "")
+    ctx.setdefault("management_url", "")
+    ctx.setdefault("management_note", "")
     reason = ctx.get("reason")
     ctx.setdefault("reason_note", f"\n\nMotivo: {reason}" if reason else "")
 
@@ -154,11 +156,22 @@ def render_message(event: str, context: dict, fallback_templates: dict[str, str]
     ctx = derive_context(context)
     _, body = db_template(event)
     if body:
-        return render_template(body, ctx)
+        return _with_stock_alert_management(event, render_template(body, ctx), ctx)
 
     tpl = fallback_templates.get(event)
     if tpl:
-        return render_template(tpl, ctx)
+        return _with_stock_alert_management(event, render_template(tpl, ctx), ctx)
 
     order_ref = ctx.get("order_ref", "")
     return f"Notificação: {event} — Pedido {order_ref}" if order_ref else f"Notificação: {event}"
+
+
+def _with_stock_alert_management(event: str, rendered: str, context: dict) -> str:
+    """Customized DB templates cannot silently omit control of a persistent alert."""
+    if event not in {"stock_arrived", "production_ready"}:
+        return rendered
+    management_url = str(context.get("management_url") or "").strip()
+    if not management_url or management_url in rendered:
+        return rendered
+    note = str(context.get("management_note") or "").strip()
+    return f"{rendered.rstrip()}\n{note}" if note else rendered

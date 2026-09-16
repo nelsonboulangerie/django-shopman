@@ -1,0 +1,12 @@
+AUDIT_IMPORTS ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-release-20260911/packages/orderman/shopman/orderman'] ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-release-20260911/packages/guestman/shopman/guestman']
+....................................ssssssssssssss                       [100%]
+=========================== short test summary info ============================
+SKIPPED [1] shopman/storefront/tests/test_concierge_authority.py:201: Requires independent PostgreSQL connections
+SKIPPED [1] shopman/storefront/tests/test_concierge_commercial_races.py:83: Requires independent PostgreSQL connections
+SKIPPED [1] shopman/storefront/tests/test_concierge_commercial_races.py:119: Requires independent PostgreSQL connections
+SKIPPED [3] shopman/storefront/tests/test_concierge_commercial_races.py:157: Requires independent PostgreSQL connections
+SKIPPED [3] shopman/storefront/tests/test_concierge_commercial_races.py:200: Requires independent PostgreSQL connections
+SKIPPED [2] shopman/storefront/tests/test_concierge_consent_race.py:21: Requires independent PostgreSQL connections
+SKIPPED [2] shopman/storefront/tests/test_concierge_payment_race.py:20: Requires independent PostgreSQL connections
+SKIPPED [1] shopman/storefront/tests/test_concierge_payment_race.py:79: Requires independent PostgreSQL connections
+36 passed, 14 skipped in 14.48s

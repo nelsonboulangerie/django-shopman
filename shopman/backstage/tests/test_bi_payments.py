@@ -103,6 +103,40 @@ def test_closing_and_bi_count_the_same_money(db):
     assert bi == {"cash": totals["cash"], "pix": totals["pix"]} == {"cash": 1000, "pix": 1500}
 
 
+def test_closing_excludes_only_provider_simulated_and_keeps_live_legacy_and_mock(db):
+    from shopman.payman.models import PaymentIntent, PaymentTransaction
+
+    from shopman.backstage.services.closing import _payment_method_totals
+
+    modes = (
+        ("SIM", "pix", 900, "provider_simulated"),
+        ("LIVE", "pix", 1100, "provider_live"),
+        ("LEGACY", "cash", 700, ""),
+        ("MOCK", "pix", 500, ""),
+    )
+    for ref, method, amount_q, mode in modes:
+        intent = PaymentIntent.objects.create(
+            ref=f"PI-CLOSING-{ref}",
+            order_ref=f"ORD-CLOSING-{ref}",
+            method=method,
+            amount_q=amount_q,
+            status=PaymentIntent.Status.CAPTURED,
+            gateway="mock" if ref == "MOCK" else ("" if method == "cash" else "efi"),
+            gateway_data={"confirmation_mode": mode} if mode else {},
+            captured_at=timezone.now(),
+        )
+        PaymentTransaction.objects.create(
+            intent=intent,
+            type=PaymentTransaction.Type.CAPTURE,
+            amount_q=amount_q,
+        )
+
+    totals = _payment_method_totals(timezone.localdate())
+
+    assert totals["pix"] == 1600
+    assert totals["cash"] == 700
+
+
 # ── No explorador ────────────────────────────────────────────────────────────
 
 
@@ -120,6 +154,31 @@ def test_received_by_method_reads_the_order_not_the_closing(db):
     assert {row.key: row.value for row in report.rows} == {"pix": 2000.0, "cash": 800.0}
     assert _labels(report) == {"pix": "PIX", "cash": "Dinheiro"}
     assert report.unit == "q"
+
+
+@pytest.mark.django_db
+def test_payment_received_excludes_provider_simulated_but_keeps_live_and_unmarked():
+    from shopman.orderman.models import Order
+
+    for ref, total_q, mode in (
+        ("PAY-SIM", 900, "provider_simulated"),
+        ("PAY-LIVE", 1100, "provider_live"),
+        ("PAY-LEGACY", 700, ""),
+    ):
+        payment = {"method": "pix"}
+        if mode:
+            payment["confirmation_mode"] = mode
+        Order.objects.create(
+            ref=ref,
+            channel_ref="pdv",
+            status=Order.Status.COMPLETED,
+            total_q=total_q,
+            data={"payment": payment},
+        )
+
+    report = build_bi_explore(metric="payment_received", by="payment_method")
+
+    assert {row.key: row.value for row in report.rows} == {"pix": 1800.0}
 
 
 @pytest.mark.django_db

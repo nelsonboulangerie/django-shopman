@@ -133,4 +133,25 @@ describe("OperatorLogin", () => {
       "lucide:lock-keyhole",
     );
   });
+
+  // Identidade do app no gate: o PNG da família PWA (o mesmo do rail e da Central),
+  // com fallback para o Lucide se a prop faltar ou a imagem falhar.
+  it("com iconSrc mostra o PNG do app; a imagem que falha cai no Lucide", async () => {
+    const wrapper = await mountLogin({
+      icon: "lucide:layout-grid",
+      iconSrc: "/pwa/pwa-64x64.png?v=2",
+    });
+    const roundel = wrapper.get("form > div:first-child");
+    const img = roundel.get("img");
+    expect(img.attributes("src")).toBe("/pwa/pwa-64x64.png?v=2");
+    expect(img.attributes("alt")).toBe("");
+    expect(roundel.findComponent({ name: "Icon" }).exists()).toBe(false);
+
+    await img.trigger("error");
+
+    expect(roundel.find("img").exists()).toBe(false);
+    expect(roundel.getComponent({ name: "Icon" }).attributes("name")).toBe(
+      "lucide:layout-grid",
+    );
+  });
 });

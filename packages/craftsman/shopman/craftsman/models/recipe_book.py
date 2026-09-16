@@ -22,6 +22,7 @@ class RecipeEntry(models.Model):
         BREAD = "bread", _("Pão")
         VIENNOISERIE = "viennoiserie", _("Viennoiserie")
         SWEET_DOUGH = "sweet_dough", _("Massa doce")
+        COOKIE = "cookie", _("Biscoito")
         FILLING = "filling", _("Recheio")
         CREAM = "cream", _("Creme")
         SAUCE = "sauce", _("Molho")

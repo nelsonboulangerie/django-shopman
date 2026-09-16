@@ -113,6 +113,23 @@ class NotificationSendHandler:
                         self._record_skip(fresh, "payment_not_pending")
                         return
 
+                # O PIX pode ser confirmado enquanto esta Directive espera um
+                # worker. A guarda do enqueue não basta: a última leitura antes
+                # do I/O externo precisa observar Payman, cancelamento e
+                # vencimento atuais para nunca enviar uma cobrança obsoleta.
+                if template == notification_svc.PAYMENT_PIX_TEMPLATE:
+                    refusal = notification_svc.payment_notice_refusal(order)
+                    if refusal is not None and refusal.code in {
+                        "payment_notice_already_paid",
+                        "payment_notice_order_cancelled",
+                        "payment_notice_expired",
+                        "payment_link_already_paid",
+                        "payment_link_order_cancelled",
+                        "payment_link_expired",
+                    }:
+                        self._record_skip(fresh, "payment_not_pending")
+                        return
+
                 # Enqueue eligibility can expire while the worker is unavailable. Reuse
                 # the same canonical link guard; do not send an obsolete charge notice.
                 if template == notification_svc.PAYMENT_LINK_TEMPLATE:
@@ -223,6 +240,10 @@ class NotificationSendHandler:
         """Handle system notifications (stock alerts, etc.) — routed to operator."""
         payload = message.payload
         event = payload.get("event", "system")
+        if event == "operator_critical":
+            from shopman.shop.services.critical_alerts import deliver
+
+            return deliver(message)
         context = payload.get("context", {})
 
         # Normalize event → template name (stock.alert.triggered → stock_alert)

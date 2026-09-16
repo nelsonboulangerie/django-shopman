@@ -179,6 +179,14 @@ export function useAlertSound(storageKey: string, options: AlertSoundOptions = {
   const soundBlocked = ref(false);
   /** Há um aviso repetindo agora? A UI usa para oferecer "silenciar". */
   const alerting = ref(false);
+  /** Quantas figuras chegaram de fato ao AudioContext em execução.
+   *
+   * O board usa este contador como recibo: trabalho pendente só vira "visto"
+   * depois de uma reprodução real (ou de um Ciente explícito). Tentar tocar
+   * enquanto o autoplay está bloqueado não é recibo. */
+  const playbackCount = ref(0);
+  /** Há trabalho pedindo som mesmo que o teto de repetições tenha pausado. */
+  let alertPending = false;
 
   let audioCtx: AudioContext | null = null;
   function ensureCtx(): AudioContext | null {
@@ -192,11 +200,18 @@ export function useAlertSound(storageKey: string, options: AlertSoundOptions = {
   }
 
   /** Chamar num gesto do usuário: resume o contexto (política de autoplay). */
-  function primeAudio() {
+  async function primeAudio(): Promise<boolean> {
     const ctx = ensureCtx();
-    if (!ctx) return;
-    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    if (!ctx) return false;
+    if (ctx.state === "suspended") {
+      try {
+        await ctx.resume();
+      } catch {
+        // A política do navegador ainda não liberou o contexto.
+      }
+    }
     soundBlocked.value = soundOn.value && ctx.state !== "running";
+    return ctx.state === "running";
   }
 
   /**
@@ -272,15 +287,15 @@ export function useAlertSound(storageKey: string, options: AlertSoundOptions = {
   }
 
   /** Um aviso: o arpejo inteiro, uma vez. */
-  function beep() {
-    if (!soundOn.value) return;
+  function beep(): boolean {
+    if (!soundOn.value) return false;
     const ctx = ensureCtx();
-    if (!ctx) return;
+    if (!ctx) return false;
     if (ctx.state === "suspended") ctx.resume().catch(() => {});
     if (ctx.state !== "running") {
       // Não conseguimos tocar sem um gesto — sinalize visualmente em vez de falhar mudo.
       soundBlocked.value = true;
-      return;
+      return false;
     }
     soundBlocked.value = false;
     const chain = buildChain(ctx);
@@ -301,16 +316,23 @@ export function useAlertSound(storageKey: string, options: AlertSoundOptions = {
       },
       (end + chain.tail + 1.5) * 1000,
     );
+    playbackCount.value += 1;
+    return true;
   }
 
   let repeatTimer: ReturnType<typeof setInterval> | null = null;
 
-  /** Para o aviso repetido. Idempotente. */
-  function stopAlert() {
+  function stopRepeater() {
     alerting.value = false;
     if (!repeatTimer) return;
     clearInterval(repeatTimer);
     repeatTimer = null;
+  }
+
+  /** Para o aviso e descarta a pendência. Idempotente. */
+  function stopAlert() {
+    alertPending = false;
+    stopRepeater();
   }
 
   /**
@@ -322,15 +344,21 @@ export function useAlertSound(storageKey: string, options: AlertSoundOptions = {
    * diferença entre um pedido atendido e uma pessoa esperando pão que não vem.
    */
   function startAlert() {
+    // Um aviso por vez: o pedido mais novo reinicia a contagem. A pendência,
+    // porém, existe mesmo com som mutado/bloqueado; ativar depois ainda precisa
+    // reproduzir o trabalho não visto.
+    stopRepeater();
+    alertPending = true;
     if (!soundOn.value) return;
-    stopAlert(); // um aviso por vez: o pedido mais novo reinicia a contagem
     beep();
     alerting.value = true;
     let repeats = 0;
     repeatTimer = setInterval(() => {
       repeats += 1;
       if (repeats >= maxRepeats || !soundOn.value) {
-        stopAlert();
+        // Pausa a sirene, mas não transforma tentativa muda em "visto". Um
+        // gesto posterior ou a ação Ativar som ainda pode reproduzir.
+        stopRepeater();
         return;
       }
       beep();
@@ -346,11 +374,27 @@ export function useAlertSound(storageKey: string, options: AlertSoundOptions = {
         // navegação privada/sem storage: a preferência vale só na sessão
       }
     }
-    // Calar o som cala o aviso em curso — senão o gesto de mutar não teria o
-    // efeito que o operador acabou de pedir.
-    stopAlert();
-    primeAudio(); // gesto do usuário — desbloqueia o áudio
-    if (soundOn.value) beep(); // feedback imediato: ligou, ouviu
+    // Calar o som cala a repetição em curso, sem apagar a pendência que o board
+    // ainda não reconheceu como vista.
+    stopRepeater();
+    if (soundOn.value) void activateSound();
+  }
+
+  /** Liga/desbloqueia sem o paradoxo de o botão "Ativar" desligar o som.
+   * Se havia atenção pendente, reproduz a figura dela; caso contrário, toca o
+   * feedback normal de ativação. */
+  async function activateSound(): Promise<boolean> {
+    soundOn.value = true;
+    if (import.meta.client) {
+      try {
+        localStorage.setItem(storageKey, "on");
+      } catch {
+        // navegação privada/sem storage: a preferência vale só na sessão
+      }
+    }
+    const ready = await primeAudio();
+    if (!ready) return false;
+    return beep();
   }
 
   let removeGestureListeners: (() => void) | null = null;
@@ -364,8 +408,11 @@ export function useAlertSound(storageKey: string, options: AlertSoundOptions = {
     // Primeiro gesto na tela destrava o áudio (a política de autoplay exige um)
     // e também acusa presença: quem tocou na tela já foi avisado.
     const onGesture = () => {
-      primeAudio();
-      stopAlert();
+      void primeAudio().then((ready) => {
+        // O primeiro gesto destrava o autoplay. Se a primeira tentativa ficou
+        // muda, reproduz agora; não cala nem marca visto antes disso.
+        if (ready && alertPending) beep();
+      });
     };
     window.addEventListener("pointerdown", onGesture);
     window.addEventListener("keydown", onGesture);
@@ -374,7 +421,7 @@ export function useAlertSound(storageKey: string, options: AlertSoundOptions = {
       window.removeEventListener("keydown", onGesture);
     };
     // Reflete o estado inicial (provável bloqueado até o 1º gesto).
-    primeAudio();
+    void primeAudio();
   });
 
   onBeforeUnmount(() => {
@@ -382,5 +429,16 @@ export function useAlertSound(storageKey: string, options: AlertSoundOptions = {
     if (removeGestureListeners) removeGestureListeners();
   });
 
-  return { soundOn, soundBlocked, alerting, toggleSound, beep, startAlert, stopAlert, primeAudio };
+  return {
+    soundOn,
+    soundBlocked,
+    alerting,
+    playbackCount,
+    toggleSound,
+    activateSound,
+    beep,
+    startAlert,
+    stopAlert,
+    primeAudio,
+  };
 }

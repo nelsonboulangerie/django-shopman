@@ -11,6 +11,69 @@ from shopman.orderman.ids import generate_line_id
 from shopman.utils.monetary import monetary_mult
 from shopman.utils.refs import RefField
 
+ANONYMIZED_HANDLE_TYPE = "anonymized"
+
+# Session.data is intentionally extensible, but these roots carry either the
+# subject identity or free-form personal data.  Once account deletion seals a
+# Session, none of them may be written back by a stale cart/checkout request.
+PERSONAL_SESSION_DATA_ROOTS = frozenset(
+    {
+        "customer",
+        "customer_name",
+        "customer_ref",
+        "customer_phone",
+        "customer_email",
+        "customer_tax_id",
+        "name",
+        "phone",
+        "email",
+        "tax_id",
+        "document",
+        "receipt_email",
+        "recipient_name",
+        "recipient_phone",
+        "delivery_address",
+        "delivery_address_structured",
+        "recipient",
+        "gift_message",
+        "order_notes",
+    }
+)
+PERSONAL_SESSION_EVENT_KEYS = frozenset(
+    {
+        "customer",
+        "customer_name",
+        "customer_ref",
+        "customer_phone",
+        "customer_email",
+        "customer_tax_id",
+        "document",
+        "receipt_email",
+        "recipient_name",
+        "recipient_phone",
+        "delivery_address",
+        "delivery_address_structured",
+        "recipient",
+        "gift_message",
+        "order_notes",
+        "from_ref",
+        "to_ref",
+        "note",
+        "reason",
+        "text",
+        "message",
+    }
+)
+PERSONAL_SESSION_EVENT_NESTED_KEYS = {
+    "receipt": frozenset({"email", "customer_name", "customer_phone"}),
+    "notification_context": frozenset(
+        {"customer_name", "customer_phone", "customer_email", "recipient_name", "recipient_phone"}
+    ),
+    "context": frozenset(
+        {"customer_name", "customer_phone", "customer_email", "recipient_name", "recipient_phone"}
+    ),
+}
+
 # =============================================================================
 # CONVENÇÕES DE VALORES MONETÁRIOS E QUANTIDADES
 # =============================================================================
@@ -186,8 +249,64 @@ class Session(models.Model):
         super().refresh_from_db(*args, **kwargs)
         self.invalidate_items_cache()
 
+    @property
+    def is_anonymized(self) -> bool:
+        return self.handle_type == ANONYMIZED_HANDLE_TYPE
+
+    def assert_accepts_personal_data(self, *roots: str) -> None:
+        """Reject identity/PII writes after account deletion sealed this row."""
+        if self.is_anonymized and PERSONAL_SESSION_DATA_ROOTS.intersection(roots):
+            from shopman.orderman.exceptions import SessionError
+
+            raise SessionError(
+                code="session_anonymized",
+                message="Esta sessão foi anonimizada e não aceita dados pessoais.",
+                context={"session_key": self.session_key},
+            )
+
     def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
+        update_fields = kwargs.get("update_fields")
+        fields = set(update_fields) if update_fields is not None else None
+        privacy_fields = fields is None or bool({"handle_type", "handle_ref", "data"} & fields)
+        if self._state.adding or not privacy_fields:
+            if self.is_anonymized and (fields is None or "data" in fields):
+                self.assert_accepts_personal_data(*(self.data or {}).keys())
+            return super().save(*args, **kwargs)
+
+        # A direct stale instance is a public write boundary too.  The check and
+        # UPDATE must share the row lock; a plain SELECT followed by save() lets
+        # deletion slip between them and restore PII after its scrub.
+        with transaction.atomic():
+            persisted_identity = (
+                type(self).objects.select_for_update()
+                .filter(pk=self.pk)
+                .values_list("handle_type", "handle_ref")
+                .first()
+            )
+            persisted_handle_type, persisted_handle_ref = persisted_identity or (None, None)
+            if persisted_handle_type == ANONYMIZED_HANDLE_TYPE:
+                if (fields is None or "handle_type" in fields) and self.handle_type != ANONYMIZED_HANDLE_TYPE:
+                    from shopman.orderman.exceptions import SessionError
+
+                    raise SessionError(
+                        code="session_anonymized",
+                        message="Uma sessão anonimizada não pode recuperar sua identidade.",
+                        context={"session_key": self.session_key},
+                    )
+                if (fields is None or "handle_ref" in fields) and self.handle_ref != persisted_handle_ref:
+                    from shopman.orderman.exceptions import SessionError
+
+                    raise SessionError(
+                        code="session_anonymized",
+                        message="Uma sessão anonimizada não pode recuperar sua identidade.",
+                        context={"session_key": self.session_key},
+                    )
+                if fields is None or "data" in fields:
+                    self.handle_type = ANONYMIZED_HANDLE_TYPE
+
+            if self.is_anonymized and (fields is None or "data" in fields):
+                self.assert_accepts_personal_data(*(self.data or {}).keys())
+            return super().save(*args, **kwargs)
 
     # ------------------------------------------------------------------ internal
 
@@ -269,16 +388,37 @@ class Session(models.Model):
         same ``session_key``. The model is intentionally opinion-free
         (``type`` is a plain string); the action vocabulary belongs to callers.
         """
+        from shopman.orderman.exceptions import SessionError
+
         from ._sequenced_event import create_sequenced_event
 
-        return create_sequenced_event(
-            model=SessionEvent,
-            scope={"session_key": self.session_key},
-            session_key=self.session_key,
-            type=event_type,
-            actor=actor,
-            payload=payload or {},
-        )
+        event_payload = payload or {}
+        with transaction.atomic():
+            persisted = type(self).objects.select_for_update().get(pk=self.pk)
+            if persisted.is_anonymized:
+                personal = False
+                if isinstance(event_payload, dict):
+                    personal = bool(PERSONAL_SESSION_EVENT_KEYS.intersection(event_payload))
+                    for container, personal_keys in PERSONAL_SESSION_EVENT_NESTED_KEYS.items():
+                        nested = event_payload.get(container)
+                        personal = personal or (
+                            isinstance(nested, dict) and bool(personal_keys.intersection(nested))
+                        )
+                if personal:
+                    raise SessionError(
+                        code="session_anonymized",
+                        message="Esta sessão foi anonimizada e não aceita eventos pessoais.",
+                        context={"session_key": persisted.session_key},
+                    )
+
+            return create_sequenced_event(
+                model=SessionEvent,
+                scope={"session_key": persisted.session_key},
+                session_key=persisted.session_key,
+                type=event_type,
+                actor=actor,
+                payload=event_payload,
+            )
 
 
 class SessionItem(models.Model):

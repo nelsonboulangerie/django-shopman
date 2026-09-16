@@ -26,7 +26,7 @@ COVERED = {"postal_code": "86050-270", "neighborhood": "Centro"}
 
 def _seed(*, exclude_prefix=None):
     shop = J.seed_shop()
-    J.seed_web_channel()
+    J.seed_web_channel(allow_cash=True)
     collection = J.seed_collection()
     J.seed_product(SKU, "Pão", 2500, collection=collection, stock_qty=20)
     J.seed_delivery_zone(shop, match_value="860", fee_q=FEE_Q, name="Londrina 860")

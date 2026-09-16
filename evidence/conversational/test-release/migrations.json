@@ -1,0 +1,43 @@
+{
+  "checks": [
+    {
+      "id": "migrations.committed",
+      "message": "No model changes without migrations.",
+      "status": "passed",
+      "title": "No model change without a migration"
+    },
+    {
+      "id": "migrations.clean_build",
+      "message": "Full migration graph applied on an empty database.",
+      "status": "passed",
+      "title": "Clean schema builds from zero"
+    },
+    {
+      "id": "migrations.graph_consistent",
+      "message": "migrate --check is clean after a full build.",
+      "status": "passed",
+      "title": "Migration graph fully applied"
+    },
+    {
+      "id": "migrations.expand_contract",
+      "message": "pré-go-live: política ADR-015 inativa (tag go-live-v1 ausente).",
+      "status": "skipped",
+      "title": "Destructive migrations carry the expand-contract marker (ADR-015)"
+    },
+    {
+      "details": {
+        "expected": "Set SHOPMAN_MIGRATIONS_BASELINE=/path/to/snapshot once a production baseline exists."
+      },
+      "id": "migrations.baseline_replay",
+      "message": "No baseline snapshot declared yet (pre go-live).",
+      "status": "skipped",
+      "title": "Baseline snapshot replay (go-live)"
+    }
+  ],
+  "counts": {
+    "failed": 0,
+    "passed": 3,
+    "skipped": 2
+  },
+  "status": "passed"
+}

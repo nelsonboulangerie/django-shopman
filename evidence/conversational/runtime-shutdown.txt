@@ -1,0 +1,8 @@
+COMMAND ['redis-cli', '-h', '127.0.0.1', '-p', '56420', 'SHUTDOWN', 'NOSAVE']
+EXIT 0
+
+COMMAND ['pg_ctl', '-D', '/tmp/conversational-implementation-20260911/pg', '-m', 'fast', 'stop']
+EXIT 0
+waiting for server to shut down............ done
+server stopped
+

@@ -192,7 +192,7 @@ def test_list_carries_cards_kinds_and_access(client, viewer, entry):
     assert body["access"] == {"can_view": True, "can_edit": False, "capture_available": False}
     assert body["book"]["count"] == 1
     assert [kind["value"] for kind in body["book"]["kinds"]] == [
-        "bread", "viennoiserie", "sweet_dough", "filling", "cream", "sauce", "beverage", "other",
+        "bread", "viennoiserie", "sweet_dough", "cookie", "filling", "cream", "sauce", "beverage", "other",
     ]
     (card,) = body["book"]["entries"]
     assert card["ref"] == "massa-tradicao"

@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -34,6 +35,7 @@ from shopman.shop.models import (
     MarketingOutbox,
 )
 from shopman.shop.services.marketing_approval import canonical_artifact_bytes
+from shopman.shop.services.marketing_capabilities import persisted_identity
 from shopman.shop.services.marketing_contracts import MarketingContractError
 
 DEFAULT_BATCH_SIZE = 100
@@ -73,6 +75,7 @@ def claim_due(
     now: datetime | None = None,
     limit: int = DEFAULT_BATCH_SIZE,
     lease_seconds: int = DEFAULT_LEASE_SECONDS,
+    outbox_refs: Iterable[str] | None = None,
 ) -> tuple[MarketingOutbox, ...]:
     """Claim committed, due rows in a short transaction.
 
@@ -97,6 +100,11 @@ def claim_due(
             state=MarketingOutbox.State.PENDING,
             available_at__lte=clock,
         ).order_by("available_at", "pk")
+        if outbox_refs is not None:
+            exact_refs = tuple(dict.fromkeys(str(value) for value in outbox_refs))
+            if not exact_refs:
+                return ()
+            query = query.filter(ref__in=exact_refs)
         query = _select_for_update(query)
         rows = list(query[:safe_limit])
         if not rows:
@@ -217,6 +225,7 @@ def process_due(
     now: datetime | None = None,
     limit: int = DEFAULT_BATCH_SIZE,
     lease_seconds: int = DEFAULT_LEASE_SECONDS,
+    outbox_refs: Iterable[str] | None = None,
 ) -> ProcessReport:
     """Claim a bounded batch and isolate every row's hand-off failure."""
 
@@ -226,6 +235,7 @@ def process_due(
         now=clock,
         limit=limit,
         lease_seconds=lease_seconds,
+        outbox_refs=outbox_refs,
     )
     dispatched = requeued = failed = 0
     oldest_due_age = max(
@@ -417,11 +427,32 @@ def _graph_error(row: MarketingOutbox, *, now: datetime) -> str:
     digest = hashlib.sha256(canonical_artifact_bytes(row.artifact.payload)).hexdigest()
     if digest != row.artifact.artifact_hash:
         return "artifact_hash_mismatch"
+    try:
+        from shopman.shop.services.marketing_artifacts import (
+            resolve_approved_dispatch_artifact,
+        )
+
+        resolved = resolve_approved_dispatch_artifact(
+            row.artifact,
+            platform=row.platform,
+        )
+        delivery_kind, delivery_format = persisted_identity(row)
+    except MarketingContractError as exc:
+        return exc.code
+    if (resolved.delivery_kind or resolved.format) and (
+        resolved.delivery_kind != delivery_kind or resolved.format != delivery_format
+    ):
+        return "delivery_identity_mismatch"
     return ""
 
 
 def _directive_topic(row: MarketingOutbox) -> str:
-    return ANNOUNCEMENT_NOTIFY if row.platform == "whatsapp" else ANNOUNCEMENT_PUBLISH
+    delivery_kind, _delivery_format = persisted_identity(row)
+    return (
+        ANNOUNCEMENT_NOTIFY
+        if delivery_kind == "direct_message"
+        else ANNOUNCEMENT_PUBLISH
+    )
 
 
 def _record_correlation(row: MarketingOutbox) -> None:
@@ -445,11 +476,18 @@ def _directive_payload(row: MarketingOutbox) -> dict:
         "platform": row.platform,
         "snapshot_ref": str(row.snapshot.ref),
     }
-    if row.platform == "whatsapp":
+    if row.delivery_kind and row.format:
+        payload.update({
+            "delivery_kind": row.delivery_kind,
+            "format": row.format,
+        })
+    if persisted_identity(row)[0] == "direct_message":
         wave_keys = list(
             MarketingOutbox.objects.filter(
                 command=row.command,
-                platform="whatsapp",
+                platform=row.platform,
+                delivery_kind=row.delivery_kind,
+                format=row.format,
             )
             .order_by("available_at", "pk")
             .values_list("wave_key", flat=True)
@@ -491,7 +529,9 @@ def directive_payload_matches(
         "content_version",
         "platform",
     )
-    if row.platform == "whatsapp":
+    if row.delivery_kind and row.format:
+        keys += ("delivery_kind", "format")
+    if persisted_identity(row)[0] == "direct_message":
         keys += ("wave", "wave_keys", "waves_expected")
     return all(payload.get(key) == expected[key] for key in keys)
 

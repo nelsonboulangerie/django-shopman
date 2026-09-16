@@ -23,6 +23,7 @@ import type {
   POSFulfillmentOptionProjection,
   POSManagerProjection,
   POSPaymentCollectionProjection,
+  POSPaymentConstraintsProjection,
   POSPaymentMethodProjection,
   POSPaymentTenderDraft,
   POSSaleReviewProjection,
@@ -30,11 +31,13 @@ import type {
   StructuredAddressProjection,
 } from "~/types/pos";
 import { formatBRL, moneyInputToQ } from "~/utils/posIntent";
+import { exceedsPaymentConstraint, pixProviderTestConstraint } from "~/presentation/paymentConstraints";
 import {
   cashNotesQ as contractCashNotesQ,
   cashNoteLabel,
-  changeForShortfallQ,
   collectionsForFulfillment,
+  orderPaymentGuidance,
+  paymentCollectionLabel,
   injectableMethods as toInjectableMethods,
   machineTenderLines,
   methodShortcuts,
@@ -62,15 +65,18 @@ import {
 import { scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
 
 const props = defineProps<{
+  salesMode?: "counter" | "order";
   tabDisplay: string;
   items: POSCartItem[];
   hasOpenTab: boolean;
   fulfillmentOptions: POSFulfillmentOptionProjection[];
   paymentMethods: POSPaymentMethodProjection[];
+  paymentConstraints?: POSPaymentConstraintsProjection;
   paymentCollections: POSPaymentCollectionProjection[];
   checkoutContract: POSCheckoutContractProjection | null;
   addressAutocomplete: POSAddressAutocompleteProjection | null;
   customerLookup: POSCustomerLookupProjection | null;
+  customerRef?: string;
   searchResults: POSCustomerSearchResult[];
   searchBusy: boolean;
   /** O cliente associado foi criado agora (resolve just-in-time). */
@@ -93,6 +99,7 @@ const props = defineProps<{
   /** Quem CONTINUA operando depois da assinatura do gerente. Ver OperatorManagerAuth. */
   operatorName?: string;
   fulfillmentType: "pickup" | "delivery";
+  fulfillmentConfirmed?: boolean;
   paymentCollection: "terminal" | "on_delivery";
   paymentTenders: POSPaymentTenderDraft[];
   /** Em quantas pessoas a conta está dividida (0 = sem divisão). */
@@ -171,6 +178,7 @@ const emit = defineEmits<{
   "update:managerUsername": [string];
   "update:managerPin": [string];
   "update:fulfillmentType": ["pickup" | "delivery"];
+  "update:fulfillmentConfirmed": [boolean];
   "update:paymentCollection": ["terminal" | "on_delivery"];
   addTender: [string];
   removeTender: [number];
@@ -209,8 +217,8 @@ const emit = defineEmits<{
   back: [];
   submit: [];
   lookupCustomer: [];
-  resolveCustomer: [];
-  decisionConfirm: [];
+  resolveCustomer: [done: (saved: boolean) => void];
+  decisionConfirm: [ownerRef?: string];
   decisionCancel: [];
   decisionMerge: [];
   /** LIBERAR o contato preso num cadastro desativado. */
@@ -277,6 +285,8 @@ const nonCashExcess = computed(() => nonCashExcessQ(props.paymentTenders, props.
 // três identificadores, e o cadastro só-com-CPF (sem telefone) existe.
 const scheduledWithoutCustomer = computed(() => scheduledNeedsCustomer({
   deliveryDate: props.deliveryDate,
+  deliveryTimeSlot: props.deliveryTimeSlot,
+  fulfillmentType: props.fulfillmentType,
   today: props.scheduleToday,
   customerName: props.customerName,
   customerPhone: props.customerPhone,
@@ -430,6 +440,7 @@ const offerCustomer = computed(() =>
 // endereço e o payload levar outro, a confirmação vira mentira.
 const receiptOffers = computed(() =>
   receiptSaveOffers({
+    customerRef: props.customerRef,
     receiptEmail: props.receiptEmail,
     customerEmail: props.customerEmail,
     invoiceTaxId: props.invoiceTaxId,
@@ -442,9 +453,6 @@ const receiptEmailOffer = computed(() => receiptOffers.value.email);
 const receiptTaxIdOffer = computed(() => receiptOffers.value.taxId);
 const saveReceiptEmailChecked = computed(() =>
   receiptContactChecked(receiptEmailOffer.value, props.saveReceiptContact),
-);
-const saveReceiptTaxIdChecked = computed(() =>
-  receiptContactChecked(receiptTaxIdOffer.value, props.saveReceiptTaxId),
 );
 // A segunda metade da promessa: quem chega ao fechamento pelo teclado nunca viu
 // o popover, e ninguém deve descobrir depois que um cadastro mudou.
@@ -566,7 +574,17 @@ const injectableMethods = computed(() =>
 // forma é o gesto de TODA venda; era o único do checkout que exigia o mouse.
 const methodKeys = computed(() => methodShortcuts(injectableMethods.value));
 const tenderLines = computed(() => props.paymentTenders.map((tender) => tenderLineView(tender, injectableMethods.value)));
-const deliveryCollections = computed(() => collectionsForFulfillment(props.paymentCollections, props.fulfillmentType));
+const deliveryCollections = computed(() => collectionsForFulfillment(
+  props.paymentCollections,
+  props.fulfillmentType,
+  props.salesMode,
+));
+const paymentGuidance = computed(() => orderPaymentGuidance({
+  salesMode: props.salesMode,
+  fulfillmentType: props.fulfillmentType,
+  collection: props.paymentCollection,
+  methods: props.paymentTenders.map((tender) => tender.method),
+}));
 
 // ── O LINK COBRA A VENDA INTEIRA ─────────────────────────────────────────
 //
@@ -592,11 +610,28 @@ const machineConfirmOpen = ref(false);
 
 const hasLinkTender = computed(() => props.paymentTenders.some((tender) => tender.method === "link"));
 const hasNonLinkTender = computed(() => props.paymentTenders.some((tender) => tender.method !== "link"));
+const pixProviderTest = computed(() => pixProviderTestConstraint(props.paymentConstraints));
+const hasPixProviderTestTender = computed(() =>
+  !!pixProviderTest.value && props.paymentTenders.some((tender) => tender.method === "pix"),
+);
+const hasNonPixTender = computed(() => props.paymentTenders.some((tender) => tender.method !== "pix"));
+const pixProviderTestExceeded = computed(() =>
+  hasPixProviderTestTender.value && exceedsPaymentConstraint(props.paymentTotalQ, pixProviderTest.value),
+);
+const pixProviderTestMixed = computed(() =>
+  hasPixProviderTestTender.value && (splitActive.value || hasNonPixTender.value),
+);
+const pixProviderTestMessage = computed(() => pixProviderTest.value?.message || (
+  "Ambiente de testes: a Efí simula a confirmação de Pix de até R$ 10,00. "
+  + "Para continuar, troque a forma de pagamento ou ajuste os itens do pedido."
+));
 /** Dá para dividir a conta AGORA? O link cobra a venda inteira, então ele fecha
  *  a porta — a não ser que a divisão já esteja armada, e aí o modal é por onde
  *  se desfaz. UMA verdade só: o botão e a tecla F10 leem daqui, senão o teclado
  *  abriria um modal que o dedo não consegue abrir. */
-const splitAvailable = computed(() => !(hasLinkTender.value && !splitActive.value));
+const splitAvailable = computed(() =>
+  !(hasLinkTender.value && !splitActive.value) && !hasPixProviderTestTender.value,
+);
 // No modal de dividir, o NÚMERO do botão é a própria tecla. Escolher o número já
 // é a decisão inteira, então a tecla escolhe E fecha, como o toque. Não disputa
 // com ninguém: o diálogo prende o foco em si e o shell cala os atalhos globais
@@ -613,7 +648,7 @@ function onSplitKeydown(event: KeyboardEvent) {
   if (event.altKey || event.ctrlKey || event.metaKey || event.repeat) return;
   const n = splitCountFromKey(event.key);
   if (n === null) return;
-  if (n === 0 ? !splitActive.value : hasLinkTender.value) return;
+  if (n === 0 ? !splitActive.value : hasLinkTender.value || hasPixProviderTestTender.value) return;
   event.preventDefault();
   emit("setSplitCount", n);
   splitSheetOpen.value = false;
@@ -623,17 +658,30 @@ function blockedByLink(ref: string): boolean {
   return ref === "link" ? hasNonLinkTender.value : hasLinkTender.value;
 }
 
-// "Troco para quanto?" só existe no dinheiro NA ENTREGA. O aviso (< total) é o
-// mesmo da review do servidor; aqui aparece NA DIGITAÇÃO, sem esperar round-trip.
-const onDeliveryCash = computed(
-  () => props.fulfillmentType === "delivery" && props.paymentCollection === "on_delivery",
-);
+function blockedByPixProviderTest(ref: string): boolean {
+  if (!pixProviderTest.value) return false;
+  if (ref === "pix") return splitActive.value || hasNonPixTender.value;
+  return hasPixProviderTestTender.value;
+}
 
-const changeForShortfall = computed(() =>
-  onDeliveryCash.value
-    ? changeForShortfallQ(moneyInputToQ(props.changeForInput), props.paymentTotalQ)
-    : 0,
+const onDelivery = computed(
+  () => props.paymentCollection === "on_delivery",
 );
+function blockedForDelivery(method: string): boolean {
+  return onDelivery.value && !["cash", "credit", "debit"].includes(method);
+}
+
+function paymentMethodBlockedReason(ref: string): string | undefined {
+  if (blockedForDelivery(ref)) {
+    const handoff = props.fulfillmentType === "pickup" ? "retirada" : "entrega";
+    return `PIX Efí e pagamentos online precisam da confirmação automática antes da ${handoff}. Escolha o recebimento antecipado.`;
+  }
+  if (blockedByLink(ref)) return "O link de pagamento cobra a venda inteira";
+  if (blockedByPixProviderTest(ref)) {
+    return "Durante os testes da Efí, Pix não pode ser combinado ou dividido. Remova o Pix para trocar a forma.";
+  }
+  return undefined;
+}
 
 // Validar (Odoo's Validate): NO "pay it all" shortcut — the button stays disabled
 // until a payment form is consciously chosen and covers the total. This prevents
@@ -666,15 +714,6 @@ const ctaLabel = computed(() => {
 const scheduleConflictReason = computed(
   () => selectedWindowConflict(props.deliverySlots, props.deliveryTimeSlot),
 );
-// O CPF só viaja no intent quando o switch está ligado (`usePosSale`), e a taxa
-// é a RESOLVIDA pelo servidor — as duas metades exatas de
-// `_validate_fiscal_delivery_fee`.
-const fiscalWithDeliveryFee = computed(
-  () => props.wantsCpfOnInvoice
-    && !!props.invoiceTaxId.replace(/\D/g, "")
-    && props.fulfillmentType === "delivery"
-    && props.deliveryFeeQ > 0,
-);
 // Levar o foco ao campo que resolve. Por `aria-label` porque é o nome que o
 // campo já carrega para quem não enxerga — um `ref` a mais seria um segundo
 // nome para a mesma coisa, e o primeiro a envelhecer.
@@ -688,15 +727,36 @@ function focusByAriaLabel(label: string) {
 }
 
 type CheckoutAction = { label: string; run: () => void };
+function removePixAndFocusAlternative() {
+  const pixIndexes = props.paymentTenders
+    .map((tender, index) => tender.method === "pix" ? index : -1)
+    .filter((index) => index >= 0)
+    .reverse();
+  pixIndexes.forEach((index) => emit("removeTender", index));
+  void nextTick(() => {
+    const alternative = document.querySelector<HTMLElement>(
+      '[data-payment-method]:not([data-payment-method="pix"]):not(:disabled)',
+    );
+    alternative?.focus();
+    alternative?.scrollIntoView({ block: "center", behavior: "auto" });
+  });
+}
+
+function returnToCart() {
+  emit("back");
+}
+
 // TODA RECUSA DO COMMIT TEM QUE TER GÊMEA AQUI. O servidor recusa a venda em
-// oito portões; a tela replicava três. Os outros cinco viravam 422 seco com o
-// cliente na frente, depois de o combinado já ter sido feito em voz alta — e um
-// deles ("Fiscal com taxa de entrega") a tela até CONTRADIZIA, escrevendo "Sai
-// na nota: CPF …" enquanto o Validar ficava verde.
+// sete portões; a tela apresenta a mesma recusa e o caminho para resolvê-la.
 //
 // A ordem é a da conversa do balcão: quem é o cliente, o que foi prometido, o
 // que sai na nota, e só então o dinheiro.
-const ctaBlock = computed<{ message: string; hint?: string; action?: CheckoutAction } | null>(() => {
+const ctaBlock = computed<{
+  message: string;
+  hint?: string;
+  action?: CheckoutAction;
+  actions?: CheckoutAction[];
+} | null>(() => {
   if (!props.items.length) {
     return {
       message: "Comanda vazia.",
@@ -711,10 +771,45 @@ const ctaBlock = computed<{ message: string; hint?: string; action?: CheckoutAct
     };
   }
   if (props.loading || needsReview.value) return null;
+  if (props.paymentTenders.some((t) => blockedForDelivery(t.method))) {
+    return {
+      message: "Esta forma exige pagamento antecipado.",
+      hint: "Troque a linha por dinheiro ou cartão na maquininha, ou escolha Receber no caixa.",
+    };
+  }
+  // A Efí de homologação não confirma valores maiores nem Pix misto. Vem cedo
+  // porque é uma limitação do instrumento já escolhido, independente dos
+  // demais dados do pedido — o aviso precisa estar presente enquanto o Pix está.
+  if (pixProviderTestMixed.value) {
+    return {
+      message: "Pix não pode ser combinado nem dividido durante os testes da Efí.",
+      hint: "Remova o Pix e escolha outra forma para esta divisão.",
+      actions: [
+        { label: "Trocar forma de pagamento", run: removePixAndFocusAlternative },
+        { label: "Ajustar itens", run: returnToCart },
+      ],
+    };
+  }
+  if (pixProviderTestExceeded.value) {
+    return {
+      message: pixProviderTestMessage.value,
+      actions: [
+        { label: "Trocar forma de pagamento", run: removePixAndFocusAlternative },
+        { label: "Ajustar itens", run: returnToCart },
+      ],
+    };
+  }
+  if (props.salesMode !== "counter" && !props.fulfillmentConfirmed) {
+    return {
+      message: "Como o cliente vai receber?",
+      hint: "Escolher data ou cliente não define entrega ou retirada.",
+      action: { label: "Escolher entrega ou retirada", run: () => { fulfillmentSheetOpen.value = true; } },
+    };
+  }
   if (scheduledWithoutCustomer.value) {
     return {
       message: "Encomenda precisa de cliente.",
-      hint: "É o contato se algo mudar até a data.",
+      hint: "Identifique quem vai receber a entrega ou retirar o pedido combinado.",
       action: { label: "Identificar cliente", run: () => { customerSheetOpen.value = true; } },
     };
   }
@@ -726,16 +821,6 @@ const ctaBlock = computed<{ message: string; hint?: string; action?: CheckoutAct
       message: "O horário combinado não cabe mais.",
       hint: scheduleConflictReason.value,
       action: { label: "Escolher horário", run: () => { scheduleSheetOpen.value = true; } },
-    };
-  }
-  // `_validate_fiscal_delivery_fee`: nota com CPF + taxa de entrega ainda passa
-  // pela conferência do gestor. É o único portão que a tela não só ignorava como
-  // desmentia, com o eco "Sai na nota" logo abaixo do switch.
-  if (fiscalWithDeliveryFee.value) {
-    return {
-      message: "Nota com CPF e taxa de entrega, não.",
-      hint: "O gestor precisa conferir antes. Finalize sem o CPF.",
-      action: { label: "Tirar o CPF", run: () => { emit("update:wantsCpfOnInvoice", false); } },
     };
   }
   // `receipt_email_required`: o canal ligado sem endereço nenhum. O composable
@@ -802,7 +887,12 @@ type CheckoutNotice = {
    *  resolve. `warn` é ressalva da review. Sem tom, é consequência. */
   tone?: "block" | "warn";
   action?: CheckoutAction;
+  actions?: CheckoutAction[];
 };
+
+function noticeActions(note: CheckoutNotice): CheckoutAction[] {
+  return note.actions || (note.action ? [note.action] : []);
+}
 
 // AVISOS — o bloqueio primeiro, depois as consequências, depois as ressalvas.
 // Só entra o que MUDA de venda para venda: uma linha que aparece em toda venda
@@ -833,6 +923,15 @@ const notices = computed<CheckoutNotice[]>(() => {
   else if (props.splitNote) {
     notes.push({ key: "split", tone: "block", icon: "lucide:users", message: props.splitNote });
   }
+  if (hasPixProviderTestTender.value && !pixProviderTestMixed.value && !pixProviderTestExceeded.value) {
+    notes.push({
+      key: "pix-provider-test",
+      tone: "warn",
+      icon: "lucide:flask-conical",
+      message: pixProviderTestMessage.value,
+      hint: `Este pedido de ${formatBRL(props.paymentTotalQ)} está dentro do limite.`,
+    });
+  }
   // A COZINHA PREPAROU MAIS DO QUE A CONTA COBRA. Fica ao lado do Validar
   // porque é ali que a diferença vira prejuízo: o operador está prestes a cobrar
   // por 1 o que o fogão fez 3 vezes. Não trava a venda — reduzir a linha é
@@ -856,8 +955,23 @@ const notices = computed<CheckoutNotice[]>(() => {
   }
   // O troco que SAI COM O ENTREGADOR. Era legenda do próprio campo, lá na coluna
   // que rola; é consequência de finalizar, e por isso mora aqui.
-  if (onDeliveryCash.value && props.changeForInput.trim() && changeForShortfall.value <= 0) {
-    notes.push({ key: "courier", icon: "lucide:banknote", message: "O entregador sai com o troco separado." });
+  if (onDelivery.value && props.paymentTenders.some((t) => t.method === "cash")) {
+    notes.push({
+      key: "courier",
+      icon: "lucide:banknote",
+      message: props.fulfillmentType === "pickup"
+        ? "Dinheiro pendente. Registre o recebimento no Gestor antes de concluir a retirada."
+        : "Dinheiro pendente. O troco calculado será separado no despacho.",
+    });
+  }
+  if (onDelivery.value && machineTenders.value.length) {
+    notes.push({
+      key: "delivery-machine",
+      icon: "lucide:smartphone-nfc",
+      message: props.fulfillmentType === "pickup"
+        ? "Passe o cartão na retirada e registre o recebimento no Gestor antes de concluir o pedido."
+        : "Levar maquininha. O cartão permanece pendente até conferir o comprovante no acerto da entrega.",
+    });
   }
   if (wantsPrintedReceipt.value) {
     // AGORA A FRASE PODE DIZER QUE A NOTA SAI. Não existe DANFE sem NFC-e
@@ -881,7 +995,9 @@ const notices = computed<CheckoutNotice[]>(() => {
 // O botão está travado sempre que HÁ motivo — não há segunda lista de regras.
 // Era assim que o excedente em cartão escapava: ele avisava, e deixava passar.
 const ctaDisabled = computed(() => {
-  if (!props.items.length || props.loading) return true;
+  // Salvar/editar cliente é parte do fechamento: enquanto o resolve está em
+  // voo, nem o clique nem o atalho Enter podem concluir com o cadastro antigo.
+  if (!props.items.length || props.loading || props.lookupBusy) return true;
   // Com a revisão falhada o botão VOLTA a clicar: ele é o retry.
   if (props.reviewFailed) return false;
   if (needsReview.value) return true;
@@ -900,7 +1016,7 @@ function onCta() {
  *  Depois da autorização do gerente, nunca antes — o cartão só é passado quando
  *  a venda já está liberada. */
 function proceed() {
-  if (machineTenders.value.length) { machineConfirmOpen.value = true; return; }
+  if (!onDelivery.value && machineTenders.value.length) { machineConfirmOpen.value = true; return; }
   emit("submit");
 }
 function onManagerAuthorize(username: string, pin: string) {
@@ -926,9 +1042,9 @@ function onMachineConfirmed() {
 defineExpose({
   validate: () => { if (!ctaDisabled.value) onCta(); },
   openCustomer: () => { customerSheetOpen.value = true; },
-  openFulfillment: () => { fulfillmentSheetOpen.value = true; },
-  openSchedule: () => { scheduleSheetOpen.value = true; },
-  openDiscount: () => { discountSheetOpen.value = true; },
+  openFulfillment: () => { if (props.salesMode !== "counter") fulfillmentSheetOpen.value = true; },
+  openSchedule: () => { if (props.salesMode !== "counter") scheduleSheetOpen.value = true; },
+  openDiscount: () => { if (props.discountTypes.length) discountSheetOpen.value = true; },
   /** O irmão do desconto: os dois Ajustes da conta abrem pela mesma dupla de
    *  teclas. Recusa quando o botão recusa — uma tecla que abre o que o dedo não
    *  abre é a tela dizendo duas coisas ao mesmo tempo. */
@@ -958,6 +1074,7 @@ defineExpose({
   pressMethodKey: (letter: string) => {
     const ref = Object.keys(methodKeys.value).find((key) => methodKeys.value[key] === letter);
     if (!ref) return false;
+    if (blockedForDelivery(ref) || blockedByLink(ref) || blockedByPixProviderTest(ref)) return true;
     emit("addTender", ref);
     return true;
   },
@@ -1062,17 +1179,16 @@ defineExpose({
              Mesma altura e mesma borda para não virarem outra família visual —
              só o arranjo diz que agem sobre o VALOR, e não que recebem dinheiro.
 
-             O desconto é contratual (a loja pode não oferecer nenhum tipo); a
-             divisão não depende de contrato nenhum, é aritmética da tela. As
-             duas moravam sob um `v-if="discountTypes.length"` — uma loja sem
-             tipo de desconto cadastrado perdia TAMBÉM o dividir conta. -->
+             Os dois botões permanecem visíveis; sem tipos de desconto no
+             contrato, só Desconto fica desabilitado. Na entrega o grupo ganha
+             os dois botões que definem quando receber. -->
         <section class="grid gap-1.5" aria-label="Ajustes da conta">
-          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Ajustes da conta</h3>
           <div class="grid grid-cols-2 gap-1.5">
             <button
-              v-if="discountTypes.length"
+              :disabled="!discountTypes.length"
+              :title="!discountTypes.length ? 'Nenhum desconto disponível para esta loja' : undefined"
               type="button"
-              class="flex h-11 items-center gap-2 rounded-md border px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
+              class="flex h-11 items-center gap-2 rounded-md border px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
               :class="hasDiscount ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground'"
               :aria-pressed="hasDiscount"
               :aria-label="hasDiscount ? `Desconto de ${discountSummary} na venda. Abrir para alterar` : 'Desconto na venda'"
@@ -1095,10 +1211,13 @@ defineExpose({
               class="flex h-11 items-center gap-2 rounded-md border px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
               :class="[
                 splitActive ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground',
-                discountTypes.length ? '' : 'col-span-2',
               ]"
               :disabled="!splitAvailable"
-              :title="hasLinkTender ? 'O link de pagamento cobra a venda inteira' : undefined"
+              :title="hasLinkTender
+                ? 'O link de pagamento cobra a venda inteira'
+                : hasPixProviderTestTender
+                  ? 'Durante os testes da Efí, Pix não pode ser dividido'
+                  : undefined"
               :aria-pressed="splitActive"
               :aria-label="splitActive
                 ? `Conta dividida em ${splitCount}, ${splitPaidCount} de ${splitCount} lançadas. Abrir para alterar`
@@ -1118,60 +1237,33 @@ defineExpose({
                 aria-hidden="true"
               >F10</OperatorKbd>
             </button>
+            <template v-if="deliveryCollections.length > 1">
+              <button
+                v-for="collection in deliveryCollections"
+                :key="collection.ref"
+                type="button"
+                class="flex h-11 items-center gap-2 rounded-md border px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
+                :class="paymentCollection === collection.ref ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground'"
+                :aria-pressed="paymentCollection === collection.ref"
+                @click="$emit('update:paymentCollection', collection.ref)"
+              >
+                <Icon :name="collection.ref === 'terminal' || fulfillmentType === 'pickup' ? 'lucide:store' : 'lucide:truck'" class="size-4 shrink-0" />
+                <span class="min-w-0 truncate text-left">{{ paymentCollectionLabel(collection, salesMode, fulfillmentType) }}</span>
+              </button>
+            </template>
           </div>
         </section>
 
         <section class="grid gap-1.5" aria-label="Forma de pagamento">
-          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Forma de pagamento</h3>
-
-          <!-- O DESCONTO NÃO MORA MAIS AQUI. Ele era o primeiro botão de uma
-               seção cujo assunto é outro: desconto não é forma de pagamento, é
-               uma operação sobre o VALOR da venda. Ficava sob o cabeçalho
-               "Forma de pagamento" ensinando a categoria errada — e, pior, era
-               o primeiro alvo da coluna do instrumento, acima de Dinheiro.
-               Agora vive no RODAPÉ, ao lado das outras ações da venda. -->
-          <!-- ONDE o dinheiro é recebido é FORMA DE PAGAMENTO, não contexto da
-               venda: veio da seção "Recebimento", que subiu inteira para a barra
-               de contexto. Só aparece quando há mais de uma opção. -->
-          <div v-if="deliveryCollections.length > 1" class="grid grid-cols-2 gap-1.5">
-            <button
-              v-for="collection in deliveryCollections"
-              :key="collection.ref"
-              type="button"
-              class="flex h-11 items-center justify-center gap-2 rounded-md border bg-card px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-              :class="paymentCollection === collection.ref ? 'border-primary bg-primary/5' : ''"
-              @click="$emit('update:paymentCollection', collection.ref)"
-            >
-              <span class="min-w-0 truncate">{{ collection.label }}</span>
-            </button>
-          </div>
-
-          <!-- Dinheiro NA PORTA (COD). Chamava-se "Troco para quanto?" e confundia
-               com o TROCO do numpad, ali embaixo — dois campos falando "troco" no
-               mesmo checkout. São momentos diferentes: o do numpad é dinheiro que
-               já está na mão AGORA; este é com quanto o cliente vai pagar DEPOIS,
-               na porta, e por isso não há tender no terminal para calcular nada.
-               O número também não é para a tela: `payment.change_for_q` vira
-               `change_out_suggested_q` e depois a linha `courier_out` no livro do
-               caixa — é assim que o entregador sai com troco separado e
-               registrado. O rótulo agora diz o momento; a legenda, a consequência. -->
-          <label v-if="onDeliveryCash" class="grid gap-1 text-sm">
-            <span class="font-medium text-muted-foreground">Com quanto vai pagar na porta?</span>
-            <UiInput
-              :model-value="changeForInput"
-              inputmode="decimal"
-              placeholder="Opcional"
-              @update:model-value="$emit('update:changeForInput', String($event || ''))"
-            />
-            <span v-if="changeForShortfall > 0" class="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
-              <Icon name="lucide:triangle-alert" class="size-3.5 shrink-0" />
-              Menor que o total: faltam {{ formatBRL(changeForShortfall) }}.
-            </span>
-            <!-- "O entregador sai com o troco separado" é CONSEQUÊNCIA de
-                 finalizar, não validação deste campo: subiu para as instruções,
-                 no topo da coluna do valor. O que fica aqui é o que só este
-                 campo sabe dizer — que o combinado não cobre o total. -->
-          </label>
+          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{{ salesMode === "order" ? "Pagamento da encomenda" : "Forma de pagamento" }}</h3>
+          <p v-if="paymentGuidance" class="px-1 text-sm text-muted-foreground" role="status">{{ paymentGuidance }}</p>
+          <p
+            v-if="pixProviderTest && !hasPixProviderTestTender && (splitActive || hasNonPixTender)"
+            class="rounded-md border border-warning/60 bg-warning/10 px-3 py-2 text-sm text-warning"
+            role="status"
+          >
+            Durante os testes da Efí, Pix precisa pagar o total sozinho. Remova as outras formas ou desfaça a divisão para usar Pix.
+          </p>
 
           <div class="flex flex-col gap-1.5">
             <!-- Tocar aqui ADICIONA uma linha; não escolhe "a forma" da venda.
@@ -1182,20 +1274,16 @@ defineExpose({
                  que está selecionado são as linhas de pagamento, que é onde a
                  seleção de fato mora.
 
-                 NA ENTREGA só dinheiro é aceito (`invalid_on_delivery_tender_payment`,
-                 recusado no commit). A tela oferecia cartão e Pix, o operador
-                 combinava por telefone, e a recusa vinha no Validar. -->
+                 Na entrega, as linhas são cobranças pendentes; a confirmação
+                 ocorre no acerto do Gestor, separada da devolução do aparelho. -->
             <button
               v-for="method in injectableMethods"
               :key="method.ref"
               type="button"
+              :data-payment-method="method.ref"
               class="flex h-11 items-center gap-3 rounded-md border bg-card px-3 text-left text-sm font-medium transition hover:border-primary/50 hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
-              :disabled="(onDeliveryCash && method.ref !== 'cash') || blockedByLink(method.ref)"
-              :title="onDeliveryCash && method.ref !== 'cash'
-                ? 'Na entrega só dinheiro; receba no caixa para usar esta forma'
-                : blockedByLink(method.ref)
-                  ? 'O link de pagamento cobra a venda inteira'
-                  : undefined"
+              :disabled="!!paymentMethodBlockedReason(method.ref)"
+              :title="paymentMethodBlockedReason(method.ref)"
               @click="$emit('addTender', method.ref)"
             >
               <Icon :name="paymentIcon(method.ref)" class="size-5 shrink-0 text-muted-foreground" />
@@ -1211,21 +1299,22 @@ defineExpose({
                cédulas à direita (só dinheiro: as 6 notas BR que o cliente entrega) -->
           <div class="flex gap-1.5">
           <div class="grid gap-1.5" :class="cashSelected ? 'flex-[3] basis-0' : 'flex-1'">
+          <!-- Teclas h-11/text-xl propositais: números legíveis num console compacto de toque. -->
           <div class="grid grid-cols-3 gap-1.5" role="group" aria-label="Teclado de valor">
             <button
               v-for="digit in digitKeys"
               :key="digit"
               type="button"
-              class="grid place-items-center rounded-md border bg-card h-11 text-xl font-semibold tabular-nums transition hover:bg-accent active:translate-y-px disabled:opacity-40"
+              class="grid place-items-center rounded-md border bg-card h-11 text-xl font-semibold tabular-nums transition hover:bg-accent active:translate-y-px disabled:opacity-50"
               :disabled="!numpadActive"
               :aria-label="`Dígito ${digit}`"
               @click="$emit('tenderDigit', digit)"
             >
               {{ digit }}
             </button>
-            <button type="button" class="grid place-items-center rounded-md border bg-card h-11 text-xl font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Vírgula (centavos)" @click="$emit('tenderComma')">,</button>
-            <button type="button" class="grid place-items-center rounded-md border bg-card h-11 text-xl font-semibold tabular-nums transition hover:bg-accent active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Dígito 0" @click="$emit('tenderDigit', '0')">0</button>
-            <button type="button" class="grid place-items-center rounded-md border border-destructive/25 bg-destructive/5 h-11 text-destructive transition hover:bg-destructive/10 active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Apagar um dígito" title="Apaga o último dígito do valor (Backspace)" @click="$emit('tenderBackspace')">
+            <button type="button" class="grid place-items-center rounded-md border bg-card h-11 text-xl font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-50" :disabled="!numpadActive" aria-label="Vírgula (centavos)" @click="$emit('tenderComma')">,</button>
+            <button type="button" class="grid place-items-center rounded-md border bg-card h-11 text-xl font-semibold tabular-nums transition hover:bg-accent active:translate-y-px disabled:opacity-50" :disabled="!numpadActive" aria-label="Dígito 0" @click="$emit('tenderDigit', '0')">0</button>
+            <button type="button" class="grid place-items-center rounded-md border border-destructive/25 bg-destructive/5 h-11 text-destructive transition hover:bg-destructive/10 active:translate-y-px disabled:opacity-50" :disabled="!numpadActive" aria-label="Apagar um dígito" title="Apaga o último dígito do valor (Backspace)" @click="$emit('tenderBackspace')">
               <Icon name="lucide:delete" class="size-5" />
             </button>
           </div>
@@ -1241,7 +1330,7 @@ defineExpose({
             <div class="grid grid-cols-2 gap-1.5">
             <button
               type="button"
-              class="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40"
+              class="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-50"
               :disabled="!numpadActive"
               aria-label="Exato: a linha assume o restante"
               title="A forma selecionada assume o que falta para cobrir o total (=)"
@@ -1252,7 +1341,7 @@ defineExpose({
             </button>
             <button
               type="button"
-              class="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40"
+              class="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-50"
               :disabled="!numpadActive"
               aria-label="Limpar: zera o valor da linha"
               title="Zera o valor da linha inteira (o Backspace apaga um dígito)"
@@ -1270,15 +1359,15 @@ defineExpose({
             class="grid flex-1 basis-0 gap-1.5"
             :style="{ gridTemplateRows: `repeat(${cashNotesQ.length}, minmax(0, 1fr))` }"
             role="group"
-            aria-label="Cédulas recebidas"
+            :aria-label="onDelivery ? `Cédulas previstas na ${fulfillmentType === 'pickup' ? 'retirada' : 'entrega'}` : 'Cédulas recebidas'"
           >
             <button
               v-for="note in cashNotesQ"
               :key="note"
               type="button"
-              class="flex items-center justify-center gap-1 rounded-md border border-success/30 bg-success/10 text-sm font-semibold tabular-nums text-success transition hover:bg-success/20 active:translate-y-px disabled:opacity-40"
+              class="flex items-center justify-center gap-1 rounded-md border border-success/30 bg-success/10 text-sm font-semibold tabular-nums text-success transition hover:bg-success/20 active:translate-y-px disabled:opacity-50"
               :disabled="!numpadActive"
-              :aria-label="`Recebi nota de ${formatBRL(note)}`"
+              :aria-label="`${onDelivery ? 'Cliente pagará com' : 'Recebi nota de'} ${formatBRL(note)}`"
               @click="$emit('tenderAdd', note)"
             >
               <Icon name="lucide:banknote" class="size-3.5 shrink-0 opacity-70" />
@@ -1338,11 +1427,11 @@ defineExpose({
           <li
             v-for="note in notices"
             :key="note.key"
-            class="flex items-center gap-3 rounded-md border p-3"
+            class="flex flex-wrap items-center gap-3 rounded-md border p-3"
             :class="note.tone === 'block'
-              ? 'border-warning bg-warning/10 text-amber-700 dark:text-amber-400'
+              ? 'border-warning bg-warning/10 text-warning'
               : note.tone === 'warn'
-                ? 'border-warning/60 bg-warning/10 text-amber-700 dark:text-amber-400'
+                ? 'border-warning/60 bg-warning/10 text-warning'
                 : 'border-border bg-muted text-muted-foreground'"
           >
             <Icon
@@ -1357,15 +1446,21 @@ defineExpose({
               >{{ note.message }}</span>
               <span v-if="note.hint" class="mt-0.5 block text-sm leading-snug opacity-80">{{ note.hint }}</span>
             </span>
-            <UiButton
-              v-if="note.action"
-              size="lg"
-              variant="outline"
-              class="h-11 shrink-0"
-              @click="note.action.run()"
+            <div
+              v-if="noticeActions(note).length"
+              class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap"
             >
-              {{ note.action.label }}
-            </UiButton>
+              <UiButton
+                v-for="action in noticeActions(note)"
+                :key="action.label"
+                size="lg"
+                variant="outline"
+                class="h-11 w-full shrink-0 sm:w-auto"
+                @click="action.run()"
+              >
+                {{ action.label }}
+              </UiButton>
+            </div>
           </li>
         </ul>
 
@@ -1626,15 +1721,7 @@ defineExpose({
                 />
               </label>
               <template v-if="wantsCpfOnInvoice">
-                <PosReceiptSaveOffer
-                  :offer="receiptTaxIdOffer"
-                  :checked="saveReceiptTaxIdChecked"
-                  :confirmed="confirmReceiptTaxId"
-                  side="left"
-                  :quiet="customerSheetOpen"
-                  @update:checked="$emit('update:saveReceiptTaxId', $event)"
-                  @update:confirmed="$emit('update:confirmReceiptTaxId', $event)"
-                >
+
                   <UiInput
                     :model-value="invoiceTaxIdMasked"
                     inputmode="numeric"
@@ -1644,15 +1731,15 @@ defineExpose({
                     :maxlength="18"
                     @update:model-value="$emit('update:invoiceTaxId', String($event || '').replace(/\D/g, '').slice(0, 14))"
                   />
-                </PosReceiptSaveOffer>
+
                 <!-- Eco do documento: o operador lê de volta o que vai sair e diz
                      ao cliente. Sem isto, "pôs o meu?" não tem resposta na tela. -->
-                <p class="flex items-center gap-1.5 text-xs" :class="taxIdEcho.ok ? 'text-muted-foreground' : 'text-amber-700 dark:text-amber-400'">
+                <p class="flex items-center gap-1.5 text-xs" :class="taxIdEcho.ok ? 'text-muted-foreground' : 'text-warning'">
                   <Icon :name="taxIdEcho.ok ? 'lucide:check' : 'lucide:triangle-alert'" class="size-3.5 shrink-0" />
                   {{ taxIdEcho.text }}
                 </p>
                 <p v-if="taxIdIsFromCadastro" class="text-xs text-muted-foreground">
-                  Do cadastro. Trocar aqui vale só nesta venda.
+                  Do cadastro do cliente.
                 </p>
               </template>
             </div>
@@ -1691,13 +1778,7 @@ defineExpose({
                 />
               </label>
               <template v-if="wantsEmailReceipt">
-                <PosReceiptSaveOffer
-                  :offer="receiptEmailOffer"
-                  :checked="saveReceiptEmailChecked"
-                  side="left"
-                  :quiet="customerSheetOpen"
-                  @update:checked="$emit('update:saveReceiptContact', $event)"
-                >
+
                   <UiInput
                     :model-value="receiptEmail"
                     type="email"
@@ -1706,12 +1787,12 @@ defineExpose({
                     aria-label="E-mail que recebe a nota"
                     @update:model-value="$emit('update:receiptEmail', String($event || ''))"
                   />
-                </PosReceiptSaveOffer>
+
                 <p v-if="!receiptEmail.trim() && customerEmail.trim()" class="text-xs text-muted-foreground">
                   Sem preencher, vai para <span class="font-medium text-foreground">{{ customerEmail }}</span>.
                 </p>
                 <p v-else-if="emailIsFromCadastro" class="text-xs text-muted-foreground">
-                  Do cadastro. Trocar aqui vale só nesta venda.
+                  Do cadastro do cliente.
                 </p>
               </template>
             </div>
@@ -1751,9 +1832,12 @@ defineExpose({
        agora REVÊ o que foi decidido no começo do atendimento, em vez de ser o
        único lugar onde a pergunta existe. -->
   <PosFulfillmentModal
+    v-if="salesMode !== 'counter'"
     v-model:open="fulfillmentSheetOpen"
     :fulfillment-options="fulfillmentOptions"
     :fulfillment-type="fulfillmentType"
+    :fulfillment-confirmed="fulfillmentConfirmed"
+    @update:fulfillment-confirmed="$emit('update:fulfillmentConfirmed', $event)"
     :saved-addresses="savedAddresses"
     :address-autocomplete="addressAutocomplete"
     :delivery-address="deliveryAddress"
@@ -1785,8 +1869,12 @@ defineExpose({
   <!-- QUANDO — a MESMA caixa que a tela de venda abre. O agendamento é decidido
        na abertura do atendimento; aqui ele é revisto, com as mesmas palavras. -->
   <PosScheduleModal
+    v-if="salesMode !== 'counter'"
+    :sales-mode="salesMode"
     v-model:open="scheduleSheetOpen"
     :today="scheduleToday"
+    :delivery-date="deliveryDate"
+    :fulfillment-type="fulfillmentConfirmed ? fulfillmentType : undefined"
     :delivery-date-effective="deliveryDateEffective"
     :delivery-time-slot="deliveryTimeSlot"
     :available-dates="scheduleAvailableDates"
@@ -1831,8 +1919,8 @@ defineExpose({
     @search="$emit('search', $event)"
     @select-result="onSelectResult"
     @clear="$emit('clearCustomer')"
-    @resolve-customer="$emit('resolveCustomer')"
-    @decision-confirm="$emit('decisionConfirm')"
+    @resolve-customer="$emit('resolveCustomer', $event)"
+    @decision-confirm="$emit('decisionConfirm', $event)"
     @decision-cancel="$emit('decisionCancel')"
     @decision-merge="$emit('decisionMerge')"
     @decision-release="$emit('decisionRelease', $event)"
@@ -1899,7 +1987,7 @@ defineExpose({
       <div class="grid gap-4">
         <p
           v-if="hasLinkTender"
-          class="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400"
+          class="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 p-3 text-sm text-warning"
         >
           <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0" />
           <span>O link de pagamento cobra a venda inteira. Remova a linha do link para dividir.</span>
@@ -1962,7 +2050,7 @@ defineExpose({
               {{ option.label }}
             </UiButton>
           </div>
-          <label class="grid gap-1 text-sm">
+          <label class="grid gap-1 text-xs">
             <span class="font-medium text-muted-foreground">{{ discountType === "fixed" ? "Valor (R$)" : "Percentual (%)" }}</span>
             <UiInput :model-value="discountValue" inputmode="decimal" placeholder="0" @update:model-value="$emit('update:discountValue', String($event || ''))" />
           </label>

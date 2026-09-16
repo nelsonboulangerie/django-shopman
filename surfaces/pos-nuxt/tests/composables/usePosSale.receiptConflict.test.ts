@@ -83,6 +83,7 @@ function routerRefusingReceiptSave(options: {
       bodies.push(body);
       if (options.refuses(body)) {
         throw {
+          status: 409,
           data: {
             detail: "Este contato já é de outro cadastro.",
             error: {
@@ -125,8 +126,13 @@ describe("usePosSale — a recusa do comprovante nomeia e limpa o campo CERTO", 
     disposers.push(h.handles.dispose);
 
     h.sale.cart.customerRef = "CUST-A";
+    // Cadastro identificado: salvar é escolha explícita, não o default de venda anônima.
+    h.sale.customerLookup.value = { ref: "CUST-A", name: "Ana Prado", email: "", tax_id: "" } as NonNullable<typeof h.sale.customerLookup.value>;
+    h.sale.cart.saveReceiptContact = true;
+    h.sale.cart.saveReceiptTaxId = true;
     h.sale.cart.customerName = "Ana Prado";
     h.sale.cart.customerPhone = "(43) 99999-0000";
+    h.sale.cart.receiptChannels = ["email"];
     h.sale.cart.receiptEmail = "bia@example.org";
 
     await h.sale.submitSale(); // prepara
@@ -150,9 +156,14 @@ describe("usePosSale — a recusa do comprovante nomeia e limpa o campo CERTO", 
     disposers.push(h.handles.dispose);
 
     h.sale.cart.customerRef = "CUST-A";
+    // Cadastro identificado: salvar é escolha explícita, não o default de venda anônima.
+    h.sale.customerLookup.value = { ref: "CUST-A", name: "Ana Prado", email: "", tax_id: "" } as NonNullable<typeof h.sale.customerLookup.value>;
+    h.sale.cart.saveReceiptContact = true;
+    h.sale.cart.saveReceiptTaxId = true;
     h.sale.cart.customerName = "Ana Prado";
     h.sale.cart.customerPhone = "(43) 99999-0000";
     h.sale.cart.customerEmail = "";
+    h.sale.cart.receiptChannels = ["email"];
     h.sale.cart.receiptEmail = "bia@example.org";
 
     await h.sale.submitSale();
@@ -191,6 +202,10 @@ describe("usePosSale — a recusa do comprovante nomeia e limpa o campo CERTO", 
     disposers.push(h.handles.dispose);
 
     h.sale.cart.customerRef = "CUST-A";
+    // Cadastro identificado: salvar é escolha explícita, não o default de venda anônima.
+    h.sale.customerLookup.value = { ref: "CUST-A", name: "Ana Prado", email: "", tax_id: "" } as NonNullable<typeof h.sale.customerLookup.value>;
+    h.sale.cart.saveReceiptContact = true;
+    h.sale.cart.saveReceiptTaxId = true;
     h.sale.cart.customerName = "Ana Prado";
     h.sale.cart.customerPhone = "(43) 99999-0000";
     h.sale.cart.wantsCpfOnInvoice = true;
@@ -235,7 +250,10 @@ describe("usePosSale — a recusa do comprovante nomeia e limpa o campo CERTO", 
     const h = cartReadyForCheckout(withRelease);
     disposers.push(h.handles.dispose);
 
+    h.sale.cart.receiptChannels = ["email"];
     h.sale.cart.receiptEmail = "bia@example.org";
+
+    h.sale.cart.saveReceiptContact = true;
 
     await h.sale.submitSale();
     await h.sale.submitSale();
@@ -329,6 +347,7 @@ describe("usePosSale — a ordem sobre o CPF divergente só viaja RECONFIRMADA",
       ref: "CUST-A", name: "Ana Prado", phone: "", email: "ana@example.org", tax_id: "",
     } as unknown as typeof h.sale.customerLookup.value;
     h.sale.cart.wantsCpfOnInvoice = false;
+    h.sale.cart.receiptChannels = ["email"];
     h.sale.cart.receiptEmail = "contador@example.org";
     h.sale.cart.saveReceiptContact = true;
 

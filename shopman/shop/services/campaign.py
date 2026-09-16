@@ -46,12 +46,13 @@ from shopman.shop.models import (
 from shopman.shop.services import audience as audience_service
 from shopman.shop.services import campaign_schedule
 from shopman.shop.services.availability_copy import availability_phrase
+from shopman.shop.services.marketing_capabilities import publication_platform_refs
 from shopman.shop.services.marketing_contracts import MarketingContractError
 
 logger = logging.getLogger(__name__)
 
 #: Plataformas que publicam conteúdo (vs. notificar audiência direta).
-POSTING_PLATFORMS = ("instagram", "facebook", "google_business")
+POSTING_PLATFORMS = publication_platform_refs()
 
 _REVERSIBLE_ANNOUNCEMENT_STATUSES = frozenset(
     {
@@ -342,7 +343,7 @@ def reconcile_quality_correction(work_order, after_partition) -> dict:
 
     with transaction.atomic():
         announcements = list(
-            Announcement.objects.select_for_update()
+            Announcement.objects.select_for_update(of=("self",))
             .select_related("rule")
             .filter(trigger_context__work_order_ref=work_order_ref)
             .order_by("pk")
@@ -1066,6 +1067,12 @@ def preview_platforms(
         variables=variables,
         platforms=normalized_platforms,
     )
+    from shopman.shop.services.marketing_artifacts import normalize_platform_content
+
+    rendered_variants = normalize_platform_content(
+        platforms=normalized_platforms,
+        platform_content=rendered_variants,
+    )
     flow_binding = (
         verified_whatsapp_flow_binding()
         if "whatsapp" in normalized_platforms
@@ -1151,10 +1158,16 @@ def _platform_content(
 
     variables = content.get("variables")
     variables = variables if isinstance(variables, dict) else {}
-    return _render_platform_variants(
+    rendered = _render_platform_variants(
         template.platform_variants or {},
         variables=variables,
         platforms=platforms,
+    )
+    from shopman.shop.services.marketing_artifacts import normalize_platform_content
+
+    return normalize_platform_content(
+        platforms=tuple(platforms or rendered),
+        platform_content=rendered,
     )
 
 
@@ -1406,7 +1419,17 @@ def _image_url(template, context: dict) -> str:
     if source == "none":
         return ""
     if source == "custom":
-        return str((template.platform_variants or {}).get("image_url") or "")
+        variants = template.platform_variants or {}
+        # Compatibility for the old, undocumented top-level shape plus the
+        # platform-scoped shape written by the operator UI.
+        legacy = variants.get("image_url") if isinstance(variants, dict) else ""
+        if legacy:
+            return str(legacy)
+        for platform in ("instagram", "facebook", "google_business", "whatsapp"):
+            variant = variants.get(platform, {}) if isinstance(variants, dict) else {}
+            if isinstance(variant, dict) and variant.get("image_url"):
+                return str(variant["image_url"])
+        return ""
     product = _product(context.get("sku", ""))
     return str(getattr(product, "image_url", "") or "")
 

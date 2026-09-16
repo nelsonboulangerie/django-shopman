@@ -12,6 +12,7 @@ from django.utils.translation import gettext_lazy as _
 class MergeStatus(models.TextChoices):
     COMPLETED = "completed", _("Unificada")
     REVERTED = "reverted", _("Desfeita")
+    REDACTED = "redacted", _("Redigida por privacidade")
 
 
 class MergeAudit(models.Model):

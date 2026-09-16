@@ -42,6 +42,8 @@ export interface CustomerDecisionParty {
 // são a MESMA pessoa. Nem atender o outro, nem manter quem está — unificar.
 
 export type CustomerDecisionKind =
+  | "receipt_identity"
+  | "existing_customer"
   | "contact_conflict"
   | "contact_change"
   | "inactive_owner"
@@ -70,6 +72,10 @@ export interface CustomerDecision {
    * do campo.
    */
   fromReceipt?: boolean;
+  receiptTaxIdOverwrite?: { from: string; to: string; customerName?: string; targetRef?: string };
+  receiptCreate?: boolean;
+  receiptSave?: boolean;
+  receiptFields?: Array<{ field: "tax_id" | "email"; value: string; owner: CustomerDecisionParty; active?: boolean }>;
 }
 
 /** Um botão a mais no painel, quando o caso pede. */
@@ -249,6 +255,41 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
   const keepLabel = current
     ? `Manter ${firstName(currentName) || currentName}`
     : `Descartar este ${label}`;
+
+  if (decision.kind === "receipt_identity") {
+    const ownerName = other?.name?.trim() || "o cliente encontrado";
+    const isTaxId = decision.field === "tax_id";
+    const inactive = decision.candidates?.some((candidate) => candidate.ref === other?.ref && candidate.owner_inactive);
+    return {
+      title: inactive ? "Cadastro inativo" : "Cadastro encontrado",
+      body: ownerName,
+      confirmLabel: inactive ? "" : "Associar cliente",
+      confirmIcon: "lucide:user-round-check",
+      cancelLabel: isTaxId ? "Só na nota" : "Só no comprovante",
+      cancelIcon: "lucide:receipt-text",
+      merge: null,
+      release: null,
+      requiresConfirmation: true,
+      confirmPrompt: `Associar ${ownerName} à venda?`,
+    };
+  }
+
+  if (decision.kind === "existing_customer") {
+    const ownerName = other?.name?.trim() || "o cliente encontrado";
+    return {
+      title: `Este ${label} já está cadastrado`,
+      body: `${decision.typed} pertence ao cadastro de ${ownerName}. `
+        + "Nenhum cadastro foi alterado. Confira com o cliente antes de usar este cadastro, ou corrija o dado para cadastrar outra pessoa.",
+      confirmLabel: `Usar cadastro de ${ownerName}`,
+      confirmIcon: "lucide:user-round-check",
+      cancelLabel: `Corrigir ${label}`,
+      cancelIcon: "lucide:pencil-line",
+      merge: null,
+      release: null,
+      requiresConfirmation: true,
+      confirmPrompt: `O cliente atendido é ${ownerName}? Os dados digitados serão substituídos pelos deste cadastro.`,
+    };
+  }
 
   if (decision.kind === "contact_conflict") {
     const ownerName = other?.name?.trim() || "outro cliente";
@@ -430,6 +471,18 @@ export function conflictDecision(input: {
       field,
       typed: (input.typed || candidateValue(other, field) || "").trim(),
       current: current ? party(current, field) : null,
+      other: party(other, field),
+      candidates,
+      fromReceipt,
+    };
+  }
+
+  if (field && !current && other && intruders.length === 1) {
+    return {
+      kind: "existing_customer",
+      field,
+      typed: (input.typed || candidateValue(other, field) || "").trim(),
+      current: null,
       other: party(other, field),
       candidates,
       fromReceipt,

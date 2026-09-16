@@ -8,6 +8,7 @@ Ref-guessing by an anonymous attacker must 404.
 from __future__ import annotations
 
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from django.test import Client
@@ -48,6 +49,32 @@ def test_tracking_api_allows_session_order_access(client, order):
 
     assert response.status_code == 200
     assert response.json()["ref"] == order.ref
+
+
+def test_tracking_route_resumes_pix_intent_that_has_no_payable_artifact(client, order):
+    order.data = {"payment": {"method": "pix", "intent_ref": "PAY-PARTIAL-EFI"}}
+    order.save(update_fields=["data", "updated_at"])
+
+    def finish_qr(current):
+        data = dict(current.data or {})
+        data["payment"] = {
+            **dict(data.get("payment") or {}),
+            "qr_code": "qr-image",
+            "copy_paste": "copy-paste",
+        }
+        current.data = data
+        current.save(update_fields=["data", "updated_at"])
+
+    with patch(
+        "shopman.shop.services.customer_orders.payment_service.initiate",
+        side_effect=finish_qr,
+    ) as resume:
+        response = client.get(f"/api/v1/tracking/{order.ref}/")
+
+    assert response.status_code == 200
+    resume.assert_called_once()
+    order.refresh_from_db()
+    assert order.data["payment"]["copy_paste"] == "copy-paste"
 
 
 def test_payment_api_ref_guess_returns_404(order_with_payment):

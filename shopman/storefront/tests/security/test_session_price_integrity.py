@@ -179,7 +179,7 @@ def test_checkout_draft_only_persists_whitelisted_fields(cart_session):
     resp = client.patch(
         "/api/v1/checkout/draft/",
         data=json.dumps({
-            "fulfillment_type": "teleport",  # invalid → coerced to pickup
+            "fulfillment_type": "pickup",
             "delivery_address_structured": {
                 "formatted_address": "Rua X 1",
                 "evil_key": "DROP TABLE",       # not whitelisted

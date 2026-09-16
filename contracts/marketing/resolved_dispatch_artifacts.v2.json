@@ -2,8 +2,10 @@
   "google_business": {
     "body": "Croissant Tradicional acabou de sair do forno ✨",
     "content_version": 7,
+    "delivery_kind": "publication",
     "facts_as_of": "",
     "facts_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "format": "standard",
     "hashtags": [
       "feitohoje",
       "croissant"
@@ -12,14 +14,16 @@
     "link": "https://shop.example/produto/croissant",
     "platform": "google_business",
     "provider_fields": {
-      "post_type": "OFFER"
+      "publication_format": "standard"
     }
   },
   "instagram": {
     "body": "Croissant Tradicional no forno ✨",
     "content_version": 7,
+    "delivery_kind": "publication",
     "facts_as_of": "",
     "facts_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "format": "feed",
     "hashtags": [
       "feitohoje",
       "instacroissant"
@@ -28,14 +32,16 @@
     "link": "https://shop.example/produto/croissant",
     "platform": "instagram",
     "provider_fields": {
-      "post_type": "FEED"
+      "publication_format": "feed"
     }
   },
   "whatsapp": {
     "body": "Croissant Tradicional quentinho. Peça agora: https://shop.example/produto/croissant",
     "content_version": 7,
+    "delivery_kind": "direct_message",
     "facts_as_of": "",
     "facts_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "format": "message",
     "hashtags": [
       "feitohoje",
       "croissant"

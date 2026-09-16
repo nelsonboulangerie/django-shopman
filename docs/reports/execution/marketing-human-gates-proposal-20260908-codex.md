@@ -1,6 +1,6 @@
 # Marketing — pacote recomendado de decisões dos gates humanos
 
-**Versão:** `marketing-human-gates.v1`
+**Versão:** `marketing-human-gates.v1.1`
 
 **Data:** 2026-09-08
 
@@ -8,7 +8,7 @@
 
 **Escopo:** G-H01 a G-H10 do plano `MARKETING-IRREPRESSIBLE-EXCELLENCE-PLAN-2026-09-08.md`
 
-**Confirmação humana:** em 2026-09-08, o proprietário confirmou o pacote por referência inequívoca à declaração da seção 13 com a resposta: “ok, pode prosseguir dessa forma.” A autorização conserva integralmente as exclusões e os gates futuros descritos neste documento.
+**Confirmação humana:** em 2026-09-08, o proprietário confirmou o pacote por referência inequívoca à declaração da seção 13 com a resposta: “ok, pode prosseguir dessa forma.” Em 2026-09-11, confirmou a recalibração estrita da quota de `fire` descrita na seção 6.5 com “ok, autorizo. já deve melhorar...”. As autorizações conservam integralmente as exclusões e os gates futuros descritos neste documento.
 
 ## 1. O que a confirmação deste pacote autoriza
 
@@ -306,10 +306,17 @@ As recomendações seguem autorização transacional server-side, token único e
 - login existente: manter 5/min por username e 30/min por IP;
 - audience preview: 30/min por user e 120/min por shop;
 - command perigoso: 10/min por user, 30/min por shop;
-- fire: 3/h por user e 10/dia por shop;
+- fire: 10 operações lógicas/h por user e 30/dia por shop; challenge,
+  confirmação e replay com a mesma idempotency key contam uma vez;
 - test-send: 5/h por user, 20/dia por shop, max 1 target, allowlist/sandbox verificado;
 - targets externos totais: 5.000/dia por shop até G-H08 recalibrar;
 - 429 sempre traz `Retry-After` e preserva draft/contexto.
+
+Recalibração aprovada pelo proprietário em 2026-09-11: o limite inicial de
+`3/h` contava cada request e fazia um fluxo válido gastar duas unidades só para
+abrir e concluir `PUBLICAR <count>`. A política acima conta a intenção lógica,
+mantém o burst de commands perigosos, todos os gates de step-up/confirmação e a
+quota durável de targets externos. A mudança não autoriza bypass de contador.
 
 ### 6.6 Emergency freeze
 

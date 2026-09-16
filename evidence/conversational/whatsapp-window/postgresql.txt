@@ -1,0 +1,4 @@
+AUDIT_IMPORTS ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-concierge-window-20260912/packages/orderman/shopman/orderman'] ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-concierge-window-20260912/packages/guestman/shopman/guestman']
+........................................................................ [ 75%]
+.......................                                                  [100%]
+95 passed in 13.48s

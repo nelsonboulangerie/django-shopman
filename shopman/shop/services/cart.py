@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 
+from django.db import transaction
+from shopman.orderman.exceptions import SessionError
 from shopman.orderman.models import Session
 
 from shopman.shop.services import availability, lot_pricing
@@ -42,6 +44,10 @@ class CartUnavailableError(Exception):
         self.error_code = error_code
         self.is_planned = is_planned
         self.planned_target_date = planned_target_date
+
+
+def lock_cart_session(*, session_key: str, channel_ref: str):
+    return Session.objects.select_for_update().filter(session_key=session_key, channel_ref=channel_ref).first()
 
 
 def get_open_session(*, session_key: str, channel_ref: str) -> Session | None:
@@ -89,6 +95,18 @@ def get_or_create_session(
     return session, session.session_key
 
 
+def _lock_cart_session(*, session_key: str, channel_ref: str) -> Session:
+    """O lock da Session precede reserva e escrita; a sessão selada não ganha holds."""
+    try:
+        session = Session.objects.select_for_update().get(session_key=session_key, channel_ref=channel_ref)
+    except Session.DoesNotExist as exc:
+        raise SessionError(code="not_found", message="Sacola não encontrada.") from exc
+    if session.state != "open":
+        raise SessionError(code=f"already_{session.state}", message="Esta sacola foi encerrada; consulte o resultado antes de continuar.")
+    return session
+
+
+@transaction.atomic
 def add_item(
     *,
     session_key: str | None,
@@ -106,6 +124,7 @@ def add_item(
         origin_channel=origin_channel,
     )
 
+    session = _lock_cart_session(session_key=resolved_key, channel_ref=channel_ref)
     existing = next((item for item in session.items if item.get("sku") == sku), None)
     hold_id = _reserve_or_raise(
         sku=sku,
@@ -116,7 +135,7 @@ def add_item(
     availability.bump_session_hold_expiry(resolved_key)
 
     if existing:
-        new_qty = int(Decimal(str(existing["qty"]))) + qty
+        new_qty = Decimal(str(existing["qty"])) + Decimal(str(qty))
         return (
             session_service.modify_session(
                 session_key=resolved_key,
@@ -145,6 +164,7 @@ def add_item(
     )
 
 
+@transaction.atomic
 def update_qty(
     *,
     session_key: str,
@@ -153,7 +173,8 @@ def update_qty(
     qty: int,
     sku: str | None = None,
 ) -> Session:
-    """Reconcile holds and update a cart line quantity."""
+    """Reconcile holds and update a cart line quantity in one local commit."""
+    _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
     line_sku = sku
     if line_sku is None:
         line = get_line(session_key=session_key, channel_ref=channel_ref, line_id=line_id)
@@ -169,7 +190,7 @@ def update_qty(
             raise CartUnavailableError(
                 sku=line_sku,
                 requested_qty=qty,
-                available_qty=int(result["available_qty"]),
+                available_qty=Decimal(str(result["available_qty"])),
                 is_paused=result["is_paused"],
                 substitutes=result["substitutes"],
                 error_code=result["error_code"],
@@ -184,6 +205,7 @@ def update_qty(
     )
 
 
+@transaction.atomic
 def remove_item(
     *,
     session_key: str,
@@ -191,7 +213,8 @@ def remove_item(
     line_id: str,
     sku: str | None = None,
 ) -> Session:
-    """Reconcile holds and remove a cart line."""
+    """Reconcile holds and remove a cart line in one local commit."""
+    _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
     line_sku = sku
     if line_sku is None:
         line = get_line(session_key=session_key, channel_ref=channel_ref, line_id=line_id)
@@ -356,6 +379,7 @@ def validate_and_apply_coupon(
     return session, promotion.name
 
 
+@transaction.atomic
 def apply_coupon_code(
     *,
     session_key: str,
@@ -371,9 +395,32 @@ def apply_coupon_code(
     and RFM segment from the session, and does so on every later reprice too.
     Open (non-segmented) coupons pass ``None``.
     """
-    session = get_open_session(session_key=session_key, channel_ref=channel_ref)
+    if customer and customer.get("ref"):
+        from shopman.shop.services import account as account_service
+
+        try:
+            locked_customer = account_service.lock_active_customer(
+                customer_ref=str(customer["ref"])
+            )
+        except account_service.AccountUnavailable as exc:
+            raise SessionError(
+                code="customer_inactive",
+                message="O titular deste cupom não está mais ativo.",
+            ) from exc
+        # The payload was built before a possible wait on Customer.  Derive the
+        # pricing identity again from the locked, active owner.
+        customer = {
+            "ref": locked_customer.ref,
+            "price_tier": (
+                locked_customer.price_tier.ref if locked_customer.price_tier_id else ""
+            ),
+        }
+
+    session = Session.objects.select_for_update().filter(session_key=session_key, channel_ref=channel_ref, state="open").first()
     if session is None:
         return None
+    if customer:
+        session.assert_accepts_personal_data("customer")
 
     data = session.data or {}
     data["coupon_code"] = code
@@ -395,9 +442,10 @@ def apply_coupon_code(
     )
 
 
+@transaction.atomic
 def remove_coupon_code(*, session_key: str, channel_ref: str) -> Session | None:
     """Remove coupon code and re-run session modifiers."""
-    session = get_open_session(session_key=session_key, channel_ref=channel_ref)
+    session = Session.objects.select_for_update().filter(session_key=session_key, channel_ref=channel_ref, state="open").first()
     if session is None:
         return None
 
@@ -419,6 +467,7 @@ def remove_coupon_code(*, session_key: str, channel_ref: str) -> Session | None:
     return session
 
 
+@transaction.atomic
 def set_delivery_draft(
     *,
     session_key: str,
@@ -436,9 +485,11 @@ def set_delivery_draft(
     the (possibly new) address; on pickup the delivery keys are dropped so the
     fee disappears from the total.
     """
-    session = get_open_session(session_key=session_key, channel_ref=channel_ref)
+    session = Session.objects.select_for_update().filter(session_key=session_key, channel_ref=channel_ref, state="open").first()
     if session is None:
         return None
+    if delivery_address_structured:
+        session.assert_accepts_personal_data("delivery_address_structured")
 
     data = dict(session.data or {})
     data["fulfillment_type"] = fulfillment_type
@@ -460,6 +511,7 @@ def set_delivery_draft(
     )
 
 
+@transaction.atomic
 def set_loyalty_redeem(
     *,
     session_key: str,
@@ -474,7 +526,7 @@ def set_loyalty_redeem(
     ``loyalty_redeem`` pricing key). Toggling here keeps them in sync instead of
     a UI-only flag that diverges from the discount actually applied.
     """
-    session = get_open_session(session_key=session_key, channel_ref=channel_ref)
+    session = Session.objects.select_for_update().filter(session_key=session_key, channel_ref=channel_ref, state="open").first()
     if session is None:
         return None
 
@@ -515,7 +567,7 @@ def _reserve_or_raise(*, sku: str, qty: int, session_key: str, channel_ref: str)
     raise CartUnavailableError(
         sku=sku,
         requested_qty=qty,
-        available_qty=int(result["available_qty"]),
+        available_qty=Decimal(str(result["available_qty"])),
         is_paused=result["is_paused"],
         substitutes=result["substitutes"],
         error_code=result["error_code"],

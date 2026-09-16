@@ -32,13 +32,31 @@ from .campaign import (
     MarketingTestReceipt,
     Trigger,
 )
+from .catalog_binding import CatalogBinding, CatalogSnapshot
 from .catalog_sync import CatalogSyncState, SyncStatus
 from .channel import Channel
-from .concierge import Conversation, ConversationMessage
+from .concierge import (
+    Conversation,
+    ConversationBinding,
+    ConversationMessage,
+    OutboundAttempt,
+)
 from .contact_release import ContactRelease, ReleasedContactKind
 from .delivery import DeliveryDistanceBand, DeliveryZone
+from .faq import FAQEntry
 from .omotenashi_copy import OmotenashiCopy
+from .privacy import (
+    PrivacyRequestOperation,
+    PrivacyRequestReceipt,
+    PrivacyRequestState,
+)
 from .promotion import Coupon, Promotion
+from .push_subscription import (
+    PUSH_CATEGORIES,
+    PUSH_SURFACE_CATEGORIES,
+    PushSubscription,
+    PushSurface,
+)
 from .quality import QualityDefect, QualityGrade
 from .rules import RuleConfig
 from .settings_proxies import (
@@ -70,14 +88,22 @@ __all__ = [
     "AttributeType",
     "ProductAffinity",
     "Conversation",
+    "ConversationBinding",
     "ConversationMessage",
+    "OutboundAttempt",
     "ContactRelease",
     "ReleasedContactKind",
     "Channel",
     "Promotion",
     "Coupon",
+    "PrivacyRequestOperation",
+    "PrivacyRequestReceipt",
+    "PrivacyRequestState",
     "DeliveryZone",
     "DeliveryDistanceBand",
+    "FAQEntry",
+    "CatalogBinding",
+    "CatalogSnapshot",
     "CatalogSyncState",
     "SyncStatus",
     "NotificationTemplate",
@@ -123,4 +149,8 @@ __all__ = [
     "NotificationEventType",
     "NotificationLifecycle",
     "NotificationSeverity",
+    "PUSH_CATEGORIES",
+    "PUSH_SURFACE_CATEGORIES",
+    "PushSubscription",
+    "PushSurface",
 ]

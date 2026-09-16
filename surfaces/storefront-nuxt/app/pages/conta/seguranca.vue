@@ -18,6 +18,8 @@ const privacyIssue = ref('')
 const deleteAccountOpen = ref(false)
 const deleteAccountAcknowledged = ref(false)
 const deleteAccountPending = ref(false)
+const deleteAccountIdempotencyKey = ref('')
+const deleteIntentStorageKey = 'shopman.account-deletion-intent.v1'
 const deviceIssue = ref('')
 const revokeDeviceOpen = ref(false)
 const revokeDeviceMode = ref<RevokeDeviceMode>('one')
@@ -32,6 +34,7 @@ const stepUpSendPending = ref(false)
 const stepUpSent = ref(false)
 const stepUpIssue = ref('')
 let pendingStepUpAction: null | (() => void | Promise<void>) = null
+let pendingStepUpPurpose: 'export' | 'delete' = 'export'
 const stepUpCodeStr = computed(() => stepUpCode.value.join('').slice(0, 6))
 
 const { data: devicesResponse, pending: devicesPending, refresh: refreshDevices } = await useFetch<AccountDeviceResponse>(apiPath('/api/v1/account/devices/'), {
@@ -40,6 +43,9 @@ const { data: devicesResponse, pending: devicesPending, refresh: refreshDevices 
 })
 
 const accountDevices = computed(() => devicesResponse.value?.devices || [])
+// Campo opcional mantém compatibilidade com o backend anterior durante rolling
+// deploy. Assim que o backend novo responde, falhamos fechados sem iniciar OTP.
+const privacyRequestsAvailable = computed(() => devicesResponse.value?.privacy_requests_available !== false)
 
 // ── Acesso rápido (passkey) ─────────────────────────────────────────
 //
@@ -135,7 +141,18 @@ async function exportData () {
 function askDeleteAccount () {
   privacyIssue.value = ''
   deleteAccountAcknowledged.value = false
+  if (import.meta.client && !deleteAccountIdempotencyKey.value) {
+    deleteAccountIdempotencyKey.value = sessionStorage.getItem(deleteIntentStorageKey) || crypto.randomUUID()
+    sessionStorage.setItem(deleteIntentStorageKey, deleteAccountIdempotencyKey.value)
+  }
   deleteAccountOpen.value = true
+}
+
+function cancelDeleteAccount () {
+  deleteAccountOpen.value = false
+  deleteAccountAcknowledged.value = false
+  deleteAccountIdempotencyKey.value = ''
+  if (import.meta.client) sessionStorage.removeItem(deleteIntentStorageKey)
 }
 
 async function deleteAccount () {
@@ -145,15 +162,21 @@ async function deleteAccount () {
   try {
     await $fetch(apiPath('/api/v1/account/delete/'), {
       method: 'POST',
-      headers: await csrfHeaders(),
+      headers: {
+        ...await csrfHeaders(),
+        'Idempotency-Key': deleteAccountIdempotencyKey.value
+      },
       credentials: 'include',
       body: { acknowledged: true }
     })
+    if (import.meta.client) sessionStorage.removeItem(deleteIntentStorageKey)
+    deleteAccountIdempotencyKey.value = ''
     session.reset()
     deleteAccountOpen.value = false
     await navigateTo('/')
   } catch (e) {
     privacyIssue.value = errorDetail(e, 'Não foi possível excluir a conta agora.')
+    deleteAccountOpen.value = true
   } finally {
     deleteAccountPending.value = false
   }
@@ -204,8 +227,9 @@ async function confirmRevokeDevice () {
   }
 }
 
-async function requireStepUp (action: () => void | Promise<void>) {
+async function requireStepUp (purpose: 'export' | 'delete', action: () => void | Promise<void>) {
   pendingStepUpAction = action
+  pendingStepUpPurpose = purpose
   stepUpCode.value = []
   stepUpIssue.value = ''
   stepUpSent.value = false
@@ -241,7 +265,7 @@ async function confirmStepUp () {
       method: 'POST',
       headers: await csrfHeaders(),
       credentials: 'include',
-      body: { code: stepUpCodeStr.value }
+      body: { code: stepUpCodeStr.value, purpose: pendingStepUpPurpose }
     })
     stepUpOpen.value = false
     const action = pendingStepUpAction
@@ -346,13 +370,19 @@ async function confirmPhoneChange () {
 // Exportar dados exige step-up antes do download (GET passa pela marca de sessão).
 function startExport () {
   privacyIssue.value = ''
-  void requireStepUp(exportData)
+  if (!privacyRequestsAvailable.value) return
+  void requireStepUp('export', exportData)
 }
 
 // Excluir conta: fecha o diálogo de ack e exige step-up antes de anonimizar.
 function confirmDeleteAccount () {
+  if (!privacyRequestsAvailable.value) return
   deleteAccountOpen.value = false
-  void requireStepUp(deleteAccount)
+  if (privacyIssue.value && deleteAccountIdempotencyKey.value) {
+    void deleteAccount()
+    return
+  }
+  void requireStepUp('delete', deleteAccount)
 }
 
 useSeoMeta({ title: 'Segurança e dados' })
@@ -554,11 +584,15 @@ useSeoMeta({ title: 'Segurança e dados' })
           <UiAlertTitle>Privacidade</UiAlertTitle>
           <UiAlertDescription>{{ privacyIssue }}</UiAlertDescription>
         </UiAlert>
+        <UiAlert v-if="!privacyRequestsAvailable">
+          <UiAlertTitle>Solicitações temporariamente indisponíveis</UiAlertTitle>
+          <UiAlertDescription>Não é possível exportar seus dados ou excluir sua conta agora. Tente novamente mais tarde.</UiAlertDescription>
+        </UiAlert>
         <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <UiButton variant="outline" class="justify-start" icon="lucide:download" :loading="exportPending" @click="startExport">
+          <UiButton variant="outline" class="justify-start" icon="lucide:download" :loading="exportPending" :disabled="!privacyRequestsAvailable" @click="startExport">
             Exportar meus dados
           </UiButton>
-          <UiButton variant="destructive" class="justify-start" icon="lucide:user-x" @click="askDeleteAccount">
+          <UiButton variant="destructive" class="justify-start" icon="lucide:user-x" :disabled="!privacyRequestsAvailable" @click="askDeleteAccount">
             Excluir minha conta
           </UiButton>
         </div>
@@ -584,7 +618,7 @@ useSeoMeta({ title: 'Segurança e dados' })
             <UiCheckbox id="delete-account-ack" v-model="deleteAccountAcknowledged" />
           </UiField>
           <UiAlertDialogFooter>
-            <UiAlertDialogCancel :disabled="deleteAccountPending">Voltar</UiAlertDialogCancel>
+            <UiAlertDialogCancel :disabled="deleteAccountPending" @click="cancelDeleteAccount">Voltar</UiAlertDialogCancel>
             <UiAlertDialogAction variant="destructive" :disabled="!deleteAccountAcknowledged || deleteAccountPending" @click="confirmDeleteAccount">
               Continuar
             </UiAlertDialogAction>

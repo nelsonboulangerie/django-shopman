@@ -44,10 +44,17 @@ SHOPMAN_ENVIRONMENT = "development"
 SHOPMAN_EXPOSE_DEBUG_OTP = True
 SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED = False
 SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED = False
+SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED = False
 SHOPMAN_MARKETING_SIMULATION_ENABLED = False
 SHOPMAN_MARKETING_DELIVERY_ADAPTERS = {}
+SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED = False
+SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED = False
+SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED = False
 SHOPMAN_MARKETING_TARGET_HMAC_KEY = "test-only-marketing-target-hmac-key"
 SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION = 1
+SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY = "test-only-privacy-receipt-hmac-key-v1"
+SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION = 1
+SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS = {}
 # ⚠️ TRUE, que é o valor do STAGING (.do/app.staging-subdomains.yaml).
 #
 SHOPMAN_ADMIN_REQUIRE_2FA = False
@@ -58,6 +65,8 @@ SHOPMAN_PIX_EXPIRY_SECONDS = 3600
 STOREFRONT_TRACKING_POLL_SECONDS = 30
 STOCKMAN_ALERT_COOLDOWN_MINUTES = 60
 GOOGLE_MAPS_API_KEY = ""
+GOOGLE_MAPS_BROWSER_API_KEY = ""
+GOOGLE_MAPS_SERVER_API_KEY = ""
 
 # ── Adapters e seams plugáveis ───────────────────────────────────────────────
 SHOPMAN_PAYMENT_ADAPTERS = {
@@ -112,12 +121,29 @@ SHOPMAN_MACHINE_ALLOW_IN_DEBUG = False
 MANYCHAT_API_TOKEN = ""
 MANYCHAT_WEBHOOK_SECRET = ""
 MANYCHAT_WHATSAPP_ID_FIELD_ID = ""
+SHOPMAN_MARKETING_META.update(  # noqa: F405
+    page_id="",
+    ig_user_id="",
+    page_access_token="",
+)
+SHOPMAN_MARKETING_GOOGLE.update(  # noqa: F405
+    access_token="",
+    client_id="",
+    client_secret="",
+    refresh_token="",
+    account_id="",
+    location_id="",
+)
 SHOPMAN_MANYCHAT.update(  # noqa: F405
     api_token="",
     base_url="https://api.manychat.com/fb",
     timeout=15,
     whatsapp_id_field_id="",
     resolver="shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.resolve",
+    otp_resolver=(
+        "shopman.guestman.contrib.manychat.resolver."
+        "ManychatSubscriberResolver.resolve_active_customer"
+    ),
 )
 SHOPMAN_MARKETING_TEST_TARGETS = {}
 SHOPMAN_MARKETING_SIMULATION_IGNORE_QUIET_HOURS = False

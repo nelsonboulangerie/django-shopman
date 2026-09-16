@@ -5,6 +5,7 @@
 // is the authoritative confirmation, so the copy is "aguarde confirmação".
 import { toast } from "vue-sonner";
 import type { PaymentProofView } from "~/presentation/payment";
+import type { POSPaymentDeliveryProjection } from "~/types/pos";
 
 // `status` = estado do polling PIX vindo do composable: 'polling' (aguardando),
 // 'paid' (confirmado), 'expired' (desistiu — terminal/timeout). Cartão/dinheiro
@@ -17,15 +18,23 @@ const props = defineProps<{
   status?: "idle" | "polling" | "paid" | "expired";
   large?: boolean;
   resending?: boolean;
+  delivery?: POSPaymentDeliveryProjection | null;
 }>();
 
 // O reenvio é um GESTO de rede (Directive nova no servidor), não estado local:
 // sobe para quem tem o transporte (usePosSale), como todo comando do balcão.
-const emit = defineEmits<{ resendLink: [] }>();
+const emit = defineEmits<{ paymentNotice: ["send" | "resend"] }>();
+
+const deliveryIcon = computed(() => {
+  if (props.delivery?.status === "accepted") return "lucide:badge-check";
+  if (props.delivery?.status === "failed" || props.delivery?.status === "skipped") return "lucide:circle-alert";
+  if (props.delivery?.status === "queued" || props.delivery?.status === "sending") return "lucide:loader-circle";
+  return "lucide:message-circle-more";
+});
 
 const TONE_CLASS: Record<PaymentProofView["tone"], string> = {
   info: "border-info/30 bg-info/10 text-info",
-  warning: "border-warning/30 bg-warning/10 text-amber-800 dark:text-amber-300",
+  warning: "border-warning/30 bg-warning/10 text-warning",
   success: "border-success/30 bg-success/10 text-success",
   danger: "border-destructive/40 bg-destructive/5 text-destructive",
   neutral: "border bg-muted/40",
@@ -62,7 +71,7 @@ async function copyLink() {
   >
     <div class="flex items-center gap-2">
       <Icon name="lucide:circle-check-big" class="size-5" />
-      <p class="text-sm font-semibold">Pagamento PIX confirmado · {{ proof.amountDisplay }}</p>
+      <p class="text-sm font-semibold tabular-nums">Pagamento PIX confirmado · {{ proof.amountDisplay }}</p>
     </div>
   </div>
 
@@ -70,7 +79,7 @@ async function copyLink() {
     <div class="flex items-center gap-2">
       <Icon :name="proof.icon" class="size-5" />
       <div class="min-w-0 flex-1">
-        <p class="text-sm font-semibold">{{ proof.isPix ? "Pagamento PIX" : "Link de pagamento" }} · {{ proof.amountDisplay }}</p>
+        <p class="text-sm font-semibold tabular-nums">{{ proof.isPix ? "Pagamento PIX" : "Link de pagamento" }} · {{ proof.amountDisplay }}</p>
         <!-- Duas coisas diferentes moram nesta linha, e as duas valem.
              (1) No LINK, a frase diz o que a casa FAZ com a URL — a cadeia
              WhatsApp → e-mail → SMS enfileirada na venda — e deixa a cópia
@@ -80,14 +89,27 @@ async function copyLink() {
              linha de baixo já diz em cinco palavras, com o giro do polling ao
              lado. Três frases para um fato é o operador parando de ler as três.
              Ela volta a aparecer quando NÃO há prova: aí é a única voz. -->
-        <p v-if="proof.isLink" class="text-xs opacity-90">Enviando o link ao cliente por WhatsApp, e-mail ou SMS. Se preferir, copie e mande você.</p>
+        <p
+          v-if="delivery?.notice"
+          class="mt-0.5 flex items-start gap-1 text-xs opacity-90"
+          :class="delivery.status === 'failed' || delivery.status === 'skipped' ? 'text-warning' : ''"
+          data-payment-delivery
+        >
+          <Icon
+            :name="deliveryIcon"
+            class="mt-0.5 size-3.5 shrink-0"
+            :class="(delivery.status === 'queued' || delivery.status === 'sending') && 'animate-spin'"
+          />
+          <span>{{ delivery.notice }}</span>
+        </p>
+        <p v-else-if="proof.isLink" class="text-xs opacity-90">Link criado. Confirme o envio ou copie e mande manualmente.</p>
         <p v-else-if="proof.message && !(proof.isPix && proof.hasProof)" class="text-xs opacity-90">{{ proof.message }}</p>
         <!-- Aguardando: gira só ENQUANTO polla. Ao desistir, para de mentir. -->
         <p v-if="proof.isPix && proof.hasProof && status === 'polling'" class="mt-0.5 flex items-center gap-1 text-xs opacity-80">
           <Icon name="lucide:loader-circle" class="size-3 animate-spin" /> Aguardando confirmação do PIX…
         </p>
         <!-- Desistiu (expirado/cancelado): acusa honestamente, sem prometer o que não cumpre. -->
-        <p v-else-if="proof.isPix && proof.hasProof && status === 'expired'" class="mt-0.5 flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-400">
+        <p v-else-if="proof.isPix && proof.hasProof && status === 'expired'" class="mt-0.5 flex items-center gap-1 text-xs font-medium text-warning">
           <Icon name="lucide:clock-alert" class="size-3.5" /> Não confirmamos o PIX automaticamente. Confira no gestor ou gere um novo pagamento.
         </p>
       </div>
@@ -95,6 +117,7 @@ async function copyLink() {
 
     <!-- PIX: QR + copia-e-cola -->
     <template v-if="proof.isPix && proof.hasProof">
+      <!-- Fundo branco proposital: preservar leitura óptica do QR em ambos os temas. -->
       <img
         v-if="proof.qrCodeSrc"
         :src="proof.qrCodeSrc"
@@ -129,22 +152,22 @@ async function copyLink() {
         <Icon name="lucide:copy" class="size-4" />
         Copiar link
       </UiButton>
-      <!-- "Não chegou": manda de novo a MESMA URL pela cadeia da casa
-           (WhatsApp → e-mail → SMS). O servidor recusa link vencido, pedido
-           pago/cancelado e clique cedo demais — a recusa vira toast com o
-           motivo, não botão escondido. -->
-      <UiButton
-        variant="outline"
-        size="sm"
-        class="shrink-0 gap-2"
-        :disabled="resending"
-        data-action="resend-link"
-        @click="emit('resendLink')"
-      >
-        <Icon :name="resending ? 'lucide:loader-circle' : 'lucide:send'" class="size-4" :class="resending && 'animate-spin'" />
-        Reenviar
-      </UiButton>
     </div>
+
+    <!-- O servidor escolhe o template e informa se o gesto seguro é enviar ou
+         reenviar. A UI não presume canal nem afirma entrega antes do adapter. -->
+    <UiButton
+      v-if="delivery?.action"
+      variant="outline"
+      size="sm"
+      class="gap-2"
+      :disabled="resending"
+      data-action="send-payment-notice"
+      @click="emit('paymentNotice', delivery.action)"
+    >
+      <Icon :name="resending ? 'lucide:loader-circle' : 'lucide:send'" class="size-4" :class="resending && 'animate-spin'" />
+      {{ delivery.action_label }}
+    </UiButton>
 
     <!-- Card: hosted checkout link (delegated; no capture here) -->
     <a

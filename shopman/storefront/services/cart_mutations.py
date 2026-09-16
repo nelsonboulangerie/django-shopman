@@ -6,6 +6,7 @@ from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from django.db import transaction
 from django.http import HttpRequest
 from shopman.utils.monetary import format_money
 
@@ -53,6 +54,7 @@ def parse_cart_qty(raw, *, minimum: int) -> int | None:
     return min(qty, MAX_CART_LINE_QTY)
 
 
+@transaction.atomic
 def set_qty_by_sku(
     request: HttpRequest,
     *,
@@ -66,6 +68,10 @@ def set_qty_by_sku(
     It keeps the server authoritative for price, holds and stock while letting
     different surfaces share the same action semantics.
     """
+    key = request.session.get("cart_session_key")
+    if key:
+        from shopman.shop.services.cart import lock_cart_session
+        lock_cart_session(session_key=key, channel_ref=STOREFRONT_CHANNEL_REF)
     with _perf_step(perf, "cart_read"):
         cart = CartService.get_cart_summary(request, include_items=True)
     with _perf_step(perf, "intent"):

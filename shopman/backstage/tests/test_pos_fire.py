@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+from unittest.mock import patch
+
 from django.test import TestCase
+from django.utils import timezone
 from shopman.orderman.models import Session
 
 from shopman.backstage.models import KDSInstance, KDSTicket, POSTab
@@ -161,6 +165,54 @@ class POSFireTabTests(TestCase):
         )
         self.assertEqual(third.fired_count, 0)
         self.assertEqual(KDSTicket.objects.filter(session_key=session.session_key).count(), 2)
+
+    def test_future_preorder_cannot_fire_until_its_delivery_date(self) -> None:
+        """Enviar uma encomenda futura não pode criar trabalho físico hoje."""
+        from shopman.shop.services.pos_intent import PosIntentError
+
+        session = self._open_tab_with_two_items()
+        delivery_day = timezone.localdate() + timedelta(days=1)
+        session.data = {
+            **(session.data or {}),
+            "pos": {**((session.data or {}).get("pos") or {}), "sales_mode": "order"},
+            "fulfillment_type": "pickup",
+            "delivery_date": delivery_day.isoformat(),
+        }
+        session.save(update_fields=["data"])
+
+        with self.assertRaises(PosIntentError) as raised:
+            pos_service.fire_pos_tab(
+                channel_ref="pdv",
+                session_key=session.session_key,
+                actor="pos:alice",
+                operator_username="alice",
+            )
+
+        error = raised.exception
+        self.assertEqual(error.code, "preorder_not_due")
+        self.assertEqual(error.field, "delivery_date")
+        self.assertEqual(error.focus, "schedule")
+        self.assertEqual(error.context, {
+            "delivery_date": delivery_day.isoformat(),
+            "today": (delivery_day - timedelta(days=1)).isoformat(),
+        })
+        self.assertIn(delivery_day.strftime("%d/%m/%Y"), error.message)
+        self.assertEqual(KDSTicket.objects.filter(session_key=session.session_key).count(), 0)
+        session.refresh_from_db()
+        self.assertFalse((session.data or {}).get("fired_lines"))
+
+        # O mesmo rascunho volta a ser disparável quando a data chega. Não há
+        # flag para limpar nem exceção operacional a conceder.
+        with patch("shopman.shop.services.pos.timezone.localdate", return_value=delivery_day):
+            result = pos_service.fire_pos_tab(
+                channel_ref="pdv",
+                session_key=session.session_key,
+                actor="pos:alice",
+                operator_username="alice",
+            )
+
+        self.assertEqual(result.fired_count, 1)
+        self.assertEqual(KDSTicket.objects.filter(session_key=session.session_key).count(), 1)
 
     def test_pedir_mais_do_mesmo_item_vira_uma_linha_nova_na_cozinha(self) -> None:
         """O segundo chá. Ele é uma LINHA, não uma unidade a mais na primeira.
@@ -486,6 +538,16 @@ class POSFireTabTests(TestCase):
         ticket.refresh_from_db()
         self.assertEqual(ticket.status, "pending")
         self.assertEqual({it["line_id"] for it in ticket.items}, {second_line})
+        cancelled_item = KDSTicket.objects.get(
+            session_key=session.session_key,
+            status="cancelled",
+        )
+        self.assertEqual(
+            {it["line_id"] for it in cancelled_item.items},
+            {first_line},
+            "o item retirado precisa continuar visível no KDS até a cozinha confirmar ciência",
+        )
+        self.assertIsNone(cancelled_item.acknowledged_at)
         # The cart shows the cancelled line as fireable again.
         fired_flags = {it["line_id"]: it["fired"] for it in build_open_tab(trim.session)["items"]}
         self.assertFalse(fired_flags[first_line])

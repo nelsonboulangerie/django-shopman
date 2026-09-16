@@ -194,7 +194,7 @@ jobs:
           cat "published/${{ matrix.tag }}.json"
 
       - name: Subir o manifesto do componente
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: published-${{ matrix.tag }}
           path: published/${{ matrix.tag }}.json
@@ -214,7 +214,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Baixar os manifestos dos componentes
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           pattern: published-*
           path: parts
@@ -257,7 +257,7 @@ jobs:
           EOF
 
       - name: Subir o manifesto do run
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: published-components
           path: published.json

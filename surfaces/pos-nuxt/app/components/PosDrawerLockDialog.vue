@@ -70,7 +70,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydownCapture, 
         </UiDialogClose>
       </template>
       <UiDialogHeader class="items-center text-center">
-        <div class="mx-auto grid size-12 place-items-center rounded-md border border-warning/40 bg-warning/10 text-amber-600 dark:text-amber-400">
+        <div class="mx-auto grid size-12 place-items-center rounded-md border border-warning/40 bg-warning/10 text-warning">
           <Icon name="lucide:inbox" class="size-6" />
         </div>
         <UiDialogTitle class="text-lg">Gaveta aberta</UiDialogTitle>
@@ -88,6 +88,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydownCapture, 
           Aguardando a gaveta fechar
         </p>
 
+      <!-- Proposital: acesso de emergência discreto do gerente, com alvo de toque de 44px. -->
       <!-- A porta da emergência para quem NÃO tem teclado.
            Três pontinhos, sem rótulo, sem cadeado, sem explicação — quem foi
            treinado sabe; quem não foi não aprende olhando. O alvo de toque é

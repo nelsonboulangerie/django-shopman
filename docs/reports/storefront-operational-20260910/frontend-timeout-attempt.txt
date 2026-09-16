@@ -1,0 +1,91 @@
+
+> test
+> vitest run --run
+
+
+ RUN  v4.1.6 /private/tmp/shopman-storefront-execution-20260910/surfaces/storefront-nuxt
+
+ ❯ |component| tests/composables/useShopSession.test.ts (8 tests | 8 skipped) 10064ms
+ ❯ |component| tests/composables/confetti.test.ts (2 tests | 2 skipped) 10060ms
+ ❯ |component| tests/composables/useCartState.test.ts (10 tests | 10 skipped) 10600ms
+ ❯ |component| tests/composables/useFavoritesState.test.ts (4 tests | 4 skipped) 10602ms
+ ❯ |component| tests/composables/useOrderTrackingStream.test.ts (7 tests | 7 skipped) 10558ms
+ ❯ |component| tests/composables/useReorder.test.ts (6 tests | 6 skipped) 10473ms
+ ❯ |component| tests/components/starRating.test.ts (3 tests | 3 skipped) 10223ms
+ ❯ |component| tests/components/connectivity.test.ts (3 tests | 3 skipped) 11302ms
+ ❯ |component| tests/components/pinInputLabel.test.ts (1 test | 1 skipped) 10738ms
+ ❯ |component| tests/components/starRatingInSheet.test.ts (1 test | 1 skipped) 10749ms
+ ❯ |component| tests/components/cartQuantityAction.test.ts (3 tests | 3 skipped) 10644ms
+ ❯ |component| tests/components/substituteSheet.test.ts (3 tests | 3 skipped) 10770ms
+ ❯ |component| tests/components/stockNotifyButton.test.ts (5 tests | 5 skipped) 10579ms
+ ❯ |unit| tests/browserHandoff.test.ts (10 tests | 1 failed) 7681ms
+     × reconhece o do WhatsApp nos dois sistemas 5251ms
+ ❯ |component| tests/components/badge.smoke.test.ts (2 tests | 2 skipped) 10365ms
+stdout | tests/pages/offerOutcome.test.ts
+<Suspense> is an experimental feature and its API will likely change.
+
+ ❯ |component| tests/pages/offerOutcome.test.ts (2 tests | 1 failed) 16173ms
+     × shows added and missing names before navigating after a partial claim 5096ms
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 14 ⎯⎯⎯⎯⎯⎯
+
+ FAIL  |component| tests/components/badge.smoke.test.ts [ tests/components/badge.smoke.test.ts ]
+ FAIL  |component| tests/components/cartQuantityAction.test.ts [ tests/components/cartQuantityAction.test.ts ]
+ FAIL  |component| tests/components/connectivity.test.ts [ tests/components/connectivity.test.ts ]
+ FAIL  |component| tests/components/pinInputLabel.test.ts [ tests/components/pinInputLabel.test.ts ]
+ FAIL  |component| tests/components/starRating.test.ts [ tests/components/starRating.test.ts ]
+ FAIL  |component| tests/components/starRatingInSheet.test.ts [ tests/components/starRatingInSheet.test.ts ]
+ FAIL  |component| tests/components/stockNotifyButton.test.ts [ tests/components/stockNotifyButton.test.ts ]
+ FAIL  |component| tests/components/substituteSheet.test.ts [ tests/components/substituteSheet.test.ts ]
+ FAIL  |component| tests/composables/confetti.test.ts [ tests/composables/confetti.test.ts ]
+ FAIL  |component| tests/composables/useCartState.test.ts [ tests/composables/useCartState.test.ts ]
+ FAIL  |component| tests/composables/useFavoritesState.test.ts [ tests/composables/useFavoritesState.test.ts ]
+ FAIL  |component| tests/composables/useOrderTrackingStream.test.ts [ tests/composables/useOrderTrackingStream.test.ts ]
+ FAIL  |component| tests/composables/useReorder.test.ts [ tests/composables/useReorder.test.ts ]
+ FAIL  |component| tests/composables/useShopSession.test.ts [ tests/composables/useShopSession.test.ts ]
+Error: Hook timed out in 10000ms.
+If this is a long-running hook, pass a timeout value as the last argument or configure it globally with "hookTimeout".
+ ❯ node_modules/@nuxt/test-utils/dist/runtime/entry.mjs:4:74
+      2| import { beforeAll } from "vitest";
+      3| //#region src/runtime/entry.ts
+      4| if (typeof window !== "undefined" && window.__NUXT_VITEST_ENVIRONMENT_…
+       |                                                                          ^
+      5|  await setupNuxt();
+      6| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/16]⎯
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| tests/browserHandoff.test.ts > reconhecer o navegador embutido > reconhece o do WhatsApp nos dois sistemas
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/browserHandoff.test.ts:17:3
+     15|
+     16| describe('reconhecer o navegador embutido', () => {
+     17|   it('reconhece o do WhatsApp nos dois sistemas', async () => {
+       |   ^
+     18|     const { isInAppBrowser } = await import('../app/composables/useBro…
+     19|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/16]⎯
+
+ FAIL  |component| tests/pages/offerOutcome.test.ts > offer outcome on its existing page > shows added and missing names before navigating after a partial claim
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/pages/offerOutcome.test.ts:49:30
+     34|     page.unmount()
+     35|   })
+     36| })
+       |   ^
+     37|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/16]⎯
+
+
+ Test Files  16 failed | 43 passed (59)
+      Tests  2 failed | 488 passed | 58 skipped (548)
+   Start at  23:35:42
+   Duration  93.18s (transform 304.68s, setup 8.70s, import 216.85s, tests 182.59s, environment 45.88s)
+

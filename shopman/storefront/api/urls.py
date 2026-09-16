@@ -41,7 +41,12 @@ from .auth import (
     TrustDeviceView,
     VerifyCodeView,
 )
-from .availability import AvailabilityView, StockAlertSubscribeView
+from .availability import (
+    AvailabilityView,
+    StockAlertIntentView,
+    StockAlertManagementView,
+    StockAlertSubscribeView,
+)
 from .catalog import CollectionListView, ProductDetailView, ProductListView
 from .conversation import OrderConversationView
 from .fomo import FomoBadgesView
@@ -62,6 +67,7 @@ from .surface import (
 )
 from .telemetry import ClientErrorView
 from .tracking import (
+    OrderCancellationRequestView,
     OrderCancelView,
     OrderConfirmReceiptView,
     OrderRateView,
@@ -103,7 +109,9 @@ urlpatterns = [
     path("checkout/loyalty/", CheckoutLoyaltyView.as_view(), name="api-checkout-loyalty"),
     # Availability
     path("availability/<str:sku>/", AvailabilityView.as_view(), name="api-availability"),
+    path("availability/<str:sku>/notify/intent/", StockAlertIntentView.as_view(), name="api-availability-notify-intent"),
     path("availability/<str:sku>/notify/", StockAlertSubscribeView.as_view(), name="api-availability-notify"),
+    path("stock-alert/manage/", StockAlertManagementView.as_view(), name="api-stock-alert-manage"),
     # FOMO — badges de urgência real (últimas unidades, saiu do forno…).
     # Fetch canônico do canal SSE ``fomo-<sku>``: o push só avisa que mudou.
     path("fomo/<str:sku>/", FomoBadgesView.as_view(), name="api-fomo"),
@@ -129,6 +137,11 @@ urlpatterns = [
     # deste endpoint — sem depender de CORS.
     path("tracking/<str:ref>/events/", order_events_view, name="api-tracking-events"),
     path("orders/<str:ref>/cancel/", OrderCancelView.as_view(), name="api-order-cancel"),
+    path(
+        "orders/<str:ref>/cancellation-request/",
+        OrderCancellationRequestView.as_view(),
+        name="api-order-cancellation-request",
+    ),
     path(
         "orders/<str:ref>/waitlist-confirm/",
         OrderWaitlistConfirmView.as_view(),

@@ -45,6 +45,7 @@ from decimal import Decimal
 from django.contrib.auth import login, logout
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError
+from django.http import FileResponse
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
@@ -64,6 +65,7 @@ from shopman.backstage.api._production_filters import (
     ProductionManagementQuerySerializer,
     ProductionMiseEnPlaceQuerySerializer,
     ProductionWeighingQuerySerializer,
+    encode_report_cursor,
     report_filters,
     validated_query,
 )
@@ -75,11 +77,13 @@ from shopman.backstage.api._production_mutations import (
     ProductionOvenConcludeMutationSerializer,
     ProductionPlanMutationSerializer,
     ProductionQualityCorrectionMutationSerializer,
+    ProductionQualityReviewMutationSerializer,
     ProductionQuickFinishMutationSerializer,
     ProductionStartMutationSerializer,
     ProductionVoidMutationSerializer,
     validated_body,
 )
+from shopman.backstage.api.pos_concurrency import tab_command
 from shopman.backstage.api.production_freshness import (
     override_attempt_digest,
     override_shortage_snapshot,
@@ -102,6 +106,7 @@ from shopman.backstage.projections.pos import (
     build_pos_shift_summary,
     build_pos_tabs,
 )
+from shopman.backstage.projections.pos_payment_delivery import build_pos_payment_delivery
 from shopman.backstage.projections.production import (
     build_production_blind_map,
     build_production_board,
@@ -109,10 +114,12 @@ from shopman.backstage.projections.production import (
     build_production_forecast,
     build_production_kds,
     build_production_mise_en_place,
+    build_production_report_page,
     build_production_reports,
     build_production_weighing,
     build_qc_kiosk,
     resolve_production_access,
+    sort_production_reports,
 )
 from shopman.backstage.services import (
     closing as closing_service,
@@ -148,6 +155,7 @@ from shopman.shop.services.pos import (
     PosTaxIdOverwriteError,
 )
 from shopman.shop.services.pos_intent import PosIntentError
+from shopman.shop.services.quality import EffectiveQualityPartitionError
 
 from .permissions import (
     HasBackstagePermission,
@@ -513,6 +521,8 @@ def _cash_shift_result(shift) -> dict:
 def _pos_payload_with_runtime(request, body: dict) -> dict:
     """Attach the active POS runtime context that browser surfaces should not invent."""
     payload = dict(body or {})
+    payload.pop("cash_shift_id", None)
+    payload.pop("pos_terminal_ref", None)
     cash_shift = _open_cash_shift_for_request(request)
     if cash_shift:
         # O servidor CONHECE o turno do operador — o browser nunca decide a
@@ -523,12 +533,8 @@ def _pos_payload_with_runtime(request, body: dict) -> dict:
 
 
 def _open_cash_shift_for_request(request):
-    """O turno ABERTO do operador no ``cashman`` — é o pk dele que vai em ``cash_shift_id``."""
-    try:
-        return pos_service.current_shift()
-    except Exception:
-        logger.debug("pos_runtime_payload_enrichment_failed user=%s", _actor(request), exc_info=True)
-        return None
+    """Resolve o turno exclusivamente pela estação desta requisição."""
+    return pos_service.current_shift(_terminal_do_pedido(request), strict=True)
 
 
 def _cash_shift_required_response() -> Response:
@@ -659,7 +665,9 @@ class POSPaymentStatusView(APIView):
         except Exception:
             logger.warning("pos.payment_status: resolve_timeouts falhou order=%s", ref, exc_info=True)
 
-        return Response(projection_data(build_payment_status(order)))
+        payload = projection_data(build_payment_status(order))
+        payload["payment_delivery"] = build_pos_payment_delivery(order)
+        return Response(payload)
 
 
 # ── Generic operator identification (PIN / badge) — shared by all surfaces ──
@@ -1327,6 +1335,16 @@ class ProductionReportsCSVRenderer(BaseRenderer):
         return json.dumps(data).encode("utf-8")
 
 
+def _quality_report_unavailable_response() -> Response:
+    return Response(
+        {
+            "detail": "Não foi possível confirmar a qualidade efetiva. Tente novamente sem usar dados parciais.",
+            "error": {"code": "quality_projection_unavailable", "recovery": "retry"},
+        },
+        status=503,
+    )
+
+
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
@@ -1350,15 +1368,110 @@ class ProductionReportsView(APIView):
             selected_date=filters["date_to"],
         )
         if request.accepted_renderer.format == "csv":
-            csv_bytes = production_service.export_reports_csv(filters["report_kind"], filters)
             filename = f"producao_{filters['report_kind']}_{filters['date_from']}_{filters['date_to']}.csv"
-            return Response(
-                csv_bytes,
+            try:
+                prepared = production_service.prepare_reports_csv(filters["report_kind"], filters)
+            except production_service.ProductionReportExportLimitExceeded as exc:
+                return Response(
+                    {
+                        "detail": "O relatório é grande demais para exportação síncrona. Reduza o período ou os filtros.",
+                        "error": {
+                            "code": "report_export_too_large",
+                            "recovery": "narrow_filters",
+                            "limit": exc.limit,
+                            "maximum": exc.maximum,
+                        },
+                    },
+                    status=413,
+                )
+            except production_service.ProductionReportChangedDuringExport:
+                return Response(
+                    {
+                        "detail": "O relatório mudou durante a preparação. Aplique os filtros e tente novamente.",
+                        "error": {"code": "stale_report_export", "recovery": "apply_filters"},
+                    },
+                    status=409,
+                )
+            except EffectiveQualityPartitionError:
+                return _quality_report_unavailable_response()
+            return FileResponse(
+                prepared,
+                as_attachment=True,
+                filename=filename,
                 content_type="text/csv; charset=utf-8",
-                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )
-        reports = build_production_reports(filters, access=access)
-        return Response({"reports": projection_data(reports)})
+        if not filters["selected_only"]:
+            try:
+                reports = sort_production_reports(
+                    build_production_reports(filters, access=access),
+                    filters["sort"],
+                )
+            except EffectiveQualityPartitionError:
+                return _quality_report_unavailable_response()
+            field = {
+                "history": "history_rows",
+                "operator_productivity": "operator_rows",
+                "recipe_waste": "waste_rows",
+                "quality": "quality_rows",
+            }[filters["report_kind"]]
+            total = len(getattr(reports, field))
+            return Response(
+                {
+                    "reports": projection_data(reports),
+                    "pagination": {
+                        "total": total,
+                        "page_size": total,
+                        "from": 1 if total else 0,
+                        "to": total,
+                        "sort": filters["sort"],
+                        "next_cursor": "",
+                        "previous_cursor": "",
+                    },
+                }
+            )
+        page_size = filters["page_size"]
+        page_offset = filters["page_offset"]
+        try:
+            reports, total, revision, stable = build_production_report_page(
+                filters,
+                sort=filters["sort"],
+                offset=page_offset,
+                page_size=page_size,
+                access=access,
+            )
+        except EffectiveQualityPartitionError:
+            return _quality_report_unavailable_response()
+        if not stable or (filters["cursor_revision"] and filters["cursor_revision"] != revision):
+            return Response(
+                {
+                    "detail": "O relatório mudou desde a página anterior. Aplique os filtros novamente.",
+                    "error": {
+                        "code": "stale_report_cursor",
+                        "recovery": "apply_filters",
+                    },
+                },
+                status=409,
+            )
+        next_offset = page_offset + page_size
+        previous_offset = max(0, page_offset - page_size)
+        return Response(
+            {
+                "reports": projection_data(reports),
+                "pagination": {
+                    "total": total,
+                    "page_size": page_size,
+                    "from": page_offset + 1 if total else 0,
+                    "to": min(page_offset + page_size, total),
+                    "sort": filters["sort"],
+                    "next_cursor": (
+                        encode_report_cursor(filters, next_offset, revision) if next_offset < total else ""
+                    ),
+                    "previous_cursor": (
+                        encode_report_cursor(filters, previous_offset, revision) if page_offset else ""
+                    ),
+                },
+            }
+        )
 
 
 @extend_schema_view(
@@ -1778,6 +1891,61 @@ class OrderRejectView(_OrderActionBase):
         return self._context_response(request, order, "reject", {"reason": reason, "cancellation_code": code}, execute, prepare=prepare)
 
 
+class OrderIFoodEvidenceView(OperationalObservationMixin, APIView):
+    """Download a registered negotiation attachment with server-held credentials."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request, ref: str):
+        from django.http import HttpResponse
+
+        from shopman.shop.services.ifood_evidence import EvidenceUnavailable, fetch_evidence
+
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        try:
+            index = int(request.query_params.get("index", ""))
+        except (ValueError, TypeError):
+            return Response({"detail": "Evidência inválida."}, status=400)
+        try:
+            content, mime = fetch_evidence(order, dispute_id=str(request.query_params.get("dispute_id") or ""), index=index)
+        except EvidenceUnavailable as exc:
+            return Response({"detail": str(exc)}, status=503)
+        extension = {"image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp", "application/pdf": "pdf"}.get(mime, "bin")
+        response = HttpResponse(content, content_type=mime)
+        response["Content-Disposition"] = f'attachment; filename="ifood-evidence-{index}.{extension}"'
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Cache-Control"] = "private, no-store"
+        return response
+
+
+class OrderIFoodHandshakeView(_OrderActionBase):
+    """Persist an explicit operator response; the worker contacts iFood later."""
+
+    intention_operation = "ifood-handshake"
+
+    def post(self, request, ref: str):
+        from shopman.shop.services import ifood_handshake
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        inputs = {key: str(request.data.get(key) or "").strip() for key in (
+            "dispute_id", "decision", "reason", "detail_reason",
+        )}
+
+        def execute(base):
+            try:
+                ifood_handshake.enqueue_response(order, **inputs, actor=_actor(request), expected_revision=base)
+            except ifood_handshake.HandshakeValidationError as exc:
+                raise OrderError(str(exc)) from exc
+            return {"response_queued": True}
+
+        return self._context_response(request, order, "ifood-handshake", inputs, execute)
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
@@ -1879,8 +2047,8 @@ class OrderCancellationReasonsView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
-        summary="Settle delivery cash-on-delivery into the operator's open shift",
-        responses={200: OpenApiResponse(description="Cash settled.")},
+        summary="Register payment collected at pickup or delivery in the operator's open shift",
+        responses={200: OpenApiResponse(description="Payment registered.")},
     ),
 )
 class OrderSettleDeliveryCashView(_OrderActionBase):
@@ -1972,6 +2140,7 @@ def _resend_payment_link_response(order) -> Response:
             "ref": order.ref,
             "detail": "Reenvio do link solicitado.",
             "payment_link_notice": payment_link_notice(order),
+            "payment_delivery": build_pos_payment_delivery(order),
         }
     )
 
@@ -2326,50 +2495,22 @@ class POSCustomerProfileView(APIView):
 
     def post(self, request, ref: str):
         try:
-            from shopman.guestman.models import Customer
+            result = pos_tabs_service.update_pos_customer_profile(
+                customer_ref=ref,
+                payload=request.data or {},
+            )
         except ImportError:
             return Response({"detail": "Guestman indisponível."}, status=503)
-        customer = Customer.objects.filter(ref=ref).first()
-        if customer is None:
+        except pos_tabs_service.PosCustomerUnavailable:
             return Response({"detail": "Cliente não encontrado."}, status=404)
-
-        body = request.data or {}
-        updates: list[str] = []
-        metadata = dict(customer.metadata or {})
-
-        if "fiscal_prefs" in body:
-            incoming = body.get("fiscal_prefs") or {}
-            if not isinstance(incoming, dict):
-                return Response({"detail": "fiscal_prefs inválido.", "field": "fiscal_prefs"}, status=400)
-            prefs = dict(metadata.get("fiscal_prefs") or {})
-            for key in ("cpf_na_nota", "email_receipt"):
-                if key in incoming:
-                    prefs[key] = bool(incoming[key])
-            metadata["fiscal_prefs"] = prefs
-            customer.metadata = metadata
-            updates.append("metadata")
-
-        if "dietary_restrictions" in body:
-            metadata["preferences"] = str(body.get("dietary_restrictions") or "").strip()
-            customer.metadata = metadata
-            if "metadata" not in updates:
-                updates.append("metadata")
-
-        if "notes" in body:
-            customer.notes = str(body.get("notes") or "").strip()
-            updates.append("notes")
-
-        if not updates:
-            return Response({"detail": "Nada para atualizar."}, status=400)
-        customer.save(update_fields=[*updates, "updated_at"])
-        return Response(
-            {
-                "ok": True,
-                "fiscal_prefs": dict((customer.metadata or {}).get("fiscal_prefs") or {}),
-                "notes": customer.notes,
-                "dietary_restrictions": str((customer.metadata or {}).get("preferences") or ""),
-            }
-        )
+        except ValueError as exc:
+            detail = str(exc)
+            field = "fiscal_prefs" if detail == "fiscal_prefs inválido." else None
+            return Response(
+                {"detail": detail, **({"field": field} if field else {})},
+                status=400,
+            )
+        return Response(result)
 
 
 @extend_schema_view(
@@ -2436,6 +2577,38 @@ class POSResendPaymentLinkView(APIView):
         if order is None:
             return Response({"detail": "Pedido não encontrado."}, status=404)
         return _resend_payment_link_response(order)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"], summary="Send or resend a pending PIX/payment-link notice from the POS",
+        responses={200: OpenApiResponse(description="Current delivery evidence."),
+                   400: OpenApiResponse(description="Invalid action."),
+                   409: OpenApiResponse(description="Payment or delivery state refuses the action.")},
+    ),
+)
+class POSSendPaymentNoticeView(APIView):
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request, ref: str):
+        from shopman.orderman.models import Order
+
+        order = Order.objects.filter(ref=ref, channel_ref=POS_CHANNEL_REF).first()
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        action = str((request.data or {}).get("action") or "send").strip().lower()
+        try:
+            notification_service.send_or_resend_payment_notice(order, action=action)
+        except notification_service.NotificationResendRefused as exc:
+            order.refresh_from_db()
+            return Response(
+                {"detail": exc.message, "error": {"code": exc.code, "message": exc.message},
+                 "payment_delivery": build_pos_payment_delivery(order)}, status=exc.status,
+            )
+        order.refresh_from_db()
+        return Response({"ok": True, "order_ref": order.ref,
+                         "payment_delivery": build_pos_payment_delivery(order)})
 
 
 @extend_schema_view(
@@ -2849,6 +3022,54 @@ class WorkOrderFinishView(_ProductionActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Confirm the effective quality of a finished production batch",
+        responses={200: OpenApiResponse(description="Quality review recorded and customer alerts reconciled.")},
+    ),
+)
+class WorkOrderQualityReviewView(_ProductionActionBase):
+    required_production_capability = "can_correct_qc"
+
+    def post(self, request, wo_id: int):
+        body = validated_body(
+            request,
+            ProductionQualityReviewMutationSerializer,
+            projection_kind="qc",
+            action_kind="review_qc",
+            action_href=f"/api/v1/backstage/production/{wo_id}/quality-review/",
+            action_ref=f"review_qc:{wo_id}",
+            work_order_id=wo_id,
+        )
+        _require_projected_work_order(
+            request,
+            wo_id,
+            committed_replay=body.get("_committed_replay", False),
+        )
+        try:
+            work_order = production_service.apply_quality_review(
+                work_order_id=wo_id,
+                actor=_production_actor(request),
+                expected_rev=body["expected_rev"],
+                idempotency_key=body["idempotency_key"],
+            )
+        except ProductionError as exc:
+            return _production_error_response(
+                exc,
+                idempotency_key=body["idempotency_key"],
+                projection_generated_at=body.get("projection_generated_at"),
+            )
+        return Response(
+            {
+                "ok": True,
+                "wo_ref": work_order.ref,
+                "quantity": _production_quantity(work_order.finished or 0),
+                "current": _current_work_order_projection(work_order.pk),
+            }
+        )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Correct the effective quality of a finished production batch",
         responses={200: OpenApiResponse(description="Quality correction recorded and stock reclassified.")},
     ),
@@ -3167,58 +3388,55 @@ def _falha_do_caixa(exc, padrao: str) -> Response:
     uma gaveta ativa e ninguém disse qual. O operador não tem o que corrigir no que
     mandou, então a resposta é 409, com o campo que falta nomeado.
     """
+    from rest_framework.exceptions import APIException
+
+    if isinstance(exc, APIException):
+        return Response(exc.detail, status=exc.status_code)
     if isinstance(exc, POSTerminalAmbiguous):
         return Response({"detail": str(exc), "field": "terminal_ref"}, status=409)
     return Response({"detail": str(exc) or padrao}, status=400)
 
 
 def _cash_idempotent(request, *, acao: str, executar):
-    """Roda uma mutação de dinheiro UMA vez por `client_request_id`.
-
-    ⚠️ As oito mutações de dinheiro do caixa declaravam `idempotency="none"` e não
-    tinham trava nenhuma. O operador lança uma sangria de R$ 200, a rede do salão
-    oscila (é a mesma do kiosk e do KDS), o botão não responde, ele toca de novo —
-    e o livro-caixa aceita as duas linhas. O livro é IMUTÁVEL de propósito, então o
-    conserto não é apagar: é um ajuste, com o gerente, no fechamento, com o dono
-    perguntando por que faltam R$ 200.
-
-    E não havia segunda linha de defesa: as `UniqueConstraint` que o cashman
-    acrescentou depois de um TOCTOU real cobrem só os `kind` que têm `order_ref`.
-    Sangria, suprimento, fundo de troco, devolução e acerto de conta são exatamente
-    os que não têm. A trava de banco que salvou a venda não alcançava o caixa.
-
-    **Replay é SILENCIOSO aqui, e a diferença com o recibo de Compras é o que a
-    chave significa.** Lá a chave é a NOTA — estável para sempre —, então um envio
-    repetido meses depois merece ser contado ao operador. Aqui a chave é ESTE GESTO:
-    a tela a descarta no sucesso, então um segundo envio com a mesma chave só pode
-    ser retry da mesma sangria. Responder o mesmo resultado é a leitura certa dele.
-
-    Sem chave não há o que travar — mesma régua do submit da venda. A tela sempre
-    manda uma; quem chama a API crua sem chave está dizendo que cada envio é uma
-    operação.
-    """
+    """Efeito interno e recibo compartilham a transação e o conteúdo da tentativa."""
     from shopman.shop.services.remote_mutations import (
+        RemoteMutationConflict,
         RemoteMutationInProgress,
+        mutation_fingerprint,
         run_idempotent_mutation,
     )
 
+    terminal_ref = _terminal_do_pedido(request)
     chave = str(request.data.get("client_request_id") or "").strip()
-    if not chave:
-        return executar()
+    if not chave or len(chave) > 128:
+        return Response({"detail": "Identifique a tentativa antes de registrar.",
+            "error": {"code": "client_request_id_required"}}, status=422)
+    payload = {k: v for k, v in request.data.items() if k not in {"client_request_id", "manager_approval"}}
+    fingerprint = mutation_fingerprint({"actor": request.user.pk, "terminal": terminal_ref,
+        "path": request.path, "payload": payload})
+
+    class CashMutationRejected(Exception):
+        def __init__(self, response):
+            self.response = response
 
     def _executar_para_o_claim():
         resposta = executar()
+        if resposta.status_code >= 300:
+            raise CashMutationRejected(resposta)
         return ({"status": resposta.status_code, "data": resposta.data}, resposta.status_code)
 
     try:
         resultado = run_idempotent_mutation(
             scope=f"{CASH_IDEMPOTENCY_SCOPE}.{acao}",
             key=chave,
+            fingerprint=fingerprint,
             execute=_executar_para_o_claim,
-            # Só a resposta BEM-SUCEDIDA vira replay. Guardar um 400 faria o
-            # operador que corrigiu o valor receber o erro antigo de volta.
-            cache_response=lambda corpo, codigo: codigo < 300,
         )
+    except CashMutationRejected as exc:
+        return exc.response
+    except RemoteMutationConflict:
+        return Response({"detail": "Esta tentativa pertence a outro conteúdo ou operador. Confira o resultado.",
+            "error": {"code": "idempotency_conflict"}}, status=409)
     except RemoteMutationInProgress:
         return Response(
             {
@@ -3256,7 +3474,7 @@ class POSCashOpenView(APIView):
                 session = pos_service.open_cash_shift(
                     operator=request.user,
                     opening_amount_raw=str(amount),
-                    terminal_ref=str(request.data.get("terminal_ref") or ""),
+                    terminal_ref=_terminal_do_pedido(request),
                 )
             except POSError as exc:
                 message = str(exc) or "Falha ao abrir caixa."
@@ -3309,7 +3527,7 @@ class POSCashCloseView(APIView):
                     actor_user=request.user,
                     closing_amount_raw=str(amount),
                     notes=notes,
-                    terminal_ref=str(request.data.get("terminal_ref") or ""),
+                    terminal_ref=_terminal_do_pedido(request),
                 )
             except POSPermissionError as exc:
                 # Fechar o caixa é da gerência (decisão de 21/08). O balcão precisa
@@ -3413,7 +3631,7 @@ class POSCashReceiptView(APIView):
                 entry_id=entry_id,
                 status=(request.data.get("status") or "").strip(),
                 detail=request.data.get("detail") or "",
-                terminal_ref=str(request.data.get("terminal_ref") or ""),
+                terminal_ref=_terminal_do_pedido(request),
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
@@ -3636,16 +3854,24 @@ class POSCashDrawerUnlockView(APIView):
 
 
 def _terminal_do_pedido(request) -> str:
-    """Em qual gaveta esta mutação acontece.
+    """O corpo pode confirmar a estação, nunca selecionar outra gaveta."""
+    from rest_framework.exceptions import APIException
+    from shopman.cashman.models import Terminal
 
-    O corpo tem prioridade porque é AFIRMAÇÃO de quem chama; o cookie da estação é o
-    contexto ambiente do dispositivo. Com uma gaveta só — o caso de hoje — os dois
-    caminham juntos. Com duas, é isto que impede o operador do balcão 1 de lançar
-    sangria na gaveta do balcão 2 sem erro nenhum.
-    """
-    corpo = request.data if hasattr(request, "data") else {}
-    do_corpo = str((corpo or {}).get("terminal_ref") or "").strip()
-    return do_corpo or station_trust.station_ref(request)
+    ref = station_trust.station_ref(request)
+    body = getattr(request, "data", {}) or {}
+    asserted = str(body.get("terminal_ref") or body.get("pos_terminal_ref") or "").strip()
+    code = "pos_station_required"
+    message = "Vincule este dispositivo a um único terminal ativo antes de operar."
+    if ref and asserted and asserted != ref:
+        code = "pos_terminal_mismatch"
+        message = "O caixa informado não corresponde a este dispositivo. Atualize o balcão."
+    elif ref and Terminal.objects.filter(ref=ref, is_active=True).exists():
+        return ref
+    exc = APIException({"detail": message, "field": "terminal_ref", "error": {"code": code, "message": message,
+        "field": "terminal_ref", "focus": "cash", "recovery": message}})
+    exc.status_code = 409
+    raise exc
 
 
 @extend_schema_view(
@@ -3972,6 +4198,15 @@ class POSTabOpenView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    def get(self, request, tab_ref: str):
+        from shopman.orderman.models import Session
+
+        session = Session.objects.filter(channel_ref=POS_CHANNEL_REF, state="open",
+            handle_ref=pos_tabs_service.normalize_tab_ref(tab_ref)).first()
+        if session is None:
+            return Response({"detail": "Esta comanda já foi encerrada.", "error": {"code": "tab_closed"}}, status=409)
+        return Response(build_open_tab(session))
+
     def post(self, request, tab_ref: str):
         try:
             session = pos_tabs_service.open_pos_tab(
@@ -3997,6 +4232,7 @@ class POSTabSaveView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -4034,6 +4270,7 @@ class POSTabClearView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def delete(self, request, session_key: str):
         try:
             cleared = pos_tabs_service.clear_pos_tab(
@@ -4060,6 +4297,7 @@ class POSTabMoveLinesView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -4092,6 +4330,7 @@ class POSTabRenameView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -4114,6 +4353,7 @@ class POSTabFireView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -4144,6 +4384,7 @@ class POSTabUnfireView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
+    @tab_command
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
@@ -4310,8 +4551,12 @@ class POSCustomerResolveView(APIView):
                 tax_id=str(body.get("customer_tax_id") or "").strip(),
                 email=str(body.get("customer_email") or "").strip(),
                 contact_correction=as_bool(body, "customer_contact_correction", default=False),
+                name_correction=as_bool(body, "customer_name_correction", default=False),
+                receipt_identity_action=body.get("receipt_identity_action"),
                 operator_username=_username(request),
             )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=422)
         except PosCustomerConflict as exc:
             return _pos_customer_conflict_response(exc)
         except PosTaxIdOverwriteError as exc:
@@ -4322,6 +4567,8 @@ class POSCustomerResolveView(APIView):
                 {"detail": str(exc) or "Cadastro conflitante.", "error": {"code": "customer_conflict"}},
                 status=422,
             )
+        except IntegrityError as exc:
+            return _pos_customer_integrity_response(exc, action="customer_resolve")
         if not customer:
             return Response({"customer": None})
         # A resposta carrega SEMPRE a projeção do cliente resolvido, chaveada
@@ -4489,6 +4736,9 @@ class POSCloseSaleView(APIView):
     required_permission = "cashman.operate_pos"
 
     def post(self, request):
+        if (request.data.get("tab_session_key") or request.data.get("tab_ref")) and not request.data.get("expected_revision"):
+            return Response({"detail": "Atualize a comanda antes de finalizar.",
+                             "error": {"code": "tab_revision_required"}}, status=422)
         body = request.data if hasattr(request, "data") else {}
         if _open_cash_shift_for_request(request) is None:
             return _cash_shift_required_response()
@@ -4514,12 +4764,16 @@ class POSCloseSaleView(APIView):
         except ValueError as exc:
             return Response({"detail": str(exc) or "Falha ao finalizar venda."}, status=422)
         order_ref = getattr(result, "order_ref", None)
+        from shopman.orderman.models import Order
+
+        closed_order = Order.objects.filter(ref=order_ref).first() if order_ref else None
         return Response(
             {
                 "ok": True,
                 "order_ref": order_ref,
                 "tab_ref": getattr(result, "tab_ref", None),
                 "payment": getattr(result, "payment", None) or {},
+                "payment_delivery": build_pos_payment_delivery(closed_order) if closed_order else {},
                 "fiscal_expected": _fiscal_expected(order_ref),
             }
         )

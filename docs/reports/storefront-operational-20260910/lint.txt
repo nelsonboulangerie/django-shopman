@@ -1,0 +1,15 @@
+
+> lint
+> eslint .
+
+
+/private/tmp/shopman-storefront-execution-20260910/surfaces/storefront-nuxt/app/components/WhatsappVerifyPanel.vue
+  89:11  warning  Attribute "size" should go before "@click"       vue/attributes-order
+  90:11  warning  Attribute "icon" should go before "@click"       vue/attributes-order
+  91:11  warning  Attribute "class" should go before "@click"      vue/attributes-order
+  92:11  warning  Attribute ":loading" should go before "@click"   vue/attributes-order
+  93:11  warning  Attribute ":disabled" should go before "@click"  vue/attributes-order
+
+✖ 5 problems (0 errors, 5 warnings)
+  0 errors and 5 warnings potentially fixable with the `--fix` option.
+

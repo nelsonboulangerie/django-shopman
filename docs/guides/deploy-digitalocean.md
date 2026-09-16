@@ -1,7 +1,7 @@
 # Deploy DigitalOcean
 
 Este guia é o caminho canônico para subir o Shopman na DigitalOcean sem o
-operador chamar Docker manualmente. O alvo atual é `shopman-alpha` na App
+operador chamar Docker manualmente. O alvo atual é `shopman-nelson` na App
 Platform, com web ASGI, worker de diretivas, job de release, PostgreSQL e cache
 Valkey compatível com Redis.
 
@@ -25,9 +25,9 @@ Fontes oficiais usadas para este contrato:
 
 ## Blueprint
 
-O arquivo `.do/app.alpha-subdomains.yaml` registra o alpha tecnico derivado do
-spec vivo (ingress host-based: `alpha.nelsonboulangerie.com.br` → loja Nuxt,
-API/Admin/backstage em `*.boulangerie.com.br`). Produção usa
+O arquivo `.do/app.alpha-subdomains.yaml` registra o perfil tecnico de pre-go-live
+derivado do spec vivo (ingress host-based: `menu.nelsonboulangerie.com.br` → loja
+Nuxt, API/Admin/backstage em `*.boulangerie.com.br`). Produção usa
 `.do/app.subdomains.yaml` (trocar `STORE_DOMAIN`). Ambos definem:
 
 - `web`: Daphne ASGI em `config.asgi:application`;

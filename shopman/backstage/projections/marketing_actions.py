@@ -30,6 +30,7 @@ from shopman.shop.models import (
     NotificationLifecycle,
     UserNotification,
 )
+from shopman.shop.services.campaign import POSTING_PLATFORMS
 from shopman.shop.services.marketing_contracts import ProviderOutcomeKind
 from shopman.shop.services.marketing_security import (
     ACTION_APPROVE,
@@ -755,10 +756,14 @@ def _approval_reason(announcement: AnnouncementProjectionV2) -> str:
         return "review_window_expired"
     if announcement.audience.freshness.state != "fresh":
         return f"audience_{announcement.audience.freshness.state}"
-    if announcement.audience.eligible_count <= 0:
-        return "no_eligible_audience"
     if not announcement.platform_refs:
         return "no_platform_selected"
+    public_only = all(
+        platform_ref in POSTING_PLATFORMS
+        for platform_ref in announcement.platform_refs
+    )
+    if announcement.audience.eligible_count <= 0 and not public_only:
+        return "no_eligible_audience"
     if announcement.readiness.state != "ready":
         return f"platform_readiness_{announcement.readiness.state}"
     return ""

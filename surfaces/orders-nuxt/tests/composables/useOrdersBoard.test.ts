@@ -4,7 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
 import { useStationLock } from "../../../operator-kit/app/composables/useStationLock";
-import { GESTOR_ALERT, useOrdersBoard } from "../../app/composables/useOrdersBoard";
+import {
+  GESTOR_ALERT,
+  gestorAttentionDecision,
+  gestorAttentionStorageKey,
+  gestorServiceDayBoundaryDelay,
+  useOrdersBoard,
+} from "../../app/composables/useOrdersBoard";
 import type { TwoZoneQueueProjection } from "../../app/types/orders";
 
 const env = installNuxtGlobals();
@@ -21,6 +27,8 @@ function emptyZone(): TwoZoneQueueProjection {
     expedition_delivery_count: 0,
     expedition_count: 0,
     total_count: 0,
+    service_day: "2026-09-16",
+    service_day_ends_at: "2026-09-17T00:00:00-03:00",
   };
 }
 
@@ -50,7 +58,7 @@ describe("useOrdersBoard — derivação da fila", () => {
     expect(useOrdersBoard().realtime.value).toBe("polling");
   });
 
-  it("expõe o som de pedido novo (kit): nasce ligado e o toggle alterna", () => {
+  it("expõe o som de pedido tratável (kit): nasce ligado e o toggle alterna", () => {
     env.fetchData.value = { queue: emptyZone() };
     const board = useOrdersBoard();
     expect(board.soundOn.value).toBe(true);
@@ -59,6 +67,197 @@ describe("useOrdersBoard — derivação da fila", () => {
     board.toggleSound();
     expect(board.soundOn.value).toBe(true);
   });
+
+  it("pede permissão local somente no gesto que religa o som", async () => {
+    env.fetchData.value = { queue: emptyZone() };
+    const requestPermission = vi.fn().mockResolvedValue("granted");
+    const notificationApi = { permission: "default", requestPermission };
+    const priorWindow = globalThis.window;
+    const priorNotification = globalThis.Notification;
+    vi.stubGlobal("window", { Notification: notificationApi });
+    vi.stubGlobal("Notification", notificationApi);
+    try {
+      const board = useOrdersBoard();
+      expect(requestPermission).not.toHaveBeenCalled();
+      board.toggleSound();
+      expect(requestPermission).not.toHaveBeenCalled();
+      board.toggleSound();
+      expect(requestPermission).toHaveBeenCalledOnce();
+      await Promise.resolve();
+    } finally {
+      vi.stubGlobal("window", priorWindow);
+      vi.stubGlobal("Notification", priorNotification);
+    }
+  });
+});
+
+describe("useOrdersBoard — atenção diária", () => {
+  const dueQueue = (ref_: string): TwoZoneQueueProjection => ({
+    ...emptyZone(),
+    intake: [{ ref: ref_, can_confirm: true } as never],
+    total_count: 1,
+  });
+
+  it("avisa na primeira abertura quando o pedido já está tratável", () => {
+    expect(gestorAttentionDecision(dueQueue("PRE-1"), new Set(), "", "2026-09-16").firstUnseen).toBe("PRE-1");
+  });
+
+  it("não repete depois que alguém viu o mesmo pedido", () => {
+    const decision = gestorAttentionDecision(dueQueue("PRE-1"), new Set(["PRE-1"]), "2026-09-16:PRE-1", "2026-09-16");
+    expect(decision.firstUnseen).toBe("");
+    expect(decision.shouldStop).toBe(true);
+  });
+
+  it("uma troca com a mesma contagem ainda avisa pelo novo ref", () => {
+    const decision = gestorAttentionDecision(
+      dueQueue("PRE-2"),
+      new Set(["PRE-1"]),
+      "2026-09-16:PRE-1",
+      "2026-09-16",
+    );
+    expect(decision.firstUnseen).toBe("PRE-2");
+  });
+
+  it("encomenda ainda futura fica silenciosa", () => {
+    const queue = {
+      ...emptyZone(),
+      preorders: [{ ref: "PRE-AMANHA", can_confirm: true, can_advance: true } as never],
+      total_count: 1,
+    };
+    expect(gestorAttentionDecision(queue, new Set(), "", "2026-09-15").firstUnseen).toBe("");
+  });
+
+  it("usa o dia canônico do servidor na chave mesmo com tablet em outro fuso", () => {
+    expect(gestorAttentionStorageKey("2026-09-16")).toBe("gestor_seen_2026-09-16");
+    // 23h59m59 em São Paulo ainda são 02h59m59 UTC do dia seguinte no tablet.
+    expect(
+      gestorServiceDayBoundaryDelay(
+        "2026-09-17T00:00:00-03:00",
+        "2026-09-17T02:59:59Z",
+      ),
+    ).toBe(1_250);
+  });
+
+  it("na virada do dia o mesmo pedido volta a ser unseen na nova memória diária", () => {
+    const queue = dueQueue("PRE-1");
+    const yesterday = gestorAttentionDecision(queue, new Set(["PRE-1"]), "", "2026-09-15");
+    const today = gestorAttentionDecision(queue, new Set(), yesterday.signature, "2026-09-16");
+
+    expect(today.firstUnseen).toBe("PRE-1");
+    expect(today.signature).toBe("2026-09-16:PRE-1");
+  });
+
+  it.each([
+    ["", "hidden", 1],
+    ["vapid-public", "hidden", 1],
+    ["", "visible", 0],
+    ["vapid-public", "visible", 0],
+  ] as const)(
+    "VAPID=%s e aba=%s preservam o alerta local esperado",
+    async (vapidPublicKey, visibilityState, notificationCount) => {
+      env.reset();
+      vi.useFakeTimers();
+      env.fetchData.value = { queue: dueQueue("PRE-LOCAL") };
+      (env.runtimeConfig.public as Record<string, unknown>).vapidPublicKey = vapidPublicKey;
+      let mounted!: () => void;
+      let unmount!: () => void;
+      const listeners = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
+      const showNotification = vi.fn().mockResolvedValue(undefined);
+      const registration = { showNotification } as unknown as ServiceWorkerRegistration;
+      const serviceWorker = {
+        getRegistration: vi.fn().mockResolvedValue(registration),
+        ready: Promise.resolve(registration),
+      };
+      const notificationApi = { permission: "granted", requestPermission: vi.fn() };
+      const source = vi.fn(function () { return { addEventListener: vi.fn(), close: vi.fn() }; });
+      const prior = {
+        onMounted: globalThis.onMounted,
+        onBeforeUnmount: globalThis.onBeforeUnmount,
+        document: globalThis.document,
+        window: globalThis.window,
+        navigator: globalThis.navigator,
+        Notification: globalThis.Notification,
+        EventSource: globalThis.EventSource,
+        ssePath: globalThis.ssePath,
+      };
+      vi.stubGlobal("onMounted", (callback: () => void) => { mounted = callback; });
+      vi.stubGlobal("onBeforeUnmount", (callback: () => void) => { unmount = callback; });
+      vi.stubGlobal("document", { ...listeners, title: "Pedidos", visibilityState });
+      vi.stubGlobal("window", {
+        ...listeners,
+        Notification: notificationApi,
+        location: { pathname: "/", search: "?view=board", hash: "" },
+      });
+      vi.stubGlobal("navigator", { serviceWorker });
+      vi.stubGlobal("Notification", notificationApi);
+      vi.stubGlobal("EventSource", source);
+      vi.stubGlobal("ssePath", (await import("../../../operator-kit/app/utils/ssePath")).ssePath);
+      try {
+        const board = useOrdersBoard();
+        mounted();
+        await vi.waitFor(() => expect(showNotification).toHaveBeenCalledTimes(notificationCount));
+        expect(board.alerting.value).toBe(true);
+        expect(notificationApi.requestPermission).not.toHaveBeenCalled();
+      } finally {
+        unmount?.();
+        vi.stubGlobal("onMounted", prior.onMounted);
+        vi.stubGlobal("onBeforeUnmount", prior.onBeforeUnmount);
+        vi.stubGlobal("document", prior.document);
+        vi.stubGlobal("window", prior.window);
+        vi.stubGlobal("navigator", prior.navigator);
+        vi.stubGlobal("Notification", prior.Notification);
+        vi.stubGlobal("EventSource", prior.EventSource);
+        vi.stubGlobal("ssePath", prior.ssePath);
+        vi.useRealTimers();
+      }
+    },
+  );
+});
+
+it("refaz a leitura na meia-noite operacional do servidor, não na do tablet", async () => {
+  env.reset();
+  vi.useFakeTimers();
+  // Mesmo que o relógio civil do tablet esteja absurdo, a conta usa apenas os
+  // dois timestamps canônicos devolvidos pelo servidor.
+  vi.setSystemTime(new Date("2038-01-01T00:00:00Z"));
+  env.fetchData.value = {
+    generated_at: "2026-09-17T02:59:59Z",
+    contract_version: 1,
+    queue: emptyZone(),
+  };
+  let mounted!: () => void;
+  let unmount!: () => void;
+  const listeners = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
+  const source = vi.fn(function () { return { addEventListener: vi.fn(), close: vi.fn() }; });
+  const prior = {
+    onMounted: globalThis.onMounted,
+    onBeforeUnmount: globalThis.onBeforeUnmount,
+    document: globalThis.document,
+    window: globalThis.window,
+    EventSource: globalThis.EventSource,
+    ssePath: globalThis.ssePath,
+  };
+  vi.stubGlobal("onMounted", (callback: () => void) => { mounted = callback; });
+  vi.stubGlobal("onBeforeUnmount", (callback: () => void) => { unmount = callback; });
+  vi.stubGlobal("document", { ...listeners, title: "Pedidos", visibilityState: "visible" });
+  vi.stubGlobal("window", listeners);
+  vi.stubGlobal("EventSource", source);
+  vi.stubGlobal("ssePath", (await import("../../../operator-kit/app/utils/ssePath")).ssePath);
+  try {
+    useOrdersBoard();
+    mounted();
+    await vi.advanceTimersByTimeAsync(1_250);
+    expect(env.refresh).toHaveBeenCalledTimes(1);
+  } finally {
+    unmount?.();
+    vi.stubGlobal("onMounted", prior.onMounted);
+    vi.stubGlobal("onBeforeUnmount", prior.onBeforeUnmount);
+    vi.stubGlobal("document", prior.document);
+    vi.stubGlobal("window", prior.window);
+    vi.stubGlobal("EventSource", prior.EventSource);
+    vi.stubGlobal("ssePath", prior.ssePath);
+    vi.useRealTimers();
+  }
 });
 
 describe("useOrdersBoard — ações (act)", () => {
@@ -307,6 +506,80 @@ it("SSE aguarda recuperação do primeiro GET mesmo após transições com erro"
     expect(source).toHaveBeenCalledTimes(1);
   } finally {
     unmount?.();
+    vi.useRealTimers();
+  }
+});
+
+it("SSE só toca depois do refresh tornar o pedido tratável", async () => {
+  env.reset();
+  vi.useFakeTimers();
+  const data = ref({
+    queue: {
+      ...emptyZone(),
+      intake: [{ ref: "PIX-1", can_confirm: false, can_advance: false } as never],
+    },
+  });
+  let releasePayment = false;
+  const refresh = vi.fn(async () => {
+    data.value = {
+      queue: {
+        ...emptyZone(),
+        intake: [{ ref: "PIX-1", can_confirm: false, can_advance: releasePayment } as never],
+      },
+    };
+  });
+  let mounted!: () => void;
+  let unmount!: () => void;
+  const pushHandlers = new Map<string, () => void>();
+  const listeners = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
+  const close = vi.fn();
+  const source = vi.fn(function () {
+    return {
+      addEventListener: vi.fn((name: string, handler: () => void) => pushHandlers.set(name, handler)),
+      close,
+    };
+  });
+  const startAlert = vi.fn();
+  const stopAlert = vi.fn();
+  const prior = {
+    useFetch: globalThis.useFetch,
+    useAlertSound: globalThis.useAlertSound,
+    onMounted: globalThis.onMounted,
+    onBeforeUnmount: globalThis.onBeforeUnmount,
+  };
+  vi.stubGlobal("useFetch", () => ({ data, pending: ref(false), error: ref(null), refresh }));
+  vi.stubGlobal("useAlertSound", () => ({
+    soundOn: ref(true),
+    soundBlocked: ref(false),
+    alerting: ref(false),
+    playbackCount: ref(0),
+    toggleSound: vi.fn(),
+    activateSound: vi.fn(async () => true),
+    startAlert,
+    stopAlert,
+  }));
+  vi.stubGlobal("onMounted", (callback: () => void) => { mounted = callback; });
+  vi.stubGlobal("onBeforeUnmount", (callback: () => void) => { unmount = callback; });
+  vi.stubGlobal("document", { ...listeners, title: "Pedidos", visibilityState: "visible" });
+  vi.stubGlobal("window", listeners);
+  vi.stubGlobal("EventSource", source);
+  vi.stubGlobal("ssePath", (await import("../../../operator-kit/app/utils/ssePath")).ssePath);
+  try {
+    useOrdersBoard();
+    mounted();
+    pushHandlers.get("backstage-orders-update")!();
+    await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    expect(startAlert).not.toHaveBeenCalled();
+
+    releasePayment = true;
+    pushHandlers.get("backstage-orders-update")!();
+    await vi.waitFor(() => expect(startAlert).toHaveBeenCalledTimes(1));
+  } finally {
+    unmount?.();
+    vi.stubGlobal("useFetch", prior.useFetch);
+    vi.stubGlobal("useAlertSound", prior.useAlertSound);
+    vi.stubGlobal("onMounted", prior.onMounted);
+    vi.stubGlobal("onBeforeUnmount", prior.onBeforeUnmount);
     vi.useRealTimers();
   }
 });

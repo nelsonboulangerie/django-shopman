@@ -278,6 +278,23 @@ def _named_snapshot_items(items: list[dict]) -> list[dict]:
     return rows
 
 
+def lock_customer_order(order_ref: str):
+    from shopman.orderman.models import Order
+    return Order.objects.select_for_update().get(ref=order_ref)
+
+
+def save_customer_rating(order, *, rating: int, comment: str) -> None:
+    from django.db import transaction
+    from shopman.orderman.models import Order
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        data = dict(locked.data or {})
+        data["customer_rating"] = {"rating": rating, "comment": comment[:500], "submitted_at": timezone.now().isoformat(), "source": "storefront_nuxt"}
+        locked.data = data
+        locked.save(update_fields=["data"])
+        order.data = data
+
+
 def get_payment_status(order) -> str | None:
     """Return the canonical payment status for an order."""
     return payment_service.get_payment_status(order)
@@ -495,7 +512,17 @@ def ensure_payment_intent(order) -> bool:
     if method not in {"pix", "card"}:
         return False
     if payment.get("intent_ref"):
-        return True
+        if method != "pix" or payment.get("copy_paste") or payment.get("qr_code"):
+            return True
+        # Efí persists the intent/txid before fetching the QR. A reload is the
+        # recovery trigger for that partial creation; an intent_ref by itself
+        # is not a payable artifact and must not be reported as ready.
+        payment_service.initiate(order)
+        refreshed = (order.data or {}).get("payment") or {}
+        return bool(
+            refreshed.get("intent_ref")
+            and (refreshed.get("copy_paste") or refreshed.get("qr_code"))
+        )
     if method == "pix" and not _payment_can_start(order):
         return False
 
@@ -586,7 +613,7 @@ def add_reorder_items(
             skipped.append(product.name or item.sku)
         except Exception:
             logger.warning("reorder_add_item_failed order=%s sku=%s", order.ref, item.sku, exc_info=True)
-            skipped.append(product.name or item.sku)
+            raise
 
     return skipped
 

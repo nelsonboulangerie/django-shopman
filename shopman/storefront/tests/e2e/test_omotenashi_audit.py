@@ -33,7 +33,7 @@ SKU_B = "CROISSANT"
 
 def _seed(stock_qty=10):
     J.seed_shop()
-    J.seed_web_channel()
+    J.seed_web_channel(allow_cash=True)
     collection = J.seed_collection()
     J.seed_product(SKU, "Pão Francês", 500, collection=collection, stock_qty=stock_qty)
     return collection
@@ -122,7 +122,7 @@ def test_04_empty_favorites_offers_guidance(client):
 def test_05_empty_catalog_and_search_offer_guidance(client):
     """✅ Empty catalogue and fruitless search both carry a configurable empty-state block."""
     J.seed_shop()
-    J.seed_web_channel()  # no products
+    J.seed_web_channel(allow_cash=True)  # no products
     status, body = J.get_json(client, "/api/v1/storefront/menu/")
     assert status == 200
     catalog = body["catalog"]
@@ -175,9 +175,11 @@ def test_06c_soldout_409_remembers_who_already_asked(client):
     e a PDP mostravam "Anotado" para o mesmo SKU no mesmo instante.
     """
     _seed(stock_qty=2)
+    customer = J.make_customer()
+    J.authenticate(client, customer)
     resp = client.post(
         f"/api/v1/availability/{SKU}/notify/",
-        data=json.dumps({"phone": "43999997777"}),
+        data=json.dumps({"adult_declared": True}),
         content_type="application/json",
     )
     assert resp.status_code == 200
@@ -187,10 +189,17 @@ def test_06c_soldout_409_remembers_who_already_asked(client):
     assert body["is_notifiable"] is True
     assert body["is_notify_subscribed"] is True
 
+    # Reload/navigation rebuilds the projection, then the component recovers the
+    # same purpose-scoped management link from this session without another POST.
+    recovered = client.get(f"/api/v1/availability/{SKU}/notify/")
+    assert recovered.status_code == 200
+    assert recovered.json()["management_url"].startswith("/gerenciar-aviso#")
+
 
 def test_07_checkout_rejected_date_is_actionable(client):
     """✅ A checkout for a date we cannot serve returns a field-routed, pt-BR error."""
     _seed()
+    assert J.otp_login(client)["status"] == 200
     J.set_cart_qty(client, SKU, 1)
     status, body = J.checkout(
         client,
@@ -214,6 +223,7 @@ def test_07b_checkout_closed_day_surfaces_reopening_and_preorder(client):
     from shopman.shop.models import Shop
 
     _seed()
+    assert J.otp_login(client)["status"] == 200
     # Shop open every day except the target weekday, so a specific future date is
     # deterministically closed (weekly closure), not just "in the past".
     shop = Shop.objects.first()
@@ -343,6 +353,7 @@ def test_10b_delivery_zone_error_enables_pickup_swap(client):
 def test_11_customer_facing_errors_are_pt_br(client):
     """✅ Framework error paths speak pt-BR (DRF locale is pt_BR — no 'Not found.'/'required')."""
     _seed()
+    assert J.otp_login(client)["status"] == 200
     # Unknown SKU → DRF Http404, localised.
     status, body = J.get_json(client, "/api/v1/availability/GHOST-SKU/")
     assert status == 404
@@ -404,19 +415,23 @@ def test_12b_profile_update_error_does_not_leak_exception(client):
 
 
 def test_13_mutation_success_shape_is_consistent(client):
-    """✅ Mutations acknowledge success and return handles needed for recovery."""
+    """✅ Mutations acknowledge success; owned recovery returns its opaque handle."""
     _seed(stock_qty=5)
+    customer = J.make_customer()
+    J.authenticate(client, customer)
     # Stock-alert subscribe.
     resp = client.post(
         f"/api/v1/availability/{SKU}/notify/",
-        data=json.dumps({"phone": "43999998888"}),
+        data=json.dumps({"adult_declared": True}),
         content_type="application/json",
     )
     assert resp.status_code == 200
     subscription = resp.json()
     assert subscription["ok"] is True
-    assert subscription["subscription_ref"]
-    assert subscription["expires_at"]
+    assert subscription["management_url"].startswith("/gerenciar-aviso#")
+    recovered = client.get(f"/api/v1/availability/{SKU}/notify/")
+    assert recovered.status_code == 200
+    assert recovered.json()["management_url"].startswith("/gerenciar-aviso#")
     # Cart mutation also acknowledges with ok:true (plus its projection).
     status, add = J.set_cart_qty(client, SKU, 1)
     assert status == 200
@@ -478,6 +493,55 @@ def test_15_checkout_prefills_known_customer_data(client):
     assert ck["preselected_address_id"] is not None
 
 
+def test_15b_address_survives_checkout_logout_and_same_customer_login(client):
+    """O endereço confirmado pertence à pessoa e reaparece após trocar a sessão."""
+    from shopman.shop.models import DeliveryZone, Shop
+
+    _seed(stock_qty=10)
+    DeliveryZone.objects.create(
+        shop=Shop.objects.first(),
+        name="Centro",
+        zone_type=DeliveryZone.ZONE_TYPE_CEP_PREFIX,
+        match_value="860",
+        fee_q=600,
+    )
+    customer = J.make_customer(first_name="Cliente", last_name="A", phone="+5543999990075")
+    J.authenticate(client, customer)
+    status, _ = J.set_cart_qty(client, SKU, 1)
+    assert status == 200
+
+    address = {
+        "formatted_address": "Rua Teste A, 95 - Centro, Londrina - PR",
+        "route": "Rua Teste A",
+        "street_number": "95",
+        "neighborhood": "Centro",
+        "city": "Londrina",
+        "state_code": "PR",
+        "postal_code": "86010-000",
+    }
+    status, body = J.checkout(
+        client,
+        name="Cliente A",
+        phone=customer.phone,
+        fulfillment_type="delivery",
+        delivery_address=address["formatted_address"],
+        delivery_address_structured=address,
+        delivery_date=J.tomorrow_iso(),
+    )
+    assert status == 201, body
+    assert customer.addresses.filter(formatted_address=address["formatted_address"]).exists()
+
+    logged_out = client.post("/api/v1/auth/logout/")
+    assert logged_out.status_code == 200
+    J.authenticate(client, customer)
+
+    response = client.get("/api/v1/account/addresses/?include=copy")
+    assert response.status_code == 200, response.content
+    rows = response.json()["addresses"]
+    assert [row["id"] for row in rows] == [customer.addresses.get().id]
+    assert rows[0]["formatted_address"] == address["formatted_address"]
+
+
 def test_16_reorder_readds_previous_order_in_one_call(client):
     """✅ Reorder re-adds a past order's items in one action and skips unavailable ones gracefully."""
     _seed(stock_qty=50)
@@ -515,6 +579,8 @@ def test_17_anonymous_cart_survives_login(client):
 def test_18_unavailable_product_exposes_notify_affordance(client):
     """✅ Catalogue cards carry the 'Me avise' plumbing and the subscribe endpoint works."""
     _seed(stock_qty=5)
+    customer = J.make_customer()
+    J.authenticate(client, customer)
     status, menu = J.get_json(client, "/api/v1/storefront/menu/")
     card = next(c for c in menu["catalog"]["items"] if c["sku"] == SKU)
     # The affordance keys exist on every card (flip to True when UNAVAILABLE + sellable).
@@ -523,14 +589,16 @@ def test_18_unavailable_product_exposes_notify_affordance(client):
     # And the back-in-stock subscription round-trips.
     resp = client.post(
         f"/api/v1/availability/{SKU}/notify/",
-        data=json.dumps({"phone": "43999997777"}),
+        data=json.dumps({"adult_declared": True}),
         content_type="application/json",
     )
     assert resp.status_code == 200
     subscription = resp.json()
     assert subscription["ok"] is True
-    assert subscription["subscription_ref"]
-    assert subscription["expires_at"]
+    assert subscription["management_url"].startswith("/gerenciar-aviso#")
+    recovered = client.get(f"/api/v1/availability/{SKU}/notify/")
+    assert recovered.status_code == 200
+    assert recovered.json()["management_url"].startswith("/gerenciar-aviso#")
     from shopman.storefront.services import stock_alerts
 
     # The subscription was persisted (phone is normalised on the way in).
@@ -561,6 +629,7 @@ def test_20_error_responses_are_json_across_status_codes(client):
     r404 = client.get("/api/v1/tracking/DOES-NOT-EXIST/")
     # 401 — protected account endpoint, anonymous.
     r401 = client.get("/api/v1/account/summary/")
+    assert J.otp_login(client)["status"] == 200
     # 400 — empty checkout body (serializer).
     r400 = client.post("/api/v1/checkout/", data=json.dumps({}), content_type="application/json")
     # 409 — oversell.
@@ -596,6 +665,7 @@ def test_21_internal_failure_degrades_not_crashes(client):
 def test_22_optional_fields_are_truly_optional(client):
     """✅ A bare product (no nutrition/allergen/etc.) and a minimal pickup checkout don't explode."""
     _seed(stock_qty=5)
+    assert J.otp_login(client)["status"] == 200
     # Minimal product detail — optional panels collapse, no crash.
     status, detail = J.get_json(client, f"/api/v1/catalog/products/{SKU}/")
     assert status == 200, detail

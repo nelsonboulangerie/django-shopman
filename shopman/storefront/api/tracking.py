@@ -7,7 +7,6 @@ from __future__ import annotations
 import logging
 
 from django.http import Http404
-from django.utils import timezone
 from django_eventstream.views import events as eventstream_view
 from django_ratelimit.core import is_ratelimited
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
@@ -24,7 +23,11 @@ from shopman.storefront.services import orders as order_service
 
 from .actions import retry_after_action
 from .projections import projection_data
-from .serializers import DetailSerializer, OrderTrackingSerializer
+from .serializers import (
+    CancellationRequestInputSerializer,
+    DetailSerializer,
+    OrderTrackingSerializer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -325,6 +328,106 @@ class OrderCancelView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=["tracking"],
+        summary="Request human review of order cancellation",
+        request=CancellationRequestInputSerializer,
+        responses={
+            200: OrderTrackingSerializer,
+            404: DetailSerializer,
+            409: OpenApiResponse(description="Cancellation request is no longer applicable."),
+        },
+    ),
+)
+class OrderCancellationRequestView(APIView):
+    """Record a self-service request without cancelling or refunding implicitly."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    serializer_class = CancellationRequestInputSerializer
+    throttle_classes = []
+
+    def post(self, request, ref: str):
+        if _request_is_rate_limited(
+            request,
+            group="storefront-api-order-cancellation-request",
+            rate="10/m",
+            method="POST",
+        ):
+            return _rate_limited_response()
+        try:
+            order = order_service.get_accessible_order(request, ref)
+        except Http404:
+            return Response(
+                {
+                    "detail": _copy_message(
+                        "TRACKING_NOT_FOUND_MESSAGE",
+                        "Confira o link do pedido ou fale com a equipe.",
+                    ),
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = CancellationRequestInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reason = serializer.validated_data["reason"]
+        try:
+            key = remote_mutations.idempotency_key_from_request(
+                request,
+                fallback=f"cancellation-request:{ref}",
+            )
+        except remote_mutations.RemoteMutationConflict as exc:
+            return Response(
+                {"detail": str(exc), "error_code": "idempotency_conflict"},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        def execute_request() -> tuple[dict, int]:
+            from shopman.storefront.services import cancellation_requests
+
+            try:
+                cancellation_requests.request_cancellation(order, reason=reason)
+            except cancellation_requests.CancellationRequestUnavailable:
+                return (
+                    {
+                        "detail": "Este pedido já foi cancelado ou devolvido.",
+                        "error_code": "cancellation_request_not_applicable",
+                    },
+                    status.HTTP_409_CONFLICT,
+                )
+            order.refresh_from_db()
+            response = OrderTrackingSerializer(_tracking_payload(order))
+            return dict(response.data), status.HTTP_200_OK
+
+        try:
+            result = remote_mutations.run_idempotent_mutation(
+                scope=remote_mutations.mutation_scope("order-cancellation-request", ref),
+                key=key,
+                fingerprint=remote_mutations.mutation_fingerprint(
+                    {"order_ref": ref, "reason": reason}
+                ),
+                execute=execute_request,
+            )
+        except remote_mutations.RemoteMutationInProgress:
+            return Response(
+                {
+                    "detail": "A solicitação já está sendo registrada.",
+                    "error_code": "mutation_in_progress",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        except remote_mutations.RemoteMutationConflict:
+            return Response(
+                {
+                    "detail": "Esta tentativa pertence a outra solicitação. Atualize e tente novamente.",
+                    "error_code": "idempotency_conflict",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(result.response_body, status=result.response_code)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["tracking"],
         summary="Customer confirms a waitlist slot after the batch came out",
         responses={
             200: OrderTrackingSerializer,
@@ -549,6 +652,9 @@ class OrderRateView(APIView):
         )
 
         def execute_rate() -> tuple[dict, int]:
+            nonlocal order
+            from shopman.shop.services.customer_orders import lock_customer_order
+            order = lock_customer_order(order.ref)
             current_projection = build_order_tracking(order)
             can_rate = any(action.ref == "rate_order" and action.enabled for action in current_projection.actions)
             if not can_rate:
@@ -560,15 +666,8 @@ class OrderRateView(APIView):
                     status.HTTP_409_CONFLICT,
                 )
 
-            data = order.data.copy() if isinstance(order.data, dict) else {}
-            data["customer_rating"] = {
-                "rating": rating,
-                "comment": comment[:500],
-                "submitted_at": timezone.now().isoformat(),
-                "source": "storefront_nuxt",
-            }
-            order.data = data
-            order.save(update_fields=["data"])
+            from shopman.shop.services.customer_orders import save_customer_rating
+            save_customer_rating(order, rating=rating, comment=comment)
             # Nota baixa (≤2) vira alerta do operador: o gestor age enquanto o
             # cliente ainda lembra, e a nota deixa de morrer no JSONField. Não pode
             # derrubar a resposta da avaliação — best-effort, debounced no helper.
@@ -582,6 +681,7 @@ class OrderRateView(APIView):
         try:
             result = remote_mutations.run_idempotent_mutation(
                 scope=f"order-rate:{ref}",
+                payload={"rating": rating, "comment": comment[:500]}, local_atomic=True,
                 key=key,
                 execute=execute_rate,
                 cache_response=lambda _body, code: code < 400,

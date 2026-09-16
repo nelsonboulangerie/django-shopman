@@ -7,7 +7,7 @@
 import { isStale } from "~/presentation/production";
 import { filterEntries } from "~/presentation/recipeBook";
 
-useHead({ title: "Receitas · Produção" });
+useHead({ title: "Receitas" });
 
 const route = useRoute();
 const query = ref(typeof route.query.q === "string" ? route.query.q : "");
@@ -107,15 +107,15 @@ function clearFilters() {
         </div>
 
         <div class="ml-auto flex flex-wrap items-center gap-3">
-          <label class="inline-flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+          <label class="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm text-muted-foreground">
             <input v-model="onlyWithoutSku" type="checkbox" class="size-4 rounded border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" />
             Sem SKU
           </label>
-          <label class="inline-flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+          <label class="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm text-muted-foreground">
             <input v-model="onlyWithDraft" type="checkbox" class="size-4 rounded border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" />
             Com rascunho
           </label>
-          <label class="inline-flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+          <label class="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm text-muted-foreground">
             <input v-model="archived" type="checkbox" class="size-4 rounded border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" />
             Arquivadas
           </label>

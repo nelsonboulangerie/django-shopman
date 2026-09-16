@@ -110,6 +110,7 @@ export function buildPosSaleIntent(
     intent_version: intentVersion || POS_SALE_INTENT_VERSION,
     tab_ref: state.tabRef,
     tab_session_key: state.tabSessionKey,
+    expected_revision: state.expectedRevision,
     items: state.items.map((item) => ({
       // A identidade viaja SEMPRE. Sem ela o servidor gerava um id novo a cada
       // save e perdia o vínculo com o ticket de KDS já disparado — era por isso
@@ -138,6 +139,7 @@ export function buildPosSaleIntent(
           }
         : {}),
     })),
+    ...(state.salesMode ? { sales_mode: state.salesMode } : {}),
     fulfillment_type: state.fulfillmentType,
     payment_method: state.paymentMethod,
     payment_collection: state.paymentCollection,
@@ -194,11 +196,10 @@ export function buildPosSaleIntent(
   ) {
     payload.tendered_q = state.tenderedQ;
   }
-  // "Troco para quanto?" só existe no dinheiro NA ENTREGA (COD) — fora dele o
-  // servidor descarta; aqui nem viaja.
+  // "Troco para quanto?" só existe no dinheiro pendente para o hand-off
+  // (entrega ou retirada) — fora dele o servidor descarta; aqui nem viaja.
   if (
-    state.fulfillmentType === "delivery"
-    && state.paymentCollection === "on_delivery"
+    state.paymentCollection === "on_delivery"
     && state.changeForQ > 0
   ) {
     payload.change_for_q = state.changeForQ;
@@ -214,6 +215,7 @@ export function buildPosSaleIntent(
     // gêmea da fricção que a tela cobra antes de deixar a ordem sair daqui.
     if (state.saveReceiptTaxIdConfirmed) payload.save_receipt_tax_id_confirmed = true;
   }
+  if (state.receiptIdentityChoices?.length) payload.receipt_identity_choices = state.receiptIdentityChoices;
   if (state.manualDiscount) payload.manual_discount = state.manualDiscount;
   if (state.managerApproval) payload.manager_approval = state.managerApproval;
 

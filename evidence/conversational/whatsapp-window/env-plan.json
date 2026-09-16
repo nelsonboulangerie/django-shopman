@@ -1,0 +1,8 @@
+{
+  "private_directory": "/var/folders/26/_q6qdvgd7ng__s8yvxymfy2h0000gn/T/concierge-window-release-cp5fbww8",
+  "app_id": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f",
+  "active_before": "b77eefc4-a3e9-406f-804a-af72dbb3cb36",
+  "changes": {
+    "CONCIERGE_WHATSAPP_INTERACTION_TIMEZONE": "America/Sao_Paulo"
+  }
+}

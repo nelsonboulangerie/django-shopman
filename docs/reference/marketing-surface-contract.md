@@ -2,7 +2,7 @@
 
 - **Proprietário:** Produto/Marketing (operação), Platform/SRE (entrega) e DPO
   (consentimento/auditoria)
-- **Última verificação:** 2026-09-10
+- **Última verificação:** 2026-09-11
 - **Verificado contra:** rotas, projeções, permissões e specs de deploy do `HEAD`
 - **Gate de deriva:** `make marketing-docs`
 
@@ -19,13 +19,39 @@ e sem navegação por membro, contato, outbox, destino ou tentativa.
 
 | Plataforma | Consequência atual | Cardinalidade | Não significa |
 |---|---|---:|---|
-| Instagram | publicação pública | 1 por anúncio | mensagem direta |
-| Facebook | publicação pública | 1 por anúncio | mensagem por pessoa |
-| Google Meu Negócio | publicação pública | 1 por anúncio | mensagem por pessoa |
-| WhatsApp | mensagem direta | até 1 por pessoa elegível | publicação pública |
+| Instagram | Story público por padrão; Feed só por escolha explícita | 1 por anúncio | mensagem direta ou fallback de Story para Feed |
+| Facebook | postagem pública na página | 1 por anúncio | mensagem por pessoa |
+| Google Meu Negócio | atualização pública padrão do estabelecimento | 1 por anúncio | mensagem por pessoa |
+| WhatsApp | mensagem direta | até 1 por pessoa elegível | postagem pública |
 
 Mensagem direta no Instagram está fora do contrato. Se for aprovada no futuro, exige
 fluxo de entrega, capability, consentimento, prontidão, limites e comprovante próprios.
+
+**Vocabulário da operação:** mensagem é uma mensagem direta e possui destinatário;
+publicação é uma postagem pública e não possui destinatário individual; entrega é o
+termo genérico que pode se referir às duas anteriores. Identificadores técnicos podem
+permanecer em inglês, mas esses termos não podem ser trocados na UI.
+
+O gate `MKT-CAP-01` foi aprovado em 2026-09-11: a evolução adotará a identidade
+`{platform, delivery_kind, format}`, um catálogo server-owned de capacidades e schemas
+fechados por destino. Durante a transição, cada plataforma continua resumida a uma
+única modalidade de entrega e nenhum novo efeito externo será habilitado. A auditoria
+e a decisão completas estão em
+[`marketing-platform-capability-audit-20260911.md`](../reports/execution/marketing-platform-capability-audit-20260911.md).
+
+Para novas entregas, as três dimensões são obrigatórias desde o schema 4 e são
+persistidas no artefato, outbox e destino. A resposta de `/marketing/options/`
+projeta `delivery_capabilities` com modalidade, formatos, default, campos aceitos e
+exigência de mídia; o formulário consome essa projeção. Linhas e artefatos anteriores
+continuam legíveis pela compatibilidade histórica, mas não podem originar uma nova
+identidade incompleta.
+
+O formato público faz parte do artefato imutável (`publication_format`). A prévia,
+aprovação e chamada do provider leem o mesmo valor. No Instagram, `story` é o default
+de produto para FOMO e exige imagem pública; `feed` é secundário e precisa estar
+explicitamente escolhido. Artefato histórico sem formato continua legível, mas o
+adapter real o recusa antes da rede — nunca adivinha um efeito novo. A prévia de Story
+mostra a imagem 9:16 e avisa que o texto do rascunho não é sobreposto automaticamente.
 
 ## Rotas Nuxt
 
@@ -131,7 +157,12 @@ não concede aprovação, publicação, disparo, teste ou configuração.
 |---|---|---|---|
 | `SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED` | Platform/SRE | `false`; sem handoff | MKT-054 |
 | `SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` | Platform/SRE | `false`; sem tentativa | MKT-054 |
+| `SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED` | Release Manager | `false`; comando unitário não cruza a fronteira | desligar após o canário |
 | `SHOPMAN_MARKETING_DELIVERY_ADAPTERS` | Platform Owner | vazio; canal indisponível | por adapter/canário |
+| `SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado | por canário público |
+| `SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado | por canário público |
+| `SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter nem é registrado | por canário público |
+| `SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED` | Platform Owner | `false`; adapter experimental nem é registrado | somente após OAuth, revisão e gate TikTok |
 | `SHOPMAN_MARKETING_TARGET_HMAC_KEY` e versão | Segurança | vazio bloqueia materialização segura | rotação versionada |
 | `SHOPMAN_MARKETING_TEST_TARGETS_JSON` | Platform Owner | `{}`; nenhum alvo de teste | remover alvo ao fim do teste |
 | `SHOPMAN_MARKETING_MEDIA_HOSTS` | Segurança/Marca | vazio; mídia externa bloqueada | revisão por host |
@@ -143,18 +174,39 @@ sintéticos pertencem exclusivamente a `config.settings_marketing_demo`. A simul
 recusa ambiente não local e qualquer flag que permita saída externa. Nenhuma flag
 desliga consentimento, permissão, CSRF, redaction, unicidade ou revalidação pré-envio.
 
+Instagram/Facebook usam `META_PAGE_ACCESS_TOKEN`; Instagram também exige
+`META_IG_USER_ID`, conta Instagram Business ligada à página, e Facebook,
+`META_PAGE_ID`. Google exige token OAuth com escopo
+`business.manage`, `GOOGLE_BUSINESS_ACCOUNT_ID` e `GOOGLE_BUSINESS_LOCATION_ID`.
+O token Google configurado nesta etapa é estático: serve ao canário, mas ativação
+contínua exige decidir e validar seu ciclo de renovação. Credencial presente não liga
+publicação: a flag da plataforma e os consumidores duráveis — ou o canário unitário
+explicitamente armado — permanecem gates independentes. Em `DEBUG`, adapter externo
+também exige o opt-in geral de saída externa.
+
+TikTok ainda não integra o catálogo selecionável. O adapter Direct Post de foto é
+somente uma fronteira testável e inerte: token estático serve no máximo a canário
+controlado; operação contínua exige armazenamento OAuth com renovação, consulta de
+`creator_info`, aprovação de `video.publish` e auditoria Direct Post. A simples
+presença da flag ou da credencial não autoriza adicionar TikTok a uma campanha.
+
 ## Operação, diagnóstico e gates
 
 - `make marketing-diagnose`: leitura agregada sem PII ou chamada de provider;
 - `make marketing-drills`: oito incidentes sintéticos e testes dos runbooks;
 - `make marketing-capacity`: 200 mil candidatos e 20 mil destinos, sem provider;
 - `make marketing-simulator`: outbox → ledger → comprovante local, sem rede;
+- `python manage.py run_marketing_publication_canary --announcement-id ID
+  --platform instagram`: preflight somente leitura a partir do número já visível na
+  URL; imprime a consequência e o comando exato, sem publicar;
 - `make admin`: garante o corte Nuxt operacional/Admin audit-only;
 - job `Marketing — cadeia completa`: instalação, unit/component, lint, tipos, build,
   E2E, acessibilidade, visual, segurança e auditoria de dependências.
 
 Runbooks: [`docs/runbooks/README.md`](../runbooks/README.md). Simulador:
 [`docs/operations/marketing-local-simulator.md`](../operations/marketing-local-simulator.md).
+Canário público:
+[`docs/operations/marketing-publication-canary.md`](../operations/marketing-publication-canary.md).
 Capacidade: [`docs/engineering/marketing-capacity-gate.md`](../engineering/marketing-capacity-gate.md).
 
 ## Deploy e estado de rollout
@@ -165,7 +217,10 @@ Os dois blueprints versionados usam readiness `/health/ready` e liveness
 `/health/live`. Eles são referência; nunca devem sobrescrever o spec vivo sem preservar
 segredos e obter autorização explícita.
 
-Em 2026-09-10, o estado é **implementação técnica local concluída até MKT-050**.
-Provider real, shadow reconciliation, canário interno, staging, piloto, deploy,
-produção e rollout não estão autorizados nem comprovados. MKT-051/G-H08/G-H09 é o
-próximo gate; teste local não o substitui.
+Em 2026-09-11, o cockpit e o pipeline-base de `#601` estão em produção e o teste
+WhatsApp unitário para contato verificado foi recebido pelo proprietário. Os adapters
+de postagem pública e a escolha Story/Feed estão em branch isolada, desligados por
+default e ainda sem deploy. Publicar Story, Feed, página do Facebook ou atualização do
+Google continua sendo gate humano: requer peça válida, conferência da prévia, conta
+correta, credenciais/escopos, autorização explícita e canário público observável. Teste
+local não substitui esse gate.

@@ -647,8 +647,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
           <!-- Redes sociais (PIM) -->
           <div v-show="tab === 'social'" class="space-y-4">
             <p class="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              Alimentam os feeds comerciais (Google, Meta, TikTok). Marca e categoria Google são
-              o mínimo para publicar.
+              Atributos comerciais compartilhados pelos canais. As exigências variam por destino.
             </p>
 
             <label class="block">

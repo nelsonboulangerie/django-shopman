@@ -90,6 +90,8 @@ class POSHeadlessSurfaceContractTests(TestCase):
         _grant_pos_perm(self.operator)
         self.client.force_login(self.operator)
         self.terminal = Terminal.default()
+        from shopman.backstage.tests.pos_test_runtime import bind_station
+        bind_station(self.client, self.terminal.ref)
         self.shift = cash.open_shift(operator=self.operator, terminal=self.terminal, float_q=0)
 
     def test_products_expose_sold_out_from_stock_scope(self) -> None:
@@ -175,6 +177,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             ["cash", "pix", "credit", "debit", "link", "mixed"],
         )
         self.assertEqual(payment_collections["on_delivery"]["payment_method_refs"], ["cash", "credit", "debit", "mixed"])
+        self.assertEqual(payment_collections["on_delivery"]["fulfillment_types"], ["pickup", "delivery"])
         action_refs = {action["ref"] for action in payload["pos"]["actions"]}
         self.assertIn("review_sale", action_refs)
         self.assertIn("close_sale", action_refs)
@@ -236,6 +239,24 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(checkout["capabilities"]["sale_correction"]["cancel_recent_action_ref"], "cancel_recent_sale")
         self.assertTrue(checkout["capabilities"]["idempotent_replay"]["safe_for_offline_queue"])
 
+    def test_pickup_only_contract_advertises_deferred_handoff_payment(self) -> None:
+        channel = Channel.objects.get(ref="pdv")
+        channel.config = {
+            **channel.config,
+            "surface_policy": {"fulfillment_types": ["pickup"]},
+        }
+        channel.save(update_fields=["config"])
+
+        payload = projection_data(build_pos(operator=self.operator))
+
+        self.assertEqual(
+            [option["ref"] for option in payload["fulfillment_options"]],
+            ["pickup"],
+        )
+        self.assertTrue(
+            payload["checkout"]["capabilities"]["supports_on_delivery_cash"]
+        )
+
     def test_api_pos_exposes_shop_name_for_customer_display(self) -> None:
         # A tela do cliente (segundo monitor do balcão) dá as boas-vindas em
         # nome da LOJA — o nome vem do Shop singleton, nunca digitado na tela.
@@ -278,7 +299,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         """
         response = self.client.post(
             "/api/v1/backstage/pos/cash/open/",
-            {"opening_amount": "0,00", "terminal_ref": self.terminal.ref},
+            {"opening_amount": "0,00", "terminal_ref": self.terminal.ref, "client_request_id": "opening-test"},
             content_type="application/json",
         )
 
@@ -295,6 +316,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+                "expected_revision": tab["revision"],
             "items": [
                 {
                     "sku": "POS-HEADLESS-ITEM",
@@ -320,6 +342,8 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(closed.status_code, 200)
         body = closed.json()
         self.assertTrue(body["ok"])
+        self.assertIn("payment_delivery", body)
+        self.assertEqual(body["payment_delivery"]["template"], "")
         order = Order.objects.get(ref=body["order_ref"])
         self.assertEqual(order.channel_ref, "pdv")
         self.assertEqual(order.total_q, 2600)
@@ -336,7 +360,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "shopman.shop.fiscal_resolvers.eletronic_payment"
         ),
     )
-    def test_close_reports_fiscal_expected_for_card_sale_without_the_toggle(self) -> None:
+    def test_close_reports_fiscal_expected_for_terminal_credit_without_the_toggle(self) -> None:
         """Venda eletrônica emite sem o operador marcar nada — e o balcão precisa saber.
 
         O botão da DANFE seguia o toggle do operador (a intenção). Com o
@@ -344,7 +368,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         nasce sem ninguém marcar nada, e o balcão não tinha como chegar nela.
         Agora quem responde é a mesma regra que decide emitir.
         """
-        closed = self._close_sale_for_fiscal(payment_method="card")
+        closed = self._close_sale_for_fiscal(payment_method="credit")
 
         self.assertTrue(closed["fiscal_expected"])
 
@@ -462,6 +486,10 @@ class POSHeadlessSurfaceContractTests(TestCase):
                     "receipt_channels": ["email"],
                     "receipt_email": "cliente@example.org",
                     "client_request_id": f"pos-receipt-email-{n}",
+                    "receipt_identity_choices": [{
+                        "field": "email", "value": "cliente@example.org", "customer_ref": "", "owner_ref": "",
+                        "choice": "receipt_only", "client_request_id": f"pos-receipt-email-{n}",
+                    }],
                 }),
                 content_type="application/json",
             )
@@ -477,36 +505,35 @@ class POSHeadlessSurfaceContractTests(TestCase):
             self.assertEqual((order.data.get("customer") or {}).get("email", ""), "")
 
     def test_receipt_email_of_an_existing_customer_does_not_500(self) -> None:
-        """E-mail da nota que já pertence a OUTRO cadastro: a venda passa.
-
-        Era o 500 mais cruel: o cliente da vez não é a Dora, mas o endereço que
-        ele pediu é o dela — e a venda travava.
-        """
-        Customer.objects.create(
+        """E-mail conhecido pergunta uma vez; apenas documento mantém venda anônima."""
+        owner = Customer.objects.create(
             ref=Customer.generate_ref(), first_name="Dora", last_name="Cliente",
             phone="+5543999990055", email="dora@example.org",
         )
+        payload = {
+            "intent_version": POS_SALE_INTENT_VERSION,
+            "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
+            "fulfillment_type": "pickup", "payment_method": "cash", "payment_collection": "terminal",
+            "receipt_channels": ["email"], "receipt_email": "dora@example.org",
+            "client_request_id": "pos-receipt-email-alheio",
+        }
         response = self.client.post(
-            "/api/v1/backstage/pos/sale/close/",
-            data=json.dumps({
-                "intent_version": POS_SALE_INTENT_VERSION,
-                "items": [{
-                    "sku": "POS-HEADLESS-ITEM", "name": "Headless Item",
-                    "qty": 1, "unit_price_q": 1300,
-                }],
-                "fulfillment_type": "pickup",
-                "payment_method": "cash",
-                "payment_collection": "terminal",
-                "receipt_channels": ["email"],
-                "receipt_email": "dora@example.org",
-                "client_request_id": "pos-receipt-email-alheio",
-            }),
-            content_type="application/json",
+            "/api/v1/backstage/pos/sale/close/", data=json.dumps(payload), content_type="application/json",
         )
-
+        self.assertEqual(response.status_code, 422, response.content)
+        self.assertEqual(response.json()["error"]["code"], "receipt_identity_conflict")
+        self.assertEqual(response.json()["error"]["value"], owner.email)
+        payload["receipt_identity_choices"] = [{
+            "field": "email", "value": owner.email, "customer_ref": "", "owner_ref": owner.ref,
+            "choice": "receipt_only", "client_request_id": payload["client_request_id"],
+        }]
+        response = self.client.post(
+            "/api/v1/backstage/pos/sale/close/", data=json.dumps(payload), content_type="application/json",
+        )
         self.assertEqual(response.status_code, 200, response.content)
         order = Order.objects.get(ref=response.json()["order_ref"])
         self.assertNotIn("customer_ref", order.data)
+        self.assertEqual(order.data["receipt"]["email"], owner.email)
 
     def _close_sale_for_fiscal(
         self, *, payment_method: str, receipt_channels: list[str] | None = None
@@ -538,6 +565,10 @@ class POSHeadlessSurfaceContractTests(TestCase):
             if "email" in receipt_channels:
                 # O canal de e-mail exige para ONDE mandar — o intent recusa sem isso.
                 payload["receipt_email"] = "cliente@example.org"
+                payload["receipt_identity_choices"] = [{
+                    "field": "email", "value": "cliente@example.org", "customer_ref": "", "owner_ref": "",
+                    "choice": "receipt_only", "client_request_id": payload["client_request_id"],
+                }]
         response = self.client.post(
             "/api/v1/backstage/pos/sale/close/",
             data=json.dumps(payload),
@@ -615,6 +646,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
                 }
             ],
             "customer_name": "Cliente PIX",
+            "customer_phone": "(43) 99999-0001",
             "fulfillment_type": "pickup",
             "payment_method": "pix",
             "payment_collection": "terminal",
@@ -635,9 +667,19 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertTrue(body["payment"]["intent_ref"].startswith("PAY-"))
         self.assertIn("000201", body["payment"]["copy_paste"])
         self.assertTrue(body["payment"]["qr_code"].startswith("data:image/png;base64,"))
+        self.assertEqual(body["payment_delivery"]["template"], "payment_requested")
+        self.assertEqual(body["payment_delivery"]["status"], "queued")
         order = Order.objects.get(ref=body["order_ref"])
         self.assertEqual(order.data["payment"]["method"], "pix")
         self.assertEqual(order.data["payment"]["intent_ref"], body["payment"]["intent_ref"])
+        self.assertEqual(
+            Directive.objects.filter(
+                topic="notification.send",
+                payload__order_ref=order.ref,
+                payload__template="payment_requested",
+            ).count(),
+            1,
+        )
 
     def test_api_headless_pos_review_requires_open_cash_shift(self) -> None:
         self.shift.delete()
@@ -675,6 +717,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+                "expected_revision": tab["revision"],
             "items": [
                 {
                     "sku": "POS-HEADLESS-ITEM",
@@ -791,6 +834,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+                "expected_revision": tab["revision"],
             "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
             "fulfillment_type": "delivery",
             "payment_method": "cash",
@@ -814,6 +858,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+                "expected_revision": tab["revision"],
             "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
             "fulfillment_type": "pickup",
             "payment_method": "mixed",
@@ -875,6 +920,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "intent_version": POS_SALE_INTENT_VERSION,
             "tab_ref": tab["tab_ref"],
             "tab_session_key": tab["tab_session_key"],
+                "expected_revision": tab["revision"],
             "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
             "fulfillment_type": "pickup",
             "payment_method": "mixed",
@@ -989,15 +1035,50 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(customer["name"], "Cliente JIT")
         self.assertEqual(Customer.objects.count(), before + 1)
         ref = customer["ref"]
-        # Resolving the same identifiers again returns the same customer (no dup).
+        # Explicitly selecting the returned ref is safe and does not duplicate.
         again = self.client.post(
             "/api/v1/backstage/pos/customer/resolve/",
-            {"customer_name": "Cliente JIT", "customer_phone": "43966665555"},
+            {"customer_ref": ref, "customer_name": "Cliente JIT", "customer_phone": "43966665555"},
             content_type="application/json",
         )
         self.assertEqual(again.status_code, 200)
         self.assertEqual(again.json()["customer"]["ref"], ref)
         self.assertEqual(Customer.objects.count(), before + 1)
+
+    def test_api_customer_resolve_requires_selection_before_reusing_phone(self) -> None:
+        existing = Customer.objects.create(
+            ref=Customer.generate_ref(), first_name="Cliente", last_name="0022", phone="+5543999990022",
+        )
+        response = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {"customer_name": "Outra Pessoa", "customer_phone": "43999990022", "customer_email": "new@example.com"},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 422)
+        error = response.json()["error"]
+        self.assertEqual(error["field"], "customer_phone")
+        self.assertEqual(error["candidates"][0]["ref"], existing.ref)
+        self.assertFalse(error["candidates"][0]["is_current"])
+        existing.refresh_from_db()
+        self.assertEqual(existing.name, "Cliente 0022")
+        self.assertEqual(existing.email, "")
+
+    def test_api_customer_resolve_reports_concurrent_unique_conflict(self) -> None:
+        from unittest.mock import patch
+
+        from django.db import IntegrityError
+
+        with patch(
+            "shopman.backstage.api.operations.pos_tabs_service.resolve_or_create_customer",
+            side_effect=IntegrityError("concurrent contact creation"),
+        ):
+            response = self.client.post(
+                "/api/v1/backstage/pos/customer/resolve/",
+                {"customer_name": "Outra Pessoa", "customer_phone": "43999990022"},
+                content_type="application/json",
+            )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["error"]["code"], "customer_conflict")
 
     def test_api_customer_resolve_empty_returns_null(self) -> None:
         response = self.client.post(
@@ -1049,7 +1130,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         # Idempotente: o mesmo CPF resolve o MESMO cadastro, agora com created=False.
         again = self.client.post(
             "/api/v1/backstage/pos/customer/resolve/",
-            {"customer_tax_id": "529.982.247-25"},
+            {"customer_ref": ref, "customer_tax_id": "529.982.247-25"},
             content_type="application/json",
         )
         self.assertEqual(again.status_code, 200)
@@ -1154,6 +1235,35 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(ana.phone, "+5543988887777")
         self.assertEqual(corrigido.json()["customer"]["phone"], "+5543988887777")
 
+    def test_api_customer_resolve_corrects_name_only_when_told(self) -> None:
+        ana = Customer.objects.create(
+            ref="CUST-FIX-NAME", first_name="Ana", last_name="Prado",
+            phone="+5543999990011",
+        )
+
+        quieto = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {"customer_ref": ana.ref, "customer_name": "Ana Corrigida"},
+            content_type="application/json",
+        )
+        self.assertEqual(quieto.status_code, 200)
+        ana.refresh_from_db()
+        self.assertEqual(ana.name, "Ana Prado")
+
+        corrigido = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {
+                "customer_ref": ana.ref,
+                "customer_name": "Ana Corrigida",
+                "customer_name_correction": True,
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(corrigido.status_code, 200)
+        ana.refresh_from_db()
+        self.assertEqual(ana.name, "Ana Corrigida")
+        self.assertEqual(corrigido.json()["customer"]["name"], "Ana Corrigida")
+
     def test_api_customer_resolve_refuses_correcting_into_someone_elses_number(self) -> None:
         # Corrigir não é roubar: o número novo já é de terceiro → mesma recusa.
         ana = Customer.objects.create(
@@ -1219,6 +1329,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
                 "intent_version": POS_SALE_INTENT_VERSION,
                 "tab_ref": tab["tab_ref"],
                 "tab_session_key": tab["tab_session_key"],
+                "expected_revision": tab["revision"],
                 "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
                 "payment_method": "cash",
                 "payment_collection": "terminal",

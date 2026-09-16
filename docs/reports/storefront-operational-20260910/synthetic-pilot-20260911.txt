@@ -1,0 +1,1220 @@
+DEBUG 2026-09-11 06:16:27,633 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 06:16:27,633 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 06:16:27,633 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 06:16:27,634 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 06:16:27,643 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 06:16:27,644 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 06:16:27,645 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 06:16:27,646 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 06:16:27,652 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 06:16:27,653 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 06:16:27,653 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 06:16:27,654 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 06:16:27,670 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 06:16:27,671 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 06:16:27,672 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 06:16:27,672 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 06:16:27,673 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 06:16:27,673 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 06:16:27,681 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 06:16:27,682 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+INFO 2026-09-11 06:16:27,726 shopman.shop.rules.engine rules.engine: Registered validator shop.business_hours
+System check identified some issues:
+
+WARNINGS:
+?: (SHOPMAN_W003) A loja oferece NFC-e no PDV (Shop.defaults['pos']['fiscal_toggle']) mas nenhum adapter fiscal está configurado.
+	HINT: O toggle 'Nota fiscal' não aparece no balcão e nenhuma nota é emitida. Defina SHOPMAN_FISCAL_ADAPTER (ex.: shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend) ou desligue 'Emitir nota fiscal' no Admin da loja.
+Operations to perform:
+  Apply all migrations: admin, auth, backstage, buyman, cashman, contenttypes, craftsman, customer_consent, customer_identifiers, customer_insights, customer_loyalty, customer_merge, customer_preferences, customer_timeline, django_eventstream, doorman, guestman, offerman, orderman, otp_totp, payman, refs, sessions, shop, stockman, storefront, taggit
+Running migrations:
+  No migrations to apply.
+DEBUG 2026-09-11 06:16:29,991 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 06:16:29,991 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 06:16:29,991 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 06:16:29,992 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 06:16:29,999 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 06:16:30,000 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 06:16:30,001 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 06:16:30,003 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 06:16:30,009 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 06:16:30,009 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 06:16:30,009 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 06:16:30,010 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 06:16:30,024 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 06:16:30,025 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 06:16:30,026 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 06:16:30,026 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 06:16:30,026 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 06:16:30,026 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 06:16:30,031 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 06:16:30,031 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+INFO 2026-09-11 06:16:30,065 shopman.shop.rules.engine rules.engine: Registered validator shop.business_hours
+System check identified some issues:
+
+WARNINGS:
+?: (SHOPMAN_W003) A loja oferece NFC-e no PDV (Shop.defaults['pos']['fiscal_toggle']) mas nenhum adapter fiscal está configurado.
+	HINT: O toggle 'Nota fiscal' não aparece no balcão e nenhuma nota é emitida. Defina SHOPMAN_FISCAL_ADAPTER (ex.: shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend) ou desligue 'Emitir nota fiscal' no Admin da loja.
+DEBUG 2026-09-11 06:16:33,251 shopman.stockman.adapters.sku_validation Loaded SKU validator: shopman.shop.adapters.sku_validator.ComposedSkuValidator
+INFO 2026-09-11 06:16:33,271 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,385 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,393 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,400 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,408 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,415 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,423 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,430 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,438 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,446 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,453 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,461 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,468 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,475 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,483 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,491 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,500 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,507 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,514 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,521 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,529 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,537 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,545 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,554 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,561 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,569 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,578 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,586 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,593 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,601 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,610 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,619 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,627 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,635 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,643 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,651 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,659 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,667 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,675 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,683 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,690 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,698 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,705 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,712 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,719 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,725 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,732 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,738 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,745 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,752 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:33,758 shopman.stockman stock.receive
+DEBUG 2026-09-11 06:16:33,832 shopman.craftsman.adapters.catalog Loaded catalog backend: shopman.shop.adapters.catalog_backend.ComposedCatalogBackend
+INFO 2026-09-11 06:16:33,918 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: BF tem peso posto à mão (250 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:33,920 shopman.shop.services.dietary_from_recipe dietary_from_recipe: BF tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:33,927 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: BF updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:33,928 shopman.shop.services.dietary_from_recipe dietary_from_recipe: BF tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:33,934 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: CGO tem peso posto à mão (300 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:33,934 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: CGO has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:33,935 shopman.shop.services.dietary_from_recipe dietary_from_recipe: CGO tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:33,936 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: CGO has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:33,936 shopman.shop.services.dietary_from_recipe dietary_from_recipe: CGO tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:33,942 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: CI tem peso posto à mão (180 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:33,943 shopman.shop.services.dietary_from_recipe dietary_from_recipe: CI tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:33,950 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: CI updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:33,951 shopman.shop.services.dietary_from_recipe dietary_from_recipe: CI tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:33,956 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: FOA tem peso posto à mão (370 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:33,958 shopman.shop.services.dietary_from_recipe dietary_from_recipe: FOA tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:33,966 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: FOA updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:33,966 shopman.shop.services.dietary_from_recipe dietary_from_recipe: FOA tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:33,972 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: FA tem peso posto à mão (350 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:33,974 shopman.shop.services.dietary_from_recipe dietary_from_recipe: FA tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:33,980 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: FA updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:33,981 shopman.shop.services.dietary_from_recipe dietary_from_recipe: FA tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:33,987 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: KP tem peso posto à mão (250 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:33,988 shopman.shop.services.dietary_from_recipe dietary_from_recipe: KP tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:33,998 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: KP updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:33,999 shopman.shop.services.dietary_from_recipe dietary_from_recipe: KP tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,005 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: CT tem peso posto à mão (70 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,007 shopman.shop.services.dietary_from_recipe dietary_from_recipe: CT tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,013 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: CT updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,014 shopman.shop.services.dietary_from_recipe dietary_from_recipe: CT tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,020 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: PC tem peso posto à mão (90 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,021 shopman.shop.services.dietary_from_recipe dietary_from_recipe: PC tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,028 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: PC updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,029 shopman.shop.services.dietary_from_recipe dietary_from_recipe: PC tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,035 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: ANC tem peso posto à mão (90 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,037 shopman.shop.services.dietary_from_recipe dietary_from_recipe: ANC tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,046 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: ANC updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,047 shopman.shop.services.dietary_from_recipe dietary_from_recipe: ANC tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,053 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: CN tem peso posto à mão (72 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,055 shopman.shop.services.dietary_from_recipe dietary_from_recipe: CN tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,062 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: CN updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,062 shopman.shop.services.dietary_from_recipe dietary_from_recipe: CN tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,069 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: BH tem peso posto à mão (90 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,070 shopman.shop.services.dietary_from_recipe dietary_from_recipe: BH tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,077 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: BH updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,078 shopman.shop.services.dietary_from_recipe dietary_from_recipe: BH tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,084 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: MD tem peso posto à mão (25 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,086 shopman.shop.services.dietary_from_recipe dietary_from_recipe: MD tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,091 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: MD updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,092 shopman.shop.services.dietary_from_recipe dietary_from_recipe: MD tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,151 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: BAP tem peso posto à mão (230 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,160 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: BAP updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,168 shopman.shop.services.dietary_from_recipe dietary_from_recipe: BAP updated (allergens=['glúten'], dietary_info=['100% vegetal', 'sem lactose']).
+INFO 2026-09-11 06:16:34,174 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: BA tem peso posto à mão (280 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,184 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: BA updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,190 shopman.shop.services.dietary_from_recipe dietary_from_recipe: BA updated (allergens=['glúten'], dietary_info=['100% vegetal', 'sem lactose']).
+INFO 2026-09-11 06:16:34,196 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: BEP tem peso posto à mão (150 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,206 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: BEP updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,214 shopman.shop.services.dietary_from_recipe dietary_from_recipe: BEP updated (allergens=['glúten', 'gergelim'], dietary_info=['100% vegetal', 'sem lactose']).
+INFO 2026-09-11 06:16:34,220 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: BAX tem peso posto à mão (420 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,229 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: BAX updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,238 shopman.shop.services.dietary_from_recipe dietary_from_recipe: BAX updated (allergens=['glúten'], dietary_info=['100% vegetal', 'sem lactose']).
+INFO 2026-09-11 06:16:34,247 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: CF tem peso posto à mão (265 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,257 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: CF updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,264 shopman.shop.services.dietary_from_recipe dietary_from_recipe: CF updated (allergens=['glúten'], dietary_info=['100% vegetal', 'sem lactose']).
+INFO 2026-09-11 06:16:34,270 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: CGR tem peso posto à mão (300 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,278 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: CGR updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,286 shopman.shop.services.dietary_from_recipe dietary_from_recipe: CGR updated (allergens=['glúten'], dietary_info=['100% vegetal', 'sem lactose']).
+INFO 2026-09-11 06:16:34,292 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: PI tem peso posto à mão (25 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,301 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: PI updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,307 shopman.shop.services.dietary_from_recipe dietary_from_recipe: PI updated (allergens=['glúten'], dietary_info=['100% vegetal', 'sem lactose']).
+INFO 2026-09-11 06:16:34,313 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: CBT tem peso posto à mão (600 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,324 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: CBT updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,333 shopman.shop.services.dietary_from_recipe dietary_from_recipe: CBT updated (allergens=['glúten'], dietary_info=['sem lactose']).
+INFO 2026-09-11 06:16:34,339 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: FOC tem peso posto à mão (475 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,350 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: FOC updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,358 shopman.shop.services.dietary_from_recipe dietary_from_recipe: FOC updated (allergens=['glúten'], dietary_info=['100% vegetal', 'sem lactose']).
+INFO 2026-09-11 06:16:34,365 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: MIF tem peso posto à mão (95 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,376 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: MIF updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,383 shopman.shop.services.dietary_from_recipe dietary_from_recipe: MIF updated (allergens=['glúten'], dietary_info=['100% vegetal', 'sem lactose']).
+INFO 2026-09-11 06:16:34,389 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: MICBT tem peso posto à mão (160 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,406 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: MICBT updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,423 shopman.shop.services.dietary_from_recipe dietary_from_recipe: MICBT updated (allergens=['glúten'], dietary_info=['sem lactose']).
+INFO 2026-09-11 06:16:34,434 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: MIFOC tem peso posto à mão (140 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,457 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: MIFOC updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,469 shopman.shop.services.dietary_from_recipe dietary_from_recipe: MIFOC updated (allergens=['glúten'], dietary_info=['100% vegetal', 'sem lactose']).
+INFO 2026-09-11 06:16:34,482 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: CM tem peso posto à mão (32 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,491 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: CM updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,501 shopman.shop.services.dietary_from_recipe dietary_from_recipe: CM updated (allergens=['glúten', 'leite', 'ovos'], dietary_info=['vegetariano']).
+INFO 2026-09-11 06:16:34,508 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: PR tem peso posto à mão (60 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,510 shopman.shop.services.dietary_from_recipe dietary_from_recipe: PR tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,519 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: PR updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,520 shopman.shop.services.dietary_from_recipe dietary_from_recipe: PR tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,526 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: MA tem peso posto à mão (95 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,536 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: MA updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,543 shopman.shop.services.dietary_from_recipe dietary_from_recipe: MA updated (allergens=['glúten', 'leite'], dietary_info=['vegetariano']).
+INFO 2026-09-11 06:16:34,554 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: CPQ tem peso posto à mão (80 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,565 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: CPQ updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,573 shopman.shop.services.dietary_from_recipe dietary_from_recipe: CPQ updated (allergens=['glúten', 'leite', 'ovos'], dietary_info=[]).
+INFO 2026-09-11 06:16:34,579 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: FF tem peso posto à mão (115 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,589 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: FF updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,596 shopman.shop.services.dietary_from_recipe dietary_from_recipe: FF updated (allergens=['glúten', 'leite'], dietary_info=[]).
+INFO 2026-09-11 06:16:34,605 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: MFF tem peso posto à mão (70 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,615 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: MFF updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,623 shopman.shop.services.dietary_from_recipe dietary_from_recipe: MFF updated (allergens=['glúten', 'leite'], dietary_info=[]).
+INFO 2026-09-11 06:16:34,629 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: JO tem peso posto à mão (35 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,639 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: JO updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,646 shopman.shop.services.dietary_from_recipe dietary_from_recipe: JO updated (allergens=['glúten', 'leite', 'gergelim'], dietary_info=['vegetariano']).
+INFO 2026-09-11 06:16:34,652 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: KBB tem peso posto à mão (90 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,662 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: KBB updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,670 shopman.shop.services.dietary_from_recipe dietary_from_recipe: KBB updated (allergens=['glúten', 'leite'], dietary_info=['vegetariano']).
+INFO 2026-09-11 06:16:34,676 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: BN tem peso posto à mão (210 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,684 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: BN updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,690 shopman.shop.services.dietary_from_recipe dietary_from_recipe: BN updated (allergens=['glúten', 'leite', 'ovos'], dietary_info=['vegetariano']).
+INFO 2026-09-11 06:16:34,695 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: BCH tem peso posto à mão (37 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,704 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: BCH updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,710 shopman.shop.services.dietary_from_recipe dietary_from_recipe: BCH updated (allergens=['glúten', 'leite', 'ovos'], dietary_info=['vegetariano']).
+INFO 2026-09-11 06:16:34,718 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: MBBBG tem peso posto à mão (28 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,727 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: MBBBG updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,735 shopman.shop.services.dietary_from_recipe dietary_from_recipe: MBBBG updated (allergens=['glúten', 'leite', 'ovos', 'gergelim'], dietary_info=['vegetariano']).
+INFO 2026-09-11 06:16:34,745 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: ANU tem peso posto à mão (95 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,762 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: ANU updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,773 shopman.shop.services.dietary_from_recipe dietary_from_recipe: ANU updated (allergens=['glúten', 'leite', 'ovos'], dietary_info=['vegetariano']).
+INFO 2026-09-11 06:16:34,780 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: ANP tem peso posto à mão (95 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,790 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: ANP updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,799 shopman.shop.services.dietary_from_recipe dietary_from_recipe: ANP updated (allergens=['glúten', 'leite', 'ovos'], dietary_info=['vegetariano']).
+INFO 2026-09-11 06:16:34,805 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: CH tem peso posto à mão (265 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,813 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: CH updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,820 shopman.shop.services.dietary_from_recipe dietary_from_recipe: CH updated (allergens=['glúten', 'leite', 'ovos'], dietary_info=['vegetariano']).
+INFO 2026-09-11 06:16:34,826 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: HO tem peso posto à mão (100 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,826 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: HO has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,827 shopman.shop.services.dietary_from_recipe dietary_from_recipe: HO tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,828 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: HO has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,829 shopman.shop.services.dietary_from_recipe dietary_from_recipe: HO tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,835 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: MIHO tem peso posto à mão (55 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,844 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: MIHO updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,851 shopman.shop.services.dietary_from_recipe dietary_from_recipe: MIHO updated (allergens=['glúten', 'leite', 'ovos'], dietary_info=[]).
+INFO 2026-09-11 06:16:34,857 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: DL tem peso posto à mão (90 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,857 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: DL has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,858 shopman.shop.services.dietary_from_recipe dietary_from_recipe: DL tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,860 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: DL has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,860 shopman.shop.services.dietary_from_recipe dietary_from_recipe: DL tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,866 shopman.shop.services.unit_weight_from_recipe unit_weight_from_recipe: COC tem peso posto à mão (53 g); não sobrescrevo — a divergência aparece na leitura da promessa.
+INFO 2026-09-11 06:16:34,878 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: COC updated (ingredients_text, nutrition_facts, metadata).
+INFO 2026-09-11 06:16:34,887 shopman.shop.services.dietary_from_recipe dietary_from_recipe: COC updated (allergens=['glúten', 'leite', 'ovos'], dietary_info=['vegetariano']).
+INFO 2026-09-11 06:16:34,892 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: QQ has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,893 shopman.shop.services.dietary_from_recipe dietary_from_recipe: QQ tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,898 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: CMO has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,899 shopman.shop.services.dietary_from_recipe dietary_from_recipe: CMO tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,904 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: CMA has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,905 shopman.shop.services.dietary_from_recipe dietary_from_recipe: CMA tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,910 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: CCOM has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,910 shopman.shop.services.dietary_from_recipe dietary_from_recipe: CCOM tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,915 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: JB has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,916 shopman.shop.services.dietary_from_recipe dietary_from_recipe: JB tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,920 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: PG has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,921 shopman.shop.services.dietary_from_recipe dietary_from_recipe: PG tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,926 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: PPU has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,926 shopman.shop.services.dietary_from_recipe dietary_from_recipe: PPU tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,930 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: SS has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,931 shopman.shop.services.dietary_from_recipe dietary_from_recipe: SS tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,940 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: CD has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,941 shopman.shop.services.dietary_from_recipe dietary_from_recipe: CD tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,945 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: PS has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,946 shopman.shop.services.dietary_from_recipe dietary_from_recipe: PS tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,951 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: MC has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,951 shopman.shop.services.dietary_from_recipe dietary_from_recipe: MC tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,973 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: THC has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,973 shopman.shop.services.dietary_from_recipe dietary_from_recipe: THC tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,978 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: THR has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,978 shopman.shop.services.dietary_from_recipe dietary_from_recipe: THR tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,983 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: THS has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,984 shopman.shop.services.dietary_from_recipe dietary_from_recipe: THS tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,989 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: THB has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,989 shopman.shop.services.dietary_from_recipe dietary_from_recipe: THB tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:34,994 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: HI has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:34,995 shopman.shop.services.dietary_from_recipe dietary_from_recipe: HI tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:35,012 shopman.shop.services.nutrition_from_recipe nutrition_from_recipe: CTV has manual override (auto_filled=False); skipping.
+INFO 2026-09-11 06:16:35,013 shopman.shop.services.dietary_from_recipe dietary_from_recipe: CTV tem valor escrito pelo gestor (source=manual); não sobrescreve.
+INFO 2026-09-11 06:16:35,050 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,058 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,064 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,070 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,076 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,082 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,088 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,094 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,100 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,107 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,113 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,120 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,126 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,133 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,139 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,160 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,168 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,175 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,182 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,189 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,196 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,202 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,209 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,216 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,223 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,230 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,236 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,242 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,249 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,256 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,263 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,271 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,278 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,288 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,296 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,305 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,312 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,319 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,326 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,333 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,340 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,347 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,353 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,360 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,366 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,373 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,379 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,385 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,392 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,400 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,408 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,415 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,422 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,428 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,435 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,445 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,484 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,493 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,500 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,508 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,515 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,524 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,530 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,536 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,541 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,547 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,558 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,566 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,573 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,580 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:35,588 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,117 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,123 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,128 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,133 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,139 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,144 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,150 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,156 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,161 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,166 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,172 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,177 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,183 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,187 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,191 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,196 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,200 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,204 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,209 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,214 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,219 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,225 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,230 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,234 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,241 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,246 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,251 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,256 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,261 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,266 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,272 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,277 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,283 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,288 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,293 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,298 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,304 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,310 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,314 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,319 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,324 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,329 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,335 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,341 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,346 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,351 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,357 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,362 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,367 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,372 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,377 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,382 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,389 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,394 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,399 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,404 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,409 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,414 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,420 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,426 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,433 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,438 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,444 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,449 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,454 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,461 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,468 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,475 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,482 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,492 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,498 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,503 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,509 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,514 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,520 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,526 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,531 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,541 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,548 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,556 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,562 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,568 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,574 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,579 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,585 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,591 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,596 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,602 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,607 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,613 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,619 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,624 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,630 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,636 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,641 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,647 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,652 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,658 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,663 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,668 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,673 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,678 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,684 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,690 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,696 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,702 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,708 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,713 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,719 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,728 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,733 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,739 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,745 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,751 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,758 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,762 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,767 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,771 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,775 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,779 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,784 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,791 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,796 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,802 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,807 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,813 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,818 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,824 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,829 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,835 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,841 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,847 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,853 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,859 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,865 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,870 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,876 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,881 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,887 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,893 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,898 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,904 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,910 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:36,915 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,864 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,874 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,882 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,887 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,894 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,900 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,906 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,914 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,921 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,929 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,935 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,941 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,948 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,954 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,961 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,967 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,976 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,982 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,988 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:41,994 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,001 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,008 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,014 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,020 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,027 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,032 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,038 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,046 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,052 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,059 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,064 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,070 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,076 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,083 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,090 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,097 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,102 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,109 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,115 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,121 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,128 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,134 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,141 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,147 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,153 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,162 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,169 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,175 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,180 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,186 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,192 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,197 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,203 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,209 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,215 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,221 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,228 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,234 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,241 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:42,247 shopman.stockman stock.receive
+INFO 2026-09-11 06:16:43,332 shopman.shop.services.kds kds.dispatch: 1 tickets for order WEB-260911-S71
+INFO 2026-09-11 06:16:43,358 shopman.shop.services.kds kds.dispatch: 1 tickets for order WHATSAPP-260911-K42
+INFO 2026-09-11 06:16:43,402 shopman.shop.services.kds kds.dispatch: 1 tickets for order WEB-260911-S02
+DEBUG 2026-09-11 06:16:43,680 shopman.orderman.dispatch Directive #1503 is scheduled for 2026-09-11 09:31:43.678334+00:00, skipping immediate dispatch.
+DEBUG 2026-09-11 06:16:44,078 shopman.shop.services.notification notification.deliver: no recipient for backend=manychat order=WEB-260911-C15, skipping
+DEBUG 2026-09-11 06:16:44,078 shopman.shop.services.notification notification.deliver: backend=sms not configured, skipping order=WEB-260911-C15
+DEBUG 2026-09-11 06:16:44,078 shopman.shop.services.notification notification.deliver: no recipient for backend=email order=WEB-260911-C15, skipping
+INFO 2026-09-11 06:16:44,078 shopman.shop.services.notification notification.deliver: no recipient for any backend, skipping order=WEB-260911-C15 template=order_accepted
+DEBUG 2026-09-11 06:16:44,082 shopman.shop.services.notification notification.deliver: no recipient for backend=manychat order=WHATSAPP-260911-F23, skipping
+DEBUG 2026-09-11 06:16:44,082 shopman.shop.services.notification notification.deliver: backend=sms not configured, skipping order=WHATSAPP-260911-F23
+DEBUG 2026-09-11 06:16:44,082 shopman.shop.services.notification notification.deliver: no recipient for backend=email order=WHATSAPP-260911-F23, skipping
+INFO 2026-09-11 06:16:44,082 shopman.shop.services.notification notification.deliver: no recipient for any backend, skipping order=WHATSAPP-260911-F23 template=order_accepted
+DEBUG 2026-09-11 06:16:44,087 shopman.shop.services.notification notification.deliver: no recipient for backend=manychat order=WEB-260911-E88, skipping
+DEBUG 2026-09-11 06:16:44,087 shopman.shop.services.notification notification.deliver: backend=sms not configured, skipping order=WEB-260911-E88
+DEBUG 2026-09-11 06:16:44,087 shopman.shop.services.notification notification.deliver: no recipient for backend=email order=WEB-260911-E88, skipping
+INFO 2026-09-11 06:16:44,087 shopman.shop.services.notification notification.deliver: no recipient for any backend, skipping order=WEB-260911-E88 template=order_accepted
+DEBUG 2026-09-11 06:16:44,091 shopman.shop.services.notification notification.deliver: no recipient for backend=manychat order=PDV-260911-Z22, skipping
+DEBUG 2026-09-11 06:16:44,091 shopman.shop.services.notification notification.deliver: no recipient for backend=email order=PDV-260911-Z22, skipping
+DEBUG 2026-09-11 06:16:44,091 shopman.shop.services.notification notification.deliver: backend=sms not configured, skipping order=PDV-260911-Z22
+INFO 2026-09-11 06:16:44,091 shopman.shop.services.notification notification.deliver: no recipient for any backend, skipping order=PDV-260911-Z22 template=order_accepted
+DEBUG 2026-09-11 06:16:44,095 shopman.shop.services.notification notification.deliver: no recipient for backend=manychat order=WHATSAPP-260911-K42, skipping
+DEBUG 2026-09-11 06:16:44,095 shopman.shop.services.notification notification.deliver: backend=sms not configured, skipping order=WHATSAPP-260911-K42
+DEBUG 2026-09-11 06:16:44,095 shopman.shop.services.notification notification.deliver: no recipient for backend=email order=WHATSAPP-260911-K42, skipping
+INFO 2026-09-11 06:16:44,095 shopman.shop.services.notification notification.deliver: no recipient for any backend, skipping order=WHATSAPP-260911-K42 template=order_accepted
+DEBUG 2026-09-11 06:16:44,100 shopman.shop.services.notification notification.deliver: no recipient for backend=console order=IFOOD-260911-Q02, skipping
+DEBUG 2026-09-11 06:16:44,100 shopman.shop.services.notification notification.deliver: no recipient for backend=sms order=IFOOD-260911-Q02, skipping
+DEBUG 2026-09-11 06:16:44,100 shopman.shop.services.notification notification.deliver: no recipient for backend=email order=IFOOD-260911-Q02, skipping
+DEBUG 2026-09-11 06:16:44,104 shopman.shop.services.notification notification.deliver: no recipient for backend=manychat order=WEB-260911-S71, skipping
+DEBUG 2026-09-11 06:16:44,104 shopman.shop.services.notification notification.deliver: backend=sms not configured, skipping order=WEB-260911-S71
+DEBUG 2026-09-11 06:16:44,104 shopman.shop.services.notification notification.deliver: no recipient for backend=email order=WEB-260911-S71, skipping
+INFO 2026-09-11 06:16:44,104 shopman.shop.services.notification notification.deliver: no recipient for any backend, skipping order=WEB-260911-S71 template=order_accepted
+DEBUG 2026-09-11 06:16:44,108 shopman.shop.services.notification notification.deliver: no recipient for backend=manychat order=WEB-260911-S54, skipping
+DEBUG 2026-09-11 06:16:44,108 shopman.shop.services.notification notification.deliver: backend=sms not configured, skipping order=WEB-260911-S54
+DEBUG 2026-09-11 06:16:44,108 shopman.shop.services.notification notification.deliver: no recipient for backend=email order=WEB-260911-S54, skipping
+INFO 2026-09-11 06:16:44,108 shopman.shop.services.notification notification.deliver: no recipient for any backend, skipping order=WEB-260911-S54 template=order_accepted
+WARNING 2026-09-11 06:16:44,325 shopman.shop.models.rules rule_config.changed
+WARNING 2026-09-11 06:16:44,326 shopman.shop.models.rules rule_config.changed
+WARNING 2026-09-11 06:16:44,328 shopman.shop.models.rules rule_config.changed
+WARNING 2026-09-11 06:16:44,330 shopman.shop.models.rules rule_config.changed
+WARNING 2026-09-11 06:16:44,332 shopman.shop.models.rules rule_config.changed
+INFO 2026-09-11 06:16:44,366 shopman.payman Intent created
+INFO 2026-09-11 06:16:44,366 shopman.payman Intent charged to account
+INFO 2026-09-11 06:16:44,376 shopman.payman Intent created
+INFO 2026-09-11 06:16:44,377 shopman.payman Intent charged to account
+INFO 2026-09-11 06:16:44,397 shopman.payman Intent created
+INFO 2026-09-11 06:16:44,397 shopman.payman Intent charged to account
+INFO 2026-09-11 06:16:44,409 shopman.payman Intent created
+INFO 2026-09-11 06:16:44,410 shopman.payman Intent charged to account
+INFO 2026-09-11 06:16:44,424 shopman.payman Intent captured
+INFO 2026-09-11 06:16:44,431 shopman.shop.services.house_account house_account.settled customer=CLI-002 method=cash settled_q=16000 intents=['PAY-0470615026DD']
+INFO 2026-09-11 06:16:44,439 shopman.shop.services.fulfillment fulfillment.create: created for order DLV-ACERTADA
+INFO 2026-09-11 06:16:44,439 shopman.shop.services.fulfillment fulfillment.update: 911 → in_progress for order DLV-ACERTADA
+INFO 2026-09-11 06:16:44,441 shopman.shop.services.fulfillment fulfillment.update: 911 → dispatched for order DLV-ACERTADA
+INFO 2026-09-11 06:16:44,459 shopman.shop.directives directives.persistent_dedupe_hit topic=notification.send dedupe_key=notification.send:DLV-ACERTADA:order_dispatched
+INFO 2026-09-11 06:16:44,459 shopman.shop.services.notification notification.send: skipped duplicate order_dispatched for order DLV-ACERTADA
+DEBUG 2026-09-11 06:16:44,461 shopman.orderman.dispatch Directive #1860 is scheduled for 2026-09-11 10:26:44.460269+00:00, skipping immediate dispatch.
+INFO 2026-09-11 06:16:44,462 shopman.shop.services.fulfillment fulfillment.update: 911 → delivered for order DLV-ACERTADA
+INFO 2026-09-11 06:16:44,478 shopman.shop.directives directives.persistent_dedupe_hit topic=notification.send dedupe_key=notification.send:DLV-ACERTADA:order_delivered
+INFO 2026-09-11 06:16:44,478 shopman.shop.services.notification notification.send: skipped duplicate order_delivered for order DLV-ACERTADA
+INFO 2026-09-11 06:16:44,498 shopman.shop.handlers.loyalty loyalty.earn: +26 points for CLI-003 (order DLV-ACERTADA)
+INFO 2026-09-11 06:16:44,499 shopman.shop.services.loyalty loyalty.earn: queued for order DLV-ACERTADA
+INFO 2026-09-11 06:16:44,502 shopman.payman Intent created
+INFO 2026-09-11 06:16:44,503 shopman.payman Intent settled without gateway
+INFO 2026-09-11 06:16:44,513 shopman.shop.services.operator_orders operator_settle_delivery_cash order=DLV-ACERTADA shift=10 amount=2600
+INFO 2026-09-11 06:16:44,517 shopman.shop.services.fulfillment fulfillment.create: created for order DLV-NARUA
+INFO 2026-09-11 06:16:44,517 shopman.shop.services.fulfillment fulfillment.update: 912 → in_progress for order DLV-NARUA
+INFO 2026-09-11 06:16:44,518 shopman.shop.services.fulfillment fulfillment.update: 912 → dispatched for order DLV-NARUA
+INFO 2026-09-11 06:16:44,540 shopman.shop.directives directives.persistent_dedupe_hit topic=notification.send dedupe_key=notification.send:DLV-NARUA:order_dispatched
+INFO 2026-09-11 06:16:44,540 shopman.shop.services.notification notification.send: skipped duplicate order_dispatched for order DLV-NARUA
+DEBUG 2026-09-11 06:16:44,541 shopman.orderman.dispatch Directive #1862 is scheduled for 2026-09-11 10:26:44.540758+00:00, skipping immediate dispatch.
+  Limpando dados anteriores...
+  ✅ Dados limpos
+
+🥐 Populando Nelson Boulangerie...
+  ✓ Catálogo de QC: 4 graus e 7 motivos canônicos
+  ⏭️  Superuser 'admin' ja existe
+  Caixa: atualizado (2 permissões)
+  Cozinha: atualizado (28 permissões)
+  Gerente: atualizado (168 permissões)
+  Admin de Catálogo: atualizado (19 permissões)
+  Rules Managers: atualizado (2 permissões)
+  Dono: atualizado (4 permissões)
+setup_groups: OK
+  admin: atualizado → Dono
+  joyce: atualizado → Gerente
+  fran: atualizado → Caixa
+  diofer: atualizado → Cozinha
+setup_operators: OK (PIN 1234 para todos)
+  Crachás de dev (imprima em Operadores → Crachá do operador):
+    admin: 40d23703ec3b
+    joyce: 60f7b70dc939
+    fran: 4fb6fb632100
+    diofer: 19f6b55d299c
+  ⚠️  Não dá para testar digitando nem colando, e isso é de propósito:
+      a tela exige hexadecimais com menos de 120ms entre teclas: dedo
+      não chega lá, e colar não gera evento de tecla nenhum. Teste com o
+      leitor, num crachá impresso.
+  ✅ Operadores em grupos, PIN 1234: admin, joyce, fran, diofer
+  ✅ Shop criado
+  ✅ Faixas de distância: 3 configuradas (3 novas). Acima de 10 km → fora da área.
+  ✅ Zonas de entrega (exceções): 2 configuradas (2 novas)
+  📦 Catálogo...
+  ✅ 111 produtos (110 com peso), 9 colecoes, 4 listagens
+  📍 Posicoes de estoque...
+  ✅ 7 posicoes
+  📊 Estoque inicial...
+  ✅ Estoque para 43 produtos + 8 sobras de ontem (lotes datados)
+  📋 Receitas...
+  ✅ 11 fornecedores
+  ✅ 56 insumos (Material)
+  ✅ 3 conversões de contagem
+  ✅ 3 conversões de volume (litro → kg)
+  ✅ Inventário de receitas: 0 entries criadas (67 no total)
+  ✅ mise en place para 15 pré-preparos (3 dias do plano)
+  ✅ saldo de abertura dimensionado para 56 insumos (fichas × cobertura de compra; maiores: FARINHA-T55 225, AGUA-FILTRADA 211.6, FARINHA-T45 150, FARINHA-T65 125)
+  ✅ 90 receitas, 12 ordens de hoje, 52 futuras e 360 historico movel; 60 coordenadas de produção reconciliadas
+  ✅ Dados remotos PDP: 57 produtos completos
+  👥 Clientes...
+  🏷️  Etiquetas de cliente...
+  ✅ 5 clientes etiquetados
+vínculos analisados: 3
+religados por telefone: 0
+órfãos sem reparo possível: 3
+use --delete-unrepairable para removê-los; sem isso ficam como estão.
+  ✅ 7 clientes, 3 faixas de preço, 5 com consentimento de marketing
+  📍 Enderecos de clientes...
+  ✅ 9 enderecos de clientes
+  📡 Canais...
+  ✅ 4 canais
+  📺 Canais de exibição...
+  ✅ 4 canais de exibição
+  ✅ Compra web: 55 produtos vendáveis orderable
+  🖥️  KDS...
+  ✅ 4 estações KDS (Cafés, Lanches, Encomendas, Expedição)
+  🧾 POS tabs...
+  ✅ 6 POS tabs cadastradas
+  🛒 Pedidos...
+  ✅ 1 pedido iFood operacional adicionado
+  ✅ 181 pedidos (35 dias + live + iFood + historico producao)
+  🧪 Cenários de segurança/confiabilidade...
+  ✅ 3 cenários determinísticos de borda
+  🧾 NFC-e exemplo (homologação) no pedido WEB-260910-Y44 — /fiscal/danfe/WEB-260910-Y44/
+  📝 Sessoes abertas...
+  ✅ 3 sessoes abertas
+  🔔 Alertas de estoque...
+  ✅ 8 alertas configurados
+  🚨 Alertas operacionais...
+  ✅ Alertas operacionais ativos: 3 (1 atraso, 1 rendimento)
+  🏷️  Promotions e coupons...
+  ✅ 5 promotions, 3 coupons
+  💳 Payments...
+  ✅ 174 payment intents + transactions (174 order links)
+  📦 Fulfillments...
+  ✅ 176 fulfillments
+  📋 Directives...
+  ✅ Directives para 182 pedidos
+  🎖️  Loyalty...
+  ✅ 5 contas de fidelidade
+  📈 Insights de cliente (RFM, churn, favoritos)...
+  ✅ 7 insights calculados
+  📣 Campanhas de marketing...
+  ✅ 2 modelos e 3 campanhas
+  📨 Templates de notificação...
+  ✅ 30 templates de notificação (0 novos)
+  ⚙️  Rule configs...
+  ✅ 5 rule configs (5 novos)
+  💬 Omotenashi copy (overrides de marca)...
+  ✅ 1 cópias omotenashi (0 novas)
+  📊 Fechamento do dia...
+  ✅ DayClosing criado
+  💵 Turnos de caixa...
+  ✅ 2 turnos de caixa (ontem fechado + hoje aberto)
+  ✅ Conta na casa (2 clientes), acerto em dinheiro, entregas com troco e maquininha
+  ✅ Checklists operacionais...
+  ✅ 3 templates e 3 execuções de checklist operacional
+  ✅ B.I.: 42 dias de prateleira/faltas/forno, 730 dias de contexto, 70321 vendas históricas, 4849 pedidos nativos de volume e 731 dias materializados
+  ✅ 1 terminais com a config da loja de volta
+  sem coleção que responda: COMBO-PETIT-DEJ
+142 valor(es) propostos, 0 preservado(s), 1 produto(s) sem proposta.
+Revise em Admin → Atributos de produto; tudo saiu como proposta.
+
+✅ Seed Nelson completo!
+── Build da loja Nuxt ──
+
+> build
+> nuxt build
+
+┌  Building Nuxt for production...
+
+ ERROR  (node:65953) [DEP0205] DeprecationWarning: module.register() is deprecated. Use module.registerHooks() instead.
+(Use node --trace-deprecation ... to show where the warning was created)
+
+│
+●  Nuxt 4.5.2 (with Nitro 2.13.4, Vite 8.2.2 and Vue 3.5.41)
+✔ Nuxt Icon discovered local-installed 1 collections: lucide
+│
+●  Nitro preset: node-server
+ℹ Nuxt Icon client bundle consist of 83 icons with 24.97KB(uncompressed) in size
+ℹ Building client...
+ℹ vite v8.2.2 building client environment for production...
+transforming...
+✓ 1272 modules transformed.
+rendering chunks...
+computing gzip size...
+ℹ node_modules/.cache/nuxt/.nuxt/dist/client/manifest.json                  26.04 kB │ gzip:  3.33 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/_sku_.DKLYq9JJ.css        0.08 kB │ gzip:  0.08 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/finalizar.DQbiR1lc.css    5.09 kB │ gzip:  1.14 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/entry.Dr7gy_N0.css      196.09 kB │ gzip: 33.51 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/CNs_Ozdc.js               0.02 kB │ gzip:  0.04 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/CuFk54ai.js               0.04 kB │ gzip:  0.05 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/C8EOqwjM.js               0.06 kB │ gzip:  0.08 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/akEvFlFq.js               0.07 kB │ gzip:  0.09 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BLC96vmK.js               0.13 kB │ gzip:  0.13 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BOZNv0aB.js               0.15 kB │ gzip:  0.14 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BxFzj9nY.js               0.15 kB │ gzip:  0.12 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/DK3Fl9T5.js               0.15 kB │ gzip:  0.15 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BAIRd6e7.js               0.17 kB │ gzip:  0.15 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/g1Ri3pE6.js               0.20 kB │ gzip:  0.17 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/CGugp4Ln.js               0.23 kB │ gzip:  0.18 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/DoSS0Vyv.js               0.25 kB │ gzip:  0.20 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/s7xrPKJz.js               0.25 kB │ gzip:  0.18 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/X31GSat8.js               0.35 kB │ gzip:  0.21 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/CfoXeQ2K.js               0.41 kB │ gzip:  0.27 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BkDcE-Mw.js               0.54 kB │ gzip:  0.35 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/vX7pid3I.js               0.57 kB │ gzip:  0.38 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BEqi0TFa.js               0.59 kB │ gzip:  0.37 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/rfSSOMWe.js               0.61 kB │ gzip:  0.40 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/DOdxamZQ.js               0.70 kB │ gzip:  0.46 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BxrSd5GB.js               0.70 kB │ gzip:  0.42 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BaTR7tHl.js               0.80 kB │ gzip:  0.49 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/DBH9UP1k.js               0.81 kB │ gzip:  0.52 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/rMvwwX9s.js               0.82 kB │ gzip:  0.52 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/cvSY-C4J.js               0.82 kB │ gzip:  0.51 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BtAktUjG.js               0.94 kB │ gzip:  0.55 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/Byc3Fv0X.js               0.95 kB │ gzip:  0.59 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/DpN56IYV.js               1.00 kB │ gzip:  0.56 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/D5Kz15Kb.js               1.01 kB │ gzip:  0.61 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/LczgkNfS.js               1.01 kB │ gzip:  0.60 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BCKSlaDQ.js               1.06 kB │ gzip:  0.61 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BLog1X39.js               1.07 kB │ gzip:  0.61 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/Dbesidbr.js               1.18 kB │ gzip:  0.71 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BCNsNPuT.js               1.26 kB │ gzip:  0.63 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/kZQNFCpn.js               1.46 kB │ gzip:  0.62 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/DlTxya0K.js               1.55 kB │ gzip:  0.87 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/Blgk3oFX.js               1.59 kB │ gzip:  0.89 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BMsHcvJF.js               2.03 kB │ gzip:  0.98 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/CAoKOtQ4.js               2.19 kB │ gzip:  0.87 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BcBy4L7A.js               2.43 kB │ gzip:  1.22 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/DcL5ILMK.js               2.54 kB │ gzip:  0.88 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/l_iTGShJ.js               2.56 kB │ gzip:  1.32 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/Bg1VnB0V.js               2.58 kB │ gzip:  1.05 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/C5S8exD1.js               2.72 kB │ gzip:  1.09 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/uFKSbYZo.js               2.73 kB │ gzip:  1.43 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/Dnthq4VA.js               3.10 kB │ gzip:  1.12 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/Dum2M8jl.js               3.20 kB │ gzip:  0.97 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/D_DR0ISj.js               3.21 kB │ gzip:  1.37 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BK8BuEXa.js               3.35 kB │ gzip:  1.22 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/v3qPtZoj.js               3.60 kB │ gzip:  1.49 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/EQER436P.js               3.73 kB │ gzip:  1.52 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/DkEzcPlC.js               4.12 kB │ gzip:  1.56 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/B1YLCsBx.js               4.17 kB │ gzip:  1.98 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/CZXIODoq.js               4.25 kB │ gzip:  1.71 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/B3bmaiBK.js               4.28 kB │ gzip:  2.02 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/Clq4VvrP.js               4.43 kB │ gzip:  1.83 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BwlMHtyG.js               4.71 kB │ gzip:  1.63 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/C366VdWV.js               4.80 kB │ gzip:  2.17 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BWbyC_T5.js               5.03 kB │ gzip:  2.23 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/AWERsXn5.js               5.06 kB │ gzip:  2.07 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/iVaG6bu5.js               5.07 kB │ gzip:  2.12 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/rTIz4ljM.js               5.36 kB │ gzip:  2.33 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/J_ERyrY9.js               5.59 kB │ gzip:  1.90 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/B_5YLLmO.js               5.68 kB │ gzip:  2.10 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BFupKNwq.js               5.70 kB │ gzip:  1.99 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BM9Q3dRm.js               6.24 kB │ gzip:  2.57 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/Raj9Dbqm.js               7.02 kB │ gzip:  2.82 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/8nFEeRrV.js               7.09 kB │ gzip:  2.79 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/DvmJRBtJ.js               7.26 kB │ gzip:  2.95 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/DK2OWQ4-.js               7.29 kB │ gzip:  3.01 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/D6Huj9cp.js               8.47 kB │ gzip:  3.33 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/D3YAq17k.js               8.70 kB │ gzip:  3.40 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/DNqGgDKt.js               9.13 kB │ gzip:  3.41 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/Baq5lODu.js               9.37 kB │ gzip:  3.37 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/DKOcHwuK.js              10.99 kB │ gzip:  2.71 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/Cv3XWyJ3.js              11.98 kB │ gzip:  3.68 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/CikeDqao.js              13.53 kB │ gzip:  5.10 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BXR11s8m.js              21.58 kB │ gzip:  7.50 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/DwOtBLu7.js              22.52 kB │ gzip:  7.39 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/Css32F7C.js              26.31 kB │ gzip:  8.66 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/Bcnp9Dpj.js              26.61 kB │ gzip:  8.85 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/XPe4OURP.js              27.88 kB │ gzip:  8.90 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/TssvA8ab.js              33.34 kB │ gzip:  9.97 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/6wB8FJ4H.js              35.82 kB │ gzip: 10.31 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/CsnArnoG.js              36.75 kB │ gzip: 11.26 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/yjb1Nzoj.js              43.33 kB │ gzip: 13.38 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/CUJbw1R3.js              54.29 kB │ gzip: 18.35 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/Bl5DIpeu.js              59.80 kB │ gzip: 18.40 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/DEDbqkVW.js              72.36 kB │ gzip: 20.23 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/cg-AtaC5.js              97.65 kB │ gzip: 30.86 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/D70_Qxo7.js             103.07 kB │ gzip: 39.98 kB
+node_modules/.cache/nuxt/.nuxt/dist/client/_nuxt/BsN2JjDV.js             263.86 kB │ gzip: 90.90 kB
+
+ℹ ✓ built in 4.11s
+
+ WARN  [33m[PLUGIN_TIMINGS] [0mYour build spent 95% of 4.1s inside plugin hooks (3.9s).
+Measured inside the callback, so queue time is excluded and time the callback itself awaited is not:
+  - @tailwindcss/vite:generate:build transform (30%, 1.2s, 8 calls)
+  - vite:vue transform (26%, 1.1s, 363 calls)
+Those rows are 56% of the build; the rest of the 95% is below.
+Not measurable — 3 hooks whose calls overlap, so elapsed time covers work other calls were doing. Profile with node --cpu-prof:
+  - nuxt:ssr-styles:client resolveId (544 calls)
+  - nuxt:resolve-bare-imports resolveId (6 calls)
+  - nuxt:fonts:font-family-injection transform (8 calls)
+See https://rolldown.rs/reference/InputOptions.checks#plugintimings for more details.
+
+
+✔ Client built in 4136ms
+ℹ Building server...
+ℹ vite v8.2.2 building ssr environment for production...
+transforming...
+✓ 521 modules transformed.
+rendering chunks...
+ℹ node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/ShopHeader-styles.rVre2WGU.mjs        0.08 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/_sku_-styles.Hcmr506N.mjs             0.08 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/error-styles.aVFd-SxB.mjs             0.08 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/finalizar-styles.CPlniBTz.mjs         0.08 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/entry-styles.Dy54rSNq.mjs             0.15 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/styles.mjs                                  0.79 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/pages-DJ8Y-yoP.js                     0.22 kB │ map:   1.64 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/routes-cWLKNt80.js                    0.25 kB │ map:   0.36 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/interval-ouA84pft.js                  0.26 kB │ map:   0.85 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/objects-wzUMrPV5.js                   0.30 kB │ map:   1.09 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/whatsapp-CWa0PdPH.js                  0.32 kB │ map:   0.81 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/safeNavigation-BlA3Idxn.js            0.37 kB │ map:   0.63 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/useCanonical-DUOZO4G4.js              0.44 kB │ map:   0.82 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/_sku_-styles-1.mjs-8xG2k40y.js        0.45 kB │ map:   0.09 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/useSearchOverlay-Bv8XLMnf.js          0.50 kB │ map:   1.43 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/entry-styles-2.mjs-DqS0Tr09.js        0.60 kB │ map:   0.09 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/httpError-DLqpU1AQ.js                 0.76 kB │ map:   2.14 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/entry-styles-1.mjs-C_KonjGd.js        0.82 kB │ map:   0.09 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/translucent-3j-PDQal.js               0.86 kB │ map:   2.43 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/useShopmanApiPath-CoIz4GQi.js         0.95 kB │ map:   1.36 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/remoteMutations-DvSkBAke.js           1.04 kB │ map:   2.34 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/ssr-BAooHTw4.js                       1.08 kB │ map:   4.12 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/state-CzRMURFE.js                     1.37 kB │ map:   5.74 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/useFavoritesState-Dk2z1pOC.js         1.42 kB │ map:   2.74 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/AspectRatio-Cw3YNXFE.js               1.61 kB │ map:   1.16 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/Content-DoBHHyJj.js                   1.93 kB │ map:   2.06 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/Actions-LR3fkdxY.js                   1.95 kB │ map:   2.30 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/Skeleton-mzuy2DHC.js                  2.12 kB │ map:   2.59 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/Description-DQF6UNgk.js               2.19 kB │ map:   2.68 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/Input-Ci_uV6ll.js                     2.24 kB │ map:   1.95 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/useReorder-CmZ8YVJ5.js                2.44 kB │ map:   4.44 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/Media-Di5em7kz.js                     2.48 kB │ map:   3.97 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/account-BJ6DXfuR.js                   2.55 kB │ map:   5.01 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/Input-BcL2ua9P.js                     2.98 kB │ map:   7.49 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/useBrowserHandoff-Dc4vrOtk.js         3.01 kB │ map:   5.58 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/dist-BKN46TB1.js                      3.04 kB │ map:  67.92 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/authPhone-DZQGnvD8.js                 3.08 kB │ map:   6.99 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/Error-C8d0J2Ra.js                     3.20 kB │ map:   4.22 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/useWhatsAppConfirm-B_QSxi7g.js        3.41 kB │ map:   5.67 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/Progress-DVveNT2c.js                  4.37 kB │ map:   5.41 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/Breadcrumbs-BPKxuTcC.js               4.71 kB │ map:  11.50 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/Switch-qAQ5rX2c.js                    4.80 kB │ map:   5.98 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/finalizar-styles-1.mjs-Dg7JsY0q.js    5.40 kB │ map:  10.45 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/Addon-Bqq6cQzo.js                     5.52 kB │ map:   9.80 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/OrderSummaryRows-xi-nbV5w.js          5.96 kB │ map:  11.08 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/a-BZj3qo3R.js                         6.01 kB │ map:  12.51 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/PinInput-Bqg6Sxdk.js                  6.02 kB │ map:   8.27 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/Trigger-Dp0rmwui.js                   6.21 kB │ map:   8.22 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/BrowserHandoffCard-CbHI-X0E.js        6.87 kB │ map:   7.25 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/CartQuantityAction-rcrSleqx.js        6.97 kB │ map:  11.34 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/account-C6nSWF42.js                   7.01 kB │ map:  16.60 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/ProductListItem-eVqr_wZE.js           7.17 kB │ map:  12.75 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/Field-BwWXofql.js                     7.19 kB │ map:  10.33 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/terms-CRJMxO88.js                     7.39 kB │ map:  14.60 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/Description-Bs_90i9_.js               7.61 kB │ map:  11.74 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/_ref_-CzC6Kptc.js                     8.22 kB │ map:  17.46 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/Description-h1hoMWpj.js               8.91 kB │ map:  12.58 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/Alert-CsatkEan.js                     9.00 kB │ map:  15.49 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/privacy-BX71sQAi.js                   9.32 kB │ map:  20.08 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/favoritos-CWErIryU.js                10.87 kB │ map:   9.60 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/nuxt-link-DfsLNhYm.js                11.62 kB │ map:  25.63 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/StockNotifyButton-Bm6qhrNs.js        12.23 kB │ map:  21.09 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/Card-C5g3GZDf.js                     12.48 kB │ map:  14.25 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/CartSummaryBreakdown-Q7lSALk4.js     13.69 kB │ map:  14.83 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/_ref_-BBMjHsZm.js                    14.71 kB │ map:  18.42 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/head-DWdzJxfF.js                     16.40 kB │ map:  49.37 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/pedidos-onYe9wsG.js                  19.96 kB │ map:  22.04 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/menu-BGR4a-LR.js                     20.48 kB │ map:  38.40 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/enderecos-QDXS26d8.js                23.89 kB │ map:  25.72 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/preferencias-DtToO44m.js             24.21 kB │ map:  25.54 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/perfil-BY-k1Qwd.js                   24.53 kB │ map:  38.02 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/busca-BzCA0zyy.js                    25.03 kB │ map:  32.25 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/conta-DOlyswy7.js                    26.65 kB │ map:  33.93 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/Item-DcegSiM-.js                     28.03 kB │ map:  31.87 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/AlertDialog-D_uJS8_D.js              28.61 kB │ map:  33.91 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/BottomSheet-DxtuzLSL.js              39.62 kB │ map:  60.45 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/menu-D3qIUzlU.js                     40.70 kB │ map:  62.79 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/entrar-CjUrW7gt.js                   55.25 kB │ map: 105.06 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/components-BGsLL0BS.js               56.93 kB │ map: 109.54 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/pages-B3w-tLtw.js                    60.86 kB │ map: 104.21 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/_sku_-rCi08pQb.js                    62.44 kB │ map:  91.60 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/sacola-DSkjzza_.js                   66.86 kB │ map:  87.06 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/AddressPicker-qFToepCt.js            81.17 kB │ map: 139.58 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/seguranca-b_9eeggW.js               144.21 kB │ map: 152.42 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/server.mjs                                149.02 kB │ map: 630.04 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/_ref_-CZTljxJP.js                   213.20 kB │ map: 296.11 kB
+node_modules/.cache/nuxt/.nuxt/dist/server/_nuxt/finalizar-C6O5Ss8Z.js               266.85 kB │ map: 350.85 kB
+
+
+ WARN  [plugin @tailwindcss/vite:generate:build] [33m[SOURCEMAP_BROKEN] [0mSourcemap is likely to be incorrect: a plugin (@tailwindcss/vite:generate:build) was used to transform files, but didn't generate a sourcemap for the transformation. Consult the plugin documentation for help: https://rolldown.rs/guide/troubleshooting#warning-sourcemap-is-likely-to-be-incorrect
+
+
+
+ WARN  [plugin @tailwindcss/vite:generate:build] [33m[SOURCEMAP_BROKEN] [0mSourcemap is likely to be incorrect: a plugin (@tailwindcss/vite:generate:build) was used to transform files, but didn't generate a sourcemap for the transformation. Consult the plugin documentation for help: https://rolldown.rs/guide/troubleshooting#warning-sourcemap-is-likely-to-be-incorrect
+ (x2)
+
+
+ WARN  [plugin @tailwindcss/vite:generate:build] [33m[SOURCEMAP_BROKEN] [0mSourcemap is likely to be incorrect: a plugin (@tailwindcss/vite:generate:build) was used to transform files, but didn't generate a sourcemap for the transformation. Consult the plugin documentation for help: https://rolldown.rs/guide/troubleshooting#warning-sourcemap-is-likely-to-be-incorrect
+ (x3)
+
+ℹ ✓ built in 3.52s
+
+ WARN  [33m[PLUGIN_TIMINGS] [0mYour build spent 95% of 3.5s inside plugin hooks (3.3s).
+Measured inside the callback, so queue time is excluded and time the callback itself awaited is not:
+  - vite:vue transform (35%, 1.2s, 361 calls)
+Those rows are 35% of the build; the rest of the 95% is below.
+Not measurable — 4 hooks whose calls overlap, so elapsed time covers work other calls were doing. Profile with node --cpu-prof:
+  - nuxt:ssr-styles:ssr resolveId (527 calls)
+  - nuxt:resolve-externals:external resolveId (27 calls)
+  - nuxt:ssr-styles:ssr transform (520 calls)
+  … and 1 more
+See https://rolldown.rs/reference/InputOptions.checks#plugintimings for more details.
+
+
+✔ Server built in 3542ms
+[nitro] ✔ Generated public .output/public
+[nitro] ℹ Building Nuxt Nitro server (preset: node-server, compatibility date: 2026-05-08)
+[nitro] ✔ Nuxt Nitro server built
+  ├─ .output/server/chunks/_/error-500.mjs (5.05 kB) (2.06 kB gzip)
+  ├─ .output/server/chunks/_/error-500.mjs.map (182 B) (156 B gzip)
+  ├─ .output/server/chunks/_/icons.mjs (544 kB) (83.3 kB gzip)
+  ├─ .output/server/chunks/_/icons.mjs.map (6.11 kB) (102 B gzip)
+  ├─ .output/server/chunks/build/_ref_-BBMjHsZm.mjs (15.5 kB) (3.75 kB gzip)
+  ├─ .output/server/chunks/build/_ref_-BBMjHsZm.mjs.map (8.31 kB) (1.94 kB gzip)
+  ├─ .output/server/chunks/build/_ref_-CzC6Kptc.mjs (8.87 kB) (2.96 kB gzip)
+  ├─ .output/server/chunks/build/_ref_-CzC6Kptc.mjs.map (4.46 kB) (1.25 kB gzip)
+  ├─ .output/server/chunks/build/_ref_-CZTljxJP.mjs (213 kB) (25.6 kB gzip)
+  ├─ .output/server/chunks/build/_ref_-CZTljxJP.mjs.map (1.04 kB) (349 B gzip)
+  ├─ .output/server/chunks/build/_sku_-rCi08pQb.mjs (63.1 kB) (10.5 kB gzip)
+  ├─ .output/server/chunks/build/_sku_-rCi08pQb.mjs.map (41 kB) (6.87 kB gzip)
+  ├─ .output/server/chunks/build/_sku_-styles.Hcmr506N.mjs (496 B) (289 B gzip)
+  ├─ .output/server/chunks/build/_sku_-styles.Hcmr506N.mjs.map (209 B) (165 B gzip)
+  ├─ .output/server/chunks/build/a-BZj3qo3R.mjs (6.47 kB) (1.85 kB gzip)
+  ├─ .output/server/chunks/build/a-BZj3qo3R.mjs.map (2.68 kB) (750 B gzip)
+  ├─ .output/server/chunks/build/account-BJ6DXfuR.mjs (3 kB) (1.44 kB gzip)
+  ├─ .output/server/chunks/build/account-BJ6DXfuR.mjs.map (1.52 kB) (619 B gzip)
+  ├─ .output/server/chunks/build/account-C6nSWF42.mjs (7 kB) (2.41 kB gzip)
+  ├─ .output/server/chunks/build/account-C6nSWF42.mjs.map (6.13 kB) (1.63 kB gzip)
+  ├─ .output/server/chunks/build/Actions-LR3fkdxY.mjs (1.94 kB) (858 B gzip)
+  ├─ .output/server/chunks/build/Actions-LR3fkdxY.mjs.map (724 B) (331 B gzip)
+  ├─ .output/server/chunks/build/Addon-Bqq6cQzo.mjs (5.51 kB) (1.68 kB gzip)
+  ├─ .output/server/chunks/build/Addon-Bqq6cQzo.mjs.map (1.8 kB) (637 B gzip)
+  ├─ .output/server/chunks/build/AddressPicker-qFToepCt.mjs (81 kB) (14.4 kB gzip)
+  ├─ .output/server/chunks/build/AddressPicker-qFToepCt.mjs.map (55.4 kB) (10.8 kB gzip)
+  ├─ .output/server/chunks/build/Alert-CsatkEan.mjs (8.96 kB) (2.1 kB gzip)
+  ├─ .output/server/chunks/build/Alert-CsatkEan.mjs.map (4.41 kB) (1.02 kB gzip)
+  ├─ .output/server/chunks/build/AlertDialog-D_uJS8_D.mjs (28.6 kB) (3.81 kB gzip)
+  ├─ .output/server/chunks/build/AlertDialog-D_uJS8_D.mjs.map (11.9 kB) (1.78 kB gzip)
+  ├─ .output/server/chunks/build/AspectRatio-Cw3YNXFE.mjs (1.61 kB) (678 B gzip)
+  ├─ .output/server/chunks/build/AspectRatio-Cw3YNXFE.mjs.map (565 B) (271 B gzip)
+  ├─ .output/server/chunks/build/authPhone-DZQGnvD8.mjs (3.08 kB) (894 B gzip)
+  ├─ .output/server/chunks/build/authPhone-DZQGnvD8.mjs.map (3.87 kB) (987 B gzip)
+  ├─ .output/server/chunks/build/BottomSheet-DxtuzLSL.mjs (39.5 kB) (6.2 kB gzip)
+  ├─ .output/server/chunks/build/BottomSheet-DxtuzLSL.mjs.map (18.8 kB) (3.46 kB gzip)
+  ├─ .output/server/chunks/build/Breadcrumbs-BPKxuTcC.mjs (4.66 kB) (1.72 kB gzip)
+  ├─ .output/server/chunks/build/Breadcrumbs-BPKxuTcC.mjs.map (2.49 kB) (818 B gzip)
+  ├─ .output/server/chunks/build/BrowserHandoffCard-CbHI-X0E.mjs (9.54 kB) (2.87 kB gzip)
+  ├─ .output/server/chunks/build/BrowserHandoffCard-CbHI-X0E.mjs.map (4.69 kB) (1.3 kB gzip)
+  ├─ .output/server/chunks/build/busca-BzCA0zyy.mjs (25.7 kB) (5.63 kB gzip)
+  ├─ .output/server/chunks/build/busca-BzCA0zyy.mjs.map (14.4 kB) (3.22 kB gzip)
+  ├─ .output/server/chunks/build/Card-C5g3GZDf.mjs (12.5 kB) (1.94 kB gzip)
+  ├─ .output/server/chunks/build/Card-C5g3GZDf.mjs.map (5.25 kB) (911 B gzip)
+  ├─ .output/server/chunks/build/CartQuantityAction-rcrSleqx.mjs (6.97 kB) (1.97 kB gzip)
+  ├─ .output/server/chunks/build/CartQuantityAction-rcrSleqx.mjs.map (4.21 kB) (1.14 kB gzip)
+  ├─ .output/server/chunks/build/CartSummaryBreakdown-Q7lSALk4.mjs (13.7 kB) (2.22 kB gzip)
+  ├─ .output/server/chunks/build/CartSummaryBreakdown-Q7lSALk4.mjs.map (7.26 kB) (1.41 kB gzip)
+  ├─ .output/server/chunks/build/conta-DOlyswy7.mjs (27.1 kB) (5.2 kB gzip)
+  ├─ .output/server/chunks/build/conta-DOlyswy7.mjs.map (15.9 kB) (2.99 kB gzip)
+  ├─ .output/server/chunks/build/Content-DoBHHyJj.mjs (1.92 kB) (847 B gzip)
+  ├─ .output/server/chunks/build/Content-DoBHHyJj.mjs.map (604 B) (306 B gzip)
+  ├─ .output/server/chunks/build/Description-Bs_90i9_.mjs (7.61 kB) (1.55 kB gzip)
+  ├─ .output/server/chunks/build/Description-Bs_90i9_.mjs.map (2.95 kB) (673 B gzip)
+  ├─ .output/server/chunks/build/Description-DQF6UNgk.mjs (2.19 kB) (965 B gzip)
+  ├─ .output/server/chunks/build/Description-DQF6UNgk.mjs.map (662 B) (320 B gzip)
+  ├─ .output/server/chunks/build/Description-h1hoMWpj.mjs (8.9 kB) (1.55 kB gzip)
+  ├─ .output/server/chunks/build/Description-h1hoMWpj.mjs.map (3.1 kB) (586 B gzip)
+  ├─ .output/server/chunks/build/enderecos-QDXS26d8.mjs (24.5 kB) (4.58 kB gzip)
+  ├─ .output/server/chunks/build/enderecos-QDXS26d8.mjs.map (14.1 kB) (2.68 kB gzip)
+  ├─ .output/server/chunks/build/entrar-CjUrW7gt.mjs (55.7 kB) (11.1 kB gzip)
+  ├─ .output/server/chunks/build/entrar-CjUrW7gt.mjs.map (37.1 kB) (7.29 kB gzip)
+  ├─ .output/server/chunks/build/entry-styles-1.mjs-C_KonjGd.mjs (808 B) (340 B gzip)
+  ├─ .output/server/chunks/build/entry-styles-1.mjs-C_KonjGd.mjs.map (97 B) (104 B gzip)
+  ├─ .output/server/chunks/build/entry-styles-2.mjs-DqS0Tr09.mjs (587 B) (337 B gzip)
+  ├─ .output/server/chunks/build/entry-styles-2.mjs-DqS0Tr09.mjs.map (97 B) (104 B gzip)
+  ├─ .output/server/chunks/build/entry-styles.Dy54rSNq.mjs (526 B) (251 B gzip)
+  ├─ .output/server/chunks/build/entry-styles.Dy54rSNq.mjs.map (219 B) (168 B gzip)
+  ├─ .output/server/chunks/build/Error-C8d0J2Ra.mjs (3.2 kB) (1.23 kB gzip)
+  ├─ .output/server/chunks/build/Error-C8d0J2Ra.mjs.map (1.78 kB) (589 B gzip)
+  ├─ .output/server/chunks/build/error-styles.aVFd-SxB.mjs (305 B) (200 B gzip)
+  ├─ .output/server/chunks/build/error-styles.aVFd-SxB.mjs.map (209 B) (165 B gzip)
+  ├─ .output/server/chunks/build/favoritos-CWErIryU.mjs (11.5 kB) (2.8 kB gzip)
+  ├─ .output/server/chunks/build/favoritos-CWErIryU.mjs.map (5.8 kB) (1.23 kB gzip)
+  ├─ .output/server/chunks/build/Field-BwWXofql.mjs (7.19 kB) (1.81 kB gzip)
+  ├─ .output/server/chunks/build/Field-BwWXofql.mjs.map (2.4 kB) (716 B gzip)
+  ├─ .output/server/chunks/build/finalizar-C6O5Ss8Z.mjs (267 kB) (34.1 kB gzip)
+  ├─ .output/server/chunks/build/finalizar-C6O5Ss8Z.mjs.map (177 kB) (26.8 kB gzip)
+  ├─ .output/server/chunks/build/finalizar-styles.CPlniBTz.mjs (5.46 kB) (1.33 kB gzip)
+  ├─ .output/server/chunks/build/finalizar-styles.CPlniBTz.mjs.map (217 B) (166 B gzip)
+  ├─ .output/server/chunks/build/Input-BcL2ua9P.mjs (2.98 kB) (1.25 kB gzip)
+  ├─ .output/server/chunks/build/Input-BcL2ua9P.mjs.map (720 B) (348 B gzip)
+  ├─ .output/server/chunks/build/Input-Ci_uV6ll.mjs (2.24 kB) (976 B gzip)
+  ├─ .output/server/chunks/build/Input-Ci_uV6ll.mjs.map (684 B) (328 B gzip)
+  ├─ .output/server/chunks/build/Item-DcegSiM-.mjs (28 kB) (4.06 kB gzip)
+  ├─ .output/server/chunks/build/Item-DcegSiM-.mjs.map (10.2 kB) (1.74 kB gzip)
+  ├─ .output/server/chunks/build/Media-Di5em7kz.mjs (2.48 kB) (1.1 kB gzip)
+  ├─ .output/server/chunks/build/Media-Di5em7kz.mjs.map (856 B) (396 B gzip)
+  ├─ .output/server/chunks/build/menu-BGR4a-LR.mjs (20 kB) (5.3 kB gzip)
+  ├─ .output/server/chunks/build/menu-BGR4a-LR.mjs.map (19.1 kB) (4.38 kB gzip)
+  ├─ .output/server/chunks/build/menu-D3qIUzlU.mjs (41.4 kB) (7.48 kB gzip)
+  ├─ .output/server/chunks/build/menu-D3qIUzlU.mjs.map (24.7 kB) (4.75 kB gzip)
+  ├─ .output/server/chunks/build/OrderSummaryRows-xi-nbV5w.mjs (5.91 kB) (1.75 kB gzip)
+  ├─ .output/server/chunks/build/OrderSummaryRows-xi-nbV5w.mjs.map (1.75 kB) (595 B gzip)
+  ├─ .output/server/chunks/build/pages-B3w-tLtw.mjs (61.6 kB) (12 kB gzip)
+  ├─ .output/server/chunks/build/pages-B3w-tLtw.mjs.map (312 B) (210 B gzip)
+  ├─ .output/server/chunks/build/pedidos-onYe9wsG.mjs (20.5 kB) (4.17 kB gzip)
+  ├─ .output/server/chunks/build/pedidos-onYe9wsG.mjs.map (12.3 kB) (2.35 kB gzip)
+  ├─ .output/server/chunks/build/perfil-BY-k1Qwd.mjs (24.9 kB) (4.67 kB gzip)
+  ├─ .output/server/chunks/build/perfil-BY-k1Qwd.mjs.map (15.1 kB) (2.79 kB gzip)
+  ├─ .output/server/chunks/build/PinInput-Bqg6Sxdk.mjs (6.02 kB) (1.75 kB gzip)
+  ├─ .output/server/chunks/build/PinInput-Bqg6Sxdk.mjs.map (2.39 kB) (688 B gzip)
+  ├─ .output/server/chunks/build/preferencias-DtToO44m.mjs (24.5 kB) (3.98 kB gzip)
+  ├─ .output/server/chunks/build/preferencias-DtToO44m.mjs.map (13.2 kB) (2.23 kB gzip)
+  ├─ .output/server/chunks/build/privacy-BX71sQAi.mjs (9.91 kB) (3.37 kB gzip)
+  ├─ .output/server/chunks/build/privacy-BX71sQAi.mjs.map (2.27 kB) (641 B gzip)
+  ├─ .output/server/chunks/build/ProductListItem-eVqr_wZE.mjs (7.13 kB) (2.24 kB gzip)
+  ├─ .output/server/chunks/build/ProductListItem-eVqr_wZE.mjs.map (3.76 kB) (979 B gzip)
+  ├─ .output/server/chunks/build/Progress-DVveNT2c.mjs (4.37 kB) (1.26 kB gzip)
+  ├─ .output/server/chunks/build/Progress-DVveNT2c.mjs.map (1.84 kB) (548 B gzip)
+  ├─ .output/server/chunks/build/remoteMutations-DvSkBAke.mjs (956 B) (557 B gzip)
+  ├─ .output/server/chunks/build/remoteMutations-DvSkBAke.mjs.map (838 B) (381 B gzip)
+  ├─ .output/server/chunks/build/routes-cWLKNt80.mjs (247 B) (205 B gzip)
+  ├─ .output/server/chunks/build/routes-cWLKNt80.mjs.map (206 B) (171 B gzip)
+  ├─ .output/server/chunks/build/sacola-DSkjzza_.mjs (67.4 kB) (10.5 kB gzip)
+  ├─ .output/server/chunks/build/sacola-DSkjzza_.mjs.map (36.9 kB) (6.31 kB gzip)
+  ├─ .output/server/chunks/build/safeNavigation-BlA3Idxn.mjs (366 B) (240 B gzip)
+  ├─ .output/server/chunks/build/safeNavigation-BlA3Idxn.mjs.map (421 B) (242 B gzip)
+  ├─ .output/server/chunks/build/seguranca-b_9eeggW.mjs (144 kB) (17.1 kB gzip)
+  ├─ .output/server/chunks/build/seguranca-b_9eeggW.mjs.map (86.4 kB) (12 kB gzip)
+  ├─ .output/server/chunks/build/ShopHeader-styles.rVre2WGU.mjs (364 B) (216 B gzip)
+  ├─ .output/server/chunks/build/ShopHeader-styles.rVre2WGU.mjs.map (219 B) (169 B gzip)
+  ├─ .output/server/chunks/build/Skeleton-mzuy2DHC.mjs (2.12 kB) (915 B gzip)
+  ├─ .output/server/chunks/build/Skeleton-mzuy2DHC.mjs.map (759 B) (351 B gzip)
+  ├─ .output/server/chunks/build/StockNotifyButton-Bm6qhrNs.mjs (12.1 kB) (3.08 kB gzip)
+  ├─ .output/server/chunks/build/StockNotifyButton-Bm6qhrNs.mjs.map (7.35 kB) (1.73 kB gzip)
+  ├─ .output/server/chunks/build/Switch-qAQ5rX2c.mjs (4.8 kB) (1.42 kB gzip)
+  ├─ .output/server/chunks/build/Switch-qAQ5rX2c.mjs.map (1.66 kB) (507 B gzip)
+  ├─ .output/server/chunks/build/terms-CRJMxO88.mjs (7.99 kB) (2.74 kB gzip)
+  ├─ .output/server/chunks/build/terms-CRJMxO88.mjs.map (2.59 kB) (714 B gzip)
+  ├─ .output/server/chunks/build/translucent-3j-PDQal.mjs (854 B) (327 B gzip)
+  ├─ .output/server/chunks/build/translucent-3j-PDQal.mjs.map (463 B) (226 B gzip)
+  ├─ .output/server/chunks/build/Trigger-Dp0rmwui.mjs (6.21 kB) (1.51 kB gzip)
+  ├─ .output/server/chunks/build/Trigger-Dp0rmwui.mjs.map (2.15 kB) (542 B gzip)
+  ├─ .output/server/chunks/build/useCanonical-DUOZO4G4.mjs (407 B) (278 B gzip)
+  ├─ .output/server/chunks/build/useCanonical-DUOZO4G4.mjs.map (383 B) (254 B gzip)
+  ├─ .output/server/chunks/build/useFavoritesState-Dk2z1pOC.mjs (1.3 kB) (618 B gzip)
+  ├─ .output/server/chunks/build/useFavoritesState-Dk2z1pOC.mjs.map (1.25 kB) (556 B gzip)
+  ├─ .output/server/chunks/build/useReorder-CmZ8YVJ5.mjs (2.21 kB) (938 B gzip)
+  ├─ .output/server/chunks/build/useReorder-CmZ8YVJ5.mjs.map (2.23 kB) (801 B gzip)
+  ├─ .output/server/chunks/build/useSearchOverlay-Bv8XLMnf.mjs (494 B) (280 B gzip)
+  ├─ .output/server/chunks/build/useSearchOverlay-Bv8XLMnf.mjs.map (578 B) (302 B gzip)
+  ├─ .output/server/chunks/build/useWhatsAppConfirm-B_QSxi7g.mjs (3.33 kB) (1.41 kB gzip)
+  ├─ .output/server/chunks/build/useWhatsAppConfirm-B_QSxi7g.mjs.map (1.87 kB) (723 B gzip)
+  ├─ .output/server/chunks/build/whatsapp-CWa0PdPH.mjs (314 B) (237 B gzip)
+  ├─ .output/server/chunks/build/whatsapp-CWa0PdPH.mjs.map (410 B) (252 B gzip)
+  ├─ .output/server/chunks/nitro/nitro.mjs (217 kB) (54.3 kB gzip)
+  ├─ .output/server/chunks/nitro/nitro.mjs.map (3.91 kB) (959 B gzip)
+  ├─ .output/server/chunks/routes/api/auth/_...path_.mjs (643 B) (352 B gzip)
+  ├─ .output/server/chunks/routes/api/auth/_...path_.mjs.map (446 B) (200 B gzip)
+  ├─ .output/server/chunks/routes/api/v1/_...path_.mjs (854 B) (440 B gzip)
+  ├─ .output/server/chunks/routes/api/v1/_...path_.mjs.map (556 B) (228 B gzip)
+  ├─ .output/server/chunks/routes/renderer.mjs (16 kB) (5.55 kB gzip)
+  ├─ .output/server/chunks/routes/renderer.mjs.map (967 B) (294 B gzip)
+  ├─ .output/server/chunks/routes/robots.txt.mjs (815 B) (402 B gzip)
+  ├─ .output/server/chunks/routes/robots.txt.mjs.map (516 B) (217 B gzip)
+  ├─ .output/server/chunks/routes/sitemap.xml.mjs (1.84 kB) (843 B gzip)
+  ├─ .output/server/chunks/routes/sitemap.xml.mjs.map (1.86 kB) (412 B gzip)
+  ├─ .output/server/chunks/routes/sse/pedido/_ref_.mjs (434 B) (233 B gzip)
+  ├─ .output/server/chunks/routes/sse/pedido/_ref_.mjs.map (200 B) (147 B gzip)
+  ├─ .output/server/chunks/virtual/_virtual_spa-template.mjs (94 B) (100 B gzip)
+  ├─ .output/server/chunks/virtual/_virtual_spa-template.mjs.map (90 B) (98 B gzip)
+  ├─ .output/server/chunks/virtual/entry.mjs (244 kB) (62.5 kB gzip)
+  ├─ .output/server/chunks/virtual/entry.mjs.map (6.81 kB) (1.63 kB gzip)
+  ├─ .output/server/chunks/virtual/precomputed.mjs (63.2 kB) (6.29 kB gzip)
+  ├─ .output/server/chunks/virtual/precomputed.mjs.map (181 B) (150 B gzip)
+  ├─ .output/server/chunks/virtual/styles.mjs (872 B) (346 B gzip)
+  ├─ .output/server/chunks/virtual/styles.mjs.map (164 B) (143 B gzip)
+  ├─ .output/server/index.mjs (396 B) (223 B gzip)
+  └─ .output/server/package.json (1.44 kB) (555 B gzip)
+Σ Total size: 7.74 MB (1.85 MB gzip)
+[nitro] ✔ You can preview this build using node .output/server/index.mjs
+│
+└  ✨ Build complete!
+============================= test session starts ==============================
+platform darwin -- Python 3.12.5, pytest-9.0.2, pluggy-1.6.0
+django: version: 6.0.5, settings: config.settings_test (from env)
+rootdir: /private/tmp/shopman-storefront-execution-20260910
+configfile: pyproject.toml
+plugins: playwright-0.7.2, cov-7.1.0, locust-2.43.4, xdist-3.8.0, timeout-2.4.0, anyio-4.14.2, django-4.12.0, base-url-2.1.0
+collected 27 items / 16 deselected / 11 selected
+
+shopman/shop/tests/e2e/test_storefront_e2e.py ...........                [100%]
+
+============================== slowest durations ===============================
+6.41s call     shopman/shop/tests/e2e/test_storefront_e2e.py::TestLiveOrderCrossing::test_11_live_pickup_order_reaches_operator_queue[chromium]
+3.79s call     shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerStore::test_03_add_to_cart_then_cart_shows_item[chromium]
+3.63s call     shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerEdgeCases::test_08b_second_tab_reads_same_server_cart[chromium]
+3.34s call     shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerEdgeCases::test_08a_storage_denied_keeps_cart_journey_usable[chromium]
+2.74s call     shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerStore::test_03a_immediate_cart_navigation_waits_for_the_mutation[chromium]
+1.88s call     shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerEdgeCases::test_07_tracking_ready_with_grant[chromium]
+1.63s call     shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerStore::test_04_checkout_surfaces_auth_gate[chromium]
+1.57s call     shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerStore::test_01_menu_lists_products_with_pdp_links[chromium]
+1.32s call     shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerEdgeCases::test_08c_keyboard_focus_survives_narrow_zoomed_view[chromium]
+1.19s setup    shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerStore::test_01_menu_lists_products_with_pdp_links[chromium]
+1.09s call     shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerEdgeCases::test_06_unknown_order_tracking_is_graceful[chromium]
+0.90s call     shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerEdgeCases::test_05_cart_empty_state[chromium]
+0.09s setup    shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerEdgeCases::test_07_tracking_ready_with_grant[chromium]
+0.08s teardown shopman/shop/tests/e2e/test_storefront_e2e.py::TestLiveOrderCrossing::test_11_live_pickup_order_reaches_operator_queue[chromium]
+0.06s setup    shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerEdgeCases::test_08b_second_tab_reads_same_server_cart[chromium]
+0.06s setup    shopman/shop/tests/e2e/test_storefront_e2e.py::TestLiveOrderCrossing::test_11_live_pickup_order_reaches_operator_queue[chromium]
+0.06s setup    shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerEdgeCases::test_06_unknown_order_tracking_is_graceful[chromium]
+0.06s setup    shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerStore::test_03a_immediate_cart_navigation_waits_for_the_mutation[chromium]
+0.05s setup    shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerStore::test_03_add_to_cart_then_cart_shows_item[chromium]
+0.05s setup    shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerEdgeCases::test_08c_keyboard_focus_survives_narrow_zoomed_view[chromium]
+0.05s setup    shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerStore::test_04_checkout_surfaces_auth_gate[chromium]
+0.04s setup    shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerEdgeCases::test_08a_storage_denied_keeps_cart_journey_usable[chromium]
+0.04s setup    shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerEdgeCases::test_05_cart_empty_state[chromium]
+0.03s teardown shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerStore::test_04_checkout_surfaces_auth_gate[chromium]
+0.02s teardown shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerEdgeCases::test_08a_storage_denied_keeps_cart_journey_usable[chromium]
+0.02s teardown shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerEdgeCases::test_08c_keyboard_focus_survives_narrow_zoomed_view[chromium]
+0.02s teardown shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerEdgeCases::test_07_tracking_ready_with_grant[chromium]
+0.02s teardown shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerEdgeCases::test_08b_second_tab_reads_same_server_cart[chromium]
+0.02s teardown shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerStore::test_01_menu_lists_products_with_pdp_links[chromium]
+0.02s teardown shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerStore::test_03_add_to_cart_then_cart_shows_item[chromium]
+0.01s teardown shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerStore::test_03a_immediate_cart_navigation_waits_for_the_mutation[chromium]
+0.01s teardown shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerEdgeCases::test_06_unknown_order_tracking_is_graceful[chromium]
+0.01s teardown shopman/shop/tests/e2e/test_storefront_e2e.py::TestCustomerEdgeCases::test_05_cart_empty_state[chromium]
+====================== 11 passed, 16 deselected in 30.45s ======================

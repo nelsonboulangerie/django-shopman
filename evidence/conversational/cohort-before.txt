@@ -1,0 +1,25 @@
+AUDIT_IMPORTS ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/orderman/shopman/orderman'] ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/guestman/shopman/guestman']
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_removed_cohort_member_cannot_run_accepted_work ______________
+
+conversation = <Conversation: Conversa 220 · synthetic-subject>
+settings = <pytest_django.fixtures.SettingsWrapper object at 0x11b4744d0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11b475c10>
+
+    def test_removed_cohort_member_cannot_run_accepted_work(conversation, settings, monkeypatch):
+        inbound(conversation)
+        settings.SHOPMAN_CONCIERGE = {**settings.SHOPMAN_CONCIERGE, "allowed_subscribers": []}
+        calls = []
+        monkeypatch.setattr(agent, "run_agent", lambda **kwargs: calls.append(1) or agent.AgentOutcome(reply_text="Não deveria executar"))
+        result = service.run_turn(conversation.pk)
+>       assert calls == []
+E       assert [1] == []
+E         
+E         Left contains one more item: 1
+E         Use -v to get more diff
+
+shopman/storefront/tests/test_concierge_runtime_turns.py:196: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-11 17:48:06,842 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+1 failed in 1.12s

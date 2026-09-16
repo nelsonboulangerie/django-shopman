@@ -200,6 +200,9 @@ export function useCartState () {
   const cartIssue = useState<CartIssue | null>('storefront-cart-issue', () => null)
   const rateLimitRecovery = useState<RateLimitRecovery | null>('storefront-cart-rate-limit', () => null)
   const lastMutation = useState<CartMutationSnapshot | null>('storefront-cart-last-mutation', () => null)
+  // Última projeção confirmada durante uma rajada. Serve apenas para desfazer a
+  // UI otimista se até a reconciliação falhar; nunca é enviada ao servidor.
+  const rollbackCart = useState<CartProjection | null>('storefront-cart-rollback', () => null)
   const apiPath = useShopmanApiPath()
   const csrfHeaders = useShopmanCsrfHeaders()
 
@@ -227,6 +230,7 @@ export function useCartState () {
   // aviso pendente (issue/rate-limit) está resolvido — pode limpar.
   function applyServerCart (next: CartProjection) {
     setCartProjection(next)
+    rollbackCart.value = null
     cartIssue.value = null
     rateLimitRecovery.value = null
   }
@@ -248,6 +252,7 @@ export function useCartState () {
     cartIssue.value = null
     rateLimitRecovery.value = null
     lastMutation.value = null
+    rollbackCart.value = null
   }
 
   function qtyForSku (sku: string): number {
@@ -279,6 +284,9 @@ export function useCartState () {
     rateLimitRecovery.value = null
     lastMutation.value = { meta: { ...meta }, qty }
 
+    // A primeira mutação da rajada guarda a última verdade visível. Respostas
+    // intermediárias avançam esse ponto de recuo sem atropelar otimismos posteriores.
+    if (queueDepth === 0) rollbackCart.value = cart.value
     // Otimista: a linha muda na hora; o resumo fica pendente até a verdade do servidor.
     cart.value = applySkuQty(cart.value, meta, qty)
     bumpPending(meta.sku)
@@ -297,12 +305,24 @@ export function useCartState () {
         // Drain da fila: a última resposta é a verdade mais recente.
         applyServerCart(response.cart)
         lastMutation.value = null
+      } else {
+        rollbackCart.value = response.cart
       }
       return response
     } catch (error: unknown) {
       queueDepth -= 1
       dropPending(meta.sku)
-      if (queueDepth === 0) await refreshCart().catch(() => null)
+      if (queueDepth === 0) {
+        try {
+          await refreshCart()
+        } catch {
+          // Backend ainda indisponível: não deixe uma inclusão sem confirmação
+          // aparentar sucesso. A reconexão posterior buscará a verdade canônica.
+          if (rollbackCart.value) setCartProjection(rollbackCart.value)
+        } finally {
+          rollbackCart.value = null
+        }
+      }
       const { status, data } = httpError(error)
       if (status === 409 && data) {
         // Não navega, e NÃO dispara toast: o SubstituteSheet global sobe no lugar

@@ -36,14 +36,10 @@ from shopman.shop.models import (
     Trigger,
 )
 from shopman.shop.services import marketing_time
+from shopman.shop.services.marketing_capabilities import DESTINATIONS, platform_choices
 
 #: Plataformas que uma regra pode alvejar, na ordem em que aparecem no formulário.
-PLATFORM_CHOICES: tuple[tuple[str, str], ...] = (
-    ("instagram", "Instagram"),
-    ("facebook", "Facebook"),
-    ("google_business", "Google Meu Negócio"),
-    ("whatsapp", "WhatsApp"),
-)
+PLATFORM_CHOICES: tuple[tuple[str, str], ...] = platform_choices()
 
 #: Janela do "publicados recentemente" no painel.
 RECENT_WINDOW = timedelta(hours=24)
@@ -84,6 +80,7 @@ class AnnouncementProjection:
     hashtags: tuple[str, ...]
     link: str
     platforms: tuple[str, ...]
+    platform_content: dict
     audience: dict
     audience_total: int
     platform_results: tuple[PlatformResultProjection, ...]
@@ -250,6 +247,24 @@ class ChoiceProjection:
 
 
 @dataclass(frozen=True)
+class MarketingFormatCapabilityProjection:
+    ref: str
+    label: str
+    provider_fields: tuple[str, ...]
+    required_provider_fields: tuple[str, ...]
+    media_required: bool
+
+
+@dataclass(frozen=True)
+class MarketingPlatformCapabilityProjection:
+    platform: str
+    label: str
+    delivery_kind: str
+    formats: tuple[MarketingFormatCapabilityProjection, ...]
+    default_format: str
+
+
+@dataclass(frozen=True)
 class CampaignOptionsProjection:
     """O que o formulário de regra precisa saber sem hardcodar o domínio.
 
@@ -260,6 +275,7 @@ class CampaignOptionsProjection:
 
     triggers: tuple[ChoiceProjection, ...]
     platforms: tuple[ChoiceProjection, ...]
+    delivery_capabilities: tuple[MarketingPlatformCapabilityProjection, ...]
     templates: tuple[AnnouncementTemplateProjection, ...]
     variables: tuple[str, ...]
     #: As faixas de preço (`PriceTier`) — varejo, atacado, staff.
@@ -483,6 +499,7 @@ def build_announcement(announcement: Announcement, *, now=None) -> AnnouncementP
         hashtags=tuple(content.get("hashtags") or ()),
         link=marketing_url_policy.safe_browser_customer_link(content.get("link")),
         platforms=tuple(announcement.platforms or ()),
+        platform_content=dict(announcement.platform_content or {}),
         audience=dict(audience),
         audience_total=int(audience.get("total") or 0),
         platform_results=_platform_results(announcement),
@@ -785,6 +802,25 @@ def build_options() -> CampaignOptionsProjection:
     return CampaignOptionsProjection(
         triggers=tuple(ChoiceProjection(value=value, label=label) for value, label in Trigger.choices),
         platforms=tuple(ChoiceProjection(value=value, label=label) for value, label in PLATFORM_CHOICES),
+        delivery_capabilities=tuple(
+            MarketingPlatformCapabilityProjection(
+                platform=destination.platform,
+                label=destination.label,
+                delivery_kind=destination.delivery_kind,
+                formats=tuple(
+                    MarketingFormatCapabilityProjection(
+                        ref=format_capability.ref,
+                        label=format_capability.label,
+                        provider_fields=tuple(sorted(format_capability.provider_fields)),
+                        required_provider_fields=tuple(sorted(format_capability.required_provider_fields)),
+                        media_required=format_capability.media_required,
+                    )
+                    for format_capability in destination.formats
+                ),
+                default_format=destination.default_format,
+            )
+            for destination in DESTINATIONS
+        ),
         templates=build_templates(),
         variables=available_variables(),
         price_tiers=_price_tier_choices(),

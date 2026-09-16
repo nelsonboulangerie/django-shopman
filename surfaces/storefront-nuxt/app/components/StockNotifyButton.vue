@@ -1,12 +1,9 @@
 <script setup lang="ts">
-import { maskPhoneInput, normalizeAuthPhone } from '~/utils/authPhone'
-import { notifyConfirmationMessage, notifyPhoneTarget } from '~/presentation/stockNotify'
+import { notifyConfirmationMessage } from '~/presentation/stockNotify'
 
-// "Me avise quando disponível" (WP-3). Esgotado honesto (is_notifiable) ganha um
-// caminho acolhedor em vez de um "+" morto: logado assina com 1 clique (usa o
-// telefone da conta); anônimo informa só o telefone num bottom-sheet canônico
-// (mesmo figurino dos demais overlays, dismiss explícito). Omotenashi: oferecer,
-// nunca bloquear seco. O estado "inscrito" PERSISTE: vem da projeção (prop subscribed).
+// O consentimento 18+ é dado uma única vez. Para anônimos ele precede o login e
+// vira uma prova opaca, curta e sem PII na sessão; a volta autenticada conclui o
+// mesmo gesto com a identidade canônica, sem uma segunda confirmação genérica.
 const props = defineProps<{
   sku: string
   // Nome do produto — usado em aria-label/tooltip (acessibilidade entre muitos cards).
@@ -22,97 +19,223 @@ const props = defineProps<{
   subscribed?: boolean
 }>()
 
-const label = computed(() => props.name ? `Me avise quando ${props.name} voltar` : 'Me avise quando voltar')
-const subscribedLabel = computed(() => props.name ? `Avisaremos você quando ${props.name} voltar` : 'Avisaremos você quando voltar')
+const label = computed(() => props.name ? `Ativar avisos recorrentes quando ${props.name} voltar` : 'Ativar avisos recorrentes quando voltar')
+const subscribedLabel = computed(() => props.name ? `Anotado para ${props.name}. Gerenciar aviso` : 'Anotado. Gerenciar aviso')
+const anonymousLabel = computed(() => props.name ? `Ativar avisos recorrentes quando ${props.name} voltar` : 'Ativar avisos recorrentes quando voltar')
 
 const apiPath = useShopmanApiPath()
 const csrfHeaders = useShopmanCsrfHeaders()
-const { isAuthenticated, publicConfig } = useShopSession()
-const defaultDdd = computed(() => publicConfig.value?.default_ddd || '')
+const { isAuthenticated } = useShopSession()
+const route = useRoute()
+const router = useRouter()
+const { states: transientStates, clearStockNotifyState } = useStockNotifyTransientState()
 
 const submitting = ref(false)
 const isSubscribed = ref(!!props.subscribed)
+const managementUrl = ref('')
+const managementRecoveryComplete = ref(false)
 const sheetOpen = ref(false)
-const phoneInput = ref('')
-const phoneError = ref('')
-
-const phone = computed({
-  get: () => phoneInput.value,
-  set: (value: string) => { phoneInput.value = maskPhoneInput(value, 'BR') }
+const adultDeclared = ref(false)
+const declarationError = ref('')
+const resumeFailed = ref(false)
+const terminalError = ref('')
+const intendedSku = computed(() => {
+  const value = route.query.aviso
+  return Array.isArray(value) ? String(value[0] || '') : String(value || '')
 })
+const intendedRef = computed(() => {
+  const value = route.query.aviso_intent
+  return Array.isArray(value) ? String(value[0] || '') : String(value || '')
+})
+const hasMatchingIntent = computed(() => intendedSku.value === props.sku && !!intendedRef.value && !isSubscribed.value)
+const transientState = computed(() => isSubscribed.value ? transientStates.value[props.sku] : undefined)
+const transientLabel = computed(() => transientState.value === 'paused' ? 'Pausado' : 'Cancelado')
+const transientDescription = computed(() => transientState.value === 'paused'
+  ? 'Aviso pausado agora. Na próxima atualização, Me avise ficará disponível.'
+  : 'Aviso cancelado agora. Na próxima atualização, Me avise ficará disponível.'
+)
 
-// O número que a casa vai usar, de volta na tela antes do envio. A normalização
-// completa o DDD e repara celular antigo de 10 dígitos — quem digitou não vê
-// isso acontecer, e um palpite errado manda a mensagem para outra pessoa.
-const notifyTarget = computed(() => notifyPhoneTarget(phoneInput.value, defaultDdd.value))
-
-async function subscribe (phoneValue: string) {
-  if (submitting.value) return
+async function subscribe (intentRef = '') {
+  if (submitting.value) return false
   submitting.value = true
-  phoneError.value = ''
+  resumeFailed.value = false
   try {
-    await $fetch(apiPath(`/api/v1/availability/${encodeURIComponent(props.sku)}/notify/`), {
+    const result = await $fetch<{ active?: boolean, management_url?: string }>(apiPath(`/api/v1/availability/${encodeURIComponent(props.sku)}/notify/`), {
       method: 'POST',
       headers: await csrfHeaders(),
       credentials: 'include',
-      body: phoneValue ? { phone: phoneValue } : {}
+      body: intentRef ? { intent_ref: intentRef } : { adult_declared: true }
     })
+    managementUrl.value = String(result?.management_url || '')
+    if (result?.active === false) {
+      isSubscribed.value = false
+      if (import.meta.client) useSonner('Este aviso não está ativo. Você pode ativá-lo novamente quando quiser.')
+      return true
+    }
+    clearStockNotifyState(props.sku)
     isSubscribed.value = true
-    sheetOpen.value = false
-    if (import.meta.client) useSonner.success(notifyConfirmationMessage(phoneValue))
+    if (import.meta.client) useSonner.success(notifyConfirmationMessage())
+    return true
   } catch (e) {
-    const { data } = httpError(e)
     const detail = errorDetail(e, 'Não foi possível registrar o aviso. Tente de novo.')
-    if (data?.field === 'phone') phoneError.value = detail
-    else if (import.meta.client) useSonner.error(detail)
+    const field = String((e as { data?: { field?: string } })?.data?.field || '')
+    if (field === 'birthday') {
+      terminalError.value = detail
+      await clearIntention()
+    }
+    else resumeFailed.value = true
+    if (import.meta.client) useSonner.error(detail)
+    return false
   } finally {
     submitting.value = false
   }
 }
 
-function onAuthenticatedClick () {
-  subscribe('')
+async function clearIntention () {
+  if (intendedSku.value !== props.sku) return
+  const query = { ...route.query }
+  delete query.aviso
+  delete query.aviso_intent
+  await router.replace({ path: route.path, query, hash: route.hash })
 }
 
-function onAnonymousSubmit () {
-  const normalized = normalizeAuthPhone(phoneInput.value, 'BR', defaultDdd.value)
-  if (!normalized) {
-    phoneError.value = 'Informe um telefone com DDD.'
+function openConsent () {
+  declarationError.value = ''
+  adultDeclared.value = false
+  sheetOpen.value = true
+}
+
+async function onSubmit () {
+  declarationError.value = ''
+  if (!adultDeclared.value) {
+    declarationError.value = 'Confirme que você tem 18 anos ou mais.'
     return
   }
-  subscribe(normalized)
+  if (isAuthenticated.value) {
+    if (!await subscribe()) return
+    sheetOpen.value = false
+    adultDeclared.value = false
+    return
+  }
+
+  submitting.value = true
+  try {
+    const result = await $fetch<{ intent_ref?: string }>(apiPath(`/api/v1/availability/${encodeURIComponent(props.sku)}/notify/intent/`), {
+      method: 'POST',
+      headers: await csrfHeaders(),
+      credentials: 'include',
+      body: { adult_declared: true }
+    })
+    const intentRef = String(result?.intent_ref || '')
+    if (!intentRef) throw new Error('intent_missing')
+    const query = { ...route.query, aviso: props.sku, aviso_intent: intentRef }
+    const next = router.resolve({ path: route.path, query, hash: route.hash }).fullPath
+    if (import.meta.client) useSonner('Agora entre para confirmar seu WhatsApp. Seu aviso fica guardado para a volta.')
+    await navigateTo(`/entrar?next=${encodeURIComponent(next)}`)
+  } catch (e) {
+    const detail = errorDetail(e, 'Não foi possível guardar o aviso. Tente de novo.')
+    if (import.meta.client) useSonner.error(detail)
+  } finally {
+    submitting.value = false
+  }
 }
+
+async function recoverManagementLink () {
+  if (!props.subscribed || managementUrl.value) {
+    managementRecoveryComplete.value = true
+    return false
+  }
+  try {
+    const result = await $fetch<{ active: boolean, management_url: string }>(apiPath(`/api/v1/availability/${encodeURIComponent(props.sku)}/notify/`), {
+      method: 'GET',
+      credentials: 'include'
+    })
+    managementUrl.value = String(result?.management_url || '')
+    return !!managementUrl.value
+  } catch {
+    // A projeção continua sendo a fonte do estado visual. A ausência de uma
+    // sessão recuperável não transforma falha de rede em nova assinatura.
+    return false
+  } finally {
+    managementRecoveryComplete.value = true
+  }
+}
+
+async function initialize () {
+  await recoverManagementLink()
+  if (!isAuthenticated.value || intendedSku.value !== props.sku || isSubscribed.value) return
+  if (!intendedRef.value) {
+    openConsent()
+    return
+  }
+  if (await subscribe(intendedRef.value)) await clearIntention()
+}
+
+async function restartIntent () {
+  await clearIntention()
+  resumeFailed.value = false
+  openConsent()
+}
+
+onMounted(initialize)
+
+watch(() => props.subscribed, value => {
+  isSubscribed.value = !!value
+})
+
+const managementHref = computed(() => managementUrl.value || (
+  isAuthenticated.value && managementRecoveryComplete.value
+    ? '/conta/preferencias#avisos-produtos'
+    : ''
+))
 </script>
 
 <template>
-  <!-- Estado confirmado (persistente): calmo, sem ação pendente. -->
-  <template v-if="isSubscribed">
-    <UiButton
-      v-if="pill"
-      variant="default"
-      size="sm"
-      icon="lucide:bell-ring"
-      disabled
-      class="h-10 w-full justify-center gap-1 rounded-full bg-cta px-3 text-sm tracking-tight text-cta-foreground shadow-sm disabled:opacity-100"
-      :aria-label="subscribedLabel"
-      :title="subscribedLabel"
-    >
-      Anotado
-    </UiButton>
-    <UiButton
-      v-else
-      variant="outline"
-      :size="compact ? 'sm' : 'lg'"
-      icon="lucide:bell-ring"
-      disabled
-      :class="[compact ? '' : 'w-full', 'disabled:opacity-100', inverted ? 'shop-action-inverted' : 'border-primary text-primary']"
-    >
-      Avisaremos você
-    </UiButton>
-  </template>
+  <!-- Confirmação efêmera da última ação: não sobrevive à próxima projeção/reload. -->
+  <UiButton
+    v-if="transientState"
+    disabled
+    :variant="pill ? 'default' : 'outline'"
+    :size="pill ? 'sm' : (compact ? 'sm' : 'lg')"
+    :icon="transientState === 'paused' ? 'lucide:pause' : 'lucide:bell-off'"
+    :class="[
+      pill ? 'h-10 w-full justify-center gap-1 rounded-full px-3 text-sm tracking-tight shadow-sm' : (compact ? '' : 'w-full'),
+      'disabled:opacity-100',
+      !pill && (inverted ? 'shop-action-inverted' : 'border-muted-foreground/40 text-muted-foreground')
+    ]"
+    :aria-label="transientDescription"
+    :title="transientDescription"
+  >
+    {{ transientLabel }}
+  </UiButton>
 
-  <!-- Logado: um clique assina com o telefone da conta. -->
+  <!-- Estado confirmado (persistente): calmo, sem ação pendente. -->
+  <UiButton
+    v-else-if="isSubscribed"
+    :to="managementHref || undefined"
+    :disabled="!managementHref"
+    :variant="pill ? 'default' : 'outline'"
+    :size="pill ? 'sm' : (compact ? 'sm' : 'lg')"
+    icon="lucide:bell-ring"
+    :class="[
+      pill ? 'h-10 w-full justify-center gap-1 rounded-full bg-cta px-3 text-sm tracking-tight text-cta-foreground shadow-sm' : (compact ? '' : 'w-full'),
+      'disabled:opacity-100',
+      !pill && (inverted ? 'shop-action-inverted' : 'border-primary text-primary')
+    ]"
+    :aria-label="subscribedLabel"
+    :title="subscribedLabel"
+  >
+    Anotado
+  </UiButton>
+
+  <!-- Logado: retorno do login retoma a prova; uso comum pede a declaração. -->
   <template v-else-if="isAuthenticated">
+    <p v-if="terminalError && !compact && !pill" class="shop-meta text-destructive" role="alert">
+      {{ terminalError }}
+    </p>
+    <p v-else-if="hasMatchingIntent && submitting && !compact && !pill" class="shop-meta text-muted-foreground" role="status">
+      WhatsApp confirmado. Estamos anotando seu aviso…
+    </p>
     <UiButton
       v-if="pill"
       variant="default"
@@ -120,11 +243,12 @@ function onAnonymousSubmit () {
       icon="lucide:bell"
       :loading="submitting"
       class="h-10 w-full justify-center gap-1 rounded-full px-3 text-sm tracking-tight shadow-sm"
+      :disabled="!!terminalError"
       :aria-label="label"
       :title="label"
-      @click="onAuthenticatedClick"
+      @click="hasMatchingIntent && resumeFailed ? restartIntent() : openConsent()"
     >
-      Me avise
+      {{ hasMatchingIntent && resumeFailed ? 'Tentar de novo' : 'Me avise' }}
     </UiButton>
     <UiButton
       v-else
@@ -133,13 +257,16 @@ function onAnonymousSubmit () {
       icon="lucide:bell"
       :loading="submitting"
       :class="[compact ? '' : 'w-full', inverted ? 'shop-action-inverted' : '']"
-      @click="onAuthenticatedClick"
+      :disabled="!!terminalError"
+      :aria-label="label"
+      :title="label"
+      @click="hasMatchingIntent && resumeFailed ? restartIntent() : openConsent()"
     >
-      Me avise
+      {{ hasMatchingIntent && resumeFailed ? 'Tentar ativar aviso' : 'Me avise sempre' }}
     </UiButton>
   </template>
 
-  <!-- Anônimo: bottom-sheet pede só o telefone (mesmo figurino dos demais overlays). -->
+  <!-- Anônimo: declara 18+ uma vez e então entra pela identidade canônica. -->
   <template v-else>
     <UiButton
       v-if="pill"
@@ -147,9 +274,9 @@ function onAnonymousSubmit () {
       size="sm"
       icon="lucide:bell"
       class="h-10 w-full justify-center gap-1 rounded-full px-3 text-sm tracking-tight shadow-sm"
-      :aria-label="label"
-      :title="label"
-      @click="sheetOpen = true"
+      :aria-label="anonymousLabel"
+      :title="anonymousLabel"
+      @click="openConsent"
     >
       Me avise
     </UiButton>
@@ -159,44 +286,41 @@ function onAnonymousSubmit () {
       variant="default"
       icon="lucide:bell"
       :class="[compact ? '' : 'w-full', inverted ? 'shop-action-inverted' : '']"
-      @click="sheetOpen = true"
+      :aria-label="anonymousLabel"
+      :title="anonymousLabel"
+      @click="openConsent"
     >
-      Me avise
+      Me avise sempre
     </UiButton>
-    <BottomSheet
-      v-model:open="sheetOpen"
-      max-width="sm"
-      title="Avisamos quando estiver disponível"
-      description="Deixe seu WhatsApp e mandamos uma mensagem assim que estiver disponível."
-      data-stock-notify-sheet
-    >
-      <form class="shop-stack-block px-4 py-4" @submit.prevent="onAnonymousSubmit">
-        <UiInput
-          v-model="phone"
-          type="tel"
-          inputmode="tel"
-          autocomplete="tel"
-          placeholder="(43) 99999-0000"
-          aria-label="Telefone para aviso"
-          class="bg-background"
-        />
-        <p v-if="phoneError" class="shop-meta text-destructive">{{ phoneError }}</p>
-        <p v-else-if="notifyTarget" class="shop-meta text-muted-foreground">
-          Mandaremos a mensagem para <span class="font-semibold text-foreground">{{ notifyTarget }}</span>. Se não for esse o número, é só corrigir aqui.
-        </p>
-        <UiButton type="submit" size="lg" class="w-full" :loading="submitting" icon="lucide:bell">
-          Avise-me
-        </UiButton>
-        <UiButton
-          type="button"
-          variant="ghost"
-          size="sm"
-          class="-ml-2 self-start text-muted-foreground hover:text-foreground"
-          @click="sheetOpen = false"
-        >
-          Agora não
-        </UiButton>
-      </form>
-    </BottomSheet>
   </template>
+
+  <BottomSheet
+    v-model:open="sheetOpen"
+    max-width="sm"
+    title="Ative seu aviso"
+    :description="isAuthenticated
+      ? 'Usaremos o WhatsApp confirmado na sua conta. O aviso continua ativo até você pausar ou cancelar.'
+      : 'Confirme a maioridade uma única vez. Depois de entrar, concluiremos o aviso automaticamente com seu WhatsApp confirmado.'"
+    data-stock-notify-sheet
+  >
+    <form class="shop-stack-block px-4 py-4" @submit.prevent="onSubmit">
+      <label class="flex items-start gap-3 text-sm leading-5">
+        <UiCheckbox v-model="adultDeclared" aria-label="Confirmar maioridade" class="mt-0.5" />
+        <span>Declaro ter 18 anos ou mais e quero receber estes avisos.</span>
+      </label>
+      <p v-if="declarationError" class="shop-meta text-destructive" role="alert">{{ declarationError }}</p>
+      <UiButton type="submit" size="lg" class="w-full" :loading="submitting" icon="lucide:bell">
+        {{ isAuthenticated ? 'Ativar aviso' : 'Continuar para entrar' }}
+      </UiButton>
+      <UiButton
+        type="button"
+        variant="ghost"
+        size="sm"
+        class="-ml-2 self-start text-muted-foreground hover:text-foreground"
+        @click="sheetOpen = false"
+      >
+        Agora não
+      </UiButton>
+    </form>
+  </BottomSheet>
 </template>

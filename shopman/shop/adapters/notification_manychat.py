@@ -111,12 +111,12 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     # "Me avise" (sem reserva) traz o link do produto.
     "stock_arrived": (
         "Boa notícia! {product_name} chegou.{reserve_note}{deadline_note} "
-        "{cta} {action_url}"
+        "{cta} {action_url}{management_note}"
     ),
     # Fornada pronta ("Me avise quando sair do forno", F9 do FOMO-MARKETING):
     # o valor da mensagem e o frescor, entao ela nasce e envelhece rapido.
     "production_ready": (
-        "Saiu do forno agora: {product_name}! {cta} {action_url}"
+        "Saiu do forno agora: {product_name}! {cta} {action_url}{management_note}"
     ),
     "purchase_request": (
         "Olá, {supplier_greeting}! Aqui é da {shop_name}. "
@@ -179,7 +179,13 @@ def _api_call(endpoint: str, payload: dict, config: dict) -> dict:
                 # Subscriber identity is not a delivery receipt.
                 return {"success": True}
             return {"success": False, "error": "provider_rejected"}
-    except (HTTPError, URLError):
+    except HTTPError as exc:
+        # Explicit request rejection: no acceptance to reconcile. 408/5xx and
+        # transport failures remain uncertain, so the chain must stop there.
+        if exc.code in {400, 401, 403, 404, 405, 413, 415, 422, 429}:
+            return {"success": False, "error": "provider_rejected"}
+        return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
+    except URLError:
         return {"success": False, "error": "acceptance_unconfirmed", "outcome_unknown": True}
     except Exception:
         logger.warning("manychat acceptance unconfirmed; response unavailable")
@@ -316,9 +322,15 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
 #: mensagem nunca deve exibir. Lista explícita porque empurrar contexto inteiro para o
 #: perfil do cliente no ManyChat seria vazar estado interno para uma ferramenta de
 #: marketing.
+#:
+#: ``management_note`` é a exceção consciente: o flow configurado só resolve variáveis
+#: de campos personalizados, então a nota que contém a capacidade de uma única
+#: assinatura fica armazenada no perfil do ManyChat. A capacidade não identifica o
+#: contato nem abre a conta, mas continua sendo segredo operacional; ADR-029 e o
+#: runbook registram a limitação e os controles exigidos no provedor.
 _FIELD_DENYLIST = frozenset({
     "session_key", "sku", "subscriber_id", "recipient", "phone",
-    "customer_ref", "customer_uuid", "hold_ids",
+    "customer_ref", "customer_uuid", "hold_ids", "management_url",
 })
 
 #: Sufixo das chaves auxiliares: existem só para o link pessoal que SAI daqui poder ser
@@ -454,37 +466,31 @@ def _prepare_call(subscriber_id: str | int, what: str) -> tuple[dict | None, int
 
 
 def send_text(subscriber_id: str | int, text: str) -> bool:
-    """Manda um texto livre ao assinante pelo WhatsApp (``sendContent``).
+    """Compatibilidade dos callers existentes; concierge usa resultado estruturado."""
+    return bool(send_text_result(subscriber_id, text).get("success"))
 
-    É a resposta do concierge. Ela nasce dentro da janela de 24 h por construção
-    (o cliente acabou de escrever), então não precisa de template aprovado: vai
-    como mensagem comum, do jeito que o modelo escreveu. A declaração
-    ``"type": "whatsapp"`` é a mesma do ``send`` e é o que faz o ManyChat avaliar
-    a janela do WhatsApp, e não a do Messenger.
 
-    Texto acima de ``TEXT_MAX_CHARS`` é cortado com aviso no log: o ManyChat
-    recusa a mensagem inteira em vez de quebrá-la, e resposta nenhuma é pior que
-    resposta sem o rabo.
+def send_text_result(subscriber_id: str | int, text: str) -> dict:
+    """Resultado de sendContent, sem perda de certeza ou truncamento.
+
+    O caller verifica janela/capacidade antes da rede. Aceite técnico não é
+    entrega; timeout mantém outcome_unknown. Bloco grande não é enviado.
     """
     text = (text or "").strip()
     if not text:
-        return False
+        return {"success": False, "error": "not_applied"}
     mc_config, subscriber = _prepare_call(subscriber_id, "send_text")
     if mc_config is None:
-        return False
+        return {"success": False, "error": "not_applied"}
 
     if len(text) > TEXT_MAX_CHARS:
-        logger.warning(
-            "ManyChat send_text: texto com %d caracteres cortado em %d (subscriber=%s)",
-            len(text), TEXT_MAX_CHARS, subscriber,
-        )
-        text = text[:TEXT_MAX_CHARS]
+        return {"success": False, "error": "block_too_large"}
 
     from ._external import inert
 
     if inert("SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG"):
         logger.info("ManyChat externo inerte (trava dev/seed): send_text -> %s: %s", subscriber, text[:120])
-        return True
+        return {"success": False, "error": "inert"}
 
     payload = {
         "subscriber_id": subscriber,
@@ -499,7 +505,7 @@ def send_text(subscriber_id: str | int, text: str) -> bool:
     result = _api_call("/sending/sendContent", payload, mc_config)
     if not result["success"]:
         logger.warning("ManyChat send_text failed: %s", result.get("error"))
-    return bool(result["success"])
+    return result
 
 
 def set_custom_field(subscriber_id: str | int, field_name: str, value: str) -> bool:
@@ -508,8 +514,9 @@ def set_custom_field(subscriber_id: str | int, field_name: str, value: str) -> b
     O concierge usa isso para o handoff: não existe API do ManyChat para pausar a
     automação de um contato, então o combinado entre o flow e a casa é um campo
     (``SHOPMAN_CONCIERGE["handoff_field"]``) que o flow lê ANTES de chamar o
-    webhook. ``"1"`` = a equipe está na conversa, o flow não chama; vazio = o
-    concierge responde. O campo precisa existir no ManyChat com o mesmo nome.
+    webhook. ``"1"`` = a equipe está na conversa, o flow não chama; ``"0"`` = o
+    concierge responde. O campo precisa existir no ManyChat com o mesmo nome e
+    o flow testa igualdade com ``"1"``.
     """
     field_name = (field_name or "").strip()
     if not field_name:
@@ -526,7 +533,7 @@ def set_custom_field(subscriber_id: str | int, field_name: str, value: str) -> b
             "ManyChat externo inerte (trava dev/seed): set_custom_field %s=%r -> %s",
             field_name, value, subscriber,
         )
-        return True
+        return False  # Inércia de teste não comprova sincronização remota.
 
     result = _api_call(
         "/subscriber/setCustomFieldByName",

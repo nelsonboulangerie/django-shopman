@@ -18,14 +18,18 @@ import {
 import { withQuery } from "ufo";
 import { resolveDjangoBaseUrl } from "./djangoBaseUrl";
 import {
-  applyOperatorSecurityHeaders,
-} from "./securityHeaders";
+  isSafeDjangoSetCookieHeader,
+  operatorCookieHeaderForDjango,
+  operatorSetCookieHeaderForBrowser,
+} from "./operatorCookies";
+import { applyOperatorSecurityHeaders } from "./securityHeaders";
 import { applyPrivateNoStore } from "./operatorSecurity";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 export const DJANGO_CONDITIONAL_REQUEST_HEADERS = ["if-none-match", "x-request-id"] as const;
 export const DJANGO_OPERATIONAL_RESPONSE_HEADERS = [
+  "content-disposition",
   "retry-after",
   "idempotency-key",
   "x-correlation-id",
@@ -41,66 +45,6 @@ export const DJANGO_OPERATIONAL_RESPONSE_HEADERS = [
   "x-ratelimit-remaining",
   "x-ratelimit-reset",
 ] as const;
-
-const COOKIE_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
-const COOKIE_VALUE = /^(?:[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*|"[\x20-\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*")$/;
-const COOKIE_DOMAIN = /^\.?[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/;
-const COOKIE_ATTRIBUTE_VALUE = /^[\x20-\x3A\x3C-\x7E]*$/;
-
-export function isSafeDjangoSetCookieHeader(header: string): boolean {
-  if (!header || header.length > 4096 || /[\x00-\x1F\x7F]/.test(header)) return false;
-
-  const [pair = "", ...rawAttributes] = header.split(";");
-  const separator = pair.indexOf("=");
-  if (separator <= 0) return false;
-  const name = pair.slice(0, separator).trim();
-  const value = pair.slice(separator + 1).trim();
-  if (!COOKIE_NAME.test(name) || !COOKIE_VALUE.test(value)) return false;
-
-  let secure = false;
-  let path: string | undefined;
-  let domain: string | undefined;
-  let sameSite: string | undefined;
-
-  for (const rawAttribute of rawAttributes) {
-    const attribute = rawAttribute.trim();
-    if (!attribute) continue;
-    const attributeSeparator = attribute.indexOf("=");
-    const attributeName = (attributeSeparator < 0 ? attribute : attribute.slice(0, attributeSeparator)).toLowerCase();
-    const attributeValue = attributeSeparator < 0 ? undefined : attribute.slice(attributeSeparator + 1).trim();
-
-    if (["secure", "httponly", "partitioned"].includes(attributeName)) {
-      if (attributeValue !== undefined) return false;
-      if (attributeName === "secure") secure = true;
-      continue;
-    }
-    if (attributeValue === undefined || !COOKIE_ATTRIBUTE_VALUE.test(attributeValue)) return false;
-
-    if (attributeName === "path") {
-      if (!attributeValue.startsWith("/") || attributeValue.includes("\\")) return false;
-      path = attributeValue;
-    } else if (attributeName === "domain") {
-      if (!COOKIE_DOMAIN.test(attributeValue)) return false;
-      domain = attributeValue;
-    } else if (attributeName === "samesite") {
-      if (!/^(?:lax|strict|none)$/i.test(attributeValue)) return false;
-      sameSite = attributeValue.toLowerCase();
-    } else if (attributeName === "max-age") {
-      if (!/^-?\d+$/.test(attributeValue)) return false;
-    } else if (attributeName === "expires") {
-      if (!/^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(attributeValue)) return false;
-    } else if (attributeName === "priority") {
-      if (!/^(?:low|medium|high)$/i.test(attributeValue)) return false;
-    } else {
-      return false;
-    }
-  }
-
-  if (sameSite === "none" && !secure) return false;
-  if (name.startsWith("__Secure-") && !secure) return false;
-  if (name.startsWith("__Host-") && (!secure || domain !== undefined || path !== "/")) return false;
-  return true;
-}
 
 export function isSafeDjangoLocation(location: string): boolean {
   return location.startsWith("/")
@@ -163,8 +107,9 @@ async function ensureDjangoCsrfCookie(
   const setCookie = response.headers.get("set-cookie");
   if (setCookie) {
     for (const cookieHeader of splitCookiesString(setCookie)) {
-      if (!isSafeDjangoSetCookieHeader(cookieHeader)) continue;
-      appendResponseHeader(event, "set-cookie", cookieHeader);
+      const browserCookieHeader = operatorSetCookieHeaderForBrowser(cookieHeader);
+      if (!browserCookieHeader) continue;
+      appendResponseHeader(event, "set-cookie", browserCookieHeader);
       mergedCookie = mergeSetCookieIntoCookieHeader(mergedCookie, cookieHeader);
     }
   }
@@ -227,7 +172,7 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
     ...mutationHeaders((name) => getRequestHeader(event, name)),
   };
 
-  let cookie = getRequestHeader(event, "cookie");
+  let cookie = operatorCookieHeaderForDjango(getRequestHeader(event, "cookie")) || undefined;
   if (cookie) headers.cookie = cookie;
 
   const contentType = getRequestHeader(event, "content-type");
@@ -292,8 +237,9 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
   const setCookie = response.headers.get("set-cookie");
   if (setCookie) {
     for (const cookieHeader of splitCookiesString(setCookie)) {
-      if (!isSafeDjangoSetCookieHeader(cookieHeader)) continue;
-      appendResponseHeader(event, "set-cookie", cookieHeader);
+      const browserCookieHeader = operatorSetCookieHeaderForBrowser(cookieHeader);
+      if (!browserCookieHeader) continue;
+      appendResponseHeader(event, "set-cookie", browserCookieHeader);
     }
   }
 

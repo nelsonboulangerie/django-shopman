@@ -1,6 +1,8 @@
-"""Admin do concierge de WhatsApp: lista, transcrição e o único verbo (devolver)."""
+"""Admin do concierge: contexto, vínculos e o único verbo de posse."""
 
 from __future__ import annotations
+
+import json
 
 import pytest
 from django.contrib.admin.sites import site as admin_site
@@ -8,8 +10,8 @@ from django.contrib.auth.models import User
 from django.test import Client, RequestFactory
 from django.urls import reverse
 
-from shopman.shop.models import Conversation, ConversationMessage, Shop
-from shopman.storefront.admin.concierge import ConversationAdmin, message_summary
+from shopman.shop.models import Conversation, ConversationBinding, ConversationMessage, Shop
+from shopman.storefront.admin.concierge import ConversationAdmin, ConversationBindingInline, message_summary
 
 
 @pytest.fixture
@@ -25,13 +27,33 @@ def admin_client(db):
 @pytest.fixture
 def conversation(db):
     conv = Conversation.objects.create(
-        subscriber_id="sub-123",
         phone="+5543999990000",
         customer_name="Ana Souza",
         customer_ref="cust-ana",
     )
+    whatsapp = ConversationBinding.objects.create(
+        conversation=conv,
+        provider="manychat",
+        account="bakery-primary",
+        transport_channel="whatsapp",
+        subject="sub-123",
+        connection_key="manychat-whatsapp-primary",
+        status=ConversationBinding.Status.ACTIVE,
+        identity_assurance="transport_subject",
+    )
+    ConversationBinding.objects.create(
+        conversation=conv,
+        provider="tiktok",
+        account="bakery-social",
+        transport_channel="direct_message",
+        subject="user-987",
+        connection_key="tiktok-dm-primary",
+        status=ConversationBinding.Status.ACTIVE,
+        identity_assurance="verified",
+    )
     ConversationMessage.objects.create(
         conversation=conv,
+        binding=whatsapp,
         role=ConversationMessage.Role.USER,
         kind=ConversationMessage.Kind.INBOUND,
         text="Quero dois croissants <b>agora</b>",
@@ -40,6 +62,7 @@ def conversation(db):
     )
     ConversationMessage.objects.create(
         conversation=conv,
+        binding=whatsapp,
         role=ConversationMessage.Role.ASSISTANT,
         kind=ConversationMessage.Kind.TOOL_CALL,
         content=[{"type": "tool_use", "id": "t1", "name": "set_item", "input": {"sku": "CROISSANT", "qty": 2}}],
@@ -52,11 +75,12 @@ def conversation(db):
     )
     ConversationMessage.objects.create(
         conversation=conv,
+        binding=whatsapp,
         role=ConversationMessage.Role.ASSISTANT,
         kind=ConversationMessage.Kind.REPLY,
         text="Dois croissants na sacola. Retira hoje ou amanhã?",
         content=[{"type": "text", "text": "Dois croissants na sacola. Retira hoje ou amanhã?"}],
-        delivered=True,
+        transport_state="accepted",
     )
     return conv
 
@@ -81,6 +105,12 @@ def test_change_page_renders_transcript(admin_client, conversation):
     # Chamada de ferramenta resumida em uma linha: nome + input.
     assert "set_item(" in html
     assert "&quot;sku&quot;" in html or '"sku"' in html
+    # Os endereços são opacos e a tela não depende de enum fechado de canal.
+    assert "manychat" in html
+    assert "whatsapp" in html
+    assert "tiktok" in html
+    assert "direct_message" in html
+    assert "user-987" in html
 
 
 def test_message_summary_clips_tool_result(conversation):
@@ -88,19 +118,32 @@ def test_message_summary_clips_tool_result(conversation):
     summary = message_summary(result)
     assert len(summary) <= 200
     call = conversation.messages.get(kind=ConversationMessage.Kind.TOOL_CALL)
-    assert message_summary(call) == 'set_item({"sku":"CROISSANT","qty":2})'
+    assert json.loads(message_summary(call).removeprefix("set_item(").removesuffix(")")) == {
+        "sku": "CROISSANT",
+        "qty": 2,
+    }
 
 
-def test_return_to_concierge_action_flips_handoff(admin_client, conversation, monkeypatch):
-    calls: list[tuple[str, bool]] = []
+def test_return_to_concierge_action_flips_handoff(admin_client, conversation, monkeypatch, settings):
+    settings.SHOPMAN_CONCIERGE = {"human_return_enabled": True}
+    calls: list[int] = []
+
+    def return_to_concierge(candidate):
+        calls.append(candidate.pk)
+        Conversation.objects.filter(pk=candidate.pk).update(
+            state=Conversation.State.ACTIVE,
+            handoff_reason="",
+        )
+        return True
+
     monkeypatch.setattr(
-        "shopman.storefront.concierge.transport.set_handoff",
-        lambda subscriber_id, on: calls.append((subscriber_id, on)) or True,
+        "shopman.storefront.concierge.service.return_to_concierge",
+        return_to_concierge,
     )
     conversation.state = Conversation.State.HANDOFF
     conversation.handoff_reason = "pediu uma pessoa"
     conversation.save()
-    active = Conversation.objects.create(subscriber_id="sub-456", phone="+5543999990001")
+    active = Conversation.objects.create(phone="+5543999990001")
 
     response = admin_client.post(
         reverse("admin:shop_conversation_changelist"),
@@ -111,8 +154,7 @@ def test_return_to_concierge_action_flips_handoff(admin_client, conversation, mo
     conversation.refresh_from_db()
     assert conversation.state == Conversation.State.ACTIVE
     assert conversation.handoff_reason == ""
-    assert calls == [("sub-123", False)]
-    assert conversation.messages.filter(kind=ConversationMessage.Kind.NOTE, text="Voltou para o concierge.").exists()
+    assert calls == [conversation.pk]
     html = response.content.decode()
     assert "1 conversa(s) devolvida(s)" in html
     assert "1 conversa(s) ignorada(s)" in html
@@ -130,3 +172,28 @@ def test_admin_is_read_only(db):
 
 def test_conversation_message_has_no_own_admin():
     assert ConversationMessage not in admin_site._registry
+
+
+def test_view_permission_does_not_grant_return(db, settings):
+    settings.SHOPMAN_CONCIERGE = {"human_return_enabled": True}
+    from django.contrib.auth.models import Permission
+
+    user = User.objects.create_user("viewer", is_staff=True)
+    user.user_permissions.add(Permission.objects.get(codename="view_conversation"))
+    request = RequestFactory().get("/")
+    request.user = user
+    model_admin = ConversationAdmin(Conversation, admin_site)
+    binding_inline = ConversationBindingInline(Conversation, admin_site)
+    assert model_admin.has_view_permission(request)
+    assert binding_inline.has_view_permission(request)
+    assert not model_admin.has_return_to_bot_permission(request)
+
+
+def test_sidebar_names_the_logical_conversation(db):
+    from shopman.backstage.admin.navigation import get_sidebar_navigation
+
+    request = RequestFactory().get("/")
+    request.user = User.objects.create_superuser("sidebar", "sidebar@test.com", "pass")
+    labels = [item["title"] for group in get_sidebar_navigation(request) for item in group["items"]]
+    assert "Conversas do concierge" in labels
+    assert "Conversas do WhatsApp" not in labels

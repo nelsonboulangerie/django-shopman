@@ -359,7 +359,10 @@ def test_manychat_conversation_api_is_thin_projection_adapter():
     assert "build_order_conversation(order, channel_ref=channel_ref)" in api
     assert "RemoteConversationSerializer(projection_data(projection))" in api
     assert "RemoteConversationSerializer" in serializer
-    assert "can_cancel = serializers.BooleanField" not in serializer
+    remote_conversation_serializer = serializer.split("class RemoteConversationSerializer", 1)[1].split(
+        "\nclass ", 1
+    )[0]
+    assert "can_cancel = serializers.BooleanField" not in remote_conversation_serializer
 
     assert "OrderTrackingProjection" not in conversation
     # Fusão PAYMENT-TRACKING-MERGE: uma verdade só. A conversa lê o promise do

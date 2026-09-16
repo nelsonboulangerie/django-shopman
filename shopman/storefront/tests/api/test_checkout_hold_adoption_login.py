@@ -228,11 +228,12 @@ def test_commit_adopts_planned_holds_after_otp_login(client):
     assert hold_ids
 
     raw_code, digest = generate_raw_code()
-    VerificationCode.objects.create(
+    verification_code = VerificationCode.objects.create(
         target_value="+5543999990001",
         purpose=VerificationCode.Purpose.LOGIN,
         code_hash=digest,
     )
+    verification_code.mark_sent()
     resp = client.post(
         "/api/v1/auth/verify-code/",
         data=json.dumps({"phone": "+5543999990001", "code": raw_code}),
@@ -285,6 +286,7 @@ def test_second_round_same_phone_not_blocked_by_abandoned_session_ghost_holds(cl
                 "delivery_time_slot": get_slots()[-1]["ref"],
                 "payment_method": "cash",
                 "expected_total_q": 1,
+                "expected_revision": round1.get("/api/v1/storefront/cart/").json()["cart"]["revision"],
             }
         ),
         content_type="application/json",

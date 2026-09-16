@@ -1,0 +1,26 @@
+[WebServer] (node:19061) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:19062) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 3 tests using 1 worker
+
+(node:19063) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › tests/e2e/guards.spec.ts:5:1 › /conta redireciona para o login preservando o destino quando não autenticado (1.2s)
+[WebServer] [VUE_ROUTER_R0004] No match found for location with path "/rota-que-nao-existe-123"
+[WebServer] ├▶ fix: Add a route matching this path or check for typos in the location.
+[WebServer] ╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route
+[WebServer] [VUE_ROUTER_R0004] No match found for location with path "/rota-que-nao-existe-123"
+[WebServer] ├▶ fix: Add a route matching this path or check for typos in the location.
+[WebServer] ╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route
+[WebServer] [VUE_ROUTER_R0004] No match found for location with path "/rota-que-nao-existe-123"
+[WebServer] ├▶ fix: Add a route matching this path or check for typos in the location.
+[WebServer] ╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route
+[WebServer] [VUE_ROUTER_R0004] No match found for location with path "/rota-que-nao-existe-123"
+[WebServer] ├▶ fix: Add a route matching this path or check for typos in the location.
+[WebServer] ╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route
+  ✓  2 [chromium] › tests/e2e/guards.spec.ts:10:1 › uma rota inexistente renderiza a página de erro 404 (noindex) com saída para o cardápio (161ms)
+  ✓  3 [chromium] › tests/e2e/guards.spec.ts:17:1 › documento aplica a política de segurança da borda sem bloquear o app (36ms)
+
+  3 passed (2.7s)

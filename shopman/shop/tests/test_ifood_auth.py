@@ -35,8 +35,9 @@ def test_fetches_and_caches_token():
     ifood_auth.reset_cache()
     captured = {}
 
-    def fake_post(url, data=None, headers=None, timeout=None):
+    def fake_post(url, data=None, headers=None, timeout=None, allow_redirects=None):
         captured["url"] = url
+        captured["allow_redirects"] = allow_redirects
         captured["data"] = data
         captured["ua"] = headers.get("User-Agent")
         captured["ctype"] = headers.get("Content-Type")
@@ -56,6 +57,7 @@ def test_fetches_and_caches_token():
     }
     assert captured["ua"] == ifood_auth.USER_AGENT
     assert captured["ctype"] == "application/x-www-form-urlencoded"
+    assert captured["allow_redirects"] is False
 
 
 @override_settings(SHOPMAN_IFOOD=_CFG)
@@ -63,7 +65,7 @@ def test_force_refetches():
     ifood_auth.reset_cache()
     calls = {"n": 0}
 
-    def fake_post(url, data=None, headers=None, timeout=None):
+    def fake_post(url, data=None, headers=None, timeout=None, allow_redirects=None):
         calls["n"] += 1
         return _Resp(200, {"accessToken": f"tok-{calls['n']}", "expiresIn": 21599})
 
@@ -79,7 +81,7 @@ def test_force_refetches():
 def test_returns_none_on_http_error():
     ifood_auth.reset_cache()
 
-    def fake_post(url, data=None, headers=None, timeout=None):
+    def fake_post(url, data=None, headers=None, timeout=None, allow_redirects=None):
         return _Resp(403, {"error": {"code": "Forbidden", "message": "No permissions granted"}})
 
     with mock.patch.object(ifood_auth.requests, "post", fake_post):
@@ -90,7 +92,7 @@ def test_returns_none_on_http_error():
 def test_authorized_headers_carry_bearer_and_ua():
     ifood_auth.reset_cache()
 
-    def fake_post(url, data=None, headers=None, timeout=None):
+    def fake_post(url, data=None, headers=None, timeout=None, allow_redirects=None):
         return _Resp(200, {"accessToken": "tok-h", "expiresIn": 21599})
 
     with mock.patch.object(ifood_auth.requests, "post", fake_post):
@@ -99,3 +101,14 @@ def test_authorized_headers_carry_bearer_and_ua():
     assert headers["Authorization"] == "Bearer tok-h"
     assert headers["User-Agent"] == ifood_auth.USER_AGENT
     assert headers["X-Test"] == "1"
+
+
+@override_settings(SHOPMAN_IFOOD=_CFG)
+def test_error_logs_never_contain_response_body(caplog):
+    ifood_auth.reset_cache()
+    for status in (302, 307, 308):
+        with mock.patch.object(ifood_auth.requests, 'post', return_value=_Resp(status, {'accessToken': 'DO-NOT-LOG', 'clientSecret': 'SECRET-NOT-LOGGED'})) as post:
+            assert ifood_auth.get_access_token(force=True) is None
+        assert post.call_args.kwargs['allow_redirects'] is False
+    assert 'SECRET-NOT-LOGGED' not in caplog.text
+    assert 'DO-NOT-LOG' not in caplog.text

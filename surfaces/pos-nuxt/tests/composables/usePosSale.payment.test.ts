@@ -419,4 +419,21 @@ describe("usePosSale — ONDE se recebe é da VENDA, não da linha que nasceu pr
     expect(h.sale.cart.paymentTenders[0]!.collection).toBe("on_delivery");
     h.handles.dispose();
   });
+
+  it("usa o dinheiro do teclado para o troco da entrega, sem consultar o campo legado", async () => {
+    const h = makeSale({ projection: entregaComDuasColetas() });
+    h.sale.addProduct(h.handles.posValue.value!.products[0]!);
+    h.sale.cart.fulfillmentType = "delivery";
+    await nextTick();
+    h.sale.cart.paymentCollection = "on_delivery";
+    await nextTick();
+    h.sale.addTender("cash");
+    h.sale.cart.paymentTenders[0]!.amount_q = 2000;
+    h.sale.cart.changeForInput = "999,00";
+    await h.sale.reviewCheckout();
+    const request = h.handles.actionCall.mock.calls.find((c) => String(c[0]).includes("/sale/review/"));
+    expect(request?.[1].body.change_for_q).toBe(2000);
+    h.handles.dispose();
+  });
+
 });

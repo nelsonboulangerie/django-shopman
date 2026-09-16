@@ -259,8 +259,43 @@ export function cashNotesQ(contract: POSCheckoutContractProjection | null = null
 export function collectionsForFulfillment(
   collections: POSPaymentCollectionProjection[],
   fulfillmentType: string,
+  salesMode?: "counter" | "order",
 ): POSPaymentCollectionProjection[] {
-  return collections.filter((collection) => collection.fulfillment_types.includes(fulfillmentType as "pickup" | "delivery"));
+  return collections.filter((collection) =>
+    collection.fulfillment_types.includes(fulfillmentType as "pickup" | "delivery")
+    && !(collection.ref === "on_delivery" && fulfillmentType === "pickup" && salesMode !== "order"),
+  );
+}
+
+/** Explica quando o pedido será cobrado sem criar outra modalidade financeira. */
+export function orderPaymentGuidance(options: {
+  salesMode?: "counter" | "order";
+  fulfillmentType: "pickup" | "delivery";
+  collection: "terminal" | "on_delivery";
+  methods: string[];
+}): string {
+  if (options.salesMode !== "order") return "";
+  if (options.collection === "on_delivery") {
+    const handoff = options.fulfillmentType === "pickup" ? "retirada" : "entrega";
+    return `Combine a forma e o valor a cobrar na ${handoff}. O pedido fica com pagamento pendente até o recebimento ser registrado no Gestor.`;
+  }
+  if (options.methods.some((method) => ["pix", "card", "link"].includes(method))) {
+    return "A cobrança será gerada ao registrar a encomenda. O pagamento fica pendente até a confirmação do provedor de pagamento; a filipeta acompanha o pedido.";
+  }
+  if (options.fulfillmentType === "pickup") {
+    return "Dinheiro e maquininha registram recebimento agora. Para aguardar pagamento, escolha Pix ou link disponível e cobre antes da retirada.";
+  }
+  return "Receba antes da entrega: dinheiro e maquininha são confirmados agora; Pix ou link aguardam confirmação do provedor de pagamento.";
+}
+
+export function paymentCollectionLabel(
+  collection: POSPaymentCollectionProjection,
+  salesMode?: "counter" | "order",
+  fulfillmentType: "pickup" | "delivery" = "delivery",
+): string {
+  if (collection.ref !== "on_delivery") return salesMode === "order" ? "Pagamento antecipado" : collection.label;
+  if (salesMode !== "order") return fulfillmentType === "pickup" ? "Pagamento na retirada" : "Receber na entrega";
+  return fulfillmentType === "pickup" ? "Pagamento na retirada" : "Cobrar na entrega";
 }
 
 export type PaymentProofTone = "info" | "warning" | "success" | "danger" | "neutral";

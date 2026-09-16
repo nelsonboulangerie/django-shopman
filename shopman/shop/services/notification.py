@@ -29,6 +29,7 @@ TOPIC = "notification.send"
 
 #: O aviso que leva a cobrança do pedido remoto anotado no PDV.
 PAYMENT_LINK_TEMPLATE = "payment_link_sent"
+PAYMENT_PIX_TEMPLATE = "payment_requested"
 
 #: Intervalo mínimo entre dois reenvios do MESMO aviso. Clique duplo, operador
 #: ansioso e cliente que "ainda não viu" em 30 s não podem virar três mensagens.
@@ -329,6 +330,73 @@ def resend_payment_link(order, *, expected_revision=None) -> Directive:
     except NotificationResendRefused as exc:
         raise NotificationResendRefused(
             exc.code.replace("notification_", "payment_link_", 1), exc.message, status=exc.status
+        ) from exc
+
+
+def payment_notice_template(order) -> str:
+    """Template de cobrança escolhido pelo servidor, nunca pelo navegador."""
+    method = str(((order.data or {}).get("payment") or {}).get("method") or "").strip().lower()
+    if method == "pix":
+        return PAYMENT_PIX_TEMPLATE
+    if method == "link":
+        return PAYMENT_LINK_TEMPLATE
+    return ""
+
+
+def payment_notice_refusal(order) -> NotificationResendRefused | None:
+    """Guarda comum do gesto de enviar/re-enviar uma cobrança do PDV."""
+    template = payment_notice_template(order)
+    if not template:
+        return NotificationResendRefused("payment_notice_unavailable", "Este pedido não tem cobrança que possa ser enviada.")
+    if template == PAYMENT_LINK_TEMPLATE:
+        return payment_link_resend_refusal(order, check_delivery=False)
+
+    payment = (order.data or {}).get("payment") or {}
+    if not payment.get("copy_paste"):
+        return NotificationResendRefused("payment_pix_unavailable", "O código PIX ainda não está disponível.")
+    if order.status == "cancelled":
+        return NotificationResendRefused("payment_notice_order_cancelled", "Pedido cancelado: a cobrança não pode ser enviada.")
+    from shopman.shop.services import payment as payment_svc
+
+    if payment_svc.has_sufficient_captured_payment(order):
+        return NotificationResendRefused("payment_notice_already_paid", "O cliente já pagou este pedido.")
+    expires_at = _parse_expires_at(payment.get("expires_at"))
+    if expires_at is not None and expires_at <= timezone.now():
+        return NotificationResendRefused("payment_notice_expired", "A cobrança venceu. Gere um novo pagamento.")
+    customer = (order.data or {}).get("customer") or {}
+    if not isinstance(customer, dict) or not (customer.get("phone") or customer.get("email")):
+        return NotificationResendRefused(
+            "payment_notice_contact_required", "Identifique o cliente com WhatsApp ou e-mail para enviar a cobrança.",
+        )
+    return None
+
+
+@transaction.atomic
+def send_or_resend_payment_notice(order, *, action: str) -> Directive:
+    """Executa o gesto explícito do POS com idempotência e guardas de cadência."""
+    from shopman.orderman.models import Order
+
+    order = Order.objects.select_for_update().get(pk=order.pk)
+    refusal = payment_notice_refusal(order)
+    if refusal is not None:
+        raise refusal
+    template = payment_notice_template(order)
+    latest = latest_delivery(order, template)
+    if action == "send":
+        if latest is not None:
+            return latest
+        send(order, template)
+        created = latest_delivery(order, template)
+        if created is None:  # pragma: no cover - receipt persistente garante a linha
+            raise NotificationResendRefused("payment_notice_not_queued", "Não foi possível colocar o envio na fila.")
+        return created
+    if action != "resend":
+        raise NotificationResendRefused("payment_notice_action_invalid", "Escolha enviar ou reenviar.", status=400)
+    try:
+        return resend(order, template)
+    except NotificationResendRefused as exc:
+        raise NotificationResendRefused(
+            exc.code.replace("notification_", "payment_notice_", 1), exc.message, status=exc.status,
         ) from exc
 
 
@@ -914,6 +982,25 @@ def _revoked_notification_channels(
         if routing is not None:
             routing["consent_lookup_failed"] = "true"
         return frozenset(channels)
+
+
+def lock_subscription_channel(channel_ref: str) -> None:
+    """Serialize subscription creation/claims; caller owns the short transaction."""
+    from shopman.shop.models import Channel
+    Channel.objects.select_for_update().get(ref=channel_ref)
+
+
+def subscription_notification_allowed(*, customer_ref: str, phone: str) -> bool:
+    """Reuse revocation policy; missing/failed identity resolution is fail-closed."""
+    try:
+        if not customer_ref:
+            from shopman.guestman.services import customer as customers
+            owner = customers.get_by_phone(phone)
+            customer_ref = owner.ref if owner else ""
+        return not _revoked_notification_channels(customer_ref, ("whatsapp",))
+    except Exception:
+        logger.warning("notification.subscription_eligibility_failed", exc_info=True)
+        return False
 
 
 def _dev_console_allowed(backend_chain: list[str]) -> bool:

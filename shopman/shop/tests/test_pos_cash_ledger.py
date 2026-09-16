@@ -46,6 +46,22 @@ _MOCK_ADAPTERS = override_settings(
     }
 )
 
+_EFI_SANDBOX_ADAPTERS = override_settings(
+    SHOPMAN_PAYMENT_ADAPTERS={
+        "pix": "shopman.shop.adapters.payment_efi",
+        "card": "shopman.shop.adapters.payment_stripe",
+        "cash": None,
+        "external": None,
+    },
+    SHOPMAN_EFI={
+        "sandbox": True,
+        "client_id": "",
+        "client_secret": "",
+        "certificate_path": "",
+        "pix_key": "",
+    },
+)
+
 
 class _Counter:
     """Um balcão: canal PDV, um item, um operador com turno aberto e fundo de R$ 100."""
@@ -131,6 +147,122 @@ def test_venda_em_pix_passa_pelo_turno_sem_tocar_na_gaveta(counter):
     assert cash.balance(counter.shift) == 10000
     # O PDV recebe o que exibir (QR do mock).
     assert result.payment.get("method") == "pix"
+
+
+@_EFI_SANDBOX_ADAPTERS
+def test_pix_acima_do_limite_e_bloqueado_antes_de_pedido_e_retry_em_dinheiro_funciona(counter):
+    review = pos_service.review_sale(
+        channel_ref="pdv",
+        payload={
+            "items": [{"sku": "PAO", "name": "Pão", "qty": 1, "unit_price_q": 1200}],
+            "customer_name": "Cliente",
+            "payment_method": "pix",
+            "client_request_id": "pix-limit-retry",
+            "cash_shift_id": counter.shift.pk,
+        },
+        operator_username=counter.operator.username,
+    )
+    warning = next(item for item in review.warnings if item["code"] == "pix_test_amount_limit")
+    assert warning["context"]["current_amount_q"] == 1200
+    assert warning["context"]["max_amount_q"] == 1000
+
+    with pytest.raises(PosIntentError) as caught:
+        counter.close(client_request_id="pix-limit-retry", payment_method="pix")
+
+    assert caught.value.code == "pix_test_amount_limit"
+    assert caught.value.context["actions"] == ["change_payment_method", "edit_cart"]
+    assert not Order.objects.exists()
+    assert not counter.sale_lines()
+
+    result = counter.close(client_request_id="pix-limit-retry", payment_method="cash")
+    assert Order.objects.filter(ref=result.order_ref).count() == 1
+    assert len(counter.sale_lines()) == 1
+
+
+@_EFI_SANDBOX_ADAPTERS
+@pytest.mark.parametrize(
+    ("delivery_fee_q", "effective_total_q", "blocked"),
+    [(99, 999, False), (100, 1000, False), (101, 1001, True)],
+)
+def test_pos_pix_boundary_uses_composed_discount_and_delivery_total(
+    counter,
+    delivery_fee_q,
+    effective_total_q,
+    blocked,
+):
+    payload = {
+        "items": [{
+            "sku": "PAO",
+            "name": "Pão",
+            "qty": 1,
+            "unit_price_q": 1200,
+            "discount": {"type": "fixed", "value": 3, "reason": "cortesia"},
+        }],
+        "fulfillment_type": "delivery",
+        "delivery_address": "Rua Teste, 1 - Centro",
+        "delivery_address_structured": {"neighborhood": "Centro"},
+        "delivery_fee_override_q": delivery_fee_q,
+        "customer_name": "Cliente",
+        "customer_phone": "+5543999990001",
+        "payment_method": "pix",
+        "client_request_id": f"pix-composed-{effective_total_q}",
+        "cash_shift_id": counter.shift.pk,
+    }
+
+    review = pos_service.review_sale(
+        channel_ref="pdv",
+        payload=payload,
+        operator_username=counter.operator.username,
+    )
+
+    assert review.subtotal_q == 1200
+    assert review.discount_q == 300
+    assert review.delivery_fee_q == delivery_fee_q
+    assert review.total_q == effective_total_q
+    warnings = [item["code"] for item in review.warnings]
+    assert ("pix_test_amount_limit" in warnings) is blocked
+    if blocked:
+        with pytest.raises(PosIntentError) as caught:
+            pos_service.close_sale(
+                channel_ref="pdv",
+                payload=payload,
+                actor=f"pos:{counter.operator.username}",
+                operator_username=counter.operator.username,
+            )
+        assert caught.value.context["current_amount_q"] == effective_total_q
+        assert not Order.objects.exists()
+
+
+@_EFI_SANDBOX_ADAPTERS
+def test_pix_misto_e_bloqueado_antes_do_commit(counter):
+    payload = {
+        "items": [{"sku": "PAO", "name": "Pão", "qty": 1, "unit_price_q": 1200}],
+        "customer_name": "Cliente",
+        "payment_method": "mixed",
+        "payment_tenders": [
+            {"method": "pix", "amount_q": 1000, "collection": "terminal"},
+            {"method": "cash", "amount_q": 200, "collection": "terminal"},
+        ],
+        "client_request_id": "pix-mixed-limit",
+        "cash_shift_id": counter.shift.pk,
+    }
+
+    review = pos_service.review_sale(
+        channel_ref="pdv",
+        payload=payload,
+        operator_username=counter.operator.username,
+    )
+    assert any(item["code"] == "pix_test_mixed_payment_unsupported" for item in review.warnings)
+
+    with pytest.raises(PosIntentError) as caught:
+        counter.close(
+            client_request_id="pix-mixed-limit",
+            payment_method="mixed",
+            payment_tenders=payload["payment_tenders"],
+        )
+    assert caught.value.code == "pix_test_mixed_payment_unsupported"
+    assert not Order.objects.exists()
+    assert not counter.sale_lines()
 
 
 @pytest.mark.parametrize("forma", ["credit", "debit"])
@@ -419,6 +551,40 @@ def test_acerto_de_entrega_grava_cod_settled_no_turno_de_quem_recebeu(counter):
     assert cash.balance(counter.shift) == 13000
 
 
+def test_pagamento_na_retirada_e_capturado_no_gestor_antes_da_conclusao(counter):
+    order = Order.objects.create(
+        ref="PICKUP-PAY-1",
+        channel_ref="pdv",
+        status=Order.Status.READY,
+        total_q=3000,
+        data={
+            "fulfillment_type": "pickup",
+            "payment": {
+                "method": "cash",
+                "collection": "on_delivery",
+                "amount_q": 3000,
+                "tenders": [{
+                    "method": "cash", "amount_q": 3000,
+                    "collection": "on_delivery", "status": "pending",
+                }],
+            },
+        },
+    )
+
+    operator_orders.settle_delivery_cash(order, cash_shift=counter.shift, actor="pos:marina")
+
+    order.refresh_from_db()
+    intent = PaymentIntent.objects.get(order_ref=order.ref)
+    assert intent.status == PaymentIntent.Status.CAPTURED
+    assert order.data["payment"]["cod_settled_at"]
+    assert order.data["payment"]["tenders"][0]["status"] == "received"
+    assert Entry.objects.get(order_ref=order.ref, kind=Entry.Kind.COD_SETTLED).amount_q == 3000
+
+    operator_orders.advance_order(order, actor="pos:marina")
+    order.refresh_from_db()
+    assert order.status == Order.Status.COMPLETED
+
+
 def test_acerto_exige_turno_aberto_e_nao_repete(counter):
     order = _cod_order("COD-2")
     with pytest.raises(ValueError, match="turno"):
@@ -576,6 +742,7 @@ def _close_shift_in_another_connection(shift_pk: int, operator_pk: int, counted_
         connections.close_all()
 
 
+@requires_postgres
 @pytest.mark.django_db(transaction=True)
 def test_venda_que_chega_depois_do_fechamento_grita_em_vez_de_evaporar(monkeypatch):
     import threading

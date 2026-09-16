@@ -1,4 +1,4 @@
-name: shopman-alpha
+name: shopman-nelson
 region: nyc
 alerts:
 - rule: DEPLOYMENT_FAILED
@@ -139,6 +139,9 @@ ingress:
       path:
         prefix: /
 envs:
+- key: NUXT_PUBLIC_VAPID_PUBLIC_KEY
+  scope: RUN_AND_BUILD_TIME
+  type: SECRET
 - key: DJANGO_SETTINGS_MODULE
   scope: RUN_TIME
   value: 'config.settings'
@@ -343,6 +346,37 @@ envs:
   scope: RUN_TIME
   value: '8932087'
   type: GENERAL
+# Os consumers globais e a via unitária de publicação permanecem desligados.
+# Canários reais exigem janela aprovada e configuração temporária no App
+# Platform; o blueprint versionado nunca deve deixá-los pré-armados. O segredo
+# HMAC permanece somente no App Platform.
+- key: SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: SHOPMAN_MARKETING_MEDIA_HOSTS
+  scope: RUN_TIME
+  value: mkt.boulangerie.com.br
+  type: GENERAL
+- key: SHOPMAN_MARKETING_TARGET_HMAC_KEY
+  scope: RUN_TIME
+  type: SECRET
+- key: SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION
+  scope: RUN_TIME
+  value: '1'
+  type: GENERAL
 - key: DOORMAN_ACCESS_LINK_API_KEY
   scope: RUN_TIME
   type: SECRET
@@ -395,19 +429,64 @@ envs:
 - key: AI_ASSIST_API_KEY
   scope: RUN_TIME
   type: SECRET
-# Concierge de WhatsApp (docs/guides/whatsapp-concierge.md). LIGADO no ar desde
-# que o dono abriu o piloto fechado; a chave S2S do webhook é a mesma do access
-# link (DOORMAN_ACCESS_LINK_API_KEY) enquanto CONCIERGE_API_KEY não for definida.
+# Concierge de WhatsApp (docs/guides/whatsapp-concierge.md). O switch global e a
+# connection são independentes; a chave do ingresso é exclusiva do Concierge.
 - key: SHOPMAN_CONCIERGE_ENABLED
   scope: RUN_TIME
   value: 'true'
   type: GENERAL
-# Piloto fechado: só estes assinantes/telefones recebem o concierge.
-# ⚠️ Vazio NÃO é "desligado" — é ABERTO A TODOS. Apagar esta lista solta o
-#    concierge em cima de toda a base do WhatsApp.
+- key: CONCIERGE_MANYCHAT_WHATSAPP_ACTIVE
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: CONCIERGE_API_KEY
+  scope: RUN_TIME
+  type: SECRET
+# Mesma conta e mesmo portão #c do flow Concierge (piloto), conferidos por GET
+# getInfo/getFlows em 11/09/2026. Teste v3 somente leitura/humano: o corpo
+# confirmado não possui ID oficial de mensagem, portanto não autoriza mutação.
+- key: CONCIERGE_CONTRACT_VERSION
+  scope: RUN_TIME
+  value: '3'
+  type: GENERAL
+- key: CONCIERGE_READ_ONLY
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: CONCIERGE_MANYCHAT_EVENT_ID_VERIFIED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+# Campo dinâmico última interação WhatsApp; fuso confirmado pelo operador.
+- key: CONCIERGE_WHATSAPP_INTERACTION_TIMEZONE
+  scope: RUN_TIME
+  value: America/Sao_Paulo
+  type: GENERAL
+- key: CONCIERGE_IDENTITY_LINK_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: CONCIERGE_HUMAN_RETURN_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: CONCIERGE_OUTPUT_RETRY_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: CONCIERGE_TRANSFER_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+- key: CONCIERGE_ACCOUNT_ID
+  scope: RUN_TIME
+  value: '764222643620409'
+  type: GENERAL
+# Subjects opacos autorizados para a coorte fechada. Nomes e telefones do payload
+# não ampliam identidade; lista vazia fecha a connection.
 - key: CONCIERGE_ALLOWED_SUBSCRIBERS
   scope: RUN_TIME
-  value: '4605528796186498,1962036908,+5543984049009,+5543984035793'
+  value: '4605528796186498,4685528796186498,1962036908'
   type: GENERAL
 - key: META_PAGE_ACCESS_TOKEN
   scope: RUN_TIME
@@ -523,7 +602,10 @@ envs:
   type: SECRET
 
 # ── Resto do que só existia no painel ─────────────────────────────────
-- key: GOOGLE_MAPS_API_KEY
+- key: GOOGLE_MAPS_BROWSER_API_KEY
+  scope: RUN_TIME
+  type: SECRET
+- key: GOOGLE_MAPS_SERVER_API_KEY
   scope: RUN_TIME
   type: SECRET
 - key: SHOPMAN_BACKUP_SHEET_HOST
@@ -570,6 +652,16 @@ services:
     success_threshold: 1
     timeout_seconds: 5
   name: web
+  envs:
+  - key: VAPID_PRIVATE_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: VAPID_PUBLIC_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: VAPID_CLAIMS_EMAIL
+    scope: RUN_TIME
+    type: SECRET
   # ⚠️ `--access-log=/dev/null` NÃO é economia de log: é vazamento de segredo.
   # O access log do daphne grava o request-target CRU, com query string
   # (daphne/http_protocol.py: "path": uri), e o token dos webhooks viaja na query
@@ -855,6 +947,18 @@ services:
     scope: RUN_AND_BUILD_TIME
     value: 'https://api.boulangerie.com.br'
     type: GENERAL
+  - key: NUXT_PUBLIC_ORDERS_URL
+    scope: RUN_AND_BUILD_TIME
+    value: 'https://gestor.boulangerie.com.br/'
+    type: GENERAL
+  - key: NUXT_PUBLIC_POS_URL
+    scope: RUN_AND_BUILD_TIME
+    value: 'https://pdv.boulangerie.com.br/'
+    type: GENERAL
+  - key: NUXT_PUBLIC_PRODUCTION_URL
+    scope: RUN_AND_BUILD_TIME
+    value: 'https://prod.boulangerie.com.br/'
+    type: GENERAL
   health_check:
     failure_threshold: 5
     http_path: /
@@ -966,6 +1070,16 @@ workers:
   instance_count: 1
   instance_size_slug: apps-s-1vcpu-0.5gb
   name: directive-worker
+  envs:
+  - key: VAPID_PRIVATE_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: VAPID_PUBLIC_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: VAPID_CLAIMS_EMAIL
+    scope: RUN_TIME
+    type: SECRET
   run_command: python manage.py process_directives --watch
   image:
     registry_type: DOCR

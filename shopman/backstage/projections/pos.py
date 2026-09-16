@@ -352,6 +352,7 @@ class POSTabProjection:
     # already went to the kitchen is, by nature, still unpaid. Derived from
     # Session.data["fired_lines"] — no extra storage.
     fired: bool = False
+    sales_mode: str = "counter"
 
 
 @dataclass(frozen=True)
@@ -361,6 +362,7 @@ class POSProjection:
     products: tuple[POSProductProjection, ...]
     collections: tuple[POSCollectionProjection, ...]
     payment_methods: tuple[POSPaymentMethodProjection, ...]
+    payment_constraints: dict
     fulfillment_options: tuple[POSFulfillmentOptionProjection, ...]
     payment_collections: tuple[POSPaymentCollectionProjection, ...]
     checkout: POSCheckoutContractProjection
@@ -464,9 +466,9 @@ _PAYMENT_COLLECTIONS = (
     ),
     POSPaymentCollectionProjection(
         ref="on_delivery",
-        label="Receber na entrega",
-        description="Dinheiro ou cartão na maquininha; pagamento pendente até o acerto.",
-        fulfillment_types=("delivery",),
+        label="Receber ao entregar o pedido",
+        description="Dinheiro ou cartão na maquininha; pagamento pendente até o recebimento ser registrado.",
+        fulfillment_types=("pickup", "delivery"),
         payment_method_refs=("cash", "credit", "debit", "mixed"),
     ),
 )
@@ -520,6 +522,7 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
         products=tuple(products),
         collections=collections,
         payment_methods=_payment_methods(),
+        payment_constraints=_payment_constraints(),
         fulfillment_options=_fulfillment_options(policy.fulfillment_types),
         payment_collections=_PAYMENT_COLLECTIONS,
         checkout=_checkout_contract(
@@ -981,6 +984,13 @@ def _payment_methods() -> tuple[POSPaymentMethodProjection, ...]:
     )
 
 
+def _payment_constraints() -> dict:
+    """Provider-test capabilities resolved from the effective runtime adapter."""
+    from shopman.shop.projections.payment_constraints import payment_constraints_payload
+
+    return payment_constraints_payload()
+
+
 def _fulfillment_options(fulfillment_types: tuple[str, ...]) -> tuple[POSFulfillmentOptionProjection, ...]:
     """Expose POS fulfillment choices resolved from channel policy."""
     options = []
@@ -1025,6 +1035,9 @@ def _pos_actions() -> tuple[Action, ...]:
             payload_schema={"path": {"tab_ref": "string"}},
             idempotency="none",
         ),
+        Action(ref="read_tab", kind="navigation", label="Atualizar comanda", priority="quiet",
+               method="GET", href="/api/v1/backstage/pos/tabs/{tab_ref}/open/",
+               payload_schema={"path": {"tab_ref": "string"}}, idempotency="none"),
         Action(
             ref="save_tab",
             kind="mutation",
@@ -1033,7 +1046,7 @@ def _pos_actions() -> tuple[Action, ...]:
             method="POST",
             href="/api/v1/backstage/pos/tabs/save/",
             payload_schema={
-                "required": ["tab_session_key", "items"],
+                "required": ["tab_session_key", "expected_revision", "items"],
                 "optional": ["customer_name", "customer_phone", "fulfillment_type", "payment_method"],
             },
             idempotency="none",
@@ -1291,6 +1304,8 @@ def _pos_actions() -> tuple[Action, ...]:
                 "customer_email",
                 # Palavra explícita do operador para CORRIGIR o contato.
                 "customer_contact_correction",
+                # Palavra explícita do botão "Salvar cadastro" para corrigir nome.
+                "customer_name_correction",
             ]},
             idempotency="required",
         ),
@@ -1736,10 +1751,17 @@ def _checkout_contract(
             "customer_lookup_action_ref": "customer_lookup",
             "supports_split_payment": True,
             "supports_cash_change": True,
-            "supports_on_delivery_cash": "delivery" in fulfillment_types,
+            # Nome legado do contrato: hoje ``on_delivery`` significa receber
+            # no hand-off, tanto na entrega quanto na retirada de encomenda.
+            # Um canal somente-pickup precisa anunciar a capacidade; caso
+            # contrário superfícies headless escondem justamente a opção que
+            # ``payment_collections`` e o intent aceitam.
+            "supports_on_delivery_cash": bool(
+                {"pickup", "delivery"}.intersection(fulfillment_types)
+            ),
             "supports_customer_lookup": True,
             "supports_customer_memory": True,
-            "supports_delivery_address_autocomplete": bool(getattr(settings, "GOOGLE_MAPS_API_KEY", "")),
+            "supports_delivery_address_autocomplete": bool(_address_autocomplete_api_key()),
             "supports_receipt_email": True,
             "supports_manual_discount": True,
             "provider_readiness": tuple(
@@ -1975,8 +1997,14 @@ def _pending_change_requests(cash_shift) -> tuple[POSChangeRequestProjection, ..
     )
 
 
+def _address_autocomplete_api_key() -> str:
+    from shopman.shop.google_maps_credentials import browser_api_key
+
+    return browser_api_key()
+
+
 def _address_autocomplete_capability() -> AddressAutocompleteProjection:
-    api_key = getattr(settings, "GOOGLE_MAPS_API_KEY", "") or ""
+    api_key = _address_autocomplete_api_key()
     lat, lng = _shop_coordinates()
     return AddressAutocompleteProjection(
         enabled=bool(api_key),
@@ -2096,6 +2124,8 @@ def _sold_out_skus(skus: list[str]) -> set[str]:
 
 
 def _tab_projection(*, ref: str, session: Session | None, display_ref: str = "") -> POSTabProjection:
+    from shopman.shop.services.pos_sales_mode import sales_mode
+
     display_ref = display_ref or _display_ref(ref)
     if session is None:
         return POSTabProjection(
@@ -2140,6 +2170,7 @@ def _tab_projection(*, ref: str, session: Session | None, display_ref: str = "")
         last_touched_display=_format_time(last_touched),
         items_preview=_items_preview(items),
         fired=bool(data.get("fired_lines")),
+        sales_mode=sales_mode(data),
     )
 
 
@@ -2425,6 +2456,9 @@ def build_open_tab(session: Session) -> dict:
     The stored ``tab_ref``/``tab_display`` are already normalized at open time,
     so they are read back verbatim (no re-normalization).
     """
+    from shopman.shop.services.pos_intent import pos_session_revision
+    from shopman.shop.services.pos_sales_mode import sales_mode
+
     data = session.data or {}
     customer = data.get("customer") or {}
     payment = data.get("payment") or {}
@@ -2465,6 +2499,7 @@ def build_open_tab(session: Session) -> dict:
     return {
         "session_key": session.session_key,
         "tab_session_key": session.session_key,
+        "revision": pos_session_revision(session),
         "tab_ref": tab_ref,
         "tab_display": tab_display,
         "items": items,
@@ -2474,7 +2509,8 @@ def build_open_tab(session: Session) -> dict:
         "price_tier": customer.get("price_tier", ""),
         "customer_tax_id": customer.get("tax_id", ""),
         "customer_email": customer.get("email", ""),
-        "fulfillment_type": data.get("fulfillment_type", "pickup") or "pickup",
+        "sales_mode": sales_mode(data),
+        "fulfillment_type": data.get("fulfillment_type") or ("" if (data.get("pos") or {}).get("sales_mode") == "order" else "pickup"),
         "delivery_address": data.get("delivery_address", ""),
         "delivery_address_structured": data.get("delivery_address_structured", {}),
         "delivery_date": data.get("delivery_date", ""),
@@ -2638,6 +2674,7 @@ def build_pos_recent_sales(*, limit: int = 20) -> dict:
     from shopman.orderman.models import Order
 
     from shopman.backstage.projections.order_queue import _fiscal_status
+    from shopman.backstage.projections.pos_payment_delivery import build_pos_payment_delivery
     from shopman.shop.services.pos import recent_sale_cancellable
 
     since = timezone.now() - timezone.timedelta(hours=24)
@@ -2679,5 +2716,6 @@ def build_pos_recent_sales(*, limit: int = 20) -> dict:
             # o desfazer para a venda ainda DENTRO da janela — o mesmo predicado
             # que o cancel impõe (`recent_sale_cancellable`).
             "can_cancel": recent_sale_cancellable(order),
+            "payment_delivery": build_pos_payment_delivery(order),
         })
     return {"sales": sales}

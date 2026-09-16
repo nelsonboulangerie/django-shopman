@@ -4,9 +4,14 @@
 // abre a superfície dedicada (ou deep-linka pro Unfold, no caso da Loja). Herda do kit
 // o OfflineBanner, o re-gate de 401 (useOperatorSession) e httpErrorMessage.
 import type { HubFailure } from "~/presentation/hub";
-import { hubFailure, hubFailureCopy, hubGreeting, hubIsEmpty, tileIcon, tileTarget } from "~/presentation/hub";
+import type { HubTileProjection } from "~/types/hub";
+import { hubFailure, hubFailureCopy, hubGreeting, hubIsEmpty, tileIcon, tileIconUrl, tileTarget } from "~/presentation/hub";
+
+// O ícone do PWA da Central — a mesma família que cada tile mostra (PWA_ICONS.md).
+const HUB_ICON_SRC = "/pwa/pwa-64x64.png?v=2";
 
 const apiPath = useHubApiPath();
+useOperatorWindowTitle("Central de Apps");
 
 const { tiles, operatorName, error, refresh } = await useOperatorHub();
 
@@ -34,6 +39,14 @@ const failureCopy = computed(() => hubFailureCopy(failure.value));
 const needsLogin = computed(() => failure.value === "login" || sessionExpired.value);
 const hasBlockingFailure = computed(() => failure.value !== "none" || sessionExpired.value);
 const isEmpty = computed(() => hubIsEmpty(tiles.value));
+
+// O tile mostra o ícone REAL do app (o PNG do PWA na origem do próprio app), e cai no
+// Lucide do Django quando a URL não resolve OU quando a imagem falha (app fora do ar,
+// deploy sem a família). A falha é local por tile: um app sem ícone não apaga os outros.
+const brokenTileIcons = reactive(new Set<string>());
+function tileImageSrc(tile: HubTileProjection): string | null {
+  return brokenTileIcons.has(tile.ref) ? null : tileIconUrl(tile);
+}
 </script>
 
 <template>
@@ -45,6 +58,7 @@ const isEmpty = computed(() => hubIsEmpty(tiles.value));
       v-if="needsLogin"
       mode="page"
       icon="lucide:layout-grid"
+      :icon-src="HUB_ICON_SRC"
       :login-url="apiPath('/api/v1/backstage/operator/login/')"
       :title="sessionExpired ? 'Sua sessão expirou' : 'Central de Apps'"
       :description="
@@ -86,7 +100,7 @@ const isEmpty = computed(() => hubIsEmpty(tiles.value));
         <!-- Rail canônico (kit). A Central é o launcher: sem botão "Central" (é a casa) e
              sem travar-operador. Só identidade + tema — a mesma espinha das outras. -->
         <div class="sticky top-0 flex h-dvh shrink-0">
-          <OperatorRail app-icon="layout-grid" app-label="Central" />
+          <OperatorRail app-icon="layout-grid" :app-icon-src="HUB_ICON_SRC" app-label="Central" />
         </div>
 
         <div class="flex min-w-0 flex-1 flex-col">
@@ -117,8 +131,17 @@ const isEmpty = computed(() => hubIsEmpty(tiles.value));
               :target="tileTarget(tile)"
               class="flex min-h-28 flex-col gap-2 rounded-md border border-border bg-card p-4 transition hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <span class="grid size-11 place-items-center rounded-md bg-primary/10 text-primary">
-                <Icon :name="tileIcon(tile.icon)" class="size-6" />
+              <span class="grid size-11 place-items-center overflow-hidden rounded-md bg-primary/10 text-primary">
+                <img
+                  v-if="tileImageSrc(tile)"
+                  :src="tileImageSrc(tile)!"
+                  class="size-11 rounded-md"
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  @error="brokenTileIcons.add(tile.ref)"
+                >
+                <Icon v-else :name="tileIcon(tile.icon)" class="size-6" />
               </span>
               <span class="mt-auto">
                 <span class="block text-sm font-semibold leading-tight">{{ tile.label }}</span>
@@ -127,9 +150,11 @@ const isEmpty = computed(() => hubIsEmpty(tiles.value));
             </a>
           </li>
           </ul>
+          <OperatorPushSettings />
           </section>
         </div>
       </div>
     </template>
+    <OperatorPwaRuntime />
   </main>
 </template>

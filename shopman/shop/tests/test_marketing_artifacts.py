@@ -92,9 +92,9 @@ def test_multichannel_variants_match_the_golden_and_inherit_only_absent_fields()
             "instagram": {
                 "body": "{{product_name}} no forno ✨",
                 "hashtags": ["{{tag}}", "instacroissant"],
-                "post_type": "FEED",
+                "publication_format": "feed",
             },
-            "google_business": {"post_type": "OFFER"},
+            "google_business": {"publication_format": "standard"},
             "whatsapp": {
                 "body": "{{product_name}} quentinho. Peça agora: {{link}}",
                 "template_name": "fornada_v3",
@@ -206,6 +206,7 @@ def test_preview_approved_evidence_and_provider_receive_the_exact_same_hash():
     preview = campaign.preview(
         "Croissant saiu do forno ✨",
         platform="instagram",
+        platform_content={"instagram": {"image_url": "/media/croissant.jpg"}},
         content_version=2,
     )
     preview_artifact = preview["artifact"]
@@ -278,7 +279,7 @@ def test_approved_resolver_fails_closed_if_sealed_payload_is_tampered():
         idempotency_key="artifact-tamper-0001",
         base_version=1,
         publish_mode="now",
-        content={"body": "Approved bytes"},
+        content={"body": "Approved bytes", "image_url": "/media/croissant.jpg"},
         platform_content={},
         platforms=["instagram"],
     )

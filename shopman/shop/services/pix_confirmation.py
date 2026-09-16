@@ -12,15 +12,20 @@ The same body of code runs for:
 3. **Tests.** Integration tests call :func:`confirm_pix` directly to
    exercise the downstream flow without going through HTTP.
 
-There is no environment branch here — dev and prod run the same code. The
-only thing that differs is *who calls it*: EFI's servers in production, an
-explicit dev action, or an opt-in mock directive in tests.
+There is no environment branch in the payment lifecycle — dev and prod run
+the same transitions.  The persisted intent does, however, identify whether
+Efí sent a live confirmation or its sandbox simulation.  That provenance is
+copied to the order and receipt audit data so a sandbox capture can never be
+mistaken for real revenue by downstream consumers.
 
 Contrato do dinheiro (o que este módulo promete)
 ------------------------------------------------
 
-Um Pix confirmado é dinheiro que JÁ está na conta da loja. A partir daí só
-existem três desfechos honestos, e nenhum deles é silêncio:
+Em produção, um Pix confirmado é dinheiro que JÁ está na conta da loja. Na
+homologação Efí, a confirmação é uma simulação do provedor: percorre o mesmo
+lifecycle para testar o sistema, mas fica marcada como ``provider_simulated``
+e ``is_test_confirmation=True``. A partir daí só existem três desfechos
+honestos, e nenhum deles é silêncio:
 
 * **cobre a cobrança** → captura no Payman e o pedido segue (``on_paid``);
 * **não cobre** → NÃO captura (o Payman só aceita uma captura por intent, e
@@ -104,6 +109,8 @@ def confirm_pix(*, txid: str, e2e_id: str = "", amount: str = "") -> None:
         _confirm_pix_without_charge(txid=txid, e2e_id=e2e_id, reported_q=reported_q)
         return
 
+    confirmation_source = _confirmation_source(db_intent)
+
     order = _order_for_charge(db_intent)
     if order is None:
         logger.warning(
@@ -130,6 +137,7 @@ def confirm_pix(*, txid: str, e2e_id: str = "", amount: str = "") -> None:
             txid=txid,
             e2e_id=e2e_id,
             reported_q=reported_q,
+            confirmation_source=confirmation_source,
         )
         return
 
@@ -139,15 +147,30 @@ def confirm_pix(*, txid: str, e2e_id: str = "", amount: str = "") -> None:
         txid=txid,
         e2e_id=e2e_id,
         reported_q=reported_q,
+        confirmation_source=confirmation_source,
     )
 
 
 # ── cobrança viva (pending / authorized / captured) ──
 
 
-def _confirm_pix_on_live_charge(order, db_intent, *, txid, e2e_id, reported_q) -> None:
+def _confirm_pix_on_live_charge(
+    order,
+    db_intent,
+    *,
+    txid,
+    e2e_id,
+    reported_q,
+    confirmation_source,
+) -> None:
     """O caminho normal: a cobrança está de pé e o Pix vem cobri-la."""
-    received_q = _record_pix_receipt(order, txid=txid, e2e_id=e2e_id, amount_q=reported_q)
+    received_q = _record_pix_receipt(
+        order,
+        txid=txid,
+        e2e_id=e2e_id,
+        amount_q=reported_q,
+        confirmation_source=confirmation_source,
+    )
     authorized_q = int(db_intent.amount_q or 0)
 
     if received_q is None:
@@ -187,7 +210,12 @@ def _confirm_pix_on_live_charge(order, db_intent, *, txid, e2e_id, reported_q) -
         _alert_insufficient(order, received_q=received_q, expected_q=authorized_q)
         return
 
-    outcome = _capture_charge(db_intent, txid=txid, e2e_id=e2e_id)
+    outcome = _capture_charge(
+        db_intent,
+        txid=txid,
+        e2e_id=e2e_id,
+        confirmation_source=confirmation_source,
+    )
     if outcome == "dead":
         # A cobrança morreu entre a leitura e a captura (cancelamento em
         # paralelo, ou cobrança expirada). Mesmo desfecho do ramo de cobrança
@@ -198,6 +226,7 @@ def _confirm_pix_on_live_charge(order, db_intent, *, txid, e2e_id, reported_q) -
             txid=txid,
             e2e_id=e2e_id,
             reported_q=reported_q,
+            confirmation_source=confirmation_source,
         )
         return
 
@@ -250,7 +279,15 @@ def _confirm_pix_on_live_charge(order, db_intent, *, txid, e2e_id, reported_q) -
 # ── cobrança morta (cancelada, falha, expirada) ──
 
 
-def _confirm_pix_on_dead_charge(order, db_intent, *, txid, e2e_id, reported_q) -> None:
+def _confirm_pix_on_dead_charge(
+    order,
+    db_intent,
+    *,
+    txid,
+    e2e_id,
+    reported_q,
+    confirmation_source,
+) -> None:
     """Dinheiro que caiu numa cobrança que não recebe mais.
 
     Era o buraco silencioso: ``cancelled`` não casava com nenhum ramo de
@@ -266,7 +303,13 @@ def _confirm_pix_on_dead_charge(order, db_intent, *, txid, e2e_id, reported_q) -
     porque o dinheiro agora existe no livro: sem intent capturado,
     ``payment.refund`` não teria o que devolver.
     """
-    received_q = _record_pix_receipt(order, txid=txid, e2e_id=e2e_id, amount_q=reported_q)
+    received_q = _record_pix_receipt(
+        order,
+        txid=txid,
+        e2e_id=e2e_id,
+        amount_q=reported_q,
+        confirmation_source=confirmation_source,
+    )
 
     if reported_q is None:
         logger.warning(
@@ -293,15 +336,8 @@ def _confirm_pix_on_dead_charge(order, db_intent, *, txid, e2e_id, reported_q) -
         txid=txid,
         e2e_id=e2e_id,
         amount_q=int(reported_q),
+        confirmation_source=confirmation_source,
     )
-    if already_booked:
-        logger.info(
-            "pix_confirmation: Pix em cobrança encerrada já registrado order=%s intent=%s",
-            order.ref,
-            booked_ref,
-        )
-        return
-
     if booked_ref is None:
         _alert(
             order.ref,
@@ -315,6 +351,11 @@ def _confirm_pix_on_dead_charge(order, db_intent, *, txid, e2e_id, reported_q) -
         )
         return
 
+    # Cancellation can commit while capture discovers the charge is dead.
+    # Re-read the canonical order after booking; the initial callback snapshot
+    # must not decide whether money belongs to a live or cancelled order.
+    # Keep provider refund I/O outside any Order row lock.
+    order.refresh_from_db()
     if order.status == Order.Status.CANCELLED:
         logger.warning(
             "pix_confirmation: Pix após cancelamento order=%s valor_q=%s intent=%s",
@@ -322,12 +363,29 @@ def _confirm_pix_on_dead_charge(order, db_intent, *, txid, e2e_id, reported_q) -
             reported_q,
             booked_ref,
         )
-        from shopman.shop.lifecycle import dispatch
+        from shopman.payman import PaymentService
+
+        from shopman.shop.lifecycle import dispatch, phase_complete
+
+        # A completed settlement replay is not another operator incident.
+        # A booked but unsettled receipt must still reach the canonical refund.
+        if already_booked and phase_complete(order, "on_paid"):
+            captured_q = PaymentService.captured_total(booked_ref)
+            if PaymentService.refunded_total(booked_ref) >= captured_q:
+                return
 
         # Ramo canônico, o mesmo que o webhook do Stripe usa: estorna e alerta
         # ``payment_after_cancel``. Um dono só para "pagamento chegou depois do
         # cancelamento".
         dispatch(order, "on_paid")
+        return
+
+    if already_booked:
+        logger.info(
+            "pix_confirmation: Pix em cobrança encerrada já registrado order=%s intent=%s",
+            order.ref,
+            booked_ref,
+        )
         return
 
     # Pedido vivo com cobrança morta: cliente pagou o QR velho, ou pagou duas
@@ -354,6 +412,7 @@ def _book_pix_outside_charge(
     txid: str,
     e2e_id: str,
     amount_q: int,
+    confirmation_source: dict,
 ) -> tuple[str | None, bool]:
     """Registrar no Payman dinheiro que a cobrança original não pode receber.
 
@@ -379,6 +438,7 @@ def _book_pix_outside_charge(
         "reason": "pix_recebido_em_cobranca_encerrada",
         "superseded_intent_ref": db_intent.ref,
         "superseded_status": db_intent.status,
+        **confirmation_source,
     }
     idempotency_key = f"pix-outside-charge:{txid}:{e2e_id}"[:128]
 
@@ -488,7 +548,14 @@ def _confirm_pix_without_charge(*, txid: str, e2e_id: str, reported_q) -> None:
 # ── escrita no pedido ──
 
 
-def _record_pix_receipt(order, *, txid: str, e2e_id: str, amount_q) -> int | None:
+def _record_pix_receipt(
+    order,
+    *,
+    txid: str,
+    e2e_id: str,
+    amount_q,
+    confirmation_source: dict | None = None,
+) -> int | None:
     """Gravar o recebimento no pedido e devolver o total recebido até agora.
 
     Os recibos ficam num mapa por Pix (``payment.pix_receipts``), não num
@@ -508,6 +575,13 @@ def _record_pix_receipt(order, *, txid: str, e2e_id: str, amount_q) -> int | Non
         receipts[key] = int(amount_q) if amount_q is not None else None
         payment_data["pix_receipts"] = receipts
 
+        source = dict(confirmation_source or {})
+        if source:
+            receipt_sources = dict(payment_data.get("pix_receipt_sources") or {})
+            receipt_sources[key] = source
+            payment_data["pix_receipt_sources"] = receipt_sources
+            payment_data.update(source)
+
         known = [int(v) for v in receipts.values() if v is not None]
         received_q = sum(known) if known else None
         if received_q is not None:
@@ -523,6 +597,19 @@ def _record_pix_receipt(order, *, txid: str, e2e_id: str, amount_q) -> int | Non
     return received_q
 
 
+def _confirmation_source(db_intent) -> dict:
+    """Return sanitized provenance for a provider confirmation.
+
+    The adapter stamps this before remote I/O.  Keeping the marker both on the
+    Payman intent and on each order receipt lets financial/reporting code
+    distinguish Efí's homologation callback from live revenue without trusting
+    request payload fields.
+    """
+    from shopman.shop.services.payment_provenance import confirmation_provenance
+
+    return confirmation_provenance(db_intent)
+
+
 def _claim_paid_dispatch(order) -> bool:
     """Gravar ``captured_at`` e devolver True só para quem ganhou a corrida.
 
@@ -534,8 +621,15 @@ def _claim_paid_dispatch(order) -> bool:
         data = dict(locked.data or {})
         payment_data = dict(data.get("payment") or {})
         if payment_data.get("captured_at"):
+            if "error" in payment_data:
+                payment_data.pop("error", None)
+                data["payment"] = payment_data
+                locked.data = data
+                locked.save(update_fields=["data", "updated_at"])
+                order.data = data
             return False
         captured_at = _captured_at_for_payment(locked) or timezone.now()
+        payment_data.pop("error", None)
         payment_data["captured_at"] = captured_at.isoformat()
         data["payment"] = payment_data
         locked.data = data
@@ -548,7 +642,13 @@ def _claim_paid_dispatch(order) -> bool:
 # ── Payman ──
 
 
-def _capture_charge(db_intent, *, txid: str, e2e_id: str) -> str:
+def _capture_charge(
+    db_intent,
+    *,
+    txid: str,
+    e2e_id: str,
+    confirmation_source: dict | None = None,
+) -> str:
     """Autorizar e capturar a cobrança pelo valor AUTORIZADO.
 
     Devolve ``"captured"`` (inclui o replay de uma cobrança já capturada) ou
@@ -565,7 +665,7 @@ def _capture_charge(db_intent, *, txid: str, e2e_id: str) -> str:
             PaymentService.authorize(
                 db_intent.ref,
                 gateway_id=txid,
-                gateway_data={"e2e_id": e2e_id},
+                gateway_data={"e2e_id": e2e_id, **(confirmation_source or {})},
             )
         if db_intent.status in ("pending", "authorized"):
             PaymentService.capture(db_intent.ref, gateway_id=txid)

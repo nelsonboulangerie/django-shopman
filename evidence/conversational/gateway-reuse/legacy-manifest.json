@@ -1,0 +1,20 @@
+{
+  "code_sha": "2583e3744c7b2f4f4330db1a5f5a6b9a11f84c08",
+  "scope": "Local C01 legacy compatibility; disabled by default; no publication or real sends",
+  "files": {
+    "config/settings.py": "5056d53fd2db8e34e7600b97885685616ea00c20c7350aa4d4fed45f62fd0820",
+    "docs/guides/whatsapp-concierge.md": "a3ba291d0b7eb44d34a311d12d2c1a4d0aafdefbfbd5daec7c6f9d1245998a97",
+    "docs/reports/conversational-operational-excellence-implementation-2026-09-11.md": "cd59036cf6763aaca246739dff145458a12d7d04128cf6c7563a61a2953ed921",
+    "evidence/conversational/gateway-reuse/README.md": "09f66ee4a7e81287fa5e3f9d26234be5688072d3a873adfc5ed1455759eb9339",
+    "evidence/conversational/gateway-reuse/legacy-final-targeted.txt": "969d176f9120c4943e3342192ff54bc94f5c5eccd6af67456cc2d5aaa0b5d11b",
+    "evidence/conversational/gateway-reuse/legacy-integration.txt": "55a8af2fe76a96e8d9af4f33d46c052ad77da8f2eaff594ce7af0336500736fe",
+    "evidence/conversational/gateway-reuse/legacy-ruff.txt": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+    "evidence/conversational/gateway-reuse/legacy-selection.json": "e5638c24060a3f05ec7354f99f4ad5815510bbef1f3d8fc545c1d432d6c16330",
+    "evidence/conversational/gateway-reuse/legacy-shutdown.txt": "891dddbfd04ca262bf6e95dcfc858006557c850f55a1a0ec576bf7de40a25ee3",
+    "evidence/conversational/gateway-reuse/legacy-tests.txt": "cefc2ae6a438ce92af980705c21cab9c3e08a07ec0650c759e23fe489ff38b4d",
+    "shopman/shop/omotenashi/copy.py": "3accf13959fc343f6c73aa92aac1cf6445913a784c0135fbd1181139bf82696f",
+    "shopman/shop/omotenashi/usage_map.py": "eb9be6399afa82feccdc192936ebdf146e84814a062f52bc619fe57a9f57b304",
+    "shopman/storefront/concierge/service.py": "7b205d4600e38c9f589544095ca3cc2a5d65ccbc04d000931e9c7d3a5149a484",
+    "shopman/storefront/tests/test_concierge_legacy_gateway.py": "d61e6b402f101dbae1a4b340ab1383430f180f2c0358cfb737db4f17585fb52c"
+  }
+}

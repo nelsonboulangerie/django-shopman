@@ -35,6 +35,50 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     "packages/cashman/shopman/cashman/tests/test_concurrency.py",
     "shopman/shop/tests/test_concurrent_finish_does_not_double_credit.py",
     "shopman/storefront/tests/test_concurrent_checkout.py",
+    "shopman/storefront/tests/test_operational_postgres.py",
+    # Exclusão de conta compartilha a trava canônica do Customer com novos
+    # pedidos, inscrições e mensagens; as três corridas exigem conexões reais.
+    "shopman/storefront/tests/test_account_privacy_postgres.py",
+    # Session anonimizada é um selo irreversível: writers atrasados esperam
+    # a trava e não podem restaurar handle, customer/data ou meta pessoal.
+    "shopman/shop/tests/test_session_privacy_fence_postgres.py",
+    # Eventos operacionais continuam depois da retenção do pedido, mas um
+    # writer stale não pode recolocar note/reason após a anonimização.
+    "shopman/shop/tests/test_order_event_privacy_fence_postgres.py",
+    # Login OTP resolves by contact before waiting for the canonical Customer
+    # row.  This proof ensures a contact change that wins that lock prevents
+    # both delivery and verification against the stale phone/email owner.
+    "packages/doorman/shopman/doorman/tests/test_verification_ownership_postgres.py",
+    # The export must finish one coherent snapshot while holding the same
+    # canonical Customer fence used by deletion; neither mixed artifacts nor a
+    # completed receipt for a preempted export are acceptable.
+    "shopman/storefront/tests/test_account_export_postgres.py",
+    # O perfil e o persist composto do PDV gravam metadata, contatos,
+    # identificadores e enderecos; a exclusao precisa vencer sem que esses
+    # filhos pessoais sejam recriados por uma instancia stale.
+    "shopman/shop/tests/test_pos_privacy_postgres.py",
+    # Identity binding writes phone/name/customer_ref back to a conversation.
+    # These races prove deletion cannot be followed by stale PII recreation.
+    "shopman/storefront/tests/test_concierge_privacy_postgres.py",
+    # ManyChat can attach identifiers and contact data while account deletion
+    # runs. The shared Customer fence decides the winner without recreating PII.
+    "packages/guestman/shopman/guestman/tests/test_manychat_privacy_postgres.py",
+    # Public Guestman child writers share the Customer-first privacy fence;
+    # loyalty additionally proves it never takes LoyaltyAccount first.
+    "packages/guestman/shopman/guestman/tests/test_privacy_mutation_fences_postgres.py",
+    # Provas do concierge dependem de locks, conexões independentes e migrações
+    # reais; skips do lote SQLite precisam executar neste gate estrito.
+    "shopman/storefront/tests/test_concierge_authority.py",
+    "shopman/storefront/tests/test_concierge_commercial_races.py",
+    "shopman/storefront/tests/test_concierge_consent_race.py",
+    "shopman/storefront/tests/test_concierge_payment_race.py",
+    "shopman/storefront/tests/test_concierge_boundary_races.py",
+    "shopman/storefront/tests/test_concierge_whatsapp_window.py",
+    "shopman/storefront/tests/test_concierge_runtime_turns.py",
+    "shopman/storefront/tests/test_concierge_runtime_fulfillment.py",
+    "shopman/storefront/tests/test_concierge_runtime_load.py",
+    "shopman/storefront/tests/test_concierge_runtime_migration.py",
+    "shopman/storefront/tests/test_concierge_runtime_vertical.py",
     "shopman/storefront/tests/security/test_race_and_ratelimit.py",
     "shopman/shop/tests/integration/test_storefront_backstage_stress.py",
     "shopman/shop/tests/test_directive_dedupe.py",
@@ -54,8 +98,21 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     "shopman/shop/tests/test_eventstream_permissions.py",
     "shopman/shop/tests/test_payment_webhooks.py",
     "shopman/shop/tests/test_ifood_webhook.py",
+    # Public publications have no audience member. PostgreSQL renders the
+    # hydrated ``member__customer`` path as an OUTER JOIN and rejects a broad
+    # ``FOR UPDATE``; this regression only exists on the real database.
+    "shopman/shop/tests/test_marketing_delivery_postgres.py",
+    # O ciclo expand/rollback/reapply da 0053 precisa rodar no PostgreSQL real:
+    # SQLite não prova compatibilidade do writer 0052 com defaults/constraints
+    # do schema expandido nem a reversão transacional do banco de produção.
+    "shopman/shop/tests/test_marketing_capabilities.py",
     "shopman/backstage/tests/test_gateway_smoke.py",
+    "shopman/backstage/tests/test_pos_tab_revision_boundary.py",
     "shopman/backstage/tests/test_planning_idempotency_race.py",
+    "shopman/backstage/tests/test_kds_lock_order_postgresql.py",
+    # Dois relays da mesma estação não podem capturar/imprimir a mesma etiqueta.
+    # A garantia depende de SELECT FOR UPDATE SKIP LOCKED no PostgreSQL real.
+    "shopman/backstage/tests/test_production_print_jobs_postgresql.py",
     "shopman/shop/tests/test_deploy_checks.py",
     "shopman/shop/tests/test_health.py",
 )

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 
+from django.db import transaction
 from django.http import HttpRequest
 from shopman.orderman.models import Session
 from shopman.utils.monetary import format_money
@@ -53,8 +54,8 @@ class CartService:
         return request.session.get("cart_session_key")
 
     @staticmethod
-    def _customer_link(request: HttpRequest) -> dict | None:
-        """Return ``{"ref", "price_tier"}`` for the authenticated viewer, or ``None``.
+    def _customer_link(request: HttpRequest):
+        """Return the authenticated customer used for a canonical session link.
 
         Used to persist the customer's identity onto the cart session so a
         promotion/coupon gated by customer tier/segment discounts on every
@@ -72,12 +73,7 @@ class CartService:
             return None
         if customer is None:
             return None
-        return {
-            "ref": getattr(customer, "ref", "") or "",
-            "price_tier": (
-                customer.price_tier.ref if getattr(customer, "price_tier_id", None) else ""
-            ),
-        }
+        return customer
 
     @staticmethod
     def _link_customer(request: HttpRequest, session_key: str) -> bool:
@@ -87,27 +83,25 @@ class CartService:
         No-op for an anonymous viewer or when the session already carries the same
         identity, so it's cheap to call on every cart write.
         """
-        payload = CartService._customer_link(request)
-        if not payload:
+        customer = CartService._customer_link(request)
+        if customer is None:
             return False
-        session = cart_mutations.get_open_session(
-            session_key=session_key, channel_ref=CHANNEL_REF
-        )
-        if session is None:
+        from shopman.orderman.exceptions import SessionError
+
+        from shopman.shop.services import account as account_service
+        from shopman.shop.services import sessions as session_service
+
+        try:
+            return session_service.assign_customer(
+                session_key=session_key,
+                channel_ref=CHANNEL_REF,
+                customer_uuid=customer.uuid,
+            )
+        except (account_service.AccountUnavailable, SessionError):
+            # Best effort: deletion won the canonical Customer fence while the
+            # request was waiting.  Pricing continues anonymously and no stale
+            # identity is restored to the cart.
             return False
-        existing = (session.data or {}).get("customer") or {}
-        merged = dict(existing)
-        if payload["ref"]:
-            merged["ref"] = payload["ref"]
-        if payload["price_tier"]:
-            merged["price_tier"] = payload["price_tier"]
-        if merged == existing:
-            return False
-        data = dict(session.data or {})
-        data["customer"] = merged
-        session.data = data
-        session.save(update_fields=["data"])
-        return True
 
     @staticmethod
     def _get_or_create_session(request: HttpRequest) -> tuple[Session, str]:
@@ -226,6 +220,19 @@ class CartService:
         return None
 
     @staticmethod
+    @transaction.atomic
+    def clear_items(request: HttpRequest) -> None:
+        """Explicit replacement retains the authorized Session and its context."""
+        key = request.session.get("cart_session_key")
+        if not key:
+            return
+        session = cart_mutations.lock_cart_session(session_key=key, channel_ref=CHANNEL_REF)
+        if session is None or session.state != "open":
+            return
+        for line in list(session.items):
+            cart_mutations.remove_item(session_key=key, channel_ref=CHANNEL_REF, line_id=line["line_id"], sku=line["sku"])
+
+    @staticmethod
     def has_items(request: HttpRequest) -> bool:
         """Return whether the visitor has an open cart with positive-qty lines."""
         session_key = CartService._get_session_key(request)
@@ -337,4 +344,3 @@ class CartService:
 
         cart_mutations.clear_session(session_key=session_key, channel_ref=CHANNEL_REF)
         request.session.pop("cart_session_key", None)
-

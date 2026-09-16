@@ -33,15 +33,53 @@ updates:
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 5
     groups:
-      # O framework anda junto e sozinho: nuxt, nitro, devtools e vite são um
-      # organismo só (subir `nuxt` arrasta `vite` de major). PR isolado, para
-      # que o gate das superfícies fale sobre UMA mudança.
+      # O framework anda junto e sozinho: subir `nuxt` pode arrastar `vite` de
+      # major. Módulos de runtime e ferramentas de desenvolvimento ficam fora
+      # deste grupo: misturá-los recriou PRs monolíticos com lockfiles inválidos
+      # (#427/#712) e escondeu qual atualização quebrou cada suíte.
       nuxt-framework:
         patterns:
           - nuxt
-          - "@nuxt/*"
           - vite
           - "@vitejs/*"
+        update-types:
+          - minor
+          - patch
+      # Módulos Nuxt carregados pela aplicação em produção. Icon e fonts têm o
+      # mesmo perfil de risco, mas não viajam com framework, lint ou mocks.
+      nuxt-runtime-modules:
+        patterns:
+          - "@nuxt/icon"
+          - "@nuxt/fonts"
+        update-types:
+          - minor
+          - patch
+      # Cada ferramenta abaixo tem contrato e falha próprios. Mantê-las em PRs
+      # distintos permite corrigir mocks/locks sem promover runtime junto.
+      nuxt-eslint:
+        patterns:
+          - "@nuxt/eslint"
+        update-types:
+          - minor
+          - patch
+      nuxt-test-utils:
+        patterns:
+          - "@nuxt/test-utils"
+        update-types:
+          - minor
+          - patch
+      nuxt-kit:
+        patterns:
+          - "@nuxt/kit"
+        update-types:
+          - minor
+          - patch
+      # Catch-all deliberadamente posterior aos grupos específicos: o GitHub
+      # atribui uma atualização apenas ao primeiro grupo correspondente. Assim,
+      # um módulo @nuxt novo não vira PR avulso nem volta ao build-tooling.
+      nuxt-other:
+        patterns:
+          - "@nuxt/*"
         update-types:
           - minor
           - patch

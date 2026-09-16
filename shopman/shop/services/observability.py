@@ -114,6 +114,13 @@ def create_operator_alert(
         dedupe_key=dedupe_text,
         **fields,
     )
+    if severity == "critical":
+        try:
+            from shopman.shop.services.critical_alerts import enqueue
+
+            enqueue(alert)
+        except Exception:
+            logger.exception("operator_alert.external_enqueue_failed")
     return alert
 
 

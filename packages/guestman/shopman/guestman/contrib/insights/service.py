@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
+from django.db import transaction
 from django.utils.module_loading import import_string
 from shopman.guestman.contrib.insights.models import CustomerInsight
 from shopman.guestman.models import Customer
@@ -64,7 +65,18 @@ class InsightService:
         Raises:
             Customer.DoesNotExist: If customer not found
         """
-        customer = Customer.objects.get(ref=customer_ref, is_active=True)
+        with transaction.atomic():
+            customer = Customer.objects.select_for_update().get(
+                ref=customer_ref,
+                is_active=True,
+            )
+            return cls._recalculate_locked(customer)
+
+    @classmethod
+    def _recalculate_locked(cls, customer: Customer) -> CustomerInsight:
+        """Recalculate while the caller holds the canonical Customer lock."""
+
+        customer_ref = customer.ref
 
         # Get or create insight
         insight, _ = CustomerInsight.objects.get_or_create(customer=customer)

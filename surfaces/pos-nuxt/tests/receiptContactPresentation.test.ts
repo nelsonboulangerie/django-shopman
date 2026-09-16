@@ -32,25 +32,15 @@ describe("receiptContactOffer — a matriz, igual para e-mail e para CPF", () =>
     });
     expect(offer.kind).toBe("save");
     expect(offer.defaultChecked).toBe(false);
-    expect(offer.title).toContain("CPF");
+    expect(offer.title).toBe("Salvar no cadastro de Ana");
   });
 
-  // A dúvida do balcão (10/09): cliente já na comanda, CPF pedido na nota, e a
-  // pergunta "salvar?" deixava no ar se desmarcar tirava o CPF da nota ou se
-  // marcar trocava o cliente. Toda oferta abre dizendo que a nota já está
-  // decidida, e a de "salvar" diz que o cliente da comanda é quem ganha o dado.
-  it("toda oferta diz primeiro que a nota já está decidida", () => {
+  it("hint resume apenas a alteração concreta", () => {
     const save = receiptContactOffer({ field: "tax_id", typed: CPF_A, customer: { name: "Ana Prado" } });
-    expect(save.hint.startsWith("Este CPF sai na nota de qualquer jeito.")).toBe(true);
-    expect(save.hint).toContain("fica também no cadastro de Ana");
-    expect(save.hint).toContain("Desmarcado, vale só nesta venda");
-
+    expect(save.hint).toBe(`CPF: ${CPF_A}.`);
     const update = receiptContactOffer({ field: "email", typed: "contador@example.org", customer: ANA });
-    expect(update.hint.startsWith("Este e-mail recebe a nota de qualquer jeito.")).toBe(true);
-    expect(update.hint).toContain("só muda se você mandar");
-
-    const create = receiptContactOffer({ field: "tax_id", typed: CPF_A, customer: null });
-    expect(create.hint.startsWith("Este CPF sai na nota de qualquer jeito.")).toBe(true);
+    expect(update.hint).toBe("ana@example.org → contador@example.org.");
+    expect(update.title).toBe("Atualizar cadastro de Ana");
   });
 
   it("e-mail IGUAL ao do cadastro: nada a perguntar", () => {
@@ -84,34 +74,22 @@ describe("receiptContactOffer — a matriz, igual para e-mail e para CPF", () =>
     expect(offer.hint).toContain(CPF_A);
   });
 
-  it("SEM cliente identificado: 'Salvar como cliente?' vem JÁ MARCADO", () => {
-    // ⚠️ Decisão do dono, contra a recomendação de nascer desmarcado. Não
-    // "corrigir" — o que segura a transparência é a linha ficar à vista.
+  it("SEM cliente identificado: 'Salvar como cliente?' exige marcar explicitamente", () => {
     const email = receiptContactOffer({ field: "email", typed: "novo@example.org", customer: null });
     const taxId = receiptContactOffer({ field: "tax_id", typed: CPF_A, customer: null });
     expect(email.kind).toBe("create");
-    expect(email.defaultChecked).toBe(true);
+    expect(email.defaultChecked).toBe(false);
     expect(taxId.kind).toBe("create");
-    expect(taxId.defaultChecked).toBe(true);
+    expect(taxId.defaultChecked).toBe(false);
   });
 
-  // ⚠️ A CAIXA VEM MARCADA — então a consequência dita tem de ser a que
-  // acontece. O servidor resolve o contato como identidade numa venda anônima:
-  // se já houver cadastro com este e-mail, a venda vai PARA ELE, com faixa de
-  // preço e fidelidade junto. Prometer "nasce um cadastro novo" era vender uma
-  // consequência que o sistema não cumpre.
-  it("a oferta NÃO promete cadastro novo — o servidor acha quem já existe", () => {
-    const email = receiptContactOffer({ field: "email", typed: "novo@example.org", customer: null });
-    expect(email.hint).not.toContain("Nasce um cadastro novo");
-    expect(email.summaryLine).not.toContain("cadastro novo será criado");
-    expect(email.hint).toContain("ou vai para o cadastro que já o tem");
-    expect(email.summaryLine).toContain("ou vai para o cadastro que já o tem");
-    // Desmarcar segue sendo um toque, e a frase continua dizendo isso.
-    expect(email.hint).toContain("Desmarque para vender sem cadastrar");
-
-    const taxId = receiptContactOffer({ field: "tax_id", typed: CPF_A, customer: null });
-    expect(taxId.hint).toContain("Marcado, fica salvo como cliente");
-    expect(taxId.summaryLine).toContain("ou vai para o cadastro que já o tem");
+  it("salvamento novo tem título curto e valor explícito", () => {
+    for (const [field, typed] of [["email", "novo@example.org"], ["tax_id", CPF_A]] as const) {
+      const offer = receiptContactOffer({ field, typed, customer: null });
+      expect(offer.title).toBe("Salvar no cadastro");
+      expect(offer.hint).toContain(typed);
+      expect(offer.hint.length).toBeLessThan(60);
+    }
   });
 
   it("campo vazio ou incompleto não pergunta nada", () => {
@@ -140,7 +118,7 @@ describe("receiptContactChecked — o toque do operador vence o padrão", () => 
   const anonima = receiptContactOffer({ field: "email", typed: "novo@example.org", customer: null });
 
   it("sem toque, vale o padrão da oferta", () => {
-    expect(receiptContactChecked(anonima, null)).toBe(true);
+    expect(receiptContactChecked(anonima, null)).toBe(false);
   });
 
   it("desmarcar SEGURA — o padrão não volta a cada tecla", () => {
@@ -167,7 +145,7 @@ describe("receiptSaveSummary — a confirmação no resumo do fechamento", () =>
         { offer: salvar, checked: true },
         { offer: cpf, checked: false },
       ]),
-    ).toEqual(["O e-mail será salvo no cadastro de Ana."]);
+    ).toEqual(["E-mail de Ana: ana@example.org."]);
   });
 
   it("nada marcado, nada dito", () => {
@@ -241,11 +219,11 @@ describe("CPF divergente pede a SEGUNDA palavra; e-mail divergente não", () => 
     expect(offer.kind).toBe("update");
     expect(offer.requiresConfirmation).toBe(true);
     // O aviso nomeia a natureza do dano — identidade fiscal, não "um campo".
-    expect(offer.warning).toContain("identidade fiscal");
+    expect(offer.warning).toContain("CPF de Ana:");
     // E nomeia os dois documentos: o que sai e o que entra.
     expect(offer.warning).toContain(CPF_A);
     expect(offer.warning).toContain(CPF_B);
-    expect(offer.confirmPrompt).toContain("Confirmar");
+    expect(offer.confirmPrompt).toBe("Trocar CPF do cadastro?");
   });
 
   it("e-mail: continua simples — sem aviso, sem segunda palavra", () => {

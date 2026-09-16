@@ -1,0 +1,77 @@
+DEBUG 2026-09-11 17:59:53,910 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 17:59:53,910 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 17:59:53,911 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 17:59:53,911 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 17:59:53,933 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 17:59:53,934 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 17:59:53,934 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 17:59:53,935 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 17:59:53,941 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 17:59:53,941 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 17:59:53,941 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 17:59:53,942 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 17:59:53,942 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 17:59:53,943 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 17:59:53,944 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 17:59:53,944 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 17:59:53,945 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 17:59:53,945 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 17:59:53,950 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 17:59:53,950 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+DEBUG 2026-09-11 17:59:54,074 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+INFO 2026-09-11 17:59:54,582 shopman.stockman stock.receive
+DEBUG 2026-09-11 17:59:54,599 shopman.stockman.adapters.sku_validation Loaded SKU validator: shopman.shop.adapters.sku_validator.ComposedSkuValidator
+DEBUG 2026-09-11 17:59:54,642 shopman.orderman.dispatch Directive #170 is scheduled for 2026-09-11 20:59:55.638679+00:00, skipping immediate dispatch.
+INFO 2026-09-11 17:59:54,642 shopman.operational concierge.stage
+DEBUG 2026-09-11 17:59:54,797 shopman.shop.modifiers discount_modifier: no insight for customer=CUST-96EFF9FD00A9
+DEBUG 2026-09-11 17:59:54,807 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+INFO 2026-09-11 17:59:54,820 shopman.stockman stock.hold.created
+DEBUG 2026-09-11 17:59:54,828 shopman.shop.modifiers discount_modifier: no insight for customer=CUST-96EFF9FD00A9
+DEBUG 2026-09-11 17:59:54,898 shopman.shop.modifiers discount_modifier: no insight for customer=CUST-96EFF9FD00A9
+DEBUG 2026-09-11 17:59:54,902 shopman.shop.modifiers discount_modifier: no insight for customer=CUST-96EFF9FD00A9
+DEBUG 2026-09-11 17:59:54,923 shopman.shop.modifiers discount_modifier: no insight for customer=CUST-96EFF9FD00A9
+INFO 2026-09-11 17:59:54,941 shopman.operational concierge.stage
+INFO 2026-09-11 17:59:54,942 shopman.operational concierge.stage
+DEBUG 2026-09-11 17:59:54,948 shopman.orderman.dispatch Directive #171 is scheduled for 2026-09-11 20:59:55.947953+00:00, skipping immediate dispatch.
+INFO 2026-09-11 17:59:54,948 shopman.operational concierge.stage
+DEBUG 2026-09-11 17:59:54,989 shopman.shop.modifiers discount_modifier: no insight for customer=CUST-96EFF9FD00A9
+INFO 2026-09-11 17:59:55,027 shopman.stockman stock.hold.created
+INFO 2026-09-11 17:59:55,028 shopman.stockman stock.hold.released
+INFO 2026-09-11 17:59:55,029 shopman.shop.services.stock stock.hold: 1 holds for order WHATSAPP-260911-R59
+INFO 2026-09-11 17:59:55,034 shopman.shop.services.checkout checkout.process: order WHATSAPP-260911-R59 committed for channel whatsapp
+INFO 2026-09-11 17:59:55,109 shopman.shop.services.stock stock.hold: skip (holds já criados) order=WHATSAPP-260911-R59
+INFO 2026-09-11 17:59:55,118 shopman.payman Intent created
+INFO 2026-09-11 17:59:55,164 shopman.shop.services.payment payment.initiate: pix intent PAY-1D301E21D37B for order WHATSAPP-260911-R59
+INFO 2026-09-11 17:59:55,165 shopman.shop.services.notification notification.send: queued order_received for order WHATSAPP-260911-R59
+WARNING 2026-09-11 17:59:55,177 shopman.operational operator_alert.created
+INFO 2026-09-11 17:59:55,177 shopman.operational concierge.stage
+WARNING 2026-09-11 17:59:55,182 shopman.operational operator_alert.created
+INFO 2026-09-11 17:59:55,182 shopman.operational concierge.stage
+INFO 2026-09-11 17:59:55,183 shopman.operational concierge.stage
+DEBUG 2026-09-11 17:59:55,188 shopman.orderman.dispatch Directive #175 is scheduled for 2026-09-11 20:59:56.187242+00:00, skipping immediate dispatch.
+INFO 2026-09-11 17:59:55,188 shopman.operational concierge.stage
+AUDIT_IMPORTS ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/orderman/shopman/orderman'] ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/guestman/shopman/guestman']
+VERTICAL_RESULT {"duplicate_event_same_message": true, "notification_templates": ["preorder_reminder", "order_received"], "order_count": 1, "payment_intents": 1, "payment_status": "pending", "unknown_outputs": 1}
+.INFO 2026-09-11 17:59:55,590 shopman.stockman stock.receive
+DEBUG 2026-09-11 17:59:55,616 shopman.orderman.dispatch Directive #176 is scheduled for 2026-09-11 21:59:55.615329+00:00, skipping immediate dispatch.
+INFO 2026-09-11 17:59:55,642 shopman.operational operator.effect.state
+DEBUG 2026-09-11 17:59:55,645 shopman.shop.services.notification notification.deliver: no recipient for backend=manychat order=H09-ORDER, skipping
+DEBUG 2026-09-11 17:59:55,645 shopman.shop.services.notification notification.deliver: no recipient for backend=sms order=H09-ORDER, skipping
+DEBUG 2026-09-11 17:59:55,645 shopman.shop.services.notification notification.deliver: no recipient for backend=email order=H09-ORDER, skipping
+WARNING 2026-09-11 17:59:55,645 shopman.shop.services.notification notification.deliver: active notification has no recipient order=H09-ORDER template=order_cancelled
+INFO 2026-09-11 17:59:55,646 shopman.operational operator.effect.state
+WARNING 2026-09-11 17:59:55,646 shopman.orderman.dispatch Directive notification.send #177 transient failure (attempt 1/5): [transient] no active notification recipient available
+INFO 2026-09-11 17:59:55,647 shopman.shop.services.notification notification.send: queued order_cancelled for order H09-ORDER
+INFO 2026-09-11 17:59:55,647 shopman.shop.handlers.confirmation confirmation.timeout: auto-cancelled order H09-ORDER (auto_cancel mode)
+.
+2 passed in 2.05s

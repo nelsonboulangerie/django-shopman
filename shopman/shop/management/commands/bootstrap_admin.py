@@ -6,6 +6,7 @@ import os
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import check_password
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
@@ -48,7 +49,10 @@ class Command(BaseCommand):
             user.is_staff = True
             user.is_superuser = True
             user.is_active = True
-            user.set_password(password)
+            # Repetir o bootstrap não deve mudar o hash autenticador da sessão.
+            # Só uma troca real de senha encerra as sessões existentes.
+            if not check_password(password, user.password):
+                user.set_password(password)
             user.save()
 
             deactivated_seed_admin = False

@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { flushPromises } from "@vue/test-utils";
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
-import { KDS_ALERT, useKdsBoard } from "~/composables/useKdsBoard";
-import type { KDSTicketProjection } from "~/types/kds";
+import { KDS_ALERT, kdsAttentionDecision, useKdsBoard } from "~/composables/useKdsBoard";
+import { boardView } from "~/presentation/board";
+import type { KDSBoardProjection, KDSTicketProjection } from "~/types/kds";
 
 const env = installNuxtGlobals();
 
@@ -29,6 +30,9 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
     ],
     status: "in_progress",
     all_checked: false,
+    previous_tab_ref: "",
+    is_scheduled: false,
+    is_expedition: false,
     status_label: "",
     is_cancelled: false,
     cancelled_at_display: "",
@@ -48,6 +52,10 @@ function board(over: Record<string, unknown> = {}) {
       is_expedition: false,
       tickets: [ticket()],
       counts: { total: 1 },
+      service_date: "2026-09-15",
+      service_date_display: "Hoje",
+      today: "2026-09-15",
+      available_dates: ["2026-09-15"],
       cancelled_tickets: [],
       recent_done: [],
       ...over,
@@ -183,6 +191,28 @@ describe("useKdsBoard — card actions (optimistic remove + rollback)", () => {
     expect((env.fetchData.value as any).board.tickets).toHaveLength(1); // recolocado
     expect(env.sonner.error).toHaveBeenCalled();
   });
+
+  it("future boards are read-only for every mutation path", async () => {
+    env.fetchData.value = board({
+      service_date: "2026-09-16",
+      tickets: [ticket()],
+      recent_done: [ticket({ pk: 9, status: "done" })],
+      cancelled_tickets: [ticket({ pk: 7, status: "cancelled", is_cancelled: true })],
+    });
+    const { readOnly, checkItem, finalize, expedite, recall, acknowledge } = useKdsBoard("bancada");
+
+    expect(readOnly.value).toBe(true);
+    checkItem(1, 0, true);
+    finalize(1);
+    expedite(1, "dispatch");
+    recall(9);
+    acknowledge(7);
+    await flushPromises();
+
+    expect(env.fetchMock).not.toHaveBeenCalled();
+    expect((env.fetchData.value as any).board.tickets).toHaveLength(1);
+    expect((env.fetchData.value as any).board.tickets[0].items[0].checked).toBe(false);
+  });
 });
 
 describe("useKdsBoard — sound preference", () => {
@@ -194,6 +224,36 @@ describe("useKdsBoard — sound preference", () => {
     expect(soundOn.value).toBe(true);
     toggleSound();
     expect(soundOn.value).toBe(false);
+  });
+});
+
+describe("useKdsBoard — atenção por ticket e data", () => {
+  const view = () => boardView(board().board as KDSBoardProjection);
+
+  it("avisa na primeira abertura quando já existe trabalho de hoje", () => {
+    expect(kdsAttentionDecision(view(), new Set(), "").shouldAlert).toBe(true);
+  });
+
+  it("não repete depois que os mesmos tickets foram vistos", () => {
+    const decision = kdsAttentionDecision(view(), new Set(["active:1"]), "active:1");
+    expect(decision.shouldAlert).toBe(false);
+    expect(decision.shouldStop).toBe(true);
+  });
+
+  it("avisa quando a identidade muda mesmo que o total continue igual", () => {
+    const current = view();
+    current.cards = [ticket({ pk: 2 })];
+    expect(kdsAttentionDecision(current, new Set(["active:1"]), "active:1").shouldAlert).toBe(true);
+  });
+
+  it("consulta futura nunca toca e encerra alerta em curso", () => {
+    const current = view();
+    current.serviceDate = "2026-09-16";
+    expect(kdsAttentionDecision(current, new Set(), "active:1")).toEqual({
+      signature: "",
+      shouldAlert: false,
+      shouldStop: true,
+    });
   });
 });
 

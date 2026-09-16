@@ -1,0 +1,26 @@
+REGRESSÃO DE DISPONIBILIDADE APÓS HOLD VENCIDO — 2026-09-11
+
+Defeito comprovado
+- Canal web com waitlist habilitada e horizon_days=2.
+- Produto com shelf_life_days=0 e estoque físico fresco no dia.
+- Depois da expiração do hold da sacola, a implementação anterior consultava Stockman diretamente na data final do horizonte.
+- Resultado observado na sessão sintética: qty=3, is_available=false, available_qty=0, checkout_block_reason=unavailable.
+- Na mesma base, a consulta canônica hoje/próxima fornada retornava total_promisable=184 e ready_physical=142.
+
+Correção
+- A projeção da sacola passou a consumir catalog_context.availability_for_skus, a mesma fonte canônica do cardápio/PDP.
+- availability.decide sem data explícita passou a escolher a data por reserve_target_date: hoje quando a pronta-entrega cobre a quantidade; caso contrário, a primeira fornada elegível.
+- Não houve alteração do horizonte de dois dias nem criação de regra ou estado paralelo.
+
+Regressão determinística
+- Cria produto com validade zero, ativa waitlist, recebe 3 unidades hoje, reserva 3, vence o hold e recebe outras 3 hoje.
+- Exige decisão aprovada com available_qty=6, linha disponível, ausência do banner e checkout habilitado.
+- Comando direcionado: python scripts/run_storefront_operational_tests.py shopman/storefront/tests/web/test_waitlist_admission.py shopman/storefront/tests/web/test_projections_cart.py shopman/shop/tests/test_waitlist_lifecycle.py shopman/shop/tests/integration/test_untracked_gate_and_lead_time.py
+- Suítes direcionadas: 84 passed, 1 skipped por condição declarada.
+- Comando amplo: python scripts/run_storefront_operational_tests.py shopman/storefront shopman/shop/tests/test_waitlist_lifecycle.py shopman/shop/tests/integration/test_untracked_gate_and_lead_time.py
+- Storefront completo + lifecycle da fila + integração de lead time: 1551 passed, 6 skipped exclusivos das condições declaradas pela suíte SQLite.
+- git diff --check: passou.
+
+Auditoria do horizonte
+- Após a correção, promise_horizon é chamado somente pelo serviço de waitlist que enumera datas candidatas de fornadas futuras.
+- O valor 2 foi introduzido como política configurável preexistente; sua adequação operacional não foi medida por este ensaio.

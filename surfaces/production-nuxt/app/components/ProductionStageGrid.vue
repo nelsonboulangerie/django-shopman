@@ -86,12 +86,6 @@ const tomorrowISO = isoForOffset(1);
 const isCustomDate = computed(
   () => selectedDate.value !== todayISO && selectedDate.value !== tomorrowISO,
 );
-const customDateInput = ref<HTMLInputElement | null>(null);
-function openCustomDate() {
-  customDateInput.value?.showPicker?.();
-  customDateInput.value?.focus();
-}
-
 // ── Filtro por ficha-base (higiene visual por grupo de massa) ───────────────
 const baseFilter = ref("");
 const baseOptions = computed(() => board.value?.base_recipes ?? []);
@@ -562,7 +556,7 @@ const headerCount = computed(() => {
           <!-- Seletor segmentado de data; mantém três escolhas no mesmo gesto compacto. -->
           <button
             type="button"
-            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
               selectedDate === todayISO
                 ? 'bg-primary text-primary-foreground'
@@ -575,7 +569,7 @@ const headerCount = computed(() => {
           </button>
           <button
             type="button"
-            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
               selectedDate === tomorrowISO
                 ? 'bg-primary text-primary-foreground'
@@ -586,27 +580,24 @@ const headerCount = computed(() => {
           >
             Amanhã
           </button>
-          <button
-            type="button"
-            class="relative rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+          <label
+            class="date-input-hit-area relative inline-flex min-h-11 cursor-pointer items-center rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
               isCustomDate
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:bg-accent hover:text-foreground'
             "
-            :aria-pressed="isCustomDate"
-            @click="openCustomDate()"
           >
-            {{ isCustomDate ? weekdayLabel(selectedDate) : "Outra data" }}
+            <span aria-hidden="true">
+              {{ isCustomDate ? weekdayLabel(selectedDate) : "Outra data" }}
+            </span>
             <input
-              ref="customDateInput"
               v-model="selectedDate"
               type="date"
               class="absolute inset-0 cursor-pointer opacity-0"
               aria-label="Escolher outra data"
-              tabindex="-1"
             />
-          </button>
+          </label>
         </div>
         <span class="text-sm text-muted-foreground">{{
           fullDateLabel(selectedDate)
@@ -644,7 +635,7 @@ const headerCount = computed(() => {
         <p class="text-sm">Estamos tentando reconectar sozinhos.</p>
         <UiButton
           type="button"
-          class="mt-1"
+          class="mt-1 min-h-11"
           variant="outline"
           size="sm"
           @click="refresh()"
@@ -674,7 +665,7 @@ const headerCount = computed(() => {
           <NuxtLink
             v-if="emptyCopy.to"
             :to="emptyCopy.to"
-            class="text-sm text-primary underline-offset-2 hover:underline"
+            class="inline-flex min-h-11 items-center text-sm text-primary underline-offset-2 hover:underline"
           >
             {{ emptyCopy.cta }}
           </NuxtLink>

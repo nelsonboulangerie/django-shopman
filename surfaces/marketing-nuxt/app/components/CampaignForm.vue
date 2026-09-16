@@ -550,7 +550,9 @@ function submit() {
       @discard="draft.discard()"
     />
     <div>
-      <label for="rule-name" class="mb-1 block text-xs font-medium text-muted-foreground"
+      <label
+        for="rule-name"
+        class="mb-1 block text-xs font-medium text-muted-foreground"
         >Nome da campanha</label
       >
       <UiInput
@@ -563,14 +565,12 @@ function submit() {
 
     <div class="grid gap-4 sm:grid-cols-2">
       <div>
-        <label for="rule-trigger" class="mb-1 block text-xs font-medium text-muted-foreground"
+        <label
+          for="rule-trigger"
+          class="mb-1 block text-xs font-medium text-muted-foreground"
           >Quando acontecer</label
         >
-        <UiNativeSelect
-          id="rule-trigger"
-          v-model="trigger"
-          class="w-full"
-        >
+        <UiNativeSelect id="rule-trigger" v-model="trigger" class="w-full">
           <option
             v-for="choice in triggers"
             :key="choice.value"
@@ -582,14 +582,12 @@ function submit() {
       </div>
 
       <div>
-        <label for="rule-template" class="mb-1 block text-xs font-medium text-muted-foreground"
+        <label
+          for="rule-template"
+          class="mb-1 block text-xs font-medium text-muted-foreground"
           >Usar o modelo</label
         >
-        <UiNativeSelect
-          id="rule-template"
-          v-model="templateId"
-          class="w-full"
-        >
+        <UiNativeSelect id="rule-template" v-model="templateId" class="w-full">
           <option
             v-for="template in templates"
             :key="template.pk"
@@ -628,14 +626,12 @@ function submit() {
          para a oferta e o clique monta a sacola com o preço resolvido NA HORA — não no
          envio, que é quando o preço envelheceria. -->
     <div v-if="offers.length">
-      <label for="rule-offer" class="mb-1 block text-xs font-medium text-muted-foreground"
+      <label
+        for="rule-offer"
+        class="mb-1 block text-xs font-medium text-muted-foreground"
         >Anunciar a oferta</label
       >
-      <UiNativeSelect
-        id="rule-offer"
-        v-model="promotionRef"
-        class="w-full"
-      >
+      <UiNativeSelect id="rule-offer" v-model="promotionRef" class="w-full">
         <option value="">Nenhuma — só contar a novidade</option>
         <option v-for="offer in offers" :key="offer.value" :value="offer.value">
           {{ offer.label }}
@@ -652,7 +648,9 @@ function submit() {
       v-if="schedules"
       class="rounded-lg border border-border bg-card p-4"
     >
-      <legend class="px-1 text-xs font-medium text-muted-foreground">Quando disparar</legend>
+      <legend class="px-1 text-xs font-medium text-muted-foreground">
+        Quando disparar
+      </legend>
 
       <div class="flex gap-2">
         <!-- Segmentos nativos mantêm aria-pressed e a troca exclusiva sem fingir envio de formulário. -->
@@ -677,7 +675,9 @@ function submit() {
       </div>
 
       <div v-if="scheduleKind === 'once'" class="mt-3">
-        <label for="rule-once-at" class="mb-1 block text-xs font-medium text-muted-foreground"
+        <label
+          for="rule-once-at"
+          class="mb-1 block text-xs font-medium text-muted-foreground"
           >Dia e hora</label
         >
         <div class="flex flex-wrap items-center gap-2">
@@ -741,9 +741,7 @@ function submit() {
           class="mt-1 text-xs text-muted-foreground"
         >
           Instante exato:
-          {{
-            scheduleSummary(onceResolution.candidate.instant, timezoneName)
-          }}
+          {{ scheduleSummary(onceResolution.candidate.instant, timezoneName) }}
           · UTC{{ onceResolution.candidate.offset }}.
         </p>
         <p class="mt-1 text-xs text-muted-foreground">
@@ -753,7 +751,9 @@ function submit() {
 
       <div v-else class="mt-3 space-y-3">
         <div>
-          <label for="rule-fire-at" class="mb-1 block text-xs font-medium text-muted-foreground"
+          <label
+            for="rule-fire-at"
+            class="mb-1 block text-xs font-medium text-muted-foreground"
             >Hora</label
           >
           <UiInput
@@ -792,7 +792,10 @@ function submit() {
 
         <div class="grid gap-3 sm:grid-cols-2">
           <div>
-            <label for="rule-starts-on" class="mb-1 block text-xs font-medium text-muted-foreground">
+            <label
+              for="rule-starts-on"
+              class="mb-1 block text-xs font-medium text-muted-foreground"
+            >
               Começar em (opcional)
             </label>
             <UiInput
@@ -803,7 +806,10 @@ function submit() {
             />
           </div>
           <div>
-            <label for="rule-ends-on" class="mb-1 block text-xs font-medium text-muted-foreground">
+            <label
+              for="rule-ends-on"
+              class="mb-1 block text-xs font-medium text-muted-foreground"
+            >
               Parar depois de (opcional)
             </label>
             <UiInput
@@ -838,7 +844,9 @@ function submit() {
     </p>
 
     <fieldset>
-      <legend class="mb-1 text-xs font-medium text-muted-foreground">Entregar por</legend>
+      <legend class="mb-1 text-xs font-medium text-muted-foreground">
+        Entregar por
+      </legend>
       <div class="flex flex-wrap gap-1.5">
         <!-- Checkboxes nativos sr-only preservam semântica enquanto as pílulas ampliam os alvos. -->
         <label
@@ -862,14 +870,19 @@ function submit() {
         </label>
       </div>
       <p class="mt-1.5 text-xs text-muted-foreground">
-        Instagram, Facebook e Google criam uma publicação pública por plataforma.
+        Instagram, Facebook e Google criam uma postagem pública por plataforma.
         WhatsApp envia uma mensagem por pessoa elegível. Mensagens diretas do
         Instagram ainda não fazem parte deste app.
       </p>
     </fieldset>
 
-    <fieldset class="rounded-lg border border-border p-3">
-      <legend class="px-1 text-xs font-medium text-muted-foreground">Avisar quem</legend>
+    <fieldset
+      v-if="platforms.includes('whatsapp')"
+      class="rounded-lg border border-border p-3"
+    >
+      <legend class="px-1 text-xs font-medium text-muted-foreground">
+        Avisar quem
+      </legend>
       <div class="space-y-2.5">
         <!-- Checkboxes permanecem nativos porque não há primitivo compartilhado de seleção binária. -->
         <label class="flex items-center gap-2 text-sm">
@@ -885,13 +898,17 @@ function submit() {
              prateleira. Quem escolhe o eixo é o servidor, pela natureza do produto, e
              o gestor não tem como (nem por que) separar os dois aqui. -->
         <label class="flex items-start gap-2 text-sm">
-          <input v-model="alerts" type="checkbox" class="mt-0.5 size-4 rounded border-border">
+          <input
+            v-model="alerts"
+            type="checkbox"
+            class="mt-0.5 size-4 rounded border-border"
+          />
           <span>
             Quem pediu "me avise" deste produto
             <span class="block text-xs text-muted-foreground">
               A fila do sino da loja: fornada para pão, reposição para o resto.
             </span>
-           </span>
+          </span>
         </label>
         <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->
         <div class="flex flex-wrap items-center gap-2 text-sm">
@@ -1090,6 +1107,14 @@ function submit() {
       </p>
     </fieldset>
 
+    <p
+      v-else
+      class="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+    >
+      Estas publicações vão para o público geral das plataformas. A lista de
+      contatos só é usada quando o WhatsApp está selecionado.
+    </p>
+
     <!-- Checkboxes permanecem nativos porque não há primitivo compartilhado de seleção binária. -->
     <div class="space-y-2.5">
       <label class="flex items-center gap-2 text-sm">
@@ -1100,10 +1125,7 @@ function submit() {
         />
         Revisar antes de publicar
       </label>
-      <p
-        v-if="!requiresApproval"
-        class="pl-6 text-xs text-warning"
-      >
+      <p v-if="!requiresApproval" class="pl-6 text-xs text-warning">
         Sem revisão, o anúncio sai sozinho assim que o evento acontecer.
       </p>
       <!-- Número nativo compacto mantém v-model.number e a unidade visível na mesma linha. -->

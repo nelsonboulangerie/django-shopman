@@ -2,7 +2,7 @@
 
 Discovers the shop with no account, browses the catalogue, fills a bag, logs in
 by phone OTP at checkout, pays with PIX and follows the order. The order is born
-from an anonymous session; the customer identity is materialised at/after commit.
+from an anonymous bag, with a phone-authenticated customer before commit.
 
 Everything runs through the real ``web`` channel config (optimistic auto-confirm,
 PIX paid after the store confirms).
@@ -29,9 +29,9 @@ allow_mock_payment = override_settings(SHOPMAN_EXPOSE_MOCK_CAPTURE=True)
 SKU = "PAO-FRANCES"
 
 
-def _seed(stock_qty=10):
+def _seed(stock_qty=10, *, allow_cash=False):
     J.seed_shop()
-    J.seed_web_channel()
+    J.seed_web_channel(allow_cash=allow_cash)
     collection = J.seed_collection()
     J.seed_product(SKU, "Pão Francês", 90, collection=collection, stock_qty=stock_qty)
 
@@ -120,7 +120,7 @@ def test_full_journey_browse_cart_otp_pix_track(client, django_capture_on_commit
 
 def test_full_journey_pickup_cash(client):
     """Simplest complete journey: browse → cart → cash pickup → tracking."""
-    _seed(stock_qty=5)
+    _seed(stock_qty=5, allow_cash=True)
 
     J.otp_login(client, J.DEFAULT_PHONE)
     status, add = J.set_cart_qty(client, SKU, 1)
@@ -143,7 +143,7 @@ def test_checkout_empty_cart_is_rejected(client):
     _seed(stock_qty=5)
     J.otp_login(client, J.DEFAULT_PHONE)
 
-    status, body = J.checkout(client, payment_method="cash")
+    status, body = J.checkout(client, payment_method="pix")
     assert status == 400, body
     assert "vazia" in body["detail"].lower()
 
@@ -160,16 +160,11 @@ def test_add_beyond_stock_is_rejected_with_rich_payload(client):
     assert any(a["ref"] == "set_available_qty" for a in body["actions"])
 
 
-def test_checkout_missing_phone_is_rejected(client):
+def test_checkout_uses_authenticated_phone_when_form_phone_is_blank(client):
     _seed(stock_qty=5)
-    J.otp_login(client, J.DEFAULT_PHONE)
+    assert J.otp_login(client, J.DEFAULT_PHONE)["status"] == 200
     J.set_cart_qty(client, SKU, 1)
-
-    import json
-
-    resp = client.post(
-        "/api/v1/checkout/",
-        data=json.dumps({"name": "Ana", "payment_method": "cash", "fulfillment_type": "pickup"}),
-        content_type="application/json",
-    )
-    assert resp.status_code == 400, resp.content
+    status, body = J.checkout(client, phone="", payment_method="pix")
+    assert status == 201, body
+    order = Order.objects.get(ref=body["order_ref"])
+    assert order.handle_ref == J.DEFAULT_PHONE

@@ -8,10 +8,17 @@ class SetSkuQtySerializer(serializers.Serializer):
     qty = serializers.IntegerField(min_value=0, max_value=99)
 
 
+class CheckoutAddressLabelSerializer(serializers.Serializer):
+    key = serializers.ChoiceField(choices=["home", "work", "other"])
+    custom = serializers.CharField(required=False, default="", allow_blank=True, max_length=120)
+
+
 class CheckoutSerializer(serializers.Serializer):
+    address_label = CheckoutAddressLabelSerializer(required=False)
     idempotency_key = serializers.CharField(required=False, default="", allow_blank=True, max_length=120)
     name = serializers.CharField(max_length=120)
-    phone = serializers.CharField(max_length=32)
+    # Compatibility input only: checkout uses the authenticated customer phone.
+    phone = serializers.CharField(required=False, allow_blank=True, max_length=32)
     notes = serializers.CharField(required=False, default="", allow_blank=True, max_length=500)
     fulfillment_type = serializers.ChoiceField(
         choices=["pickup", "delivery"],
@@ -25,7 +32,7 @@ class CheckoutSerializer(serializers.Serializer):
     delivery_instructions = serializers.CharField(required=False, default="", allow_blank=True, max_length=500)
     delivery_date = serializers.CharField(required=False, default="", allow_blank=True, max_length=32)
     delivery_time_slot = serializers.CharField(required=False, default="", allow_blank=True, max_length=32)
-    payment_method = serializers.CharField(required=False, default="", allow_blank=True, max_length=32)
+    payment_method = serializers.CharField(max_length=32)
     # Troco para entrega em dinheiro ("50", "50,00") — o entregador precisa saber.
     change_for = serializers.CharField(required=False, default="", allow_blank=True, max_length=32)
     use_loyalty = serializers.BooleanField(required=False, default=False)
@@ -44,6 +51,7 @@ class CheckoutSerializer(serializers.Serializer):
     # certo. Superfícies com operador presente (PDV) commitam por outro caminho
     # (`shop/services/pos.py`) e não passam por aqui.
     expected_total_q = serializers.IntegerField(required=True, min_value=0)
+    expected_revision = serializers.IntegerField(required=True, min_value=0)
     # Omotenashi: lembrar endereço/escolhas é o default; o cliente desmarca o toggle
     # "Salvar para a próxima vez" → save_as_default=false. (O endereço novo salva sempre.)
     save_as_default = serializers.BooleanField(required=False, default=True)
@@ -60,6 +68,7 @@ class CheckoutResponseSerializer(serializers.Serializer):
     order_ref = serializers.CharField()
     status = serializers.CharField()
     next_url = serializers.CharField(required=False)
+    convenience_pending = serializers.ListField(child=serializers.CharField(), required=False)
 
 
 class DetailSerializer(serializers.Serializer):
@@ -114,6 +123,80 @@ class AvailabilityResponseSerializer(serializers.Serializer):
     badge_text = serializers.CharField()
     badge_class = serializers.CharField()
     is_bundle = serializers.BooleanField()
+
+
+class StockAlertSubscribeRequestSerializer(serializers.Serializer):
+    # Required for a direct authenticated opt-in. A same-session ``intent_ref``
+    # may instead carry the explicit declaration captured before login.
+    adult_declared = serializers.BooleanField(required=False)
+    intent_ref = serializers.CharField(required=False, allow_blank=True, max_length=64)
+    alert_type = serializers.ChoiceField(
+        choices=["stock_back", "production_ready"],
+        required=False,
+        allow_blank=True,
+    )
+
+
+class StockAlertIntentRequestSerializer(serializers.Serializer):
+    adult_declared = serializers.BooleanField(required=True)
+
+
+class StockAlertIntentResponseSerializer(serializers.Serializer):
+    ok = serializers.BooleanField()
+    intent_ref = serializers.CharField(max_length=64)
+    expires_at = serializers.DateTimeField()
+
+
+class StockAlertSubscribeResponseSerializer(serializers.Serializer):
+    ok = serializers.BooleanField()
+    subscription_ref = serializers.UUIDField(required=False)
+    active = serializers.BooleanField(required=False)
+    expires_at = serializers.DateTimeField(allow_null=True, required=False)
+    management_url = serializers.URLField(required=False)
+
+
+class StockAlertAuthRequiredResponseSerializer(serializers.Serializer):
+    detail = serializers.CharField()
+    field = serializers.ChoiceField(choices=["auth"])
+    auth_required = serializers.BooleanField()
+
+
+class StockAlertSessionStateSerializer(serializers.Serializer):
+    active = serializers.BooleanField()
+    management_url = serializers.URLField()
+
+
+class StockAlertSubscriptionRefSerializer(serializers.Serializer):
+    subscription_ref = serializers.UUIDField()
+
+
+class StockAlertSubscriptionControlRequestSerializer(StockAlertSubscriptionRefSerializer):
+    action = serializers.ChoiceField(choices=["pause", "resume"])
+
+
+class StockAlertSubscriptionControlResponseSerializer(serializers.Serializer):
+    ok = serializers.BooleanField()
+    active = serializers.BooleanField(required=False)
+    cancelled = serializers.BooleanField(required=False)
+
+
+class StockAlertManagementActionSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=["pause", "resume"])
+
+
+class StockAlertManagementStateSerializer(serializers.Serializer):
+    ok = serializers.BooleanField()
+    sku = serializers.CharField()
+    product_name = serializers.CharField()
+    event_label = serializers.CharField()
+    state = serializers.ChoiceField(choices=["active", "paused", "cancelled"])
+    can_pause = serializers.BooleanField()
+    can_resume = serializers.BooleanField()
+    can_cancel = serializers.BooleanField()
+    suppressed_deliveries = serializers.IntegerField(min_value=0)
+    accepted_deliveries = serializers.IntegerField(min_value=0)
+    unresolved_deliveries = serializers.IntegerField(min_value=0)
+    delivery_note = serializers.CharField()
 
 
 class ReverseGeocodeRequestSerializer(serializers.Serializer):
@@ -219,6 +302,23 @@ class PickupInfoSerializer(serializers.Serializer):
     directions_url = serializers.CharField(allow_null=True, required=False)
 
 
+class CancellationRequestProjectionSerializer(serializers.Serializer):
+    protocol = serializers.CharField()
+    requested_at_display = serializers.CharField()
+    title = serializers.CharField()
+    message = serializers.CharField()
+
+
+class CancellationRequestInputSerializer(serializers.Serializer):
+    reason = serializers.CharField(
+        allow_blank=True,
+        required=False,
+        default="",
+        max_length=500,
+        trim_whitespace=True,
+    )
+
+
 class OrderTrackingCopySerializer(serializers.Serializer):
     page_kicker = serializers.CharField()
     order_ref_label = serializers.CharField()
@@ -281,6 +381,7 @@ class OrderTrackingCopySerializer(serializers.Serializer):
 
 
 class OrderTrackingSerializer(serializers.Serializer):
+    convenience_pending = serializers.ListField(child=serializers.CharField(), required=False)
     ref = serializers.CharField()
     status = serializers.CharField()
     status_label = serializers.CharField()
@@ -311,6 +412,7 @@ class OrderTrackingSerializer(serializers.Serializer):
     # Cancelamento pelo estabelecimento: motivo + estorno visíveis ao cliente.
     cancellation_note = serializers.CharField(allow_blank=True, required=False)
     refund_status_label = serializers.CharField(allow_null=True, required=False)
+    cancellation_request = CancellationRequestProjectionSerializer(allow_null=True, required=False)
     payment_expires_at = serializers.CharField(allow_null=True, required=False)
     # Fusão PAYMENT-TRACKING-MERGE: sem tela de pagamento à parte. O bloco é
     # inline; a captura simulada (DEBUG/staging) é sinalizada aqui.

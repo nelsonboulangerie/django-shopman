@@ -1,0 +1,57 @@
+{
+  "artifact_type": "local_contract_fixture_not_provider_export",
+  "version": 2,
+  "published": false,
+  "activation_gates": [
+    "G01",
+    "G02",
+    "G03",
+    "G04",
+    "G07"
+  ],
+  "request": {
+    "method": "POST",
+    "path": "/api/webhooks/manychat/conversation/",
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Api-Key": "<existing-concierge-key-or-access-link-key>"
+    },
+    "body": {
+      "subscriber_id": "opaque:customer",
+      "text": "#c Quero falar com alguém",
+      "first_name": "Cliente sintético",
+      "last_name": "Teste",
+      "event_id": "sandbox-provider-event-0001"
+    }
+  },
+  "responses": {
+    "200:queued": "Recebimento durável apenas; não afirmar pedido/pagamento/resposta enviada.",
+    "200:duplicate": "Evento já aceito; trabalho recuperado sem duplicar intenção.",
+    "200:handoff": "Manter caminho humano existente; campo concierge_handoff é espelho.",
+    "200:disabled": "Continuar caminho humano aprovado; não chamar IA.",
+    "200:event_id_required": "Conter automação; corrigir contrato do evento ou encaminhar humano.",
+    "409": "Identidade reutilizada com payload diferente: triagem; nunca criar novo event_id automaticamente.",
+    "429": "Aguardar e repetir o mesmo evento/payload segundo política homologada.",
+    "500": "Resultado incerto: preservar mesmo evento/payload; nunca gerar intenção nova."
+  },
+  "routing": {
+    "entry": "existing_keyword_#c_closed_cohort_only",
+    "default_reply_change": false,
+    "human_field": "concierge_handoff",
+    "human_surface": "ManyChat Live Chat",
+    "return": "Apenas após sincronização confirmada e capacidade autorizada.",
+    "existing_flow_name": "Concierge (piloto)",
+    "existing_flow_ns": "content20260904134021_491685"
+  },
+  "pending_supplier_evidence": [
+    "event_id stable source",
+    "sandbox ACK mapping",
+    "handoff field behavior",
+    "provider flow export and hash"
+  ],
+  "configuration": {
+    "account_id": "set_from_verified_getInfo_account_id_in_environment",
+    "contract_version": 2,
+    "activation": "pending_native_flow_event_identity_proof"
+  }
+}

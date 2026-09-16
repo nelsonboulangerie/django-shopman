@@ -89,6 +89,8 @@ export function makeSale(opts: HarnessOptions = {}) {
 
   const scope = effectScope();
   const sale = scope.run(() => usePosSale(deps))!;
+  // Cenários de pagamento partem de recebimento escolhido pelo operador.
+  sale.cart.fulfillmentConfirmed = true;
 
   return {
     sale,

@@ -1,0 +1,556 @@
+DEBUG 2026-09-11 05:42:23,363 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 05:42:23,363 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 05:42:23,363 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 05:42:23,364 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 05:42:23,371 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 05:42:23,372 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 05:42:23,373 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 05:42:23,374 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 05:42:23,379 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 05:42:23,380 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 05:42:23,380 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 05:42:23,381 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 05:42:23,395 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 05:42:23,396 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 05:42:23,396 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 05:42:23,397 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 05:42:23,397 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 05:42:23,397 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 05:42:23,401 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 05:42:23,402 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+DEBUG 2026-09-11 05:42:23,468 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-11 05:42:23,763 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-11 05:42:24,826 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+DEBUG 2026-09-11 05:42:28,703 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:28,710 shopman.stockman.adapters.sku_validation Loaded SKU validator: shopman.shop.adapters.sku_validator.ComposedSkuValidator
+DEBUG 2026-09-11 05:42:28,717 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:28,756 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:28,767 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:28,791 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:28,799 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:28,822 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:28,832 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:28,858 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:28,865 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:28,892 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:28,901 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:28,925 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:28,934 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:28,957 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:28,967 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:28,990 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:28,998 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,024 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,032 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,057 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,065 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,089 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,097 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,121 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,129 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,152 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,161 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,184 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,193 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,217 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,225 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,253 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,261 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,284 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,294 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,317 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,326 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,350 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,358 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,382 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,391 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,414 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,423 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,445 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,454 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,480 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+DEBUG 2026-09-11 05:42:29,487 shopman.shop.services.availability availability._expand_if_bundle degraded; returning None
+Traceback (most recent call last):
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/services/availability.py", line 410, in _expand_if_bundle
+    components = catalog.expand_bundle(sku, qty)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/shopman/shop/adapters/catalog.py", line 27, in expand_bundle
+    return CatalogService.expand(sku, qty)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/shopman-storefront-execution-20260910/packages/offerman/shopman/offerman/service.py", line 221, in expand
+    raise CatalogError("NOT_A_BUNDLE", sku=sku)
+shopman.offerman.exceptions.CatalogError: [NOT_A_BUNDLE] SKU is not a bundle
+STOREFRONT_LOCAL_BUDGET {"samples": 24, "successes": 24, "p95_ms": 36.41, "max_ms": 456.54, "budget_ms": 1500, "scope": "Django test client + postgresql; no browser/network/humans"}
+.DEBUG 2026-09-11 05:42:29,517 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+
+1 passed in 6.65s

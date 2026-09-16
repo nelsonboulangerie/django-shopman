@@ -22,9 +22,11 @@
 // O roteador casa `/display/` com a mesma página; o nome é o que não muda.
 const route = useRoute();
 const isCustomerDisplay = computed(() => route.name === "display");
+useOperatorWindowTitle("PDV");
 </script>
 
 <template>
   <PosCustomerDisplayShell v-if="isCustomerDisplay" />
   <PosOperatorShell v-else />
+  <OperatorPwaRuntime :show-prompts="!isCustomerDisplay" />
 </template>

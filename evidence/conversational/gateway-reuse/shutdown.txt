@@ -1,0 +1,8 @@
+COMMAND ['redis-cli', '-h', '127.0.0.1', '-p', '56430', 'SHUTDOWN', 'NOSAVE']
+EXIT 0
+
+COMMAND ['pg_ctl', '-D', '/var/folders/26/_q6qdvgd7ng__s8yvxymfy2h0000gn/T/concierge-gateway-reuse-20260911-3ylhpikw/pg', '-m', 'fast', 'stop']
+EXIT 0
+waiting for server to shut down.... done
+server stopped
+

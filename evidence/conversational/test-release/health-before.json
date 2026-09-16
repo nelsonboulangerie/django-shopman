@@ -1,0 +1,14 @@
+[
+  {
+    "url": "https://api.boulangerie.com.br/health/",
+    "status": 200
+  },
+  {
+    "url": "https://api.boulangerie.com.br/ready/",
+    "status": 200
+  },
+  {
+    "url": "https://mkt.boulangerie.com.br/health/ready",
+    "status": 200
+  }
+]

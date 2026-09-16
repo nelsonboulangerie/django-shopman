@@ -1,4 +1,5 @@
 import tailwindcss from "@tailwindcss/vite";
+import { definePwaCapability } from "../operator-kit/pwa.config";
 
 export default defineNuxtConfig({
   extends: ["../operator-kit"],
@@ -20,6 +21,29 @@ export default defineNuxtConfig({
   },
 
   modules: [
+    definePwaCapability({
+      app: "purchase",
+      display: "standalone",
+      wakeLock: false,
+      kiosk: false,
+      push: { surfaceRef: "purchase", categories: ["purchase"] },
+      manifest: {
+        name: "Compras",
+        shortName: "Compras",
+        description: "Compras e recebimento de insumos.",
+        themeColor: "#FFFFFF",
+        backgroundColor: "#FAFAF9",
+        orientation: "any",
+        icons: [
+          { src: "/pwa/pwa-192x192.png?v=2", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/pwa/pwa-512x512.png?v=2", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/pwa/maskable-512x512.png?v=2", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        ],
+        shortcuts: [
+          { name: "Recebimento", shortName: "Receber", url: "/?view=receive", icon: "/pwa/pwa-192x192.png?v=2" },
+        ],
+      },
+    }),
     "@nuxtjs/color-mode",
     "motion-v/nuxt",
     "@vueuse/nuxt",

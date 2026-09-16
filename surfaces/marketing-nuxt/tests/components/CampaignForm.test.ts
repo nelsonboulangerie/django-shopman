@@ -24,11 +24,16 @@ const PLATFORMS = [
   { value: "instagram", label: "Instagram" },
 ];
 const TEMPLATES = [
-  { pk: 1, name: "Relâmpago", body: "oi", variables: [], use_ai_generation: false, image_source: "" },
+  {
+    pk: 1,
+    name: "Relâmpago",
+    body: "oi",
+    variables: [],
+    use_ai_generation: false,
+    image_source: "",
+  },
 ];
-const OFFERS = [
-  { value: "relampago-17h30", label: "Relâmpago das 17h30" },
-];
+const OFFERS = [{ value: "relampago-17h30", label: "Relâmpago das 17h30" }];
 const PRICE_TIERS = [{ value: "atacado", label: "Atacado" }];
 const TAGS = [{ value: "sem-gluten", label: "Sem glúten" }];
 const RFM_SEGMENTS = [{ value: "loyal_customer", label: "Cliente fiel" }];
@@ -76,7 +81,9 @@ describe("CampaignForm — a oferta anunciada", () => {
 
     await wrapper.find("form").trigger("submit");
 
-    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
     expect(payload.promotion_ref).toBe("");
   });
 
@@ -86,21 +93,28 @@ describe("CampaignForm — a oferta anunciada", () => {
     await wrapper.find("#rule-offer").setValue("relampago-17h30");
     await wrapper.find("form").trigger("submit");
 
-    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
     expect(payload.promotion_ref).toBe("relampago-17h30");
   });
 
   it("relê a oferta da regra aberta", () => {
     const wrapper = form(makeRule({ promotion_ref: "relampago-17h30" }));
-    expect((wrapper.find("#rule-offer").element as HTMLSelectElement).value)
-      .toBe("relampago-17h30");
+    expect(
+      (wrapper.find("#rule-offer").element as HTMLSelectElement).value,
+    ).toBe("relampago-17h30");
   });
 
   it("some quando não há oferta viva — seletor vazio não ajuda ninguém", () => {
     const wrapper = mount(CampaignForm, {
       props: {
-        rule: null, triggers: TRIGGERS, platformOptions: PLATFORMS,
-        templates: TEMPLATES as never, offers: [], platformLabels: {},
+        rule: null,
+        triggers: TRIGGERS,
+        platformOptions: PLATFORMS,
+        templates: TEMPLATES as never,
+        offers: [],
+        platformLabels: {},
       },
       global: { stubs: { Icon: true, UiNativeSelect: UiNativeSelectStub } },
     });
@@ -113,10 +127,24 @@ describe("CampaignForm — natureza de cada saída", () => {
     const text = form(makeRule()).text();
 
     expect(text).toContain("Entregar por");
-    expect(text).toContain("uma publicação pública por plataforma");
+    expect(text).toContain("uma postagem pública por plataforma");
     expect(text).toContain("WhatsApp envia uma mensagem por pessoa elegível");
     expect(text).toContain(
       "Mensagens diretas do Instagram ainda não fazem parte deste app",
+    );
+  });
+
+  it("só pede público quando há mensagem direta por WhatsApp", () => {
+    const direct = form(makeRule({ platforms: ["whatsapp"] }));
+    const publicOnly = form(makeRule({ platforms: ["instagram"] }));
+
+    expect(direct.text()).toContain("Avisar quem");
+    expect(direct.text()).not.toContain(
+      "Estas publicações vão para o público geral",
+    );
+    expect(publicOnly.text()).not.toContain("Avisar quem");
+    expect(publicOnly.text()).toContain(
+      "Estas publicações vão para o público geral",
     );
   });
 });
@@ -135,10 +163,12 @@ describe("CampaignForm — quando disparar", () => {
   it("monta o JSON que o serviço lê, com a semana toda implícita", async () => {
     const wrapper = form(makeRule());
 
-    await wrapper.find("input[type=\"time\"]").setValue("17:30");
+    await wrapper.find('input[type="time"]').setValue("17:30");
     await wrapper.find("form").trigger("submit");
 
-    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
     expect(payload.schedule).toEqual({
       type: "recurring",
       timezone: "America/Sao_Paulo",
@@ -149,20 +179,30 @@ describe("CampaignForm — quando disparar", () => {
   it("manda só os dias marcados", async () => {
     const wrapper = form(makeRule());
 
-    const days = wrapper.findAll("button[aria-pressed]").filter((b) => ["sex", "sáb"].includes(b.text()));
+    const days = wrapper
+      .findAll("button[aria-pressed]")
+      .filter((b) => ["sex", "sáb"].includes(b.text()));
     for (const day of days) await day.trigger("click");
     await wrapper.find("form").trigger("submit");
 
-    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
-    expect((payload.schedule as Record<string, unknown>).weekdays).toEqual([4, 5]);
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
+    expect((payload.schedule as Record<string, unknown>).weekdays).toEqual([
+      4, 5,
+    ]);
   });
 
   it("uma vez manda o instante, não a janela", async () => {
-    const wrapper = form(makeRule({ schedule: { type: "once", at: "2026-08-15T17:30" } }));
+    const wrapper = form(
+      makeRule({ schedule: { type: "once", at: "2026-08-15T17:30" } }),
+    );
 
     await wrapper.find("form").trigger("submit");
 
-    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
     expect(payload.schedule).toEqual({ type: "once", at: "2026-08-15T17:30" });
   });
 
@@ -178,11 +218,16 @@ describe("CampaignForm — quando disparar", () => {
 
   it("uma vez nova envia offset e timezone sem inferir o computador", async () => {
     const wrapper = form(makeRule());
-    await wrapper.findAll("button").find(button => button.text() === "Uma vez")!.trigger("click");
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Uma vez")!
+      .trigger("click");
     await wrapper.find("#rule-once-at").setValue("2027-01-10T17:30");
     await wrapper.find("form").trigger("submit");
 
-    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
     expect(payload.schedule).toEqual({
       type: "once",
       at: "2027-01-10T17:30:00-03:00",
@@ -193,11 +238,16 @@ describe("CampaignForm — quando disparar", () => {
   it("explica e bloqueia um horário inexistente na mudança de DST", async () => {
     const wrapper = form(makeRule(), "");
     await wrapper.setProps({ shopTimezone: "America/New_York" });
-    await wrapper.findAll("button").find(button => button.text() === "Uma vez")!.trigger("click");
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Uma vez")!
+      .trigger("click");
     await wrapper.find("#rule-once-at").setValue("2027-03-14T02:30");
     await wrapper.find("form").trigger("submit");
 
-    expect(wrapper.text()).toContain("não existe por causa da mudança do relógio");
+    expect(wrapper.text()).toContain(
+      "não existe por causa da mudança do relógio",
+    );
     expect(wrapper.emitted("submit")).toBeUndefined();
   });
 
@@ -206,24 +256,39 @@ describe("CampaignForm — quando disparar", () => {
 
     await wrapper.find("form").trigger("submit");
 
-    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
     expect("schedule" in payload).toBe(false);
   });
 
   it("relê o agendamento da regra aberta", () => {
     const wrapper = form(
-      makeRule({ schedule: { type: "recurring", windows: [["06:00", "07:00"]], weekdays: [0] } }),
+      makeRule({
+        schedule: {
+          type: "recurring",
+          windows: [["06:00", "07:00"]],
+          weekdays: [0],
+        },
+      }),
     );
 
-    expect((wrapper.find("input[type=\"time\"]").element as HTMLInputElement).value).toBe("06:00");
-    const marked = wrapper.findAll("button[aria-pressed=\"true\"]").map((b) => b.text());
+    expect(
+      (wrapper.find('input[type="time"]').element as HTMLInputElement).value,
+    ).toBe("06:00");
+    const marked = wrapper
+      .findAll('button[aria-pressed="true"]')
+      .map((b) => b.text());
     expect(marked).toContain("seg");
   });
 
   it("preserva o agendamento inteiro quando ninguém o altera", async () => {
     const schedule = {
       type: "recurring" as const,
-      windows: [["06:00", "07:00"], ["16:00", "18:00"]],
+      windows: [
+        ["06:00", "07:00"],
+        ["16:00", "18:00"],
+      ],
       weekdays: [0, 2, 4],
       starts_on: "2026-09-10",
       ends_on: "2026-12-31",
@@ -233,31 +298,45 @@ describe("CampaignForm — quando disparar", () => {
 
     await wrapper.find("form").trigger("submit");
 
-    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
     expect(payload.schedule).toEqual(schedule);
-    expect(wrapper.text()).toContain("Horários adicionais preservados: 16:00–18:00");
+    expect(wrapper.text()).toContain(
+      "Horários adicionais preservados: 16:00–18:00",
+    );
   });
 
   it("edita a primeira hora sem apagar período, janelas extras ou extensão", async () => {
-    const wrapper = form(makeRule({
-      schedule: {
-        type: "recurring",
-        windows: [["06:00", "07:00"], ["16:00", "18:00"]],
-        weekdays: [1, 3],
-        starts_on: "2026-09-10",
-        ends_on: "2026-12-31",
-        timezone_policy: "recipient",
-      },
-    }));
+    const wrapper = form(
+      makeRule({
+        schedule: {
+          type: "recurring",
+          windows: [
+            ["06:00", "07:00"],
+            ["16:00", "18:00"],
+          ],
+          weekdays: [1, 3],
+          starts_on: "2026-09-10",
+          ends_on: "2026-12-31",
+          timezone_policy: "recipient",
+        },
+      }),
+    );
 
     await wrapper.find("#rule-fire-at").setValue("08:15");
     await wrapper.find("form").trigger("submit");
 
-    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
     expect(payload.schedule).toEqual({
       type: "recurring",
       timezone: "America/Sao_Paulo",
-      windows: [["08:15", "09:15"], ["16:00", "18:00"]],
+      windows: [
+        ["08:15", "09:15"],
+        ["16:00", "18:00"],
+      ],
       weekdays: [1, 3],
       starts_on: "2026-09-10",
       ends_on: "2026-12-31",
@@ -266,18 +345,22 @@ describe("CampaignForm — quando disparar", () => {
   });
 
   it("troca gatilho agendado por evento sem deixar um schedule incompatível", async () => {
-    const wrapper = form(makeRule({
-      schedule: {
-        type: "once",
-        at: "2026-10-10T10:00",
-        provider_hint: "keep-server-extension",
-      },
-    }));
+    const wrapper = form(
+      makeRule({
+        schedule: {
+          type: "once",
+          at: "2026-10-10T10:00",
+          provider_hint: "keep-server-extension",
+        },
+      }),
+    );
 
     await wrapper.find("#rule-trigger").setValue("production_finished");
     await wrapper.find("form").trigger("submit");
 
-    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
     expect(payload.schedule).toEqual({
       type: "immediate",
       provider_hint: "keep-server-extension",
@@ -303,15 +386,19 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
       bought_collections: ["cafe-da-manha"],
       future_selector: { mode: "safe" },
     };
-    const wrapper = form(makeRule({
-      trigger: "production_finished",
-      trigger_filter: { collections: ["paes"], future_filter: true },
-      audience_rules: audienceRules,
-    }));
+    const wrapper = form(
+      makeRule({
+        trigger: "production_finished",
+        trigger_filter: { collections: ["paes"], future_filter: true },
+        audience_rules: audienceRules,
+      }),
+    );
 
     await wrapper.find("form").trigger("submit");
 
-    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
     expect(payload.audience_rules).toEqual(audienceRules);
     expect("trigger_filter" in payload).toBe(false);
     expect(wrapper.text()).toContain("bought_skus");
@@ -320,21 +407,34 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
   });
 
   it("altera critérios avançados sem apagar os seletores protegidos", async () => {
-    const wrapper = form(makeRule({
-      trigger: "production_finished",
-      audience_rules: {
-        bought_skus: ["PAO-01"],
-        bought_collections: ["cafe-da-manha"],
-      },
-    }));
+    const wrapper = form(
+      makeRule({
+        trigger: "production_finished",
+        audience_rules: {
+          bought_skus: ["PAO-01"],
+          bought_collections: ["cafe-da-manha"],
+        },
+      }),
+    );
 
-    await wrapper.findAll("button").find((button) => button.text() === "Sem glúten")!.trigger("click");
-    await wrapper.findAll("button").find((button) => button.text() === "Atacado")!.trigger("click");
-    await wrapper.findAll("button").find((button) => button.text() === "Cliente fiel")!.trigger("click");
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Sem glúten")!
+      .trigger("click");
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Atacado")!
+      .trigger("click");
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Cliente fiel")!
+      .trigger("click");
     await wrapper.find("#rule-audience-match").setValue("all");
     await wrapper.find("form").trigger("submit");
 
-    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
     expect(payload.audience_rules).toEqual({
       bought_skus: ["PAO-01"],
       bought_collections: ["cafe-da-manha"],
@@ -352,17 +452,24 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
     });
     const first = form(rule, "operator:7");
     await first.find("#rule-name").setValue("Campanha em revisão");
-    await first.findAll("button").find(button => button.text() === "Sem glúten")!
+    await first
+      .findAll("button")
+      .find((button) => button.text() === "Sem glúten")!
       .trigger("click");
     first.unmount();
 
     const restored = form(rule, "operator:7");
     await flushPromises();
 
-    expect((restored.find("#rule-name").element as HTMLInputElement).value)
-      .toBe("Campanha em revisão");
-    expect(restored.findAll("button").find(button => button.text() === "Sem glúten")!
-      .attributes("aria-pressed")).toBe("true");
+    expect(
+      (restored.find("#rule-name").element as HTMLInputElement).value,
+    ).toBe("Campanha em revisão");
+    expect(
+      restored
+        .findAll("button")
+        .find((button) => button.text() === "Sem glúten")!
+        .attributes("aria-pressed"),
+    ).toBe("true");
     expect(restored.text()).toContain("Rascunho restaurado");
   });
 
@@ -382,8 +489,9 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
     const restored = form(rule, "operator:7");
     await flushPromises();
 
-    expect((restored.find("#rule-name").element as HTMLInputElement).value)
-      .toBe("Não redigitar depois do login");
+    expect(
+      (restored.find("#rule-name").element as HTMLInputElement).value,
+    ).toBe("Não redigitar depois do login");
     expect(restored.text()).toContain("Rascunho restaurado");
   });
 
@@ -396,11 +504,18 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
     first.unmount();
 
     const other = form(
-      makeRule({ pk: 6, name: "Campanha seis", trigger: "production_finished", updated_at: "v1" }),
+      makeRule({
+        pk: 6,
+        name: "Campanha seis",
+        trigger: "production_finished",
+        updated_at: "v1",
+      }),
       "operator:7",
     );
     await flushPromises();
 
-    expect((other.find("#rule-name").element as HTMLInputElement).value).toBe("Campanha seis");
+    expect((other.find("#rule-name").element as HTMLInputElement).value).toBe(
+      "Campanha seis",
+    );
   });
 });

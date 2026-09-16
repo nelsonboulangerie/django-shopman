@@ -1,0 +1,97 @@
+DEBUG 2026-09-11 17:51:42,773 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-11 17:51:42,773 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-11 17:51:42,773 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-11 17:51:42,774 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-11 17:51:42,793 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-11 17:51:42,794 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-11 17:51:42,794 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-11 17:51:42,795 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-11 17:51:42,800 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-11 17:51:42,801 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-11 17:51:42,801 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-11 17:51:42,801 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-11 17:51:42,801 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-11 17:51:42,802 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-11 17:51:42,803 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-11 17:51:42,803 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-11 17:51:42,803 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-11 17:51:42,804 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-11 17:51:42,808 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-11 17:51:42,808 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+INFO 2026-09-11 17:51:43,438 daphne.server HTTP/2 support not enabled (install the http2 and tls Twisted extras)
+INFO 2026-09-11 17:51:43,438 daphne.server Configuring endpoint tcp:port=58419:interface=127.0.0.1
+INFO 2026-09-11 17:51:43,438 daphne.server Listening on TCP address 127.0.0.1:58419
+INFO 2026-09-11 17:51:50,325 django.channels.server HTTP GET /admin/login/?next=/admin/shop/conversation/ 200 [0.10, 127.0.0.1:64088]
+INFO 2026-09-11 17:51:50,385 django.channels.server HTTP GET /static/unfold/css/simplebar/simplebar.css 200 [0.01, 127.0.0.1:64091]
+INFO 2026-09-11 17:51:50,385 django.channels.server HTTP GET /static/unfold/fonts/inter/styles.css 200 [0.01, 127.0.0.1:64088]
+INFO 2026-09-11 17:51:50,385 django.channels.server HTTP GET /static/unfold/fonts/material-symbols/styles.css 200 [0.01, 127.0.0.1:64089]
+INFO 2026-09-11 17:51:50,386 django.channels.server HTTP GET /static/unfold/js/htmx/htmx.js 200 [0.01, 127.0.0.1:64092]
+INFO 2026-09-11 17:51:50,388 django.channels.server HTTP GET /static/unfold/js/chart/chart.js 200 [0.01, 127.0.0.1:64093]
+INFO 2026-09-11 17:51:50,388 django.channels.server HTTP GET /static/unfold/css/styles.css 200 [0.01, 127.0.0.1:64090]
+INFO 2026-09-11 17:51:50,391 django.channels.server HTTP GET /static/unfold/js/simplebar/simplebar.js 200 [0.00, 127.0.0.1:64091]
+INFO 2026-09-11 17:51:50,391 django.channels.server HTTP GET /static/unfold/js/app.js 200 [0.00, 127.0.0.1:64088]
+INFO 2026-09-11 17:51:50,412 django.channels.server HTTP GET /static/unfold/js/alpine/alpine.persist.js 200 [0.00, 127.0.0.1:64091]
+INFO 2026-09-11 17:51:50,412 django.channels.server HTTP GET /static/unfold/js/alpine/alpine.anchor.js 200 [0.00, 127.0.0.1:64088]
+INFO 2026-09-11 17:51:50,419 django.channels.server HTTP GET /static/unfold/js/alpine/alpine.resize.js 200 [0.00, 127.0.0.1:64091]
+INFO 2026-09-11 17:51:50,420 django.channels.server HTTP GET /static/unfold/js/alpine/alpine.js 200 [0.00, 127.0.0.1:64090]
+INFO 2026-09-11 17:51:50,420 django.channels.server HTTP GET /static/unfold/js/alpine/alpine.sort.js 200 [0.00, 127.0.0.1:64088]
+INFO 2026-09-11 17:51:50,450 django.channels.server HTTP GET /static/unfold/fonts/inter/Inter-SemiBold.woff2 200 [0.00, 127.0.0.1:64088]
+INFO 2026-09-11 17:51:50,450 django.channels.server HTTP GET /static/unfold/fonts/inter/Inter-Medium.woff2 200 [0.00, 127.0.0.1:64090]
+INFO 2026-09-11 17:51:50,450 django.channels.server HTTP GET /static/unfold/fonts/material-symbols/Material-Symbols-Outlined.woff2 200 [0.00, 127.0.0.1:64091]
+INFO 2026-09-11 17:51:50,490 django.channels.server HTTP GET /static/unfold/fonts/inter/Inter-Regular.woff2 200 [0.00, 127.0.0.1:64091]
+INFO 2026-09-11 17:51:51,439 django.channels.server HTTP POST /admin/login/?next=/admin/shop/conversation/ 302 [0.21, 127.0.0.1:64091]
+INFO 2026-09-11 17:51:51,527 django.channels.server HTTP GET /admin/shop/conversation/ 200 [0.09, 127.0.0.1:64091]
+INFO 2026-09-11 17:51:51,537 django.channels.server HTTP GET /static/admin/js/actions.js 200 [0.00, 127.0.0.1:64089]
+INFO 2026-09-11 17:51:51,537 django.channels.server HTTP GET /static/admin/js/admin/RelatedObjectLookups.js 200 [0.00, 127.0.0.1:64092]
+INFO 2026-09-11 17:51:51,538 django.channels.server HTTP GET /static/admin/js/core.js 200 [0.00, 127.0.0.1:64093]
+INFO 2026-09-11 17:51:51,538 django.channels.server HTTP GET /static/admin/js/jquery.init.js 200 [0.01, 127.0.0.1:64088]
+INFO 2026-09-11 17:51:51,539 django.channels.server HTTP GET /static/admin/js/vendor/jquery/jquery.js 200 [0.01, 127.0.0.1:64090]
+INFO 2026-09-11 17:51:51,543 django.channels.server HTTP GET /static/admin/js/urlify.js 200 [0.00, 127.0.0.1:64089]
+INFO 2026-09-11 17:51:51,543 django.channels.server HTTP GET /static/admin/js/prepopulate.js 200 [0.00, 127.0.0.1:64092]
+INFO 2026-09-11 17:51:51,544 django.channels.server HTTP GET /static/admin/js/vendor/xregexp/xregexp.js 200 [0.00, 127.0.0.1:64093]
+INFO 2026-09-11 17:51:51,546 django.channels.server HTTP GET /admin/jsi18n/ 200 [0.01, 127.0.0.1:64091]
+INFO 2026-09-11 17:51:52,182 django.channels.server HTTP GET /admin/shop/conversation/1/change/ 200 [0.09, 127.0.0.1:64091]
+INFO 2026-09-11 17:51:52,190 django.channels.server HTTP GET /static/admin/js/change_form.js 200 [0.00, 127.0.0.1:64093]
+INFO 2026-09-11 17:51:52,191 django.channels.server HTTP GET /static/admin/js/prepopulate_init.js 200 [0.00, 127.0.0.1:64092]
+INFO 2026-09-11 17:51:52,196 django.channels.server HTTP GET /admin/jsi18n/ 200 [0.01, 127.0.0.1:64091]
+INFO 2026-09-11 17:51:52,970 django.channels.server HTTP GET /admin/login/?next=/admin/shop/conversation/ 200 [0.01, 127.0.0.1:64103]
+INFO 2026-09-11 17:51:53,003 django.channels.server HTTP GET /static/unfold/fonts/inter/styles.css 200 [0.00, 127.0.0.1:64103]
+INFO 2026-09-11 17:51:53,003 django.channels.server HTTP GET /static/unfold/css/simplebar/simplebar.css 200 [0.00, 127.0.0.1:64106]
+INFO 2026-09-11 17:51:53,003 django.channels.server HTTP GET /static/unfold/fonts/material-symbols/styles.css 200 [0.00, 127.0.0.1:64104]
+INFO 2026-09-11 17:51:53,004 django.channels.server HTTP GET /static/unfold/js/chart/chart.js 200 [0.00, 127.0.0.1:64108]
+INFO 2026-09-11 17:51:53,005 django.channels.server HTTP GET /static/unfold/css/styles.css 200 [0.00, 127.0.0.1:64105]
+INFO 2026-09-11 17:51:53,005 django.channels.server HTTP GET /static/unfold/js/htmx/htmx.js 200 [0.00, 127.0.0.1:64107]
+INFO 2026-09-11 17:51:53,008 django.channels.server HTTP GET /static/unfold/js/app.js 200 [0.00, 127.0.0.1:64103]
+INFO 2026-09-11 17:51:53,008 django.channels.server HTTP GET /static/unfold/js/simplebar/simplebar.js 200 [0.00, 127.0.0.1:64106]
+INFO 2026-09-11 17:51:53,012 django.channels.server HTTP GET /static/unfold/js/alpine/alpine.anchor.js 200 [0.00, 127.0.0.1:64106]
+INFO 2026-09-11 17:51:53,012 django.channels.server HTTP GET /static/unfold/js/alpine/alpine.persist.js 200 [0.00, 127.0.0.1:64103]
+INFO 2026-09-11 17:51:53,016 django.channels.server HTTP GET /static/unfold/js/alpine/alpine.sort.js 200 [0.00, 127.0.0.1:64106]
+INFO 2026-09-11 17:51:53,017 django.channels.server HTTP GET /static/unfold/js/alpine/alpine.js 200 [0.00, 127.0.0.1:64107]
+INFO 2026-09-11 17:51:53,017 django.channels.server HTTP GET /static/unfold/js/alpine/alpine.resize.js 200 [0.00, 127.0.0.1:64103]
+INFO 2026-09-11 17:51:53,027 django.channels.server HTTP GET /static/unfold/fonts/inter/Inter-SemiBold.woff2 200 [0.00, 127.0.0.1:64103]
+INFO 2026-09-11 17:51:53,027 django.channels.server HTTP GET /static/unfold/fonts/inter/Inter-Medium.woff2 200 [0.00, 127.0.0.1:64107]
+INFO 2026-09-11 17:51:53,027 django.channels.server HTTP GET /static/unfold/fonts/material-symbols/Material-Symbols-Outlined.woff2 200 [0.00, 127.0.0.1:64106]
+INFO 2026-09-11 17:51:53,040 django.channels.server HTTP GET /static/unfold/fonts/inter/Inter-Regular.woff2 200 [0.00, 127.0.0.1:64106]
+INFO 2026-09-11 17:51:53,844 django.channels.server HTTP POST /admin/login/?next=/admin/shop/conversation/ 302 [0.17, 127.0.0.1:64106]
+INFO 2026-09-11 17:51:53,905 django.channels.server HTTP GET /admin/shop/conversation/ 200 [0.06, 127.0.0.1:64106]
+INFO 2026-09-11 17:51:53,917 django.channels.server HTTP GET /static/admin/js/admin/RelatedObjectLookups.js 200 [0.01, 127.0.0.1:64108]
+INFO 2026-09-11 17:51:53,917 django.channels.server HTTP GET /static/admin/js/vendor/jquery/jquery.js 200 [0.01, 127.0.0.1:64107]
+INFO 2026-09-11 17:51:53,918 django.channels.server HTTP GET /static/admin/js/core.js 200 [0.01, 127.0.0.1:64105]
+INFO 2026-09-11 17:51:53,919 django.channels.server HTTP GET /static/admin/js/jquery.init.js 200 [0.01, 127.0.0.1:64103]
+INFO 2026-09-11 17:51:53,920 django.channels.server HTTP GET /static/admin/js/actions.js 200 [0.01, 127.0.0.1:64104]
+INFO 2026-09-11 17:51:53,926 django.channels.server HTTP GET /static/admin/js/prepopulate.js 200 [0.00, 127.0.0.1:64107]
+INFO 2026-09-11 17:51:53,926 django.channels.server HTTP GET /static/admin/js/urlify.js 200 [0.01, 127.0.0.1:64108]
+INFO 2026-09-11 17:51:53,927 django.channels.server HTTP GET /admin/jsi18n/ 200 [0.02, 127.0.0.1:64106]
+INFO 2026-09-11 17:51:53,928 django.channels.server HTTP GET /static/admin/js/vendor/xregexp/xregexp.js 200 [0.01, 127.0.0.1:64105]
+INFO 2026-09-11 17:51:54,543 django.channels.server HTTP GET /admin/shop/conversation/1/change/ 200 [0.08, 127.0.0.1:64105]
+INFO 2026-09-11 17:51:54,553 django.channels.server HTTP GET /static/admin/js/prepopulate_init.js 200 [0.00, 127.0.0.1:64108]
+INFO 2026-09-11 17:51:54,554 django.channels.server HTTP GET /static/admin/js/change_form.js 200 [0.00, 127.0.0.1:64106]
+INFO 2026-09-11 17:51:54,561 django.channels.server HTTP GET /admin/jsi18n/ 200 [0.01, 127.0.0.1:64105]
+INFO 2026-09-11 17:52:20,549 daphne.server Killed 0 pending application instances
+Performing system checks...
+
+System check identified no issues (1 silenced).
+September 11, 2026 - 17:51:43
+Django version 6.0.5, using settings 'config.settings_test'
+Starting ASGI/Daphne version 4.2.1 development server at http://127.0.0.1:58419/
+Quit the server with CONTROL-C.

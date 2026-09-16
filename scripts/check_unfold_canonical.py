@@ -307,7 +307,10 @@ RUNTIME_BACKSTAGE_SURFACES: tuple[Surface, ...] = (
         id="runtime-pos",
         kind="registered-runtime-backstage",
         templates=(ROOT / "shopman/backstage/templates/pos",),
-        projections=(ROOT / "shopman/backstage/projections/pos.py",),
+        projections=(
+            ROOT / "shopman/backstage/projections/pos.py",
+            ROOT / "shopman/backstage/projections/pos_payment_delivery.py",
+        ),
         replacement="POS is registered runtime UI; management screens must use Admin/Unfold.",
     ),
     # KDS station + customer board migraram p/ o app Nuxt dedicado (kds-nuxt)
@@ -346,8 +349,11 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
         kind="explicit-exception",
         projections=(
             ROOT / "shopman/backstage/projections/order_queue.py",
+            ROOT / "shopman/backstage/projections/ifood.py",
+            ROOT / "shopman/backstage/projections/ifood_handshake.py",
             ROOT / "shopman/backstage/projections/kds.py",
             ROOT / "shopman/backstage/projections/catalog.py",
+            ROOT / "shopman/backstage/projections/catalog_bindings.py",
             ROOT / "shopman/backstage/projections/feeds.py",
             ROOT / "shopman/backstage/projections/closing.py",
             ROOT / "shopman/backstage/projections/cash_session.py",
@@ -373,13 +379,16 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/bi_scenarios.py",
         ),
         exception_reason=(
-            "Order queue + KDS + catalog-matrix + feeds + day-closing + cash-session + "
+            "Order queue + KDS + catalog-matrix + catalog-bindings + feeds + day-closing + cash-session + "
             "production + product-promise + recipe-book + purchase + campaign projections feed dedicated headless Nuxt operator apps "
             "(gestor./kds./pdv./prod./compras./mkt. via api/v1/backstage/*), not Admin/Unfold "
             "pages (OPERATOR-APPS-PLAN Fase 2; CROSS-CHANNEL-CATALOG-HUB-PLAN Frente 3; "
             "ADMIN-ROLE-PLAN WP-ADM-3/WP-ADM-4/WP-ADM-7d — config de rule/capability fica no "
             "Admin/Unfold, a matriz operacional no Gestor, o fechamento do dia e os relatórios "
             "X/Z na antesala do PDV, a produção inteira no Produção). "
+            "Vínculos de catálogo: revisão de identidade solicitada no Gestor pelo usuário, "
+            "consumida em /api/v1/backstage/catalog/channels/<ref>/review/ e "
+            "surfaces/orders-nuxt/app/pages/channels/[ref]/catalog.vue, sem publicação remota. "
             "Promessa do catálogo (WP-FICHA-DE-PRODUTO-E-PROMESSA bloco C): a leitura de "
             "'o que o cliente lê ainda corresponde à ficha?' é conferência de chão, "
             "consumida em api/v1/backstage/catalog/promise/ pelo Produção, onde o operador "

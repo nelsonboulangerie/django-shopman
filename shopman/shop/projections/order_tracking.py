@@ -128,6 +128,14 @@ class TrackingPickupData:
 
 
 @dataclass(frozen=True)
+class TrackingCancellationRequestData:
+    """Customer request awaiting a human cancellation/refund decision."""
+
+    protocol: str
+    requested_at: str
+
+
+@dataclass(frozen=True)
 class TrackingPromiseData:
     """The active operational promise as data.
 
@@ -219,6 +227,7 @@ class TrackingData:
     # notificação para contar a história.
     cancellation_note: str = ""
     refund_status_key: str | None = None
+    cancellation_request: TrackingCancellationRequestData | None = None
     # Fila de espera (WP-P2E): o acompanhamento é a superfície que SEMPRE
     # existe. A notificação pode não chegar (janela do WhatsApp, número
     # trocado); esta tela não depende dela para o cliente saber que a fornada
@@ -232,6 +241,7 @@ class TrackingData:
     # storefront recalculava por conta própria com a pergunta pobre ("estamos em
     # ambiente de teste?"), e o botão aparecia em pedido de cartão no Stripe real
     # — botão morto, porque o endpoint pergunta pelo método e devolve 404.
+    convenience_pending: tuple[str, ...] = ()
     can_mock_confirm_payment: bool = False
     stale_after_seconds: int = 30  # sobrescrito no build com a config viva
 
@@ -281,6 +291,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     # que o lifecycle usa na notificação. Sem nota, a tela não inventa motivo.
     cancellation_note = str(order_data.get("cancellation_note") or "")
     refund_status_key = _refund_status_key(order)
+    cancellation_request = _cancellation_request(order)
     progress_steps = _build_progress_steps(
         order,
         is_delivery=is_delivery,
@@ -316,15 +327,18 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     actions = _build_order_actions(
         order,
         can_cancel=can_cancel,
+        cancellation_requested=cancellation_request is not None,
         can_rate=_can_rate(order),
         can_mock_confirm_payment=can_mock_confirm_payment,
     )
 
     return TrackingData(
+        convenience_pending=convenience_pending(order.ref),
         can_mock_confirm_payment=can_mock_confirm_payment,
         stale_after_seconds=_stale_after_seconds(),
         cancellation_note=cancellation_note,
         refund_status_key=refund_status_key,
+        cancellation_request=cancellation_request,
         order_ref=interaction.order_ref,
         status=order.status,
         display_status_key=_display_status_key(order),
@@ -477,6 +491,18 @@ def _refund_status_key(order) -> str | None:
         return "processing"
     return None
 
+
+def _cancellation_request(order) -> TrackingCancellationRequestData | None:
+    from shopman.shop.services import cancellation_requests
+
+    request = cancellation_requests.current(order)
+    if request is None:
+        return None
+    return TrackingCancellationRequestData(
+        protocol=request.protocol,
+        requested_at=request.requested_at.isoformat(),
+    )
+
 def _can_mock_confirm_payment(order) -> bool:
     """Este pedido pode receber uma captura simulada AGORA?
 
@@ -587,6 +613,7 @@ def _build_order_actions(
     order,
     *,
     can_cancel: bool,
+    cancellation_requested: bool,
     can_rate: bool,
     can_mock_confirm_payment: bool,
 ) -> tuple[Action, ...]:
@@ -627,6 +654,40 @@ def _build_order_actions(
                 ),
                 "cancel_label": _copy_title("TRACKING_CANCEL_KEEP_CTA", "Manter pedido"),
                 "confirm_label": _copy_title("TRACKING_CANCEL_CONFIRM_CTA", "Confirmar cancelamento"),
+                "severity": "danger",
+            },
+        ))
+    elif order.status not in {"cancelled", "returned"} and not cancellation_requested:
+        actions.append(_action(
+            ref="request_cancellation",
+            kind="mutation",
+            label=_copy_title("TRACKING_ACTION_REQUEST_CANCELLATION", "Solicitar cancelamento"),
+            priority="danger",
+            href=f"/api/v1/orders/{order.ref}/cancellation-request/",
+            method="POST",
+            payload_schema={
+                "type": "object",
+                "required": ["idempotency_key"],
+                "properties": {
+                    "reason": {"type": "string", "maxLength": 500},
+                    "idempotency_key": {"type": "string"},
+                },
+            },
+            idempotency="required",
+            confirmation={
+                "title": _copy_title(
+                    "TRACKING_REQUEST_CANCELLATION_TITLE",
+                    "Solicitar cancelamento",
+                ),
+                "message": _copy_message(
+                    "TRACKING_REQUEST_CANCELLATION_MESSAGE",
+                    "Como o pedido já avançou, a equipe precisa analisar o cancelamento e um possível estorno. Você recebe um protocolo agora.",
+                ),
+                "confirm_label": _copy_title(
+                    "TRACKING_REQUEST_CANCELLATION_CONFIRM_CTA",
+                    "Enviar solicitação",
+                ),
+                "cancel_label": _copy_title("TRACKING_CANCEL_KEEP_CTA", "Manter pedido"),
                 "severity": "danger",
             },
         ))
@@ -1007,7 +1068,7 @@ def _build_promise(
     # Encomenda agendada (WP-D): entre a confirmação e a data combinada o pedido
     # está garantido para a data. A presentation compõe "pedido para sábado, a
     # partir das 09h" com ``commitment_date``/``commitment_slot_ref``.
-    if is_preorder and order.status in {"new", "accepted"}:
+    if is_preorder and order.status == "accepted":
         return promise(state="preorder_scheduled", tone="success" if payment_confirmed else "info")
 
     if payment_confirmed and order.status in {"new", "accepted"}:
@@ -1296,7 +1357,7 @@ def _payment_confirmed_timestamp(order) -> str | None:
             from shopman.payman import PaymentService
 
             intent = PaymentService.get(intent_ref)
-        except Exception:
+        except Exception:  # silêncio-deliberado: projeção conserva o evento canônico como fallback
             logger.debug(
                 "order_tracking_payment_capture_timestamp_failed order=%s intent=%s",
                 order.ref,
@@ -1689,3 +1750,10 @@ __all__ = [
     "build_tracking",
     "build_tracking_status",
 ]
+
+
+def convenience_pending(order_ref: str) -> tuple[str, ...]:
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.directives import CHECKOUT_CONVENIENCE
+    return tuple(Directive.objects.filter(topic=CHECKOUT_CONVENIENCE, payload__order_ref=order_ref).exclude(status="done").values_list("payload__effect", flat=True))

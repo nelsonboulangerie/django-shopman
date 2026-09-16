@@ -16,7 +16,7 @@ import {
   formulaFromDraft,
 } from "~/presentation/recipeBook";
 
-useHead({ title: "Nova receita · Produção" });
+useHead({ title: "Nova receita" });
 
 type Door = "note" | "photo" | "manual";
 const route = useRoute();

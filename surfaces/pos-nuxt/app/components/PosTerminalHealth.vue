@@ -18,6 +18,8 @@ const props = defineProps<{
 
 const posRef = computed(() => props.pos);
 const { probe, checking, check, agentConfigured } = useAgentHealth(posRef);
+// Rail estendido mostra rótulo, como os demais itens (verdade compartilhada do kit).
+const { showLabels } = useRailState();
 
 const rows = computed(() =>
   terminalHealthRows(
@@ -51,7 +53,7 @@ type StatusMeta = {
 
 const STATUS_META: Record<string, StatusMeta> = {
   ready: { label: "OK", dot: "bg-success", text: "text-success", badge: "success" },
-  warning: { label: "Atenção", dot: "bg-warning", text: "text-amber-700 dark:text-amber-400", badge: "warning" },
+  warning: { label: "Atenção", dot: "bg-warning", text: "text-warning", badge: "warning" },
   error: { label: "Erro", dot: "bg-destructive", text: "text-destructive", badge: "destructive" },
   // Periférico que a loja não instalou: aparece na lista como ausente, em tom
   // neutro, e NÃO acende o badge geral. Só falha o que existe.
@@ -70,17 +72,25 @@ function meta(status: string): StatusMeta {
 <template>
   <UiPopover>
     <UiPopoverTrigger as-child>
+      <!-- No rail o gatilho fala a gramática do `RailItem` (kit): mesmos tokens
+           `rail-foreground`, mesma altura, rótulo no estado estendido. Era o
+           único item do rail em `text-primary-foreground`: no tema claro os dois
+           tokens coincidem (branco), no escuro `primary-foreground` vira o tom
+           escuro do texto sobre a ação dourada — e o ícone sumia no bronze. -->
       <button
         v-if="compact"
         type="button"
-        class="grid size-10 place-items-center rounded-md text-primary-foreground/80 transition hover:bg-primary-foreground/10 hover:text-primary-foreground"
+        data-terminal-health-trigger
+        class="flex h-11 items-center rounded-md text-rail-foreground/80 transition hover:bg-rail-foreground/10 hover:text-rail-foreground"
+        :class="showLabels ? 'w-full gap-3 px-2.5' : 'w-11 justify-center'"
         :aria-label="`Saúde do terminal: ${overall.label}`"
-        :title="`${pos.terminal_label}: ${overall.label}`"
+        :title="showLabels ? undefined : `${pos.terminal_label}: ${overall.label}`"
       >
-        <span class="relative grid size-5 place-items-center">
+        <span class="relative grid size-5 shrink-0 place-items-center">
           <Icon name="lucide:monitor" class="size-5" />
-          <span class="absolute -bottom-0.5 -right-1 size-2 rounded-full ring-2 ring-primary" :class="overall.dot" />
+          <span class="absolute -bottom-0.5 -right-1 size-2 rounded-full ring-2 ring-rail" :class="overall.dot" />
         </span>
+        <span v-if="showLabels" class="min-w-0 truncate text-sm">Terminal · {{ overall.label }}</span>
       </button>
       <UiButton v-else variant="ghost" size="sm" class="gap-2 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground" :aria-label="`Saúde do terminal: ${overall.label}`">
         <span class="size-2 rounded-full" :class="overall.dot" />

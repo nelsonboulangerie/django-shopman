@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { tileBadge } from '~/presentation/menu'
 import { crossSellItems, detailDescription, galleryImages, nutritionTable } from '~/presentation/product'
-import { absoluteImage, breadcrumbJsonLd, metaDescription, priceFromQ, productJsonLd } from '~/presentation/seo'
+import { absoluteImage, breadcrumbJsonLd, jsonLdText, metaDescription, priceFromQ, productJsonLd } from '~/presentation/seo'
 import type { ProductMutationMeta, ProductResponse } from '~/types/shopman'
 import { compactUnitWeightLabel } from '~/utils/display'
 
@@ -101,7 +101,7 @@ useHead({
     ? [
         {
           type: 'application/ld+json',
-          innerHTML: JSON.stringify(productJsonLd({
+          innerHTML: jsonLdText(productJsonLd({
             product: product.value,
             origin: requestUrl.origin,
             url: canonicalUrl.value,
@@ -110,7 +110,7 @@ useHead({
         },
         {
           type: 'application/ld+json',
-          innerHTML: JSON.stringify(breadcrumbJsonLd([
+          innerHTML: jsonLdText(breadcrumbJsonLd([
             { name: 'Início', url: `${requestUrl.origin}/` },
             { name: 'Cardápio', url: `${requestUrl.origin}/menu` },
             ...(product.value.breadcrumb_category

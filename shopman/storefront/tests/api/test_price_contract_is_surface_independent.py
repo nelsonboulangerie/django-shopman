@@ -22,6 +22,7 @@ import json
 import pytest
 from django.utils import timezone
 
+from shopman.storefront.tests._checkout_auth import authenticate_checkout
 from shopman.storefront.tests._checkout_baseline import displayed_total_q
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
@@ -57,6 +58,7 @@ def _last_slot() -> str:
 
 
 def _post(client, payload: dict):
+    payload = {**payload, "expected_revision": client.get("/api/v1/storefront/cart/").json()["cart"]["revision"]}
     return client.post(
         "/api/v1/checkout/",
         data=json.dumps(payload),
@@ -70,6 +72,7 @@ def test_commit_without_a_baseline_is_refused(client):
     Este é o teste que teria pego o furo: o chamador "esquece" o campo e espera
     que passe. Passar significa aceitar cobrar um número que ninguém mostrou.
     """
+    authenticate_checkout(client)
     _seed_surface()
     _add_item(client)
 
@@ -85,6 +88,7 @@ def test_commit_without_a_baseline_is_refused(client):
 
 def test_commit_with_a_stale_baseline_is_refused(client):
     """Baseline que não bate com o preço atual → recusa explícita, não cobrança."""
+    authenticate_checkout(client)
     _seed_surface()
     _add_item(client)
 
@@ -100,6 +104,7 @@ def test_commit_with_a_stale_baseline_is_refused(client):
 
 def test_commit_with_the_displayed_baseline_goes_through(client):
     """O caminho feliz continua feliz: baseline correta fecha o pedido."""
+    authenticate_checkout(client)
     _seed_surface()
     _add_item(client)
 
@@ -121,6 +126,7 @@ def test_a_low_baseline_cannot_dictate_the_price(client):
     Se um dia alguém trocar a comparação por atribuição, este teste cai: mandar
     1 centavo passaria a fechar o pedido por 1 centavo.
     """
+    authenticate_checkout(client)
     _seed_surface()
     _add_item(client)
 

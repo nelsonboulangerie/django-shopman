@@ -1,0 +1,50 @@
+{
+  "date": "2026-09-11",
+  "candidate_before_adaptation": "dd5a23b0e6d8751d39a3d615a5d77e4a01acc674",
+  "mode": "read_only_external_configuration_inspection",
+  "app": {
+    "id": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f",
+    "name": "shopman-nelson",
+    "observed_active_deployment": "239c5fd5-846f-4983-be70-9fb660654c73",
+    "api_domain": "api.boulangerie.com.br",
+    "legacy_enabled": true,
+    "allowed_subject_entries": 2,
+    "legacy_phone_entries": 2,
+    "manychat_token_configured": true,
+    "access_link_key_configured": true,
+    "ai_key_configured": true,
+    "contract_version_env_present": false,
+    "account_id_env_present": false,
+    "worker_command": "python manage.py process_directives --watch"
+  },
+  "provider": {
+    "getInfo_status": "success",
+    "account_id": "764222643620409",
+    "account_name": "Nelson Boulangerie",
+    "getFlows_status": "success",
+    "flow_name": "Concierge (piloto)",
+    "flow_ns": "content20260904134021_491685",
+    "flow_metadata_fields_returned": ["ns", "name", "folder_id"],
+    "getCustomFields_status": "success",
+    "handoff_field": {"name": "concierge_handoff", "type": "text"}
+  },
+  "historical_contract": {
+    "keyword": "#c",
+    "keyword_source_commit": "d777be1cc",
+    "method": "POST",
+    "path": "/api/webhooks/manychat/conversation/",
+    "authentication_header": "X-Api-Key",
+    "backend_key_fallback": "DOORMAN_ACCESS_LINK_API_KEY",
+    "response_mapping": false,
+    "body_fields": ["subscriber_id", "text", "first_name", "last_name"]
+  },
+  "not_proven": [
+    "Current native flow node body and variable bindings",
+    "Stable provider message/event identity across retries and separate identical messages",
+    "Incoming messages accepted by the new candidate through the live flow",
+    "Actual output delivery from the new candidate"
+  ],
+  "external_mutations": [],
+  "credentials_recorded": false,
+  "remote_console_closed": true
+}

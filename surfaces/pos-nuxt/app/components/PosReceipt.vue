@@ -24,6 +24,7 @@ const printedAt = computed(() => new Date(props.receipt.printedAtMs).toLocaleStr
 
 <template>
   <div class="pos-receipt bg-white px-3 py-4 font-mono text-[12px] leading-snug text-black">
+    <!-- Branco/preto e 11–12px propositais: dimensões físicas e contraste do recibo térmico. -->
     <div class="text-center">
       <p class="text-sm font-bold uppercase tracking-wide">{{ terminalLabel }}</p>
       <p class="text-[11px]">Recibo não fiscal</p>

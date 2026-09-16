@@ -6,6 +6,10 @@ import type { AlertProjection } from "~/types/orders";
 const { alerts, activeCount, criticalCount, ack } = useAlerts();
 const open = ref(false);
 
+function contextAction(alert: AlertProjection) {
+  return alert.actions?.find((action) => action.kind === "open_alert_context" && action.enabled);
+}
+
 function sevChip(sev: AlertProjection["severity"]): string {
   if (sev === "critical" || sev === "error")
     return "border-destructive/40 bg-destructive/10 text-destructive dark:text-orange-300";
@@ -58,6 +62,14 @@ function sevChip(sev: AlertProjection["severity"]): string {
               <p class="mt-0.5 text-xs text-muted-foreground">
                 {{ a.created_at_display }}<template v-if="a.order_ref"> · {{ a.order_ref }}</template>
               </p>
+              <NuxtLink
+                v-if="contextAction(a)"
+                :to="contextAction(a)!.href"
+                class="mt-2 inline-flex min-h-9 items-center rounded-md border bg-background px-3 text-xs font-semibold text-foreground transition hover:bg-accent"
+                @click="open = false"
+              >
+                {{ contextAction(a)!.label }}
+              </NuxtLink>
             </div>
             <button
               type="button"

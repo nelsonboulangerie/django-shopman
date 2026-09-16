@@ -3,6 +3,7 @@ import { cartHoldBanner, holdBannerVariant, holdCountdown, lineHoldState } from 
 import type { CartItemProjection, CartResponse, ProductMutationMeta } from '~/types/shopman'
 import { formatCount } from '~/utils/display'
 
+const { outcome: reorderOutcome } = useReorder()
 const apiPath = useShopmanApiPath()
 const {
   cart,
@@ -111,6 +112,14 @@ useSeoMeta({
       </div>
     </div>
     <div class="shop-container shop-stack-block">
+      <section v-if="reorderOutcome && (reorderOutcome.skipped.length || !reorderOutcome.ok)" role="status" class="rounded-lg border p-4 shop-stack-tight">
+        <h2 class="shop-title">{{ reorderOutcome.ok ? 'Pedido parcialmente adicionado' : 'Nenhum item foi adicionado' }}</h2>
+        <p v-if="reorderOutcome.added.length">Adicionados: {{ reorderOutcome.added.map(item => item.name).join(', ') }}.</p>
+        <p v-if="reorderOutcome.skipped.length">Ficaram de fora: {{ reorderOutcome.skipped.join(', ') }}. Não estão disponíveis agora.</p>
+        <UiButton to="/menu" variant="outline">Escolher outros itens</UiButton>
+        <UiButton variant="ghost" @click="reorderOutcome = null">Entendi</UiButton>
+      </section>
+
       <div>
         <h1 class="shop-title">Sua sacola</h1>
         <p v-if="!cart.is_empty" class="mt-2 shop-muted">

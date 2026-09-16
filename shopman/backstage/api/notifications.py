@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
@@ -31,14 +32,19 @@ from shopman.backstage.projections.marketing_actions import (
     resolve_notification_actions_for,
 )
 from shopman.shop.models import (
+    PUSH_SURFACE_CATEGORIES,
     Announcement,
+    NotificationCategory,
     NotificationLifecycle,
     NotificationSeverity,
+    PushSubscription,
+    PushSurface,
     UserNotification,
 )
 from shopman.shop.models.user_notification import ACTIVE_NOTIFICATION_STATES
 from shopman.shop.services import user_notifications as notification_lifecycle
 from shopman.shop.services.marketing_time import configured_timezone_name
+from shopman.shop.services.push_endpoints import normalize_push_endpoint
 
 from .permissions import IsBackstageOperator
 
@@ -502,6 +508,172 @@ class NotificationActionView(APIView):
             **resultado,
             "unread_count": _unread(request),
         })
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="List Web Push devices and category choices for the current user",
+        responses={200: OpenApiResponse(description="Active devices and category choices.")},
+    ),
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Register or refresh a Web Push subscription",
+        responses={200: OpenApiResponse(description="Subscription registered.")},
+    ),
+    patch=extend_schema(
+        tags=["backstage"],
+        summary="Update Web Push categories for one owned device",
+        responses={200: OpenApiResponse(description="Subscription preferences updated.")},
+    ),
+    delete=extend_schema(
+        tags=["backstage"],
+        summary="Remove one owned Web Push device",
+        responses={204: OpenApiResponse(description="Subscription removed.")},
+    ),
+)
+class NotificationPushSubscriptionView(APIView):
+    """Assinaturas da pessoa autenticada; IDs/endpoints alheios sempre viram 404."""
+
+    permission_classes = [IsBackstageOperator]
+
+    def get(self, request):
+        devices = PushSubscription.objects.filter(
+            user=request.user,
+            disabled_at__isnull=True,
+        ).order_by("-created_at", "-pk")
+        labels = dict(NotificationCategory.choices)
+        return Response({
+            "devices": [_push_subscription_dict(subscription) for subscription in devices],
+            "categories": [
+                {"value": category, "label": labels[category]}
+                for category in sorted(PUSH_SURFACE_CATEGORIES[PushSurface.HUB])
+            ],
+            "surface_categories": {
+                surface: sorted(categories)
+                for surface, categories in PUSH_SURFACE_CATEGORIES.items()
+            },
+        })
+
+    def post(self, request):
+        payload = request.data or {}
+        raw_subscription = payload.get("subscription")
+        subscription = raw_subscription if isinstance(raw_subscription, dict) else payload
+        endpoint = _valid_push_endpoint(subscription.get("endpoint"))
+        if endpoint is None:
+            return _push_error("endpoint", "Envie um endpoint HTTPS válido.")
+
+        keys = subscription.get("keys")
+        if not isinstance(keys, dict):
+            return _push_error("keys", "Envie as chaves p256dh e auth do navegador.")
+        p256dh = _bounded_text(keys.get("p256dh"), maximum=512)
+        auth = _bounded_text(keys.get("auth"), maximum=512)
+        if not p256dh or not auth:
+            return _push_error("keys", "As chaves p256dh e auth são obrigatórias.")
+
+        surface_ref = _bounded_text(payload.get("surface_ref"), maximum=32)
+        if surface_ref not in PushSurface.values:
+            return _push_error("surface_ref", "Esta surface não aceita Web Push.")
+        categories = _valid_push_categories(payload.get("categories"), surface_ref=surface_ref)
+        if categories is None:
+            return _push_error("categories", "Uma categoria não pertence a esta surface.")
+        device_label = _bounded_text(payload.get("device_label"), maximum=120) or "Este aparelho"
+
+        with transaction.atomic():
+            record, created = PushSubscription.objects.update_or_create(
+                endpoint=endpoint,
+                defaults={
+                    "user": request.user,
+                    "p256dh": p256dh,
+                    "auth": auth,
+                    "surface_ref": surface_ref,
+                    "device_label": device_label,
+                    "categories": categories,
+                    "failures": 0,
+                    "disabled_at": None,
+                },
+            )
+        return Response(
+            {"created": created, "device": _push_subscription_dict(record)},
+            status=201 if created else 200,
+        )
+
+    def patch(self, request):
+        record = _owned_push_subscription(request)
+        if record is None:
+            return Response({"detail": "Aparelho não encontrado."}, status=404)
+        categories = _valid_push_categories(
+            (request.data or {}).get("categories"),
+            surface_ref=record.surface_ref,
+        )
+        if categories is None:
+            return _push_error("categories", "Uma categoria não pertence a esta surface.")
+        record.categories = categories
+        record.save(update_fields=["categories"])
+        return Response({"device": _push_subscription_dict(record)})
+
+    def delete(self, request):
+        record = _owned_push_subscription(request)
+        if record is None:
+            return Response({"detail": "Aparelho não encontrado."}, status=404)
+        if record.disabled_at is None:
+            record.disabled_at = timezone.now()
+            record.save(update_fields=["disabled_at"])
+        return Response(status=204)
+
+
+def _push_subscription_dict(subscription: PushSubscription) -> dict:
+    return {
+        "id": subscription.pk,
+        "endpoint": subscription.endpoint,
+        "surface_ref": subscription.surface_ref,
+        "device_label": subscription.device_label,
+        "categories": list(subscription.categories or []),
+        "created_at": subscription.created_at.isoformat(),
+        "last_success_at": (
+            subscription.last_success_at.isoformat() if subscription.last_success_at else None
+        ),
+    }
+
+
+def _owned_push_subscription(request) -> PushSubscription | None:
+    payload = request.data or {}
+    queryset = PushSubscription.objects.filter(user=request.user, disabled_at__isnull=True)
+    raw_id = payload.get("id")
+    if isinstance(raw_id, int) and not isinstance(raw_id, bool) and raw_id > 0:
+        return queryset.filter(pk=raw_id).first()
+    endpoint = _bounded_text(payload.get("endpoint"), maximum=4096)
+    return queryset.filter(endpoint=endpoint).first() if endpoint else None
+
+
+def _valid_push_endpoint(value) -> str | None:
+    return normalize_push_endpoint(value)
+
+
+def _valid_push_categories(value, *, surface_ref: str) -> list[str] | None:
+    allowed = PUSH_SURFACE_CATEGORIES.get(surface_ref)
+    if allowed is None or not isinstance(value, list) or len(value) > len(PUSH_SURFACE_CATEGORIES[PushSurface.HUB]):
+        return None
+    categories = [_bounded_text(category, maximum=32) for category in value]
+    if any(not category or category not in allowed for category in categories):
+        return None
+    if len(categories) != len(set(categories)):
+        return None
+    return sorted(categories)
+
+
+def _bounded_text(value, *, maximum: int) -> str:
+    if not isinstance(value, str):
+        return ""
+    normalized = value.strip()
+    return normalized if len(normalized) <= maximum else ""
+
+
+def _push_error(field: str, detail: str) -> Response:
+    return Response(
+        {"detail": detail, "field": field, "errors": {field: [detail]}},
+        status=400,
+    )
 
 
 def _flag_body(request, name: str) -> bool:

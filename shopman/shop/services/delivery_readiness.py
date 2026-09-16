@@ -12,17 +12,17 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
+from django.conf import settings
 from django.utils import timezone
+
+from shopman.shop.services.marketing_capabilities import DESTINATIONS, platform_kind
 
 PUBLICATION = "publication"
 DIRECT_MESSAGE = "direct_message"
 logger = logging.getLogger(__name__)
 
 PLATFORM_KIND: dict[str, str] = {
-    "instagram": PUBLICATION,
-    "facebook": PUBLICATION,
-    "google_business": PUBLICATION,
-    "whatsapp": DIRECT_MESSAGE,
+    destination.platform: destination.delivery_kind for destination in DESTINATIONS
 }
 ReadinessState = Literal["ready", "degraded", "blocked", "unknown"]
 
@@ -59,7 +59,7 @@ def readiness_for(
     clock = _aware_now(now)
     out = []
     for platform in platforms or []:
-        kind = PLATFORM_KIND.get(platform)
+        kind = platform_kind(platform)
         if kind is None:
             out.append(
                 PlatformReadiness(
@@ -73,6 +73,8 @@ def readiness_for(
                     action="Revisar as plataformas da campanha",
                 )
             )
+        elif pipeline_block := _pipeline_block(platform, kind=kind, now=clock):
+            out.append(pipeline_block)
         elif simulated := _local_simulation_readiness(platform, kind=kind, now=clock):
             out.append(simulated)
         elif kind == PUBLICATION:
@@ -84,6 +86,55 @@ def readiness_for(
 
     record_readiness(result, now=clock)
     return result
+
+
+def _pipeline_block(
+    platform: str,
+    *,
+    kind: str,
+    now: datetime,
+) -> PlatformReadiness | None:
+    """Never call a lane ready when its durable handoff cannot run."""
+
+    if _isolated_publication_canary(kind=kind):
+        # A public canary has its own exact-ref handoff and target claim. It is
+        # safe only while both broad consumers remain off; provider readiness
+        # is still verified by ``_publication_readiness`` below.
+        return None
+    if not getattr(settings, "SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED", False):
+        return PlatformReadiness(
+            platform=platform,
+            kind=kind,
+            state="blocked",
+            reason_code="delivery_handoff_disabled",
+            checked_at=now,
+            facts_as_of=now,
+            source_status="fresh",
+            reason="A preparação das entregas está pausada neste ambiente.",
+            action="Pedir à operação para ativar o processamento de Marketing",
+        )
+    if not getattr(settings, "SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED", False):
+        return PlatformReadiness(
+            platform=platform,
+            kind=kind,
+            state="blocked",
+            reason_code="delivery_worker_disabled",
+            checked_at=now,
+            facts_as_of=now,
+            source_status="fresh",
+            reason="O envio para as plataformas está pausado neste ambiente.",
+            action="Pedir à operação para ativar o worker de entregas",
+        )
+    return None
+
+
+def _isolated_publication_canary(*, kind: str) -> bool:
+    return bool(
+        kind == PUBLICATION
+        and getattr(settings, "SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED", False)
+        and not getattr(settings, "SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED", False)
+        and not getattr(settings, "SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED", False)
+    )
 
 
 def _local_simulation_readiness(
@@ -127,9 +178,9 @@ def _local_simulation_readiness(
 
 
 def _publication_readiness(platform: str, *, now: datetime) -> PlatformReadiness:
-    from shopman.shop.handlers.campaign import _posting_adapter
+    from shopman.shop.services.marketing_delivery_runtime import delivery_provider
 
-    adapter = _posting_adapter(platform)
+    adapter = delivery_provider(platform, require_available=False)
     if adapter is None:
         return PlatformReadiness(
             platform=platform,
@@ -186,14 +237,25 @@ def _publication_readiness(platform: str, *, now: datetime) -> PlatformReadiness
             action="Conferir as credenciais da plataforma",
         )
 
+    canary_only = _isolated_publication_canary(kind=PUBLICATION)
     return PlatformReadiness(
         platform=platform,
         kind=PUBLICATION,
         state="ready",
-        reason_code="",
+        reason_code="publication_canary_ready" if canary_only else "",
         checked_at=now,
         facts_as_of=now,
         source_status="fresh",
+        reason=(
+            "A integração está pronta para uma postagem canário isolada."
+            if canary_only
+            else ""
+        ),
+        limitation=(
+            "Somente a consequência pública exata confirmada no canário será executada."
+            if canary_only
+            else ""
+        ),
     )
 
 
@@ -243,6 +305,57 @@ def _direct_message_readiness(platform: str, *, now: datetime) -> PlatformReadin
             source_status="fresh",
             reason="Marketing por WhatsApp exige o transporte ManyChat da ADR-009.",
             action="Configurar a credencial ManyChat deste ambiente",
+        )
+
+    # The legacy campaign backend and the durable delivery worker have different
+    # provider contracts.  A healthy ManyChat credential alone cannot make the
+    # v2 outbox deliver: the worker needs a registered ``marketing_delivery``
+    # adapter for this exact lane.  Reporting ready without it leaves approved
+    # messages queued forever.
+    from shopman.shop.services.marketing_delivery_runtime import delivery_provider
+
+    durable_provider = delivery_provider(platform, require_available=False)
+    if durable_provider is None:
+        return PlatformReadiness(
+            platform=platform,
+            kind=DIRECT_MESSAGE,
+            state="blocked",
+            reason_code="whatsapp_durable_provider_missing",
+            checked_at=now,
+            facts_as_of=now,
+            source_status="fresh",
+            reason=(
+                "A integração de campanhas do WhatsApp ainda não está conectada "
+                "à fila segura de envio."
+            ),
+            action="Concluir e verificar a integração durável do WhatsApp",
+        )
+    durable_probe = getattr(durable_provider, "is_available", None)
+    try:
+        durable_available = bool(durable_probe is not None and durable_probe())
+    except Exception:
+        logger.warning("marketing.whatsapp_durable_provider_probe_failed", exc_info=True)
+        return PlatformReadiness(
+            platform=platform,
+            kind=DIRECT_MESSAGE,
+            state="unknown",
+            reason_code="whatsapp_durable_provider_probe_unavailable",
+            checked_at=now,
+            source_status="unavailable",
+            reason="Não foi possível verificar a fila segura do WhatsApp agora.",
+            action="Tentar a verificação novamente",
+        )
+    if not durable_available:
+        return PlatformReadiness(
+            platform=platform,
+            kind=DIRECT_MESSAGE,
+            state="blocked",
+            reason_code="whatsapp_durable_provider_unavailable",
+            checked_at=now,
+            facts_as_of=now,
+            source_status="fresh",
+            reason="A fila segura do WhatsApp está configurada, mas indisponível.",
+            action="Conferir a integração durável do WhatsApp",
         )
 
     template = NotificationTemplate.objects.filter(

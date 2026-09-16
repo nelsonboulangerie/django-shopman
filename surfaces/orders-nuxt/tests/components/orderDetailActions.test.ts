@@ -92,6 +92,10 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     customer_note: "",
     payment_method: "cash",
     payment_method_label: "Dinheiro",
+    ifood_cancellation_notice: "",
+    ifood_payment_summary: [],
+    ifood_operation_summary: [],
+    ifood_negotiations: [],
     payment_status: "pending",
     can_confirm: true,
     can_advance: false,
@@ -503,7 +507,7 @@ describe("acerto — turno observado no diálogo", () => {
     const action = (base: string) => ({ ...fixtureActions({ can_confirm: true })[0]!, ref: "settle-delivery-cash",
       payload_schema: { base_revision: base, expected_actor_id: 1 }, confirmation: { description: `Caixa sintético ${base}` } });
     const w = abrir(order({ can_confirm: false, can_settle_delivery_cash: true, actions: [action("turno-1")] }));
-    await w.findAll("button").find((button) => button.text().includes("Acertar entrega"))!.trigger("click");
+    await w.findAll("button").find((button) => button.text().includes("Receber na retirada"))!.trigger("click");
     await w.get('[aria-label="Valor recebido"]').setValue("15,00");
     detalhe.value = order({ can_confirm: false, can_settle_delivery_cash: true, actions: [action("turno-2")] });
     await w.vm.$nextTick();
@@ -536,7 +540,7 @@ it("fechar e reabrir o acerto conserva valor e pede revisar a custódia que mudo
   const action = (base: string) => ({ ...fixtureActions({ can_confirm: true })[0]!, ref: "settle-delivery-cash",
     label: "Acertar dinheiro", payload_schema: { base_revision: base }, confirmation: { required: true, description: base } });
   const w = abrir(order({ can_confirm: false, can_settle_delivery_cash: true, actions: [action("turno-1")] }));
-  const open = () => w.findAll("button").find(button => button.text().includes("Acertar entrega"))!;
+  const open = () => w.findAll("button").find(button => button.text().includes("Receber na retirada"))!;
   await open().trigger("click");
   await w.find('[aria-label="Valor recebido"]').setValue("15,00");
   await w.findAll("button").find(button => button.text() === "Voltar")!.trigger("click");
@@ -576,4 +580,22 @@ it("keeps a confirmed note when the following useful read fails", async () => {
     await flushPromises();
     expect((note.element as HTMLTextAreaElement).value).toBe("Nota nova confirmada");
   } finally { readError.value = null; w.unmount(); }
+});
+
+describe("detalhe iFood", () => {
+  it("mostra o aviso de cancelamento pendente e os valores a cobrar sem liberar avanço", () => {
+    const notice = "Cancelamento solicitado ao iFood. Aguardando confirmação.";
+    const w = abrir(order({
+      channel_ref: "ifood", status: "accepted", status_label: "Confirmado",
+      can_confirm: false, can_advance: false,
+      advance_block_label: "Aguardando iFood", advance_block_reason: notice,
+      ifood_cancellation_notice: notice,
+      ifood_payment_summary: ["Cobrar na entrega: R$ 15,00"],
+    }));
+    expect(w.get("[data-ifood-cancellation]").text()).toBe(notice);
+    expect(w.get("[data-ifood-payment]").text()).toBe("Cobrar na entrega: R$ 15,00");
+    expect(w.get('[data-action="advance-blocked"]').attributes("disabled")).toBeDefined();
+    expect(w.find('[data-action="advance"]').exists()).toBe(false);
+    expect(w.text()).toContain("Confirmado");
+  });
 });

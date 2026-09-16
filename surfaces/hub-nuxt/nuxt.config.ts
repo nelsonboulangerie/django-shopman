@@ -1,4 +1,5 @@
 import tailwindcss from "@tailwindcss/vite";
+import { definePwaCapability } from "../operator-kit/pwa.config";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 
 export default defineNuxtConfig({
@@ -24,6 +25,34 @@ export default defineNuxtConfig({
   },
 
   modules: [
+    definePwaCapability({
+      app: "hub",
+      display: "standalone",
+      wakeLock: false,
+      kiosk: false,
+      push: {
+        surfaceRef: "hub",
+        categories: ["campaign", "production", "order", "purchase", "report", "sign_in", "system"],
+      },
+      manifest: {
+        name: "Central de Apps",
+        shortName: "Central",
+        description: "Central dos aplicativos de operação.",
+        themeColor: "#7C3A40",
+        backgroundColor: "#FCF6F1",
+        orientation: "any",
+        icons: [
+          { src: "/pwa/pwa-192x192.png?v=2", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/pwa/pwa-512x512.png?v=2", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/pwa/maskable-512x512.png?v=2", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        ],
+        shortcuts: [
+          { name: "Pedidos", shortName: "Pedidos", url: "/shortcuts/orders", icon: "/pwa/pwa-192x192.png?v=2" },
+          { name: "Caixa", shortName: "Caixa", url: "/shortcuts/pos", icon: "/pwa/pwa-192x192.png?v=2" },
+          { name: "Produção", shortName: "Produção", url: "/shortcuts/production", icon: "/pwa/pwa-192x192.png?v=2" },
+        ],
+      },
+    }),
     "@nuxtjs/color-mode",
     "motion-v/nuxt",
     "@vueuse/nuxt",

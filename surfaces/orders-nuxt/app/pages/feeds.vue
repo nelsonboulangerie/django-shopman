@@ -8,6 +8,7 @@
 import type { CollectionOptionProjection, FeedProjection } from "~/types/feeds";
 
 const { readMetadata, realtime, board, pending, error, errorMsg, refresh, isBusy, setActive, setCollections, setRotation } = useFeedBoard();
+const catalogChannels = computed(() => board.value?.catalog_channels ?? []);
 const feeds = computed<FeedProjection[]>(() => board.value?.feeds ?? []);
 const allCollections = computed<CollectionOptionProjection[]>(() => board.value?.all_collections ?? []);
 const loading = computed(() => pending.value && !board.value);
@@ -48,7 +49,7 @@ function resolveCollections(sc: FeedProjection, keep: boolean) {
 async function applyEdit(sc: FeedProjection) {
   if (collectionConflict(sc)) return;
   const ok = await setCollections(sc.ref, [...draft.value], collectionDrafts.value[sc.ref]?.base);
-  if (ok) { delete collectionDrafts.value[sc.ref]; if (editRef.value === sc.ref) editRef.value = null; }
+  if (ok) { Reflect.deleteProperty(collectionDrafts.value, sc.ref); if (editRef.value === sc.ref) editRef.value = null; }
 }
 
 const rotationRef = ref<string | null>(null);
@@ -72,7 +73,7 @@ function resolveRotation(sc: FeedProjection, keep: boolean) {
 async function applyRotation(sc: FeedProjection) {
   if (rotationConflict(sc)) return;
   const ok = await setRotation(sc.ref, Number(draftSeconds.value) || 0, Number(draftItems.value) || 0, rotationDrafts.value[sc.ref]?.base);
-  if (ok) { delete rotationDrafts.value[sc.ref]; if (rotationRef.value === sc.ref) rotationRef.value = null; }
+  if (ok) { Reflect.deleteProperty(rotationDrafts.value, sc.ref); if (rotationRef.value === sc.ref) rotationRef.value = null; }
 }
 const hasDraft = computed(() => feeds.value.some((sc) => {
   const collections = collectionDrafts.value[sc.ref];
@@ -82,7 +83,7 @@ const hasDraft = computed(() => feeds.value.some((sc) => {
 }));
 onBeforeRouteLeave(() => !hasDraft.value || window.confirm("Há alterações de feed não salvas. Sair e descartá-las?"));
 
-useHead({ title: "Feeds · Gestor" });
+useHead({ title: "Canais" });
 </script>
 
 <template>
@@ -90,18 +91,18 @@ useHead({ title: "Feeds · Gestor" });
     <UiToolbar>
       <div class="flex items-center gap-2">
         <Icon name="lucide:monitor-play" class="size-4 text-muted-foreground" />
-        <h1 class="text-sm font-semibold">Feeds</h1>
-        <span class="text-xs text-muted-foreground">Empurram o cardápio para fora (TV, Google, Meta)</span>
+        <h1 class="text-sm font-semibold">Canais</h1>
+        <span class="text-xs text-muted-foreground">Venda e exibição do catálogo</span>
       </div>
       <template #end>
         <p class="hidden text-xs text-muted-foreground sm:block">
-          <span class="tabular-nums">{{ feeds.length }}</span> feed{{ feeds.length === 1 ? "" : "s" }}
+          <span class="tabular-nums">{{ feeds.length + catalogChannels.length }}</span> canais
         </p>
         <!-- criar/configurar a fundo (novo canal de exibição, opções) é no Admin -->
         <a
           :href="`${adminBase}/admin/shop/channel/`" target="_blank" rel="noopener"
           class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-3 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
-          title="Criar / configurar feeds no Admin"
+          title="Configurar canais"
         >
           <Icon name="lucide:settings" class="size-4" />
           <span class="hidden sm:inline">Admin</span>
@@ -124,6 +125,7 @@ useHead({ title: "Feeds · Gestor" });
       </div>
 
       <div v-else-if="feeds.length" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <h2 class="text-sm font-semibold sm:col-span-2 xl:col-span-3">Feeds e telas</h2>
         <article
           v-for="sc in feeds" :key="sc.ref"
           class="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 transition"
@@ -256,10 +258,26 @@ useHead({ title: "Feeds · Gestor" });
         </article>
       </div>
 
-      <div v-else-if="!error" class="grid place-items-center rounded-xl border border-dashed border-border py-16 text-center">
+      <div v-else-if="!error && !catalogChannels.length" class="grid place-items-center rounded-xl border border-dashed border-border py-16 text-center">
         <Icon name="lucide:monitor-off" class="mb-2 size-8 text-muted-foreground/40" />
-        <p class="text-sm text-muted-foreground">Nenhum feed. Crie um no Admin (menuboard, Google ou Meta).</p>
+        <p class="text-sm text-muted-foreground">Nenhum canal configurado. Configure os canais no Admin.</p>
       </div>
+      <section v-if="!loading && catalogChannels.length" class="mt-6 space-y-3" aria-label="Canais de venda">
+        <h2 class="text-sm font-semibold">Canais de venda</h2>
+        <p class="text-xs text-muted-foreground">Últimos registros locais de envio. Não representam o estado atual da loja na plataforma.</p>
+        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <article v-for="channel in catalogChannels" :key="channel.ref" class="space-y-3 rounded-xl border border-border bg-card p-4">
+            <h3 class="font-medium">{{ channel.name }}</h3>
+            <p class="text-sm text-muted-foreground">{{ channel.diagnostic }}</p>
+            <p v-if="channel.observed" class="text-xs tabular-nums">
+              {{ channel.synced }} sincronizados · {{ channel.pending }} pendentes · {{ channel.errors }} com erro · {{ channel.retracted }} retirados · {{ channel.skipped }} não enviados
+            </p>
+            <p v-else class="text-xs text-muted-foreground">Ainda sem registros de envio de produtos.</p>
+            <NuxtLink :to="`/channels/${encodeURIComponent(channel.ref)}/catalog`" class="mr-2 inline-flex min-h-control items-center rounded-md border px-3 text-sm hover:bg-accent">Revisar vínculos</NuxtLink>
+            <NuxtLink :to="channel.catalog_path" class="inline-flex min-h-control items-center rounded-md border px-3 text-sm hover:bg-accent">Ver produtos no Catálogo</NuxtLink>
+          </article>
+        </div>
+      </section>
     </section>
   </main>
 </template>

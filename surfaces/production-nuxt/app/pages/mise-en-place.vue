@@ -23,6 +23,8 @@ const dateChips = [
   { iso: isoForOffset(1), label: "Amanhã" },
 ];
 
+const { stationRef } = useOperatorLock("backstage.operate_production");
+
 const {
   projection,
   lines,
@@ -33,7 +35,8 @@ const {
   isChecked,
   toggleChecked,
   checkedCount,
-} = useMiseEnPlace(selectedDate);
+  checklistRevisionChanged,
+} = useMiseEnPlace(selectedDate, stationRef);
 const weighing = useWeighing(selectedDate);
 
 const mode = ref<"insumos" | "preparos">("preparos");
@@ -176,7 +179,7 @@ function refreshAll() {
             v-for="chip in dateChips"
             :key="chip.iso"
             type="button"
-            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
               selectedDate === chip.iso
                 ? 'bg-primary text-primary-foreground'
@@ -197,7 +200,7 @@ function refreshAll() {
           <!-- Modo em segmento compacto: alterna duas visões da mesma preparação. -->
           <button
             type="button"
-            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
               mode === 'preparos'
                 ? 'bg-primary text-primary-foreground'
@@ -210,7 +213,7 @@ function refreshAll() {
           </button>
           <button
             type="button"
-            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
               mode === 'insumos'
                 ? 'bg-primary text-primary-foreground'
@@ -228,6 +231,14 @@ function refreshAll() {
           class="text-sm tabular-nums text-muted-foreground"
         >
           {{ checkedCount }}/{{ lines.length }} separados
+        </span>
+
+        <span
+          v-if="mode === 'insumos' && lines.length"
+          class="flex items-center gap-1.5 text-xs text-muted-foreground"
+        >
+          <Icon name="lucide:info" class="size-4 shrink-0" />
+          Checklist local {{ stationRef ? "desta estação" : "deste dispositivo" }} · não é registro de auditoria
         </span>
 
         <div class="ml-auto flex items-center gap-3">
@@ -263,6 +274,15 @@ function refreshAll() {
 
       <!-- ── Modo Insumos: agregado do dia (provisionamento + checklist) ── -->
       <template v-if="mode === 'insumos'">
+        <div
+          v-if="checklistRevisionChanged"
+          role="status"
+          aria-live="polite"
+          class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
+        >
+          <Icon name="lucide:refresh-cw" class="size-4 shrink-0" />
+          <span>O planejamento mudou. Confira esta revisão; as marcações da lista anterior foram limpas.</span>
+        </div>
         <p
           v-if="pending && !lines.length"
           class="text-sm text-muted-foreground"
@@ -296,7 +316,7 @@ function refreshAll() {
           <p class="text-base font-medium">Nada para separar nesta data.</p>
           <NuxtLink
             to="/plan"
-            class="text-sm text-primary underline-offset-2 hover:underline"
+            class="inline-flex min-h-11 items-center text-sm text-primary underline-offset-2 hover:underline"
             >Planejar produção</NuxtLink
           >
         </div>
@@ -537,7 +557,7 @@ function refreshAll() {
           </p>
           <NuxtLink
             to="/plan"
-            class="text-sm text-primary underline-offset-2 hover:underline"
+            class="inline-flex min-h-11 items-center text-sm text-primary underline-offset-2 hover:underline"
             >Planejar produção</NuxtLink
           >
         </div>

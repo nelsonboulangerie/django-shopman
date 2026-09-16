@@ -1,0 +1,18 @@
+
+> test:e2e
+> playwright test tests/e2e/resilience.spec.ts
+
+[WebServer] (node:94642) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:94643) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 3 tests using 1 worker
+
+(node:94644) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › tests/e2e/resilience.spec.ts:5:1 › a home renderiza o shell mesmo com o backend vazio (degrada com dignidade) (1.1s)
+  ✓  2 [chromium] › tests/e2e/resilience.spec.ts:13:1 › o link de salto move o foco para o conteúdo principal (292ms)
+  ✓  3 [chromium] › tests/e2e/resilience.spec.ts:24:1 › o banner offline aparece ao perder conexão e some ao voltar (373ms)
+
+  3 passed (3.3s)

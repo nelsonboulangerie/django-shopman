@@ -195,6 +195,54 @@ describe("QcCloseScreen — classificação por grau", () => {
     expect(wrapper.text()).not.toContain("O que houve");
   });
 
+  it("dois toques no grau atribuem toda a fornada quando nada mais foi distribuído", async () => {
+    const wrapper = mountQc();
+    const fair = buttonByText(wrapper, "Razoável")!;
+
+    await fair.trigger("click");
+    await fair.trigger("click");
+
+    expect(fair.attributes("aria-label")).toContain("40 unidades");
+    expect(
+      wrapper.find('[data-grade-ref="standard"]').attributes("aria-label"),
+    ).toContain("0 unidades");
+
+    await buttonByText(wrapper, "Confirmar")!.trigger("click");
+    await buttonByText(wrapper, "Formato")!.trigger("click");
+
+    expect(wrapper.emitted("confirm")?.[0]?.[0]).toMatchObject({
+      quantity: "40",
+      partition: [
+        {
+          quantity: "40",
+          quality_grade_ref: "fair",
+          quality_defect_ref: "shape",
+        },
+      ],
+    });
+  });
+
+  it("dois toques preservam outros graus e Perda e tomam somente o saldo", async () => {
+    const wrapper = mountQc();
+
+    await buttonByText(wrapper, "Ótimo")!.trigger("click");
+    await enter(wrapper, "7");
+    await buttonByText(wrapper, "Perda")!.trigger("click");
+    await enter(wrapper, "3");
+
+    const fair = buttonByText(wrapper, "Razoável")!;
+    await fair.trigger("click");
+    await fair.trigger("click");
+
+    expect(fair.attributes("aria-label")).toContain("30 unidades");
+    expect(
+      wrapper.find('[data-grade-ref="excellent"]').attributes("aria-label"),
+    ).toContain("7 unidades");
+    expect(
+      wrapper.find('button[aria-label="Perda: 3 unidades"]').exists(),
+    ).toBe(true);
+  });
+
   it("Razoável exige motivo mesmo com markdown configurado em zero", async () => {
     const grades = GRADES.map((grade) =>
       grade.ref === "fair" ? { ...grade, markdown_percent: 0 } : grade,

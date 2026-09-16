@@ -9,11 +9,13 @@
 // `useRailState`): colapsado (só um puxador) · compacto (só ícone) · estendido (ícone +
 // rótulo). A nav de SEÇÃO de cada app (abas do Gestor, visões do Produção) NÃO vive aqui —
 // fica no topo do conteúdo; o rail concentra só o comum e economiza a horizontal.
-import { computed } from "vue";
+import { computed, ref } from "vue";
 
 const props = defineProps<{
-  /** Ícone forte do app (DS §6), com ou sem `lucide:`. */
+  /** Ícone forte do app (DS §6), com ou sem `lucide:`. Fallback quando `appIconSrc` falta ou falha. */
   appIcon: string;
+  /** O ícone REAL do app — o PNG da família PWA (`/pwa/pwa-64x64.png?v=2`, ver PWA_ICONS.md). */
+  appIconSrc?: string;
   appLabel: string;
   /** URL da Central (launcher). Omitido na própria Central → some o item. */
   centralUrl?: string;
@@ -32,6 +34,11 @@ function toggleTheme() {
 const themeLabel = computed(() => (colorMode.value === "dark" ? "Tema claro" : "Tema escuro"));
 
 const appIconName = computed(() => (props.appIcon.startsWith("lucide:") ? props.appIcon : `lucide:${props.appIcon}`));
+
+// Imagem que não carregou (build sem a família, cache velho) cai no Lucide — o rail
+// nunca fica com um quadrado vazio no lugar da identidade.
+const appIconBroken = ref(false);
+const showAppImage = computed(() => Boolean(props.appIconSrc) && !appIconBroken.value);
 </script>
 
 <template>
@@ -56,10 +63,20 @@ const appIconName = computed(() => (props.appIcon.startsWith("lucide:") ? props.
       :class="isExtended ? 'w-full' : ''"
     >
       <span
-        class="grid size-11 shrink-0 place-items-center rounded-md bg-rail-foreground/15 transition"
+        class="grid size-11 shrink-0 place-items-center overflow-hidden rounded-md bg-rail-foreground/15 transition"
         :class="centralUrl ? 'group-hover:bg-rail-foreground/25 group-focus-visible:bg-rail-foreground/25' : ''"
       >
+        <img
+          v-if="showAppImage"
+          :src="appIconSrc"
+          class="size-11 rounded-md"
+          :class="centralUrl ? 'group-hover:hidden group-focus-visible:hidden' : ''"
+          alt=""
+          decoding="async"
+          @error="appIconBroken = true"
+        >
         <Icon
+          v-else
           :name="appIconName"
           class="size-5"
           :class="centralUrl ? 'group-hover:hidden group-focus-visible:hidden' : ''"

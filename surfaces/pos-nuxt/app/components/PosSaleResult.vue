@@ -12,6 +12,7 @@ import {
   autoAdvanceSeconds,
   changeDisplay as toChangeDisplay,
   enterAdvances,
+  orderReadback,
   paymentFailed,
   pixAwaiting,
   type PixPollStatus,
@@ -36,10 +37,13 @@ const emit = defineEmits<{
   printReceipt: [];
   printDanfe: [];
   cancelSale: [];
-  resendLink: [];
+  paymentNotice: ["send" | "resend"];
 }>();
 
-const title = computed(() => saleResultTitle(props.result.receipt.customerName, props.result.payment));
+const readback = computed(() => orderReadback(props.result));
+const title = computed(() => props.result.salesMode === "order"
+  ? paymentFailed(props.result.payment) ? "Encomenda registrada, cobrança não criada" : "Encomenda registrada"
+  : saleResultTitle(props.result.receipt.customerName, props.result.payment));
 const chargeFailed = computed(() => paymentFailed(props.result.payment));
 const changeDisplay = computed(() => toChangeDisplay(props.result.changeQ));
 const pixPending = computed(() => pixAwaiting(props.result.payment, props.pixStatus));
@@ -62,6 +66,8 @@ function cancelCountdown() {
   countdown.value = 0;
 }
 onMounted(() => {
+  // A encomenda precisa ficar disponível para conferir e imprimir a filipeta.
+  if (props.result.salesMode === "order") return;
   const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
   const seconds = autoAdvanceSeconds({
     changeQ: props.result.changeQ,
@@ -114,6 +120,26 @@ function onNewSale() {
       </p>
     </div>
 
+    <!-- LEITURA DE VOLTA da encomenda: como e quando, ditos em voz alta antes
+         de desligar o telefone. É a última chance de pegar um "era sábado, não
+         sexta" — depois disso o combinado só existe no Gestor. -->
+    <div
+      v-if="readback"
+      class="grid w-full max-w-md gap-2 rounded-md border bg-card p-4 text-left"
+      data-order-readback
+      role="status"
+    >
+      <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Confirme com o cliente</p>
+      <p v-if="readback.fulfillment" class="flex items-center gap-2 text-base font-semibold">
+        <Icon :name="readback.fulfillment.startsWith('Entrega') ? 'lucide:bike' : 'lucide:store'" class="size-5 shrink-0 text-muted-foreground" />
+        {{ readback.fulfillment }}
+      </p>
+      <p v-if="readback.schedule" class="flex items-center gap-2 text-base font-semibold">
+        <Icon name="lucide:calendar-clock" class="size-5 shrink-0 text-muted-foreground" />
+        {{ readback.schedule }}
+      </p>
+    </div>
+
     <!-- TROCO — o herói da tela quando existe. `aria-live` anuncia o valor. -->
     <div v-if="changeDisplay" class="grid justify-items-center gap-1" aria-live="polite" role="status">
       <p class="text-sm font-medium uppercase tracking-wide text-muted-foreground">Troco</p>
@@ -147,9 +173,10 @@ function onNewSale() {
       :proof="result.payment"
       :status="pixStatus"
       :resending="resendingLink"
+      :delivery="result.paymentDelivery"
       large
       class="w-full max-w-md text-left"
-      @resend-link="emit('resendLink')"
+      @payment-notice="emit('paymentNotice', $event)"
     />
 
     <!-- Hierarquia única de ações (mesma disciplina do checkout): UM CTA
@@ -185,7 +212,7 @@ function onNewSale() {
           <Icon name="lucide:printer" class="size-4" />
           Imprimir DANFE
         </UiButton>
-        <UiButton variant="outline" size="sm" class="gap-1.5" :href="result.nextUrl">
+        <UiButton v-if="result.salesMode === 'order'" variant="outline" size="sm" class="gap-1.5" :href="result.nextUrl">
           <Icon name="lucide:external-link" class="size-4" />
           Abrir no gestor
         </UiButton>

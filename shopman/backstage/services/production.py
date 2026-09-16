@@ -10,11 +10,12 @@ from __future__ import annotations
 import csv
 import hashlib
 import logging
+import tempfile
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
-from io import StringIO
 
+from django.conf import settings
 from django.utils import timezone
 from shopman.utils.spreadsheet import escape_cell
 
@@ -234,6 +235,7 @@ def has_committed_mutation_attempt(
 
     event_specs = {
         "start": ("start", WorkOrderEvent.Kind.STARTED),
+        "review_qc": ("quality-review", WorkOrderEvent.Kind.QUALITY_REVIEWED),
         "correct_qc": ("quality-correction", WorkOrderEvent.Kind.QUALITY_CORRECTED),
         "advance_step": ("advance-step", WorkOrderEvent.Kind.STEP_ADVANCED),
         "void": ("void", WorkOrderEvent.Kind.VOIDED),
@@ -2192,6 +2194,145 @@ def _quality_correction_replay(*, event_key: str, work_order_id, actor: str, att
     return replay.work_order
 
 
+def _quality_review_replay(*, event_key: str, work_order_id, actor: str, expected_rev: int):
+    """Return an exact manager QC confirmation retry."""
+    from shopman.craftsman.models import WorkOrderEvent
+
+    replay = WorkOrderEvent.objects.select_related("work_order").filter(idempotency_key=event_key).first()
+    if replay is None:
+        return None
+    if (
+        replay.kind != WorkOrderEvent.Kind.QUALITY_REVIEWED
+        or replay.work_order_id != work_order_id
+        or replay.actor != str(actor or "")
+        or (replay.payload or {}).get("attempt")
+        != {"work_order_id": work_order_id, "expected_rev": expected_rev}
+    ):
+        raise ProductionConflict(
+            "Esta chave de tentativa já foi usada em outra revisão.",
+            data={"work_order": replay.work_order.ref, "cause": "idempotency_conflict"},
+        )
+    return replay.work_order
+
+
+def _emit_quality_reviewed(work_order_id: int) -> None:
+    """Publish the canonical review fact only after its transaction commits."""
+    from django.db import transaction
+
+    def emit() -> None:
+        from shopman.craftsman.models import WorkOrder
+        from shopman.craftsman.signals import production_changed
+
+        work_order = WorkOrder.objects.get(pk=work_order_id)
+        production_changed.send(
+            sender=_emit_quality_reviewed,
+            product_ref=work_order.output_sku,
+            date=work_order.target_date,
+            action="quality_reviewed",
+            work_order=work_order,
+        )
+
+    transaction.on_commit(emit)
+
+
+def apply_quality_review(
+    *,
+    work_order_id,
+    actor: str,
+    expected_rev: int | None,
+    idempotency_key: str | None,
+):
+    """Confirm the effective QC partition without rewriting production facts."""
+    from django.db import transaction
+    from shopman.craftsman.models import WorkOrder, WorkOrderEvent
+    from shopman.craftsman.services.scheduling import _check_rev, _next_seq
+
+    from shopman.shop.services import quality as quality_service
+
+    _require_irreversible_attempt(
+        actor=actor,
+        expected_rev=expected_rev,
+        idempotency_key=idempotency_key,
+    )
+    event_key = _mutation_idempotency_key("quality-review", work_order_id, idempotency_key)
+    try:
+        with transaction.atomic():
+            replay = _quality_review_replay(
+                event_key=event_key,
+                work_order_id=work_order_id,
+                actor=actor,
+                expected_rev=expected_rev,
+            )
+            if replay is not None:
+                return replay
+
+            work_order = WorkOrder.objects.select_for_update().filter(pk=work_order_id).first()
+            if work_order is None:
+                raise ProductionNotFound(
+                    "Ordem de produção não encontrada.",
+                    resource="work_order",
+                    identifier=str(work_order_id),
+                )
+            replay = _quality_review_replay(
+                event_key=event_key,
+                work_order_id=work_order_id,
+                actor=actor,
+                expected_rev=expected_rev,
+            )
+            if replay is not None:
+                return replay
+            if work_order.status != WorkOrder.Status.FINISHED:
+                raise ProductionConflict(
+                    "Conclua a fornada antes de revisar a qualidade.",
+                    data={"work_order": work_order.ref, "cause": "quality_review_requires_finished"},
+                )
+            if WorkOrderEvent.objects.filter(
+                work_order=work_order,
+                kind__in=(
+                    WorkOrderEvent.Kind.QUALITY_REVIEWED,
+                    WorkOrderEvent.Kind.QUALITY_CORRECTED,
+                ),
+            ).exists():
+                raise ProductionConflict(
+                    "A qualidade desta fornada já foi revisada.",
+                    data={"work_order": work_order.ref, "cause": "quality_already_reviewed"},
+                )
+
+            _check_rev(work_order, expected_rev)
+            partition = quality_service.effective_partition(work_order)
+            if not partition:
+                raise ProductionError("A fornada não possui fatos de qualidade para revisar.")
+            event = WorkOrderEvent.objects.create(
+                work_order=work_order,
+                seq=_next_seq(work_order),
+                kind=WorkOrderEvent.Kind.QUALITY_REVIEWED,
+                payload={
+                    "schema_version": 1,
+                    "partition": partition,
+                    "attempt": {
+                        "work_order_id": work_order.pk,
+                        "expected_rev": expected_rev,
+                    },
+                },
+                actor=actor,
+                idempotency_key=event_key,
+            )
+            _emit_quality_reviewed(work_order.pk)
+            work_order.refresh_from_db(fields=["rev"])
+            logger.info(
+                "production.quality_reviewed wo=%s event=%s actor=%s",
+                work_order.ref,
+                event.pk,
+                actor,
+            )
+            return work_order
+    except (ProductionError, ProductionNotFound, ProductionConflict):
+        raise
+    except Exception as exc:
+        translated = _operator_error(exc)
+        raise translated from (None if translated is exc else exc)
+
+
 def _record_quality_hold_risk(exc: ProductionConflict) -> None:
     """Keep a blocked physical correction visible after its transaction rolls back."""
     data = dict(getattr(exc, "data", {}) or {})
@@ -2411,6 +2552,7 @@ def apply_quality_correction(
                 actor=actor,
                 idempotency_key=event_key,
             )
+            _emit_quality_reviewed(work_order.pk)
             work_order.refresh_from_db(fields=["rev"])
             logger.info(
                 "production.quality_corrected wo=%s event=%s actor=%s stock=%s",
@@ -3032,18 +3174,42 @@ def _csv_safe(value) -> str:
     return escape_cell("" if value is None else str(value))
 
 
-def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
-    """Export a production report as UTF-8 BOM CSV for spreadsheet tools."""
-    from shopman.backstage.projections.production import build_production_reports
+class _StreamingCSVBuffer:
+    def write(self, value: str) -> str:
+        return value
+
+
+class ProductionReportExportLimitExceeded(RuntimeError):
+    """The requested synchronous export exceeds its configured safe bound."""
+
+    def __init__(self, *, limit: str, maximum: int):
+        self.limit = limit
+        self.maximum = maximum
+        super().__init__(f"production report export exceeds {limit} limit ({maximum})")
+
+
+class ProductionReportChangedDuringExport(RuntimeError):
+    """The report changed while its temporary export file was prepared."""
+
+
+def _report_export_limit(setting_name: str, default: int) -> int:
+    value = int(getattr(settings, setting_name, default))
+    return value if value > 0 else default
+
+
+def iter_reports_csv(report_kind: str, filters: dict | None = None):
+    """Yield CSV chunks for the bounded, pre-response preparation step."""
+    from shopman.backstage.projections.production import iter_production_report_rows
 
     requested = dict(filters or {})
-    requested["report_kind"] = report_kind
-    reports = build_production_reports(requested)
-    output = StringIO()
-    writer = csv.writer(output)
+    kind = report_kind if report_kind in {"history", "operator_productivity", "recipe_waste", "quality"} else "history"
+    requested["report_kind"] = kind
+    rows = iter_production_report_rows(requested, sort=str(requested.get("sort") or "default"))
+    writer = csv.writer(_StreamingCSVBuffer())
+    yield "\ufeff"
 
-    if reports.filters.report_kind == "operator_productivity":
-        writer.writerow(
+    if kind == "operator_productivity":
+        yield writer.writerow(
             [
                 "Operador",
                 "Nome",
@@ -3053,8 +3219,8 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
                 "Tempo médio (min)",
             ]
         )
-        for row in reports.operator_rows:
-            writer.writerow(
+        for row in rows:
+            yield writer.writerow(
                 [
                     _csv_safe(row.operator_ref),
                     _csv_safe(row.operator_name),
@@ -3064,10 +3230,10 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
                     row.duration_avg_minutes,
                 ]
             )
-    elif reports.filters.report_kind == "quality":
+    elif kind == "quality":
         # Sem este ramo o "quality" caía no else e exportava o HISTÓRICO —
         # o gestor baixava a tabela errada com o nome certo.
-        writer.writerow(
+        yield writer.writerow(
             [
                 "Receita",
                 "Nome",
@@ -3077,8 +3243,8 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
                 "% da receita",
             ]
         )
-        for row in reports.quality_rows:
-            writer.writerow(
+        for row in rows:
+            yield writer.writerow(
                 [
                     _csv_safe(row.recipe_ref),
                     _csv_safe(row.recipe_name),
@@ -3088,8 +3254,8 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
                     row.share,
                 ]
             )
-    elif reports.filters.report_kind == "recipe_waste":
-        writer.writerow(
+    elif kind == "recipe_waste":
+        yield writer.writerow(
             [
                 "Receita",
                 "Nome",
@@ -3099,8 +3265,8 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
                 "Utilização capacidade",
             ]
         )
-        for row in reports.waste_rows:
-            writer.writerow(
+        for row in rows:
+            yield writer.writerow(
                 [
                     _csv_safe(row.recipe_ref),
                     _csv_safe(row.recipe_name),
@@ -3111,7 +3277,7 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
                 ]
             )
     else:
-        writer.writerow(
+        yield writer.writerow(
             [
                 "Ref",
                 "Data",
@@ -3129,8 +3295,8 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
                 "Duração (min)",
             ]
         )
-        for row in reports.history_rows:
-            writer.writerow(
+        for row in rows:
+            yield writer.writerow(
                 [
                     _csv_safe(row.ref),
                     _csv_safe(row.date),
@@ -3149,7 +3315,52 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
                 ]
             )
 
-    return ("\ufeff" + output.getvalue()).encode("utf-8")
+
+def prepare_reports_csv(report_kind: str, filters: dict | None = None):
+    """Build a bounded, revision-consistent file before response headers exist."""
+
+    from shopman.backstage.projections.production import production_report_revision
+
+    requested = dict(filters or {})
+    requested["report_kind"] = report_kind
+    max_rows = _report_export_limit("SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_ROWS", 50_000)
+    max_bytes = _report_export_limit("SHOPMAN_PRODUCTION_REPORT_EXPORT_MAX_BYTES", 20 * 1024 * 1024)
+    spool_bytes = min(
+        max_bytes,
+        _report_export_limit("SHOPMAN_PRODUCTION_REPORT_EXPORT_SPOOL_BYTES", 1024 * 1024),
+    )
+    revision = production_report_revision(requested)
+    prepared = tempfile.SpooledTemporaryFile(max_size=spool_bytes, mode="w+b")
+    byte_count = 0
+    row_count = 0
+    try:
+        for index, chunk in enumerate(iter_reports_csv(report_kind, requested)):
+            encoded = chunk.encode("utf-8")
+            byte_count += len(encoded)
+            if byte_count > max_bytes:
+                raise ProductionReportExportLimitExceeded(limit="bytes", maximum=max_bytes)
+            if index >= 2:
+                row_count += 1
+                if row_count > max_rows:
+                    raise ProductionReportExportLimitExceeded(limit="rows", maximum=max_rows)
+            prepared.write(encoded)
+        if revision != production_report_revision(requested):
+            raise ProductionReportChangedDuringExport
+        prepared.seek(0)
+        return prepared
+    except Exception:
+        prepared.close()
+        raise
+
+
+def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
+    """Compatibility helper for callers that explicitly require CSV bytes."""
+
+    prepared = prepare_reports_csv(report_kind, filters)
+    try:
+        return prepared.read()
+    finally:
+        prepared.close()
 
 
 def _check_linked_order_coverage(

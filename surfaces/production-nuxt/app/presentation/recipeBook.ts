@@ -44,6 +44,7 @@ export const KIND_OPTIONS: readonly { value: RecipeKind; label: string }[] = [
   { value: "bread", label: "Pão" },
   { value: "viennoiserie", label: "Viennoiserie" },
   { value: "sweet_dough", label: "Massa doce" },
+  { value: "cookie", label: "Biscoito" },
   { value: "filling", label: "Recheio" },
   { value: "cream", label: "Creme" },
   { value: "sauce", label: "Molho" },

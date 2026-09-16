@@ -96,6 +96,13 @@ export interface AlertProjection {
   message: string;
   order_ref: string;
   created_at_display: string;
+  actions: Array<{
+    ref: string;
+    kind: string;
+    label: string;
+    enabled: boolean;
+    href: string;
+  }>;
 }
 
 export interface AlertsResponse {

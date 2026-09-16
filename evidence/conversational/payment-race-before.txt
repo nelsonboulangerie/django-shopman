@@ -1,0 +1,96 @@
+AUDIT_IMPORTS ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/orderman/shopman/orderman'] ['/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/packages/guestman/shopman/guestman']
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_pix_callback_and_unpaid_cancel_preserve_money_and_terminal_truth[cancel] _
+
+winner = 'cancel'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x119880da0>
+
+    @pytest.mark.django_db(transaction=True)
+    @pytest.mark.parametrize("winner", ["callback", "cancel"])
+    def test_pix_callback_and_unpaid_cancel_preserve_money_and_terminal_truth(winner, monkeypatch):
+        assert connection.vendor == "postgresql", "This proof requires PostgreSQL"
+        Channel.objects.create(ref="race-pix", name="Synthetic PIX race")
+        intent = PaymentService.create_intent("PIX-RACE", 1000, "pix", gateway="mock", gateway_id="synthetic-pix-race")
+        PaymentService.authorize(intent.ref, gateway_id=intent.gateway_id)
+        order = Order.objects.create(ref="PIX-RACE", channel_ref="race-pix", status="new", total_q=1000,
+            data={"payment": {"method": "pix", "intent_ref": intent.ref}})
+        paused, resume = Event(), Event()
+        capture = pix_confirmation._capture_charge
+    
+        def capture_at_barrier(*args, **kwargs):
+            if winner == "callback":
+                result = capture(*args, **kwargs)
+            paused.set()
+            assert resume.wait(10)
+            return result if winner == "callback" else capture(*args, **kwargs)
+    
+        monkeypatch.setattr(pix_confirmation, "_capture_charge", capture_at_barrier)
+    
+        def callback():
+            try:
+                pix_confirmation.confirm_pix(txid=intent.gateway_id, e2e_id="synthetic-e2e", amount="10.00")
+            finally:
+                connections.close_all()
+    
+        def cancel():
+            try:
+                return cancellation.cancel(Order.objects.get(pk=order.pk), "pix_timeout", actor="synthetic-timeout",
+                    expected_unpaid_intent_ref=intent.ref)
+            finally:
+                connections.close_all()
+    
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            paid = pool.submit(callback)
+            try:
+                assert paused.wait(10)
+                cancelled = pool.submit(cancel).result(timeout=10)
+            finally:
+                resume.set()
+            paid.result(timeout=10)
+        # The identical provider event must never account for a second payment.
+        pix_confirmation.confirm_pix(txid=intent.gateway_id, e2e_id="synthetic-e2e", amount="10.00")
+        order.refresh_from_db()
+        intents = PaymentService.get_by_order(order.ref)
+        assert sum(PaymentService.captured_total(item.ref) for item in intents) == 1000
+        assert order.data["payment"]["pix_receipts"] == {"synthetic-e2e": 1000}
+        assert cancelled is (winner == "cancel")
+        if winner == "cancel":
+            assert order.status == "cancelled"
+>           assert sum(PaymentService.refunded_total(item.ref) for item in intents) == 1000
+E           assert 0 == 1000
+E            +  where 0 = sum(<generator object test_pix_callback_and_unpaid_cancel_preserve_money_and_terminal_truth.<locals>.<genexpr> at 0x11a198a00>)
+
+shopman/storefront/tests/test_concierge_payment_race.py:66: AssertionError
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-11 18:16:44,535 shopman.payman Intent created
+INFO 2026-09-11 18:16:44,536 shopman.payman Intent authorized
+DEBUG 2026-09-11 18:16:44,539 shopman.shop.handlers._sse_emitters _sse_emitters._on_payment_changed degraded; using fallback
+Traceback (most recent call last):
+  File "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-conversational-implementation-20260911/shopman/shop/handlers/_sse_emitters.py", line 343, in _on_payment_changed
+    order = Order.objects.get(ref=order_ref)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py", line 639, in get
+    raise self.model.DoesNotExist(
+shopman.orderman.models.order.Order.DoesNotExist: Order matching query does not exist.
+INFO 2026-09-11 18:16:44,556 shopman.shop.services.cancellation cancellation.cancel: order PIX-RACE cancelled by synthetic-timeout — pix_timeout
+INFO 2026-09-11 18:16:44,574 shopman.payman Intent cancelled
+INFO 2026-09-11 18:16:44,579 shopman.shop.services.payment payment.cancel: cancelled PAY-1555B5667910 for order PIX-RACE
+INFO 2026-09-11 18:16:44,587 shopman.shop.handlers.loyalty loyalty.revoke: no customer_ref on order PIX-RACE, skipping
+INFO 2026-09-11 18:16:44,588 shopman.shop.services.loyalty loyalty.revoke: queued for order PIX-RACE (cancelled)
+INFO 2026-09-11 18:16:44,592 shopman.operational operator.effect.state
+DEBUG 2026-09-11 18:16:44,593 shopman.shop.services.notification notification.deliver: no recipient for backend=manychat order=PIX-RACE, skipping
+DEBUG 2026-09-11 18:16:44,593 shopman.shop.services.notification notification.deliver: no recipient for backend=sms order=PIX-RACE, skipping
+DEBUG 2026-09-11 18:16:44,593 shopman.shop.services.notification notification.deliver: no recipient for backend=email order=PIX-RACE, skipping
+WARNING 2026-09-11 18:16:44,593 shopman.shop.services.notification notification.deliver: active notification has no recipient order=PIX-RACE template=order_cancelled
+INFO 2026-09-11 18:16:44,594 shopman.operational operator.effect.state
+WARNING 2026-09-11 18:16:44,594 shopman.orderman.dispatch Directive notification.send #217 transient failure (attempt 1/5): [transient] no active notification recipient available
+INFO 2026-09-11 18:16:44,596 shopman.shop.services.notification notification.send: queued order_cancelled for order PIX-RACE
+INFO 2026-09-11 18:16:44,600 shopman.payman Intent created
+INFO 2026-09-11 18:16:44,601 shopman.payman Intent authorized
+INFO 2026-09-11 18:16:44,607 shopman.payman Intent captured
+INFO 2026-09-11 18:16:44,613 shopman.shop.services.pix_confirmation pix_confirmation: Pix fora da cobrança registrado order=PIX-RACE intent=PAY-B323C8028A47 valor_q=1000
+INFO 2026-09-11 18:16:44,619 shopman.shop.services.pix_confirmation pix_confirmation: Pix em cobrança encerrada já registrado order=PIX-RACE intent=PAY-B323C8028A47

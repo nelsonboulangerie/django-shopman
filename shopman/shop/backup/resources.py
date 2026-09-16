@@ -47,6 +47,7 @@ from shopman.shop.models import (
     Coupon,
     DeliveryDistanceBand,
     DeliveryZone,
+    FAQEntry,
     NotificationTemplate,
     OmotenashiCopy,
     Promotion,
@@ -123,6 +124,12 @@ class OmotenashiCopyResource(resources.ModelResource):
     class Meta(NaturalKeyMeta):
         model = OmotenashiCopy
         import_id_fields = ("key", "moment", "audience")
+
+
+class FAQEntryResource(resources.ModelResource):
+    class Meta(NaturalKeyMeta):
+        model = FAQEntry
+        import_id_fields = ("ref",)
 
 
 class NotificationTemplateResource(resources.ModelResource):
@@ -367,6 +374,7 @@ def register_shop_resources() -> None:
         ("quality_grades", QualityGradeResource, 0),
         ("quality_defects", QualityDefectResource, 0),
         ("omotenashi_copy", OmotenashiCopyResource, 0),
+        ("faq_entries", FAQEntryResource, 0),
         ("notification_templates", NotificationTemplateResource, 0),
         ("announcement_templates", AnnouncementTemplateResource, 0),
         ("products", ProductBackupResource, 0),

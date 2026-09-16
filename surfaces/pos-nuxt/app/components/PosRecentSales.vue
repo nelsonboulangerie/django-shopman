@@ -6,7 +6,7 @@
 // balcão precisa a qualquer hora: imprimir a DANFE na bobina (via agente do
 // balcão), reenviar por e-mail (o Focus entrega) e reprocessar falha. As ações
 // seguem o FATO (a nota existe), nunca o toggle que o operador marcou na venda.
-import type { POSProjection } from "~/types/pos";
+import type { POSPaymentDeliveryProjection, POSProjection } from "~/types/pos";
 import { toast } from "vue-sonner";
 
 interface RecentSale {
@@ -27,6 +27,7 @@ interface RecentSale {
   can_requeue_fiscal: boolean;
   /** Ainda dentro da janela do desfazer (o servidor decide e impõe). */
   can_cancel: boolean;
+  payment_delivery?: POSPaymentDeliveryProjection;
 }
 
 const props = defineProps<{
@@ -163,6 +164,26 @@ async function resendEmail(sale: RecentSale) {
   }
 }
 
+async function sendPaymentNotice(sale: RecentSale) {
+  const requested = sale.payment_delivery?.action;
+  if (!requested) return;
+  busyRef.value = sale.order_ref;
+  try {
+    const response = await $fetch<{ payment_delivery?: POSPaymentDeliveryProjection }>(
+      apiPath(`/api/v1/backstage/pos/orders/${encodeURIComponent(sale.order_ref)}/send-payment-notice/`),
+      { method: "POST", credentials: "include", body: { action: requested } },
+    );
+    if (response.payment_delivery) sale.payment_delivery = response.payment_delivery;
+    toast.success(response.payment_delivery?.notice || "Cobrança colocada na fila de envio.");
+  } catch (error) {
+    const delivery = (error as { data?: { payment_delivery?: POSPaymentDeliveryProjection } } | null)?.data?.payment_delivery;
+    if (delivery) sale.payment_delivery = delivery;
+    toast.error(messageOf(error));
+  } finally {
+    busyRef.value = "";
+  }
+}
+
 async function requeueFiscal(sale: RecentSale) {
   busyRef.value = sale.order_ref;
   try {
@@ -283,7 +304,16 @@ function fiscalChipClass(status: string): string {
               </span>
             </div>
 
-            <div v-if="canPrintOnAgent || sale.can_print_danfe || sale.can_requeue_fiscal || sale.can_cancel" class="mt-2 flex flex-wrap items-center gap-2">
+            <p
+              v-if="sale.payment_delivery?.notice"
+              class="mt-2 flex items-start gap-1 text-xs text-muted-foreground"
+              data-payment-delivery
+            >
+              <Icon name="lucide:message-circle-more" class="mt-0.5 size-3.5 shrink-0" />
+              {{ sale.payment_delivery.notice }}
+            </p>
+
+            <div v-if="canPrintOnAgent || sale.can_print_danfe || sale.can_requeue_fiscal || sale.can_cancel || sale.payment_delivery?.action" class="mt-2 flex flex-wrap items-center gap-2">
               <!-- Recibo não fiscal: qualquer venda reimprime, a qualquer hora.
                    Só aparece onde há agente; a bobina é o único transporte da
                    reimpressão (o diálogo do navegador só existe na venda viva). -->
@@ -304,6 +334,16 @@ function fiscalChipClass(status: string): string {
               >
                 <Icon name="lucide:receipt-text" class="size-3.5" />
                 DANFE
+              </UiButton>
+              <UiButton
+                v-if="sale.payment_delivery?.action"
+                type="button" variant="outline" size="xs" class="gap-1"
+                :disabled="busyRef === sale.order_ref"
+                data-action="send-payment-notice"
+                @click="sendPaymentNotice(sale)"
+              >
+                <Icon name="lucide:send" class="size-3.5" />
+                {{ sale.payment_delivery.action_label }}
               </UiButton>
               <UiButton
                 v-if="sale.can_resend_email"

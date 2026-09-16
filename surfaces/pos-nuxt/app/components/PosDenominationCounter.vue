@@ -45,7 +45,7 @@ watch(totalQ, (value) => emit("total-q", value));
           denom.shape === 'note' ? 'h-10 w-16 rounded-md' : 'size-10 rounded-full',
           denom.shape === 'note'
             ? 'border-success/40 bg-success/10 text-success'
-            : 'border-warning/40 bg-warning/10 text-amber-700 dark:text-amber-400',
+            : 'border-warning/40 bg-warning/10 text-warning',
         ]"
       >
         {{ denom.label }}

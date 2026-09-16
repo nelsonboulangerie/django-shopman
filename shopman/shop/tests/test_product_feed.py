@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
 from xml.etree import ElementTree as ET
 
 import pytest
@@ -46,10 +47,51 @@ def test_feed_is_valid_google_rss(client, feed):
     assert item.find(f"{G}id").text == "BAGUETE"
     assert item.find(f"{G}price").text == "13.00 BRL"
     assert item.find(f"{G}availability").text == "in_stock"  # google = underscore
-    assert item.find(f"{G}brand").text == "Nelson Boulangerie"
-    assert item.find(f"{G}identifier_exists").text == "no"
+    assert item.find(f"{G}brand") is None  # marca da loja não prova a marca do produto
+    assert item.find(f"{G}identifier_exists") is None  # vazio não comprova ausência
     assert item.find(f"{G}custom_label_0").text == "vitrine"  # coleção do feed
     assert item.find(f"{G}product_type").text == "Vitrine"
+
+
+@pytest.mark.parametrize("channel", ["google", "meta"])
+def test_feed_uses_product_commercial_attributes(client, feed, channel):
+    product = feed["com_foto"]
+    product.metadata = {"social": {
+        "brand": "Fabricante & Filhos", "gtin": "4006381333931",
+        "mpn": "REF<123>", "condition": "new", "google_product_category": "250",
+    }}
+    product.save()
+    item = _items(client.get(f"/feed/{channel}.xml").content)[0]
+    for field, value in product.metadata["social"].items():
+        assert item.find(f"{G}{field}").text == value
+    assert item.find(f"{G}identifier_exists") is None
+
+
+def test_feed_preserves_mpn_without_gtin(client, feed):
+    product = feed["com_foto"]
+    product.metadata = {"social": {"brand": "Nelson", "mpn": "BAGUETE"}}
+    product.save()
+    item = _items(client.get("/feed/google.xml").content)[0]
+    assert item.find(f"{G}mpn").text == "BAGUETE"
+    assert item.find(f"{G}gtin") is None
+    assert item.find(f"{G}identifier_exists") is None
+
+
+@pytest.mark.parametrize("condition", ["used", "refurbished"])
+def test_feed_preserves_condition(client, feed, condition):
+    product = feed["com_foto"]
+    product.metadata = {"social": {"condition": condition}}
+    product.save()
+    item = _items(client.get("/feed/google.xml").content)[0]
+    assert item.find(f"{G}condition").text == condition
+
+
+def test_feed_does_not_hide_shop_database_failure(client, feed):
+    from django.db import OperationalError
+
+    with patch.object(Shop.objects, "only", side_effect=OperationalError("indisponível")):
+        with pytest.raises(OperationalError):
+            client.get("/feed/google.xml")
 
 
 def test_meta_kind_uses_spaced_availability(client, feed):

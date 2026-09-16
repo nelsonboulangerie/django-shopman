@@ -14,9 +14,11 @@ COMPOSE ?= docker compose
 APP_COMPOSE := $(COMPOSE) --profile app
 RELEASE_COMPOSE := $(COMPOSE) --profile release
 NUXT_DIR := surfaces/storefront-nuxt
+PWA_SURFACE := $(if $(filter storefront,$(app)),storefront-nuxt,$(app)-nuxt)
+PWA_DIR := surfaces/$(PWA_SURFACE)
 SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils
 
-.PHONY: surfaces surfaces-types help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-counter-agent test-migrations test-silent-swallow deploy-spec-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
+.PHONY: surfaces surfaces-types help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-counter-agent test-migrations test-silent-swallow deploy-spec-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -43,6 +45,7 @@ install: ## Instala deps + apps da suite em modo editável
 		"redis>=5.1,<8.0" \
 		"psycopg[binary]>=3.2,<4.0" \
 		"python-dotenv>=1.0,<2.0" \
+		"pywebpush>=2.5,<3.0" \
 		"qrcode[pil]>=7.4,<8.0" \
 		"locust>=2.24,<3.0" \
 		"pytest-timeout>=2.3,<3.0" \
@@ -323,6 +326,19 @@ storefront-e2e: $(NUXT_DIR)/node_modules/.package-lock.json ## E2E Playwright: s
 		SHOPMAN_E2E_PORT="$(or $(port),$(PORT),8001)" \
 		SHOPMAN_E2E_NUXT_PORT="$(or $(nuxt_port),3100)" \
 		bash scripts/run_storefront_e2e.sh $(args)
+
+pwa: ## PWA opt-in (app=storefront|pos|hub|orders|kds|production|marketing|purchase|bi)
+	@test -n "$(app)" || (echo "uso: make pwa app=<surface opt-in>" >&2; exit 2)
+	@test -d "$(PWA_DIR)" || (echo "surface desconhecida: $(app)" >&2; exit 2)
+	@if [ "$(app)" != "storefront" ]; then cd surfaces/operator-kit && npm ci; fi
+	cd $(PWA_DIR) && npm ci
+	@if [ "$(app)" = "production" ]; then \
+		cd $(PWA_DIR) && SHOPMAN_ENVIRONMENT=build NUXT_DJANGO_BASE_URL=https://django-upstream.invalid npm run build; \
+	else \
+		cd $(PWA_DIR) && npm run build; \
+	fi
+	node tools/pwa-gate/check.mjs --app=$(app)
+	@if [ -f "$(PWA_DIR)/tests/e2e/pwa.spec.ts" ]; then cd $(PWA_DIR) && npx playwright test tests/e2e/pwa.spec.ts; fi
 
 test-coverage: ## Cobertura do Backstage com gate de 75%
 	@echo "── Backstage coverage ──"

@@ -13,6 +13,12 @@ WORKDIR /repo
 # usa, mas copiá-la é inofensivo e mantém a receita única.
 COPY surfaces/operator-kit ./surfaces/operator-kit
 COPY surfaces/${SURFACE} ./surfaces/${SURFACE}
+# Consumers importam a layer já no `nuxt prepare` do próprio postinstall. As
+# dependências do kit, portanto, precisam existir antes do `npm ci` da surface.
+# O Storefront não estende o kit e preserva a imagem sem esse custo adicional.
+RUN if [ "${SURFACE}" != "storefront-nuxt" ]; then \
+      cd /repo/surfaces/operator-kit && npm ci; \
+    fi
 WORKDIR /repo/surfaces/${SURFACE}
 RUN npm ci
 # production-nuxt exige config também no build. A origem .invalid (RFC 2606) é

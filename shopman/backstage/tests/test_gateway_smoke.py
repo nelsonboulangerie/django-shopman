@@ -38,6 +38,7 @@ def test_gateway_smoke_local_fixtures_pass_and_rollback():
 
 @pytest.mark.django_db
 @override_settings(
+    SHOPMAN_EFI={"sandbox": False},
     SHOPMAN_PAYMENT_ADAPTERS={
         "pix": "shopman.shop.adapters.payment_efi",
         "card": "shopman.shop.adapters.payment_stripe",
@@ -132,7 +133,8 @@ def test_gateway_smoke_blocks_focus_nfe_production_config_for_staging():
 @pytest.mark.django_db
 def test_gateway_smoke_runtime_readiness_accepts_production_provider_config(tmp_path, settings):
     certificate = tmp_path / "efi.pem"
-    certificate.write_text("dummy cert")
+    from shopman.backstage.tests.certificate_fixtures import synthetic_certificate
+    certificate.write_bytes(synthetic_certificate())
     settings.SHOPMAN_ENVIRONMENT = "production"
     settings.SHOPMAN_PAYMENT_ADAPTERS = {
         "pix": "shopman.shop.adapters.payment_efi",

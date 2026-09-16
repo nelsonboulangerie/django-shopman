@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 from django.test import TestCase
-from shopman.orderman.exceptions import InvalidTransition
+from shopman.orderman.exceptions import InvalidTransition, ValidationError
 from shopman.orderman.models import (
     Directive,
     Fulfillment,
@@ -134,6 +134,41 @@ class TestOrder(TestCase):
 
         evt2 = order.emit_event("note_added", actor="user")
         assert evt2.seq == 1
+
+    def test_anonymized_order_rejects_personal_event_payload_from_stale_instance(self):
+        order = Order.objects.create(
+            ref="ORD-TEST-ANON-EVENT",
+            channel_ref=self.channel.ref,
+        )
+        stale = Order.objects.get(pk=order.pk)
+        Order.objects.filter(pk=order.pk).update(
+            handle_type="anonymized",
+            handle_ref="ANON-test",
+        )
+
+        for key in ("note", "reason"):
+            with pytest.raises(ValidationError) as caught:
+                stale.emit_event("personal_text", actor="operator", payload={key: "nome do cliente"})
+            assert caught.value.code == "order_anonymized"
+            assert caught.value.context["keys"] == [key]
+
+        assert not order.events.filter(type="personal_text").exists()
+
+    def test_anonymized_order_still_accepts_operational_event_payload(self):
+        order = Order.objects.create(
+            ref="ORD-TEST-ANON-OPERATIONAL",
+            channel_ref=self.channel.ref,
+            handle_type="anonymized",
+            handle_ref="ANON-operational",
+        )
+
+        event = order.emit_event(
+            "status_changed",
+            actor="system",
+            payload={"old_status": "ready", "new_status": "completed"},
+        )
+
+        assert event.payload == {"old_status": "ready", "new_status": "completed"}
 
     # O snapshot em memória carrega Decimal (SessionItem.qty); no banco o
     # DecimalEncoder serializa como string. Re-hidratar a instância do banco

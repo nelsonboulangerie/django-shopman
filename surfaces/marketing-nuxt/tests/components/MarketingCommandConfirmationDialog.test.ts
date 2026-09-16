@@ -65,15 +65,15 @@ describe("MarketingCommandConfirmationDialog", () => {
     expect((username.element as HTMLInputElement).value).toBe("admin");
     expect(username.attributes("autocomplete")).toBe("username");
     expect(username.attributes("readonly")).toBeDefined();
-    expect(wrapper.find("#decision-credential").attributes("autocomplete")).toBe(
-      "current-password",
-    );
+    expect(
+      wrapper.find("#decision-credential").attributes("autocomplete"),
+    ).toBe("current-password");
     expect(wrapper.find("#decision-typed-confirmation").element.tagName).toBe(
       "TEXTAREA",
     );
     expect(wrapper.text()).toContain("Público geral da plataforma");
-    expect(wrapper.text()).toContain("uma publicação pública por plataforma");
-    expect(wrapper.text()).toContain("não envia DM por pessoa");
+    expect(wrapper.text()).toContain("uma postagem pública por plataforma");
+    expect(wrapper.text()).toContain("não envia mensagem direta por pessoa");
   });
 
   it("explica que confirmar o disparo cria revisão sem publicar", () => {
@@ -119,13 +119,15 @@ describe("MarketingCommandConfirmationDialog", () => {
 
     expect(wrapper.text()).toContain("Confirmar este disparo?");
     expect(wrapper.text()).toContain("cria somente um anúncio para revisão");
-    expect(wrapper.text()).toContain("nada será publicado agora");
+    expect(wrapper.text()).toContain(
+      "nenhuma publicação ou mensagem será enviada agora",
+    );
     expect(wrapper.text()).toContain("Madeleine (MDL)");
     expect(wrapper.text()).toContain("Criar para revisão");
     expect(wrapper.text()).toContain("Voltar sem criar");
     expect(wrapper.text()).toContain("Pessoas para mensagem direta");
     expect(wrapper.text()).toContain("12 pessoas");
-    expect(wrapper.text()).toContain("uma publicação pública por plataforma");
+    expect(wrapper.text()).toContain("uma postagem pública por plataforma");
     expect(wrapper.text()).toContain("WhatsApp:");
     expect(wrapper.text()).toContain("consentimento revalidado");
   });

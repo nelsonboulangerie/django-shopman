@@ -69,9 +69,12 @@ type PreviewBatch = {
 };
 
 type PreviewProblem = {
+  code: string;
+  title: string;
   detail: string;
   fieldDetail: string;
   retryable: boolean;
+  repairHref: string;
 };
 
 const preview = ref<PreviewBatch | null>(null);
@@ -180,6 +183,10 @@ function previewProblem(error: unknown): PreviewProblem {
     response?: { _data?: Record<string, unknown> };
   };
   const data = failure?.data || failure?.response?._data || {};
+  const code = typeof data.code === "string" ? data.code : "";
+  const isMediaProblem =
+    code.startsWith("marketing_media_") || code === "instagram_media_required";
+  const retryable = data.retryable === true;
   const rawFields = data.field_errors;
   let fieldDetail = "";
   if (rawFields && typeof rawFields === "object") {
@@ -188,12 +195,19 @@ function previewProblem(error: unknown): PreviewProblem {
     else if (first) fieldDetail = String(first);
   }
   return {
+    code,
+    title: isMediaProblem
+      ? "Corrija a imagem para gerar a prévia"
+      : retryable
+        ? "Não foi possível atualizar a prévia agora"
+        : "Revise os dados para gerar a prévia",
     detail:
       typeof data.detail === "string"
         ? data.detail
         : "Não foi possível atualizar a prévia agora.",
     fieldDetail,
-    retryable: data.retryable === true,
+    retryable,
+    repairHref: isMediaProblem ? "/templates" : "",
   };
 }
 
@@ -205,6 +219,13 @@ const platformLabel = computed(
   () => props.platformLabels[activePlatform.value] || activePlatform.value,
 );
 const isWhatsapp = computed(() => activePlatform.value === "whatsapp");
+const publicationFormat = computed(() =>
+  String(artifact.value?.provider_fields.publication_format || ""),
+);
+const isInstagramStory = computed(
+  () =>
+    activePlatform.value === "instagram" && publicationFormat.value === "story",
+);
 const linkIsInBody = computed(
   () =>
     !!artifact.value?.link && artifact.value.body.includes(artifact.value.link),
@@ -285,19 +306,29 @@ const shortHash = computed(
       class="mt-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm"
       role="alert"
     >
-      <p class="font-medium">A prévia não foi atualizada</p>
+      <p class="font-medium">{{ problem.title }}</p>
       <p class="mt-1 text-xs text-muted-foreground">{{ problem.detail }}</p>
       <p v-if="problem.fieldDetail" class="mt-1 text-xs text-muted-foreground">
         {{ problem.fieldDetail }}
       </p>
       <UiButton
+        v-if="problem.retryable"
         type="button"
         variant="outline"
         class="mt-2"
         @click="retry"
       >
         <Icon name="lucide:refresh-cw" class="size-4" />
-        {{ problem.retryable ? "Tentar novamente" : "Revalidar prévia" }}
+        Tentar novamente
+      </UiButton>
+      <UiButton
+        v-else-if="problem.repairHref"
+        :to="problem.repairHref"
+        variant="outline"
+        class="mt-2"
+      >
+        <Icon name="lucide:image" class="size-4" />
+        Corrigir imagem nos modelos
       </UiButton>
     </div>
 
@@ -382,9 +413,40 @@ const shortHash = computed(
         </p>
       </div>
 
+      <div v-else-if="isInstagramStory" class="mt-3" role="tabpanel">
+        <p class="mb-1 text-xs font-medium text-muted-foreground">
+          Story do Instagram
+        </p>
+        <div
+          class="aspect-[9/16] w-full max-w-[14rem] overflow-hidden rounded-xl border border-border bg-background"
+        >
+          <img
+            :src="artifact.image_url"
+            :alt="preview.product_name"
+            class="size-full object-cover"
+          />
+        </div>
+        <div
+          class="mt-2 rounded-md bg-background px-3 py-2 text-xs text-muted-foreground"
+        >
+          <p class="font-medium text-foreground">O que será publicado</p>
+          <p>A imagem vertical acima, como Story público e efêmero.</p>
+          <p class="mt-1">
+            O texto do rascunho fica no comprovante desta decisão; ele não é
+            inserido automaticamente sobre a imagem.
+          </p>
+        </div>
+      </div>
+
       <div v-else class="mt-3" role="tabpanel">
         <p class="mb-1 text-xs font-medium text-muted-foreground">
-          {{ platformLabel }}
+          {{ platformLabel
+          }}<template v-if="publicationFormat">
+            ·
+            {{
+              publicationFormat === "feed" ? "Feed" : "Atualização padrão"
+            }}</template
+          >
         </p>
         <div
           class="max-w-[18rem] overflow-hidden rounded-lg border border-border bg-background"
@@ -421,8 +483,8 @@ const shortHash = computed(
         <span>
           Sem valor nesta amostra:
           <span class="font-mono">{{ emptyFields.join(", ") }}</span
-          >. Campos por destinatário serão resolvidos apenas no boundary
-          protegido.
+          >. Campos por destinatário serão resolvidos apenas na etapa protegida
+          de envio.
         </span>
       </p>
 

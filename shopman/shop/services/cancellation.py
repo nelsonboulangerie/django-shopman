@@ -39,9 +39,9 @@ def cancel(
         extra_data: Optional keys merged into ``order.data`` (e.g. ``rejected_by``).
 
     Returns:
-        True if cancelled, False if order was already in a terminal state.
+        True if cancelled or the iFood request was queued; False for terminal orders.
 
-    SYNC — transitions status immediately.
+    Live iFood orders stay open until CAN confirms the asynchronous request.
     """
     # Context, state and timeout preconditions belong to the same local commit.
     Order.objects.select_for_update().get(pk=order.pk)
@@ -80,10 +80,21 @@ def cancel(
         )
         return False
 
+    from shopman.shop.services import ifood_cancellation
+
+    remote_confirmed = bool((extra_data or {}).get("ifood_cancelled"))
+    if not remote_confirmed and ifood_cancellation.requires_remote_decision(order):
+        return ifood_cancellation.enqueue_locked(order, reason=reason, actor=actor, extra_data=extra_data)
+
     # Write cancellation context FIRST — transition_status fires the
     # order_changed signal via on_commit, and lifecycle handlers need
     # cancellation_reason and cancelled_by already in order.data.
     data = dict(order.data or {})
+    if remote_confirmed and data.get(ifood_cancellation.KEY):
+        request = dict(data[ifood_cancellation.KEY])
+        data.update(request.get("context") or {})
+        request.update(state="confirmed", retryable=False, last_error="")
+        data[ifood_cancellation.KEY] = request
     data["cancellation_reason"] = reason
     data["cancelled_by"] = actor
     if extra_data:

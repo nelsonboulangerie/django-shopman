@@ -645,15 +645,10 @@ class AnnouncementApproveView(_CampaignBase):
             if "image_url" in edits:
                 content["image_url"] = edits["image_url"]
             platforms = edits.get("platforms", list(announcement.platforms or []))
-            platform_content = (
-                campaign_service._platform_content(
-                    announcement.template,
-                    content,
-                    platforms=platforms,
-                )
-                if announcement.template_id
-                else dict(announcement.platform_content or {})
-            )
+            # The preview reads this same snapshot. Re-reading a template that
+            # changed after the announcement was created would approve content
+            # different from what the operator reviewed.
+            platform_content = dict(announcement.platform_content or {})
 
         try:
             result = marketing_approval.approve_command(

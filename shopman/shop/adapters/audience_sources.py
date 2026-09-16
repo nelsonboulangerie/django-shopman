@@ -19,6 +19,7 @@ from datetime import datetime
 class ActiveAlertSubscription:
     ref: object
     contact_phone: str
+    adult_declared: bool
 
 
 def favorite_customer_refs(sku: str) -> list[str]:
@@ -33,7 +34,7 @@ def favorite_customer_refs(sku: str) -> list[str]:
 
 
 def pending_alert_count(sku: str) -> int:
-    """Quantas pessoas estão na fila de "me avise" deste SKU, ainda não avisadas.
+    """Legacy name: number of people with an active SKU-specific opt-in.
 
     É a contagem por trás do badge "X pessoas querem" (F16): o número conta
     exatamente a fila em que o botão "Me avise" convida a entrar. Contar
@@ -55,38 +56,27 @@ def pending_alert_count(sku: str) -> int:
 
 
 def notified_alert_count(sku: str) -> int:
-    """Quantas pessoas pediram aviso deste SKU e JÁ foram avisadas.
-
-    Existe para o zero da tela do Marketing poder falar. "Ninguém para avisar"
-    tem duas causas que na tela pareciam a mesma: ninguém pediu, ou pediram e a
-    fila já foi servida. Foi exatamente o segundo caso que apareceu como bug —
-    a inscrição existia, o estoque voltou 7 minutos depois, o aviso saiu, e o
-    público virou zero sem nada explicar por quê.
-
-    Dedupe por telefone, igual ao ``pending_alert_count``: é gente, não linha.
-    """
-    from shopman.storefront.models import StockAlertSubscription
+    """How many distinct subscriptions have an accepted delivery receipt."""
+    from shopman.storefront.models import StockAlertDelivery
 
     return (
-        StockAlertSubscription.objects.filter(sku=sku, notified_at__isnull=False)
-        .values("contact_phone")
+        StockAlertDelivery.objects.filter(
+            occurrence__sku=sku, status=StockAlertDelivery.Status.ACCEPTED
+        )
+        .values("subscription__target_key")
         .distinct()
         .count()
     )
 
 
-def pending_alert_contacts(sku: str) -> list[tuple[str, str, object]]:
-    """``(telefone, customer_ref, ref)`` de cada assinatura pendente deste SKU.
-
-    Inclui os dois gatilhos (``stock_back`` e ``production_ready``): quem pediu
-    para ser avisado sobre o produto quer saber, seja qual for o motivo.
-    """
+def pending_alert_contacts(sku: str) -> list[tuple[str, str, object, bool]]:
+    """Contact plus ref and 18+ declaration for each active SKU opt-in."""
     from shopman.storefront.models import StockAlertSubscription
 
     return list(
         StockAlertSubscription.objects.active()
         .filter(sku=sku)
-        .values_list("contact_phone", "customer_ref", "ref")
+        .values_list("contact_phone", "customer_ref", "ref", "adult_declared")
     )
 
 
@@ -100,11 +90,15 @@ def active_alert_subscriptions(
     rows = (
         StockAlertSubscription.objects.active(now=now)
         .filter(ref__in=tuple(refs))
-        .values_list("ref", "contact_phone")
+        .values_list("ref", "contact_phone", "adult_declared")
     )
     return tuple(
-        ActiveAlertSubscription(ref=ref, contact_phone=phone)
-        for ref, phone in rows
+        ActiveAlertSubscription(
+            ref=ref,
+            contact_phone=phone,
+            adult_declared=adult_declared,
+        )
+        for ref, phone, adult_declared in rows
     )
 
 

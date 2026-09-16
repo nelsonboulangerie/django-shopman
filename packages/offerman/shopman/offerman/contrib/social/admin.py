@@ -42,12 +42,12 @@ def build_social_form(base_form_cls):
         social_brand = forms.CharField(
             label="Marca", required=False, max_length=100,
             widget=UnfoldAdminTextInputWidget,
-            help_text="Vazio usa o nome da loja. Google/Meta usam como marca do produto.",
+            help_text="Marca real do produto, inclusive em itens de revenda. Deixe vazio se ainda não informada.",
         )
         social_gtin = forms.CharField(
             label="GTIN / código de barras", required=False, max_length=14,
             widget=UnfoldAdminTextInputWidget,
-            help_text="8, 12, 13 ou 14 dígitos. Vazio = 'sem código de barras' (identifier_exists=no no Google).",
+            help_text="8, 12, 13 ou 14 dígitos. Vazio significa não informado, não comprova ausência de identificador.",
         )
         social_mpn = forms.CharField(
             label="MPN", required=False, max_length=70,

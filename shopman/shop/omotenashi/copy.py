@@ -52,6 +52,50 @@ class CopyEntry:
 # Use WILDCARD ("*") for the moment/audience axis when tone doesn't shift.
 
 OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
+    # ── PWA storefront ────────────────────────────────────────────
+    "PWA_OFFLINE_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="A loja ficou sem conexão")},
+    },
+    "PWA_OFFLINE_MESSAGE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Sem conexão agora. Assim que a internet voltar, você continua de onde parou.")},
+    },
+    "PWA_OFFLINE_RETRY_CTA": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Tentar de novo")},
+    },
+    "PWA_INSTALL_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="A loja mais perto de você")},
+    },
+    "PWA_INSTALL_MESSAGE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Instale para abrir o cardápio e seus pedidos direto da Tela de Início.")},
+    },
+    "PWA_INSTALL_CTA": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Instalar")},
+    },
+    "PWA_INSTALL_DISMISS_CTA": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Agora não")},
+    },
+    "PWA_IOS_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Coloque a loja na Tela de Início")},
+    },
+    "PWA_IOS_MESSAGE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="No Safari, são só dois passos.")},
+    },
+    "PWA_IOS_SHARE_STEP": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Toque em Compartilhar na barra do Safari.")},
+    },
+    "PWA_IOS_ADD_STEP": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Escolha Adicionar à Tela de Início.")},
+    },
+    "PWA_IOS_DONE_CTA": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Já adicionei")},
+    },
+    "PWA_UPDATE_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Nova versão disponível")},
+    },
+    "PWA_UPDATE_CTA": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Atualizar")},
+    },
+
     # ── Cart empty ────────────────────────────────────────────────
     "CART_EMPTY": {
         MOMENT_MADRUGADA: {
@@ -263,6 +307,14 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "HOME_HOW_IT_WORKS_HEADING": {
         WILDCARD: {WILDCARD: CopyEntry(title="Como Funciona")},
+    },
+    "HOME_FAQ_HEADING": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="Dúvidas frequentes",
+                message="Respostas diretas para você decidir o próximo passo.",
+            ),
+        },
     },
     "HOME_HOW_ONLINE_HEADING": {
         WILDCARD: {WILDCARD: CopyEntry(title="Peça online")},
@@ -1099,12 +1151,12 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "CONCIERGE_MEDIA_UNSUPPORTED": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Por enquanto eu leio só mensagens de texto. Pode escrever o seu pedido por aqui que eu sigo com você.",
+            message="Ainda não consigo ouvir áudios ou interpretar esta mídia. Suas escolhas anteriores estão preservadas. Você pode escrever apenas o que falta ou pedir atendimento humano.",
         )},
     },
     "CONCIERGE_HANDOFF_ACK": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Claro. Alguém da equipe continua com você por aqui em instantes.",
+            message="Solicitei atendimento humano e preservei suas escolhas. A equipe continuará por aqui conforme a disponibilidade.",
         )},
     },
     "CONCIERGE_TURN_LIMIT": {

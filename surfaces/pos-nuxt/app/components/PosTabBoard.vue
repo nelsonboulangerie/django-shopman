@@ -194,7 +194,7 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
           <span class="truncate font-semibold tabular-nums">#{{ view.displayRef }}</span>
           <span
             v-if="view.isUnpaid"
-            class="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400"
+            class="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning"
             title="Disparado para a cozinha e ainda não pago"
           >
             <Icon name="lucide:flame" class="size-3" />

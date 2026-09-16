@@ -54,9 +54,8 @@ def _norm_hashtags(raw) -> list[str]:
 class ProductSocialAttributes:
     """Per-product social/commerce catalog attributes.
 
-    All fields optional with sensible defaults — the operator only fills what
-    matters (``brand`` empty resolves to the shop name at projection time;
-    ``condition`` defaults to "new"; empty ``gtin`` means "no identifier").
+    Campos opcionais; condição assume "new". Marca e GTIN vazios representam
+    dados não informados, sem afirmar fabricante ou ausência de identificadores.
     """
 
     brand: str = ""
@@ -125,7 +124,7 @@ class ProductSocialAttributes:
         if self.gtin and not _gtin_is_valid(self.gtin):
             problems.append(
                 "GTIN inválido: use 8, 12, 13 ou 14 dígitos com dígito verificador correto "
-                "(ou deixe vazio para 'sem código de barras')."
+                "(ou deixe vazio quando não informado)."
             )
         if self.condition not in _CONDITION_VALUES:
             problems.append(f"Condição inválida: use uma de {sorted(_CONDITION_VALUES)}.")

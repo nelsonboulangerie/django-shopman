@@ -39,6 +39,18 @@ export interface POSPaymentMethodProjection {
   label: string;
 }
 
+export interface POSPaymentConstraintProjection {
+  provider: string;
+  environment: string;
+  mode: string;
+  is_test: boolean;
+  max_amount_q: number;
+  max_amount_display: string;
+  message: string;
+}
+
+export type POSPaymentConstraintsProjection = Partial<Record<string, POSPaymentConstraintProjection>>;
+
 export interface POSFulfillmentOptionProjection {
   ref: "pickup" | "delivery";
   label: string;
@@ -400,6 +412,7 @@ export interface POSProjection {
   products: POSProductProjection[];
   collections: POSCollectionProjection[];
   payment_methods: POSPaymentMethodProjection[];
+  payment_constraints?: POSPaymentConstraintsProjection;
   fulfillment_options: POSFulfillmentOptionProjection[];
   payment_collections: POSPaymentCollectionProjection[];
   checkout: POSCheckoutContractProjection;
@@ -542,6 +555,8 @@ export interface POSPaymentTenderDraft {
 }
 
 export interface POSTabPayload {
+  revision?: string;
+  sales_mode?: "counter" | "order";
   session_key: string;
   tab_session_key: string;
   tab_ref: string;
@@ -553,7 +568,7 @@ export interface POSTabPayload {
   price_tier?: string;
   customer_tax_id: string;
   customer_email: string;
-  fulfillment_type: "pickup" | "delivery";
+  fulfillment_type: "pickup" | "delivery" | "";
   delivery_address: string;
   delivery_address_structured: StructuredAddressProjection;
   delivery_date: string;
@@ -578,10 +593,24 @@ export interface POSCloseSaleResponse {
   order_ref?: string;
   tab_ref?: string;
   payment?: POSPaymentResultProjection;
+  payment_delivery?: POSPaymentDeliveryProjection;
   /** Esta venda vai ter NFC-e. Quem responde é a regra fiscal no servidor: a
    *  emissão também dispara por forma de pagamento, sem o operador marcar nada,
    *  e a nota ainda não existe no instante do fechamento. */
   fiscal_expected?: boolean;
+}
+
+export interface POSPaymentDeliveryProjection {
+  template: string;
+  status: "not_sent" | "queued" | "sending" | "accepted" | "unknown" | "skipped" | "failed" | string;
+  channel: "whatsapp" | "email" | "sms" | "" | string;
+  channel_label: string;
+  notice: string;
+  reason_code: string;
+  can_send: boolean;
+  can_resend: boolean;
+  action: "send" | "resend" | "";
+  action_label: string;
 }
 
 export interface POSPaymentResultProjection {
@@ -598,7 +627,18 @@ export interface POSPaymentResultProjection {
   error?: string;
 }
 
+export interface POSReceiptIdentityChoice {
+  field: "tax_id" | "email";
+  value: string;
+  customer_ref: string;
+  owner_ref: string;
+  client_request_id: string;
+  choice: "receipt_only";
+}
+
 export interface POSIntentCartState {
+  expectedRevision?: string;
+  salesMode?: "counter" | "order";
   tabRef: string;
   tabSessionKey: string;
   items: POSCartItem[];
@@ -611,7 +651,7 @@ export interface POSIntentCartState {
   invoiceTaxId: string;
   customerEmail: string;
   customerMemoryAction: string;
-  fulfillmentType: "pickup" | "delivery";
+  fulfillmentType: "pickup" | "delivery" | "";
   deliveryAddress: string;
   deliveryAddressStructured: StructuredAddressProjection;
   deliveryComplement: string;
@@ -642,6 +682,7 @@ export interface POSIntentCartState {
    *  ordem porque o servidor a exige por conta própria: trava que mora só na
    *  tela não é trava. */
   saveReceiptTaxIdConfirmed: boolean;
+  receiptIdentityChoices?: POSReceiptIdentityChoice[];
   manualDiscount: Record<string, unknown> | null;
   managerApproval: Record<string, unknown> | null;
   clientRequestId: string;

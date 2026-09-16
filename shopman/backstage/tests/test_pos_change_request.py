@@ -351,10 +351,14 @@ def test_as_acoes_do_pedido_de_troco_estao_no_contrato(operator):
 def test_endpoints_exigem_permissao_de_operar_pdv(client):
     user = get_user_model().objects.create_user(username="curioso", password="x")
     client.force_login(user)
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
 
     response = client.post(
         reverse("api-backstage-pos-change-request"),
-        data={"kind": "coins"},
+        data={"client_request_id": "test-change_request-360", "kind": "coins"},
         content_type="application/json",
     )
     assert response.status_code in (401, 403)
@@ -363,10 +367,14 @@ def test_endpoints_exigem_permissao_de_operar_pdv(client):
 def test_endpoint_pede_troco_e_devolve_a_ref(client, operator):
     _grant(operator, "operate_pos")
     client.force_login(operator)
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
 
     response = client.post(
         reverse("api-backstage-pos-change-request"),
-        data={"amount": "20", "denominations": [50, 25], "note": "acabou moeda de 50 centavos"},
+        data={"client_request_id": "test-change_request-375", "amount": "20", "denominations": [50, 25], "note": "acabou moeda de 50 centavos"},
         content_type="application/json",
     )
 
@@ -381,11 +389,15 @@ def test_endpoint_de_atender_sem_pin_devolve_o_codigo_do_desafio(client, operato
     """A tela precisa do CÓDIGO para abrir o diálogo de PIN, não de um toast mudo."""
     _grant(operator, "operate_pos")
     client.force_login(operator)
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
     entry = pos_service.request_change(operator=operator, amount_raw="50", denominations=[50])
 
     response = client.post(
         reverse("api-backstage-pos-change-request-serve", args=[str(entry.pk)]),
-        data={},
+        data={"client_request_id": "test-change_request-397", },
         content_type="application/json",
     )
 
@@ -398,11 +410,15 @@ def test_endpoint_de_atender_sem_pin_devolve_o_codigo_do_desafio(client, operato
 def test_endpoint_de_atender_com_pin_do_gerente_resolve(client, operator, manager):
     _grant(operator, "operate_pos")
     client.force_login(operator)
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
     entry = pos_service.request_change(operator=operator, amount_raw="50", denominations=[50])
 
     response = client.post(
         reverse("api-backstage-pos-change-request-serve", args=[str(entry.pk)]),
-        data={"manager_approval": _approval()},
+        data={"client_request_id": "test-change_request-417", "manager_approval": _approval()},
         content_type="application/json",
     )
 
@@ -416,11 +432,15 @@ def test_endpoint_de_atender_com_pin_do_gerente_resolve(client, operator, manage
 def test_endpoint_de_cancelar_resolve(client, operator):
     _grant(operator, "operate_pos")
     client.force_login(operator)
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+    bind_station(client, Terminal.default().ref)
     entry = pos_service.request_change(operator=operator, amount_raw="50", denominations=[50])
 
     response = client.post(
         reverse("api-backstage-pos-change-request-cancel", args=[str(entry.pk)]),
-        data={},
+        data={"client_request_id": "test-change_request-438", },
         content_type="application/json",
     )
 
@@ -523,3 +543,44 @@ def test_atender_o_pedido_anuncia_o_estado_do_PEDIDO_nao_o_do_atendimento(
 
     assert enviados[-1]["ref"] == str(entry.pk)
     assert enviados[-1]["status"] == "served"
+
+
+def test_change_request_alert_reaches_manager_and_resolves_on_cancel(operator):
+    from shopman.backstage.models import OperatorAlert
+    from shopman.backstage.services.alerts import list_active_alerts
+
+    entry = pos_service.request_change(operator=operator, amount_raw="50", denominations=[1000, 50], note="Moedas para fila")
+    alert = OperatorAlert.objects.get(pk=entry.payload["alert_id"])
+    assert alert.type == "cash_change_requested"
+    assert alert.audience == "operations"
+    assert "R$ 50,00" in alert.message
+    assert "marina" in alert.message
+    assert "R$ 10,00" in alert.message
+    assert "Moedas para fila" in alert.message
+    assert alert in list_active_alerts()
+    pos_service.cancel_change_request(operator=operator, request_ref=str(entry.pk))
+    alert.refresh_from_db()
+    assert alert.resolved_at is not None
+    assert alert.resolved_by == "marina"
+    assert alert not in list_active_alerts()
+
+
+def test_change_request_alert_resolves_on_service(operator, manager):
+    from shopman.backstage.models import OperatorAlert
+
+    entry = pos_service.request_change(operator=operator, amount_raw="50")
+    pos_service.serve_change_request(operator=operator, request_ref=str(entry.pk), manager_approval=_approval())
+    alert = OperatorAlert.objects.get(pk=entry.payload["alert_id"])
+    assert alert.resolved_at is not None
+
+
+def test_change_request_failure_does_not_leave_orphan_alert(operator, monkeypatch):
+    from shopman.backstage.models import OperatorAlert
+
+    def fail(*args, **kwargs):
+        raise POSError("Turno fechado")
+
+    monkeypatch.setattr(pos_service, "_record", fail)
+    with pytest.raises(POSError):
+        pos_service.request_change(operator=operator, amount_raw="50")
+    assert not OperatorAlert.objects.filter(type="cash_change_requested").exists()

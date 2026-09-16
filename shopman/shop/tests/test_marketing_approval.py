@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -119,6 +119,7 @@ def test_approval_records_whether_ai_copy_was_edited(actor):
         base_price_q=1200,
         is_published=True,
         is_sellable=True,
+        image_url="https://example.test/croissant.jpg",
     )
     template = AnnouncementTemplate.objects.create(
         name="Fornada IA",
@@ -207,6 +208,21 @@ def test_approval_commits_one_connected_graph_without_provider_or_directive(acto
         "instagram",
         "google_business",
     }
+    assert {(entry.platform, entry.delivery_kind, entry.format) for entry in result.outbox} == {
+        ("instagram", "publication", "story"),
+        ("google_business", "publication", "standard"),
+    }
+    assert {
+        (
+            payload["platform"],
+            payload["delivery_kind"],
+            payload["format"],
+        )
+        for payload in result.artifact.payload["resolved_artifacts"].values()
+    } == {
+        ("instagram", "publication", "story"),
+        ("google_business", "publication", "standard"),
+    }
     assert all(entry.state == MarketingOutbox.State.PENDING for entry in result.outbox)
     assert all(entry.command_id == result.receipt.pk for entry in result.outbox)
     assert all(entry.artifact_id == result.artifact.pk for entry in result.outbox)
@@ -221,7 +237,13 @@ def test_artifact_hash_matches_exact_canonical_approved_bytes(actor, announcemen
         "image_url": "https://example.test/pao.jpg",
         "link": "https://example.test/produto/pao-de-queijo",
     }
-    variants = {"instagram": {"body": "Pão de queijo às 17h ✨"}}
+    variants = {
+        "instagram": {
+            "body": "Pão de queijo às 17h ✨",
+            "publication_format": "story",
+        },
+        "google_business": {"publication_format": "standard"},
+    }
 
     decision_time = timezone.now()
     result = _approve(
@@ -355,7 +377,11 @@ def test_social_publish_now_is_not_blocked_by_direct_message_quiet_hours(
 
 
 def test_input_mutation_after_approval_cannot_change_sealed_artifact(actor, announcement):
-    content = {"body": "Original", "hashtags": ["original"]}
+    content = {
+        "body": "Original",
+        "hashtags": ["original"],
+        "image_url": "/media/original.jpg",
+    }
     result = _approve(actor=actor, announcement=announcement, content=content)
 
     content["body"] = "Alterado fora"
@@ -365,6 +391,7 @@ def test_input_mutation_after_approval_cannot_change_sealed_artifact(actor, anno
     assert result.artifact.payload["content"] == {
         "body": "Original",
         "hashtags": ["original"],
+        "image_url": "/media/original.jpg",
     }
 
 
@@ -382,6 +409,27 @@ def test_untrusted_media_is_rejected_before_artifact_and_outbox(actor, announcem
         )
 
     assert caught.value.code == "marketing_media_private_host"
+    assert MarketingContentArtifact.objects.count() == 0
+    assert MarketingOutbox.objects.count() == 0
+
+
+def test_orphan_platform_content_names_the_problem_and_both_repairs(actor, announcement):
+    with pytest.raises(MarketingContractError) as caught:
+        _approve(
+            actor=actor,
+            announcement=announcement,
+            key="idem-approval-orphan-platform",
+            platforms=["instagram"],
+            platform_content={"whatsapp": {"body": "Versão direta"}},
+        )
+
+    assert caught.value.code == "orphan_platform_content"
+    assert caught.value.detail == (
+        "Há conteúdo salvo para WhatsApp, mas essa plataforma não está selecionada em ‘Entregar por’."
+    )
+    assert caught.value.field_errors["platform_content"] == (
+        "Selecione WhatsApp em ‘Entregar por’ ou remova a versão específica dessa plataforma.",
+    )
     assert MarketingContentArtifact.objects.count() == 0
     assert MarketingOutbox.objects.count() == 0
 
@@ -494,6 +542,7 @@ def test_whatsapp_at_approved_minimum_seals_exact_members_flow_and_one_wave(acto
             ref=f"MKT-APPROVAL-{number}",
             first_name=f"Pessoa {number}",
             phone=f"+554399910{number:04d}",
+            birthday=date(1990, 1, 1),
         )
         ConsentService.grant_consent(customer.ref, "whatsapp", source="approval-test")
         refs.append(customer.ref)

@@ -79,24 +79,7 @@ def emit(order) -> None:
         _alert_payment_mismatch(order, payment)
         return
 
-    delivery = None
-    if data.get("fulfillment_type") == "delivery":
-        delivery = {"address": dict(data.get("delivery_address_structured") or {})}
-
-    # ``create_deduped`` e não ``queue``: a emissão agora tem DOIS gatilhos — o
-    # fechamento da venda (a nota segue o dinheiro/a mercadoria) e o
-    # ``on_completed`` (rede dos canais remotos). O UNIQUE parcial do Core
-    # garante no máximo uma directive viva por pedido; quem chegar segundo vira
-    # dedupe-hit, nunca segunda nota.
-    payload = {"order_ref": order.ref}
-    if order.channel_ref:
-        payload["channel_ref"] = order.channel_ref
-    payload.update(
-        items=_build_fiscal_items(order),
-        payment=payment,
-        customer=_fiscal_customer(data),
-        delivery=delivery,
-    )
+    payload = build_emission_payload(order)
     created = directives.create_deduped(
         FISCAL_EMIT_NFCE,
         payload=payload,
@@ -104,6 +87,23 @@ def emit(order) -> None:
     )
     if created is not None:
         logger.info("fiscal.emit: queued for order %s", order.ref)
+
+
+def build_emission_payload(order) -> dict:
+    """Snapshot canônico tanto da primeira emissão quanto do reprocessamento."""
+    data = order.data or {}
+    payment = dict(data.get("payment") or {})
+    payment.setdefault("amount_q", order.total_q)
+    if _payment_below_total(payment, order):
+        raise ValueError("Pagamento fiscal abaixo do total do pedido. Corrija antes de reprocessar.")
+    delivery = None
+    if data.get("fulfillment_type") == "delivery":
+        delivery = {"address": dict(data.get("delivery_address_structured") or {})}
+    payload = {"order_ref": order.ref}
+    if order.channel_ref:
+        payload["channel_ref"] = order.channel_ref
+    payload.update(items=_build_fiscal_items(order), payment=payment, customer=_fiscal_customer(data), delivery=delivery)
+    return payload
 
 
 def _declared_payment_q(payment: dict) -> int:

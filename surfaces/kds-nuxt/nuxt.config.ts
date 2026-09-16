@@ -1,4 +1,5 @@
 import tailwindcss from "@tailwindcss/vite";
+import { definePwaCapability } from "../operator-kit/pwa.config";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 
 export default defineNuxtConfig({
@@ -22,6 +23,26 @@ export default defineNuxtConfig({
   },
 
   modules: [
+    definePwaCapability({
+      app: "kds",
+      display: "fullscreen",
+      wakeLock: true,
+      kiosk: true,
+      idleReloadPaths: ["*"],
+      manifest: {
+        name: "KDS",
+        shortName: "KDS",
+        description: "Painel de preparo e expedição da cozinha.",
+        themeColor: "#0A0A0A",
+        backgroundColor: "#0A0A0A",
+        orientation: "landscape",
+        icons: [
+          { src: "/pwa/pwa-192x192.png?v=2", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/pwa/pwa-512x512.png?v=2", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/pwa/maskable-512x512.png?v=2", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        ],
+      },
+    }),
     '@nuxtjs/color-mode',
     'motion-v/nuxt',
     '@vueuse/nuxt',
@@ -84,7 +105,7 @@ export default defineNuxtConfig({
     baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       htmlAttrs: { lang: "pt-BR" },
-      title: "Shopman KDS",
+      title: "KDS",
       meta: [
         { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
         { name: "theme-color", content: "#0a0a0a" },

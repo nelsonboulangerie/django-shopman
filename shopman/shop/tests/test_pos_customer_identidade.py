@@ -21,12 +21,14 @@ lacuna, então telefone digitado errado ontem só tinha conserto no Admin.
 from __future__ import annotations
 
 import pytest
-from shopman.guestman.models import ContactPoint, Customer
+from shopman.guestman.models import ContactPoint, Customer, CustomerAddress
 
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services.pos import (
     PosCustomerConflict,
+    PosCustomerMergeError,
     _persist_customer_from_payload,
+    merge_pos_customers,
     resolve_or_create_customer,
 )
 
@@ -97,17 +99,13 @@ def test_a_recusa_nao_escreve_nada_em_ninguem(_pdv):
     assert Customer.objects.count() == 2     # nem cadastro novo nasceu
 
 
-def test_sem_ref_o_telefone_resolve_normalmente(_pdv):
-    """A outra metade: cliente anônimo digitando o próprio telefone.
-
-    Sem ninguém associado, o telefone é a única identidade que existe — e
-    ignorá-lo criaria um cadastro duplicado por venda.
-    """
-    b = _customer("Bruno", "Souza", "+5543999990022")
-
-    resolvido = resolve_or_create_customer(phone="43999990022", operator_username="op")
-
-    assert resolvido["ref"] == b.ref
+@pytest.mark.parametrize("identifier", ["phone", "email", "tax_id"])
+def test_registration_without_name_requires_explicit_selection(_pdv, identifier):
+    existing = _customer("Bruno", "Souza", "+5543999990022", email="bruno@example.com", document="52998224725")
+    value = {"phone": "43999990022", "email": "bruno@example.com", "tax_id": "52998224725"}[identifier]
+    with pytest.raises(PosCustomerConflict) as conflict:
+        resolve_or_create_customer(**{identifier: value}, operator_username="op")
+    assert conflict.value.candidates[0]["ref"] == existing.ref
     assert Customer.objects.count() == 1
 
 
@@ -229,15 +227,16 @@ def test_a_correcao_so_vale_para_o_cadastro_que_o_ref_apontou(_pdv):
     """Sem ref não há 'de quem' corrigir — e o resolve por telefone não vira porta."""
     b = _customer("Bruno", "Souza", "+5543999990022")
 
-    resolve_or_create_customer(
-        phone="43999990022",
-        email="bruno@example.com",
-        contact_correction=True,   # sem ref: a correção não se aplica
-        operator_username="op",
-    )
+    with pytest.raises(PosCustomerConflict):
+        resolve_or_create_customer(
+            phone="43999990022",
+            email="bruno@example.com",
+            contact_correction=True,
+            operator_username="op",
+        )
 
     b.refresh_from_db()
-    assert b.email == "bruno@example.com"   # lacuna, isso o merge sempre fez
+    assert b.email == ""
 
 
 def test_a_correcao_nao_toca_no_documento_fiscal(_pdv):
@@ -266,3 +265,133 @@ def test_a_correcao_troca_o_email_do_cadastro(_pdv):
 
     a.refresh_from_db()
     assert a.email == "novo@example.com"
+
+
+@pytest.mark.parametrize("same_name", [False, True])
+def test_new_named_customer_requires_selection_of_existing_phone(_pdv, same_name):
+    existing = _customer("Cliente", "0022", "+5543999990022")
+    before_metadata = existing.metadata.copy()
+    with pytest.raises(PosCustomerConflict) as conflict:
+        resolve_or_create_customer(
+            name=existing.name if same_name else "Outra Pessoa",
+            phone="(43) 99999-0022",
+            email="new@example.com",
+            operator_username="op",
+        )
+    assert conflict.value.field == "customer_phone"
+    assert conflict.value.candidates[0]["ref"] == existing.ref
+    assert conflict.value.candidates[0]["is_current"] is False
+    existing.refresh_from_db()
+    assert existing.name == "Cliente 0022"
+    assert existing.email == ""
+    assert existing.metadata == before_metadata
+    assert not ContactPoint.objects.filter(value_normalized="new@example.com").exists()
+    assert Customer.objects.count() == 1
+
+
+def test_sale_cannot_bypass_duplicate_customer_confirmation(_pdv):
+    existing = _customer("Ana", "Prado", "+5543999990011")
+    with pytest.raises(PosCustomerConflict):
+        _persist_customer_from_payload(
+            {"customer_name": "Outra Pessoa", "customer_phone": "43999990011"},
+            operator_username="op",
+        )
+    assert Customer.objects.count() == 1
+    assert resolve_or_create_customer(ref=existing.ref, operator_username="op")["ref"] == existing.ref
+
+
+def test_stale_selection_never_falls_back_to_another_customer(_pdv):
+    existing = _customer("Bruno", "Souza", "+5543999990022")
+    with pytest.raises(ValueError, match="cadastro selecionado não está disponível"):
+        resolve_or_create_customer(ref="missing", phone=existing.phone, operator_username="op")
+    assert Customer.objects.count() == 1
+
+
+def test_inactive_selection_never_recreates_pos_profile_or_children(_pdv):
+    customer = _customer("Ana", "Prado", "+5543999990011")
+    Customer.objects.filter(pk=customer.pk).update(is_active=False, metadata={})
+
+    with pytest.raises(ValueError, match="cadastro selecionado não está disponível"):
+        _persist_customer_from_payload(
+            {
+                "customer_ref": customer.ref,
+                "customer_phone": "43988887777",
+                "customer_contact_correction": True,
+                "customer_email": "nova@example.com",
+                "customer_tax_id": "52998224725",
+                "delivery_address": "Rua que não pode voltar, 10",
+            },
+            operator_username="op",
+        )
+
+    customer.refresh_from_db()
+    assert customer.is_active is False
+    assert customer.phone == "+5543999990011"
+    assert customer.email == ""
+    assert customer.document == ""
+    assert customer.metadata == {}
+    assert not CustomerAddress.objects.filter(customer=customer).exists()
+    assert not ContactPoint.objects.filter(
+        customer=customer,
+        value_normalized__in=("+5543988887777", "nova@example.com"),
+    ).exists()
+
+
+def test_pos_merge_refuses_inactive_target_before_moving_children(_pdv):
+    source = _customer("Ana", "Prado", "+5543999990011")
+    target = _customer("Bia", "Silva", "+5543999990022")
+    address = CustomerAddress.objects.create(
+        customer=source,
+        label="home",
+        formatted_address="Rua da Ana, 10",
+    )
+    Customer.objects.filter(pk=target.pk).update(is_active=False)
+
+    with pytest.raises(PosCustomerMergeError, match="cadastro que ficaria está desativado"):
+        merge_pos_customers(
+            source_ref=source.ref,
+            target_ref=target.ref,
+            operator_username="op",
+        )
+
+    source.refresh_from_db()
+    address.refresh_from_db()
+    assert source.is_active is True
+    assert address.customer_id == source.pk
+
+
+def test_nome_preenchido_nao_muda_por_merge_passivo(_pdv):
+    customer = _customer("Ana", "Prado", "+5543999990011")
+
+    resolve_or_create_customer(
+        ref=customer.ref, name="Ana Corrigida", operator_username="op",
+    )
+
+    customer.refresh_from_db()
+    assert customer.name == "Ana Prado"
+
+
+def test_nome_muda_somente_com_correcao_explicita(_pdv):
+    customer = _customer("Ana", "Prado", "+5543999990011")
+
+    resolve_or_create_customer(
+        ref=customer.ref,
+        name="Ana Corrigida",
+        name_correction=True,
+        operator_username="op",
+    )
+
+    customer.refresh_from_db()
+    assert customer.name == "Ana Corrigida"
+
+
+def test_correcao_para_nome_simples_remove_sobrenome_antigo(_pdv):
+    customer = _customer("Ana", "Prado", "+5543999990011")
+
+    resolve_or_create_customer(
+        ref=customer.ref, name="Aninha", name_correction=True, operator_username="op",
+    )
+
+    customer.refresh_from_db()
+    assert customer.first_name == "Aninha"
+    assert customer.last_name == ""

@@ -50,7 +50,7 @@ from pathlib import Path
 API = "https://api.digitalocean.com/v2"
 
 #: Fases terminais de fracasso: o que o Deploy Images publicou NÃO chegou ao
-#: alpha. Seguir para as asserções aqui seria medir a versão anterior e ficar
+#: ambiente vivo. Seguir para as asserções aqui seria medir a versão anterior e ficar
 #: verde — o modo de falhar que o smoke inteiro existe para impedir.
 FAILED_PHASES = {"ERROR", "CANCELED"}
 
@@ -139,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     if not token:
         print(
             "::error::DIGITALOCEAN_ACCESS_TOKEN ausente — sem ele não dá para "
-            "saber se o deploy chegou ao alpha, e um smoke que não sabe o que "
+            "saber se o deploy chegou ao app, e um smoke que não sabe o que "
             "está medindo é pior que smoke nenhum.",
             file=sys.stderr,
         )
@@ -210,7 +210,7 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"::error::o deployment {dep_id} deste run terminou "
                 f"{dep.get('phase')} — o que o Deploy Images publicou NÃO chegou "
-                "ao alpha. As asserções abaixo mediriam a versão anterior e "
+                "ao app. As asserções abaixo mediriam a versão anterior e "
                 "ficariam verdes.",
                 file=sys.stderr,
             )
@@ -220,7 +220,7 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"::error::este run publicou {len(componentes)} componente(s) e "
                 f"nenhum deployment com a imagem deles ficou ACTIVE em "
-                f"{args.max_seconds}s (estado: {estado}). O alpha NÃO está com o "
+                f"{args.max_seconds}s (estado: {estado}). O app NÃO está com o "
                 "que subiu.",
                 file=sys.stderr,
             )

@@ -12,6 +12,7 @@ Usage:
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import check_password
 from django.core.management.base import BaseCommand
 
 
@@ -33,7 +34,10 @@ class Command(BaseCommand):
         user.is_staff = True
         user.is_superuser = True
         user.is_active = True
-        user.set_password(options["password"])  # no validation — dev only
+        # Novo salt com a MESMA senha invalida todas as sessões Django.
+        # O bootstrap de staging se repete; só uma troca real deve deslogar.
+        if not check_password(options["password"], user.password):
+            user.set_password(options["password"])  # no validation — dev only
         user.save()
         verb = "criado" if created else "resetado"
         self.stdout.write(self.style.SUCCESS(f"ensure_dev_superuser: '{username}' {verb} (superuser, ativo)."))

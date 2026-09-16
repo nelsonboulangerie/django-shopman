@@ -23,7 +23,7 @@ O **CNPJ emitente** vem automaticamente da config da loja (`Shop.document`, Admi
 Só sobrescrever via `FOCUS_NFE_CNPJ_EMITENTE` se o emitente for diferente do CNPJ da loja.
 
 ### Staging (homologação)
-No DigitalOcean → Apps → `shopman-alpha` → Settings → App-Level Environment Variables (Encrypt nos segredos):
+No DigitalOcean → Apps → `shopman-nelson` → Settings → App-Level Environment Variables (Encrypt nos segredos):
 ```
 SHOPMAN_FISCAL_ADAPTER=shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend
 FOCUS_NFE_TOKEN=<token de homologação>     (Encrypt)
@@ -43,11 +43,12 @@ saindo (gate de prontidão do alpha — ver [GO-LIVE-CREDENTIALS-MATRIX](../plan
 
 ## Verificação
 
-O gate `manage.py check --deploy` e `integration_readiness.focus_nfe_readiness` exigem:
-adapter apontado + `FOCUS_NFE_TOKEN` + CNPJ emitente (config ou `Shop.document`), e barram
-`producao` em staging / `homologacao` em produção (segurança de ambiente).
+A prontidão `integration_readiness.focus_nfe_readiness` verifica adapter, token, CNPJ emitente e ambiente. O modo de staging recusa produção; o modo runtime em produção recusa homologação. O `check --deploy` incorpora essa última guarda por `SHOPMAN_E022`; não substitui a prontidão completa.
 
 ## Referências
 - [GO-LIVE-CREDENTIALS-MATRIX](../plans/GO-LIVE-CREDENTIALS-MATRIX.md) — matriz por fase + gate do alpha
 - [fiscal-parametrizacao-nfce](../reference/fiscal-parametrizacao-nfce.md) — CFOP/CSOSN/PIS-COFINS (contador)
 - [Focus NFe — CSC](https://focusnfe.com.br/blog/o-que-e-token-csc/) · [A1 vs A3](https://focusnfe.com.br/blog/nfe-saibas-as-diferencas-entre-os-certificados-a1-e-a3/)
+
+
+O `check --deploy` inclui a guarda de ambiente de produção `SHOPMAN_E022`. Para a verificação completa de credenciais, catálogo fiscal e evidência externa, execute também `make production-readiness`; aprovação estática não comprova autorização de uma NFC-e nem validade operacional do certificado instalado.
