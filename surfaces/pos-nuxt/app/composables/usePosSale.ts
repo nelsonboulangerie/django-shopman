@@ -35,7 +35,7 @@ import {
 } from "~/utils/posIntent";
 import { cartQtyForSku } from "~/presentation/catalog";
 import { sanitizeTabRef as sanitizeTabRefShape, sortTabs } from "~/presentation/tabBoard";
-import { scheduleLabel, windowLabel, type ScheduleWindow } from "~/presentation/schedule";
+import { resolveWindowLabel, scheduleLabel, type ScheduleWindow } from "~/presentation/schedule";
 import {
   isPaymentCovered,
   paymentChangeQ as computeChangeQ,
@@ -806,6 +806,14 @@ export function usePosSale(deps: PosSaleDeps) {
   });
   const deliverySlotsPending = computed(
     () => scheduleBusy.value || (!review.value && !schedule.value && !scheduleFailed.value),
+  );
+  // Os slots CANÔNICOS da casa, com o rótulo real do servidor. A grade acima só
+  // conhece o dia carregado: uma comanda salva com `slot-09` para HOJE, antes de
+  // alguém buscar a agenda, mostrava o ref cru no chip e na leitura de volta.
+  const canonicalDeliverySlots = computed<ScheduleWindow[]>(() => pos.value?.delivery_slots_canonical ?? []);
+  /** O rótulo da janela escolhida: grade do dia → canônicos → humanização. */
+  const deliveryWindowLabel = computed(
+    () => resolveWindowLabel(cart.deliveryTimeSlot, [deliverySlots.value, canonicalDeliverySlots.value]),
   );
 
   // Payment by injection (Odoo-style): the operator adds tender lines in any form;
@@ -2651,7 +2659,7 @@ export function usePosSale(deps: PosSaleDeps) {
           // data, a janela e o bairro, e a tela de resultado precisa deles.
           fulfillmentLabel: cart.salesMode === "order" ? orderFulfillmentLabel() : "",
           scheduleLabel: cart.salesMode === "order"
-            ? scheduleLabel(cart.deliveryDate, windowLabel(deliverySlots.value, cart.deliveryTimeSlot), scheduleToday.value)
+            ? scheduleLabel(cart.deliveryDate, deliveryWindowLabel.value, scheduleToday.value)
             : "",
         };
         // PIX pendente → polla até confirmar; outros métodos já saem resolvidos.
@@ -3094,6 +3102,8 @@ export function usePosSale(deps: PosSaleDeps) {
     deliveryDistanceKm,
     deliverySlots,
     deliverySlotsPending,
+    canonicalDeliverySlots,
+    deliveryWindowLabel,
     deliveryDateEffective,
     scheduleToday,
     scheduleAvailableDates,

@@ -4,7 +4,7 @@ import { toast } from "vue-sonner";
 import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { rollStyle } from "~/presentation/printGeometry";
-import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
+import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
 import { enterAdvances, paymentFailed } from "~/presentation/saleResult";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
@@ -114,6 +114,8 @@ const {
   deliveryDistanceKm,
   deliverySlots,
   deliverySlotsPending,
+  canonicalDeliverySlots,
+  deliveryWindowLabel,
   deliveryDateEffective,
   scheduleToday,
   scheduleAvailableDates,
@@ -481,7 +483,7 @@ function openScheduleHere() {
 // parecer que falta preencher alguma coisa.
 const scheduleChipLabel = computed(() => scheduleLabel(
   cart.deliveryDate,
-  windowLabel(deliverySlots.value, cart.deliveryTimeSlot),
+  deliveryWindowLabel.value,
   scheduleToday.value,
 ));
 const scheduleChipActive = computed(() => Boolean(cart.deliveryDate || cart.deliveryTimeSlot));
@@ -986,6 +988,7 @@ onBeforeUnmount(() => {
         :delivery-fee-source="deliveryFeeSource"
         :delivery-distance-km="deliveryDistanceKm"
         :delivery-slots="deliverySlots"
+        :canonical-delivery-slots="canonicalDeliverySlots"
         :delivery-slots-pending="deliverySlotsPending"
         :delivery-date-effective="deliveryDateEffective"
         v-model:change-for-input="cart.changeForInput"

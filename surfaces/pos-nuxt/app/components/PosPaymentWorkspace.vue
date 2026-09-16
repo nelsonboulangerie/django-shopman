@@ -62,7 +62,7 @@ import {
   receiptSaveOffers,
   receiptSaveSummary,
 } from "~/presentation/receiptContact";
-import { scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
+import { resolveWindowLabel, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
 
 const props = defineProps<{
   salesMode?: "counter" | "order";
@@ -140,6 +140,9 @@ const props = defineProps<{
   /** Janelas do dia escolhido, já anotadas com a prontidão do carrinho. */
   deliverySlots: Array<{ ref: string; label: string; enabled?: boolean; reason?: string }>;
   /** Ainda não há resposta sobre as janelas (a review está a caminho). */
+  /** Os slots canônicos da casa (rótulo real de `slot-09` quando a grade do
+   *  dia ainda não chegou). Opcional: a página passa, o teste pode omitir. */
+  canonicalDeliverySlots?: Array<{ ref: string; label: string }>;
   deliverySlotsPending: boolean;
   /** A data que vale — a escolhida, ou o hoje que o servidor devolveu. */
   deliveryDateEffective: string;
@@ -336,7 +339,7 @@ const scheduleSheetOpen = ref(false);
 // O resumo do "quando" para o atalho dentro do Recebimento se explicar sozinho.
 const scheduleChipLabel = computed(() => scheduleLabel(
   props.deliveryDate,
-  windowLabel(props.deliverySlots, props.deliveryTimeSlot),
+  resolveWindowLabel(props.deliveryTimeSlot, [props.deliverySlots, props.canonicalDeliverySlots ?? []]),
   props.scheduleToday,
 ));
 const discountSheetOpen = ref(false);

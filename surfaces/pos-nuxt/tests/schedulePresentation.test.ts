@@ -5,6 +5,7 @@ import {
   isScheduled,
   parseLocalDate,
   readinessNote,
+  resolveWindowLabel,
   scheduledNeedsCustomer,
   scheduleLabel,
   selectedWindowConflict,
@@ -195,5 +196,31 @@ describe("scheduledNeedsCustomer — a régua da tela não pode ser mais apertad
     expect(scheduledNeedsCustomer({ ...base, deliveryDate: "", deliveryTimeSlot: "15:00-15:30" })).toBe(true);
     expect(scheduledNeedsCustomer({ ...base, deliveryDate: "", fulfillmentType: "delivery" })).toBe(true);
     expect(scheduledNeedsCustomer({ ...base, deliveryDate: "" })).toBe(false);
+  });
+});
+
+describe("resolveWindowLabel — o rótulo real antes do deduzido", () => {
+  const CANONICOS: ScheduleWindow[] = [
+    { ref: "slot-09", label: "A partir das 9h" },
+    { ref: "slot-12", label: "A partir das 12h" },
+    { ref: "slot-15", label: "A partir das 15h" },
+  ];
+
+  it("com os canônicos carregados, `slot-09` é o rótulo DO SERVIDOR", () => {
+    expect(resolveWindowLabel("slot-09", [[], CANONICOS])).toBe("A partir das 9h");
+  });
+
+  it("sem canônicos (e sem grade), o ref é humanizado — nunca cru", () => {
+    expect(resolveWindowLabel("slot-09", [[], []])).toBe("a partir das 9h");
+    expect(resolveWindowLabel("slot-09", [])).toBe("a partir das 9h");
+  });
+
+  it("a grade do dia vence os canônicos quando conhece o ref", () => {
+    const grade: ScheduleWindow[] = [{ ref: "slot-09", label: "Manhã (9h)" }];
+    expect(resolveWindowLabel("slot-09", [grade, CANONICOS])).toBe("Manhã (9h)");
+  });
+
+  it("ref vazio é vazio", () => {
+    expect(resolveWindowLabel("", [CANONICOS])).toBe("");
   });
 });
