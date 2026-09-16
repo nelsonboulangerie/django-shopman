@@ -483,9 +483,12 @@ useHead({ title: "Painel" });
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
           <UiDialogTitle>Recusar este anúncio?</UiDialogTitle>
+          <!-- ⚠️ Dizia "A fornada segue normalmente" — e fornada é UM dos gatilhos
+               (a regra deste arquivo, lá em cima). A recusa é só do anúncio. -->
           <UiDialogDescription>
-            Ele não vai para nenhuma plataforma e não volta para a fila. A
-            fornada segue normalmente.
+            Ele não vai para nenhuma plataforma e não volta para a fila. Nada
+            mais muda: a campanha e o que aconteceu na padaria seguem como
+            estão.
           </UiDialogDescription>
         </UiDialogHeader>
         <!-- Opcional de propósito: campo obrigatório aqui só produziria "não" digitado
