@@ -683,7 +683,7 @@ function askToReject() {
               />
               <Icon :name="platformIcon(option.value)" class="size-3.5" />
               {{ option.label }}
-              <span v-if="readinessNote(option).badge" class="text-xs opacity-80">· {{ readinessNote(option).badge }}</span>
+              <span v-if="readinessNote(option).badge" class="text-xs">· {{ readinessNote(option).badge }}</span>
             </label>
           </div>
           <p

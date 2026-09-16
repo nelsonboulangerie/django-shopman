@@ -973,7 +973,7 @@ function submit() {
             @change="togglePlatform(option.value)"
           />
           {{ option.label }}
-          <span v-if="readinessNote(option).badge" class="text-xs opacity-80">· {{ readinessNote(option).badge }}</span>
+          <span v-if="readinessNote(option).badge" class="text-xs">· {{ readinessNote(option).badge }}</span>
         </label>
       </div>
       <!-- Prontidão é pré-condição de PUBLICAR, não de configurar: a campanha salva,
