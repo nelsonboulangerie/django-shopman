@@ -44,6 +44,9 @@ class NoopCustomerResolver:
     def get_by_uuid(self, uuid) -> AuthCustomerInfo | None:
         raise NotImplementedError(self._msg)
 
+    def lock_active_by_uuid(self, uuid) -> AuthCustomerInfo | None:
+        raise NotImplementedError(self._msg)
+
     def get_by_identifier(self, identifier_type: str, identifier_value: str) -> AuthCustomerInfo | None:
         raise NotImplementedError(self._msg)
 

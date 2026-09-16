@@ -37,6 +37,18 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_int_or_raw(name: str, default: int) -> int | str:
+    """Parse an integer without hiding an explicitly invalid deployment value."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    value = raw.strip()
+    try:
+        return int(value)
+    except ValueError:
+        return value
+
+
 def _materialized_secret_file(*, content: str, filename: str) -> str:
     secret_dir = Path(os.environ.get("SHOPMAN_RUNTIME_SECRET_DIR", "/tmp/shopman-secrets"))
     secret_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -150,6 +162,21 @@ SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION = max(
     1,
     _env_int("SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION", 1),
 )
+# Recibos de direitos de dados usam segredo próprio e versionado. A chave
+# anterior permanece no keyring durante a retenção dos recibos para que replay
+# e prova de idempotência sobrevivam a rotações sem reutilizar SECRET_KEY.
+SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY = os.environ.get(
+    "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY",
+    "",
+).strip()
+SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION = _env_int_or_raw(
+    "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION",
+    1,
+)
+SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS = os.environ.get(
+    "SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS",
+    "{}",
+).strip()
 
 # ⚠️ PRODUÇÃO: Restringir a domínios reais. "*" é apenas para desenvolvimento.
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
@@ -536,6 +563,10 @@ SHOPMAN_MANYCHAT = {
     "resolver": os.environ.get(
         "MANYCHAT_SUBSCRIBER_RESOLVER",
         "shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.resolve",
+    ),
+    "otp_resolver": os.environ.get(
+        "MANYCHAT_OTP_SUBSCRIBER_RESOLVER",
+        "shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.resolve_active_customer",
     ),
     "flow_map": MANYCHAT_FLOW_MAP,
 }

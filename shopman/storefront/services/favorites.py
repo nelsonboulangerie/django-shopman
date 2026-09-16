@@ -14,35 +14,50 @@ logger = logging.getLogger(__name__)
 
 def add(customer_ref: str, sku: str) -> bool:
     """Mark a SKU as favorite. Idempotent. Returns True (is favorite)."""
+    from django.db import transaction
+
+    from shopman.shop.services import account as account_service
     from shopman.storefront.models import CustomerFavorite
 
     if not customer_ref or not sku:
         return False
-    CustomerFavorite.objects.get_or_create(customer_ref=customer_ref, sku=sku)
+    with transaction.atomic():
+        locked = account_service.lock_active_customer(customer_ref=customer_ref)
+        CustomerFavorite.objects.get_or_create(customer_ref=locked.ref, sku=sku)
     return True
 
 
 def remove(customer_ref: str, sku: str) -> bool:
     """Unfavorite a SKU. Idempotent. Returns False (not favorite)."""
+    from django.db import transaction
+
+    from shopman.shop.services import account as account_service
     from shopman.storefront.models import CustomerFavorite
 
     if customer_ref and sku:
-        CustomerFavorite.objects.filter(customer_ref=customer_ref, sku=sku).delete()
+        with transaction.atomic():
+            locked = account_service.lock_active_customer(customer_ref=customer_ref)
+            CustomerFavorite.objects.filter(customer_ref=locked.ref, sku=sku).delete()
     return False
 
 
 def toggle(customer_ref: str, sku: str) -> bool:
     """Flip favorite state. Returns the new state (True = now favorite)."""
+    from django.db import transaction
+
+    from shopman.shop.services import account as account_service
     from shopman.storefront.models import CustomerFavorite
 
     if not customer_ref or not sku:
         return False
-    existing = CustomerFavorite.objects.filter(customer_ref=customer_ref, sku=sku).first()
-    if existing:
-        existing.delete()
-        return False
-    CustomerFavorite.objects.create(customer_ref=customer_ref, sku=sku)
-    return True
+    with transaction.atomic():
+        locked = account_service.lock_active_customer(customer_ref=customer_ref)
+        existing = CustomerFavorite.objects.filter(customer_ref=locked.ref, sku=sku).first()
+        if existing:
+            existing.delete()
+            return False
+        CustomerFavorite.objects.create(customer_ref=locked.ref, sku=sku)
+        return True
 
 
 def skus_for(customer_ref: str) -> list[str]:

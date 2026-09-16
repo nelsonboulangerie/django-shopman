@@ -32,6 +32,9 @@ from shopman.shop.models import (
     DeliveryReconciliation,
     DeliveryTarget,
     OutboundAttempt,
+    PrivacyRequestOperation,
+    PrivacyRequestReceipt,
+    PrivacyRequestState,
 )
 from shopman.shop.services.marketing_delivery_ledger import ensure_targets
 from shopman.shop.tests.test_marketing_delivery_ledger import _graph
@@ -184,6 +187,31 @@ def test_data_retention_counts_expired_code_without_deleting_it() -> None:
     assert r10["counts"]["codigos_vencidos"] == 1
     assert code.target_value not in raw
     assert VerificationCode.objects.filter(pk=code.pk).exists()
+
+
+@pytest.mark.django_db
+def test_r09_counts_expired_privacy_receipt_for_review_without_deleting_it() -> None:
+    now = timezone.now()
+    receipt = PrivacyRequestReceipt.objects.create(
+        operation=PrivacyRequestOperation.EXPORT,
+        state=PrivacyRequestState.COMPLETED,
+        subject_digest="a" * 64,
+        idempotency_fingerprint="b" * 64,
+        idempotency_digest="c" * 64,
+        request_digest="d" * 64,
+        authorization_method="otp_step_up",
+        authorized_at=now - timedelta(days=100),
+        completed_at=now - timedelta(days=100),
+        retention_until=now - timedelta(seconds=1),
+    )
+
+    payload, raw = _run_json()
+
+    r09 = next(row for row in payload["rules"] if row["rule"] == "R09")
+    assert r09["candidates"] == 0
+    assert r09["counts"]["recibos_de_privacidade_elegiveis_para_revisao"] == 1
+    assert str(receipt.ref) not in raw
+    assert PrivacyRequestReceipt.objects.filter(pk=receipt.pk).exists()
 
 
 @pytest.mark.django_db

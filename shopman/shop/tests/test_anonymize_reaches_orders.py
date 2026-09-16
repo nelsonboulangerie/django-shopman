@@ -24,6 +24,7 @@ from __future__ import annotations
 import pytest
 from django.db import connection, transaction
 from shopman.guestman.models import Customer
+from shopman.orderman.exceptions import CommitError
 from shopman.orderman.ids import generate_idempotency_key, generate_session_key
 from shopman.orderman.models import Order, Session
 from shopman.orderman.services import CommitService
@@ -112,8 +113,8 @@ def _sweep(needles: tuple[str, ...]) -> list[str]:
             for column in columns:
                 for needle in needles:
                     sql = (
-                        f'SELECT count(*) FROM {connection.ops.quote_name(table)} '
-                        f'WHERE CAST({connection.ops.quote_name(column)} AS TEXT) LIKE %s'
+                        f"SELECT count(*) FROM {connection.ops.quote_name(table)} "
+                        f"WHERE CAST({connection.ops.quote_name(column)} AS TEXT) LIKE %s"
                     )
                     try:
                         with transaction.atomic():
@@ -134,8 +135,7 @@ def test_a_varredura_do_banco_nao_acha_mais_o_titular():
 
     antes = _sweep((PHONE, FIRST_NAME))
     assert any("orderman_order" in hit for hit in antes), (
-        "controle positivo: o teste tem de VER o telefone antes de apagar, "
-        f"senão não prova nada. Achados: {antes}"
+        f"controle positivo: o teste tem de VER o telefone antes de apagar, senão não prova nada. Achados: {antes}"
     )
 
     anonymize_customer(customer)
@@ -173,11 +173,202 @@ def test_o_pedido_perde_o_pii_e_guarda_a_compra():
     for key in ("customer", "delivery_address", "delivery_address_structured", "order_notes"):
         assert key not in order.data, key
         assert key not in (order.snapshot or {}).get("data", {}), f"snapshot.{key}"
-    # O que descreve a COMPRA fica: é dele que vivem a obrigação fiscal e o B.I.
-    assert order.data.get("customer_ref") == "CLI-ANON-ORD"
+    # O que descreve a COMPRA fica: é dele que vivem a obrigação fiscal e o B.I.;
+    # o ref do titular, embora interno, continua correlacionável e sai.
+    assert "customer_ref" not in order.data
     assert order.data.get("fulfillment_type") == "delivery"
     assert order.snapshot["items"]
     assert order.total_q > 0
+
+
+def test_exclusao_limpa_texto_pessoal_das_tres_copias_do_meta_do_item():
+    """OrderItem, Session.items e snapshot não podem divergir na exclusão."""
+    import json
+
+    from shopman.storefront.services.account_export import build_account_export
+
+    customer = _customer()
+    order = _order_for(customer)
+    session = Session.objects.get(session_key=order.session_key, channel_ref=order.channel_ref)
+    order_item = order.items.get(line_id="L1")
+    session_item = session.session_items.get(line_id="L1")
+
+    sentinels = {
+        "order_item": "PII-ORDER-ITEM-MARINA",
+        "session_item": "PII-SESSION-ITEM-MARINA",
+        "snapshot_item": "PII-SNAPSHOT-ITEM-MARINA",
+    }
+
+    def meta_with(personal_text):
+        return {
+            "customer_note": personal_text,
+            "gift_wrap": True,
+            "_disc": {"type": "manual", "amount_q": 100},
+            "fiscal": {"ncm": "19059090"},
+            "customization": {
+                "choice_ref": "SIZE-L",
+                "price_delta_q": 200,
+                "note": personal_text,
+                "text": personal_text,
+                "message": personal_text,
+            },
+        }
+
+    order_item.meta = meta_with(sentinels["order_item"])
+    order_item.save(update_fields=["meta"])
+    session_item.meta = meta_with(sentinels["session_item"])
+    session_item.save(update_fields=["meta"])
+    snapshot = dict(order.snapshot)
+    snapshot_items = [dict(item) for item in snapshot["items"]]
+    snapshot_items[0]["meta"] = meta_with(sentinels["snapshot_item"])
+    snapshot["items"] = snapshot_items
+    Order.objects.filter(pk=order.pk).update(snapshot=snapshot)
+
+    before = _sweep(tuple(sentinels.values()))
+    assert any("orderman_orderitem.meta" in hit for hit in before)
+    assert any("orderman_sessionitem.meta" in hit for hit in before)
+    assert any("orderman_order.snapshot" in hit for hit in before)
+
+    artifact = build_account_export(customer)
+    exported = json.load(artifact)
+    artifact.close()
+    exported_order_item = next(row for row in exported["order_items"] if row["order_ref"] == order.ref)
+    exported_session_item = next(
+        row for row in exported["order_session_items"] if row["session_id"] == session.pk
+    )
+    exported_order = next(row for row in exported["orders"] if row["ref"] == order.ref)
+    assert sentinels["order_item"] in str(exported_order_item["meta"])
+    assert sentinels["session_item"] in str(exported_session_item["meta"])
+    assert sentinels["snapshot_item"] in str(exported_order["snapshot_items"][0]["meta"])
+
+    anonymize_customer(customer)
+
+    order.refresh_from_db()
+    order_item.refresh_from_db()
+    session_item.refresh_from_db()
+    expected_commercial = {
+        "gift_wrap": True,
+        "_disc": {"type": "manual", "amount_q": 100},
+        "fiscal": {"ncm": "19059090"},
+        "customization": {"choice_ref": "SIZE-L", "price_delta_q": 200},
+    }
+    assert order_item.meta == expected_commercial
+    assert session_item.meta == expected_commercial
+    assert order.snapshot["items"][0]["meta"] == expected_commercial
+    assert _sweep(tuple(sentinels.values())) == []
+
+
+def test_exportacao_e_exclusao_alinham_eventos_e_alerta_de_cancelamento():
+    import json
+
+    from shopman.backstage.models import OperatorAlert
+    from shopman.storefront.services.account_export import build_account_export
+
+    customer = _customer()
+    order = _order_for(customer)
+    session = Session.objects.get(session_key=order.session_key, channel_ref=order.channel_ref)
+    sentinels = {
+        "order_note": "PII-ORDER-EVENT-NOTE",
+        "order_reason": "PII-ORDER-EVENT-REASON",
+        "session_from": "PII-SESSION-FROM-REF",
+        "session_to": "PII-SESSION-TO-REF",
+        "session_text": "PII-SESSION-FREE-TEXT",
+    }
+    protocol = "SC-20260916-KEEP1234"
+
+    note_event = order.emit_event(
+        "operator_comment",
+        actor="operator:test",
+        payload={"note": sentinels["order_note"], "operational_code": "handover"},
+    )
+    reason_event = order.emit_event(
+        "customer_cancellation_requested",
+        actor="customer:self-service",
+        payload={"protocol": protocol, "reason": sentinels["order_reason"]},
+    )
+    renamed_event = session.emit_event(
+        "tab_renamed",
+        actor="operator:test",
+        payload={
+            "from_ref": sentinels["session_from"],
+            "to_ref": sentinels["session_to"],
+            "count": 2,
+        },
+    )
+    free_text_event = session.emit_event(
+        "manual_context",
+        actor="operator:test",
+        payload={
+            "note": sentinels["session_text"],
+            "reason": sentinels["session_text"],
+            "text": sentinels["session_text"],
+            "message": sentinels["session_text"],
+            "sku": "CROIS-01",
+        },
+    )
+    alert = OperatorAlert.objects.create(
+        type="customer_cancellation_requested",
+        severity="warning",
+        audience="orders",
+        order_ref=order.ref,
+        message=(
+            f"O cliente solicitou análise de cancelamento do pedido {order.ref}. "
+            f"Protocolo {protocol}. Abra o pedido para decidir o cancelamento e eventual estorno. "
+            f"Motivo informado: {sentinels['order_reason']}"
+        ),
+    )
+    OperatorAlert.objects.create(
+        type="payment_failed",
+        severity="error",
+        order_ref=order.ref,
+        message="alerta operacional fora do footprint de cancelamento",
+    )
+    before = _sweep((sentinels["order_reason"],))
+    assert any("orderman_orderevent.payload" in hit for hit in before)
+    assert any("backstage_operatoralert.message" in hit for hit in before)
+
+    artifact = build_account_export(customer)
+    exported = json.load(artifact)
+    artifact.close()
+    order_events = {row["type"]: row for row in exported["order_events"]}
+    session_events = {row["type"]: row for row in exported["order_session_events"]}
+    assert order_events["operator_comment"]["payload"] == {"note": sentinels["order_note"]}
+    assert order_events["customer_cancellation_requested"]["payload"] == {
+        "protocol": protocol,
+        "reason": sentinels["order_reason"],
+    }
+    assert session_events["tab_renamed"]["payload"] == {
+        "from_ref": sentinels["session_from"],
+        "to_ref": sentinels["session_to"],
+        "count": 2,
+    }
+    assert session_events["manual_context"]["payload"] == {
+        "sku": "CROIS-01",
+        "note": sentinels["session_text"],
+        "reason": sentinels["session_text"],
+        "text": sentinels["session_text"],
+        "message": sentinels["session_text"],
+    }
+    assert len(exported["order_cancellation_alerts"]) == 1
+    exported_alert = exported["order_cancellation_alerts"][0]
+    assert exported_alert["protocol"] == protocol
+    assert exported_alert["reason"] == sentinels["order_reason"]
+    assert "message" not in exported_alert
+
+    anonymize_customer(customer)
+
+    note_event.refresh_from_db()
+    reason_event.refresh_from_db()
+    renamed_event.refresh_from_db()
+    free_text_event.refresh_from_db()
+    alert.refresh_from_db()
+    assert note_event.payload == {"operational_code": "handover"}
+    assert reason_event.payload == {"protocol": protocol}
+    assert renamed_event.payload == {"count": 2}
+    assert free_text_event.payload == {"sku": "CROIS-01"}
+    assert protocol in alert.message
+    assert "Motivo informado:" not in alert.message
+    assert _sweep(tuple(sentinels.values())) == []
 
 
 def test_a_sessao_recebe_o_mesmo_tratamento():
@@ -206,6 +397,94 @@ def test_o_telefone_reciclado_nao_abre_o_historico_antigo():
 
     query = customer_identity_filter(customer_ref="CLI-OUTRO", phone=PHONE)
     assert Order.objects.filter(query).count() == 0
+
+
+def test_exclusao_nao_altera_pedido_com_dono_canonico_diferente():
+    current = _customer()
+    previous = Customer.objects.create(ref="CLI-ANTERIOR", first_name="Outra pessoa")
+    alien = Order.objects.create(
+        ref="ORDER-OUTRO-DONO",
+        channel_ref="web",
+        handle_type="phone",
+        handle_ref=current.phone,
+        status="completed",
+        data={
+            "customer_ref": previous.ref,
+            "customer": {"ref": previous.ref, "phone": current.phone},
+        },
+    )
+
+    anonymize_customer(current)
+
+    alien.refresh_from_db()
+    assert alien.handle_type == "phone"
+    assert alien.handle_ref == PHONE
+    assert alien.data["customer_ref"] == previous.ref
+
+
+def test_commit_recusa_sessao_antiga_de_customer_inativo() -> None:
+    customer = _customer()
+    Channel.objects.get_or_create(ref="web", defaults={"name": "web"})
+    session = Session.objects.create(
+        session_key=generate_session_key(),
+        channel_ref="web",
+        state="open",
+        handle_type="phone",
+        handle_ref=customer.phone,
+        items=[{"sku": "CROIS-01", "qty": 1, "unit_price_q": 500, "line_id": "L1"}],
+        data={
+            "customer_ref": customer.ref,
+            "customer": {"ref": customer.ref, "phone": customer.phone},
+        },
+    )
+    customer.is_active = False
+    customer.save(update_fields=["is_active"])
+
+    with pytest.raises(CommitError) as caught:
+        CommitService.commit(
+            session_key=session.session_key,
+            channel_ref="web",
+            idempotency_key=generate_idempotency_key(),
+        )
+
+    assert caught.value.code == "customer_inactive"
+    assert not Order.objects.filter(session_key=session.session_key).exists()
+
+
+def test_commit_recusa_ref_e_telefone_de_clientes_diferentes() -> None:
+    referenced = Customer.objects.create(
+        ref="CLI-IDENTITY-REF",
+        first_name="Referência",
+        phone="+5543991234501",
+    )
+    phone_owner = Customer.objects.create(
+        ref="CLI-IDENTITY-PHONE",
+        first_name="Telefone",
+        phone="+5543991234502",
+    )
+    Channel.objects.get_or_create(ref="web", defaults={"name": "web"})
+    session = Session.objects.create(
+        session_key=generate_session_key(),
+        channel_ref="web",
+        state="open",
+        handle_type="phone",
+        handle_ref=phone_owner.phone,
+        items=[{"sku": "CROIS-01", "qty": 1, "unit_price_q": 500, "line_id": "L1"}],
+        data={
+            "customer_ref": referenced.ref,
+            "customer": {"ref": referenced.ref, "phone": phone_owner.phone},
+        },
+    )
+
+    with pytest.raises(CommitError) as caught:
+        CommitService.commit(
+            session_key=session.session_key,
+            channel_ref="web",
+            idempotency_key=generate_idempotency_key(),
+        )
+
+    assert caught.value.code == "customer_identity_mismatch"
+    assert not Order.objects.filter(session_key=session.session_key).exists()
 
 
 def test_o_perfil_de_rfm_nao_sobrevive():
@@ -244,14 +523,11 @@ def test_rodar_duas_vezes_nao_estoura():
     assert _sweep((PHONE,)) == []
 
 
-def test_a_exportacao_mostra_o_que_a_exclusao_apaga():
-    """As duas metades do mesmo direito têm de concordar sobre o escopo.
+def test_exportacao_e_exclusao_nao_reivindicam_legado_so_por_telefone():
+    """Telefone atual não prova autoria de pedido histórico ownerless."""
+    import json
 
-    A exportação lia só `data.customer_ref` e perdia o pedido identificado
-    apenas pelo handle de telefone — mostrava ao titular menos do que a loja
-    guardava dele.
-    """
-    from shopman.shop.services.account import export_customer_data
+    from shopman.storefront.services.account_export import build_account_export
 
     customer = _customer()
     order = _order_for(customer)
@@ -262,13 +538,18 @@ def test_a_exportacao_mostra_o_que_a_exclusao_apaga():
     data.pop("customer", None)
     Order.objects.filter(pk=orphan.pk).update(data=data)
 
-    exported = export_customer_data(customer)
+    artifact = build_account_export(customer)
+    exported = json.load(artifact)
+    artifact.close()
     refs = {row["ref"] for row in exported["orders"]}
-    assert {order.ref, orphan.ref} <= refs
+    assert order.ref in refs
+    assert orphan.ref not in refs
     assert exported["customer"]["phone"] == PHONE
 
     anonymize_customer(customer)
-    assert _sweep((PHONE,)) == []
+    orphan.refresh_from_db()
+    assert orphan.handle_ref == PHONE
+    assert orphan.data == data
 
 
 def test_o_lado_do_login_tambem_esquece_o_telefone():
@@ -285,7 +566,11 @@ def test_o_lado_do_login_tambem_esquece_o_telefone():
     customer = _customer()
     user = get_user_model().objects.create_user(username="cli-anon-ord", first_name=FIRST_NAME)
     CustomerUser.objects.create(user=user, customer_id=customer.uuid, metadata={"phone": PHONE})
-    VerificationCode.objects.create(target_value=PHONE, purpose=VerificationCode.Purpose.LOGIN)
+    VerificationCode.objects.create(
+        customer_id=customer.uuid,
+        target_value=PHONE,
+        purpose=VerificationCode.Purpose.LOGIN,
+    )
 
     anonymize_customer(customer)
 

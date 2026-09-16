@@ -64,6 +64,7 @@ class ManychatService:
             customer = cls._find_by_manychat_id(manychat_id)
 
             if customer:
+                customer = cls._lock_active_customer(customer.pk)
                 if not customer.phone and not incoming_phone:
                     raise ValueError(UNIDENTIFIED_SUBSCRIBER)
                 # Update existing customer
@@ -75,6 +76,7 @@ class ManychatService:
             customer = cls._find_by_identifiers(subscriber_data)
 
             if customer:
+                customer = cls._lock_active_customer(customer.pk)
                 if not customer.phone and not incoming_phone:
                     raise ValueError(UNIDENTIFIED_SUBSCRIBER)
                 # Link Manychat ID to existing customer
@@ -156,11 +158,24 @@ class ManychatService:
     ) -> Customer:
         """Bind trusted ManyChat/access-link identity data to a known customer."""
         with transaction.atomic():
-            customer = Customer.objects.select_for_update().get(pk=customer.pk)
+            customer = cls._lock_active_customer(customer.pk)
             cls._add_manychat_identifiers(customer, subscriber_data, source_system)
             cls._update_customer(customer, subscriber_data, source_system=source_system)
             customer.refresh_from_db()
             return customer
+
+    @staticmethod
+    def _lock_active_customer(customer_pk: int) -> Customer:
+        """Acquire the canonical privacy fence before any identity write."""
+
+        customer = (
+            Customer.objects.select_for_update()
+            .filter(pk=customer_pk, is_active=True)
+            .first()
+        )
+        if customer is None:
+            raise ValueError("Customer is inactive.")
+        return customer
 
     @classmethod
     def _find_by_manychat_id(cls, manychat_id: str) -> Customer | None:

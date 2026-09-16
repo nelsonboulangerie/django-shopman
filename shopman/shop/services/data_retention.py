@@ -22,6 +22,7 @@ from shopman.shop.models import (
     DeliveryTarget,
     MarketingSecurityEvent,
     OutboundAttempt,
+    PrivacyRequestReceipt,
 )
 
 
@@ -129,6 +130,9 @@ def build_retention_dry_run(
     incident_records = MarketingSecurityEvent.objects.filter(
         retention_until__lte=clock,
     ).count()
+    expired_privacy_receipts = PrivacyRequestReceipt.objects.filter(
+        retention_until__lte=clock,
+    ).count()
     # 0055 guarda payload remoto bruto e imutável. R12 o inventaria somente por
     # contagem; o dry-run jamais carrega ``raw_json`` para memória ou saída.
     catalog_snapshots_with_raw_payload = CatalogSnapshot.objects.count()
@@ -181,8 +185,9 @@ def build_retention_dry_run(
         ),
         _row(
             "R09",
-            status="inventario_sem_marco_de_exclusao_ou_fim_da_finalidade",
+            status="inventario_sem_descarte;_recibos_exigem_revisao_e_legal_hold",
             candidates=0,
+            recibos_de_privacidade_elegiveis_para_revisao=expired_privacy_receipts,
             **external["R09"],
         ),
         _row("R10", status="comando_existente_sem_job_comprovado", **external["R10"]),

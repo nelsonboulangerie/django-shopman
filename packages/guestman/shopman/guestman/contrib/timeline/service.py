@@ -2,6 +2,7 @@
 
 import logging
 
+from django.db import transaction
 from shopman.guestman.contrib.timeline.models import TimelineEvent
 from shopman.guestman.models import Customer
 
@@ -46,18 +47,21 @@ class TimelineService:
         Raises:
             Customer.DoesNotExist: If customer not found
         """
-        customer = Customer.objects.get(ref=customer_ref, is_active=True)
-
-        return TimelineEvent.objects.create(
-            customer=customer,
-            event_type=event_type,
-            title=title,
-            description=description,
-            channel=channel,
-            reference=reference,
-            metadata=metadata or {},
-            created_by=created_by,
-        )
+        with transaction.atomic():
+            customer = Customer.objects.select_for_update().get(
+                ref=customer_ref,
+                is_active=True,
+            )
+            return TimelineEvent.objects.create(
+                customer=customer,
+                event_type=event_type,
+                title=title,
+                description=description,
+                channel=channel,
+                reference=reference,
+                metadata=metadata or {},
+                created_by=created_by,
+            )
 
     @classmethod
     def get_timeline(

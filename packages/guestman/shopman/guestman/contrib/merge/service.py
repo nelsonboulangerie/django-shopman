@@ -89,9 +89,21 @@ class MergeService:
             )
 
         with transaction.atomic():
-            # Lock both rows to prevent concurrent modifications
-            source = Customer.objects.select_for_update().get(pk=source_customer.pk)
-            target = Customer.objects.select_for_update().get(pk=target_customer.pk)
+            # Lock both canonical rows in deterministic order before any child.
+            # The checks above were only hints: deletion may have won while this
+            # request waited, so active state must be revalidated under lock.
+            locked = {
+                customer.pk: customer
+                for customer in Customer.objects.select_for_update()
+                .filter(pk__in=(source_customer.pk, target_customer.pk))
+                .order_by("pk")
+            }
+            source = locked.get(source_customer.pk)
+            target = locked.get(target_customer.pk)
+            if source is None or not source.is_active:
+                raise CustomerError("MERGE_FAILED", message="Source customer is inactive.")
+            if target is None or not target.is_active:
+                raise CustomerError("MERGE_FAILED", message="Target customer is inactive.")
 
             # Snapshot tracks migrated PKs for undo
             snapshot: dict[str, list] = {}
@@ -182,8 +194,24 @@ class MergeService:
             )
 
         with transaction.atomic():
-            source = Customer.objects.select_for_update().get(pk=audit.source_id)
-            target = Customer.objects.select_for_update().get(pk=audit.target_id)
+            # MergeAudit's historical UUID fields store the integer Customer PK
+            # encoded as a UUID.  Convert explicitly before building the lock
+            # map; comparing the UUID object to integer dict keys always misses.
+            source_pk = int(audit.source_id)
+            target_pk = int(audit.target_id)
+            locked = {
+                customer.pk: customer
+                for customer in Customer.objects.select_for_update()
+                .filter(pk__in=(source_pk, target_pk))
+                .order_by("pk")
+            }
+            source = locked.get(source_pk)
+            target = locked.get(target_pk)
+            if source is None or target is None or not target.is_active:
+                raise CustomerError(
+                    "UNDO_FAILED",
+                    message="Merge participants are no longer available.",
+                )
 
             snapshot = audit.snapshot
 

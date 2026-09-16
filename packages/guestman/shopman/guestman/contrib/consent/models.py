@@ -246,5 +246,18 @@ class CommunicationConsentEvent(models.Model):
     def delete(self, *args, **kwargs):
         raise ValidationError(_("Eventos de consentimento não podem ser apagados."))
 
+    @classmethod
+    def redact_subject(cls, customer) -> int:
+        """Desvincula PII por exercício do titular sem apagar a prova legal.
+
+        Eventos continuam append-only para qualquer mutação de negócio. Esta é
+        a única exceção estreita: remove FK, IP e ator em texto, preservando
+        prova criptográfica, finalidade e datas.
+        """
+
+        database = customer._state.db or "default"
+        queryset = models.QuerySet(model=cls, using=database).filter(customer=customer)
+        return queryset.update(customer=None, ip_address=None, actor_ref="")
+
     def __str__(self) -> str:  # pragma: no cover - admin/debug only
         return f"{self.channel}/{self.purpose}: {self.event_type} @ {self.occurred_at.isoformat()}"

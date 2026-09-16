@@ -140,6 +140,9 @@ jobs:
           IFOOD_WEBHOOK_TOKEN: ci-ifood-webhook-token
           MANYCHAT_API_TOKEN: ci-manychat-api-token
           MANYCHAT_WEBHOOK_SECRET: ci-manychat-webhook-secret
+          SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY: ci-only-privacy-receipt-hmac-key-at-least-32-bytes
+          SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION: "1"
+          SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS: "{}"
           # Distinct synthetic keys exercise the production contract without network calls.
           GOOGLE_MAPS_API_KEY: ""
           GOOGLE_MAPS_BROWSER_API_KEY: ci-maps-browser-key

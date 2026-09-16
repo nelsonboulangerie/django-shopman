@@ -73,6 +73,30 @@ class DefaultAuthAdapter:
         """Resolve customer by UUID."""
         return self.resolver.get_by_uuid(uuid)
 
+    def lock_active_customer_by_uuid(self, uuid) -> AuthCustomerInfo | None:
+        """Acquire the host's canonical customer lock before auth writes."""
+        return self.resolver.lock_active_by_uuid(uuid)
+
+    def login_target_belongs_to_customer(
+        self,
+        customer: AuthCustomerInfo,
+        target: str,
+    ) -> bool:
+        """Revalidate a login handle after acquiring the canonical customer lock.
+
+        ``resolve_customer`` is deliberately called again here.  Production
+        resolvers consult Guestman's current ContactPoint source of truth and
+        its current Customer cache; comparing the UUID prevents a phone/email
+        that moved or was removed while we waited for the row lock from being
+        used to issue or accept an OTP for the stale owner.
+        """
+        current_owner = self.resolve_customer(target)
+        return bool(
+            current_owner
+            and current_owner.is_active
+            and str(current_owner.uuid) == str(customer.uuid)
+        )
+
     def create_customer_for_phone(self, phone: str) -> AuthCustomerInfo:
         """Create a new customer for the given phone number."""
         return self.resolver.create_for_phone(phone)

@@ -9,6 +9,10 @@ SECRET_KEY = "test-secret-key-for-customers-tests"
 DEBUG = True
 
 INSTALLED_APPS = [
+    # Guestman ships ModelAdmin integrations too.  Keeping Admin installed in
+    # the package harness makes those public adapters collectible/testable
+    # without coupling the package suite to the monolith's settings module.
+    "django.contrib.admin",
     "django.contrib.contenttypes",
     "django.contrib.auth",
     "django.contrib.postgres",

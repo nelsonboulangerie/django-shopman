@@ -79,6 +79,7 @@ class AccessLinkService:
     # ===========================================
 
     @classmethod
+    @transaction.atomic
     def create_token(
         cls,
         customer: AuthCustomerInfo,
@@ -123,10 +124,18 @@ class AccessLinkService:
                 error="Invalid access link source.",
                 error_code=ErrorCode.INVALID_INPUT,
             )
+        adapter = get_adapter()
+        locked_customer = adapter.lock_active_customer_by_uuid(customer.uuid)
+        if locked_customer is None:
+            return TokenResult(
+                success=False,
+                error="Account inactive.",
+                error_code=ErrorCode.ACCOUNT_INACTIVE,
+            )
         expires_at = timezone.now() + timedelta(minutes=ttl)
 
         link, raw_token = AccessLink.create_with_token(
-            customer_id=customer.uuid,
+            customer_id=locked_customer.uuid,
             audience=audience,
             source=source,
             expires_at=expires_at,
@@ -139,7 +148,7 @@ class AccessLinkService:
         access_link_created.send(
             sender=cls,
             token=link,
-            customer=customer,
+            customer=locked_customer,
             audience=audience,
             source=source,
             url=url,
@@ -147,7 +156,7 @@ class AccessLinkService:
 
         logger.info(
             "Access link created",
-            extra={"customer_id": str(customer.uuid), "audience": audience},
+            extra={"customer_id": str(locked_customer.uuid), "audience": audience},
         )
 
         return TokenResult(
@@ -218,10 +227,26 @@ class AccessLinkService:
         Returns:
             AuthResult with user and customer
         """
-        # Find token (lookup by HMAC hash, never plaintext)
-        token = AccessLink.get_by_token(token_str, for_update=True)
-        if token is None:
+        # Primeira leitura sem lock: serve somente para descobrir o titular.
+        # A ordem canônica é Customer -> AccessLink, a mesma da exclusão.
+        token_hint = AccessLink.get_by_token(token_str, for_update=False)
+        if token_hint is None:
             logger.warning("Invalid token attempted")
+            return AuthResult(success=False, error="Invalid token.", error_code=ErrorCode.TOKEN_INVALID)
+
+        adapter = get_adapter()
+        customer = adapter.lock_active_customer_by_uuid(token_hint.customer_id)
+        if customer is None:
+            return AuthResult(
+                success=False,
+                error="Account inactive.",
+                error_code=ErrorCode.ACCOUNT_INACTIVE,
+            )
+
+        # Releitura sob lock: o link pode ter expirado ou sido consumido desde
+        # a leitura indicativa acima.
+        token = AccessLink.get_by_token(token_str, for_update=True)
+        if token is None or token.pk != token_hint.pk or token.customer_id != customer.uuid:
             return AuthResult(success=False, error="Invalid token.", error_code=ErrorCode.TOKEN_INVALID)
 
         # G7: Validate
@@ -235,21 +260,6 @@ class AccessLinkService:
             else:
                 code = ErrorCode.TOKEN_INVALID
             return AuthResult(success=False, error=e.message, error_code=code)
-
-        # Fetch customer info via adapter
-        adapter = get_adapter()
-        customer = adapter.resolve_customer_by_uuid(token.customer_id)
-        if not customer:
-            return AuthResult(
-                success=False, error="Customer not found.",
-                error_code=ErrorCode.ACCOUNT_NOT_FOUND,
-            )
-
-        if not customer.is_active:
-            return AuthResult(
-                success=False, error="Account inactive.",
-                error_code=ErrorCode.ACCOUNT_INACTIVE,
-            )
 
         # Get or create User
         user, created_user = cls._get_or_create_user(customer)

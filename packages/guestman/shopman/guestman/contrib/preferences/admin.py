@@ -1,12 +1,13 @@
 """Admin for CustomerPreference."""
 
 from django.contrib import admin
+from shopman.guestman.admin_privacy import CustomerOwnedPrivacyFenceAdminMixin
 from shopman.guestman.contrib.preferences.models import CustomerPreference
 from unfold.admin import ModelAdmin
 
 
 @admin.register(CustomerPreference)
-class CustomerPreferenceAdmin(ModelAdmin):
+class CustomerPreferenceAdmin(CustomerOwnedPrivacyFenceAdminMixin, ModelAdmin):
     list_display = [
         "customer",
         "category",

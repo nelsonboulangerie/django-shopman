@@ -52,6 +52,9 @@ SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED = False
 SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED = False
 SHOPMAN_MARKETING_TARGET_HMAC_KEY = "test-only-marketing-target-hmac-key"
 SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION = 1
+SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY = "test-only-privacy-receipt-hmac-key-v1"
+SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION = 1
+SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS = {}
 # ⚠️ TRUE, que é o valor do STAGING (.do/app.staging-subdomains.yaml).
 #
 SHOPMAN_ADMIN_REQUIRE_2FA = False
@@ -137,6 +140,10 @@ SHOPMAN_MANYCHAT.update(  # noqa: F405
     timeout=15,
     whatsapp_id_field_id="",
     resolver="shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.resolve",
+    otp_resolver=(
+        "shopman.guestman.contrib.manychat.resolver."
+        "ManychatSubscriberResolver.resolve_active_customer"
+    ),
 )
 SHOPMAN_MARKETING_TEST_TARGETS = {}
 SHOPMAN_MARKETING_SIMULATION_IGNORE_QUIET_HOURS = False

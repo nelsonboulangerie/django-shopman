@@ -108,6 +108,5 @@ def on_customer_anonymized(sender, customer_ref: str = "", phone: str = "", **kw
 
     if customer_ref:
         CustomerFavorite.objects.filter(customer_ref=customer_ref).delete()
+    if customer_ref:
         StockAlertSubscription.objects.filter(customer_ref=customer_ref).delete()
-    if phone:
-        StockAlertSubscription.objects.filter(contact_phone=phone).delete()

@@ -3,6 +3,7 @@
 from django.contrib import admin
 from django.urls import reverse
 from django.utils.html import format_html
+from shopman.guestman.admin_privacy import CustomerOwnedPrivacyFenceAdminMixin
 from shopman.guestman.contrib.timeline.models import TimelineEvent
 from shopman.utils import unfold_badge
 from unfold.admin import ModelAdmin
@@ -19,7 +20,7 @@ _EVENT_COLORS = {
 
 
 @admin.register(TimelineEvent)
-class TimelineEventAdmin(ModelAdmin):
+class TimelineEventAdmin(CustomerOwnedPrivacyFenceAdminMixin, ModelAdmin):
     list_display = [
         "created_at",
         "event_type_badge",

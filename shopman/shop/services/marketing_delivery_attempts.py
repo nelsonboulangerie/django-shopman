@@ -13,7 +13,7 @@ from typing import Protocol
 from django.db import connection, transaction
 from django.utils import timezone
 
-from shopman.shop.models import DeliveryAttempt, DeliveryTarget
+from shopman.shop.models import AudienceSnapshotMember, DeliveryAttempt, DeliveryTarget
 from shopman.shop.services.marketing_contracts import (
     DeliveryState,
     MarketingContractError,
@@ -65,10 +65,14 @@ def deterministic_attempt_token(
     with transaction.atomic():
         target = DeliveryTarget.objects.select_for_update().get(ref=target_ref)
         _validate_claim(target, worker_id=safe_worker_id, now=clock)
-        active = DeliveryAttempt.objects.filter(
-            target=target,
-            state__in=(DeliveryAttempt.State.PREPARED, DeliveryAttempt.State.CALLING),
-        ).order_by("ordinal").first()
+        active = (
+            DeliveryAttempt.objects.filter(
+                target=target,
+                state__in=(DeliveryAttempt.State.PREPARED, DeliveryAttempt.State.CALLING),
+            )
+            .order_by("ordinal")
+            .first()
+        )
         ordinal = active.ordinal if active is not None else target.attempt_count + 1
         return f"marketing:v1:{target.ref}:attempt:{ordinal}"
 
@@ -89,14 +93,16 @@ def queue_target(target_ref, *, now: datetime | None = None) -> DeliveryTarget:
         target.lease_until = None
         target.version += 1
         target.updated_at = clock
-        target.save(update_fields=[
-            "state",
-            "next_attempt_at",
-            "lease_owner",
-            "lease_until",
-            "version",
-            "updated_at",
-        ])
+        target.save(
+            update_fields=[
+                "state",
+                "next_attempt_at",
+                "lease_owner",
+                "lease_until",
+                "version",
+                "updated_at",
+            ]
+        )
         _schedule_aggregate(target.announcement_id)
         return target
 
@@ -129,9 +135,7 @@ def execute_target(
         now=clock,
     )
     if attempt.state == DeliveryAttempt.State.COMPLETED:
-        return _observed_execution(
-            AttemptExecution(attempt, target, provider_called=False, replayed=True)
-        )
+        return _observed_execution(AttemptExecution(attempt, target, provider_called=False, replayed=True))
     if attempt.state == DeliveryAttempt.State.CALLING:
         # Another worker (or this worker before losing its response) already
         # crossed the call boundary.  Waiting/reconciliation is safe; calling
@@ -157,6 +161,8 @@ def execute_target(
             "recipient_age_not_verified",
             "recipient_known_minor",
             "recipient_age_source_unavailable",
+            "recipient_account_inactive",
+            "recipient_identity_changed",
             "subscription_inactive",
             "subscription_unavailable",
         }:
@@ -288,16 +294,18 @@ def _settle_invalid_facts(
             target.settled_at = now
         target.version += 1
         target.updated_at = now
-        target.save(update_fields=[
-            "state",
-            "lease_owner",
-            "lease_until",
-            "next_attempt_at",
-            "last_error_code",
-            "settled_at",
-            "version",
-            "updated_at",
-        ])
+        target.save(
+            update_fields=[
+                "state",
+                "lease_owner",
+                "lease_until",
+                "next_attempt_at",
+                "last_error_code",
+                "settled_at",
+                "version",
+                "updated_at",
+            ]
+        )
         _schedule_aggregate(target.announcement_id)
 
 
@@ -318,15 +326,17 @@ def _defer_frozen_call(attempt_ref, *, now: datetime) -> None:
         target.last_error_code = "marketing_frozen"
         target.version += 1
         target.updated_at = now
-        target.save(update_fields=[
-            "state",
-            "lease_owner",
-            "lease_until",
-            "next_attempt_at",
-            "last_error_code",
-            "version",
-            "updated_at",
-        ])
+        target.save(
+            update_fields=[
+                "state",
+                "lease_owner",
+                "lease_until",
+                "next_attempt_at",
+                "last_error_code",
+                "version",
+                "updated_at",
+            ]
+        )
 
 
 def _settle_pre_provider_guard(
@@ -347,16 +357,18 @@ def _settle_pre_provider_guard(
         attempt.outcome_kind = ProviderOutcomeKind.NOT_ATTEMPTED.value
         attempt.error_code = error.code
         attempt.completed_at = now
-        attempt.save(update_fields=[
-            "state",
-            "outcome_kind",
-            "error_code",
-            "completed_at",
-            "updated_at",
-        ])
+        attempt.save(
+            update_fields=[
+                "state",
+                "outcome_kind",
+                "error_code",
+                "completed_at",
+                "updated_at",
+            ]
+        )
 
         terminal = not error.retryable
-        if terminal:
+        if terminal and target.state == DeliveryTarget.State.QUEUED:
             next_state = DeliveryState.SUPPRESSED
             ensure_delivery_transition(DeliveryState(target.state), next_state)
             target.state = next_state.value
@@ -364,19 +376,22 @@ def _settle_pre_provider_guard(
         target.lease_until = None
         target.last_error_code = error.code
         target.next_attempt_at = now + timedelta(seconds=30)
-        target.settled_at = now if terminal else None
+        if terminal:
+            target.settled_at = target.settled_at or now
         target.version += 1
         target.updated_at = now
-        target.save(update_fields=[
-            "state",
-            "lease_owner",
-            "lease_until",
-            "next_attempt_at",
-            "last_error_code",
-            "settled_at",
-            "version",
-            "updated_at",
-        ])
+        target.save(
+            update_fields=[
+                "state",
+                "lease_owner",
+                "lease_until",
+                "next_attempt_at",
+                "last_error_code",
+                "settled_at",
+                "version",
+                "updated_at",
+            ]
+        )
         _schedule_aggregate(target.announcement_id)
         return attempt, target
 
@@ -450,11 +465,7 @@ def _prepare_attempt(
     now: datetime,
 ) -> tuple[DeliveryAttempt, DeliveryTarget, bool]:
     with transaction.atomic():
-        target = (
-            DeliveryTarget.objects.select_for_update()
-            .select_related("artifact")
-            .get(ref=target_ref)
-        )
+        target = DeliveryTarget.objects.select_for_update().select_related("artifact").get(ref=target_ref)
         _validate_artifact(target, artifact, request_hash)
         existing = DeliveryAttempt.objects.filter(
             target=target,
@@ -507,16 +518,47 @@ def _begin_call(
     now: datetime,
 ) -> tuple[DeliveryAttempt, DeliveryTarget, bool]:
     with transaction.atomic():
-        attempt = (
-            DeliveryAttempt.objects.select_for_update()
-            .select_related("target")
-            .get(ref=attempt_ref)
+        # Descobrir o titular sem lock permite adquirir a cerca canônica na
+        # ordem Customer -> Attempt -> Target. A exclusão usa Customer ->
+        # Target; compartilhar a ordem elimina a janela em que um envio direto
+        # poderia cruzar o provider depois do recibo de exclusão.
+        identity = (
+            DeliveryAttempt.objects.filter(ref=attempt_ref)
+            .values(
+                "target_id",
+                "target__member_id",
+                "target__member__customer_id",
+            )
+            .first()
         )
+        if identity is None:
+            raise DeliveryAttempt.DoesNotExist
+        customer_id = identity["target__member__customer_id"]
+        if customer_id is not None:
+            from shopman.guestman.models import Customer
+
+            customer = Customer.objects.select_for_update().filter(pk=customer_id).only("pk", "is_active").first()
+            if customer is None or not customer.is_active:
+                raise MarketingContractError(
+                    code="recipient_account_inactive",
+                    detail="A conta destinatária não está mais ativa.",
+                )
+        attempt = DeliveryAttempt.objects.select_for_update().select_related("target").get(ref=attempt_ref)
         if attempt.state != DeliveryAttempt.State.PREPARED:
             return attempt, attempt.target, False
         # Do not join the nullable ``member`` relation under FOR UPDATE:
         # PostgreSQL refuses to lock the nullable side of an outer join.
         target = DeliveryTarget.objects.select_for_update().get(pk=attempt.target_id)
+        current_customer_id = None
+        if target.member_id is not None:
+            current_customer_id = (
+                AudienceSnapshotMember.objects.filter(pk=target.member_id).values_list("customer_id", flat=True).first()
+            )
+        if current_customer_id != customer_id:
+            raise MarketingContractError(
+                code="recipient_identity_changed",
+                detail="A identidade destinatária mudou antes do envio.",
+            )
         if target.state != DeliveryTarget.State.QUEUED:
             raise MarketingContractError(
                 code="delivery_target_not_queued",
@@ -533,14 +575,16 @@ def _begin_call(
         target.last_attempt_at = now
         target.version += 1
         target.updated_at = now
-        target.save(update_fields=[
-            "state",
-            "lease_owner",
-            "lease_until",
-            "last_attempt_at",
-            "version",
-            "updated_at",
-        ])
+        target.save(
+            update_fields=[
+                "state",
+                "lease_owner",
+                "lease_until",
+                "last_attempt_at",
+                "version",
+                "updated_at",
+            ]
+        )
         return attempt, target, True
 
 
@@ -642,40 +686,43 @@ def _complete_attempt(
         attempt.error_code = safe_code
         attempt.retry_after_seconds = outcome.retry_after_seconds
         attempt.completed_at = now
-        attempt.save(update_fields=[
-            "state",
-            "outcome_kind",
-            "provider_receipt_ref",
-            "error_code",
-            "retry_after_seconds",
-            "completed_at",
-            "updated_at",
-        ])
+        attempt.save(
+            update_fields=[
+                "state",
+                "outcome_kind",
+                "provider_receipt_ref",
+                "error_code",
+                "retry_after_seconds",
+                "completed_at",
+                "updated_at",
+            ]
+        )
         target.state = target_state.value
-        target.last_error_code = safe_code if outcome.kind not in {
-            ProviderOutcomeKind.ACCEPTED_UNCONFIRMED,
-            ProviderOutcomeKind.CONFIRMED,
-        } else ""
+        target.last_error_code = (
+            safe_code
+            if outcome.kind
+            not in {
+                ProviderOutcomeKind.ACCEPTED_UNCONFIRMED,
+                ProviderOutcomeKind.CONFIRMED,
+            }
+            else ""
+        )
         target.provider_receipt_ref = safe_receipt
-        target.provider_ref_retention_until = (
-            now + timedelta(days=180) if safe_receipt else None
-        )
-        target.settled_at = (
-            None
-            if target_state in {DeliveryState.FAILED_RETRYABLE, DeliveryState.UNKNOWN}
-            else now
-        )
+        target.provider_ref_retention_until = now + timedelta(days=180) if safe_receipt else None
+        target.settled_at = None if target_state in {DeliveryState.FAILED_RETRYABLE, DeliveryState.UNKNOWN} else now
         target.version += 1
         target.updated_at = now
-        target.save(update_fields=[
-            "state",
-            "last_error_code",
-            "provider_receipt_ref",
-            "provider_ref_retention_until",
-            "settled_at",
-            "version",
-            "updated_at",
-        ])
+        target.save(
+            update_fields=[
+                "state",
+                "last_error_code",
+                "provider_receipt_ref",
+                "provider_ref_retention_until",
+                "settled_at",
+                "version",
+                "updated_at",
+            ]
+        )
         _schedule_aggregate(target.announcement_id)
         return attempt, target
 
@@ -756,11 +803,7 @@ def _request_hash(value: str) -> str:
 
 
 def _validate_claim(target: DeliveryTarget, *, worker_id: str, now: datetime) -> None:
-    if (
-        target.lease_owner != worker_id
-        or target.lease_until is None
-        or target.lease_until <= now
-    ):
+    if target.lease_owner != worker_id or target.lease_until is None or target.lease_until <= now:
         raise MarketingContractError(
             code="delivery_target_not_leased",
             detail="O worker não possui um lease ativo para este target.",

@@ -20,10 +20,27 @@ def customer_by_phone(phone: str):
 
 
 def set_missing_first_name(*, phone: str, name: str) -> None:
-    customer = customer_by_phone(phone)
-    if customer and not customer.first_name:
-        customer.first_name = name
-        customer.save(update_fields=["first_name"])
+    from django.db import transaction
+
+    from shopman.shop.services import account as account_service
+
+    hint = customer_by_phone(phone)
+    if hint is None:
+        return
+    with transaction.atomic():
+        try:
+            customer = account_service.lock_active_customer(customer_uuid=hint.uuid)
+        except account_service.AccountUnavailable:
+            return
+        # A leitura por telefone ocorreu antes da espera na trava. Revalidar a
+        # identidade atual impede que uma troca concorrente faça o nome entrar
+        # no cadastro antigo por um alvo reciclado.
+        current = customer_by_phone(phone)
+        if current is None or current.pk != customer.pk:
+            return
+        if not customer.first_name:
+            customer.first_name = name
+            customer.save(update_fields=["first_name", "updated_at"])
 
 
 def update_customer_name(customer_ref: str, *, first_name: str, last_name: str):
@@ -106,7 +123,13 @@ def request_code(*, phone: str, delivery_method: str, ip_address: str | None):
 CONTACT_VERIFICATION_PURPOSE = "verify_contact"
 
 
-def request_contact_verification_code(*, phone: str, delivery_method: str, ip_address: str | None):
+def request_contact_verification_code(
+    *,
+    phone: str,
+    delivery_method: str,
+    ip_address: str | None,
+    customer_uuid,
+):
     """Envia um OTP para provar posse de um número — sem logar, sem criar cliente.
 
     O caminho de login (`request_code` acima) resolve o cliente do número e, se
@@ -126,6 +149,7 @@ def request_contact_verification_code(*, phone: str, delivery_method: str, ip_ad
         purpose=CONTACT_VERIFICATION_PURPOSE,
         delivery_method=delivery_method,
         ip_address=ip_address,
+        customer_id=customer_uuid,
     )
 
 
@@ -174,10 +198,7 @@ def verify_contact_code(*, phone: str, code_input: str, customer_uuid) -> Contac
             .filter(
                 target_value=target,
                 purpose=CONTACT_VERIFICATION_PURPOSE,
-                status__in=[
-                    VerificationCode.Status.PENDING,
-                    VerificationCode.Status.SENT,
-                ],
+                status=VerificationCode.Status.SENT,
                 expires_at__gt=timezone.now(),
             )
             .order_by("-created_at")
@@ -295,33 +316,44 @@ def safe_redirect_url(next_url: str | None, request) -> str:
 
 def trusted_device_login(request, *, phone: str):
     """Authenticate request through trusted-device flow. Returns customer or None."""
-    customer = customer_by_phone(phone)
-    if not customer:
+    customer_hint = customer_by_phone(phone)
+    if not customer_hint:
         return None
 
     from django.contrib.auth import login
+    from django.db import transaction
     from shopman.doorman.protocols.customer import AuthCustomerInfo
     from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
     from shopman.doorman.services.device_trust import DeviceTrustService
 
-    if not DeviceTrustService.check(request, "customer", customer.uuid):
-        return None
+    from shopman.shop.services import account as account_service
 
-    customer_info = AuthCustomerInfo(
-        uuid=customer.uuid,
-        name=customer.name,
-        phone=customer.phone,
-        email=getattr(customer, "email", None) or None,
-        is_active=True,
-    )
-    user, _ = get_or_create_user_for_customer(customer_info)
-    # login() dá flush na sessão quando OUTRO usuário estava logado — a sacola
-    # anônima tem que sobreviver à troca, como nos fluxos do Doorman.
-    preserved = preserved_session_values(request.session) if hasattr(request, "session") else {}
-    login(request, user, backend="shopman.doorman.backends.PhoneOTPBackend")
-    for key, value in preserved.items():
-        request.session[key] = value
-    return customer
+    with transaction.atomic():
+        try:
+            customer = account_service.lock_active_customer(customer_uuid=customer_hint.uuid)
+        except account_service.AccountUnavailable:
+            # A exclusão pode vencer depois da leitura indicativa por telefone.
+            # Login por dispositivo confiável é uma conveniência: nesse caso ele
+            # simplesmente deixa de autenticar, sem transformar a corrida em 500.
+            return None
+        if not DeviceTrustService.check(request, "customer", customer.uuid):
+            return None
+
+        customer_info = AuthCustomerInfo(
+            uuid=customer.uuid,
+            name=customer.name,
+            phone=customer.phone,
+            email=getattr(customer, "email", None) or None,
+            is_active=True,
+        )
+        user, _ = get_or_create_user_for_customer(customer_info)
+        # login() dá flush na sessão quando OUTRO usuário estava logado — a sacola
+        # anônima tem que sobreviver à troca, como nos fluxos do Doorman.
+        preserved = preserved_session_values(request.session) if hasattr(request, "session") else {}
+        login(request, user, backend="shopman.doorman.backends.PhoneOTPBackend")
+        for key, value in preserved.items():
+            request.session[key] = value
+        return customer
 
 
 # ── Passkey ──────────────────────────────────────────────────────────
@@ -363,11 +395,19 @@ def passkey_registration_options(request, *, customer) -> dict:
 
 
 def passkey_register(request, *, customer, credential: dict, label: str = ""):
+    from django.db import transaction
     from shopman.doorman.services import passkey as passkey_service
 
-    return passkey_service.verify_registration(
-        request, customer_id=customer.uuid, credential=credential, label=label,
-    )
+    from shopman.shop.services import account as account_service
+
+    with transaction.atomic():
+        locked_customer = account_service.lock_active_customer(customer_uuid=customer.uuid)
+        return passkey_service.verify_registration(
+            request,
+            customer_id=locked_customer.uuid,
+            credential=credential,
+            label=label,
+        )
 
 
 def passkey_login_options(request) -> dict:
@@ -384,34 +424,55 @@ def passkey_login(request, *, credential: dict):
     sessão nasce com identidade FORTE — nada reduzido, nada a confirmar.
     """
     from django.contrib.auth import login
+    from django.db import transaction
+    from shopman.doorman.models import Passkey
     from shopman.doorman.protocols.customer import AuthCustomerInfo
     from shopman.doorman.services import passkey as passkey_service
     from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
 
-    result = passkey_service.verify_login(request, credential=credential)
-    customer = customer_by_uuid(result.customer_id)
-    if customer is None:
-        from shopman.doorman.services.passkey import PasskeyError
+    from shopman.shop.services import account as account_service
 
-        # Credencial órfã: o cliente foi apagado/anonimizado e a chave sobrou. Recusar com a
-        # mesma mensagem de sempre (não contar o que existe na base) e deixar rastro no log.
-        logger.warning("passkey_login_orphan_credential customer=%s", result.customer_id)
-        raise PasskeyError("Não reconhecemos esta chave. Entre pelo WhatsApp.")
+    credential_id = str(credential.get("id") or credential.get("rawId") or "")
+    customer_id = Passkey.objects.filter(credential_id=credential_id).values_list(
+        "customer_id", flat=True
+    ).first()
+    if customer_id is None:
+        return passkey_service.verify_login(request, credential=credential)
 
-    customer_info = AuthCustomerInfo(
-        uuid=customer.uuid,
-        name=customer.name,
-        phone=customer.phone,
-        email=getattr(customer, "email", None) or None,
-        is_active=True,
-    )
-    user, _ = get_or_create_user_for_customer(customer_info)
-    # A sacola anônima sobrevive à troca de sessão, como em todo login daqui.
-    preserved = preserved_session_values(request.session) if hasattr(request, "session") else {}
-    login(request, user, backend="shopman.doorman.backends.PhoneOTPBackend")
-    for key, value in preserved.items():
-        request.session[key] = value
-    return customer
+    with transaction.atomic():
+        try:
+            customer = account_service.lock_active_customer(customer_uuid=customer_id)
+        except account_service.AccountUnavailable as exc:
+            from shopman.doorman.services.passkey import PasskeyError
+
+            raise PasskeyError("Não reconhecemos esta chave. Entre pelo WhatsApp.") from exc
+        if not Passkey.objects.select_for_update().filter(
+            credential_id=credential_id,
+            customer_id=customer.uuid,
+        ).exists():
+            from shopman.doorman.services.passkey import PasskeyError
+
+            raise PasskeyError("Não reconhecemos esta chave. Entre pelo WhatsApp.")
+        result = passkey_service.verify_login(request, credential=credential)
+        if str(result.customer_id) != str(customer.uuid):
+            from shopman.doorman.services.passkey import PasskeyError
+
+            raise PasskeyError("Não reconhecemos esta chave. Entre pelo WhatsApp.")
+
+        customer_info = AuthCustomerInfo(
+            uuid=customer.uuid,
+            name=customer.name,
+            phone=customer.phone,
+            email=getattr(customer, "email", None) or None,
+            is_active=True,
+        )
+        user, _ = get_or_create_user_for_customer(customer_info)
+        # A sacola anônima sobrevive à troca de sessão, como em todo login daqui.
+        preserved = preserved_session_values(request.session) if hasattr(request, "session") else {}
+        login(request, user, backend="shopman.doorman.backends.PhoneOTPBackend")
+        for key, value in preserved.items():
+            request.session[key] = value
+        return customer
 
 
 def passkey_list(customer) -> list:
@@ -443,14 +504,19 @@ def device_is_trusted(request, *, customer_uuid) -> bool:
 
 
 def trust_device(*, response, customer_id, request) -> None:
+    from django.db import transaction
     from shopman.doorman.services.device_trust import DeviceTrustService
 
-    DeviceTrustService.trust(
-        response=response,
-        subject_type="customer",
-        subject_id=customer_id,
-        request=request,
-    )
+    from shopman.shop.services import account as account_service
+
+    with transaction.atomic():
+        locked_customer = account_service.lock_active_customer(customer_uuid=customer_id)
+        DeviceTrustService.trust(
+            response=response,
+            subject_type="customer",
+            subject_id=locked_customer.uuid,
+            request=request,
+        )
 
 
 def revoke_current_device(*, request, response) -> None:

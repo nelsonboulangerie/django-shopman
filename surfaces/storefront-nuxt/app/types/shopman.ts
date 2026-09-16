@@ -1138,6 +1138,7 @@ export interface AccountDeviceCopy {
 export interface AccountDeviceResponse {
   devices: AccountDeviceProjection[]
   copy: AccountDeviceCopy
+  privacy_requests_available?: boolean
 }
 
 export interface FavoritesResponse {
