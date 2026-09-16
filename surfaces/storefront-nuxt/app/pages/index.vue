@@ -420,7 +420,13 @@ useHead({
             type="single"
             collapsible
             class="mt-6 border-y"
-          />
+          >
+            <template #content="{ item }">
+              <UiAccordionContent>
+                <CloudflareEmailBoundary>{{ item.content }}</CloudflareEmailBoundary>
+              </UiAccordionContent>
+            </template>
+          </UiAccordion>
         </div>
       </div>
     </section>
