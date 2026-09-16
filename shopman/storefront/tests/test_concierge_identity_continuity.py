@@ -4,6 +4,7 @@ from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
 
 import pytest
+from django.db import transaction
 from django.utils import timezone
 from shopman.guestman.models import Customer
 
@@ -175,6 +176,23 @@ def test_attach_binding_rejects_identity_conflict_without_mutating_journeys(
     assert not ConversationBinding.objects.filter(subject="tiktok-subject").exists()
 
 
+def test_attach_binding_revalidates_phone_after_customer_lock(identity_context):
+    customer, _identified, scope, stale_resolution = identity_context
+    ownerless = Conversation.objects.create(channel_ref="web")
+    from shopman.shop.services import account as account_service
+
+    with transaction.atomic():
+        locked = account_service.lock_active_customer(customer_pk=customer.pk)
+        account_service._set_primary_phone(locked, "+5543999990003")
+
+    with pytest.raises(service.BindingAttachmentRejected, match="identity_unverified"):
+        service.attach_binding(ownerless.pk, scope, stale_resolution)
+
+    ownerless.refresh_from_db()
+    assert ownerless.customer_ref == ownerless.phone == ownerless.customer_name == ""
+    assert not ConversationBinding.objects.filter(subject="tiktok-subject").exists()
+
+
 def test_attach_binding_never_moves_binding_from_another_conversation(identity_context):
     _, conversation, scope, resolution = identity_context
     separate = Conversation.objects.create()
@@ -246,6 +264,34 @@ def test_identify_marks_new_binding_when_conversation_is_already_identified(
     binding.refresh_from_db()
     assert identified.customer_ref == conversation.customer_ref
     assert binding.identity_assurance == ConversationBinding.IdentityAssurance.VERIFIED_CUSTOMER
+
+
+def test_identify_does_not_restore_identity_after_customer_was_deleted(
+    identity_context,
+    monkeypatch,
+):
+    customer, _identified, scope, resolution = identity_context
+    ownerless = Conversation.objects.create(channel_ref="web")
+    binding = ConversationBinding.objects.create(
+        conversation=ownerless,
+        provider=scope.provider,
+        account=scope.account,
+        transport_channel=scope.channel,
+        subject=scope.subject,
+        connection_key=scope.connection_key,
+        status=ConversationBinding.Status.ACTIVE,
+        identity_assurance=ConversationBinding.IdentityAssurance.TRANSPORT_SUBJECT,
+        activated_at=timezone.now(),
+    )
+    Customer.objects.filter(pk=customer.pk).update(is_active=False, phone="", first_name="Anonimizado")
+    monkeypatch.setattr(transport, "identity_for", lambda *_args, **_kwargs: resolution)
+
+    service.identify(ownerless, binding)
+
+    ownerless.refresh_from_db()
+    binding.refresh_from_db()
+    assert ownerless.customer_ref == ownerless.phone == ownerless.customer_name == ""
+    assert binding.identity_assurance == ConversationBinding.IdentityAssurance.TRANSPORT_SUBJECT
 
 
 def test_manychat_adapter_translates_customer_resolver_to_typed_identity(

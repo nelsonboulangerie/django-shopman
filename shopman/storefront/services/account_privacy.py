@@ -21,6 +21,7 @@ from shopman.shop.models import (
 )
 
 _CONTRACT_VERSION = "account-privacy.v1"
+_HMAC_DOMAIN_VERSION = "shopman-privacy-receipt-hmac.v1"
 _FAILED_RETENTION = timedelta(days=90)
 _COMPLETED_RETENTION = timedelta(days=365 * 5)
 _STALE_IN_PROGRESS = timedelta(minutes=10)
@@ -60,6 +61,32 @@ class DeletionOutcome:
     replayed: bool
 
 
+def privacy_requests_available() -> bool:
+    """Indica se os recibos obrigatórios podem ser assinados neste processo.
+
+    Exportação e exclusão não devem ser oferecidas quando a chave dedicada está
+    ausente ou inválida: o recibo é parte do contrato, não telemetria opcional.
+    """
+
+    try:
+        keys = _privacy_hmac_keys()
+        _ensure_receipt_key_coverage(keys)
+    except PrivacyReceiptKeyUnavailable:
+        return False
+    return True
+
+
+def subject_receipt_digests(customer_uuid) -> list[str]:
+    """Digests versionados para projetar recibos do próprio titular."""
+
+    keys = _privacy_hmac_keys()
+    _ensure_receipt_key_coverage(keys)
+    return [
+        _digest("subject", str(customer_uuid), key_version=version, key=key)
+        for version, key in keys.items()
+    ]
+
+
 def delete_account(*, customer, idempotency_key: str, authorized_at) -> DeletionOutcome:
     """Anonimiza uma conta uma única vez ou reproduz seu recibo concluído.
 
@@ -69,6 +96,10 @@ def delete_account(*, customer, idempotency_key: str, authorized_at) -> Deletion
     """
 
     normalized_key = _validate_idempotency_key(idempotency_key)
+    idempotency_fingerprint = _stable_idempotency_fingerprint(
+        PrivacyRequestOperation.DELETION,
+        normalized_key,
+    )
     request_material = json.dumps(
         {"acknowledged": True, "contract": _CONTRACT_VERSION, "operation": "deletion"},
         sort_keys=True,
@@ -76,7 +107,7 @@ def delete_account(*, customer, idempotency_key: str, authorized_at) -> Deletion
     )
     key_version, key = _key_for_idempotency(
         PrivacyRequestOperation.DELETION,
-        normalized_key,
+        idempotency_fingerprint,
     )
     subject_digest = _digest(
         "subject",
@@ -98,8 +129,11 @@ def delete_account(*, customer, idempotency_key: str, authorized_at) -> Deletion
     )
     receipt, replayed = _acquire_receipt(
         operation=PrivacyRequestOperation.DELETION,
+        subject_material=str(customer.uuid),
         subject_digest=subject_digest,
+        idempotency_fingerprint=idempotency_fingerprint,
         idempotency_digest=idempotency_digest,
+        request_material=request_material,
         request_digest=request_digest,
         authorized_at=authorized_at,
         key_version=key_version,
@@ -152,7 +186,10 @@ def delete_account(*, customer, idempotency_key: str, authorized_at) -> Deletion
                 raise AccountDeletionBlocked(blocker)
 
             _settle_storefront_records(locked_customer)
-            account_service.anonymize_customer(locked_customer)
+            account_service.anonymize_customer(
+                locked_customer,
+                correlation_ref=str(receipt.ref),
+            )
             now = timezone.now()
             receipt.state = PrivacyRequestState.COMPLETED
             receipt.completed_at = now
@@ -201,6 +238,10 @@ def begin_export(
             str(customer_uuid),
             key_version=key_version,
             key=key,
+        ),
+        idempotency_fingerprint=_stable_idempotency_fingerprint(
+            PrivacyRequestOperation.EXPORT,
+            nonce,
         ),
         idempotency_digest=_digest(
             "idempotency",
@@ -251,8 +292,11 @@ def fail_export(receipt_pk: int, *, stage: str = "artifact") -> None:
 def _acquire_receipt(
     *,
     operation: str,
+    subject_material: str,
     subject_digest: str,
+    idempotency_fingerprint: str,
     idempotency_digest: str,
+    request_material: str,
     request_digest: str,
     authorized_at,
     key_version: int,
@@ -269,22 +313,40 @@ def _acquire_receipt(
         with transaction.atomic():
             receipt, created = PrivacyRequestReceipt.objects.get_or_create(
                 operation=operation,
-                subject_digest=subject_digest,
-                idempotency_digest=idempotency_digest,
-                defaults=defaults,
+                idempotency_fingerprint=idempotency_fingerprint,
+                defaults={
+                    **defaults,
+                    "subject_digest": subject_digest,
+                    "idempotency_digest": idempotency_digest,
+                },
             )
     except IntegrityError:
         receipt = PrivacyRequestReceipt.objects.get(
             operation=operation,
-            idempotency_digest=idempotency_digest,
+            idempotency_fingerprint=idempotency_fingerprint,
         )
-        if not hmac.compare_digest(receipt.subject_digest, subject_digest):
-            raise PrivacyRequestConflict("idempotency_key_owned_by_another_subject") from None
         created = False
 
     if created:
         return receipt, False
-    if not hmac.compare_digest(receipt.request_digest, request_digest):
+    receipt_key = _privacy_hmac_keys().get(receipt.key_version)
+    if receipt_key is None:
+        raise PrivacyReceiptKeyUnavailable("receipt_key_version_not_configured")
+    expected_subject = _digest(
+        "subject",
+        subject_material,
+        key_version=receipt.key_version,
+        key=receipt_key,
+    )
+    expected_request = _digest(
+        "request",
+        request_material,
+        key_version=receipt.key_version,
+        key=receipt_key,
+    )
+    if not hmac.compare_digest(receipt.subject_digest, expected_subject):
+        raise PrivacyRequestConflict("idempotency_key_owned_by_another_subject")
+    if not hmac.compare_digest(receipt.request_digest, expected_request):
         raise PrivacyRequestConflict("request_digest_mismatch")
     if receipt.state == PrivacyRequestState.COMPLETED:
         return receipt, True
@@ -319,11 +381,14 @@ def replay_completed_deletion(idempotency_key: str) -> DeletionOutcome | None:
     """Consulta somente um recibo concluído; nunca inicia ou retoma exclusão."""
 
     normalized_key = _validate_idempotency_key(idempotency_key)
-    digests = _all_digests("idempotency", normalized_key)
+    fingerprint = _stable_idempotency_fingerprint(
+        PrivacyRequestOperation.DELETION,
+        normalized_key,
+    )
     receipt = (
         PrivacyRequestReceipt.objects.filter(
             operation=PrivacyRequestOperation.DELETION,
-            idempotency_digest__in=digests,
+            idempotency_fingerprint=fingerprint,
             state=PrivacyRequestState.COMPLETED,
         )
         .order_by("-started_at", "-pk")
@@ -364,6 +429,7 @@ def _settle_storefront_records(customer) -> None:
 
     from django.db.models import Q
 
+    from shopman.shop.models import AudienceSnapshotMember, DeliveryTarget
     from shopman.storefront.models import (
         CustomerFavorite,
         StockAlertDelivery,
@@ -371,12 +437,13 @@ def _settle_storefront_records(customer) -> None:
     )
     from shopman.storefront.services.stock_alerts import _revocation_hash
 
-    phone = customer.phone or ""
-    query = Q(customer_ref=customer.ref)
-    if phone:
-        query |= Q(customer_ref="", contact_phone=phone)
-    subscriptions = list(StockAlertSubscription.objects.select_for_update().filter(query).order_by("pk"))
+    subscriptions = list(
+        StockAlertSubscription.objects.select_for_update()
+        .filter(customer_ref=customer.ref)
+        .order_by("pk")
+    )
     subscription_ids = [subscription.pk for subscription in subscriptions]
+    subscription_refs = [subscription.ref for subscription in subscriptions]
     if (
         subscription_ids
         and StockAlertDelivery.objects.filter(
@@ -419,12 +486,58 @@ def _settle_storefront_records(customer) -> None:
                 dispatch_claimed_at=None,
             )
 
+    # Um member misto pode ter sido produzido ao deduplicar, pelo mesmo
+    # telefone, um Customer canônico e uma assinatura ownerless. Essa
+    # assinatura não vira propriedade do cadastro atual por coincidência de
+    # número: preservamos o target e apenas retiramos o vínculo contaminado.
+    owned_members = AudienceSnapshotMember.objects.select_for_update().filter(customer=customer).filter(
+        Q(subscription_ref__isnull=True) | Q(subscription_ref__in=subscription_refs)
+    )
+    owned_member_ids = tuple(owned_members.values_list("pk", flat=True))
+    targets = DeliveryTarget.objects.select_for_update().filter(member_id__in=owned_member_ids)
+    if targets.filter(state=DeliveryTarget.State.SENDING).exists():
+        raise AccountDeletionBlocked("marketing_delivery_in_flight")
+    targets.filter(
+        state__in=(
+            DeliveryTarget.State.PLANNED,
+            DeliveryTarget.State.QUEUED,
+            DeliveryTarget.State.FAILED_RETRYABLE,
+        )
+    ).update(
+        state=DeliveryTarget.State.CANCELLED,
+        lease_owner="",
+        lease_until=None,
+        last_error_code="subject_deleted",
+        settled_at=now,
+    )
+    owned_members.delete()
+    (
+        AudienceSnapshotMember.objects.select_for_update()
+        .filter(customer=customer, subscription_ref__isnull=False)
+        .exclude(subscription_ref__in=subscription_refs)
+        .update(customer=None)
+    )
+
     CustomerFavorite.objects.filter(customer_ref=customer.ref).delete()
 
 
 def _deletion_blocker(customer) -> str:
-    from shopman.shop.models import ConversationMessage, DeliveryTarget, OutboundAttempt
+    from shopman.shop.models import ConversationMessage, OutboundAttempt
     from shopman.shop.services import account as account_service
+
+    otp_blocker = account_service.privacy_otp_deletion_blocker(customer)
+    if otp_blocker:
+        return otp_blocker
+
+    # Apagar apenas o vínculo local não impede que uma sincronização posterior
+    # do ManyChat reapresente o mesmo assinante e recrie seus dados. Enquanto
+    # não houver uma confirmação de desvínculo/supressão no provedor, recusamos
+    # honestamente a exclusão em vez de emitir um recibo falso de conclusão.
+    # A detecção é por vínculo comprovado — nunca por mera coincidência de
+    # telefone — e acontece com o Customer já protegido pela cerca canônica.
+    manychat_blocker = account_service.privacy_manychat_deletion_blocker(customer)
+    if manychat_blocker:
+        return manychat_blocker
 
     order_blocker = account_service.privacy_order_deletion_blocker(
         customer.ref,
@@ -442,11 +555,6 @@ def _deletion_blocker(customer) -> str:
         state=OutboundAttempt.State.EXECUTING,
     ).exists():
         return "conversation_delivery_in_flight"
-    if DeliveryTarget.objects.filter(
-        member__customer=customer,
-        state=DeliveryTarget.State.SENDING,
-    ).exists():
-        return "marketing_delivery_in_flight"
     return ""
 
 
@@ -472,21 +580,13 @@ def _validate_idempotency_key(value: str) -> str:
     return str(parsed)
 
 
-def _key_for_idempotency(operation: str, idempotency_key: str) -> tuple[int, bytes]:
+def _key_for_idempotency(operation: str, idempotency_fingerprint: str) -> tuple[int, bytes]:
     keys = _privacy_hmac_keys()
-    digests = [
-        _digest(
-            "idempotency",
-            idempotency_key,
-            key_version=version,
-            key=key,
-        )
-        for version, key in keys.items()
-    ]
+    _ensure_receipt_key_coverage(keys)
     existing = (
         PrivacyRequestReceipt.objects.filter(
             operation=operation,
-            idempotency_digest__in=digests,
+            idempotency_fingerprint=idempotency_fingerprint,
         )
         .order_by("-started_at", "-pk")
         .first()
@@ -499,13 +599,31 @@ def _key_for_idempotency(operation: str, idempotency_key: str) -> tuple[int, byt
     return existing.key_version, key
 
 
+def _stable_idempotency_fingerprint(operation: str, idempotency_key: str) -> str:
+    """Identificador irreversível e independente da rotação da chave HMAC.
+
+    A entrada é obrigatoriamente UUIDv4 aleatório e não é persistida. O
+    domínio fixo e a operação impedem colisões entre fluxos sem quebrar o
+    lookup quando o contrato da solicitação evoluir.
+    """
+
+    material = f"shopman-privacy-idempotency.v1\0{operation}\0{idempotency_key}".encode()
+    return hashlib.sha256(material).hexdigest()
+
+
 def _all_digests(purpose: str, value: str) -> list[str]:
     return [_digest(purpose, value, key_version=version, key=key) for version, key in _privacy_hmac_keys().items()]
 
 
 def _current_privacy_key(keys: dict[int, bytes] | None = None) -> tuple[int, bytes]:
     resolved = keys or _privacy_hmac_keys()
-    version = int(getattr(settings, "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION", 1))
+    _ensure_receipt_key_coverage(resolved)
+    try:
+        version = int(
+            getattr(settings, "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION", 1)
+        )
+    except (TypeError, ValueError) as exc:
+        raise PrivacyReceiptKeyUnavailable("current_receipt_key_version_invalid") from exc
     key = resolved.get(version)
     if key is None:
         raise PrivacyReceiptKeyUnavailable("current_receipt_key_not_configured")
@@ -533,7 +651,12 @@ def _privacy_hmac_keys() -> dict[int, bytes]:
             raise PrivacyReceiptKeyUnavailable("receipt_key_invalid")
         keys[version] = key
 
-    current_version = int(getattr(settings, "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION", 1))
+    try:
+        current_version = int(
+            getattr(settings, "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION", 1)
+        )
+    except (TypeError, ValueError) as exc:
+        raise PrivacyReceiptKeyUnavailable("current_receipt_key_version_invalid") from exc
     current_key = str(getattr(settings, "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY", "") or "").encode("utf-8")
     if current_version < 1 or len(current_key) < 32:
         raise PrivacyReceiptKeyUnavailable("current_receipt_key_invalid")
@@ -547,6 +670,13 @@ def _privacy_hmac_keys() -> dict[int, bytes]:
     return keys
 
 
+def _ensure_receipt_key_coverage(keys: Mapping[int, bytes]) -> None:
+    """Fail closed while any retained receipt cannot be authenticated."""
+
+    if PrivacyRequestReceipt.objects.exclude(key_version__in=tuple(keys)).exists():
+        raise PrivacyReceiptKeyUnavailable("retained_receipt_key_not_configured")
+
+
 def _digest(
     purpose: str,
     value: str,
@@ -556,7 +686,7 @@ def _digest(
 ) -> str:
     if key_version is None or key is None:
         key_version, key = _current_privacy_key()
-    material = f"{_CONTRACT_VERSION}\0key:{key_version}\0{purpose}\0{value}".encode()
+    material = f"{_HMAC_DOMAIN_VERSION}\0key:{key_version}\0{purpose}\0{value}".encode()
     return hmac.new(key, material, hashlib.sha256).hexdigest()
 
 

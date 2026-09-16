@@ -14,7 +14,7 @@ from typing import Any, BinaryIO
 from django.apps import apps
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import connection, transaction
-from django.db.models import Q, QuerySet
+from django.db.models import OuterRef, Q, QuerySet, Subquery
 from django.utils import timezone
 
 SCHEMA_VERSION = "account_export.v1"
@@ -47,6 +47,17 @@ FORBIDDEN_EMBEDDED_KEYS = frozenset(
         "token",
         "token_hash",
     }
+)
+
+
+def _canonical_embedded_key(value: Any) -> str:
+    """Normaliza snake/camel/kebab e Unicode para a mesma fronteira."""
+
+    return "".join(character for character in str(value).casefold() if character.isalnum())
+
+
+_CANONICAL_FORBIDDEN_EMBEDDED_KEYS = frozenset(
+    _canonical_embedded_key(key) for key in FORBIDDEN_EMBEDDED_KEYS
 )
 
 # These tuples are the export contract.  Using ``values(*allowlist)`` ensures a
@@ -157,7 +168,6 @@ ORDER_ITEM_FIELDS = (
     "qty",
     "unit_price_q",
     "line_total_q",
-    "meta",
 )
 LOYALTY_FIELDS = (
     "points_balance",
@@ -178,22 +188,131 @@ LOYALTY_TRANSACTION_FIELDS = (
     "reference",
     "created_at",
 )
-ORDER_DATA_KEYS = (
-    "customer",
+ORDER_DATA_SCALAR_KEYS = (
     "customer_ref",
     "fulfillment_type",
     "delivery_address",
-    "delivery_address_structured",
     "delivery_date",
     "delivery_time_slot",
     "order_notes",
     "origin_channel",
-    "receipt",
-    "fiscal",
     "is_gift",
-    "recipient",
     "gift_message",
     "gift_hide_values",
+)
+ORDER_DATA_NESTED_FIELDS = {
+    "customer": (
+        "ref",
+        "uuid",
+        "name",
+        "first_name",
+        "last_name",
+        "phone",
+        "email",
+        "document",
+        "tax_id",
+        "cpf",
+        "cnpj",
+    ),
+    "delivery_address_structured": (
+        "formatted_address",
+        "route",
+        "street_number",
+        "neighborhood",
+        "city",
+        "state",
+        "state_code",
+        "postal_code",
+        "country",
+        "country_code",
+        "complement",
+        "delivery_instructions",
+        "recipient_name",
+        "recipient_phone",
+        "latitude",
+        "longitude",
+        "place_id",
+    ),
+    "receipt": ("channels", "email", "customer_name", "customer_phone"),
+    "fiscal": ("issue_document", "tax_id", "cpf", "cnpj"),
+    "recipient": ("name", "phone", "email"),
+}
+ORDER_DATA_QUERY_PATHS = ORDER_DATA_SCALAR_KEYS + tuple(
+    f"{container}__{field}"
+    for container, fields in ORDER_DATA_NESTED_FIELDS.items()
+    for field in fields
+)
+ITEM_META_QUERY_PATHS = (
+    "customer_note",
+    "gift_wrap",
+    "customization__note",
+    "customization__text",
+    "customization__message",
+)
+SNAPSHOT_ITEM_FIELDS = (
+    "line_id",
+    "sku",
+    "name",
+    "qty",
+    "unit_price_q",
+    "line_total_q",
+)
+ORDER_EVENT_PAYLOAD_FIELDS = ("protocol", "note", "reason")
+SESSION_EVENT_PAYLOAD_FIELDS = (
+    "sku",
+    "name",
+    "qty",
+    "qty_before",
+    "qty_after",
+    "order_ref",
+    "total_q",
+    "item_count",
+    "was_fired",
+    "from_ref",
+    "to_ref",
+    "count",
+    "cancelled",
+    "note",
+    "reason",
+    "text",
+    "message",
+)
+DIRECTIVE_PERSONAL_QUERY_PATHS = ORDER_DATA_QUERY_PATHS + (
+    "customer_name",
+    "customer_phone",
+    "customer_email",
+    "recipient_name",
+    "recipient_phone",
+    "receipt_email",
+    "tax_id",
+    "document",
+    "notification_context__customer_name",
+    "notification_context__customer_phone",
+    "notification_context__customer_email",
+    "notification_context__recipient_name",
+    "notification_context__recipient_phone",
+    "context__customer_name",
+    "context__customer_phone",
+    "context__customer_email",
+    "context__recipient_name",
+    "context__recipient_phone",
+)
+PAYMENT_PERSONAL_QUERY_PATHS = (
+    "customer_ref",
+    "customer_name",
+    "customer_phone",
+    "customer_email",
+    "receipt_email",
+    "tax_id",
+    "document",
+    "payer__name",
+    "payer__phone",
+    "payer__email",
+    "payer__tax_id",
+    "billing_details__name",
+    "billing_details__phone",
+    "billing_details__email",
+    "billing_details__tax_id",
 )
 PRICING_KEYS = (
     "subtotal_q",
@@ -211,7 +330,7 @@ def _clean_embedded(value: Any) -> Any:
         return {
             str(key): _clean_embedded(item)
             for key, item in value.items()
-            if str(key).lower() not in FORBIDDEN_EMBEDDED_KEYS
+            if _canonical_embedded_key(key) not in _CANONICAL_FORBIDDEN_EMBEDDED_KEYS
         }
     if isinstance(value, list):
         return [_clean_embedded(item) for item in value]
@@ -223,7 +342,11 @@ def _clean_embedded(value: Any) -> Any:
 def _closed_mapping(value: Any, fields: tuple[str, ...]) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         return {}
-    return {field: _clean_embedded(value[field]) for field in fields if field in value}
+    return {
+        field: _clean_embedded(value[field])
+        for field in fields
+        if field in value and value[field] is not None
+    }
 
 
 def _project_customer_metadata(value: Any) -> dict[str, Any]:
@@ -245,20 +368,128 @@ def _project_pricing(value: Any) -> dict[str, Any]:
 
 
 def _project_order_data(value: Any) -> dict[str, Any]:
-    return _closed_mapping(value, ORDER_DATA_KEYS)
+    if not isinstance(value, Mapping):
+        return {}
+    projected = _closed_mapping(value, ORDER_DATA_SCALAR_KEYS)
+    for container, fields in ORDER_DATA_NESTED_FIELDS.items():
+        nested = {
+            field: _clean_embedded(value[path])
+            for field in fields
+            if (path := f"{container}__{field}") in value and value[path] is not None
+        }
+        if nested:
+            projected[container] = nested
+    return projected
 
 
 def _project_item_meta(value: Any) -> dict[str, Any]:
-    return _closed_mapping(
+    if not isinstance(value, Mapping):
+        return {}
+    projected = _closed_mapping(value, ("customer_note", "gift_wrap"))
+    nested_customization = value.get("customization")
+    customization = {}
+    for field in ("note", "text", "message"):
+        path = f"customization__{field}"
+        if path in value and value[path] is not None:
+            customization[field] = _clean_embedded(value[path])
+        elif isinstance(nested_customization, Mapping) and nested_customization.get(field) is not None:
+            customization[field] = _clean_embedded(nested_customization[field])
+    if customization:
+        projected["customization"] = customization
+    return projected
+
+
+def _project_snapshot_items(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    projected = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        safe = _closed_mapping(item, SNAPSHOT_ITEM_FIELDS)
+        meta = _project_item_meta(item.get("meta"))
+        if meta:
+            safe["meta"] = meta
+        projected.append(safe)
+    return projected
+
+
+def _project_session_event_payload(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    projected = _closed_mapping(value, SESSION_EVENT_PAYLOAD_FIELDS)
+    for field in ("items", "lines"):
+        rows = value.get(field)
+        if isinstance(rows, list):
+            projected[field] = [
+                _closed_mapping(row, ("line_id", "sku", "name", "qty"))
+                for row in rows
+                if isinstance(row, Mapping)
+            ]
+    line_ids = value.get("line_ids")
+    if isinstance(line_ids, list):
+        projected["line_ids"] = [str(line_id) for line_id in line_ids]
+    return projected
+
+
+def _project_directive_personal_data(value: Any) -> dict[str, Any]:
+    projected = _project_order_data(value)
+    projected.update(
+        _closed_mapping(
+            value,
+            (
+                "customer_name",
+                "customer_phone",
+                "customer_email",
+                "recipient_name",
+                "recipient_phone",
+                "receipt_email",
+                "tax_id",
+                "document",
+            ),
+        )
+    )
+    for container in ("notification_context", "context"):
+        nested = {
+            field: _clean_embedded(value[path])
+            for field in (
+                "customer_name",
+                "customer_phone",
+                "customer_email",
+                "recipient_name",
+                "recipient_phone",
+            )
+            if (path := f"{container}__{field}") in value and value[path] is not None
+        }
+        if nested:
+            projected[container] = nested
+    return projected
+
+
+def _project_payment_personal_data(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    projected = _closed_mapping(
         value,
         (
-            "customer_note",
-            "customization",
-            "gift_wrap",
-            "options",
-            "modifiers",
+            "customer_ref",
+            "customer_name",
+            "customer_phone",
+            "customer_email",
+            "receipt_email",
+            "tax_id",
+            "document",
         ),
     )
+    for container in ("payer", "billing_details"):
+        nested = {
+            field: _clean_embedded(value[path])
+            for field in ("name", "phone", "email", "tax_id")
+            if (path := f"{container}__{field}") in value and value[path] is not None
+        }
+        if nested:
+            projected[container] = nested
+    return projected
 
 
 def _project_message_content(value: Any) -> list[dict[str, Any]]:
@@ -308,18 +539,108 @@ def _project_session_row(row: dict[str, Any]) -> Mapping[str, Any]:
 
 
 def _project_order_row(row: dict[str, Any]) -> Mapping[str, Any]:
-    return _pack_json_paths(row, prefix="data__", target="data", projector=_project_order_data)
+    snapshot_items = _project_snapshot_items(row.pop("snapshot__items", None))
+    _pack_json_paths(row, prefix="data__", target="data", projector=_project_order_data)
+    _pack_json_paths(
+        row,
+        prefix="snapshot__data__",
+        target="snapshot_data",
+        projector=_project_order_data,
+    )
+    if snapshot_items:
+        row["snapshot_items"] = snapshot_items
+    return row
 
 
 def _project_order_item_row(row: dict[str, Any]) -> Mapping[str, Any]:
     row["order_ref"] = row.pop("order__ref")
-    row["meta"] = _project_item_meta(row.get("meta"))
-    return row
+    return _pack_json_paths(row, prefix="meta__", target="meta", projector=_project_item_meta)
 
 
 def _project_session_item_row(row: dict[str, Any]) -> Mapping[str, Any]:
-    row["meta"] = _project_item_meta(row.get("meta"))
-    return row
+    return _pack_json_paths(row, prefix="meta__", target="meta", projector=_project_item_meta)
+
+
+def _project_order_event_row(row: dict[str, Any]) -> Mapping[str, Any]:
+    row["order_ref"] = row.pop("order__ref")
+    return _pack_json_paths(
+        row,
+        prefix="payload__",
+        target="payload",
+        projector=lambda value: _closed_mapping(value, ORDER_EVENT_PAYLOAD_FIELDS),
+    )
+
+
+def _project_session_event_row(row: dict[str, Any]) -> Mapping[str, Any]:
+    return _pack_json_paths(
+        row,
+        prefix="payload__",
+        target="payload",
+        projector=_project_session_event_payload,
+    )
+
+
+def _project_directive_row(row: dict[str, Any]) -> Mapping[str, Any]:
+    row["order_ref"] = row.pop("payload__order_ref")
+    return _pack_json_paths(
+        row,
+        prefix="payload__",
+        target="personal_data",
+        projector=_project_directive_personal_data,
+    )
+
+
+def _project_payment_intent_row(row: dict[str, Any]) -> Mapping[str, Any]:
+    return _pack_json_paths(
+        row,
+        prefix="gateway_data__",
+        target="personal_data",
+        projector=_project_payment_personal_data,
+    )
+
+
+def _project_access_link_row(row: dict[str, Any]) -> Mapping[str, Any]:
+    return _pack_json_paths(
+        row,
+        prefix="metadata__",
+        target="metadata",
+        projector=lambda value: _closed_mapping(
+            value,
+            ("device", "login_source", "channel", "origin"),
+        ),
+    )
+
+
+def _project_merge_audit_row(row: dict[str, Any]) -> Mapping[str, Any]:
+    return _pack_json_paths(
+        row,
+        prefix="evidence__",
+        target="evidence",
+        projector=lambda value: _closed_mapping(
+            value,
+            ("reason", "detail", "note", "basis"),
+        ),
+    )
+
+
+def _project_owned_merge_audit(
+    customer_ref: str,
+    customer_uuid: Any,
+) -> Callable[[dict[str, Any]], Mapping[str, Any]]:
+    def transform(row: dict[str, Any]) -> Mapping[str, Any]:
+        source_ref = row.pop("source_ref")
+        source_id = row.pop("source_id")
+        target_ref = row.pop("target_ref")
+        target_id = row.pop("target_id")
+        roles = []
+        if source_ref == customer_ref or source_id == customer_uuid:
+            roles.append("source")
+        if target_ref == customer_ref or target_id == customer_uuid:
+            roles.append("target")
+        row["roles"] = roles
+        return _project_merge_audit_row(row)
+
+    return transform
 
 
 def _project_conversation_message(row: dict[str, Any]) -> Mapping[str, Any]:
@@ -416,7 +737,11 @@ def _postgres_repeatable_read_if_safe(*, outermost: bool) -> None:
     if connection.vendor != "postgresql" or not outermost:
         return
     with connection.cursor() as cursor:
-        cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        # A exportacao segura adquire a mesma trava canonica da exclusao e, no
+        # caminho HTTP, conclui o recibo na propria transacao. Portanto ela nao
+        # pode ser READ ONLY. REPEATABLE READ ainda impede que as muitas
+        # consultas que formam o artefato observem instantes diferentes.
+        cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
 
 
 def _write_export(writer: _ObjectWriter, customer: Any) -> None:
@@ -425,7 +750,6 @@ def _write_export(writer: _ObjectWriter, customer: Any) -> None:
     customer_ref = customer_row["ref"]
     customer_uuid = customer_row["uuid"]
     phone = customer_row["phone"] or ""
-    email = customer_row["email"] or ""
     customer_row["metadata"] = _project_customer_metadata(customer_row.get("metadata"))
 
     writer.value("schema_version", SCHEMA_VERSION)
@@ -598,10 +922,21 @@ def _write_export(writer: _ObjectWriter, customer: Any) -> None:
         "auth_access_links",
         _values(
             "doorman.AccessLink",
-            fields=("audience", "created_at", "expires_at", "used_at", "source"),
+            fields=(
+                "audience",
+                "created_at",
+                "expires_at",
+                "used_at",
+                "source",
+                "metadata__device",
+                "metadata__login_source",
+                "metadata__channel",
+                "metadata__origin",
+            ),
             order_by=("created_at", "pk"),
             filters={"customer_id": customer_uuid},
         ),
+        transform=_project_access_link_row,
     )
     writer.array(
         "auth_trusted_devices",
@@ -631,10 +966,6 @@ def _write_export(writer: _ObjectWriter, customer: Any) -> None:
         ),
     )
     verification_query = Q(customer_id=customer_uuid)
-    if phone:
-        verification_query |= Q(customer_id__isnull=True, target_value=phone)
-    if email:
-        verification_query |= Q(customer_id__isnull=True, target_value=email)
     writer.array(
         "auth_verification_codes",
         _values(
@@ -645,6 +976,9 @@ def _write_export(writer: _ObjectWriter, customer: Any) -> None:
                 "status",
                 "created_at",
                 "expires_at",
+                "delivery_started_at",
+                "delivery_reconciled_at",
+                "delivery_evidence_ref",
                 "sent_at",
                 "verified_at",
                 "delivery_method",
@@ -672,7 +1006,7 @@ def _write_export(writer: _ObjectWriter, customer: Any) -> None:
             "handle_type",
             "handle_ref",
             "state",
-            *(f"data__{key}" for key in ORDER_DATA_KEYS),
+            *(f"data__{path}" for path in ORDER_DATA_QUERY_PATHS),
             *(f"pricing__{key}" for key in PRICING_KEYS),
             "opened_at",
             "committed_at",
@@ -693,7 +1027,7 @@ def _write_export(writer: _ObjectWriter, customer: Any) -> None:
             "qty",
             "unit_price_q",
             "line_total_q",
-            "meta",
+            *(f"meta__{path}" for path in ITEM_META_QUERY_PATHS),
             "created_at",
             "updated_at",
         ),
@@ -704,15 +1038,28 @@ def _write_export(writer: _ObjectWriter, customer: Any) -> None:
         apps.get_model("orderman.SessionEvent")
         .objects.filter(session_key__in=sessions.values("session_key"))
         .order_by("created_at", "pk")
-        .values("seq", "type", "created_at"),
+        .values(
+            "session_key",
+            "seq",
+            "type",
+            *(f"payload__{field}" for field in SESSION_EVENT_PAYLOAD_FIELDS),
+            "payload__items",
+            "payload__lines",
+            "payload__line_ids",
+            "created_at",
+        ),
+        transform=_project_session_event_row,
     )
     order_model = apps.get_model("orderman.Order")
     orders = order_model.objects.filter(footprint)
+    order_refs = tuple(orders.values_list("ref", flat=True))
     writer.array(
         "orders",
         orders.order_by("created_at", "pk").values(
             *ORDER_FIELDS,
-            *(f"data__{key}" for key in ORDER_DATA_KEYS),
+            *(f"data__{path}" for path in ORDER_DATA_QUERY_PATHS),
+            *(f"snapshot__data__{path}" for path in ORDER_DATA_QUERY_PATHS),
+            "snapshot__items",
         ),
         transform=_project_order_row,
     )
@@ -721,16 +1068,77 @@ def _write_export(writer: _ObjectWriter, customer: Any) -> None:
         apps.get_model("orderman.OrderItem")
         .objects.filter(order_id__in=orders.values("pk"))
         .order_by("order__created_at", "order__pk", "line_id", "pk")
-        .values(*ORDER_ITEM_FIELDS),
+        .values(
+            *ORDER_ITEM_FIELDS,
+            *(f"meta__{path}" for path in ITEM_META_QUERY_PATHS),
+        ),
         transform=_project_order_item_row,
+    )
+    writer.array(
+        "order_directives",
+        apps.get_model("orderman.Directive")
+        .objects.filter(payload__order_ref__in=order_refs)
+        .order_by("created_at", "pk")
+        .values(
+            "topic",
+            "status",
+            "attempts",
+            "available_at",
+            "created_at",
+            "started_at",
+            "updated_at",
+            "error_code",
+            "payload__order_ref",
+            *(f"payload__{path}" for path in DIRECTIVE_PERSONAL_QUERY_PATHS),
+        ),
+        transform=_project_directive_row,
     )
     writer.array(
         "order_events",
         apps.get_model("orderman.OrderEvent")
         .objects.filter(order_id__in=orders.values("pk"))
         .order_by("order__created_at", "order__pk", "seq", "pk")
-        .values("order__ref", "seq", "type", "created_at"),
-        transform=_rename("order__ref", "order_ref"),
+        .values(
+            "order__ref",
+            "seq",
+            "type",
+            *(f"payload__{field}" for field in ORDER_EVENT_PAYLOAD_FIELDS),
+            "created_at",
+        ),
+        transform=_project_order_event_row,
+    )
+    cancellation_event = (
+        apps.get_model("orderman.OrderEvent")
+        .objects.filter(
+            order__ref=OuterRef("order_ref"),
+            type="customer_cancellation_requested",
+        )
+        .order_by("-seq")
+    )
+    writer.array(
+        "order_cancellation_alerts",
+        apps.get_model("backstage.OperatorAlert")
+        .objects.filter(
+            type="customer_cancellation_requested",
+            order_ref__in=order_refs,
+        )
+        .annotate(
+            protocol=Subquery(cancellation_event.values("payload__protocol")[:1]),
+            reason=Subquery(cancellation_event.values("payload__reason")[:1]),
+        )
+        .order_by("created_at", "pk")
+        .values(
+            "type",
+            "severity",
+            "audience",
+            "order_ref",
+            "protocol",
+            "reason",
+            "acknowledged",
+            "acknowledged_at",
+            "resolved_at",
+            "created_at",
+        ),
     )
     fulfillments = apps.get_model("orderman.Fulfillment").objects.filter(order_id__in=orders.values("pk"))
     writer.array(
@@ -779,7 +1187,9 @@ def _write_export(writer: _ObjectWriter, customer: Any) -> None:
             "cancelled_at",
             "expires_at",
             "cancel_reason",
+            *(f"gateway_data__{path}" for path in PAYMENT_PERSONAL_QUERY_PATHS),
         ),
+        transform=_project_payment_intent_row,
     )
     writer.array(
         "payment_transactions",
@@ -804,8 +1214,6 @@ def _write_export(writer: _ObjectWriter, customer: Any) -> None:
     )
 
     conversation_query = Q(customer_ref=customer_ref)
-    if phone:
-        conversation_query |= Q(customer_ref="", phone=phone)
     conversation_model = apps.get_model("shop.Conversation")
     conversations = conversation_model.objects.filter(conversation_query)
     writer.array(
@@ -886,8 +1294,6 @@ def _write_export(writer: _ObjectWriter, customer: Any) -> None:
         ),
     )
     stock_query = Q(customer_ref=customer_ref)
-    if phone:
-        stock_query |= Q(customer_ref="", contact_phone=phone)
     subscriptions = apps.get_model("storefront.StockAlertSubscription").objects.filter(stock_query)
     writer.array(
         "stock_alert_subscriptions",
@@ -938,7 +1344,9 @@ def _write_export(writer: _ObjectWriter, customer: Any) -> None:
     )
 
     audience_members = apps.get_model("shop.AudienceSnapshotMember").objects.filter(
-        Q(customer_id=customer.pk) | Q(subscription_ref__in=subscriptions.values("ref"))
+        Q(customer_id=customer.pk, subscription_ref__isnull=True)
+        | Q(customer_id=customer.pk, subscription_ref__in=subscriptions.values("ref"))
+        | Q(customer_id__isnull=True, subscription_ref__in=subscriptions.values("ref"))
     )
     writer.array(
         "marketing_audience_members",
@@ -1044,22 +1452,84 @@ def _write_export(writer: _ObjectWriter, customer: Any) -> None:
             "occurred_at",
         ),
     )
+    writer.array(
+        "contact_releases",
+        _values(
+            "shop.ContactRelease",
+            fields=("kind", "value", "was_primary", "released_at"),
+            order_by=("released_at", "pk"),
+            filters={"released_from_ref": customer_ref},
+        ),
+    )
+    writer.array(
+        "merge_audits",
+        _values(
+            "customer_merge.MergeAudit",
+            fields=(
+                "source_ref",
+                "target_ref",
+                "source_id",
+                "target_id",
+                "status",
+                "migrated_contact_points",
+                "migrated_external_identities",
+                "migrated_identifiers",
+                "migrated_addresses",
+                "migrated_preferences",
+                "migrated_consents",
+                "migrated_timeline_events",
+                "loyalty_merged",
+                "merged_at",
+                "reverted_at",
+                "evidence__reason",
+                "evidence__detail",
+                "evidence__note",
+                "evidence__basis",
+            ),
+            order_by=("merged_at", "pk"),
+            query=(
+                Q(source_ref=customer_ref)
+                | Q(target_ref=customer_ref)
+                | Q(source_id=customer_uuid)
+                | Q(target_id=customer_uuid)
+            ),
+        ),
+        transform=_project_owned_merge_audit(customer_ref, customer_uuid),
+    )
+    from shopman.storefront.services import account_privacy
+
+    writer.array(
+        "privacy_request_receipts",
+        apps.get_model("shop.PrivacyRequestReceipt")
+        .objects.filter(subject_digest__in=account_privacy.subject_receipt_digests(customer_uuid))
+        .order_by("started_at", "pk")
+        .values(
+            "ref",
+            "operation",
+            "state",
+            "authorization_method",
+            "failure_stage",
+            "failure_code",
+            "outcome_counts",
+            "attempt_count",
+            "authorized_at",
+            "started_at",
+            "completed_at",
+        ),
+    )
     writer.finish()
 
 
-def build_account_export(
+def _build_locked_account_export(
     customer: Any,
     *,
     spool_max_size: int = DEFAULT_SPOOL_MAX_SIZE,
     chunk_size: int = DEFAULT_ITERATOR_CHUNK_SIZE,
 ) -> BinaryIO:
-    """Build a complete JSON artifact and return it positioned at byte zero.
+    """Build from a Customer whose canonical row is locked by the caller."""
 
-    The returned ``SpooledTemporaryFile`` has ``byte_count`` and
-    ``section_counts`` attributes for receipt/audit evidence.  The caller owns
-    the successful file and must close it.  On every failure this function
-    closes the partial artifact before re-raising.
-    """
+    if not connection.in_atomic_block:
+        raise RuntimeError("account export requires an active transaction")
 
     if spool_max_size < 1:
         raise ValueError("spool_max_size must be positive")
@@ -1069,10 +1539,7 @@ def build_account_export(
     artifact = tempfile.SpooledTemporaryFile(max_size=spool_max_size, mode="w+b")
     try:
         writer = _ObjectWriter(artifact, chunk_size=chunk_size)
-        outermost = not connection.in_atomic_block
-        with transaction.atomic():
-            _postgres_repeatable_read_if_safe(outermost=outermost)
-            _write_export(writer, customer)
+        _write_export(writer, customer)
         byte_count = artifact.tell()
         artifact.byte_count = byte_count
         artifact.section_counts = dict(writer.counts)
@@ -1084,10 +1551,98 @@ def build_account_export(
         raise
 
 
+def build_account_export(
+    customer: Any,
+    *,
+    spool_max_size: int = DEFAULT_SPOOL_MAX_SIZE,
+    chunk_size: int = DEFAULT_ITERATOR_CHUNK_SIZE,
+) -> BinaryIO:
+    """Build a complete, transactionally consistent account export.
+
+    The canonical active ``Customer`` row remains locked until every query and
+    JSON encoding step has finished. Writers of personal data share this same
+    fence, so deletion either waits for the complete old snapshot or wins and
+    makes this request fail closed. The successful spool is returned at byte
+    zero after the transaction has committed; no database lock is held while
+    the client downloads it.
+    """
+
+    from shopman.shop.services import account as account_service
+
+    outermost = not connection.in_atomic_block
+    with transaction.atomic():
+        _postgres_repeatable_read_if_safe(outermost=outermost)
+        locked_customer = account_service.lock_active_customer(
+            customer_uuid=customer.uuid,
+        )
+        return _build_locked_account_export(
+            locked_customer,
+            spool_max_size=spool_max_size,
+            chunk_size=chunk_size,
+        )
+
+
+def prepare_account_export(
+    *,
+    customer_uuid: Any,
+    receipt_pk: int,
+    spool_max_size: int = DEFAULT_SPOOL_MAX_SIZE,
+    chunk_size: int = DEFAULT_ITERATOR_CHUNK_SIZE,
+) -> tuple[BinaryIO, Any]:
+    """Spool a full export and complete its receipt in one fenced transaction.
+
+    Lock order intentionally matches account deletion: privacy receipt first,
+    canonical Customer second. A failed/preempted snapshot is rolled back and
+    its durable receipt is marked FAILED only after leaving that transaction.
+    """
+
+    from shopman.shop.models import (
+        PrivacyRequestOperation,
+        PrivacyRequestReceipt,
+        PrivacyRequestState,
+    )
+    from shopman.shop.services import account as account_service
+    from shopman.storefront.services import account_privacy
+
+    artifact = None
+    try:
+        outermost = not connection.in_atomic_block
+        with transaction.atomic():
+            _postgres_repeatable_read_if_safe(outermost=outermost)
+            receipt = PrivacyRequestReceipt.objects.select_for_update().get(pk=receipt_pk)
+            if (
+                receipt.operation != PrivacyRequestOperation.EXPORT
+                or receipt.state != PrivacyRequestState.IN_PROGRESS
+                or receipt.subject_digest
+                not in account_privacy.subject_receipt_digests(customer_uuid)
+            ):
+                raise RuntimeError("privacy export receipt is not in progress")
+            locked_customer = account_service.lock_active_customer(
+                customer_uuid=customer_uuid,
+            )
+            artifact = _build_locked_account_export(
+                locked_customer,
+                spool_max_size=spool_max_size,
+                chunk_size=chunk_size,
+            )
+            receipt = account_privacy.complete_export(
+                receipt.pk,
+                counts=artifact.section_counts,
+            )
+        return artifact, receipt
+    except Exception as exc:
+        if artifact is not None:
+            artifact.close()
+        stage = "precondition" if isinstance(exc, account_service.AccountUnavailable) else "artifact"
+        account_privacy.fail_export(receipt_pk, stage=stage)
+        raise
+
+
 __all__ = [
     "DEFAULT_ITERATOR_CHUNK_SIZE",
     "DEFAULT_SPOOL_MAX_SIZE",
     "FORBIDDEN_EMBEDDED_KEYS",
     "SCHEMA_VERSION",
     "build_account_export",
+    "prepare_account_export",
 ]

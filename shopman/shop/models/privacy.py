@@ -32,7 +32,7 @@ class PrivacyRequestState(models.TextChoices):
 
 _HMAC_DIGEST_VALIDATOR = RegexValidator(
     regex=r"\A[0-9a-f]{64}\Z",
-    message=_("Informe um digest HMAC hexadecimal de 64 caracteres."),
+    message=_("Informe um digest SHA-256 hexadecimal de 64 caracteres."),
 )
 
 
@@ -41,8 +41,10 @@ class PrivacyRequestReceipt(models.Model):
 
     O recibo não referencia o cadastro e não guarda identificadores, chaves de
     idempotência, conteúdo exportado ou exceções em claro. Os três digests são
-    pseudônimos HMAC versionados; resultados e falhas ficam limitados a
-    contagens e códigos.
+    pseudônimos HMAC versionados. A impressão de idempotência é SHA-256 da
+    chave UUIDv4 aleatória: correlacionável somente por quem conhece essa chave,
+    que não é persistida. Resultados e falhas ficam limitados a contagens e
+    códigos; isto é pseudonimização, não anonimato absoluto.
     """
 
     ref = models.UUIDField(_("referência"), default=uuid.uuid4, unique=True, editable=False)
@@ -66,6 +68,15 @@ class PrivacyRequestReceipt(models.Model):
         _("digest do titular"),
         max_length=64,
         validators=[_HMAC_DIGEST_VALIDATOR],
+    )
+    idempotency_fingerprint = models.CharField(
+        _("impressão digital da idempotência"),
+        max_length=64,
+        validators=[_HMAC_DIGEST_VALIDATOR],
+        help_text=_(
+            "SHA-256 estável da chave aleatória; permite deduplicar durante "
+            "a rotação da chave HMAC sem guardar o valor original."
+        ),
     )
     idempotency_digest = models.CharField(
         _("digest da idempotência"),
@@ -116,7 +127,7 @@ class PrivacyRequestReceipt(models.Model):
         verbose_name_plural = _("recibos de solicitações de privacidade")
         constraints = [
             models.UniqueConstraint(
-                fields=["operation", "idempotency_digest"],
+                fields=["operation", "idempotency_fingerprint"],
                 name="shop_privacy_receipt_operation_idem_uq",
             ),
             models.CheckConstraint(
@@ -138,6 +149,7 @@ class PrivacyRequestReceipt(models.Model):
             models.CheckConstraint(
                 condition=(
                     models.Q(subject_digest__regex=r"^[0-9a-f]{64}$")
+                    & models.Q(idempotency_fingerprint__regex=r"^[0-9a-f]{64}$")
                     & models.Q(idempotency_digest__regex=r"^[0-9a-f]{64}$")
                     & models.Q(request_digest__regex=r"^[0-9a-f]{64}$")
                 ),

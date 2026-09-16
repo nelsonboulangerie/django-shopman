@@ -10,6 +10,8 @@ from shopman.utils.refs import RefField
 
 from .session import DecimalEncoder
 
+_PERSONAL_EVENT_PAYLOAD_KEYS = frozenset({"note", "reason"})
+
 
 class Order(models.Model):
     """
@@ -321,16 +323,37 @@ class Order(models.Model):
         Calcula seq automaticamente como MAX(seq) + 1 para este order, com retry
         otimista em caso de colisão com emissão concorrente (ver create_sequenced_event).
         """
+        from shopman.orderman.exceptions import ValidationError
+
         from ._sequenced_event import create_sequenced_event
 
-        return create_sequenced_event(
-            model=OrderEvent,
-            scope={"order": self},
-            order=self,
-            type=event_type,
-            actor=actor,
-            payload=payload or {},
-        )
+        event_payload = payload or {}
+        with transaction.atomic():
+            # A instância do chamador pode ser anterior à exclusão. A releitura
+            # lockada torna o selo de anonimização e o INSERT uma decisão única:
+            # quem perdeu a corrida não recoloca texto pessoal no audit log.
+            persisted_handle_type, persisted_ref = (
+                type(self).objects.select_for_update().values_list("handle_type", "ref").get(pk=self.pk)
+            )
+            personal_keys = (
+                _PERSONAL_EVENT_PAYLOAD_KEYS.intersection(event_payload)
+                if isinstance(event_payload, dict)
+                else frozenset()
+            )
+            if persisted_handle_type == "anonymized" and personal_keys:
+                raise ValidationError(
+                    code="order_anonymized",
+                    message="Um pedido anonimizado não aceita texto pessoal em eventos.",
+                    context={"order_ref": persisted_ref, "keys": sorted(personal_keys)},
+                )
+            return create_sequenced_event(
+                model=OrderEvent,
+                scope={"order_id": self.pk},
+                order_id=self.pk,
+                type=event_type,
+                actor=actor,
+                payload=event_payload,
+            )
 
 
 class OrderItem(models.Model):

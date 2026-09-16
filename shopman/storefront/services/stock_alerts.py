@@ -205,7 +205,9 @@ def subscribe_with_outcome(
         from shopman.shop.services import account as account_service
 
         try:
-            customer = account_service.lock_active_customer(customer_pk=customer.pk)
+            customer = account_service.lock_active_customer(
+                customer_ref=(getattr(customer, "ref", "") or "").strip()
+            )
         except account_service.AccountUnavailable:
             return SubscribeOutcome(None, False)
 

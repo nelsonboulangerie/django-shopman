@@ -100,6 +100,17 @@ def _step_up_required_response() -> Response:
     )
 
 
+def _privacy_receipt_unavailable_response(*, operation: str) -> Response:
+    action = "exportar seus dados" if operation == "export" else "excluir sua conta"
+    return Response(
+        {
+            "detail": f"Não é possível {action} agora. Tente novamente mais tarde.",
+            "error": {"code": "privacy_receipt_unavailable"},
+        },
+        status=status.HTTP_503_SERVICE_UNAVAILABLE,
+    )
+
+
 def _fmt_dt(value) -> str:
     if not value:
         return ""
@@ -623,7 +634,7 @@ def _stock_alert_preferences(customer) -> list[dict]:
     from shopman.storefront.services.stock_alerts import product_name
 
     rows = StockAlertSubscription.objects.filter(
-        Q(customer_ref=customer.ref) | Q(contact_phone=customer.phone),
+        Q(customer_ref=customer.ref),
         revoked_at__isnull=True,
         proof_status="verified",
     )
@@ -994,6 +1005,8 @@ class AccountDeviceListView(APIView):
     authentication_classes = [SessionAuthentication]
 
     def get(self, request):
+        from shopman.storefront.services import account_privacy
+
         customer_info = getattr(request, "customer", None)
         if customer_info is None:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
@@ -1004,6 +1017,7 @@ class AccountDeviceListView(APIView):
         return Response({
             "devices": [_serialize_device(device) for device in devices],
             "copy": _devices_copy(),
+            "privacy_requests_available": account_privacy.privacy_requests_available(),
         })
 
     def delete(self, request):
@@ -1059,20 +1073,25 @@ class AccountExportView(APIView):
             return _step_up_required_response()
         from shopman.storefront.services import account_export, account_privacy
 
-        receipt = account_privacy.begin_export(
-            customer_uuid=customer.uuid,
-            authorized_at=authorized_at,
-        )
+        try:
+            receipt = account_privacy.begin_export(
+                customer_uuid=customer.uuid,
+                authorized_at=authorized_at,
+            )
+        except account_privacy.PrivacyReceiptKeyUnavailable:
+            logger.error("storefront_privacy_receipt_key_unavailable", extra={"operation": "export"})
+            return _privacy_receipt_unavailable_response(operation="export")
         artifact = None
         try:
-            artifact = account_export.build_account_export(customer)
-            receipt = account_privacy.complete_export(
-                receipt.pk,
-                counts=artifact.section_counts,
+            artifact, receipt = account_export.prepare_account_export(
+                customer_uuid=customer.uuid,
+                receipt_pk=receipt.pk,
             )
         except Exception:
             if artifact is not None:
                 artifact.close()
+            # ``prepare_account_export`` already records ordinary failures;
+            # this idempotent fallback also covers faults at the call boundary.
             account_privacy.fail_export(receipt.pk)
             logger.exception(
                 "storefront_account_export_failed",
@@ -1128,7 +1147,6 @@ class AccountStepUpView(APIView):
         result = auth_service.verify_for_login(phone=phone, code_input=code, request=None)
         if not getattr(result, "success", False):
             return Response({"detail": "Código inválido ou expirado."}, status=400)
-        _mark_step_up(request, customer_uuid=customer.uuid, purpose=purpose)
 
         # ⚠️ E o aparelho passa a ser CONHECIDO. É o que dissolve a cerca em vez de
         # empilhá-la: quem chegou por um link de campanha (`identity_strength = number`)
@@ -1139,15 +1157,22 @@ class AccountStepUpView(APIView):
         # semana seguinte, no mesmo celular. Provar identidade tem de COMPRAR algo durável:
         # é a diferença entre uma porta e um pedágio.
         response = Response({"ok": True, "device_trusted": True})
-        request.session[IDENTITY_SESSION_KEY] = IDENTITY_DEVICE
         try:
             auth_service.trust_device(
                 response=response, customer_id=customer.uuid, request=request,
             )
+        except account_service.AccountUnavailable:
+            return Response(
+                {"detail": "Esta conta não está mais disponível."},
+                status=409,
+            )
         except Exception:
-            # A confirmação vale de qualquer forma (a marca de step-up já está na sessão);
-            # só o atalho durável não pôde ser gravado.
+            # Uma falha operacional do atalho durável não invalida o OTP;
+            # conta excluída, acima, falha fechada e não marca a sessão.
             logger.warning("account.step_up_trust_failed", exc_info=True)
+            response.data["device_trusted"] = False
+        _mark_step_up(request, customer_uuid=customer.uuid, purpose=purpose)
+        request.session[IDENTITY_SESSION_KEY] = IDENTITY_DEVICE
         return response
 
 
@@ -1304,6 +1329,12 @@ class AccountDeleteView(APIView):
                     )
                 except account_privacy.InvalidIdempotencyKey:
                     replay = None
+                except account_privacy.PrivacyReceiptKeyUnavailable:
+                    logger.error(
+                        "storefront_privacy_receipt_key_unavailable",
+                        extra={"operation": "deletion_replay"},
+                    )
+                    return _privacy_receipt_unavailable_response(operation="deletion")
                 if replay is not None:
                     return Response(
                         {
@@ -1337,6 +1368,12 @@ class AccountDeleteView(APIView):
                 },
                 status=400,
             )
+        except account_privacy.PrivacyReceiptKeyUnavailable:
+            logger.error(
+                "storefront_privacy_receipt_key_unavailable",
+                extra={"operation": "deletion"},
+            )
+            return _privacy_receipt_unavailable_response(operation="deletion")
         except account_privacy.PrivacyRequestConflict:
             return Response(
                 {
@@ -1365,11 +1402,28 @@ class AccountDeleteView(APIView):
                 "order_automation_in_flight": (
                     "Uma atualização do pedido está sendo concluída. Aguarde um momento e tente novamente."
                 ),
+                "order_obligation_pending": (
+                    "Ainda há uma etapa obrigatória do pedido para concluir. Aguarde a conclusão e tente novamente."
+                ),
                 "conversation_delivery_in_flight": (
                     "Uma mensagem está sendo enviada neste instante. Aguarde um momento e tente novamente."
                 ),
+                "otp_delivery_in_flight": (
+                    "Um código de acesso está sendo enviado neste instante. "
+                    "Aguarde a conclusão e tente excluir a conta novamente."
+                ),
                 "marketing_delivery_in_flight": (
                     "Uma mensagem de marketing está sendo enviada neste instante. Aguarde um momento e tente novamente."
+                ),
+                "manychat_unlink_required": (
+                    "Esta conta ainda está vinculada ao atendimento pelo ManyChat. "
+                    "Peça à equipe para desvincular essa integração antes de excluir a conta; "
+                    "assim ela não recria seus dados depois da exclusão."
+                ),
+                "manychat_reconciliation_pending": (
+                    "Uma verificação com o ManyChat ainda precisa ser concluída. "
+                    "Peça à equipe para conferir essa integração e tente excluir a conta novamente; "
+                    "assim não confirmamos a exclusão enquanto o provedor pode ter aceitado dados."
                 ),
             }
             return Response(

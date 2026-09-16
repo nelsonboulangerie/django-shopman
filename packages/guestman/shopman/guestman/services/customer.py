@@ -245,21 +245,27 @@ UPDATABLE_FIELDS = {
 
 def update(ref: str, **fields) -> Customer | None:
     """Update customer fields (only whitelisted fields are accepted)."""
-    cust = get(ref)
-    if not cust:
-        return None
+    with transaction.atomic():
+        cust = (
+            Customer.objects.select_for_update()
+            .select_related("price_tier")
+            .filter(ref=ref, is_active=True)
+            .first()
+        )
+        if not cust:
+            return None
 
-    changes = {}
-    for key, value in fields.items():
-        if key not in UPDATABLE_FIELDS:
-            continue
-        if hasattr(cust, key):
-            old_value = getattr(cust, key)
-            if old_value != value:
-                changes[key] = {"old": old_value, "new": value}
-            setattr(cust, key, value)
+        changes = {}
+        for key, value in fields.items():
+            if key not in UPDATABLE_FIELDS:
+                continue
+            if hasattr(cust, key):
+                old_value = getattr(cust, key)
+                if old_value != value:
+                    changes[key] = {"old": old_value, "new": value}
+                setattr(cust, key, value)
 
-    cust.save()
+        cust.save()
     if changes:
         customer_updated.send(sender=Customer, customer=cust, changes=changes)
     return cust

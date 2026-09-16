@@ -49,7 +49,7 @@ def test_forget_customer_without_link_is_safe():
     forget_customer(uuid.uuid4())
 
 
-def test_forget_customer_apaga_o_telefone_do_vinculo_e_os_codigos():
+def test_forget_customer_apaga_o_telefone_do_vinculo_e_codigo_canonico():
     """O telefone é a identidade desta loja, e ele sobrevivia em dois lugares.
 
     Medido em 20/08 varrendo o banco depois de excluir a conta pela tela do
@@ -62,19 +62,22 @@ def test_forget_customer_apaga_o_telefone_do_vinculo_e_os_codigos():
     phone = "+5543991234567"
     user = User.objects.create_user(username="customer_y", first_name="Bia")
     CustomerUser.objects.create(user=user, customer_id=cid, metadata={"phone": phone})
-    VerificationCode.objects.create(target_value=phone, purpose=VerificationCode.Purpose.LOGIN)
+    VerificationCode.objects.create(
+        customer_id=cid,
+        target_value=phone,
+        purpose=VerificationCode.Purpose.LOGIN,
+    )
     VerificationCode.objects.create(target_value="+5543990000000", purpose=VerificationCode.Purpose.LOGIN)
 
     forget_customer(cid, phone=phone)
 
-    link = CustomerUser.objects.get(customer_id=cid)
-    assert link.metadata == {}
+    assert not CustomerUser.objects.filter(customer_id=cid).exists()
     assert not VerificationCode.objects.filter(target_value=phone).exists()
     # O código de outra pessoa não é assunto desta exclusão.
     assert VerificationCode.objects.filter(target_value="+5543990000000").exists()
 
 
-def test_forget_customer_apaga_otp_de_email_sem_customer_id():
+def test_forget_customer_preserva_otp_ownerless_ambiguo():
     cid = uuid.uuid4()
     email = "titular@example.com"
     VerificationCode.objects.create(
@@ -88,7 +91,7 @@ def test_forget_customer_apaga_otp_de_email_sem_customer_id():
 
     forget_customer(cid, email=email)
 
-    assert not VerificationCode.objects.filter(target_value=email).exists()
+    assert VerificationCode.objects.filter(target_value=email).exists()
     assert VerificationCode.objects.filter(target_value="outra@example.com").exists()
 
 

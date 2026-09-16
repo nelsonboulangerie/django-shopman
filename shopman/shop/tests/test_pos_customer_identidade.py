@@ -21,12 +21,14 @@ lacuna, então telefone digitado errado ontem só tinha conserto no Admin.
 from __future__ import annotations
 
 import pytest
-from shopman.guestman.models import ContactPoint, Customer
+from shopman.guestman.models import ContactPoint, Customer, CustomerAddress
 
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services.pos import (
     PosCustomerConflict,
+    PosCustomerMergeError,
     _persist_customer_from_payload,
+    merge_pos_customers,
     resolve_or_create_customer,
 )
 
@@ -303,6 +305,59 @@ def test_stale_selection_never_falls_back_to_another_customer(_pdv):
     with pytest.raises(ValueError, match="cadastro selecionado não está disponível"):
         resolve_or_create_customer(ref="missing", phone=existing.phone, operator_username="op")
     assert Customer.objects.count() == 1
+
+
+def test_inactive_selection_never_recreates_pos_profile_or_children(_pdv):
+    customer = _customer("Ana", "Prado", "+5543999990011")
+    Customer.objects.filter(pk=customer.pk).update(is_active=False, metadata={})
+
+    with pytest.raises(ValueError, match="cadastro selecionado não está disponível"):
+        _persist_customer_from_payload(
+            {
+                "customer_ref": customer.ref,
+                "customer_phone": "43988887777",
+                "customer_contact_correction": True,
+                "customer_email": "nova@example.com",
+                "customer_tax_id": "52998224725",
+                "delivery_address": "Rua que não pode voltar, 10",
+            },
+            operator_username="op",
+        )
+
+    customer.refresh_from_db()
+    assert customer.is_active is False
+    assert customer.phone == "+5543999990011"
+    assert customer.email == ""
+    assert customer.document == ""
+    assert customer.metadata == {}
+    assert not CustomerAddress.objects.filter(customer=customer).exists()
+    assert not ContactPoint.objects.filter(
+        customer=customer,
+        value_normalized__in=("+5543988887777", "nova@example.com"),
+    ).exists()
+
+
+def test_pos_merge_refuses_inactive_target_before_moving_children(_pdv):
+    source = _customer("Ana", "Prado", "+5543999990011")
+    target = _customer("Bia", "Silva", "+5543999990022")
+    address = CustomerAddress.objects.create(
+        customer=source,
+        label="home",
+        formatted_address="Rua da Ana, 10",
+    )
+    Customer.objects.filter(pk=target.pk).update(is_active=False)
+
+    with pytest.raises(PosCustomerMergeError, match="cadastro que ficaria está desativado"):
+        merge_pos_customers(
+            source_ref=source.ref,
+            target_ref=target.ref,
+            operator_username="op",
+        )
+
+    source.refresh_from_db()
+    address.refresh_from_db()
+    assert source.is_active is True
+    assert address.customer_id == source.pk
 
 
 def test_nome_preenchido_nao_muda_por_merge_passivo(_pdv):

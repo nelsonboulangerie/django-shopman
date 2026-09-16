@@ -2495,50 +2495,22 @@ class POSCustomerProfileView(APIView):
 
     def post(self, request, ref: str):
         try:
-            from shopman.guestman.models import Customer
+            result = pos_tabs_service.update_pos_customer_profile(
+                customer_ref=ref,
+                payload=request.data or {},
+            )
         except ImportError:
             return Response({"detail": "Guestman indisponível."}, status=503)
-        customer = Customer.objects.filter(ref=ref).first()
-        if customer is None:
+        except pos_tabs_service.PosCustomerUnavailable:
             return Response({"detail": "Cliente não encontrado."}, status=404)
-
-        body = request.data or {}
-        updates: list[str] = []
-        metadata = dict(customer.metadata or {})
-
-        if "fiscal_prefs" in body:
-            incoming = body.get("fiscal_prefs") or {}
-            if not isinstance(incoming, dict):
-                return Response({"detail": "fiscal_prefs inválido.", "field": "fiscal_prefs"}, status=400)
-            prefs = dict(metadata.get("fiscal_prefs") or {})
-            for key in ("cpf_na_nota", "email_receipt"):
-                if key in incoming:
-                    prefs[key] = bool(incoming[key])
-            metadata["fiscal_prefs"] = prefs
-            customer.metadata = metadata
-            updates.append("metadata")
-
-        if "dietary_restrictions" in body:
-            metadata["preferences"] = str(body.get("dietary_restrictions") or "").strip()
-            customer.metadata = metadata
-            if "metadata" not in updates:
-                updates.append("metadata")
-
-        if "notes" in body:
-            customer.notes = str(body.get("notes") or "").strip()
-            updates.append("notes")
-
-        if not updates:
-            return Response({"detail": "Nada para atualizar."}, status=400)
-        customer.save(update_fields=[*updates, "updated_at"])
-        return Response(
-            {
-                "ok": True,
-                "fiscal_prefs": dict((customer.metadata or {}).get("fiscal_prefs") or {}),
-                "notes": customer.notes,
-                "dietary_restrictions": str((customer.metadata or {}).get("preferences") or ""),
-            }
-        )
+        except ValueError as exc:
+            detail = str(exc)
+            field = "fiscal_prefs" if detail == "fiscal_prefs inválido." else None
+            return Response(
+                {"detail": detail, **({"field": field} if field else {})},
+                status=400,
+            )
+        return Response(result)
 
 
 @extend_schema_view(

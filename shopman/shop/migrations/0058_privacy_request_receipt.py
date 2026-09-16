@@ -11,7 +11,7 @@ import shopman.shop.models.privacy
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("shop", "0056_concierge_message_observation_controls"),
+        ("shop", "0057_push_subscription"),
     ]
 
     operations = [
@@ -51,11 +51,28 @@ class Migration(migrations.Migration):
                         max_length=64,
                         validators=[
                             django.core.validators.RegexValidator(
-                                message="Informe um digest HMAC hexadecimal de 64 caracteres.",
+                                message="Informe um digest SHA-256 hexadecimal de 64 caracteres.",
                                 regex="\\A[0-9a-f]{64}\\Z",
                             )
                         ],
                         verbose_name="digest do titular",
+                    ),
+                ),
+                (
+                    "idempotency_fingerprint",
+                    models.CharField(
+                        help_text=(
+                            "SHA-256 estável da chave aleatória; permite deduplicar durante a rotação da chave "
+                            "HMAC sem guardar o valor original."
+                        ),
+                        max_length=64,
+                        validators=[
+                            django.core.validators.RegexValidator(
+                                message="Informe um digest SHA-256 hexadecimal de 64 caracteres.",
+                                regex="\\A[0-9a-f]{64}\\Z",
+                            )
+                        ],
+                        verbose_name="impressão digital da idempotência",
                     ),
                 ),
                 (
@@ -64,7 +81,7 @@ class Migration(migrations.Migration):
                         max_length=64,
                         validators=[
                             django.core.validators.RegexValidator(
-                                message="Informe um digest HMAC hexadecimal de 64 caracteres.",
+                                message="Informe um digest SHA-256 hexadecimal de 64 caracteres.",
                                 regex="\\A[0-9a-f]{64}\\Z",
                             )
                         ],
@@ -77,7 +94,7 @@ class Migration(migrations.Migration):
                         max_length=64,
                         validators=[
                             django.core.validators.RegexValidator(
-                                message="Informe um digest HMAC hexadecimal de 64 caracteres.",
+                                message="Informe um digest SHA-256 hexadecimal de 64 caracteres.",
                                 regex="\\A[0-9a-f]{64}\\Z",
                             )
                         ],
@@ -141,7 +158,7 @@ class Migration(migrations.Migration):
                 ],
                 "constraints": [
                     models.UniqueConstraint(
-                        fields=("operation", "idempotency_digest"),
+                        fields=("operation", "idempotency_fingerprint"),
                         name="shop_privacy_receipt_operation_idem_uq",
                     ),
                     models.CheckConstraint(
@@ -155,6 +172,7 @@ class Migration(migrations.Migration):
                     models.CheckConstraint(
                         condition=models.Q(
                             ("subject_digest__regex", "^[0-9a-f]{64}$"),
+                            ("idempotency_fingerprint__regex", "^[0-9a-f]{64}$"),
                             ("idempotency_digest__regex", "^[0-9a-f]{64}$"),
                             ("request_digest__regex", "^[0-9a-f]{64}$"),
                         ),

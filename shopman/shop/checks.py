@@ -27,6 +27,7 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E022  Provedor de produção aponta para ambiente ou credencial de teste
   SHOPMAN_E023  Google Maps exige credenciais de browser e servidor separadas em produção
   SHOPMAN_E024  Configuração VAPID parcial ou inválida
+  SHOPMAN_E025  Chave HMAC dos recibos de privacidade ausente ou inválida
 
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode
@@ -52,8 +53,11 @@ Warnings (non-blocking, logged at startup):
 
 from __future__ import annotations
 
+import hmac
+import json
 import logging
 import os
+from collections.abc import Mapping
 from urllib.parse import urlparse
 
 from django.conf import settings
@@ -1217,3 +1221,64 @@ def check_vapid_configuration(app_configs, **kwargs):
         ),
         id="SHOPMAN_E024",
     )]
+
+
+@register(deploy=True)
+def check_privacy_receipt_hmac_configuration(app_configs, **kwargs):
+    """Block non-debug releases with an unusable privacy receipt keyring."""
+    if settings.DEBUG:
+        return []
+
+    current_key = str(
+        getattr(settings, "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY", "") or ""
+    ).encode("utf-8")
+    raw_version = getattr(settings, "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION", 1)
+    raw_previous = getattr(settings, "SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS", {})
+
+    invalid = len(current_key) < 32
+    try:
+        current_version = int(raw_version)
+        invalid = invalid or current_version < 1
+    except (TypeError, ValueError):
+        current_version = None
+        invalid = True
+
+    if isinstance(raw_previous, str):
+        try:
+            previous = json.loads(raw_previous)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            previous = None
+    else:
+        previous = raw_previous
+
+    if not isinstance(previous, Mapping):
+        invalid = True
+    else:
+        for raw_previous_version, raw_previous_key in previous.items():
+            try:
+                previous_version = int(raw_previous_version)
+            except (TypeError, ValueError):
+                invalid = True
+                continue
+            previous_key = str(raw_previous_key or "").encode("utf-8")
+            if previous_version < 1 or len(previous_key) < 32:
+                invalid = True
+            if (
+                current_version is not None
+                and previous_version == current_version
+                and not hmac.compare_digest(previous_key, current_key)
+            ):
+                invalid = True
+
+    if not invalid:
+        return []
+    return [
+        Error(
+            "A configuração HMAC dos recibos de privacidade está ausente ou inválida.",
+            hint=(
+                "Defina uma chave atual exclusiva com ao menos 32 bytes, versão inteira "
+                "positiva e um keyring JSON de chaves anteriores igualmente válidas."
+            ),
+            id="SHOPMAN_E025",
+        )
+    ]

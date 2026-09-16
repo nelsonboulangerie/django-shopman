@@ -11,11 +11,12 @@ from __future__ import annotations
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
-from threading import Event
+from threading import Barrier, Event
 from time import monotonic
 
 import pytest
-from django.db import close_old_connections, connection, connections
+from django.db import close_old_connections, connection, connections, transaction
+from django.test import override_settings
 from django.utils import timezone
 from shopman.guestman.contrib.consent.models import CommunicationConsent
 from shopman.guestman.models import Customer, CustomerAddress
@@ -103,11 +104,11 @@ def _paused_deletion(customer: Customer, monkeypatch):
     locked, release = Event(), Event()
     original = account_service.anonymize_customer
 
-    def pause_after_subject_lock(subject):
+    def pause_after_subject_lock(subject, *, correlation_ref=""):
         # delete_account já possui SELECT FOR UPDATE no Customer neste ponto.
         locked.set()
         assert release.wait(10)
-        return original(subject)
+        return original(subject, correlation_ref=correlation_ref)
 
     monkeypatch.setattr(account_service, "anonymize_customer", pause_after_subject_lock)
     worker = Worker(
@@ -118,6 +119,69 @@ def _paused_deletion(customer: Customer, monkeypatch):
         )
     )
     return worker, locked, release
+
+
+@override_settings(
+    SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY="test-only-privacy-receipt-hmac-key-v2",
+    SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION=2,
+    SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS={
+        "1": "test-only-privacy-receipt-hmac-key-v1",
+    },
+)
+def test_concurrent_hmac_versions_share_one_stable_idempotency_receipt():
+    operation = "deletion"
+    idempotency_key = str(uuid.uuid4())
+    subject_uuid = str(uuid.uuid4())
+    request_material = "account-privacy.v1:deletion"
+    fingerprint = account_privacy._stable_idempotency_fingerprint(
+        operation,
+        idempotency_key,
+    )
+    keys = account_privacy._privacy_hmac_keys()
+    barrier = Barrier(2)
+
+    def acquire(version: int):
+        barrier.wait(timeout=10)
+        return account_privacy._acquire_receipt(
+            operation=operation,
+            subject_material=subject_uuid,
+            subject_digest=account_privacy._digest(
+                "subject",
+                subject_uuid,
+                key_version=version,
+                key=keys[version],
+            ),
+            idempotency_fingerprint=fingerprint,
+            idempotency_digest=account_privacy._digest(
+                "idempotency",
+                idempotency_key,
+                key_version=version,
+                key=keys[version],
+            ),
+            request_material=request_material,
+            request_digest=account_privacy._digest(
+                "request",
+                request_material,
+                key_version=version,
+                key=keys[version],
+            ),
+            authorized_at=timezone.now(),
+            key_version=version,
+        )
+
+    workers = [Worker(lambda: acquire(1)), Worker(lambda: acquire(2))]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = [future.result(20) for future in [pool.submit(worker) for worker in workers]]
+
+    assert PrivacyRequestReceipt.objects.filter(
+        operation=operation,
+        idempotency_fingerprint=fingerprint,
+    ).count() == 1
+    assert sum(isinstance(result, tuple) for result in results) == 1
+    assert sum(
+        isinstance(result, dict) and result.get("exception") == "PrivacyRequestInProgress"
+        for result in results
+    ) == 1
 
 
 def test_deletion_wins_against_checkout_without_leaving_a_personal_order(monkeypatch):
@@ -151,9 +215,79 @@ def test_deletion_wins_against_checkout_without_leaving_a_personal_order(monkeyp
         deletion_result = deleted.result(20)
         checkout_result = committed.result(20)
 
+    assert not isinstance(deletion_result, dict), deletion_result
     assert deletion_result.replayed is False
     assert checkout_result == {"exception": "CommitError", "code": "customer_inactive"}
     assert not Order.objects.filter(session_key="privacy-race-checkout").exists()
+
+
+def test_checkout_rejects_phone_changed_after_customer_lock(monkeypatch):
+    customer = _customer("11")
+    session = Session.objects.create(
+        session_key="privacy-race-checkout-phone-change",
+        channel_ref="web",
+        items=[{"sku": "PRIVACY-RACE", "qty": 1, "unit_price_q": 1000}],
+        data={
+            "customer_ref": customer.ref,
+            "customer": {"ref": customer.ref, "phone": customer.phone},
+        },
+    )
+    session_locked = Event()
+    customer_locked = Event()
+    release_session = Event()
+    original_customer_lock = CommitService._lock_active_session_customer
+
+    def observe_customer_lock(identity_snapshot):
+        locked = original_customer_lock(identity_snapshot)
+        customer_locked.set()
+        return locked
+
+    monkeypatch.setattr(
+        CommitService,
+        "_lock_active_session_customer",
+        staticmethod(observe_customer_lock),
+    )
+
+    def change_only_phone():
+        with transaction.atomic():
+            current = Session.objects.select_for_update().get(pk=session.pk)
+            session_locked.set()
+            assert customer_locked.wait(10)
+            data = dict(current.data)
+            identity = dict(data["customer"])
+            identity["phone"] = "+554399991099"
+            data["customer"] = identity
+            current.data = data
+            current.save(update_fields=["data"])
+            assert release_session.wait(10)
+
+    change = Worker(change_only_phone)
+    checkout = Worker(
+        lambda: CommitService.commit(
+            session_key=session.session_key,
+            channel_ref="web",
+            idempotency_key="privacy-race-checkout-phone-change-idempotency",
+        )
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        changed = pool.submit(change)
+        assert session_locked.wait(10)
+        committed = pool.submit(checkout)
+        try:
+            assert customer_locked.wait(10)
+            _assert_database_wait(checkout)
+        finally:
+            release_session.set()
+        change_result = changed.result(20)
+        checkout_result = committed.result(20)
+
+    assert change_result is None
+    assert checkout_result == {
+        "exception": "CommitError",
+        "code": "customer_identity_changed",
+    }
+    assert not Order.objects.filter(session_key=session.session_key).exists()
 
 
 def test_deletion_wins_against_stock_alert_without_recreating_contact(monkeypatch):
@@ -185,6 +319,132 @@ def test_deletion_wins_against_stock_alert_without_recreating_contact(monkeypatc
     assert subscription_result.subscription is None
     assert subscription_result.created is False
     assert not StockAlertSubscription.objects.filter(sku="PRIVACY-RACE").exists()
+
+
+def _access_link_for(customer):
+    from shopman.doorman.protocols.customer import AuthCustomerInfo
+    from shopman.doorman.services.access_link import AccessLinkService
+
+    return AccessLinkService.create_token(
+        AuthCustomerInfo(
+            uuid=customer.uuid,
+            name=customer.name,
+            phone=customer.phone,
+            email=customer.email,
+            is_active=True,
+        )
+    )
+
+
+def _exchange_access_link(token):
+    from django.contrib.sessions.backends.db import SessionStore
+    from django.test import RequestFactory
+    from shopman.doorman.services.access_link import AccessLinkService
+
+    request = RequestFactory().get("/")
+    request.session = SessionStore()
+    return AccessLinkService.exchange(token, request)
+
+
+def test_deletion_wins_against_access_link_exchange(monkeypatch):
+    from shopman.doorman.models import AccessLink, CustomerUser
+
+    customer = _customer("07")
+    token_result = _access_link_for(customer)
+    link = AccessLink.get_by_token(token_result.token)
+    deletion, subject_locked, release = _paused_deletion(customer, monkeypatch)
+    exchange = Worker(lambda: _exchange_access_link(token_result.token))
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        deleted = pool.submit(deletion)
+        try:
+            assert subject_locked.wait(10)
+            exchanged = pool.submit(exchange)
+            _assert_database_wait(exchange)
+        finally:
+            release.set()
+        deletion_result = deleted.result(20)
+        exchange_result = exchanged.result(20)
+
+    assert deletion_result.replayed is False
+    assert exchange_result.success is False
+    assert not AccessLink.objects.filter(pk=link.pk).exists()
+    assert not CustomerUser.objects.filter(customer_id=customer.uuid).exists()
+
+
+def test_deletion_wins_against_access_link_creation(monkeypatch):
+    from shopman.doorman.models import AccessLink
+    from shopman.doorman.protocols.customer import AuthCustomerInfo
+    from shopman.doorman.services.access_link import AccessLinkService
+
+    customer = _customer("09")
+    stale_info = AuthCustomerInfo(
+        uuid=customer.uuid,
+        name=customer.name,
+        phone=customer.phone,
+        email=customer.email,
+        is_active=True,
+    )
+    deletion, subject_locked, release = _paused_deletion(customer, monkeypatch)
+    create_link = Worker(lambda: AccessLinkService.create_token(stale_info))
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        deleted = pool.submit(deletion)
+        try:
+            assert subject_locked.wait(10)
+            created = pool.submit(create_link)
+            _assert_database_wait(create_link)
+        finally:
+            release.set()
+        deletion_result = deleted.result(20)
+        link_result = created.result(20)
+
+    assert deletion_result.replayed is False
+    assert link_result.success is False
+    assert not AccessLink.objects.filter(customer_id=customer.uuid).exists()
+
+
+def test_access_link_exchange_wins_then_deletion_removes_auth_artifacts(monkeypatch):
+    from shopman.doorman.models import AccessLink, CustomerUser
+    from shopman.guestman.adapters.auth import CustomerResolver
+
+    customer = _customer("08")
+    token_result = _access_link_for(customer)
+    link = AccessLink.get_by_token(token_result.token)
+    subject_locked, release = Event(), Event()
+    original_lock = CustomerResolver.lock_active_by_uuid
+
+    def pause_after_subject_lock(resolver, customer_uuid):
+        info = original_lock(resolver, customer_uuid)
+        subject_locked.set()
+        assert release.wait(10)
+        return info
+
+    monkeypatch.setattr(CustomerResolver, "lock_active_by_uuid", pause_after_subject_lock)
+    exchange = Worker(lambda: _exchange_access_link(token_result.token))
+    deletion = Worker(
+        lambda: account_privacy.delete_account(
+            customer=customer,
+            idempotency_key=str(uuid.uuid4()),
+            authorized_at=timezone.now(),
+        )
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        exchanged = pool.submit(exchange)
+        try:
+            assert subject_locked.wait(10)
+            deleted = pool.submit(deletion)
+            _assert_database_wait(deletion)
+        finally:
+            release.set()
+        exchange_result = exchanged.result(20)
+        deletion_result = deleted.result(20)
+
+    assert exchange_result.success is True
+    assert deletion_result.replayed is False
+    assert not AccessLink.objects.filter(pk=link.pk).exists()
+    assert not CustomerUser.objects.filter(customer_id=customer.uuid).exists()
 
 
 @pytest.mark.parametrize("mutation", ("address", "profile", "consent"))

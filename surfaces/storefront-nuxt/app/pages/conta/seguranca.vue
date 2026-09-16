@@ -43,6 +43,9 @@ const { data: devicesResponse, pending: devicesPending, refresh: refreshDevices 
 })
 
 const accountDevices = computed(() => devicesResponse.value?.devices || [])
+// Campo opcional mantém compatibilidade com o backend anterior durante rolling
+// deploy. Assim que o backend novo responde, falhamos fechados sem iniciar OTP.
+const privacyRequestsAvailable = computed(() => devicesResponse.value?.privacy_requests_available !== false)
 
 // ── Acesso rápido (passkey) ─────────────────────────────────────────
 //
@@ -367,11 +370,13 @@ async function confirmPhoneChange () {
 // Exportar dados exige step-up antes do download (GET passa pela marca de sessão).
 function startExport () {
   privacyIssue.value = ''
+  if (!privacyRequestsAvailable.value) return
   void requireStepUp('export', exportData)
 }
 
 // Excluir conta: fecha o diálogo de ack e exige step-up antes de anonimizar.
 function confirmDeleteAccount () {
+  if (!privacyRequestsAvailable.value) return
   deleteAccountOpen.value = false
   if (privacyIssue.value && deleteAccountIdempotencyKey.value) {
     void deleteAccount()
@@ -579,11 +584,15 @@ useSeoMeta({ title: 'Segurança e dados' })
           <UiAlertTitle>Privacidade</UiAlertTitle>
           <UiAlertDescription>{{ privacyIssue }}</UiAlertDescription>
         </UiAlert>
+        <UiAlert v-if="!privacyRequestsAvailable">
+          <UiAlertTitle>Solicitações temporariamente indisponíveis</UiAlertTitle>
+          <UiAlertDescription>Não é possível exportar seus dados ou excluir sua conta agora. Tente novamente mais tarde.</UiAlertDescription>
+        </UiAlert>
         <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <UiButton variant="outline" class="justify-start" icon="lucide:download" :loading="exportPending" @click="startExport">
+          <UiButton variant="outline" class="justify-start" icon="lucide:download" :loading="exportPending" :disabled="!privacyRequestsAvailable" @click="startExport">
             Exportar meus dados
           </UiButton>
-          <UiButton variant="destructive" class="justify-start" icon="lucide:user-x" @click="askDeleteAccount">
+          <UiButton variant="destructive" class="justify-start" icon="lucide:user-x" :disabled="!privacyRequestsAvailable" @click="askDeleteAccount">
             Excluir minha conta
           </UiButton>
         </div>

@@ -19,6 +19,7 @@ from shopman.orderman import registry
 from shopman.orderman.exceptions import CommitError, IdempotencyCacheHit, SessionError, ValidationError
 from shopman.orderman.ids import generate_order_ref
 from shopman.orderman.models import Directive, IdempotencyKey, Order, OrderItem, Session
+from shopman.utils.phone import normalize_phone
 
 # Ref de pedido é aleatório (1 letra + 2 dígitos). generate_order_ref já sorteia de novo
 # se o ref existe; sob CORRIDA (dois commits pegando o mesmo código no mesmo instante) o
@@ -562,6 +563,10 @@ class CommitService:
             customer_ref = handle_ref.strip()
         if not phone and handle_type in {"phone", "whatsapp", "manychat"}:
             phone = handle_ref.strip()
+        # Sessões legadas/PDV podem guardar o mesmo número em formato humano,
+        # enquanto Customer/ContactPoint usam E.164. A cerca deve comparar a
+        # identidade canônica, sem relaxar o fail-closed de ref+telefone.
+        phone = normalize_phone(phone) or phone
         return customer_ref, phone
 
     @staticmethod
@@ -575,14 +580,32 @@ class CommitService:
             # Orderman continua um kernel instalável sem Guestman; a cerca só
             # existe quando o deployment integra o cadastro canônico.
             return None
-        query = Q(ref=customer_ref) if customer_ref else Q(phone=phone)
-        matches = list(Customer.objects.filter(query).values_list("pk", flat=True)[:2])
+        phone_query = Q(phone=phone) | Q(
+            contact_points__value_normalized=phone,
+            contact_points__type__in=("phone", "whatsapp"),
+        )
+        if customer_ref and phone:
+            query = Q(ref=customer_ref) & phone_query
+        elif customer_ref:
+            query = Q(ref=customer_ref)
+        else:
+            query = phone_query
+        matches = list(
+            Customer.objects.filter(query).values_list("pk", flat=True).distinct()[:2]
+        )
         if len(matches) > 1:
             raise CommitError(
                 code="customer_identity_ambiguous",
                 message="A identidade do cliente precisa ser confirmada novamente.",
             )
         if not matches:
+            if customer_ref and phone and Customer.objects.filter(
+                Q(ref=customer_ref) | phone_query
+            ).exists():
+                raise CommitError(
+                    code="customer_identity_mismatch",
+                    message="A identidade do cliente precisa ser confirmada novamente.",
+                )
             # Integrações legadas podem selar um ref externo sem Customer local.
             # Exclusão não remove a linha canônica: ela a mantém inativa, então
             # apenas uma linha encontrada e inativa comprova a corrida perdida.
@@ -611,11 +634,21 @@ class CommitService:
                     message="A identidade da sessão mudou. Revise e confirme novamente.",
                 )
             return
-        if current_ref:
-            matches_locked = current_ref == locked_customer.ref
-        else:
-            matches_locked = bool(current_phone and current_phone == locked_customer.phone)
-        if not matches_locked:
+        if (before_ref, before_phone) != (current_ref, current_phone):
+            raise CommitError(
+                code="customer_identity_changed",
+                message="A identidade da sessão mudou. Revise e confirme novamente.",
+            )
+
+        ref_matches = not current_ref or current_ref == locked_customer.ref
+        customer_phone = normalize_phone(locked_customer.phone) or locked_customer.phone
+        phone_matches = not current_phone or current_phone == customer_phone
+        if current_phone and not phone_matches:
+            phone_matches = locked_customer.contact_points.filter(
+                value_normalized=current_phone,
+                type__in=("phone", "whatsapp"),
+            ).exists()
+        if not ref_matches or not phone_matches:
             raise CommitError(
                 code="customer_identity_changed",
                 message="A identidade da sessão mudou. Revise e confirme novamente.",

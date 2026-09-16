@@ -44,12 +44,16 @@ class LoyaltyService:
         Raises:
             Customer.DoesNotExist: If customer not found
         """
-        customer = Customer.objects.get(ref=customer_ref, is_active=True)
-        account, _ = LoyaltyAccount.objects.get_or_create(
-            customer=customer,
-            defaults={"stamps_target": get_default_stamps_target()},
-        )
-        return account
+        with transaction.atomic():
+            customer = Customer.objects.select_for_update().get(
+                ref=customer_ref,
+                is_active=True,
+            )
+            account, _ = LoyaltyAccount.objects.get_or_create(
+                customer=customer,
+                defaults={"stamps_target": get_default_stamps_target()},
+            )
+            return account
 
     @classmethod
     def get_account(cls, customer_ref: str) -> LoyaltyAccount | None:
@@ -308,15 +312,16 @@ class LoyaltyService:
         Prevents lost-update race conditions on concurrent earn/redeem/stamp.
         """
         try:
-            return (
-                LoyaltyAccount.objects
-                .select_for_update()
-                .select_related("customer")
-                .get(
-                    customer__ref=customer_ref,
-                    customer__is_active=True,
-                    is_active=True,
-                )
+            customer = Customer.objects.select_for_update().get(
+                ref=customer_ref,
+                is_active=True,
+            )
+        except Customer.DoesNotExist as e:
+            raise CustomerError("LOYALTY_NOT_ENROLLED", customer_ref=customer_ref) from e
+        try:
+            return LoyaltyAccount.objects.select_for_update().get(
+                customer=customer,
+                is_active=True,
             )
         except LoyaltyAccount.DoesNotExist as e:
             raise CustomerError("LOYALTY_NOT_ENROLLED", customer_ref=customer_ref) from e

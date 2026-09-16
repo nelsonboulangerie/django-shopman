@@ -17,6 +17,9 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+from contextlib import contextmanager
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING
 from urllib.error import HTTPError, URLError
@@ -31,6 +34,48 @@ logger = logging.getLogger(__name__)
 # ManyChat API base URL
 _API_BASE = "https://api.manychat.com/fb"
 _API_TIMEOUT = 10
+_PRIVACY_PENDING_KEY = "manychat_resolution_pending"
+_PROVIDER_LOCK_NAMESPACE = 72601
+_LOCAL_PROVIDER_LOCKS: dict[int, threading.Lock] = {}
+_LOCAL_PROVIDER_LOCKS_GUARD = threading.Lock()
+
+
+@dataclass(frozen=True)
+class _ProviderLookupOutcome:
+    subscriber_id: int | None = None
+    conclusive_absence: bool = False
+
+
+@dataclass(frozen=True)
+class _ProviderCreateOutcome:
+    subscriber_id: int | None = None
+
+
+@contextmanager
+def _customer_provider_mutex(customer_pk: int):
+    """Serialize provider resolution without keeping a DB transaction open."""
+    from django.db import connection
+
+    if connection.vendor == "postgresql":
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT pg_advisory_lock(%s, %s)",
+                [_PROVIDER_LOCK_NAMESPACE, int(customer_pk)],
+            )
+        try:
+            yield
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT pg_advisory_unlock(%s, %s)",
+                    [_PROVIDER_LOCK_NAMESPACE, int(customer_pk)],
+                )
+        return
+
+    with _LOCAL_PROVIDER_LOCKS_GUARD:
+        local_lock = _LOCAL_PROVIDER_LOCKS.setdefault(int(customer_pk), threading.Lock())
+    with local_lock:
+        yield
 
 
 def _read_http_error_body(error: HTTPError) -> str:
@@ -138,7 +183,7 @@ class ManychatSubscriberResolver:
     """
 
     @classmethod
-    def resolve(cls, recipient: str) -> int | None:
+    def resolve(cls, recipient: str, *, require_customer: bool = False) -> int | None:
         """
         Resolve subscriber_id a partir do recipient.
 
@@ -161,13 +206,14 @@ class ManychatSubscriberResolver:
         if customer is None and original_recipient != recipient:
             customer = cls._find_customer(original_recipient)
 
-        # Fast path: customer exists and has MANYCHAT identifier
         if customer:
-            subscriber_id = cls._get_manychat_id(customer)
-            if subscriber_id is not None:
-                if recipient.startswith("+"):
-                    cls._mirror_whatsapp_id_custom_field_api(subscriber_id, recipient)
-                return subscriber_id
+            return cls._resolve_for_customer(customer.pk, recipient)
+
+        # OTP delivery must never bootstrap an ownerless provider contact.  If
+        # account deletion won before this lookup, returning None lets the
+        # configured delivery chain fall back without recreating external PII.
+        if require_customer:
+            return None
 
         # API fallback: lookup subscriber by the mirrored WhatsApp ID before
         # the system phone. WhatsApp-only contacts often do not have ManyChat's
@@ -180,13 +226,170 @@ class ManychatSubscriberResolver:
                     cls._mirror_whatsapp_id_custom_field_api(subscriber_id, recipient)
             if subscriber_id is None:
                 subscriber_id = cls._create_whatsapp_subscriber_api(recipient)
-            if subscriber_id is not None and customer:
-                cls._persist_manychat_id(customer, subscriber_id)
             return subscriber_id
 
         if not customer:
             logger.debug("Manychat resolver: customer not found for %s", recipient[:20])
         return None
+
+    @classmethod
+    def resolve_active_customer(cls, recipient: str) -> int | None:
+        """OTP-safe one-argument capability: never bootstrap an ownerless contact."""
+        return cls.resolve(recipient, require_customer=True)
+
+    @classmethod
+    def _resolve_for_customer(cls, customer_pk: int, recipient: str) -> int | None:
+        """Resolve under the account's canonical privacy fence.
+
+        The Customer row serializes resolution with account deletion.  Provider
+        calls have the resolver's bounded timeout and happen only after the
+        active-state recheck.  If an external create/lookup has no conclusive
+        local result, a non-PII reconciliation marker remains durable: deletion
+        must fail closed instead of claiming that an account was erased while
+        the provider may have accepted a contact.
+        """
+        prepared, subscriber_id = cls._prepare_customer_resolution(customer_pk, recipient)
+        if not prepared:
+            if subscriber_id is not None and recipient.startswith("+"):
+                cls._mirror_whatsapp_id_custom_field_api(subscriber_id, recipient)
+            return subscriber_id
+        return cls._run_pending_customer_resolution(customer_pk, recipient)
+
+    @classmethod
+    def _prepare_customer_resolution(
+        cls,
+        customer_pk: int,
+        recipient: str,
+    ) -> tuple[bool, int | None]:
+        """Commit the fail-closed intent before any provider mutation."""
+        from django.conf import settings
+        from django.db import transaction
+        from shopman.guestman.models import Customer
+
+        with transaction.atomic(durable=True):
+            customer = (
+                Customer.objects.select_for_update()
+                .filter(pk=customer_pk, is_active=True)
+                .first()
+            )
+            if customer is None:
+                return False, None
+            subscriber_id = cls._get_manychat_id(customer)
+            if subscriber_id is not None:
+                return False, subscriber_id
+            if not recipient.startswith("+"):
+                return False, None
+            api_token = str(getattr(settings, "MANYCHAT_API_TOKEN", "") or "").strip()
+            if not api_token:
+                return False, None
+
+            metadata = dict(customer.metadata or {})
+            if metadata.get(_PRIVACY_PENDING_KEY):
+                return False, None
+            metadata[_PRIVACY_PENDING_KEY] = True
+            customer.metadata = metadata
+            customer.save(update_fields=["metadata", "updated_at"])
+            return True, None
+
+    @classmethod
+    def _run_pending_customer_resolution(cls, customer_pk: int, recipient: str) -> int | None:
+        """Run bounded I/O only after the durable intent transaction committed."""
+        with _customer_provider_mutex(customer_pk):
+            subscriber_id = cls._lookup_by_whatsapp_id_custom_field_api(recipient)
+            if subscriber_id is None:
+                subscriber_id = cls._lookup_by_phone_api(recipient)
+                if subscriber_id is not None:
+                    cls._mirror_whatsapp_id_custom_field_api(subscriber_id, recipient)
+            if subscriber_id is None:
+                subscriber_id = cls._create_whatsapp_subscriber_outcome(recipient).subscriber_id
+            return cls._finalize_customer_resolution(customer_pk, subscriber_id)
+
+    @classmethod
+    def _finalize_customer_resolution(
+        cls,
+        customer_pk: int,
+        subscriber_id: int | None,
+    ) -> int | None:
+        from django.db import transaction
+        from shopman.guestman.models import Customer
+
+        with transaction.atomic(durable=True):
+            customer = (
+                Customer.objects.select_for_update()
+                .filter(pk=customer_pk, is_active=True)
+                .first()
+            )
+            if customer is None:
+                return None
+            metadata = dict(customer.metadata or {})
+            if not metadata.get(_PRIVACY_PENDING_KEY):
+                return cls._get_manychat_id(customer)
+            if subscriber_id is not None:
+                cls._persist_manychat_id(customer, subscriber_id)
+                metadata.pop(_PRIVACY_PENDING_KEY, None)
+                customer.metadata = metadata
+                customer.save(update_fields=["metadata", "updated_at"])
+            return subscriber_id
+
+    @classmethod
+    def reconcile_pending(cls, customer_pk: int) -> str:
+        """Reconcile an uncertain create using a read-only provider lookup.
+
+        Returns ``linked`` when the external subscriber is materialized locally,
+        ``absent`` only after the provider gives a successful empty lookup,
+        ``uncertain`` when upstream cannot confirm either outcome, and ``clear``
+        when no reconciliation was pending.  It never creates or deletes an
+        external subscriber.
+        """
+        with _customer_provider_mutex(customer_pk):
+            phone = cls._pending_customer_phone(customer_pk)
+            if phone is None:
+                return "clear"
+            if not phone:
+                return "uncertain"
+            outcome = cls._lookup_by_phone_api_outcome(phone)
+            if outcome.subscriber_id is not None:
+                cls._finalize_customer_resolution(customer_pk, outcome.subscriber_id)
+                return "linked"
+            if outcome.conclusive_absence:
+                cls._clear_pending_resolution(customer_pk)
+                return "absent"
+            return "uncertain"
+
+    @classmethod
+    def _pending_customer_phone(cls, customer_pk: int) -> str | None:
+        from django.db import transaction
+        from shopman.guestman.models import Customer
+
+        with transaction.atomic(durable=True):
+            customer = (
+                Customer.objects.select_for_update()
+                .filter(pk=customer_pk, is_active=True)
+                .first()
+            )
+            if customer is None:
+                return None
+            if not (customer.metadata or {}).get(_PRIVACY_PENDING_KEY):
+                return None
+            return _canonical_phone(customer.phone or "")
+
+    @classmethod
+    def _clear_pending_resolution(cls, customer_pk: int) -> None:
+        from django.db import transaction
+        from shopman.guestman.models import Customer
+
+        with transaction.atomic(durable=True):
+            customer = (
+                Customer.objects.select_for_update()
+                .filter(pk=customer_pk, is_active=True)
+                .first()
+            )
+            if customer is None:
+                return
+            metadata = dict(customer.metadata or {})
+            metadata.pop(_PRIVACY_PENDING_KEY, None)
+            customer.metadata = metadata
+            customer.save(update_fields=["metadata", "updated_at"])
 
     @classmethod
     def fetch_subscriber_info(cls, subscriber_id: str | int) -> dict | None:
@@ -389,11 +592,18 @@ class ManychatSubscriberResolver:
 
         GET /fb/subscriber/findBySystemField?phone=<E.164>
         """
+        return cls._lookup_by_phone_api_outcome(phone).subscriber_id
+
+    @classmethod
+    def _lookup_by_phone_api_outcome(cls, phone: str) -> _ProviderLookupOutcome:
+        """Lookup with enough outcome detail for privacy reconciliation."""
         from django.conf import settings
 
         api_token = getattr(settings, "MANYCHAT_API_TOKEN", "")
         if not api_token:
-            return None
+            return _ProviderLookupOutcome()
+
+        every_variant_conclusive = True
 
         for lookup_phone in _lookup_phone_values(phone):
             url = (
@@ -415,18 +625,20 @@ class ManychatSubscriberResolver:
                                 "Manychat resolver: found subscriber %s for phone %s via API",
                                 subscriber_id, phone[:8],
                             )
-                            return subscriber_id
+                            return _ProviderLookupOutcome(subscriber_id=subscriber_id)
                         logger.info(
                             "Manychat resolver: no subscriber found for phone %s via system field",
                             phone[:8],
                         )
                     else:
+                        every_variant_conclusive = False
                         logger.warning(
                             "Manychat resolver: lookup failed for phone %s: %s",
                             phone[:8],
                             _manychat_failure_message(data),
                         )
             except HTTPError as e:
+                every_variant_conclusive = False
                 error_body = _read_http_error_body(e)
                 if e.code == 404:
                     logger.debug("Manychat resolver: subscriber not found for phone %s", phone[:8])
@@ -438,13 +650,14 @@ class ManychatSubscriberResolver:
                         error_body,
                     )
             except (URLError, ValueError, Exception):
+                every_variant_conclusive = False
                 logger.debug(
                     "Manychat resolver: API call failed for phone %s",
                     phone[:8],
                     exc_info=True,
                 )
 
-        return None
+        return _ProviderLookupOutcome(conclusive_absence=every_variant_conclusive)
 
     @classmethod
     def _create_whatsapp_subscriber_api(cls, phone: str) -> int | None:
@@ -452,11 +665,16 @@ class ManychatSubscriberResolver:
 
         POST /fb/subscriber/createSubscriber
         """
+        return cls._create_whatsapp_subscriber_outcome(phone).subscriber_id
+
+    @classmethod
+    def _create_whatsapp_subscriber_outcome(cls, phone: str) -> _ProviderCreateOutcome:
+        """Create with a conservative distinction between rejection and doubt."""
         from django.conf import settings
 
         api_token = getattr(settings, "MANYCHAT_API_TOKEN", "")
         if not api_token:
-            return None
+            return _ProviderCreateOutcome()
 
         payload = {"whatsapp_phone": phone}
         request = Request(
@@ -482,7 +700,7 @@ class ManychatSubscriberResolver:
                             phone[:8],
                         )
                         cls._mirror_whatsapp_id_custom_field_api(subscriber_id, phone)
-                        return subscriber_id
+                        return _ProviderCreateOutcome(subscriber_id=subscriber_id)
                     logger.warning(
                         "Manychat resolver: createSubscriber returned no id for phone %s",
                         phone[:8],
@@ -493,6 +711,10 @@ class ManychatSubscriberResolver:
                         phone[:8],
                         _manychat_failure_message(data),
                     )
+                    # Some provider errors mean the contact already exists.  A
+                    # response without its id is therefore not proof of absence;
+                    # keep the reconciliation fence until a read lookup decides.
+                    return _ProviderCreateOutcome()
         except HTTPError as e:
             logger.warning(
                 "Manychat resolver: createSubscriber HTTP error %d for phone %s: %s",
@@ -507,7 +729,7 @@ class ManychatSubscriberResolver:
                 exc_info=True,
             )
 
-        return None
+        return _ProviderCreateOutcome()
 
     @classmethod
     def _mirror_whatsapp_id_custom_field_api(cls, subscriber_id: int, phone: str) -> bool:

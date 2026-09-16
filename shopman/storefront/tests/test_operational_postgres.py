@@ -119,13 +119,19 @@ def test_concurrent_stock_moves_create_one_occurrence_and_one_delivery():
 
 
 def test_concurrent_authenticated_subscribe_creates_one_customer_alert():
+    from shopman.guestman.models import Customer
+
     from shopman.shop.models import Channel
     from shopman.storefront.models import StockAlertSubscription
     from shopman.storefront.services import stock_alerts
 
     Channel.objects.get_or_create(ref="web", defaults={"name": "Web", "is_active": True})
     barrier = Barrier(2)
-    customer = SimpleNamespace(ref="CUS-PG-SUBSCRIBE", phone="+5543999990087")
+    customer = Customer.objects.create(
+        ref="CUS-PG-SUBSCRIBE",
+        first_name="Cliente",
+        phone="+5543999990087",
+    )
 
     def run():
         try:

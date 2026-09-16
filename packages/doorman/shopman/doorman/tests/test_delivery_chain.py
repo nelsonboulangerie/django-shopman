@@ -43,6 +43,7 @@ class TestSendCodeWithFallback:
     def teardown_method(self):
         reset_adapter()
 
+    @override_settings(DOORMAN={"DELIVERY_CHAIN": []})
     def test_no_chain_uses_default_sender(self):
         """Empty DELIVERY_CHAIN → uses default sender via send_code()."""
         adapter = DefaultAuthAdapter()

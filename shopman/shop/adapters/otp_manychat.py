@@ -26,8 +26,12 @@ def _resolve_subscriber(phone: str, config: dict) -> int | None:
     if phone.isdigit():
         return int(phone)
 
-    resolver_path = config.get("resolver")
+    # OTP requires a resolver capability that refuses ownerless bootstrap.
+    # The general notification resolver remains a positional one-argument
+    # extension point; we do not inject kwargs into arbitrary dotted callables.
+    resolver_path = config.get("otp_resolver")
     if not resolver_path:
+        logger.warning("ManyChat OTP resolver with customer fence is not configured")
         return None
 
     from ._dotted import import_dotted_attr

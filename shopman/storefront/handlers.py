@@ -104,18 +104,9 @@ def on_customer_anonymized(sender, customer_ref: str = "", phone: str = "", **kw
     Sem este receptor, "excluir minha conta" deixava o número de volta na fila
     do próximo "voltou ao estoque".
     """
-    from django.db.models import Q
-
     from shopman.storefront.models import CustomerFavorite, StockAlertSubscription
 
     if customer_ref:
         CustomerFavorite.objects.filter(customer_ref=customer_ref).delete()
-    subscription_query = Q()
     if customer_ref:
-        subscription_query |= Q(customer_ref=customer_ref)
-    if phone:
-        # Contatos são recicláveis: o fallback só alcança legado sem vínculo
-        # canônico e nunca a assinatura pertencente a outro Customer.
-        subscription_query |= Q(customer_ref="", contact_phone=phone)
-    if subscription_query.children:
-        StockAlertSubscription.objects.filter(subscription_query).delete()
+        StockAlertSubscription.objects.filter(customer_ref=customer_ref).delete()

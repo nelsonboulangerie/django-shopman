@@ -5,7 +5,12 @@ from unittest.mock import patch
 
 import pytest
 from django.test import Client
+from django.test.utils import override_settings
 from django.utils import timezone
+from shopman.guestman.contrib.identifiers.models import (
+    CustomerIdentifier,
+    IdentifierType,
+)
 from shopman.guestman.models import Customer
 
 from shopman.shop.models import PrivacyRequestOperation, PrivacyRequestReceipt
@@ -41,6 +46,18 @@ def _mint_login_code(phone: str) -> str:
     )
     code.mark_sent()
     return raw_code
+
+
+def _authorize_step_up(client: Client, customer: Customer, purpose: str) -> None:
+    from shopman.storefront.api.account import STEP_UP_SESSION_KEY
+
+    session = client.session
+    session[STEP_UP_SESSION_KEY] = {
+        "customer_uuid": str(customer.uuid),
+        "purpose": purpose,
+        "accepted_at": timezone.now().isoformat(),
+    }
+    session.save()
 
 
 def test_delete_requires_step_up(client: Client):
@@ -226,7 +243,7 @@ def test_export_failure_keeps_safe_failed_receipt(client: Client):
     session.save()
 
     with patch(
-        "shopman.storefront.services.account_export.build_account_export",
+        "shopman.storefront.services.account_export.prepare_account_export",
         side_effect=RuntimeError("private database detail"),
     ):
         response = client.get("/api/v1/account/export/")
@@ -236,6 +253,170 @@ def test_export_failure_keeps_safe_failed_receipt(client: Client):
     assert receipt.state == "failed"
     assert receipt.failure_code == "account_export_incomplete"
     assert "private database detail" not in response.content.decode()
+
+
+@pytest.mark.parametrize("invalid_key", ["", "short-key"])
+def test_export_with_unavailable_receipt_key_fails_closed_without_artifact(
+    client: Client,
+    invalid_key: str,
+):
+    customer = Customer.objects.create(
+        ref="CUS-SU-EXP-KEY",
+        first_name="Helena",
+        phone="+5543999990020",
+    )
+    _login_as_customer(client, customer)
+    _authorize_step_up(client, customer, "export")
+
+    with (
+        override_settings(SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY=invalid_key),
+        patch("shopman.storefront.services.account_export.prepare_account_export") as build_export,
+    ):
+        response = client.get("/api/v1/account/export/")
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "privacy_receipt_unavailable"
+    build_export.assert_not_called()
+    assert not PrivacyRequestReceipt.objects.exists()
+    customer.refresh_from_db()
+    assert customer.is_active is True
+    assert customer.phone == "+5543999990020"
+
+
+@pytest.mark.parametrize("invalid_key", ["", "short-key"])
+def test_delete_with_unavailable_receipt_key_fails_closed_without_mutation(
+    client: Client,
+    invalid_key: str,
+):
+    customer = Customer.objects.create(
+        ref="CUS-SU-DEL-KEY",
+        first_name="Iara",
+        phone="+5543999990021",
+    )
+    _login_as_customer(client, customer)
+    _authorize_step_up(client, customer, "delete")
+
+    with override_settings(SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY=invalid_key):
+        response = client.post(
+            "/api/v1/account/delete/",
+            data={"acknowledged": True},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()),
+        )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "privacy_receipt_unavailable"
+    assert not PrivacyRequestReceipt.objects.exists()
+    customer.refresh_from_db()
+    assert customer.is_active is True
+    assert customer.first_name == "Iara"
+    assert customer.phone == "+5543999990021"
+
+
+def test_delete_explains_required_manychat_unlink_without_mutating_account(
+    client: Client,
+):
+    customer = Customer.objects.create(
+        ref="CUS-SU-DEL-MANYCHAT",
+        first_name="Lia",
+        phone="+5543999990023",
+    )
+    CustomerIdentifier.objects.create(
+        customer=customer,
+        identifier_type=IdentifierType.MANYCHAT,
+        identifier_value="manychat-delete-api-test",
+    )
+    _login_as_customer(client, customer)
+    _authorize_step_up(client, customer, "delete")
+
+    response = client.post(
+        "/api/v1/account/delete/",
+        data={"acknowledged": True},
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"] == {
+        "code": "account_deletion_blocked",
+        "reason": "manychat_unlink_required",
+    }
+    assert "desvincular" in response.json()["detail"].lower()
+    assert "manychat" in response.json()["detail"].lower()
+    customer.refresh_from_db()
+    assert customer.is_active is True
+    assert customer.phone == "+5543999990023"
+
+
+def test_delete_explains_pending_manychat_reconciliation(client: Client):
+    customer = Customer.objects.create(
+        ref="CUS-SU-DEL-MANYCHAT-PENDING",
+        first_name="Lia",
+        phone="+5543999990024",
+        metadata={"manychat_resolution_pending": True},
+    )
+    _login_as_customer(client, customer)
+    _authorize_step_up(client, customer, "delete")
+
+    response = client.post(
+        "/api/v1/account/delete/",
+        data={"acknowledged": True},
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"] == {
+        "code": "account_deletion_blocked",
+        "reason": "manychat_reconciliation_pending",
+    }
+    detail = response.json()["detail"].lower()
+    assert "verificação" in detail
+    assert "manychat" in detail
+    customer.refresh_from_db()
+    assert customer.is_active is True
+    assert customer.phone == "+5543999990024"
+
+
+@pytest.mark.parametrize("invalid_key", ["", "short-key"])
+def test_security_projection_hides_unavailable_privacy_actions(
+    client: Client,
+    invalid_key: str,
+):
+    customer = Customer.objects.create(
+        ref="CUS-SU-DEVICE-KEY",
+        first_name="Joana",
+        phone="+5543999990022",
+    )
+    _login_as_customer(client, customer)
+
+    with override_settings(SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY=invalid_key):
+        response = client.get("/api/v1/account/devices/")
+
+    assert response.status_code == 200
+    assert response.json()["privacy_requests_available"] is False
+
+
+def test_invalid_receipt_key_version_returns_controlled_unavailable_response(
+    client: Client,
+):
+    customer = Customer.objects.create(
+        ref="CUS-SU-DEVICE-KEY-VERSION",
+        first_name="Joana",
+        phone="+5543999990023",
+    )
+    _login_as_customer(client, customer)
+
+    with override_settings(
+        SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY="test-only-privacy-receipt-hmac-key-v1",
+        SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION="invalid",
+        SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS={},
+    ):
+        response = client.get("/api/v1/account/devices/")
+
+    assert response.status_code == 200
+    assert response.json()["privacy_requests_available"] is False
+    assert not PrivacyRequestReceipt.objects.exists()
 
 
 def test_delete_acknowledgement_must_be_boolean_true(client: Client):

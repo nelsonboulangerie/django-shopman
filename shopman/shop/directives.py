@@ -23,6 +23,13 @@ LIFECYCLE_PHASE_RECEIPT_SCOPE = "lifecycle:phase"
 NOTIFICATION_SEND = "notification.send"
 NOTIFICATION_PUSH = "notification.push"
 NOTIFICATION_PUSH_RECEIPT_SCOPE = "notification:push"
+
+# Única classe de trabalho de pedido que pode ser cancelada quando o titular
+# pede exclusão: entregas pessoais ainda não iniciadas. Todo outro topic ligado
+# ao pedido é obrigação operacional por padrão (fiscal, pagamento, logística,
+# lifecycle, fidelidade etc.) e deve continuar com o payload já anonimizado.
+# A lista fechada evita que um topic novo seja cancelado por acidente.
+PERSONAL_ORDER_DELIVERY_TOPICS = frozenset({NOTIFICATION_SEND, NOTIFICATION_PUSH})
 STOCK_ALERT_DELIVER = "stock_alert.deliver"
 STOCK_ALERT_DELIVERY_RECEIPT_SCOPE = "stock_alert:delivery"
 

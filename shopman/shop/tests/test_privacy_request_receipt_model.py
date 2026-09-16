@@ -21,6 +21,7 @@ def _receipt_kwargs(**overrides):
     values = {
         "operation": PrivacyRequestOperation.EXPORT,
         "subject_digest": "a" * 64,
+        "idempotency_fingerprint": "d" * 64,
         "idempotency_digest": "b" * 64,
         "request_digest": "c" * 64,
         "authorization_method": "recent_session",
@@ -35,6 +36,7 @@ def test_receipt_defaults_are_safe_and_support_both_operations() -> None:
     deletion = PrivacyRequestReceipt.objects.create(
         **_receipt_kwargs(
             operation=PrivacyRequestOperation.DELETION,
+            idempotency_fingerprint="e" * 64,
             idempotency_digest="d" * 64,
             request_digest="e" * 64,
         )
@@ -90,7 +92,7 @@ def test_in_progress_state_rejects_completed_at() -> None:
         PrivacyRequestReceipt.objects.create(**_receipt_kwargs(completed_at=timezone.now()))
 
 
-def test_operation_subject_and_idempotency_digest_are_unique_together() -> None:
+def test_operation_and_stable_idempotency_fingerprint_are_unique_together() -> None:
     PrivacyRequestReceipt.objects.create(**_receipt_kwargs())
 
     with pytest.raises(IntegrityError), transaction.atomic():
@@ -107,7 +109,12 @@ def test_operation_subject_and_idempotency_digest_are_unique_together() -> None:
 
 @pytest.mark.parametrize(
     "field",
-    ["subject_digest", "idempotency_digest", "request_digest"],
+    [
+        "subject_digest",
+        "idempotency_fingerprint",
+        "idempotency_digest",
+        "request_digest",
+    ],
 )
 def test_hmac_digests_must_be_opaque_lowercase_hex(field: str) -> None:
     receipt = PrivacyRequestReceipt(**_receipt_kwargs(**{field: "raw-personal-value"}))

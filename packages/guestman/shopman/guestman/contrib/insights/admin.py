@@ -1,6 +1,7 @@
 """Admin for CustomerInsight."""
 
 from django.contrib import admin
+from shopman.guestman.admin_privacy import PrivacyReadOnlyAdminMixin
 from shopman.guestman.contrib.insights.models import CustomerInsight
 from shopman.utils import unfold_badge_numeric
 from unfold.admin import ModelAdmin
@@ -8,7 +9,7 @@ from unfold.decorators import display
 
 
 @admin.register(CustomerInsight)
-class CustomerInsightAdmin(ModelAdmin):
+class CustomerInsightAdmin(PrivacyReadOnlyAdminMixin, ModelAdmin):
     list_display = [
         "customer",
         "total_orders",

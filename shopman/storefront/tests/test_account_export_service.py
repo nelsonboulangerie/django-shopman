@@ -299,7 +299,7 @@ def test_export_closes_partial_spool_on_error(monkeypatch):
     assert created[0].closed is True
 
 
-def test_export_phone_fallback_never_crosses_a_canonical_owner() -> None:
+def test_export_never_claims_legacy_records_by_recycled_phone() -> None:
     current = _customer(suffix="05")
     previous = Customer.objects.create(ref="EXPORT-PREVIOUS", first_name="Outra pessoa")
     alien_order = Order.objects.create(
@@ -334,7 +334,7 @@ def test_export_phone_fallback_never_crosses_a_canonical_owner() -> None:
     payload, _counts = _decoded_export(current)
 
     refs = {row["ref"] for row in payload["orders"]}
-    assert ownerless_order.ref in refs
+    assert ownerless_order.ref not in refs
     assert alien_order.ref not in refs
     assert payload["auth_verification_codes"] == []
     assert payload["stock_alert_subscriptions"] == []

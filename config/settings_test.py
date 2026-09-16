@@ -140,6 +140,10 @@ SHOPMAN_MANYCHAT.update(  # noqa: F405
     timeout=15,
     whatsapp_id_field_id="",
     resolver="shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.resolve",
+    otp_resolver=(
+        "shopman.guestman.contrib.manychat.resolver."
+        "ManychatSubscriberResolver.resolve_active_customer"
+    ),
 )
 SHOPMAN_MARKETING_TEST_TARGETS = {}
 SHOPMAN_MARKETING_SIMULATION_IGNORE_QUIET_HOURS = False

@@ -413,6 +413,120 @@ def test_absent_vapid_configuration_is_silent_locally():
 
 
 @override_settings(
+    DEBUG=False,
+    SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY="current-privacy-receipt-key-at-least-32-bytes",
+    SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION=2,
+    SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS=(
+        '{"1": "previous-privacy-receipt-key-at-least-32-bytes"}'
+    ),
+)
+def test_privacy_receipt_hmac_accepts_valid_json_keyring():
+    assert checks.check_privacy_receipt_hmac_configuration(None) == []
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY="current-privacy-receipt-key-at-least-32-bytes",
+    SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION=2,
+    SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS={
+        "1": "previous-privacy-receipt-key-at-least-32-bytes",
+        "2": "current-privacy-receipt-key-at-least-32-bytes",
+    },
+)
+def test_privacy_receipt_hmac_accepts_mapping_with_matching_current_version():
+    assert checks.check_privacy_receipt_hmac_configuration(None) == []
+
+
+@pytest.mark.parametrize(
+    ("key", "version", "previous"),
+    [
+        ("", 1, {}),
+        ("too-short", 1, {}),
+        ("current-privacy-receipt-key-at-least-32-bytes", 0, {}),
+        ("current-privacy-receipt-key-at-least-32-bytes", "invalid", {}),
+        ("current-privacy-receipt-key-at-least-32-bytes", 2, "not-json"),
+        ("current-privacy-receipt-key-at-least-32-bytes", 2, []),
+        (
+            "current-privacy-receipt-key-at-least-32-bytes",
+            2,
+            {"1": "short"},
+        ),
+        (
+            "current-privacy-receipt-key-at-least-32-bytes",
+            2,
+            {"2": "different-current-key-that-is-at-least-32-bytes"},
+        ),
+    ],
+)
+@override_settings(DEBUG=False)
+def test_privacy_receipt_hmac_rejects_invalid_configuration(
+    settings, key, version, previous
+):
+    settings.SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY = key
+    settings.SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION = version
+    settings.SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS = previous
+
+    messages = checks.check_privacy_receipt_hmac_configuration(None)
+
+    assert [message.id for message in messages] == ["SHOPMAN_E025"]
+    if key:
+        assert key not in messages[0].msg
+        assert key not in messages[0].hint
+
+
+@override_settings(
+    DEBUG=True,
+    SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY="",
+    SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION="invalid",
+    SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS="not-json",
+)
+def test_privacy_receipt_hmac_is_silent_in_debug():
+    assert checks.check_privacy_receipt_hmac_configuration(None) == []
+
+
+def test_integer_env_parsers_preserve_existing_defaults_and_hmac_invalidity(monkeypatch):
+    monkeypatch.setenv("SHOPMAN_TEST_INTEGER", "7")
+    assert project_settings._env_int("SHOPMAN_TEST_INTEGER", 3) == 7
+    assert project_settings._env_int_or_raw("SHOPMAN_TEST_INTEGER", 3) == 7
+
+    monkeypatch.setenv("SHOPMAN_TEST_INTEGER", "invalid")
+    assert project_settings._env_int("SHOPMAN_TEST_INTEGER", 3) == 3
+    invalid_version = project_settings._env_int_or_raw("SHOPMAN_TEST_INTEGER", 3)
+    assert invalid_version == "invalid"
+
+    with override_settings(
+        DEBUG=False,
+        SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY="current-privacy-receipt-key-at-least-32-bytes",
+        SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION=invalid_version,
+        SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS={},
+    ):
+        assert [
+            message.id
+            for message in checks.check_privacy_receipt_hmac_configuration(None)
+        ] == ["SHOPMAN_E025"]
+
+    for raw in ("0", "-2"):
+        monkeypatch.setenv("SHOPMAN_TEST_INTEGER", raw)
+        parsed = project_settings._env_int_or_raw("SHOPMAN_TEST_INTEGER", 3)
+        assert parsed == int(raw)
+        with override_settings(
+            DEBUG=False,
+            SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY=(
+                "current-privacy-receipt-key-at-least-32-bytes"
+            ),
+            SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION=parsed,
+            SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS={},
+        ):
+            assert [
+                message.id
+                for message in checks.check_privacy_receipt_hmac_configuration(None)
+            ] == ["SHOPMAN_E025"]
+
+    monkeypatch.delenv("SHOPMAN_TEST_INTEGER")
+    assert project_settings._env_int_or_raw("SHOPMAN_TEST_INTEGER", 3) == 3
+
+
+@override_settings(
     SHOPMAN_MARKETING_MEDIA_HOSTS=(
         "*.example.com",
         "http://cdn.example.com",

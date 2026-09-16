@@ -198,7 +198,7 @@ class TestOTPManychatSender:
         mod = import_module("shopman.shop.adapters.otp_manychat")
         config = {
             "api_token": "token",
-            "resolver": "shopman.shop.tests.test_adapters._manychat_test_resolver",
+            "otp_resolver": "shopman.shop.tests.test_adapters._manychat_test_resolver",
         }
 
         subscriber_id = mod._resolve_subscriber("+5543999998888", config)
@@ -207,7 +207,7 @@ class TestOTPManychatSender:
 
     @override_settings(SHOPMAN_MANYCHAT={
         "api_token": "token",
-        "resolver": "shopman.shop.tests.test_adapters._manychat_test_resolver",
+        "otp_resolver": "shopman.shop.tests.test_adapters._manychat_test_resolver",
     })
     def test_send_code_uses_direct_content(self):
         mod = import_module("shopman.shop.adapters.otp_manychat")
@@ -221,6 +221,15 @@ class TestOTPManychatSender:
         assert payload["subscriber_id"] == 123456
         assert "flow_ns" not in payload
         assert "flow_token" not in payload
+
+    def test_general_resolver_is_not_used_as_unfenced_otp_fallback(self):
+        mod = import_module("shopman.shop.adapters.otp_manychat")
+        config = {
+            "api_token": "token",
+            "resolver": "shopman.shop.tests.test_adapters._manychat_test_resolver",
+        }
+
+        assert mod._resolve_subscriber("+5543999998888", config) is None
 
 
 @pytest.mark.django_db

@@ -89,14 +89,13 @@ def forget_customer(customer_uuid, phone: str = "", email: str = "") -> None:
     desativa o login, revoga TrustedDevices e passkeys, zera o `metadata` do
     vínculo e apaga os códigos de verificação emitidos para o telefone.
 
-    ``phone`` e ``email`` são os contatos originais do titular e vêm do chamador porque o código
-    OTP é indexado pelo DESTINO (`target_value`), não pelo cliente: sem ele,
-    quem excluiu a conta agora mesmo deixava o próprio telefone no banco, no
-    código que acabou de usar para provar que era ele. Idempotente e defensivo.
+    Códigos são apagados somente pelo ``customer_id`` canônico. Telefone/e-mail
+    atuais não provam autoria de códigos ownerless históricos e podem ter sido
+    reciclados; os argumentos permanecem apenas por compatibilidade.
     """
-    from django.db.models import Q
-
     from ..models import AccessLink, Passkey, PinCredential, TrustedDevice, VerificationCode
+
+    del phone, email
 
     failures: list[str] = []
     user_id = None
@@ -145,6 +144,8 @@ def forget_customer(customer_uuid, phone: str = "", email: str = "") -> None:
         failures.append("apagar passkeys")
 
     try:
+        from django.db.models import Q
+
         links = Q(customer_id=customer_uuid)
         if user_id is not None:
             links |= Q(user_id=user_id)
@@ -161,15 +162,17 @@ def forget_customer(customer_uuid, phone: str = "", email: str = "") -> None:
             failures.append("apagar credencial de PIN")
 
     try:
-        codes = Q(customer_id=customer_uuid)
-        if phone:
-            codes |= Q(customer_id__isnull=True, target_value=phone)
-        if email:
-            codes |= Q(customer_id__isnull=True, target_value=email)
-        VerificationCode.objects.filter(codes).delete()
+        VerificationCode.objects.filter(customer_id=customer_uuid).delete()
     except Exception:
         logger.warning("forget_customer: limpeza de códigos OTP falhou", exc_info=True)
         failures.append("apagar códigos de verificação")
+
+    if link is not None:
+        try:
+            link.delete()
+        except Exception:
+            logger.warning("forget_customer: remoção do vínculo falhou", exc_info=True)
+            failures.append("remover vínculo de login")
 
     if failures:
         # O orquestrador agrega esta falha às demais e recusa sucesso parcial,

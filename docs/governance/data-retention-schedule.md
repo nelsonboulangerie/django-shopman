@@ -45,6 +45,13 @@ recusa antes de iniciar o inventário. Esta etapa não altera
 `MAINTENANCE_COMMANDS`, não adiciona migration e não chama a limpeza passiva já
 existente desde 0056.
 
+Os recibos sem PII de exportação e exclusão carregam `retention_until`: 90
+dias para falhas e, inicialmente, 5 anos para conclusões. Esse marco é um
+horizonte de **elegibilidade para revisão de risco**, não uma afirmação de
+prazo legal automático. O dry-run os conta dentro de R09, mas mantém
+`candidates=0`; qualquer descarte depende de checagem de `legal hold`, dry-run
+revisado e gate humano separado. Não há rotina destrutiva ou job ativo.
+
 ## Decisão humana registrada
 
 > Aprovo R01–R15 como política operacional inicial e autorizo implementação e
