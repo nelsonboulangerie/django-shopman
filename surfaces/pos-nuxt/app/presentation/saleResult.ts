@@ -33,6 +33,26 @@ export interface PosSaleResultSnapshot {
   /** O cliente pediu a nota IMPRESSA? Congelado aqui porque o carrinho já
    *  zerou quando a nota autoriza — e é dela que a impressão automática vive. */
   wantsPrintedInvoice: boolean;
+  /** ENCOMENDA: como e quando o pedido será recebido, congelados no commit —
+   *  é o que o operador lê de volta ao cliente antes de desligar o telefone. */
+  fulfillmentLabel?: string;
+  scheduleLabel?: string;
+}
+
+/**
+ * A LEITURA DE VOLTA da encomenda: "Retirada · sáb, 20/09, 10:00 às 10:30".
+ *
+ * Só existe no modo encomenda — na venda de balcão o pedido já foi entregue na
+ * mão. Congelada no `result` porque o carrinho zera logo depois do commit, e a
+ * tela de resultado é a última chance de o operador confirmar em voz alta o
+ * combinado com o cliente na frente (ou ao telefone).
+ */
+export function orderReadback(result: Pick<PosSaleResultSnapshot, "salesMode" | "fulfillmentLabel" | "scheduleLabel">): { fulfillment: string; schedule: string } | null {
+  if (result.salesMode !== "order") return null;
+  const fulfillment = (result.fulfillmentLabel || "").trim();
+  const schedule = (result.scheduleLabel || "").trim();
+  if (!fulfillment && !schedule) return null;
+  return { fulfillment, schedule };
 }
 
 export interface SaleResultAdvanceInputs {

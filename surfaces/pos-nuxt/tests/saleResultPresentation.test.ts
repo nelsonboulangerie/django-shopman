@@ -8,6 +8,7 @@ import {
   autoAdvanceSeconds,
   changeDisplay,
   enterAdvances,
+  orderReadback,
   pixAwaiting,
   saleResultTitle,
 } from "~/presentation/saleResult";
@@ -157,5 +158,21 @@ describe("cobrança que falhou não veste cara de venda concluída", () => {
   it("o título diz o que aconteceu, e não agradece", () => {
     expect(saleResultTitle("Ana Maria", falhou)).toBe("Venda registrada, cobrança não criada");
     expect(saleResultTitle("Ana Maria", null)).toBe("Venda concluída. Obrigado, Ana!");
+  });
+});
+
+describe("orderReadback — a leitura de volta da encomenda", () => {
+  it("balcão não lê nada de volta: o pedido já foi entregue na mão", () => {
+    expect(orderReadback({ salesMode: "counter", fulfillmentLabel: "Retirada", scheduleLabel: "Hoje" })).toBeNull();
+    expect(orderReadback({ salesMode: undefined, fulfillmentLabel: "Retirada" })).toBeNull();
+  });
+
+  it("encomenda devolve como e quando, aparados", () => {
+    expect(orderReadback({ salesMode: "order", fulfillmentLabel: " Entrega · Centro ", scheduleLabel: "sáb, 20/09, 10:00 às 10:30" }))
+      .toEqual({ fulfillment: "Entrega · Centro", schedule: "sáb, 20/09, 10:00 às 10:30" });
+  });
+
+  it("encomenda sem nenhum dos dois não inventa bloco vazio", () => {
+    expect(orderReadback({ salesMode: "order", fulfillmentLabel: "", scheduleLabel: "  " })).toBeNull();
   });
 });
