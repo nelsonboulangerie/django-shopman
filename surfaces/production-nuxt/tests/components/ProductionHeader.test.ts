@@ -24,7 +24,15 @@ const stubs = {
     emits: ["update:open"],
     template: '<div v-if="open" data-shortcuts-help />',
   },
+  FloorTimersPanel: {
+    props: ["open"],
+    emits: ["update:open"],
+    template: '<div v-if="open" data-floor-timers-panel />',
+  },
 };
+
+const timersActive = ref(0);
+const timersRinging = ref(0);
 
 function press(
   key: string,
@@ -49,7 +57,13 @@ beforeEach(() => {
   vi.stubGlobal("onBeforeUnmount", onBeforeUnmount);
   vi.stubGlobal("useRoute", () => ({ path: "/plan" }));
   vi.stubGlobal("navigateTo", navigateSpy);
+  vi.stubGlobal("useFloorTimers", () => ({
+    activeCount: computed(() => timersActive.value),
+    ringingCount: computed(() => timersRinging.value),
+  }));
   navigateSpy.mockClear();
+  timersActive.value = 0;
+  timersRinging.value = 0;
   wrapper = mount(ProductionHeader, {
     props: { title: "Planejamento" },
     global: { stubs },
@@ -110,5 +124,32 @@ describe("ProductionHeader — atalhos descobríveis", () => {
     press("#", { altKey: true, code: "Digit3" });
 
     expect(navigateSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("ProductionHeader — timers da bancada", () => {
+  it("o botão Timers mostra os ativos depois de montar e abre o painel", async () => {
+    timersActive.value = 2;
+    wrapper?.unmount();
+    wrapper = mount(ProductionHeader, {
+      props: { title: "Produção" },
+      global: { stubs },
+      attachTo: document.body,
+    });
+    await nextTick();
+
+    const button = wrapper.find('button[aria-label="Timers (2 ativos)"]');
+    expect(button.exists()).toBe(true);
+    expect(button.text()).toContain("2");
+    expect(wrapper.find("[data-floor-timers-panel]").exists()).toBe(false);
+
+    await button.trigger("click");
+    expect(wrapper.find("[data-floor-timers-panel]").exists()).toBe(true);
+  });
+
+  it("sem timer ativo não há badge — e o botão continua lá", () => {
+    const button = wrapper!.find('button[aria-label="Timers (0 ativos)"]');
+    expect(button.exists()).toBe(true);
+    expect(button.text()).not.toMatch(/\d/);
   });
 });
