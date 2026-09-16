@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
+from threading import Event, Lock
 from unittest.mock import Mock
 from urllib.error import HTTPError
 
@@ -35,6 +37,14 @@ GOOGLE = {
     "location_id": "location-2",
     "access_token": "secret-google-token",
     "timeout": 8,
+}
+GOOGLE_OAUTH = {
+    **GOOGLE,
+    "access_token": "",
+    "client_id": "client-id.apps.googleusercontent.com",
+    "client_secret": "secret-client",
+    "refresh_token": "secret-refresh",
+    "token_url": "https://oauth.example.test/token",
 }
 TIKTOK = {
     "api_base": "https://open.tiktokapis.example.test",
@@ -95,6 +105,31 @@ def test_http_boundary_keeps_token_out_of_url_and_normalizes_form_boole(monkeypa
     assert request.get_header("Authorization") == "Bearer secret-meta-token"
     assert b"published=true" in request.data
     assert observed["timeout"] == 7
+
+
+def test_http_credential_form_has_no_bearer_and_never_places_secrets_in_url(monkeypatch):
+    observed = {}
+
+    def open_request(request, *, timeout):
+        observed["request"] = request
+        observed["timeout"] = timeout
+        return _Response(b'{"access_token":"fresh","expires_in":3600}')
+
+    monkeypatch.setattr(http, "_open", open_request)
+
+    result = http.request_form_json(
+        url="https://oauth.example.test/token",
+        timeout=8,
+        payload={"client_secret": "secret-client", "refresh_token": "secret-refresh"},
+    )
+
+    request = observed["request"]
+    assert result["access_token"] == "fresh"
+    assert request.full_url == "https://oauth.example.test/token"
+    assert request.get_header("Authorization") is None
+    assert b"client_secret=secret-client" in request.data
+    assert b"refresh_token=secret-refresh" in request.data
+    assert observed["timeout"] == 8
 
 
 def test_http_boundary_never_propagates_provider_response_body(monkeypatch):
@@ -325,6 +360,271 @@ def test_google_standard_post_and_lookup(monkeypatch):
     assert sent.provider_receipt_ref == "gbp:post-3"
     assert confirmed.kind == ProviderOutcomeKind.CONFIRMED
     assert "secret-google-token" not in request.call_args_list[0].kwargs["url"]
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED=True,
+    SHOPMAN_MARKETING_GOOGLE=GOOGLE_OAUTH,
+)
+def test_google_refreshes_once_and_reuses_short_lived_access_token(monkeypatch):
+    refresh = Mock(
+        return_value={
+            "access_token": "fresh-google-token",
+            "expires_in": 3600,
+            "token_type": "Bearer",
+        }
+    )
+    request = Mock(
+        side_effect=[
+            {"name": "accounts/account-1/locations/location-2/localPosts/post-3"},
+            {"name": "accounts/account-1/locations/location-2/localPosts/post-3"},
+        ]
+    )
+    google._TOKEN_CACHE.clear()
+    monkeypatch.setattr(google, "request_form_json", refresh)
+    monkeypatch.setattr(google, "request_json", request)
+
+    sent = google.send(
+        artifact=artifact("google_business", "standard"),
+        target_key="public",
+        idempotency_token="idem",
+    )
+    google.lookup(
+        target_key="public",
+        idempotency_token="idem",
+        provider_receipt_ref=sent.provider_receipt_ref,
+    )
+
+    assert refresh.call_count == 1
+    assert refresh.call_args.kwargs["url"] == "https://oauth.example.test/token"
+    assert refresh.call_args.kwargs["payload"] == {
+        "client_id": "client-id.apps.googleusercontent.com",
+        "client_secret": "secret-client",
+        "refresh_token": "secret-refresh",
+        "grant_type": "refresh_token",
+    }
+    assert [call.kwargs["access_token"] for call in request.call_args_list] == [
+        "fresh-google-token",
+        "fresh-google-token",
+    ]
+
+
+def test_google_oauth_refresh_is_single_flight_within_a_worker(monkeypatch):
+    config = dict(GOOGLE_OAUTH)
+    entered = Event()
+    release = Event()
+    calls: list[dict] = []
+    calls_lock = Lock()
+
+    def refresh(**kwargs):
+        with calls_lock:
+            calls.append(kwargs)
+        entered.set()
+        assert release.wait(timeout=2)
+        return {
+            "access_token": "shared-token",
+            "expires_in": 3600,
+            "token_type": "Bearer",
+        }
+
+    google._TOKEN_CACHE.clear()
+    monkeypatch.setattr(google, "request_form_json", refresh)
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = [executor.submit(google._access_token, config) for _ in range(4)]
+        assert entered.wait(timeout=2)
+        release.set()
+        assert [future.result(timeout=2) for future in futures] == ["shared-token"] * 4
+
+    assert len(calls) == 1
+
+
+def test_google_oauth_refreshes_again_after_cached_token_expires(monkeypatch):
+    config = dict(GOOGLE_OAUTH)
+    refresh = Mock(
+        side_effect=[
+            {"access_token": "token-1", "expires_in": 3600, "token_type": "Bearer"},
+            {"access_token": "token-2", "expires_in": 3600, "token_type": "Bearer"},
+        ]
+    )
+    clock = Mock(side_effect=[100.0, 100.0, 3700.0, 3700.0])
+    google._TOKEN_CACHE.clear()
+    monkeypatch.setattr(google, "request_form_json", refresh)
+    monkeypatch.setattr(google.time, "monotonic", clock)
+
+    assert google._access_token(config) == "token-1"
+    assert google._access_token(config) == "token-2"
+    assert refresh.call_count == 2
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_kind", "expected_code"),
+    [
+        (
+            HTTPFailure(503),
+            ProviderOutcomeKind.FAILED_RETRYABLE,
+            "google_oauth_refresh_unavailable",
+        ),
+        (
+            HTTPFailure(400),
+            ProviderOutcomeKind.FAILED_FINAL,
+            "google_oauth_refresh_rejected",
+        ),
+        (
+            TransportFailure(),
+            ProviderOutcomeKind.FAILED_RETRYABLE,
+            "google_oauth_refresh_unavailable",
+        ),
+    ],
+)
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED=True,
+    SHOPMAN_MARKETING_GOOGLE=GOOGLE_OAUTH,
+)
+def test_google_oauth_refresh_failures_are_sanitized_and_never_publish(
+    monkeypatch,
+    failure,
+    expected_kind,
+    expected_code,
+):
+    google._TOKEN_CACHE.clear()
+    publish = Mock()
+    monkeypatch.setattr(google, "request_form_json", Mock(side_effect=failure))
+    monkeypatch.setattr(google, "request_json", publish)
+
+    with pytest.raises(ProviderCallFailure) as caught:
+        google.send(
+            artifact=artifact("google_business", "standard"),
+            target_key="public",
+            idempotency_token="idem",
+        )
+
+    assert caught.value.kind == expected_kind
+    assert caught.value.code == expected_code
+    assert "secret-client" not in str(caught.value)
+    assert "secret-refresh" not in str(caught.value)
+    assert publish.call_count == 0
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED=True,
+    SHOPMAN_MARKETING_GOOGLE=GOOGLE_OAUTH,
+)
+def test_google_rejects_malformed_oauth_response_without_publishing(monkeypatch):
+    google._TOKEN_CACHE.clear()
+    publish = Mock()
+    monkeypatch.setattr(
+        google,
+        "request_form_json",
+        Mock(return_value={"access_token": "", "token_type": "Bearer"}),
+    )
+    monkeypatch.setattr(google, "request_json", publish)
+
+    with pytest.raises(ProviderCallFailure) as caught:
+        google.send(
+            artifact=artifact("google_business", "standard"),
+            target_key="public",
+            idempotency_token="idem",
+        )
+
+    assert caught.value.kind == ProviderOutcomeKind.FAILED_FINAL
+    assert caught.value.code == "google_oauth_refresh_response_invalid"
+    assert publish.call_count == 0
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED=True,
+    SHOPMAN_MARKETING_GOOGLE=GOOGLE_OAUTH,
+)
+def test_google_rejected_cached_oauth_token_is_invalidated_and_retried_later(monkeypatch):
+    google._TOKEN_CACHE.clear()
+    refresh = Mock(
+        side_effect=[
+            {"access_token": "stale-token", "expires_in": 3600, "token_type": "Bearer"},
+            {"access_token": "fresh-token", "expires_in": 3600, "token_type": "Bearer"},
+        ]
+    )
+    publish = Mock(
+        side_effect=[
+            HTTPFailure(401),
+            {"name": "accounts/account-1/locations/location-2/localPosts/post-4"},
+        ]
+    )
+    monkeypatch.setattr(google, "request_form_json", refresh)
+    monkeypatch.setattr(google, "request_json", publish)
+
+    with pytest.raises(ProviderCallFailure) as caught:
+        google.send(
+            artifact=artifact("google_business", "standard"),
+            target_key="public",
+            idempotency_token="idem-1",
+        )
+
+    assert caught.value.kind == ProviderOutcomeKind.FAILED_RETRYABLE
+    assert caught.value.code == "google_publish_oauth_token_rejected"
+    assert google._TOKEN_CACHE == {}
+
+    outcome = google.send(
+        artifact=artifact("google_business", "standard"),
+        target_key="public",
+        idempotency_token="idem-2",
+    )
+
+    assert outcome.provider_receipt_ref == "gbp:post-4"
+    assert refresh.call_count == 2
+    assert [call.kwargs["access_token"] for call in publish.call_args_list] == [
+        "stale-token",
+        "fresh-token",
+    ]
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED=True,
+    SHOPMAN_MARKETING_GOOGLE=GOOGLE,
+)
+def test_google_static_token_rejection_remains_final(monkeypatch):
+    monkeypatch.setattr(google, "request_json", Mock(side_effect=HTTPFailure(401)))
+
+    with pytest.raises(ProviderCallFailure) as caught:
+        google.send(
+            artifact=artifact("google_business", "standard"),
+            target_key="public",
+            idempotency_token="idem",
+        )
+
+    assert caught.value.kind == ProviderOutcomeKind.FAILED_FINAL
+    assert caught.value.code == "google_publish_rejected"
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED=True,
+    SHOPMAN_MARKETING_GOOGLE={
+        **GOOGLE_OAUTH,
+        "access_token": "legacy-static-token",
+        "client_secret": "",
+    },
+)
+def test_google_partial_oauth_configuration_remains_unavailable():
+    assert google.is_available() is False
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED=True,
+    SHOPMAN_MARKETING_GOOGLE={
+        **GOOGLE_OAUTH,
+        "access_token": "legacy-static-token",
+        "token_url": "http://oauth.example.test/token",
+    },
+)
+def test_google_insecure_oauth_endpoint_remains_unavailable():
+    assert google.is_available() is False
 
 
 @override_settings(

@@ -648,11 +648,19 @@ SHOPMAN_MARKETING_META = {
     "timeout": _env_int("META_MARKETING_TIMEOUT", 30),
 }
 
-# Public Google Business Profile posts. The OAuth token needs the
-# business.manage scope; all three values plus the independent switch are
-# required before the adapter reports ready.
+# Public Google Business Profile posts. Renewable OAuth needs client ID,
+# client secret and refresh token; the static access token remains only as a
+# short-lived canary fallback. Account, location and the independent switch
+# are always required before the adapter reports ready.
 SHOPMAN_MARKETING_GOOGLE = {
     "access_token": os.environ.get("GOOGLE_BUSINESS_ACCESS_TOKEN", "").strip(),
+    "client_id": os.environ.get("GOOGLE_BUSINESS_OAUTH_CLIENT_ID", "").strip(),
+    "client_secret": os.environ.get("GOOGLE_BUSINESS_OAUTH_CLIENT_SECRET", "").strip(),
+    "refresh_token": os.environ.get("GOOGLE_BUSINESS_OAUTH_REFRESH_TOKEN", "").strip(),
+    # Fixed credential boundary: a production environment variable must not be
+    # able to redirect long-lived secrets to another host. Tests may override
+    # this settings dictionary with a fake HTTPS provider.
+    "token_url": "https://oauth2.googleapis.com/token",
     "account_id": os.environ.get("GOOGLE_BUSINESS_ACCOUNT_ID", "").strip(),
     "location_id": os.environ.get("GOOGLE_BUSINESS_LOCATION_ID", "").strip(),
     "api_base": os.environ.get(

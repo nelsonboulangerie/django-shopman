@@ -42,13 +42,52 @@ def request_json(
     encoding: str = "json",
 ) -> dict:
     """Call one JSON endpoint without placing credentials in URL or errors."""
-
-    data = None
     headers = {
         "Accept": "application/json",
         "Authorization": f"Bearer {access_token}",
         "User-Agent": "Shopman-Marketing/1.0",
     }
+    return _request_json(
+        method=method,
+        url=url,
+        timeout=timeout,
+        payload=payload,
+        encoding=encoding,
+        headers=headers,
+    )
+
+
+def request_form_json(*, url: str, timeout: int, payload: dict) -> dict:
+    """POST a credential form without inventing or logging a bearer token.
+
+    OAuth client secrets and refresh tokens belong in the request body.  The
+    shared response boundary deliberately discards provider bodies on errors,
+    so neither credential can escape through an exception message.
+    """
+
+    return _request_json(
+        method="POST",
+        url=url,
+        timeout=timeout,
+        payload=payload,
+        encoding="form",
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "Shopman-Marketing/1.0",
+        },
+    )
+
+
+def _request_json(
+    *,
+    method: str,
+    url: str,
+    timeout: int,
+    payload: dict | None,
+    encoding: str,
+    headers: dict[str, str],
+) -> dict:
+    data = None
     if payload is not None:
         if encoding == "form":
             normalized = {
