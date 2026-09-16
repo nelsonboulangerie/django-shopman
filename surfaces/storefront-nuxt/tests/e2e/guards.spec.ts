@@ -29,3 +29,11 @@ test('documento aplica a política de segurança da borda sem bloquear o app', a
   expect(headers['referrer-policy']).toBe('strict-origin-when-cross-origin')
   expect(headers['strict-transport-security']).toBe('max-age=31536000; includeSubDomains; preload')
 })
+
+test('home proíbe transformações do SSR por intermediários', async ({ request }) => {
+  const response = await request.get('/')
+  const cacheControl = response.headers()['cache-control']?.split(',').map(value => value.trim()) || []
+
+  expect(response.status()).toBe(200)
+  expect(cacheControl).toEqual(expect.arrayContaining(['private', 'no-transform']))
+})

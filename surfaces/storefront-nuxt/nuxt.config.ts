@@ -47,6 +47,12 @@ export default defineNuxtConfig({
   // seguro. Sem esta regra o Nitro serve public/ com cache curto e cada volta à
   // loja rebaixa o catálogo inteiro.
   routeRules: {
+    // Cloudflare Email Address Obfuscation mutates plain email text in the SSR
+    // document before Vue hydrates it. The documented no-transform contract is
+    // scoped to the home, the only route whose backend FAQ contains plain email.
+    '/': {
+      headers: { 'cache-control': 'private, no-transform' }
+    },
     '/img/products/**': {
       headers: { 'cache-control': 'public, max-age=31536000, immutable' }
     },
