@@ -65,15 +65,15 @@ jobs:
             surfaces/${{ matrix.app }}/package-lock.json
             surfaces/operator-kit/package-lock.json
 
-      - name: Install dependencies
-        run: npm ci
-
-      # Apps que estendem a layer resolvem módulos ('vue', '@vueuse/core') a
-      # partir do node_modules da própria operator-kit no typecheck — sem este
-      # install, hub/production falham com TS2307.
+      # Apps que estendem a layer resolvem módulos da própria operator-kit já
+      # no `nuxt prepare` do postinstall. Portanto o kit precisa existir antes
+      # do `npm ci` da surface, não apenas antes do typecheck.
       - name: Install operator-kit layer deps
         if: matrix.app != 'operator-kit' && matrix.app != 'storefront-nuxt'
         working-directory: surfaces/operator-kit
+        run: npm ci
+
+      - name: Install dependencies
         run: npm ci
 
       - name: Vitest
@@ -112,13 +112,13 @@ jobs:
             surfaces/${{ matrix.surface }}/package-lock.json
             surfaces/operator-kit/package-lock.json
 
-      - name: Install surface dependencies
-        working-directory: surfaces/${{ matrix.surface }}
-        run: npm ci
-
       - name: Install operator-kit capability dependencies
         if: matrix.app != 'storefront'
         working-directory: surfaces/operator-kit
+        run: npm ci
+
+      - name: Install surface dependencies
+        working-directory: surfaces/${{ matrix.surface }}
         run: npm ci
 
       - name: Install Storefront browser
