@@ -47,6 +47,8 @@ O layer contribui, via auto-import do Nuxt:
 | `app/components/OperatorLock.vue` | `<OperatorLock>` | overlay de lock (picker + PIN pad + crachá + troca forçada) |
 | `app/components/OperatorPinChange.vue` | `<OperatorPinChange>` | numpad de troca de PIN (forçada e voluntária) |
 | `app/components/OperatorNumpad.vue` | `<OperatorNumpad>` | numpad de quantidade (inteiro): POS e quiosque de QC |
+| `app/presentation/windowTitle.ts` | `windowTitle` | regra pura do título da janela: `"<App> · <Página>"` (app na frente, senão o Chrome prefixa o nome do PWA) |
+| `app/composables/useOperatorWindowTitle.ts` | `useOperatorWindowTitle` | instala o `titleTemplate` no `app.vue` (e `error.vue`) lendo o `manifest.name` da capability PWA; as páginas passam só o próprio título |
 
 Os testes também têm harness compartilhado: `tests/support/composableEnv.ts`
 (`installNuxtGlobals()`, env `node` com Vue real + fronteira de dados mockada) é importado
