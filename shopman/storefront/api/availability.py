@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import secrets
+import time
+from datetime import timedelta
 from decimal import Decimal
 
 from django.core.cache import cache
@@ -19,6 +22,8 @@ from shopman.shop.services import availability as avail_service
 from shopman.storefront.api.serializers import (
     AvailabilityResponseSerializer,
     StockAlertAuthRequiredResponseSerializer,
+    StockAlertIntentRequestSerializer,
+    StockAlertIntentResponseSerializer,
     StockAlertManagementActionSerializer,
     StockAlertManagementStateSerializer,
     StockAlertSessionStateSerializer,
@@ -29,6 +34,65 @@ from shopman.storefront.api.serializers import (
     StockAlertSubscriptionRefSerializer,
 )
 from shopman.storefront.services import catalog as catalog_service
+
+_STOCK_ALERT_INTENTS_SESSION_KEY = "stock_alert_intents"
+_STOCK_ALERT_INTENT_TTL_SECONDS = 15 * 60
+_STOCK_ALERT_INTENT_LIMIT = 5
+_STOCK_ALERT_DISCLOSURE_VERSION = "recurring-whatsapp-adult-v1"
+
+
+def _active_stock_alert_intents(session) -> list[dict]:
+    """Return valid short-lived consent proofs from this browser session."""
+    now = time.time()
+    raw = session.get(_STOCK_ALERT_INTENTS_SESSION_KEY, []) if session is not None else []
+    raw = list(raw) if isinstance(raw, (list, tuple)) else []
+    active = []
+    for marker in raw:
+        if not isinstance(marker, dict):
+            continue
+        try:
+            created_at = float(marker.get("created_at") or 0)
+        except (TypeError, ValueError):
+            continue
+        if (
+            str(marker.get("ref") or "")
+            and str(marker.get("sku") or "")
+            and marker.get("adult_declared") is True
+            and str(marker.get("disclosure_version") or "") == _STOCK_ALERT_DISCLOSURE_VERSION
+            and 0 <= now - created_at <= _STOCK_ALERT_INTENT_TTL_SECONDS
+        ):
+            active.append(dict(marker))
+    if session is not None and active != raw:
+        session[_STOCK_ALERT_INTENTS_SESSION_KEY] = active
+    return active
+
+
+def _stock_alert_intent(request, *, sku: str, intent_ref: str, customer_ref: str = "") -> dict | None:
+    """Resolve a consent proof owned by this session and, once used, customer."""
+    session = getattr(request, "session", None)
+    for marker in _active_stock_alert_intents(session):
+        if not secrets.compare_digest(str(marker.get("ref") or ""), intent_ref):
+            continue
+        if str(marker.get("sku") or "") != sku:
+            return None
+        completed_by = str(marker.get("completed_customer_ref") or "")
+        if completed_by and completed_by != customer_ref:
+            return None
+        return marker
+    return None
+
+
+def _mark_stock_alert_intent_complete(request, *, intent_ref: str, customer_ref: str) -> None:
+    """Keep a completed proof replayable only by the same customer until TTL."""
+    session = getattr(request, "session", None)
+    if session is None:
+        return
+    intents = _active_stock_alert_intents(session)
+    for marker in intents:
+        if secrets.compare_digest(str(marker.get("ref") or ""), intent_ref):
+            marker["completed_customer_ref"] = customer_ref
+            session[_STOCK_ALERT_INTENTS_SESSION_KEY] = intents
+            return
 
 
 @extend_schema_view(
@@ -89,6 +153,78 @@ class AvailabilityView(APIView):
 
         cache.set(cache_key, data, 10)
         return Response(data)
+
+
+@method_decorator(ratelimit(key="user_or_ip", rate="10/m", method="POST", block=False), name="dispatch")
+class StockAlertIntentView(APIView):
+    """Capture one explicit 18+ disclosure before authentication.
+
+    The session marker contains no identity or contact data. It only proves that
+    this browser explicitly accepted the current disclosure for this SKU, so a
+    successful login can resume the same action without asking twice.
+    """
+
+    authentication_classes = [SessionAuthentication]
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        tags=["availability"],
+        summary="Prepare a short-lived product alert consent proof",
+        request=StockAlertIntentRequestSerializer,
+        responses={200: StockAlertIntentResponseSerializer},
+    )
+    def post(self, request, sku):
+        if getattr(request, "limited", False):
+            return Response(
+                {"detail": "Muitas tentativas. Aguarde um instante."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        if not catalog_service.product_exists(sku):
+            raise Http404
+
+        adult_declaration = str(request.data.get("adult_declared") or "").strip().lower()
+        if adult_declaration not in {"true", "1"}:
+            return Response(
+                {
+                    "detail": "Confirme que você tem 18 anos ou mais para receber este aviso.",
+                    "field": "adult_declared",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        session = getattr(request, "session", None)
+        if session is None:
+            return _no_store_response(
+                {"detail": "Não foi possível guardar este aviso. Tente de novo."},
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        from django.utils import timezone
+
+        now = time.time()
+        intent_ref = secrets.token_urlsafe(24)
+        intents = [
+            marker
+            for marker in _active_stock_alert_intents(session)
+            if str(marker.get("sku") or "") != sku
+        ]
+        intents.append(
+            {
+                "ref": intent_ref,
+                "sku": sku,
+                "created_at": now,
+                "adult_declared": True,
+                "adult_declared_at": timezone.now().isoformat(),
+                "disclosure_version": _STOCK_ALERT_DISCLOSURE_VERSION,
+            }
+        )
+        session[_STOCK_ALERT_INTENTS_SESSION_KEY] = intents[-_STOCK_ALERT_INTENT_LIMIT:]
+
+        expires_at = timezone.now() + timedelta(seconds=_STOCK_ALERT_INTENT_TTL_SECONDS)
+        return _no_store_response(
+            {"ok": True, "intent_ref": intent_ref, "expires_at": expires_at.isoformat()},
+            status_code=status.HTTP_200_OK,
+        )
 
 
 @method_decorator(ratelimit(key="user_or_ip", rate="10/m", method="POST", block=False), name="dispatch")
@@ -173,6 +309,7 @@ class StockAlertSubscribeView(APIView):
         from shopman.storefront.services import stock_alerts
 
         alert_type = str(request.data.get("alert_type") or "").strip()
+        intent_ref = str(request.data.get("intent_ref") or "").strip()
         if alert_type and alert_type not in StockAlertSubscription.AlertType.values:
             return Response(
                 {"detail": "Tipo de aviso desconhecido.", "field": "alert_type"},
@@ -192,8 +329,27 @@ class StockAlertSubscribeView(APIView):
                 status_code=status.HTTP_401_UNAUTHORIZED,
             )
 
+        intent = (
+            _stock_alert_intent(
+                request,
+                sku=sku,
+                intent_ref=intent_ref,
+                customer_ref=str(customer.ref),
+            )
+            if intent_ref
+            else None
+        )
+        if intent_ref and intent is None:
+            return _no_store_response(
+                {
+                    "detail": "Este pedido de aviso expirou. Toque em Me avise para tentar de novo.",
+                    "field": "intent_ref",
+                },
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
         adult_declaration = str(request.data.get("adult_declared") or "").strip().lower()
-        if adult_declaration not in {"true", "1"}:
+        if intent is None and adult_declaration not in {"true", "1"}:
             return Response(
                 {
                     "detail": "Confirme que você tem 18 anos ou mais para receber este aviso.",
@@ -265,6 +421,13 @@ class StockAlertSubscribeView(APIView):
             if marker not in marked:
                 marked.append(marker)
                 session["stock_alert_subscriptions"] = marked
+
+        if intent_ref:
+            _mark_stock_alert_intent_complete(
+                request,
+                intent_ref=intent_ref,
+                customer_ref=str(customer.ref),
+            )
 
         return _no_store_response(
             {

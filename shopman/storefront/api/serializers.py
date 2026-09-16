@@ -126,12 +126,25 @@ class AvailabilityResponseSerializer(serializers.Serializer):
 
 
 class StockAlertSubscribeRequestSerializer(serializers.Serializer):
-    adult_declared = serializers.BooleanField(required=True)
+    # Required for a direct authenticated opt-in. A same-session ``intent_ref``
+    # may instead carry the explicit declaration captured before login.
+    adult_declared = serializers.BooleanField(required=False)
+    intent_ref = serializers.CharField(required=False, allow_blank=True, max_length=64)
     alert_type = serializers.ChoiceField(
         choices=["stock_back", "production_ready"],
         required=False,
         allow_blank=True,
     )
+
+
+class StockAlertIntentRequestSerializer(serializers.Serializer):
+    adult_declared = serializers.BooleanField(required=True)
+
+
+class StockAlertIntentResponseSerializer(serializers.Serializer):
+    ok = serializers.BooleanField()
+    intent_ref = serializers.CharField(max_length=64)
+    expires_at = serializers.DateTimeField()
 
 
 class StockAlertSubscribeResponseSerializer(serializers.Serializer):

@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 from urllib.parse import urlsplit
 
 import pytest
+from django.core.cache import cache
 from django.core.management import call_command
 from django.db import IntegrityError
 from django.utils import timezone
@@ -38,6 +39,14 @@ def configured_channel():
 
 
 PHONE = "+5543999990001"
+
+
+@pytest.fixture
+def isolated_stock_intent_rate_limit():
+    """Intent cases must not spend the shared in-memory limiter of later cases."""
+    cache.clear()
+    yield
+    cache.clear()
 
 
 def _state(can_add: bool, available_qty: int | None = None):
@@ -552,6 +561,166 @@ def test_global_optout_is_rechecked_immediately_before_stock_alert_send():
 
 
 # ── endpoint ────────────────────────────────────────────────────────
+
+
+def test_anonymous_intent_records_only_short_lived_session_proof(client, isolated_stock_intent_rate_limit):
+    product = _publish(sku="SKU-INTENT")
+
+    response = client.post(
+        f"/api/v1/availability/{product.sku}/notify/intent/",
+        {"adult_declared": True, "phone": "+5543000000000", "email": "ignored@example.com"},
+        REMOTE_ADDR="203.0.113.21",
+    )
+
+    assert response.status_code == 200
+    assert response["Cache-Control"] == "private, no-store, max-age=0"
+    body = response.json()
+    assert body["ok"] is True
+    assert body["intent_ref"]
+    assert body["expires_at"]
+    assert not StockAlertSubscription.objects.filter(sku=product.sku).exists()
+    marker = client.session["stock_alert_intents"][0]
+    assert marker["ref"] == body["intent_ref"]
+    assert marker["sku"] == product.sku
+    assert marker["adult_declared"] is True
+    assert marker["adult_declared_at"]
+    assert marker["disclosure_version"] == "recurring-whatsapp-adult-v1"
+    assert "phone" not in marker
+    assert "email" not in marker
+    assert "cpf" not in marker
+
+
+def test_anonymous_intent_requires_explicit_adult_declaration(client, isolated_stock_intent_rate_limit):
+    product = _publish(sku="SKU-INTENT-NO-CONSENT")
+
+    response = client.post(
+        f"/api/v1/availability/{product.sku}/notify/intent/",
+        {},
+        REMOTE_ADDR="203.0.113.22",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["field"] == "adult_declared"
+    assert client.session.get("stock_alert_intents") in (None, [])
+
+
+def test_authenticated_return_consumes_matching_session_intent_automatically(client, isolated_stock_intent_rate_limit):
+    product = _publish(sku="SKU-INTENT-RETURN")
+    prepared = client.post(
+        f"/api/v1/availability/{product.sku}/notify/intent/",
+        {"adult_declared": True},
+        REMOTE_ADDR="203.0.113.23",
+    ).json()
+    customer = _authenticate(client, ref="CUS-INTENT-RETURN")
+
+    response = client.post(
+        f"/api/v1/availability/{product.sku}/notify/",
+        {"intent_ref": prepared["intent_ref"]},
+        REMOTE_ADDR="203.0.113.24",
+    )
+
+    assert response.status_code == 200
+    sub = StockAlertSubscription.objects.get(sku=product.sku)
+    assert sub.customer_ref == customer.ref
+    assert sub.contact_phone == PHONE
+    assert sub.adult_declared is True
+    marker = client.session["stock_alert_intents"][0]
+    assert marker["completed_customer_ref"] == customer.ref
+
+
+def test_manipulated_or_cross_session_intent_cannot_subscribe(client, isolated_stock_intent_rate_limit):
+    from django.test import Client
+
+    product = _publish(sku="SKU-INTENT-BOUNDARY")
+    prepared = client.post(
+        f"/api/v1/availability/{product.sku}/notify/intent/",
+        {"adult_declared": True},
+        REMOTE_ADDR="203.0.113.25",
+    ).json()
+    other_session = Client()
+    _authenticate(other_session, ref="CUS-INTENT-OTHER")
+
+    response = other_session.post(
+        f"/api/v1/availability/{product.sku}/notify/",
+        {"intent_ref": prepared["intent_ref"]},
+        REMOTE_ADDR="203.0.113.26",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["field"] == "intent_ref"
+    assert not StockAlertSubscription.objects.filter(sku=product.sku).exists()
+
+
+def test_expired_session_intent_cannot_subscribe(client, isolated_stock_intent_rate_limit):
+    product = _publish(sku="SKU-INTENT-EXPIRED")
+    prepared = client.post(
+        f"/api/v1/availability/{product.sku}/notify/intent/",
+        {"adult_declared": True},
+        REMOTE_ADDR="203.0.113.27",
+    ).json()
+    session = client.session
+    session["stock_alert_intents"][0]["created_at"] -= 16 * 60
+    session.save()
+    _authenticate(client, ref="CUS-INTENT-EXPIRED")
+
+    response = client.post(
+        f"/api/v1/availability/{product.sku}/notify/",
+        {"intent_ref": prepared["intent_ref"]},
+        REMOTE_ADDR="203.0.113.28",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["field"] == "intent_ref"
+    assert not StockAlertSubscription.objects.filter(sku=product.sku).exists()
+
+
+def test_completed_intent_replays_for_same_customer_after_lost_response(client, isolated_stock_intent_rate_limit):
+    product = _publish(sku="SKU-INTENT-REPLAY")
+    prepared = client.post(
+        f"/api/v1/availability/{product.sku}/notify/intent/",
+        {"adult_declared": True},
+        REMOTE_ADDR="203.0.113.29",
+    ).json()
+    _authenticate(client, ref="CUS-INTENT-REPLAY")
+    payload = {"intent_ref": prepared["intent_ref"]}
+
+    first = client.post(
+        f"/api/v1/availability/{product.sku}/notify/",
+        payload,
+        REMOTE_ADDR="203.0.113.30",
+    )
+    repeated = client.post(
+        f"/api/v1/availability/{product.sku}/notify/",
+        payload,
+        REMOTE_ADDR="203.0.113.30",
+    )
+
+    assert first.status_code == repeated.status_code == 200
+    assert first.json()["management_url"] == repeated.json()["management_url"]
+    assert StockAlertSubscription.objects.filter(sku=product.sku).count() == 1
+
+
+def test_known_minor_cannot_complete_prelogin_intent(client, isolated_stock_intent_rate_limit):
+    product = _publish(sku="SKU-INTENT-MINOR")
+    prepared = client.post(
+        f"/api/v1/availability/{product.sku}/notify/intent/",
+        {"adult_declared": True},
+        REMOTE_ADDR="203.0.113.31",
+    ).json()
+    customer = _authenticate(client, ref="CUS-INTENT-MINOR")
+    today = timezone.localdate()
+    customer.birthday = today.replace(year=today.year - 17)
+    customer.save(update_fields=["birthday"])
+
+    response = client.post(
+        f"/api/v1/availability/{product.sku}/notify/",
+        {"intent_ref": prepared["intent_ref"]},
+        REMOTE_ADDR="203.0.113.32",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["field"] == "birthday"
+    assert not StockAlertSubscription.objects.filter(sku=product.sku).exists()
 
 
 def test_endpoint_anonymous_requires_verified_identity_and_ignores_typed_phone(client):

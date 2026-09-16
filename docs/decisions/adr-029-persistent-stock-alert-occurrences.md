@@ -37,10 +37,14 @@ não oferecia pausa da autorização específica.
   e revogável, enviada no fragmento de um link “Gerenciar este aviso”. A página remove o fragmento
   imediatamente, `GET` apenas consulta e `PATCH`/`DELETE` pausam, retomam ou cancelam. Cancelamento
   é irreversível; retomada vale apenas para ocorrências futuras. No web, novo opt-in exige a
-  identidade autenticada e usa o telefone canônico da conta. A tela preserva página, filtros,
-  âncora e SKU durante a entrada; ao voltar, a pessoa confirma explicitamente a assinatura sem
-  redigitar o telefone. Um `POST` anônimo responde `401`, oferece a entrada como próxima ação e
-  não grava telefone, assinatura ou marcador de sessão. A migração marca assinaturas web ativas
+  identidade autenticada e usa o telefone canônico da conta. Antes da entrada, a pessoa aceita
+  explicitamente a declaração 18+; só então o servidor registra na sessão uma prova opaca, curta,
+  versionada e sem PII. A tela preserva página, filtros, âncora, SKU e a referência dessa intenção;
+  ao voltar, revalida sessão, SKU e aniversário conhecido e conclui automaticamente sem pedir o
+  mesmo consentimento duas vezes. Uma query isolada ou intenção de outra sessão não autoriza a
+  criação. Um `POST` anônimo no endpoint de assinatura continua respondendo `401`, ignora telefone,
+  CPF e e-mail digitados e não cria opt-in. A migração
+  marca assinaturas web ativas
   sem `customer_ref` como `legacy_unverified`, preservando histórico e recibos, impedindo novas
   entregas e invalidando sua capacidade de gestão; após entrar, a pessoa pode criar uma assinatura
   nova. Outros canais podem usar contato sem `customer_ref` quando o evento de entrada já fornece
