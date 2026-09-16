@@ -133,6 +133,7 @@ watch(sessionState, async (next, previous) => {
       />
       <OperatorLock v-else :perm="OPERATOR_PERM" />
       <OperatorSonner />
+      <OperatorPwaRuntime />
     </div>
   </NuxtPage>
 </template>

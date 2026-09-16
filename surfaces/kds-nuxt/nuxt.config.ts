@@ -1,4 +1,5 @@
 import tailwindcss from "@tailwindcss/vite";
+import { definePwaCapability } from "../operator-kit/pwa.config";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 
 export default defineNuxtConfig({
@@ -22,6 +23,25 @@ export default defineNuxtConfig({
   },
 
   modules: [
+    definePwaCapability({
+      app: "kds",
+      display: "fullscreen",
+      wakeLock: true,
+      kiosk: true,
+      manifest: {
+        name: "Shopman KDS",
+        shortName: "KDS",
+        description: "Painel de preparo e expedição da cozinha.",
+        themeColor: "#0A0A0A",
+        backgroundColor: "#0A0A0A",
+        orientation: "landscape",
+        icons: [
+          { src: "/pwa/pwa-192x192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/pwa/pwa-512x512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/pwa/maskable-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        ],
+      },
+    }),
     '@nuxtjs/color-mode',
     'motion-v/nuxt',
     '@vueuse/nuxt',

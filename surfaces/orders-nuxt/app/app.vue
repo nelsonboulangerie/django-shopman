@@ -58,5 +58,6 @@ useHead({ title: "Gestor de Pedidos" });
     <OperatorLogin v-if="!canIdentify" :reload-on-success="false" @success="restoreAuthenticatedWorkspace" />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
     <OperatorSonner />
+    <OperatorPwaRuntime />
   </div>
 </template>

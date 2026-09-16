@@ -98,6 +98,20 @@ jobs:
             surface: storefront-nuxt
           - app: pos
             surface: pos-nuxt
+          - app: hub
+            surface: hub-nuxt
+          - app: orders
+            surface: orders-nuxt
+          - app: kds
+            surface: kds-nuxt
+          - app: production
+            surface: production-nuxt
+          - app: marketing
+            surface: marketing-nuxt
+          - app: purchase
+            surface: purchase-nuxt
+          - app: bi
+            surface: bi-nuxt
 
     steps:
       - name: Checkout
@@ -141,9 +155,9 @@ jobs:
       # O deploy usa esta receita genérica, não o workspace já preparado pelo
       # job. Construí-la aqui prova a ordem real de instalação e impede que o
       # postinstall do consumer só falhe depois do merge, ao publicar no DOCR.
-      - name: Build POS deployment image
-        if: matrix.app == 'pos'
-        run: docker build --file surfaces/Dockerfile.surface --build-arg SURFACE=pos-nuxt .
+      - name: Build operator deployment image
+        if: matrix.app != 'storefront'
+        run: docker build --file surfaces/Dockerfile.surface --build-arg SURFACE=${{ matrix.surface }} .
 
   marketing-complete:
     name: Marketing — cadeia completa

@@ -3,6 +3,7 @@ const OPERATOR_PERM = "backstage.operate_purchase";
 const { canIdentify, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
 const { view, metrics } = usePurchaseDesk();
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
+const route = useRoute();
 
 const railItems = [
   { key: "panel", label: "Painel", icon: "layout-dashboard" },
@@ -10,6 +11,14 @@ const railItems = [
   { key: "receive", label: "Receber", icon: "package-check" },
   { key: "base", label: "Base", icon: "database" },
 ] as const;
+
+function applyShortcutView(value: unknown) {
+  if (typeof value === "string" && railItems.some((item) => item.key === value)) {
+    view.value = value as typeof view.value;
+  }
+}
+applyShortcutView(route.query.view);
+watch(() => route.query.view, applyShortcutView);
 
 useHead({ title: "Compras" });
 </script>
@@ -65,5 +74,6 @@ useHead({ title: "Compras" });
     />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
     <OperatorSonner />
+    <OperatorPwaRuntime />
   </div>
 </template>

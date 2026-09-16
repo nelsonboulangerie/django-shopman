@@ -1,5 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
+import { definePwaCapability } from "../operator-kit/pwa.config";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 
 const immutableAssetHeaders = {
@@ -63,6 +64,28 @@ export default defineNuxtConfig({
   },
 
   modules: [
+    definePwaCapability({
+      app: "marketing",
+      display: "standalone",
+      wakeLock: false,
+      kiosk: false,
+      manifest: {
+        name: "Shopman Marketing",
+        shortName: "Marketing",
+        description: "Campanhas e anúncios da operação.",
+        themeColor: "#FFFFFF",
+        backgroundColor: "#FAFAF9",
+        orientation: "any",
+        icons: [
+          { src: "/pwa/pwa-192x192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/pwa/pwa-512x512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/pwa/maskable-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        ],
+        shortcuts: [
+          { name: "Campanhas", shortName: "Campanhas", url: "/campaigns", icon: "/pwa/pwa-192x192.png" },
+        ],
+      },
+    }),
     '@nuxtjs/color-mode',
     'motion-v/nuxt',
     '@vueuse/nuxt',

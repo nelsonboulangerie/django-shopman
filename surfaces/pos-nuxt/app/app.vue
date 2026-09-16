@@ -22,17 +22,10 @@
 // O roteador casa `/display/` com a mesma página; o nome é o que não muda.
 const route = useRoute();
 const isCustomerDisplay = computed(() => route.name === "display");
-// O terminal e o display do cliente são telas fixas: ambos pedem Wake Lock. Em
-// navegador sem suporte, ou quando a política do aparelho recusa, o composable
-// degrada para o comportamento atual sem interromper venda ou exibição.
-useWakeLock();
 </script>
 
 <template>
   <PosCustomerDisplayShell v-if="isCustomerDisplay" />
   <PosOperatorShell v-else />
-  <ClientOnly v-if="!isCustomerDisplay">
-    <OperatorPwaInstallInvite app="pos" app-name="Shopman PDV" />
-    <OperatorPwaUpdatePrompt />
-  </ClientOnly>
+  <OperatorPwaRuntime :show-prompts="!isCustomerDisplay" />
 </template>

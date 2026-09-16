@@ -1,5 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import { configuredDjangoBaseUrl } from "../operator-kit/server/utils/djangoBaseUrl";
+import { definePwaCapability } from "../operator-kit/pwa.config";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 const isProduction = process.env.NODE_ENV === "production";
 const djangoBaseUrl = configuredDjangoBaseUrl();
@@ -29,6 +30,29 @@ export default defineNuxtConfig({
   },
 
   modules: [
+    definePwaCapability({
+      app: "production",
+      display: "fullscreen",
+      wakeLock: true,
+      kiosk: true,
+      manifest: {
+        name: "Shopman Produção",
+        shortName: "Produção",
+        description: "Planejamento, preparo e fornadas.",
+        themeColor: "#FFFFFF",
+        backgroundColor: "#FAFAF9",
+        orientation: "landscape",
+        icons: [
+          { src: "/pwa/pwa-192x192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/pwa/pwa-512x512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/pwa/maskable-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        ],
+        shortcuts: [
+          { name: "Plano", shortName: "Plano", url: "/plan", icon: "/pwa/pwa-192x192.png" },
+          { name: "Fornadas", shortName: "Fornadas", url: "/board", icon: "/pwa/pwa-192x192.png" },
+        ],
+      },
+    }),
     "@nuxtjs/color-mode",
     "motion-v/nuxt",
     "@vueuse/nuxt",

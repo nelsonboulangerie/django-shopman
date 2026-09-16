@@ -1,4 +1,5 @@
 import tailwindcss from "@tailwindcss/vite";
+import { definePwaCapability } from "../operator-kit/pwa.config";
 
 export default defineNuxtConfig({
   // Superfície de operador: herda BFF/resiliência/telemetria/DS do kit compartilhado.
@@ -20,6 +21,28 @@ export default defineNuxtConfig({
   },
 
   modules: [
+    definePwaCapability({
+      app: "bi",
+      display: "standalone",
+      wakeLock: false,
+      kiosk: false,
+      manifest: {
+        name: "Shopman B.I.",
+        shortName: "B.I.",
+        description: "Leitura dos números da operação.",
+        themeColor: "#FFFFFF",
+        backgroundColor: "#FAFAF9",
+        orientation: "any",
+        icons: [
+          { src: "/pwa/pwa-192x192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/pwa/pwa-512x512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/pwa/maskable-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        ],
+        shortcuts: [
+          { name: "Vendas", shortName: "Vendas", url: "/sales", icon: "/pwa/pwa-192x192.png" },
+        ],
+      },
+    }),
     "@nuxtjs/color-mode",
     "motion-v/nuxt",
     "@vueuse/nuxt",

@@ -40,6 +40,17 @@ async function pngSize (path) {
 }
 
 const repository = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
+const operatorProfile = (surface, { display = 'standalone', orientation = 'any', shortcuts = true } = {}) => ({
+  surface: `${surface}-nuxt`,
+  manifestUrl: '/manifest.webmanifest',
+  manifestHref: '/manifest.webmanifest',
+  manifestCache: 'public, max-age=3600',
+  packageWithPwaDependency: 'operator-kit',
+  storefront: false,
+  display,
+  orientation,
+  shortcuts,
+})
 const profiles = {
   storefront: {
     surface: 'storefront-nuxt',
@@ -49,14 +60,14 @@ const profiles = {
     packageWithPwaDependency: 'storefront-nuxt',
     storefront: true,
   },
-  pos: {
-    surface: 'pos-nuxt',
-    manifestUrl: '/manifest.webmanifest',
-    manifestHref: '/manifest.webmanifest',
-    manifestCache: 'public, max-age=3600',
-    packageWithPwaDependency: 'operator-kit',
-    storefront: false,
-  },
+  pos: operatorProfile('pos'),
+  hub: operatorProfile('hub'),
+  orders: operatorProfile('orders'),
+  kds: operatorProfile('kds', { display: 'fullscreen', orientation: 'landscape', shortcuts: false }),
+  production: operatorProfile('production', { display: 'fullscreen', orientation: 'landscape' }),
+  marketing: operatorProfile('marketing'),
+  purchase: operatorProfile('purchase'),
+  bi: operatorProfile('bi'),
 }
 const requestedApp = process.argv.find(value => value.startsWith('--app='))?.split('=', 2)[1]
 const profile = profiles[requestedApp]
@@ -128,6 +139,8 @@ const preview = spawn(process.execPath, [join(output, 'server/index.mjs')], {
     ...process.env,
     HOST: '127.0.0.1',
     PORT: String(port),
+    NUXT_SHOPMAN_ENVIRONMENT: 'test',
+    SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM: '1',
     NUXT_DJANGO_BASE_URL: 'http://127.0.0.1:1'
   },
   stdio: ['ignore', 'pipe', 'pipe']
@@ -149,12 +162,15 @@ try {
     check(field in manifest, `manifesto contém ${field}`)
   }
   check(manifest.icons.some(icon => icon.purpose === 'maskable'), 'manifesto declara ícone maskable')
+  check(manifest.display === (profile.display || 'standalone'), `manifesto usa display ${profile.display || 'standalone'}`)
+  check(manifest.orientation === (profile.orientation || 'any'), `manifesto usa orientação ${profile.orientation || 'any'}`)
   if (profile.storefront) {
     check(manifest.icons.some(icon => icon.purpose === 'monochrome'), 'manifesto declara ícone monochrome')
     check(manifest.screenshots.filter(item => item.form_factor === 'narrow').length === 2, 'manifesto declara duas screenshots narrow')
     check(manifest.screenshots.filter(item => item.form_factor === 'wide').length === 1, 'manifesto declara uma screenshot wide')
   } else {
-    check(manifest.shortcuts.length > 0, 'manifesto do operador declara atalhos')
+    if (profile.shortcuts) check(manifest.shortcuts.length > 0, 'manifesto do operador declara atalhos')
+    else check(manifest.shortcuts.length === 0, 'manifesto do kiosk não inventa atalhos')
   }
 
   const swResponse = await fetch(`${baseUrl}/sw.js`, { method: 'HEAD' })

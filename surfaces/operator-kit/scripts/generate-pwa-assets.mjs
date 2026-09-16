@@ -12,6 +12,7 @@ const output = resolve(argument("out"));
 const background = argument("background", "#8B6B2E");
 const ink = argument("ink", "#3B2A1E");
 const paper = argument("paper", "#FCF6F1");
+const badgeLabel = argument("badge", "");
 
 if (!argument("source") || !argument("out")) {
   throw new Error("uso: --source=<nelson-mark.svg> --out=<public/pwa>");
@@ -24,6 +25,21 @@ const markSource = (await readFile(source, "utf8"))
   .replaceAll("#A37316", ink);
 
 function badgeSvg(size) {
+  const escapedLabel = badgeLabel
+    .slice(0, 3)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+  if (escapedLabel) {
+    const fontSize = escapedLabel.length > 2 ? 37 : escapedLabel.length > 1 ? 43 : 50;
+    return Buffer.from(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r="56" fill="${ink}" stroke="${paper}" stroke-width="6"/>
+        <text x="60" y="64" fill="${paper}" font-family="Arial, Helvetica, sans-serif"
+          font-size="${fontSize}" font-weight="700" text-anchor="middle" dominant-baseline="middle">${escapedLabel}</text>
+      </svg>
+    `);
+  }
   return Buffer.from(`
     <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 120 120">
       <circle cx="60" cy="60" r="56" fill="${ink}" stroke="${paper}" stroke-width="6"/>
