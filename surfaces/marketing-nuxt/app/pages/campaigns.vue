@@ -10,6 +10,7 @@ import {
   formatCount,
   platformsSummary,
 } from "~/presentation/campaign";
+import { fireActionFor, fireAvailability } from "~/presentation/campaignFire";
 import type {
   Campaign,
   ChosenAudience,
@@ -201,25 +202,12 @@ onBeforeUnmount(() => {
 const panelOpen = computed(() => creating.value || editing.value !== null);
 
 function fireAction(rule: Campaign) {
-  return actions.value.find(
-    (action) =>
-      action.resource_ref === `campaign:${rule.pk}` &&
-      action.kind === "fire_campaign",
-  );
+  return fireActionFor(rule, actions.value);
 }
 
-function fireUnavailableReason(rule: Campaign): string {
-  const action = fireAction(rule);
-  if (!rule.is_active || action?.reason === "campaign_inactive") {
-    return "Ligue a campanha antes de preparar um disparo.";
-  }
-  if (!action || action.reason === "command_not_available") {
-    return "O disparo direto está indisponível até concluir a atualização de segurança.";
-  }
-  if (action.reason === "missing_capability") {
-    return "Seu perfil não autoriza disparos manuais.";
-  }
-  return "O disparo manual não está disponível agora.";
+/** Liberado ou não, e a frase do porquê — a linha mostra a frase por extenso. */
+function fireState(rule: Campaign) {
+  return fireAvailability(rule, actions.value);
 }
 
 function openNew() {
@@ -535,7 +523,7 @@ useHead({ title: "Campanhas" });
       <li
         v-for="rule in pageRules"
         :key="rule.pk"
-        class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-4 py-3 sm:flex sm:gap-3"
+        class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-4 py-3 sm:flex sm:flex-wrap sm:gap-3"
       >
         <!-- Liga/desliga permanece nativo porque expõe role=switch e estado aria-checked. -->
         <button
@@ -632,10 +620,7 @@ useHead({ title: "Campanhas" });
             :aria-label="
               fireAction(rule)?.enabled
                 ? `Disparar a campanha ${rule.name} agora`
-                : `${fireUnavailableReason(rule)} Campanha ${rule.name}`
-            "
-            :title="
-              fireAction(rule)?.enabled ? '' : fireUnavailableReason(rule)
+                : `${fireState(rule).reason} Campanha ${rule.name}`
             "
             variant="outline"
             size="xs"
@@ -649,6 +634,15 @@ useHead({ title: "Campanhas" });
             class="size-4 text-muted-foreground"
           />
         </div>
+        <!-- ⚠️ A razão morava só no `title` do botão desabilitado, e o Firefox não
+             mostra tooltip em botão desabilitado: "Indisponível" ficava sem porquê.
+             Botão morto sem frase é defeito — a frase vai por extenso, sob a linha. -->
+        <p
+          v-if="!fireState(rule).enabled"
+          class="col-start-2 -mt-1 text-xs text-muted-foreground sm:basis-full sm:pl-12"
+        >
+          {{ fireState(rule).reason }}
+        </p>
       </li>
       </ul>
 

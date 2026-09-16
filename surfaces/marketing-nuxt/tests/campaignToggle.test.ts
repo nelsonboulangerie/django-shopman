@@ -24,8 +24,14 @@ describe("campaign activation switch", () => {
       "utf8",
     );
 
+    const presentation = readFileSync(
+      new URL("../app/presentation/campaignFire.ts", import.meta.url),
+      "utf8",
+    );
+
     expect(page).toContain(':disabled="!fireAction(rule)?.enabled"');
-    expect(page).toContain('action.kind === "fire_campaign"');
+    expect(page).toContain("fireActionFor(rule, actions.value)");
+    expect(presentation).toContain('action.kind === "fire_campaign"');
     expect(page).toContain('"Indisponível"');
   });
 
