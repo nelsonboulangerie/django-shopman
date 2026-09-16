@@ -11,6 +11,7 @@ import { useOrderIntention } from "./useOrderIntention";
 // SSE/poll are client-only (EventSource is a browser API).
 import type { CancellationReason, OrderQueueResponse, TwoZoneQueueProjection } from "~/types/orders";
 import { preorderGroups, treatableOrderRefs, zonesView, type PreorderGroup, type ZoneView } from "~/presentation/board";
+import { showTreatableOrderNotification } from "~/utils/treatableNotification";
 
 export type { CancellationReason };
 
@@ -213,6 +214,18 @@ export function useOrdersBoard() {
 
   function toggleSound() {
     toggleAlertSound();
+    // O mesmo gesto que liga o som pode pedir a permissão da notificação local.
+    // A assinatura Web Push continua sendo uma ação própria e explícita.
+    if (
+      soundOn.value
+      && typeof window !== "undefined"
+      && "Notification" in window
+      && Notification.permission === "default"
+    ) {
+      void Notification.requestPermission().catch(() => {
+        // silêncio-deliberado: som e título continuam mesmo se o prompt falhar
+      });
+    }
   }
 
   // Título piscando enquanto a aba está oculta — restaurado ao voltar (o
@@ -239,6 +252,15 @@ export function useOrdersBoard() {
     startAlert();
     if (document.visibilityState !== "visible") {
       startTitleAlert(ref_);
+      const worker = "serviceWorker" in navigator ? navigator.serviceWorker : undefined;
+      const location = window.location;
+      void showTreatableOrderNotification(ref_, {
+        permission: "Notification" in window ? Notification.permission : "denied",
+        serviceWorker: worker,
+        actionUrl: location
+          ? `${location.pathname || "/"}${location.search || ""}${location.hash || ""}`
+          : "/",
+      });
     }
   }
 

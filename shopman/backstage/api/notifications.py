@@ -12,8 +12,6 @@ todo queryset é filtrado por ``request.user`` — nem staff lê a caixa alheia.
 from __future__ import annotations
 
 import logging
-from ipaddress import ip_address
-from urllib.parse import urlparse
 
 from django.db import transaction
 from django.db.models import Q
@@ -46,6 +44,7 @@ from shopman.shop.models import (
 from shopman.shop.models.user_notification import ACTIVE_NOTIFICATION_STATES
 from shopman.shop.services import user_notifications as notification_lifecycle
 from shopman.shop.services.marketing_time import configured_timezone_name
+from shopman.shop.services.push_endpoints import normalize_push_endpoint
 
 from .permissions import IsBackstageOperator
 
@@ -648,27 +647,7 @@ def _owned_push_subscription(request) -> PushSubscription | None:
 
 
 def _valid_push_endpoint(value) -> str | None:
-    endpoint = _bounded_text(value, maximum=4096)
-    if not endpoint:
-        return None
-    parsed = urlparse(endpoint)
-    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
-        return None
-    try:
-        hostname = (parsed.hostname or "").rstrip(".").lower()
-        port = parsed.port
-    except ValueError:
-        return None
-    if not hostname or port not in (None, 443) or parsed.fragment:
-        return None
-    if hostname == "localhost" or hostname.endswith(".localhost"):
-        return None
-    try:
-        if not ip_address(hostname).is_global:
-            return None
-    except ValueError:  # silêncio-deliberado: hostname DNS válido não é um literal IP
-        pass
-    return endpoint
+    return normalize_push_endpoint(value)
 
 
 def _valid_push_categories(value, *, surface_ref: str) -> list[str] | None:

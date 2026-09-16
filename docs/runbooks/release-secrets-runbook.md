@@ -278,6 +278,18 @@ Provisione o trio servidor como um conjunto: configuração parcial bloqueia
 `check --deploy`. Sem nenhuma das três, o deploy segue com
 `SHOPMAN_W019`, mas Web Push fica deliberadamente desligado.
 
+O endpoint devolvido pelo navegador é entrada não confiável. O Shopman aceita
+somente HTTPS/443 nos push services oficiais do Google FCM, Mozilla Autopush,
+Apple (`*.push.apple.com`) e Microsoft (`*.notify.windows.com`), repete essa
+validação imediatamente antes do envio e não segue redirects. Um endpoint
+legado fora dessa allowlist é desativado sem I/O.
+
+A entrega externa é **at-least-once**. `last_success_at` mede saúde do aparelho,
+mas não é recibo por mensagem: após timeout, resposta perdida ou falha parcial,
+o retry tenta novamente todos os aparelhos elegíveis. Isso pode repetir um
+aviso, mas nunca permite que o sucesso de uma mensagem mais nova apague uma
+mensagem anterior ainda pendente.
+
 Rotacionar o par invalida todas as assinaturas existentes. A ordem segura é:
 
 1. gerar e guardar o novo par no cofre;

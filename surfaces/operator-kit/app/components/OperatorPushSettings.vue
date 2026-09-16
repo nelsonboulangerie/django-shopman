@@ -34,7 +34,7 @@ async function toggleCategory(category: string): Promise<void> {
       Os avisos estão bloqueados no navegador. Libere-os nos ajustes deste site.
     </p>
     <button
-      v-else-if="!active"
+      v-else-if="supported && !active"
       type="button"
       data-activate-push
       class="mt-4 inline-flex h-11 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-60"
@@ -43,8 +43,8 @@ async function toggleCategory(category: string): Promise<void> {
     >
       {{ loading ? 'Ativando…' : 'Ativar avisos' }}
     </button>
-    <p v-if="!supported && permission !== 'denied'" class="mt-2 text-xs text-muted-foreground">
-      No iPhone, abra a Central pela Tela de Início. Neste ambiente os avisos podem ainda não estar configurados.
+    <p v-else-if="!supported" role="status" data-push-unavailable class="mt-4 text-sm text-muted-foreground">
+      Avisos em segundo plano ainda não estão disponíveis neste ambiente. No iPhone, use a Central instalada na Tela de Início.
     </p>
     <p v-if="error" role="status" class="mt-2 text-sm text-destructive">{{ error }}</p>
 

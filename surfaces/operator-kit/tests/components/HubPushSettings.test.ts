@@ -17,6 +17,7 @@ describe("HubPushSettings", () => {
   beforeEach(() => {
     const state = holder.state;
     state.active.value = false;
+    state.supported.value = true;
     state.permission.value = "default";
     state.devices.value = [];
     state.currentDevice.value = null;
@@ -31,6 +32,16 @@ describe("HubPushSettings", () => {
     expect(state.activate).not.toHaveBeenCalled();
     await wrapper.get("[data-activate-push]").trigger("click");
     expect(state.activate).toHaveBeenCalledOnce();
+  });
+
+  it("sem VAPID não oferece uma ação impossível nem pede permissão", async () => {
+    const state = holder.state;
+    state.supported.value = false;
+    const wrapper = await mountSuspended(OperatorPushSettings);
+
+    expect(wrapper.find("[data-activate-push]").exists()).toBe(false);
+    expect(wrapper.get("[data-push-unavailable]").text()).toContain("ainda não estão disponíveis");
+    expect(state.activate).not.toHaveBeenCalled();
   });
 
   it("mostra categorias e permite remover um aparelho", async () => {

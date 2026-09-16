@@ -25,7 +25,7 @@ def colleague():
 def _payload(**changes):
     payload = {
         "subscription": {
-            "endpoint": "https://push.example.test/device-1",
+            "endpoint": "https://fcm.googleapis.com/fcm/send/device-1",
             "keys": {"p256dh": "public-device-key", "auth": "device-auth"},
         },
         "surface_ref": "orders",
@@ -70,7 +70,7 @@ def test_register_list_update_and_remove_owned_device(client, operator):
 def test_registration_is_idempotent_and_reactivates_endpoint(client, operator):
     old = PushSubscription.objects.create(
         user=operator,
-        endpoint="https://push.example.test/device-1",
+        endpoint="https://fcm.googleapis.com/fcm/send/device-1",
         p256dh="old-key",
         auth="old-auth",
         surface_ref="orders",
@@ -96,7 +96,7 @@ def test_reregistering_browser_endpoint_transfers_it_to_current_account(
 ):
     record = PushSubscription.objects.create(
         user=colleague,
-        endpoint="https://push.example.test/device-1",
+        endpoint="https://fcm.googleapis.com/fcm/send/device-1",
         p256dh="old-key",
         auth="old-auth",
         surface_ref="orders",
@@ -116,7 +116,10 @@ def test_reregistering_browser_endpoint_transfers_it_to_current_account(
         ({"subscription": {"endpoint": "http://push.test", "keys": {"p256dh": "x", "auth": "y"}}}, "endpoint"),
         ({"subscription": {"endpoint": "https://127.0.0.1/push", "keys": {"p256dh": "x", "auth": "y"}}}, "endpoint"),
         ({"subscription": {"endpoint": "https://push.localhost/device", "keys": {"p256dh": "x", "auth": "y"}}}, "endpoint"),
-        ({"subscription": {"endpoint": "https://push.test", "keys": {"p256dh": "", "auth": "y"}}}, "keys"),
+        ({"subscription": {"endpoint": "https://fcm.googleapis.com.evil.test/device", "keys": {"p256dh": "x", "auth": "y"}}}, "endpoint"),
+        ({"subscription": {"endpoint": "https://user@fcm.googleapis.com/device", "keys": {"p256dh": "x", "auth": "y"}}}, "endpoint"),
+        ({"subscription": {"endpoint": "https://fcm.googleapis.com:444/device", "keys": {"p256dh": "x", "auth": "y"}}}, "endpoint"),
+        ({"subscription": {"endpoint": "https://fcm.googleapis.com/fcm/send/device", "keys": {"p256dh": "", "auth": "y"}}}, "keys"),
         ({"surface_ref": "storefront"}, "surface_ref"),
         ({"categories": ["campaign"]}, "categories"),
         ({"categories": ["order", "order"]}, "categories"),
@@ -133,7 +136,7 @@ def test_invalid_registration_is_rejected(client, operator, changes, field):
 def test_other_users_device_is_neither_visible_nor_mutable(client, operator, colleague):
     record = PushSubscription.objects.create(
         user=colleague,
-        endpoint="https://push.example.test/other",
+        endpoint="https://updates.push.services.mozilla.com/wpush/v2/other",
         p256dh="key",
         auth="auth",
         surface_ref="hub",

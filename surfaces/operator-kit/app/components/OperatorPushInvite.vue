@@ -4,7 +4,7 @@ const push = useWebPush();
 
 <template>
   <div
-    v-if="!push.active.value && push.permission.value !== 'denied'"
+    v-if="push.supported.value && !push.active.value && push.permission.value !== 'denied'"
     data-operator-push-invite
     class="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-40 max-w-xs rounded-xl border bg-card p-3 shadow-lg"
   >

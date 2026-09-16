@@ -9,7 +9,7 @@ from urllib.parse import urljoin, urlsplit
 from django.conf import settings
 from django.utils import timezone
 from pywebpush import WebPushException, webpush
-from requests import RequestException
+from requests import RequestException, Session
 from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
 from shopman.orderman.models import Directive
 
@@ -22,6 +22,7 @@ from shopman.shop.models import (
     UserNotification,
 )
 from shopman.shop.services.observability import operational_event
+from shopman.shop.services.push_endpoints import normalize_push_endpoint
 
 _FINANCIAL_OR_SENSITIVE_CATEGORIES = frozenset({"order", "purchase", "report", "sign_in"})
 _EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
@@ -35,6 +36,14 @@ _CATEGORY_BASE_SETTING = {
     "purchase": "SHOPMAN_PURCHASE_BASE_URL",
     "report": "SHOPMAN_BI_BASE_URL",
 }
+
+
+class _NoRedirectPushSession(Session):
+    """Requests session that never follows a provider-controlled redirect."""
+
+    def post(self, url, data=None, json=None, **kwargs):
+        kwargs["allow_redirects"] = False
+        return super().post(url, data=data, json=json, **kwargs)
 
 
 class NotificationPushHandler:
@@ -74,56 +83,68 @@ class NotificationPushHandler:
         urgency = "high" if notification.severity == NotificationSeverity.CRITICAL else "normal"
         transient_failures = 0
 
-        for subscription in subscriptions:
-            if subscription.last_success_at and subscription.last_success_at >= message.created_at:
-                continue
-            try:
-                webpush(
-                    subscription_info={
-                        "endpoint": subscription.endpoint,
-                        "keys": {"p256dh": subscription.p256dh, "auth": subscription.auth},
-                    },
-                    data=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-                    vapid_private_key=private_key,
-                    vapid_claims={"sub": f"mailto:{claims_email}"},
-                    ttl=ttl,
-                    headers={"Urgency": urgency},
-                    timeout=max(1, int(getattr(settings, "VAPID_TIMEOUT_SECONDS", 10))),
-                )
-            except WebPushException as exc:
-                status_code = getattr(getattr(exc, "response", None), "status_code", None)
-                if status_code in {404, 410}:
-                    _disable_subscription(subscription, status_code=status_code)
+        session = _NoRedirectPushSession()
+        try:
+            for subscription in subscriptions:
+                endpoint = normalize_push_endpoint(subscription.endpoint)
+                if endpoint is None:
+                    _disable_subscription(subscription, status_code=None, reason="endpoint_not_allowed")
                     continue
-                _record_failure(subscription, status_code=status_code)
-                if status_code == 429 or (isinstance(status_code, int) and status_code >= 500):
+                # ``last_success_at`` is health telemetry, never a receipt for a
+                # particular message. Delivery is deliberately at-least-once:
+                # after a partial/ambiguous failure every eligible endpoint is
+                # attempted again, so a newer success can never erase an older
+                # notification that was still pending.
+                try:
+                    webpush(
+                        subscription_info={
+                            "endpoint": endpoint,
+                            "keys": {"p256dh": subscription.p256dh, "auth": subscription.auth},
+                        },
+                        data=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                        vapid_private_key=private_key,
+                        vapid_claims={"sub": f"mailto:{claims_email}"},
+                        ttl=ttl,
+                        headers={"Urgency": urgency},
+                        timeout=max(1, int(getattr(settings, "VAPID_TIMEOUT_SECONDS", 10))),
+                        requests_session=session,
+                    )
+                except WebPushException as exc:
+                    status_code = getattr(getattr(exc, "response", None), "status_code", None)
+                    if status_code in {404, 410}:
+                        _disable_subscription(subscription, status_code=status_code)
+                        continue
+                    _record_failure(subscription, status_code=status_code)
+                    if status_code == 429 or (isinstance(status_code, int) and status_code >= 500):
+                        transient_failures += 1
+                        continue
+                    operational_event(
+                        "notification.push.rejected",
+                        subscription_id=subscription.pk,
+                        surface_ref=subscription.surface_ref,
+                        category=notification.category,
+                        status_code=status_code,
+                    )
+                except RequestException:
+                    _record_failure(subscription, status_code=None)
                     transient_failures += 1
-                    continue
-                operational_event(
-                    "notification.push.rejected",
-                    subscription_id=subscription.pk,
-                    surface_ref=subscription.surface_ref,
-                    category=notification.category,
-                    status_code=status_code,
-                )
-            except RequestException:
-                _record_failure(subscription, status_code=None)
-                transient_failures += 1
-            except Exception as exc:
-                _record_failure(subscription, status_code=None)
-                raise DirectiveTerminalError("notification.push falhou antes do transporte") from exc
-            else:
-                subscription.last_success_at = timezone.now()
-                subscription.failures = 0
-                subscription.save(update_fields=["last_success_at", "failures"])
-                operational_event(
-                    "notification.push.delivered",
-                    subscription_id=subscription.pk,
-                    surface_ref=subscription.surface_ref,
-                    category=notification.category,
-                    ttl=ttl,
-                    urgency=urgency,
-                )
+                except Exception as exc:
+                    _record_failure(subscription, status_code=None)
+                    raise DirectiveTerminalError("notification.push falhou antes do transporte") from exc
+                else:
+                    subscription.last_success_at = timezone.now()
+                    subscription.failures = 0
+                    subscription.save(update_fields=["last_success_at", "failures"])
+                    operational_event(
+                        "notification.push.delivered",
+                        subscription_id=subscription.pk,
+                        surface_ref=subscription.surface_ref,
+                        category=notification.category,
+                        ttl=ttl,
+                        urgency=urgency,
+                    )
+        finally:
+            session.close()
 
         if transient_failures:
             raise DirectiveTransientError(
@@ -202,7 +223,12 @@ def _record_failure(subscription: PushSubscription, *, status_code: int | None) 
     )
 
 
-def _disable_subscription(subscription: PushSubscription, *, status_code: int) -> None:
+def _disable_subscription(
+    subscription: PushSubscription,
+    *,
+    status_code: int | None,
+    reason: str = "provider_gone",
+) -> None:
     subscription.failures = min(subscription.failures + 1, 32767)
     subscription.disabled_at = timezone.now()
     subscription.save(update_fields=["failures", "disabled_at"])
@@ -212,6 +238,7 @@ def _disable_subscription(subscription: PushSubscription, *, status_code: int) -
         surface_ref=subscription.surface_ref,
         failures=subscription.failures,
         status_code=status_code,
+        reason=reason,
     )
 
 

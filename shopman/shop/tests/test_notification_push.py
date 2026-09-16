@@ -12,7 +12,7 @@ from pywebpush import WebPushException
 from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
 from shopman.orderman.models import Directive
 
-from shopman.shop.handlers.notification_push import NotificationPushHandler
+from shopman.shop.handlers.notification_push import NotificationPushHandler, _NoRedirectPushSession
 from shopman.shop.models import PushSubscription, UserNotification
 from shopman.shop.services.user_notifications import push_user_notification
 
@@ -48,7 +48,7 @@ def notification(owner):
 def subscription(owner):
     return PushSubscription.objects.create(
         user=owner,
-        endpoint="https://push.example.test/device",
+        endpoint="https://fcm.googleapis.com/fcm/send/device",
         p256dh="device-public-key",
         auth="device-auth",
         surface_ref="hub",
@@ -79,6 +79,7 @@ def test_handler_delivers_redacted_payload_and_records_success(notification, sub
     assert call["ttl"] == 3600
     assert call["headers"] == {"Urgency": "normal"}
     assert call["timeout"] == 7
+    assert isinstance(call["requests_session"], _NoRedirectPushSession)
     subscription.refresh_from_db()
     assert subscription.last_success_at is not None
     assert subscription.failures == 0
@@ -103,6 +104,17 @@ def test_financial_payload_is_title_only_and_unsafe_url_is_removed(owner, subscr
     assert payload["body"] == ""
     assert payload["action_url"] == "/"
     assert webpush.call_args.kwargs["headers"] == {"Urgency": "high"}
+
+
+def test_transport_session_never_follows_redirects():
+    response = requests.Response()
+    response.status_code = 307
+    with patch.object(requests.Session, "post", return_value=response) as post:
+        _NoRedirectPushSession().post(
+            "https://fcm.googleapis.com/fcm/send/device",
+            data=b"encrypted",
+        )
+    assert post.call_args.kwargs["allow_redirects"] is False
 
 
 @VAPID
@@ -147,7 +159,21 @@ def test_transient_transport_failure_requests_retry(notification, subscription, 
 
 
 @VAPID
-def test_irrelevant_subscription_and_duplicate_delivery_are_skipped(notification, subscription):
+def test_stored_non_provider_endpoint_is_disabled_without_transport(notification, subscription):
+    subscription.endpoint = "https://127.0.0.1/internal"
+    subscription.save(update_fields=["endpoint"])
+
+    with patch("shopman.shop.handlers.notification_push.webpush") as webpush:
+        NotificationPushHandler().handle(_directive(notification))
+
+    webpush.assert_not_called()
+    subscription.refresh_from_db()
+    assert subscription.disabled_at is not None
+    assert subscription.failures == 1
+
+
+@VAPID
+def test_irrelevant_subscription_is_skipped_but_success_timestamp_is_not_a_receipt(notification, subscription):
     subscription.categories = ["order"]
     subscription.save(update_fields=["categories"])
     with patch("shopman.shop.handlers.notification_push.webpush") as webpush:
@@ -160,7 +186,71 @@ def test_irrelevant_subscription_and_duplicate_delivery_are_skipped(notification
     subscription.save(update_fields=["categories", "last_success_at"])
     with patch("shopman.shop.handlers.notification_push.webpush") as webpush:
         NotificationPushHandler().handle(duplicate)
-        webpush.assert_not_called()
+        webpush.assert_called_once()
+
+
+@VAPID
+def test_newer_delivery_cannot_hide_an_older_pending_notification(owner, subscription):
+    older = UserNotification.objects.create(
+        user=owner,
+        category="campaign",
+        severity="warning",
+        title="A",
+    )
+    older_directive = _directive(older)
+    newer = UserNotification.objects.create(
+        user=owner,
+        category="campaign",
+        severity="warning",
+        title="B",
+    )
+
+    with patch("shopman.shop.handlers.notification_push.webpush") as webpush:
+        NotificationPushHandler().handle(_directive(newer))
+        NotificationPushHandler().handle(older_directive)
+
+    assert [json.loads(call.kwargs["data"])["title"] for call in webpush.call_args_list] == ["B", "A"]
+
+
+@VAPID
+def test_partial_failure_retries_every_device_at_least_once(owner, notification, subscription):
+    PushSubscription.objects.create(
+        user=owner,
+        endpoint="https://updates.push.services.mozilla.com/wpush/v2/device-2",
+        p256dh="device-public-key-2",
+        auth="device-auth-2",
+        surface_ref="hub",
+        device_label="Firefox",
+        categories=["campaign"],
+    )
+    busy = WebPushException("busy", response=type("Response", (), {"status_code": 503})())
+    directive = _directive(notification)
+
+    with patch(
+        "shopman.shop.handlers.notification_push.webpush",
+        side_effect=[None, busy],
+    ):
+        with pytest.raises(DirectiveTransientError):
+            NotificationPushHandler().handle(directive)
+
+    with patch("shopman.shop.handlers.notification_push.webpush") as retry:
+        NotificationPushHandler().handle(directive)
+    assert retry.call_count == 2
+
+
+@VAPID
+def test_ambiguous_lost_response_is_retried_instead_of_marked_delivered(notification, subscription):
+    directive = _directive(notification)
+    with patch(
+        "shopman.shop.handlers.notification_push.webpush",
+        side_effect=requests.ConnectionError("response lost"),
+    ):
+        with pytest.raises(DirectiveTransientError):
+            NotificationPushHandler().handle(directive)
+
+    with patch("shopman.shop.handlers.notification_push.webpush") as retry:
+        NotificationPushHandler().handle(directive)
+    retry.assert_called_once()
 
 
 def test_missing_vapid_is_terminal(notification, subscription):

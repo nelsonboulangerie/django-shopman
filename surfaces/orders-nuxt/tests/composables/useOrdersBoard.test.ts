@@ -67,6 +67,28 @@ describe("useOrdersBoard — derivação da fila", () => {
     board.toggleSound();
     expect(board.soundOn.value).toBe(true);
   });
+
+  it("pede permissão local somente no gesto que religa o som", async () => {
+    env.fetchData.value = { queue: emptyZone() };
+    const requestPermission = vi.fn().mockResolvedValue("granted");
+    const notificationApi = { permission: "default", requestPermission };
+    const priorWindow = globalThis.window;
+    const priorNotification = globalThis.Notification;
+    vi.stubGlobal("window", { Notification: notificationApi });
+    vi.stubGlobal("Notification", notificationApi);
+    try {
+      const board = useOrdersBoard();
+      expect(requestPermission).not.toHaveBeenCalled();
+      board.toggleSound();
+      expect(requestPermission).not.toHaveBeenCalled();
+      board.toggleSound();
+      expect(requestPermission).toHaveBeenCalledOnce();
+      await Promise.resolve();
+    } finally {
+      vi.stubGlobal("window", priorWindow);
+      vi.stubGlobal("Notification", priorNotification);
+    }
+  });
 });
 
 describe("useOrdersBoard — atenção diária", () => {
@@ -124,6 +146,72 @@ describe("useOrdersBoard — atenção diária", () => {
     expect(today.firstUnseen).toBe("PRE-1");
     expect(today.signature).toBe("2026-09-16:PRE-1");
   });
+
+  it.each([
+    ["", "hidden", 1],
+    ["vapid-public", "hidden", 1],
+    ["", "visible", 0],
+    ["vapid-public", "visible", 0],
+  ] as const)(
+    "VAPID=%s e aba=%s preservam o alerta local esperado",
+    async (vapidPublicKey, visibilityState, notificationCount) => {
+      env.reset();
+      vi.useFakeTimers();
+      env.fetchData.value = { queue: dueQueue("PRE-LOCAL") };
+      (env.runtimeConfig.public as Record<string, unknown>).vapidPublicKey = vapidPublicKey;
+      let mounted!: () => void;
+      let unmount!: () => void;
+      const listeners = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
+      const showNotification = vi.fn().mockResolvedValue(undefined);
+      const registration = { showNotification } as unknown as ServiceWorkerRegistration;
+      const serviceWorker = {
+        getRegistration: vi.fn().mockResolvedValue(registration),
+        ready: Promise.resolve(registration),
+      };
+      const notificationApi = { permission: "granted", requestPermission: vi.fn() };
+      const source = vi.fn(function () { return { addEventListener: vi.fn(), close: vi.fn() }; });
+      const prior = {
+        onMounted: globalThis.onMounted,
+        onBeforeUnmount: globalThis.onBeforeUnmount,
+        document: globalThis.document,
+        window: globalThis.window,
+        navigator: globalThis.navigator,
+        Notification: globalThis.Notification,
+        EventSource: globalThis.EventSource,
+        ssePath: globalThis.ssePath,
+      };
+      vi.stubGlobal("onMounted", (callback: () => void) => { mounted = callback; });
+      vi.stubGlobal("onBeforeUnmount", (callback: () => void) => { unmount = callback; });
+      vi.stubGlobal("document", { ...listeners, title: "Pedidos", visibilityState });
+      vi.stubGlobal("window", {
+        ...listeners,
+        Notification: notificationApi,
+        location: { pathname: "/", search: "?view=board", hash: "" },
+      });
+      vi.stubGlobal("navigator", { serviceWorker });
+      vi.stubGlobal("Notification", notificationApi);
+      vi.stubGlobal("EventSource", source);
+      vi.stubGlobal("ssePath", (await import("../../../operator-kit/app/utils/ssePath")).ssePath);
+      try {
+        const board = useOrdersBoard();
+        mounted();
+        await vi.waitFor(() => expect(showNotification).toHaveBeenCalledTimes(notificationCount));
+        expect(board.alerting.value).toBe(true);
+        expect(notificationApi.requestPermission).not.toHaveBeenCalled();
+      } finally {
+        unmount?.();
+        vi.stubGlobal("onMounted", prior.onMounted);
+        vi.stubGlobal("onBeforeUnmount", prior.onBeforeUnmount);
+        vi.stubGlobal("document", prior.document);
+        vi.stubGlobal("window", prior.window);
+        vi.stubGlobal("navigator", prior.navigator);
+        vi.stubGlobal("Notification", prior.Notification);
+        vi.stubGlobal("EventSource", prior.EventSource);
+        vi.stubGlobal("ssePath", prior.ssePath);
+        vi.useRealTimers();
+      }
+    },
+  );
 });
 
 it("refaz a leitura na meia-noite operacional do servidor, não na do tablet", async () => {
