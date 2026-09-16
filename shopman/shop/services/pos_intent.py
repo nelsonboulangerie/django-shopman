@@ -79,9 +79,16 @@ POS_SALE_INTENT_PAYMENT_COLLECTIONS = tuple(sorted(_ALLOWED_PAYMENT_COLLECTIONS)
 POS_SALE_INTENT_RECEIPT_CHANNELS = tuple(sorted(_ALLOWED_RECEIPT_CHANNELS))
 
 
-@dataclass(frozen=True)
+@dataclass(eq=False)
 class PosIntentError(ValueError):
-    """Validation error with stable recovery metadata for POS surfaces."""
+    """Validation error with stable recovery metadata for POS surfaces.
+
+    ⚠️ NÃO pode ser ``frozen``: ao atravessar qualquer ``@contextmanager`` o
+    Python 3.12 faz ``exc.__traceback__ = tb`` no ``__exit__``, e a dataclass
+    congelada estoura ``FrozenInstanceError`` — o 422 com ``code``/``field``
+    virava 500 sob ``OperationalObservationMixin``. ``eq=False`` mantém a
+    identidade de exceção normal (hash por identidade), como toda ``ValueError``.
+    """
 
     code: str
     message: str
