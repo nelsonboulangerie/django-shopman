@@ -13,11 +13,13 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from threading import Barrier, Event
 from time import monotonic
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.db import close_old_connections, connection, connections, transaction
 from django.test import override_settings
 from django.utils import timezone
+from shopman.guestman import ConsentService
 from shopman.guestman.contrib.consent.models import CommunicationConsent
 from shopman.guestman.models import Customer, CustomerAddress
 from shopman.orderman.models import Order, Session
@@ -549,9 +551,25 @@ def test_deletion_wins_against_direct_marketing_before_provider_boundary(monkeyp
         target_keys=("privacy-recipient",),
     )
     customer = members[0].customer
-    fanout_in_chunks(outbox.ref)
-    assert queue_materialized_targets(outbox.ref) == 1
-    claimed = claim_due_targets(worker_id="privacy-race-worker")
+    ConsentService.grant_consent(
+        customer.ref,
+        "whatsapp",
+        source="account-privacy-race-test",
+    )
+    claim_at = (
+        timezone.now().astimezone(ZoneInfo("America/Sao_Paulo"))
+        + timedelta(days=1)
+    ).replace(hour=9, minute=0, second=0, microsecond=0)
+    fanout_in_chunks(outbox.ref, now=claim_at)
+    assert queue_materialized_targets(outbox.ref, now=claim_at) == 1
+    claimed = claim_due_targets(
+        worker_id="privacy-race-worker",
+        now=claim_at,
+        limit=1,
+        platforms=("whatsapp",),
+        outbox_refs=(str(outbox.ref),),
+    )
+    assert len(claimed.targets) == 1
     target = claimed.targets[0]
     assert target.member_id == members[0].pk
 
@@ -570,7 +588,7 @@ def test_deletion_wins_against_direct_marketing_before_provider_boundary(monkeyp
             idempotency_token="privacy-race-provider-token",
             request_hash=artifact.artifact_hash,
             worker_id="privacy-race-worker",
-            now=timezone.now() + timedelta(seconds=1),
+            now=claim_at + timedelta(seconds=1),
         )
     )
 
@@ -586,9 +604,12 @@ def test_deletion_wins_against_direct_marketing_before_provider_boundary(monkeyp
         send_result = sent.result(20)
 
     assert deletion_result.replayed is False
-    assert send_result.provider_called is False
+    assert send_result == {
+        "exception": "MarketingContractError",
+        "code": "delivery_target_not_queued",
+    }
     assert provider.calls == []
     target.refresh_from_db()
-    attempt = DeliveryAttempt.objects.get(target=target)
     assert target.state == DeliveryTarget.State.CANCELLED
-    assert attempt.error_code == "recipient_account_inactive"
+    assert target.last_error_code == "subject_deleted"
+    assert not DeliveryAttempt.objects.filter(target=target).exists()
