@@ -1,18 +1,25 @@
 <script lang="ts">
-import { createCommentVNode, defineComponent } from 'vue'
+import { createCommentVNode, defineComponent, Fragment, h } from 'vue'
 
 export default defineComponent({
   name: 'CloudflareEmailBoundary',
-  setup (_props, { slots }) {
-    // Cloudflare's documented per-address opt-out. Runtime comment VNodes are
-    // deliberate: production template compilation removes source comments.
-    // Keeping these nodes in both SSR and hydration prevents Cloudflare from
-    // replacing plain text with an injected <a> before Vue starts.
-    return () => [
-      createCommentVNode('email_off'),
-      slots.default?.(),
-      createCommentVNode('/email_off')
-    ]
+  props: {
+    protect: {
+      type: Boolean,
+      default: false
+    }
+  },
+  setup (props, { slots }) {
+    return () => h(Fragment, null, props.protect
+      ? [
+          // Cloudflare's documented per-address opt-out. The edge consumes
+          // these markers, so only SSR responses that will cross Cloudflare
+          // may emit them; hydration renders the original text without them.
+          createCommentVNode('email_off'),
+          ...(slots.default?.() || []),
+          createCommentVNode('/email_off')
+        ]
+      : slots.default?.())
   }
 })
 </script>
