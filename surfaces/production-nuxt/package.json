@@ -31,7 +31,7 @@
     "nostics": "^1.2.0",
     "nuxt": "^4.5.2",
     "reka-ui": "^2.10.4",
-    "tailwind-merge": "^3.6.0",
+    "tailwind-merge": "^3.7.0",
     "tailwind-variants": "^3.3.1",
     "tailwindcss": "^4.3.0",
     "vue": "^3.5.42",
