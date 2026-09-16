@@ -8,13 +8,15 @@ import sharp from 'sharp'
 
 const root = new URL('../', import.meta.url)
 const sourceMark = new URL('brand/nelson-mark.svg', root)
+const sourceBackgroundMark = new URL('brand/nelson-mark-bg.svg', root)
 const sourceLogo = new URL('brand/nelson-logo.svg', root)
 const splashScreensSource = new URL('pwa-splash-screens.json', root)
 const output = new URL('public/pwa/', root)
 
 const source = await readFile(sourceMark, 'utf8')
+const backgroundMark = await readFile(sourceBackgroundMark)
 const monochrome = source
-  .replace(/\s*<path class="st0" d="M639,320[^>]+\/>/, '')
+  .replace(/\s*<path class="st0"[^>]+\/>/, '')
   .replace(/fill:\s*#[0-9a-f]{6};/gi, 'fill: #000000;')
 
 const paperTexture = (width, height) => Buffer.from(`
@@ -81,6 +83,16 @@ await sharp(Buffer.from(monochrome))
   .toFile(fileURLToPath(new URL('monochrome-512x512.png', output)))
 
 await Promise.all([
+  // O gerador usa uma única fonte. Sobrescrevemos somente os artefatos que
+  // precisam do fundo full-bleed com a variante oficial fornecida pelo dono.
+  sharp(backgroundMark)
+    .resize(512, 512, { fit: 'fill' })
+    .png({ compressionLevel: 9 })
+    .toFile(fileURLToPath(new URL('maskable-512x512.png', output))),
+  sharp(backgroundMark)
+    .resize(180, 180, { fit: 'fill' })
+    .png({ compressionLevel: 9 })
+    .toFile(fileURLToPath(new URL('apple-touch-icon-180x180.png', output))),
   writeFile(new URL('favicon.svg', output), source),
   copyFile(sourceLogo, new URL('nelson-logo.svg', output))
 ])

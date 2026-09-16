@@ -1,8 +1,39 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 
 describe('storefront PWA assets', () => {
+  it('keeps any-purpose icons transparent and background icons full-bleed', async () => {
+    const transparentSource = readFileSync(resolve('brand/nelson-mark.svg'), 'utf8')
+    const backgroundSource = readFileSync(resolve('brand/nelson-mark-bg.svg'), 'utf8')
+    const transparent = await sharp(resolve('public/pwa/pwa-512x512.png'))
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    const maskable = await sharp(resolve('public/pwa/maskable-512x512.png'))
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    const apple = await sharp(resolve('public/pwa/apple-touch-icon-180x180.png'))
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    const topLeftRgb = Array.from(maskable.data.subarray(0, 3))
+    const topRightOffset = (maskable.info.width - 1) * 4
+    const topRightRgb = Array.from(maskable.data.subarray(topRightOffset, topRightOffset + 3))
+
+    expect(transparentSource).toContain('fill: #ffcd40;')
+    expect(transparentSource).toContain('fill: #aa6a2b;')
+    expect(backgroundSource).toContain('linearGradient')
+    expect(backgroundSource).toContain('stop-color="#cca135"')
+    expect(backgroundSource).toContain('stop-color="#ffcd40"')
+    expect(transparent.data[3]).toBe(0)
+    expect(maskable.data[3]).toBe(255)
+    expect(apple.data[3]).toBe(255)
+    expect(topLeftRgb).not.toEqual(topRightRgb)
+  })
+
   it('uses the same high-contrast instruction grammar in both iOS steps', () => {
     const shareStep = readFileSync(resolve('public/pwa/ios-share-step.svg'), 'utf8')
     const addStep = readFileSync(resolve('public/pwa/ios-add-step.svg'), 'utf8')

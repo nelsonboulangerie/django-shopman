@@ -19,7 +19,7 @@ test('manifesto, service worker e metadados iOS são servidos pelo build', async
 
   await page.goto('/')
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/manifest.webmanifest?v=3')
-  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute('href', '/pwa/apple-touch-icon-180x180.png')
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute('href', '/pwa/apple-touch-icon-180x180.png?v=3')
   await expect(page.locator('link[rel="apple-touch-startup-image"]')).toHaveCount(40)
 })
 
