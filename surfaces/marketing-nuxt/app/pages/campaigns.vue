@@ -350,7 +350,7 @@ async function onSubmit(payload: Record<string, unknown>) {
   }
 }
 
-useHead({ title: "Campanhas · Marketing" });
+useHead({ title: "Campanhas" });
 </script>
 
 <template>

@@ -123,7 +123,7 @@ async function resumeServerDecision() {
   await navigateTo(`/announcements/${pk}`);
 }
 
-useHead({ title: "Painel · Marketing" });
+useHead({ title: "Painel" });
 </script>
 
 <template>

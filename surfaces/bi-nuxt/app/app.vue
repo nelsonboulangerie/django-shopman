@@ -9,7 +9,7 @@ const { canIdentify, locked, mustChange, operator, lock } = useOperatorLock(OPER
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
-useHead({ title: "B.I." });
+useOperatorWindowTitle("B.I.");
 </script>
 
 <template>

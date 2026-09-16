@@ -16,7 +16,7 @@ const {
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
-useHead({ title: "Marketing" });
+useOperatorWindowTitle("Marketing");
 
 watch(sessionState, async (next, previous) => {
   if (next !== "authenticated" || previous === "authenticated") return;

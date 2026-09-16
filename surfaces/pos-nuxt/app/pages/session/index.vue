@@ -27,7 +27,7 @@ import {
 import type { ManagerApproval } from "~/composables/usePosCashSession";
 import type { DayClosingResponse } from "~/types/closing";
 
-useHead({ title: "Sessão de caixa · PDV" });
+useHead({ title: "Sessão de caixa" });
 
 const action = usePosAction();
 const { pos, shift, actions, pending, refresh } = await usePosTerminal();

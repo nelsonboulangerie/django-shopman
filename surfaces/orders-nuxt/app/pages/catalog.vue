@@ -428,7 +428,7 @@ function assistFor(sku: Ref<string | null>) {
 }
 const detailAssist = assistFor(detailSku);
 
-useHead({ title: "Catálogo · Gestor" });
+useHead({ title: "Catálogo" });
 </script>
 
 <template>

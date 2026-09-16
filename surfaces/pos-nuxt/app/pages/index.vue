@@ -12,7 +12,6 @@ import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // PosPaymentWorkspace). O chrome comum (login, lock, offline) vive no shell
 // (app.vue); a sessão de caixa (abrir/fechar/movimentos) vive na antesala
 // (`/session`) — sem turno aberto, esta página manda o operador pra lá.
-useHead({ title: "PDV" });
 
 // Mantém a divisória do carrinho alinhada ao contexto, inclusive quando as pills quebram linha.
 const contextHeader = ref<HTMLElement | null>(null);

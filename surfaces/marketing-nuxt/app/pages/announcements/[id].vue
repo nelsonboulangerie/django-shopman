@@ -225,7 +225,7 @@ async function resumeServerDecision() {
   }
 }
 
-useHead({ title: "Anúncio · Marketing" });
+useHead({ title: "Anúncio" });
 </script>
 
 <template>

@@ -7,7 +7,7 @@
 import { isStale } from "~/presentation/production";
 import { filterEntries } from "~/presentation/recipeBook";
 
-useHead({ title: "Receitas · Produção" });
+useHead({ title: "Receitas" });
 
 const route = useRoute();
 const query = ref(typeof route.query.q === "string" ? route.query.q : "");

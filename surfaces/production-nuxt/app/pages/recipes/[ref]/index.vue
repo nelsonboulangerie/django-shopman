@@ -37,7 +37,7 @@ const {
   publish,
 } = useRecipeEntry(entryRef);
 
-useHead({ title: computed(() => `${entry.value?.name || "Receita"} · Produção`) });
+useHead({ title: computed(() => entry.value?.name || "Receita") });
 
 // ── Versão selecionada (query `v`; padrão = a atual, senão a mais nova) ─────
 const selectedNumber = ref<number | null>(Number(route.query.v) || null);

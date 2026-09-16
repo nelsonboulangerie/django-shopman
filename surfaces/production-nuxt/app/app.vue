@@ -18,7 +18,7 @@ const isKiosk = computed(() => route.path.startsWith("/board"));
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
-useHead({ title: "Produção" });
+useOperatorWindowTitle("Produção");
 
 async function goToHome() {
   await navigateTo("/");
