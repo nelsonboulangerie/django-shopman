@@ -167,7 +167,7 @@ def _custom_field_name_by_id(api_token: str, field_id: str) -> str:
             _read_http_error_body(e),
         )
     except (URLError, ValueError, Exception):
-        logger.warning("Manychat resolver: custom fields lookup failed", exc_info=True)
+        logger.warning("Manychat resolver: custom fields lookup failed")
     return ""
 
 
@@ -432,9 +432,7 @@ class ManychatSubscriberResolver:
                 e.code, subscriber_id, _read_http_error_body(e),
             )
         except (URLError, ValueError, Exception):
-            logger.warning(
-                "Manychat resolver: getInfo call failed for %s", subscriber_id, exc_info=True
-            )
+            logger.warning("Manychat resolver: getInfo call failed")
         return None
 
     @staticmethod
@@ -578,11 +576,7 @@ class ManychatSubscriberResolver:
                         error_body,
                     )
             except (URLError, ValueError, Exception):
-                logger.warning(
-                    "Manychat resolver: WhatsApp ID API call failed for %s",
-                    whatsapp_id[:8],
-                    exc_info=True,
-                )
+                logger.warning("Manychat resolver: WhatsApp ID API call failed")
 
         return None
 
@@ -723,11 +717,7 @@ class ManychatSubscriberResolver:
                 _read_http_error_body(e),
             )
         except (URLError, ValueError, Exception):
-            logger.warning(
-                "Manychat resolver: createSubscriber call failed for phone %s",
-                phone[:8],
-                exc_info=True,
-            )
+            logger.warning("Manychat resolver: createSubscriber call failed")
 
         return _ProviderCreateOutcome()
 
@@ -791,11 +781,7 @@ class ManychatSubscriberResolver:
                 _read_http_error_body(e),
             )
         except (URLError, ValueError, Exception):
-            logger.warning(
-                "Manychat resolver: WhatsApp ID mirror call failed for subscriber %s",
-                subscriber_id,
-                exc_info=True,
-            )
+            logger.warning("Manychat resolver: WhatsApp ID mirror call failed")
         return False
 
     @classmethod
