@@ -35,6 +35,10 @@ export interface OperatorPwaCapabilityOptions {
   wakeLock?: boolean;
   kiosk?: boolean;
   idleReloadPaths?: string[];
+  push?: {
+    surfaceRef: "hub" | "orders" | "pos" | "production" | "marketing" | "purchase" | "bi";
+    categories: Array<"campaign" | "production" | "order" | "purchase" | "report" | "sign_in" | "system">;
+  };
 }
 
 function namesImport(entry: unknown, name: string): boolean {
@@ -65,6 +69,7 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
     wakeLock: false,
     kiosk: false,
     idleReloadPaths: [],
+    push: undefined,
   },
   async setup(options, nuxt) {
     if (!options.app.trim()) throw new TypeError("operator PWA exige app");
@@ -83,6 +88,9 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
     if (!options.kiosk && options.idleReloadPaths?.length) {
       throw new TypeError("operator PWA sem kiosk não aceita recarga ociosa");
     }
+    if (options.push && (!options.push.categories.length || new Set(options.push.categories).size !== options.push.categories.length)) {
+      throw new TypeError("operator PWA push exige categorias explícitas e sem repetição");
+    }
 
     const resolver = createResolver(import.meta.url);
     nuxt.hook("modules:done", () => {
@@ -98,6 +106,8 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
     });
     const publicConfig = nuxt.options.runtimeConfig.public as Record<string, unknown>;
     publicConfig.operatorPwa = JSON.parse(JSON.stringify(options));
+    publicConfig.vapidPublicKey = process.env.NUXT_PUBLIC_VAPID_PUBLIC_KEY || "";
+    publicConfig.appVersion = process.env.NUXT_PUBLIC_APP_VERSION || process.env.SOURCE_VERSION || "local";
 
     const routeRules = nuxt.options.routeRules ||= {};
     routeRules["/sw.js"] = {
@@ -133,6 +143,12 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
       route: "/manifest.webmanifest",
       handler: resolver.resolve("./runtime/server/manifest"),
     });
+    if (options.push) {
+      addServerHandler({
+        route: "/operator-push-sw.js",
+        handler: resolver.resolve("./runtime/server/push-worker"),
+      });
+    }
     addPlugin({
       src: resolver.resolve("./runtime/plugins/pwaRegistration.client"),
       mode: "client",
@@ -159,6 +175,7 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
         // `offline.html` into `offline`, while the navigation fallback must
         // address the committed static shell by its exact URL.
         manifestTransforms: [async entries => ({ manifest: entries, warnings: [] })],
+        importScripts: options.push ? ["/operator-push-sw.js"] : undefined,
         runtimeCaching: [
           {
             urlPattern: ({ request }: { request: Request }) => request.mode === "navigate",

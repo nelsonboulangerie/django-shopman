@@ -678,6 +678,25 @@ Templates de notificação: `"order_confirmed"`, `"order_cancelled"`, `"order_ca
 
 Valores de `event`: `"stock.alert.triggered"`, `"system"`.
 
+#### `notification.push`
+
+Segunda perna assíncrona de uma `UserNotification`; o SSE continua sendo emitido
+separadamente. A chave persistente é `push:<notification_id>:v<notification_version>`
+no scope `notification:push`.
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `notification_id` | `int` | `user_notifications.push_user_notification` | `NotificationPushHandler` |
+| `notification_version` | `int` | `user_notifications.push_user_notification` | evidência/dedupe; o handler relê o registro canônico |
+
+O payload enviado ao relé contém somente o ponteiro e a apresentação mínima:
+`schema_version`, `notification_id`, `category`, `severity`, `title`, `body`,
+`action_url`, `tag` e `badge_count`. Categorias financeiras ou sensíveis
+(`order`, `purchase`, `report`, `sign_in`) saem sem `body`; e-mail, telefone,
+documento e valor são redigidos nas demais. `action_url` aponta somente para um
+caminho relativo ou para a origem HTTPS canônica da surface da categoria, sempre
+sem query string. TTL: 1 hora para operação, 24 horas para relatório.
+
 #### `fiscal.emit_nfce`
 
 No reprocessamento de uma directive falha, o payload é reconstruído dos dados

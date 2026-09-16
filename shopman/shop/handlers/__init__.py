@@ -52,6 +52,7 @@ ALL_HANDLERS = [
     "shopman.shop.handlers.courier_sync.CourierSyncHandler",
     # Notification
     "shopman.shop.handlers.notification.NotificationSendHandler",
+    "shopman.shop.handlers.notification_push.NotificationPushHandler",
     # Returns
     "shopman.shop.handlers.returns.ReturnHandler",
     # Loyalty
@@ -135,9 +136,11 @@ def _register_cancellation_request_signals() -> None:
 def _register_notification_handlers() -> None:
     from shopman.shop.adapters import notification_email, notification_manychat
     from shopman.shop.handlers.notification import NotificationSendHandler
+    from shopman.shop.handlers.notification_push import NotificationPushHandler
     from shopman.shop.notifications import register_backend
 
     registry.register_directive_handler(NotificationSendHandler())
+    registry.register_directive_handler(NotificationPushHandler())
     register_backend("email", notification_email)
     register_backend("manychat", notification_manychat)
     if "console" in (getattr(settings, "SHOPMAN_NOTIFICATION_ADAPTERS", {}) or {}):

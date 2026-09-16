@@ -26,6 +26,7 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E021  Allowlist de mídia Marketing contém host inseguro
   SHOPMAN_E022  Provedor de produção aponta para ambiente ou credencial de teste
   SHOPMAN_E023  Google Maps exige credenciais de browser e servidor separadas em produção
+  SHOPMAN_E024  Configuração VAPID parcial ou inválida
 
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode
@@ -46,6 +47,7 @@ Warnings (non-blocking, logged at startup):
   SHOPMAN_W016  Captura simulada exposta em staging técnico
   SHOPMAN_W017  SHOPMAN_ENVIRONMENT com valor irreconhecível (tratado como produção)
   SHOPMAN_W018  Botão "Simular pagamento" e auto-confirm do Pix mock ligados juntos
+  SHOPMAN_W019  Web Push do backstage desativado por ausência de VAPID
 """
 
 from __future__ import annotations
@@ -56,6 +58,8 @@ from urllib.parse import urlparse
 
 from django.conf import settings
 from django.core.checks import Error, Warning, register
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 
 from shopman.shop.environment import (
     NON_PRODUCTION_ENVIRONMENTS,
@@ -1177,3 +1181,39 @@ def check_google_maps_credential_boundary(app_configs, **kwargs):
                       hint="Remova GOOGLE_MAPS_API_KEY e provisione chaves distintas para browser (referrers) e servidor (Geocoding).",
                       id="SHOPMAN_E023")]
     return []
+
+
+@register(deploy=True)
+def check_vapid_configuration(app_configs, **kwargs):
+    private_key = str(getattr(settings, "VAPID_PRIVATE_KEY", "") or "").strip()
+    public_key = str(getattr(settings, "VAPID_PUBLIC_KEY", "") or "").strip()
+    claims_email = str(getattr(settings, "VAPID_CLAIMS_EMAIL", "") or "").strip()
+    configured = (private_key, public_key, claims_email)
+
+    if not any(configured):
+        if not is_production():
+            return []
+        return [Warning(
+            "Web Push do backstage está desativado porque as chaves VAPID não foram configuradas.",
+            hint=(
+                "Provisione VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY e VAPID_CLAIMS_EMAIL "
+                "como um único conjunto antes de habilitar Web Push."
+            ),
+            id="SHOPMAN_W019",
+        )]
+
+    invalid = not all(configured) or private_key == public_key or len(private_key) < 32 or len(public_key) < 32
+    try:
+        validate_email(claims_email)
+    except ValidationError:
+        invalid = True
+    if not invalid:
+        return []
+    return [Error(
+        "A configuração VAPID está parcial ou inválida.",
+        hint=(
+            "Defina em conjunto VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY e um "
+            "VAPID_CLAIMS_EMAIL válido; nunca reutilize a mesma chave nos dois campos."
+        ),
+        id="SHOPMAN_E024",
+    )]

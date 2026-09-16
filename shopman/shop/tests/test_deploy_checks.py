@@ -369,6 +369,50 @@ def test_release_readiness_runs_django_deploy_checks():
 
 
 @override_settings(
+    SHOPMAN_ENVIRONMENT="production",
+    VAPID_PRIVATE_KEY="private-key-long-enough-for-tests-123456",
+    VAPID_PUBLIC_KEY="public-key-long-enough-for-tests-1234567",
+    VAPID_CLAIMS_EMAIL="ops@example.com",
+)
+def test_vapid_complete_configuration_is_clean():
+    assert checks.check_vapid_configuration(None) == []
+
+
+@override_settings(
+    SHOPMAN_ENVIRONMENT="production",
+    VAPID_PRIVATE_KEY="private-key-long-enough-for-tests-123456",
+    VAPID_PUBLIC_KEY="",
+    VAPID_CLAIMS_EMAIL="not-an-email",
+)
+def test_vapid_partial_or_invalid_configuration_blocks_deploy():
+    assert [message.id for message in checks.check_vapid_configuration(None)] == [
+        "SHOPMAN_E024"
+    ]
+
+
+@override_settings(
+    SHOPMAN_ENVIRONMENT="production",
+    VAPID_PRIVATE_KEY="",
+    VAPID_PUBLIC_KEY="",
+    VAPID_CLAIMS_EMAIL="",
+)
+def test_absent_vapid_configuration_warns_in_production():
+    assert [message.id for message in checks.check_vapid_configuration(None)] == [
+        "SHOPMAN_W019"
+    ]
+
+
+@override_settings(
+    SHOPMAN_ENVIRONMENT="development",
+    VAPID_PRIVATE_KEY="",
+    VAPID_PUBLIC_KEY="",
+    VAPID_CLAIMS_EMAIL="",
+)
+def test_absent_vapid_configuration_is_silent_locally():
+    assert checks.check_vapid_configuration(None) == []
+
+
+@override_settings(
     SHOPMAN_MARKETING_MEDIA_HOSTS=(
         "*.example.com",
         "http://cdn.example.com",

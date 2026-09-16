@@ -213,16 +213,6 @@ export function useOrdersBoard() {
 
   function toggleSound() {
     toggleAlertSound();
-    // Mesmo gesto que destrava o autoplay pede a permissão de notificação: fora
-    // de um gesto do usuário o browser ignora (ou penaliza) o pedido.
-    if (
-      soundOn.value &&
-      import.meta.client &&
-      "Notification" in window &&
-      Notification.permission === "default"
-    ) {
-      Notification.requestPermission().catch(() => {});
-    }
   }
 
   // Título piscando enquanto a aba está oculta — restaurado ao voltar (o
@@ -245,24 +235,9 @@ export function useOrdersBoard() {
     }, 1_500);
   }
 
-  function notifyTreatableOrder(ref_: string) {
-    // Silenciosamente degradável: sem API ou sem permissão, som e título cobrem.
-    try {
-      if (!("Notification" in window) || Notification.permission !== "granted") return;
-      const n = new Notification(`Pedido para tratar${ref_ ? ` ${ref_}` : ""}`, {
-        body: "Há um pedido que já pode ser tratado no quadro.",
-        tag: "gestor-treatable-order",
-      });
-      n.onclick = () => { window.focus(); n.close(); };
-    } catch {
-      // construtor pode lançar (ex.: Android sem service worker) — sem drama
-    }
-  }
-
   function announceTreatableOrder(ref_: string) {
     startAlert();
     if (document.visibilityState !== "visible") {
-      notifyTreatableOrder(ref_);
       startTitleAlert(ref_);
     }
   }

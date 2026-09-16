@@ -256,7 +256,39 @@ Nao confunda:
 - `DOORMAN_ACCESS_LINK_API_KEY`: autentica criacao server-to-server de access links.
 - `CONCIERGE_API_KEY`: autentica somente o ingresso da Concierge; não reutilizar a chave de AccessLink.
 
-## 8. Ativar gateways reais
+## 8. Web Push do backstage
+
+Gere o par fora do repositório e grave os três valores diretamente como
+segredos na DigitalOcean. A chave privada existe somente no `web` e no
+`directive-worker`; os apps recebem apenas a pública por
+`NUXT_PUBLIC_VAPID_PUBLIC_KEY`.
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+```env
+VAPID_PRIVATE_KEY=<private key>
+VAPID_PUBLIC_KEY=<public key>
+VAPID_CLAIMS_EMAIL=operacao@exemplo.com
+NUXT_PUBLIC_VAPID_PUBLIC_KEY=<mesma public key>
+```
+
+Provisione o trio servidor como um conjunto: configuração parcial bloqueia
+`check --deploy`. Sem nenhuma das três, o deploy segue com
+`SHOPMAN_W019`, mas Web Push fica deliberadamente desligado.
+
+Rotacionar o par invalida todas as assinaturas existentes. A ordem segura é:
+
+1. gerar e guardar o novo par no cofre;
+2. atualizar o trio no `web` e no `directive-worker`, e a pública nos apps;
+3. executar `python manage.py disable_push_subscriptions --confirm-vapid-rotation`;
+4. publicar todos os componentes e confirmar que cada aparelho oferece nova ativação.
+
+Nunca preserve endpoints antigos depois da rotação nem exponha
+`VAPID_PRIVATE_KEY` em variável `NUXT_PUBLIC_*`.
+
+## 9. Ativar gateways reais
 
 Enquanto credenciais reais nao estiverem prontas, mantenha staging tecnico em
 mock explicito:
@@ -276,7 +308,7 @@ SHOPMAN_CARD_ADAPTER=shopman.shop.adapters.payment_stripe
 SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=false
 ```
 
-## 9. Validar
+## 10. Validar
 
 Sem falhar por bloqueios externos:
 
@@ -304,6 +336,11 @@ Resultado esperado antes de trafego real: nenhum `failed` e nenhum
 `blocked_by_implementation`, o contrato ainda nao esta provado para pedidos
 conversacionais inbound; use ManyChat apenas para OTP/access-link ate esse
 smoke ser implementado.
+
+Para Web Push, registre separadamente a prova humana que o ambiente local não
+produz: Android e iPhone instalados, tela desligada, aviso crítico recebido e
+toque abrindo a tela correta ainda autenticada. Ausência dessa prova impede
+declarar F3 concluída, mesmo com os gates automatizados verdes.
 
 
 Em produção, o fallback de `GOOGLE_MAPS_API_KEY` é desabilitado e o check `SHOPMAN_E023` recusa a chave compartilhada. As chaves explícitas de browser e servidor também não podem ser iguais. Restrinja e rotacione as credenciais no Google Cloud antes do cutover; esta guarda local não verifica as restrições cadastradas no provedor.

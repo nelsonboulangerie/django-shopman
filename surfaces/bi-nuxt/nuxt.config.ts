@@ -26,6 +26,7 @@ export default defineNuxtConfig({
       display: "standalone",
       wakeLock: false,
       kiosk: false,
+      push: { surfaceRef: "bi", categories: ["report"] },
       manifest: {
         name: "Shopman B.I.",
         shortName: "B.I.",

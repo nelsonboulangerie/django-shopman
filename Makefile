@@ -45,6 +45,7 @@ install: ## Instala deps + apps da suite em modo editável
 		"redis>=5.1,<8.0" \
 		"psycopg[binary]>=3.2,<4.0" \
 		"python-dotenv>=1.0,<2.0" \
+		"pywebpush>=2.5,<3.0" \
 		"qrcode[pil]>=7.4,<8.0" \
 		"locust>=2.24,<3.0" \
 		"pytest-timeout>=2.3,<3.0" \

@@ -7,6 +7,7 @@ interface OperatorPwaRuntimeConfig {
   wakeLock?: boolean;
   idleReloadPaths?: string[];
   manifest?: { name?: string };
+  push?: { surfaceRef?: string };
 }
 
 withDefaults(defineProps<{
@@ -62,5 +63,6 @@ watch(
   <ClientOnly v-if="enabled && showPrompts">
     <OperatorPwaInstallInvite :app="config.app!" :app-name="config.manifest?.name || 'Shopman'" />
     <OperatorPwaUpdatePrompt v-if="!applyingIdleUpdate" />
+    <OperatorPushInvite v-if="config.push && config.app !== 'hub'" />
   </ClientOnly>
 </template>

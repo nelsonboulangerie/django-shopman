@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
@@ -16,6 +17,7 @@ from shopman.shop.models import (
     NotificationEventType,
     NotificationLifecycle,
     NotificationSeverity,
+    PushSubscription,
     UserNotification,
     UserNotificationEvent,
 )
@@ -97,7 +99,7 @@ def create_condition_alert(
                 outcome_code="created" if created else "same_condition_same_owner",
             )
             if created:
-                _push_after_commit(notification)
+                _push_after_commit(notification, enqueue_web_push=True)
     except IntegrityError:
         # Compatibilidade com bancos que reportam a corrida fora do savepoint de
         # get_or_create. A unique key continua sendo a autoridade.
@@ -439,8 +441,12 @@ def reconcile_condition(
     return len(siblings)
 
 
-def push_user_notification(notification: UserNotification) -> None:
-    """Emite somente invalidação mínima; a verdade volta pelo fetch canônico."""
+def push_user_notification(
+    notification: UserNotification,
+    *,
+    enqueue_web_push: bool = True,
+) -> None:
+    """Mantém a invalidação SSE e, quando habilitado, enfileira Web Push."""
 
     payload = {"id": notification.pk, "category": notification.category}
     try:
@@ -448,13 +454,34 @@ def push_user_notification(notification: UserNotification) -> None:
 
         send_event(f"user-{notification.user_id}", "user-notification", payload)
     except ImportError:
-        return
+        pass
     except Exception:
         logger.warning(
             "operator_notification.user_push_failed user=%s",
             notification.user_id,
             exc_info=True,
         )
+
+    if not enqueue_web_push or not _vapid_ready():
+        return
+    if not PushSubscription.objects.filter(
+        user_id=notification.user_id,
+        disabled_at__isnull=True,
+    ).exists():
+        return
+
+    from shopman.shop import directives
+
+    dedupe_key = f"push:{notification.pk}:v{notification.version}"
+    directives.create_persistently_deduped(
+        directives.NOTIFICATION_PUSH,
+        payload={
+            "notification_id": notification.pk,
+            "notification_version": notification.version,
+        },
+        dedupe_key=dedupe_key,
+        receipt_scope=directives.NOTIFICATION_PUSH_RECEIPT_SCOPE,
+    )
 
 
 def _refresh_active_review_alerts(announcement: Announcement, *, source_ref: str) -> int:
@@ -510,7 +537,7 @@ def _refresh_active_review_alerts(announcement: Announcement, *, source_ref: str
             )
             UserNotificationEvent.objects.bulk_create(events)
         for notification in siblings:
-            _push_after_commit(notification)
+            _push_after_commit(notification, enqueue_web_push=True)
     return len(siblings)
 
 
@@ -585,27 +612,28 @@ def _event_record(
     )
 
 
-def _push_after_commit(notification: UserNotification) -> None:
+def _push_after_commit(
+    notification: UserNotification,
+    *,
+    enqueue_web_push: bool = False,
+) -> None:
     notification_pk = notification.pk
-    category = notification.category
-    user_id = notification.user_id
 
     def _send() -> None:
-        payload = {"id": notification_pk, "category": category}
         try:
-            from django_eventstream import send_event
-
-            send_event(f"user-{user_id}", "user-notification", payload)
-        except ImportError:
+            fresh = UserNotification.objects.get(pk=notification_pk)
+        except UserNotification.DoesNotExist:
             return
-        except Exception:
-            logger.warning(
-                "operator_notification.user_push_failed user=%s",
-                user_id,
-                exc_info=True,
-            )
+        push_user_notification(fresh, enqueue_web_push=enqueue_web_push)
 
-    transaction.on_commit(_send)
+    transaction.on_commit(_send, robust=True)
+
+
+def _vapid_ready() -> bool:
+    return all(
+        str(getattr(settings, name, "") or "").strip()
+        for name in ("VAPID_PRIVATE_KEY", "VAPID_PUBLIC_KEY", "VAPID_CLAIMS_EMAIL")
+    )
 
 
 def _push_batch_after_commit(*, user_id: int) -> None:

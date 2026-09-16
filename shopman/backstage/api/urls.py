@@ -88,6 +88,7 @@ from .notifications import (
     NotificationActionView,
     NotificationListV2View,
     NotificationListView,
+    NotificationPushSubscriptionView,
     NotificationReadView,
     NotificationSeenBatchView,
 )
@@ -492,6 +493,11 @@ urlpatterns = [
     # Auditoria no Admin). É para onde o aviso de acesso aponta.
     path("sign-ins/", SignInListView.as_view(), name="api-backstage-sign-ins"),
     path("notifications/", NotificationListView.as_view(), name="api-backstage-notifications"),
+    path(
+        "notifications/push/",
+        NotificationPushSubscriptionView.as_view(),
+        name="api-backstage-notifications-push",
+    ),
     path("notifications/v2/", NotificationListV2View.as_view(), name="api-backstage-notifications-v2"),
     path(
         "notifications/v2/seen/",

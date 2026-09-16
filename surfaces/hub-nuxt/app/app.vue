@@ -127,6 +127,7 @@ const isEmpty = computed(() => hubIsEmpty(tiles.value));
             </a>
           </li>
           </ul>
+          <OperatorPushSettings />
           </section>
         </div>
       </div>
