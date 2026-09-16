@@ -565,7 +565,19 @@ def _on_ready(order, config: ChannelConfig) -> None:
 
 
 def _on_dispatched(order, config: ChannelConfig) -> None:
-    """Order dispatched: notify."""
+    """Order dispatched: the NFC-e leaves WITH the goods, then notify.
+
+    Cobrar na entrega não segura a nota: a NFC-e acompanha a mercadoria na
+    saída, e o pedido COD da loja só ganhava nota na conclusão — a sacola saía
+    sem documento e a expedição gritava (``fiscal_handoff_without_nfce``). O
+    PDV já emite no fechamento; aqui é a mesma regra para quem chegou pela
+    loja. ``fiscal.emit`` é idempotente (dedupe ``nfce:{ref}``), então o
+    pedido que já tem nota não emite duas vezes.
+    """
+    from shopman.shop.services.payment_gate import collects_on_delivery
+
+    if collects_on_delivery(order):
+        fiscal.emit(order)
     notification.send(order, "order_dispatched")
 
 
