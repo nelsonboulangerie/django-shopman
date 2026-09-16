@@ -69,6 +69,52 @@ diferentes ao mesmo tempo. As regras valem para todos, humanos incluídos:
 - **Relate o que é fato.** Contagem de testes não é evidência; saída de comando é.
   O que ficou de fora se diz com nome e motivo.
 
+## ⛔ A ESTEIRA: aprovado vira commit, push, PR e fila — no mesmo turno
+
+Medido em 16/09/2026: 150 worktrees, dezenas de branches com 10 a 77 commits à
+frente do `main` e nenhum PR, decisões aprovadas que nunca viraram código, código
+pronto que nunca chegou ao ar. A regra já estava escrita e era ignorada. Regra sem
+trava é lembrete; o que segue é a trava, e vale para todo agente (Claude, Codex,
+quem for) e para humano.
+
+**Aprovação é autorização da esteira inteira.** Quando o Pablo aprova ou pede uma
+mudança, ele já autorizou: commit → push → PR → `gh pr merge <N>` (fila) → deploy do
+alpha (push no `main` é o deploy, 6 min). Não pergunte "posso commitar?", "abro o
+PR?", "enfileiro?". Faça e relate. Versionamento reverte; trabalho dormente não se
+recupera, porque ninguém lembra que ele existe.
+
+**O que AINDA pede a palavra dele** — o que muda o negócio ou o ambiente vivo, não a
+mecânica do repositório: reseed do alpha · credencial dele em qualquer ambiente ·
+decisão de produto ou de escopo · apagar dado ou branch que não seja comprovadamente
+redundante. Se a pergunta é dessas, publique o que existe e escreva a pergunta no
+relatório, com o número do PR.
+
+**Nenhum turno termina com trabalho dormente.** Ao encerrar, cada frente está num
+destes estados, e o relatório diz qual:
+
+1. **mergeado** — número do PR;
+2. **na fila** — `gh pr merge <N>` dado, `autoMergeRequest` ligado;
+3. **PR aberto vermelho** — a CAUSA nomeada e o próximo passo;
+4. **esperando decisão dele** — a pergunta escrita, PR (draft) já aberto.
+
+Trabalho parcial no fim da sessão vira commit + push + **PR draft** com `WIP:` no
+título. Nunca fica só na worktree: worktree é invisível para `gh pr list`, para as
+outras sessões e para o Pablo. Draft custa 20 segundos; redescobrir custa dias.
+
+**Mecanismo, não lembrete:**
+
+- `make inflight` — o inventário do que está em voo e dormindo: worktrees sujas,
+  branches locais sem PR, PRs verdes fora da fila, vermelhos, conflitantes. Rode
+  antes de agir (para não colidir) e ao relatar (para não deixar nada para trás).
+  `make audit-branches` olha só branch remota; a que dorme é local.
+- Hook de `Stop` (`scripts/esteira-stop-hook.sh`, registrado em
+  `~/.claude/settings.json`) — bloqueia a sessão de encerrar com arquivo não
+  commitado, commit não empurrado, branch sem PR ou PR verde fora da fila, e devolve
+  a lista com o comando de cada item. Bloqueia uma vez por turno: a segunda
+  tentativa passa, para que "esperando o Pablo sobre X" continue sendo saída
+  legítima, desde que dita e com o trabalho publicado. Não contorne: publique.
+- `AGENTS.md` é link para este arquivo: o Codex lê a mesma regra.
+
 ## Estrutura do Projeto
 
 ```
