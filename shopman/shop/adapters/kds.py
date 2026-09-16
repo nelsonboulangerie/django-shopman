@@ -57,6 +57,10 @@ def create_ticket(session_key: str, kds_instance, items: list) -> Any:
 def unfire_session_lines(session_key: str, line_ids: list[str]) -> dict:
     """Un-fire specific lines for a session: remove them from their live tickets.
 
+    Precondition: the caller holds the source Session/Order row lock.  KDS
+    writers use one global order, ``source -> ticket``, to avoid deadlocks with
+    POS tab commands.
+
     A ticket loses only the targeted line items; when that empties the ticket it
     is cancelled (status="cancelled"), otherwise the surviving courses keep their
     prep progress. The model save re-emits the KDS SSE event either way. Removing
@@ -116,7 +120,7 @@ def cancel_open_tickets(order) -> int:
 
 
 def cancel_open_tickets_for_session(session_key: str) -> int:
-    """Cancel all open tickets for a session (comanda descartada sem venda)."""
+    """Cancel open tickets after the caller locked their Session/Order source."""
     from django.db import transaction
     from django.utils import timezone
 

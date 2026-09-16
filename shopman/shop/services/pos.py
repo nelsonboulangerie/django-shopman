@@ -1143,9 +1143,9 @@ def clear_pos_tab(*, channel_ref: str, session_key: str, operator_username: str)
         cleared = session_service.abandon_session(session_key=session.session_key, channel_ref=channel_ref)
         if cleared and fired:
             # A cozinha não pode continuar produzindo uma comanda descartada.
-            from shopman.shop.adapters import kds as kds_adapter
+            from shopman.shop.services import kds as kds_service
 
-            cancelled = kds_adapter.cancel_open_tickets_for_session(session.session_key)
+            cancelled = kds_service.cancel_tickets_for_session(session.session_key)
             if cancelled:
                 logger.info(
                     "pos_clear_tab: %d ticket(s) de cozinha cancelados session=%s",

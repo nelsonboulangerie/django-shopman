@@ -329,9 +329,13 @@ def preview_order_for_instance(order, instance) -> list[dict]:
 
 def unfire_lines(*, session_key: str, line_ids: list[str]) -> dict:
     """Cancel the kitchen fire for specific lines, freeing them to re-fire."""
+    from django.db import transaction
+
     from shopman.shop.adapters import kds as kds_adapter
 
-    return kds_adapter.unfire_session_lines(session_key, line_ids)
+    with transaction.atomic():
+        _lock_source_for_session(session_key)
+        return kds_adapter.unfire_session_lines(session_key, line_ids)
 
 
 def _order_to_lines(order) -> list[dict]:
@@ -456,10 +460,22 @@ def cancel_tickets(order) -> int:
     from shopman.shop.adapters import kds as kds_adapter
 
     with transaction.atomic():
+        _lock_source_for_session(order.session_key)
         count = kds_adapter.cancel_open_tickets(order)
     if count:
         logger.info("kds.cancel_tickets: cancelled %d tickets for order=%s", count, order.ref)
     return count
+
+
+def cancel_tickets_for_session(session_key: str) -> int:
+    """Cancel open tickets for a POS tab, always locking its source first."""
+    from django.db import transaction
+
+    from shopman.shop.adapters import kds as kds_adapter
+
+    with transaction.atomic():
+        _lock_source_for_session(session_key)
+        return kds_adapter.cancel_open_tickets_for_session(session_key)
 
 
 def on_all_tickets_done(order, *, actor: str = "kds.all_done") -> bool:
@@ -525,7 +541,11 @@ def _ticket_order(ticket, *, for_update: bool = False):
     done-loop (advance to PREPARING / READY) is a no-op until then: kitchen
     progress on an open comanda does not move an order that does not exist.
     """
-    qs = Order.objects.filter(session_key=ticket.session_key).order_by("-id")
+    return _order_for_session_key(ticket.session_key, for_update=for_update)
+
+
+def _order_for_session_key(session_key: str, *, for_update: bool = False):
+    qs = Order.objects.filter(session_key=session_key).order_by("-id")
     if for_update:
         qs = qs.select_for_update()
     return qs.first()
@@ -533,15 +553,56 @@ def _ticket_order(ticket, *, for_update: bool = False):
 
 def _ticket_source(ticket, *, for_update: bool = False):
     """Resolve Order ou a comanda aberta que originou um ticket legado."""
+    if for_update:
+        return _lock_source_for_session(ticket.session_key)
+
     order = _ticket_order(ticket, for_update=for_update)
     if order is not None:
         return order
     from shopman.orderman.models import Session
 
-    qs = Session.objects.filter(session_key=ticket.session_key, state="open").order_by("-id")
-    if for_update:
-        qs = qs.select_for_update()
-    return qs.first()
+    return (
+        Session.objects.filter(session_key=ticket.session_key, state="open")
+        .order_by("-id")
+        .first()
+    )
+
+
+def _lock_source_for_session(session_key: str):
+    """Lock the authoritative source before any KDSTicket for the same work.
+
+    The global writer order is ``Session/Order -> KDSTicket``.  A POS commit
+    holds the Session while creating the Order, so after waiting for a Session
+    lock we must check Order once more: the source may have changed ownership
+    while this transaction was blocked.
+    """
+    order = _order_for_session_key(session_key, for_update=True)
+    if order is not None:
+        return order
+
+    from shopman.orderman.models import Session
+
+    session = (
+        Session.objects.select_for_update()
+        .filter(session_key=session_key)
+        .order_by("-id")
+        .first()
+    )
+    if session is None:
+        return None
+
+    # We may have waited behind Session -> Order commit. Prefer and lock the
+    # newly committed aggregate before proceeding to its kitchen tickets.
+    return _order_for_session_key(session_key, for_update=True) or session
+
+
+def _lock_source_then_ticket(ticket):
+    session_key = ticket.session_key
+    source = _lock_source_for_session(session_key)
+    locked_ticket = _lock_ticket_after_source(ticket)
+    if locked_ticket.session_key != session_key:
+        raise RuntimeError("A origem do ticket mudou durante a operação.")
+    return source, locked_ticket
 
 
 def _ensure_source_due(source) -> None:
@@ -580,12 +641,13 @@ def set_ticket_item_checked(ticket, *, index: int, checked: bool, actor: str) ->
     from django.db import transaction
 
     with transaction.atomic():
-        ticket = _locked_ticket(ticket)
-        return _set_ticket_item_checked_locked(ticket, index=index, checked=checked, actor=actor)
+        source, ticket = _lock_source_then_ticket(ticket)
+        return _set_ticket_item_checked_locked(
+            ticket, source=source, index=index, checked=checked, actor=actor
+        )
 
 
-def _set_ticket_item_checked_locked(ticket, *, index: int, checked: bool, actor: str) -> bool:
-    source = _ticket_source(ticket, for_update=True)
+def _set_ticket_item_checked_locked(ticket, *, source, index: int, checked: bool, actor: str) -> bool:
     _ensure_source_due(source)
     if ticket.status not in OPEN_TICKET_STATUSES:
         return False
@@ -622,12 +684,11 @@ def complete_ticket(ticket, *, actor: str) -> bool:
     from django.db import transaction
 
     with transaction.atomic():
-        ticket = _locked_ticket(ticket)
-        return _complete_ticket_locked(ticket, actor=actor)
+        source, ticket = _lock_source_then_ticket(ticket)
+        return _complete_ticket_locked(ticket, source=source, actor=actor)
 
 
-def _complete_ticket_locked(ticket, *, actor: str) -> bool:
-    source = _ticket_source(ticket, for_update=True)
+def _complete_ticket_locked(ticket, *, source, actor: str) -> bool:
     _ensure_source_due(source)
     if ticket.status not in OPEN_TICKET_STATUSES:
         return False
@@ -674,12 +735,11 @@ def reopen_ticket(ticket, *, actor: str) -> bool:
     from django.db import transaction
 
     with transaction.atomic():
-        ticket = _locked_ticket(ticket)
-        return _reopen_ticket_locked(ticket, actor=actor)
+        source, ticket = _lock_source_then_ticket(ticket)
+        return _reopen_ticket_locked(ticket, source=source, actor=actor)
 
 
-def _reopen_ticket_locked(ticket, *, actor: str) -> bool:
-    source = _ticket_source(ticket, for_update=True)
+def _reopen_ticket_locked(ticket, *, source, actor: str) -> bool:
     _ensure_source_due(source)
     if ticket.status != "done":
         return False
@@ -707,12 +767,12 @@ def acknowledge_ticket(ticket, *, actor: str) -> bool:
     from django.db import transaction
 
     with transaction.atomic():
-        ticket = _locked_ticket(ticket)
-        return _acknowledge_ticket_locked(ticket, actor=actor)
+        source, ticket = _lock_source_then_ticket(ticket)
+        return _acknowledge_ticket_locked(ticket, source=source, actor=actor)
 
 
-def _acknowledge_ticket_locked(ticket, *, actor: str) -> bool:
-    _ensure_source_due(_ticket_source(ticket, for_update=True))
+def _acknowledge_ticket_locked(ticket, *, source, actor: str) -> bool:
+    _ensure_source_due(source)
     if ticket.status != "cancelled" or ticket.acknowledged_at is not None:
         return False
     ticket.acknowledged_at = timezone.now()
@@ -721,7 +781,8 @@ def _acknowledge_ticket_locked(ticket, *, actor: str) -> bool:
     return True
 
 
-def _locked_ticket(ticket):
+def _lock_ticket_after_source(ticket):
+    """Lock one ticket only after its Session/Order source is already locked."""
     return ticket.__class__.objects.select_for_update().get(pk=ticket.pk)
 
 

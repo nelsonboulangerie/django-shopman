@@ -137,6 +137,99 @@ def test_marcar_um_item_poe_o_ticket_em_preparo(ticket):
     assert ticket.status == "in_progress"
 
 
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("status", "command"),
+    [
+        ("pending", "check"),
+        ("pending", "complete"),
+        ("done", "recall"),
+        ("cancelled", "ack"),
+    ],
+)
+def test_todo_writer_do_kds_trava_a_fonte_antes_do_ticket(
+    ticket, monkeypatch, status, command
+):
+    """Guarda estrutural contra reintroduzir ``KDSTicket -> Session/Order``."""
+    from shopman.shop.services import kds as kds_core
+
+    Session.objects.create(
+        session_key=ticket.session_key,
+        channel_ref="pdv",
+        state="open",
+    )
+    ticket.status = status
+    ticket.save(update_fields=["status"])
+
+    calls = []
+    real_source = kds_core._lock_source_for_session
+    real_ticket = kds_core._lock_ticket_after_source
+
+    def source_lock(session_key):
+        calls.append("source")
+        return real_source(session_key)
+
+    def ticket_lock(current):
+        calls.append("ticket")
+        return real_ticket(current)
+
+    monkeypatch.setattr(kds_core, "_lock_source_for_session", source_lock)
+    monkeypatch.setattr(kds_core, "_lock_ticket_after_source", ticket_lock)
+
+    if command == "check":
+        kds_core.set_ticket_item_checked(ticket, index=0, checked=True, actor="kds:test")
+    elif command == "complete":
+        kds_core.complete_ticket(ticket, actor="kds:test")
+    elif command == "recall":
+        kds_core.reopen_ticket(ticket, actor="kds:test")
+    else:
+        kds_core.acknowledge_ticket(ticket, actor="kds:test")
+
+    assert calls[:2] == ["source", "ticket"]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("command", ["unfire", "cancel"])
+def test_writer_do_pdv_tambem_usa_fonte_antes_do_ledger_de_tickets(
+    ticket, monkeypatch, command
+):
+    from shopman.shop.adapters import kds as kds_adapter
+    from shopman.shop.services import kds as kds_core
+
+    Session.objects.create(
+        session_key=ticket.session_key,
+        channel_ref="pdv",
+        state="open",
+    )
+    ticket.items[0]["line_id"] = "linha-1"
+    ticket.save(update_fields=["items"])
+
+    calls = []
+    real_source = kds_core._lock_source_for_session
+    adapter_name = (
+        "unfire_session_lines" if command == "unfire" else "cancel_open_tickets_for_session"
+    )
+    real_writer = getattr(kds_adapter, adapter_name)
+
+    def source_lock(session_key):
+        calls.append("source")
+        return real_source(session_key)
+
+    def ticket_writer(*args, **kwargs):
+        calls.append("ticket")
+        return real_writer(*args, **kwargs)
+
+    monkeypatch.setattr(kds_core, "_lock_source_for_session", source_lock)
+    monkeypatch.setattr(kds_adapter, adapter_name, ticket_writer)
+
+    if command == "unfire":
+        kds_core.unfire_lines(session_key=ticket.session_key, line_ids=["linha-1"])
+    else:
+        kds_core.cancel_tickets_for_session(ticket.session_key)
+
+    assert calls[:2] == ["source", "ticket"]
+
+
 # ── A TV do salão ────────────────────────────────────────────────────────────
 
 
