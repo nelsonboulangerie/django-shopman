@@ -986,7 +986,18 @@ const notices = computed<CheckoutNotice[]>(() => {
     //
     // O "assim que autorizar" fica: a emissão é assíncrona e quem autoriza é a
     // SEFAZ. Prometer o instante seria a segunda mentira.
-    notes.push({ key: "print", icon: "lucide:printer", message: "Pedir papel já pede a nota — imprime sozinha assim que autorizar." });
+    //
+    // ⚠️ Mas só quando o CONTRATO diz que pedir papel pede a nota
+    // (`receipt_requests_emission`). Sem essa palavra do servidor, a bobina só
+    // sai quando outra regra emitir (CPF, cartão, Pix) — e prometer "imprime
+    // sozinha" num dinheiro sem CPF seria a mentira de sempre com outra frase.
+    notes.push({
+      key: "print",
+      icon: "lucide:printer",
+      message: props.checkoutContract?.receipt_requests_emission
+        ? "Pedir papel já pede a nota — imprime sozinha assim que autorizar."
+        : "A nota impressa sai quando houver NFC-e (CPF, cartão ou Pix).",
+    });
   }
   // As ressalvas da review entram na MESMA faixa: são o mesmo gesto de leitura,
   // e uma segunda caixa ao lado só ensina o olho a pular as duas.
