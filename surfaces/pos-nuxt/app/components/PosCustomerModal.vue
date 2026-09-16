@@ -131,9 +131,9 @@ async function saveProfile(body: Record<string, unknown>) {
   }
 }
 
-function toggleProfilePref(key: "cpf_na_nota" | "email_receipt") {
-  profileDraft[key] = !profileDraft[key];
-  void saveProfile({ fiscal_prefs: { [key]: profileDraft[key] } });
+function setProfilePref(key: "cpf_na_nota" | "email_receipt", value: boolean) {
+  profileDraft[key] = value;
+  void saveProfile({ fiscal_prefs: { [key]: value } });
 }
 
 function saveProfileText() {
@@ -143,12 +143,15 @@ function saveProfileText() {
   });
 }
 
-function toggleReceiptChannel(ref: string) {
-  const next = props.receiptChannels.includes(ref)
-    ? props.receiptChannels.filter((c) => c !== ref)
-    : [...props.receiptChannels, ref];
+// Os canais são uma LISTA no contrato; na tela, um interruptor por canal — o
+// mesmo desenho do bloco "Nota e comprovante" da tela de pagamento.
+function setReceiptChannel(ref: string, on: boolean) {
+  const next = on
+    ? (props.receiptChannels.includes(ref) ? props.receiptChannels : [...props.receiptChannels, ref])
+    : props.receiptChannels.filter((c) => c !== ref);
   emit("update:receiptChannels", next);
 }
+const RECEIPT_CHANNEL_ICONS: Record<string, string> = { print: "lucide:printer", email: "lucide:mail" };
 
 // Só um cadastro carregado representa cliente associado; texto digitado é rascunho.
 const hasCustomer = computed(() => Boolean(props.customerLookup?.ref));
@@ -455,27 +458,34 @@ const newCustomerNote = computed(() => {
                  "hoje não" é desmarcar na venda; "nunca mais" é desligar AQUI. -->
             <div v-if="customerLookup?.ref" class="grid gap-2 border-t border-primary/20 pt-3">
               <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Preferências do cliente</p>
-              <div class="grid grid-cols-2 gap-2">
-                <UiButton
-                  type="button" variant="outline" size="sm"
-                  class="justify-between text-xs"
-                  :class="profileDraft.cpf_na_nota ? 'border-primary bg-primary/5' : ''"
-                  :disabled="profileSaving"
-                  @click="toggleProfilePref('cpf_na_nota')"
-                >
-                  CPF na nota por padrão
-                  <Icon :name="profileDraft.cpf_na_nota ? 'lucide:check' : 'lucide:minus'" class="size-3.5" />
-                </UiButton>
-                <UiButton
-                  type="button" variant="outline" size="sm"
-                  class="justify-between text-xs"
-                  :class="profileDraft.email_receipt ? 'border-primary bg-primary/5' : ''"
-                  :disabled="profileSaving"
-                  @click="toggleProfilePref('email_receipt')"
-                >
-                  Nota por e-mail por padrão
-                  <Icon :name="profileDraft.email_receipt ? 'lucide:check' : 'lucide:minus'" class="size-3.5" />
-                </UiButton>
+              <!-- INTERRUPTORES, não botões-com-check: preferência é ESTADO
+                   ("sempre assim"), e o switch diz de longe se está ligado —
+                   a mesma peça do bloco "Nota e comprovante" do pagamento. -->
+              <div class="grid divide-y rounded-md border">
+                <label class="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm">
+                  <span class="flex min-w-0 items-center gap-2 font-medium">
+                    <Icon name="lucide:id-card" class="size-4 shrink-0 text-muted-foreground" />
+                    CPF na nota por padrão
+                  </span>
+                  <UiSwitch
+                    :model-value="profileDraft.cpf_na_nota"
+                    :disabled="profileSaving"
+                    aria-label="CPF na nota por padrão"
+                    @update:model-value="setProfilePref('cpf_na_nota', $event)"
+                  />
+                </label>
+                <label class="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm">
+                  <span class="flex min-w-0 items-center gap-2 font-medium">
+                    <Icon name="lucide:mail" class="size-4 shrink-0 text-muted-foreground" />
+                    Nota por e-mail por padrão
+                  </span>
+                  <UiSwitch
+                    :model-value="profileDraft.email_receipt"
+                    :disabled="profileSaving"
+                    aria-label="Nota por e-mail por padrão"
+                    @update:model-value="setProfilePref('email_receipt', $event)"
+                  />
+                </label>
               </div>
               <label class="grid gap-1 text-sm">
                 <span class="text-xs font-medium text-muted-foreground">Restrições alimentares</span>
@@ -793,20 +803,26 @@ const newCustomerNote = computed(() => {
           <div v-if="showFiscal && !isReceiptDecision" class="grid gap-3 border-t pt-4">
             <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Comprovante</p>
             <!-- MULTI: imprimir E enviar não competem. "Sem comprovante" é
-                 nenhum canal marcado, não um terceiro botão. -->
-            <div class="grid grid-cols-2 gap-2">
-              <UiButton
+                 nenhum canal ligado, não um terceiro botão. Interruptor por
+                 canal: um botão-com-check dizia "eu executo" e não se lia de
+                 longe qual estava marcado; o switch é estado, e se vê. -->
+            <div class="grid divide-y rounded-md border">
+              <label
                 v-for="channel in receiptChannelOptions"
                 :key="channel.ref"
-                type="button"
-                variant="outline"
-                class="h-auto justify-center gap-1.5 whitespace-normal px-2 py-2 text-xs"
-                :class="receiptChannels.includes(channel.ref) ? 'border-primary bg-primary/5' : ''"
-                @click="toggleReceiptChannel(channel.ref)"
+                class="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm"
               >
-                <Icon :name="receiptChannels.includes(channel.ref) ? 'lucide:check' : 'lucide:minus'" class="size-3.5" />
-                {{ channel.label }}
-              </UiButton>
+                <span class="flex min-w-0 items-center gap-2 font-medium">
+                  <Icon :name="RECEIPT_CHANNEL_ICONS[channel.ref] || 'lucide:receipt'" class="size-4 shrink-0 text-muted-foreground" />
+                  {{ channel.label }}
+                </span>
+                <UiSwitch
+                  data-receipt-channel
+                  :model-value="receiptChannels.includes(channel.ref)"
+                  :aria-label="channel.label"
+                  @update:model-value="setReceiptChannel(channel.ref, $event)"
+                />
+              </label>
             </div>
             <!-- ⚠️ Sem `<label>` em volta: a oferta traz o interruptor dela num
                  `<label>` próprio, e rótulo dentro de rótulo faz o clique no
