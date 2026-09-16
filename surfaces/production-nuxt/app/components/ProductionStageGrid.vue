@@ -8,8 +8,10 @@
 // A ação abre overlay com quantidade em stepper touch (+/−) e confirmação
 // explícita; cada informe vira evento imutável (actor + timestamp → BI).
 // Na Produção a ação é UMA só — "Continuar · N" confirma quanto segue para a
-// Expedição, já preenchido com o planejado; divergência pede só um motivo
-// (decisão Pablo 2026-09-16). Sem "iniciar", sem subetapas, sem máquina de
+// Expedição, já preenchido com o planejado (decisão Pablo 2026-09-16). A
+// diferença para o planejado é rendimento da massa, não perda: fica nos dois
+// números da ordem, sem pedir motivo — motivo se pede na Expedição, onde há
+// produto pronto que pode sumir. Sem "iniciar", sem subetapas, sem máquina de
 // estados: fermentação e afins são ferramenta (timer), nunca fluxo.
 // Instruções específicas do SKU (peso de corte etc.) terão casa neste overlay
 // (estudo de notação de pâtonnage pendente). Nomenclatura interna do sistema
@@ -200,7 +202,6 @@ const PLAN_TITLE: Record<PlanMode, string> = {
 const startRow = ref<ProductionMatrixRowProjection | null>(null);
 const startQty = ref("");
 const startQtyInput = ref<HTMLInputElement | null>(null);
-const startReason = ref("");
 const startSubmitting = ref(false);
 const selectedStartPk = ref<number | null>(null);
 const startedRow = ref<ProductionMatrixRowProjection | null>(null);
@@ -240,8 +241,8 @@ const selectedStartedOrder = computed<WorkOrderCardProjection | null>(
     ) ?? null,
 );
 
-// A quantidade produzida diverge do planejado? Então o operador diz o porquê —
-// um motivo só, e é tudo o que a divergência pede.
+// Diferente do planejado? A tela diz, mas não pergunta: rendimento da massa
+// é número, e os dois números ficam na ordem.
 function qtyNumber(value: string): number {
   return parseFloat(value.replace(",", ".")) || 0;
 }
@@ -250,12 +251,8 @@ const startDiverges = computed(() => {
   if (!wo) return false;
   return qtyNumber(startQty.value) !== qtyNumber(wo.planned_qty);
 });
-const startQtyValid = computed(() => qtyNumber(startQty.value) > 0);
 const startReady = computed(
-  () =>
-    !!selectedStartOrder.value &&
-    startQtyValid.value &&
-    (!startDiverges.value || startReason.value.trim().length > 0),
+  () => !!selectedStartOrder.value && qtyNumber(startQty.value) > 0,
 );
 
 // Stepper touch: quantidade sempre editável com +/− generosos.
@@ -383,7 +380,6 @@ function openStart(row: ProductionMatrixRowProjection) {
   selectedStartPk.value =
     row.planned_orders.length === 1 ? row.planned_orders[0]!.pk : null;
   startQty.value = selectedStartOrder.value?.planned_qty ?? "";
-  startReason.value = "";
   if (selectedStartPk.value != null) {
     void nextTick(() => startQtyInput.value?.focus());
   }
@@ -407,12 +403,10 @@ async function confirmStart() {
       wo.pk,
       wo.rev,
       startQty.value.trim(),
-      startDiverges.value ? startReason.value.trim() : "",
     );
     if (res.ok) {
       startRow.value = null;
       selectedStartPk.value = null;
-      startReason.value = "";
       kds.refresh();
       useSonner.success(
         `Produzido: ${rowLabel(row)} × ${startQty.value.trim()}`,
@@ -1072,23 +1066,13 @@ const headerCount = computed(() => {
             +
           </button>
         </div>
-        <!-- Divergiu do planejado? Um motivo só — e é tudo o que se pede. -->
-        <div
+        <!-- Divergiu do planejado? A tela avisa e segue: é rendimento, não perda. -->
+        <p
           v-if="selectedStartOrder && startDiverges"
-          class="flex flex-col gap-1.5"
+          class="text-sm text-muted-foreground"
         >
-          <p class="text-sm text-muted-foreground">
-            Diferente do planejado ({{ selectedStartOrder.planned_qty }}). Por
-            quê?
-          </p>
-          <UiTextarea
-            v-model="startReason"
-            :rows="2"
-            placeholder="Motivo da diferença…"
-            aria-label="Motivo da diferença"
-            @keydown.enter.prevent="confirmStart()"
-          />
-        </div>
+          Diferente do planejado ({{ selectedStartOrder.planned_qty }}).
+        </p>
         <UiDialogFooter>
           <UiButton
             type="button"

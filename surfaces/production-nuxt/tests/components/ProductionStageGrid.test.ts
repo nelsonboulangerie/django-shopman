@@ -19,8 +19,9 @@ import {
 // (resolvidos pelo alias). O finish saiu do grid: fechar a fornada é a Expedição
 // (quiosque de QC), que mira UMA WorkOrder por cartão — o bug do rendimento de 200%
 // (pré-preencher o agregado contra a WO[0]) morreu por construção. Na Produção a
-// ação é uma só — Continuar · N — e a divergência pede um motivo (16/09/2026);
-// o modal de etapas ("Avançar para Fermentação") não existe mais.
+// ação é uma só — Continuar · N (16/09/2026); a diferença para o planejado é
+// rendimento e não pede motivo; o modal de etapas ("Avançar para Fermentação")
+// não existe mais.
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 function wo(
@@ -433,7 +434,7 @@ describe("ProductionStageGrid — produce render", () => {
       .at(-1)!
       .trigger("click");
 
-    expect(startSpy).toHaveBeenCalledWith("PAO-001", 8, 4, "30", "");
+    expect(startSpy).toHaveBeenCalledWith("PAO-001", 8, 4, "30");
   });
 
   it("confirms produced quantity on the first click and blocks repeats while pending", async () => {
@@ -464,7 +465,7 @@ describe("ProductionStageGrid — produce render", () => {
     await request.promise;
   });
 
-  it("confirms the planned quantity with Enter, without asking why", async () => {
+  it("confirms the planned quantity with Enter", async () => {
     boardRows.value = [
       row({
         planned_qty: "30",
@@ -476,16 +477,13 @@ describe("ProductionStageGrid — produce render", () => {
     await byText(w, "button", "Continuar")!.trigger("click");
     const input = w.find('input[aria-label="Quantidade produzida"]');
     expect((input.element as HTMLInputElement).value).toBe("30");
-    expect(w.find('textarea[aria-label="Motivo da diferença"]').exists()).toBe(
-      false,
-    );
     await input.trigger("keydown", { key: "Enter" });
 
     expect(startSpy).toHaveBeenCalledTimes(1);
-    expect(startSpy).toHaveBeenCalledWith("PAO-001", 1, 2, "30", "");
+    expect(startSpy).toHaveBeenCalledWith("PAO-001", 1, 2, "30");
   });
 
-  it("a divergência pede um motivo — e só um — antes de continuar", async () => {
+  it("a diferença para o planejado é rendimento: avisa, não pergunta, e segue", async () => {
     boardRows.value = [
       row({
         planned_qty: "30",
@@ -498,26 +496,32 @@ describe("ProductionStageGrid — produce render", () => {
     const input = w.find('input[aria-label="Quantidade produzida"]');
     await input.setValue("27");
     expect(w.text()).toContain("Diferente do planejado (30)");
+    expect(w.find("textarea").exists()).toBe(false);
     const submit = w
       .findAll("button")
       .filter((button) => button.text().trim() === "Confirmar")
       .at(-1)!;
-    expect(submit.attributes("disabled")).toBeDefined();
+    expect(submit.attributes("disabled")).toBeUndefined();
     await input.trigger("keydown", { key: "Enter" });
+
+    expect(startSpy).toHaveBeenCalledWith("PAO-001", 1, 2, "27");
+  });
+
+  it("zero não segue: não há o que continuar", async () => {
+    boardRows.value = [
+      row({
+        planned_qty: "30",
+        planned_orders: [wo({ status: "planned" })],
+      }),
+    ];
+    const w = mountGrid();
+
+    await byText(w, "button", "Continuar")!.trigger("click");
+    const input = w.find('input[aria-label="Quantidade produzida"]');
+    await input.setValue("0");
+    await input.trigger("keydown", { key: "Enter" });
+
     expect(startSpy).not.toHaveBeenCalled();
-
-    await w
-      .find('textarea[aria-label="Motivo da diferença"]')
-      .setValue("três caíram no chão");
-    await submit.trigger("click");
-
-    expect(startSpy).toHaveBeenCalledWith(
-      "PAO-001",
-      1,
-      2,
-      "27",
-      "três caíram no chão",
-    );
   });
 
   it("nunca oferece avanço de etapa nem gestão de lote", () => {

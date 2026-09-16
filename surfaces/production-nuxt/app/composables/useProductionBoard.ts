@@ -141,19 +141,15 @@ export function useProductionBoard(
     );
   }
 
-  // `note` carrega o motivo quando a quantidade produzida diverge da planejada;
-  // vai no payload do evento STARTED (o Core já o grava), sem campo novo.
   function start(
     key: string,
     woPk: number,
     rev: number,
     quantity: string,
-    note = "",
   ): Promise<BoardActResult> {
     return post(key, `start:${woPk}`, (idempotencyKey, metadata, expectedRev) =>
       startProductionWorkOrder(woPk, {
         quantity,
-        ...(note ? { note } : {}),
         expected_rev: expectedRev ?? rev,
         ...metadata,
         idempotency_key: idempotencyKey,
