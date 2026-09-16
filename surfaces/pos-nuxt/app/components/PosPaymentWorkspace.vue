@@ -62,7 +62,8 @@ import {
   receiptSaveOffers,
   receiptSaveSummary,
 } from "~/presentation/receiptContact";
-import { scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
+import { resolveWindowLabel, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
+import { toast } from "vue-sonner";
 
 const props = defineProps<{
   salesMode?: "counter" | "order";
@@ -142,6 +143,9 @@ const props = defineProps<{
   /** Janelas do dia escolhido, já anotadas com a prontidão do carrinho. */
   deliverySlots: Array<{ ref: string; label: string; enabled?: boolean; reason?: string }>;
   /** Ainda não há resposta sobre as janelas (a review está a caminho). */
+  /** Os slots canônicos da casa (rótulo real de `slot-09` quando a grade do
+   *  dia ainda não chegou). Opcional: a página passa, o teste pode omitir. */
+  canonicalDeliverySlots?: Array<{ ref: string; label: string }>;
   deliverySlotsPending: boolean;
   /** A data que vale — a escolhida, ou o hoje que o servidor devolveu. */
   deliveryDateEffective: string;
@@ -337,7 +341,7 @@ const scheduleSheetOpen = ref(false);
 // O resumo do "quando" para o atalho dentro do Recebimento se explicar sozinho.
 const scheduleChipLabel = computed(() => scheduleLabel(
   props.deliveryDate,
-  windowLabel(props.deliverySlots, props.deliveryTimeSlot),
+  resolveWindowLabel(props.deliveryTimeSlot, [props.deliverySlots, props.canonicalDeliverySlots ?? []]),
   props.scheduleToday,
 ));
 const discountSheetOpen = ref(false);
@@ -983,7 +987,18 @@ const notices = computed<CheckoutNotice[]>(() => {
     //
     // O "assim que autorizar" fica: a emissão é assíncrona e quem autoriza é a
     // SEFAZ. Prometer o instante seria a segunda mentira.
-    notes.push({ key: "print", icon: "lucide:printer", message: "Pedir papel já pede a nota — imprime sozinha assim que autorizar." });
+    //
+    // ⚠️ Mas só quando o CONTRATO diz que pedir papel pede a nota
+    // (`receipt_requests_emission`). Sem essa palavra do servidor, a bobina só
+    // sai quando outra regra emitir (CPF, cartão, Pix) — e prometer "imprime
+    // sozinha" num dinheiro sem CPF seria a mentira de sempre com outra frase.
+    notes.push({
+      key: "print",
+      icon: "lucide:printer",
+      message: props.checkoutContract?.receipt_requests_emission
+        ? "Pedir papel já pede a nota — imprime sozinha assim que autorizar."
+        : "A nota impressa sai quando houver NFC-e (CPF, cartão ou Pix).",
+    });
   }
   // As ressalvas da review entram na MESMA faixa: são o mesmo gesto de leitura,
   // e uma segunda caixa ao lado só ensina o olho a pular as duas.
@@ -1075,7 +1090,15 @@ defineExpose({
   pressMethodKey: (letter: string) => {
     const ref = Object.keys(methodKeys.value).find((key) => methodKeys.value[key] === letter);
     if (!ref) return false;
-    if (blockedForDelivery(ref) || blockedByLink(ref) || blockedByPixProviderTest(ref)) return true;
+    // A tecla da forma bloqueada calava: o operador apertava P, nada
+    // acontecia, e apertava de novo achando que a tecla quebrou. O dedo no
+    // botão já ouvia o motivo (`addTender`); a tecla ouve o mesmo.
+    if (blockedForDelivery(ref)) {
+      const handoff = props.fulfillmentType === "pickup" ? "retirada" : "entrega";
+      toast.info(`Na ${handoff}, use dinheiro ou cartão na maquininha. PIX Efí exige confirmação automática.`);
+      return true;
+    }
+    if (blockedByLink(ref) || blockedByPixProviderTest(ref)) return true;
     emit("addTender", ref);
     return true;
   },

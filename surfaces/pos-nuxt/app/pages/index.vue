@@ -4,7 +4,7 @@ import { toast } from "vue-sonner";
 import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { rollStyle } from "~/presentation/printGeometry";
-import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
+import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
 import { enterAdvances, paymentFailed } from "~/presentation/saleResult";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
@@ -114,6 +114,8 @@ const {
   deliveryDistanceKm,
   deliverySlots,
   deliverySlotsPending,
+  canonicalDeliverySlots,
+  deliveryWindowLabel,
   deliveryDateEffective,
   scheduleToday,
   scheduleAvailableDates,
@@ -177,6 +179,7 @@ const {
   reviewFailed,
   submitSale,
   dismissResult,
+  markFiscalState,
   resendingLink,
   sendPaymentNotice,
   onExternalSaleCancelled,
@@ -327,6 +330,9 @@ async function autoPrintDanfe(orderRef: string, tries = 0) {
   // estiver. Só paramos se a página inteira sair.
   try {
     const danfe = await fetchPrintable(orderRef, "danfe-escpos");
+    // O 409 virou 200: a nota EXISTE. A tela de resultado promove "NFC-e na
+    // fila…" para "Imprimir DANFE" — por existência, não por previsão.
+    markFiscalState(orderRef, "authorized");
     const outcome = await agent.print(danfe.payload_b64, danfe.title);
     if (outcome.status === "printed") {
       toast.success("DANFE impressa.");
@@ -346,11 +352,24 @@ async function autoPrintDanfe(orderRef: string, tries = 0) {
 // A venda fechou pedindo papel: começa a esperar a nota. Sem nota esperada
 // (dinheiro sem CPF, por exemplo) não há o que imprimir — e prometer papel ali
 // seria mentir duas vezes.
-watch(result, (snapshot) => {
-  stopAutoPrint();
-  if (!snapshot?.wantsPrintedInvoice || !snapshot.fiscalExpected) return;
-  autoPrintDanfe(snapshot.orderRef);
-});
+//
+// A espera começa quando a nota está NA FILA. Aguardando o Pix (`awaiting_
+// payment`) ela nem foi pedida — insistir no 409 durante toda a espera do Pix
+// esgotava as 30 tentativas e desistia com "a nota demorou", mentindo. Quando
+// o polling do Pix confirma, o estado vira `queued` e a espera começa aqui.
+// A promoção para `authorized` (o próprio auto-print) NÃO reinicia a espera.
+watch(
+  () => [result.value?.orderRef, result.value?.fiscalState] as const,
+  ([orderRef, fiscalState], previous) => {
+    const [previousRef, previousState] = previous ?? [undefined, undefined];
+    if (orderRef !== previousRef) stopAutoPrint();
+    if (!orderRef || !result.value?.wantsPrintedInvoice) return;
+    if (fiscalState !== "queued") return;
+    if (orderRef === previousRef && previousState === "queued") return;
+    stopAutoPrint();
+    autoPrintDanfe(orderRef);
+  },
+);
 onBeforeUnmount(stopAutoPrint);
 
 async function printDanfe() {
@@ -359,6 +378,7 @@ async function printDanfe() {
   printingDanfe.value = true;
   try {
     const danfe = await fetchPrintable(orderRef, "danfe-escpos");
+    markFiscalState(orderRef, "authorized");
     const outcome = await agent.print(danfe.payload_b64, danfe.title);
     if (outcome.status === "printed") {
       toast.success("DANFE na impressora.");
@@ -483,7 +503,7 @@ function openScheduleHere() {
 // parecer que falta preencher alguma coisa.
 const scheduleChipLabel = computed(() => scheduleLabel(
   cart.deliveryDate,
-  windowLabel(deliverySlots.value, cart.deliveryTimeSlot),
+  deliveryWindowLabel.value,
   scheduleToday.value,
 ));
 const scheduleChipActive = computed(() => Boolean(cart.deliveryDate || cart.deliveryTimeSlot));
@@ -585,7 +605,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
     }
     if (
       event.key === "Enter" && !isEditing
-      && enterAdvances({ changeQ: result.value.changeQ, payment: result.value.payment, pixStatus: pixStatus.value })
+      && enterAdvances({ changeQ: result.value.changeQ, payment: result.value.payment, pixStatus: pixStatus.value, salesMode: result.value.salesMode })
     ) {
       event.preventDefault();
       startNextSale();
@@ -990,6 +1010,7 @@ onBeforeUnmount(() => {
         :delivery-fee-source="deliveryFeeSource"
         :delivery-distance-km="deliveryDistanceKm"
         :delivery-slots="deliverySlots"
+        :canonical-delivery-slots="canonicalDeliverySlots"
         :delivery-slots-pending="deliverySlotsPending"
         :delivery-date-effective="deliveryDateEffective"
         v-model:change-for-input="cart.changeForInput"

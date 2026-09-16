@@ -18,6 +18,7 @@ import type {
   POSSaleReviewProjection,
   POSScheduleResponse,
   POSSaleReviewResponse,
+  PosFiscalState,
   POSTabPayload,
   POSTabProjection,
   SavedAddressProjection,
@@ -35,7 +36,7 @@ import {
 } from "~/utils/posIntent";
 import { cartQtyForSku } from "~/presentation/catalog";
 import { sanitizeTabRef as sanitizeTabRefShape, sortTabs } from "~/presentation/tabBoard";
-import { scheduleLabel, windowLabel, type ScheduleWindow } from "~/presentation/schedule";
+import { resolveWindowLabel, scheduleLabel, type ScheduleWindow } from "~/presentation/schedule";
 import {
   isPaymentCovered,
   paymentChangeQ as computeChangeQ,
@@ -55,7 +56,7 @@ import {
 } from "~/utils/posTabLifecycle";
 import { cartNetTotalQ, cashLandedInDrawer, type PosReceiptSnapshot } from "~/presentation/receipt";
 import { manualDiscountWasOverridden, winningDiscountLabel } from "~/presentation/lineDiscounts";
-import type { PosSaleResultSnapshot } from "~/presentation/saleResult";
+import { resolveFiscalState, type PosSaleResultSnapshot } from "~/presentation/saleResult";
 import type {
   CustomerDecision,
   CustomerDecisionField,
@@ -424,7 +425,16 @@ export function usePosSale(deps: PosSaleDeps) {
         );
         if (generation !== pixPollGeneration || pixOrderRef.value !== orderRef) return;
         applyPaymentDelivery(orderRef, status.payment_delivery);
-        if (status?.is_paid) { pixStatus.value = "paid"; stopPixPolling(generation); }
+        if (status?.is_paid) {
+          pixStatus.value = "paid";
+          // A NFC-e que esperava o Pix agora está na fila: a tela de resultado
+          // troca "sai quando o pagamento confirmar" por "na fila", e a
+          // impressão automática começa a esperar a autorização.
+          if (result.value?.orderRef === orderRef && result.value.fiscalState === "awaiting_payment") {
+            markFiscalState(orderRef, "queued");
+          }
+          stopPixPolling(generation);
+        }
         else if (status?.is_terminal) { pixStatus.value = "expired"; stopPixPolling(generation); } // cancelado/expirado
       // A desistência é que fala alto: 240 tentativas → `pixStatus = "expired"`
       // e o toast do watcher. A tentativa isolada, não.
@@ -452,6 +462,18 @@ export function usePosSale(deps: PosSaleDeps) {
    * aguardando não é descartado: vira o chip pendente no header e o polling
    * continua até resolver/expirar. Sem prova pendente, o polling encerra.
    */
+  /**
+   * A tela de resultado descobre o estado da nota DEPOIS do fechamento: a
+   * impressão automática vê o 409 virar 200 (`authorized`), o polling do Pix vê
+   * o pagamento confirmar (`awaiting_payment` → `queued`). Só a venda que está
+   * na tela é promovida; a de uma venda que já saiu não tem onde aparecer.
+   */
+  function markFiscalState(orderRef: string, state: PosFiscalState) {
+    if (!result.value || result.value.orderRef !== orderRef) return;
+    if (result.value.fiscalState === state) return;
+    result.value = { ...result.value, fiscalState: state };
+  }
+
   function dismissResult() {
     if (!result.value) return;
     stopDeliveryPolling();
@@ -807,6 +829,14 @@ export function usePosSale(deps: PosSaleDeps) {
   const deliverySlotsPending = computed(
     () => scheduleBusy.value || (!review.value && !schedule.value && !scheduleFailed.value),
   );
+  // Os slots CANÔNICOS da casa, com o rótulo real do servidor. A grade acima só
+  // conhece o dia carregado: uma comanda salva com `slot-09` para HOJE, antes de
+  // alguém buscar a agenda, mostrava o ref cru no chip e na leitura de volta.
+  const canonicalDeliverySlots = computed<ScheduleWindow[]>(() => pos.value?.delivery_slots_canonical ?? []);
+  /** O rótulo da janela escolhida: grade do dia → canônicos → humanização. */
+  const deliveryWindowLabel = computed(
+    () => resolveWindowLabel(cart.deliveryTimeSlot, [deliverySlots.value, canonicalDeliverySlots.value]),
+  );
 
   // Payment by injection (Odoo-style): the operator adds tender lines in any form;
   // the method is derived (no "mixed" selection). Finalize is gated until covered.
@@ -1066,11 +1096,15 @@ export function usePosSale(deps: PosSaleDeps) {
   );
   const suggestedSplitRef = computed(() => (cart.tabDisplay ? `${cart.tabDisplay}-2` : ""));
 
+  // ⚠️ Sem cláusula de método. `cart.paymentMethod` é campo LEGADO (o primeiro
+  // método da projeção, "cash", ou o que a comanda salva trouxe): filtrar por
+  // ele fazia o watcher abaixo reescrever "Na entrega" para "No caixa" em
+  // silêncio numa comanda reaberta com `payment_method: "pix"`. Os tenders são a
+  // verdade, e o workspace já valida cada linha contra a coleta (`blockedForDelivery`).
   const availablePaymentCollections = computed(() =>
     (pos.value?.payment_collections || []).filter((collection) =>
       collection.fulfillment_types.includes(cart.fulfillmentType)
-      && !(collection.ref === "on_delivery" && cart.fulfillmentType === "pickup" && cart.salesMode !== "order")
-      && collection.payment_method_refs.includes(cart.paymentMethod),
+      && !(collection.ref === "on_delivery" && cart.fulfillmentType === "pickup" && cart.salesMode !== "order"),
     ),
   );
 
@@ -1545,7 +1579,12 @@ export function usePosSale(deps: PosSaleDeps) {
       paymentCollection: cart.paymentCollection,
       paymentTenders: resolvedPayment.paymentTenders,
       tenderedQ: resolvedPayment.tenderedQ,
+      // "Troco para quanto?" só existe quando o operador PERGUNTOU: a linha de
+      // dinheiro virgem é o auto-preenchimento do sistema (= total), e mandá-la
+      // gravava "troco para R$ 42 num pedido de R$ 42" sem ninguém ter falado
+      // com o cliente — o entregador saía com troco zero por engano.
       changeForQ: cart.paymentCollection === "on_delivery"
+        && cart.paymentTenders.some((t) => t.method === "cash" && !t._virgin)
         ? cart.paymentTenders.filter((t) => t.method === "cash").reduce((sum, t) => sum + t.amount_q, 0)
         : 0,
       receiptChannels: cart.receiptChannels,
@@ -2636,6 +2675,9 @@ export function usePosSale(deps: PosSaleDeps) {
       }
       if (guarded.kind === "error") throw guarded.error;
       const { response, orderRef } = guarded;
+      // COBRANÇA NA ENTREGA/RETIRADA: o dinheiro ainda não entrou. O troco
+      // calculado é o que o entregador vai separar, não o que sai da gaveta.
+      const paidOnDelivery = cart.paymentCollection === "on_delivery";
       // Freeze a receipt snapshot before the cart resets (spec §D3): the
         // printed receipt is a record of what was sold, not live state.
         const receipt: PosReceiptSnapshot = {
@@ -2658,6 +2700,13 @@ export function usePosSale(deps: PosSaleDeps) {
           })),
           fulfillmentLabel: pos.value?.fulfillment_options.find((option) => option.ref === cart.fulfillmentType)?.label || cart.fulfillmentType,
           printedAtMs: Date.now(),
+          // O recibo do navegador imprime como o servidor (`receipt_escpos`):
+          // "Dinheiro R$ 42 / Recebido R$ 100 / Troco R$ 58", e não a linha
+          // como digitada. "Recebido" é medição — só viaja quando o operador
+          // digitou (`tendered_q`, dinheiro sozinho no caixa).
+          tenderedQ: paidOnDelivery ? 0 : (resolvePayment(cart.paymentTenders, paymentTotalQ.value).tenderedQ ?? 0),
+          changeQ: paidOnDelivery ? 0 : Math.max(0, paymentChangeQ.value),
+          paymentPending: paidOnDelivery,
         };
         // Com entrega, o BAIRRO diz mais que a palavra "entrega" — é o que o
         // operador confere de relance e repete ao cliente.
@@ -2678,10 +2727,18 @@ export function usePosSale(deps: PosSaleDeps) {
           // O botão da DANFE segue a REGRA fiscal, não o toggle: cartão e pix
           // emitem por forma de pagamento, sem o operador marcar nada.
           fiscalExpected: !!response.fiscal_expected,
+          // Onde a nota está: dito pelo close; sem `fiscal_state`, deriva.
+          fiscalState: resolveFiscalState(response),
           // Troco congelado AGORA — o resetCart logo abaixo apaga os tenders e
           // o troco computado voltaria a zero. Uma fonte só: a tela de
           // resultado do operador e a tela do cliente leem daqui.
-          changeQ: Math.max(0, paymentChangeQ.value),
+          //
+          // ⚠️ Na cobrança na entrega/retirada o troco é ZERO aqui: a tela
+          // anunciava "TROCO R$ 58 · Confira o troco" e travava Enter e
+          // auto-avanço por um dinheiro que ainda não tinha entrado. O que o
+          // entregador leva vai em `courierChangeQ`, informativo.
+          changeQ: paidOnDelivery ? 0 : Math.max(0, paymentChangeQ.value),
+          courierChangeQ: paidOnDelivery ? Math.max(0, paymentChangeQ.value) : 0,
           // Congelado pelo mesmo motivo do troco: o `resetCart` logo abaixo
           // apaga os canais, e a nota autoriza depois — segundos ou minutos.
           wantsPrintedInvoice: cart.receiptChannels.includes("print"),
@@ -2690,7 +2747,7 @@ export function usePosSale(deps: PosSaleDeps) {
           // data, a janela e o bairro, e a tela de resultado precisa deles.
           fulfillmentLabel: cart.salesMode === "order" ? orderFulfillmentLabel() : "",
           scheduleLabel: cart.salesMode === "order"
-            ? scheduleLabel(cart.deliveryDate, windowLabel(deliverySlots.value, cart.deliveryTimeSlot), scheduleToday.value)
+            ? scheduleLabel(cart.deliveryDate, deliveryWindowLabel.value, scheduleToday.value)
             : "",
         };
         // PIX pendente → polla até confirmar; outros métodos já saem resolvidos.
@@ -3133,6 +3190,9 @@ export function usePosSale(deps: PosSaleDeps) {
     deliveryDistanceKm,
     deliverySlots,
     deliverySlotsPending,
+    availablePaymentCollections,
+    canonicalDeliverySlots,
+    deliveryWindowLabel,
     deliveryDateEffective,
     scheduleToday,
     scheduleAvailableDates,
@@ -3202,6 +3262,7 @@ export function usePosSale(deps: PosSaleDeps) {
     reviewCheckout,
     submitSale,
     dismissResult,
+    markFiscalState,
     resendingLink,
     sendPaymentNotice,
     resendPaymentLink,

@@ -100,6 +100,21 @@ export function windowLabel(windows: ScheduleWindow[], ref: string): string {
 }
 
 /**
+ * O rótulo REAL antes do rótulo deduzido. A grade do dia é a primeira fonte;
+ * os slots canônicos da casa (`pos.delivery_slots_canonical`, "A partir das
+ * 9h") a segunda — é o que resolve `slot-09` numa comanda salva para HOJE, cuja
+ * grade ainda não foi buscada. Só sem nenhuma das duas o ref é humanizado.
+ */
+export function resolveWindowLabel(ref: string, grids: ScheduleWindow[][]): string {
+  if (!ref) return "";
+  for (const grid of grids) {
+    const found = grid.find((w) => w.ref === ref)?.label;
+    if (found) return found;
+  }
+  return humanizeWindowRef(ref);
+}
+
+/**
  * O ref da janela NUNCA vira texto de tela. Quando a lista de janelas ainda não
  * chegou (comanda reaberta, resultado da venda, agenda não buscada), o rótulo
  * saía como "slot-09" — o dono viu "Hoje, slot-09" no balcão. Os refs da casa

@@ -749,7 +749,7 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
   it("a bobina e o troco do entregador deixaram de ser legenda de campo", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: covered({
-        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [] },
+        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [], receipt_requests_emission: true },
         receiptChannels: ["print"],
         fulfillmentType: "delivery",
         paymentCollection: "on_delivery",
@@ -762,6 +762,39 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
     // e não voltaram a aparecer dentro da coluna do instrumento
     expect(wrapper.find(".order-2").text()).not.toContain("Imprime sozinha");
     expect(wrapper.find(".order-2").text()).not.toContain("troco separado");
+  });
+
+  // "Pedir papel já pede a nota" só é verdade quando o CONTRATO diz que a regra
+  // fiscal lê o canal de impressão (`receipt_requests_emission`). Sem essa
+  // palavra, prometer "imprime sozinha" num dinheiro sem CPF é a mentira antiga.
+  it("a promessa da bobina obedece ao contrato: sem `receipt_requests_emission`, diz quando a nota sai", async () => {
+    const semPalavra = await mountSuspended(PosPaymentWorkspace, {
+      props: covered({
+        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [] },
+        receiptChannels: ["print"],
+      }),
+    });
+    expect(avisos(semPalavra).text()).toContain("A nota impressa sai quando houver NFC-e (CPF, cartão ou Pix).");
+    expect(avisos(semPalavra).text()).not.toContain("imprime sozinha");
+    semPalavra.unmount();
+
+    const explicitoFalso = await mountSuspended(PosPaymentWorkspace, {
+      props: covered({
+        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [], receipt_requests_emission: false },
+        receiptChannels: ["print"],
+      }),
+    });
+    expect(avisos(explicitoFalso).text()).toContain("A nota impressa sai quando houver NFC-e (CPF, cartão ou Pix).");
+    explicitoFalso.unmount();
+
+    const comPalavra = await mountSuspended(PosPaymentWorkspace, {
+      props: covered({
+        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [], receipt_requests_emission: true },
+        receiptChannels: ["print"],
+      }),
+    });
+    expect(avisos(comPalavra).text()).toContain("Pedir papel já pede a nota — imprime sozinha assim que autorizar.");
+    comPalavra.unmount();
   });
 
   it("o campo legado não interfere mais no pagamento informado pelo teclado", async () => {

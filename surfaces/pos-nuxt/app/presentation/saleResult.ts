@@ -7,7 +7,7 @@
 // como a tela se comporta com ele.
 
 import type { PaymentProofView } from "~/presentation/payment";
-import type { POSPaymentDeliveryProjection } from "~/types/pos";
+import type { PosFiscalState, POSPaymentDeliveryProjection } from "~/types/pos";
 import type { PosReceiptSnapshot } from "~/presentation/receipt";
 import { firstName } from "~/presentation/customerDisplay";
 import { formatBRL } from "~/utils/posIntent";
@@ -29,7 +29,18 @@ export interface PosSaleResultSnapshot {
   paymentDelivery?: POSPaymentDeliveryProjection | null;
   receipt: PosReceiptSnapshot;
   fiscalExpected: boolean;
+  /** Onde a NFC-e está AGORA. Vem do close; sem ele, deriva de `fiscalExpected`
+   *  (`resolveFiscalState`). Promovida pela própria tela quando o 409 da bobina
+   *  vira 200 (`authorized`) e quando o Pix confirma (`awaiting_payment` →
+   *  `queued`). */
+  fiscalState: PosFiscalState;
+  /** Troco que SAIU DA GAVETA nesta venda, em centavos. Zero na cobrança na
+   *  entrega/retirada: o dinheiro ainda não entrou, e o herói "Confira o troco"
+   *  travava Enter e auto-avanço por um troco que ninguém tinha em mãos. */
   changeQ: number;
+  /** Troco que o entregador/balcão vai LEVAR para o hand-off (cobrança na
+   *  entrega/retirada) — informativo, sem herói e sem travar a tela. */
+  courierChangeQ?: number;
   /** O cliente pediu a nota IMPRESSA? Congelado aqui porque o carrinho já
    *  zerou quando a nota autoriza — e é dela que a impressão automática vive. */
   wantsPrintedInvoice: boolean;
@@ -60,6 +71,62 @@ export interface SaleResultAdvanceInputs {
   changeQ: number;
   payment: PaymentProofView | null;
   pixStatus: PixPollStatus;
+  /** ENCOMENDA: a tela é a leitura de volta ao cliente — Enter não a dispensa. */
+  salesMode?: "counter" | "order";
+}
+
+/**
+ * O estado fiscal que a tela usa quando o servidor ainda não fala `fiscal_state`:
+ * nota esperada = "na fila" (ela ainda não existe no instante do fechamento);
+ * não esperada = nada a imprimir.
+ */
+export function resolveFiscalState(
+  response: { fiscal_state?: PosFiscalState | null; fiscal_expected?: boolean | null },
+): PosFiscalState {
+  if (response.fiscal_state) return response.fiscal_state;
+  return response.fiscal_expected ? "queued" : "not_expected";
+}
+
+/** O rótulo curto do estado da NFC-e — chip das Últimas vendas e da tela de resultado. */
+export function fiscalStateLabel(state: PosFiscalState): string {
+  switch (state) {
+    case "authorized": return "NFC-e autorizada";
+    case "queued": return "NFC-e na fila";
+    case "awaiting_payment": return "NFC-e aguarda o pagamento";
+    case "failed": return "NFC-e falhou";
+    default: return "Sem NFC-e";
+  }
+}
+
+export type DanfeOffer =
+  | { kind: "print"; label: "Imprimir DANFE" }
+  | { kind: "queued"; label: "NFC-e na fila…" }
+  | { kind: "awaiting_payment"; label: "NFC-e sai quando o pagamento confirmar" }
+  | { kind: "failed"; label: "NFC-e falhou — veja Últimas vendas" }
+  | null;
+
+/**
+ * O que a tela OFERECE sobre a DANFE — por existência da nota, não por previsão.
+ *
+ * O botão "Imprimir DANFE" aparecia por `fiscalExpected`, e o endpoint responde
+ * 409 até a SEFAZ autorizar (no Pix, durante toda a espera): o operador tocava e
+ * lia um erro por uma nota que ainda não existia. Só `authorized` ganha o botão
+ * vivo; `queued` mostra o botão desabilitado (a impressão automática promove
+ * quando o 409 vira 200); `awaiting_payment` e `failed` dizem o próximo passo.
+ */
+export function danfeOffer(state: PosFiscalState): DanfeOffer {
+  switch (state) {
+    case "authorized": return { kind: "print", label: "Imprimir DANFE" };
+    case "queued": return { kind: "queued", label: "NFC-e na fila…" };
+    case "awaiting_payment": return { kind: "awaiting_payment", label: "NFC-e sai quando o pagamento confirmar" };
+    case "failed": return { kind: "failed", label: "NFC-e falhou — veja Últimas vendas" };
+    default: return null;
+  }
+}
+
+/** "Troco a separar: R$ 58" — a linha discreta da cobrança na entrega; "" sem troco. */
+export function courierChangeLine(courierChangeQ: number | undefined): string {
+  return courierChangeQ && courierChangeQ > 0 ? `Troco a separar: ${formatBRL(courierChangeQ)}` : "";
 }
 
 /** Com cliente vinculado o obrigado é nominal (frase completa, com ponto e
@@ -132,6 +199,10 @@ export function autoAdvanceSeconds(
  * dois casos sair é gesto deliberado no CTA (ou F2).
  */
 export function enterAdvances(inputs: SaleResultAdvanceInputs): boolean {
+  // ENCOMENDA: a tela é a leitura de volta ("era sábado, não sexta") e a saída
+  // das fichas. O Enter que validou não pode engoli-la por hábito — sair é F2
+  // ou o CTA, como o auto-avanço já não corre aqui.
+  if (inputs.salesMode === "order") return false;
   if (inputs.changeQ > 0) return false;
   // O Enter que validou a venda não pode passar por cima do aviso de que a
   // cobrança não foi criada.
